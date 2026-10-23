@@ -138,7 +138,12 @@ extension IncidentApi on GitLabApi {
     String status, {
     String? expectedUpdatedAt,
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     if (!_incidentActions.contains(status)) {
       throw const ApiFailure(FailureKind.validation);
     }
@@ -153,6 +158,10 @@ extension IncidentApi on GitLabApi {
       throw const ApiFailure(FailureKind.conflict);
     }
     if (before['escalationStatus'] == status) return before;
+    if (beforeMutation != null) await beforeMutation();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
     final response = await _send(
       instance.graphQL,
       method: 'POST',

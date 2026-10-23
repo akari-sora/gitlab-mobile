@@ -665,7 +665,12 @@ extension WorkItemActivityApi on GitLabApi {
     WorkItemActivityCommentTarget target,
     String body, {
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _requireActivityOwner(target._owner);
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -704,6 +709,8 @@ extension WorkItemActivityApi on GitLabApi {
         return true;
       },
       isCurrent: isCurrent,
+      beforeMutation: beforeMutation,
+      mayStart: mayStart,
     );
   }
 
@@ -711,7 +718,12 @@ extension WorkItemActivityApi on GitLabApi {
     WorkItemActivityReplyTarget target,
     String body, {
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _requireActivityOwner(target._owner);
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -759,6 +771,8 @@ extension WorkItemActivityApi on GitLabApi {
         return true;
       },
       isCurrent: isCurrent,
+      beforeMutation: beforeMutation,
+      mayStart: mayStart,
     );
   }
 
@@ -767,6 +781,7 @@ extension WorkItemActivityApi on GitLabApi {
     WorkItemActivityFilter filter = WorkItemActivityFilter.all,
     WorkItemActivityOrder order = WorkItemActivityOrder.oldestFirst,
     bool Function()? isCurrent,
+    bool allowLegacyFallback = true,
   }) async {
     _validateExpectedAttributeIdentity(expected);
     return await _readWorkItemActivity(
@@ -774,12 +789,14 @@ extension WorkItemActivityApi on GitLabApi {
       filter: filter,
       order: order,
       isCurrent: isCurrent,
+      allowLegacyFallback: allowLegacyFallback,
     );
   }
 
   Future<WorkItemActivityPage> workItemActivityNext(
     WorkItemActivityContinuation continuation, {
     bool Function()? isCurrent,
+    bool allowLegacyFallback = true,
   }) async {
     _requireActivityOwner(continuation._owner);
     return await _readWorkItemActivity(
@@ -790,6 +807,7 @@ extension WorkItemActivityApi on GitLabApi {
       order: continuation._order,
       controlsSupported: continuation._controlsSupported,
       isCurrent: isCurrent,
+      allowLegacyFallback: allowLegacyFallback,
     );
   }
 
@@ -949,9 +967,16 @@ extension WorkItemActivityApi on GitLabApi {
     String? expectedReplyId,
     DateTime? expectedDiscussionCreatedAt,
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
     _requireCurrentWorkItemRequest(isCurrent);
     if (!consume()) throw const ApiFailure(FailureKind.writeUncertain);
+
+    if (beforeMutation != null) await beforeMutation();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
 
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
     try {
@@ -1060,11 +1085,19 @@ extension WorkItemActivityApi on GitLabApi {
     required WorkItemActivityOrder order,
     bool? controlsSupported,
     bool Function()? isCurrent,
+    bool allowLegacyFallback = true,
   }) async {
     final cursor = _validatedWorkItemCursor(after);
     final initialRequest = cursor == null;
     var useControls =
         controlsSupported ?? _workItemActivityControlsUnsupported[this] != true;
+    if (!useControls && !allowLegacyFallback) {
+      throw ApiFailure(
+        FailureKind.unsupported,
+        title: l10n.instanceNoActivityFilterSort,
+        detail: l10n.versionNoActivityFilterSort,
+      );
+    }
     _requireCurrentWorkItemRequest(isCurrent);
     var response = await _readWorkItemActivityResponse(
       expected.id,
@@ -1075,7 +1108,7 @@ extension WorkItemActivityApi on GitLabApi {
     );
     _requireCurrentWorkItemRequest(isCurrent);
     if (useControls && _activityControlsSchemaUnavailable(response.bytes)) {
-      if (!initialRequest) {
+      if (!initialRequest || !allowLegacyFallback) {
         throw ApiFailure(
           FailureKind.unsupported,
           title: l10n.instanceNoActivityFilterSort,

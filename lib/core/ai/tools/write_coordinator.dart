@@ -14,6 +14,7 @@ import '../exact_edit.dart' as exact;
 import '../wire/wire_format.dart';
 import '../write_text.dart' as text;
 import 'gitlab_write_port.dart' as port;
+import 'graphql_write_hooks.dart';
 import 'target_binding.dart';
 import 'tool_catalogue.dart';
 import 'write_ledger.dart';
@@ -428,6 +429,10 @@ final class PolicyAiWriteCoordinator
   bool _previousIncomplete = false;
   Timer? _approvalTimer;
   static final List<_WriteLease> _leases = [];
+  // A failed graph boundary flush cannot be inferred safe from the cached
+  // prepared entry. Share the fail-stop across conversations on this journal.
+  static final _graphJournalFailures =
+      Expando<Map<String, Set<String>>>('graph journal failures');
 
   List<AiWriteProposal> get proposals => List.unmodifiable([
     for (final pending in _pending.values)
@@ -682,6 +687,9 @@ final class PolicyAiWriteCoordinator
       request = preparedText.request;
       final prepared = await (_port ??= createPort()).prepare(request);
       _requirePolicy(policy, runId: runId);
+      if (prepared.boundary != capability.boundary) {
+        throw const _WriteBlocked('graphBoundaryMismatch');
+      }
       final scanReasons = _checkTextScan(prepared, policy, fresh);
       if (ownerFromPreRead) target = _todoTarget(prepared, policy.scope);
       final extra = <AiFixedConfirmReason>[
@@ -894,6 +902,10 @@ final class PolicyAiWriteCoordinator
     var preparedOnDisk = false;
     var dispatching = false;
     var accepted = false;
+    final graph = pending.prepared.boundary == AiWriteBoundary.graph;
+    var graphMarkAttempted = false;
+    var graphTerminalAttempted = false;
+    var graphJournalFailed = false;
     try {
       _requirePending(pending);
       // Approval becomes durable before the conflict lock/final reads. A
@@ -968,6 +980,10 @@ final class PolicyAiWriteCoordinator
       final capability = ledger.find(request.operationId)!;
       final prepared = await _port!.prepare(request);
       _requirePending(pending);
+      if (prepared.boundary != capability.boundary ||
+          prepared.boundary != pending.prepared.boundary) {
+        throw const _WriteBlocked('graphBoundaryMismatch');
+      }
       if (!_sameKeys(prepared.writeKeys, pending.prepared.writeKeys) ||
           !_sameKeys(prepared.dependencyKeys, pending.prepared.dependencyKeys) ||
           prepared.releaseName != pending.prepared.releaseName ||
@@ -996,6 +1012,7 @@ final class PolicyAiWriteCoordinator
         throw const _WriteBlocked('approvalRequired');
       }
       if (fresh.noChange) {
+        graphTerminalAttempted = graph;
         await journal.finish(
           executionId: proposal.executionId,
           terminal: AiJournalState.notExecuted,
@@ -1013,8 +1030,31 @@ final class PolicyAiWriteCoordinator
         );
       }
       _requirePending(pending);
-      await journal.markDispatching(executionId: proposal.executionId);
-      dispatching = true;
+      if (graph) {
+        Future<void> beforeMutation() async {
+          _requirePending(pending);
+          graphMarkAttempted = true;
+          try {
+            await journal.markDispatching(executionId: proposal.executionId);
+            dispatching = true;
+          } on Object catch (error) {
+            // These journal gates run before any dispatching save. All other
+            // failures can leave the flush outcome unknown.
+            graphJournalFailed = error is! AiJournalException || !const {
+              'accountBlocked', 'invalidTransition', 'isolated',
+              'confirmationRequired', 'recoveryPending', 'unavailable',
+              'unknownExecution', 'staleOwner', 'keyMissing', 'removed',
+              'unknownFormat', 'overSize', 'uninitialized', 'storageLimit',
+              'notConfigured',
+            }.contains(error.reason);
+            rethrow;
+          }
+        }
+        prepared.bindGraphBeforeMutation(beforeMutation);
+      } else {
+        await journal.markDispatching(executionId: proposal.executionId);
+        dispatching = true;
+      }
       // There is no await between this final check and the port's mutation.
       final outcome = await _port!.commit(
         prepared,
@@ -1044,21 +1084,56 @@ final class PolicyAiWriteCoordinator
           return true;
         },
       );
-      if (outcome is port.AiWriteNotSent) {
-        await journal.revertDispatchingToNotExecuted(
+      if (outcome is port.AiGraphNoChange) {
+        if (!graph || dispatching || accepted) {
+          throw const _WriteBlocked('graphContractViolation');
+        }
+        graphTerminalAttempted = true;
+        await journal.finish(
           executionId: proposal.executionId,
+          terminal: AiJournalState.notExecuted,
         );
+        return _complete(
+          pending,
+          AiWriteOutcome(
+            state: AiJournalState.succeeded,
+            reasonCode: 'noChange',
+            noChange: true,
+            executionId: proposal.executionId,
+            operationId: proposal.operationId,
+            target: _targetSummary(pending.prepared),
+          ),
+        );
+      }
+      if (outcome is port.AiWriteNotSent) {
+        graphTerminalAttempted = graph;
+        if (dispatching) {
+          await journal.revertDispatchingToNotExecuted(
+            executionId: proposal.executionId,
+          );
+        } else {
+          await journal.finish(
+            executionId: proposal.executionId,
+            terminal: AiJournalState.notExecuted,
+          );
+        }
         return _complete(
           pending,
           _notExecuted(
             pending.call,
-            _pendingFailure(pending) ?? 'notAccepted',
+            _pendingFailure(pending) ?? outcome.reasonCode,
             executionId: proposal.executionId,
             target: _targetSummary(pending.prepared),
           ),
         );
       }
       final settled = outcome as port.AiWriteSettled;
+      if (graph && (!accepted || !dispatching ||
+          (settled.state != AiJournalState.succeeded &&
+              settled.state != AiJournalState.writeUncertain))) {
+        throw const _WriteBlocked('graphContractViolation');
+      }
+      graphTerminalAttempted = graph;
       await journal.finish(
         executionId: proposal.executionId,
         terminal: settled.state,
@@ -1115,6 +1190,11 @@ final class PolicyAiWriteCoordinator
           ? AiJournalState.writeUncertain
           : AiJournalState.notExecuted;
       try {
+        if (graph && (graphJournalFailed || graphTerminalAttempted)) {
+          // Do not retry a flush whose durable state is unknown, or claim a
+          // refund. An explicit journal recovery/reset must resolve it first.
+          throw const AiJournalException('journalUnavailable');
+        }
         if (dispatching && !accepted) {
           await journal.revertDispatchingToNotExecuted(
             executionId: proposal.executionId,
@@ -1128,6 +1208,11 @@ final class PolicyAiWriteCoordinator
           await journal.refund(pending.hold);
         }
       } on Object {
+        if (graph && (graphMarkAttempted || preparedOnDisk)) {
+          graphJournalFailed = true;
+          final failures = _graphJournalFailures[journal] ??= {};
+          (failures[pending.policy.scope.accountKey] ??= {}).add(proposal.executionId);
+        }
         // A failed durable rollback keeps dispatching/uncertain isolation.
         if (dispatching || accepted) state = AiJournalState.writeUncertain;
       }
@@ -1135,7 +1220,7 @@ final class PolicyAiWriteCoordinator
         pending,
         AiWriteOutcome(
           state: state,
-          reasonCode: accepted
+          reasonCode: graphJournalFailed ? 'journalUnavailable' : accepted
               ? 'writeUncertain'
               : _pendingFailure(pending) ?? _reason(error),
           mutationCount: accepted ? 1 : 0,
@@ -1235,6 +1320,17 @@ final class PolicyAiWriteCoordinator
 
   String? _policyFailure(AiWritePolicySnapshot policy, {bool pauses = true}) {
     if (_stopped != null) return _stopped;
+    final failures = _graphJournalFailures[journal]?[policy.scope.accountKey];
+    if (failures != null) {
+      final unresolved = journal.entries(policy.scope.accountKey).where((entry) =>
+          failures.contains(entry.executionId) && const {
+            AiJournalState.prepared,
+            AiJournalState.dispatching,
+            AiJournalState.writeUncertain,
+          }.contains(entry.state));
+      if (unresolved.isNotEmpty) return 'journalUnavailable';
+      _graphJournalFailures[journal]!.remove(policy.scope.accountKey);
+    }
     if (!policy.alive) return 'accountChanged';
     if (!policy.enabled) return 'policyDenied';
     if (journal.tombstoneFlag(policy.scope.accountKey)) return 'accountBlocked';
@@ -1599,6 +1695,7 @@ final class PolicyAiWriteCoordinator
 
     Object? visit(Object? value, AiArgSpec spec, String field, String path) {
       if (spec.text == AiTextRole.fragmentEdits) return value;
+      if (spec.type == AiArgType.stringList) return value;
       if (value is String) return prepare(value, field, spec, path);
       if (value is Map<String, Object?>) {
         final properties = _nestedProperties(spec);
@@ -1821,6 +1918,7 @@ String _singleLine(String value) =>
     value.replaceAll(RegExp(r'[\r\n\u2028\u2029]'), ' ');
 
 String _reason(Object error) => switch (error) {
+  GraphHookContractException() => 'graphContractViolation',
   _WriteBlocked(:final reason) => reason,
   port.AiWriteRefused(:final reason) => reason,
   AiJournalException(:final reason) => reason,
@@ -2210,6 +2308,7 @@ bool _validArg(Object? value, AiArgSpec spec) => switch (spec.type) {
   AiArgType.object => value is Map<String, Object?> &&
       _validObject(value, _nestedProperties(spec)),
   AiArgType.integerList => value is List<Object?> && value.every((item) => item is int),
+  AiArgType.stringList => value is List<Object?> && value.every((item) => item is String),
   AiArgType.edits || AiArgType.variables || AiArgType.suggestionList ||
   AiArgType.snippetActions => value is List<Object?> && value.length <= 20 &&
       value.every((item) => item is Map<String, Object?> &&
@@ -2408,6 +2507,7 @@ Map<String, Object?> _argSchema(AiArgSpec spec) => switch (spec.type) {
   AiArgType.boolean => {'type': 'boolean'},
   AiArgType.object => _objectSchema(_nestedProperties(spec)),
   AiArgType.integerList => {'type': 'array', 'items': {'type': 'integer'}},
+  AiArgType.stringList => {'type': 'array', 'items': {'type': 'string'}},
   AiArgType.edits || AiArgType.variables || AiArgType.suggestionList ||
   AiArgType.snippetActions => {
     'type': 'array', 'maxItems': 20,

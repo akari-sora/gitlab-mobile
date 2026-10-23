@@ -20,6 +20,44 @@ READ_PORT_MEMBERS = {
     "snippetText",
 }
 
+_MR6B3_WRITE_PORT_MEMBERS = {
+    "projectWorkItem",
+    "workItemState",
+    "workItemStatus",
+    "workItemDates",
+    "workItemHealthEdit",
+    "workItemAssignees",
+    "searchWorkItemAssigneeCandidates",
+    "workItemMilestone",
+    "workItemMilestoneChoices",
+    "workItemWeight",
+    "workItemActivityWriteAccess",
+    "workItemActivity",
+    "workItemActivityNext",
+    "workItemDiscussionNotesNext",
+    "workItemActivityDeleteAccess",
+    "workItemActivityReactionAccess",
+    "workItemNotifications",
+    "incidentStatus",
+    "pendingTodosForSnooze",
+    "snoozedTodosForUnsnooze",
+    "updateWorkItemState",
+    "updateWorkItemStatus",
+    "updateWorkItemDates",
+    "updateWorkItemHealthStatus",
+    "updateWorkItemAssignees",
+    "updateWorkItemMilestone",
+    "updateWorkItemWeight",
+    "createWorkItemActivityComment",
+    "createWorkItemActivityReply",
+    "deleteWorkItemActivityNote",
+    "setWorkItemActivityNoteReaction",
+    "setWorkItemNotifications",
+    "setIncidentStatus",
+    "snoozeTodo",
+    "unsnoozeTodo",
+}
+
 WRITE_PORT_MEMBERS = {
     "instance",
     "currentUser",
@@ -108,7 +146,7 @@ WRITE_PORT_MEMBERS = {
     "editProject",
     "deleteProject",
     "forkProject",
-}
+} | _MR6B3_WRITE_PORT_MEMBERS
 
 GENERIC_CHANNELS = {
     "writeRecord",
@@ -172,6 +210,57 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertTrue(members)
         self.assertLessEqual(members, WRITE_PORT_MEMBERS)
         self.assertEqual(violations, [])
+
+    def test_mr6b3_write_port_whitelist_delta_is_exact(self):
+        expected_reads = {
+            "projectWorkItem",
+            "workItemState",
+            "workItemStatus",
+            "workItemDates",
+            "workItemHealthEdit",
+            "workItemAssignees",
+            "searchWorkItemAssigneeCandidates",
+            "workItemMilestone",
+            "workItemMilestoneChoices",
+            "workItemWeight",
+            "workItemActivityWriteAccess",
+            "workItemActivity",
+            "workItemActivityNext",
+            "workItemDiscussionNotesNext",
+            "workItemActivityDeleteAccess",
+            "workItemActivityReactionAccess",
+            "workItemNotifications",
+            "incidentStatus",
+            "pendingTodosForSnooze",
+            "snoozedTodosForUnsnooze",
+        }
+        expected_writes = {
+            "updateWorkItemState",
+            "updateWorkItemStatus",
+            "updateWorkItemDates",
+            "updateWorkItemHealthStatus",
+            "updateWorkItemAssignees",
+            "updateWorkItemMilestone",
+            "updateWorkItemWeight",
+            "createWorkItemActivityComment",
+            "createWorkItemActivityReply",
+            "deleteWorkItemActivityNote",
+            "setWorkItemActivityNoteReaction",
+            "setWorkItemNotifications",
+            "setIncidentStatus",
+            "snoozeTodo",
+            "unsnoozeTodo",
+        }
+        self.assertEqual(_MR6B3_WRITE_PORT_MEMBERS, expected_reads | expected_writes)
+        self.assertEqual(len(expected_reads), 20)
+        self.assertEqual(len(expected_writes), 15)
+        self.assertEqual(len(_MR6B3_WRITE_PORT_MEMBERS), 35)
+        self.assertNotIn("namespaceWorkItem", WRITE_PORT_MEMBERS)
+        self.assertNotIn("snoozedTodos", WRITE_PORT_MEMBERS)
+        self.assertTrue(
+            {"updateWorkItemContent", "editWorkItemActivityNote", "updateWorkItemLabels"}
+            .isdisjoint(WRITE_PORT_MEMBERS)
+        )
 
     def test_ledger_named_methods_are_write_port_whitelisted(self):
         methods = set()

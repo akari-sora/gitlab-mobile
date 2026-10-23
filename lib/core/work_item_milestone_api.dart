@@ -415,7 +415,12 @@ extension WorkItemMilestoneApi on GitLabApi {
     required WorkItemMilestoneSelection selection,
     bool Function()? isCurrent,
     void Function()? onMutationSent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _requireActivityOwner(target._owner);
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -457,8 +462,12 @@ extension WorkItemMilestoneApi on GitLabApi {
     }
 
     _requireCurrentWorkItemRequest(isCurrent);
+    if (beforeMutation != null) await beforeMutation();
     ({Uint8List bytes, Headers headers, int statusCode}) response;
     onMutationSent?.call();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
     try {
       response = await _send(
         instance.graphQL,

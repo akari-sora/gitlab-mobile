@@ -80,17 +80,20 @@ final class WorkItemActivityReactionTarget {
     required String actorId,
     required _WorkItemActivityEditNote original,
     required List<WorkItemActivityReaction> reactions,
+    required int maxPages,
   }) : _owner = owner,
        _identity = identity,
        _actorId = actorId,
        _original = original,
-       _reactions = List.unmodifiable(reactions);
+       _reactions = List.unmodifiable(reactions),
+       _maxPages = maxPages;
 
   final GitLabApi _owner;
   final _WorkItemActivityIdentity _identity;
   final String _actorId;
   final _WorkItemActivityEditNote _original;
   final List<WorkItemActivityReaction> _reactions;
+  final int _maxPages;
   bool _consumed = false;
 
   WorkItemActivityNote get note => _original.note;
@@ -109,7 +112,9 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
     WorkItemActivityDiscussion discussion,
     WorkItemActivityNote expectedNote, {
     bool Function()? isCurrent,
+    int maxPages = _workItemActivityReactionPageLimit,
   }) async {
+    _validateWorkItemActivityReactionMaxPages(maxPages);
     _validateExpectedAttributeIdentity(expected);
     _workItemActivityModelId(expected.id);
     if (expectedNote.system ||
@@ -124,9 +129,10 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
       discussionId: discussion.id,
       discussionCreatedAt: discussion.createdAt,
       isCurrent: isCurrent,
+      maxPages: maxPages,
     );
     _requireDisplayedActivityNote(preflight.value.note, expectedNote);
-    return _workItemActivityReactionAccess(identity, preflight);
+    return _workItemActivityReactionAccess(identity, preflight, maxPages);
   }
 
   Future<WorkItemActivityReactionAccess> setWorkItemActivityNoteReaction(
@@ -134,7 +140,12 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
     String name, {
     required bool awarded,
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _requireActivityOwner(target._owner);
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -146,6 +157,7 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
       discussionId: target._original.discussionId,
       discussionCreatedAt: target._original.discussionCreatedAt,
       isCurrent: isCurrent,
+      maxPages: target._maxPages,
     );
     if (!preflight.canAward) {
       throw ApiFailure(
@@ -181,9 +193,17 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
     }
     target._consumed = true;
     if (fresh == awarded) {
-      return _workItemActivityReactionAccess(target._identity, preflight);
+      return _workItemActivityReactionAccess(
+        target._identity,
+        preflight,
+        target._maxPages,
+      );
     }
 
+    if (beforeMutation != null) await beforeMutation();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
     try {
       final response = await _send(
         instance.graphQL,
@@ -224,6 +244,7 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
         discussionId: target._original.discussionId,
         discussionCreatedAt: target._original.discussionCreatedAt,
         isCurrent: isCurrent,
+        maxPages: target._maxPages,
       );
       if (readback.actorId != target._actorId) {
         throw const FormatException('Changed reaction actor');
@@ -240,7 +261,11 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
           awarded) {
         throw const FormatException('Unconfirmed reaction state');
       }
-      return _workItemActivityReactionAccess(target._identity, readback);
+      return _workItemActivityReactionAccess(
+        target._identity,
+        readback,
+        target._maxPages,
+      );
     } on Object {
       throw const ApiFailure(FailureKind.writeUncertain);
     }
@@ -252,8 +277,10 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
     required String noteId,
     required String discussionId,
     required DateTime discussionCreatedAt,
+    required int maxPages,
     bool Function()? isCurrent,
   }) async {
+    _validateWorkItemActivityReactionMaxPages(maxPages);
     String? after;
     final seenCursors = <String>{};
     final reactions = <WorkItemActivityReaction>[];
@@ -262,7 +289,7 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
     String? firstActorId;
     bool? firstPermission;
 
-    for (var page = 0; page < _workItemActivityReactionPageLimit; page++) {
+    for (var page = 0; page < maxPages; page++) {
       _requireCurrentWorkItemRequest(isCurrent);
       final response = await _read(
         instance.graphQL,
@@ -357,7 +384,7 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
             !seenCursors.add(rawCursor)) {
           throw const FormatException('Invalid reaction cursor');
         }
-        if (page + 1 == _workItemActivityReactionPageLimit) {
+        if (page + 1 == maxPages) {
           throw const FormatException('Reaction page limit exceeded');
         }
         after = rawCursor;
@@ -371,6 +398,7 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
   WorkItemActivityReactionAccess _workItemActivityReactionAccess(
     _WorkItemActivityIdentity identity,
     _WorkItemActivityReactionPreflight preflight,
+    int maxPages,
   ) => WorkItemActivityReactionAccess._(
     reactions: preflight.reactions,
     actorId: preflight.actorId,
@@ -382,9 +410,16 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
             actorId: preflight.actorId!,
             original: preflight.value,
             reactions: preflight.reactions,
+            maxPages: maxPages,
           )
         : null,
   );
+}
+
+void _validateWorkItemActivityReactionMaxPages(int maxPages) {
+  if (maxPages < 1 || maxPages > _workItemActivityReactionPageLimit) {
+    throw ArgumentError.value(maxPages, 'maxPages');
+  }
 }
 
 String _validatedWorkItemActivityReactionName(String value) {

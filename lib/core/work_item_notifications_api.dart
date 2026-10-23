@@ -95,7 +95,12 @@ extension WorkItemNotificationsApi on GitLabApi {
     WorkItemNotificationTarget target, {
     required bool subscribed,
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _requireActivityOwner(target._owner);
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -123,6 +128,10 @@ extension WorkItemNotificationsApi on GitLabApi {
     if (before.subscribed == subscribed) return before;
 
     _requireCurrentWorkItemRequest(isCurrent);
+    if (beforeMutation != null) await beforeMutation();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
     ({Uint8List bytes, Headers headers, int statusCode}) response;
     try {
       response = await _send(

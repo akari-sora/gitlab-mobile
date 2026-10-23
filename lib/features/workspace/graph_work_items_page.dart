@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/ai/ai_work_item_write_registry.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -1874,6 +1875,41 @@ class _DatesWriteRegistry extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool tryStartAi(GitLabApi api, String id, Object token) {
+    final byId = _active[api] ??= <String, Set<Object>>{};
+    final tokens = byId[id] ??= <Object>{};
+    if (tokens.isNotEmpty) return false;
+    tokens.add(token);
+    notifyListeners();
+    return true;
+  }
+
+  void settleAi(
+    GitLabApi api,
+    String id,
+    Object token, {
+    required bool mutationSent,
+    DateTime? confirmedRevision,
+  }) {
+    final byId = _active[api];
+    final tokens = byId?[id];
+    if (tokens == null || !tokens.remove(token)) return;
+    if (tokens.isEmpty) byId!.remove(id);
+    if (mutationSent) {
+      final terminals = _terminals[api] ??= <String, _DatesTerminal>{};
+      final earlier = terminals[id]?.revision;
+      terminals[id] = _DatesTerminal(
+        confirmedRevision == null
+            ? earlier
+            : earlier != null && earlier.isAfter(confirmedRevision)
+            ? earlier
+            : confirmedRevision,
+        confirmed: confirmedRevision != null,
+      );
+    }
+    notifyListeners();
+  }
+
   void settle(
     GitLabApi api,
     String id,
@@ -2020,6 +2056,35 @@ class _HealthWriteRegistry extends ChangeNotifier {
     }
   }
 
+  void settleAi(
+    GitLabApi api,
+    String id,
+    Object token, {
+    required bool mutationSent,
+    DateTime? confirmedRevision,
+  }) {
+    final perApi = _active[api];
+    final perItem = perApi?[id];
+    final entry = perItem?.remove(token);
+    if (perItem != null && perItem.isEmpty) perApi!.remove(id);
+    if (entry == null) return;
+    if (mutationSent) {
+      final terminals = _terminals[api] ??= <String, _HealthTerminal>{};
+      final current = terminals[id];
+      if (current == null || entry.seq > current.seq) {
+        terminals[id] = _HealthTerminal(
+          floorRevision: confirmedRevision == null
+              ? current?.floorRevision
+              : _maxDateTime(current?.floorRevision, confirmedRevision),
+          confirmed: confirmedRevision != null,
+          knownNotApplied: false,
+          seq: entry.seq,
+        );
+      }
+    }
+    notifyListeners();
+  }
+
   void recordOutcome(
     GitLabApi api,
     String id,
@@ -2066,6 +2131,218 @@ class _HealthWriteRegistry extends ChangeNotifier {
       seq: entry.seq,
     );
     notifyListeners();
+  }
+}
+
+/// Creates the session-bound adapter used by AI Work Item writes. The
+/// adapter reserves the existing UI registries synchronously and therefore
+/// shares their per-client, per-item exclusion and freshness floors.
+AiWorkItemWriteRegistry createAiWorkspaceWorkItemWriteRegistry({
+  required GitLabApi api,
+  required String accountKey,
+  required String instanceKey,
+  required int generation,
+  required bool Function() isCurrent,
+}) => _AiWorkspaceWorkItemWriteRegistry(
+  api: api,
+  accountKey: accountKey,
+  instanceKey: instanceKey,
+  generation: generation,
+  isCurrent: isCurrent,
+);
+
+final class _AiWorkspaceWorkItemWriteLease implements AiWorkItemWriteLease {
+  _AiWorkspaceWorkItemWriteLease({
+    required this.owner,
+    required this.gid,
+    required this.kind,
+    required this.token,
+    required this.holdsStatus,
+  });
+
+  final _AiWorkspaceWorkItemWriteRegistry owner;
+  @override
+  final String gid;
+  @override
+  final AiWorkItemWriteKind kind;
+  final Object token;
+  final bool holdsStatus;
+  bool settled = false;
+}
+
+final class _AiWorkspaceWorkItemWriteRegistry
+    implements AiWorkItemWriteRegistry {
+  _AiWorkspaceWorkItemWriteRegistry({
+    required this.api,
+    required this.accountKey,
+    required this.instanceKey,
+    required this.generation,
+    required this.isCurrent,
+  });
+
+  static final _workItemGid = RegExp(r'^gid://gitlab/WorkItem/[1-9][0-9]*$');
+
+  final GitLabApi api;
+  final String accountKey;
+  final String instanceKey;
+  final int generation;
+  final bool Function() isCurrent;
+
+  bool get _ownerCurrent {
+    if (!accountKey.startsWith('$instanceKey#') ||
+        accountKey.length <= instanceKey.length + 1 ||
+        instanceKey != api.instance.key ||
+        generation < 0 ||
+        api.isClosed) {
+      return false;
+    }
+    try {
+      return isCurrent();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _valid(String gid) => _workItemGid.hasMatch(gid);
+
+  bool _occupied(String gid) =>
+      WorkItemStatusWriteRegistry.instance.isActive(api, gid) ||
+      _DatesWriteRegistry.instance.isActive(api, gid) ||
+      _HealthWriteRegistry.instance.isActive(api, gid);
+
+  @override
+  bool isActive(String gid) {
+    if (!_ownerCurrent || !_valid(gid)) return true;
+    return _occupied(gid);
+  }
+
+  @override
+  AiWorkItemWriteLease? tryStart(String gid, AiWorkItemWriteKind kind) {
+    if (!_ownerCurrent || !_valid(gid) || _occupied(gid)) return null;
+    final token = Object();
+    var holdsStatus = false;
+    final started = switch (kind) {
+      AiWorkItemWriteKind.status =>
+        WorkItemStatusWriteRegistry.instance.tryStartExternal(api, gid, token),
+      AiWorkItemWriteKind.dates => _startDates(gid, token),
+      AiWorkItemWriteKind.health => _HealthWriteRegistry.instance.start(
+        api: api,
+        id: gid,
+        token: token,
+        floorRevision: _HealthWriteRegistry.instance
+            .terminalFor(api, gid)
+            ?.floorRevision,
+      ),
+    };
+    if (!started) return null;
+    holdsStatus =
+        kind == AiWorkItemWriteKind.status || kind == AiWorkItemWriteKind.dates;
+    return _AiWorkspaceWorkItemWriteLease(
+      owner: this,
+      gid: gid,
+      kind: kind,
+      token: token,
+      holdsStatus: holdsStatus,
+    );
+  }
+
+  bool _startDates(String gid, Object token) {
+    final status = WorkItemStatusWriteRegistry.instance;
+    if (!status.tryStartExternal(api, gid, token)) return false;
+    if (_DatesWriteRegistry.instance.tryStartAi(api, gid, token)) return true;
+    status.settleExternal(api, gid, token: token, mutationSent: false);
+    return false;
+  }
+
+  @override
+  void settle(
+    AiWorkItemWriteLease lease,
+    AiWorkItemWriteResult result,
+    DateTime? revision,
+  ) {
+    if (lease is! _AiWorkspaceWorkItemWriteLease ||
+        !identical(lease.owner, this) ||
+        lease.settled) {
+      return;
+    }
+    lease.settled = true;
+    final mutationSent = result != AiWorkItemWriteResult.notSent;
+    final confirmedRevision = result == AiWorkItemWriteResult.confirmed
+        ? revision
+        : null;
+    switch (lease.kind) {
+      case AiWorkItemWriteKind.status:
+        break;
+      case AiWorkItemWriteKind.dates:
+        _DatesWriteRegistry.instance.settleAi(
+          api,
+          lease.gid,
+          lease.token,
+          mutationSent: mutationSent,
+          confirmedRevision: confirmedRevision,
+        );
+      case AiWorkItemWriteKind.health:
+        _HealthWriteRegistry.instance.settleAi(
+          api,
+          lease.gid,
+          lease.token,
+          mutationSent: mutationSent,
+          confirmedRevision: confirmedRevision,
+        );
+    }
+    if (lease.holdsStatus) {
+      WorkItemStatusWriteRegistry.instance.settleExternal(
+        api,
+        lease.gid,
+        token: lease.token,
+        mutationSent: mutationSent,
+        confirmedRevision: confirmedRevision,
+      );
+    }
+  }
+}
+
+/// Freshness recorded by the UI registries after an AI lease settles.
+typedef AiWorkspaceWriteFreshness = ({
+  DateTime? revision,
+  bool confirmed,
+  bool knownNotApplied,
+});
+
+@visibleForTesting
+AiWorkspaceWriteFreshness? aiWorkspaceWriteFreshnessForTesting(
+  GitLabApi api,
+  String gid,
+  AiWorkItemWriteKind kind,
+) {
+  switch (kind) {
+    case AiWorkItemWriteKind.status:
+      final value = WorkItemStatusWriteRegistry.instance.terminal(api, gid);
+      return value == null
+          ? null
+          : (
+              revision: value.revision,
+              confirmed: value.confirmed,
+              knownNotApplied: false,
+            );
+    case AiWorkItemWriteKind.dates:
+      final value = _DatesWriteRegistry.instance.terminal(api, gid);
+      return value == null
+          ? null
+          : (
+              revision: value.revision,
+              confirmed: value.confirmed,
+              knownNotApplied: false,
+            );
+    case AiWorkItemWriteKind.health:
+      final value = _HealthWriteRegistry.instance.terminalFor(api, gid);
+      return value == null
+          ? null
+          : (
+              revision: value.floorRevision,
+              confirmed: value.confirmed,
+              knownNotApplied: value.knownNotApplied,
+            );
   }
 }
 
