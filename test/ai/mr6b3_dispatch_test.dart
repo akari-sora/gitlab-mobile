@@ -515,6 +515,46 @@ void main() {
       );
     });
 
+    for (final mode in [
+      Mr6b3MutationMode.noop,
+      Mr6b3MutationMode.preflightRefused,
+      Mr6b3MutationMode.hookReturnedResult,
+      Mr6b3MutationMode.accepted,
+    ]) {
+      test('$mode display failure after durable settlement is not a journal failure', () async {
+        harness.port.mode = mode;
+        var failed = false;
+        harness.safeDisplay = (value) {
+          final entries = harness.journal.entries(mr6b3Account);
+          if (!failed && entries.isNotEmpty &&
+              const {AiJournalState.notExecuted, AiJournalState.succeeded}
+                  .contains(entries.last.state)) {
+            failed = true;
+            throw StateError('syntheticPostSettlementDisplayFailure');
+          }
+          return value;
+        };
+        final proposal = (await harness.proposeState())!;
+        final writesBefore = harness.files.writeCount;
+        final outcome = await harness.approve(proposal);
+        expect(failed, isTrue);
+        expect(outcome.reasonCode, isNot('journalUnavailable'));
+        final sent = mode == Mr6b3MutationMode.accepted;
+        expect(outcome.mutationCount, sent ? 1 : 0);
+        expect(harness.port.sends, sent ? 1 : 0);
+        final marked = sent || mode == Mr6b3MutationMode.hookReturnedResult;
+        expect(harness.files.writeCount - writesBefore, marked ? 3 : 2);
+        expect(harness.journal.entries(mr6b3Account).last.state,
+            sent ? AiJournalState.succeeded : AiJournalState.notExecuted);
+        final durable = await harness.readDurableJournal();
+        expect(((durable['entries']! as List).last as Map)['state'],
+            sent ? 'succeeded' : 'notExecuted');
+        expect(harness.journal.isolated(mr6b3Account, {mr6b3WriteKey}), isFalse);
+        harness.beginRun();
+        expect(await harness.proposeState(), isNotNull);
+      });
+    }
+
     for (final scenario in <({String name, Object? value, Object? error})>[
       (
         name: 'payload errors',

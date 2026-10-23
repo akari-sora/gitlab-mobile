@@ -966,6 +966,7 @@ final class PolicyAiWriteCoordinator
     final graph = pending.prepared.boundary == AiWriteBoundary.graph;
     var graphMarkAttempted = false;
     var graphTerminalAttempted = false;
+    var graphTerminalCompleted = false;
     var graphJournalFailed = false;
     try {
       _requirePending(pending);
@@ -1078,6 +1079,8 @@ final class PolicyAiWriteCoordinator
           executionId: proposal.executionId,
           terminal: AiJournalState.notExecuted,
         );
+        graphTerminalAttempted = false;
+        graphTerminalCompleted = graph;
         return _complete(
           pending,
           AiWriteOutcome(
@@ -1154,6 +1157,8 @@ final class PolicyAiWriteCoordinator
           executionId: proposal.executionId,
           terminal: AiJournalState.notExecuted,
         );
+        graphTerminalAttempted = false;
+        graphTerminalCompleted = true;
         return _complete(
           pending,
           AiWriteOutcome(
@@ -1178,6 +1183,8 @@ final class PolicyAiWriteCoordinator
             terminal: AiJournalState.notExecuted,
           );
         }
+        graphTerminalAttempted = false;
+        graphTerminalCompleted = graph;
         return _complete(
           pending,
           _notExecuted(
@@ -1199,6 +1206,8 @@ final class PolicyAiWriteCoordinator
         executionId: proposal.executionId,
         terminal: settled.state,
       );
+      graphTerminalAttempted = false;
+      graphTerminalCompleted = graph;
       if (settled.state == AiJournalState.succeeded) {
         final created = prepared.createdOnSuccess;
         if (created != null && created.accountKey == pending.policy.scope.accountKey) {
@@ -1250,32 +1259,36 @@ final class PolicyAiWriteCoordinator
       var state = accepted
           ? AiJournalState.writeUncertain
           : AiJournalState.notExecuted;
-      try {
-        if (graph && (graphJournalFailed || graphTerminalAttempted)) {
-          // Do not retry a flush whose durable state is unknown, or claim a
-          // refund. An explicit journal recovery/reset must resolve it first.
-          throw const AiJournalException('journalUnavailable');
+      // A later display/projection failure cannot undo a successful terminal
+      // flush. Retrying finish/revert here would itself be an invalid transition.
+      if (!graphTerminalCompleted) {
+        try {
+          if (graph && (graphJournalFailed || graphTerminalAttempted)) {
+            // Do not retry a flush whose durable state is unknown, or claim a
+            // refund. An explicit journal recovery/reset must resolve it first.
+            throw const AiJournalException('journalUnavailable');
+          }
+          if (dispatching && !accepted) {
+            await journal.revertDispatchingToNotExecuted(
+              executionId: proposal.executionId,
+            );
+          } else if (preparedOnDisk) {
+            await journal.finish(
+              executionId: proposal.executionId,
+              terminal: state,
+            );
+          } else {
+            await journal.refund(pending.hold);
+          }
+        } on Object {
+          if (graph && (graphMarkAttempted || preparedOnDisk)) {
+            graphJournalFailed = true;
+            final failures = _graphJournalFailures[journal] ??= {};
+            (failures[pending.policy.scope.accountKey] ??= {}).add(proposal.executionId);
+          }
+          // A failed durable rollback keeps dispatching/uncertain isolation.
+          if (dispatching || accepted) state = AiJournalState.writeUncertain;
         }
-        if (dispatching && !accepted) {
-          await journal.revertDispatchingToNotExecuted(
-            executionId: proposal.executionId,
-          );
-        } else if (preparedOnDisk) {
-          await journal.finish(
-            executionId: proposal.executionId,
-            terminal: state,
-          );
-        } else {
-          await journal.refund(pending.hold);
-        }
-      } on Object {
-        if (graph && (graphMarkAttempted || preparedOnDisk)) {
-          graphJournalFailed = true;
-          final failures = _graphJournalFailures[journal] ??= {};
-          (failures[pending.policy.scope.accountKey] ??= {}).add(proposal.executionId);
-        }
-        // A failed durable rollback keeps dispatching/uncertain isolation.
-        if (dispatching || accepted) state = AiJournalState.writeUncertain;
       }
       return _complete(
         pending,

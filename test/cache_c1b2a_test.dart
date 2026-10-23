@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -472,6 +474,485 @@ void main() {
         firstCount,
         reason: 'the reopen itself must add zero GET projects/42/issues requests',
       );
+    },
+  );
+
+  testWidgets(
+    'board r3-m2: refresh then leave and re-enter closed while its fresh read is held lands updated and remount adds zero GETs',
+    (tester) async {
+      var now = DateTime.utc(2026, 10, 23, 8);
+      final issues = {
+        for (final state in ['opened', 'closed'])
+          state: {
+            'id': state == 'opened' ? 1001 : 1002,
+            'iid': state == 'opened' ? 1 : 2,
+            'project_id': 42,
+            'title': 'Original $state issue',
+            'description': 'Synthetic board issue.',
+            'state': state,
+            'labels': <Object?>[],
+            'author': {'id': 7, 'username': 'developer'},
+            'assignees': <Object?>[],
+            'created_at': '2026-10-01T00:00:00Z',
+            'updated_at': '2026-10-02T00:00:00Z',
+          },
+      };
+      var holdClosed = false;
+      late Completer<void> gate;
+      final adapter = FakeAdapter((request) async {
+        final path = request.uri.path;
+        if (path.endsWith('/projects/42/boards')) {
+          return jsonResponse([
+            {
+              'id': 1,
+              'name': 'Delivery',
+              'hide_backlog_list': false,
+              'hide_closed_list': false,
+            },
+          ]);
+        }
+        if (path.endsWith('/projects/42/boards/1/lists')) {
+          return jsonResponse([]);
+        }
+        if (path.endsWith('/projects/42/boards/1')) {
+          return jsonResponse({
+            'id': 1,
+            'name': 'Delivery',
+            'hide_backlog_list': false,
+            'hide_closed_list': false,
+          });
+        }
+        if (path.endsWith('/projects/42/issues')) {
+          final state = request.uri.queryParameters['state']!;
+          if (state == 'closed' && holdClosed) {
+            await gate.future;
+          }
+          return jsonResponse([Map<String, Object?>.from(issues[state]!)]);
+        }
+        return jsonResponse([]);
+      });
+      final api = _boundApi(adapter, clock: () => now);
+      addTearDown(api.close);
+
+      Widget host(Key key) => MaterialApp(
+        home: BoardsPage(
+          key: key,
+          account: _account(api),
+          api: api,
+          project: _project,
+        ),
+      );
+
+      int closedGets() => adapter.requests
+          .where(
+            (request) =>
+                request.uri.path.endsWith('/projects/42/issues') &&
+                request.uri.queryParameters['state'] == 'closed',
+          )
+          .length;
+
+      Future<void> waitForClosedGets(int target) async {
+        for (var i = 0; i < 40; i++) {
+          if (closedGets() >= target) return;
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 15)),
+          );
+        }
+        expect(closedGets(), greaterThanOrEqualTo(target));
+      }
+
+      await tester.pumpWidget(host(const ValueKey('r3m2-first')));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Original closed issue'), findsOneWidget);
+      expect(closedGets(), 1);
+
+      for (final entry in issues.entries) {
+        entry.value['title'] = 'Updated ${entry.key} issue';
+      }
+      now = now.add(const Duration(seconds: 20));
+      await tester.tap(find.byIcon(Icons.refresh));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Updated opened issue'), findsOneWidget);
+
+      holdClosed = true;
+      gate = Completer<void>();
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await waitForClosedGets(2);
+      await tester.tap(find.byKey(const ValueKey('board-column-open')));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await waitForClosedGets(3);
+      gate.complete();
+      await settleNetworkWidgets(tester);
+      expect(find.text('Updated closed issue'), findsOneWidget);
+      expect(closedGets(), 3);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      now = now.add(const Duration(seconds: 10));
+      await tester.pumpWidget(host(const ValueKey('r3m2-reopen')));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Updated closed issue'), findsOneWidget);
+      expect(
+        closedGets(),
+        3,
+        reason: 'the remount itself must add zero closed issue GETs',
+      );
+    },
+  );
+
+  testWidgets(
+    'board r3-m1: older forced attempt landing after newer failure never spends the refresh intent',
+    (tester) async {
+      var now = DateTime.utc(2026, 10, 23, 8);
+      final issues = {
+        for (final state in ['opened', 'closed'])
+          state: {
+            'id': state == 'opened' ? 1001 : 1002,
+            'iid': state == 'opened' ? 1 : 2,
+            'project_id': 42,
+            'title': 'Original $state issue',
+            'description': 'Synthetic board issue.',
+            'state': state,
+            'labels': <Object?>[],
+            'author': {'id': 7, 'username': 'developer'},
+            'assignees': <Object?>[],
+            'created_at': '2026-10-01T00:00:00Z',
+            'updated_at': '2026-10-02T00:00:00Z',
+          },
+      };
+      var holdClosed = false;
+      late Completer<void> gate;
+      var closedAttempts = 0;
+      final adapter = FakeAdapter((request) async {
+        final path = request.uri.path;
+        if (path.endsWith('/projects/42/boards')) {
+          return jsonResponse([
+            {
+              'id': 1,
+              'name': 'Delivery',
+              'hide_backlog_list': false,
+              'hide_closed_list': false,
+            },
+          ]);
+        }
+        if (path.endsWith('/projects/42/boards/1/lists')) {
+          return jsonResponse([]);
+        }
+        if (path.endsWith('/projects/42/boards/1')) {
+          return jsonResponse({
+            'id': 1,
+            'name': 'Delivery',
+            'hide_backlog_list': false,
+            'hide_closed_list': false,
+          });
+        }
+        if (path.endsWith('/projects/42/issues')) {
+          final state = request.uri.queryParameters['state']!;
+          if (state == 'closed' && holdClosed) {
+            closedAttempts++;
+            if (closedAttempts == 1) {
+              await gate.future;
+              return jsonResponse([Map<String, Object?>.from(issues[state]!)]);
+            }
+            if (closedAttempts == 2) {
+              return jsonResponse({'message': 'boom'}, status: 500);
+            }
+          }
+          return jsonResponse([Map<String, Object?>.from(issues[state]!)]);
+        }
+        return jsonResponse([]);
+      });
+      final api = _boundApi(adapter, clock: () => now);
+      addTearDown(api.close);
+
+      Widget host(Key key) => MaterialApp(
+        home: BoardsPage(
+          key: key,
+          account: _account(api),
+          api: api,
+          project: _project,
+        ),
+      );
+
+      int closedGets() => adapter.requests
+          .where(
+            (request) =>
+                request.uri.path.endsWith('/projects/42/issues') &&
+                request.uri.queryParameters['state'] == 'closed',
+          )
+          .length;
+
+      Future<void> waitForClosedGets(int target) async {
+        for (var i = 0; i < 40; i++) {
+          if (closedGets() >= target) return;
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 15)),
+          );
+        }
+        expect(closedGets(), greaterThanOrEqualTo(target));
+      }
+
+      await tester.pumpWidget(host(const ValueKey('r3m1-first')));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Original closed issue'), findsOneWidget);
+
+      for (final entry in issues.entries) {
+        entry.value['title'] = 'Updated ${entry.key} issue';
+      }
+      now = now.add(const Duration(seconds: 20));
+      await tester.tap(find.byIcon(Icons.refresh));
+      await settleNetworkWidgets(tester);
+
+      holdClosed = true;
+      gate = Completer<void>();
+      closedAttempts = 0;
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await waitForClosedGets(2);
+      await tester.tap(find.byKey(const ValueKey('board-column-open')));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await waitForClosedGets(3);
+      await settleNetworkWidgets(tester);
+      expect(find.text('Updated closed issue'), findsNothing);
+      gate.complete();
+      await settleNetworkWidgets(tester);
+
+      now = now.add(const Duration(seconds: 10));
+      await tester.tap(find.byKey(const ValueKey('board-column-open')));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Updated closed issue'), findsOneWidget);
+      expect(
+        closedGets(),
+        4,
+        reason: 'the older attempt must not spend the intent; the next '
+            'remount still reads fresh once',
+      );
+    },
+  );
+
+  testWidgets(
+    'board r3-m3: refresh while searching leaves the unsearched query pending',
+    (tester) async {
+      var now = DateTime.utc(2026, 10, 23, 8);
+      final issues = {
+        for (final state in ['opened', 'closed'])
+          state: {
+            'id': state == 'opened' ? 1001 : 1002,
+            'iid': state == 'opened' ? 1 : 2,
+            'project_id': 42,
+            'title': 'Original $state issue',
+            'description': 'Synthetic board issue.',
+            'state': state,
+            'labels': <Object?>[],
+            'author': {'id': 7, 'username': 'developer'},
+            'assignees': <Object?>[],
+            'created_at': '2026-10-01T00:00:00Z',
+            'updated_at': '2026-10-02T00:00:00Z',
+          },
+      };
+      final adapter = FakeAdapter((request) {
+        final path = request.uri.path;
+        if (path.endsWith('/projects/42/boards')) {
+          return jsonResponse([
+            {
+              'id': 1,
+              'name': 'Delivery',
+              'hide_backlog_list': false,
+              'hide_closed_list': false,
+            },
+          ]);
+        }
+        if (path.endsWith('/projects/42/boards/1/lists')) {
+          return jsonResponse([]);
+        }
+        if (path.endsWith('/projects/42/boards/1')) {
+          return jsonResponse({
+            'id': 1,
+            'name': 'Delivery',
+            'hide_backlog_list': false,
+            'hide_closed_list': false,
+          });
+        }
+        if (path.endsWith('/projects/42/issues')) {
+          final state = request.uri.queryParameters['state']!;
+          return jsonResponse([Map<String, Object?>.from(issues[state]!)]);
+        }
+        return jsonResponse([]);
+      });
+      final api = _boundApi(adapter, clock: () => now);
+      addTearDown(api.close);
+
+      Widget host(Key key) => MaterialApp(
+        home: BoardsPage(
+          key: key,
+          account: _account(api),
+          api: api,
+          project: _project,
+        ),
+      );
+
+      int plainClosedGets() => adapter.requests
+          .where(
+            (request) =>
+                request.uri.path.endsWith('/projects/42/issues') &&
+                request.uri.queryParameters['state'] == 'closed' &&
+                !request.uri.queryParameters.containsKey('search'),
+          )
+          .length;
+      int searchedClosedGets() => adapter.requests
+          .where(
+            (request) =>
+                request.uri.path.endsWith('/projects/42/issues') &&
+                request.uri.queryParameters['state'] == 'closed' &&
+                request.uri.queryParameters['search'] == 'crash',
+          )
+          .length;
+
+      await tester.pumpWidget(host(const ValueKey('r3m3-first')));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Original closed issue'), findsOneWidget);
+      expect(plainClosedGets(), 1);
+
+      await tester.enterText(find.byType(TextField), 'crash');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await settleNetworkWidgets(tester);
+      expect(searchedClosedGets(), 1);
+
+      for (final entry in issues.entries) {
+        entry.value['title'] = 'Updated ${entry.key} issue';
+      }
+      now = now.add(const Duration(seconds: 20));
+      await tester.tap(find.byIcon(Icons.refresh));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Updated closed issue'), findsOneWidget);
+      expect(searchedClosedGets(), 2);
+
+      await tester.tap(find.byIcon(Icons.clear));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Updated closed issue'), findsOneWidget);
+      expect(
+        plainClosedGets(),
+        2,
+        reason: 'clearing the search must read the unsearched query fresh once',
+      );
+    },
+  );
+
+  testWidgets(
+    'board error retry after a failed toolbar refresh reads fresh',
+    (tester) async {
+      var now = DateTime.utc(2026, 10, 23, 8);
+      final issues = {
+        for (final state in ['opened', 'closed'])
+          state: {
+            'id': state == 'opened' ? 1001 : 1002,
+            'iid': state == 'opened' ? 1 : 2,
+            'project_id': 42,
+            'title': 'Original $state issue',
+            'description': 'Synthetic board issue.',
+            'state': state,
+            'labels': <Object?>[],
+            'author': {'id': 7, 'username': 'developer'},
+            'assignees': <Object?>[],
+            'created_at': '2026-10-01T00:00:00Z',
+            'updated_at': '2026-10-02T00:00:00Z',
+          },
+      };
+      var failBoards = false;
+      final adapter = FakeAdapter((request) {
+        final path = request.uri.path;
+        if (path.endsWith('/projects/42/boards') &&
+            !path.endsWith('/boards/1') &&
+            !path.endsWith('/boards/1/lists')) {
+          if (failBoards) {
+            return jsonResponse({'message': 'boom'}, status: 500);
+          }
+          return jsonResponse([
+            {
+              'id': 1,
+              'name': 'Delivery',
+              'hide_backlog_list': false,
+              'hide_closed_list': false,
+            },
+          ]);
+        }
+        if (path.endsWith('/projects/42/boards/1/lists')) {
+          return jsonResponse([]);
+        }
+        if (path.endsWith('/projects/42/boards/1')) {
+          return jsonResponse({
+            'id': 1,
+            'name': 'Delivery',
+            'hide_backlog_list': false,
+            'hide_closed_list': false,
+          });
+        }
+        if (path.endsWith('/projects/42/issues')) {
+          final state = request.uri.queryParameters['state']!;
+          return jsonResponse([Map<String, Object?>.from(issues[state]!)]);
+        }
+        return jsonResponse([]);
+      });
+      final api = _boundApi(adapter, clock: () => now);
+      addTearDown(api.close);
+
+      Widget host(Key key) => MaterialApp(
+        home: BoardsPage(
+          key: key,
+          account: _account(api),
+          api: api,
+          project: _project,
+        ),
+      );
+
+      int closedGets() => adapter.requests
+          .where(
+            (request) =>
+                request.uri.path.endsWith('/projects/42/issues') &&
+                request.uri.queryParameters['state'] == 'closed',
+          )
+          .length;
+
+      await tester.pumpWidget(host(const ValueKey('retry-first')));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Original closed issue'), findsOneWidget);
+      expect(closedGets(), 1);
+
+      for (final entry in issues.entries) {
+        entry.value['title'] = 'Updated ${entry.key} issue';
+      }
+      now = now.add(const Duration(seconds: 20));
+      failBoards = true;
+      await tester.tap(find.byIcon(Icons.refresh));
+      await settleNetworkWidgets(tester);
+      expect(find.text('重新整理'), findsOneWidget);
+
+      failBoards = false;
+      await tester.tap(find.text('重新整理'));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('board-column-closed')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Updated closed issue'), findsOneWidget);
+      expect(closedGets(), 2);
     },
   );
 }
