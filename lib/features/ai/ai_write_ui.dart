@@ -276,6 +276,7 @@ String? aiRefusalText(String code) => switch (code) {
   'snippetBinary' ||
   'snippetTooLarge' ||
   'snippetPathInvalid' ||
+  'snippetTooManyFiles' ||
   'pipelineVariableForbidden' ||
   'pipelineVariableSecret' => l10n.aiRefusedContent,
   'scheduleParamsUnreadable' ||
