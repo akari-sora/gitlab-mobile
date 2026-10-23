@@ -11,16 +11,31 @@ import 'ci_page.dart';
 import 'project_page.dart';
 
 import '../../l10n/l10n.dart';
+enum ProjectCiLoadState { unknown, loading, known, error }
+
 final class ProjectCiItem {
   const ProjectCiItem({
     required this.project,
+    this.state = ProjectCiLoadState.unknown,
     this.latestPipeline,
     this.error,
   });
 
   final Project project;
+  final ProjectCiLoadState state;
   final Json? latestPipeline;
   final ApiFailure? error;
+
+  ProjectCiItem copyWith({
+    ProjectCiLoadState? state,
+    Json? latestPipeline,
+    ApiFailure? error,
+  }) => ProjectCiItem(
+    project: project,
+    state: state ?? this.state,
+    latestPipeline: latestPipeline,
+    error: error,
+  );
 
   String get status {
     if (error != null) return 'error';
@@ -76,6 +91,8 @@ class CiOverviewPage extends StatefulWidget {
 }
 
 class _CiOverviewPageState extends State<CiOverviewPage> {
+  static const _pipelineBatchSize = 8;
+
   int _loadEpoch = 0;
   bool _loading = false;
   bool _loadingMore = false;
@@ -97,6 +114,23 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
   }
 
   @override
+  void didUpdateWidget(CiOverviewPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final accountChanged = oldWidget.account?.key != widget.account?.key;
+    final apiChanged = !identical(oldWidget.api, widget.api);
+    final sessionChanged = !identical(oldWidget.session, widget.session);
+    if (accountChanged || apiChanged || sessionChanged) {
+      _loadEpoch++;
+      _loading = false;
+      _loadingMore = false;
+      _nextPageUri = null;
+      _error = null;
+      _items = const [];
+      unawaited(_load());
+    }
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     _scroll.dispose();
@@ -114,6 +148,8 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     bool current() =>
         mounted &&
         epoch == _loadEpoch &&
+        identical(_api, curApi) &&
+        _account?.key == startAccountKey &&
         (widget.session == null || widget.session!.generation == startGeneration) &&
         (widget.session == null || widget.session!.active?.key == startAccountKey);
 
@@ -135,36 +171,10 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       _nextPageUri = page.next;
 
       final projects = page.items.map(Project.fromJson).toList();
-
-      final items = await poolMap(
-        projects,
-        (project) async {
-          if (!current()) {
-            return ProjectCiItem(project: project);
-          }
-          try {
-            final pipelinePage = await curApi.records(
-              ['projects', '${project.id}', 'pipelines'],
-              query: {'per_page': '1'},
-            );
-            return ProjectCiItem(
-              project: project,
-              latestPipeline: pipelinePage.items.isNotEmpty ? pipelinePage.items.first : null,
-            );
-          } catch (e) {
-            return ProjectCiItem(
-              project: project,
-              error: safeFailure(e),
-            );
-          }
-        },
-        maxConcurrent: widget.maxConcurrent,
-      );
-
-      if (!current()) return;
       setState(() {
-        _items = items;
+        _items = projects.map((project) => ProjectCiItem(project: project)).toList();
       });
+      await _loadPipelineRows(projects, api: curApi, current: current);
     } catch (e) {
       if (current()) {
         setState(() {
@@ -172,7 +182,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         });
       }
     } finally {
-      if (mounted) {
+      if (current()) {
         setState(() {
           _loading = false;
         });
@@ -191,6 +201,8 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     bool current() =>
         mounted &&
         epoch == _loadEpoch &&
+        identical(_api, curApi) &&
+        _account?.key == startAccountKey &&
         (widget.session == null || widget.session!.generation == startGeneration) &&
         (widget.session == null || widget.session!.active?.key == startAccountKey);
 
@@ -212,40 +224,17 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       _nextPageUri = page.next;
 
       final projects = page.items.map(Project.fromJson).toList();
-
-      final newItems = await poolMap(
-        projects,
-        (project) async {
-          if (!current()) {
-            return ProjectCiItem(project: project);
-          }
-          try {
-            final pipelinePage = await curApi.records(
-              ['projects', '${project.id}', 'pipelines'],
-              query: {'per_page': '1'},
-            );
-            return ProjectCiItem(
-              project: project,
-              latestPipeline: pipelinePage.items.isNotEmpty ? pipelinePage.items.first : null,
-            );
-          } catch (e) {
-            return ProjectCiItem(
-              project: project,
-              error: safeFailure(e),
-            );
-          }
-        },
-        maxConcurrent: widget.maxConcurrent,
-      );
-
-      if (!current()) return;
       setState(() {
-        _items = [..._items, ...newItems];
+        _items = [
+          ..._items,
+          ...projects.map((project) => ProjectCiItem(project: project)),
+        ];
       });
+      await _loadPipelineRows(projects, api: curApi, current: current);
     } catch (_) {
       // Keep existing items on failure
     } finally {
-      if (mounted) {
+      if (current()) {
         setState(() {
           _loadingMore = false;
         });
@@ -254,21 +243,108 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
   }
 
   List<ProjectCiItem> get _filteredItems {
-    var list = _items;
+    Iterable<ProjectCiItem> list = _items;
     if (_filter == 'running') {
-      list = list.where((i) => i.isRunning).toList();
+      list = list.where((i) => i.isRunning || _isUnresolved(i));
     } else if (_filter == 'failed') {
-      list = list.where((i) => i.isFailed).toList();
+      list = list.where((i) => i.isFailed || _isUnresolved(i));
     }
     if (_search.isNotEmpty) {
       final q = _search.toLowerCase();
       list = list
           .where((i) =>
               i.project.name.toLowerCase().contains(q) ||
-              i.project.path.toLowerCase().contains(q))
-          .toList();
+              i.project.path.toLowerCase().contains(q));
     }
-    return list;
+    final results = list.toList();
+    final sourceIndex = <int, int>{
+      for (var index = 0; index < _items.length; index++)
+        _items[index].project.id: index,
+    };
+    results.sort((a, b) {
+      final stateOrder = _stateOrder(a.state).compareTo(_stateOrder(b.state));
+      if (stateOrder != 0) return stateOrder;
+      return sourceIndex[a.project.id]!.compareTo(sourceIndex[b.project.id]!);
+    });
+    return results;
+  }
+
+  int _stateOrder(ProjectCiLoadState state) => switch (state) {
+    ProjectCiLoadState.known => 0,
+    ProjectCiLoadState.error => 1,
+    ProjectCiLoadState.loading => 2,
+    ProjectCiLoadState.unknown => 3,
+  };
+
+  bool _isUnresolved(ProjectCiItem item) =>
+      item.state == ProjectCiLoadState.unknown ||
+      item.state == ProjectCiLoadState.loading;
+
+  Future<void> _loadPipelineRows(
+    List<Project> projects, {
+    required GitLabApi api,
+    required bool Function() current,
+  }) async {
+    for (var start = 0; start < projects.length; start += _pipelineBatchSize) {
+      if (!current()) return;
+      final proposedEnd = start + _pipelineBatchSize;
+      final end = proposedEnd < projects.length ? proposedEnd : projects.length;
+      final batch = projects.sublist(start, end);
+      await poolMap(
+        batch,
+        (project) => _loadPipelineRow(project, api: api, current: current),
+        maxConcurrent: widget.maxConcurrent,
+      );
+    }
+  }
+
+  Future<void> _loadPipelineRow(
+    Project project, {
+    required GitLabApi api,
+    required bool Function() current,
+  }) async {
+    if (!current()) return;
+    _replaceItem(
+      project.id,
+      (item) => item.copyWith(state: ProjectCiLoadState.loading),
+    );
+    try {
+      final pipelinePage = await api.records(
+        ['projects', '${project.id}', 'pipelines'],
+        query: {'per_page': '1'},
+      );
+      if (!current()) return;
+      _replaceItem(
+        project.id,
+        (item) => item.copyWith(
+          state: ProjectCiLoadState.known,
+          latestPipeline: pipelinePage.items.isNotEmpty ? pipelinePage.items.first : null,
+        ),
+      );
+    } catch (e) {
+      if (!current()) return;
+      _replaceItem(
+        project.id,
+        (item) => item.copyWith(
+          state: ProjectCiLoadState.error,
+          error: safeFailure(e),
+        ),
+      );
+    }
+  }
+
+  void _replaceItem(
+    int projectId,
+    ProjectCiItem Function(ProjectCiItem item) replace,
+  ) {
+    if (!mounted) return;
+    final index = _items.indexWhere((item) => item.project.id == projectId);
+    if (index < 0) return;
+    setState(() {
+      final items = List<ProjectCiItem>.of(_items);
+      items[index] = replace(items[index]);
+      _items = items;
+    });
   }
 
   Future<void> _openItem(ProjectCiItem item) async {
@@ -398,6 +474,9 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
+                        key: ValueKey(
+                          'ci-overview-filter-${entry.key.isEmpty ? 'all' : entry.key}',
+                        ),
                         label: Text(entry.value),
                         selected: _filter == entry.key,
                         showCheckmark: false,
@@ -476,13 +555,16 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Card(
+        key: ValueKey(
+          'ci-overview-state-${item.project.id}-${item.state.name}',
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: side,
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => _openItem(item),
+          onTap: _isUnresolved(item) ? null : () => _openItem(item),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: Column(
@@ -514,7 +596,19 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (item.latestPipeline != null)
+                  if (item.state == ProjectCiLoadState.loading)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else if (item.state == ProjectCiLoadState.unknown)
+                    Icon(
+                      Icons.help_outline,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    )
+                  else if (item.latestPipeline != null)
                     StatusBadge(valueText(item.latestPipeline!, 'status'))
                   else if (item.error != null)
                     Tooltip(

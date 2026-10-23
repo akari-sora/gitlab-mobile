@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import '../ai/ai_chat_page.dart';
 import '../ai/ai_chat_session.dart';
@@ -9,6 +10,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/job_trace.dart';
 import '../../core/models.dart';
+import '../../core/rate_budget.dart';
 import '../../shared/external_link.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
@@ -723,20 +725,46 @@ class PipelinePage extends StatefulWidget {
   final Project project;
   final int id;
   @override
-  State<PipelinePage> createState() => _PipelinePageState();
+  PipelinePageState createState() => PipelinePageState();
 }
-class _PipelinePageState extends State<PipelinePage> {
+class PipelinePageState extends State<PipelinePage> {
   final _feed = GlobalKey<RecordsFeedState>();
   final _testsKey = GlobalKey<PipelineTestsViewState>();
   final _chrome = ScrollChromeController();
   int _generation = 0;
+  int _readEpoch = 0;
   NavigatorState? _navigator;
   final Set<Route<dynamic>> _ownedRoutes = {};
-  bool _current(int generation) => mounted && generation == _generation;
+  ValueListenable<TickerModeData>? _tickerMode;
+  bool _backgroundEnabled = true;
+  bool _current(int generation) => mounted && !widget.api.isClosed && generation == _generation;
+  bool _readCurrent(int generation, int readEpoch) =>
+      _current(generation) && readEpoch == _readEpoch;
+  Json? get data => _data;
+  ApiFailure? get error => _error;
+  DateTime? get fetchedAt => _fetchedAt;
+  bool get stale => _stale;
+  bool get revalidating => _revalidating;
+  FailureKind? get backgroundFailure => _backgroundFailure;
+  DateTime? get backgroundRetryAt => _backgroundRetryAt;
+  void _updateTickerMode() {
+    final mode = TickerMode.getValuesNotifier(context);
+    if (!identical(mode, _tickerMode)) {
+      _tickerMode?.removeListener(_tickerModeChanged);
+      _tickerMode = mode;
+      mode.addListener(_tickerModeChanged);
+    }
+    _tickerModeChanged();
+  }
+  void _tickerModeChanged() {
+    _backgroundEnabled = _tickerMode!.value.enabled;
+    if (_backgroundEnabled) _startRevalidation(_generation);
+  }
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _navigator = Navigator.of(context);
+    _updateTickerMode();
   }
   void _ownRoute(Route<dynamic> route) {
     if (!_ownedRoutes.add(route)) return;
@@ -760,9 +788,15 @@ class _PipelinePageState extends State<PipelinePage> {
     if (oldWidget.account.key != widget.account.key || oldWidget.project.id != widget.project.id ||
         oldWidget.id != widget.id || !identical(oldWidget.api, widget.api)) {
       _generation++;
+      _readEpoch++;
       _dismissRoutes();
       _data = null;
       _error = null;
+      _fetchedAt = null;
+      _stale = false;
+      _revalidating = false;
+      _backgroundFailure = null;
+      _backgroundRetryAt = null;
       _busy = false;
       _loading = false;
       unawaited(_load());
@@ -771,24 +805,131 @@ class _PipelinePageState extends State<PipelinePage> {
   @override
   void dispose() {
     _generation++;
+    _readEpoch++;
     _dismissRoutes();
+    _tickerMode?.removeListener(_tickerModeChanged);
     _chrome.dispose();
     super.dispose();
   }
   Json? _data;
   ApiFailure? _error;
+  DateTime? _fetchedAt;
+  bool _stale = false, _revalidating = false;
+  FailureKind? _backgroundFailure;
+  DateTime? _backgroundRetryAt;
   bool _busy = false, _loading = false;
   @override
   void initState() { super.initState(); unawaited(_load()); }
-  Future<void> _load() async {
+  bool _revoked(ApiFailure failure) => switch (failure.kind) {
+    FailureKind.unauthenticated || FailureKind.forbidden || FailureKind.invisible => true,
+    _ => false,
+  };
+  Future<CachedRead<Json>?> _read(
+    PipelinePage owner,
+    int generation, {
+    required int readEpoch,
+    required bool fresh,
+    required bool background,
+  }) async {
+    var read = await owner.api.cachedRecord(
+      ['projects', '${owner.project.id}', 'pipelines', '${owner.id}'],
+      fresh: fresh,
+      background: background,
+    );
+    if (!_readCurrent(generation, readEpoch)) return null;
+    if (read.superseded) {
+      if (background && !_backgroundEnabled) return null;
+      read = await owner.api.cachedRecord(
+        ['projects', '${owner.project.id}', 'pipelines', '${owner.id}'],
+        fresh: true,
+        background: background,
+      );
+      if (!_readCurrent(generation, readEpoch)) return null;
+    }
+    return read.superseded || read.dropped ? null : read;
+  }
+  void _apply(CachedRead<Json> read) {
+    _data = read.value;
+    _fetchedAt = read.fetchedAt;
+    _stale = read.stale;
+  }
+  void _withdraw() {
+    _data = null;
+    _fetchedAt = null;
+    _stale = false;
+  }
+  Future<void> _load({bool fresh = false}) async {
     if (_loading || !mounted) { return; }
-    final owner = widget, generation = _generation;
-    setState(() { _loading = true; _error = null; });
+    final owner = widget, generation = _generation, readEpoch = ++_readEpoch;
+    setState(() {
+      _loading = true;
+      _error = null;
+      _revalidating = false;
+      _backgroundFailure = null;
+      _backgroundRetryAt = null;
+    });
     try {
-      final data = await owner.api.record(['projects', '${owner.project.id}', 'pipelines', '${owner.id}']);
-      if (_current(generation)) { setState(() => _data = data); }
-    } catch (e) { if (_current(generation)) { setState(() => _error = safeFailure(e)); } }
-    finally { if (_current(generation)) { setState(() => _loading = false); } }
+      final read = await _read(
+        owner,
+        generation,
+        readEpoch: readEpoch,
+        fresh: fresh,
+        background: false,
+      );
+      if (_readCurrent(generation, readEpoch) && read != null) {
+        setState(() { _apply(read); _loading = false; });
+        _startRevalidation(generation, readEpoch: readEpoch);
+      }
+    } catch (e) {
+      if (_readCurrent(generation, readEpoch)) {
+        final failure = safeFailure(e);
+        setState(() { _error = failure; if (_revoked(failure)) _withdraw(); });
+      }
+    } finally {
+      if (_readCurrent(generation, readEpoch) && _loading) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+  void _startRevalidation(int generation, {int? readEpoch}) {
+    final epoch = readEpoch ?? _readEpoch;
+    if (!_readCurrent(generation, epoch) || !_backgroundEnabled || !_stale || _revalidating ||
+        _backgroundFailure != null || _loading) {
+      return;
+    }
+    setState(() => _revalidating = true);
+    unawaited(_revalidate(widget, generation, epoch));
+  }
+  Future<void> _revalidate(PipelinePage owner, int generation, int readEpoch) async {
+    try {
+      final read = await _read(
+        owner,
+        generation,
+        readEpoch: readEpoch,
+        fresh: true,
+        background: true,
+      );
+      if (_readCurrent(generation, readEpoch) && read != null) {
+        setState(() => _apply(read));
+      }
+    } catch (e) {
+      if (_readCurrent(generation, readEpoch)) {
+        final failure = safeFailure(e);
+        setState(() {
+          if (_revoked(failure)) {
+            _withdraw();
+            _error = failure;
+          } else {
+            _backgroundFailure = failure.kind;
+            _backgroundRetryAt = failure.retryAt;
+          }
+        });
+      }
+    } finally {
+      if (_readCurrent(generation, readEpoch)) {
+        setState(() => _revalidating = false);
+      }
+    }
   }
   void _openOwned(int generation, Widget Function(PipelinePage owner) page) {
     final owner = widget;
@@ -804,6 +945,25 @@ class _PipelinePageState extends State<PipelinePage> {
     _ownRoute(route);
     unawaited(Navigator.push(context, route));
   }
+  Future<void> _refreshJobs() async {
+    final owner = widget, generation = _generation, feed = _feed.currentState;
+    if (!_current(generation) || _data == null) return;
+    if (feed != null) {
+      await feed.refresh();
+      return;
+    }
+    // TabBarView disposes the jobs feed while Tests is selected. Refresh its
+    // canonical cache too, so returning to Jobs cannot reuse the old value.
+    try {
+      await owner.api.cachedRecords(
+        ['projects', '${owner.project.id}', 'pipelines', '${owner.id}', 'jobs'],
+        query: {'include_retried': 'true', 'per_page': '100'},
+        fresh: true,
+      );
+    } catch (e) {
+      if (mounted && _current(generation)) showFailure(context, e);
+    }
+  }
   Future<void> _openJob(int id) async {
     final owner = widget, generation = _generation;
     final route = MaterialPageRoute<void>(builder: (_) => JobLogPage(
@@ -812,9 +972,9 @@ class _PipelinePageState extends State<PipelinePage> {
     await Navigator.push(context, route);
     // The job route stays open across retries and completes only on real back.
     if (!_current(generation)) { return; }
-    await _load();
+    await _load(fresh: true);
     if (_current(generation)) {
-      await _feed.currentState?.refresh();
+      await _refreshJobs();
       if (_current(generation)) await _testsKey.currentState?.refresh();
     }
   }
@@ -834,9 +994,9 @@ class _PipelinePageState extends State<PipelinePage> {
       }
       await owner.api.pipelineAction(owner.project.id, owner.id, action);
       if (!_current(generation)) return;
-      await _load();
+      await _load(fresh: true);
       if (_current(generation)) {
-        await _feed.currentState?.refresh();
+        await _refreshJobs();
         if (_current(generation)) await _testsKey.currentState?.refresh();
       }
     } catch (e) { if (mounted && _current(generation)) { showFailure(context, e); } }
@@ -853,9 +1013,9 @@ class _PipelinePageState extends State<PipelinePage> {
       await owner.api.jobAction(owner.project.id, jobId, action);
       if (!_current(generation)) return;
       unawaited(Haptics.success());
-      await _load();
+      await _load(fresh: true);
       if (_current(generation)) {
-        await _feed.currentState?.refresh();
+        await _refreshJobs();
         if (_current(generation)) await _testsKey.currentState?.refresh();
       }
     } catch (e) {
@@ -888,10 +1048,11 @@ class _PipelinePageState extends State<PipelinePage> {
           onPressed: _openGraph,
           icon: const Icon(Icons.account_tree_outlined)),
         IconButton(tooltip: l10n.refreshAction, onPressed: _loading || _busy ? null : () async {
-          await _load();
-          if (mounted) {
-            await _feed.currentState?.refresh();
-            await _testsKey.currentState?.refresh();
+          final generation = _generation;
+          await _load(fresh: true);
+          if (_current(generation)) {
+            await _refreshJobs();
+            if (_current(generation)) await _testsKey.currentState?.refresh();
           }
         }, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(enabled: !_busy, tooltip: l10n.pipelineActions, onSelected: _action, itemBuilder: (_) => [
@@ -1131,7 +1292,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
   @override
   void initState() {
     super.initState();
-    unawaited(refresh());
+    unawaited(refresh(fresh: false));
   }
 
   @override
@@ -1150,7 +1311,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
     super.dispose();
   }
 
-  Future<void> refresh() async {
+  Future<void> refresh({bool fresh = true}) async {
     final gen = ++_generation;
     setState(() {
       _loadingSummary = true;
@@ -1161,10 +1322,22 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
     });
 
     try {
-      final summary = await widget.api.pipelineTestReportSummary(
-        widget.project.id,
-        widget.pipelineId,
+      final api = widget.api;
+      final path = [
+        'projects', '${widget.project.id}', 'pipelines',
+        '${widget.pipelineId}', 'test_report_summary',
+      ];
+      var read = await api.cachedRecord(
+        path, fresh: fresh, maxAge: const Duration(seconds: 30),
       );
+      if (!mounted || gen != _generation) return;
+      if (read.superseded) {
+        read = await api.cachedRecord(path, fresh: true);
+      }
+      if (read.dropped || read.superseded) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      final summary = TestReportSummary.fromJson(read.value);
       if (!mounted || gen != _generation) return;
       setState(() {
         _summary = summary;
@@ -1730,9 +1903,9 @@ class JobLogPage extends StatefulWidget {
   final IOSink Function(File file) openSink;
   final Future<File> Function(File partial, File target) promoteArtifact;
   @override
-  State<JobLogPage> createState() => _JobLogPageState();
+  JobLogPageState createState() => JobLogPageState();
 }
-class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
+class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   late final JobLogPage _routeOwner;
   late int _jobId;
   int _loadEpoch = 0;
@@ -1753,16 +1926,50 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   List<_LogMatch> _matches = const <_LogMatch>[];
   int _currentMatch = 0;
   Timer? _timer;
+  Duration? _timerInterval;
+  StreamSubscription<RateBudgetSnapshot>? _rateBudgetSubscription;
+  ValueListenable<TickerModeData>? _tickerMode;
+  late RateLevel _rateLevel;
   final _scroll = ScrollController();
   final _chrome = ScrollChromeController();
+  Duration get pollingInterval => switch (_rateLevel) {
+    RateLevel.normal => const Duration(seconds: 10),
+    RateLevel.low => const Duration(seconds: 30),
+    RateLevel.critical => const Duration(seconds: 60),
+  };
   @override
   void initState() {
     super.initState(); _routeOwner = widget; _jobId = widget.id;
+    _rateLevel = widget.api.rateBudget.snapshot().level;
+    _rateBudgetSubscription = widget.api.rateBudget.stream.listen((snapshot) {
+      if (!mounted || snapshot.level == _rateLevel) return;
+      _rateLevel = snapshot.level;
+      _schedule();
+    });
     WidgetsBinding.instance.addObserver(this); unawaited(_load());
+  }
+  void _updateTickerMode() {
+    final mode = TickerMode.getValuesNotifier(context);
+    if (!identical(mode, _tickerMode)) {
+      _tickerMode?.removeListener(_tickerModeChanged);
+      _tickerMode = mode;
+      mode.addListener(_tickerModeChanged);
+    }
+    _tickerModeChanged();
+  }
+  void _tickerModeChanged() => _schedule();
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateTickerMode();
+    ModalRoute.isCurrentOf(context);
+    _schedule();
   }
   @override
   void dispose() {
     _loadEpoch++; _timer?.cancel(); _scroll.dispose();
+    unawaited(_rateBudgetSubscription?.cancel());
+    _tickerMode?.removeListener(_tickerModeChanged);
     _searchController.dispose(); _chrome.dispose();
     WidgetsBinding.instance.removeObserver(this); super.dispose();
   }
@@ -1772,10 +1979,19 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     else { _schedule(); }
   }
   void _schedule() {
+    if (!_auto || !mounted || _tickerMode?.value.enabled != true ||
+        ModalRoute.isCurrentOf(context) != true ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      _timer?.cancel();
+      return;
+    }
+    // Dependency and ticker notifications can repeat after visibility resumes.
+    // Keep the existing deadline unless the budget changed its cadence.
+    if (_timer?.isActive == true && _timerInterval == pollingInterval) return;
     _timer?.cancel();
-    if (!_auto || !mounted) { return; }
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted && ModalRoute.of(context)?.isCurrent == true &&
+    _timerInterval = pollingInterval;
+    _timer = Timer.periodic(pollingInterval, (_) {
+      if (mounted && _tickerMode?.value.enabled == true && ModalRoute.isCurrentOf(context) == true &&
           WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed && !_loading && !_busy && !_confirming) {
         unawaited(_load());
       }
