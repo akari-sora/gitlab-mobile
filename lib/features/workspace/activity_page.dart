@@ -377,9 +377,9 @@ String activitySentence(Json event) {
   final target = _targetLabel(targetType);
   final iid = note.isNotEmpty ? valueInt(note, 'noteable_iid') : valueInt(event, 'target_iid');
   // One value, sigil included, so a right-to-left interface isolates it whole.
-  final reference = iid > 0
-      ? '${targetType == 'MergeRequest' ? '!' : '#'}$iid'
-      : targetType == 'Commit' ? _shortSha(valueText(note, 'commit_id')) : '';
+  // A commit note carries no reference: the Events API exposes commit_id only
+  // on merge-request diff notes, never on a note about a commit.
+  final reference = iid > 0 ? '${targetType == 'MergeRequest' ? '!' : '#'}$iid' : '';
   final verb = switch (action) {
     'opened' => l10n.activityOpened,
     'closed' => l10n.activityClosed,
@@ -412,9 +412,6 @@ String activitySentence(Json event) {
       ? l10n.activityVerbTarget(verb, target)
       : l10n.activityVerbTargetRef(verb, target, reference);
 }
-
-String _shortSha(String sha) =>
-    RegExp(r'^[0-9a-f]{7,64}$').hasMatch(sha) ? sha.substring(0, 8.clamp(0, sha.length)) : '';
 
 IconData _activityIcon(Json event) {
   final action = valueText(event, 'action_name');

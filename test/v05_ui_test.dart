@@ -304,11 +304,10 @@ void main() {
     expect(activitySentence({'action_name': 'commented on', 'target_type': 'Note',
       'note': {'noteable_type': 'Issue', 'noteable_iid': 12, 'body': 'hi'}}), '留言於議題 #12');
     expect(activitySentence({'action_name': 'joined'}), '加入了專案');
-    // A comment on a commit names the commit and its short SHA.
+    // A commit note names the target; the Events API never sends a commit SHA
+    // on it (commit_id exists only on merge-request diff notes).
     expect(activitySentence({'action_name': 'commented on', 'target_type': 'Note',
-      'note': {'noteable_type': 'Commit', 'commit_id': '1a2b3c4d5e6f7a8b9c0d', 'body': 'hi'}}), '留言於提交 1a2b3c4d');
-    expect(activitySentence({'action_name': 'commented on', 'target_type': 'Note',
-      'note': {'noteable_type': 'Commit', 'commit_id': 'not a sha', 'body': 'hi'}}), '留言於提交');
+      'note': {'noteable_type': 'Commit', 'body': 'hi'}}), '留言於提交');
   });
 
   test('activity sentences use the language\'s spacing between verb and target', () {
@@ -328,6 +327,9 @@ void main() {
     useLanguage(languageForTag('ko')!);
     expect(activitySentence({'action_name': 'opened', 'target_type': 'MergeRequest', 'target_iid': 7}),
       '머지 리퀘스트 !7: 열음');
+    // Without a reference Korean keeps the same target-first word order.
+    expect(activitySentence({'action_name': 'commented on', 'target_type': 'Note',
+      'note': {'noteable_type': 'Commit', 'body': 'hi'}}), '커밋: 댓글 작성');
 
     // Arabic isolates the verb and the target separately and keeps the reference in one isolate.
     useLanguage(languageForTag('ar')!);
