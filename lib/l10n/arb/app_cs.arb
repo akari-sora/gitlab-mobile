@@ -2714,5 +2714,7 @@
   "cacheRateLimited": "GitLab omezuje požadavky",
   "cacheRefreshFailed": "Nelze obnovit",
   "cacheResumesInMinutes": "Obnoví se přibližně za {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
+  "refreshEveryMinute": "Refresh every minute"
 }

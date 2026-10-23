@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/rate_budget.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
@@ -30,6 +31,7 @@ void main() {
       await tester.pump();
       final state = tester.state<JobLogPageState>(find.byType(JobLogPage));
       expect(state.pollingInterval, const Duration(seconds: 10));
+      expect(find.text(l10n.refreshEveryTenSeconds), findsOneWidget);
       await tester.pump(const Duration(seconds: 9));
       expect(fixture.traceReads, 1);
       await _pumpUntilTrace(tester, fixture, const Duration(seconds: 1), 2);
@@ -39,6 +41,9 @@ void main() {
       await tester.pump();
       expect(fixture.budget.snapshot().level, RateLevel.low);
       expect(state.pollingInterval, const Duration(seconds: 30));
+      // The chip names the slower cadence, not the normal 10 s.
+      expect(find.text(l10n.refreshEveryThirtySeconds), findsOneWidget);
+      expect(find.text(l10n.refreshEveryTenSeconds), findsNothing);
       await tester.pump(const Duration(seconds: 29));
       expect(fixture.traceReads, 2);
       await _pumpUntilTrace(tester, fixture, const Duration(seconds: 1), 3);
@@ -48,6 +53,7 @@ void main() {
       await tester.pump();
       expect(fixture.budget.snapshot().level, RateLevel.critical);
       expect(state.pollingInterval, const Duration(seconds: 60));
+      expect(find.text(l10n.refreshEveryMinute), findsOneWidget);
       await tester.pump(const Duration(seconds: 59));
       expect(fixture.traceReads, 3);
       await _pumpUntilTrace(tester, fixture, const Duration(seconds: 1), 4);

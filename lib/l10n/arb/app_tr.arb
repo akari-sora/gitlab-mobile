@@ -2714,5 +2714,7 @@
   "cacheRateLimited": "GitLab istekleri sınırlıyor",
   "cacheRefreshFailed": "Yenilenemedi",
   "cacheResumesInMinutes": "Yaklaşık {minutes} dk. sonra devam eder",
-  "activityVerbTarget": "{verb} ({target})"
+  "activityVerbTarget": "{verb} ({target})",
+  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
+  "refreshEveryMinute": "Refresh every minute"
 }

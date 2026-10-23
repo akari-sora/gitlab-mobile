@@ -2717,4 +2717,6 @@ const _messagesMs = <String>[
   'Tidak dapat memuat semula',
   'Sambung semula dalam sekitar {minutes} min',
   '{verb} {target}',
+  'Refresh every 30 seconds',
+  'Refresh every minute',
 ];

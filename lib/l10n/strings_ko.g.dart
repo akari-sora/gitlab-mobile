@@ -2717,4 +2717,6 @@ const _messagesKo = <String>[
   '새로 고침할 수 없습니다',
   '약 {minutes}분 후 다시 시작',
   '{verb} ({target})',
+  'Refresh every 30 seconds',
+  'Refresh every minute',
 ];

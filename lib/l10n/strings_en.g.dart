@@ -2717,4 +2717,6 @@ const _messagesEn = <String>[
   'Couldn\'t refresh',
   'Resumes in about {minutes} min',
   '{verb} {target}',
+  'Refresh every 30 seconds',
+  'Refresh every minute',
 ];

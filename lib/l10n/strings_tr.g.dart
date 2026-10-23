@@ -2717,4 +2717,6 @@ const _messagesTr = <String>[
   'Yenilenemedi',
   'Yaklaşık {minutes} dk. sonra devam eder',
   '{verb} ({target})',
+  'Refresh every 30 seconds',
+  'Refresh every minute',
 ];

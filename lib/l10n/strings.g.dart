@@ -8238,4 +8238,10 @@ final class AppStrings {
 
   /// {verb}{target}
   String activityVerbTarget(Object? verb, Object? target) => _format(language, language._messages[2714], {'verb': verb, 'target': target});
+
+  /// 30 秒更新
+  String get refreshEveryThirtySeconds => language._messages[2715];
+
+  /// 每分鐘更新
+  String get refreshEveryMinute => language._messages[2716];
 }

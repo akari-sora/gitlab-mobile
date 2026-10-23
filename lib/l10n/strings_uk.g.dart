@@ -2717,4 +2717,6 @@ const _messagesUk = <String>[
   'Не вдалося оновити',
   'Відновиться приблизно за {minutes} хв',
   '{verb} {target}',
+  'Refresh every 30 seconds',
+  'Refresh every minute',
 ];

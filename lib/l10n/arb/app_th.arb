@@ -2714,5 +2714,7 @@
   "cacheRateLimited": "GitLab กำลังจำกัดคำขอ",
   "cacheRefreshFailed": "รีเฟรชไม่ได้",
   "cacheResumesInMinutes": "กลับมาในอีกประมาณ {minutes} นาที",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
+  "refreshEveryMinute": "Refresh every minute"
 }

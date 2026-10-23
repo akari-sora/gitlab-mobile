@@ -2717,4 +2717,6 @@ const _messagesPtBr = <String>[
   'Não foi possível atualizar',
   'Retoma em cerca de {minutes} min',
   '{verb} {target}',
+  'Refresh every 30 seconds',
+  'Refresh every minute',
 ];

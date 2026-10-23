@@ -2714,5 +2714,7 @@
   "cacheRateLimited": "GitLab limitează cererile",
   "cacheRefreshFailed": "Nu se poate reîmprospăta",
   "cacheResumesInMinutes": "Se reia în aproximativ {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
+  "refreshEveryMinute": "Refresh every minute"
 }

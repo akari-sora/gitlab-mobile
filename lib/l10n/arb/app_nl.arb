@@ -2714,5 +2714,7 @@
   "cacheRateLimited": "GitLab beperkt verzoeken",
   "cacheRefreshFailed": "Kan niet vernieuwen",
   "cacheResumesInMinutes": "Hervatting over ca. {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
+  "refreshEveryMinute": "Refresh every minute"
 }

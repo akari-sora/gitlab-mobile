@@ -1970,7 +1970,8 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     _rateLevel = widget.api.rateBudget.snapshot().level;
     _rateBudgetSubscription = widget.api.rateBudget.stream.listen((snapshot) {
       if (!mounted || snapshot.level == _rateLevel) return;
-      _rateLevel = snapshot.level;
+      // The auto-refresh chip names the cadence, so it rebuilds too.
+      setState(() => _rateLevel = snapshot.level);
       _schedule();
     });
     WidgetsBinding.instance.addObserver(this); unawaited(_load());
@@ -2554,7 +2555,11 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 if (valueText(_job!, 'stage').isNotEmpty) MetaChip(valueText(_job!, 'stage'), icon: Icons.layers_outlined),
                 if (valueText(_job!, 'ref').isNotEmpty) MetaChip(valueText(_job!, 'ref'), icon: Icons.alt_route, mono: true),
               ],
-              FilterChip(label: Text(l10n.refreshEveryTenSeconds), selected: _auto, onSelected: (value) {
+              FilterChip(label: Text(switch (_rateLevel) {
+                RateLevel.normal => l10n.refreshEveryTenSeconds,
+                RateLevel.low => l10n.refreshEveryThirtySeconds,
+                RateLevel.critical => l10n.refreshEveryMinute,
+              }), selected: _auto, onSelected: (value) {
                 setState(() => _auto = value); _schedule();
               }),
               FilterChip(label: Text(l10n.followLogTail), selected: _follow, onSelected: (value) => setState(() => _follow = value)),

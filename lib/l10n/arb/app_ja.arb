@@ -2714,5 +2714,7 @@
   "cacheRateLimited": "GitLab によりリクエストが制限されています",
   "cacheRefreshFailed": "更新できません",
   "cacheResumesInMinutes": "約 {minutes} 分後に再開",
-  "activityVerbTarget": "{verb}（{target}）"
+  "activityVerbTarget": "{verb}（{target}）",
+  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
+  "refreshEveryMinute": "Refresh every minute"
 }

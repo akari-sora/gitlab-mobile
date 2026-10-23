@@ -2714,5 +2714,7 @@
   "cacheRateLimited": "GitLab sedang mengehadkan permintaan",
   "cacheRefreshFailed": "Tidak dapat memuat semula",
   "cacheResumesInMinutes": "Sambung semula dalam sekitar {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
+  "refreshEveryMinute": "Refresh every minute"
 }

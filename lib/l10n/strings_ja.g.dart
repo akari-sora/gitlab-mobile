@@ -2717,4 +2717,6 @@ const _messagesJa = <String>[
   '更新できません',
   '約 {minutes} 分後に再開',
   '{verb}（{target}）',
+  'Refresh every 30 seconds',
+  'Refresh every minute',
 ];

@@ -2717,4 +2717,6 @@ const _messagesId = <String>[
   'Tidak dapat memperbarui',
   'Lanjut lagi dalam sekitar {minutes} mnt',
   '{verb} {target}',
+  'Refresh every 30 seconds',
+  'Refresh every minute',
 ];

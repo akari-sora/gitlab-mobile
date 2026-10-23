@@ -2717,4 +2717,6 @@ const _messagesTh = <String>[
   'รีเฟรชไม่ได้',
   'กลับมาในอีกประมาณ {minutes} นาที',
   '{verb} {target}',
+  'Refresh every 30 seconds',
+  'Refresh every minute',
 ];

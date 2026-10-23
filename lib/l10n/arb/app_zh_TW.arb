@@ -11489,5 +11489,7 @@
       "verb": {},
       "target": {}
     }
-  }
+  },
+  "refreshEveryThirtySeconds": "30 秒更新",
+  "refreshEveryMinute": "每分鐘更新"
 }

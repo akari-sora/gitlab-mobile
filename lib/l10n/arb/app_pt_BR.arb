@@ -2714,5 +2714,7 @@
   "cacheRateLimited": "O GitLab está limitando solicitações",
   "cacheRefreshFailed": "Não foi possível atualizar",
   "cacheResumesInMinutes": "Retoma em cerca de {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
+  "refreshEveryMinute": "Refresh every minute"
 }

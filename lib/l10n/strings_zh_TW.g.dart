@@ -2717,4 +2717,6 @@ const _messagesZhTw = <String>[
   '無法更新',
   '約 {minutes} 分鐘後恢復',
   '{verb}{target}',
+  '30 秒更新',
+  '每分鐘更新',
 ];

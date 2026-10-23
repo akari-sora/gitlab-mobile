@@ -2717,4 +2717,6 @@ const _messagesPl = <String>[
   'Nie można odświeżyć',
   'Wznowienie za ok. {minutes} min',
   '{verb} {target}',
+  'Refresh every 30 seconds',
+  'Refresh every minute',
 ];
