@@ -115,7 +115,7 @@ void main() {
   );
 
   testWidgets(
-    '§3.4 fixture MR approvals 404 cache warm viewport 412x900 clock +5s completion settled: sub-resource 404 keeps the parent',
+    '§3.4 fixture MR approvals 404 cache empty viewport 412x900 clock fixed completion settled: cold sub-resource 404 keeps the parent',
     (tester) async {
       final fixture = _WorkItemFixture.mr()..approvalsStatus = 404;
       addTearDown(fixture.close);
@@ -131,7 +131,127 @@ void main() {
   );
 
   testWidgets(
-    '§3.4 fixture issue related 404 cache empty viewport 412x900 clock fixed completion settled: sub-resource 404 keeps the parent',
+    '§3.4 fixture MR approvals 403 after success viewport 412x900 clock +5s completion explicit refresh: revoked approvals withdraw the card but keep the MR',
+    (tester) async {
+      final fixture = _WorkItemFixture.mr();
+      addTearDown(fixture.close);
+      _viewport(tester);
+      await tester.pumpWidget(workspaceHost(fixture.page()));
+      await settleWorkspace(tester);
+      expect(find.byIcon(Icons.rule_outlined), findsOneWidget, reason: 'approvals card shown');
+      fixture.approvalsStatus = 403;
+      fixture.now = fixture.now.add(const Duration(seconds: 5));
+      await tester.tap(find.byIcon(Icons.refresh));
+      await settleWorkspace(tester);
+      expect(fixture.detailReads, 2, reason: 'explicit refresh re-reads detail');
+      expect(fixture.approvalsReads, 2, reason: 'explicit refresh re-reads approvals');
+      expect(find.byIcon(Icons.rule_outlined), findsNothing, reason: 'revoked approvals card withdrawn');
+      expect(find.byIcon(Icons.check_circle_outline), findsNothing);
+      final state = tester.state<WorkItemPageState>(find.byType(WorkItemPage));
+      expect(state.data?['title'], 'Synthetic MR', reason: 'parent detail kept');
+      expect(state.readError, isNull);
+    },
+  );
+
+  testWidgets(
+    '§3.4 fixture MR approvals change cache stale viewport 412x900 clock +31s completion settled: stale reopen re-reads approvals and updates the card',
+    (tester) async {
+      final fixture = _WorkItemFixture.mr();
+      addTearDown(fixture.close);
+      _viewport(tester);
+      await tester.pumpWidget(workspaceHost(fixture.page()));
+      await settleWorkspace(tester);
+      expect(find.byIcon(Icons.rule_outlined), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      fixture.now = fixture.now.add(const Duration(seconds: 31));
+      fixture.nextApprovals = fixture.approvalsJson(
+        approvedBy: [
+          {'user': {'id': 7, 'username': 'developer'}},
+        ],
+        required: 1,
+        left: 0,
+      );
+      await tester.pumpWidget(workspaceHost(fixture.page()));
+      await settleWorkspace(tester);
+      expect(fixture.detailReads, 2, reason: 'detail revalidated in background');
+      expect(fixture.approvalsReads, 2, reason: 'stale approvals re-read from network');
+      expect(find.byIcon(Icons.rule_outlined), findsNothing);
+      expect(find.byIcon(Icons.check_circle_outline), findsOneWidget, reason: 'threshold now reached');
+    },
+  );
+
+  testWidgets(
+    '§3.4 fixture issue related change cache stale viewport 412x900 clock +45s completion settled: stale reopen re-reads related and links and shows the new link',
+    (tester) async {
+      final fixture = _WorkItemFixture.issue();
+      addTearDown(fixture.close);
+      _viewport(tester);
+      await tester.pumpWidget(workspaceHost(fixture.page()));
+      await settleWorkspace(tester);
+      expect(fixture.relatedReads, 1);
+      expect(fixture.linksReads, 1);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      fixture.now = fixture.now.add(const Duration(seconds: 45));
+      fixture.intercept = (request) =>
+          request.uri.path == '/gitlab/api/v4/projects/42/issues/1/related_merge_requests'
+          ? jsonResponse([
+              {'id': 99, 'iid': 5, 'project_id': 42, 'title': 'Linked later', 'state': 'opened'},
+            ])
+          : null;
+      await tester.pumpWidget(workspaceHost(fixture.page()));
+      await settleWorkspace(tester);
+      expect(fixture.detailReads, 2, reason: 'detail revalidated in background');
+      expect(fixture.relatedReads, 2, reason: 'stale related re-read from network');
+      expect(fixture.linksReads, 2, reason: 'stale links re-read from network');
+      await tester.scrollUntilVisible(
+        find.textContaining('Linked later'),
+        400,
+        scrollable: find.descendant(
+          of: find.descendant(of: find.byType(TabBarView), matching: find.byType(ListView)),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(find.textContaining('Linked later'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    '§3.4 fixture issue related cache warm viewport 412x900 clock +5s completion explicit refresh: refresh button refreshes the related list too',
+    (tester) async {
+      final fixture = _WorkItemFixture.issue();
+      addTearDown(fixture.close);
+      _viewport(tester);
+      await tester.pumpWidget(workspaceHost(fixture.page()));
+      await settleWorkspace(tester);
+      expect(fixture.relatedReads, 1);
+      expect(fixture.linksReads, 1);
+      fixture.now = fixture.now.add(const Duration(seconds: 5));
+      fixture.intercept = (request) =>
+          request.uri.path == '/gitlab/api/v4/projects/42/issues/1/related_merge_requests'
+          ? jsonResponse([
+              {'id': 99, 'iid': 5, 'project_id': 42, 'title': 'Linked on refresh', 'state': 'opened'},
+            ])
+          : null;
+      await tester.tap(find.descendant(of: find.byType(AppBar), matching: find.byIcon(Icons.refresh)));
+      await settleWorkspace(tester);
+      expect(fixture.detailReads, 2, reason: 'explicit refresh re-reads detail');
+      expect(fixture.relatedReads, 2, reason: 'explicit refresh drives the related list');
+      expect(fixture.linksReads, 2, reason: 'explicit refresh drives the links list');
+      await tester.scrollUntilVisible(
+        find.textContaining('Linked on refresh'),
+        400,
+        scrollable: find.descendant(
+          of: find.descendant(of: find.byType(TabBarView), matching: find.byType(ListView)),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(find.textContaining('Linked on refresh'), findsOneWidget);
+    },
+  );
+  testWidgets(
+    '§3.4 fixture issue related 404 cache empty viewport 412x900 clock fixed completion settled: cold sub-resource 404 keeps the parent',
     (tester) async {
       final fixture = _WorkItemFixture.issue()..relatedStatus = 404;
       addTearDown(fixture.close);
@@ -186,12 +306,13 @@ void main() {
   );
 
   testWidgets(
-    '§3.4 fixture issue detail queued background hidden viewport 412x900 clock +31s completion no HTTP: hidden queued read waits until visible',
+    '§3.4 fixture issue detail queued background hidden viewport 412x900 clock +31s completion no HTTP: same hidden state sends nothing until visible',
     (tester) async {
       final fixture = _WorkItemFixture.issue();
       addTearDown(fixture.close);
       _viewport(tester);
-      await tester.pumpWidget(workspaceHost(fixture.page()));
+      Widget host(bool on) => workspaceHost(TickerMode(enabled: on, child: fixture.page(key: const ValueKey('same'))));
+      await tester.pumpWidget(host(true));
       await settleWorkspace(tester);
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
@@ -203,23 +324,22 @@ void main() {
         for (var id = 1; id <= 4; id++)
           fixture.api.cachedRecord(['projects', '8', 'issues', '$id'], fresh: true, background: true),
       ];
-      await pumpUntil(tester, () => fixture.adapter.requests.length >= 9);
-      await tester.pumpWidget(workspaceHost(fixture.page()));
-      await pumpUntil(tester, () {
-        try {
-          return tester.state<WorkItemPageState>(find.byType(WorkItemPage)).revalidating;
-        } catch (_) {
-          return false;
-        }
-      });
-      await tester.pumpWidget(
-        workspaceHost(TickerMode(enabled: false, child: fixture.page(key: const ValueKey('hidden')))),
+      await pumpUntil(tester, () => fixture.blockerReads == 4, description: 'background slots occupied');
+      await tester.pumpWidget(host(true));
+      await pumpUntil(
+        tester,
+        () => tester.state<WorkItemPageState>(find.byType(WorkItemPage)).revalidating,
+        description: 'stale reopen queues a background revalidation',
       );
+      final state = tester.state<WorkItemPageState>(find.byType(WorkItemPage));
+      await tester.pumpWidget(host(false));
+      expect(identical(tester.state<WorkItemPageState>(find.byType(WorkItemPage)), state), isTrue, reason: 'same state kept while hidden');
       occupied.complete();
       await settleNetworkWidgets(tester);
       await tester.runAsync(() => Future.wait(blockers));
       expect(fixture.detailReads, 1, reason: 'hidden queued read must send no HTTP');
-      await tester.pumpWidget(workspaceHost(fixture.page(key: const ValueKey('hidden'))));
+      await tester.pumpWidget(host(true));
+      expect(identical(tester.state<WorkItemPageState>(find.byType(WorkItemPage)), state), isTrue, reason: 'same state resumes');
       await settleWorkspace(tester);
       expect(fixture.detailReads, 2, reason: 'visibility resumes exactly one read');
     },
@@ -294,6 +414,110 @@ void main() {
       );
     }
   }
+
+  for (final sustained in [false, true]) {
+    testWidgets(
+      '§3.4 fixture MR approvals cold supersedes ${sustained ? 'leave fail-soft without a card' : 'recover after writes stop'} viewport 412x900 clock fixed completion bounded',
+      (tester) async {
+        final fixture = _WorkItemFixture.mr();
+        addTearDown(fixture.close);
+        _viewport(tester);
+        final responses = List.generate(sustained ? 6 : 4, (_) => Completer<ResponseBody>());
+        var reads = 0;
+        fixture.intercept = (request) {
+          if (request.method != 'GET' || request.uri.path != _WorkItemFixture.approvalsPath) return null;
+          final index = reads++;
+          return index < responses.length ? responses[index].future : null;
+        };
+        await tester.pumpWidget(workspaceHost(fixture.page()));
+        for (var index = 0; index < responses.length; index++) {
+          await pumpUntil(tester, () => reads == index + 1, description: 'next bounded approvals read after superseding write');
+          await tester.runAsync(() => fixture.api.updateMergeRequest(42, 12, {'title': 'synthetic write $index'}));
+          responses[index].complete(jsonResponse(fixture.approvalsJson()));
+        }
+        if (!sustained) {
+          await pumpUntil(
+            tester,
+            () => find.byIcon(Icons.rule_outlined).evaluate().isNotEmpty,
+            description: 'approvals card recovers after writes stop',
+          );
+          await settleNetworkWidgets(tester);
+          expect(reads, 5, reason: 'superseded approvals read is retried, not swallowed');
+          expect(find.byIcon(Icons.rule_outlined), findsOneWidget);
+          expect(tester.state<WorkItemPageState>(find.byType(WorkItemPage)).readError, isNull);
+        } else {
+          await pumpUntil(
+            tester,
+            () =>
+                reads >= 6 &&
+                tester.state<WorkItemPageState>(find.byType(WorkItemPage)).data != null &&
+                !tester.state<WorkItemPageState>(find.byType(WorkItemPage)).revalidating,
+            description: 'bounded approvals retry ends fail-soft',
+          );
+          await settleNetworkWidgets(tester);
+          expect(reads, 6, reason: 'approvals recovery must be bounded');
+          final state = tester.state<WorkItemPageState>(find.byType(WorkItemPage));
+          expect(state.data?['title'], 'Synthetic MR', reason: 'parent detail kept');
+          expect(state.readError, isNull, reason: 'transient approvals failure stays fail-soft');
+          expect(find.byIcon(Icons.rule_outlined), findsNothing, reason: 'no card without approvals data');
+        }
+      },
+    );
+  }
+
+  testWidgets(
+    '§3.4 fixture MR detail failed refresh keeps error viewport 412x900 clock +31s completion settled: hidden toggle does not revalidate over a visible error',
+    (tester) async {
+      final fixture = _WorkItemFixture.mr();
+      addTearDown(fixture.close);
+      _viewport(tester);
+      Widget host(bool on) => workspaceHost(TickerMode(enabled: on, child: fixture.page(key: const ValueKey('guard'))));
+      await tester.pumpWidget(host(true));
+      await settleWorkspace(tester);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      fixture.now = fixture.now.add(const Duration(seconds: 31));
+      final held = Completer<ResponseBody>();
+      fixture.nextDetail = held;
+      await tester.pumpWidget(host(true));
+      await pumpUntil(
+        tester,
+        () => fixture.detailReads == 2,
+        description: 'stale reopen sends one background revalidation',
+      );
+      expect(
+        tester.state<WorkItemPageState>(find.byType(WorkItemPage)).revalidating,
+        isTrue,
+      );
+      fixture.intercept = (request) =>
+          request.method == 'GET' && request.uri.path == fixture.detailPath ? jsonResponse({}, status: 500) : null;
+      await tester.tap(find.byIcon(Icons.refresh));
+      await pumpUntil(
+        tester,
+        () => fixture.detailReads == 3,
+        description: 'explicit refresh sends while stale',
+      );
+      held.complete(jsonResponse(fixture.mrDetail()));
+      await settleWorkspace(tester);
+      expect(fixture.detailReads, 3, reason: 'explicit refresh sent while stale');
+      expect(find.byType(FailureNotice), findsWidgets, reason: 'failed refresh surfaces the error');
+      final state = tester.state<WorkItemPageState>(find.byType(WorkItemPage));
+      expect(state.data?['title'], 'Synthetic MR', reason: 'old data kept');
+      await tester.pumpWidget(host(false));
+      expect(identical(tester.state<WorkItemPageState>(find.byType(WorkItemPage)), state), isTrue);
+      await tester.pumpWidget(host(true));
+      expect(identical(tester.state<WorkItemPageState>(find.byType(WorkItemPage)), state), isTrue);
+      await settleNetworkWidgets(tester);
+      expect(fixture.detailReads, 3, reason: 'hidden toggle must not revalidate over a visible error');
+      fixture.intercept = null;
+      final notice = tester.widget<FailureNotice>(find.byType(FailureNotice).first);
+      expect(notice.onRetry, isNotNull);
+      notice.onRetry!();
+      await settleWorkspace(tester);
+      expect(fixture.detailReads, 4, reason: 'retry re-reads fresh');
+      expect(find.byType(FailureNotice), findsNothing, reason: 'error clears on success');
+    },
+  );
 
   testWidgets(
     '§3.4 fixture issue detail cold dropped viewport 412x900 clock fixed completion retry notice: dropped cold read shows retry and recovers',
@@ -403,6 +627,7 @@ final class _WorkItemFixture {
   var now = DateTime.utc(2026, 10, 23, 1);
   int? approvalsStatus;
   int? relatedStatus;
+  Json? nextApprovals;
   Completer<ResponseBody>? nextDetail;
   FutureOr<ResponseBody>? Function(RequestOptions)? intercept;
   static const sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -446,6 +671,8 @@ final class _WorkItemFixture {
   int get linksReads => adapter.requests
       .where((r) => r.method == 'GET' && r.uri.path == '/gitlab/api/v4/projects/42/issues/1/links')
       .length;
+  int get blockerReads => adapter.requests.where((r) => r.uri.path.contains('/projects/8/issues/')).length;
+  static const approvalsPath = '/gitlab/api/v4/projects/42/merge_requests/12/approvals';
 
   Json issueDetail({String title = 'Synthetic issue'}) => {
     'id': 1001,
@@ -463,6 +690,11 @@ final class _WorkItemFixture {
     'user_notes_count': 0,
     'upvotes': 0,
     'subscribed': false,
+  };
+  Json approvalsJson({List<Json> approvedBy = const [], int required = 1, int left = 1}) => {
+    'approved_by': approvedBy,
+    'approvals_required': required,
+    'approvals_left': left,
   };
   Json mrDetail({String title = 'Synthetic MR'}) => {
     'id': 1012,
@@ -512,9 +744,12 @@ final class _WorkItemFixture {
       return jsonResponse(issueDetail());
     }
     if (path == '/gitlab/api/v4/projects/42/merge_requests/12/approvals') {
+      final next = nextApprovals;
+      nextApprovals = null;
+      if (next != null) return jsonResponse(next);
       final status = approvalsStatus;
       if (status != null) return jsonResponse({}, status: status);
-      return jsonResponse({'approved_by': <Json>[], 'approvals_required': 1, 'approvals_left': 1});
+      return jsonResponse(approvalsJson());
     }
     if (path == '/gitlab/api/v4/projects/42/issues/1/related_merge_requests') {
       final status = relatedStatus;

@@ -524,9 +524,13 @@ class WorkItemPage extends StatefulWidget {
   State<WorkItemPage> createState() => WorkItemPageState();
 }
 
+/// Thread-class freshness for the approvals, related-MR and link reads below.
+const _threadMaxAge = Duration(seconds: 30);
+
 class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderStateMixin {
   Json? _data;
   Json? _approvalsData;
+  int _relatedRevision = 0;
   IncidentStatusSnapshot? _incidentStatus;
   ApiFailure? _incidentStatusError;
   ApiFailure? _error;
@@ -748,6 +752,36 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
     return read.dropped ? null : read;
   }
 
+  /// Approvals share the detail read's bounded-retry shape (two superseded
+  /// reads → one quiet-wait read → retryable failure) so a superseded
+  /// approvals read is retried, never silently swallowed. Reads older than
+  /// the thread freshness window go to the network via [maxAge].
+  Future<CachedRead<Json>?> _readApprovals(
+    ({Account account, GitLabApi api, Project project, String resource, int iid, ProjectWorkItemType type, int generation}) owner,
+    int generation, {
+    required int readEpoch,
+    required List<String> ownerPath,
+    required bool fresh,
+  }) async {
+    Future<CachedRead<Json>> readPage(bool force, {bool quiet = false}) => CachedRead.run(
+      () => owner.api.cachedRecord([...ownerPath, 'approvals'], fresh: force, maxAge: _threadMaxAge),
+      mayStart: () => _readCurrent(generation, readEpoch),
+      waitForQuiet: quiet,
+    );
+    var read = await readPage(fresh);
+    if (!_readCurrent(generation, readEpoch)) return null;
+    if (read.superseded) {
+      read = await readPage(true);
+      if (!_readCurrent(generation, readEpoch)) return null;
+      if (read.superseded) {
+        read = await readPage(true, quiet: true);
+        if (!_readCurrent(generation, readEpoch)) return null;
+      }
+      if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    }
+    return read.dropped ? null : read;
+  }
+
   void _withdraw() {
     _data = null;
     _approvalsData = null;
@@ -781,6 +815,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
     ++_epoch;
     final readEpoch = ++_readEpoch;
     final graphEpoch = ++_graphEpoch;
+    if (fresh) _relatedRevision++;
     if (mounted) {
       setState(() {
         _loading = true;
@@ -804,30 +839,27 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
         validateWorkItemIdentity(read.value, expectedType: owner.type, expectedProjectId: owner.project.id);
       }
       Json? approvals;
+      bool clearApprovals = false;
       IncidentStatusSnapshot? incidentStatus;
       ApiFailure? incidentStatusError;
       if (owner.resource == 'merge_requests') {
         try {
-          final approvalsRead = await CachedRead.run(
-            () => owner.api.cachedRecord([...ownerPath, 'approvals'], fresh: fresh),
-            mayStart: () => _readCurrent(generation, readEpoch),
-          );
+          final approvalsRead = await _readApprovals(owner, generation, readEpoch: readEpoch, ownerPath: ownerPath, fresh: fresh);
           if (!_readCurrent(generation, readEpoch)) return;
-          if (!approvalsRead.dropped && !approvalsRead.superseded) {
-            approvals = approvalsRead.value;
-          } else if (approvalsRead.superseded) {
-            throw const ApiFailure(FailureKind.cancelled);
-          }
+          if (approvalsRead != null) approvals = approvalsRead.value;
         } on ApiFailure catch (failure) {
           if (!_readCurrent(generation, readEpoch)) return;
           if (failure.kind == FailureKind.unauthenticated) {
-            _failedDetail(failure, background: false);
+            setState(() => _failedDetail(failure, background: false));
             return;
           }
-          // fail-soft for approvals 403/404 and transient failures
           if (_revoked(failure)) {
-            approvals = null;
+            // A revoked approvals read withdraws the approvals part only;
+            // the parent detail stays on screen.
+            clearApprovals = true;
           }
+          // Other failures (including a bounded-retry-exhausted superseded
+          // read) keep the previous approvals value: fail-soft.
         }
       } else if (owner.type == ProjectWorkItemType.incident) {
         try {
@@ -844,7 +876,11 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
         _data = read.value;
         _detailRead = read;
         _stale = read.stale;
-        if (approvals != null) _approvalsData = approvals;
+        if (clearApprovals) {
+          _approvalsData = null;
+        } else if (approvals != null) {
+          _approvalsData = approvals;
+        }
         _incidentStatus = incidentStatus;
         _incidentStatusError = incidentStatusError;
         _graphReadyEpoch = graphEpoch;
@@ -870,7 +906,8 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
         !_stale ||
         _loading ||
         _revalidating ||
-        _backgroundFailure != null) {
+        _backgroundFailure != null ||
+        _error != null) {
       return;
     }
     setState(() {
@@ -906,9 +943,6 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
       setState(() {
         if (_revoked(failure)) {
           _failedDetail(failure, background: true);
-          if (failure.kind != FailureKind.unauthenticated && _data != null) {
-            // sub-resource style revoked already handled; detail revoked withdraws
-          }
         } else {
           _backgroundFailure = failure.kind;
           _backgroundRetryAt = failure.retryAt;
@@ -2019,7 +2053,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                           if (!mr)
                             _WorkItemKeepAlive(
                               key: ValueKey('work-item-related-issues/${owner.account.key}/${owner.project.id}/${owner.iid}/${owner.generation}'),
-                              child: _RelatedIssueItems(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid),
+                              child: _RelatedIssueItems(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid, revision: _relatedRevision),
                             ),
                           if (mr) _MergeRequestHistory(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid),
                           const SizedBox(height: 12),
@@ -2227,8 +2261,11 @@ class _MergeChecks extends StatefulWidget {
 
 class _MergeChecksState extends State<_MergeChecks> {
   late Future<Json> _approvals;
-  Future<Json> _cachedApprovals() async {
-    final read = await widget.api.cachedRecord([...widget.path, 'approvals']);
+  Future<Json> _cachedApprovals({bool fresh = false}) async {
+    var read = await widget.api.cachedRecord([...widget.path, 'approvals'], fresh: fresh, maxAge: _threadMaxAge);
+    if (read.superseded) {
+      read = await widget.api.cachedRecord([...widget.path, 'approvals'], fresh: true, maxAge: _threadMaxAge);
+    }
     if (read.dropped || read.superseded) {
       throw const ApiFailure(FailureKind.cancelled);
     }
@@ -2269,7 +2306,7 @@ class _MergeChecksState extends State<_MergeChecks> {
               resourceLabel: l10n.mergeChecks,
               onSwitchAccount: endSessionFrom(context),
               onRetry: () => setState(() {
-        _approvals = _cachedApprovals();
+        _approvals = _cachedApprovals(fresh: true);
       }),
             );
           }
@@ -2296,11 +2333,15 @@ class _MergeChecksState extends State<_MergeChecks> {
 
 /// Merge requests that mention or close an issue, and its linked issues.
 class _RelatedIssueItems extends StatefulWidget {
-  const _RelatedIssueItems({required this.account, required this.api, required this.project, required this.iid});
+  const _RelatedIssueItems({required this.account, required this.api, required this.project, required this.iid, this.revision = 0});
   final Account account;
   final GitLabApi api;
   final Project project;
   final int iid;
+  /// Bumped by the page on every explicit (fresh) load so the list refreshes
+  /// together with the detail; stale cache entries already re-read through
+  /// [maxAge] on reopen.
+  final int revision;
   @override
   State<_RelatedIssueItems> createState() => _RelatedIssueItemsState();
 }
@@ -2322,28 +2363,34 @@ class _RelatedIssueItemsState extends State<_RelatedIssueItems> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant _RelatedIssueItems oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.revision != widget.revision) {
+      unawaited(_load(fresh: true));
+    }
+  }
+
   Future<void> _load({bool fresh = false}) async {
     final epoch = ++_epoch;
     final base = ['projects', '${widget.project.id}', 'issues', '${widget.iid}'];
     if (_error != null) setState(() => _error = null);
     try {
-      final related = await widget.api.cachedRecords([...base, 'related_merge_requests'], fresh: fresh);
+      final reads = await Future.wait([
+        widget.api.cachedRecords([...base, 'related_merge_requests'], fresh: fresh, maxAge: _threadMaxAge),
+        widget.api.cachedRecords([...base, 'links'], fresh: fresh, maxAge: _threadMaxAge),
+      ]);
       if (!mounted || epoch != _epoch) return;
-      if (related.dropped || related.superseded) {
-        throw const ApiFailure(FailureKind.cancelled);
-      }
-      final links = await widget.api.cachedRecords([...base, 'links'], fresh: fresh);
-      if (!mounted || epoch != _epoch) return;
-      if (links.dropped || links.superseded) {
-        throw const ApiFailure(FailureKind.cancelled);
+      for (final read in reads) {
+        if (read.dropped || read.superseded) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
       }
       if (!mounted || epoch != _epoch) return;
       setState(() {
-        _mergeRequests = related.value.items;
-        _links = links.value.items;
+        _mergeRequests = reads[0].value.items;
+        _links = reads[1].value.items;
       });
-      return;
-      // replaced by cached reads above
     } catch (e) {
       if (mounted && epoch == _epoch) setState(() => _error = safeFailure(e));
     }

@@ -125,7 +125,7 @@ void main() {
   );
 
   testWidgets(
-    '§3.4 fixture discussions 404 cache empty viewport 412x900 clock fixed completion settled: feed error does not withdraw other cached detail',
+    '§3.4 fixture discussions 404 cache empty viewport 412x900 clock fixed completion settled: feed 404 shows retry without other detail',
     (tester) async {
       final fixture = _DiscussionsFixture()..discussionsStatus = 404;
       addTearDown(fixture.close);
