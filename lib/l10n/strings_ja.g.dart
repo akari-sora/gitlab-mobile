@@ -2720,4 +2720,6 @@ const _messagesJa = <String>[
   'GitLab のリクエスト上限に近づいたため、送信を一時停止中',
   'GitLab によりリクエストが制限されています。送信を一時停止中',
   'リクエスト枠のリセット後に再開',
+  'GitLab request budget is low',
+  'This message was not sent. Send it again when the send button is back.',
 ];

@@ -2720,4 +2720,6 @@ const _messagesNl = <String>[
   'Het verzoekenquotum van GitLab is bijna opgebruikt; verzenden is gepauzeerd',
   'GitLab beperkt verzoeken; verzenden is gepauzeerd',
   'Hervatting zodra het verzoekenquotum opnieuw is ingesteld',
+  'GitLab request budget is low',
+  'This message was not sent. Send it again when the send button is back.',
 ];

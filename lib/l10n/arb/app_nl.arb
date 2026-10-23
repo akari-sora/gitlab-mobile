@@ -2717,5 +2717,7 @@
   "activityVerbTarget": "{verb} {target}",
   "aiSendPausedBudget": "Het verzoekenquotum van GitLab is bijna opgebruikt; verzenden is gepauzeerd",
   "aiSendPausedRateLimited": "GitLab beperkt verzoeken; verzenden is gepauzeerd",
-  "aiSendResumesAfterReset": "Hervatting zodra het verzoekenquotum opnieuw is ingesteld"
+  "aiSendResumesAfterReset": "Hervatting zodra het verzoekenquotum opnieuw is ingesteld",
+  "aiGitLabBudgetTitle": "GitLab request budget is low",
+  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
 }

@@ -18,6 +18,7 @@ import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 
 import 'session_test.dart' show MemoryAccountStore;
 import 'support/fake_adapter.dart';
@@ -281,6 +282,8 @@ void main() {
     );
     expect((controller.failure as AiFailure?)?.kind, AiFailureKind.rateLimited);
     expect((controller.failure as AiFailure?)?.notSent, isTrue);
+    // GitLab's budget stopped it, not the AI provider (round-2 U-2).
+    expect(controller.failure?.title, l10n.aiGitLabBudgetTitle);
     expect(
       (controller.failure as AiFailure?)?.retryAt,
       controller.sendBlockedUntil,
@@ -570,6 +573,8 @@ void main() {
         AiFailureKind.rateLimited,
       );
       expect((controller.failure as AiFailure?)?.notSent, isTrue);
+      // GitLab's budget stopped it, not the AI provider (round-2 U-2).
+      expect(controller.failure?.title, l10n.aiGitLabBudgetTitle);
       expect(
         (controller.failure as AiFailure?)?.retryAt,
         controller.sendBlockedUntil,

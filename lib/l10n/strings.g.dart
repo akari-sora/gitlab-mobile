@@ -8247,4 +8247,10 @@ final class AppStrings {
 
   /// 額度重設後恢復
   String get aiSendResumesAfterReset => language._messages[2717];
+
+  /// GitLab 請求額度暫時不足
+  String get aiGitLabBudgetTitle => language._messages[2718];
+
+  /// 這則訊息沒有送出。送出按鈕恢復後再送一次。
+  String get aiGitLabBudgetDetail => language._messages[2719];
 }

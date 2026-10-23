@@ -2720,4 +2720,6 @@ const _messagesVi = <String>[
   'Hạn mức yêu cầu GitLab gần cạn; tạm dừng gửi',
   'GitLab đang giới hạn yêu cầu; tạm dừng gửi',
   'Tiếp tục khi hạn mức yêu cầu được đặt lại',
+  'GitLab request budget is low',
+  'This message was not sent. Send it again when the send button is back.',
 ];

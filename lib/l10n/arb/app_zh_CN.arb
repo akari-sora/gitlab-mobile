@@ -2717,5 +2717,7 @@
   "activityVerbTarget": "{verb}{target}",
   "aiSendPausedBudget": "GitLab 请求额度快用完了，暂停发送",
   "aiSendPausedRateLimited": "GitLab 正在限制请求，暂停发送",
-  "aiSendResumesAfterReset": "请求额度重置后恢复"
+  "aiSendResumesAfterReset": "请求额度重置后恢复",
+  "aiGitLabBudgetTitle": "GitLab request budget is low",
+  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
 }

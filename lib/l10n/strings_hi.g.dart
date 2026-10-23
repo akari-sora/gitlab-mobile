@@ -2720,4 +2720,6 @@ const _messagesHi = <String>[
   'GitLab के अनुरोधों का कोटा लगभग खत्म हो गया है; भेजना रुका हुआ है',
   'GitLab अनुरोध सीमित कर रहा है; भेजना रुका हुआ है',
   'अनुरोधों का कोटा बहाल होने पर फिर से शुरू होगा',
+  'GitLab request budget is low',
+  'This message was not sent. Send it again when the send button is back.',
 ];

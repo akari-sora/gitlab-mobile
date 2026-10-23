@@ -2717,5 +2717,7 @@
   "activityVerbTarget": "{verb} {target}",
   "aiSendPausedBudget": "حصة طلبات GitLab على وشك النفاد؛ الإرسال متوقف مؤقتًا",
   "aiSendPausedRateLimited": "يقيّد GitLab الطلبات؛ الإرسال متوقف مؤقتًا",
-  "aiSendResumesAfterReset": "يستأنف عند إعادة تعيين حصة الطلبات"
+  "aiSendResumesAfterReset": "يستأنف عند إعادة تعيين حصة الطلبات",
+  "aiGitLabBudgetTitle": "GitLab request budget is low",
+  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
 }

@@ -2720,4 +2720,6 @@ const _messagesPtBr = <String>[
   'A cota de solicitações do GitLab está quase esgotada; envio pausado',
   'O GitLab está limitando solicitações; envio pausado',
   'Retoma quando a cota de solicitações for redefinida',
+  'GitLab request budget is low',
+  'This message was not sent. Send it again when the send button is back.',
 ];

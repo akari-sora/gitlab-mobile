@@ -2717,5 +2717,7 @@
   "activityVerbTarget": "{verb} {target}",
   "aiSendPausedBudget": "Kuota permintaan GitLab hampir habis; pengiriman dijeda",
   "aiSendPausedRateLimited": "GitLab sedang membatasi permintaan; pengiriman dijeda",
-  "aiSendResumesAfterReset": "Lanjut lagi saat kuota permintaan diatur ulang"
+  "aiSendResumesAfterReset": "Lanjut lagi saat kuota permintaan diatur ulang",
+  "aiGitLabBudgetTitle": "GitLab request budget is low",
+  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
 }

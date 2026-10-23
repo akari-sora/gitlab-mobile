@@ -2720,4 +2720,6 @@ const _messagesTr = <String>[
   'GitLab istek kotası tükenmek üzere; gönderim duraklatıldı',
   'GitLab istekleri sınırlıyor; gönderim duraklatıldı',
   'İstek kotası sıfırlandığında devam eder',
+  'GitLab request budget is low',
+  'This message was not sent. Send it again when the send button is back.',
 ];

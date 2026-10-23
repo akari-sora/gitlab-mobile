@@ -92,7 +92,11 @@ final class _AiRunBudget {
           // Each context read bounds cache invalidation and OAuth retries.
           // Reserve that path before transport; settle only actual sends below.
           if (meter.count + maximum > lease.remaining) {
-            throw const AiFailure(AiFailureKind.rateLimited, notSent: true);
+            throw const AiFailure(
+              AiFailureKind.rateLimited,
+              notSent: true,
+              gitLabBudget: true,
+            );
           }
         }),
       );
@@ -1489,6 +1493,7 @@ class AiChatController extends ChangeNotifier
           AiFailureKind.rateLimited,
           retryAt: sendBlockedUntil,
           notSent: true,
+          gitLabBudget: true,
         );
       }
       if (context().isExpired(_now())) {
@@ -1799,6 +1804,7 @@ class AiChatController extends ChangeNotifier
           AiFailureKind.rateLimited,
           retryAt: sendBlockedUntil,
           notSent: true,
+          gitLabBudget: true,
         );
       }
       final clean = _redactor.redactSource(text);

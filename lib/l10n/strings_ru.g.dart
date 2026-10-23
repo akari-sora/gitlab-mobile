@@ -2720,4 +2720,6 @@ const _messagesRu = <String>[
   'Квота запросов GitLab почти исчерпана; отправка приостановлена',
   'GitLab ограничивает запросы; отправка приостановлена',
   'Возобновится после сброса квоты запросов',
+  'GitLab request budget is low',
+  'This message was not sent. Send it again when the send button is back.',
 ];

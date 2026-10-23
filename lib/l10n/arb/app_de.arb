@@ -2717,5 +2717,7 @@
   "activityVerbTarget": "{verb} {target}",
   "aiSendPausedBudget": "Das GitLab-Anfragekontingent ist fast aufgebraucht; Senden pausiert",
   "aiSendPausedRateLimited": "GitLab begrenzt derzeit die Anfragen; Senden pausiert",
-  "aiSendResumesAfterReset": "Fortsetzung nach Zurücksetzen des Anfragekontingents"
+  "aiSendResumesAfterReset": "Fortsetzung nach Zurücksetzen des Anfragekontingents",
+  "aiGitLabBudgetTitle": "GitLab request budget is low",
+  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
 }

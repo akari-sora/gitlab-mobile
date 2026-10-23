@@ -2717,5 +2717,7 @@
   "activityVerbTarget": "{verb} {target}",
   "aiSendPausedBudget": "โควตาคำขอของ GitLab ใกล้หมดแล้ว จึงหยุดส่งชั่วคราว",
   "aiSendPausedRateLimited": "GitLab กำลังจำกัดคำขอ จึงหยุดส่งชั่วคราว",
-  "aiSendResumesAfterReset": "กลับมาส่งได้เมื่อโควตาคำขอถูกรีเซ็ต"
+  "aiSendResumesAfterReset": "กลับมาส่งได้เมื่อโควตาคำขอถูกรีเซ็ต",
+  "aiGitLabBudgetTitle": "GitLab request budget is low",
+  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
 }

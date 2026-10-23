@@ -2717,5 +2717,7 @@
   "activityVerbTarget": "{verb} {target}",
   "aiSendPausedBudget": "Le quota de requêtes GitLab est presque épuisé ; envoi en pause",
   "aiSendPausedRateLimited": "GitLab limite les requêtes ; envoi en pause",
-  "aiSendResumesAfterReset": "Reprise à la réinitialisation du quota de requêtes"
+  "aiSendResumesAfterReset": "Reprise à la réinitialisation du quota de requêtes",
+  "aiGitLabBudgetTitle": "GitLab request budget is low",
+  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
 }
