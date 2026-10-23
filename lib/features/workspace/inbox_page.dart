@@ -8,6 +8,8 @@ import '../../shared/external_link.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
+import '../ai/ai_chat_page.dart';
+import '../ai/ai_chat_session.dart';
 import 'navigation.dart';
 import 'records_feed.dart';
 import 'search_page.dart';
@@ -72,6 +74,10 @@ class _InboxPageState extends State<InboxPage> {
     body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child: StatusBarInset(child: gestureSafe(Column(
       crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       CollapsingChrome(visible: _chrome, child: AppBar(primary: false, title: LargeTitle(l10n.inboxTab), actions: [
+        // Offered only where the app was built with AI (a registry above).
+        if (AiRunRegistry.maybeOf(context) != null)
+          IconButton(key: const ValueKey('inbox-ai'), tooltip: l10n.aiInboxAsk, icon: const Icon(Icons.auto_awesome),
+            onPressed: () => openAiChat(context, const AiInboxOrigin())),
         IconButton(tooltip: l10n.globalSearch, icon: const Icon(Icons.manage_search),
           onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
             builder: (_) => SearchPage(account: account, api: api)))),

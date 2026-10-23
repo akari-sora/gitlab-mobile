@@ -1,0 +1,69 @@
+part of '../write_ledger.dart';
+
+// Caps include both prepares, controller project freshness, OAuth GET replay,
+// one mutation and independent readback. Merge reuses SHA-bound diffs/commits
+// on dispatch (decision 2), but rechecks closures, CI config and protection.
+// Prefix locks deliberately intersect all children of an uncertain MR write.
+// Cancel reserves both the current endpoint and the decision-3 fallback POST.
+const List<AiCapability> aiMergeRows = <AiCapability>[
+  AiCapability(
+    operationId: 'mergeRequest',
+    baseTier: AiWriteTier.t3,
+    scopeClass: AiScopeClass.mergeRequest,
+    modelVisible: true,
+    httpCap: 37,
+    readback: true,
+    arguments: {
+      'projectId': _projectId,
+      'iid': _iid,
+      'autoMerge': AiArgSpec(AiArgType.boolean),
+      'squash': AiArgSpec(AiArgType.boolean),
+      'removeSourceBranch': AiArgSpec(AiArgType.boolean),
+    },
+  ),
+  AiCapability(
+    operationId: 'approveMergeRequest',
+    baseTier: AiWriteTier.t4,
+    scopeClass: AiScopeClass.mergeRequest,
+    modelVisible: true,
+    httpCap: 23,
+    readback: true,
+    arguments: {'projectId': _projectId, 'iid': _iid},
+  ),
+  AiCapability(
+    operationId: 'rebaseMergeRequest',
+    baseTier: AiWriteTier.t3,
+    scopeClass: AiScopeClass.mergeRequest,
+    modelVisible: true,
+    httpCap: 19,
+    readback: true,
+    arguments: {'projectId': _projectId, 'iid': _iid},
+  ),
+  AiCapability(
+    operationId: 'cancelAutoMerge',
+    baseTier: AiWriteTier.t3,
+    scopeClass: AiScopeClass.mergeRequest,
+    modelVisible: true,
+    httpCap: 20,
+    readback: true,
+    arguments: {'projectId': _projectId, 'iid': _iid},
+  ),
+  AiCapability(
+    operationId: 'publishDraftNotes',
+    baseTier: AiWriteTier.t3,
+    scopeClass: AiScopeClass.mergeRequest,
+    modelVisible: true,
+    httpCap: 23,
+    readback: true,
+    arguments: {'projectId': _projectId, 'iid': _iid},
+  ),
+  AiCapability(
+    operationId: 'deleteDraftNote',
+    baseTier: AiWriteTier.t4,
+    scopeClass: AiScopeClass.mergeRequest,
+    modelVisible: true,
+    httpCap: 23,
+    readback: true,
+    arguments: {'projectId': _projectId, 'iid': _iid, 'noteId': _iid},
+  ),
+];

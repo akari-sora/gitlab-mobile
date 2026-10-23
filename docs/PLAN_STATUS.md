@@ -1,6 +1,6 @@
 # Plan and status
 
-Last updated: 2026-10-23.
+Last updated: 2026-10-23 (afternoon).
 
 This page is the single place for **what we are building, in what order, and where each piece stands**.
 - Update it in the same MR that changes a status.
@@ -39,54 +39,24 @@ There are two tracks.
 | MR1–MR5 | Endpoint policy, adapters, provider settings, consent, read-only tools, runner | Merged 2026-10-20/21 | !87, !88, !89, !91, !92 |
 | MR6a | Chat page and entry points, draft append and preview, report | Merged 2026-10-21/22 | !96, !97, !98, !99, !100 |
 | MR6b-1 | AI writes, first batch: T1 and T2 REST writes, consent v2, autonomy levels, coordinator, journal, approval cards | Merged 2026-10-22 | !102; follow-ups #12 |
-| **MR6b-2** | AI writes, second batch: files and suggestions, branches/tags/releases, merge requests, CI, snippets, content deletes, mark-all to-dos, registry and project hard lines, read tools for releases/milestones/snippets. Also structured previews, card titles, refusal reasons and the Inbox AI entry | **In review.** Implemented in 18 packets and translated into 24 languages. Emulator self-test passed (5 writes proposed and rejected; GitLab unchanged). Review round 1 found 1 Critical and 13 Important; fixes are in progress | !104; follow-ups #13 |
-| MR6b-3 | All GraphQL writes: Work Items (incl. group), incidents, to-do snooze | Not started | plan v6 §14 |
+| MR6b-2 | AI writes, second batch: files and suggestions, branches/tags/releases, merge requests, CI, snippets, content deletes, mark-all to-dos, registry and project hard lines, read tools for releases/milestones/snippets. Also structured previews, card titles, refusal reasons and the Inbox AI entry | Merged 2026-10-23 after four review rounds and three emulator rounds (every write proposed and rejected; GitLab unchanged) | !104; follow-ups #13 |
+| **MR6b-3** | All GraphQL writes for project Work Items, incidents and to-do snooze, split into small MRs (shared seams S0a–S0c, then one family per MR) | **Planning.** Breakdown v2 in review. Group Work Items moved to a later MR6b-3g (lead decision D1) | plan v6 §14 |
 | MR6c | Background runs: Android foreground service, notifications, app lock, stop protocol | Not started | plan v6 §12, §14 |
 | MR7 | Open the AI gate: full CI on the release commit, sandbox writes, Play declarations, listing | Not started | plan v6 §13, §14 |
 | Play listing | Store listing, screenshots, data safety | After MR7 | [Store listing](STORE_LISTING.md) |
-| Cache C1a | Opt-in read cache (`CachedRead<T>`), scope versions and write barrier, pinned entries, per-class rate limits, request meter, AI run leases, binding after validation | Merged 2026-10-23 | !103; follow-ups #14 |
-| Cache C1b-1 prerequisites | Background reads joined correctly, uncacheable reads skip admission, archive-class 429s, confidential-marker limits | Merged 2026-10-23 | !106; follow-ups #14 |
-| **Cache C1b-1a** | Cached first pages with stale-while-revalidate in `RecordsFeed` (activity, CI, file history, groups, inbox, my work, project extras, projects, search) and the freshness strip (refreshing, offline, rate limited, refresh failed) | **In review** | this MR |
-| Cache C1b-1b | Detail pages: issue, MR, pipeline and project overview read through the cache | Not started | cache plan v3 §3.1 |
-| Cache C1b-2 | Remaining screens (boards, project more, snippets, registries, work item, discussions, repository) and the AI side: read-port and tool-catalogue metering, AI budget leases and the critical-level send block | Not started; after MR6b-2 | cache plan v3 V9, V20 |
+| Cache C1a | Opt-in read cache (`CachedRead<T>`), scope versions and write barrier, pinned entries, per-class rate limits, request meter, AI run leases, binding after validation | Merged 2026-10-23 after four review rounds (full-path sub-resources are not cached, plan v3 V21) | !103; follow-ups #14 |
+| Cache C1b-1 prerequisites | Fixes from #14 needed before screens adopt the cache: dropped background reads, uncacheable reads bypass admission, archive 429 class, confidential-marker saturation | Merged 2026-10-23 | !106; follow-ups #14 |
+| **Cache C1b-1a** | Cached first pages with stale-while-revalidate in `RecordsFeed` (activity, CI, file history, groups, inbox, my work, project extras, projects, search) and the freshness strip (refreshing, offline, rate limited, refresh failed) | **In review.** Emulator self-test passed (offline strip over cached rows, refresh clears it). Round-1 fixes in progress | !107 |
+| Cache C1b-1b | Hot spots: project overview, pipeline detail, CI overview queue, job-log polling by rate budget | In progress | cache plan v3 §3.1, §3.2 |
+| Cache C1b-2 | Remaining screens (boards, project more, snippets, registries, work item, discussions, repository) and the AI side: read-port and tool-catalogue metering, AI budget leases and the critical-level send block | Not started; can start now that MR6b-2 is merged | cache plan v3 V9, V20 |
 | Cache C2 | Encrypted disk cache, clear markers, startup order | Plan final; not started; after C1b-2 | cache plan v3 §4, V13, V14, V17 |
 | Cache C3 | Offline repository saving (archive fetch, verified blobs) and an offline read-only mode | Plan approved in two review rounds (v2.1); not started; C3a needs C1a, C1b-2 and C2. Split: C3a core, C3b save and browse UI, C3c offline mode, C3d optional | [C3 plan](plans/cache-c3-offline-plan-v2.md) |
 
-### MR6b-2: open items before merge
-- **Logic fixes from review round 1.** Each item is listed in follow-up packet `fix1`:
-  - target binding for deletes and project rows (Critical);
-  - `ci_config_path: null`;
-  - asynchronous deletes;
-  - suggestion previews;
-  - note-delete previews;
-  - hiding batch apply;
-  - honest readback;
-  - the stored-variables audit notice;
-  - the new cancel-auto-merge endpoint;
-  - unapprove 405/406;
-  - file-family HTTP caps;
-  - false "target you did not mention" warnings;
-  - plain user-rejection results.
-- **UI fixes already on the branch:**
-  - preview-covered fields hidden;
-  - field labels;
-  - mark-all and delete wording;
-  - merge outcome texts;
-  - approval preview;
-  - stored-variables row notice.
-- **After the fixes:**
-  - render the new preview data (note author and excerpt, full closing references, extra files);
-  - translate the remaining new strings;
-  - an Opus round-2 check;
-  - an emulator re-test;
-  - merge and mirror.
-
 ## Next steps
-1. Finish MR6b-2 (above) and merge it.
-2. C1b-1a (this MR), then C1b-1b.
-3. MR6b-3, split into small MRs by family.
-4. C1b-2 (after MR6b-2), then C2, then C3 (C3a core, C3b UI, C3c offline mode, C3d optional).
-5. MR6c, MR7, Play listing.
+1. C1b-1a (round-1 fixes, then an Opus check), then C1b-1b.
+2. MR6b-3: approve breakdown v2, then the shared seams S0a–S0c, then one family per MR.
+3. C1b-2, then C2, then C3 (C3a core, C3b UI, C3c offline mode, C3d optional).
+4. MR6b-3g (group Work Items), MR6c, MR7, Play listing.
 
 ## Plan documents
 | Document | Covers |

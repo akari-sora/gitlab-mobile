@@ -20,6 +20,16 @@ enum AiTokenLimitField { maxTokens, maxCompletionTokens, maxOutputTokens }
 
 enum AiDataUse { noTraining, training, unknown }
 
+const aiProductionWriteEscalationRuleIds = <String>{
+  'protectedOrDefaultBranch',
+  'removeSourceBranch',
+  'ciConfigHardLine',
+  'pipelineVariables',
+  'scheduleParamsUnsafe',
+  'visibilityRaised',
+  'confidentialityLowered',
+  'retryOrPlayConfirmationOnly',
+};
 
 AiAutonomyLevel effectiveCeiling({
   required AiAutonomyLevel ceiling,
@@ -34,6 +44,7 @@ final class AiWritePolicy {
     required this.operationIds,
     required this.hardLineOperationIds,
     required this.fixedConfirmOperationIds,
+    this.escalationRuleIds = const <String>{},
     required this.resetConfirmWindow,
   });
 
@@ -43,6 +54,7 @@ final class AiWritePolicy {
   final Set<String> operationIds;
   final Set<String> hardLineOperationIds;
   final Set<String> fixedConfirmOperationIds;
+  final Set<String> escalationRuleIds;
   final Duration resetConfirmWindow;
 
   /// Snapshots caller-owned sets before a contract freezes its hash.
@@ -60,6 +72,7 @@ final class AiWritePolicy {
       ),
       hardLineOperationIds: Set.unmodifiable(hardLineOperationIds),
       fixedConfirmOperationIds: Set.unmodifiable(fixedConfirmOperationIds),
+      escalationRuleIds: Set.unmodifiable(escalationRuleIds),
       resetConfirmWindow: resetConfirmWindow,
     );
   }
@@ -75,6 +88,7 @@ final class AiWritePolicy {
           ..sort(),
     'hardLineOperationIds': hardLineOperationIds.toList()..sort(),
     'fixedConfirmOperationIds': fixedConfirmOperationIds.toList()..sort(),
+    'escalationRuleIds': escalationRuleIds.toList()..sort(),
     'resetConfirmWindowMicros': resetConfirmWindow.inMicroseconds,
     'levels': <String, Object?>{
       for (final level in AiAutonomyLevel.values)

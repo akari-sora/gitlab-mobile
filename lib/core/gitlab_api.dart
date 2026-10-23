@@ -703,7 +703,12 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     String filePath, {
     bool refresh = false,
     bool allowDisk = true,
+    // AI file edits read the live content; nothing is joined or stored.
+    bool useCache = true,
   }) async {
+    if (!useCache) {
+      return (await _readTextFile(projectId, sha, filePath)).value;
+    }
     final pinned = _cache.isConfirmed(sha);
     final ref = pinned ? sha.toLowerCase() : sha;
     final uri = instance.api(['projects', '$projectId', 'repository', 'files', filePath], {'ref': ref});

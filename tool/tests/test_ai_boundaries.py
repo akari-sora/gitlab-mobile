@@ -1,11 +1,122 @@
 from pathlib import Path
 import re
+import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
 AI_ROOT = ROOT / "lib" / "core" / "ai"
 PORT = AI_ROOT / "tools" / "gitlab_read_port.dart"
+
+READ_PORT_MEMBERS = {
+    "textFile",
+    "tree",
+    "record",
+    "records",
+    "jobTraceChunk",
+    "commit",
+    "commitDiff",
+    "search",
+    "snippetText",
+}
+
+WRITE_PORT_MEMBERS = {
+    "instance",
+    "currentUser",
+    "record",
+    "records",
+    "fileMetadata",
+    "textFile",
+    "snippetText",
+    "projectSnippetSnapshot",
+    "snippetBlob",
+    "effectiveProjectAccess",
+    "addAwardEmoji",
+    "removeAwardEmoji",
+    "setStar",
+    "setSubscribed",
+    "markTodoDone",
+    "createNote",
+    "updateNote",
+    "createIssue",
+    "updateIssue",
+    "createMergeRequest",
+    "updateMergeRequest",
+    "unapproveMergeRequest",
+    "createTodo",
+    "createDiscussion",
+    "createDiscussionNote",
+    "updateDiscussionNote",
+    "setDiscussionResolved",
+    "createDraftNote",
+    "updateDraftNote",
+    "createLabel",
+    "updateLabel",
+    "createMilestone",
+    "updateMilestone",
+    "setMilestoneState",
+    "createBoard",
+    "renameBoard",
+    "setBoardSystemListHidden",
+    "createBoardList",
+    "moveBoardList",
+    "moveBoardCard",
+    "uploadProjectFile",
+    "createRepositoryFile",
+    "updateRepositoryFile",
+    "deleteFile",
+    "applySuggestion",
+    "batchApplySuggestions",
+    "createBranch",
+    "deleteBranch",
+    "createTag",
+    "deleteTag",
+    "createRelease",
+    "updateRelease",
+    "deleteRelease",
+    "mergeRequest",
+    "approveMergeRequest",
+    "rebaseMergeRequest",
+    "cancelAutoMerge",
+    "publishDraftNotes",
+    "deleteDraftNote",
+    "createPipeline",
+    "pipelineAction",
+    "jobAction",
+    "playPipelineSchedule",
+    "deletePipeline",
+    "createSnippet",
+    "updateSnippetMetadata",
+    "updateSnippet",
+    "updateSnippetFiles",
+    "deleteSnippetFile",
+    "deleteSnippet",
+    "deleteNote",
+    "deleteDiscussionNote",
+    "deleteIssue",
+    "deleteMergeRequest",
+    "deleteLabel",
+    "deleteMilestone",
+    "deleteBoard",
+    "deleteBoardList",
+    "markAllTodosDone",
+    "deletePackage",
+    "deletePackageFile",
+    "deleteContainerRepository",
+    "deleteContainerTag",
+    "createProject",
+    "editProject",
+    "deleteProject",
+    "forkProject",
+}
+
+GENERIC_CHANNELS = {
+    "writeRecord",
+    "removeRecord",
+    "writeEmpty",
+    "graphMutation",
+    "_send",
+}
 
 
 class AiBoundaryTest(unittest.TestCase):
@@ -20,7 +131,7 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertTrue(version.is_file(), "Catalogue version needs its own file")
         source = version.read_text(encoding="utf-8")
         self.assertNotRegex(source, r"(?m)^\s*(?:import|export|part)\b")
-        self.assertRegex(source, r"const\s+aiToolCatalogueVersion\s*=\s*2\s*;")
+        self.assertRegex(source, r"const\s+aiToolCatalogueVersion\s*=\s*3\s*;")
         catalogue = (AI_ROOT / "tools" / "tool_catalogue.dart").read_text(
             encoding="utf-8"
         )
@@ -40,39 +151,99 @@ class AiBoundaryTest(unittest.TestCase):
         source = PORT.read_text(encoding="utf-8")
         members = self._api_members(source)
         self.assertTrue(members)
-        self.assertLessEqual(
-            members,
-            {
-                "textFile",
-                "tree",
-                "record",
-                "records",
-                "jobTraceChunk",
-                "commit",
-                "commitDiff",
-                "search",
-            },
-        )
+        self.assertLessEqual(members, READ_PORT_MEMBERS)
+
+    def test_read_port_whitelist_adds_exactly_snippet_text(self):
+        previous_members = READ_PORT_MEMBERS - {"snippetText"}
+        self.assertEqual(self._api_members("_api.snippetText(1, 2);"), {"snippetText"})
+        self.assertNotIn("snippetText", previous_members)
+        self.assertNotIn("projectSnippetSnapshot", READ_PORT_MEMBERS)
 
     def test_row13_write_port_calls_only_whitelisted_members(self):
-        source = (AI_ROOT / "tools" / "gitlab_write_port.dart").read_text(
-            encoding="utf-8"
-        )
-        members = self._api_members(source)
+        sources = self._write_port_sources()
+        members = set()
+        violations = []
+        for path, source, is_part in sources:
+            members.update(self._api_members(source))
+            violations.extend(
+                f"{path.relative_to(ROOT)}: {violation}"
+                for violation in self._write_port_violations(source, is_part=is_part)
+            )
         self.assertTrue(members)
-        self.assertLessEqual(members, {
-            "instance", "currentUser", "record", "records",
-            "addAwardEmoji", "removeAwardEmoji", "setStar", "setSubscribed",
-            "markTodoDone", "createNote", "updateNote", "createIssue",
-            "updateIssue", "createMergeRequest", "updateMergeRequest",
-            "unapproveMergeRequest", "createTodo", "createDiscussion",
-            "createDiscussionNote", "updateDiscussionNote",
-            "setDiscussionResolved", "createDraftNote", "updateDraftNote",
-            "createLabel", "updateLabel", "createMilestone", "updateMilestone",
-            "setMilestoneState", "createBoard", "renameBoard",
-            "setBoardSystemListHidden", "createBoardList", "moveBoardList",
-            "moveBoardCard", "uploadProjectFile",
-        })
+        self.assertLessEqual(members, WRITE_PORT_MEMBERS)
+        self.assertEqual(violations, [])
+
+    def test_ledger_named_methods_are_write_port_whitelisted(self):
+        methods = set()
+        paths = [AI_ROOT / "tools" / "write_ledger.dart"]
+        paths.extend(sorted((AI_ROOT / "tools" / "ledger").glob("rows_*.dart")))
+        row_pattern = re.compile(
+            r"AiCapability\(\s*operationId:\s*'([^']+)'"
+            r"((?:(?!AiCapability\().)*)",
+            re.DOTALL,
+        )
+        for path in paths:
+            source = path.read_text(encoding="utf-8")
+            for operation_id, body in row_pattern.findall(source):
+                named = re.search(r"\bnamedMethod:\s*'([^']+)'", body)
+                methods.add(named.group(1) if named else operation_id)
+        self.assertTrue(methods)
+        self.assertLessEqual(methods, WRITE_PORT_MEMBERS)
+
+    def test_write_port_guard_catches_part_alias_and_type_declaration(self):
+        source = "final alias = _api; final GitLabApi escaped = alias;"
+        self.assertEqual(
+            self._write_port_violations(source, is_part=True),
+            ["part declares GitLabApi", "part uses _api without member access"],
+        )
+
+    def test_write_port_guard_catches_api_passed_as_argument(self):
+        for source in (
+            "helper(_api);",
+            "helper(api: _api);",
+            "helper(<Object>[_api]);",
+        ):
+            with self.subTest(source=source):
+                self.assertIn(
+                    "part uses _api without member access",
+                    self._write_port_violations(source, is_part=True),
+                )
+
+    def test_write_port_guard_catches_generic_channels_anywhere(self):
+        for channel in sorted(GENERIC_CHANNELS):
+            with self.subTest(channel=channel):
+                source = f"// escape attempt: {channel}"
+                self.assertEqual(
+                    self._write_port_violations(source, is_part=False),
+                    [f"uses generic channel {channel}"],
+                )
+
+    def test_write_port_guard_catches_gitlab_api_text_in_parts(self):
+        source = "// ../../gitlab_api.dart"
+        self.assertEqual(
+            self._write_port_violations(source, is_part=True),
+            ["part contains gitlab_api.dart"],
+        )
+
+    def test_write_port_discovery_finds_arbitrary_nested_part_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tools = Path(directory)
+            (tools / "gitlab_write_port.dart").write_text("", encoding="utf-8")
+            nested = tools / "nested"
+            nested.mkdir()
+            part = nested / "arbitrary_name.dart"
+            part.write_text(
+                "part of 'gitlab_write_port.dart';\n",
+                encoding="utf-8",
+            )
+            sources = self._write_port_sources(tools)
+        self.assertEqual(
+            [(path.relative_to(tools).as_posix(), is_part) for path, _, is_part in sources],
+            [
+                ("gitlab_write_port.dart", False),
+                ("nested/arbitrary_name.dart", True),
+            ],
+        )
 
     def test_read_port_guard_catches_method_tear_offs(self):
         source = "final write = _api.writeRecord; await write();"
@@ -132,6 +303,38 @@ class AiBoundaryTest(unittest.TestCase):
                 re.findall(rf"\b{re.escape(receiver)}(?:\.\.|\.)(\w+)\b", source)
             )
         return members
+
+    @staticmethod
+    def _write_port_sources(tools=None):
+        tools = tools or AI_ROOT / "tools"
+        main = tools / "gitlab_write_port.dart"
+        sources = [(main, main.read_text(encoding="utf-8"), False)]
+        part_pattern = re.compile(
+            r"\bpart\s+of\s+['\"]gitlab_write_port\.dart['\"]\s*;"
+        )
+        for path in sorted(tools.rglob("*.dart")):
+            if path == main:
+                continue
+            source = path.read_text(encoding="utf-8")
+            if part_pattern.search(source):
+                sources.append((path, source, True))
+        return sources
+
+    @staticmethod
+    def _write_port_violations(source, *, is_part):
+        violations = []
+        for channel in sorted(GENERIC_CHANNELS):
+            if re.search(rf"\b{re.escape(channel)}\b", source):
+                violations.append(f"uses generic channel {channel}")
+        if not is_part:
+            return violations
+        if re.search(r"\bGitLabApi\b", source):
+            violations.append("part declares GitLabApi")
+        if re.search(r"\bgitlab_api\.dart\b", source):
+            violations.append("part contains gitlab_api.dart")
+        if re.search(r"\b_api\b(?!\s*\.)", source):
+            violations.append("part uses _api without member access")
+        return violations
 
 
 if __name__ == "__main__":

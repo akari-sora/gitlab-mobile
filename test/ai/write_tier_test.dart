@@ -46,7 +46,7 @@ void main() {
         );
         expect(
           _decide(
-            operationId: 'saveFile',
+            operationId: 'createFile',
             tier: AiWriteTier.t3,
             level: AiAutonomyLevel.conversationGrant,
             facts: const AiTierFacts(protectedOrDefaultBranch: true),
@@ -335,7 +335,8 @@ void main() {
             );
           }
         }
-        expect(productionAiLedger.find('markAllTodosDone'), isNull);
+        expect(productionAiLedger.find('markAllTodosDone')!.baseTier,
+            AiWriteTier.t4);
         final AiTierDecision mention = _decide(
           operationId: 'createNote',
           tier: AiWriteTier.t2,
@@ -448,7 +449,7 @@ void main() {
       expect(
         decideListed(
           ledger: productionAiLedger,
-          operationId: 'edit_file',
+          operationId: 'not_a_listed_operation',
           build: (AiCapability capability) => AiTierInput(
             level: AiAutonomyLevel.bypass,
             capability: capability,
@@ -608,8 +609,16 @@ void main() {
     test('project, merge request and todo scopes offer different tools', () {
       expect(
         toolsForScope(_projectScope),
-        hasLength(productionAiLedger.modelVisible.length),
+        hasLength(productionAiLedger.modelVisible.length - 1),
       );
+      final Set<String> projectTools = toolsForScope(
+        _projectScope,
+      ).map((AiCapability row) => row.operationId).toSet();
+      expect(
+        projectTools,
+        containsAll(<String>['createProject', 'forkProject']),
+      );
+      expect(projectTools, isNot(contains('markAllTodosDone')));
       final AiWriteScope merge = AiWriteScope(
         accountKey: _account,
         grants: <AiScopeGrant>[
@@ -645,7 +654,7 @@ void main() {
         toolsForScope(
           todos,
         ).map((AiCapability row) => row.operationId).toList(),
-        <String>['markTodoDone'],
+        <String>['markTodoDone', 'markAllTodosDone'],
       );
       final AiWriteScope groupOnly = AiWriteScope(
         accountKey: _account,
@@ -740,19 +749,19 @@ void main() {
         productionAiLedger.modelVisible
             .map((AiCapability row) => row.operationId)
             .toSet(),
-        _mr6b1Operations,
+        _productionOperations,
       );
-      for (final AiCapability row in productionAiLedger.modelVisible) {
+      for (final AiCapability row in ProductionAiLedger.rows) {
         expect(
-          row.baseTier == AiWriteTier.t1 || row.baseTier == AiWriteTier.t2,
-          isTrue,
+          row.modelVisible,
+          _productionOperations.contains(row.operationId),
+          reason: row.operationId,
         );
       }
       expect(
         productionAiLedger.find('upload_attachment')!.namedMethod,
         'uploadProjectFile',
       );
-      expect(productionAiLedger.find('edit_file'), isNull);
       expect(productionAiLedger.find('snoozeTodo'), isNull);
       expect(aiFixedConfirmOperationIds, <String>{'markAllTodosDone'});
       expect(AiWriteLimits.writesPerSend, 8);
@@ -787,7 +796,7 @@ void main() {
       );
       expect(
         _bind('see main and README', <AiTargetRef>[file]).missingComponents,
-        containsAll(<String>['ref', 'path']),
+        <String>['ref', 'path'],
       );
       expect(
         _bind('update `src/app.dart`', <AiTargetRef>[file]).missingComponents,
@@ -1344,6 +1353,59 @@ const Set<String> _mr6b1Operations = <String>{
   'moveBoardList',
   'moveBoardCard',
   'upload_attachment',
+};
+
+const Set<String> _mr6b2Operations = <String>{
+  'edit_file',
+  'createFile',
+  'deleteFile',
+  'applySuggestion',
+  'createBranch',
+  'deleteBranch',
+  'createTag',
+  'deleteTag',
+  'createRelease',
+  'updateRelease',
+  'deleteRelease',
+  'mergeRequest',
+  'approveMergeRequest',
+  'rebaseMergeRequest',
+  'cancelAutoMerge',
+  'publishDraftNotes',
+  'deleteDraftNote',
+  'createPipeline',
+  'pipelineAction',
+  'jobAction',
+  'playPipelineSchedule',
+  'deletePipeline',
+  'createSnippet',
+  'updateSnippetMetadata',
+  'updateSnippet',
+  'updateSnippetFiles',
+  'deleteSnippetFile',
+  'deleteSnippet',
+  'deleteNote',
+  'deleteDiscussionNote',
+  'deleteIssue',
+  'deleteMergeRequest',
+  'deleteLabel',
+  'deleteMilestone',
+  'deleteBoard',
+  'deleteBoardList',
+  'markAllTodosDone',
+  'deletePackage',
+  'deletePackageFile',
+  'deleteContainerRepository',
+  'deleteContainerTag',
+  'createProject',
+  'editProject',
+  'deleteProject',
+  'forkProject',
+};
+
+const Set<String> _productionOperations = <String>{
+  ..._mr6b1Operations,
+  ..._mr6b2Operations,
 };
 
 AiGateDecision _matrix(AiAutonomyLevel level, AiWriteTier tier) {

@@ -659,11 +659,7 @@ class _BoardsPageState extends State<BoardsPage> {
       return;
     }
     await _boardWrite((generation) async {
-      await api.removeRecord([
-        ..._boardPathFor(projectId, board.id),
-        'lists',
-        '$listId',
-      ]);
+      await api.deleteBoardList(projectId, board.id, listId);
       if (!mounted || generation != _generation) return;
       final lists = await _allPagesFor(api, [
         ..._boardPathFor(projectId, board.id),
@@ -727,7 +723,7 @@ class _BoardsPageState extends State<BoardsPage> {
       return;
     }
     await _boardWrite((generation) async {
-      await api.removeRecord(_boardPathFor(projectId, board.id));
+      await api.deleteBoard(projectId, board.id);
       if (!mounted || generation != _generation) return;
       final boards = await _allPagesFor(api, _boardPathFor(projectId));
       if (boards.any((value) => value['id'] == board.id)) {

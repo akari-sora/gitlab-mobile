@@ -40,7 +40,7 @@ void main() {
     expect(h.coordinator.proposals, isEmpty);
     expect(h.coordinator.settledEdits, [proposal]);
     expect(proposal.editedText, 'my own words for rejected');
-    expect(proposal.outcome?.reasonCode, 'rejected');
+    expect(proposal.outcome?.reasonCode, 'userRejected');
     expect(proposal.outcome?.state, AiJournalState.notExecuted);
   });
 

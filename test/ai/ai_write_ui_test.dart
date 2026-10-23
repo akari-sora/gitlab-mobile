@@ -5,6 +5,7 @@ import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_preview.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
 import 'package:gitlab_mobile/features/ai/ai_attachment_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
@@ -26,6 +27,8 @@ AiWriteProposal _proposal({
   String reason = 'You asked me to approve the review.',
   AiUploadPreview? upload,
   List<String> closingRefs = const [],
+  AiWritePreview? preview,
+  bool showSquash = false,
 }) => AiWriteProposal(
   executionId: 'exec-1',
   operationId: operationId,
@@ -36,6 +39,7 @@ AiWriteProposal _proposal({
     typedName: typedName ? 'team/example' : null,
     reasons: reasons,
     reusesStoredVariables: tier == AiWriteTier.t3,
+    showSquash: showSquash,
   ),
   payloadDigest: 'digest',
   previewText: 'createNote !44',
@@ -50,6 +54,7 @@ AiWriteProposal _proposal({
   fields: fields,
   upload: upload,
   closingRefs: closingRefs,
+  preview: preview,
 );
 
 final class _Writes implements AiWriteChatSession {
@@ -365,6 +370,108 @@ void main() {
     );
   });
 
+  testWidgets('a merge card shows its preview once, without repeats', (
+    tester,
+  ) async {
+    final proposal = _proposal(
+      operationId: 'mergeRequest',
+      tier: AiWriteTier.t4,
+      fields: const {'squash': 'true'},
+      showSquash: true,
+      closingRefs: const ['#3'],
+      preview: AiMergePreview(
+        sourceBranch: 'feature/login',
+        targetBranch: 'main',
+        shortSha: 'a1b2c3d4',
+        pathCount: 2,
+        squash: true,
+        closingIssues: const [
+          AiClosingIssue(projectId: 9, iid: 3, outOfScope: false),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(find.byKey(const ValueKey('ai-preview-merge')), findsOneWidget);
+    expect(find.text(l10n.aiPreviewSquashOn), findsOneWidget);
+    expect(find.text(l10n.aiProposalSquash), findsNothing);
+    expect(find.text(l10n.aiProposalClosesOnMerge('#3')), findsOneWidget);
+    expect(find.byKey(const ValueKey('ai-proposal-closes')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('ai-proposal-field-squash')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('pipeline variables read as KEY = value lines', (tester) async {
+    final proposal = _proposal(
+      operationId: 'createPipeline',
+      tier: AiWriteTier.t3,
+      fields: const {
+        'ref': 'main',
+        'variables':
+            '[{"key":"DEPLOY_TARGET","value":"staging"},'
+            '{"key":"CFG","value":"x","variable_type":"file"}]',
+      },
+      preview: AiPipelinePreview(
+        ref: 'main',
+        newVariableNames: const ['DEPLOY_TARGET', 'CFG'],
+      ),
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(find.text(l10n.aiFieldVariables), findsOneWidget);
+    expect(
+      find.text('DEPLOY_TARGET = staging\nCFG (file) = x'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('ai-proposal-field-ref')), findsNothing);
+  });
+
+  testWidgets('a delete card leaves its target to the preview', (tester) async {
+    final proposal = _proposal(
+      operationId: 'deleteBranch',
+      tier: AiWriteTier.t4,
+      fields: const {'branch': 'feature/old'},
+      preview: const AiDeletePreview(targetName: 'feature/old'),
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(find.byKey(const ValueKey('ai-preview-delete')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ai-proposal-field-branch')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a rerun card warns about stored variables once', (tester) async {
+    final proposal = _proposal(
+      operationId: 'retryPipeline',
+      tier: AiWriteTier.t3,
+      fields: const {},
+      preview: AiPipelinePreview(ref: 'main', pipelineId: 1201),
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey('ai-preview-stored-variables')),
+      findsOneWidget,
+    );
+    expect(find.text(l10n.aiProposalStoredVariables), findsNothing);
+  });
+
   testWidgets('a card held by an account removal cannot be approved', (
     tester,
   ) async {
@@ -403,6 +510,37 @@ void main() {
     expect(find.text(l10n.aiSettledEditKept), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('ai-settled-edit-dismiss')));
     expect(dismissed, 1);
+  });
+
+  testWidgets('an edited card the user rejected says so', (tester) async {
+    late CoordHarness h;
+    late AiWriteProposal kept;
+    await tester.runAsync(() async {
+      h = await CoordHarness.create();
+      h.newRun('Start a thread on #3 in team/example-9');
+      final proposal = (await h.coordinator.propose(
+        AiToolCall(
+          id: 'thread',
+          name: 'createDiscussion',
+          arguments: const {
+            'projectId': 9,
+            'resource': 'issues',
+            'iid': 3,
+            'body': 'synthetic thread',
+            'reason': 'The user asked for a thread.',
+          },
+        ),
+      ))!;
+      await h.coordinator.approve(proposal, editedText: 'my own words');
+      await h.coordinator.reject(proposal);
+      kept = h.coordinator.settledEdits.single;
+    });
+    addTearDown(() => tester.runAsync(h.dispose));
+    expect(kept.outcome?.reasonCode, 'userRejected');
+    await tester.pumpWidget(
+      _host(AiSettledEditCard(proposal: kept, onDismiss: () {})),
+    );
+    expect(find.textContaining(l10n.aiSettledEditRejected), findsOneWidget);
   });
 
   testWidgets('an edited write that ran is never called not made', (
@@ -549,6 +687,89 @@ void main() {
     expect(find.text(l10n.aiProposalTooManyRunning), findsOneWidget);
   });
 
+  for (final (code, text) in [
+    ('alreadyMerged', () => l10n.aiRefusedAlreadyMerged),
+    ('headMoved', () => l10n.aiRefusedChanged),
+    ('refMissing', () => l10n.aiRefusedGone),
+    ('maintainerRequired', () => l10n.aiRefusedPermission),
+    ('sensitivePath', () => l10n.aiRefusedContent),
+    ('somethingNew', () => l10n.aiProposalNotRun),
+  ]) {
+    testWidgets('a write GitLab refused as $code says so', (tester) async {
+      final proposal = _proposal();
+      final writes = _Writes([proposal])
+        ..answer = (_) => AiWriteOutcome(
+          state: AiJournalState.failedCertain,
+          reasonCode: code,
+        );
+      await tester.pumpWidget(
+        _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+      await tester.pumpAndSettle();
+      expect(find.text(text()), findsOneWidget);
+    });
+  }
+
+  test('every refusal the write port names has words', () {
+    // The codes MR6b-2's families and the coordinator return.
+    for (final code in const [
+      'targetChanged',
+      'previewChanged',
+      'draftsChanged',
+      'settingsChanged',
+      'superseded',
+      'proposalInvalidated',
+      'fileExists',
+      'fileMissing',
+      'fragmentNotFound',
+      'fragmentNotUnique',
+      'fragmentsOverlap',
+      'releaseMissing',
+      'tagMissing',
+      'scheduleMissing',
+      'containerMissing',
+      'jobNotInPipeline',
+      'packageNotDeletable',
+      'projectArchived',
+      'protectedBranch',
+      'defaultBranch',
+      'autoMergeNotEnabled',
+      'mergeCheckIncomplete',
+      'mergeCheckUnsupported',
+      'autoMergeCancelError',
+      'cancelEndpointUnavailable',
+      'suggestionForeign',
+      'suggestionNotAppliable',
+      'personalNamespaceUnknown',
+      'batchTooLarge',
+      'binaryFile',
+      'fileTooLarge',
+      'invalidPath',
+      'noEditableText',
+      'pipelineVariableForbidden',
+      'pipelineVariableSecret',
+      'scheduleParamsUnreadable',
+      'conflict',
+      'snippetChanged',
+      'snippetLastFile',
+      'snippetBinary',
+      'snippetTooLarge',
+      'snippetPathInvalid',
+      'snippetTooManyFiles',
+      'snippetFilesUnreadable',
+      'validation',
+      'forbidden',
+      'invisible',
+      'unsupported',
+      'rateLimited',
+      'network',
+      'invalidResponse',
+    ]) {
+      expect(aiRefusalText(code), isNotNull, reason: code);
+    }
+  });
+
   testWidgets('an edit the checks refused can be changed again', (
     tester,
   ) async {
@@ -673,7 +894,7 @@ void main() {
       for (final status in AiWriteResultStatus.values) {
         expect(aiWriteStatusLabel(status), isNotEmpty);
       }
-      for (final row in ProductionAiLedger.rows) {
+      for (final row in productionAiLedger.modelVisible) {
         expect(
           aiOperationLabel(row.operationId),
           isNot(l10n.aiOpUnknown),

@@ -48,6 +48,7 @@ final class AiTargetRef {
     this.projectPath,
     this.iid,
     this.parentIid,
+    this.noteId,
     this.refName,
     this.path,
     this.sourceRef,
@@ -68,6 +69,7 @@ final class AiTargetRef {
   final String? projectPath;
   final int? iid;
   final int? parentIid;
+  final int? noteId;
   final String? refName;
   final String? path;
   final String? sourceRef;
@@ -153,7 +155,7 @@ bool scopeAdmits(
     return false;
   }
   for (final AiScopeGrant grant in scope.grants) {
-    if (_grantAdmits(grant, capability.scopeClass, target)) return true;
+    if (_grantAdmits(grant, capability, target)) return true;
   }
   return false;
 }
@@ -176,6 +178,7 @@ AiBindingResult bindTargets({
       : _Parsed();
   final List<String> missing = <String>[];
   var allBound = targets.isNotEmpty;
+  var allMissingMentioned = allowText && targets.isNotEmpty;
   if (targets.isEmpty) missing.add('target');
   for (final AiTargetRef target in targets) {
     final _ComponentCheck check = _bindOne(
@@ -187,6 +190,9 @@ AiBindingResult bindTargets({
     if (!check.bound) {
       allBound = false;
       missing.addAll(check.missing);
+      allMissingMentioned = allMissingMentioned && check.missing.every(
+        (component) => _componentMentioned(target, component, parsed),
+      );
     }
   }
   final AiIntentAssessment intent = assessIntent(
@@ -200,7 +206,9 @@ AiBindingResult bindTargets({
   );
   final bool needsIntent = directionsFor(operationId ?? '').isNotEmpty;
   final List<AiFixedConfirmReason> reasons = <AiFixedConfirmReason>[
-    if (!allBound) AiFixedConfirmReason.targetUnbound,
+    if (!allBound)
+      allMissingMentioned ? AiFixedConfirmReason.targetNamedNotMarked
+          : AiFixedConfirmReason.targetUnbound,
     if (needsIntent && !intent.authorizes) AiFixedConfirmReason.intentNotUnique,
   ];
   return AiBindingResult(
@@ -219,10 +227,10 @@ AiBindingResult bindTargets({
 
 bool _grantAdmits(
   AiScopeGrant grant,
-  AiScopeClass scopeClass,
+  AiCapability capability,
   AiTargetRef target,
 ) {
-  switch (scopeClass) {
+  switch (capability.scopeClass) {
     case AiScopeClass.project:
       return grant.kind == AiScopeKind.project &&
           grant.projectId != null &&
@@ -260,6 +268,15 @@ bool _grantAdmits(
               grant.kind == AiScopeKind.mergeRequest) &&
           grant.projectId != null &&
           grant.projectId == target.projectId;
+    case AiScopeClass.accountGlobalOnly:
+      return grant.kind == AiScopeKind.accountGlobal;
+    case AiScopeClass.personalNamespace:
+      if (grant.kind != AiScopeKind.project) return false;
+      if (capability.operationId == 'createProject') return true;
+      if (capability.operationId == 'forkProject') {
+        return grant.projectId != null && grant.projectId == target.projectId;
+      }
+      return false;
   }
 }
 
@@ -386,8 +403,18 @@ _ComponentCheck _bindOne({
         bound,
         bound ? const <String>[] : <String>[target.kind.name],
       );
-    case AiTargetKind.issue:
     case AiTargetKind.note:
+      if (target.noteId != null) {
+        final bool bound = allowText &&
+            _projectIdInScope(scope, target.projectId) &&
+            parsed.noteIds.contains(target.noteId);
+        return _ComponentCheck(bound, bound ? const [] : const ['note']);
+      }
+      final bool bound = _resourceBound(target, scope, parsed, allowText,
+          target.side == AiResourceSide.mergeRequest
+              ? _IssueKind.mergeRequest : _IssueKind.issue);
+      return _ComponentCheck(bound, bound ? const [] : const ['note']);
+    case AiTargetKind.issue:
     case AiTargetKind.emoji:
       final bool bound = _resourceBound(
         target,
@@ -607,7 +634,9 @@ bool _namedBound(
 
 bool _refHit(String? ref, _Parsed parsed, bool allowText) {
   if (!allowText || ref == null || ref.isEmpty) return false;
-  if (parsed.refs.contains(ref) || parsed.tokens.contains(ref)) return true;
+  if (parsed.refs.contains(ref) || parsed.tokens.contains(ref)) {
+    return true;
+  }
   const String head = 'refs/heads/';
   if (ref.startsWith(head)) {
     return parsed.refs.contains(ref.substring(head.length));
@@ -695,6 +724,27 @@ final class _Span {
   bool covers(int from, int to) => from < end && start < to;
 }
 
+bool _componentMentioned(AiTargetRef target, String component, _Parsed parsed) {
+  final name = switch (component) {
+    'ref' || 'branch' => target.refName ?? target.name,
+    'path' => target.path ?? target.name,
+    'tag' => target.name ?? target.refName,
+    'source' => target.sourceRef,
+    'target' => target.targetRef,
+    'name' when target.kind == AiTargetKind.newBranch => target.name,
+    _ => null,
+  };
+  return _verbatimHit(name, parsed);
+}
+
+bool _verbatimHit(String? name, _Parsed parsed) {
+  if (name == null || name.isEmpty) return false;
+  // A repo name is one complete token; "main" never matches "mainly".
+  return RegExp('(?<![A-Za-z0-9_./~@%+\\-])${RegExp.escape(name)}'
+      '(?![A-Za-z0-9_/~@%+\\-]|\\.[A-Za-z0-9_.-])')
+      .hasMatch(parsed.prose);
+}
+
 final class _Parsed {
   final List<_IssueRef> issues = <_IssueRef>[];
   final List<_IssueRef> mergeRequests = <_IssueRef>[];
@@ -703,6 +753,8 @@ final class _Parsed {
   final Set<String> refs = <String>{};
   final Set<String> paths = <String>{};
   final Set<String> tags = <String>{};
+  final Set<int> noteIds = <int>{};
+  String prose = '';
 }
 
 _Parsed _parse(String text, AiWriteScope scope) {
@@ -747,6 +799,20 @@ _Parsed _parse(String text, AiWriteScope scope) {
       parsed.issues.add(ref);
     }
   }
+  final prose = StringBuffer();
+  var end = 0;
+  for (final span in spans..sort((a, b) => a.start.compareTo(b.start))) {
+    if (span.start < end) continue;
+    prose.write(text.substring(end, span.start));
+    prose.write(' ');
+    end = span.end;
+  }
+  prose.write(text.substring(end));
+  parsed.prose = prose.toString();
+  final noteReference = RegExp(r'(?<![A-Za-z0-9_])(?:note:|note #|#note_)([1-9][0-9]*)(?![A-Za-z0-9_])');
+  for (final match in noteReference.allMatches(parsed.prose)) {
+    parsed.noteIds.add(int.parse(match.group(1)!));
+  }
   return parsed;
 }
 
@@ -768,6 +834,8 @@ void _addTick(String raw, _Parsed parsed) {
     if (name.isNotEmpty && !name.contains('..')) parsed.tags.add(name);
     return;
   }
+  final note = RegExp(r'^(?:note:|note #|#note_)([1-9][0-9]*)$').firstMatch(text);
+  if (note != null) parsed.noteIds.add(int.parse(note.group(1)!));
   parsed.tokens.add(text);
   parsed.refs.add(text);
   final String? path = _normalizeRepoPath(text);
@@ -800,6 +868,11 @@ void _addUrl(String raw, AiWriteScope scope, _Parsed parsed) {
   if (dash <= 0 || dash + 1 >= rest.length) return;
   var owner = rest.sublist(0, dash).join('/');
   final String kind = rest[dash + 1];
+  if (const {'issues', 'merge_requests'}.contains(kind) &&
+      rest.length == dash + 3 && int.tryParse(rest.last) != null) {
+    final note = RegExp(r'^note_([1-9][0-9]*)$').firstMatch(uri.fragment);
+    if (note != null) parsed.noteIds.add(int.parse(note.group(1)!));
+  }
   final List<String> tail = rest.sublist(dash + 2);
   var group = false;
   if (owner.startsWith('groups/')) {

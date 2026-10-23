@@ -16,9 +16,12 @@ import '../../core/ai/context_builders.dart' show aiMaxRedactionInputChars;
 import '../../core/ai/prompts.dart';
 import '../../core/ai/redaction.dart';
 import '../../core/ai/runner.dart';
+import '../../core/ai/exact_edit.dart' as exact;
 import '../../core/ai/tools/gitlab_read_port.dart';
+import '../../core/ai/tools/field_provenance.dart';
 import '../../core/ai/tools/gitlab_write_port.dart' as writes;
 import '../../core/ai/tools/tool_catalogue.dart';
+import '../../core/ai/tools/target_binding.dart';
 import '../../core/ai/tools/write_coordinator.dart';
 import '../../core/ai/tools/write_ledger.dart' as ledger;
 import '../../core/ai/tools/write_tier.dart' as tiers;
@@ -1031,7 +1034,9 @@ class AiChatController extends ChangeNotifier
       accountKey: _accountKey,
       instance: _api.instance,
       grants: [
-        if (origin case AiWorkItemOrigin(:final kind, :final iid))
+        if (origin is AiInboxOrigin)
+          const ledger.AiScopeGrant(kind: ledger.AiScopeKind.accountGlobal)
+        else if (origin case AiWorkItemOrigin(:final kind, :final iid))
           ledger.AiScopeGrant(
             kind: kind == AiWorkItemKind.issue
                 ? ledger.AiScopeKind.workItem
@@ -1071,6 +1076,18 @@ class AiChatController extends ChangeNotifier
       writePolicyRevision: account?.writePolicyRevision ?? 0,
       scopeRevision: _writeScopeRevision,
       sessionGeneration: _generation,
+      currentResource: switch (origin) {
+        AiFileOrigin(:final project, :final path, :final sha) => AiTargetRef(
+          kind: AiTargetKind.file, projectId: project.id, path: path, refName: sha),
+        AiWorkItemOrigin(:final project, :final kind, :final iid) => AiTargetRef(
+          kind: kind == AiWorkItemKind.issue ? AiTargetKind.issue : AiTargetKind.mergeRequest,
+          projectId: project.id, iid: iid),
+        _ => null,
+      },
+      currentJobId: switch (origin) {
+        AiJobOrigin(:final jobId) => jobId,
+        _ => null,
+      },
       toolsEnabled: config.toolsEnabled && _provider?.id == config.id,
       consentValid: settings.isValid(_accountKey, contract),
       alive: _alive,
@@ -1108,20 +1125,41 @@ class AiChatController extends ChangeNotifier
     await _refreshSecrets();
     if (!_alive) throw const AiJournalException('accountChanged');
     final args = request.arguments;
-    if (request.operationId == 'markTodoDone') {
+    if (request.operationId == 'markTodoDone' ||
+        (args['projectId'] == null &&
+            !ledger.aiT12Rows.any((row) => row.operationId == request.operationId))) {
       return const AiWriteFreshness();
     }
     final project = args['projectId'];
     if (project is! int || project < 1) {
       throw const AiJournalException('invalidArguments');
     }
-    final projectData = await _api.record(['projects', '$project']);
-    if (!_alive || projectData['id'] != project) {
+    final operation = request.operationId;
+    final fields = args['fields'];
+    // New-family caps reserve one freshness GET. When replacing a description,
+    // spend it on that field's current value; the port independently reads the
+    // project. Missing fresh visibility conservatively requires confirmation.
+    final descriptionPath = fields is Map<String, Object?> &&
+            fields.containsKey('description')
+        ? switch (operation) {
+            'updateRelease' => [
+              'projects', '$project', 'releases', args['tag_name']! as String,
+            ],
+            'updateSnippetMetadata' => [
+              'projects', '$project', 'snippets', _writeId(args, 'snippetId'),
+            ],
+            _ => null,
+          }
+        : null;
+    final projectData = descriptionPath == null
+        ? await _api.record(['projects', '$project'])
+        : const <String, dynamic>{};
+    if (!_alive || (descriptionPath == null && projectData['id'] != project)) {
       throw const AiJournalException('accountChanged');
     }
-    final operation = request.operationId;
+    final legacy = ledger.aiT12Rows.any((row) => row.operationId == operation);
     final iid = args['iid'];
-    final resource = switch (operation) {
+    final resource = !legacy ? null : switch (operation) {
       'updateIssue' || 'moveBoardCard' => 'issues',
       'updateMergeRequest' ||
       'unapproveMergeRequest' ||
@@ -1130,7 +1168,7 @@ class AiChatController extends ChangeNotifier
       _ => args['resource'],
     };
     Map<String, dynamic> target = projectData;
-    List<String>? path;
+    List<String>? path = descriptionPath;
     if (resource != null) {
       if ((resource != 'issues' && resource != 'merge_requests') ||
           iid is! int ||
@@ -1179,11 +1217,23 @@ class AiChatController extends ChangeNotifier
     }
     if (path != null) target = await _api.record(path);
     if (!_alive) throw const AiJournalException('accountChanged');
+    if (descriptionPath != null &&
+        (operation == 'updateRelease'
+            ? target['tag_name'] != args['tag_name']
+            : target['id'] != args['snippetId'] ||
+                target['project_id'] != project)) {
+      throw const AiJournalException('accountChanged');
+    }
+    if (operation == 'updateMilestone' &&
+        (target['id'] != args['milestoneId'] ||
+            target['project_id'] != project ||
+            target['iid'] is! int || (target['iid']! as int) < 1)) {
+      throw const AiJournalException('accountChanged');
+    }
     // A create is read against its project, which is neither the new
     // resource's current value nor its revision.
     final createsInProject =
         path == null && _projectCreates.contains(operation);
-    final fields = args['fields'];
     // §3: only an existing resource going from confidential to not lowers
     // confidentiality; a new issue is not confidential by default.
     final confidentialLowered =
@@ -1202,7 +1252,12 @@ class AiChatController extends ChangeNotifier
     };
     // The written field's own provenance: only placeholders the table issued
     // for this resource and field are restored. Other writes get none.
-    final projectPath = projectData['path_with_namespace'];
+    final projectPath = projectData['path_with_namespace'] ??
+        _writeScope().grants
+            .where((grant) => grant.projectId == project)
+            .map((grant) => grant.projectPath)
+            .whereType<String>()
+            .firstOrNull;
     final noteId = args['noteId'];
     write_text.AiFieldProvenance restorable({int? note}) =>
         write_text.AiFieldProvenance.gitLab(
@@ -1219,6 +1274,28 @@ class AiChatController extends ChangeNotifier
       if ((operation == 'updateNote' || operation == 'updateDiscussionNote') &&
           noteId is int)
         'body': restorable(note: noteId),
+      if (operation == 'updateRelease' && descriptionPath != null)
+        'description': AiProjectFieldProvenance.releaseDescription(
+          instance: placeholders.instance,
+          projectId: project,
+          projectPath: projectPath is String ? projectPath : null,
+          tagName: args['tag_name']! as String,
+        ),
+      if (operation == 'updateMilestone' && target['iid'] is int)
+        'description': AiProjectFieldProvenance.milestoneDescription(
+          instance: placeholders.instance,
+          projectId: project,
+          projectPath: projectPath is String ? projectPath : null,
+          milestoneId: args['milestoneId']! as int,
+          milestoneIid: target['iid']! as int,
+        ),
+      if (operation == 'updateSnippetMetadata' && descriptionPath != null)
+        'description': AiProjectFieldProvenance.snippetDescription(
+          instance: placeholders.instance,
+          projectId: project,
+          projectPath: projectPath is String ? projectPath : null,
+          snippetId: args['snippetId']! as int,
+        ),
     };
     final noChange = switch (operation) {
       'setStar' =>
@@ -1232,13 +1309,14 @@ class AiChatController extends ChangeNotifier
       _ => false,
     };
     return AiWriteFreshness(
-      updatedAt: !createsInProject && target['updated_at'] is String
+      updatedAt: legacy &&
+              !createsInProject && target['updated_at'] is String
           ? target['updated_at'] as String
           : null,
       headSha: resource == 'merge_requests' && target['sha'] is String
           ? target['sha'] as String
           : null,
-      lastCommitId: target['last_commit_id'] is String
+      lastCommitId: legacy && target['last_commit_id'] is String
           ? target['last_commit_id'] as String
           : null,
       noChange: noChange,
@@ -1299,6 +1377,7 @@ class AiChatController extends ChangeNotifier
       placeholders: placeholders,
       knownSecrets: () => _secrets.current.toSet(),
       safeDisplay: draftSafe,
+      checkFragmentsWithCount: exact.checkFragments,
       // §4.4: a personal access token never replays a GET after a 401.
       httpCost: (operation) => aiWriteRequestAllowance(
         operation,
@@ -2210,6 +2289,8 @@ const _writeBackOperations = {
   'updateDraftNote',
   'updateLabel',
   'updateMilestone',
+  'updateRelease',
+  'updateSnippetMetadata',
   'renameBoard',
 };
 
@@ -2282,11 +2363,11 @@ String _writeId(Map<String, Object?> args, String key) {
   return '$value';
 }
 
-/// Canonical disclosure for the production MR6b-1 catalogue. The UI owner uses
+/// Canonical disclosure for the production catalogue. The UI owner uses
 /// this same policy when requesting a new write grant.
-AiWritePolicy aiMr6b1WritePolicy(AiAutonomyLevel agreedCeiling) =>
+AiWritePolicy aiProductionWritePolicy(AiAutonomyLevel agreedCeiling) =>
     AiWritePolicy(
-      policyVersion: 1,
+      policyVersion: 2,
       agreedCeiling: agreedCeiling,
       catalogueVersion: aiToolCatalogueVersion,
       operationIds: {
@@ -2299,8 +2380,14 @@ AiWritePolicy aiMr6b1WritePolicy(AiAutonomyLevel agreedCeiling) =>
             capability.operationId,
       },
       fixedConfirmOperationIds: ledger.aiFixedConfirmOperationIds,
+      escalationRuleIds: aiProductionWriteEscalationRuleIds,
       resetConfirmWindow: aiWriteResetConfirmWindow,
     );
+
+/// Compatibility for earlier packet fixtures; production uses the canonical
+/// v2 policy above, including all current operations and escalation rules.
+AiWritePolicy aiMr6b1WritePolicy(AiAutonomyLevel agreedCeiling) =>
+    aiProductionWritePolicy(agreedCeiling);
 
 String _toolExcerpt(String text) {
   final clipped = clipAiText(text, 2000);
@@ -2406,7 +2493,7 @@ AiConsentContract aiConversationConsentContract(
   return settings.consentContractFor(
     accountKey,
     provider,
-    writePolicy: aiMr6b1WritePolicy(agreed),
+    writePolicy: aiProductionWritePolicy(agreed),
     agreedCeiling: agreed,
   );
 }

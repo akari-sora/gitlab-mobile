@@ -172,6 +172,9 @@ AiTierDecision decideTier(AiTierInput input) {
   }
   if (input.binding.allBound) {
     reasons.remove(AiFixedConfirmReason.targetUnbound);
+    reasons.remove(AiFixedConfirmReason.targetNamedNotMarked);
+  } else if (reasons.contains(AiFixedConfirmReason.targetNamedNotMarked)) {
+    reasons.remove(AiFixedConfirmReason.targetUnbound);
   } else {
     reasons.add(AiFixedConfirmReason.targetUnbound);
   }
@@ -202,7 +205,7 @@ const Map<String, AiFixedConfirmReason> _fixedOperationReason =
 
 const Set<String> _protectedBranchOperations = <String>{
   'edit_file',
-  'saveFile',
+  'createFile',
   'applySuggestion',
   'batchApplySuggestions',
   'mergeRequest',
