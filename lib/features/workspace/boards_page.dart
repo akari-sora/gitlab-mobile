@@ -41,6 +41,8 @@ class _BoardsPageState extends State<BoardsPage> {
   String _query = '';
   final Map<String, GlobalKey<RecordsFeedState>> _feeds = {};
   Set<String> _freshColumns = {};
+  Set<String> _freshSpent = {};
+  Map<String, int> _freshAttempts = {};
   final Set<Route<dynamic>> _ownedRoutes = {};
   NavigatorState? _navigator;
 
@@ -207,9 +209,15 @@ class _BoardsPageState extends State<BoardsPage> {
         results[1] as List<Json>,
       );
       _feeds.clear();
-      _freshColumns = fresh
-          ? {for (final column in definition.columns) column.key}
-          : {};
+      if (fresh) {
+        _freshColumns = {for (final column in definition.columns) column.key};
+        _freshSpent = {};
+        _freshAttempts = {};
+      } else {
+        _freshColumns = {};
+        _freshSpent = {};
+        _freshAttempts = {};
+      }
       setState(() {
         _board = definition;
         _columnIndex = 0;
@@ -995,6 +1003,13 @@ class _BoardsPageState extends State<BoardsPage> {
     final key = _feeds.putIfAbsent(column.key, GlobalKey<RecordsFeedState>.new);
     // Each load owns its one-shot refresh intent, including lazy columns.
     final freshColumns = _freshColumns;
+    final freshSpent = _freshSpent;
+    final freshAttempts = _freshAttempts;
+    final pairEntries =
+        query.parameters.entries.toList()
+          ..sort((a, b) => a.key.compareTo(b.key));
+    final pairKey =
+        '${column.key}\x00${pairEntries.map((e) => '${e.key}=${e.value}').join('&')}';
     return RecordsFeed(
       key: key,
       identity:
@@ -1013,19 +1028,34 @@ class _BoardsPageState extends State<BoardsPage> {
       visible: column.kind == BoardColumnKind.open
           ? (issue) => boardOpenIssueMatches(board, issue)
           : null,
-      // The refresh intent is spent only by a fresh read that reached the
-      // network: a read dropped because the column went away keeps it.
+      // The refresh intent is spent only by the latest forced attempt that
+      // reached the network: an older attempt landing after a newer one
+      // started, a dropped read, or a failure keeps it. Intent is per
+      // column and query, so a refresh while searching leaves the
+      // unsearched query pending.
       cached: ({required fresh, required background}) async {
-        final force = fresh || freshColumns.contains(column.key);
+        final pending =
+            freshColumns.contains(column.key) && !freshSpent.contains(pairKey);
+        final force = fresh || pending;
+        final int? attempt = pending
+            ? (freshAttempts[column.key] ?? 0) + 1
+            : null;
+        if (pending) {
+          freshAttempts[column.key] = attempt!;
+        }
         final read = await widget.api.cachedRecords(
           ['projects', '${widget.project.id}', 'issues'],
           query: query.parameters,
           fresh: force,
           background: background,
         );
-        if (force && read.lineage == CacheLineage.network &&
-            !read.superseded && !read.dropped) {
-          freshColumns.remove(column.key);
+        if (pending &&
+            force &&
+            read.lineage == CacheLineage.network &&
+            !read.superseded &&
+            !read.dropped &&
+            freshAttempts[column.key] == attempt) {
+          freshSpent.add(pairKey);
         }
         return read;
       },
@@ -1064,7 +1094,7 @@ class _BoardsPageState extends State<BoardsPage> {
             account: widget.account,
             resourceLabel: l10n.pathIssueBoard(widget.project.path),
             onSwitchAccount: endSessionFrom(context),
-            onRetry: _loadBoards,
+            onRetry: () => unawaited(_loadBoards(fresh: true)),
           ),
         ],
       );
