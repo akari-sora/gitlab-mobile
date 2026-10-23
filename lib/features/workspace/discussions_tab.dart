@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/attachment_budget.dart';
@@ -302,7 +303,13 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     setState(() => _busy = true);
     try {
       var sha = widget.headSha ?? '';
-      if (sha.isEmpty) sha = valueText(await widget.api.record(path), 'sha');
+      if (sha.isEmpty) {
+        final detail = await widget.api.cachedRecord(path);
+        if (detail.dropped || detail.superseded) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        sha = valueText(detail.value, 'sha');
+      }
       if (!mounted || sha.isEmpty) return;
       // Same rule as inline anchoring: a supplied coordinate that is not a
       // positive int drops both lines, so the thread is listed under
@@ -336,6 +343,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       filteredEmpty: _filteredEmptyText,
       account: widget.account, resourceLabel: l10n.pathThreadTitle(widget.project.path),
       onSwitchAccount: endSessionFrom(context),
+      cached: ({required bool fresh, required bool background}) => widget.api.cachedRecords([...path, 'discussions'], fresh: fresh, background: background),
       load: (next) => widget.api.records([...path, 'discussions'], next: next),
       visible: _isItemVisible,
       leading: (_, controller) {
