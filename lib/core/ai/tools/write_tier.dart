@@ -172,6 +172,9 @@ AiTierDecision decideTier(AiTierInput input) {
   }
   if (input.binding.allBound) {
     reasons.remove(AiFixedConfirmReason.targetUnbound);
+    reasons.remove(AiFixedConfirmReason.targetNamedNotMarked);
+  } else if (reasons.contains(AiFixedConfirmReason.targetNamedNotMarked)) {
+    reasons.remove(AiFixedConfirmReason.targetUnbound);
   } else {
     reasons.add(AiFixedConfirmReason.targetUnbound);
   }

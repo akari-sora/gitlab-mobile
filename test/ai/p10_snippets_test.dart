@@ -354,7 +354,7 @@ void main() {
         change == 'paths'
             ? 'snippetFilesUnreadable'
             : change == 'projectIdentity'
-            ? 'preflightFailed'
+            ? 'invalidResponse'
             : 'targetChanged',
       );
       expect(s.writes, isEmpty);

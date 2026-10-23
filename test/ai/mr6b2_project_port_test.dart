@@ -226,18 +226,26 @@ final class _Fixture {
         },
       );
     }
-    if (path.startsWith('/projects/9/registry/repositories/5')) {
+    if (path == '/registry/repositories/5') {
       if (containerStatus != null) {
         return jsonResponse({}, status: containerStatus!);
       }
       if (mutated && !remains) return jsonResponse({}, status: 404);
-      return jsonResponse(path.contains('/tags/')
-          ? tag
-          : {
-              ...repository,
-              if (mutated && containerDeletionStatus != null)
-                'status': containerDeletionStatus,
-            });
+      return jsonResponse({
+        ...repository,
+        if (mutated && containerDeletionStatus != null)
+          'status': containerDeletionStatus,
+      });
+    }
+    if (path == '/projects/9/registry/repositories/5') {
+      return jsonResponse({}, status: 404);
+    }
+    if (path.startsWith('/projects/9/registry/repositories/5/tags/')) {
+      if (containerStatus != null) {
+        return jsonResponse({}, status: containerStatus!);
+      }
+      if (mutated && !remains) return jsonResponse({}, status: 404);
+      return jsonResponse(tag);
     }
     throw StateError('Unexpected synthetic request ${request.method} $path');
   }
@@ -469,6 +477,106 @@ void main() {
     });
   }
 
+  test('container repository accepts global readback 404 as deleted', () async {
+    final f = _Fixture('deleteContainerRepository');
+    final prepared =
+        await f.port.prepare(_request('deleteContainerRepository'));
+    final outcome =
+        await f.port.commit(prepared, mayStart: () => true) as AiWriteSettled;
+    expect(outcome.state, AiJournalState.succeeded);
+    expect(outcome.readbackVerified, isTrue);
+    expect(f.writes, hasLength(1));
+  });
+
+  test(
+    'project-scoped repository 404 is not accepted as deletion readback',
+    () async {
+      final f = _Fixture('deleteContainerRepository')..remains = true;
+      final prepared =
+          await f.port.prepare(_request('deleteContainerRepository'));
+      final outcome =
+          await f.port.commit(prepared, mayStart: () => true) as AiWriteSettled;
+      expect(outcome.state, AiJournalState.writeUncertain);
+      expect(outcome.readbackVerified, isFalse);
+      expect(
+        f.adapter.requests.where(
+          (request) =>
+              request.method == 'GET' &&
+              request.uri.path.endsWith(
+                '/projects/9/registry/repositories/5',
+              ),
+        ),
+        isEmpty,
+      );
+      expect(
+        f.adapter.requests.where(
+          (request) =>
+              request.method == 'GET' &&
+              request.uri.path.endsWith('/registry/repositories/5'),
+        ),
+        hasLength(2),
+      );
+      expect(f.writes, hasLength(1));
+    },
+  );
+
+  test(
+    'container repository metadata never uses the project-scoped DELETE path',
+    () async {
+      for (final op in [
+        'deleteContainerRepository',
+        'deleteContainerTag',
+      ]) {
+        final f = _Fixture(op);
+        final prepared = await f.port.prepare(_request(op));
+        expect(prepared.confirmName, _confirm[op]);
+        expect(
+          f.adapter.requests.where(
+            (request) =>
+                request.method == 'GET' &&
+                request.uri.path.endsWith(
+                  '/projects/9/registry/repositories/5',
+                ),
+          ),
+          isEmpty,
+        );
+        expect(
+          f.adapter.requests.where(
+            (request) =>
+                request.method == 'GET' &&
+                request.uri.path.endsWith('/registry/repositories/5'),
+          ),
+          hasLength(1),
+        );
+        expect(f.writes, isEmpty);
+      }
+    },
+  );
+
+  for (final projectId in <Object?>[null, 10]) {
+    test(
+      'container repository readback rejects project_id $projectId',
+      () async {
+        final f = _Fixture('deleteContainerRepository')
+          ..remains = true
+          ..containerDeletionStatus = 'delete_scheduled';
+        final prepared =
+            await f.port.prepare(_request('deleteContainerRepository'));
+        if (projectId == null) {
+          f.repository.remove('project_id');
+        } else {
+          f.repository['project_id'] = projectId;
+        }
+        final outcome =
+            await f.port.commit(prepared, mayStart: () => true)
+                as AiWriteSettled;
+        expect(outcome.state, AiJournalState.writeUncertain);
+        expect(outcome.readbackVerified, isFalse);
+        expect(f.writes, hasLength(1));
+      },
+    );
+  }
+
   for (final op in _cases.keys) {
     for (final grant in [
       const AiScopeGrant(kind: AiScopeKind.workItem, projectId: 9, iid: 3),
@@ -561,6 +669,18 @@ void main() {
         );
         f.access = 40;
         f.repository['project_id'] = 10;
+        await expectLater(
+          f.port.prepare(_request(op)),
+          throwsA(
+            isA<AiWriteRefused>().having(
+              (e) => e.reason,
+              'reason',
+              'containerMissing',
+            ),
+          ),
+        );
+        f.repository['project_id'] = 9;
+        f.repository.remove('project_id');
         await expectLater(
           f.port.prepare(_request(op)),
           throwsA(

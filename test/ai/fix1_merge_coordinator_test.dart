@@ -260,7 +260,9 @@ void main() {
           }),
         );
 
-        final sending = stack.controller.send('Merge this merge request');
+        final sending = stack.controller.send(
+          'Merge this merge request from `feature/navigation` to `main`',
+        );
         await waitFor(
           () =>
               stack.controller.proposals.isNotEmpty ||

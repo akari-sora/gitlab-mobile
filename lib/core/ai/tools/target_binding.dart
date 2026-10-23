@@ -178,6 +178,7 @@ AiBindingResult bindTargets({
       : _Parsed();
   final List<String> missing = <String>[];
   var allBound = targets.isNotEmpty;
+  var allMissingMentioned = allowText && targets.isNotEmpty;
   if (targets.isEmpty) missing.add('target');
   for (final AiTargetRef target in targets) {
     final _ComponentCheck check = _bindOne(
@@ -189,6 +190,9 @@ AiBindingResult bindTargets({
     if (!check.bound) {
       allBound = false;
       missing.addAll(check.missing);
+      allMissingMentioned = allMissingMentioned && check.missing.every(
+        (component) => _componentMentioned(target, component, parsed),
+      );
     }
   }
   final AiIntentAssessment intent = assessIntent(
@@ -202,7 +206,9 @@ AiBindingResult bindTargets({
   );
   final bool needsIntent = directionsFor(operationId ?? '').isNotEmpty;
   final List<AiFixedConfirmReason> reasons = <AiFixedConfirmReason>[
-    if (!allBound) AiFixedConfirmReason.targetUnbound,
+    if (!allBound)
+      allMissingMentioned ? AiFixedConfirmReason.targetNamedNotMarked
+          : AiFixedConfirmReason.targetUnbound,
     if (needsIntent && !intent.authorizes) AiFixedConfirmReason.intentNotUnique,
   ];
   return AiBindingResult(
@@ -361,7 +367,6 @@ _ComponentCheck _bindOne({
       ];
       return _ComponentCheck(missing.isEmpty, missing);
     case AiTargetKind.merge:
-      if (_appAsserts(target)) return const _ComponentCheck(true, <String>[]);
       final List<String> missing = <String>[
         if (!_resourceBound(
           target,
@@ -622,16 +627,14 @@ bool _namedBound(
     return _refHit(target.refName ?? target.name, parsed, true);
   }
   if (target.kind == AiTargetKind.tag) {
-    return _nameHit(name, parsed, true) || parsed.tags.contains(name) ||
-        _verbatimHit(name, parsed);
+    return _nameHit(name, parsed, true) || parsed.tags.contains(name);
   }
   return _nameHit(name, parsed, true);
 }
 
 bool _refHit(String? ref, _Parsed parsed, bool allowText) {
   if (!allowText || ref == null || ref.isEmpty) return false;
-  if (parsed.refs.contains(ref) || parsed.tokens.contains(ref) ||
-      _verbatimHit(ref, parsed)) {
+  if (parsed.refs.contains(ref) || parsed.tokens.contains(ref)) {
     return true;
   }
   const String head = 'refs/heads/';
@@ -645,7 +648,7 @@ bool _pathHit(String? path, _Parsed parsed, bool allowText) {
   if (!allowText) return false;
   final String? normal = _normalizeRepoPath(path);
   if (normal == null) return false;
-  return parsed.paths.contains(normal) || _verbatimHit(path, parsed);
+  return parsed.paths.contains(normal);
 }
 
 bool _nameHit(String? name, _Parsed parsed, bool allowText) {
@@ -719,6 +722,19 @@ final class _Span {
   final int start;
   final int end;
   bool covers(int from, int to) => from < end && start < to;
+}
+
+bool _componentMentioned(AiTargetRef target, String component, _Parsed parsed) {
+  final name = switch (component) {
+    'ref' || 'branch' => target.refName ?? target.name,
+    'path' => target.path ?? target.name,
+    'tag' => target.name ?? target.refName,
+    'source' => target.sourceRef,
+    'target' => target.targetRef,
+    'name' when target.kind == AiTargetKind.newBranch => target.name,
+    _ => null,
+  };
+  return _verbatimHit(name, parsed);
 }
 
 bool _verbatimHit(String? name, _Parsed parsed) {
