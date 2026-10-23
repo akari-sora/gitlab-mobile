@@ -874,19 +874,13 @@ void main() {
       expect(sent, isEmpty);
       final note = find.byKey(const ValueKey('ai-report-preview-updated'));
       expect(note, findsOne);
-      // The note is on screen next to Send and is read out when it appears.
+      // The note is on screen and Send announced it.
       final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
       expect(tester.getRect(note).bottom, lessThanOrEqualTo(screen.height));
       expect(tester.getRect(note).top, greaterThanOrEqualTo(0));
       expect(
-        find.ancestor(
-          of: note,
-          matching: find.byWidgetPredicate(
-            (widget) =>
-                widget is Semantics && (widget.properties.liveRegion ?? false),
-          ),
-        ),
-        findsOne,
+        tester.takeAnnouncements().map((a) => a.message),
+        [l10n.aiReportPreviewUpdated],
       );
       expect(tester.widget<Text>(preview).data, contains('two files'));
       await send(tester);
@@ -1102,6 +1096,34 @@ void main() {
         expect(tester.getRect(button).bottom, lessThanOrEqualTo(640 - 280));
       });
     }
+
+    testWidgets('the update is announced with the keyboard up', (tester) async {
+      final ratio = tester.view.devicePixelRatio;
+      tester.view.physicalSize = const Size(360, 640) * ratio;
+      addTearDown(tester.view.reset);
+      const token = 'synthetic-rotated-oauth-token';
+      final session = answered()..rotatedSecret = token;
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      final description = find.byKey(const ValueKey('ai-report-description'));
+      await tester.ensureVisible(description);
+      await tester.pumpAndSettle();
+      await tester.showKeyboard(description);
+      tester.view.viewInsets = FakeViewPadding(bottom: 300 * ratio);
+      await tester.enterText(description, 'pasted $token');
+      await tester.pumpAndSettle();
+      tester.takeAnnouncements();
+      await tester.tap(find.byKey(const ValueKey('ai-report-send')));
+      await tester.pumpAndSettle();
+      expect(sent, isEmpty);
+      // Announced even though the note was outside the form's viewport in
+      // the frame it appeared.
+      expect(
+        tester.takeAnnouncements().map((a) => a.message),
+        [l10n.aiReportPreviewUpdated],
+      );
+    });
 
     testWidgets('Send stays pinned above the keyboard on a 640 dp phone', (
       tester,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/ai/ai_report.dart';
@@ -126,6 +127,15 @@ class _AiReportSheetState extends State<AiReportSheet> {
         _previewUpdated = true;
         _sending = false;
       });
+      // Said out loud now: the note may still be outside the scroller this
+      // frame, and Android drops a live-region change on a hidden node.
+      unawaited(
+        SemanticsService.sendAnnouncement(
+          View.of(context),
+          l10n.aiReportPreviewUpdated,
+          Directionality.of(context),
+        ),
+      );
       // The note asks the user to check the preview: show its start.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final box = _previewBox.currentContext;
@@ -201,15 +211,13 @@ class _AiReportSheetState extends State<AiReportSheet> {
         final note = _previewUpdated
             ? Padding(
                 padding: const EdgeInsets.only(bottom: 6),
-                // Read out when it appears: Send did not send this time.
-                child: Semantics(
-                  liveRegion: true,
-                  child: Text(
-                    l10n.aiReportPreviewUpdated,
-                    key: const ValueKey('ai-report-preview-updated'),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
+                // Announced by Send itself (see _send), not a live region:
+                // iOS would read it twice.
+                child: Text(
+                  l10n.aiReportPreviewUpdated,
+                  key: const ValueKey('ai-report-preview-updated'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.primary,
                   ),
                 ),
               )
