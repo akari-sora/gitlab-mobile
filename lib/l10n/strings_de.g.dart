@@ -2709,4 +2709,6 @@ const _messagesDe = <String>[
   'Löschen ist geplant',
   'Gehört zu',
   '{count} weitere Dateien ändern sich ebenfalls',
+  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
+  'GitLab may delay the deletion; it can be restored during the retention period.',
 ];

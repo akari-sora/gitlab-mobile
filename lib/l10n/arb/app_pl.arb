@@ -2706,5 +2706,7 @@
   "aiWriteMergeAccepted": "GitLab przyjął scalanie; sprawdź jego najnowszy stan",
   "aiWriteDeletionScheduled": "Zaplanowano usunięcie",
   "aiPreviewParent": "Należy do",
-  "aiPreviewMoreFiles": "Zmieni się też {count} innych plików"
+  "aiPreviewMoreFiles": "Zmieni się też {count} innych plików",
+  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
+  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
 }

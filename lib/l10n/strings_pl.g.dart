@@ -2709,4 +2709,6 @@ const _messagesPl = <String>[
   'Zaplanowano usunięcie',
   'Należy do',
   'Zmieni się też {count} innych plików',
+  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
+  'GitLab may delay the deletion; it can be restored during the retention period.',
 ];

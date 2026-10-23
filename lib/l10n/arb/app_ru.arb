@@ -2706,5 +2706,7 @@
   "aiWriteMergeAccepted": "GitLab принял слияние; проверьте его актуальное состояние",
   "aiWriteDeletionScheduled": "Удаление запланировано",
   "aiPreviewParent": "Относится к",
-  "aiPreviewMoreFiles": "Также изменится ещё {count} файлов"
+  "aiPreviewMoreFiles": "Также изменится ещё {count} файлов",
+  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
+  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
 }

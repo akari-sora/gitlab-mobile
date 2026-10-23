@@ -2706,5 +2706,7 @@
   "aiWriteMergeAccepted": "GitLab đã chấp nhận việc gộp; hãy kiểm tra trạng thái mới nhất",
   "aiWriteDeletionScheduled": "Đã lên lịch xóa",
   "aiPreviewParent": "Thuộc về",
-  "aiPreviewMoreFiles": "{count} tệp khác cũng sẽ thay đổi"
+  "aiPreviewMoreFiles": "{count} tệp khác cũng sẽ thay đổi",
+  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
+  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
 }

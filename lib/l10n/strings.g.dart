@@ -8214,4 +8214,10 @@ final class AppStrings {
 
   /// 另外還有 {count} 個檔案會變更
   String aiPreviewMoreFiles(Object? count) => _format(language, language._messages[2706], {'count': count});
+
+  /// 你在訊息裡提到了這個名稱，但沒有用反引號（`）標出來，所以這筆寫入需要你確認。
+  String get aiConfirmTargetNamedNotMarked => language._messages[2707];
+
+  /// GitLab 可能會延後刪除，保留期內仍可還原。
+  String get aiPreviewDeletionMayBeDelayed => language._messages[2708];
 }

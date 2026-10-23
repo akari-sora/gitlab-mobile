@@ -2709,4 +2709,6 @@ const _messagesVi = <String>[
   'Đã lên lịch xóa',
   'Thuộc về',
   '{count} tệp khác cũng sẽ thay đổi',
+  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
+  'GitLab may delay the deletion; it can be restored during the retention period.',
 ];

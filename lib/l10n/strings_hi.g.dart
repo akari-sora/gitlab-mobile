@@ -2709,4 +2709,6 @@ const _messagesHi = <String>[
   'हटाना शेड्यूल किया गया',
   'इससे जुड़ा है',
   '{count} और फ़ाइलें भी बदलेंगी',
+  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
+  'GitLab may delay the deletion; it can be restored during the retention period.',
 ];

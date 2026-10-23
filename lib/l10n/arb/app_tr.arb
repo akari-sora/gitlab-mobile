@@ -2706,5 +2706,7 @@
   "aiWriteMergeAccepted": "GitLab birleştirmeyi kabul etti; en son durumunu kontrol edin",
   "aiWriteDeletionScheduled": "Silme zamanlandı",
   "aiPreviewParent": "Ait olduğu öğe",
-  "aiPreviewMoreFiles": "{count} dosya daha değişecek"
+  "aiPreviewMoreFiles": "{count} dosya daha değişecek",
+  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
+  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
 }
