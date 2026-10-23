@@ -42,6 +42,7 @@ final class AiWriteProposal {
     this.fields = const <String, String>{},
     this.upload,
     this.closingRefs = const <String>[],
+    this.editableField,
   }) : preview = preview ?? port.AiFieldsPreview(const {});
 
   final String executionId;
@@ -70,6 +71,10 @@ final class AiWriteProposal {
   /// The write's arguments for the approval card, each value redacted with
   /// the live secrets. The model's `reason` is [modelReason] instead.
   Map<String, String> fields;
+
+  /// The one text field an edit may replace, from the ledger, and only when
+  /// this write carries it; null means the card offers no edit.
+  final String? editableField;
   String? editedText;
   bool get valid => _valid;
   bool _valid = true;
@@ -773,6 +778,7 @@ final class PolicyAiWriteCoordinator
         preview: redactAiWritePreview(prepared.preview, safeDisplay,
             preexistingSecretHits: scanReasons.preexistingSecretHits),
         fields: _fields(request, capability, safeDisplay),
+        editableField: _editableField(request, capability),
         closingRefs: [
           for (final ref in preparedText.closingRefs) safeDisplay(ref),
         ],
@@ -966,6 +972,7 @@ final class PolicyAiWriteCoordinator
     final graph = pending.prepared.boundary == AiWriteBoundary.graph;
     var graphMarkAttempted = false;
     var graphTerminalAttempted = false;
+    var graphTerminalCompleted = false;
     var graphJournalFailed = false;
     try {
       _requirePending(pending);
@@ -1078,6 +1085,8 @@ final class PolicyAiWriteCoordinator
           executionId: proposal.executionId,
           terminal: AiJournalState.notExecuted,
         );
+        graphTerminalAttempted = false;
+        graphTerminalCompleted = graph;
         return _complete(
           pending,
           AiWriteOutcome(
@@ -1154,6 +1163,8 @@ final class PolicyAiWriteCoordinator
           executionId: proposal.executionId,
           terminal: AiJournalState.notExecuted,
         );
+        graphTerminalAttempted = false;
+        graphTerminalCompleted = true;
         return _complete(
           pending,
           AiWriteOutcome(
@@ -1178,6 +1189,8 @@ final class PolicyAiWriteCoordinator
             terminal: AiJournalState.notExecuted,
           );
         }
+        graphTerminalAttempted = false;
+        graphTerminalCompleted = graph;
         return _complete(
           pending,
           _notExecuted(
@@ -1199,6 +1212,8 @@ final class PolicyAiWriteCoordinator
         executionId: proposal.executionId,
         terminal: settled.state,
       );
+      graphTerminalAttempted = false;
+      graphTerminalCompleted = graph;
       if (settled.state == AiJournalState.succeeded) {
         final created = prepared.createdOnSuccess;
         if (created != null && created.accountKey == pending.policy.scope.accountKey) {
@@ -1250,32 +1265,36 @@ final class PolicyAiWriteCoordinator
       var state = accepted
           ? AiJournalState.writeUncertain
           : AiJournalState.notExecuted;
-      try {
-        if (graph && (graphJournalFailed || graphTerminalAttempted)) {
-          // Do not retry a flush whose durable state is unknown, or claim a
-          // refund. An explicit journal recovery/reset must resolve it first.
-          throw const AiJournalException('journalUnavailable');
+      // A later display/projection failure cannot undo a successful terminal
+      // flush. Retrying finish/revert here would itself be an invalid transition.
+      if (!graphTerminalCompleted) {
+        try {
+          if (graph && (graphJournalFailed || graphTerminalAttempted)) {
+            // Do not retry a flush whose durable state is unknown, or claim a
+            // refund. An explicit journal recovery/reset must resolve it first.
+            throw const AiJournalException('journalUnavailable');
+          }
+          if (dispatching && !accepted) {
+            await journal.revertDispatchingToNotExecuted(
+              executionId: proposal.executionId,
+            );
+          } else if (preparedOnDisk) {
+            await journal.finish(
+              executionId: proposal.executionId,
+              terminal: state,
+            );
+          } else {
+            await journal.refund(pending.hold);
+          }
+        } on Object {
+          if (graph && (graphMarkAttempted || preparedOnDisk)) {
+            graphJournalFailed = true;
+            final failures = _graphJournalFailures[journal] ??= {};
+            (failures[pending.policy.scope.accountKey] ??= {}).add(proposal.executionId);
+          }
+          // A failed durable rollback keeps dispatching/uncertain isolation.
+          if (dispatching || accepted) state = AiJournalState.writeUncertain;
         }
-        if (dispatching && !accepted) {
-          await journal.revertDispatchingToNotExecuted(
-            executionId: proposal.executionId,
-          );
-        } else if (preparedOnDisk) {
-          await journal.finish(
-            executionId: proposal.executionId,
-            terminal: state,
-          );
-        } else {
-          await journal.refund(pending.hold);
-        }
-      } on Object {
-        if (graph && (graphMarkAttempted || preparedOnDisk)) {
-          graphJournalFailed = true;
-          final failures = _graphJournalFailures[journal] ??= {};
-          (failures[pending.policy.scope.accountKey] ??= {}).add(proposal.executionId);
-        }
-        // A failed durable rollback keeps dispatching/uncertain isolation.
-        if (dispatching || accepted) state = AiJournalState.writeUncertain;
       }
       return _complete(
         pending,
@@ -2196,20 +2215,38 @@ AiTargetRef _todoTarget(port.AiWritePrepared prepared, AiWriteScope scope) {
   );
 }
 
+/// Where [_edit] would put edited text: the ledger's field at the top level
+/// or inside `fields`, or null when this write does not carry it as text.
+({String field, bool nested})? _editTarget(
+  port.AiWriteRequest request, AiCapability capability,
+) {
+  final field = capability.editableField;
+  if (field == null) return null;
+  final args = request.arguments;
+  if (_argumentSpecs(capability).containsKey(field) && args[field] is String) {
+    return (field: field, nested: false);
+  }
+  if (args['fields'] case final Map<String, Object?> fields
+      when fields[field] is String &&
+          _argumentSpecs(capability)['fields']?.properties.containsKey(field) == true) {
+    return (field: field, nested: true);
+  }
+  return null;
+}
+
+String? _editableField(port.AiWriteRequest request, AiCapability capability) =>
+    _editTarget(request, capability)?.field;
+
 port.AiWriteRequest _edit(
   port.AiWriteRequest request, AiCapability capability, String edited,
 ) {
-  final field = capability.editableField;
-  if (field == null) throw const _WriteBlocked('noEditableText');
+  final target = _editTarget(request, capability);
+  if (target == null) throw const _WriteBlocked('noEditableText');
   final args = Map<String, Object?>.from(request.arguments);
-  if (_argumentSpecs(capability).containsKey(field) && args[field] is String) {
-    args[field] = edited;
-  } else if (args['fields'] case final Map<String, Object?> fields
-      when fields[field] is String &&
-          _argumentSpecs(capability)['fields']?.properties.containsKey(field) == true) {
-    args['fields'] = {...fields, field: edited};
+  if (target.nested) {
+    args['fields'] = {...args['fields']! as Map<String, Object?>, target.field: edited};
   } else {
-    throw const _WriteBlocked('noEditableText');
+    args[target.field] = edited;
   }
   return port.AiWriteRequest(
     operationId: request.operationId,

@@ -112,6 +112,39 @@ void main() {
     isolated.settle(separate!, AiWorkItemWriteResult.notSent, null);
   });
 
+  test('Dates releases its STATUS reservation without changing STATUS freshness', () {
+    for (final seedStatus in [false, true]) {
+      for (final result in AiWorkItemWriteResult.values) {
+        final fixture = WorkItemStatusFixture();
+        addTearDown(fixture.closeAll);
+        final registry = _registry(fixture);
+        final status = WorkItemStatusWriteRegistry.instance;
+        final earlier = DateTime.utc(2026, 10, 22);
+        final newer = DateTime.utc(2026, 10, 23);
+        if (seedStatus) {
+          final lease = registry.tryStart(_gid, AiWorkItemWriteKind.status)!;
+          registry.settle(lease, AiWorkItemWriteResult.confirmed, earlier);
+        }
+        final terminal = status.terminal(fixture.api, _gid);
+        final lease = registry.tryStart(_gid, AiWorkItemWriteKind.dates)!;
+        expect(status.isActive(fixture.api, _gid), isTrue);
+        registry.settle(lease, result, newer);
+        expect(status.isActive(fixture.api, _gid), isFalse);
+        expect(status.terminal(fixture.api, _gid), same(terminal));
+        final dates = aiWorkspaceWriteFreshnessForTesting(
+          fixture.api, _gid, AiWorkItemWriteKind.dates,
+        );
+        expect(dates, switch (result) {
+          AiWorkItemWriteResult.notSent => null,
+          AiWorkItemWriteResult.confirmed =>
+            (revision: newer, confirmed: true, knownNotApplied: false),
+          AiWorkItemWriteResult.uncertain =>
+            (revision: null, confirmed: false, knownNotApplied: false),
+        });
+      }
+    }
+  });
+
   test('external STATUS ownership ignores wrong and stale settle tokens', () {
     final fixture = WorkItemStatusFixture();
     addTearDown(fixture.closeAll);
