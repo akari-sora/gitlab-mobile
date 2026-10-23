@@ -853,7 +853,6 @@ class RepositoryTabState extends State<RepositoryTab> {
                     }
                     final sha = ref.sha;
                     final folder = _folder;
-                    final readmeEpoch = _readmeEpoch;
                     final read = await widget.api.cachedRecords(
                       [
                         'projects',
@@ -869,9 +868,10 @@ class RepositoryTabState extends State<RepositoryTab> {
                       fresh: fresh,
                       background: background,
                     );
-                    if (!mounted ||
-                        _currentRef?.sha != sha ||
-                        _readmeEpoch != readmeEpoch) {
+                    // Only the SHA: a newer README generation can come
+                    // from the picker's own refresh, whose tree must still
+                    // detect the README (R3-1).
+                    if (!mounted || _currentRef?.sha != sha) {
                       return read;
                     }
                     if (folder.isEmpty && !read.dropped && !read.superseded) {
@@ -886,7 +886,6 @@ class RepositoryTabState extends State<RepositoryTab> {
                     }
                     final sha = ref.sha;
                     final folder = _folder;
-                    final readmeEpoch = _readmeEpoch;
                     final page = await widget.api.records(
                       [
                         'projects',
@@ -901,9 +900,10 @@ class RepositoryTabState extends State<RepositoryTab> {
                       },
                       next: next,
                     );
-                    if (!mounted ||
-                        _currentRef?.sha != sha ||
-                        _readmeEpoch != readmeEpoch) {
+                    // Only the SHA: a newer README generation can come
+                    // from the picker's own refresh, whose tree must still
+                    // detect the README (R3-1).
+                    if (!mounted || _currentRef?.sha != sha) {
                       return page;
                     }
                     if (folder.isEmpty) {

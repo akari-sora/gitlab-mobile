@@ -13,6 +13,51 @@ import 'support/widget_settle.dart';
 import 'workspace_widget_test.dart' show settleWorkspace, workspaceHost;
 
 void main() {
+  testWidgets('a picker switch shows README B when tree B answers after the rebuild', (tester) async {
+    final fixture = _RepositoryFixture();
+    addTearDown(fixture.close);
+    _viewport(tester);
+    const shaB = _RepositoryFixture.shaB;
+    fixture.readmeBodyByRef[shaB] = '# README B marker-bbb';
+    final heldTreeB = Completer<void>();
+    fixture.intercept = (request) {
+      final p = request.uri.path;
+      if (p == '/gitlab/api/v4/projects/42/repository/branches') {
+        return jsonResponse([
+          {'name': 'main', 'protected': false, 'default': true, 'commit': {'id': _RepositoryFixture.sha}},
+          {'name': 'feature', 'protected': false, 'default': false, 'commit': {'id': shaB}},
+        ]);
+      }
+      if (p == '/gitlab/api/v4/projects/42/repository/tags') return jsonResponse([]);
+      if (p == '/gitlab/api/v4/projects/42/repository/tree' && request.uri.queryParameters['ref'] == shaB) {
+        return heldTreeB.future.then((_) => jsonResponse(_rootTree()));
+      }
+      return null;
+    };
+    await tester.pumpWidget(workspaceHost(fixture.tab()));
+    await settleWorkspace(tester);
+    expect(find.textContaining('Synthetic README', findRichText: true), findsOneWidget);
+    await tester.tap(find.widgetWithIcon(TextButton, Icons.alt_route));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('feature'));
+    await settleNetworkWidgets(tester);
+    final treeB = fixture.adapter.requests.where((r) => r.uri.path.endsWith('/repository/tree') && r.uri.queryParameters['ref'] == shaB).length;
+    heldTreeB.complete();
+    await settleWorkspace(tester);
+    final card = find.byType(RepositoryReadmeCard);
+    final failure = find.descendant(of: card, matching: find.byType(FailureNotice)).evaluate().length;
+    final spinner = find.descendant(of: card, matching: find.byType(CircularProgressIndicator)).evaluate().length;
+    final bbb = find.textContaining('marker-bbb', findRichText: true).evaluate().length;
+    final raws = fixture.adapter.requests.where((r) => r.uri.path.endsWith('README.md/raw')).map((r) => r.uri.queryParameters['ref']!.substring(0, 1)).toList();
+    final heads = fixture.adapter.requests.where((r) => r.method == 'HEAD').map((r) => r.uri.queryParameters['ref']!.substring(0, 1)).toList();
+    expect(treeB, greaterThan(0));
+    expect(bbb, 1, reason: 'README B must show after a picker switch');
+    expect(failure, 0);
+    expect(spinner, 0);
+    expect(heads.last, 'b');
+    expect(raws.last, 'b');
+  });
+
   testWidgets(
     '§3.4 fixture branch tree README cache empty viewport 412x900 clock fixed completion settled: first open reads branch tree HEAD raw once each',
     (tester) async {
