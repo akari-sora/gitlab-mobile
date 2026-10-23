@@ -2715,6 +2715,8 @@
   "cacheRefreshFailed": "Tidak dapat memperbarui",
   "cacheResumesInMinutes": "Lanjut lagi dalam sekitar {minutes} mnt",
   "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Muat ulang tiap 30 detik",
+  "refreshEveryMinute": "Muat ulang tiap menit",
   "aiSendPausedBudget": "Kuota permintaan GitLab hampir habis; pengiriman dijeda",
   "aiSendPausedRateLimited": "GitLab sedang membatasi permintaan; pengiriman dijeda",
   "aiSendResumesAfterReset": "Lanjut lagi saat kuota permintaan diatur ulang",
