@@ -141,6 +141,28 @@ enum AiChatBlocker {
   contextUnavailable,
 }
 
+/// Why a ready conversation still cannot send: the account's GitLab request
+/// budget, not the conversation, is the limit.
+enum AiChatSendBlockReason {
+  /// GitLab's remaining requests are critically low until the bucket resets.
+  criticalRateBudget,
+
+  /// GitLab asked the app to wait (a 429 cooldown).
+  serverCooldown,
+
+  /// Every run lease of the account is still held.
+  runBudgetUnavailable,
+}
+
+/// A session whose sends also wait for the account's GitLab request budget.
+abstract interface class AiChatSendGate {
+  /// Why sending is paused, or null when the budget allows a send.
+  AiChatSendBlockReason? get sendBlockReason;
+
+  /// When the pause is known to end; null when GitLab gave no time.
+  DateTime? get sendBlockedUntil;
+}
+
 /// One conversation as the chat page sees it. Implementations notify at most
 /// every 100 ms while a reply streams.
 abstract interface class AiChatSession implements Listenable {

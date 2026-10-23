@@ -2714,5 +2714,10 @@
   "cacheRateLimited": "يقيّد GitLab الطلبات",
   "cacheRefreshFailed": "تعذّر التحديث",
   "cacheResumesInMinutes": "يستأنف بعد {minutes} د تقريبًا",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "حصة طلبات GitLab على وشك النفاد؛ الإرسال متوقف مؤقتًا",
+  "aiSendPausedRateLimited": "يقيّد GitLab الطلبات؛ الإرسال متوقف مؤقتًا",
+  "aiSendResumesAfterReset": "يستأنف عند إعادة تعيين حصة الطلبات",
+  "aiGitLabBudgetTitle": "حصة طلبات GitLab على وشك النفاد",
+  "aiGitLabBudgetDetail": "لم تُرسل هذه الرسالة. أعد إرسالها عندما يصبح زر «إرسال» متاحًا مجددًا."
 }

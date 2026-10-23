@@ -2717,4 +2717,9 @@ const _messagesCs = <String>[
   'Nelze obnovit',
   'Obnoví se přibližně za {minutes} min',
   '{verb} {target}',
+  'Kvóta požadavků pro GitLab je téměř vyčerpaná; odesílání je pozastaveno',
+  'GitLab omezuje požadavky; odesílání je pozastaveno',
+  'Obnoví se po obnovení kvóty požadavků',
+  'Kvóta požadavků pro GitLab je téměř vyčerpaná',
+  'Tato zpráva nebyla odeslána. Odešlete ji znovu, až bude tlačítko „Odeslat“ opět dostupné.',
 ];
