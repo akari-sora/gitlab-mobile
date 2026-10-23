@@ -14,3 +14,31 @@ The C2 breakdown (`c2-breakdown-v3.md`) passed three review rounds (Codex, Opus,
 
 ## C2-D3. Minors
 Fix Opus r3 m3-1 (the contradictory sentence and threshold) in the packet that owns it; m3-2 to m3-4 are one-line notes for their packets. Everything else from round 3 is a follow-up.
+
+# Addenda after P-C2a round 1 (2026-10-24, lead)
+
+These decide the two items round 1 left open (claude2 I-2, I-3) in C2-D2's
+style: nullable display fields decided against real shapes, and one plan line
+read against its own preamble. They amend §3.2/§3.3 for P-C2a only; later
+packets inherit them.
+
+## C2-D4. Pure display fields may be null against real shapes (claude2 r1 I-3)
+- These join §3.2's legal-null supplement table: Position/LinePosition
+  `old_line` and `new_line` (one side is null on every added or removed
+  line), `type`, and `line_range` including its start/end line numbers; and
+  Pipeline `name` (null when the project sets no `workflow:name`).
+- Everything else keeps the breakdown's non-null rules; a wrong type still
+  nulls the whole projection.
+- Real-shape fixtures must include a DiffNote on an added line
+  (`old_line: null`) and a pipeline with `name: null`.
+
+## C2-D5. E17 text admission follows the app's actual key (claude2 r1 I-2)
+- §3.3's E17 row ("同路徑 /raw → text") is read against the same section's
+  preamble and §1: raw and text are keyed by `Accept`, not by an extra path
+  segment. E17 therefore admits exactly the request `GitLabApi.textFile`
+  builds: `projects/:p/repository/files/:file?ref=<sha>` with
+  `accept: 'text/plain'` (5 path segments, bodyKind text). The same path
+  under a JSON Accept stays FileMetadata (E14), per the Accept-keyed design.
+- Fixtures use the URI the app really produces. The transport's `/raw`
+  variant carries `lfs=false`, which is not a semantic key, so `_validRequest`
+  keeps rejecting it; d1 may revisit that only through a new decision.
