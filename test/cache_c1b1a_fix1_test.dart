@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/record_controller.dart';
 import 'package:gitlab_mobile/features/workspace/records_feed.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import 'support/fake_adapter.dart';
@@ -193,7 +194,7 @@ void main() {
   );
 
   for (final end in ['reset', 'dispose', 'hidden']) {
-    test('Codex I-2: quiet recovery respects $end', () async {
+    test('Codex I-2: explicit quiet recovery respects $end', () async {
       final pending = Completer<CachedRead<ApiPage<Json>>>();
       var calls = 0;
       final controller = RecordController(
@@ -219,14 +220,15 @@ void main() {
       }
       pending.complete(_read(666));
       await refresh;
-      expect(
-        controller.items.map((item) => item['id']),
-        end == 'reset' ? [9] : isEmpty,
-      );
+      expect(controller.items.map((item) => item['id']), switch (end) {
+        'reset' => [9],
+        'hidden' => [666],
+        _ => isEmpty,
+      });
       if (end == 'hidden') {
         controller.setBackgroundEnabled(true);
-        await _until(() => !controller.revalidating);
-        expect(controller.items.single['id'], 9);
+        expect(controller.revalidating, isFalse);
+        expect(calls, 3, reason: 'an explicit read completes while hidden');
       }
     });
   }
@@ -301,10 +303,10 @@ void main() {
     },
   );
 
-  for (final explicit in [false, true]) {
+  for (final operation in ['background', 'refresh', 'reconcile']) {
     for (final hideAt in [1, 2, 3]) {
       testWidgets(
-        'Codex I-3: hiding during ${explicit ? 'explicit' : 'background'} reconcile page $hideAt keeps the complete old window and resumes',
+        'Codex I-3: hiding during $operation page $hideAt fences background work only',
         (tester) async {
           var now = _fetched, rebuilding = false, held = false;
           final pending = Completer<ResponseBody>();
@@ -330,10 +332,12 @@ void main() {
           final oldTime = controller.fetchedAt;
           rebuilding = true;
           now = now.add(const Duration(seconds: 61));
-          final refresh = explicit
+          final background = operation == 'background';
+          if (operation == 'refresh') api.clearReadCache();
+          final refresh = operation == 'reconcile'
               ? controller.reconcileLoadedWindow()
               : controller.refresh();
-          if (!explicit) await refresh;
+          if (background) await refresh;
           await pumpUntil(tester, () => held);
           final requestsBeforeHide = [
             for (var page = 1; page <= 3; page++) _gets(adapter, page: page),
@@ -343,27 +347,30 @@ void main() {
             _page(10 + hideAt, next: hideAt < 3 ? hideAt + 1 : null),
           );
           await settleNetworkWidgets(tester);
-          if (explicit) await refresh;
-          expect(controller.items.map((item) => item['id']), [1, 2, 3]);
-          expect(controller.fetchedAt, oldTime);
+          if (!background) await refresh;
+          expect(
+            controller.items.map((item) => item['id']),
+            background ? [1, 2, 3] : [11, 12, 13],
+          );
+          expect(controller.fetchedAt, background ? oldTime : now);
           expect(
             [for (var page = 1; page <= 3; page++) _gets(adapter, page: page)],
-            requestsBeforeHide,
-            reason: 'no continuation HTTP may start while hidden',
+            background ? requestsBeforeHide : [2, 2, 2],
+            reason: 'only background continuation HTTP waits for visibility',
           );
           expect(controller.next, isNull);
           await tester.pumpWidget(_host(api, key, true));
           await settleNetworkWidgets(tester);
           expect(controller.items.map((item) => item['id']), [11, 12, 13]);
-          expect(_gets(adapter), 3);
-          expect(_gets(adapter, page: 2), hideAt == 1 ? 2 : 3);
-          expect(_gets(adapter, page: 3), hideAt == 3 ? 3 : 2);
+          expect(_gets(adapter), background ? 3 : 2);
+          expect(_gets(adapter, page: 2), background && hideAt > 1 ? 3 : 2);
+          expect(_gets(adapter, page: 3), background && hideAt == 3 ? 3 : 2);
         },
       );
     }
   }
 
-  testWidgets('Codex I-3: an uncached hidden feed defers its initial HTTP', (
+  testWidgets('N-1: an uncached hidden feed sends its initial HTTP', (
     tester,
   ) async {
     final adapter = FakeAdapter((_) => _page(1));
@@ -372,7 +379,8 @@ void main() {
     final key = GlobalKey<RecordsFeedState>();
     await tester.pumpWidget(_host(api, key, false, useCache: false));
     await settleNetworkWidgets(tester);
-    expect(_gets(adapter), 0);
+    expect(_gets(adapter), 1);
+    expect(key.currentState!.controller.items.single['id'], 1);
     await tester.pumpWidget(_host(api, key, true, useCache: false));
     await settleNetworkWidgets(tester);
     expect(_gets(adapter), 1);
@@ -380,7 +388,7 @@ void main() {
   });
 
   testWidgets(
-    'Codex I-3: uncached hidden reconciliation resumes the old window',
+    'N-1: uncached hidden reconciliation completes the whole window',
     (tester) async {
       var rebuilding = false;
       final adapter = FakeAdapter((request) {
@@ -397,9 +405,9 @@ void main() {
       rebuilding = true;
       await tester.pumpWidget(_host(api, key, false, useCache: false));
       await tester.runAsync(controller.reconcileLoadedWindow);
-      expect(_gets(adapter), 1);
-      expect(_gets(adapter, page: 2), 1);
-      expect(controller.items.map((item) => item['id']), [1, 2]);
+      expect(_gets(adapter), 2);
+      expect(_gets(adapter, page: 2), 2);
+      expect(controller.items.map((item) => item['id']), [11, 12]);
       await tester.pumpWidget(_host(api, key, true, useCache: false));
       await settleNetworkWidgets(tester);
       expect(_gets(adapter), 2);
@@ -407,6 +415,151 @@ void main() {
       expect(controller.items.map((item) => item['id']), [11, 12]);
     },
   );
+
+  for (final outcome in ['success', 'network', '429']) {
+    for (final completeHidden in [false, true]) {
+      testWidgets(
+        'N-1: a cold cached feed created hidden reports $outcome when completed ${completeHidden ? 'hidden' : 'visible'}',
+        (tester) async {
+          final pending = Completer<ResponseBody>();
+          final adapter = FakeAdapter((_) => pending.future);
+          final api = _api(adapter);
+          addTearDown(api.close);
+          final key = GlobalKey<RecordsFeedState>();
+          await tester.pumpWidget(_host(api, key, false));
+          expect(find.byType(RowsSkeleton), findsOneWidget);
+          expect(find.byType(EmptyState), findsNothing);
+          await settleNetworkWidgets(tester);
+          final controller = key.currentState!.controller;
+          expect(
+            _gets(adapter),
+            1,
+            reason: 'the explicit read sends while hidden',
+          );
+          expect(controller.loading, isTrue);
+          expect(find.byType(RowsSkeleton), findsOneWidget);
+          expect(find.byType(EmptyState), findsNothing);
+
+          if (!completeHidden) {
+            await tester.pumpWidget(_host(api, key, true));
+            await settleNetworkWidgets(tester);
+            expect(_gets(adapter), 1);
+            expect(controller.loading, isTrue);
+            expect(find.byType(RowsSkeleton), findsOneWidget);
+            expect(find.byType(EmptyState), findsNothing);
+          }
+
+          switch (outcome) {
+            case 'success':
+              pending.complete(_page(9));
+            case 'network':
+              pending.completeError(
+                DioException(
+                  requestOptions: adapter.requests.single,
+                  type: DioExceptionType.connectionError,
+                ),
+              );
+            case '429':
+              pending.complete(
+                jsonResponse(
+                  {},
+                  status: 429,
+                  headers: {
+                    'retry-after': ['60'],
+                  },
+                ),
+              );
+          }
+          await settleNetworkWidgets(tester);
+          expect(controller.loading, isFalse);
+          expect(find.byType(RowsSkeleton), findsNothing);
+          expect(find.byType(EmptyState), findsNothing);
+          if (completeHidden) {
+            await tester.pumpWidget(_host(api, key, true));
+            await settleNetworkWidgets(tester);
+          }
+          expect(
+            _gets(adapter),
+            1,
+            reason: 'showing the feed needs no new read',
+          );
+          expect(controller.revalidating, isFalse);
+          expect(controller.backgroundFailure, isNull);
+          expect(find.byType(EmptyState), findsNothing);
+          if (outcome == 'success') {
+            expect(controller.items.single['id'], 9);
+            expect(controller.error, isNull);
+            expect(find.text('Row 9'), findsOneWidget);
+            expect(find.byType(FailureNotice), findsNothing);
+          } else {
+            expect(controller.items, isEmpty);
+            expect(
+              controller.error?.kind,
+              outcome == 'network'
+                  ? FailureKind.network
+                  : FailureKind.rateLimited,
+            );
+            expect(find.byType(FailureNotice), findsOneWidget);
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          api.close();
+        },
+      );
+    }
+  }
+
+  testWidgets('Codex I-3: a stale hidden feed revalidates only when visible', (
+    tester,
+  ) async {
+    var now = _fetched;
+    var reads = 0;
+    final adapter = FakeAdapter((_) => _page(reads++ == 0 ? 1 : 9));
+    final api = _api(adapter, clock: () => now);
+    addTearDown(api.close);
+    await tester.runAsync(() => api.cachedRecords(['issues']));
+    now = now.add(const Duration(seconds: 61));
+    final key = GlobalKey<RecordsFeedState>();
+    await tester.pumpWidget(_host(api, key, false));
+    await settleNetworkWidgets(tester);
+    final controller = key.currentState!.controller;
+    expect(_gets(adapter), 1);
+    expect(controller.items.single['id'], 1);
+    expect(controller.stale, isTrue);
+    expect(controller.revalidating, isFalse);
+    await tester.pumpWidget(_host(api, key, true));
+    await settleNetworkWidgets(tester);
+    expect(_gets(adapter), 2);
+    expect(controller.items.single['id'], 9);
+    expect(controller.stale, isFalse);
+    expect(controller.revalidating, isFalse);
+  });
+
+  test('Codex I-2: background quiet recovery waits for visibility', () async {
+    final pending = Completer<CachedRead<ApiPage<Json>>>();
+    var calls = 0;
+    final controller = RecordController(
+      (_) async => const ApiPage<Json>([]),
+      cached: ({required fresh, required background}) {
+        if (!fresh) return Future.value(_read(1, stale: true));
+        calls++;
+        if (calls <= 2) return Future.value(_read(666, superseded: true));
+        if (calls == 3) return pending.future;
+        return Future.value(_read(9));
+      },
+    );
+    addTearDown(controller.dispose);
+    await controller.refresh();
+    await _until(() => calls == 3);
+    controller.setBackgroundEnabled(false);
+    pending.complete(_read(666));
+    await _until(() => !controller.revalidating);
+    expect(controller.items.single['id'], 1);
+    expect(calls, 3);
+    controller.setBackgroundEnabled(true);
+    await _until(() => !controller.revalidating);
+    expect(controller.items.single['id'], 9);
+    expect(calls, 4);
+  });
 
   for (final inFlight in [false, true]) {
     for (final failed in [false, true]) {
