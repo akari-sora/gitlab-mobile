@@ -15,18 +15,18 @@ void main() {
   tearDown(() => s.close());
 
   test(
-    'P6 ledger preserves five model-visible closed named operations and counted caps',
+    'P6 ledger preserves five closed named operations and counted caps',
     () {
       final expected = {
-        'edit_file': ('updateRepositoryFile', 31, true),
-        'createFile': ('createRepositoryFile', 23, true),
-        'deleteFile': ('deleteFile', 25, false),
-        'applySuggestion': ('applySuggestion', 23, true),
-        'batchApplySuggestions': ('batchApplySuggestions', 137, true),
+        'edit_file': ('updateRepositoryFile', 35, true, true),
+        'createFile': ('createRepositoryFile', 27, true, true),
+        'deleteFile': ('deleteFile', 29, false, true),
+        'applySuggestion': ('applySuggestion', 27, true, true),
+        'batchApplySuggestions': ('batchApplySuggestions', 141, true, false),
       };
       expect(aiFileRows, hasLength(5));
       for (final row in aiFileRows) {
-        expect(row.modelVisible, isTrue);
+        expect(row.modelVisible, expected[row.operationId]!.$4);
         expect(row.namedMethod, expected[row.operationId]!.$1);
         expect(row.httpCap, expected[row.operationId]!.$2);
         expect(row.readback, expected[row.operationId]!.$3);
@@ -40,9 +40,9 @@ void main() {
       );
       expect(
         productionAiLedger.modelVisible.any(
-          (r) => expected.containsKey(r.operationId),
+          (r) => r.operationId == 'batchApplySuggestions',
         ),
-        isTrue,
+        isFalse,
       );
     },
   );

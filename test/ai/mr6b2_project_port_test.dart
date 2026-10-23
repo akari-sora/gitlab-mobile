@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart';
+import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
@@ -165,6 +166,8 @@ final class _Fixture {
   bool duplicateFile = false;
   bool wrongReadbackId = false;
   bool wrongReadbackFields = false;
+  String? projectDeletionField;
+  String? containerDeletionStatus;
 
   ResponseBody respond(RequestOptions request) {
     final path = request.uri.path.substring('/gitlab/api/v4'.length);
@@ -196,6 +199,8 @@ final class _Fixture {
       }
       return jsonResponse({
         ...project,
+        if (mutated && op == 'deleteProject' && projectDeletionField != null)
+          projectDeletionField!: '2026-10-23',
         if (mutated && wrongReadbackFields) 'name': 'unexpected name',
       });
     }
@@ -226,7 +231,13 @@ final class _Fixture {
         return jsonResponse({}, status: containerStatus!);
       }
       if (mutated && !remains) return jsonResponse({}, status: 404);
-      return jsonResponse(path.contains('/tags/') ? tag : repository);
+      return jsonResponse(path.contains('/tags/')
+          ? tag
+          : {
+              ...repository,
+              if (mutated && containerDeletionStatus != null)
+                'status': containerDeletionStatus,
+            });
     }
     throw StateError('Unexpected synthetic request ${request.method} $path');
   }
@@ -286,6 +297,17 @@ void main() {
           expect(prepared.dependencyKeys.single.parts, [_account, 'project:9']);
         }
         expect(prepared.bindingDigest, matches(RegExp(r'^[0-9a-f]{64}$')));
+        expect(
+          prepared.bindingTargets.single.kind,
+          {
+            'deletePackage',
+            'deletePackageFile',
+            'deleteContainerRepository',
+            'deleteContainerTag',
+          }.contains(op)
+              ? AiTargetKind.other
+              : AiTargetKind.project,
+        );
         expect(f.writes, isEmpty);
         final outcome =
             await f.port.commit(prepared, mayStart: () => true)
@@ -410,6 +432,39 @@ void main() {
         (await f.port.commit(p, mayStart: () => true) as AiWriteSettled).state,
         AiJournalState.writeUncertain,
       );
+      expect(f.writes, hasLength(1));
+    });
+  }
+
+  for (final field in ['marked_for_deletion_on', 'marked_for_deletion_at']) {
+    test('deleteProject accepts non-empty $field as scheduled deletion',
+        () async {
+      final f = _Fixture('deleteProject')
+        ..remains = true
+        ..projectDeletionField = field;
+      final prepared = await f.port.prepare(_request('deleteProject'));
+      final outcome =
+          await f.port.commit(prepared, mayStart: () => true) as AiWriteSettled;
+      expect(outcome.state, AiJournalState.succeeded);
+      expect(outcome.resultCode, 'deletionScheduled');
+      expect(outcome.readbackVerified, isTrue);
+      expect(f.writes, hasLength(1));
+    });
+  }
+
+  for (final status in ['delete_scheduled', 'delete_ongoing']) {
+    test('deleteContainerRepository accepts $status as scheduled deletion',
+        () async {
+      final f = _Fixture('deleteContainerRepository')
+        ..remains = true
+        ..containerDeletionStatus = status;
+      final prepared =
+          await f.port.prepare(_request('deleteContainerRepository'));
+      final outcome =
+          await f.port.commit(prepared, mayStart: () => true) as AiWriteSettled;
+      expect(outcome.state, AiJournalState.succeeded);
+      expect(outcome.resultCode, 'deletionScheduled');
+      expect(outcome.readbackVerified, isTrue);
       expect(f.writes, hasLength(1));
     });
   }

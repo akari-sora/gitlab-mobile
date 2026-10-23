@@ -199,6 +199,7 @@ final class AiWriteOutcome {
     'write ${operationId ?? "operation"}'
     '${target == null ? "" : " on $target"}: '
     '${noChange ? "noChange" : state.name}; $reasonCode'
+    '${reasonCode == "userRejected" ? "; the user rejected the proposal" : ""}'
     '${state == AiJournalState.writeUncertain || state == AiJournalState.dispatching ? "; doNotRetry" : ""}'
     '${resultSummary == null || resultSummary!.isEmpty ? "" : "; $resultSummary"}',
   );
@@ -261,6 +262,7 @@ final class AiWritePolicySnapshot {
     this.clientMayStart = true,
     this.aiAttribution = false,
     this.currentJobId,
+    this.currentResource,
   });
 
   final AiWriteScope scope;
@@ -277,6 +279,7 @@ final class AiWritePolicySnapshot {
   final bool clientMayStart;
   final bool aiAttribution;
   final int? currentJobId;
+  final AiTargetRef? currentResource;
 
   bool get enabled =>
       alive &&
@@ -1080,7 +1083,7 @@ final class PolicyAiWriteCoordinator
       }
       final readbackConfirmed =
           settled.state == AiJournalState.succeeded &&
-          capability.readback;
+          settled.readbackVerified;
       if (readbackConfirmed) {
         proposal.editedText = null;
       }
@@ -1090,6 +1093,7 @@ final class PolicyAiWriteCoordinator
           state: settled.state,
           reasonCode: settled.resultCode,
           mutationCount: settled.mutationCount,
+          noChange: settled.resultCode == 'noChange',
           readbackConfirmed: readbackConfirmed,
           executionId: proposal.executionId,
           operationId: proposal.operationId,
@@ -1166,7 +1170,7 @@ final class PolicyAiWriteCoordinator
       pending,
       _notExecuted(
         pending.call,
-        'rejected',
+        'userRejected',
         executionId: proposal.executionId,
         target: _targetSummary(pending.prepared),
       ),
@@ -1270,6 +1274,7 @@ final class PolicyAiWriteCoordinator
         current.writePolicyRevision != expected.writePolicyRevision ||
         current.scopeRevision != expected.scopeRevision ||
         current.currentJobId != expected.currentJobId ||
+        _originIdentity(current.currentResource) != _originIdentity(expected.currentResource) ||
         current.consentHash != expected.consentHash ||
         _scopeDigest(current.scope) != _scopeDigest(expected.scope)) {
       throw const _WriteBlocked('settingsChanged');
@@ -1372,8 +1377,10 @@ final class PolicyAiWriteCoordinator
     AiWriteProposal proposal, {
     required bool confirmed,
   }) {
+    if (confirmed) return null;
+    if (proposal.tier.reusesStoredVariables) return 'storedVariablesMayApply';
     final upload = proposal.upload;
-    if (upload == null || confirmed || !upload.readersCanFetch) return null;
+    if (upload == null || !upload.readersCanFetch) return null;
     return uploadReadersCanFetch;
   }
 
@@ -1684,6 +1691,14 @@ final class PolicyAiWriteCoordinator
   }
 
   AiTargetRef _boundTarget(AiTargetRef target, AiWritePolicySnapshot policy) {
+    final origin = policy.currentResource;
+    final currentResource = origin != null &&
+        origin.projectId == target.projectId &&
+        ((target.kind == AiTargetKind.file && origin.kind == AiTargetKind.file &&
+            target.path == origin.path &&
+            (target.refName == origin.refName || target.sourceRef == origin.refName)) ||
+         (target.kind == AiTargetKind.merge && origin.kind == AiTargetKind.mergeRequest &&
+            target.iid == origin.iid));
     final currentJob = target.kind == AiTargetKind.job &&
         target.jobId == policy.currentJobId && target.jobId != null &&
         policy.scope.grants.any((grant) => grant.projectId == target.projectId);
@@ -1701,15 +1716,15 @@ final class PolicyAiWriteCoordinator
             created.id == target.pipelineId) ||
          (target.kind == AiTargetKind.note &&
             target.side == AiResourceSide.mergeRequest && created.id != null &&
-            created.id == target.iid && created.parentIid != null &&
+            created.id == (target.noteId ?? target.iid) && created.parentIid != null &&
             created.parentIid == target.parentIid)));
-    if (!currentJob && !created && !createdPipeline) return target;
+    if (!currentResource && !currentJob && !created && !createdPipeline) return target;
     return AiTargetRef(
       kind: target.kind, side: target.side,
-      origin: currentJob ? AiTargetOrigin.currentResource :
+      origin: currentResource || currentJob ? AiTargetOrigin.currentResource :
           created ? AiTargetOrigin.createdInSegment : target.origin,
       projectId: target.projectId, projectPath: target.projectPath,
-      iid: target.iid, parentIid: target.parentIid,
+      iid: target.iid, parentIid: target.parentIid, noteId: target.noteId,
       refName: target.refName, path: target.path,
       sourceRef: target.sourceRef, targetRef: target.targetRef,
       pipelineId: target.pipelineId, jobId: target.jobId,
@@ -1806,6 +1821,10 @@ String _reason(Object error) => switch (error) {
   AiJournalException(:final reason) => reason,
   _ => 'preflightFailed',
 };
+
+String _originIdentity(AiTargetRef? origin) => jsonEncode(origin == null ? null : [
+  origin.kind.name, origin.projectId, origin.iid, origin.path, origin.refName,
+]);
 
 String _nonce() {
   final random = Random.secure();
@@ -2131,13 +2150,15 @@ const aiWriteRequestCounts = <String, AiWriteRequestCount>{
 };
 
 /// §4.4: the HTTP requests a write reserves from the send's shared budget
-/// when it is proposed. The ledger cap includes one mutation and doubled
-/// logical GETs for OAuth replay. A PAT needs each GET only once. An unknown
+/// when it is proposed. The ledger cap includes the mutation allowance (two
+/// for cancel's compatibility fallback) and doubled logical GETs for OAuth
+/// replay. A PAT needs each GET only once. An unknown
 /// operation reserves the largest visible ledger cap for compatibility.
 int aiWriteRequestAllowance(String operation, {bool oauthReplay = true}) {
   final cap = productionAiLedger.find(operation)?.httpCap ??
       productionAiLedger.modelVisible.fold<int>(0, (most, row) => row.httpCap > most ? row.httpCap : most);
-  return oauthReplay ? cap : (cap - 1) ~/ 2 + 1;
+  final mutations = operation == 'cancelAutoMerge' ? 2 : 1;
+  return oauthReplay ? cap : (cap - mutations) ~/ 2 + mutations;
 }
 
 bool _legacy(String operation) => aiT12Rows.any((row) => row.operationId == operation);
@@ -2230,6 +2251,7 @@ port.AiWritePreview redactAiWritePreview(
       preexistingSecretHits:
           preexistingSecretHits ?? preview.preexistingSecretHits,
       ciPath: preview.ciPath,
+      moreFiles: preview.moreFiles,
     ),
     port.AiMergePreview() => port.AiMergePreview(
       sourceBranch: safeDisplay(preview.sourceBranch),
@@ -2240,7 +2262,12 @@ port.AiWritePreview redactAiWritePreview(
       removeSourceBranch: preview.removeSourceBranch,
       autoMerge: preview.autoMerge,
       ciPaths: preview.ciPaths.map(safeDisplay).toList(),
-      closingIssues: preview.closingIssues,
+      closingIssues: [
+        for (final issue in preview.closingIssues)
+          port.AiClosingIssue(projectId: issue.projectId, iid: issue.iid,
+              outOfScope: issue.outOfScope,
+              fullReference: optional(issue.fullReference)),
+      ],
       headMovedCommits: preview.headMovedCommits.map(safeDisplay).toList(),
     ),
     port.AiPipelinePreview() => port.AiPipelinePreview(
@@ -2266,6 +2293,9 @@ port.AiWritePreview redactAiWritePreview(
       ref: optional(preview.ref),
       count: preview.count,
       hasMore: preview.hasMore,
+      parentName: optional(preview.parentName),
+      author: optional(preview.author),
+      excerpt: optional(preview.excerpt),
     ),
     port.AiCancelAutoMergePreview() => port.AiCancelAutoMergePreview(
       iid: preview.iid,

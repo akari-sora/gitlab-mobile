@@ -49,7 +49,7 @@ AiMergeCheck _check({
   AiWriteScope scope = _scope,
 }) => evaluateMergeCheck(
   changes: changes ?? _changes([_path('lib/main.dart')]),
-  ci: ci ?? AiCiConfig.fromProject(''),
+  ci: ci ?? AiCiConfig.fromProject(const {'ci_config_path': ''}),
   closesIssues: closes,
   description: description,
   commitMessages: messages,
@@ -60,7 +60,7 @@ AiMergeCheck _check({
 void main() {
   group('P5 CI path classification', () {
     test('default and all CODEOWNERS locations are CI paths', () {
-      final config = AiCiConfig.fromProject('');
+      final config = AiCiConfig.fromProject(const {'ci_config_path': ''});
       for (final path in [
         '.gitlab-ci.yml',
         '.gitlab/ci/build.yml',
@@ -85,18 +85,22 @@ void main() {
     test(
       'custom local path and external configurations keep default guards',
       () {
-        final local = AiCiConfig.fromProject('ci/custom.yml');
+        final local = AiCiConfig.fromProject(const {
+          'ci_config_path': 'ci/custom.yml',
+        });
         expect(local, isA<AiCiConfigLocal>());
         expect(isCiConfigPath('ci/custom.yml', local), isTrue);
       expect(isCiConfigPath('custom.yml', local), isFalse);
-      final atSign = AiCiConfig.fromProject('ci/custom@v1.yml');
+      final atSign = AiCiConfig.fromProject(const {
+        'ci_config_path': 'ci/custom@v1.yml',
+      });
       expect(atSign, isA<AiCiConfigLocal>());
       expect(isCiConfigPath('ci/custom@v1.yml', atSign), isTrue);
         for (final path in [
           'x.yml@group/project',
           'https://ci.example/config.yml',
         ]) {
-          final external = AiCiConfig.fromProject(path);
+          final external = AiCiConfig.fromProject({'ci_config_path': path});
           expect(external, isA<AiCiConfigExternal>());
           expect(isCiConfigPath('.gitlab-ci.yml', external), isTrue);
           expect(isCiConfigPath('x.yml', external), isFalse);
@@ -104,14 +108,33 @@ void main() {
       },
     );
 
-    test('unreadable CI settings and invalid paths fail closed', () {
-      for (final value in <Object?>[null, 9, [], '../ci.yml', '/ci.yml']) {
-        final config = AiCiConfig.fromProject(value);
+    test('present null uses the default path; absent and malformed fail closed', () {
+      final defaultConfig = AiCiConfig.fromProject(const {
+        'ci_config_path': null,
+      });
+      expect(defaultConfig, isA<AiCiConfigLocal>());
+      expect(isCiConfigPath('.gitlab-ci.yml', defaultConfig), isTrue);
+      expect(isCiConfigPath('lib/main.dart', defaultConfig), isFalse);
+
+      for (final project in <Map<String, Object?>>[
+        {},
+        {'ci_config_path': 9},
+        {'ci_config_path': []},
+        {'ci_config_path': '../ci.yml'},
+        {'ci_config_path': '/ci.yml'},
+      ]) {
+        final config = AiCiConfig.fromProject(project);
         expect(config, isA<AiCiConfigUnreadable>());
         expect(isCiConfigPath('lib/main.dart', config), isTrue);
       }
       for (final path in ['', '../a', 'a//b', 'a\\b', 'a\n']) {
-        expect(isCiConfigPath(path, AiCiConfig.fromProject('')), isTrue);
+        expect(
+          isCiConfigPath(
+            path,
+            AiCiConfig.fromProject(const {'ci_config_path': ''}),
+          ),
+          isTrue,
+        );
       }
     });
   });
@@ -131,7 +154,9 @@ void main() {
       expect(
         _check(
           changes: changes,
-          ci: AiCiConfig.fromProject('ci/custom.yml'),
+          ci: AiCiConfig.fromProject(const {
+            'ci_config_path': 'ci/custom.yml',
+          }),
         ).ciPaths,
         ['.gitlab/old.yml', 'ci/custom.yml'],
       );
@@ -320,7 +345,9 @@ void main() {
         ),
         _check(description: 'updated'),
         _check(messages: ['updated']),
-        _check(ci: AiCiConfig.fromProject('other.yml')),
+        _check(
+          ci: AiCiConfig.fromProject(const {'ci_config_path': 'other.yml'}),
+        ),
         _check(ci: const AiCiConfigUnreadable()),
         _check(closes: null),
         _check(changes: _changes([_path('new.dart')])),

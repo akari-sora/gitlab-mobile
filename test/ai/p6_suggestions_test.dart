@@ -33,9 +33,17 @@ void main() {
         ]);
         expect(p.textScan!.newTexts, ['beta']);
         expect(p.bindingTargets, hasLength(2));
-        final preview = p.preview as AiFieldsPreview;
-        final changes = preview.fields['changes']! as List;
-        expect((changes.single as Map)['path'], 'src/a.txt');
+        final preview = p.preview as AiDiffPreview;
+        expect(preview.path, 'src/a.txt');
+        expect(preview.ref, 'work');
+        expect(preview.moreFiles, 0);
+        expect(
+          preview.lines.any(
+            (line) =>
+                line.kind == AiDiffLineKind.addition && line.text == 'beta',
+          ),
+          isTrue,
+        );
         final result =
             await s.writePort.commit(p, mayStart: () => true) as AiWriteSettled;
         expect(result.state, AiJournalState.succeeded);
@@ -65,13 +73,12 @@ void main() {
         p6Request('applySuggestion', p6Args('applySuggestion')),
       );
       expect(p.textScan!.newTexts, ['resolved replacement\n']);
-      final changes = (p.preview as AiFieldsPreview).fields['changes']! as List;
-      final lines = (changes.single as Map)['lines']! as List;
+      final lines = (p.preview as AiDiffPreview).lines;
       expect(
         lines.any(
           (line) =>
-              (line as List)[0] == 'addition' &&
-              line[1] == 'resolved replacement',
+              line.kind == AiDiffLineKind.addition &&
+              line.text == 'resolved replacement',
         ),
         isTrue,
       );
@@ -198,6 +205,7 @@ void main() {
       );
       expect(p.facts.touchesCiConfig, isTrue);
       expect(p.confirmName, 'ci/custom.yml');
+      expect((p.preview as AiDiffPreview).ciPath, isTrue);
       s.suggestionPath = 'src/a.txt';
       s.suggestionOldPath = 'ci/custom.yml';
       p = await s.writePort.prepare(
@@ -205,6 +213,7 @@ void main() {
       );
       expect(p.facts.touchesCiConfig, isTrue);
       expect(p.confirmName, 'ci/custom.yml');
+      expect((p.preview as AiDiffPreview).ciPath, isTrue);
       s.suggestionOldPath = null;
       p = await s.writePort.prepare(
         p6Request('applySuggestion', {
@@ -233,6 +242,7 @@ void main() {
     );
     expect(p.facts.touchesCiConfig, isTrue);
     expect(p.confirmName, 'ci/custom.yml');
+    expect((p.preview as AiDiffPreview).ciPath, isFalse);
     expect(
       p.writeKeys.map((key) => key.parts.last),
       unorderedEquals(['src/a.txt', 'ci/custom.yml']),
@@ -244,6 +254,10 @@ void main() {
       unorderedEquals(['src/a.txt', 'ci/custom.yml']),
     );
     expect(p.textScan!.newTexts, ['beta', 'beta']);
+    final preview = p.preview as AiDiffPreview;
+    expect(preview.path, 'src/a.txt');
+    expect(preview.ref, 'work');
+    expect(preview.moreFiles, 1);
   });
 
   for (final path in ['.env', '../outside']) {

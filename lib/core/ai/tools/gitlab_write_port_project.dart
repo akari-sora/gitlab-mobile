@@ -44,6 +44,7 @@ extension _ProjectPrepare on GitLabAiWritePort {
     late Future<Object?> Function(Object?) readback;
     late bool Function(Object?) confirmed;
     late AiWritePreview preview;
+    AiTargetRef? bindingTarget;
 
     switch (op) {
       case 'deletePackage':
@@ -96,6 +97,12 @@ extension _ProjectPrepare on GitLabAiWritePort {
         }
         confirmed = (value) => value == true;
         preview = AiDeletePreview(targetName: confirmName, path: projectName);
+        bindingTarget = AiTargetRef(
+          kind: AiTargetKind.other,
+          projectId: project,
+          projectPath: projectName,
+          name: confirmName,
+        );
       case 'deleteContainerRepository':
       case 'deleteContainerTag':
         _projectNotArchived(p);
@@ -114,7 +121,7 @@ extension _ProjectPrepare on GitLabAiWritePort {
         keys = {_key([...projectKey, 'registry', '$repository'])};
         if (op == 'deleteContainerRepository') {
           mutation = () => _api.deleteContainerRepository(project, repository);
-          readback = (_) => _projectAbsent(path);
+          readback = (_) => _containerDeletionState(path);
         } else {
           final tag = _text(a, 'tag');
           final tagPath = [...path, 'tags', tag];
@@ -130,6 +137,12 @@ extension _ProjectPrepare on GitLabAiWritePort {
         }
         confirmed = (value) => value == true;
         preview = AiDeletePreview(targetName: confirmName, path: projectName);
+        bindingTarget = AiTargetRef(
+          kind: AiTargetKind.other,
+          projectId: project,
+          projectPath: projectName,
+          name: confirmName,
+        );
       case 'createProject':
         final name = _text(a, 'name');
         final path = _text(a, 'path');
@@ -179,7 +192,7 @@ extension _ProjectPrepare on GitLabAiWritePort {
         preview = AiFieldsPreview({'name': name, 'description': description});
       case 'deleteProject':
         mutation = () => _api.deleteProject(project!);
-        readback = (_) => _projectAbsent(['projects', '$project']);
+        readback = (_) => _projectDeletionState(['projects', '$project']);
         confirmed = (value) => value == true;
         preview = AiDeletePreview(targetName: confirmName, path: projectName);
       case 'forkProject':
@@ -211,13 +224,27 @@ extension _ProjectPrepare on GitLabAiWritePort {
       readback: readback,
       projectPath: projectName,
       projectVisibility: creating ? 'private' : p['visibility'] as String?,
-      bindingTargets: [AiTargetRef(
-        kind: AiTargetKind.project, projectId: project, projectPath: projectName,
-        name: personal ? confirmName : projectName,
-      )],
+      bindingTargets: [
+        bindingTarget ?? AiTargetRef(
+          kind: AiTargetKind.project,
+          projectId: project,
+          projectPath: projectName,
+          name: personal ? confirmName : projectName,
+        ),
+      ],
       bindingDigest: sha256.convert(utf8.encode(jsonEncode(binding))).toString(),
       preview: preview,
       classify: (prepared, {result, readback, mutationError, readbackError}) {
+        if (mutationError == null &&
+            readbackError == null &&
+            readback == _deletionScheduled) {
+          return _outcome(
+            prepared,
+            AiJournalState.succeeded,
+            'deletionScheduled',
+            readbackVerified: true,
+          );
+        }
         if (mutationError == null && readbackError == null && !confirmed(readback)) {
           return _outcome(prepared, AiJournalState.writeUncertain, 'readbackUnconfirmed');
         }
@@ -255,6 +282,36 @@ extension _ProjectPrepare on GitLabAiWritePort {
     }
   }
 
+  Future<Object> _projectDeletionState(List<String> path) async {
+    try {
+      final value = await _api.record(path);
+      final markedOn = value['marked_for_deletion_on'];
+      final markedAt = value['marked_for_deletion_at'];
+      if ((markedOn is String && markedOn.trim().isNotEmpty) ||
+          (markedAt is String && markedAt.trim().isNotEmpty)) {
+        return _deletionScheduled;
+      }
+      return false;
+    } on ApiFailure catch (error) {
+      if (error.status != 404) rethrow;
+      return true;
+    }
+  }
+
+  Future<Object> _containerDeletionState(List<String> path) async {
+    try {
+      final value = await _api.record(path);
+      if (value['status'] == 'delete_scheduled' ||
+          value['status'] == 'delete_ongoing') {
+        return _deletionScheduled;
+      }
+      return false;
+    } on ApiFailure catch (error) {
+      if (error.status != 404) rethrow;
+      return true;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _projectPackageFiles(List<String> path) async {
     final files = <Map<String, dynamic>>[];
     Uri? next;
@@ -267,6 +324,8 @@ extension _ProjectPrepare on GitLabAiWritePort {
     throw const ApiFailure(FailureKind.tooLarge);
   }
 }
+
+const _deletionScheduled = 'deletionScheduled';
 
 void _projectNotArchived(Map<String, dynamic> project) {
   if (project['archived'] == true) throw const AiWriteRefused('projectArchived');

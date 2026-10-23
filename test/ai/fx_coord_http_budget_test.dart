@@ -58,11 +58,10 @@ const _counted = <String, (int fresh, int prepare, int readback)>{
 // auto-merge also reserves its fallback mutation; batch suggestions reserve
 // all twenty distinct discussions and can exceed a single send's budget.
 const _mr6b2CountedCaps = <String, int>{
-  'edit_file': 31,
-  'createFile': 23,
-  'deleteFile': 25,
-  'applySuggestion': 23,
-  'batchApplySuggestions': 137,
+  'edit_file': 35,
+  'createFile': 27,
+  'deleteFile': 29,
+  'applySuggestion': 27,
   'createBranch': 19,
   'deleteBranch': 17,
   'createTag': 19,
@@ -159,9 +158,10 @@ void main() {
     for (final entry in _mr6b2CountedCaps.entries) {
       test('${entry.key} reserves its counted worst case', () {
         expect(aiWriteRequestAllowance(entry.key), entry.value);
+        final mutations = entry.key == 'cancelAutoMerge' ? 2 : 1;
         expect(
           aiWriteRequestAllowance(entry.key, oauthReplay: false),
-          (entry.value - 1) ~/ 2 + 1,
+          (entry.value - mutations) ~/ 2 + mutations,
         );
       });
     }

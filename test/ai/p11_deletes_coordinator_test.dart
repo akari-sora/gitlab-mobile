@@ -229,6 +229,28 @@ void main() {
     expect((await f.approve(p)).state, AiJournalState.succeeded);
   });
 
+  for (final operation in [
+    'deleteLabel',
+    'deleteMilestone',
+    'deleteBoard',
+    'deleteBoardList',
+    'deleteNote',
+    'deleteDiscussionNote',
+  ]) {
+    test('fix1 $operation stays unbound at bypass without an explicit target',
+        () async {
+      f.level = AiAutonomyLevel.bypass;
+      final proposal = await f.propose(operation);
+      expect(proposal, isNotNull);
+      expect(proposal!.tier.decision, AiGateDecision.requireApproval);
+      expect(
+        proposal.tier.reasons,
+        contains(AiFixedConfirmReason.targetUnbound),
+      );
+      expect(f.mutations, 0);
+    });
+  }
+
   const related = <String, Map<String, Object?>>{
     'createNote': {
       'projectId': 9,

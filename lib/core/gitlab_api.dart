@@ -753,8 +753,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     String sha,
     String filePath, {
     bool refresh = false,
+    bool useCache = true,
   }) {
-    if (!RegExp(r'^[0-9a-fA-F]{40,64}$').hasMatch(sha)) {
+    if (!useCache || !RegExp(r'^[0-9a-fA-F]{40,64}$').hasMatch(sha)) {
       return _readTextFile(projectId, sha, filePath).then((read) => read.value);
     }
     return _cachedRead(

@@ -36,6 +36,7 @@ final class AiDiffPreview extends AiWritePreview {
     this.newFile = false,
     this.preexistingSecretHits = 0,
     this.ciPath = false,
+    this.moreFiles = 0,
   }) : lines = List.unmodifiable(lines);
 
   final String path;
@@ -44,6 +45,7 @@ final class AiDiffPreview extends AiWritePreview {
   final bool newFile;
   final int preexistingSecretHits;
   final bool ciPath;
+  final int moreFiles;
 }
 
 final class AiClosingIssue {
@@ -51,11 +53,13 @@ final class AiClosingIssue {
     required this.projectId,
     required this.iid,
     required this.outOfScope,
+    this.fullReference,
   });
 
   final int projectId;
   final int iid;
   final bool outOfScope;
+  final String? fullReference;
 }
 
 final class AiMergePreview extends AiWritePreview {
@@ -137,6 +141,9 @@ final class AiDeletePreview extends AiWritePreview {
     this.ref,
     this.count,
     this.hasMore = false,
+    this.parentName,
+    this.author,
+    this.excerpt,
   });
 
   final String targetName;
@@ -144,6 +151,9 @@ final class AiDeletePreview extends AiWritePreview {
   final String? ref;
   final int? count;
   final bool hasMore;
+  final String? parentName;
+  final String? author;
+  final String? excerpt;
 }
 
 final class AiCancelAutoMergePreview extends AiWritePreview {

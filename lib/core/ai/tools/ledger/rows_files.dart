@@ -26,12 +26,15 @@ const _suggestionItem = <String, AiArgSpec>{
 
 // Reads reserve two HTTP requests each for OAuth replay, including the HEAD
 // and raw GET inside textFile. Count both prepares with cold immutable caches.
-// edit: 2 * (user + project + branch + metadata + text HEAD/raw) * 2
-//       + mutation + (metadata + text HEAD/raw) * 2 = 31.
-// create: 2 * (user + project + branch + metadata) * 2 + 1 + 3 * 2 = 23.
-// delete: 2 * 6 * 2 + 1 = 25; 204 is acknowledgement, no ambiguous 404 proof.
-// suggestions: 2 * (user + project + MR + branch + discussions) * 2
-//              + mutation + discussions * 2; at most 20 distinct discussions.
+// Each pass also has the coordinator's uncached project freshness GET.
+// edit: 2 * (freshness + user + project + branch + metadata + text HEAD/raw)
+//       * 2 + mutation + (metadata + text HEAD/raw) * 2 = 35.
+// create: 2 * (freshness + user + project + branch + metadata) * 2
+//         + mutation + 3 * 2 = 27.
+// delete: 2 * (freshness + 6 prepare reads) * 2 + mutation = 29;
+//         204 is acknowledgement, no ambiguous 404 proof.
+// suggestions: 2 * (freshness + user + project + MR + branch + discussions)
+//              * 2 + mutation + discussions * 2; at most 20 discussions.
 const List<AiCapability> aiFileRows = <AiCapability>[
   AiCapability(
     operationId: 'edit_file',
@@ -39,7 +42,7 @@ const List<AiCapability> aiFileRows = <AiCapability>[
     baseTier: AiWriteTier.t3,
     scopeClass: AiScopeClass.project,
     modelVisible: true,
-    httpCap: 31,
+    httpCap: 35,
     readback: true,
     arguments: {
       ..._fileCoordinates,
@@ -56,7 +59,7 @@ const List<AiCapability> aiFileRows = <AiCapability>[
     baseTier: AiWriteTier.t3,
     scopeClass: AiScopeClass.project,
     modelVisible: true,
-    httpCap: 23,
+    httpCap: 27,
     readback: true,
     arguments: {
       ..._fileCoordinates,
@@ -72,7 +75,7 @@ const List<AiCapability> aiFileRows = <AiCapability>[
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
     modelVisible: true,
-    httpCap: 25,
+    httpCap: 29,
     arguments: _fileCoordinates,
   ),
   AiCapability(
@@ -80,7 +83,7 @@ const List<AiCapability> aiFileRows = <AiCapability>[
     baseTier: AiWriteTier.t3,
     scopeClass: AiScopeClass.mergeRequest,
     modelVisible: true,
-    httpCap: 23,
+    httpCap: 27,
     readback: true,
     arguments: {..._suggestionCoordinates, ..._suggestionItem},
   ),
@@ -88,8 +91,8 @@ const List<AiCapability> aiFileRows = <AiCapability>[
     operationId: 'batchApplySuggestions',
     baseTier: AiWriteTier.t3,
     scopeClass: AiScopeClass.mergeRequest,
-    modelVisible: true,
-    httpCap: 137,
+    modelVisible: false,
+    httpCap: 141,
     readback: true,
     arguments: {
       ..._suggestionCoordinates,

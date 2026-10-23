@@ -185,8 +185,11 @@ extension WorkspaceApi on GitLabApi {
         'auto_merge_strategy': 'merge_when_pipeline_succeeds',
       },
     });
-  Future<Json> cancelAutoMerge(int project, int iid) =>
-    writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid', 'cancel_merge_when_pipeline_succeeds'], {});
+  // `newEndpoint` sends GitLab 19.5's `cancel_auto_merge`, which returns the
+  // merge request. The default stays on the deprecated endpoint the screen uses.
+  Future<Json> cancelAutoMerge(int project, int iid, {bool newEndpoint = false}) =>
+    writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid',
+      newEndpoint ? 'cancel_auto_merge' : 'cancel_merge_when_pipeline_succeeds'], {});
   Future<Json> rebaseMergeRequest(int project, int iid, {bool skipCi = false}) =>
     writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid', 'rebase'], {
       if (skipCi) 'skip_ci': true,

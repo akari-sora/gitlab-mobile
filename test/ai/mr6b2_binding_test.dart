@@ -109,7 +109,7 @@ void main() {
     );
 
     test(
-      'plain words and the same path on a different ref do not bind',
+      'verbatim path and ref bind but a different ref does not',
       () async {
         final prepared = await h.prepare('edit_file', mr6b2Args('edit_file'));
         expect(
@@ -118,7 +118,7 @@ void main() {
         );
         expect(
           _bind('Edit src/a.txt on work.', prepared.bindingTargets).allBound,
-          isFalse,
+          isTrue,
         );
         expect(
           _bind(
