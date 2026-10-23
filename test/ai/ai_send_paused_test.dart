@@ -322,6 +322,7 @@ void main() {
           ),
           child: _host(
             AiChatPage(
+              now: _now,
               session: _GatedSession(
                 reason: AiChatSendBlockReason.criticalRateBudget,
                 until: _now().add(const Duration(minutes: 12)),
