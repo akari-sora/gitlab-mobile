@@ -2717,7 +2717,7 @@ const _messagesNl = <String>[
   'Kan niet vernieuwen',
   'Hervatting over ca. {minutes} min',
   '{verb} {target}',
-  'GitLab request budget is almost used up; sending is paused',
-  'GitLab is limiting requests; sending is paused',
-  'Resumes when the budget resets',
+  'Het verzoekenquotum van GitLab is bijna opgebruikt; verzenden is gepauzeerd',
+  'GitLab beperkt verzoeken; verzenden is gepauzeerd',
+  'Hervatting zodra het verzoekenquotum opnieuw is ingesteld',
 ];

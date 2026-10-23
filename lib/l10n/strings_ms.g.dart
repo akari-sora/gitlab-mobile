@@ -2717,7 +2717,7 @@ const _messagesMs = <String>[
   'Tidak dapat memuat semula',
   'Sambung semula dalam sekitar {minutes} min',
   '{verb} {target}',
-  'GitLab request budget is almost used up; sending is paused',
-  'GitLab is limiting requests; sending is paused',
-  'Resumes when the budget resets',
+  'Kuota permintaan GitLab hampir habis; penghantaran dijeda',
+  'GitLab sedang mengehadkan permintaan; penghantaran dijeda',
+  'Sambung semula apabila kuota permintaan ditetapkan semula',
 ];

@@ -2717,7 +2717,7 @@ const _messagesJa = <String>[
   '更新できません',
   '約 {minutes} 分後に再開',
   '{verb}（{target}）',
-  'GitLab request budget is almost used up; sending is paused',
-  'GitLab is limiting requests; sending is paused',
-  'Resumes when the budget resets',
+  'GitLab のリクエスト上限に近づいたため、送信を一時停止中',
+  'GitLab によりリクエストが制限されています。送信を一時停止中',
+  'リクエスト枠のリセット後に再開',
 ];

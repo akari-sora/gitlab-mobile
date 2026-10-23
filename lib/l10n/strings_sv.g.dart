@@ -2717,7 +2717,7 @@ const _messagesSv = <String>[
   'Kan inte uppdatera',
   'Återupptas om ca {minutes} min',
   '{verb} {target}',
-  'GitLab request budget is almost used up; sending is paused',
-  'GitLab is limiting requests; sending is paused',
-  'Resumes when the budget resets',
+  'Kvoten för begäranden hos GitLab är nästan förbrukad; sändningen är pausad',
+  'GitLab begränsar begäranden; sändningen är pausad',
+  'Återupptas när kvoten för begäranden återställs',
 ];

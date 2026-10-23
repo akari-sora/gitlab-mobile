@@ -2717,7 +2717,7 @@ const _messagesTh = <String>[
   'รีเฟรชไม่ได้',
   'กลับมาในอีกประมาณ {minutes} นาที',
   '{verb} {target}',
-  'GitLab request budget is almost used up; sending is paused',
-  'GitLab is limiting requests; sending is paused',
-  'Resumes when the budget resets',
+  'โควตาคำขอของ GitLab ใกล้หมดแล้ว จึงหยุดส่งชั่วคราว',
+  'GitLab กำลังจำกัดคำขอ จึงหยุดส่งชั่วคราว',
+  'กลับมาส่งได้เมื่อโควตาคำขอถูกรีเซ็ต',
 ];

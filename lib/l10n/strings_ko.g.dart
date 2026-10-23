@@ -2717,7 +2717,7 @@ const _messagesKo = <String>[
   '새로 고침할 수 없습니다',
   '약 {minutes}분 후 다시 시작',
   '{verb} ({target})',
-  'GitLab request budget is almost used up; sending is paused',
-  'GitLab is limiting requests; sending is paused',
-  'Resumes when the budget resets',
+  'GitLab 요청 한도가 거의 소진되어 전송이 일시 중지되었습니다',
+  'GitLab이 요청을 제한하고 있습니다. 전송이 일시 중지되었습니다',
+  '요청 한도가 초기화되면 다시 시작',
 ];

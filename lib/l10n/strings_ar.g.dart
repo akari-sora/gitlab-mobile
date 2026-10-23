@@ -2717,7 +2717,7 @@ const _messagesAr = <String>[
   'تعذّر التحديث',
   'يستأنف بعد {minutes} د تقريبًا',
   '{verb} {target}',
-  'GitLab request budget is almost used up; sending is paused',
-  'GitLab is limiting requests; sending is paused',
-  'Resumes when the budget resets',
+  'حصة طلبات GitLab على وشك النفاد؛ الإرسال متوقف مؤقتًا',
+  'يقيّد GitLab الطلبات؛ الإرسال متوقف مؤقتًا',
+  'يستأنف عند إعادة تعيين حصة الطلبات',
 ];

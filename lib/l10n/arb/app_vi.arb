@@ -2715,7 +2715,7 @@
   "cacheRefreshFailed": "Không thể làm mới",
   "cacheResumesInMinutes": "Tiếp tục sau khoảng {minutes} phút",
   "activityVerbTarget": "{verb} {target}",
-  "aiSendPausedBudget": "GitLab request budget is almost used up; sending is paused",
-  "aiSendPausedRateLimited": "GitLab is limiting requests; sending is paused",
-  "aiSendResumesAfterReset": "Resumes when the budget resets"
+  "aiSendPausedBudget": "Hạn mức yêu cầu GitLab gần cạn; tạm dừng gửi",
+  "aiSendPausedRateLimited": "GitLab đang giới hạn yêu cầu; tạm dừng gửi",
+  "aiSendResumesAfterReset": "Tiếp tục khi hạn mức yêu cầu được đặt lại"
 }

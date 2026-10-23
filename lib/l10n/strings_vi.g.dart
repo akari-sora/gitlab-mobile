@@ -2717,7 +2717,7 @@ const _messagesVi = <String>[
   'Không thể làm mới',
   'Tiếp tục sau khoảng {minutes} phút',
   '{verb} {target}',
-  'GitLab request budget is almost used up; sending is paused',
-  'GitLab is limiting requests; sending is paused',
-  'Resumes when the budget resets',
+  'Hạn mức yêu cầu GitLab gần cạn; tạm dừng gửi',
+  'GitLab đang giới hạn yêu cầu; tạm dừng gửi',
+  'Tiếp tục khi hạn mức yêu cầu được đặt lại',
 ];

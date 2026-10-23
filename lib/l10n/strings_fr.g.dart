@@ -2717,7 +2717,7 @@ const _messagesFr = <String>[
   'Actualisation impossible',
   'Reprise dans environ {minutes} min',
   '{verb} {target}',
-  'GitLab request budget is almost used up; sending is paused',
-  'GitLab is limiting requests; sending is paused',
-  'Resumes when the budget resets',
+  'Le quota de requêtes GitLab est presque épuisé ; envoi en pause',
+  'GitLab limite les requêtes ; envoi en pause',
+  'Reprise à la réinitialisation du quota de requêtes',
 ];
