@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "Copiază textul editat",
   "aiProposalClosesOnMerge": "La îmbinarea în ramura implicită, se vor închide aceste probleme: {issues}",
   "aiSettledEditWritten": "Scris, dar aplicația nu l-a recitit pentru confirmare. Textul editat de tine rămâne aici; verifică GitLab înainte de a retrimite.",
-  "aiSettledEditUncertain": "Nu este clar dacă modificarea a fost făcută. Textul editat de tine rămâne aici; verifică GitLab înainte de a retrimite."
+  "aiSettledEditUncertain": "Nu este clar dacă modificarea a fost făcută. Textul editat de tine rămâne aici; verifică GitLab înainte de a retrimite.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

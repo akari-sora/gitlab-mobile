@@ -2601,4 +2601,9 @@ const _messagesPtBr = <String>[
   'Ao ser mesclada na branch padrão, esta alteração fecha estas issues: {issues}',
   'Gravado, mas o app não releu para confirmar. Seu texto editado foi mantido aqui; confira o GitLab antes de enviar de novo.',
   'Não está claro se esta alteração foi feita. Seu texto editado foi mantido aqui; confira o GitLab antes de enviar de novo.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

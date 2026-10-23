@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "نسخ النص المعدَّل",
   "aiProposalClosesOnMerge": "عند الدمج في الفرع الافتراضي، ستُغلق هذه المشكلات: {issues}",
   "aiSettledEditWritten": "تمت الكتابة، لكن التطبيق لم يقرأها مجددًا للتأكيد. بقي نصك المعدَّل هنا؛ تحقق من GitLab قبل إعادة الإرسال.",
-  "aiSettledEditUncertain": "لا يمكن التأكد من إتمام هذا التغيير. بقي نصك المعدَّل هنا؛ تحقق من GitLab قبل إعادة الإرسال."
+  "aiSettledEditUncertain": "لا يمكن التأكد من إتمام هذا التغيير. بقي نصك المعدَّل هنا؛ تحقق من GitLab قبل إعادة الإرسال.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

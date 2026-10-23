@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "คัดลอกข้อความที่แก้ไข",
   "aiProposalClosesOnMerge": "เมื่อรวมเข้ากับสาขาเริ่มต้น จะปิดปัญหาเหล่านี้: {issues}",
   "aiSettledEditWritten": "เขียนแล้ว แต่แอปไม่ได้อ่านกลับเพื่อยืนยัน ข้อความที่คุณแก้ไขยังอยู่ที่นี่ โปรดตรวจสอบ GitLab ก่อนส่งอีกครั้ง",
-  "aiSettledEditUncertain": "ไม่แน่ชัดว่าการเปลี่ยนแปลงนี้สำเร็จหรือไม่ ข้อความที่คุณแก้ไขยังอยู่ที่นี่ โปรดตรวจสอบ GitLab ก่อนส่งอีกครั้ง"
+  "aiSettledEditUncertain": "ไม่แน่ชัดว่าการเปลี่ยนแปลงนี้สำเร็จหรือไม่ ข้อความที่คุณแก้ไขยังอยู่ที่นี่ โปรดตรวจสอบ GitLab ก่อนส่งอีกครั้ง",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

@@ -2601,4 +2601,9 @@ const _messagesEs = <String>[
   'Al fusionarse en la rama predeterminada, se cerrarán estas incidencias: {issues}',
   'Se escribió, pero la app no lo volvió a leer para confirmarlo. Tu texto editado se conserva aquí; revisa GitLab antes de enviarlo de nuevo.',
   'No está claro si se realizó este cambio. Tu texto editado se conserva aquí; revisa GitLab antes de enviarlo de nuevo.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "Sao chép nội dung đã sửa",
   "aiProposalClosesOnMerge": "Khi gộp vào nhánh mặc định, các vấn đề này sẽ đóng: {issues}",
   "aiSettledEditWritten": "Đã ghi, nhưng ứng dụng không đọc lại để xác nhận. Nội dung bạn đã sửa vẫn được giữ ở đây; hãy kiểm tra GitLab trước khi gửi lại.",
-  "aiSettledEditUncertain": "Chưa rõ thay đổi này đã được thực hiện hay chưa. Nội dung bạn đã sửa vẫn được giữ ở đây; hãy kiểm tra GitLab trước khi gửi lại."
+  "aiSettledEditUncertain": "Chưa rõ thay đổi này đã được thực hiện hay chưa. Nội dung bạn đã sửa vẫn được giữ ở đây; hãy kiểm tra GitLab trước khi gửi lại.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

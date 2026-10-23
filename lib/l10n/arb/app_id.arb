@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "Salin teks yang diedit",
   "aiProposalClosesOnMerge": "Saat digabung ke cabang default, isu berikut akan ditutup: {issues}",
   "aiSettledEditWritten": "Sudah ditulis, tetapi aplikasi tidak membacanya kembali untuk memastikan. Teks hasil editan Anda tetap di sini; periksa GitLab sebelum mengirim ulang.",
-  "aiSettledEditUncertain": "Belum jelas apakah perubahan ini berhasil dilakukan. Teks hasil editan Anda tetap di sini; periksa GitLab sebelum mengirim ulang."
+  "aiSettledEditUncertain": "Belum jelas apakah perubahan ini berhasil dilakukan. Teks hasil editan Anda tetap di sini; periksa GitLab sebelum mengirim ulang.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

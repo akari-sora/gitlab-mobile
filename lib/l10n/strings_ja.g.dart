@@ -2601,4 +2601,9 @@ const _messagesJa = <String>[
   'デフォルトブランチにマージすると、次のイシューが閉じます：{issues}',
   '書き込み済みですが、アプリは確認のための再読み込みをしていません。編集した内容はここに残してあります。再送する前に GitLab を確認してください。',
   'この変更が行われたかどうか不明です。編集した内容はここに残してあります。再送する前に GitLab を確認してください。',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

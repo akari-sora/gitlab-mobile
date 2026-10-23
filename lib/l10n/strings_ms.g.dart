@@ -2601,4 +2601,9 @@ const _messagesMs = <String>[
   'Apabila digabungkan ke cabang lalai, isu ini akan ditutup: {issues}',
   'Sudah ditulis, tetapi aplikasi tidak membacanya semula untuk mengesahkan. Teks suntingan anda kekal di sini; semak GitLab sebelum menghantar semula.',
   'Tidak jelas sama ada perubahan ini telah dibuat. Teks suntingan anda kekal di sini; semak GitLab sebelum menghantar semula.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

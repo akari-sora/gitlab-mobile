@@ -2601,4 +2601,9 @@ const _messagesSv = <String>[
   'Vid sammanfogning med standardgrenen stängs dessa ärenden: {issues}',
   'Skrivet, men appen läste inte tillbaka det för att bekräfta. Din redigerade text finns kvar här; kontrollera GitLab innan du skickar igen.',
   'Det är oklart om ändringen genomfördes. Din redigerade text finns kvar här; kontrollera GitLab innan du skickar igen.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

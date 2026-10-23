@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "編集した内容をコピー",
   "aiProposalClosesOnMerge": "デフォルトブランチにマージすると、次のイシューが閉じます：{issues}",
   "aiSettledEditWritten": "書き込み済みですが、アプリは確認のための再読み込みをしていません。編集した内容はここに残してあります。再送する前に GitLab を確認してください。",
-  "aiSettledEditUncertain": "この変更が行われたかどうか不明です。編集した内容はここに残してあります。再送する前に GitLab を確認してください。"
+  "aiSettledEditUncertain": "この変更が行われたかどうか不明です。編集した内容はここに残してあります。再送する前に GitLab を確認してください。",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

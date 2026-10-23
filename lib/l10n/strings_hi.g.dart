@@ -2601,4 +2601,9 @@ const _messagesHi = <String>[
   'डिफ़ॉल्ट शाखा में मर्ज होने पर ये इश्यू बंद हो जाएँगे: {issues}',
   'लिखा जा चुका है, लेकिन ऐप ने पुष्टि के लिए इसे दोबारा नहीं पढ़ा। आपका संपादित पाठ यहीं रखा है; दोबारा भेजने से पहले GitLab देखें।',
   'स्पष्ट नहीं है कि यह बदलाव हुआ या नहीं। आपका संपादित पाठ यहीं रखा है; दोबारा भेजने से पहले GitLab देखें।',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

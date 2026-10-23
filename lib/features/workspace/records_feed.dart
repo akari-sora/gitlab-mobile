@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../shared/cache_freshness.dart';
 import '../../shared/motion.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/skeleton.dart';
@@ -198,6 +199,12 @@ class RecordsFeedState extends State<RecordsFeed> {
     );
   }
 
+  /// The time the shown rows were loaded, when they are not fresh from the
+  /// network and no failure notice already explains them.
+  DateTime? _freshness(RecordController c) => widget.cached == null || c.items.isEmpty ||
+      c.loading || c.error != null || !(c.stale || c.revalidating || c.backgroundFailure != null)
+      ? null : c.fetchedAt;
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(listenable: controller, builder: (context, _) {
     _deriveRows();
@@ -219,6 +226,10 @@ class RecordsFeedState extends State<RecordsFeed> {
       // ends; a pull-to-refresh shows only its own spinner.
       SizedBox(height: 8, child: controller.loading && controller.items.isNotEmpty && !_pulling
           ? const Center(child: LinearProgressIndicator(minHeight: 2)) : null),
+      if (_freshness(controller) case final fetchedAt?) CacheFreshnessBar(fetchedAt: fetchedAt,
+        refreshing: controller.revalidating, failure: controller.backgroundFailure,
+        retryAt: controller.backgroundRetryAt,
+        onRetry: () { unawaited(controller.refresh(fresh: true)); }),
       if (controller.loading && controller.items.isEmpty) RowsSkeleton(grouped: widget.grouped),
       if (!controller.loading && shown.isEmpty && controller.error == null && controller.next == null) EmptyState(
         controller.items.isEmpty ? widget.empty : (widget.filteredEmpty ?? widget.empty),

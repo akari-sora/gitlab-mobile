@@ -2604,5 +2604,10 @@
   "aiSettledEditCopy": "Copy the edited text",
   "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}",
   "aiSettledEditWritten": "Written, but the app did not read it back to confirm. Your edited text is kept here; check GitLab before sending it again.",
-  "aiSettledEditUncertain": "It's unclear whether this change was made. Your edited text is kept here; check GitLab before sending it again."
+  "aiSettledEditUncertain": "It's unclear whether this change was made. Your edited text is kept here; check GitLab before sending it again.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

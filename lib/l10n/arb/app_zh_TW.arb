@@ -11305,5 +11305,20 @@
     }
   },
   "aiSettledEditWritten": "已寫入，但沒有讀回確認。你改過的內容留在這裡，重送前請先到 GitLab 查看。",
-  "aiSettledEditUncertain": "不確定這筆寫入是否完成。你改過的內容留在這裡，重送前請先到 GitLab 查看。"
+  "aiSettledEditUncertain": "不確定這筆寫入是否完成。你改過的內容留在這裡，重送前請先到 GitLab 查看。",
+  "cacheLastUpdated": "最後更新：{time}",
+  "@cacheLastUpdated": {
+    "placeholders": {
+      "time": {}
+    }
+  },
+  "cacheRefreshing": "正在更新",
+  "cacheRateLimited": "GitLab 正在限制請求",
+  "cacheRefreshFailed": "無法更新",
+  "cacheResumesInMinutes": "約 {minutes} 分鐘後恢復",
+  "@cacheResumesInMinutes": {
+    "placeholders": {
+      "minutes": {}
+    }
+  }
 }

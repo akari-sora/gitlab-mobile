@@ -2601,4 +2601,9 @@ const _messagesAr = <String>[
   'عند الدمج في الفرع الافتراضي، ستُغلق هذه المشكلات: {issues}',
   'تمت الكتابة، لكن التطبيق لم يقرأها مجددًا للتأكيد. بقي نصك المعدَّل هنا؛ تحقق من GitLab قبل إعادة الإرسال.',
   'لا يمكن التأكد من إتمام هذا التغيير. بقي نصك المعدَّل هنا؛ تحقق من GitLab قبل إعادة الإرسال.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "Copier le texte modifié",
   "aiProposalClosesOnMerge": "Une fois fusionnée dans la branche par défaut, cette demande fermera ces tickets : {issues}",
   "aiSettledEditWritten": "Écrit, mais l'application ne l'a pas relu pour le confirmer. Votre texte modifié est conservé ici ; vérifiez GitLab avant de le renvoyer.",
-  "aiSettledEditUncertain": "On ne sait pas si cette modification a été effectuée. Votre texte modifié est conservé ici ; vérifiez GitLab avant de le renvoyer."
+  "aiSettledEditUncertain": "On ne sait pas si cette modification a été effectuée. Votre texte modifié est conservé ici ; vérifiez GitLab avant de le renvoyer.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

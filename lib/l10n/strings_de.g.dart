@@ -2601,4 +2601,9 @@ const _messagesDe = <String>[
   'Beim Zusammenführen in den Standard-Branch werden diese Issues geschlossen: {issues}',
   'Geschrieben, aber die App hat es nicht zur Bestätigung zurückgelesen. Ihr bearbeiteter Text bleibt hier erhalten; prüfen Sie GitLab, bevor Sie ihn erneut senden.',
   'Es ist unklar, ob diese Änderung ausgeführt wurde. Ihr bearbeiteter Text bleibt hier erhalten; prüfen Sie GitLab, bevor Sie ihn erneut senden.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

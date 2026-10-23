@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "Düzenlenen metni kopyala",
   "aiProposalClosesOnMerge": "Varsayılan dala birleştirildiğinde şu konular kapanır: {issues}",
   "aiSettledEditWritten": "Yazıldı, ancak uygulama doğrulamak için geri okumadı. Düzenlediğiniz metin burada duruyor; yeniden göndermeden önce GitLab'ı kontrol edin.",
-  "aiSettledEditUncertain": "Bu değişikliğin yapılıp yapılmadığı belirsiz. Düzenlediğiniz metin burada duruyor; yeniden göndermeden önce GitLab'ı kontrol edin."
+  "aiSettledEditUncertain": "Bu değişikliğin yapılıp yapılmadığı belirsiz. Düzenlediğiniz metin burada duruyor; yeniden göndermeden önce GitLab'ı kontrol edin.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

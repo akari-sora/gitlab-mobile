@@ -7890,4 +7890,19 @@ final class AppStrings {
 
   /// 不確定這筆寫入是否完成。你改過的內容留在這裡，重送前請先到 GitLab 查看。
   String get aiSettledEditUncertain => language._messages[2598];
+
+  /// 最後更新：{time}
+  String cacheLastUpdated(Object? time) => _format(language, language._messages[2599], {'time': time});
+
+  /// 正在更新
+  String get cacheRefreshing => language._messages[2600];
+
+  /// GitLab 正在限制請求
+  String get cacheRateLimited => language._messages[2601];
+
+  /// 無法更新
+  String get cacheRefreshFailed => language._messages[2602];
+
+  /// 約 {minutes} 分鐘後恢復
+  String cacheResumesInMinutes(Object? minutes) => _format(language, language._messages[2603], {'minutes': minutes});
 }

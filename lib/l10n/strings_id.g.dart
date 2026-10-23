@@ -2601,4 +2601,9 @@ const _messagesId = <String>[
   'Saat digabung ke cabang default, isu berikut akan ditutup: {issues}',
   'Sudah ditulis, tetapi aplikasi tidak membacanya kembali untuk memastikan. Teks hasil editan Anda tetap di sini; periksa GitLab sebelum mengirim ulang.',
   'Belum jelas apakah perubahan ini berhasil dilakukan. Teks hasil editan Anda tetap di sini; periksa GitLab sebelum mengirim ulang.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

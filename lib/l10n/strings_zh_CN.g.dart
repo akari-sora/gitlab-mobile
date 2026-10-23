@@ -2601,4 +2601,9 @@ const _messagesZhCn = <String>[
   '合并到默认分支后，会关闭这些议题：{issues}',
   '已写入，但应用没有读回确认。你修改过的内容保留在这里，重新发送前请先到 GitLab 查看。',
   '不确定这次写入是否完成。你修改过的内容保留在这里，重新发送前请先到 GitLab 查看。',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

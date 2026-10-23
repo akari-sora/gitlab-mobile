@@ -2601,4 +2601,9 @@ const _messagesPl = <String>[
   'Po scaleniu z domyślną gałęzią zostaną zamknięte te zgłoszenia: {issues}',
   'Zapisano, ale aplikacja nie odczytała tego ponownie, by potwierdzić. Edytowany tekst pozostaje tutaj; przed ponownym wysłaniem sprawdź GitLab.',
   'Nie wiadomo, czy ta zmiana została wprowadzona. Edytowany tekst pozostaje tutaj; przed ponownym wysłaniem sprawdź GitLab.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

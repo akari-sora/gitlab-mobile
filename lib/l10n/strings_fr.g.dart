@@ -2601,4 +2601,9 @@ const _messagesFr = <String>[
   'Une fois fusionnée dans la branche par défaut, cette demande fermera ces tickets : {issues}',
   'Écrit, mais l\'application ne l\'a pas relu pour le confirmer. Votre texte modifié est conservé ici ; vérifiez GitLab avant de le renvoyer.',
   'On ne sait pas si cette modification a été effectuée. Votre texte modifié est conservé ici ; vérifiez GitLab avant de le renvoyer.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

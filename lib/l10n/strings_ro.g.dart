@@ -2601,4 +2601,9 @@ const _messagesRo = <String>[
   'La îmbinarea în ramura implicită, se vor închide aceste probleme: {issues}',
   'Scris, dar aplicația nu l-a recitit pentru confirmare. Textul editat de tine rămâne aici; verifică GitLab înainte de a retrimite.',
   'Nu este clar dacă modificarea a fost făcută. Textul editat de tine rămâne aici; verifică GitLab înainte de a retrimite.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

@@ -2601,4 +2601,9 @@ const _messagesCs = <String>[
   'Po sloučení do výchozí větve se zavřou tyto úkoly: {issues}',
   'Zapsáno, ale aplikace to znovu nenačetla k potvrzení. Váš upravený text zůstává zde; před opětovným odesláním zkontrolujte GitLab.',
   'Není jasné, zda se změna provedla. Váš upravený text zůstává zde; před opětovným odesláním zkontrolujte GitLab.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "Скопировать изменённый текст",
   "aiProposalClosesOnMerge": "После слияния в ветку по умолчанию будут закрыты эти задачи: {issues}",
   "aiSettledEditWritten": "Записано, но приложение не перечитало это для подтверждения. Ваш изменённый текст сохранён здесь; перед повторной отправкой проверьте GitLab.",
-  "aiSettledEditUncertain": "Неясно, было ли это изменение выполнено. Ваш изменённый текст сохранён здесь; перед повторной отправкой проверьте GitLab."
+  "aiSettledEditUncertain": "Неясно, было ли это изменение выполнено. Ваш изменённый текст сохранён здесь; перед повторной отправкой проверьте GitLab.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

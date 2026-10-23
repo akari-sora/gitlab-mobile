@@ -2601,4 +2601,9 @@ const _messagesVi = <String>[
   'Khi gộp vào nhánh mặc định, các vấn đề này sẽ đóng: {issues}',
   'Đã ghi, nhưng ứng dụng không đọc lại để xác nhận. Nội dung bạn đã sửa vẫn được giữ ở đây; hãy kiểm tra GitLab trước khi gửi lại.',
   'Chưa rõ thay đổi này đã được thực hiện hay chưa. Nội dung bạn đã sửa vẫn được giữ ở đây; hãy kiểm tra GitLab trước khi gửi lại.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

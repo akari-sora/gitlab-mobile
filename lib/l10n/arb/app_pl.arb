@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "Kopiuj edytowany tekst",
   "aiProposalClosesOnMerge": "Po scaleniu z domyślną gałęzią zostaną zamknięte te zgłoszenia: {issues}",
   "aiSettledEditWritten": "Zapisano, ale aplikacja nie odczytała tego ponownie, by potwierdzić. Edytowany tekst pozostaje tutaj; przed ponownym wysłaniem sprawdź GitLab.",
-  "aiSettledEditUncertain": "Nie wiadomo, czy ta zmiana została wprowadzona. Edytowany tekst pozostaje tutaj; przed ponownym wysłaniem sprawdź GitLab."
+  "aiSettledEditUncertain": "Nie wiadomo, czy ta zmiana została wprowadzona. Edytowany tekst pozostaje tutaj; przed ponownym wysłaniem sprawdź GitLab.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

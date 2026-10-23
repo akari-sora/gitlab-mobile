@@ -20,6 +20,9 @@ class RecordController extends ChangeNotifier {
   DateTime? fetchedAt;
   bool stale = false, revalidating = false;
   FailureKind? backgroundFailure;
+
+  /// When a rate-limited background read may be retried, if GitLab said.
+  DateTime? backgroundRetryAt;
   bool loading = false, loadingMore = false, failedMore = false;
   bool _disposed = false, _backgroundEnabled = true;
   int _generation = 0;
@@ -41,6 +44,7 @@ class RecordController extends ChangeNotifier {
     final generation = ++_generation;
     loading = true; loadingMore = false; failedMore = false;
     _failedReconcile = false; error = null; backgroundFailure = null;
+    backgroundRetryAt = null;
     revalidating = false; _revalidation = null;
     _retryStaleRead = false;
     _emit();
@@ -145,7 +149,7 @@ class RecordController extends ChangeNotifier {
         if (_revoked(failure)) {
           _withdraw(); error = failure;
         } else {
-          backgroundFailure = failure.kind;
+          backgroundFailure = failure.kind; backgroundRetryAt = failure.retryAt;
         }
       }
     } finally {

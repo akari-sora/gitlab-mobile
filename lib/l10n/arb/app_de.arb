@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "Bearbeiteten Text kopieren",
   "aiProposalClosesOnMerge": "Beim Zusammenführen in den Standard-Branch werden diese Issues geschlossen: {issues}",
   "aiSettledEditWritten": "Geschrieben, aber die App hat es nicht zur Bestätigung zurückgelesen. Ihr bearbeiteter Text bleibt hier erhalten; prüfen Sie GitLab, bevor Sie ihn erneut senden.",
-  "aiSettledEditUncertain": "Es ist unklar, ob diese Änderung ausgeführt wurde. Ihr bearbeiteter Text bleibt hier erhalten; prüfen Sie GitLab, bevor Sie ihn erneut senden."
+  "aiSettledEditUncertain": "Es ist unklar, ob diese Änderung ausgeführt wurde. Ihr bearbeiteter Text bleibt hier erhalten; prüfen Sie GitLab, bevor Sie ihn erneut senden.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }

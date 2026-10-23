@@ -2601,4 +2601,9 @@ const _messagesEn = <String>[
   'When merged into the default branch, this closes these issues: {issues}',
   'Written, but the app did not read it back to confirm. Your edited text is kept here; check GitLab before sending it again.',
   'It\'s unclear whether this change was made. Your edited text is kept here; check GitLab before sending it again.',
+  'Last updated {time}',
+  'Refreshing',
+  'GitLab is limiting requests',
+  'Couldn\'t refresh',
+  'Resumes in about {minutes} min',
 ];

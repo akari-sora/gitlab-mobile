@@ -2598,5 +2598,10 @@
   "aiSettledEditCopy": "संपादित पाठ कॉपी करें",
   "aiProposalClosesOnMerge": "डिफ़ॉल्ट शाखा में मर्ज होने पर ये इश्यू बंद हो जाएँगे: {issues}",
   "aiSettledEditWritten": "लिखा जा चुका है, लेकिन ऐप ने पुष्टि के लिए इसे दोबारा नहीं पढ़ा। आपका संपादित पाठ यहीं रखा है; दोबारा भेजने से पहले GitLab देखें।",
-  "aiSettledEditUncertain": "स्पष्ट नहीं है कि यह बदलाव हुआ या नहीं। आपका संपादित पाठ यहीं रखा है; दोबारा भेजने से पहले GitLab देखें।"
+  "aiSettledEditUncertain": "स्पष्ट नहीं है कि यह बदलाव हुआ या नहीं। आपका संपादित पाठ यहीं रखा है; दोबारा भेजने से पहले GitLab देखें।",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min"
 }
