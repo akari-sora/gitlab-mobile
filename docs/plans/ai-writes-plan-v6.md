@@ -1,5 +1,7 @@
 # Mergeline AI 助理：設計補充 v6.9（寫入與操控、可選自主等級、背景執行）
 
+> Repository note: this is v6.10. §24 (v6.10) records amendments made after review round 9, such as 405/406 counting as certain non-execution and snippets confirmed by `#id`. Where §24 and the body (§0–§15) differ, §24 wins.
+
 狀態：已通過計畫審查第 9 輪（Codex、Opus、cursor-agent 皆為 APPROVE WITH CHANGES；要求的修改已併入 v6.9，逐項處理見 §23），作為 MR6a–MR7 的實作依據。以 v5（`ai-assistant-plan-v5.md`）為基礎；與 v5 衝突時以本文件為準。§16–§23 是變更紀錄，只記錄當時的處理；與正文（§0–§15）衝突時以正文為準。
 
 ## 0. 擁有者決定（2026-10-21，不重議）

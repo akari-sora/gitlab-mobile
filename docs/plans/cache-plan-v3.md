@@ -1,5 +1,7 @@
 # Mergeline 讀取快取、限流感知、加密磁碟快取與離線儲存庫計畫 v2（2026-10-23）
 
+> Repository note: the body below is plan v2. The "v3 修訂" (V1–V16), "v3.1 補充" (V17–V20) and V21 sections at the end are plan v3 and override the body where they differ.
+
 取代 v1 與 v2-addendum。依據：
 - 第 1 輪計畫審查：`review-codex.md`（C1–C7、I1–I12）、`review-opus.md`（CR-1–CR-4、I-1–I-13）。
 - 程式盤點：`survey.md`。

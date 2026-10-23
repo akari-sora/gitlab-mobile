@@ -1,9 +1,9 @@
 # Mergeline C3：離線保存儲存庫與離線唯讀模式　計畫 v2（2026-10-23）
 
-- **性質**：獨立、完整的計畫，取代 `c3-plan-v1.md`、`plan-v3.md` §5，以及 `plan-v2-addendum.md` 的 §2.8。
+- **性質**：獨立、完整的計畫，取代 `c3-plan-v1.md`、`cache-plan-v3.md` §5，以及 `plan-v2-addendum.md` 的 §2.8。
 - **回應**：第 1 輪審查 `c3-review1-codex.md`、`c3-review1-opus.md`，兩份都是 REQUEST CHANGES。
 - **依據**：
-  - `plan-v3.md`：D1–D5、§4、V10、V13、V14、V16、V17、V18、V20；
+  - `cache-plan-v3.md`：D1–D5、§4、V10、V13、V14、V16、V17、V18、V20；
   - `survey.md`；
   - 先前的審查紀錄（R2-C3、I-6、I-7、N-1、N-2、m-10、m-11）。
 - **程式版本**：
