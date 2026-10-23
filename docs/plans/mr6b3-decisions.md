@@ -181,10 +181,3 @@ The answers:
 - **Snooze time precision.** The AI's snooze time is normalised to whole seconds (never rounded up) before the preview, the digest and the mutation, and must still be in the future. GitLab's `Time` scalar serialises whole seconds, so an exact comparison with fractional input would turn real successes into uncertain writes.
 - **Reaction readback.** GitLab bumps a note's `updatedAt` when a reaction changes, so the readback after a reaction mutation does not compare `updatedAt`. The checks before acceptance still do. This is a separate fix on `main` (it also affected the UI).
 
-## D24. The drafted answers to the family open questions are adopted (2026-10-23)
-
-Applies to every family built on the breakdown v4 open questions; recorded here from the lead's build notes so the repo carries it (review m4).
-
-- **Q-P11-1 (three-stage to formula mapping).** Opening pages count into P, method-preflight pages into Mpre, and independent-readback pages into Mrb. Counters assert each stage reads at most its maxPages and the totals match the booked L and httpCap (P11a: L=18, cap 37; P11b: L=10, cap 21).
-- **Q-P11-2 (intentUnclear ownership).** The family emits `intentUnclear` for any non-explicit-boolean direction signal and performs no confirmation itself; the direction-word adjudication and the confirmation UX belong to the lead UI wave.
-- **Family scope of D24:** parent-drift refusals map to `noteChanged` (used by P10 and P13), and a family's controls-support gate refuses both unsupported variants before the write is accepted (used by P9, from the S0d contracts).
