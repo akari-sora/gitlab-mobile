@@ -2711,4 +2711,5 @@ const _messagesEn = <String>[
   '{count} more files change too',
   'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
   'GitLab may delay the deletion; it can be restored during the retention period.',
+  '{verb} {target}',
 ];

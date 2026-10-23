@@ -2711,4 +2711,5 @@ const _messagesEs = <String>[
   'También cambian {count} archivos más',
   'Mencionaste este nombre en el mensaje, pero no lo marcaste con comillas invertidas (`, por lo que esta escritura necesita tu confirmación.',
   'GitLab puede retrasar la eliminación; se puede restaurar durante el período de retención.',
+  '{verb} {target}',
 ];

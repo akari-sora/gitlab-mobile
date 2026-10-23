@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "ينتمي إلى",
   "aiPreviewMoreFiles": "سيتغير {count} ملفات أخرى أيضًا",
   "aiConfirmTargetNamedNotMarked": "لقد ذكرت هذا الاسم في الرسالة ولم تحدده بعلامة الاقتباس المائلة (`)، لذا يحتاج هذا الإجراء إلى موافقتك.",
-  "aiPreviewDeletionMayBeDelayed": "قد يؤجل GitLab عملية الحذف؛ ويمكنك استعادة العنصر خلال فترة الاستبقاء."
+  "aiPreviewDeletionMayBeDelayed": "قد يؤجل GitLab عملية الحذف؛ ويمكنك استعادة العنصر خلال فترة الاستبقاء.",
+  "activityVerbTarget": "{verb} {target}"
 }

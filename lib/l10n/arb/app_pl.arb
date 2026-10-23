@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "Należy do",
   "aiPreviewMoreFiles": "Zmieni się też {count} innych plików",
   "aiConfirmTargetNamedNotMarked": "O tej nazwie była mowa w wiadomości, ale nie została jednak oznaczona backtickiem (`, więc ten zapis wymaga potwierdzenia.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab może opóźnić usunięcie; element można przywrócić w okresie przechowywania."
+  "aiPreviewDeletionMayBeDelayed": "GitLab może opóźnić usunięcie; element można przywrócić w okresie przechowywania.",
+  "activityVerbTarget": "{verb} {target}"
 }
