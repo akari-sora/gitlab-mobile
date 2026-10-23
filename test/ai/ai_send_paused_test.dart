@@ -11,20 +11,32 @@ import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 
+/// The test clock: the card and the session read it, tests move it.
+var _clock = DateTime.utc(2026, 10, 23, 12);
+DateTime _now() => _clock;
+
+/// Moves the test clock and Flutter's fake time together.
+Future<void> _advance(WidgetTester tester, Duration by) async {
+  _clock = _clock.add(by);
+  await tester.pump(by);
+}
+
 /// A ready conversation whose sends wait for the account's GitLab budget.
 /// Like the controller, the block is read live: a stated wait that has
-/// passed no longer blocks.
+/// passed no longer blocks, unless [sticky] (GitLab still limits after the
+/// stated time).
 final class _GatedSession extends ChangeNotifier
     implements AiChatSession, AiChatSendGate {
-  _GatedSession({this.reason, this.until});
+  _GatedSession({this.reason, this.until, this.sticky = false});
 
   AiChatSendBlockReason? reason;
   DateTime? until;
+  final bool sticky;
 
   @override
   AiChatSendBlockReason? get sendBlockReason {
     final until = this.until;
-    if (until != null && !until.isAfter(DateTime.now())) return null;
+    if (!sticky && until != null && !until.isAfter(_now())) return null;
     return reason;
   }
 
@@ -140,9 +152,9 @@ void main() {
   ) async {
     final session = _GatedSession(
       reason: AiChatSendBlockReason.criticalRateBudget,
-      until: DateTime.now().add(const Duration(minutes: 3, seconds: 5)),
+      until: _now().add(const Duration(minutes: 3, seconds: 5)),
     );
-    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pumpWidget(_host(AiChatPage(session: session, now: _now)));
     await tester.enterText(
       find.byKey(const ValueKey('ai-chat-input')),
       'Why did the pipeline fail?',
@@ -163,7 +175,7 @@ void main() {
     final session = _GatedSession(
       reason: AiChatSendBlockReason.serverCooldown,
     );
-    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pumpWidget(_host(AiChatPage(session: session, now: _now)));
 
     expect(find.text(l10n.aiSendPausedRateLimited), findsOneWidget);
     expect(find.text(l10n.aiSendResumesAfterReset), findsOneWidget);
@@ -175,7 +187,7 @@ void main() {
     final session = _GatedSession(
       reason: AiChatSendBlockReason.runBudgetUnavailable,
     );
-    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pumpWidget(_host(AiChatPage(session: session, now: _now)));
 
     expect(
       find.text(l10n.aiChatTooManyRunning('${AiRunRegistry.maxRunning}')),
@@ -190,7 +202,7 @@ void main() {
     final session = _GatedSession(
       reason: AiChatSendBlockReason.criticalRateBudget,
     );
-    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pumpWidget(_host(AiChatPage(session: session, now: _now)));
     await tester.enterText(
       find.byKey(const ValueKey('ai-chat-input')),
       'Summarize it',
@@ -210,17 +222,12 @@ void main() {
   testWidgets('the minute count drops as time passes', (tester) async {
     final session = _GatedSession(
       reason: AiChatSendBlockReason.serverCooldown,
-      until: DateTime.now().add(const Duration(minutes: 1, seconds: 1)),
+      until: _now().add(const Duration(minutes: 1, seconds: 1)),
     );
-    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pumpWidget(_host(AiChatPage(session: session, now: _now)));
     expect(find.text(l10n.cacheResumesInMinutes(2)), findsOneWidget);
 
-    // The card reads the wall clock; let a little more than a second pass.
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 1200)),
-    );
-    await tester.pump(const Duration(seconds: 2));
-
+    await _advance(tester, const Duration(seconds: 1));
     expect(find.text(l10n.cacheResumesInMinutes(1)), findsOneWidget);
   });
 
@@ -229,9 +236,9 @@ void main() {
   ) async {
     final session = _GatedSession(
       reason: AiChatSendBlockReason.serverCooldown,
-      until: DateTime.now().add(const Duration(milliseconds: 600)),
+      until: _now().add(const Duration(seconds: 30)),
     );
-    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pumpWidget(_host(AiChatPage(session: session, now: _now)));
     await tester.enterText(
       find.byKey(const ValueKey('ai-chat-input')),
       'Retry now',
@@ -239,14 +246,53 @@ void main() {
     await tester.pump();
     expect(_sendButton(tester).onPressed, isNull);
 
+    await _advance(tester, const Duration(seconds: 29));
+    expect(_sendButton(tester).onPressed, isNull);
     // No budget event arrives: only the card's own timer can bring it back.
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 800)),
-    );
-    await tester.pump(const Duration(seconds: 1));
+    await _advance(tester, const Duration(seconds: 1));
 
     expect(_card, findsNothing);
     expect(_sendButton(tester).onPressed, isNotNull);
+    expect(find.text('Retry now'), findsOneWidget);
+  });
+
+  testWidgets('a wait that passes while GitLab still limits keeps the card', (
+    tester,
+  ) async {
+    final session = _GatedSession(
+      reason: AiChatSendBlockReason.serverCooldown,
+      until: _now().add(const Duration(seconds: 30)),
+      sticky: true,
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session, now: _now)));
+
+    await _advance(tester, const Duration(seconds: 30));
+    expect(_card, findsOneWidget);
+    expect(find.text(l10n.aiSendResumesAfterReset), findsOneWidget);
+    expect(_sendButton(tester).onPressed, isNull);
+    // With no time left the card schedules nothing more.
+    await _advance(tester, const Duration(minutes: 5));
+    expect(find.text(l10n.aiSendResumesAfterReset), findsOneWidget);
+  });
+
+  testWidgets('a later stated time replaces the earlier wake-up', (
+    tester,
+  ) async {
+    final session = _GatedSession(
+      reason: AiChatSendBlockReason.serverCooldown,
+      until: _now().add(const Duration(seconds: 30)),
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session, now: _now)));
+    session.update(
+      () => session.until = _now().add(const Duration(minutes: 3)),
+    );
+    await tester.pump();
+
+    await _advance(tester, const Duration(seconds: 31));
+    expect(_card, findsOneWidget);
+    expect(find.text(l10n.cacheResumesInMinutes(3)), findsOneWidget);
+    await _advance(tester, const Duration(minutes: 3));
+    expect(_card, findsNothing);
   });
 
   testWidgets('a conversation blocker wins over the budget card', (
@@ -255,7 +301,7 @@ void main() {
     final session = _GatedSession(
       reason: AiChatSendBlockReason.criticalRateBudget,
     )..blocker = AiChatBlocker.tooManyRunning;
-    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pumpWidget(_host(AiChatPage(session: session, now: _now)));
 
     expect(_card, findsNothing);
     expect(find.byKey(const ValueKey('ai-chat-blocker')), findsOneWidget);
@@ -278,7 +324,7 @@ void main() {
             AiChatPage(
               session: _GatedSession(
                 reason: AiChatSendBlockReason.criticalRateBudget,
-                until: DateTime.now().add(const Duration(minutes: 12)),
+                until: _now().add(const Duration(minutes: 12)),
               ),
             ),
             locale: Locale(tag),
