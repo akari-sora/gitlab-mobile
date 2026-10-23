@@ -84,8 +84,23 @@ class _AiReportSheetState extends State<AiReportSheet> {
   /// last keys typed): the user confirms the new text with a second Send.
   var _previewUpdated = false;
 
-  /// The preview, brought into view when Send replaced it.
+  /// The note and the preview, brought into view when Send replaced it.
   final _previewBox = GlobalKey();
+
+  /// The Cancel and Send row, measured after each layout: whether the
+  /// buttons can stay pinned above the keyboard depends on their real height
+  /// (text size, language, wrapping), not on a constant.
+  final _buttonsBox = GlobalKey();
+  var _buttonsHeight = 48.0;
+
+  void _measureButtons() {
+    final box = _buttonsBox.currentContext?.findRenderObject();
+    if (!mounted || box is! RenderBox || !box.hasSize) return;
+    final height = box.size.height;
+    if ((height - _buttonsHeight).abs() > 0.5) {
+      setState(() => _buttonsHeight = height);
+    }
+  }
 
   Future<void> _send() async {
     final choice = _choice;
@@ -175,9 +190,14 @@ class _AiReportSheetState extends State<AiReportSheet> {
         // status bar and the drag handle; the keyboard is taken off here.
         final room = math.max(0.0, constraints.maxHeight - keyboard);
         final height = room < 420 ? room : room * 0.9;
+        final bottomInset = keyboard > 0 ? 0.0 : media.padding.bottom;
         // With little room (a landscape phone with the keyboard up) the
-        // buttons scroll with the form instead of being pinned under it.
-        final pinned = room >= 280;
+        // buttons scroll with the form instead of being pinned under it:
+        // pinned, the form keeps at least 100 dp next to the measured footer.
+        // Both ways the row is laid out at the same width, so the measurement
+        // does not change with the choice.
+        final pinned = room - (_buttonsHeight + 16 + bottomInset) >= 100;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _measureButtons());
         final note = _previewUpdated
             ? Padding(
                 padding: const EdgeInsets.only(bottom: 6),
@@ -195,6 +215,7 @@ class _AiReportSheetState extends State<AiReportSheet> {
               )
             : null;
         final buttons = Wrap(
+          key: _buttonsBox,
           alignment: WrapAlignment.end,
           spacing: 8,
           runSpacing: 4,
@@ -215,11 +236,11 @@ class _AiReportSheetState extends State<AiReportSheet> {
           pinned ? 16 : 0,
           8,
           pinned ? 16 : 0,
-          8 + (keyboard > 0 ? 0 : media.padding.bottom),
+          8 + bottomInset,
         );
-        // The note sits by the buttons. Pinned, the footer leaves the form at
-        // least 120 dp for the preview; whatever does not fit scrolls, kept
-        // at its end so Send is always on screen.
+        // Pinned, the footer leaves the form at least 120 dp for the preview;
+        // whatever does not fit scrolls, kept at its end so Send is always on
+        // screen.
         final actions = pinned
             ? ConstrainedBox(
                 // Measured against the sheet's own height, which is 90% of
@@ -230,21 +251,10 @@ class _AiReportSheetState extends State<AiReportSheet> {
                   primary: false,
                   reverse: true,
                   padding: actionsPadding,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [?note, buttons],
-                  ),
+                  child: buttons,
                 ),
               )
-            : Padding(
-                padding: actionsPadding,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [?note, buttons],
-                ),
-              );
+            : Padding(padding: actionsPadding, child: buttons);
         final form = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -321,24 +331,35 @@ class _AiReportSheetState extends State<AiReportSheet> {
               const SizedBox(height: 8),
               Text(l10n.aiReportPreview, style: theme.textTheme.labelLarge),
               const SizedBox(height: 6),
-              DecoratedBox(
+              // The note sits right above the text it asks the user to check,
+              // in the form: in the footer's scroller it could be scrolled
+              // out of view above Send at large text with the keyboard up.
+              Column(
                 key: _previewBox,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: Text(
-                      preview!,
-                      key: const ValueKey('ai-report-preview'),
-                      style: codeTextStyle(context, fontSize: 12),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ?note,
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: theme.colorScheme.outlineVariant,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          preview!,
+                          key: const ValueKey('ai-report-preview'),
+                          style: codeTextStyle(context, fontSize: 12),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ],
           ],
