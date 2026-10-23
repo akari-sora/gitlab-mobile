@@ -2716,5 +2716,10 @@
   "cacheResumesInMinutes": "Fortsetzung in ca. {minutes} Min.",
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "Alle 30 Sek. aktualisieren",
-  "refreshEveryMinute": "Jede Minute aktualisieren"
+  "refreshEveryMinute": "Jede Minute aktualisieren",
+  "aiSendPausedBudget": "Das GitLab-Anfragekontingent ist fast aufgebraucht; Senden pausiert",
+  "aiSendPausedRateLimited": "GitLab begrenzt derzeit die Anfragen; Senden pausiert",
+  "aiSendResumesAfterReset": "Fortsetzung nach Zurücksetzen des Anfragekontingents",
+  "aiGitLabBudgetTitle": "Das GitLab-Anfragekontingent ist fast aufgebraucht",
+  "aiGitLabBudgetDetail": "Diese Nachricht wurde nicht gesendet. Sende sie erneut, sobald die Schaltfläche „Senden“ wieder verfügbar ist."
 }

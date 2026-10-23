@@ -2719,4 +2719,9 @@ const _messagesIt = <String>[
   '{verb} {target}',
   'Aggiorna ogni 30 s',
   'Aggiorna ogni minuto',
+  'La quota di richieste GitLab è quasi esaurita; invio in pausa',
+  'GitLab sta limitando le richieste; invio in pausa',
+  'Riprende quando la quota di richieste viene ripristinata',
+  'La quota di richieste GitLab è quasi esaurita',
+  'Questo messaggio non è stato inviato. Invialo di nuovo quando il pulsante «Invia» sarà nuovamente disponibile.',
 ];

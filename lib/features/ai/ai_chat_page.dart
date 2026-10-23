@@ -109,6 +109,7 @@ class AiChatPage extends StatefulWidget {
     this.analyzeDraft = analyzeAiDraft,
     this.sendReport = sendAiReport,
     this.buildInfo = loadBuildInfo,
+    this.now = DateTime.now,
   });
 
   final AiChatSession session;
@@ -131,6 +132,9 @@ class AiChatPage extends StatefulWidget {
   /// The version a report names; replaced in tests.
   final BuildInfoLoader buildInfo;
 
+  /// The clock the send-paused card counts down with; replaced in tests.
+  final DateTime Function() now;
+
   /// Opened from "AI summary": send the summary request once, when the empty
   /// conversation is ready.
   final bool summarize;
@@ -151,6 +155,11 @@ class _AiChatPageState extends State<AiChatPage> {
   /// The draft is being read and checked, before the preview opens.
   var _preparingDraft = false;
   var _reporting = false;
+
+  /// Completes when the page closes, cancelling a draft check in flight, so
+  /// closing the chat stops the check instead of leaving it until its
+  /// 30 s deadline.
+  final _pageClosed = Completer<void>();
 
   /// "AI summary" sends its request once, when the empty session is ready.
   late bool _pendingSummary;
@@ -185,6 +194,8 @@ class _AiChatPageState extends State<AiChatPage> {
   @override
   void dispose() {
     // The run goes on without the page; a cleartext prompt cannot be shown.
+    // A draft check in flight stops here rather than at its deadline.
+    _pageClosed.complete();
     _session.confirmCleartext = null;
     _session.removeListener(_maybeSummarize);
     _input
@@ -195,6 +206,13 @@ class _AiChatPageState extends State<AiChatPage> {
   }
 
   void _inputChanged() => setState(() {});
+
+  // GitLab's stated wait is over: the send button reads the budget again.
+  void _sendPauseEnded() {
+    if (!mounted) return;
+    setState(() {});
+    _maybeSummarize();
+  }
 
   Future<void> _insertDraft(AiAssistantItem item) async {
     final target = widget.draftTarget;
@@ -234,7 +252,11 @@ class _AiChatPageState extends State<AiChatPage> {
       }
       final AiDraftAnalysis analysis;
       try {
-        analysis = await widget.analyzeDraft(text, existing);
+        analysis = await widget.analyzeDraft(
+          text,
+          existing,
+          cancel: _pageClosed.future,
+        );
       } on Object {
         _notice(l10n.aiDraftCheckFailed);
         return;
@@ -730,6 +752,13 @@ class _AiChatPageState extends State<AiChatPage> {
     final items = _session.items;
     // The blocker or preparing card scrolls with the conversation, so a long
     // message at a large text size never squeezes the page.
+    final (paused, pausedUntil) = switch (_session) {
+      final AiChatSendGate gate
+          when _session.phase == AiChatPhase.idle &&
+              _session.blocker == AiChatBlocker.none =>
+        (gate.sendBlockReason, gate.sendBlockedUntil),
+      _ => (null, null),
+    };
     final notice =
         _session.blocker != AiChatBlocker.none ||
             _session.phase == AiChatPhase.preparing
@@ -737,6 +766,13 @@ class _AiChatPageState extends State<AiChatPage> {
             session: _session,
             onOpenSettings: _openSettings,
             onReviewConsent: _reviewConsent,
+          )
+        : paused != null
+        ? _SendPausedCard(
+            reason: paused,
+            until: pausedUntil,
+            now: widget.now,
+            onResume: _sendPauseEnded,
           )
         : null;
     // A card that just appeared sits by the composer; scroll it into view.
@@ -1956,6 +1992,130 @@ class _Composer extends StatelessWidget {
                           icon: const Icon(Icons.arrow_upward_rounded),
                         ),
                 ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Says why the send button is off while the account's GitLab request budget
+/// pauses sending, and when that ends. It updates as the minutes pass and
+/// tells the page when the stated time is over.
+class _SendPausedCard extends StatefulWidget {
+  const _SendPausedCard({
+    required this.reason,
+    required this.until,
+    required this.now,
+    required this.onResume,
+  });
+
+  final AiChatSendBlockReason reason;
+  final DateTime? until;
+  final DateTime Function() now;
+  final VoidCallback onResume;
+
+  @override
+  State<_SendPausedCard> createState() => _SendPausedCardState();
+}
+
+class _SendPausedCardState extends State<_SendPausedCard> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _schedule();
+  }
+
+  @override
+  void didUpdateWidget(_SendPausedCard old) {
+    super.didUpdateWidget(old);
+    if (old.until != widget.until) _schedule();
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  Duration? get _left {
+    final left = widget.until?.difference(widget.now());
+    return left == null || left <= Duration.zero ? null : left;
+  }
+
+  // Wakes when the rounded-up minute count changes, and when the wait ends.
+  void _schedule() {
+    _tick?.cancel();
+    final left = _left;
+    if (left == null) return;
+    final step = left.inMicroseconds % Duration.microsecondsPerMinute;
+    _tick = Timer(
+      Duration(
+        microseconds: step == 0 ? Duration.microsecondsPerMinute : step,
+      ),
+      () {
+        if (!mounted) return;
+        if (_left == null) {
+          widget.onResume();
+        } else {
+          setState(_schedule);
+        }
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final left = _left;
+    final (title, detail) = switch (widget.reason) {
+      AiChatSendBlockReason.runBudgetUnavailable => (
+        l10n.aiChatTooManyRunning('${AiRunRegistry.maxRunning}'),
+        null,
+      ),
+      final reason => (
+        reason == AiChatSendBlockReason.criticalRateBudget
+            ? l10n.aiSendPausedBudget
+            : l10n.aiSendPausedRateLimited,
+        // Only a reset time GitLab actually gave is worth stating.
+        left == null
+            ? l10n.aiSendResumesAfterReset
+            : l10n.cacheResumesInMinutes(
+                (left.inMicroseconds + Duration.microsecondsPerMinute - 1) ~/
+                    Duration.microsecondsPerMinute,
+              ),
+      ),
+    };
+    return Card(
+      key: const ValueKey('ai-chat-send-paused'),
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: MergeSemantics(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.hourglass_top, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title),
+                    if (detail != null)
+                      Text(
+                        detail,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ],
           ),

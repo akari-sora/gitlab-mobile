@@ -90,6 +90,77 @@ void main() {
     );
 
     test(
+      'json and text file reads use separate cache entries keyed by accept',
+      () async {
+        final adapter = FakeAdapter((request) {
+          final path = request.uri.path;
+          if (path.endsWith('/projects/8') && request.method == 'GET') {
+            return jsonResponse({...projectJson(8), 'license': null});
+          }
+          if (path.endsWith('/repository/branches/main')) {
+            return jsonResponse({
+              'name': 'main',
+              'commit': {'id': _sha},
+            });
+          }
+          if (path.endsWith('/repository/files/README.md/raw')) {
+            return ResponseBody.fromString(
+              'hello text',
+              200,
+              headers: {
+                'x-gitlab-size': ['10'],
+              },
+            );
+          }
+          if (path.endsWith('/repository/files/README.md')) {
+            if (request.method == 'HEAD') {
+              return ResponseBody.fromString(
+                '',
+                200,
+                headers: {
+                  'x-gitlab-size': ['10'],
+                },
+              );
+            }
+            return jsonResponse({
+              'file_name': 'README.md',
+              'content': 'aGVsbG8=',
+            });
+          }
+          return jsonResponse({}, status: 404);
+        });
+        final api = _boundApi(adapter);
+        addTearDown(api.close);
+
+        final project = await api.project('8');
+        final sha = await api.defaultBranchSha(project);
+        expect(sha, _sha);
+
+        final firstJson = await api.cachedRecord(
+          ['projects', '8', 'repository', 'files', 'README.md'],
+          query: {'ref': sha},
+        );
+        final secondJson = await api.cachedRecord(
+          ['projects', '8', 'repository', 'files', 'README.md'],
+          query: {'ref': sha},
+        );
+        expect(firstJson.value['file_name'], 'README.md');
+        expect(secondJson.lineage, CacheLineage.memory);
+        expect(secondJson.value['file_name'], 'README.md');
+        expect(adapter.requests, hasLength(3));
+
+        final firstText = await api.textFile(8, sha, 'README.md');
+        final secondText = await api.textFile(8, sha, 'README.md');
+        expect(firstText, 'hello text');
+        expect(secondText, 'hello text');
+        expect(firstText, isA<String>());
+        expect(firstJson.value, isA<Map<String, dynamic>>());
+
+        expect(adapter.requests, hasLength(5));
+      },
+    );
+
+    test(
       'continuation pages never cache and poisoned next is rejected',
       () async {
         final adapter = FakeAdapter((request) {

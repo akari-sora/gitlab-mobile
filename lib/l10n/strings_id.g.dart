@@ -2719,4 +2719,9 @@ const _messagesId = <String>[
   '{verb} {target}',
   'Muat ulang tiap 30 detik',
   'Muat ulang tiap menit',
+  'Kuota permintaan GitLab hampir habis; pengiriman dijeda',
+  'GitLab sedang membatasi permintaan; pengiriman dijeda',
+  'Lanjut lagi saat kuota permintaan diatur ulang',
+  'Kuota permintaan GitLab hampir habis',
+  'Pesan ini tidak terkirim. Kirim ulang saat tombol “Kirim” tersedia kembali.',
 ];

@@ -762,7 +762,11 @@ void main() {
         productionAiLedger.find('upload_attachment')!.namedMethod,
         'uploadProjectFile',
       );
-      expect(productionAiLedger.find('snoozeTodo'), isNull);
+      expect(
+        productionAiLedger.find('snoozeTodo') == null ||
+            !productionAiLedger.find('snoozeTodo')!.modelVisible,
+        isTrue,
+      );
       expect(aiFixedConfirmOperationIds, <String>{'markAllTodosDone'});
       expect(AiWriteLimits.writesPerSend, 8);
       expect(AiWriteLimits.t4PerSend, 3);

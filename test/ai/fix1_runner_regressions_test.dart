@@ -310,6 +310,7 @@ void main() {
       addTearDown(h.transport.close);
       final active = h.runner.run('first');
       await h.started.future;
+      if (trigger == 'run timeout') h.expireRunDeadline();
       final old = h.runner.segment;
       if (trigger == 'stop') h.runner.stop();
       final stopped = await active;
@@ -718,6 +719,10 @@ final class _TransportHarness {
       runDeadline: trigger == 'run timeout'
           ? const Duration(milliseconds: 30)
           : const Duration(minutes: 12),
+      // A loaded full suite can spend the real 30 ms in preflight before Dio
+      // enters the adapter. Freeze only the run-timeout fixture's logical
+      // clock until [started] proves the transport request exists.
+      now: trigger == 'run timeout' ? () => _runNow : null,
       executeTool: (_) {
         if (!toolStarted.isCompleted) toolStarted.complete();
         return pendingTool.future;
@@ -726,6 +731,7 @@ final class _TransportHarness {
     );
   }
   final owner = Object();
+  DateTime _runNow = DateTime.utc(2026, 10, 23, 12);
   final started = Completer<void>();
   final toolStarted = Completer<void>();
   final pendingTool = Completer<AiToolResult>();
@@ -734,4 +740,8 @@ final class _TransportHarness {
   late FakeAdapter adapter;
   late AiTransport transport;
   late AiRunner runner;
+
+  void expireRunDeadline() {
+    _runNow = _runNow.add(const Duration(milliseconds: 31));
+  }
 }

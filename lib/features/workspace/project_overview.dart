@@ -58,6 +58,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
   RepositoryRef? _ref;
   RepositoryReadme? _readme;
   ApiFailure? _readmeError;
+  String? _readmeDeniedBranch;
   bool _readmeLoading = false;
   bool _readmeMissing = false;
   bool _moreOpen = false;
@@ -79,10 +80,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
   DateTime? backgroundRetryAt;
   bool get stale =>
       _detailsRead?.stale == true ||
-      _branchRead?.stale == true ||
-      _treeRead?.stale == true ||
-      _readmePending ||
-      _detailsRead != null && _branch != (_ref?.name ?? '');
+      _readmeStale;
   DateTime? get fetchedAt {
     final times = [?_detailsRead?.fetchedAt, ?_branchRead?.fetchedAt];
     if (times.isEmpty) return null;
@@ -94,6 +92,11 @@ class ProjectOverviewState extends State<ProjectOverview> {
       : widget.project.defaultBranch ?? '';
   bool get _emptyRepository => _branch.isEmpty;
   bool get _backgroundEnabled => _tickerMode?.value.enabled ?? false;
+  bool get _readmeStale => _readmeDeniedBranch != _branch &&
+      (_branchRead?.stale == true ||
+          _treeRead?.stale == true ||
+          _readmePending ||
+          _detailsRead != null && _branch != (_ref?.name ?? ''));
 
   void _updateTickerMode() {
     final mode = TickerMode.getValuesNotifier(context);
@@ -137,6 +140,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
     if (ownerChanged) {
       _epoch++;
       _withdraw();
+      _readmeDeniedBranch = null;
       _readmeError = null;
       error = null;
       backgroundFailure = null;
@@ -203,6 +207,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
       error = failure;
       _readmeError = null;
     } else if (repository && _revoked(failure)) {
+      _readmeDeniedBranch = _branch;
       _ref = null;
       _readme = null;
       _branchRead = null;
@@ -260,6 +265,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
       backgroundRetryAt = null;
       _resumeWhenVisible = false;
       error = null;
+      if (fresh) _readmeDeniedBranch = null;
     });
     try {
       await _loadDetails(epoch, fresh: fresh);
@@ -300,8 +306,10 @@ class ProjectOverviewState extends State<ProjectOverview> {
         return;
       }
       setState(() {
+        final previousBranch = _branch;
         _details = read.value;
         _detailsRead = read;
+        if (_branch != previousBranch) _readmeDeniedBranch = null;
       });
     } catch (e) {
       if (!_current(epoch, api)) return;
@@ -317,6 +325,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
     bool background = false,
   }) async {
     final api = widget.api, project = widget.project, branch = _branch;
+    if (_readmeDeniedBranch == branch) return;
     if (branch.isEmpty) {
       setState(() {
         _ref = null;
@@ -331,7 +340,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
     }
     setState(() {
       _readmeLoading = !background && _readme == null;
-      _readmeError = null;
+      if (!background) _readmeError = null;
     });
     try {
       final branchRead = await _read(
@@ -404,6 +413,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
         _readmePending = false;
         _readmeMissing = path == null;
         _readmeLoading = false;
+        _readmeError = null;
       });
     } catch (e) {
       if (!_current(epoch, api)) return;
@@ -438,11 +448,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
         await _loadDetails(epoch, fresh: true, background: true);
         if (!_current(epoch, api) || error != null || backgroundFailure != null) return;
       }
-      if (_backgroundEnabled &&
-          (_readmePending ||
-              _branchRead?.stale == true ||
-              _treeRead?.stale == true ||
-              _branch != (_ref?.name ?? ''))) {
+      if (_backgroundEnabled && _readmeStale) {
         await _loadReadme(epoch, background: true);
       }
     } finally {

@@ -33,6 +33,7 @@ final class AiFailure implements Exception, UserFacingFailure {
     this.retryAt,
     this.requiresNewSegment = false,
     this.notSent = false,
+    this.gitLabBudget = false,
   });
 
   final AiFailureKind kind;
@@ -42,6 +43,10 @@ final class AiFailure implements Exception, UserFacingFailure {
 
   /// The transport refused the request before handing it to the network.
   final bool notSent;
+
+  /// GitLab's request budget for the account, not the AI provider, stopped
+  /// the send; the page names GitLab instead of the provider.
+  final bool gitLabBudget;
 
   static AiFailure fromStatus(int status, {String? retryAfter, DateTime? now}) {
     final retryAt = parseRetryAfter(retryAfter, now: now);
@@ -90,7 +95,7 @@ final class AiFailure implements Exception, UserFacingFailure {
   }
 
   @override
-  String get title => switch (kind) {
+  String get title => gitLabBudget ? l10n.aiGitLabBudgetTitle : switch (kind) {
     AiFailureKind.unauthenticated => l10n.aiUnauthenticatedTitle,
     AiFailureKind.forbidden => l10n.aiForbiddenTitle,
     AiFailureKind.notFound => l10n.aiNotFoundTitle,
@@ -113,7 +118,7 @@ final class AiFailure implements Exception, UserFacingFailure {
   };
 
   @override
-  String get detail => switch (kind) {
+  String get detail => gitLabBudget ? l10n.aiGitLabBudgetDetail : switch (kind) {
     AiFailureKind.unauthenticated => l10n.aiUnauthenticatedDetail,
     AiFailureKind.forbidden => l10n.aiForbiddenDetail,
     AiFailureKind.notFound => l10n.aiNotFoundDetail,

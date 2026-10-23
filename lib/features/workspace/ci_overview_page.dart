@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
@@ -99,6 +100,9 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
   Uri? _nextPageUri;
   ApiFailure? _error;
   List<ProjectCiItem> _items = const [];
+  ValueListenable<TickerModeData>? _tickerMode;
+  bool _tickerEnabled = true;
+  bool _resumeWhenVisible = false;
   String _filter = ''; // '', 'running', 'failed'
   String _search = '';
   final _searchController = TextEditingController();
@@ -106,11 +110,40 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
 
   Account? get _account => widget.account ?? widget.session?.active;
   GitLabApi? get _api => widget.api ?? widget.session?.api;
+  bool get _backgroundEnabled =>
+      _tickerEnabled && (ModalRoute.of(context)?.isCurrent ?? true);
 
   @override
   void initState() {
     super.initState();
     unawaited(_load());
+  }
+
+  void _updateTickerMode() {
+    final mode = TickerMode.getValuesNotifier(context);
+    if (!identical(mode, _tickerMode)) {
+      _tickerMode?.removeListener(_tickerModeChanged);
+      _tickerMode = mode;
+      mode.addListener(_tickerModeChanged);
+    }
+    _tickerModeChanged();
+  }
+
+  void _tickerModeChanged() {
+    _tickerEnabled = _tickerMode!.value.enabled;
+    if (_backgroundEnabled) _resumeBackgroundRead();
+  }
+
+  void _resumeBackgroundRead() {
+    if (!_resumeWhenVisible || !_backgroundEnabled || _loading) return;
+    _resumeWhenVisible = false;
+    unawaited(_load(background: true));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateTickerMode();
   }
 
   @override
@@ -126,12 +159,14 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       _nextPageUri = null;
       _error = null;
       _items = const [];
+      _resumeWhenVisible = false;
       unawaited(_load());
     }
   }
 
   @override
   void dispose() {
+    _tickerMode?.removeListener(_tickerModeChanged);
     _searchController.dispose();
     _scroll.dispose();
     super.dispose();
@@ -139,6 +174,11 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
 
   Future<void> _load({bool fresh = false, bool background = false}) async {
     if (_loading || !mounted) return;
+    if (background && !_backgroundEnabled) {
+      _resumeWhenVisible = true;
+      return;
+    }
+    if (background) _resumeWhenVisible = false;
     final curAccount = _account;
     final curApi = _api;
     if (curAccount == null || curApi == null) return;
@@ -152,6 +192,14 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         _account?.key == startAccountKey &&
         (widget.session == null || widget.session!.generation == startGeneration) &&
         (widget.session == null || widget.session!.active?.key == startAccountKey);
+    bool canApply({required bool background}) {
+      if (!current()) return false;
+      if (background && !_backgroundEnabled) {
+        _resumeWhenVisible = true;
+        return false;
+      }
+      return true;
+    }
 
     setState(() {
       _loading = true;
@@ -172,7 +220,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         background: background,
         current: current,
       );
-      if (!current()) return;
+      if (!canApply(background: background)) return;
       if (read == null) {
         if (!background && _items.isEmpty) {
           setState(() => _error = const ApiFailure(FailureKind.cancelled));
@@ -202,14 +250,22 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         projects,
         api: curApi,
         current: current,
-        fresh: fresh,
+        fresh: fresh && !background,
         background: background,
         revalidateStale: !revalidateStaleProjects,
       );
     } catch (e) {
       if (current()) {
+        final failure = safeFailure(e);
+        final revoked = switch (failure.kind) {
+          FailureKind.unauthenticated ||
+          FailureKind.forbidden ||
+          FailureKind.invisible => true,
+          _ => false,
+        };
+        if (background && !revoked && !canApply(background: true)) return;
         setState(() {
-          _error = safeFailure(e);
+          _error = failure;
         });
       }
     } finally {
@@ -220,6 +276,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         if (revalidateStaleProjects) {
           unawaited(_load(fresh: true, background: true));
         }
+        _resumeBackgroundRead();
       }
     }
   }
@@ -363,6 +420,10 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     bool background = false,
   }) async {
     if (!current()) return false;
+    if (background && !_backgroundEnabled) {
+      _resumeWhenVisible = true;
+      return false;
+    }
     _replaceItem(
       project.id,
       (item) => item.state == ProjectCiLoadState.known
@@ -379,6 +440,10 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         current: current,
       );
       if (!current()) return false;
+      if (background && !_backgroundEnabled) {
+        _resumeWhenVisible = true;
+        return false;
+      }
       if (read == null) {
         if (!background) {
           _replaceItem(
@@ -411,6 +476,10 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         FailureKind.invisible => true,
         _ => false,
       };
+      if (background && !revoked && !_backgroundEnabled) {
+        _resumeWhenVisible = true;
+        return false;
+      }
       _replaceItem(
         project.id,
         (item) => background && !revoked && item.state == ProjectCiLoadState.known
@@ -442,15 +511,27 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         fresh: fresh,
         background: background,
       ),
-      mayStart: current,
+      mayStart: () => current() && (!background || _backgroundEnabled),
       waitForQuiet: quiet,
     );
 
+    bool canContinue() {
+      if (!current()) return false;
+      if (background && !_backgroundEnabled) {
+        _resumeWhenVisible = true;
+        return false;
+      }
+      return true;
+    }
+
     var read = await readPage(fresh: fresh);
+    if (!canContinue()) return null;
     if (read.superseded) {
       read = await readPage(fresh: true);
+      if (!canContinue()) return null;
       if (read.superseded) {
         read = await readPage(fresh: true, quiet: true);
+        if (!canContinue()) return null;
       }
       if (read.superseded) {
         throw const ApiFailure(FailureKind.cancelled);
@@ -505,7 +586,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       );
     }
     if (mounted) {
-      unawaited(_load(fresh: true, background: true));
+      unawaited(_load(background: true));
     }
   }
 

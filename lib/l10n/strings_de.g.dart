@@ -2719,4 +2719,9 @@ const _messagesDe = <String>[
   '{verb} {target}',
   'Alle 30 Sek. aktualisieren',
   'Jede Minute aktualisieren',
+  'Das GitLab-Anfragekontingent ist fast aufgebraucht; Senden pausiert',
+  'GitLab begrenzt derzeit die Anfragen; Senden pausiert',
+  'Fortsetzung nach Zurücksetzen des Anfragekontingents',
+  'Das GitLab-Anfragekontingent ist fast aufgebraucht',
+  'Diese Nachricht wurde nicht gesendet. Sende sie erneut, sobald die Schaltfläche „Senden“ wieder verfügbar ist.',
 ];

@@ -40,6 +40,9 @@ class _BoardsPageState extends State<BoardsPage> {
   int _generation = 0;
   String _query = '';
   final Map<String, GlobalKey<RecordsFeedState>> _feeds = {};
+  Set<String> _freshColumns = {};
+  Set<String> _freshSpent = {};
+  Map<String, int> _freshAttempts = {};
   final Set<Route<dynamic>> _ownedRoutes = {};
   NavigatorState? _navigator;
 
@@ -136,7 +139,7 @@ class _BoardsPageState extends State<BoardsPage> {
   Future<List<Json>> _allPages(List<String> path, {int maxPages = 4}) =>
       _allPagesFor(widget.api, path, maxPages: maxPages);
 
-  Future<void> _loadBoards({int? preferredId}) async {
+  Future<void> _loadBoards({int? preferredId, bool fresh = false}) async {
     final generation = ++_generation;
     setState(() {
       _loading = true;
@@ -161,7 +164,11 @@ class _BoardsPageState extends State<BoardsPage> {
         (value) => value?['id'] == (preferredId ?? _board?.id),
         orElse: () => boards.first,
       )!;
-      await _loadBoard(requiredInt(selected, 'id'), generation: generation);
+      await _loadBoard(
+        requiredInt(selected, 'id'),
+        generation: generation,
+        fresh: fresh,
+      );
     } catch (error) {
       if (mounted && generation == _generation) {
         setState(() {
@@ -172,7 +179,7 @@ class _BoardsPageState extends State<BoardsPage> {
     }
   }
 
-  Future<void> _loadBoard(int id, {int? generation}) async {
+  Future<void> _loadBoard(int id, {int? generation, bool fresh = false}) async {
     final activeGeneration = generation ?? ++_generation;
     if (generation == null) {
       setState(() {
@@ -202,6 +209,15 @@ class _BoardsPageState extends State<BoardsPage> {
         results[1] as List<Json>,
       );
       _feeds.clear();
+      if (fresh) {
+        _freshColumns = {for (final column in definition.columns) column.key};
+        _freshSpent = {};
+        _freshAttempts = {};
+      } else {
+        _freshColumns = {};
+        _freshSpent = {};
+        _freshAttempts = {};
+      }
       setState(() {
         _board = definition;
         _columnIndex = 0;
@@ -985,6 +1001,15 @@ class _BoardsPageState extends State<BoardsPage> {
       );
     }
     final key = _feeds.putIfAbsent(column.key, GlobalKey<RecordsFeedState>.new);
+    // Each load owns its one-shot refresh intent, including lazy columns.
+    final freshColumns = _freshColumns;
+    final freshSpent = _freshSpent;
+    final freshAttempts = _freshAttempts;
+    final pairEntries =
+        query.parameters.entries.toList()
+          ..sort((a, b) => a.key.compareTo(b.key));
+    final pairKey =
+        '${column.key}\x00${pairEntries.map((e) => '${e.key}=${e.value}').join('&')}';
     return RecordsFeed(
       key: key,
       identity:
@@ -1003,6 +1028,37 @@ class _BoardsPageState extends State<BoardsPage> {
       visible: column.kind == BoardColumnKind.open
           ? (issue) => boardOpenIssueMatches(board, issue)
           : null,
+      // The refresh intent is spent only by the latest forced attempt that
+      // reached the network: an older attempt landing after a newer one
+      // started, a dropped read, or a failure keeps it. Intent is per
+      // column and query, so a refresh while searching leaves the
+      // unsearched query pending.
+      cached: ({required fresh, required background}) async {
+        final pending =
+            freshColumns.contains(column.key) && !freshSpent.contains(pairKey);
+        final force = fresh || pending;
+        final int? attempt = pending
+            ? (freshAttempts[column.key] ?? 0) + 1
+            : null;
+        if (pending) {
+          freshAttempts[column.key] = attempt!;
+        }
+        final read = await widget.api.cachedRecords(
+          ['projects', '${widget.project.id}', 'issues'],
+          query: query.parameters,
+          fresh: force,
+          background: background,
+        );
+        if (pending &&
+            force &&
+            read.lineage == CacheLineage.network &&
+            !read.superseded &&
+            !read.dropped &&
+            freshAttempts[column.key] == attempt) {
+          freshSpent.add(pairKey);
+        }
+        return read;
+      },
       load: (next) => widget.api.records(
         ['projects', '${widget.project.id}', 'issues'],
         query: query.parameters,
@@ -1038,7 +1094,7 @@ class _BoardsPageState extends State<BoardsPage> {
             account: widget.account,
             resourceLabel: l10n.pathIssueBoard(widget.project.path),
             onSwitchAccount: endSessionFrom(context),
-            onRetry: _loadBoards,
+            onRetry: () => unawaited(_loadBoards(fresh: true)),
           ),
         ],
       );
@@ -1125,7 +1181,9 @@ class _BoardsPageState extends State<BoardsPage> {
           tooltip: l10n.refreshBoard,
           onPressed: _loading
               ? null
-              : () => unawaited(_loadBoards(preferredId: _board?.id)),
+              : () => unawaited(
+                  _loadBoards(preferredId: _board?.id, fresh: true),
+                ),
           icon: const Icon(Icons.refresh),
         ),
       ],

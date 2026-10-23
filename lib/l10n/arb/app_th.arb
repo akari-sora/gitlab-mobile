@@ -2716,5 +2716,10 @@
   "cacheResumesInMinutes": "กลับมาในอีกประมาณ {minutes} นาที",
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "รีเฟรชทุก 30 วินาที",
-  "refreshEveryMinute": "รีเฟรชทุกนาที"
+  "refreshEveryMinute": "รีเฟรชทุกนาที",
+  "aiSendPausedBudget": "โควตาคำขอของ GitLab ใกล้หมดแล้ว จึงหยุดส่งชั่วคราว",
+  "aiSendPausedRateLimited": "GitLab กำลังจำกัดคำขอ จึงหยุดส่งชั่วคราว",
+  "aiSendResumesAfterReset": "กลับมาส่งได้เมื่อโควตาคำขอถูกรีเซ็ต",
+  "aiGitLabBudgetTitle": "โควตาคำขอของ GitLab ใกล้หมดแล้ว",
+  "aiGitLabBudgetDetail": "ข้อความนี้ไม่ได้ถูกส่ง. ส่งอีกครั้งเมื่อปุ่ม “ส่ง” กลับมาใช้งานได้"
 }

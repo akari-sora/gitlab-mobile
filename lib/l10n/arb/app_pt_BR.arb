@@ -2716,5 +2716,10 @@
   "cacheResumesInMinutes": "Retoma em cerca de {minutes} min",
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "Atualizar a cada 30 s",
-  "refreshEveryMinute": "Atualizar a cada minuto"
+  "refreshEveryMinute": "Atualizar a cada minuto",
+  "aiSendPausedBudget": "A cota de solicitações do GitLab está quase esgotada; envio pausado",
+  "aiSendPausedRateLimited": "O GitLab está limitando solicitações; envio pausado",
+  "aiSendResumesAfterReset": "Retoma quando a cota de solicitações for redefinida",
+  "aiGitLabBudgetTitle": "A cota de solicitações do GitLab está quase esgotada",
+  "aiGitLabBudgetDetail": "Esta mensagem não foi enviada. Envie-a novamente quando o botão “Enviar” estiver disponível de novo."
 }

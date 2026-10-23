@@ -11,6 +11,8 @@ PORT = AI_ROOT / "tools" / "gitlab_read_port.dart"
 READ_PORT_MEMBERS = {
     "textFile",
     "tree",
+    "cachedRecord",
+    "cachedRecords",
     "record",
     "records",
     "jobTraceChunk",
@@ -18,6 +20,44 @@ READ_PORT_MEMBERS = {
     "commitDiff",
     "search",
     "snippetText",
+}
+
+_MR6B3_WRITE_PORT_MEMBERS = {
+    "projectWorkItem",
+    "workItemState",
+    "workItemStatus",
+    "workItemDates",
+    "workItemHealthEdit",
+    "workItemAssignees",
+    "searchWorkItemAssigneeCandidates",
+    "workItemMilestone",
+    "workItemMilestoneChoices",
+    "workItemWeight",
+    "workItemActivityWriteAccess",
+    "workItemActivity",
+    "workItemActivityNext",
+    "workItemDiscussionNotesNext",
+    "workItemActivityDeleteAccess",
+    "workItemActivityReactionAccess",
+    "workItemNotifications",
+    "incidentStatus",
+    "pendingTodosForSnooze",
+    "snoozedTodosForUnsnooze",
+    "updateWorkItemState",
+    "updateWorkItemStatus",
+    "updateWorkItemDates",
+    "updateWorkItemHealthStatus",
+    "updateWorkItemAssignees",
+    "updateWorkItemMilestone",
+    "updateWorkItemWeight",
+    "createWorkItemActivityComment",
+    "createWorkItemActivityReply",
+    "deleteWorkItemActivityNote",
+    "setWorkItemActivityNoteReaction",
+    "setWorkItemNotifications",
+    "setIncidentStatus",
+    "snoozeTodo",
+    "unsnoozeTodo",
 }
 
 WRITE_PORT_MEMBERS = {
@@ -108,7 +148,7 @@ WRITE_PORT_MEMBERS = {
     "editProject",
     "deleteProject",
     "forkProject",
-}
+} | _MR6B3_WRITE_PORT_MEMBERS
 
 GENERIC_CHANNELS = {
     "writeRecord",
@@ -159,6 +199,19 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertNotIn("snippetText", previous_members)
         self.assertNotIn("projectSnippetSnapshot", READ_PORT_MEMBERS)
 
+    def test_ai_cached_reads_refuse_disk_and_bound_age(self):
+        source = PORT.read_text(encoding="utf-8")
+        self.assertRegex(source, r"_aiMaxAge\s*=\s*Duration\(seconds:\s*60\)")
+        self.assertRegex(source, r"cachedRecord\([\s\S]*?allowDisk:\s*false")
+        self.assertRegex(source, r"cachedRecords\([\s\S]*?allowDisk:\s*false")
+        self.assertRegex(source, r"lineage\s*==\s*CacheLineage\.disk")
+        self.assertRegex(source, r"read\.dropped\s*\|\|\s*read\.superseded")
+
+    def test_ai_typed_cache_reads_disable_disk(self):
+        source = PORT.read_text(encoding="utf-8")
+        self.assertRegex(source, r"textFile\([\s\S]*?allowDisk:\s*false")
+        self.assertRegex(source, r"tree\([\s\S]*?allowDisk:\s*false")
+
     def test_row13_write_port_calls_only_whitelisted_members(self):
         sources = self._write_port_sources()
         members = set()
@@ -172,6 +225,57 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertTrue(members)
         self.assertLessEqual(members, WRITE_PORT_MEMBERS)
         self.assertEqual(violations, [])
+
+    def test_mr6b3_write_port_whitelist_delta_is_exact(self):
+        expected_reads = {
+            "projectWorkItem",
+            "workItemState",
+            "workItemStatus",
+            "workItemDates",
+            "workItemHealthEdit",
+            "workItemAssignees",
+            "searchWorkItemAssigneeCandidates",
+            "workItemMilestone",
+            "workItemMilestoneChoices",
+            "workItemWeight",
+            "workItemActivityWriteAccess",
+            "workItemActivity",
+            "workItemActivityNext",
+            "workItemDiscussionNotesNext",
+            "workItemActivityDeleteAccess",
+            "workItemActivityReactionAccess",
+            "workItemNotifications",
+            "incidentStatus",
+            "pendingTodosForSnooze",
+            "snoozedTodosForUnsnooze",
+        }
+        expected_writes = {
+            "updateWorkItemState",
+            "updateWorkItemStatus",
+            "updateWorkItemDates",
+            "updateWorkItemHealthStatus",
+            "updateWorkItemAssignees",
+            "updateWorkItemMilestone",
+            "updateWorkItemWeight",
+            "createWorkItemActivityComment",
+            "createWorkItemActivityReply",
+            "deleteWorkItemActivityNote",
+            "setWorkItemActivityNoteReaction",
+            "setWorkItemNotifications",
+            "setIncidentStatus",
+            "snoozeTodo",
+            "unsnoozeTodo",
+        }
+        self.assertEqual(_MR6B3_WRITE_PORT_MEMBERS, expected_reads | expected_writes)
+        self.assertEqual(len(expected_reads), 20)
+        self.assertEqual(len(expected_writes), 15)
+        self.assertEqual(len(_MR6B3_WRITE_PORT_MEMBERS), 35)
+        self.assertNotIn("namespaceWorkItem", WRITE_PORT_MEMBERS)
+        self.assertNotIn("snoozedTodos", WRITE_PORT_MEMBERS)
+        self.assertTrue(
+            {"updateWorkItemContent", "editWorkItemActivityNote", "updateWorkItemLabels"}
+            .isdisjoint(WRITE_PORT_MEMBERS)
+        )
 
     def test_ledger_named_methods_are_write_port_whitelisted(self):
         methods = set()

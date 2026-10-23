@@ -119,6 +119,27 @@ void main() {
             untilReset: const Duration(seconds: 20, microseconds: 1),
             expected: RateLevel.low,
           ),
+          (
+            name: 'reserve cap at large limit',
+            limit: 100,
+            remaining: 3,
+            untilReset: const Duration(seconds: 60),
+            expected: RateLevel.low,
+          ),
+          (
+            name: 'low cap at large limit',
+            limit: 200,
+            remaining: 15,
+            untilReset: const Duration(seconds: 60),
+            expected: RateLevel.normal,
+          ),
+          (
+            name: 'limit 3 empty',
+            limit: 3,
+            remaining: 0,
+            untilReset: const Duration(seconds: 60),
+            expected: RateLevel.critical,
+          ),
         ];
 
     for (final testCase in cases) {
@@ -180,38 +201,44 @@ void main() {
     expect(budget.snapshot().buckets['user']?.remaining, 8);
   });
 
-  test('responses populate independently named buckets', () {
-    final reset = now.add(const Duration(minutes: 5));
-    budget.noteResponse(
-      headers: rateHeaders(
-        limit: 100,
-        remaining: 20,
-        reset: reset,
-        name: 'newer',
-      ),
-      statusCode: 200,
-      requestClass: RateRequestClass.global,
-      sequence: 2,
-      trusted: true,
-    );
-    budget.noteResponse(
-      headers: rateHeaders(
-        limit: 50,
-        remaining: 10,
-        reset: reset,
-        name: 'older',
-      ),
-      statusCode: 200,
-      requestClass: RateRequestClass.global,
-      sequence: 1,
-      trusted: true,
-    );
+  test(
+    'responses populate independently named buckets despite reversed send ordering',
+    () {
+      // Sequence numbers are deliberately reversed: the newer bucket arrives
+      // first, so a global (instead of per-bucket) ordering guard would drop
+      // the older bucket.
+      final reset = now.add(const Duration(minutes: 5));
+      budget.noteResponse(
+        headers: rateHeaders(
+          limit: 100,
+          remaining: 20,
+          reset: reset,
+          name: 'newer',
+        ),
+        statusCode: 200,
+        requestClass: RateRequestClass.global,
+        sequence: 2,
+        trusted: true,
+      );
+      budget.noteResponse(
+        headers: rateHeaders(
+          limit: 50,
+          remaining: 10,
+          reset: reset,
+          name: 'older',
+        ),
+        statusCode: 200,
+        requestClass: RateRequestClass.global,
+        sequence: 1,
+        trusted: true,
+      );
 
-    expect(
-      budget.snapshot().buckets.keys,
-      containsAll(<String>['newer', 'older']),
-    );
-  });
+      expect(
+        budget.snapshot().buckets.keys,
+        containsAll(<String>['newer', 'older']),
+      );
+    },
+  );
 
   test('unknown and untrusted responses do not clear an active limit', () {
     budget.noteResponse(
@@ -634,6 +661,63 @@ void main() {
     expect(
       budget.retryAtFor(RateRequestClass.archive),
       now.add(const Duration(seconds: 60)),
+    );
+  });
+
+  test('fallback jitter scales the 60s backoff to 72s', () {
+    budget.close();
+    budget = GitLabRateBudget(now: () => now, jitter: () => 1);
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 429,
+      requestClass: RateRequestClass.archive,
+      sequence: 1,
+      trusted: true,
+    );
+
+    expect(
+      budget.retryAtFor(RateRequestClass.archive),
+      now.add(const Duration(seconds: 72)),
+    );
+  });
+
+  test('an older 429 does not advance the fallback streak', () {
+    // seq 1 is older than the recorded seq 2, so it must not consume a
+    // backoff step: the third (seq 3) retry lands at 120 s, not 240 s.
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 429,
+      requestClass: RateRequestClass.archive,
+      sequence: 2,
+      trusted: true,
+    );
+    expect(
+      budget.retryAtFor(RateRequestClass.archive),
+      now.add(const Duration(seconds: 60)),
+    );
+
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 429,
+      requestClass: RateRequestClass.archive,
+      sequence: 1,
+      trusted: true,
+    );
+    expect(
+      budget.retryAtFor(RateRequestClass.archive),
+      now.add(const Duration(seconds: 60)),
+    );
+
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 429,
+      requestClass: RateRequestClass.archive,
+      sequence: 3,
+      trusted: true,
+    );
+    expect(
+      budget.retryAtFor(RateRequestClass.archive),
+      now.add(const Duration(seconds: 120)),
     );
   });
 

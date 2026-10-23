@@ -1051,7 +1051,18 @@ class _MetadataPageState extends State<MetadataPage> {
   ]), body: widget.api.isClosed || !_sessionCurrent() ? const SizedBox.shrink() : gestureSafe(RecordsFeed(key: _feed, identity: '${widget.account.key}/${widget.project.id}/${widget.kind.name}/$_generation',
     account: widget.account, resourceLabel: '${widget.project.path} · ${metadataTitle(widget.kind)}',
     onSwitchAccount: endSessionFrom(context),
-    empty: metadataEmpty(widget.kind), load: (next) => widget.api.records(path,
+    empty: metadataEmpty(widget.kind),
+    cached: ({required fresh, required background}) =>
+        widget.api.cachedRecords(
+          path,
+          query: {
+            if (widget.kind == MetadataKind.labels)
+              'include_ancestor_groups': 'false',
+          },
+          fresh: fresh,
+          background: background,
+        ),
+    load: (next) => widget.api.records(path,
       query: {if (widget.kind == MetadataKind.labels) 'include_ancestor_groups': 'false'}, next: next),
     itemBuilder: (context, value) => EntityCard(
       onTap: () => _view(value),
@@ -1251,6 +1262,12 @@ class _MetadataWorkItemsPage extends StatelessWidget {
         onSwitchAccount: endSessionFrom(context),
         empty: empty,
         emptyIcon: _mr ? Icons.merge : Icons.adjust,
+        cached: ({required fresh, required background}) => api.cachedRecords(
+          path,
+          query: query,
+          fresh: fresh,
+          background: background,
+        ),
         load: _load,
         itemBuilder: (context, data) => workItemCard(
           context,

@@ -403,7 +403,13 @@ void main() {
       final reopenedContext = registry.open(contextOrigin);
       expect(reopenedContext, isNot(same(firstContext)));
       await _waitFor(() => reopenedContext.canSend);
-      expect(contextReads(), 2);
+      expect(contextReads(), 1); // Fresh metadata is shared across conversations.
+      expect(
+        fixture.adapter.requests.where(
+          (request) => request.uri.path.endsWith('/projects/42/jobs/501/trace'),
+        ),
+        hasLength(2), // Each new conversation still reads the live job log.
+      );
       registry.release(reopenedContext);
 
       final conversations = <AiChatSession>[

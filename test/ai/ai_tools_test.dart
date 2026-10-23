@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/sensitive_paths.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
+import 'package:gitlab_mobile/core/request_meter.dart';
 
 import '../support/fake_adapter.dart';
 
@@ -89,6 +90,9 @@ final class _FakePort implements AiGitLabReadPort {
     required String baseSha,
   }) async {
     calls++;
+    RequestMeter.current
+      ?..increment()
+      ..increment();
     return AiPortRead({
       'diff_refs': {'head_sha': diffHead, 'base_sha': diffBase},
       'changes': diffs,

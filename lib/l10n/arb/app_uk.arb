@@ -2716,5 +2716,10 @@
   "cacheResumesInMinutes": "Відновиться приблизно за {minutes} хв",
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "Оновлення кожні 30 секунд",
-  "refreshEveryMinute": "Оновлення кожну хвилину"
+  "refreshEveryMinute": "Оновлення кожну хвилину",
+  "aiSendPausedBudget": "Квоту запитів GitLab майже вичерпано; надсилання призупинено",
+  "aiSendPausedRateLimited": "GitLab обмежує запити; надсилання призупинено",
+  "aiSendResumesAfterReset": "Відновиться після скидання квоти запитів",
+  "aiGitLabBudgetTitle": "Квоту запитів GitLab майже вичерпано",
+  "aiGitLabBudgetDetail": "Це повідомлення не надіслано. Надішліть його ще раз, коли кнопка «Надіслати» знову стане доступною."
 }
