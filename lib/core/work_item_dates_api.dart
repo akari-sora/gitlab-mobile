@@ -248,7 +248,12 @@ extension WorkItemDatesApi on GitLabApi {
     required String? dueDate,
     required void Function() onMutationSent,
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     if (target._consumed) throw _datesSpent;
     target._consumed = true;
     _requireActivityOwner(target._owner);
@@ -308,6 +313,8 @@ extension WorkItemDatesApi on GitLabApi {
     _requireDatesCurrent(isCurrent);
     if (isClosed) throw _datesCancelled;
 
+    if (beforeMutation != null) await beforeMutation();
+
     final widget = _datesMutationWidget(
       target.edition,
       mode,
@@ -319,6 +326,7 @@ extension WorkItemDatesApi on GitLabApi {
       'startAndDueDateWidget': widget,
     };
     onMutationSent();
+    if (mayStart != null && !mayStart()) throw _datesCancelled;
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
     try {
       response = await _send(

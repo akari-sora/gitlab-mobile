@@ -37,6 +37,8 @@ import '../../core/request_meter.dart';
 import '../../l10n/l10n.dart';
 import '../auth/session_controller.dart';
 import '../workspace/attachment_picker.dart';
+import '../workspace/graph_work_items_page.dart'
+    show createAiWorkspaceWorkItemWriteRegistry;
 import 'ai_chat_context.dart';
 import 'ai_chat_session.dart';
 import 'ai_attachment_session.dart';
@@ -1261,6 +1263,16 @@ class AiChatController extends ChangeNotifier
     _writeScopeRevision++;
   }
 
+  // MR6b-3 freshness seam: exercise the production reader without making the
+  // still-empty graph ledger visible to the runner.
+  @visibleForTesting
+  Future<AiWriteFreshness> readWriteFreshnessForTesting(
+    writes.AiWriteRequest request,
+  ) => _freshWrite(
+    request,
+    write_text.UploadPlaceholderTable(instance: _api.instance),
+  );
+
   Future<AiWriteFreshness> _freshWrite(
     writes.AiWriteRequest request,
     write_text.UploadPlaceholderTable placeholders,
@@ -1551,7 +1563,19 @@ class AiChatController extends ChangeNotifier
       snapshot: () => _writeSnapshot(config),
       createPort:
           _writePortFactory ??
-          () => writes.GitLabAiWritePort(_api, accountKey: _accountKey),
+          () => writes.GitLabAiWritePort(
+            _api,
+            accountKey: _accountKey,
+            // MR6b-3 registry binding. The captured client and generation
+            // remain the owner even when the session or conversation changes.
+            workItemWriteRegistry: createAiWorkspaceWorkItemWriteRegistry(
+              api: _api,
+              accountKey: _accountKey,
+              instanceKey: _api.instance.key,
+              generation: _generation,
+              isCurrent: current,
+            ),
+          ),
       journal: _writeJournal,
       conversationId: conversationId,
       budget: budget,
