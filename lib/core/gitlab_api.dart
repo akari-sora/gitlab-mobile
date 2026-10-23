@@ -224,7 +224,7 @@ final class GitLabApi {
       final loaded = await load();
       return _LoadedRead(loaded.value, cost(loaded.value), loaded.ttl > Duration.zero);
     }, fresh: refresh);
-    if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    if (read.dropped || read.superseded) throw const ApiFailure(FailureKind.cancelled);
     return read.value;
   }
 
@@ -239,8 +239,11 @@ final class GitLabApi {
     final p = _cache.path(uri);
     if (method == 'POST' && (p.length == 1 && const {'projects', 'groups'}.contains(p.first) ||
         p.length == 3 && p.first == 'projects' && p.last == 'fork')) { return RateRequestClass.create; }
+    if (p.length == 4 && p.first == 'projects' && p[2] == 'repository' &&
+        p[3].startsWith('archive')) {
+      return RateRequestClass.archive;
+    }
     if (p.contains('search') || uri.queryParameters.containsKey('search')) return RateRequestClass.search;
-    if (p.any((s) => s.startsWith('archive')) && p.contains('repository')) return RateRequestClass.archive;
     if (method == 'GET' && p.length == 1 && p.first == 'groups') { return RateRequestClass.groupList; }
     if (method == 'GET' && p.length == 1 && p.first == 'projects') { return RateRequestClass.projectList; }
     return RateRequestClass.global;
@@ -634,7 +637,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
   Future<Project> project(String idOrFullPath, {bool refresh = false, bool allowDisk = true}) async {
     final read = await cachedRecord(['projects', idOrFullPath], fresh: refresh,
       maxAge: const Duration(minutes: 5), allowDisk: allowDisk);
-    if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    if (read.dropped || read.superseded) throw const ApiFailure(FailureKind.cancelled);
     try { return Project.fromJson(read.value); }
     on FormatException { throw const ApiFailure(FailureKind.invalidResponse); }
   }
@@ -651,7 +654,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       'branches',
       branch,
     ], maxAge: const Duration(seconds: 60), allowDisk: allowDisk);
-    if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    if (read.dropped || read.superseded) throw const ApiFailure(FailureKind.cancelled);
     final j = read.value;
     final sha = requiredString(objectJson(j['commit']), 'id');
     if (!_fullSha.hasMatch(sha.toLowerCase())) {
@@ -671,7 +674,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     final ref = _cache.isConfirmed(sha) ? sha.toLowerCase() : sha;
     final read = await cachedRecords(['projects', '$projectId', 'repository', 'tree'],
       query: {'ref': ref, 'path': path, 'per_page': '50'}, next: next, allowDisk: allowDisk);
-    if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    if (read.dropped || read.superseded) throw const ApiFailure(FailureKind.cancelled);
     return ApiPage(List.unmodifiable(read.value.items.map(TreeEntry.fromJson)), next: read.value.next);
   }
 
@@ -709,6 +712,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       return _LoadedRead(loaded.value, loaded.responseBytes ?? utf8.encode(loaded.value).length,
         loaded.ttl > Duration.zero);
     }, fresh: refresh, allowDisk: allowDisk, accept: 'text/plain');
+    if (read.dropped || read.superseded) throw const ApiFailure(FailureKind.cancelled);
     return read.value;
   }
 
