@@ -240,6 +240,21 @@ void main() {
     expect(find.text(l10n.aiPreviewMoreFiles('2')), findsOneWidget);
   });
 
+  testWidgets('a project delete may be delayed, not "cannot be undone"', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        const AiWritePreviewView(
+          operationId: 'deleteProject',
+          preview: AiDeletePreview(targetName: 'team/app'),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('ai-preview-deletion-delayed')), findsOne);
+    expect(find.byKey(const ValueKey('ai-preview-cannot-undo')), findsNothing);
+  });
+
   testWidgets('an approval shows no file count or merge options', (
     tester,
   ) async {

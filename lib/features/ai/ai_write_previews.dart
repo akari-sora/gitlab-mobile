@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/ai/tools/write_preview.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
+import '../../shared/markdown_view.dart' show firstStrongDirection;
 import '../../shared/theme.dart';
 
 /// What a write card shows about the change itself (plan v6 §3, §5 item 8,
@@ -41,6 +42,9 @@ class AiWritePreviewView extends StatelessWidget {
     final AiDeletePreview delete => _DeletePreview(
       delete: delete,
       todos: operationId == 'markAllTodosDone',
+      delayed:
+          operationId == 'deleteProject' ||
+          operationId == 'deleteContainerRepository',
     ),
     final AiCancelAutoMergePreview cancel => _CancelAutoMergePreview(
       cancel: cancel,
@@ -133,6 +137,9 @@ class _Quote extends StatelessWidget {
           child: Text(
             text,
             key: const ValueKey('ai-preview-excerpt'),
+            // A left-to-right comment reads left to right in an Arabic
+            // interface, as MarkdownView does.
+            textDirection: firstStrongDirection(text),
             maxLines: 4,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(
@@ -443,13 +450,20 @@ class _DraftsPreview extends StatelessWidget {
 }
 
 class _DeletePreview extends StatelessWidget {
-  const _DeletePreview({required this.delete, required this.todos});
+  const _DeletePreview({
+    required this.delete,
+    required this.todos,
+    this.delayed = false,
+  });
 
   final AiDeletePreview delete;
 
   /// Marking every to-do done: the target is the account and the count is
   /// to-dos. GitLab can restore a done to-do, so this is not "can't be undone".
   final bool todos;
+
+  /// A project or container repository delete that GitLab may only schedule.
+  final bool delayed;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -477,7 +491,14 @@ class _DeletePreview extends StatelessWidget {
           todos ? l10n.todoLabel : l10n.aiPreviewDeleteCount,
           delete.hasMore ? l10n.aiPreviewAtLeast('$count') : '$count',
         ),
-      if (!todos)
+      // GitLab may only schedule these; they can be restored for a while.
+      if (delayed)
+        _Notice(
+          l10n.aiPreviewDeletionMayBeDelayed,
+          icon: Icons.warning_amber_rounded,
+          noticeKey: const ValueKey('ai-preview-deletion-delayed'),
+        )
+      else if (!todos)
         _Notice(
           l10n.aiPreviewCannotUndo,
           icon: Icons.warning_amber_rounded,
