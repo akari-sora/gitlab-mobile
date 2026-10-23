@@ -2720,6 +2720,6 @@ const _messagesZhCn = <String>[
   'GitLab 请求额度快用完了，暂停发送',
   'GitLab 正在限制请求，暂停发送',
   '请求额度重置后恢复',
-  'GitLab request budget is low',
-  'This message was not sent. Send it again when the send button is back.',
+  'GitLab 请求额度暂时不足',
+  '此消息未发送。“发送”按钮恢复可用后再发送一次。',
 ];

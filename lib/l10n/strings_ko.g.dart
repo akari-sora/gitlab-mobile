@@ -2720,6 +2720,6 @@ const _messagesKo = <String>[
   'GitLab 요청 한도가 거의 소진되어 전송이 일시 중지되었습니다',
   'GitLab이 요청을 제한하고 있습니다. 전송이 일시 중지되었습니다',
   '요청 한도가 초기화되면 다시 시작',
-  'GitLab request budget is low',
-  'This message was not sent. Send it again when the send button is back.',
+  'GitLab 요청 한도가 거의 소진되었습니다',
+  '이 메시지는 전송되지 않았습니다. “전송” 버튼을 다시 사용할 수 있게 되면 다시 전송하세요.',
 ];

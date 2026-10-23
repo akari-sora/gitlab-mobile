@@ -2718,6 +2718,6 @@
   "aiSendPausedBudget": "Limit żądań w GitLab jest prawie wyczerpany; wysyłanie wstrzymane",
   "aiSendPausedRateLimited": "GitLab ogranicza żądania; wysyłanie wstrzymane",
   "aiSendResumesAfterReset": "Wznowienie po odnowieniu limitu żądań",
-  "aiGitLabBudgetTitle": "GitLab request budget is low",
-  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
+  "aiGitLabBudgetTitle": "Limit żądań w GitLab jest prawie wyczerpany",
+  "aiGitLabBudgetDetail": "Ta wiadomość nie została wysłana. Wyślij ją ponownie, gdy przycisk „Wyślij” będzie znów dostępny."
 }

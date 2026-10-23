@@ -2720,6 +2720,6 @@ const _messagesFr = <String>[
   'Le quota de requêtes GitLab est presque épuisé ; envoi en pause',
   'GitLab limite les requêtes ; envoi en pause',
   'Reprise à la réinitialisation du quota de requêtes',
-  'GitLab request budget is low',
-  'This message was not sent. Send it again when the send button is back.',
+  'Le quota de requêtes GitLab est presque épuisé',
+  'Ce message n’a pas été envoyé. Renvoyez-le lorsque le bouton « Envoyer » sera à nouveau disponible.',
 ];

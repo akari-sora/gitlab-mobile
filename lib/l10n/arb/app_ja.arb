@@ -2718,6 +2718,6 @@
   "aiSendPausedBudget": "GitLab のリクエスト上限に近づいたため、送信を一時停止中",
   "aiSendPausedRateLimited": "GitLab によりリクエストが制限されています。送信を一時停止中",
   "aiSendResumesAfterReset": "リクエスト枠のリセット後に再開",
-  "aiGitLabBudgetTitle": "GitLab request budget is low",
-  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
+  "aiGitLabBudgetTitle": "GitLab のリクエスト上限に近づいています",
+  "aiGitLabBudgetDetail": "このメッセージは送信されませんでした。「送信」ボタンが再び使えるようになったら、もう一度送信してください。"
 }

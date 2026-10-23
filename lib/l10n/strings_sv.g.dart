@@ -2720,6 +2720,6 @@ const _messagesSv = <String>[
   'Kvoten för begäranden hos GitLab är nästan förbrukad; sändningen är pausad',
   'GitLab begränsar begäranden; sändningen är pausad',
   'Återupptas när kvoten för begäranden återställs',
-  'GitLab request budget is low',
-  'This message was not sent. Send it again when the send button is back.',
+  'Kvoten för begäranden hos GitLab är nästan förbrukad',
+  'Meddelandet skickades inte. Skicka det igen när knappen ”Skicka” är tillgänglig igen.',
 ];

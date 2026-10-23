@@ -2720,6 +2720,6 @@ const _messagesId = <String>[
   'Kuota permintaan GitLab hampir habis; pengiriman dijeda',
   'GitLab sedang membatasi permintaan; pengiriman dijeda',
   'Lanjut lagi saat kuota permintaan diatur ulang',
-  'GitLab request budget is low',
-  'This message was not sent. Send it again when the send button is back.',
+  'Kuota permintaan GitLab hampir habis',
+  'Pesan ini tidak terkirim. Kirim ulang saat tombol “Kirim” tersedia kembali.',
 ];

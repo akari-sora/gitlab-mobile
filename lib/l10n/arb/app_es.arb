@@ -2718,6 +2718,6 @@
   "aiSendPausedBudget": "La cuota de solicitudes de GitLab está casi agotada; envío en pausa",
   "aiSendPausedRateLimited": "GitLab está limitando las solicitudes; envío en pausa",
   "aiSendResumesAfterReset": "Se reanuda cuando se restablezca la cuota de solicitudes",
-  "aiGitLabBudgetTitle": "GitLab request budget is low",
-  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
+  "aiGitLabBudgetTitle": "La cuota de solicitudes de GitLab está casi agotada",
+  "aiGitLabBudgetDetail": "Este mensaje no se envió. Envíalo de nuevo cuando el botón «Enviar» vuelva a estar disponible."
 }

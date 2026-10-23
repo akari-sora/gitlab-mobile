@@ -2720,6 +2720,6 @@ const _messagesDe = <String>[
   'Das GitLab-Anfragekontingent ist fast aufgebraucht; Senden pausiert',
   'GitLab begrenzt derzeit die Anfragen; Senden pausiert',
   'Fortsetzung nach Zurücksetzen des Anfragekontingents',
-  'GitLab request budget is low',
-  'This message was not sent. Send it again when the send button is back.',
+  'Das GitLab-Anfragekontingent ist fast aufgebraucht',
+  'Diese Nachricht wurde nicht gesendet. Sende sie erneut, sobald die Schaltfläche „Senden“ wieder verfügbar ist.',
 ];

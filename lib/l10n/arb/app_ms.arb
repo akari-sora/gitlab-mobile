@@ -2718,6 +2718,6 @@
   "aiSendPausedBudget": "Kuota permintaan GitLab hampir habis; penghantaran dijeda",
   "aiSendPausedRateLimited": "GitLab sedang mengehadkan permintaan; penghantaran dijeda",
   "aiSendResumesAfterReset": "Sambung semula apabila kuota permintaan ditetapkan semula",
-  "aiGitLabBudgetTitle": "GitLab request budget is low",
-  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
+  "aiGitLabBudgetTitle": "Kuota permintaan GitLab hampir habis",
+  "aiGitLabBudgetDetail": "Mesej ini tidak dihantar. Hantar semula apabila butang “Hantar” tersedia semula."
 }

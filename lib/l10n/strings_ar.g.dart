@@ -2720,6 +2720,6 @@ const _messagesAr = <String>[
   'حصة طلبات GitLab على وشك النفاد؛ الإرسال متوقف مؤقتًا',
   'يقيّد GitLab الطلبات؛ الإرسال متوقف مؤقتًا',
   'يستأنف عند إعادة تعيين حصة الطلبات',
-  'GitLab request budget is low',
-  'This message was not sent. Send it again when the send button is back.',
+  'حصة طلبات GitLab على وشك النفاد',
+  'لم تُرسل هذه الرسالة. أعد إرسالها عندما يصبح زر «إرسال» متاحًا مجددًا.',
 ];

@@ -2720,6 +2720,6 @@ const _messagesCs = <String>[
   'Kvóta požadavků pro GitLab je téměř vyčerpaná; odesílání je pozastaveno',
   'GitLab omezuje požadavky; odesílání je pozastaveno',
   'Obnoví se po obnovení kvóty požadavků',
-  'GitLab request budget is low',
-  'This message was not sent. Send it again when the send button is back.',
+  'Kvóta požadavků pro GitLab je téměř vyčerpaná',
+  'Tato zpráva nebyla odeslána. Odešlete ji znovu, až bude tlačítko „Odeslat“ opět dostupné.',
 ];

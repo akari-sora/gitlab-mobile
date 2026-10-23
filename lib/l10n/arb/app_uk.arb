@@ -2718,6 +2718,6 @@
   "aiSendPausedBudget": "Квоту запитів GitLab майже вичерпано; надсилання призупинено",
   "aiSendPausedRateLimited": "GitLab обмежує запити; надсилання призупинено",
   "aiSendResumesAfterReset": "Відновиться після скидання квоти запитів",
-  "aiGitLabBudgetTitle": "GitLab request budget is low",
-  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
+  "aiGitLabBudgetTitle": "Квоту запитів GitLab майже вичерпано",
+  "aiGitLabBudgetDetail": "Це повідомлення не надіслано. Надішліть його ще раз, коли кнопка «Надіслати» знову стане доступною."
 }

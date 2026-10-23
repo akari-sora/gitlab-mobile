@@ -2720,6 +2720,6 @@ const _messagesTh = <String>[
   'โควตาคำขอของ GitLab ใกล้หมดแล้ว จึงหยุดส่งชั่วคราว',
   'GitLab กำลังจำกัดคำขอ จึงหยุดส่งชั่วคราว',
   'กลับมาส่งได้เมื่อโควตาคำขอถูกรีเซ็ต',
-  'GitLab request budget is low',
-  'This message was not sent. Send it again when the send button is back.',
+  'โควตาคำขอของ GitLab ใกล้หมดแล้ว',
+  'ข้อความนี้ไม่ได้ถูกส่ง. ส่งอีกครั้งเมื่อปุ่ม “ส่ง” กลับมาใช้งานได้',
 ];

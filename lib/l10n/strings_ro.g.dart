@@ -2720,6 +2720,6 @@ const _messagesRo = <String>[
   'Cota de cereri GitLab este aproape epuizată; trimiterea este suspendată',
   'GitLab limitează cererile; trimiterea este suspendată',
   'Se reia când se resetează cota de cereri',
-  'GitLab request budget is low',
-  'This message was not sent. Send it again when the send button is back.',
+  'Cota de cereri GitLab este aproape epuizată',
+  'Acest mesaj nu a fost trimis. Trimiteți-l din nou când butonul „Trimite” este din nou disponibil.',
 ];
