@@ -214,14 +214,30 @@ extension _GraphqlReactionsNotificationsPrepare on GitLabAiWritePort {
   }
 }
 
-AiWriteRefused _p11Refusal(ApiFailure failure, {required bool reaction}) =>
-    AiWriteRefused(switch (failure.kind) {
-      FailureKind.forbidden ||
-      FailureKind.invisible ||
-      FailureKind.unsupported =>
+AiWriteRefused _p11Refusal(ApiFailure failure, {required bool reaction}) {
+  switch (failure.kind) {
+    case FailureKind.forbidden:
+    case FailureKind.invisible:
+    case FailureKind.unsupported:
+      return AiWriteRefused(
         reaction ? 'reactionForbidden' : 'notificationForbidden',
-      _ => reaction ? 'reactionConflict' : 'notificationConflict',
-    });
+      );
+    case FailureKind.conflict:
+    case FailureKind.cancelled:
+    case FailureKind.invalidResponse:
+      // A mid-preflight cancellation, a truncated response or the core's own
+      // conflict fence means the target may have drifted; that is the
+      // conflict reading.
+      return AiWriteRefused(
+        reaction ? 'reactionConflict' : 'notificationConflict',
+      );
+    default:
+      // rateLimited, network, unauthenticated, tooLarge and validation keep
+      // their own kind for the coordinator, the model and the user, the way
+      // P2's and P10's refusal mapping passes them through.
+      throw failure;
+  }
+}
 
 String _p11Digest(List<Object?> values) =>
     sha256.convert(utf8.encode(jsonEncode(values))).toString();
