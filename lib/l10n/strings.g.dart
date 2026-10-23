@@ -8178,4 +8178,13 @@ final class AppStrings {
 
   /// GitLab 還在檢查能不能合併，所以沒有執行。請稍後再試。
   String get aiRefusedMergeChecking => language._messages[2694];
+
+  /// 請 AI 處理待辦
+  String get aiInboxAsk => language._messages[2695];
+
+  /// 待辦助手
+  String get aiInboxChatTitle => language._messages[2696];
+
+  /// 幫我把全部待辦標為完成
+  String get aiSuggestInboxMarkAll => language._messages[2697];
 }

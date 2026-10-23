@@ -2700,5 +2700,8 @@
   "aiRefusedArchived": "The project is archived and can't be changed, so nothing was done.",
   "aiRefusedProtectedBranch": "This is a protected branch; the AI can't delete or rewrite it, so nothing was done.",
   "aiRefusedDefaultBranch": "The default branch can't be deleted, so nothing was done.",
-  "aiRefusedMergeChecking": "GitLab is still checking whether this can be merged, so nothing was done. Try again shortly."
+  "aiRefusedMergeChecking": "GitLab is still checking whether this can be merged, so nothing was done. Try again shortly.",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

@@ -2697,4 +2697,7 @@ const _messagesDe = <String>[
   'Dies ist ein geschützter Branch; die KI darf ihn nicht löschen oder überschreiben. Es wurde nichts ausgeführt.',
   'Der Standard-Branch kann nicht gelöscht werden. Es wurde nichts ausgeführt.',
   'GitLab prüft noch, ob sich dies mergen lässt. Es wurde nichts ausgeführt. Versuchen Sie es gleich noch einmal.',
+  'Ask AI about your to-dos',
+  'To-do assistant',
+  'Mark all my to-dos as done',
 ];

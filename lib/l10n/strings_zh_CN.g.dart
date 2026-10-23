@@ -2697,4 +2697,7 @@ const _messagesZhCn = <String>[
   '这是受保护的分支，AI 不能删除或改写它，所以没有执行。',
   '不能删除默认分支，所以没有执行。',
   'GitLab 还在检查能否合并，所以没有执行。请稍后再试。',
+  'Ask AI about your to-dos',
+  'To-do assistant',
+  'Mark all my to-dos as done',
 ];

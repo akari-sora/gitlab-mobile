@@ -2694,5 +2694,8 @@
   "aiRefusedArchived": "Project đã được lưu trữ và không thể thay đổi, nên chưa có gì được thực hiện.",
   "aiRefusedProtectedBranch": "Đây là nhánh được bảo vệ; AI không thể xóa hoặc ghi đè nó, nên chưa có gì được thực hiện.",
   "aiRefusedDefaultBranch": "Không thể xóa nhánh mặc định, nên chưa có gì được thực hiện.",
-  "aiRefusedMergeChecking": "GitLab vẫn đang kiểm tra xem có thể gộp hay không, nên chưa có gì được thực hiện. Hãy thử lại sau ít phút."
+  "aiRefusedMergeChecking": "GitLab vẫn đang kiểm tra xem có thể gộp hay không, nên chưa có gì được thực hiện. Hãy thử lại sau ít phút.",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

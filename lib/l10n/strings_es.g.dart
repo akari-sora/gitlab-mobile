@@ -2697,4 +2697,7 @@ const _messagesEs = <String>[
   'Esta rama está protegida; la IA no puede eliminarla ni reescribirla, así que no se hizo nada.',
   'La rama predeterminada no se puede eliminar, así que no se hizo nada.',
   'GitLab aún está comprobando si se puede fusionar, así que no se hizo nada. Inténtalo de nuevo en un momento.',
+  'Ask AI about your to-dos',
+  'To-do assistant',
+  'Mark all my to-dos as done',
 ];

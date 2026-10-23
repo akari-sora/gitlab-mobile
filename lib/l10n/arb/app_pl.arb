@@ -2694,5 +2694,8 @@
   "aiRefusedArchived": "Projekt jest zarchiwizowany i nie można go zmieniać, więc nic nie zostało zrobione.",
   "aiRefusedProtectedBranch": "To gałąź chroniona; AI nie może jej usunąć ani przepisać, więc nic nie zostało zrobione.",
   "aiRefusedDefaultBranch": "Nie można usunąć gałęzi domyślnej, więc nic nie zostało zrobione.",
-  "aiRefusedMergeChecking": "GitLab nadal sprawdza, czy można scalić, więc nic nie zostało zrobione. Spróbuj ponownie za chwilę."
+  "aiRefusedMergeChecking": "GitLab nadal sprawdza, czy można scalić, więc nic nie zostało zrobione. Spróbuj ponownie za chwilę.",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

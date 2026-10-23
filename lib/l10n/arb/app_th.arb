@@ -2694,5 +2694,8 @@
   "aiRefusedArchived": "โปรเจกต์ถูกเก็บถาวรและเปลี่ยนแปลงไม่ได้ จึงไม่ได้ดำเนินการใดๆ",
   "aiRefusedProtectedBranch": "นี่เป็นสาขาที่ได้รับการป้องกัน AI ลบหรือเขียนทับไม่ได้ จึงไม่ได้ดำเนินการใดๆ",
   "aiRefusedDefaultBranch": "ไม่สามารถลบสาขาเริ่มต้นได้ จึงไม่ได้ดำเนินการใดๆ",
-  "aiRefusedMergeChecking": "GitLab ยังตรวจสอบอยู่ว่ารวมได้หรือไม่ จึงไม่ได้ดำเนินการใดๆ โปรดลองใหม่อีกครั้งในอีกสักครู่"
+  "aiRefusedMergeChecking": "GitLab ยังตรวจสอบอยู่ว่ารวมได้หรือไม่ จึงไม่ได้ดำเนินการใดๆ โปรดลองใหม่อีกครั้งในอีกสักครู่",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

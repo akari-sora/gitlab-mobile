@@ -2697,4 +2697,7 @@ const _messagesSv = <String>[
   'Det här är en skyddad gren; AI kan inte ta bort eller skriva om den, så ingenting gjordes.',
   'Standardgrenen kan inte tas bort, så ingenting gjordes.',
   'GitLab kontrollerar fortfarande om detta kan slås samman, så ingenting gjordes. Försök igen om en stund.',
+  'Ask AI about your to-dos',
+  'To-do assistant',
+  'Mark all my to-dos as done',
 ];

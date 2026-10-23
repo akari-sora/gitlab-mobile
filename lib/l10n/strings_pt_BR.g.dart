@@ -2697,4 +2697,7 @@ const _messagesPtBr = <String>[
   'Esta é uma branch protegida; a IA não pode excluí-la nem reescrevê-la, então nada foi feito.',
   'A branch padrão não pode ser excluída, então nada foi feito.',
   'O GitLab ainda está verificando se é possível mesclar, então nada foi feito. Tente novamente em instantes.',
+  'Ask AI about your to-dos',
+  'To-do assistant',
+  'Mark all my to-dos as done',
 ];

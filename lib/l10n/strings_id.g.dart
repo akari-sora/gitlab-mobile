@@ -2697,4 +2697,7 @@ const _messagesId = <String>[
   'Ini branch yang dilindungi; AI tidak dapat menghapus atau menulis ulang branch ini, jadi tidak ada yang dilakukan.',
   'Branch default tidak dapat dihapus, jadi tidak ada yang dilakukan.',
   'GitLab masih memeriksa apakah ini dapat digabung, jadi tidak ada yang dilakukan. Coba lagi sebentar lagi.',
+  'Ask AI about your to-dos',
+  'To-do assistant',
+  'Mark all my to-dos as done',
 ];

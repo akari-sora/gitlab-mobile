@@ -2694,5 +2694,8 @@
   "aiRefusedArchived": "El proyecto está archivado y no se puede modificar, así que no se hizo nada.",
   "aiRefusedProtectedBranch": "Esta rama está protegida; la IA no puede eliminarla ni reescribirla, así que no se hizo nada.",
   "aiRefusedDefaultBranch": "La rama predeterminada no se puede eliminar, así que no se hizo nada.",
-  "aiRefusedMergeChecking": "GitLab aún está comprobando si se puede fusionar, así que no se hizo nada. Inténtalo de nuevo en un momento."
+  "aiRefusedMergeChecking": "GitLab aún está comprobando si se puede fusionar, así que no se hizo nada. Inténtalo de nuevo en un momento.",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

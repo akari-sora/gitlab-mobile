@@ -2694,5 +2694,8 @@
   "aiRefusedArchived": "Projekt je archivován a nelze jej měnit, takže nebylo nic provedeno.",
   "aiRefusedProtectedBranch": "Toto je chráněná větev; AI ji nemůže smazat ani přepsat, takže nebylo nic provedeno.",
   "aiRefusedDefaultBranch": "Výchozí větev nelze smazat, takže nebylo nic provedeno.",
-  "aiRefusedMergeChecking": "GitLab stále kontroluje, zda lze sloučit, takže nebylo nic provedeno. Zkuste to za chvíli znovu."
+  "aiRefusedMergeChecking": "GitLab stále kontroluje, zda lze sloučit, takže nebylo nic provedeno. Zkuste to za chvíli znovu.",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

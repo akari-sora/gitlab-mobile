@@ -68,6 +68,7 @@ String aiOriginTitle(
   required String Function(String text) safe,
 }) {
   final value = switch (origin) {
+    AiInboxOrigin() => l10n.aiInboxChatTitle,
     AiGeneralOrigin() => null,
     AiJobOrigin(:final jobName) => safe(jobName),
     AiWorkItemOrigin(:final title) => safe(title),
@@ -76,6 +77,7 @@ String aiOriginTitle(
   // An empty value is one that could not be checked against the secrets.
   if (value == null || value.isEmpty) return l10n.aiAssistantLabel;
   return switch (origin) {
+    AiInboxOrigin() => l10n.aiInboxChatTitle,
     AiGeneralOrigin() => l10n.aiAssistantLabel,
     AiJobOrigin() => l10n.aiChatJobTitle(value),
     AiWorkItemOrigin(:final kind, :final iid) =>
@@ -86,6 +88,8 @@ String aiOriginTitle(
 }
 
 List<String> _suggestions(AiChatOrigin origin) => switch (origin) {
+  // The Inbox conversation can only mark to-dos done; it cannot read them.
+  AiInboxOrigin() => [l10n.aiSuggestInboxMarkAll],
   AiGeneralOrigin() => const [],
   AiJobOrigin() => [l10n.aiSuggestJobWhy, l10n.aiSuggestJobFix],
   AiWorkItemOrigin(kind: AiWorkItemKind.mergeRequest) => [

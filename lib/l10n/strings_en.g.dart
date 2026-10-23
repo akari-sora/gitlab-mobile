@@ -2697,4 +2697,7 @@ const _messagesEn = <String>[
   'This is a protected branch; the AI can\'t delete or rewrite it, so nothing was done.',
   'The default branch can\'t be deleted, so nothing was done.',
   'GitLab is still checking whether this can be merged, so nothing was done. Try again shortly.',
+  'Ask AI about your to-dos',
+  'To-do assistant',
+  'Mark all my to-dos as done',
 ];

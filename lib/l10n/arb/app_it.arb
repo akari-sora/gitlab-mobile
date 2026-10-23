@@ -2694,5 +2694,8 @@
   "aiRefusedArchived": "Il progetto è archiviato e non può essere modificato, quindi non è stato fatto nulla.",
   "aiRefusedProtectedBranch": "Questo branch è protetto; l'IA non può eliminarlo né riscriverlo, quindi non è stato fatto nulla.",
   "aiRefusedDefaultBranch": "Il branch predefinito non può essere eliminato, quindi non è stato fatto nulla.",
-  "aiRefusedMergeChecking": "GitLab sta ancora verificando se l'unione è possibile, quindi non è stato fatto nulla. Riprova tra poco."
+  "aiRefusedMergeChecking": "GitLab sta ancora verificando se l'unione è possibile, quindi non è stato fatto nulla. Riprova tra poco.",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

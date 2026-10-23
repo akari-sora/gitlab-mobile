@@ -2694,5 +2694,8 @@
   "aiRefusedArchived": "Проєкт в архіві й не може бути змінений, тому нічого не виконано.",
   "aiRefusedProtectedBranch": "Це захищена гілка: AI не може видаляти чи перезаписувати її, тому нічого не виконано.",
   "aiRefusedDefaultBranch": "Гілку за замовчуванням видалити не можна, тому нічого не виконано.",
-  "aiRefusedMergeChecking": "GitLab ще перевіряє, чи можна виконати злиття, тому нічого не виконано. Спробуйте трохи пізніше."
+  "aiRefusedMergeChecking": "GitLab ще перевіряє, чи можна виконати злиття, тому нічого не виконано. Спробуйте трохи пізніше.",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

@@ -2697,4 +2697,7 @@ const _messagesIt = <String>[
   'Questo branch è protetto; l\'IA non può eliminarlo né riscriverlo, quindi non è stato fatto nulla.',
   'Il branch predefinito non può essere eliminato, quindi non è stato fatto nulla.',
   'GitLab sta ancora verificando se l\'unione è possibile, quindi non è stato fatto nulla. Riprova tra poco.',
+  'Ask AI about your to-dos',
+  'To-do assistant',
+  'Mark all my to-dos as done',
 ];

@@ -2697,4 +2697,7 @@ const _messagesCs = <String>[
   'Toto je chráněná větev; AI ji nemůže smazat ani přepsat, takže nebylo nic provedeno.',
   'Výchozí větev nelze smazat, takže nebylo nic provedeno.',
   'GitLab stále kontroluje, zda lze sloučit, takže nebylo nic provedeno. Zkuste to za chvíli znovu.',
+  'Ask AI about your to-dos',
+  'To-do assistant',
+  'Mark all my to-dos as done',
 ];

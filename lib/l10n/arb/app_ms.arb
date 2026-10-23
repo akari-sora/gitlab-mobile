@@ -2694,5 +2694,8 @@
   "aiRefusedArchived": "Projek telah diarkibkan dan tidak boleh diubah, jadi tiada apa-apa yang dilakukan.",
   "aiRefusedProtectedBranch": "Ini branch yang dilindungi; AI tidak boleh memadam atau menulis semulanya, jadi tiada apa-apa yang dilakukan.",
   "aiRefusedDefaultBranch": "Branch lalai tidak boleh dipadam, jadi tiada apa-apa yang dilakukan.",
-  "aiRefusedMergeChecking": "GitLab masih menyemak sama ada ini boleh digabungkan, jadi tiada apa-apa yang dilakukan. Cuba lagi sebentar nanti."
+  "aiRefusedMergeChecking": "GitLab masih menyemak sama ada ini boleh digabungkan, jadi tiada apa-apa yang dilakukan. Cuba lagi sebentar nanti.",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

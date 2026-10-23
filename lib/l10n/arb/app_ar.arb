@@ -2694,5 +2694,8 @@
   "aiRefusedArchived": "المشروع مؤرشف ولا يمكن تغييره، لذا لم يُنفَّذ شيء.",
   "aiRefusedProtectedBranch": "هذا فرع محمي ولا يستطيع AI حذفه أو إعادة كتابته، لذا لم يُنفَّذ شيء.",
   "aiRefusedDefaultBranch": "لا يمكن حذف الفرع الافتراضي، لذا لم يُنفَّذ شيء.",
-  "aiRefusedMergeChecking": "لا يزال GitLab يتحقق من إمكانية الدمج، لذا لم يُنفَّذ شيء. حاول مرة أخرى بعد قليل."
+  "aiRefusedMergeChecking": "لا يزال GitLab يتحقق من إمكانية الدمج، لذا لم يُنفَّذ شيء. حاول مرة أخرى بعد قليل.",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

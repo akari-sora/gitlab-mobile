@@ -2694,5 +2694,8 @@
   "aiRefusedArchived": "Proje arşivlenmiş ve değiştirilemez, bu yüzden hiçbir şey yapılmadı.",
   "aiRefusedProtectedBranch": "Bu korumalı bir daldır; AI onu silemez veya yeniden yazamaz, bu yüzden hiçbir şey yapılmadı.",
   "aiRefusedDefaultBranch": "Varsayılan dal silinemez, bu yüzden hiçbir şey yapılmadı.",
-  "aiRefusedMergeChecking": "GitLab hâlâ birleştirilip birleştirilemeyeceğini denetliyor, bu yüzden hiçbir şey yapılmadı. Kısa süre sonra yeniden deneyin."
+  "aiRefusedMergeChecking": "GitLab hâlâ birleştirilip birleştirilemeyeceğini denetliyor, bu yüzden hiçbir şey yapılmadı. Kısa süre sonra yeniden deneyin.",
+  "aiInboxAsk": "Ask AI about your to-dos",
+  "aiInboxChatTitle": "To-do assistant",
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
 }

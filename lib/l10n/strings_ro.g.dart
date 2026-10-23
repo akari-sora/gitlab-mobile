@@ -2697,4 +2697,7 @@ const _messagesRo = <String>[
   'Aceasta este o ramură protejată; AI nu o poate șterge sau rescrie, deci nu s-a făcut nimic.',
   'Ramura implicită nu poate fi ștearsă, deci nu s-a făcut nimic.',
   'GitLab încă verifică dacă se poate îmbina, deci nu s-a făcut nimic. Încearcă din nou în scurt timp.',
+  'Ask AI about your to-dos',
+  'To-do assistant',
+  'Mark all my to-dos as done',
 ];
