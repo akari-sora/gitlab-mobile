@@ -762,6 +762,9 @@ void main() {
       'forbidden',
       'invisible',
       'unsupported',
+      'rateLimited',
+      'network',
+      'invalidResponse',
     ]) {
       expect(aiRefusalText(code), isNotNull, reason: code);
     }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/ai/ai_display.dart';
+import '../../core/failure.dart';
 import '../../core/ai/tools/write_coordinator.dart';
 import '../../core/ai/tools/write_ledger.dart';
 import '../../core/ai/tools/write_preview.dart'
@@ -354,6 +355,10 @@ String? aiRefusalText(String code) => switch (code) {
   'pipelineVariableSecret' => l10n.aiRefusedContent,
   'scheduleParamsUnreadable' ||
   'snippetFilesUnreadable' => l10n.aiRefusedUnverifiable,
+  // A pre-read that hit a transport limit says which, in the app's own words.
+  'rateLimited' => const ApiFailure(FailureKind.rateLimited).title,
+  'network' => const ApiFailure(FailureKind.network).title,
+  'invalidResponse' => const ApiFailure(FailureKind.invalidResponse).title,
   _ => null,
 };
 
