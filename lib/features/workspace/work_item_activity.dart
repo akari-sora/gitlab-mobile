@@ -371,19 +371,24 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     final permalink = _notePermalink(expected, note);
     final scope =
         '${expected.project?.fullPath ?? expected.namespace?.fullPath ?? ''} · #${expected.iid}';
+    // A reaction bumps the note's updatedAt on GitLab, so later edit, delete
+    // and reaction reads in this dialog use the note the readback returned,
+    // and closing refreshes the feed (its copy is now older than GitLab's).
+    var current = note;
+    var reacted = false;
     final route = DialogRoute<_WorkItemNoteActionResult>(
       context: context,
       builder: (_) => _WorkItemNoteActionsDialog(
         loadEdit: () => widget.api.workItemActivityEditAccess(
           expected,
           discussion,
-          note,
+          current,
           isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
         ),
         loadDelete: () => widget.api.workItemActivityDeleteAccess(
           expected,
           discussion,
-          note,
+          current,
           isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
         ),
         deleteNote: (target) => widget.api.deleteWorkItemActivityNote(
@@ -393,7 +398,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
         loadReactions: () => widget.api.workItemActivityReactionAccess(
           expected,
           discussion,
-          note,
+          current,
           isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
         ),
         setReaction: (target, name, {required awarded}) =>
@@ -403,6 +408,10 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
               awarded: awarded,
               isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
             ),
+        onReactionWritten: (fresh) {
+          reacted = true;
+          if (fresh != null) current = fresh;
+        },
         account: widget.account,
         scopeLabel: scope,
         permalink: permalink,
@@ -428,7 +437,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
         case _WorkItemNoteChangedAction():
           _refreshAfterWrite();
         case null:
-          break;
+          if (reacted) _refreshAfterWrite();
       }
     } finally {
       _noteActionRoutes.remove(route);
@@ -1344,6 +1353,7 @@ class _WorkItemNoteActionsDialog extends StatefulWidget {
     required this.deleteNote,
     required this.loadReactions,
     required this.setReaction,
+    required this.onReactionWritten,
     required this.account,
     required this.scopeLabel,
     required this.permalink,
@@ -1361,6 +1371,10 @@ class _WorkItemNoteActionsDialog extends StatefulWidget {
     required bool awarded,
   })
   setReaction;
+
+  /// A reaction write reached GitLab: the fresh note after a confirmed
+  /// write, or null when the outcome is unknown (GitLab may have changed it).
+  final void Function(WorkItemActivityNote? fresh) onReactionWritten;
   final Account account;
   final String scopeLabel;
   final Uri? permalink;
@@ -1391,6 +1405,10 @@ class _WorkItemNoteActionsDialogState
   bool _changingReaction = false;
   bool _reactionUncertain = false;
 
+  /// Edit access loaded before a reaction carries the old updatedAt; load
+  /// it again once the current load ends.
+  bool _reloadEdit = false;
+
   bool get _writeBusy => _deleting || _changingReaction;
 
   @override
@@ -1417,8 +1435,26 @@ class _WorkItemNoteActionsDialogState
     } finally {
       if (mounted && widget.isCurrent()) {
         setState(() => _loadingEdit = false);
+        if (_reloadEdit) {
+          _reloadEdit = false;
+          unawaited(_loadEdit());
+        }
       }
     }
+  }
+
+  void _afterReactionWrite() {
+    setState(() {
+      _editAccess = null;
+      _editError = null;
+      if (_deleteOpen) _deleteAccess = null;
+    });
+    if (_loadingEdit) {
+      _reloadEdit = true;
+    } else {
+      unawaited(_loadEdit());
+    }
+    if (_deleteOpen && !_deleteUncertain) unawaited(_loadDelete());
   }
 
   void _openDelete() {
@@ -1557,12 +1593,17 @@ class _WorkItemNoteActionsDialogState
     });
     try {
       final fresh = await widget.setReaction(target, name, awarded: awarded);
+      widget.onReactionWritten(fresh.target?.note);
       if (mounted && widget.isCurrent()) {
         setState(() => _reactionAccess = fresh);
+        _afterReactionWrite();
       }
     } catch (error) {
       if (!mounted || !widget.isCurrent()) return;
       final failure = safeFailure(error);
+      if (failure.kind == FailureKind.writeUncertain) {
+        widget.onReactionWritten(null);
+      }
       setState(() {
         _reactionError = failure;
         _reactionAccess = null;

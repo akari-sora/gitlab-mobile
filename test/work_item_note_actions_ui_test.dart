@@ -241,6 +241,69 @@ void main() {
     });
   }
 
+  testWidgets('after a reaction, delete, close and reopen use the fresh note', (
+    tester,
+  ) async {
+    final fixture = EmulatorQaFixture();
+    addTearDown(fixture.api.close);
+
+    await _openFirstNoteActions(tester, fixture);
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-note-reactions')),
+    );
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-add-reaction')),
+    );
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-pick-reaction:heart')),
+    );
+    expect(find.text('❤️ 1'), findsOneWidget);
+    // GitLab bumped updatedAt; the dialog's delete must not call the note
+    // changed.
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-delete-note')),
+    );
+    expect(find.text(l10n.commentHasBeenModified), findsNothing);
+    expect(find.textContaining('刪除後無法復原'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('work-item-activity-confirm-delete-note')),
+      findsOneWidget,
+    );
+
+    // Closing without another write still refreshes the activity, so the
+    // reopened dialog loads edit and reactions from the fresh note.
+    int feedReads() => fixture.adapter.requests
+        .where(
+          (request) => ((request.data as Map)['query'] as String).contains(
+            'query MobileWorkItemActivity(',
+          ),
+        )
+        .length;
+    final activityReads = feedReads();
+    await tester.tap(find.widgetWithText(TextButton, '關閉'));
+    await _drainAsync(tester);
+    expect(feedReads(), greaterThan(activityReads));
+    await _tap(
+      tester,
+      find.byKey(
+        const ValueKey('work-item-activity-note-actions:$_projectNoteId'),
+      ),
+    );
+    expect(find.text(l10n.commentHasBeenModified), findsNothing);
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-note-reactions')),
+    );
+    expect(find.text(l10n.commentHasBeenModified), findsNothing);
+    expect(find.text('❤️ 1'), findsOneWidget);
+    expect(fixture.workItemNoteDeleteEvents, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('reactions add then remove when updatedAt advances', (
     tester,
   ) async {
