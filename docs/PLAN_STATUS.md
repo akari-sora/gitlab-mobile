@@ -1,6 +1,6 @@
 # Plan and status
 
-Last updated: 2026-10-23 (evening).
+Last updated: 2026-10-23 (night).
 
 This page is the single place for **what we are building, in what order, and where each piece stands**.
 - Update it in the same MR that changes a status.
@@ -40,26 +40,25 @@ There are two tracks.
 | MR6a | Chat page and entry points, draft append and preview, report | Merged 2026-10-21/22 | !96, !97, !98, !99, !100 |
 | MR6b-1 | AI writes, first batch: T1 and T2 REST writes, consent v2, autonomy levels, coordinator, journal, approval cards | Merged 2026-10-22 | !102; follow-ups #12 |
 | MR6b-2 | AI writes, second batch: files and suggestions, branches/tags/releases, merge requests, CI, snippets, content deletes, mark-all to-dos, registry and project hard lines, read tools for releases/milestones/snippets. Also structured previews, card titles, refusal reasons and the Inbox AI entry | Merged 2026-10-23 after four review rounds and three emulator rounds (every write proposed and rejected; GitLab unchanged) | !104; follow-ups #13 |
-| **MR6b-3** | GraphQL writes for project Work Items (state, status, dates, health, assignees, milestone, weight, activity notes create/delete), reactions and notifications, incidents and to-do snooze, split into small MRs (shared seams S0a–S0c, then one family per MR) | **Planning.** Breakdown v4 in progress after review round 3. Group Work Items move to MR6b-3g (D1); whole-field text writes (Work Item title/description, note edits) and labels move to MR6b-3t (D18, D19) | plan v6 §14 |
+| **MR6b-3** | GraphQL writes for project Work Items (state, status, dates, health, assignees, milestone, weight, activity notes create/delete), reactions and notifications, incidents and to-do snooze, split into small MRs (shared seams S0a–S0c, then one family per MR) | **Building.** Breakdown v4 and decisions D1–D24 are final. The shared seams S0a–S0c merged 2026-10-23 (!116). Families in review: P2 (close/reopen), P5 (health), P11 (reactions, notifications), P12 (incidents), P13 (to-do snooze). P3, P4, P6, P8 and P10 are being built. P9 (comment create) and P10 (note delete) wait on seam follow-up S0d (actor evidence, parent-before-missing-note, continuation reply target, controls support). Group Work Items move to MR6b-3g (D1); whole-field text writes (Work Item title/description, note edits) and labels move to MR6b-3t (D18, D19) | plan v6 §14; [breakdown](plans/mr6b3-breakdown.md), [decisions](plans/mr6b3-decisions.md) |
 | MR6c | Background runs: Android foreground service, notifications, app lock, stop protocol | Not started | plan v6 §12, §14 |
 | MR7 | Open the AI gate: full CI on the release commit, sandbox writes, Play declarations, listing | Not started | plan v6 §13, §14 |
 | Play listing | Store listing, screenshots, data safety | After MR7 | [Store listing](STORE_LISTING.md) |
 | Cache C1a | Opt-in read cache (`CachedRead<T>`), scope versions and write barrier, pinned entries, per-class rate limits, request meter, AI run leases, binding after validation | Merged 2026-10-23 after four review rounds (full-path sub-resources are not cached, plan v3 V21) | !103; follow-ups #14 |
 | Cache C1b-1 prerequisites | Fixes from #14 needed before screens adopt the cache: dropped background reads, uncacheable reads bypass admission, archive 429 class, confidential-marker saturation | Merged 2026-10-23 | !106; follow-ups #14 |
 | Cache C1b-1a | Cached first pages with stale-while-revalidate in `RecordsFeed` (activity, CI, file history, groups, inbox, my work, project extras, projects, search) and the freshness strip (refreshing, offline, rate limited, refresh failed) | Merged 2026-10-23 after three review rounds. Emulator self-test passed (offline strip over cached rows, refresh clears it) | !107 |
-| **Cache C1b-1b** | Hot spots: project overview, pipeline detail, CI overview queue, job-log polling by rate budget | **In review.** Round-1 fixes in progress | cache plan v3 §3.1, §3.2 |
-| **Cache C1b-2a** | Boards and project metadata lists (branches, tags, commits, releases, labels, milestones, and the label and milestone Work Item lists) read cached first pages | **In review.** Two review rounds passed | this MR; follow-ups #16 |
-| Cache C1b-2b | Remaining screens (project more, work item, discussions, repository; snippets and registries once their list paths are in the read-class table) | Not started; after C1b-1b | cache plan v3 V9 |
-| **Cache C1b-2c** | AI side: cached reads within 60 s, read-port and tool-catalogue metering, AI budget leases, and the send-paused card | **In review.** Round-1 fixes in progress | cache plan v3 V20 |
-| **Cache C2 prerequisites** | The six "before C2" items from #14 and GraphQL 403/404 scope | **In review.** Round-1 fixes done, Opus check pending | !109 |
-| Cache C2 | Encrypted disk cache, clear markers, startup order | Plan final; not started; after C1b-2 and its prerequisites. Gate items on #14 | cache plan v3 §4, V13, V14, V17 |
+| Cache C1b-1b | Hot spots: project overview, pipeline detail, CI overview queue, job-log polling by rate budget | Merged 2026-10-23 after three review rounds. Emulator self-test passed | !115 |
+| Cache C1b-2a | Boards and project metadata lists (branches, tags, commits, releases, labels, milestones, and the label and milestone Work Item lists) read cached first pages | Merged 2026-10-23 (!111, board fix !114). Board follow-ups in !120 | follow-ups #16 |
+| **Cache C1b-2b** | Remaining screens (project more, work item, discussions, repository; snippets and registries once their list paths are in the read-class table) | **In review.** Round 3 found a README ordering issue after a branch switch, now fixed; an Opus check is pending | this MR; cache plan v3 V9 |
+| Cache C1b-2c | AI side: cached reads within 60 s, read-port and tool-catalogue metering, AI budget leases, and the send-paused card | Merged 2026-10-23 (!112, follow-ups !118). Emulator self-test passed | follow-ups #17 |
+| Cache C2 prerequisites | The six "before C2" items from #14 and GraphQL 403/404 scope | Merged 2026-10-23 | !109 |
+| **Cache C2** | Encrypted disk cache, clear markers, startup order | **Building.** The packet breakdown passed three review rounds; the last two Importants are settled in lead decisions C2-D1 and C2-D2. Seven packets (a, b, c, d1, d2, d3, e); P-C2a is in implementation, P-C2b follows it | cache plan v3 §4, V13, V14, V17; [breakdown](plans/cache-c2-breakdown.md), [decisions](plans/cache-c2-decisions.md) |
 | Cache C3 | Offline repository saving (archive fetch, verified blobs) and an offline read-only mode | Plan approved in two review rounds (v2.1); not started; C3a needs C1a, C1b-2 and C2. Split: C3a core, C3b save and browse UI, C3c offline mode, C3d optional | [C3 plan](plans/cache-c3-offline-plan-v2.md) |
 
 ## Next steps
-1. Land C1b-2a, the C2 prerequisites (!109) and the test follow-ups (!110); then C1b-1b and C1b-2c after their round-1 fixes.
-2. MR6b-3: review breakdown v4, then the shared seams S0a–S0c, then one family per MR.
-3. C1b-2b, then C2, then C3 (C3a core, C3b UI, C3c offline mode, C3d optional).
-4. MR6b-3t (text fields, labels), MR6b-3g (group Work Items), MR6c, MR7, Play listing.
+1. C1b-2b; the MR6b-3 families one MR each, and S0d for P9 and P10.
+2. C2 packets in order (a, b, c, d1–d3, e), then C3 (C3a core, C3b UI, C3c offline mode, C3d optional).
+3. MR6b-3t (text fields, labels), MR6b-3g (group Work Items), MR6c, MR7, Play listing.
 
 ## Plan documents
 | Document | Covers |

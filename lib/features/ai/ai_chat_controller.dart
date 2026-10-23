@@ -189,6 +189,9 @@ class AiChatController extends ChangeNotifier
     _rateChanges = _api.rateBudget.stream.listen((_) {
       if (_alive) _notify();
     });
+    _budgetChanges = _budgetAllocator.changes.listen((_) {
+      if (_alive) _notify();
+    });
     _secrets = KnownSecretsLive(
       session,
       settings,
@@ -237,6 +240,7 @@ class AiChatController extends ChangeNotifier
   final DateTime Function() _now;
   late final RunBudgetAllocator _budgetAllocator;
   StreamSubscription<RateBudgetSnapshot>? _rateChanges;
+  StreamSubscription<void>? _budgetChanges;
   _AiRunBudget? _runBudget;
 
   @visibleForTesting
@@ -265,9 +269,9 @@ class AiChatController extends ChangeNotifier
     final snapshot = _api.rateBudget.snapshot();
     DateTime? until = snapshot.cooldowns[RateRequestClass.global];
     for (final bucket in snapshot.buckets.values) {
-      if (bucket.level == RateLevel.critical &&
-          (until == null || bucket.resetAt.isAfter(until))) {
-        until = bucket.resetAt;
+      if (bucket.level == RateLevel.critical) {
+        final cleared = GitLabRateBudget.criticalClearedAt(bucket.resetAt);
+        if (until == null || cleared.isAfter(until)) until = cleared;
       }
     }
     return until;
@@ -789,8 +793,9 @@ class AiChatController extends ChangeNotifier
       if (!_alive) return false;
       // As in recheck: what is shown could not be checked against the
       // larger secret set, so the chat stops until it can. A run in flight
-      // keeps its phase (and Stop); the failed display it left blocks the
-      // chat when the run ends.
+      // keeps its phase (and Stop); only a failed display re-redaction
+      // leaves _displayFailed to block the chat when the run ends — a
+      // failed secret read leaves nothing behind.
       if (_phase == AiChatPhase.idle) {
         _failure = error is AiFailure ? error : safeFailure(error);
         _contextFailed = true;
@@ -2609,6 +2614,7 @@ class AiChatController extends ChangeNotifier
     // The active send retains its lease until cancelled reads settle and its
     // unconditional finally can charge them before returning unused capacity.
     unawaited(_rateChanges?.cancel());
+    unawaited(_budgetChanges?.cancel());
     _historyRetry?.cancel();
     _history.removeListener(_historyChanged);
     _pendingReportedHistory.clear();

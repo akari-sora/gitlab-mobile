@@ -440,18 +440,12 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
 
   AiWriteProposal get _proposal => widget.proposal;
 
-  /// The field an edit replaces, as the coordinator picks it: the body, or
-  /// the single title, description or name among the fields.
+  /// The field an edit replaces: the ledger's editable field when this
+  /// write carries it, so the card never offers an edit the coordinator
+  /// would refuse.
   String? get _editableField {
-    final fields = _proposal.fields;
-    // A reaction's name is an emoji code, not text to rewrite.
-    if (_proposal.operationId.endsWith('AwardEmoji')) return null;
-    if (fields.containsKey('body')) return 'body';
-    final candidates = [
-      for (final key in const ['description', 'title', 'name'])
-        if (fields.containsKey(key)) key,
-    ];
-    return candidates.length == 1 ? candidates.single : null;
+    final field = _proposal.editableField;
+    return field != null && _proposal.fields.containsKey(field) ? field : null;
   }
 
   bool get _nameTyped {
@@ -530,6 +524,10 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
   }
 
   Future<void> _edit(String field) async {
+    // The sheet would hand focus back to the composer on close and raise
+    // the keyboard over the card the user is reading. Unfocusing the node
+    // itself also clears its scope's memory of it.
+    FocusManager.instance.primaryFocus?.unfocus();
     final edited = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
