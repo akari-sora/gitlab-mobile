@@ -507,7 +507,11 @@ void main() {
         expect(payloads.last, contains('fresh first title'));
         expect(payloads.last, isNot(contains('original first title')));
         expect(firstReads, 2);
-        expect(budget.gitLabRequests, 7, reason: 'the retry reuses fresh memory');
+        expect(
+          budget.gitLabRequests,
+          7,
+          reason: 'the retry reuses fresh memory',
+        );
         expect(budget.calls, 2);
         expect(budget.gitLabRequests, adapter.requests.length);
         expect(placeholders.seenOnlyCut(field), isFalse);
