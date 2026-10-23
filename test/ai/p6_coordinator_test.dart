@@ -276,7 +276,13 @@ void main() {
       expect(p.tier.reasons, contains(AiFixedConfirmReason.targetUnbound));
       await h!.coordinator.reject(p);
     }
-    for (final message in ['Change `work` `src/a.txt`', 'Change work src/a.txt']) {
+    h!.beginRun('Change work src/a.txt');
+    final mentioned = await h!.propose('edit_file', id: 'plain mentions');
+    expect(mentioned!.tier.decision, AiGateDecision.requireApproval);
+    expect(mentioned.tier.reasons, contains(AiFixedConfirmReason.targetNamedNotMarked));
+    expect(s.writes, isEmpty);
+    await h!.coordinator.reject(mentioned);
+    for (final message in ['Change `work` `src/a.txt`']) {
       h!.beginRun(message);
       final p = await h!.propose('edit_file', id: message);
       expect(p!.tier.decision, AiGateDecision.execute);

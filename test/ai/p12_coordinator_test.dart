@@ -249,7 +249,7 @@ void main() {
 
     h.newCoordinator();
     expect(await h.propose('editProject', {'projectId': 9}), isNull);
-    expect(h.coordinator.outcomeFor('call')?.reasonCode, 'preflightFailed');
+    expect(h.coordinator.outcomeFor('call')?.reasonCode, 'validation');
     expect(h.server.mutations, isEmpty);
   });
 
@@ -674,7 +674,7 @@ final class _Server {
     if (path == 'projects/9/members/all/7' && request.method == 'GET') {
       return jsonResponse({'id': 7, 'access_level': accessLevel});
     }
-    if (path == 'projects/9/registry/repositories/81' &&
+    if (path == 'registry/repositories/81' &&
         request.method == 'GET') {
       if (repositoryDeleted || !containerPresent) {
         return jsonResponse({'message': '404'}, status: 404);
@@ -684,6 +684,10 @@ final class _Server {
         'project_id': 9,
         'path': 'team/example-9/app',
       });
+    }
+    if (path == 'projects/9/registry/repositories/81' &&
+        request.method == 'GET') {
+      return jsonResponse({'message': '404'}, status: 404);
     }
     if (path == 'projects/9/registry/repositories/81/tags/v1' &&
         request.method == 'GET') {

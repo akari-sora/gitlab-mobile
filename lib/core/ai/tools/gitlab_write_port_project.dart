@@ -110,26 +110,34 @@ extension _ProjectPrepare on GitLabAiWritePort {
           throw const AiWriteRefused('maintainerRequired');
         }
         final repository = _positive(a, 'repositoryId');
-        final path = ['projects', '$project', 'registry', 'repositories', '$repository'];
-        final value = await _projectContainer(path);
+        final repositoryPath = ['registry', 'repositories', '$repository'];
+        final value = await _projectContainer(repositoryPath);
         if (value['id'] != repository || value['project_id'] != project) {
           throw const AiWriteRefused('containerMissing');
         }
-        final repositoryPath = _responseText(value, 'path');
-        confirmName = repositoryPath;
-        binding.addAll([repository, repositoryPath]);
+        final repositoryName = _responseText(value, 'path');
+        confirmName = repositoryName;
+        binding.addAll([repository, repositoryName]);
         keys = {_key([...projectKey, 'registry', '$repository'])};
         if (op == 'deleteContainerRepository') {
           mutation = () => _api.deleteContainerRepository(project, repository);
-          readback = (_) => _containerDeletionState(path);
+          readback = (_) => _containerDeletionState(repositoryPath, project);
         } else {
           final tag = _text(a, 'tag');
-          final tagPath = [...path, 'tags', tag];
+          final tagPath = [
+            'projects',
+            '$project',
+            'registry',
+            'repositories',
+            '$repository',
+            'tags',
+            tag,
+          ];
           final value = await _projectContainer(tagPath);
           if (_responseText(value, 'name') != tag) {
             throw const AiWriteRefused('containerMissing');
           }
-          confirmName = '$repositoryPath:${value['name']}';
+          confirmName = '$repositoryName:${value['name']}';
           binding.addAll([tag, value['digest'], value['revision']]);
           keys = {_key([...projectKey, 'registry', '$repository', tag])};
           mutation = () => _api.deleteContainerTag(project, repository, tag);
@@ -298,9 +306,15 @@ extension _ProjectPrepare on GitLabAiWritePort {
     }
   }
 
-  Future<Object> _containerDeletionState(List<String> path) async {
+  Future<Object> _containerDeletionState(
+    List<String> path,
+    int project,
+  ) async {
     try {
       final value = await _api.record(path);
+      if (value['project_id'] != project) {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
       if (value['status'] == 'delete_scheduled' ||
           value['status'] == 'delete_ongoing') {
         return _deletionScheduled;

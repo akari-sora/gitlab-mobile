@@ -292,6 +292,7 @@ String aiConfirmReasonText(AiFixedConfirmReason reason) => switch (reason) {
   AiFixedConfirmReason.confidentialOrVisibilityMix =>
     l10n.aiConfirmConfidentialMix,
   AiFixedConfirmReason.targetUnbound => l10n.aiConfirmTargetUnbound,
+  AiFixedConfirmReason.targetNamedNotMarked => l10n.aiConfirmTargetNamedNotMarked,
   AiFixedConfirmReason.intentNotUnique => l10n.aiConfirmIntentNotUnique,
 };
 

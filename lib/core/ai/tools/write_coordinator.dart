@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 
 import '../../../features/ai/ai_attachment_session.dart';
 import '../../../features/ai/ai_write_journal.dart';
+import '../../failure.dart';
 import '../../instance.dart';
 import '../ai_transcript.dart';
 import '../app_text.dart';
@@ -1105,7 +1106,7 @@ final class PolicyAiWriteCoordinator
           ].where((part) => part.isNotEmpty).join(', '),
           uploadReferable: referable,
           upload: proposal.upload,
-          auditNotice: _auditNotice(proposal, confirmed: confirmed),
+          auditNotice: _auditNotice(proposal, confirmed: confirmed, state: settled.state),
         ),
         projection: settled.projection,
       );
@@ -1143,7 +1144,7 @@ final class PolicyAiWriteCoordinator
           target: _targetSummary(pending.prepared),
           upload: proposal.upload,
           auditNotice: accepted
-              ? _auditNotice(proposal, confirmed: confirmed)
+              ? _auditNotice(proposal, confirmed: confirmed, state: state)
               : null,
         ),
       );
@@ -1376,9 +1377,13 @@ final class PolicyAiWriteCoordinator
   static String? _auditNotice(
     AiWriteProposal proposal, {
     required bool confirmed,
+    required AiJournalState state,
   }) {
     if (confirmed) return null;
-    if (proposal.tier.reusesStoredVariables) return 'storedVariablesMayApply';
+    if (proposal.tier.reusesStoredVariables) {
+      return state == AiJournalState.succeeded || state == AiJournalState.writeUncertain
+          ? 'storedVariablesMayApply' : null;
+    }
     final upload = proposal.upload;
     if (upload == null || !upload.readersCanFetch) return null;
     return uploadReadersCanFetch;
@@ -1819,6 +1824,11 @@ String _reason(Object error) => switch (error) {
   _WriteBlocked(:final reason) => reason,
   port.AiWriteRefused(:final reason) => reason,
   AiJournalException(:final reason) => reason,
+  ApiFailure(:final kind) when const {
+    FailureKind.forbidden, FailureKind.invisible, FailureKind.validation,
+    FailureKind.unsupported, FailureKind.invalidResponse,
+    FailureKind.rateLimited, FailureKind.network,
+  }.contains(kind) => kind.name,
   _ => 'preflightFailed',
 };
 
@@ -1907,6 +1917,8 @@ AiTargetRef _target(
   };
   final bound = scope.grants.any(
     (grant) =>
+        (capability.scopeClass == AiScopeClass.accountGlobalOnly &&
+            grant.kind == AiScopeKind.accountGlobal) ||
         (kind == AiTargetKind.project &&
             grant.kind == AiScopeKind.project &&
             grant.projectId == project) ||

@@ -782,7 +782,7 @@ void main() {
   });
 
   group('§15 row 16 target binding and intent words', () {
-    test('verbatim words bind, and a file needs every component', () {
+    test('ordinary words do not bind, and a file needs every component', () {
       final AiTargetRef file = AiTargetRef(
         kind: AiTargetKind.file,
         projectId: 9,
@@ -796,7 +796,7 @@ void main() {
       );
       expect(
         _bind('see main and README', <AiTargetRef>[file]).missingComponents,
-        <String>['path'],
+        <String>['ref', 'path'],
       );
       expect(
         _bind('update `src/app.dart`', <AiTargetRef>[file]).missingComponents,

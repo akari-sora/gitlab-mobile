@@ -56,6 +56,7 @@ enum AiFixedConfirmReason {
   journalResetWindow,
   confidentialOrVisibilityMix,
   targetUnbound,
+  targetNamedNotMarked,
   intentNotUnique,
 }
 

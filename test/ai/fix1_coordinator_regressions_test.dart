@@ -18,13 +18,16 @@ AiBindingResult _bind(String message, AiTargetRef target) => bindTargets(
 );
 
 void main() {
-  test('Emulator 1 verbatim bare and quoted branch tag and paths bind whole tokens', () {
+  test('Emulator 1 backticks bind branch tag and paths; plain names only mention', () {
     for (final kind in [AiTargetKind.branch, AiTargetKind.tag, AiTargetKind.path]) {
       final name = kind == AiTargetKind.path ? 'src/a.txt' : 'ci/mobile-workbench';
       final target = AiTargetRef(kind: kind, projectId: 9, name: name,
           path: name, refName: name);
-      for (final text in ['delete $name', 'delete "$name"', 'delete `$name`']) {
-        expect(_bind(text, target).allBound, isTrue, reason: '$kind $text');
+      expect(_bind('delete `$name`', target).allBound, isTrue, reason: '$kind');
+      for (final text in ['delete $name', 'delete "$name"']) {
+        final result = _bind(text, target);
+        expect(result.allBound, isFalse, reason: '$kind $text');
+        expect(result.reasons, [AiFixedConfirmReason.targetNamedNotMarked]);
       }
       for (final text in ['delete prefix/$name', 'delete ${name}more',
           '> delete $name', '```\ndelete $name\n```',
@@ -34,7 +37,9 @@ void main() {
     }
     final main = AiTargetRef(kind: AiTargetKind.branch, projectId: 9, refName: 'main');
     expect(_bind('delete mainly', main).allBound, isFalse);
-    expect(_bind('delete main.', main).allBound, isTrue);
+    expect(_bind('delete main.', main).allBound, isFalse);
+    expect(_bind('delete main.', main).reasons,
+        [AiFixedConfirmReason.targetNamedNotMarked]);
     final label = AiTargetRef(kind: AiTargetKind.label, projectId: 9, name: 'bug');
     expect(_bind('delete bug', label).allBound, isFalse);
     expect(_bind('delete `bug`', label).allBound, isTrue);
