@@ -83,10 +83,14 @@ class ProjectOverviewState extends State<ProjectOverview> {
       _detailsRead?.stale == true ||
       _readmeStale;
   // Project details shown from an earlier read: say so while they are
-  // refreshed or after that failed. The README reports its own state.
-  DateTime? get _freshnessAt => _details == null || loading || error != null ||
-      !(_detailsRead?.stale == true || revalidating || backgroundFailure != null)
-      ? null : _detailsRead?.fetchedAt;
+  // refreshed or after that failed. The gate is the details read's own
+  // staleness — the README refreshes and reports its state separately and
+  // must never raise this strip or set its spinner on its own.
+  bool get _detailsStale => _detailsRead?.stale == true;
+  DateTime? get _freshnessAt =>
+      _details == null || loading || error != null || !_detailsStale
+          ? null
+          : _detailsRead?.fetchedAt;
   DateTime? get fetchedAt {
     final times = [?_detailsRead?.fetchedAt, ?_branchRead?.fetchedAt];
     if (times.isEmpty) return null;

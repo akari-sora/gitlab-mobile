@@ -354,16 +354,17 @@ void main() {
           second.currentState!.backgroundRetryAt,
           failure == FailureKind.rateLimited ? isNotNull : isNull,
         );
-        // The kept project says its refresh failed, and why.
+        // The details are fresh; only the README's refresh failed, and the
+        // README section reports that itself — no page strip (review I2).
         await tester.pump();
-        expect(find.byType(CacheFreshnessBar), findsOneWidget);
+        expect(find.byType(CacheFreshnessBar), findsNothing);
         expect(
           find.text(
             failure == FailureKind.network
                 ? l10n.cannotConnect
                 : l10n.cacheRateLimited,
           ),
-          findsOneWidget,
+          findsNothing,
         );
         _counts(fixture, branches: 2);
         // Dispose the cooldown timer before the binding checks pending timers.

@@ -829,7 +829,6 @@ class RepositoryTabState extends State<RepositoryTab> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_currentRef == null || _currentRef!.sha.isEmpty) _refBar(context),
-        ?_freshnessStrip(),
         if (_loading) const LinearProgressIndicator(minHeight: 2),
         if (_error != null)
           FailureNotice(
