@@ -2717,6 +2717,8 @@ const _messagesZhTw = <String>[
   '無法更新',
   '約 {minutes} 分鐘後恢復',
   '{verb}{target}',
+  '30 秒更新',
+  '每分鐘更新',
   'GitLab 請求額度快用完了，暫停送出',
   'GitLab 正在限制請求，暫停送出',
   '額度重設後恢復',

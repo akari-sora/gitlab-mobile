@@ -89,6 +89,11 @@ void _expectSendOrder(String body, {bool reportsMutation = false}) {
   expect(hook, isNonNegative);
   expect(gate, greaterThan(hook));
   expect(send, greaterThan(gate));
+  expect(
+    RegExp(r'\breturn\b').allMatches(body.substring(hook, send)),
+    isEmpty,
+    reason: 'every noop return must precede the durable hook',
+  );
   if (reportsMutation) {
     final report = body.indexOf('onMutationSent', hook);
     expect(report, greaterThan(hook));
@@ -441,11 +446,19 @@ void main() {
     );
     await expectLater(
       api.snoozeTodo(-1, DateTime.utc(2000), beforeMutation: hook),
-      throwsA(_failure(FailureKind.validation)),
+      throwsArgumentError,
     );
     await expectLater(
       api.unsnoozeTodo(-1, beforeMutation: hook),
-      throwsA(_failure(FailureKind.validation)),
+      throwsArgumentError,
+    );
+    await expectLater(
+      api.snoozeTodo(-1, DateTime.utc(2000), mayStart: () => true),
+      throwsArgumentError,
+    );
+    await expectLater(
+      api.unsnoozeTodo(-1, mayStart: () => true),
+      throwsArgumentError,
     );
     expect(adapter.requests, isEmpty);
   });

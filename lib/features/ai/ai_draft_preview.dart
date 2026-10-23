@@ -26,23 +26,39 @@ const _analysisTimeout = Duration(seconds: 30);
 typedef AiDraftAnalysis = ({DraftMentions asWritten, DraftMentions neutralized});
 
 typedef AiDraftAnalyzer =
-    Future<AiDraftAnalysis> Function(String text, String existing);
+    Future<AiDraftAnalysis> Function(
+      String text,
+      String existing, {
+      Future<void>? cancel,
+    });
 
 /// Runs the check off the UI isolate whatever the length: even a short answer
 /// with a long unbroken run of letters takes seconds to parse on a phone.
 /// Throws a `TimeoutException` after [timeout]; the caller then appends
-/// nothing.
+/// nothing. When [cancel] completes first, the isolate is killed just like at
+/// the deadline, and a `StateError` is thrown, so closing the chat stops the
+/// check instead of leaving it running until its deadline.
 Future<AiDraftAnalysis> analyzeAiDraft(
   String text,
   String existing, {
   Duration timeout = _analysisTimeout,
-}) => runWithDeadline(() => _analyze(text, existing), timeout);
+  Future<void>? cancel,
+}) => runWithDeadline(
+  () => _analyze(text, existing),
+  timeout,
+  cancel: cancel,
+);
 
 /// Runs [work] on a new isolate and returns its result. If [work] fails, or is
 /// still running after [timeout], the isolate is killed, so an abandoned check
 /// never keeps a core busy, and a retry never runs beside an earlier one.
+/// Completing [cancel] kills the isolate the same way, promptly.
 @visibleForTesting
-Future<R> runWithDeadline<R>(R Function() work, Duration timeout) async {
+Future<R> runWithDeadline<R>(
+  R Function() work,
+  Duration timeout, {
+  Future<void>? cancel,
+}) async {
   final port = ReceivePort();
   Isolate? isolate;
   try {
@@ -52,7 +68,11 @@ Future<R> runWithDeadline<R>(R Function() work, Duration timeout) async {
       onError: port.sendPort,
       onExit: port.sendPort,
     );
-    final message = await port.first.timeout(timeout);
+    final message = await Future.any([
+      port.first.timeout(timeout),
+      if (cancel != null)
+        cancel.then((_) => throw StateError('The draft check was cancelled')),
+    ]);
     if (message case (R result,)) return result;
     // onError sends [error, stack]; onExit sends null.
     if (message case [final Object? error, final Object? stack]) {

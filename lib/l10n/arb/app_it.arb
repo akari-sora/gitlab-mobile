@@ -2715,6 +2715,8 @@
   "cacheRefreshFailed": "Impossibile aggiornare",
   "cacheResumesInMinutes": "Riprende tra circa {minutes} min",
   "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Aggiorna ogni 30 s",
+  "refreshEveryMinute": "Aggiorna ogni minuto",
   "aiSendPausedBudget": "La quota di richieste GitLab è quasi esaurita; invio in pausa",
   "aiSendPausedRateLimited": "GitLab sta limitando le richieste; invio in pausa",
   "aiSendResumesAfterReset": "Riprende quando la quota di richieste viene ripristinata",
