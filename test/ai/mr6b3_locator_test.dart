@@ -198,6 +198,37 @@ void main() {
     },
   );
 
+  test(
+    'locator returns a non-last initial note target anchored to that note',
+    () async {
+      final api = testApi(
+        FakeAdapter(
+          (_) => jsonResponse(
+            _activity(
+              discussion: _discussion(
+                notes: [_note('gid://gitlab/Note/400'), _note(_noteId)],
+              ),
+            ),
+          ),
+        ),
+      );
+      addTearDown(api.close);
+
+      final location = await locateAiWorkItemActivityNote(
+        _detail,
+        400,
+        first: api.workItemActivity,
+        next: _unexpectedActivityNext,
+        notesNext: _unexpectedNotesNext,
+      );
+
+      expect(location.note.id, 'gid://gitlab/Note/400');
+      expect(location.discussion.id, _discussionId);
+      expect(location.replyTarget, isNotNull);
+      expect(location.replyTarget!.anchorNoteId, 'gid://gitlab/Note/400');
+    },
+  );
+
   test('locator returns the exact note and reply target in one read', () async {
     final api = testApi(
       FakeAdapter(
@@ -226,6 +257,7 @@ void main() {
     expect(location.note.id, _noteId);
     expect(location.discussion.id, _discussionId);
     expect(location.replyTarget, isNotNull);
+    expect(location.replyTarget!.anchorNoteId, _noteId);
   });
 
   test('locator shares a strict two-read budget with nested notes', () async {
@@ -271,6 +303,7 @@ void main() {
 
     expect(location.note.id, 'gid://gitlab/Note/402');
     expect(location.replyTarget, isNotNull);
+    expect(location.replyTarget!.anchorNoteId, 'gid://gitlab/Note/402');
     expect(reads, 2);
   });
 

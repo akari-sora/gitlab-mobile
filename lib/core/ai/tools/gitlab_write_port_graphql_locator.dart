@@ -130,20 +130,15 @@ Future<AiWorkItemActivityNoteLocation> locateAiWorkItemActivityNote(
       }
       pageDiscussionIds.add(discussion.id);
       discussions[discussion.id] = discussion;
-      final replyTarget = page.replyTargetsByDiscussion[discussion.id];
       _addAiActivityNotes(
         notes,
         discussion,
         discussion.notes.items,
-        replyTarget,
+        page.replyTargetsByNote,
       );
       final continuation = page.nextNotesByDiscussion[discussion.id];
       if (continuation != null) {
-        pendingNotes.add((
-          discussion: discussion,
-          continuation: continuation,
-          replyTarget: replyTarget,
-        ));
+        pendingNotes.add((discussion: discussion, continuation: continuation));
       }
     }
     if (page.nextNotesByDiscussion.keys.any(
@@ -182,7 +177,7 @@ Future<AiWorkItemActivityNoteLocation> locateAiWorkItemActivityNote(
         notes,
         pending.discussion,
         page.notes.items,
-        pending.replyTarget,
+        page.replyTargetsByNote,
       );
       pendingNotes.clear();
     } else {
@@ -217,7 +212,6 @@ Future<AiWorkItemActivityNoteLocation> locateAiWorkItemActivityNote(
 typedef _AiPendingNotes = ({
   WorkItemActivityDiscussion discussion,
   WorkItemDiscussionNotesContinuation continuation,
-  WorkItemActivityReplyTarget? replyTarget,
 });
 
 typedef _AiLocatedActivityNote = ({
@@ -230,7 +224,7 @@ void _addAiActivityNotes(
   Map<String, _AiLocatedActivityNote> found,
   WorkItemActivityDiscussion discussion,
   List<WorkItemActivityNote> notes,
-  WorkItemActivityReplyTarget? replyTarget,
+  Map<String, WorkItemActivityReplyTarget> replyTargetsByNote,
 ) {
   for (final note in notes) {
     final numericId = _aiNoteNumericId(note.id);
@@ -248,7 +242,7 @@ void _addAiActivityNotes(
     found[note.id] = (
       discussion: discussion,
       note: note,
-      replyTarget: replyTarget,
+      replyTarget: replyTargetsByNote[note.id],
     );
   }
 }

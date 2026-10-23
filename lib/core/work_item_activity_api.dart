@@ -110,26 +110,41 @@ query MobileWorkItemDiscussionNotes(
 }
 ''';
 
-final _workItemActivityWriteAccessQuery =
+const _workItemActivityControlsVariables =
+    r'$filter: NotesFilterType! $sort: WorkItemDiscussionsSort!';
+const _workItemActivityControlsProbe = r'''
+discussions(first: 1, filter: $filter, sort: $sort) {
+  pageInfo { hasNextPage }
+}
+''';
+
+String _workItemActivityWriteAccessQuery(bool checkControls) =>
     '''
-query MobileWorkItemActivityWriteAccess(\$id: WorkItemID!) {
+query MobileWorkItemActivityWriteAccess(
+  \$id: WorkItemID!
+  ${checkControls ? _workItemActivityControlsVariables : ''}
+) {
   currentUser { id }
   workItem(id: \$id) {
     $_workItemActivityIdentityFields
     userPermissions { createNote }
     widgets {
       type
-      ... on WorkItemWidgetNotes { discussionLocked }
+      ... on WorkItemWidgetNotes {
+        discussionLocked
+        ${checkControls ? _workItemActivityControlsProbe : ''}
+      }
     }
   }
 }
 ''';
 
-final _workItemActivityReplyPreflightQuery =
+String _workItemActivityReplyPreflightQuery(bool checkControls) =>
     '''
 query MobileWorkItemActivityReplyPreflight(
   \$workItemId: WorkItemID!
   \$anchorNoteId: NoteID!
+  ${checkControls ? _workItemActivityControlsVariables : ''}
 ) {
   currentUser { id }
   workItem(id: \$workItemId) {
@@ -137,7 +152,10 @@ query MobileWorkItemActivityReplyPreflight(
     userPermissions { createNote }
     widgets {
       type
-      ... on WorkItemWidgetNotes { discussionLocked }
+      ... on WorkItemWidgetNotes {
+        discussionLocked
+        ${checkControls ? _workItemActivityControlsProbe : ''}
+      }
     }
   }
   anchor: note(id: \$anchorNoteId) {
@@ -233,8 +251,10 @@ final class WorkItemActivityPage {
     required Map<String, WorkItemDiscussionNotesContinuation>
     nextNotesByDiscussion,
     required Map<String, WorkItemActivityReplyTarget> replyTargetsByDiscussion,
+    required Map<String, WorkItemActivityReplyTarget> replyTargetsByNote,
   }) : nextNotesByDiscussion = Map.unmodifiable(nextNotesByDiscussion),
-       replyTargetsByDiscussion = Map.unmodifiable(replyTargetsByDiscussion);
+       replyTargetsByDiscussion = Map.unmodifiable(replyTargetsByDiscussion),
+       replyTargetsByNote = Map.unmodifiable(replyTargetsByNote);
 
   final WorkItemActivitySnapshot snapshot;
   final WorkItemActivityFilter filter;
@@ -243,6 +263,7 @@ final class WorkItemActivityPage {
   final WorkItemActivityContinuation? nextDiscussions;
   final Map<String, WorkItemDiscussionNotesContinuation> nextNotesByDiscussion;
   final Map<String, WorkItemActivityReplyTarget> replyTargetsByDiscussion;
+  final Map<String, WorkItemActivityReplyTarget> replyTargetsByNote;
 }
 
 /// A permission result isolated from the read-only activity query. Older
@@ -251,11 +272,20 @@ final class WorkItemActivityWriteAccess {
   const WorkItemActivityWriteAccess._({
     required this.canCreateNote,
     required this.discussionLocked,
+    required this.actorId,
+    required this.controlsSupported,
     required this.commentTarget,
   });
 
   final bool canCreateNote;
   final bool discussionLocked;
+
+  /// Validated GraphQL actor, for binding to a separately verified account.
+  final String? actorId;
+
+  /// Null means unprobed. Opt in with `requireControlsSupported` to detect
+  /// support in the existing permission read, without a legacy fallback.
+  final bool? controlsSupported;
   final WorkItemActivityCommentTarget? commentTarget;
 }
 
@@ -312,15 +342,18 @@ final class WorkItemActivityCommentTarget {
     required _WorkItemActivityIdentity identity,
     required int workItemModelId,
     required String authorId,
+    required bool requireControlsSupported,
   }) : _owner = owner,
        _identity = identity,
        _workItemModelId = workItemModelId,
-       _authorId = authorId;
+       _authorId = authorId,
+       _requireControlsSupported = requireControlsSupported;
 
   final GitLabApi _owner;
   final _WorkItemActivityIdentity _identity;
   final int _workItemModelId;
   final String _authorId;
+  final bool _requireControlsSupported;
   bool _consumed = false;
 }
 
@@ -350,21 +383,25 @@ final class WorkItemActivityReplyTarget {
   final DateTime _discussionCreatedAt;
   final String _anchorNoteId;
   bool _consumed = false;
+
+  String get anchorNoteId => _anchorNoteId;
 }
 
 /// A bounded continuation page for exactly one validated discussion.
 final class WorkItemDiscussionNotesPage {
-  const WorkItemDiscussionNotesPage._({
+  WorkItemDiscussionNotesPage._({
     required this.workItemId,
     required this.discussionId,
     required this.notes,
     required this.next,
-  });
+    required Map<String, WorkItemActivityReplyTarget> replyTargetsByNote,
+  }) : replyTargetsByNote = Map.unmodifiable(replyTargetsByNote);
 
   final String workItemId;
   final String discussionId;
   final WorkItemActivityConnection<WorkItemActivityNote> notes;
   final WorkItemDiscussionNotesContinuation? next;
+  final Map<String, WorkItemActivityReplyTarget> replyTargetsByNote;
 }
 
 /// Opaque capability minted by [GitLabApi] for the next discussion page.
@@ -595,13 +632,16 @@ extension WorkItemActivityApi on GitLabApi {
     _requireCurrentWorkItemRequest(isCurrent);
     try {
       final data = _workItemGraphData(response.bytes);
-      if (data['workItem'] == null || data['note'] == null) {
+      if (data['workItem'] == null) {
         throw const ApiFailure(FailureKind.invisible);
       }
       _requireActivityIdentity(
         _parseAttributeIdentity(objectJson(data['workItem'])),
         identity,
       );
+      if (data['note'] == null) {
+        throw const ApiFailure(FailureKind.invisible);
+      }
       final value = _parseActivityEditNote(
         data['note'],
         identity: identity,
@@ -639,6 +679,7 @@ extension WorkItemActivityApi on GitLabApi {
   Future<WorkItemActivityWriteAccess> workItemActivityWriteAccess(
     WorkItemGraphSummary expected, {
     bool Function()? isCurrent,
+    bool requireControlsSupported = false,
   }) async {
     _validateExpectedAttributeIdentity(expected);
     final identity = _activityIdentityFromExpected(expected);
@@ -646,16 +687,20 @@ extension WorkItemActivityApi on GitLabApi {
     final preflight = await _readActivityWritePreflight(
       identity,
       isCurrent: isCurrent,
+      requireControlsSupported: requireControlsSupported,
     );
     return WorkItemActivityWriteAccess._(
       canCreateNote: preflight.canCreateNote,
       discussionLocked: preflight.discussionLocked,
+      actorId: preflight.authorId,
+      controlsSupported: preflight.controlsSupported,
       commentTarget: preflight.canCreateNote && !preflight.discussionLocked
           ? WorkItemActivityCommentTarget._(
               owner: this,
               identity: identity,
               workItemModelId: modelId,
               authorId: preflight.authorId!,
+              requireControlsSupported: requireControlsSupported,
             )
           : null,
     );
@@ -667,6 +712,7 @@ extension WorkItemActivityApi on GitLabApi {
     bool Function()? isCurrent,
     Future<void> Function()? beforeMutation,
     bool Function()? mayStart,
+    String? expectedActorId,
   }) async {
     if ((beforeMutation == null) != (mayStart == null)) {
       throw ArgumentError('beforeMutation and mayStart must be paired');
@@ -680,7 +726,15 @@ extension WorkItemActivityApi on GitLabApi {
     final preflight = await _readActivityWritePreflight(
       target._identity,
       isCurrent: isCurrent,
+      requireControlsSupported: target._requireControlsSupported,
     );
+    if (target._requireControlsSupported &&
+        preflight.controlsSupported != true) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    if (expectedActorId != null && preflight.authorId != expectedActorId) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
     if (!preflight.canCreateNote) {
       throw ApiFailure(
         FailureKind.forbidden,
@@ -720,6 +774,8 @@ extension WorkItemActivityApi on GitLabApi {
     bool Function()? isCurrent,
     Future<void> Function()? beforeMutation,
     bool Function()? mayStart,
+    String? expectedActorId,
+    bool requireControlsSupported = false,
   }) async {
     if ((beforeMutation == null) != (mayStart == null)) {
       throw ArgumentError('beforeMutation and mayStart must be paired');
@@ -734,7 +790,14 @@ extension WorkItemActivityApi on GitLabApi {
       target._identity,
       anchorNoteId: target._anchorNoteId,
       isCurrent: isCurrent,
+      requireControlsSupported: requireControlsSupported,
     );
+    if (requireControlsSupported && preflight.controlsSupported != true) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    if (expectedActorId != null && preflight.authorId != expectedActorId) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
     if (!preflight.canCreateNote) {
       throw ApiFailure(
         FailureKind.forbidden,
@@ -869,6 +932,10 @@ extension WorkItemActivityApi on GitLabApi {
         discussionId: discussion.value.id,
         notes: discussion.value.notes,
         next: next,
+        replyTargetsByNote: _activityReplyTargetsByNote(
+          identity: identity,
+          discussion: discussion.value,
+        ),
       );
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
@@ -879,6 +946,7 @@ extension WorkItemActivityApi on GitLabApi {
     ({
       bool canCreateNote,
       bool discussionLocked,
+      bool? controlsSupported,
       String? authorId,
       _WorkItemActivityAnchor? anchor,
     })
@@ -887,8 +955,20 @@ extension WorkItemActivityApi on GitLabApi {
     _WorkItemActivityIdentity expected, {
     String? anchorNoteId,
     bool Function()? isCurrent,
+    bool requireControlsSupported = false,
   }) async {
     _requireCurrentWorkItemRequest(isCurrent);
+    final unsupported = (
+      canCreateNote: false,
+      discussionLocked: false,
+      controlsSupported: false,
+      authorId: null,
+      anchor: null,
+    );
+    if (requireControlsSupported &&
+        _workItemActivityControlsUnsupported[this] == true) {
+      return unsupported;
+    }
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
     try {
       response = await _read(
@@ -897,11 +977,24 @@ extension WorkItemActivityApi on GitLabApi {
         graphQuery: true,
         data: {
           'query': anchorNoteId == null
-              ? _workItemActivityWriteAccessQuery
-              : _workItemActivityReplyPreflightQuery,
+              ? _workItemActivityWriteAccessQuery(requireControlsSupported)
+              : _workItemActivityReplyPreflightQuery(requireControlsSupported),
           'variables': anchorNoteId == null
-              ? {'id': expected.id}
-              : {'workItemId': expected.id, 'anchorNoteId': anchorNoteId},
+              ? {
+                  'id': expected.id,
+                  if (requireControlsSupported) ...{
+                    'filter': 'ALL_NOTES',
+                    'sort': 'CREATED_ASC',
+                  },
+                }
+              : {
+                  'workItemId': expected.id,
+                  'anchorNoteId': anchorNoteId,
+                  if (requireControlsSupported) ...{
+                    'filter': 'ALL_NOTES',
+                    'sort': 'CREATED_ASC',
+                  },
+                },
         },
       );
     } on Object {
@@ -909,6 +1002,11 @@ extension WorkItemActivityApi on GitLabApi {
       rethrow;
     }
     _requireCurrentWorkItemRequest(isCurrent);
+    if (requireControlsSupported &&
+        _activityControlsSchemaUnavailable(response.bytes)) {
+      _workItemActivityControlsUnsupported[this] = true;
+      return unsupported;
+    }
     try {
       final data = _workItemGraphData(response.bytes);
       final rawWorkItem = data['workItem'];
@@ -949,6 +1047,11 @@ extension WorkItemActivityApi on GitLabApi {
       return (
         canCreateNote: canCreateNote,
         discussionLocked: discussionLocked,
+        controlsSupported: requireControlsSupported
+            ? true
+            : _workItemActivityControlsUnsupported[this] == true
+            ? false
+            : null,
         authorId: authorId,
         anchor: anchor,
       );
@@ -1108,6 +1211,7 @@ extension WorkItemActivityApi on GitLabApi {
     );
     _requireCurrentWorkItemRequest(isCurrent);
     if (useControls && _activityControlsSchemaUnavailable(response.bytes)) {
+      _workItemActivityControlsUnsupported[this] = true;
       if (!initialRequest || !allowLegacyFallback) {
         throw ApiFailure(
           FailureKind.unsupported,
@@ -1115,7 +1219,6 @@ extension WorkItemActivityApi on GitLabApi {
           detail: l10n.versionNoActivityFilterSort,
         );
       }
-      _workItemActivityControlsUnsupported[this] = true;
       useControls = false;
       response = await _readWorkItemActivityResponse(
         expected.id,
@@ -1147,6 +1250,7 @@ extension WorkItemActivityApi on GitLabApi {
       final notesContinuations =
           <String, WorkItemDiscussionNotesContinuation>{};
       final replyTargets = <String, WorkItemActivityReplyTarget>{};
+      final replyTargetsByNote = <String, WorkItemActivityReplyTarget>{};
       final workItemModelId = _workItemActivityModelIdOrNull(identity.id);
       for (final entry in parsed.discussionsWithCursors) {
         final continuation = _notesContinuation(
@@ -1166,6 +1270,12 @@ extension WorkItemActivityApi on GitLabApi {
             discussion: entry.value,
           );
           if (target != null) replyTargets[entry.value.id] = target;
+          replyTargetsByNote.addAll(
+            _activityReplyTargetsByNote(
+              identity: identity,
+              discussion: entry.value,
+            ),
+          );
         }
       }
       return WorkItemActivityPage._(
@@ -1193,6 +1303,7 @@ extension WorkItemActivityApi on GitLabApi {
               ),
         nextNotesByDiscussion: notesContinuations,
         replyTargetsByDiscussion: replyTargets,
+        replyTargetsByNote: replyTargetsByNote,
       );
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
@@ -1264,13 +1375,14 @@ extension WorkItemActivityApi on GitLabApi {
     required _WorkItemActivityIdentity identity,
     required int workItemModelId,
     required WorkItemActivityDiscussion discussion,
+    String? anchorNoteId,
   }) {
     if (discussion.notes.availability !=
             WorkItemActivityConnectionAvailability.present ||
         discussion.notes.items.isEmpty) {
       return null;
     }
-    final anchorNoteId = discussion.notes.items.last.id;
+    anchorNoteId ??= discussion.notes.items.last.id;
     if (!_isWritableActivityNoteId(anchorNoteId) ||
         !_isGraphIdType(discussion.id, const {'Discussion'}) ||
         !_isGraphIdType(discussion.replyId, const {
@@ -1288,6 +1400,23 @@ extension WorkItemActivityApi on GitLabApi {
       discussionCreatedAt: discussion.createdAt,
       anchorNoteId: anchorNoteId,
     );
+  }
+
+  Map<String, WorkItemActivityReplyTarget> _activityReplyTargetsByNote({
+    required _WorkItemActivityIdentity identity,
+    required WorkItemActivityDiscussion discussion,
+  }) {
+    final modelId = _workItemActivityModelIdOrNull(identity.id);
+    if (modelId == null) return const {};
+    return {
+      for (final note in discussion.notes.items)
+        note.id: ?_activityReplyTarget(
+          identity: identity,
+          workItemModelId: modelId,
+          discussion: discussion,
+          anchorNoteId: note.id,
+        ),
+    };
   }
 }
 
