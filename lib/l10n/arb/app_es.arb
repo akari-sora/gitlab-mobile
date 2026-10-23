@@ -2715,6 +2715,8 @@
   "cacheRefreshFailed": "No se puede actualizar",
   "cacheResumesInMinutes": "Se reanuda en unos {minutes} min",
   "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Actualizar cada 30 s",
+  "refreshEveryMinute": "Actualizar cada minuto",
   "aiSendPausedBudget": "La cuota de solicitudes de GitLab está casi agotada; envío en pausa",
   "aiSendPausedRateLimited": "GitLab está limitando las solicitudes; envío en pausa",
   "aiSendResumesAfterReset": "Se reanuda cuando se restablezca la cuota de solicitudes",

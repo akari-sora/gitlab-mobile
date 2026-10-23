@@ -73,7 +73,12 @@ extension WorkItemStateApi on GitLabApi {
     WorkItemStateEvent event, {
     required DateTime expectedUpdatedAt,
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _validateExpectedWorkItemStateIdentity(expected);
     _requireCurrentWorkItemRequest(isCurrent);
     final before = await workItemState(expected, isCurrent: isCurrent);
@@ -95,6 +100,10 @@ extension WorkItemStateApi on GitLabApi {
 
     // This check is intentionally adjacent to the only write.
     _requireCurrentWorkItemRequest(isCurrent);
+    if (beforeMutation != null) await beforeMutation();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
     try {
       response = await _send(

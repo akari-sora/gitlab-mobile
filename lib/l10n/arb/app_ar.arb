@@ -2715,6 +2715,8 @@
   "cacheRefreshFailed": "تعذّر التحديث",
   "cacheResumesInMinutes": "يستأنف بعد {minutes} د تقريبًا",
   "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "تحديث كل 30 ثانيةً",
+  "refreshEveryMinute": "تحديث كل دقيقة",
   "aiSendPausedBudget": "حصة طلبات GitLab على وشك النفاد؛ الإرسال متوقف مؤقتًا",
   "aiSendPausedRateLimited": "يقيّد GitLab الطلبات؛ الإرسال متوقف مؤقتًا",
   "aiSendResumesAfterReset": "يستأنف عند إعادة تعيين حصة الطلبات",

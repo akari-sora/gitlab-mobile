@@ -2717,6 +2717,8 @@ const _messagesVi = <String>[
   'Không thể làm mới',
   'Tiếp tục sau khoảng {minutes} phút',
   '{verb} {target}',
+  'Làm mới mỗi 30 giây',
+  'Làm mới mỗi phút',
   'Hạn mức yêu cầu GitLab gần cạn; tạm dừng gửi',
   'GitLab đang giới hạn yêu cầu; tạm dừng gửi',
   'Tiếp tục khi hạn mức yêu cầu được đặt lại',

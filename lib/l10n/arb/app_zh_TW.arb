@@ -11490,6 +11490,8 @@
       "target": {}
     }
   },
+  "refreshEveryThirtySeconds": "30 秒更新",
+  "refreshEveryMinute": "每分鐘更新",
   "aiSendPausedBudget": "GitLab 請求額度快用完了，暫停送出",
   "aiSendPausedRateLimited": "GitLab 正在限制請求，暫停送出",
   "aiSendResumesAfterReset": "額度重設後恢復",

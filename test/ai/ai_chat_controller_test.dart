@@ -1324,17 +1324,114 @@ void main() {
     },
   );
 
+  test(
+    'a kept reported answer does not mark a new conversation not saved',
+    () async {
+      final store = MemoryAiStore();
+      final environment = await _environment(aiStore: store);
+      addTearDown(environment.dispose);
+      var failWrites = false;
+      final root = await Directory.systemTemp.createTemp('mr6a4-kept-unsaved-');
+      final history = AiHistoryCoordinator.debugReset(
+        store: store,
+        files: AiHistoryFileStore(
+          root: () async {
+            if (failWrites) {
+              throw const FileSystemException('synthetic outage');
+            }
+            return root;
+          },
+        ),
+      );
+      addTearDown(() async {
+        AiHistoryCoordinator.debugReset();
+        await root.delete(recursive: true);
+      });
+      final controller = _controller(
+        environment,
+        wireClientFactory:
+            ({required config, required apiKey, required conversationId}) =>
+                _wireClient(
+                  FakeAdapter((_) => _sse(answer('Final answer'))),
+                  config: config,
+                  apiKey: apiKey,
+                  conversationId: conversationId,
+                ),
+        historyRetryDelays: const [
+          Duration(milliseconds: 10),
+          Duration(milliseconds: 50),
+          Duration(milliseconds: 300),
+        ],
+      );
+      addTearDown(controller.dispose);
+      await _configure(
+        environment,
+        _provider(AiFormat.responses),
+        grantConsent: true,
+      );
+      final account = environment.workspace.account.key;
+      expect(await history.enable(account), AiHistoryState.ready);
+      await environment.settings.loadAccount(account);
+      await controller.recheck();
+      await controller.send('earlier question');
+      final firstId = controller.id;
+      controller.markReported(
+        controller.items.whereType<AiAssistantItem>().single,
+      );
+      // The earlier conversation's save fails for good, so it shows not
+      // saved there.
+      failWrites = true;
+      await _waitUntil(() => controller.reportNotSaved);
+      expect(controller.historySaved, isFalse);
+      // A new conversation keeps the reported answer on screen but has
+      // nothing of its own waiting to be saved.
+      final changed = await environment.settings.saveProvider(
+        _provider(AiFormat.responses, model: 'changed-model'),
+      );
+      await environment.settings.grantConsent(
+        account,
+        aiConversationConsentContract(
+          environment.settings,
+          environment.workspace.account.key,
+          changed,
+        ),
+        const {'synthetic': true},
+      );
+      await controller.recheck();
+      expect(controller.id, isNot(firstId));
+      await controller.send('new question with nothing reported');
+      expect(controller.reportNotSaved, isFalse);
+      expect(controller.historySaved, isFalse);
+      // The new conversation's own unsaved report still shows.
+      controller.markReported(
+        controller.items.whereType<AiAssistantItem>().last,
+      );
+      await _waitUntil(() => controller.reportNotSaved);
+    },
+  );
+
   test('a failed refresh blocks an idle chat but leaves a run alone', () async {
     final environment = await _environment();
     addTearDown(environment.dispose);
     var fail = false;
-    final release = Completer<void>();
+    final stream = StreamController<Uint8List>();
+    addTearDown(() async {
+      if (!stream.isClosed) await stream.close();
+    });
     var requests = 0;
     final controller = await _readyController(
       environment,
       FakeAdapter((_) async {
         requests++;
-        if (requests > 1) await release.future;
+        if (requests > 1) {
+          return ResponseBody(
+            stream.stream,
+            200,
+            headers: {
+              Headers.contentTypeHeader: ['text/event-stream'],
+            },
+          );
+        }
         return _sse(answer('synthetic reply'));
       }),
       tools: false,
@@ -1343,16 +1440,38 @@ void main() {
       },
     );
     await controller.send('first');
-    // During a run: the phase, and Stop, stay.
+    // During a run, while the reply streams: the phase, and Stop, stay.
     final second = controller.send('second');
-    await _waitUntil(() => controller.phase == AiChatPhase.running);
+    await _waitFor(() => requests > 1);
+    // Pad past the first display threshold so the partial reply is shown
+    // while still streaming.
+    const partial = 'partial reply';
+    stream.add(
+      Uint8List.fromList(
+        utf8.encode(
+          _partialEvents(AiFormat.responses, partial.padRight(256, '!')),
+        ),
+      ),
+    );
+    await _waitFor(
+      () => controller.items.whereType<AiAssistantItem>().any(
+        (item) => item.text.contains(partial),
+      ),
+    );
+    expect(controller.phase, AiChatPhase.running);
     fail = true;
     expect(await controller.refreshSecrets(), isFalse);
     expect(controller.phase, AiChatPhase.running);
     expect(controller.blocker, AiChatBlocker.none);
     fail = false;
-    release.complete();
+    stream.add(Uint8List.fromList(utf8.encode(answer('complete reply'))));
+    await stream.close();
     await second;
+    expect(controller.phase, AiChatPhase.idle);
+    expect(
+      controller.items.whereType<AiAssistantItem>().last.text,
+      'complete reply',
+    );
     // While idle: the chat stops until the display can be checked.
     fail = true;
     expect(await controller.refreshSecrets(), isFalse);

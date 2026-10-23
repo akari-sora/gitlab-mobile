@@ -2715,6 +2715,8 @@
   "cacheRefreshFailed": "Не удалось обновить",
   "cacheResumesInMinutes": "Возобновится примерно через {minutes} мин",
   "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Обновлять каждые 30 секунд",
+  "refreshEveryMinute": "Обновлять каждую минуту",
   "aiSendPausedBudget": "Квота запросов GitLab почти исчерпана; отправка приостановлена",
   "aiSendPausedRateLimited": "GitLab ограничивает запросы; отправка приостановлена",
   "aiSendResumesAfterReset": "Возобновится после сброса квоты запросов",

@@ -2721,6 +2721,8 @@
   "cacheRefreshFailed": "Couldn't refresh",
   "cacheResumesInMinutes": "Resumes in about {minutes} min",
   "activityVerbTarget": "{verb} {target}",
+  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
+  "refreshEveryMinute": "Refresh every minute",
   "aiSendPausedBudget": "GitLab request budget is almost used up; sending is paused",
   "aiSendPausedRateLimited": "GitLab is limiting requests; sending is paused",
   "aiSendResumesAfterReset": "Resumes when the budget resets",

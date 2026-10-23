@@ -2717,6 +2717,8 @@ const _messagesNl = <String>[
   'Kan niet vernieuwen',
   'Hervatting over ca. {minutes} min',
   '{verb} {target}',
+  'Elke 30 sec. vernieuwen',
+  'Elke minuut vernieuwen',
   'Het verzoekenquotum van GitLab is bijna opgebruikt; verzenden is gepauzeerd',
   'GitLab beperkt verzoeken; verzenden is gepauzeerd',
   'Hervatting zodra het verzoekenquotum opnieuw is ingesteld',
