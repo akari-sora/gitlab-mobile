@@ -219,7 +219,7 @@ class _AiWriteLogPageState extends State<AiWriteLogPage> {
           username,
           '${account.user.id}',
         ),
-        l10n.aiWriteLogResetDetail(username),
+        l10n.aiWriteLogResetDetail,
         releases == null
             ? l10n.aiWriteLogResetUnknown
             : l10n.aiWriteLogResetReleases('$releases'),
