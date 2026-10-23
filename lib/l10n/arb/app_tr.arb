@@ -2719,5 +2719,6 @@
   "aiSendPausedRateLimited": "GitLab istekleri sınırlıyor; gönderim duraklatıldı",
   "aiSendResumesAfterReset": "İstek kotası sıfırlandığında devam eder",
   "aiGitLabBudgetTitle": "GitLab istek kotası tükenmek üzere",
-  "aiGitLabBudgetDetail": "Bu ileti gönderilmedi. “Gönder” düğmesi yeniden kullanılabilir olduğunda tekrar gönderin."
+  "aiGitLabBudgetDetail": "Bu ileti gönderilmedi. “Gönder” düğmesi yeniden kullanılabilir olduğunda tekrar gönderin.",
+  "activityVerbTargetRef": "{verb} ({target} {ref})"
 }

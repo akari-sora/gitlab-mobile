@@ -2722,4 +2722,5 @@ const _messagesVi = <String>[
   'Tiếp tục khi hạn mức yêu cầu được đặt lại',
   'Hạn mức yêu cầu GitLab gần cạn',
   'Tin nhắn này chưa được gửi. Gửi lại khi nút “Gửi” khả dụng trở lại.',
+  '{verb} {target} {ref}',
 ];

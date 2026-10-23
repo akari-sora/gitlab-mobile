@@ -2722,4 +2722,5 @@ const _messagesPtBr = <String>[
   'Retoma quando a cota de solicitações for redefinida',
   'A cota de solicitações do GitLab está quase esgotada',
   'Esta mensagem não foi enviada. Envie-a novamente quando o botão “Enviar” estiver disponível de novo.',
+  '{verb} {target} {ref}',
 ];

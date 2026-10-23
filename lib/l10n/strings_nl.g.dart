@@ -2722,4 +2722,5 @@ const _messagesNl = <String>[
   'Hervatting zodra het verzoekenquotum opnieuw is ingesteld',
   'Het verzoekenquotum van GitLab is bijna opgebruikt',
   'Dit bericht is niet verzonden. Verzend het opnieuw zodra de knop ‘Verzenden’ weer beschikbaar is.',
+  '{verb} {target} {ref}',
 ];

@@ -2719,5 +2719,6 @@
   "aiSendPausedRateLimited": "GitLab अनुरोध सीमित कर रहा है; भेजना रुका हुआ है",
   "aiSendResumesAfterReset": "अनुरोधों का कोटा बहाल होने पर फिर से शुरू होगा",
   "aiGitLabBudgetTitle": "GitLab के अनुरोधों का कोटा लगभग खत्म हो गया है",
-  "aiGitLabBudgetDetail": "यह संदेश नहीं भेजा गया। जब “भेजें” बटन फिर से उपलब्ध हो, तब इसे दोबारा भेजें।"
+  "aiGitLabBudgetDetail": "यह संदेश नहीं भेजा गया। जब “भेजें” बटन फिर से उपलब्ध हो, तब इसे दोबारा भेजें।",
+  "activityVerbTargetRef": "{verb} ({target} {ref})"
 }

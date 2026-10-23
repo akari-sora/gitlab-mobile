@@ -304,6 +304,11 @@ void main() {
     expect(activitySentence({'action_name': 'commented on', 'target_type': 'Note',
       'note': {'noteable_type': 'Issue', 'noteable_iid': 12, 'body': 'hi'}}), '留言於議題 #12');
     expect(activitySentence({'action_name': 'joined'}), '加入了專案');
+    // A comment on a commit names the commit and its short SHA.
+    expect(activitySentence({'action_name': 'commented on', 'target_type': 'Note',
+      'note': {'noteable_type': 'Commit', 'commit_id': '1a2b3c4d5e6f7a8b9c0d', 'body': 'hi'}}), '留言於提交 1a2b3c4d');
+    expect(activitySentence({'action_name': 'commented on', 'target_type': 'Note',
+      'note': {'noteable_type': 'Commit', 'commit_id': 'not a sha', 'body': 'hi'}}), '留言於提交');
   });
 
   test('activity sentences use the language\'s spacing between verb and target', () {
@@ -315,9 +320,14 @@ void main() {
       'Opened Merge request !7');
     expect(activitySentence({'action_name': 'opened', 'target_type': 'Unknown', 'target_iid': 3}), 'Opened #3');
 
+    // The reference sits inside the message, so each language places it
+    // with its own order: Japanese inside the brackets, Korean verb last.
     useLanguage(languageForTag('ja')!);
     expect(activitySentence({'action_name': 'opened', 'target_type': 'MergeRequest', 'target_iid': 7}),
-      'オープンしました（マージリクエスト） !7');
+      'オープンしました（マージリクエスト !7）');
+    useLanguage(languageForTag('ko')!);
+    expect(activitySentence({'action_name': 'opened', 'target_type': 'MergeRequest', 'target_iid': 7}),
+      '머지 리퀘스트 !7: 열음');
 
     // Arabic isolates the verb and the target separately and keeps the reference in one isolate.
     useLanguage(languageForTag('ar')!);

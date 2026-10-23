@@ -2722,4 +2722,5 @@ const _messagesTr = <String>[
   'İstek kotası sıfırlandığında devam eder',
   'GitLab istek kotası tükenmek üzere',
   'Bu ileti gönderilmedi. “Gönder” düğmesi yeniden kullanılabilir olduğunda tekrar gönderin.',
+  '{verb} ({target} {ref})',
 ];

@@ -2722,4 +2722,5 @@ const _messagesEs = <String>[
   'Se reanuda cuando se restablezca la cuota de solicitudes',
   'La cuota de solicitudes de GitLab está casi agotada',
   'Este mensaje no se envió. Envíalo de nuevo cuando el botón «Enviar» vuelva a estar disponible.',
+  '{verb} {target} {ref}',
 ];

@@ -2722,4 +2722,5 @@ const _messagesMs = <String>[
   'Sambung semula apabila kuota permintaan ditetapkan semula',
   'Kuota permintaan GitLab hampir habis',
   'Mesej ini tidak dihantar. Hantar semula apabila butang “Hantar” tersedia semula.',
+  '{verb} {target} {ref}',
 ];

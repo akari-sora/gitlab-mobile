@@ -8253,4 +8253,7 @@ final class AppStrings {
 
   /// 這則訊息沒有送出。送出按鈕恢復後再送一次。
   String get aiGitLabBudgetDetail => language._messages[2719];
+
+  /// {verb}{target} {ref}
+  String activityVerbTargetRef(Object? verb, Object? target, Object? ref) => _format(language, language._messages[2720], {'verb': verb, 'target': target, 'ref': ref});
 }

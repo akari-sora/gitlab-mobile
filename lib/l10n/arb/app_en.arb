@@ -2725,5 +2725,6 @@
   "aiSendPausedRateLimited": "GitLab is limiting requests; sending is paused",
   "aiSendResumesAfterReset": "Resumes when the budget resets",
   "aiGitLabBudgetTitle": "GitLab request budget is low",
-  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
+  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back.",
+  "activityVerbTargetRef": "{verb} {target} {ref}"
 }

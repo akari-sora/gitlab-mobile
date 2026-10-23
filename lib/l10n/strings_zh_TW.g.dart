@@ -2722,4 +2722,5 @@ const _messagesZhTw = <String>[
   '額度重設後恢復',
   'GitLab 請求額度暫時不足',
   '這則訊息沒有送出。送出按鈕恢復後再送一次。',
+  '{verb}{target} {ref}',
 ];

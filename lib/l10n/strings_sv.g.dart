@@ -2722,4 +2722,5 @@ const _messagesSv = <String>[
   'Återupptas när kvoten för begäranden återställs',
   'Kvoten för begäranden hos GitLab är nästan förbrukad',
   'Meddelandet skickades inte. Skicka det igen när knappen ”Skicka” är tillgänglig igen.',
+  '{verb} {target} {ref}',
 ];

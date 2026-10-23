@@ -2722,4 +2722,5 @@ const _messagesZhCn = <String>[
   '请求额度重置后恢复',
   'GitLab 请求额度暂时不足',
   '此消息未发送。“发送”按钮恢复可用后再发送一次。',
+  '{verb}{target} {ref}',
 ];
