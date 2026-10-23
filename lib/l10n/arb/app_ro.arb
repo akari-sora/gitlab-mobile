@@ -2714,5 +2714,10 @@
   "cacheRateLimited": "GitLab limitează cererile",
   "cacheRefreshFailed": "Nu se poate reîmprospăta",
   "cacheResumesInMinutes": "Se reia în aproximativ {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "Cota de cereri GitLab este aproape epuizată; trimiterea este suspendată",
+  "aiSendPausedRateLimited": "GitLab limitează cererile; trimiterea este suspendată",
+  "aiSendResumesAfterReset": "Se reia când se resetează cota de cereri",
+  "aiGitLabBudgetTitle": "Cota de cereri GitLab este aproape epuizată",
+  "aiGitLabBudgetDetail": "Acest mesaj nu a fost trimis. Trimiteți-l din nou când butonul „Trimite” este din nou disponibil."
 }

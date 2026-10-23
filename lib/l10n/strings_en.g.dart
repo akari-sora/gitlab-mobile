@@ -2717,4 +2717,9 @@ const _messagesEn = <String>[
   'Couldn\'t refresh',
   'Resumes in about {minutes} min',
   '{verb} {target}',
+  'GitLab request budget is almost used up; sending is paused',
+  'GitLab is limiting requests; sending is paused',
+  'Resumes when the budget resets',
+  'GitLab request budget is low',
+  'This message was not sent. Send it again when the send button is back.',
 ];

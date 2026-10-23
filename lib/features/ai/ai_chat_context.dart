@@ -14,10 +14,25 @@ import 'ai_chat_session.dart';
 
 /// The redacted starting context plus immutable revisions used to bind tools.
 final class AiChatContext {
-  const AiChatContext({required this.built, required this.scope, this.field});
+  const AiChatContext({
+    required this.built,
+    required this.scope,
+    this.field,
+    this.fetchedAt,
+  });
 
   final AiBuiltContext built;
   final AiResourceScope? scope;
+
+  /// The oldest network timestamp, or null for empty / SHA-pinned context.
+  final DateTime? fetchedAt;
+
+  bool isExpired(DateTime now) {
+    final fetched = fetchedAt;
+    if (fetched == null) return false;
+    final age = now.difference(fetched);
+    return age.isNegative || age >= _aiContextMaxAge;
+  }
 
   /// The issue or merge request description this page context carries, a
   /// field the AI can write back whole.
@@ -91,12 +106,15 @@ Future<AiChatContext> loadAiChatContext({
   required String accountKey,
   required Future<void> Function() refreshSecrets,
   required bool Function() isCurrent,
+  DateTime Function()? now,
+  void Function(int maxRequests)? beforeRead,
 }) async {
   _requireCurrent(isCurrent);
   final builder = AiContextBuilders(redactor: redactor);
   final nonce = _nonce();
+  final reads = _AiContextReads(api, now ?? DateTime.now, beforeRead);
 
-  return switch (origin) {
+  final context = switch (origin) {
     AiGeneralOrigin() => AiChatContext(
       built: AiBuiltContext(
         blocks: const [],
@@ -107,36 +125,41 @@ Future<AiChatContext> loadAiChatContext({
       ),
       scope: null,
     ),
-    AiJobOrigin() => _loadJob(
+    AiJobOrigin() => await _loadJob(
       origin,
       api,
+      reads,
       builder,
       nonce,
       accountKey,
       refreshSecrets,
       isCurrent,
     ),
-    AiWorkItemOrigin(kind: AiWorkItemKind.issue) => _loadIssue(
+    AiWorkItemOrigin(kind: AiWorkItemKind.issue) => await _loadIssue(
       origin,
       api,
+      reads,
       builder,
       nonce,
       accountKey,
       refreshSecrets,
       isCurrent,
     ),
-    AiWorkItemOrigin(kind: AiWorkItemKind.mergeRequest) => _loadMergeRequest(
+    AiWorkItemOrigin(kind: AiWorkItemKind.mergeRequest) =>
+      await _loadMergeRequest(
+        origin,
+        api,
+        reads,
+        builder,
+        nonce,
+        accountKey,
+        refreshSecrets,
+        isCurrent,
+      ),
+    AiFileOrigin() => await _loadFile(
       origin,
       api,
-      builder,
-      nonce,
-      accountKey,
-      refreshSecrets,
-      isCurrent,
-    ),
-    AiFileOrigin() => _loadFile(
-      origin,
-      api,
+      reads,
       builder,
       nonce,
       accountKey,
@@ -144,24 +167,105 @@ Future<AiChatContext> loadAiChatContext({
       isCurrent,
     ),
   };
+  return AiChatContext(
+    built: context.built,
+    scope: context.scope,
+    field: context.field,
+    fetchedAt: origin is AiGeneralOrigin || origin is AiFileOrigin
+        ? null
+        : reads.fetchedAt,
+  );
+}
+
+const _aiContextMaxAge = Duration(seconds: 60);
+
+/// Keeps the original timestamps while composing several cache-backed reads.
+final class _AiContextReads {
+  _AiContextReads(this.api, this.now, this.beforeRead) : fetchedAt = now();
+
+  final GitLabApi api;
+  final DateTime Function() now;
+  final void Function(int maxRequests)? beforeRead;
+  DateTime fetchedAt;
+
+  Future<Json> record(List<String> path) async {
+    beforeRead?.call(4);
+    var read = await api.cachedRecord(
+      path,
+      maxAge: _aiContextMaxAge,
+      allowDisk: false,
+    );
+    if (!_usable(read)) {
+      beforeRead?.call(4);
+      read = await api.cachedRecord(
+        path,
+        fresh: true,
+        maxAge: _aiContextMaxAge,
+        allowDisk: false,
+      );
+    }
+    return _value(read);
+  }
+
+  Future<ApiPage<Json>> records(
+    List<String> path, {
+    Map<String, String> query = const {},
+    Uri? next,
+  }) async {
+    beforeRead?.call(4);
+    var read = await api.cachedRecords(
+      path,
+      query: query,
+      next: next,
+      maxAge: _aiContextMaxAge,
+      allowDisk: false,
+    );
+    if (!_usable(read)) {
+      beforeRead?.call(4);
+      read = await api.cachedRecords(
+        path,
+        query: query,
+        next: next,
+        fresh: true,
+        maxAge: _aiContextMaxAge,
+        allowDisk: false,
+      );
+    }
+    return _value(read);
+  }
+
+  bool _usable<T>(CachedRead<T> read) =>
+      !read.dropped &&
+      !read.superseded &&
+      read.lineage != CacheLineage.disk &&
+      !now().isBefore(read.fetchedAt) &&
+      now().difference(read.fetchedAt) < _aiContextMaxAge;
+
+  T _value<T>(CachedRead<T> read) {
+    if (!_usable(read)) throw const ApiFailure(FailureKind.network);
+    if (read.fetchedAt.isBefore(fetchedAt)) fetchedAt = read.fetchedAt;
+    return read.value;
+  }
 }
 
 Future<AiChatContext> _loadJob(
   AiJobOrigin origin,
   GitLabApi api,
+  _AiContextReads reads,
   AiContextBuilders builder,
   String nonce,
   String accountKey,
   Future<void> Function() refreshSecrets,
   bool Function() isCurrent,
 ) async {
-  final job = await api.record([
+  final job = await reads.record([
     'projects',
     '${origin.project.id}',
     'jobs',
     '${origin.jobId}',
   ]);
   _requireCurrent(isCurrent);
+  reads.beforeRead?.call(2);
   final trace = await api.jobTrace(origin.project.id, origin.jobId);
   _requireCurrent(isCurrent);
   await refreshSecrets();
@@ -201,33 +305,34 @@ Future<AiChatContext> _loadJob(
 Future<AiChatContext> _loadIssue(
   AiWorkItemOrigin origin,
   GitLabApi api,
+  _AiContextReads reads,
   AiContextBuilders builder,
   String nonce,
   String accountKey,
   Future<void> Function() refreshSecrets,
   bool Function() isCurrent,
 ) async {
-  final item = await api.record([
+  final item = await reads.record([
     'projects',
     '${origin.project.id}',
     'issues',
     '${origin.iid}',
   ]);
   _requireCurrent(isCurrent);
-  final notes = await _recentNotes(api, [
+  final notes = await _recentNotes(reads, [
     'projects',
     '${origin.project.id}',
     'issues',
     '${origin.iid}',
     'notes',
   ], isCurrent);
-  final project = await api.record(['projects', '${origin.project.id}']);
+  final project = await reads.record(['projects', '${origin.project.id}']);
   _requireCurrent(isCurrent);
   final defaultBranch = _optionalString(project, 'default_branch');
   String? pinnedSha;
   if (defaultBranch != null && defaultBranch.isNotEmpty) {
     try {
-      final branch = await api.record([
+      final branch = await reads.record([
         'projects',
         '${origin.project.id}',
         'repository',
@@ -285,13 +390,14 @@ Future<AiChatContext> _loadIssue(
 Future<AiChatContext> _loadMergeRequest(
   AiWorkItemOrigin origin,
   GitLabApi api,
+  _AiContextReads reads,
   AiContextBuilders builder,
   String nonce,
   String accountKey,
   Future<void> Function() refreshSecrets,
   bool Function() isCurrent,
 ) async {
-  final item = await api.record([
+  final item = await reads.record([
     'projects',
     '${origin.project.id}',
     'merge_requests',
@@ -301,7 +407,7 @@ Future<AiChatContext> _loadMergeRequest(
   final headSha = _requiredNestedString(item, 'diff_refs', 'head_sha');
   final baseSha = _requiredNestedString(item, 'diff_refs', 'base_sha');
 
-  final versions = await api.records(
+  final versions = await reads.records(
     [
       'projects',
       '${origin.project.id}',
@@ -323,7 +429,7 @@ Future<AiChatContext> _loadMergeRequest(
   if (versionId is! int) {
     throw const FormatException('Merge request has no matching diff version.');
   }
-  final detail = await api.record([
+  final detail = await reads.record([
     'projects',
     '${origin.project.id}',
     'merge_requests',
@@ -336,7 +442,7 @@ Future<AiChatContext> _loadMergeRequest(
       _requiredString(detail, 'base_commit_sha') != baseSha) {
     throw const FormatException('Merge request diff revision changed.');
   }
-  final notes = await _recentNotes(api, [
+  final notes = await _recentNotes(reads, [
     'projects',
     '${origin.project.id}',
     'merge_requests',
@@ -399,6 +505,7 @@ Future<AiChatContext> _loadMergeRequest(
 Future<AiChatContext> _loadFile(
   AiFileOrigin origin,
   GitLabApi api,
+  _AiContextReads reads,
   AiContextBuilders builder,
   String nonce,
   String accountKey,
@@ -428,7 +535,14 @@ Future<AiChatContext> _loadFile(
       ),
     );
   }
-  final text = await api.textFile(origin.project.id, origin.sha, origin.path);
+  reads.beforeRead?.call(8);
+  final text = await api.textFile(
+    origin.project.id,
+    origin.sha,
+    origin.path,
+    refresh: true,
+    allowDisk: false,
+  );
   _requireCurrent(isCurrent);
   await refreshSecrets();
   _requireCurrent(isCurrent);
@@ -481,7 +595,7 @@ AiResourceScope _scope({
 /// The newest notes, newest first, read page by page until 20 of them are not
 /// system notes or the notes run out (at most five pages).
 Future<List<Json>> _recentNotes(
-  GitLabApi api,
+  _AiContextReads reads,
   List<String> path,
   bool Function() isCurrent,
 ) async {
@@ -490,7 +604,7 @@ Future<List<Json>> _recentNotes(
   var human = 0;
   Uri? next;
   for (var page = 0; page < 5; page++) {
-    final result = await api.records(
+    final result = await reads.records(
       path,
       query: const {'order_by': 'created_at', 'sort': 'desc'},
       next: next,

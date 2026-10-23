@@ -2714,5 +2714,10 @@
   "cacheRateLimited": "GitLab sedang membatasi permintaan",
   "cacheRefreshFailed": "Tidak dapat memperbarui",
   "cacheResumesInMinutes": "Lanjut lagi dalam sekitar {minutes} mnt",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "Kuota permintaan GitLab hampir habis; pengiriman dijeda",
+  "aiSendPausedRateLimited": "GitLab sedang membatasi permintaan; pengiriman dijeda",
+  "aiSendResumesAfterReset": "Lanjut lagi saat kuota permintaan diatur ulang",
+  "aiGitLabBudgetTitle": "Kuota permintaan GitLab hampir habis",
+  "aiGitLabBudgetDetail": "Pesan ini tidak terkirim. Kirim ulang saat tombol “Kirim” tersedia kembali."
 }
