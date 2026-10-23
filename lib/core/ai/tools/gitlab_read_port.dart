@@ -370,6 +370,7 @@ final class GitLabAiReadPort
       if (_compositionExpired([versions.fetchedAt, value.fetchedAt])) {
         freshnessRetried = true;
         // Re-read every expired source once, then fail only if still stale.
+        var valueRefreshed = false;
         if (_isExpired(versions.fetchedAt)) {
           versions = await _cachedRecords(
             versionsPath,
@@ -384,9 +385,10 @@ final class GitLabAiReadPort
               ...versionsPath,
               '$versionId',
             ], fresh: true);
+            valueRefreshed = true;
           }
         }
-        if (_isExpired(value.fetchedAt)) {
+        if (!valueRefreshed && _isExpired(value.fetchedAt)) {
           value = await _cachedRecord([
             ...versionsPath,
             '$versionId',
@@ -493,10 +495,7 @@ final class GitLabAiReadPort
     return age.isNegative || age >= _aiMaxAge;
   }
 
-  bool _isExpired(DateTime fetchedAt) {
-    final age = _now().difference(fetchedAt);
-    return age.isNegative || age >= _aiMaxAge;
-  }
+  bool _isExpired(DateTime fetchedAt) => _compositionExpired([fetchedAt]);
 
   DateTime _oldest(Iterable<DateTime> fetchedAt) {
     return fetchedAt.reduce(
