@@ -640,6 +640,7 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
               AiWritePreviewView(
                 preview: preview,
                 storedVariables: tier.reusesStoredVariables,
+                operationId: proposal.operationId,
               ),
             ],
             for (final MapEntry(:key, :value) in proposal.fields.entries)

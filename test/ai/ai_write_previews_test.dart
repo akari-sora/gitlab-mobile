@@ -164,6 +164,23 @@ void main() {
     expect(find.text(l10n.aiPreviewAtLeast('30')), findsOneWidget);
   });
 
+  testWidgets('marking all to-dos done is not shown as a delete', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        const AiWritePreviewView(
+          operationId: 'markAllTodosDone',
+          preview: AiDeletePreview(targetName: '@someone', count: 5),
+        ),
+      ),
+    );
+    expect(find.text(l10n.accountLabel), findsOneWidget);
+    expect(find.text(l10n.todoLabel), findsOneWidget);
+    expect(find.text(l10n.aiPreviewDeleteTarget), findsNothing);
+    expect(find.byKey(const ValueKey('ai-preview-cannot-undo')), findsNothing);
+  });
+
   for (final tag in ['zh-TW', 'de', 'ar']) {
     testWidgets('previews fit $tag at 2x on 320 dp', (tester) async {
       tester.view.physicalSize =

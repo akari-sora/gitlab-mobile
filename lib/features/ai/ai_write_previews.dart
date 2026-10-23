@@ -13,9 +13,14 @@ class AiWritePreviewView extends StatelessWidget {
     super.key,
     required this.preview,
     this.storedVariables = false,
+    this.operationId,
   });
 
   final AiWritePreview preview;
+
+  /// The write the preview belongs to, where one preview type serves writes
+  /// that read differently (marking all to-dos done is not a delete).
+  final String? operationId;
 
   /// A rerun, retry or play that may reuse variables GitLab stored (the
   /// tier decides; §0 item 12).
@@ -30,7 +35,10 @@ class AiWritePreviewView extends StatelessWidget {
       storedVariables: storedVariables,
     ),
     final AiDraftPublishPreview drafts => _DraftsPreview(drafts: drafts),
-    final AiDeletePreview delete => _DeletePreview(delete: delete),
+    final AiDeletePreview delete => _DeletePreview(
+      delete: delete,
+      todos: operationId == 'markAllTodosDone',
+    ),
     final AiCancelAutoMergePreview cancel => _CancelAutoMergePreview(
       cancel: cancel,
     ),
@@ -381,29 +389,37 @@ class _DraftsPreview extends StatelessWidget {
 }
 
 class _DeletePreview extends StatelessWidget {
-  const _DeletePreview({required this.delete});
+  const _DeletePreview({required this.delete, required this.todos});
 
   final AiDeletePreview delete;
+
+  /// Marking every to-do done: the target is the account and the count is
+  /// to-dos. GitLab can restore a done to-do, so this is not "can't be undone".
+  final bool todos;
 
   @override
   Widget build(BuildContext context) => Column(
     key: const ValueKey('ai-preview-delete'),
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _Fact(l10n.aiPreviewDeleteTarget, isolated(delete.targetName)),
+      _Fact(
+        todos ? l10n.accountLabel : l10n.aiPreviewDeleteTarget,
+        isolated(delete.targetName),
+      ),
       if (delete.path case final path?)
         _Fact(l10n.aiPreviewPath, isolated(path)),
       if (delete.ref case final ref?) _Fact(l10n.aiPreviewRef, isolated(ref)),
       if (delete.count case final count?)
         _Fact(
-          l10n.aiPreviewDeleteCount,
+          todos ? l10n.todoLabel : l10n.aiPreviewDeleteCount,
           delete.hasMore ? l10n.aiPreviewAtLeast('$count') : '$count',
         ),
-      _Notice(
-        l10n.aiPreviewCannotUndo,
-        icon: Icons.warning_amber_rounded,
-        noticeKey: const ValueKey('ai-preview-cannot-undo'),
-      ),
+      if (!todos)
+        _Notice(
+          l10n.aiPreviewCannotUndo,
+          icon: Icons.warning_amber_rounded,
+          noticeKey: const ValueKey('ai-preview-cannot-undo'),
+        ),
     ],
   );
 }
