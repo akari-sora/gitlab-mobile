@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "Kan inte uppdatera",
   "cacheResumesInMinutes": "Återupptas om ca {minutes} min",
   "activityVerbTarget": "{verb} {target}",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "Uppdatera var 30:e sekund",
+  "refreshEveryMinute": "Uppdatera varje minut"
 }

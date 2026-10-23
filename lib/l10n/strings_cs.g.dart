@@ -2717,6 +2717,6 @@ const _messagesCs = <String>[
   'Nelze obnovit',
   'Obnoví se přibližně za {minutes} min',
   '{verb} {target}',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  'Obnovit každých 30 s',
+  'Obnovit každou minutu',
 ];

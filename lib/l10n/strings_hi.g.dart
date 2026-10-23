@@ -2717,6 +2717,6 @@ const _messagesHi = <String>[
   'अपडेट नहीं हो सका',
   'लगभग {minutes} मिनट में फिर से शुरू होगा',
   '{verb} ({target})',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  'हर 30 सेकंड में रीफ़्रेश करें',
+  'हर मिनट में रीफ़्रेश करें',
 ];

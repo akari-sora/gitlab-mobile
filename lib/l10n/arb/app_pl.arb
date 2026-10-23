@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "Nie można odświeżyć",
   "cacheResumesInMinutes": "Wznowienie za ok. {minutes} min",
   "activityVerbTarget": "{verb} {target}",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "Odświeżaj co 30 s",
+  "refreshEveryMinute": "Odświeżaj co minutę"
 }

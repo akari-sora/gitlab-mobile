@@ -2717,6 +2717,6 @@ const _messagesSv = <String>[
   'Kan inte uppdatera',
   'Återupptas om ca {minutes} min',
   '{verb} {target}',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  'Uppdatera var 30:e sekund',
+  'Uppdatera varje minut',
 ];

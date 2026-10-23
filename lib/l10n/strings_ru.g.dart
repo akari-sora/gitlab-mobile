@@ -2717,6 +2717,6 @@ const _messagesRu = <String>[
   'Не удалось обновить',
   'Возобновится примерно через {minutes} мин',
   '{verb} {target}',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  'Обновлять каждые 30 секунд',
+  'Обновлять каждую минуту',
 ];

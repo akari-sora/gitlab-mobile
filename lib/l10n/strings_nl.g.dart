@@ -2717,6 +2717,6 @@ const _messagesNl = <String>[
   'Kan niet vernieuwen',
   'Hervatting over ca. {minutes} min',
   '{verb} {target}',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  'Elke 30 sec. vernieuwen',
+  'Elke minuut vernieuwen',
 ];

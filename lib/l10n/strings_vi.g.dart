@@ -2717,6 +2717,6 @@ const _messagesVi = <String>[
   'Không thể làm mới',
   'Tiếp tục sau khoảng {minutes} phút',
   '{verb} {target}',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  'Làm mới mỗi 30 giây',
+  'Làm mới mỗi phút',
 ];

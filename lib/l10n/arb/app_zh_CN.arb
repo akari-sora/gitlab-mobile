@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "无法刷新",
   "cacheResumesInMinutes": "约 {minutes} 分钟后恢复",
   "activityVerbTarget": "{verb}{target}",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "30 秒刷新",
+  "refreshEveryMinute": "每分钟刷新"
 }

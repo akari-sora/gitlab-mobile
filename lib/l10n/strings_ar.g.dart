@@ -2717,6 +2717,6 @@ const _messagesAr = <String>[
   'تعذّر التحديث',
   'يستأنف بعد {minutes} د تقريبًا',
   '{verb} {target}',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  'تحديث كل 30 ثانيةً',
+  'تحديث كل دقيقة',
 ];

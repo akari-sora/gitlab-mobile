@@ -2717,6 +2717,6 @@ const _messagesIt = <String>[
   'Impossibile aggiornare',
   'Riprende tra circa {minutes} min',
   '{verb} {target}',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  'Aggiorna ogni 30 s',
+  'Aggiorna ogni minuto',
 ];

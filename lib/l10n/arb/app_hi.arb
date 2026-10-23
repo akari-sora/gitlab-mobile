@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "अपडेट नहीं हो सका",
   "cacheResumesInMinutes": "लगभग {minutes} मिनट में फिर से शुरू होगा",
   "activityVerbTarget": "{verb} ({target})",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "हर 30 सेकंड में रीफ़्रेश करें",
+  "refreshEveryMinute": "हर मिनट में रीफ़्रेश करें"
 }

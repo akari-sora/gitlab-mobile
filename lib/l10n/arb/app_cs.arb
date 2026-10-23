@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "Nelze obnovit",
   "cacheResumesInMinutes": "Obnoví se přibližně za {minutes} min",
   "activityVerbTarget": "{verb} {target}",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "Obnovit každých 30 s",
+  "refreshEveryMinute": "Obnovit každou minutu"
 }

@@ -2717,6 +2717,6 @@ const _messagesDe = <String>[
   'Aktualisierung nicht möglich',
   'Fortsetzung in ca. {minutes} Min.',
   '{verb} {target}',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  'Alle 30 Sek. aktualisieren',
+  'Jede Minute aktualisieren',
 ];

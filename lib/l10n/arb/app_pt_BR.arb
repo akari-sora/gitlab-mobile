@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "Não foi possível atualizar",
   "cacheResumesInMinutes": "Retoma em cerca de {minutes} min",
   "activityVerbTarget": "{verb} {target}",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "Atualizar a cada 30 s",
+  "refreshEveryMinute": "Atualizar a cada minuto"
 }

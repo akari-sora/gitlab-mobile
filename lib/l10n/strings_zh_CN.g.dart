@@ -2717,6 +2717,6 @@ const _messagesZhCn = <String>[
   '无法刷新',
   '约 {minutes} 分钟后恢复',
   '{verb}{target}',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  '30 秒刷新',
+  '每分钟刷新',
 ];

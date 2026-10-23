@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "Không thể làm mới",
   "cacheResumesInMinutes": "Tiếp tục sau khoảng {minutes} phút",
   "activityVerbTarget": "{verb} {target}",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "Làm mới mỗi 30 giây",
+  "refreshEveryMinute": "Làm mới mỗi phút"
 }

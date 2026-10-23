@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "تعذّر التحديث",
   "cacheResumesInMinutes": "يستأنف بعد {minutes} د تقريبًا",
   "activityVerbTarget": "{verb} {target}",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "تحديث كل 30 ثانيةً",
+  "refreshEveryMinute": "تحديث كل دقيقة"
 }

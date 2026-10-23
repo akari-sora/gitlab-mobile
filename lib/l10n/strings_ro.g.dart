@@ -2717,6 +2717,6 @@ const _messagesRo = <String>[
   'Nu se poate reîmprospăta',
   'Se reia în aproximativ {minutes} min',
   '{verb} {target}',
-  'Refresh every 30 seconds',
-  'Refresh every minute',
+  'Actualizare la 30 de secunde',
+  'Actualizare la un minut',
 ];

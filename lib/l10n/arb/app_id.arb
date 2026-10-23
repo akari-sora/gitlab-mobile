@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "Tidak dapat memperbarui",
   "cacheResumesInMinutes": "Lanjut lagi dalam sekitar {minutes} mnt",
   "activityVerbTarget": "{verb} {target}",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "Muat ulang tiap 30 detik",
+  "refreshEveryMinute": "Muat ulang tiap menit"
 }

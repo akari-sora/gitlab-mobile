@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "새로 고침할 수 없습니다",
   "cacheResumesInMinutes": "약 {minutes}분 후 다시 시작",
   "activityVerbTarget": "{verb} ({target})",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "30초마다 갱신",
+  "refreshEveryMinute": "1분마다 갱신"
 }

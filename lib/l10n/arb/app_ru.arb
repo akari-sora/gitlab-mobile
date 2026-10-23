@@ -2715,6 +2715,6 @@
   "cacheRefreshFailed": "Не удалось обновить",
   "cacheResumesInMinutes": "Возобновится примерно через {minutes} мин",
   "activityVerbTarget": "{verb} {target}",
-  "refreshEveryThirtySeconds": "Refresh every 30 seconds",
-  "refreshEveryMinute": "Refresh every minute"
+  "refreshEveryThirtySeconds": "Обновлять каждые 30 секунд",
+  "refreshEveryMinute": "Обновлять каждую минуту"
 }
