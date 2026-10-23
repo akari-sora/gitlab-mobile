@@ -12,6 +12,22 @@ import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'runner_test.dart' as base;
 
 void main() {
+  test('issue13 runner notifies writes only when a new segment starts', () async {
+    final h = base.Harness();
+    final coordinator = _PendingCoordinator();
+    final runner = _runner(h, writeCoordinator: coordinator);
+    expect((await runner.run('first')).reason, AiRunEnd.done);
+    expect(coordinator.segments, 1);
+    final original = runner.segment;
+    expect((await runner.run('same segment')).reason, AiRunEnd.done);
+    expect(runner.segment, same(original));
+    expect(coordinator.segments, 1);
+    runner.forceProjection();
+    expect((await runner.run('new segment')).reason, AiRunEnd.done);
+    expect(runner.segment, isNot(same(original)));
+    expect(coordinator.segments, 2);
+  });
+
   test(
     '§15 row12 policy revisions reopen a segment but level changes preserve it',
     () async {
@@ -303,10 +319,14 @@ final class _PendingCoordinator implements AiWriteCoordinator {
   final outcome = Completer<AiWriteOutcome>();
   final stopReasons = <String>[];
   int executeCalls = 0;
+  int segments = 0;
   void Function(bool)? _onAwaitingApproval;
 
   @override
   bool handles(String name) => name == 'setStar';
+
+  @override
+  void beginSegment() => segments++;
 
   @override
   void beginRun(String userUtterance) {}

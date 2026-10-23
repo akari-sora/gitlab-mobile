@@ -48,15 +48,18 @@ extension _MergePrepare on GitLabAiWritePort {
       throw const AiWriteRefused('mergeCheckUnsupported');
     }
     final memory = _memories[this] ??= _MergeMemory();
+    final mrKey = '$project:$iid';
     final snapshotKey = '$op:${request.executionId}';
     final previous = memory.snapshots[snapshotKey];
     if (previous?['expired'] == true) {
       throw const AiWriteRefused('mergeCheckIncomplete');
     }
     if (previous != null && previous['sha'] != sha) {
+      if (op == 'mergeRequest' || op == 'approveMergeRequest') {
+        memory.rejectedHeads[mrKey] = previous['sha']! as String;
+      }
       throw const AiWriteRefused('headMoved');
     }
-    final mrKey = '$project:$iid';
     final root = [accountKey, 'project:$project'];
     final mrParts = [...root, 'mergeRequest', '$iid'];
     final mrConflict = _key(mrParts);

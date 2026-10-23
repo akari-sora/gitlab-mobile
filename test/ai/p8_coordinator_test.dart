@@ -5,6 +5,7 @@ import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_preview.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart'
     show UploadPlaceholderTable;
 import 'package:gitlab_mobile/core/instance.dart';
@@ -120,6 +121,69 @@ void main() {
     );
     expect(h.server.writes, isEmpty);
   });
+
+  for (final body in [
+    'Review with @alice',
+    '@all review',
+    '@team/reviewers review',
+    '@one @two @three @four @five @six review',
+  ]) {
+    test('issue13 server draft mentions require approval: $body', () async {
+      h.level = AiAutonomyLevel.bypass;
+      h.server.drafts = [{'id': 8, 'note': body}];
+      final proposal = await h.propose(op: 'publishDraftNotes');
+      expect(proposal, isNotNull);
+      expect(proposal!.tier.decision, AiGateDecision.requireApproval);
+      expect(proposal.tier.reasons, contains(AiFixedConfirmReason.massMention));
+      expect(h.server.drafts.single['note'], body);
+      expect(h.server.writes, isEmpty);
+      final outcome = await h.coordinator.approve(proposal);
+      expect(outcome.state, AiJournalState.succeeded);
+      expect(outcome.mutationCount, 1);
+      expect(h.server.writes.single.uri.path, endsWith('/draft_notes/bulk_publish'));
+    });
+  }
+
+  for (final body in [
+    '@alice\nglpat-ABCDEFGHIJKLMNOPQRST',
+    '@alice\n[REDACTED]',
+    '@alice\n/merge',
+    '@alice\n![image](https://outside.example/a.png)',
+  ]) {
+    test('issue13 draft mentions do not relax class A safety: $body', () async {
+      h.server.drafts = [{'id': 8, 'note': body}];
+      expect(await h.propose(op: 'publishDraftNotes'), isNull);
+      expect(h.coordinator.recordedOutcomeFor(h.lastCall)!.reasonCode,
+          'policyBlocked');
+      expect(h.server.writes, isEmpty);
+    });
+  }
+
+  for (final failedOp in ['mergeRequest', 'approveMergeRequest']) {
+    for (final nextOp in ['mergeRequest', 'approveMergeRequest']) {
+      test('issue13 local $failedOp head movement marks later $nextOp preview',
+          () async {
+        final first = (await h.propose(op: failedOp))!;
+        h.server.sha = 'e' * 40;
+        final outcome = await h.coordinator.approve(first,
+            typedName: first.tier.typedName);
+        expect(outcome.state, AiJournalState.notExecuted);
+        expect(outcome.reasonCode, 'headMoved');
+        expect(h.server.writes, isEmpty);
+        h.level = AiAutonomyLevel.conversationGrant;
+        final next = (await h.propose(op: nextOp))!;
+        expect(next.tier.decision, AiGateDecision.requireApproval);
+        expect(next.tier.reasons,
+            contains(AiFixedConfirmReason.headMovedSincePreview));
+        expect((next.preview as AiMergePreview).headMovedCommits, [h.server.sha]);
+        final compare = h.server.adapter.requests.singleWhere(
+            (r) => r.uri.path.endsWith('/compare'));
+        expect(compare.uri.queryParameters['from'], merge.head);
+        expect(compare.uri.queryParameters['to'], h.server.sha);
+        expect(h.server.writes, isEmpty);
+      });
+    }
+  }
 
   test('incomplete merge cannot produce a coordinator proposal', () async {
     h.server.changesCount = '1+';
