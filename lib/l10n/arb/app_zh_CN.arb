@@ -2532,7 +2532,7 @@
   "aiWriteLogActionFailed": "没有完成，请再试一次。",
   "aiWriteLogReset": "重置写入记录",
   "aiWriteLogResetTitle": "重置写入记录？",
-  "aiWriteLogResetDetail": "重置会删除这个账号在这台设备上的 AI 写入记录，也会解除所有中断写入的锁。接下来 24 小时内，AI 的每一笔写入都要你确认。输入 {username} 以确认。",
+  "aiWriteLogResetDetail": "重置会删除这个账号在这台设备上的 AI 写入记录，也会解除所有中断写入的锁。接下来 24 小时内，AI 的每一笔写入都要你确认。",
   "aiWriteLogResetDone": "已重置写入记录。",
   "aiWriteLogNeedsAttention": "{count} 笔中断的写入需要你查看",
   "aiJournalPrepared": "准备中",

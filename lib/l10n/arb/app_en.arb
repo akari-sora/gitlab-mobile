@@ -2538,7 +2538,7 @@
   "aiWriteLogActionFailed": "That did not work. Try again.",
   "aiWriteLogReset": "Reset the change log",
   "aiWriteLogResetTitle": "Reset the change log?",
-  "aiWriteLogResetDetail": "Resetting deletes this account's AI change log on this device and lifts every lock from interrupted changes. For the next 24 hours, every AI change needs your confirmation. Type {username} to confirm.",
+  "aiWriteLogResetDetail": "Resetting deletes this account's AI change log on this device and lifts every lock from interrupted changes. For the next 24 hours, every AI change needs your confirmation.",
   "aiWriteLogResetDone": "The change log was reset.",
   "aiWriteLogNeedsAttention": "Interrupted changes needing your attention: {count}",
   "aiJournalPrepared": "Preparing",

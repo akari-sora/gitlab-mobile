@@ -2534,7 +2534,7 @@ const _messagesNl = <String>[
   'Dat is niet gelukt. Probeer het opnieuw.',
   'Schrijflogboek resetten',
   'Schrijflogboek resetten?',
-  'Bij het resetten wordt het AI-schrijflogboek van dit account op dit apparaat verwijderd en worden alle vergrendelingen van onderbroken schrijfacties opgeheven. De komende 24 uur heeft elke schrijfactie van de AI jouw bevestiging nodig. Typ {username} om te bevestigen.',
+  'Bij het resetten wordt het AI-schrijflogboek van dit account op dit apparaat verwijderd en worden alle vergrendelingen van onderbroken schrijfacties opgeheven. De komende 24 uur heeft elke schrijfactie van de AI jouw bevestiging nodig.',
   'Het schrijflogboek is gereset.',
   '{count} onderbroken schrijfacties hebben je aandacht nodig',
   'Wordt voorbereid',

@@ -29,6 +29,7 @@ AiWriteProposal _proposal({
   List<String> closingRefs = const [],
   AiWritePreview? preview,
   bool showSquash = false,
+  String? editableField = 'body',
 }) => AiWriteProposal(
   executionId: 'exec-1',
   operationId: operationId,
@@ -55,6 +56,7 @@ AiWriteProposal _proposal({
   upload: upload,
   closingRefs: closingRefs,
   preview: preview,
+  editableField: editableField,
 );
 
 final class _Writes implements AiWriteChatSession {
@@ -255,6 +257,40 @@ void main() {
     );
     expect(find.byKey(const ValueKey('ai-proposal-edit')), findsNothing);
     expect(find.byKey(const ValueKey('ai-proposal-approve')), findsOne);
+  });
+
+  testWidgets('the edit button follows the ledger, not the field names', (
+    tester,
+  ) async {
+    // createRelease edits its description; editProject has no editable text,
+    // so a name-only edit would always be refused.
+    for (final (operation, fields, editable, offered) in [
+      (
+        'createRelease',
+        const {'tagName': 'v1.0', 'description': 'Notes'},
+        'description',
+        true,
+      ),
+      ('editProject', const {'name': 'Renamed'}, null, false),
+      ('renameBoard', const {'name': 'Sprint'}, null, false),
+      ('createIssue', const {'title': 'Only a title'}, 'description', false),
+    ]) {
+      final proposal = _proposal(
+        operationId: operation,
+        fields: fields,
+        editableField: editable,
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey('ai-proposal-edit')),
+        offered ? findsOneWidget : findsNothing,
+        reason: operation,
+      );
+    }
   });
 
   testWidgets('switches and state changes read as words', (tester) async {
@@ -654,6 +690,43 @@ void main() {
     await tester.pumpAndSettle();
     expect(writes.approvals.single.editedText, 'Looks good to me.');
     expect(find.text(l10n.aiProposalEdited), findsOneWidget);
+  });
+
+  testWidgets('closing the edit sheet does not refocus the composer', (
+    tester,
+  ) async {
+    final proposal = _proposal();
+    final writes = _Writes([proposal])
+      ..answer = (edited) => AiWriteOutcome(
+        state: AiJournalState.notExecuted,
+        reasonCode: 'approvalRequired',
+      );
+    final composer = FocusNode();
+    addTearDown(composer.dispose);
+    await tester.pumpWidget(
+      _host(
+        Column(
+          children: [
+            AiWriteProposalCard(proposal: proposal, session: writes),
+            TextField(focusNode: composer, autofocus: true),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(composer.hasFocus, isTrue);
+    for (final close in ['done', 'cancel']) {
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-edit')));
+      await tester.pumpAndSettle();
+      if (close == 'done') {
+        await tester.tap(find.byKey(const ValueKey('ai-proposal-edit-done')));
+      } else {
+        await tester.tap(find.text(l10n.cancelAction));
+      }
+      await tester.pumpAndSettle();
+      expect(composer.hasFocus, isFalse, reason: close);
+      expect(tester.testTextInput.isVisible, isFalse, reason: close);
+    }
   });
 
   testWidgets('a proposal that is no longer valid cannot be approved', (

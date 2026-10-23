@@ -2532,7 +2532,7 @@
   "aiWriteLogActionFailed": "Non ha funzionato. Riprova.",
   "aiWriteLogReset": "Reimposta il registro delle scritture",
   "aiWriteLogResetTitle": "Reimpostare il registro delle scritture?",
-  "aiWriteLogResetDetail": "La reimpostazione elimina il registro delle scritture dell'AI di questo account su questo dispositivo e toglie tutti i blocchi delle scritture interrotte. Per le prossime 24 ore, ogni scrittura dell'AI richiederà la tua conferma. Digita {username} per confermare.",
+  "aiWriteLogResetDetail": "La reimpostazione elimina il registro delle scritture dell'AI di questo account su questo dispositivo e toglie tutti i blocchi delle scritture interrotte. Per le prossime 24 ore, ogni scrittura dell'AI richiederà la tua conferma.",
   "aiWriteLogResetDone": "Il registro delle scritture è stato reimpostato.",
   "aiWriteLogNeedsAttention": "{count} scritture interrotte richiedono la tua attenzione",
   "aiJournalPrepared": "In preparazione",

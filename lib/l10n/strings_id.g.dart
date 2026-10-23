@@ -2534,7 +2534,7 @@ const _messagesId = <String>[
   'Tidak berhasil. Coba lagi.',
   'Reset log penulisan',
   'Reset log penulisan?',
-  'Reset akan menghapus log penulisan AI akun ini di perangkat ini dan mencabut semua kunci dari penulisan yang terputus. Selama 24 jam berikutnya, setiap penulisan AI memerlukan konfirmasi Anda. Ketik {username} untuk mengonfirmasi.',
+  'Reset akan menghapus log penulisan AI akun ini di perangkat ini dan mencabut semua kunci dari penulisan yang terputus. Selama 24 jam berikutnya, setiap penulisan AI memerlukan konfirmasi Anda.',
   'Log penulisan telah direset.',
   '{count} penulisan terputus perlu perhatian Anda',
   'Menyiapkan',

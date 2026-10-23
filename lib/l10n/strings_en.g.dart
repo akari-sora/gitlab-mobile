@@ -2534,7 +2534,7 @@ const _messagesEn = <String>[
   'That did not work. Try again.',
   'Reset the change log',
   'Reset the change log?',
-  'Resetting deletes this account\'s AI change log on this device and lifts every lock from interrupted changes. For the next 24 hours, every AI change needs your confirmation. Type {username} to confirm.',
+  'Resetting deletes this account\'s AI change log on this device and lifts every lock from interrupted changes. For the next 24 hours, every AI change needs your confirmation.',
   'The change log was reset.',
   'Interrupted changes needing your attention: {count}',
   'Preparing',

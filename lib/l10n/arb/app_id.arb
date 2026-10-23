@@ -2532,7 +2532,7 @@
   "aiWriteLogActionFailed": "Tidak berhasil. Coba lagi.",
   "aiWriteLogReset": "Reset log penulisan",
   "aiWriteLogResetTitle": "Reset log penulisan?",
-  "aiWriteLogResetDetail": "Reset akan menghapus log penulisan AI akun ini di perangkat ini dan mencabut semua kunci dari penulisan yang terputus. Selama 24 jam berikutnya, setiap penulisan AI memerlukan konfirmasi Anda. Ketik {username} untuk mengonfirmasi.",
+  "aiWriteLogResetDetail": "Reset akan menghapus log penulisan AI akun ini di perangkat ini dan mencabut semua kunci dari penulisan yang terputus. Selama 24 jam berikutnya, setiap penulisan AI memerlukan konfirmasi Anda.",
   "aiWriteLogResetDone": "Log penulisan telah direset.",
   "aiWriteLogNeedsAttention": "{count} penulisan terputus perlu perhatian Anda",
   "aiJournalPrepared": "Menyiapkan",

@@ -2534,7 +2534,7 @@ const _messagesEs = <String>[
   'No funcionó. Inténtalo de nuevo.',
   'Restablecer el registro de escrituras',
   '¿Restablecer el registro de escrituras?',
-  'Al restablecer, se elimina el registro de escrituras de AI de esta cuenta en este dispositivo y se levantan todos los bloqueos de las escrituras interrumpidas. Durante las próximas 24 horas, cada escritura de AI requerirá tu confirmación. Escribe {username} para confirmar.',
+  'Al restablecer, se elimina el registro de escrituras de AI de esta cuenta en este dispositivo y se levantan todos los bloqueos de las escrituras interrumpidas. Durante las próximas 24 horas, cada escritura de AI requerirá tu confirmación.',
   'Se restableció el registro de escrituras.',
   '{count} escrituras interrumpidas requieren tu atención',
   'Preparando',

@@ -2532,7 +2532,7 @@
   "aiWriteLogActionFailed": "Không thành công. Hãy thử lại.",
   "aiWriteLogReset": "Đặt lại nhật ký ghi",
   "aiWriteLogResetTitle": "Đặt lại nhật ký ghi?",
-  "aiWriteLogResetDetail": "Đặt lại sẽ xóa nhật ký ghi của AI cho tài khoản này trên thiết bị này và gỡ mọi khóa của các lần ghi bị gián đoạn. Trong 24 giờ tiếp theo, mọi lần ghi của AI đều cần bạn xác nhận. Nhập {username} để xác nhận.",
+  "aiWriteLogResetDetail": "Đặt lại sẽ xóa nhật ký ghi của AI cho tài khoản này trên thiết bị này và gỡ mọi khóa của các lần ghi bị gián đoạn. Trong 24 giờ tiếp theo, mọi lần ghi của AI đều cần bạn xác nhận.",
   "aiWriteLogResetDone": "Đã đặt lại nhật ký ghi.",
   "aiWriteLogNeedsAttention": "{count} lần ghi bị gián đoạn cần bạn xem xét",
   "aiJournalPrepared": "Đang chuẩn bị",

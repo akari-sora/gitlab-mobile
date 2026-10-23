@@ -2532,7 +2532,7 @@
   "aiWriteLogActionFailed": "Não funcionou. Tente novamente.",
   "aiWriteLogReset": "Redefinir o registro de escritas",
   "aiWriteLogResetTitle": "Redefinir o registro de escritas?",
-  "aiWriteLogResetDetail": "Redefinir exclui o registro de escritas da AI desta conta neste dispositivo e remove todos os bloqueios das escritas interrompidas. Nas próximas 24 horas, cada escrita da AI precisará da sua confirmação. Digite {username} para confirmar.",
+  "aiWriteLogResetDetail": "Redefinir exclui o registro de escritas da AI desta conta neste dispositivo e remove todos os bloqueios das escritas interrompidas. Nas próximas 24 horas, cada escrita da AI precisará da sua confirmação.",
   "aiWriteLogResetDone": "O registro de escritas foi redefinido.",
   "aiWriteLogNeedsAttention": "{count} escritas interrompidas precisam da sua atenção",
   "aiJournalPrepared": "Preparando",

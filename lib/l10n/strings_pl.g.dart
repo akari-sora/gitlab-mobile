@@ -2534,7 +2534,7 @@ const _messagesPl = <String>[
   'To się nie udało. Spróbuj ponownie.',
   'Zresetuj dziennik zapisów',
   'Zresetować dziennik zapisów?',
-  'Reset usuwa dziennik zapisów AI tego konta na tym urządzeniu i zdejmuje wszystkie blokady przerwanych zapisów. Przez następne 24 godziny każdy zapis AI będzie wymagał twojego potwierdzenia. Wpisz {username}, aby potwierdzić.',
+  'Reset usuwa dziennik zapisów AI tego konta na tym urządzeniu i zdejmuje wszystkie blokady przerwanych zapisów. Przez następne 24 godziny każdy zapis AI będzie wymagał twojego potwierdzenia.',
   'Dziennik zapisów został zresetowany.',
   'Przerwane zapisy wymagające twojej uwagi: {count}',
   'Przygotowywanie',

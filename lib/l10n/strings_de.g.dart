@@ -2534,7 +2534,7 @@ const _messagesDe = <String>[
   'Das hat nicht geklappt. Versuchen Sie es erneut.',
   'Schreibprotokoll zurücksetzen',
   'Schreibprotokoll zurücksetzen?',
-  'Beim Zurücksetzen wird das AI-Schreibprotokoll dieses Kontos auf diesem Gerät gelöscht und jede Sperre unterbrochener Schreibvorgänge aufgehoben. Die nächsten 24 Stunden muss jeder Schreibvorgang der AI von Ihnen bestätigt werden. Geben Sie zur Bestätigung {username} ein.',
+  'Beim Zurücksetzen wird das AI-Schreibprotokoll dieses Kontos auf diesem Gerät gelöscht und jede Sperre unterbrochener Schreibvorgänge aufgehoben. Die nächsten 24 Stunden muss jeder Schreibvorgang der AI von Ihnen bestätigt werden.',
   'Das Schreibprotokoll wurde zurückgesetzt.',
   '{count} unterbrochene Schreibvorgänge brauchen Ihre Aufmerksamkeit',
   'Wird vorbereitet',

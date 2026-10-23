@@ -2534,7 +2534,7 @@ const _messagesSv = <String>[
   'Det gick inte. Försök igen.',
   'Återställ skrivloggen',
   'Återställa skrivloggen?',
-  'Återställningen raderar AI:s skrivlogg för det här kontot på den här enheten och hävar alla lås från avbrutna skrivningar. Under de närmaste 24 timmarna kräver varje skrivning från AI din bekräftelse. Skriv {username} för att bekräfta.',
+  'Återställningen raderar AI:s skrivlogg för det här kontot på den här enheten och hävar alla lås från avbrutna skrivningar. Under de närmaste 24 timmarna kräver varje skrivning från AI din bekräftelse.',
   'Skrivloggen har återställts.',
   '{count} avbrutna skrivningar behöver din uppmärksamhet',
   'Förbereds',

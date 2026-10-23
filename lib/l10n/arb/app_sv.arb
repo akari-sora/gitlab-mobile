@@ -2532,7 +2532,7 @@
   "aiWriteLogActionFailed": "Det gick inte. Försök igen.",
   "aiWriteLogReset": "Återställ skrivloggen",
   "aiWriteLogResetTitle": "Återställa skrivloggen?",
-  "aiWriteLogResetDetail": "Återställningen raderar AI:s skrivlogg för det här kontot på den här enheten och hävar alla lås från avbrutna skrivningar. Under de närmaste 24 timmarna kräver varje skrivning från AI din bekräftelse. Skriv {username} för att bekräfta.",
+  "aiWriteLogResetDetail": "Återställningen raderar AI:s skrivlogg för det här kontot på den här enheten och hävar alla lås från avbrutna skrivningar. Under de närmaste 24 timmarna kräver varje skrivning från AI din bekräftelse.",
   "aiWriteLogResetDone": "Skrivloggen har återställts.",
   "aiWriteLogNeedsAttention": "{count} avbrutna skrivningar behöver din uppmärksamhet",
   "aiJournalPrepared": "Förbereds",

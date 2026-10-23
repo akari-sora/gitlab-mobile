@@ -2532,7 +2532,7 @@
   "aiWriteLogActionFailed": "Nepovedlo se. Zkuste to znovu.",
   "aiWriteLogReset": "Resetovat protokol zápisů",
   "aiWriteLogResetTitle": "Resetovat protokol zápisů?",
-  "aiWriteLogResetDetail": "Reset smaže protokol zápisů AI pro tento účet na tomto zařízení a zruší všechny zámky přerušených zápisů. Následujících 24 hodin bude každý zápis AI vyžadovat vaše potvrzení. Pro potvrzení napište {username}.",
+  "aiWriteLogResetDetail": "Reset smaže protokol zápisů AI pro tento účet na tomto zařízení a zruší všechny zámky přerušených zápisů. Následujících 24 hodin bude každý zápis AI vyžadovat vaše potvrzení.",
   "aiWriteLogResetDone": "Protokol zápisů byl resetován.",
   "aiWriteLogNeedsAttention": "Přerušené zápisy vyžadující vaši pozornost: {count}",
   "aiJournalPrepared": "Příprava",
