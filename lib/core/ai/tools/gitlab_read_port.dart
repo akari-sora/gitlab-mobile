@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import '../../failure.dart';
@@ -8,6 +9,9 @@ import '../../snippet_models.dart' show validatedSnippetPath;
 import 'sensitive_paths.dart';
 
 typedef AiJson = Map<String, Object?>;
+
+/// Reserves a bounded read; the returned callback settles its physical sends.
+typedef AiBeforeRead = void Function() Function(int maximum);
 
 final class AiPortRead<T> {
   const AiPortRead(
@@ -76,15 +80,34 @@ final class GitLabAiReadPort
   final GitLabApi _api;
   final int projectId;
   final DateTime Function() _now;
+  final Object _beforeReadKey = Object();
+
+  // Cache reads can reload once after invalidation and replay once for OAuth
+  // (4 sends); file reads also perform HEAD + GET (8). Direct reads replay
+  // once (2); a trace 404 can additionally read the job's status (4).
+
+  Future<T> withBeforeRead<T>(
+    Future<T> Function() operation, {
+    required AiBeforeRead beforeRead,
+  }) => runZoned(operation, zoneValues: {_beforeReadKey: beforeRead});
+
+  Future<T> _read<T>(int maximum, Future<T> Function() operation) async {
+    final settle = (Zone.current[_beforeReadKey] as AiBeforeRead?)?.call(
+      maximum,
+    );
+    try {
+      return await operation();
+    } finally {
+      settle?.call();
+    }
+  }
 
   @override
   Future<AiPortRead<AiJson>> release(String tagName) async {
-    final value = await _api.record([
-      'projects',
-      '$projectId',
-      'releases',
-      tagName,
-    ]);
+    final value = await _read(
+      2,
+      () => _api.record(['projects', '$projectId', 'releases', tagName]),
+    );
     if (value['tag_name'] != tagName) {
       throw const FormatException('releaseIdentityMismatch');
     }
@@ -93,12 +116,11 @@ final class GitLabAiReadPort
 
   @override
   Future<AiPortRead<AiJson>> milestone(int milestoneId) async {
-    final value = await _api.record([
-      'projects',
-      '$projectId',
-      'milestones',
-      '$milestoneId',
-    ]);
+    final value = await _read(
+      2,
+      () =>
+          _api.record(['projects', '$projectId', 'milestones', '$milestoneId']),
+    );
     final iid = value['iid'];
     if (value['id'] != milestoneId ||
         value['project_id'] != projectId ||
@@ -120,7 +142,11 @@ final class GitLabAiReadPort
     }
     final measured = await _measure(() async {
       var metadata = _validatedSnippetMetadata(
-        await _api.record(['projects', '$projectId', 'snippets', '$snippetId']),
+        await _read(
+          2,
+          () =>
+              _api.record(['projects', '$projectId', 'snippets', '$snippetId']),
+        ),
         snippetId,
       );
       var metadataAt = _now();
@@ -149,23 +175,29 @@ final class GitLabAiReadPort
           freshnessRetried: false,
         );
       }
-      final content = await _api.snippetText(
-        projectId,
-        snippetId,
-        ref: ref,
-        filePath: selected,
+      final content = await _read(
+        2,
+        () => _api.snippetText(
+          projectId,
+          snippetId,
+          ref: ref,
+          filePath: selected,
+        ),
       );
       final contentAt = _now();
       var freshnessRetried = false;
       if (_compositionExpired([metadataAt, contentAt])) {
         freshnessRetried = true;
         metadata = _validatedSnippetMetadata(
-          await _api.record([
-            'projects',
-            '$projectId',
-            'snippets',
-            '$snippetId',
-          ]),
+          await _read(
+            2,
+            () => _api.record([
+              'projects',
+              '$projectId',
+              'snippets',
+              '$snippetId',
+            ]),
+          ),
           snippetId,
         );
         metadataAt = _now();
@@ -232,7 +264,8 @@ final class GitLabAiReadPort
   @override
   Future<AiPortRead<String>> readFile(String sha, String path) async {
     final measured = await _measure(
-      () => _api.textFile(projectId, sha, path, allowDisk: false),
+      () =>
+          _read(8, () => _api.textFile(projectId, sha, path, allowDisk: false)),
     );
     return AiPortRead(measured.value, requestCount: measured.requestCount);
   }
@@ -247,12 +280,15 @@ final class GitLabAiReadPort
       Uri? next;
       var pages = 0;
       do {
-        final page = await _api.tree(
-          projectId,
-          sha,
-          path: path,
-          next: next,
-          allowDisk: false,
+        final page = await _read(
+          next == null ? 4 : 2,
+          () => _api.tree(
+            projectId,
+            sha,
+            path: path,
+            next: next,
+            allowDisk: false,
+          ),
         );
         pages++;
         items.addAll(
@@ -404,18 +440,24 @@ final class GitLabAiReadPort
     List<String> path, {
     bool fresh = false,
   }) async {
-    var read = await _api.cachedRecord(
-      path,
-      fresh: fresh,
-      maxAge: _aiMaxAge,
-      allowDisk: false,
-    );
-    if (read.lineage == CacheLineage.disk) {
-      read = await _api.cachedRecord(
+    var read = await _read(
+      4,
+      () => _api.cachedRecord(
         path,
-        fresh: true,
+        fresh: fresh,
         maxAge: _aiMaxAge,
         allowDisk: false,
+      ),
+    );
+    if (read.lineage == CacheLineage.disk) {
+      read = await _read(
+        4,
+        () => _api.cachedRecord(
+          path,
+          fresh: true,
+          maxAge: _aiMaxAge,
+          allowDisk: false,
+        ),
       );
     }
     _requirePublishable(read);
@@ -427,20 +469,26 @@ final class GitLabAiReadPort
     Map<String, String> query = const {},
     bool fresh = false,
   }) async {
-    var read = await _api.cachedRecords(
-      path,
-      query: query,
-      fresh: fresh,
-      maxAge: _aiMaxAge,
-      allowDisk: false,
-    );
-    if (read.lineage == CacheLineage.disk) {
-      read = await _api.cachedRecords(
+    var read = await _read(
+      4,
+      () => _api.cachedRecords(
         path,
         query: query,
-        fresh: true,
+        fresh: fresh,
         maxAge: _aiMaxAge,
         allowDisk: false,
+      ),
+    );
+    if (read.lineage == CacheLineage.disk) {
+      read = await _read(
+        4,
+        () => _api.cachedRecords(
+          path,
+          query: query,
+          fresh: true,
+          maxAge: _aiMaxAge,
+          allowDisk: false,
+        ),
       );
     }
     _requirePublishable(read);
@@ -511,9 +559,12 @@ final class GitLabAiReadPort
 
   @override
   Future<AiPortRead<List<AiJson>>> pipelineJobs(int pipelineId) async {
-    final page = await _api.records(
-      ['projects', '$projectId', 'pipelines', '$pipelineId', 'jobs'],
-      query: const {'per_page': '100'},
+    final page = await _read(
+      2,
+      () => _api.records(
+        ['projects', '$projectId', 'pipelines', '$pipelineId', 'jobs'],
+        query: const {'per_page': '100'},
+      ),
     );
     return AiPortRead(
       page.items,
@@ -548,11 +599,14 @@ final class GitLabAiReadPort
     var offset = 0;
     var requests = 0;
     while (true) {
-      final chunk = await _api.jobTraceChunk(
-        projectId,
-        jobId,
-        offset: offset,
-        maxBytes: GitLabApi.maxTextBytes,
+      final chunk = await _read(
+        4,
+        () => _api.jobTraceChunk(
+          projectId,
+          jobId,
+          offset: offset,
+          maxBytes: GitLabApi.maxTextBytes,
+        ),
       );
       fetchedAt.add(_now());
       requests += chunk.requestCount;
@@ -596,15 +650,16 @@ final class GitLabAiReadPort
   }
 
   @override
-  Future<AiPortRead<AiJson>> commit(String sha) async =>
-      AiPortRead(await _api.commit(projectId, sha), requestCount: 1);
+  Future<AiPortRead<AiJson>> commit(String sha) async => AiPortRead(
+    await _read(2, () => _api.commit(projectId, sha)),
+    requestCount: 1,
+  );
 
   @override
   Future<AiPortRead<List<AiJson>>> commitDiff(String sha) async {
-    final page = await _api.commitDiff(
-      projectId,
-      sha,
-      query: const {'per_page': '100'},
+    final page = await _read(
+      2,
+      () => _api.commitDiff(projectId, sha, query: const {'per_page': '100'}),
     );
     return AiPortRead(
       page.items,
@@ -615,7 +670,10 @@ final class GitLabAiReadPort
 
   @override
   Future<AiPortRead<List<AiJson>>> search(String scope, String query) async {
-    final page = await _api.search(scope, query, projectId: projectId);
+    final page = await _read(
+      2,
+      () => _api.search(scope, query, projectId: projectId),
+    );
     return AiPortRead(
       page.items,
       requestCount: 1,

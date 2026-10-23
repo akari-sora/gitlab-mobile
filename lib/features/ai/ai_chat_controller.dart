@@ -66,8 +66,8 @@ final class _AiRunBudget {
   final Set<Future<void>> _reads = {};
   PolicyAiWriteCoordinator? writes;
 
-  Future<AiToolResult> read(Future<AiToolResult> Function() execute) {
-    final pending = Future<AiToolResult>.sync(execute);
+  Future<T> read<T>(Future<T> Function() execute) {
+    final pending = Future<T>.sync(execute);
     final settled = pending.then<void>(
       (_) {},
       onError: (Object _, StackTrace _) {},
@@ -1632,6 +1632,25 @@ class AiChatController extends ChangeNotifier
           : (call) => runBudget!.read(
               () => catalogue.executeResult(call, budget: budget()),
             ),
+      prepareToolResults: catalogue == null
+          ? null
+          : (calls, results, beforeDelivery) => runBudget!.read(() async {
+              final delivered = await catalogue.prepareDelivery(
+                calls,
+                results,
+                budget: budget(),
+                beforeDelivery: beforeDelivery,
+              );
+              for (final result in delivered.results) {
+                if (!result.isError &&
+                    !result.notExecuted &&
+                    !result.blockedSensitive) {
+                  _readConfidential |= result.readConfidential;
+                  _readInternal |= result.readInternal;
+                }
+              }
+              return delivered;
+            }),
       resetToolBudget: () {
         if (current()) {
           runBudget = _runBudget;
