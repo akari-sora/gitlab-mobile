@@ -15,6 +15,7 @@ import '../../shared/external_link.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
+import '../../shared/cache_freshness.dart';
 import '../../shared/workspace_ui.dart';
 import 'commit_page.dart';
 import 'records_feed.dart';
@@ -757,6 +758,11 @@ class PipelinePageState extends State<PipelinePage> {
   bool get revalidating => _revalidating;
   FailureKind? get backgroundFailure => _backgroundFailure;
   DateTime? get backgroundRetryAt => _backgroundRetryAt;
+
+  // Metadata shown from an earlier read: say so while it is refreshed in the
+  // background or after that refresh failed. Fresh data gets no strip.
+  DateTime? get _freshnessAt => _data == null || _loading || _error != null ||
+      !(_stale || _revalidating || _backgroundFailure != null) ? null : _fetchedAt;
   void _updateTickerMode() {
     final mode = TickerMode.getValuesNotifier(context);
     if (!identical(mode, _tickerMode)) {
@@ -1151,6 +1157,17 @@ class PipelinePageState extends State<PipelinePage> {
             resource: 'pipelines',
             iid: widget.id,
           ))),
+        if (_freshnessAt case final fetchedAt?)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: CacheFreshnessBar(
+              fetchedAt: fetchedAt,
+              refreshing: _revalidating,
+              failure: _backgroundFailure,
+              retryAt: _backgroundRetryAt,
+              onRetry: () => unawaited(_load(fresh: true)),
+            ),
+          ),
         if (_data != null)
           TabBar(
             onTap: (_) => _chrome.show(),

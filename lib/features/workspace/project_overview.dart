@@ -12,6 +12,7 @@ import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/theme.dart';
+import '../../shared/cache_freshness.dart';
 import '../../shared/workspace_ui.dart';
 import 'activity_page.dart';
 import 'project_extras.dart';
@@ -81,6 +82,15 @@ class ProjectOverviewState extends State<ProjectOverview> {
   bool get stale =>
       _detailsRead?.stale == true ||
       _readmeStale;
+  // Project details shown from an earlier read: say so while they are
+  // refreshed or after that failed. The gate is the details read's own
+  // staleness — the README refreshes and reports its state separately and
+  // must never raise this strip or set its spinner on its own.
+  bool get _detailsStale => _detailsRead?.stale == true;
+  DateTime? get _freshnessAt =>
+      _details == null || loading || error != null || !_detailsStale
+          ? null
+          : _detailsRead?.fetchedAt;
   DateTime? get fetchedAt {
     final times = [?_detailsRead?.fetchedAt, ?_branchRead?.fetchedAt];
     if (times.isEmpty) return null;
@@ -826,6 +836,17 @@ class ProjectOverviewState extends State<ProjectOverview> {
         if (error != null) FailureNotice(error!, account: widget.account,
           resourceLabel: widget.project.path, onRetry: () => unawaited(refresh()),
           onSwitchAccount: endSessionFrom(context)),
+        if (_freshnessAt case final fetchedAt?)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: CacheFreshnessBar(
+              fetchedAt: fetchedAt,
+              refreshing: revalidating,
+              failure: backgroundFailure,
+              retryAt: backgroundRetryAt,
+              onRetry: () => unawaited(refresh()),
+            ),
+          ),
         ColoredBox(
           color: dark ? theme.scaffoldBackgroundColor : theme.colorScheme.surface,
           child: _hero(context),

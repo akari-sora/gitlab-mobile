@@ -13,6 +13,7 @@ import '../../core/models.dart';
 import '../../core/repository_ref.dart';
 import '../../core/syntax_highlighter.dart';
 import '../../shared/external_link.dart';
+import '../../shared/cache_freshness.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
@@ -102,6 +103,25 @@ class RepositoryTabState extends State<RepositoryTab> {
   bool get revalidating => _revalidating;
   FailureKind? get backgroundFailure => _backgroundFailure;
   DateTime? get backgroundRetryAt => _backgroundRetryAt;
+
+  // The ref shown is from an earlier read: say so while it is refreshed in
+  // the background or after that refresh failed. The tree and the README
+  // report their own state through the feed, so this follows the ref only.
+  Widget? _freshnessStrip() {
+    final fetchedAt = _currentRef == null || _loading || _error != null ||
+        !(_stale || _revalidating || _backgroundFailure != null) ? null : this.fetchedAt;
+    if (fetchedAt == null) return null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: CacheFreshnessBar(
+        fetchedAt: fetchedAt,
+        refreshing: _revalidating,
+        failure: _backgroundFailure,
+        retryAt: _backgroundRetryAt,
+        onRetry: () => unawaited(_resolve(fresh: true)),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -843,6 +863,7 @@ class RepositoryTabState extends State<RepositoryTab> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _refBar(context),
+                      ?_freshnessStrip(),
                       if (_folder.isNotEmpty) _breadcrumbs(context),
                     ],
                   ),
