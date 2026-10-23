@@ -2534,7 +2534,7 @@ const _messagesRo = <String>[
   'Nu a mers. Încearcă din nou.',
   'Resetează jurnalul scrierilor',
   'Resetezi jurnalul scrierilor?',
-  'Resetarea șterge jurnalul scrierilor AI al acestui cont de pe acest dispozitiv și ridică toate blocările scrierilor întrerupte. În următoarele 24 de ore, fiecare scriere a AI va cere confirmarea ta. Tastează {username} pentru a confirma.',
+  'Resetarea șterge jurnalul scrierilor AI al acestui cont de pe acest dispozitiv și ridică toate blocările scrierilor întrerupte. În următoarele 24 de ore, fiecare scriere a AI va cere confirmarea ta.',
   'Jurnalul scrierilor a fost resetat.',
   '{count} scrieri întrerupte necesită atenția ta',
   'Se pregătește',

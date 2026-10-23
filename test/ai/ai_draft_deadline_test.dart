@@ -57,6 +57,57 @@ void main() {
     expect(count, last, reason: 'the worker must stop sending');
   });
 
+  test('cancelling a check stops its worker without waiting for the deadline', () async {
+    final beats = ReceivePort();
+    addTearDown(beats.close);
+    final send = beats.sendPort;
+    var count = 0;
+    beats.listen((_) => count++);
+    final cancel = Completer<void>();
+    final check = runWithDeadline<void>(() {
+      while (true) {
+        send.send(1);
+        sleep(const Duration(milliseconds: 5));
+      }
+    }, const Duration(seconds: 30), cancel: cancel.future);
+    cancel.complete();
+    await expectLater(
+      check,
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('cancelled'),
+        ),
+      ),
+    );
+    // A cancelled worker goes quiet like a killed one, instead of sending
+    // every 5 ms until the 30 s deadline, so removing the kill fails this
+    // the same way removing it fails the deadline test above.
+    var last = -1;
+    for (var tries = 0; tries < 20 && count != last; tries++) {
+      last = count;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    expect(count, last, reason: 'the worker must stop sending');
+  });
+
+  test('a check that finishes before the cancel keeps its result', () async {
+    final cancel = Completer<void>();
+    final check = runWithDeadline(
+      () => 6 * 7,
+      const Duration(seconds: 10),
+      cancel: cancel.future,
+    );
+    // A later cancel must not change what a completed check returned.
+    unawaited(
+      Future<void>.delayed(const Duration(seconds: 1)).then((_) {
+        if (!cancel.isCompleted) cancel.complete();
+      }),
+    );
+    expect(await check, 42);
+  });
+
   test('a draft too slow to check gives up at the deadline', () async {
     // One candidate already in code makes the batch check fail, and the long
     // unbroken run makes every one-by-one reparse slow: this takes far longer

@@ -22,8 +22,10 @@ void main() {
 
     final unclassified = <String>[];
     final pending2 = <String>[];
-    final pending3Named = <String>{};
-    final pending3GraphMutations = <String>[];
+    final pending3CurrentNamed = <String>{};
+    final pending3DeferredNamed = <String>{};
+    final pending3CurrentGraph = <(String, String)>{};
+    final pending3DeferredGraph = <(String, String)>{};
     final mapped = <_Site>[];
     final screenGeneric = <_Site>[];
 
@@ -45,11 +47,20 @@ void main() {
           }
         case _Kind.mr6b3:
           if (site.kind == 'graphMutation') {
-            pending3GraphMutations.add(
-              '${site.file}:${site.line} ${bucket.label}',
-            );
+            final key = (site.file, site.detail);
+            if (_currentMr6b3GraphSites.containsKey(key)) {
+              pending3CurrentGraph.add(key);
+            } else if (_deferredMr6b3GraphSites.containsKey(key)) {
+              pending3DeferredGraph.add(key);
+            } else {
+              unclassified.add(
+                '${site.file}:${site.line} graphMutation ${site.detail}',
+              );
+            }
+          } else if (_currentMr6b3Methods.contains(site.detail)) {
+            pending3CurrentNamed.add(site.detail);
           } else {
-            pending3Named.add(site.detail);
+            pending3DeferredNamed.add(site.detail);
           }
         case _Kind.unknown:
           unclassified.add(
@@ -63,21 +74,14 @@ void main() {
       isEmpty,
       reason: 'write call sites outside the ledger and the pending lists',
     );
-    expect(
-      pending2,
-      isEmpty,
-      reason: 'MR6b-2 has no pending write call sites',
-    );
+    expect(pending2, isEmpty, reason: 'MR6b-2 has no pending write call sites');
 
     final implementation = <String>{
       for (final _Site site in sites)
         if (site.file == 'lib/core/workspace_api.dart' && site.kind != 'named')
           site.detail,
     };
-    expect(
-      implementation,
-      _workspaceWriteImplementations,
-    );
+    expect(implementation, _workspaceWriteImplementations);
     expect(
       ledgerMethods.keys.toSet().containsAll(_workspaceWriteImplementations),
       isTrue,
@@ -88,19 +92,35 @@ void main() {
     for (final _Site site in screenGeneric) {
       counts[site.file] = (counts[site.file] ?? 0) + 1;
     }
-    expect(counts, isEmpty,
-      reason: 'workspace screens must use named write methods');
-    expect(pending3Named, pending3Methods);
-    final pending3GraphCounts = <String, int>{};
-    for (final String mutation in pending3GraphMutations) {
-      final file = mutation.substring(0, mutation.indexOf(':'));
-      pending3GraphCounts[file] = (pending3GraphCounts[file] ?? 0) + 1;
-    }
     expect(
-      pending3GraphCounts,
-      _pendingMr6b3GraphMutationCounts,
-      reason: 'only the known MR6b-3 GraphQL mutations may remain pending',
+      counts,
+      isEmpty,
+      reason: 'workspace screens must use named write methods',
     );
+    expect(_currentMr6b3Methods, hasLength(15));
+    expect(_currentMr6b3GraphSites, hasLength(14));
+    expect(_deferredMr6b3Methods, hasLength(3));
+    expect(_deferredMr6b3GraphSites, hasLength(3));
+    expect(
+      pending3CurrentNamed,
+      _currentMr6b3Methods.difference(ledgerMethods.keys.toSet()),
+    );
+    expect(pending3DeferredNamed, _deferredMr6b3Methods);
+    expect(
+      _graphInventoryProblems(sites),
+      isEmpty,
+      reason: 'each fixed GraphQL mutation site must occur exactly once',
+    );
+    expect(
+      pending3CurrentGraph,
+      {
+        for (final entry in _currentMr6b3GraphSites.entries)
+          if (!entry.value.every(ledgerMethods.containsKey)) entry.key,
+      },
+      reason:
+          'current MR6b-3 sites remain pending until every mapped row lands',
+    );
+    expect(pending3DeferredGraph, _deferredMr6b3GraphSites.keys.toSet());
 
     for (final (String file, String method) in _rewiredNamedCalls) {
       expect(
@@ -109,8 +129,74 @@ void main() {
         reason: '$file $method',
       );
     }
-
   });
+
+  test(
+    'GraphQL site mapping rejects unknown, duplicate, and partial shared delivery',
+    () {
+      const shared = _Site(
+        file: 'lib/core/work_item_activity_api.dart',
+        line: 1,
+        kind: 'graphMutation',
+        detail: '_createWorkItemActivityNote',
+      );
+      const unknown = _Site(
+        file: 'lib/core/new_write_api.dart',
+        line: 1,
+        kind: 'graphMutation',
+        detail: 'sendUnknownWrite',
+      );
+      expect(
+        _classify(
+          shared,
+          ledgerMethods: const {'createWorkItemActivityComment': 'comment'},
+          pending2Methods: const {},
+          pending3Methods: _pendingMr6b3Methods,
+        ).kind,
+        _Kind.mr6b3,
+      );
+      expect(
+        _classify(
+          shared,
+          ledgerMethods: const {
+            'createWorkItemActivityComment': 'comment',
+            'createWorkItemActivityReply': 'reply',
+          },
+          pending2Methods: const {},
+          pending3Methods: _pendingMr6b3Methods,
+        ).kind,
+        _Kind.ledger,
+      );
+      expect(
+        _classify(
+          unknown,
+          ledgerMethods: const {},
+          pending2Methods: const {},
+          pending3Methods: _pendingMr6b3Methods,
+        ).kind,
+        _Kind.unknown,
+      );
+
+      final duplicateProblems = _graphInventoryProblems([
+        shared,
+        shared,
+        for (final key in {
+          ..._currentMr6b3GraphSites.keys,
+          ..._deferredMr6b3GraphSites.keys,
+        })
+          if (key != (shared.file, shared.detail))
+            _Site(file: key.$1, line: 1, kind: 'graphMutation', detail: key.$2),
+      ]);
+      expect(
+        duplicateProblems,
+        contains(
+          'lib/core/work_item_activity_api.dart '
+          '_createWorkItemActivityNote occurs 2 times',
+        ),
+      );
+      expect(duplicateProblems, contains('expected 17 sites, found 18'));
+    },
+  );
 }
 
 enum _Kind { ledger, mr6b2, mr6b3, unknown }
@@ -212,7 +298,7 @@ const _workspaceWriteImplementations = <String>{
   'deleteContainerTag',
 };
 
-const _pendingMr6b3Methods = <String>{
+const _currentMr6b3Methods = <String>{
   'updateWorkItemWeight',
   'updateWorkItemStatus',
   'updateWorkItemState',
@@ -220,12 +306,9 @@ const _pendingMr6b3Methods = <String>{
   'setWorkItemActivityNoteReaction',
   'deleteWorkItemActivityNote',
   'updateWorkItemMilestone',
-  'updateWorkItemLabels',
   'updateWorkItemHealthStatus',
   'updateWorkItemDates',
-  'updateWorkItemContent',
   'updateWorkItemAssignees',
-  'editWorkItemActivityNote',
   'createWorkItemActivityComment',
   'createWorkItemActivityReply',
   'snoozeTodo',
@@ -233,23 +316,97 @@ const _pendingMr6b3Methods = <String>{
   'setIncidentStatus',
 };
 
-const _pendingMr6b3GraphMutationCounts = <String, int>{
-  'lib/core/incident_api.dart': 1,
-  'lib/core/todo_snooze_api.dart': 2,
-  'lib/core/work_item_activity_api.dart': 2,
-  'lib/core/work_item_assignee_api.dart': 1,
-  'lib/core/work_item_content_api.dart': 1,
-  'lib/core/work_item_dates_api.dart': 1,
-  'lib/core/work_item_health_api.dart': 1,
-  'lib/core/work_item_labels_api.dart': 1,
-  'lib/core/work_item_milestone_api.dart': 1,
-  'lib/core/work_item_note_delete_api.dart': 1,
-  'lib/core/work_item_note_reactions_api.dart': 1,
-  'lib/core/work_item_notifications_api.dart': 1,
-  'lib/core/work_item_state_api.dart': 1,
-  'lib/core/work_item_status_api.dart': 1,
-  'lib/core/work_item_weight_api.dart': 1,
+const _deferredMr6b3Methods = <String>{
+  'updateWorkItemContent',
+  'editWorkItemActivityNote',
+  'updateWorkItemLabels',
 };
+
+const _pendingMr6b3Methods = <String>{
+  ..._currentMr6b3Methods,
+  ..._deferredMr6b3Methods,
+};
+
+const _currentMr6b3GraphSites = <(String, String), Set<String>>{
+  ('lib/core/work_item_state_api.dart', 'updateWorkItemState'): {
+    'updateWorkItemState',
+  },
+  ('lib/core/work_item_status_api.dart', 'updateWorkItemStatus'): {
+    'updateWorkItemStatus',
+  },
+  ('lib/core/work_item_dates_api.dart', 'updateWorkItemDates'): {
+    'updateWorkItemDates',
+  },
+  ('lib/core/work_item_health_api.dart', 'updateWorkItemHealthStatus'): {
+    'updateWorkItemHealthStatus',
+  },
+  ('lib/core/work_item_assignee_api.dart', 'updateWorkItemAssignees'): {
+    'updateWorkItemAssignees',
+  },
+  ('lib/core/work_item_milestone_api.dart', 'updateWorkItemMilestone'): {
+    'updateWorkItemMilestone',
+  },
+  ('lib/core/work_item_weight_api.dart', 'updateWorkItemWeight'): {
+    'updateWorkItemWeight',
+  },
+  ('lib/core/work_item_activity_api.dart', '_createWorkItemActivityNote'): {
+    'createWorkItemActivityComment',
+    'createWorkItemActivityReply',
+  },
+  ('lib/core/work_item_note_delete_api.dart', 'deleteWorkItemActivityNote'): {
+    'deleteWorkItemActivityNote',
+  },
+  (
+    'lib/core/work_item_note_reactions_api.dart',
+    'setWorkItemActivityNoteReaction',
+  ): {
+    'setWorkItemActivityNoteReaction',
+  },
+  ('lib/core/work_item_notifications_api.dart', 'setWorkItemNotifications'): {
+    'setWorkItemNotifications',
+  },
+  ('lib/core/incident_api.dart', 'setIncidentStatus'): {'setIncidentStatus'},
+  ('lib/core/todo_snooze_api.dart', 'snoozeTodo'): {'snoozeTodo'},
+  ('lib/core/todo_snooze_api.dart', 'unsnoozeTodo'): {'unsnoozeTodo'},
+};
+
+const _deferredMr6b3GraphSites = <(String, String), String>{
+  ('lib/core/work_item_content_api.dart', 'updateWorkItemContent'):
+      'updateWorkItemContent',
+  ('lib/core/work_item_activity_api.dart', 'editWorkItemActivityNote'):
+      'editWorkItemActivityNote',
+  ('lib/core/work_item_labels_api.dart', 'updateWorkItemLabels'):
+      'updateWorkItemLabels',
+};
+
+List<String> _graphInventoryProblems(Iterable<_Site> sites) {
+  final expected = <(String, String)>{
+    ..._currentMr6b3GraphSites.keys,
+    ..._deferredMr6b3GraphSites.keys,
+  };
+  final counts = <(String, String), int>{};
+  for (final site in sites) {
+    if (site.kind != 'graphMutation') continue;
+    final key = (site.file, site.detail);
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+
+  final problems = <String>[];
+  final rawCount = counts.values.fold<int>(0, (sum, count) => sum + count);
+  if (rawCount != 17) {
+    problems.add('expected 17 sites, found $rawCount');
+  }
+  for (final key in expected) {
+    final count = counts[key] ?? 0;
+    if (count != 1) {
+      problems.add('${key.$1} ${key.$2} occurs $count times');
+    }
+  }
+  for (final key in counts.keys.toSet().difference(expected)) {
+    problems.add('unknown site ${key.$1} ${key.$2}');
+  }
+  return problems;
+}
 
 const _rewiredNamedCalls = <(String, String)>[
   ('comment_editor.dart', 'createNote'),
@@ -327,7 +484,17 @@ _Bucket _classify(
   required Set<String> pending3Methods,
 }) {
   if (site.kind == 'graphMutation') {
-    return _Bucket(_Kind.mr6b3, 'graphMutation ${site.detail}');
+    final key = (site.file, site.detail);
+    final currentMethods = _currentMr6b3GraphSites[key];
+    if (currentMethods != null) {
+      return currentMethods.every(ledgerMethods.containsKey)
+          ? const _Bucket(_Kind.ledger, 'mr6b3 graph delivered')
+          : const _Bucket(_Kind.mr6b3, 'mr6b3 graph pending');
+    }
+    if (_deferredMr6b3GraphSites.containsKey(key)) {
+      return const _Bucket(_Kind.mr6b3, 'mr6b3 graph deferred');
+    }
+    return const _Bucket(_Kind.unknown, 'unknown graph mutation');
   }
   if (site.kind == 'named') {
     final operation = ledgerMethods[site.detail];

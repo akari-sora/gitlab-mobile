@@ -2534,7 +2534,7 @@ const _messagesMs = <String>[
   'Tidak berjaya. Cuba lagi.',
   'Set semula log penulisan',
   'Set semula log penulisan?',
-  'Set semula akan memadam log penulisan AI akaun ini pada peranti ini dan menanggalkan semua kunci penulisan yang terganggu. Selama 24 jam berikutnya, setiap penulisan AI memerlukan pengesahan anda. Taip {username} untuk mengesahkan.',
+  'Set semula akan memadam log penulisan AI akaun ini pada peranti ini dan menanggalkan semua kunci penulisan yang terganggu. Selama 24 jam berikutnya, setiap penulisan AI memerlukan pengesahan anda.',
   'Log penulisan telah disetkan semula.',
   '{count} penulisan terganggu memerlukan perhatian anda',
   'Sedang disediakan',

@@ -2534,7 +2534,7 @@ const _messagesIt = <String>[
   'Non ha funzionato. Riprova.',
   'Reimposta il registro delle scritture',
   'Reimpostare il registro delle scritture?',
-  'La reimpostazione elimina il registro delle scritture dell\'AI di questo account su questo dispositivo e toglie tutti i blocchi delle scritture interrotte. Per le prossime 24 ore, ogni scrittura dell\'AI richiederà la tua conferma. Digita {username} per confermare.',
+  'La reimpostazione elimina il registro delle scritture dell\'AI di questo account su questo dispositivo e toglie tutti i blocchi delle scritture interrotte. Per le prossime 24 ore, ogni scrittura dell\'AI richiederà la tua conferma.',
   'Il registro delle scritture è stato reimpostato.',
   '{count} scritture interrotte richiedono la tua attenzione',
   'In preparazione',

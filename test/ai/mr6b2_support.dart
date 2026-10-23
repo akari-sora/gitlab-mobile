@@ -54,6 +54,7 @@ final class VisibleProductionLedger implements AiCapabilityLedger {
       httpCap: row.httpCap,
       readback: row.readback,
       editableField: row.editableField,
+      boundary: row.boundary,
     );
   }
 

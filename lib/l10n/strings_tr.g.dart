@@ -2534,7 +2534,7 @@ const _messagesTr = <String>[
   'Olmadı. Tekrar dene.',
   'Yazma günlüğünü sıfırla',
   'Yazma günlüğü sıfırlansın mı?',
-  'Sıfırlama, bu cihazdaki bu hesaba ait AI yazma günlüğünü siler ve yarıda kalan yazmaların tüm kilitlerini kaldırır. Sonraki 24 saat boyunca AI\'ın her yazması senin onayını gerektirir. Onaylamak için {username} yaz.',
+  'Sıfırlama, bu cihazdaki bu hesaba ait AI yazma günlüğünü siler ve yarıda kalan yazmaların tüm kilitlerini kaldırır. Sonraki 24 saat boyunca AI\'ın her yazması senin onayını gerektirir.',
   'Yazma günlüğü sıfırlandı.',
   'Yarıda kalan {count} yazma dikkatini bekliyor',
   'Hazırlanıyor',

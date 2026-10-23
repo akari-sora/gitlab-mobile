@@ -158,7 +158,12 @@ extension WorkItemWeightApi on GitLabApi {
     required int? weight,
     bool Function()? isCurrent,
     void Function()? onMutationSent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _validateWeightInput(weight);
     _requireActivityOwner(target._owner);
     if (target._consumed) throw _weightUncertain;
@@ -184,7 +189,11 @@ extension WorkItemWeightApi on GitLabApi {
     if (before.snapshot.value?.weight == weight) return before.snapshot;
 
     ({Uint8List bytes, Headers headers, int statusCode}) response;
+    if (beforeMutation != null) await beforeMutation();
     onMutationSent?.call();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
     try {
       response = await _send(
         instance.graphQL,

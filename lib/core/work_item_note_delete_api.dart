@@ -102,7 +102,12 @@ extension WorkItemActivityDeleteApi on GitLabApi {
   Future<void> deleteWorkItemActivityNote(
     WorkItemActivityDeleteTarget target, {
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _requireActivityOwner(target._owner);
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -130,6 +135,11 @@ extension WorkItemActivityDeleteApi on GitLabApi {
       throw const ApiFailure(FailureKind.writeUncertain);
     }
     target._consumed = true;
+
+    if (beforeMutation != null) await beforeMutation();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
 
     try {
       final response = await _send(

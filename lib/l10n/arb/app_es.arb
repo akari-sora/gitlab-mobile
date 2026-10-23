@@ -2532,7 +2532,7 @@
   "aiWriteLogActionFailed": "No funcionó. Inténtalo de nuevo.",
   "aiWriteLogReset": "Restablecer el registro de escrituras",
   "aiWriteLogResetTitle": "¿Restablecer el registro de escrituras?",
-  "aiWriteLogResetDetail": "Al restablecer, se elimina el registro de escrituras de AI de esta cuenta en este dispositivo y se levantan todos los bloqueos de las escrituras interrumpidas. Durante las próximas 24 horas, cada escritura de AI requerirá tu confirmación. Escribe {username} para confirmar.",
+  "aiWriteLogResetDetail": "Al restablecer, se elimina el registro de escrituras de AI de esta cuenta en este dispositivo y se levantan todos los bloqueos de las escrituras interrumpidas. Durante las próximas 24 horas, cada escritura de AI requerirá tu confirmación.",
   "aiWriteLogResetDone": "Se restableció el registro de escrituras.",
   "aiWriteLogNeedsAttention": "{count} escrituras interrumpidas requieren tu atención",
   "aiJournalPrepared": "Preparando",
