@@ -182,6 +182,92 @@ void main() {
   );
 
   testWidgets(
+    '§3.4 fixture MR merge checks approvals cache ages while detail revalidates viewport 412x900 clock +31s completion: merge checks independently re-reads stale approvals',
+    (tester) async {
+      final fixture = _WorkItemFixture.mr();
+      addTearDown(fixture.close);
+      _viewport(tester);
+      const detailPath = ['projects', '42', 'merge_requests', '12'];
+      const approvalsPath = [...detailPath, 'approvals'];
+      await tester.runAsync(() async {
+        await fixture.api.cachedRecord(detailPath);
+        await fixture.api.cachedRecord(approvalsPath);
+      });
+      expect(fixture.detailReads, 1, reason: 'seed detail cache once');
+      expect(fixture.approvalsReads, 1, reason: 'seed approvals cache once');
+
+      fixture.now = fixture.now.add(const Duration(seconds: 31));
+      await tester.runAsync(
+        () => fixture.api.cachedRecord(approvalsPath, fresh: true),
+      );
+      expect(
+        fixture.approvalsReads,
+        2,
+        reason: 'keep approvals fresh while detail is stale',
+      );
+      final pendingDetail = Completer<ResponseBody>();
+      fixture.nextDetail = pendingDetail;
+      await tester.pumpWidget(workspaceHost(fixture.page()));
+      await pumpUntil(
+        tester,
+        () =>
+            tester
+                .state<WorkItemPageState>(find.byType(WorkItemPage))
+                .revalidating &&
+            fixture.detailReads == 2,
+        description: 'stale detail sends its background revalidation',
+      );
+      expect(
+        fixture.detailReads,
+        2,
+        reason: 'one held background detail request',
+      );
+      expect(
+        fixture.approvalsReads,
+        2,
+        reason:
+            'the parent approvals read used the fresh cache and sent no HTTP',
+      );
+      await tester.tap(find.byType(Tab).last);
+      await tester.pump();
+      expect(
+        fixture.approvalsReads,
+        2,
+        reason: 'initial merge checks read also used the fresh approvals cache',
+      );
+
+      fixture.now = fixture.now.add(const Duration(seconds: 31));
+      fixture.nextApprovals = fixture.approvalsJson(
+        approvedBy: [
+          {
+            'user': {'id': 9, 'username': 'fresh-reviewer'},
+          },
+        ],
+        required: 1,
+        left: 0,
+      );
+      pendingDetail.complete(
+        jsonResponse(fixture.mrDetail(title: 'Revalidated MR')),
+      );
+      await pumpUntil(
+        tester,
+        () => fixture.approvalsReads == 3,
+        description: 'merge checks independently re-reads approvals older than 30 seconds',
+      );
+      await settleWorkspace(tester);
+      expect(fixture.detailReads, 2);
+      expect(
+        fixture.approvalsReads,
+        3,
+        reason: 'exactly one merge checks stale-cache read',
+      );
+      expect(find.text('@fresh-reviewer'), findsOneWidget);
+      _expectDetailUri(fixture);
+      _expectApprovalsUri(fixture);
+    },
+  );
+
+  testWidgets(
     '§3.4 fixture issue related change cache stale viewport 412x900 clock +45s completion settled: stale reopen re-reads related and links and shows the new link',
     (tester) async {
       final fixture = _WorkItemFixture.issue();

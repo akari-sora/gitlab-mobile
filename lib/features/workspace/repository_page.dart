@@ -458,35 +458,36 @@ class RepositoryTabState extends State<RepositoryTab> {
   }
 
   void _detectReadmeCandidate(List<Json> items, String sha) {
+    if (!mounted || _currentRef?.sha != sha) return;
     if (_readme != null && _readme!.sha == sha) return;
     if (_readmeLoading && _readmeFetchSha == sha) return;
     final path = findReadmePath(items);
     if (path != null) {
       _readmeCandidatePath = path;
       _readmeFetchSha = sha;
-      unawaited(_fetchReadme(path, sha, _epoch, ++_readmeEpoch));
+      unawaited(_fetchReadme(path, sha, ++_readmeEpoch));
     }
   }
 
-  Future<void> _fetchReadme(String path, String sha, int epoch, int readmeEpoch) async {
+  Future<void> _fetchReadme(String path, String sha, int readmeEpoch) async {
     if (!mounted) return;
     setState(() {
       _readmeLoading = true;
       _readmeError = null;
     });
     try {
-      // A foreground explicit read of SHA-pinned content (never stale). The
-      // fence covers the page epoch so a stale page never applies the result;
-      // visibility is intentionally not gated here because the tree that
-      // triggered this read already passed the feed's own visibility fence.
+      // The README generation changes with the account, project, ref or
+      // request. A same-SHA branch refresh can advance the page epoch without
+      // invalidating this completion. The triggering tree owns visibility.
       final text = await CachedRead.run(
         () => widget.api.textFile(widget.project.id, sha, path),
-        mayStart: () => mounted && _epoch == epoch && !widget.api.isClosed,
+        mayStart: () => mounted && _readmeEpoch == readmeEpoch &&
+            _currentRef?.sha == sha && !widget.api.isClosed,
       );
       if (utf8.encode(text).length > 256 * 1024) {
         throw const ApiFailure(FailureKind.tooLarge);
       }
-      if (mounted && _epoch == epoch && _readmeEpoch == readmeEpoch) {
+      if (mounted && _readmeEpoch == readmeEpoch) {
         setState(() {
           if (_currentRef?.sha == sha) {
             _readme = RepositoryReadme(path: path, sha: sha, markdown: text);
@@ -495,7 +496,7 @@ class RepositoryTabState extends State<RepositoryTab> {
         });
       }
     } catch (e) {
-      if (mounted && _epoch == epoch && _readmeEpoch == readmeEpoch) {
+      if (mounted && _readmeEpoch == readmeEpoch) {
         setState(() {
           if (_currentRef?.sha == sha) {
             _readmeError = safeFailure(e);
@@ -852,6 +853,7 @@ class RepositoryTabState extends State<RepositoryTab> {
                     }
                     final sha = ref.sha;
                     final folder = _folder;
+                    final readmeEpoch = _readmeEpoch;
                     final read = await widget.api.cachedRecords(
                       [
                         'projects',
@@ -867,6 +869,11 @@ class RepositoryTabState extends State<RepositoryTab> {
                       fresh: fresh,
                       background: background,
                     );
+                    if (!mounted ||
+                        _currentRef?.sha != sha ||
+                        _readmeEpoch != readmeEpoch) {
+                      return read;
+                    }
                     if (folder.isEmpty && !read.dropped && !read.superseded) {
                       _detectReadmeCandidate(read.value.items, sha);
                     }
@@ -879,6 +886,7 @@ class RepositoryTabState extends State<RepositoryTab> {
                     }
                     final sha = ref.sha;
                     final folder = _folder;
+                    final readmeEpoch = _readmeEpoch;
                     final page = await widget.api.records(
                       [
                         'projects',
@@ -893,6 +901,11 @@ class RepositoryTabState extends State<RepositoryTab> {
                       },
                       next: next,
                     );
+                    if (!mounted ||
+                        _currentRef?.sha != sha ||
+                        _readmeEpoch != readmeEpoch) {
+                      return page;
+                    }
                     if (folder.isEmpty) {
                       _detectReadmeCandidate(page.items, sha);
                     }
@@ -919,7 +932,6 @@ class RepositoryTabState extends State<RepositoryTab> {
                           _fetchReadme(
                             _readmeCandidatePath!,
                             _currentRef!.sha,
-                            _epoch,
                             ++_readmeEpoch,
                           );
                         }

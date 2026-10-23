@@ -285,6 +285,411 @@ void main() {
     },
   );
 
+  for (final background in [false, true]) {
+    testWidgets(
+      '§3.4 fixture late tree A README B held viewport 412x900 clock ${background ? '+61s' : 'fixed'} completion ${background ? 'background revalidation' : 'explicit refresh'}: late tree A never replaces README B',
+      (tester) async {
+        final fixture = _RepositoryFixture();
+        addTearDown(fixture.close);
+        _viewport(tester);
+        const shaA = _RepositoryFixture.sha;
+        const shaB = _RepositoryFixture.shaB;
+        if (background) {
+          // Warm the branch alone; the reopened tree A must still hit HTTP.
+          fixture.treeStatus = 500;
+          await tester.pumpWidget(workspaceHost(fixture.tab()));
+          await settleWorkspace(tester);
+          await tester.pumpWidget(const SizedBox());
+          await tester.pump();
+          fixture.now = fixture.now.add(const Duration(seconds: 61));
+          fixture.treeStatus = null;
+        }
+        final treeBefore = fixture.treeReads;
+        final heldTreeA = Completer<void>();
+        final heldReadmeB = Completer<ResponseBody>();
+        fixture.readmePending[shaB] = heldReadmeB;
+        var holdTreeA = true;
+        fixture.intercept = (request) {
+          if (holdTreeA &&
+              request.method == 'GET' &&
+              request.uri.path ==
+                  '/gitlab/api/v4/projects/42/repository/tree' &&
+              request.uri.queryParameters['ref'] == shaA) {
+            holdTreeA = false;
+            return heldTreeA.future.then((_) => jsonResponse(_rootTree()));
+          }
+          return null;
+        };
+        final heldBranchB = Completer<ResponseBody>();
+        if (background) fixture.nextBranch = heldBranchB;
+        await tester.pumpWidget(workspaceHost(fixture.tab()));
+        await pumpUntil(
+          tester,
+          () => fixture.treeReads == treeBefore + 1,
+          description: 'tree A in flight',
+        );
+        final state = tester.state<RepositoryTabState>(
+          find.byType(RepositoryTab),
+        );
+        expect(state.currentRef?.sha, shaA);
+        if (!background) {
+          fixture.nextBranch = heldBranchB;
+          await tester.tap(find.widgetWithIcon(IconButton, Icons.refresh));
+        }
+        await pumpUntil(
+          tester,
+          () => fixture.branchReads == 2,
+          description: 'branch B read starts',
+        );
+        expect(state.revalidating, background);
+        heldBranchB.complete(
+          jsonResponse({
+            'name': 'main',
+            'commit': {'id': shaB},
+          }),
+        );
+        await pumpUntil(
+          tester,
+          () => state.currentRef?.sha == shaB,
+          description: 'branch B applied',
+        );
+        await pumpUntil(
+          tester,
+          () => fixture.treeReads == treeBefore + 2,
+          description: 'tree B loads',
+        );
+        await pumpUntil(
+          tester,
+          () => fixture.readmeRawReads == 1,
+          description: 'README B starts',
+        );
+        heldTreeA.complete();
+        await settleNetworkWidgets(tester);
+        expect(
+          find.descendant(
+            of: find.byType(RepositoryReadmeCard),
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsOneWidget,
+          reason: 'late tree A must not end README B loading',
+        );
+        heldReadmeB.complete(
+          ResponseBody.fromString('# README B marker-bbb', 200),
+        );
+        await settleWorkspace(tester);
+        expect(
+          find.textContaining('marker-bbb', findRichText: true),
+          findsOneWidget,
+        );
+        expect(fixture.branchReads, 2);
+        expect(fixture.treeReads, treeBefore + 2);
+        _expectReadmeRequests(fixture, [shaB]);
+      },
+    );
+  }
+
+  testWidgets(
+    '§3.4 fixture README A held branch stale viewport 412x900 clock +61s completion background revalidation: old README never clears the new SHA loading flag',
+    (tester) async {
+      final fixture = _RepositoryFixture()..treeStatus = 500;
+      addTearDown(fixture.close);
+      _viewport(tester);
+      await tester.pumpWidget(workspaceHost(fixture.tab()));
+      await settleWorkspace(tester);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      fixture.now = fixture.now.add(const Duration(seconds: 61));
+      fixture.treeStatus = null;
+      final heldReadmeA = Completer<ResponseBody>();
+      final heldReadmeB = Completer<ResponseBody>();
+      fixture.readmePending[_RepositoryFixture.sha] = heldReadmeA;
+      fixture.readmePending[_RepositoryFixture.shaB] = heldReadmeB;
+      final heldBranchB = Completer<ResponseBody>();
+      fixture.nextBranch = heldBranchB;
+      await tester.pumpWidget(workspaceHost(fixture.tab()));
+      await pumpUntil(
+        tester,
+        () => fixture.readmeRawReads == 1,
+        description: 'README A in flight',
+      );
+      final state = tester.state<RepositoryTabState>(
+        find.byType(RepositoryTab),
+      );
+      expect(state.revalidating, isTrue);
+      heldBranchB.complete(
+        jsonResponse({
+          'name': 'main',
+          'commit': {'id': _RepositoryFixture.shaB},
+        }),
+      );
+      await pumpUntil(
+        tester,
+        () => state.currentRef?.sha == _RepositoryFixture.shaB,
+        description: 'branch B applied in background',
+      );
+      await pumpUntil(
+        tester,
+        () => fixture.readmeRawReads == 2,
+        description: 'README B starts',
+      );
+      heldReadmeA.complete(
+        ResponseBody.fromString('# README A marker-aaa', 200),
+      );
+      await settleNetworkWidgets(tester);
+      expect(
+        find.textContaining('marker-aaa', findRichText: true),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(RepositoryReadmeCard),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+        reason: 'README A completion must not end README B loading',
+      );
+      heldReadmeB.complete(
+        ResponseBody.fromString('# README B marker-bbb', 200),
+      );
+      await settleWorkspace(tester);
+      expect(
+        find.textContaining('marker-bbb', findRichText: true),
+        findsOneWidget,
+      );
+      expect(fixture.branchReads, 2);
+      expect(fixture.treeReads, 3);
+      expect(fixture.readmeHeadReads, 2);
+      expect(fixture.readmeRawReads, 2);
+    },
+  );
+
+  for (final status in [200, 500]) {
+    testWidgets(
+      '§3.4 fixture same SHA README held viewport 412x900 clock fixed completion ${status == 200 ? 'success' : 'failure'}: same SHA explicit refresh releases README loading',
+      (tester) async {
+        final fixture = _RepositoryFixture();
+        addTearDown(fixture.close);
+        _viewport(tester);
+        final heldReadme = Completer<ResponseBody>();
+        fixture.readmePending[_RepositoryFixture.sha] = heldReadme;
+        await tester.pumpWidget(workspaceHost(fixture.tab()));
+        await pumpUntil(
+          tester,
+          () => fixture.readmeRawReads == 1,
+          description: 'README A in flight',
+        );
+        await tester.tap(find.widgetWithIcon(IconButton, Icons.refresh));
+        await pumpUntil(
+          tester,
+          () => fixture.branchReads == 2,
+          description: 'same SHA branch refresh',
+        );
+        await settleNetworkWidgets(tester);
+        heldReadme.complete(
+          ResponseBody.fromString('# README A marker-aaa', status),
+        );
+        await settleWorkspace(tester);
+        expect(
+          find.descendant(
+            of: find.byType(RepositoryReadmeCard),
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsNothing,
+          reason: 'same SHA refresh must not orphan a README completion',
+        );
+        if (status == 500) {
+          final notice = tester.widget<FailureNotice>(
+            find.descendant(
+              of: find.byType(RepositoryReadmeCard),
+              matching: find.byType(FailureNotice),
+            ),
+          );
+          expect(notice.onRetry, isNotNull);
+          fixture.readmePending.clear();
+          fixture.readmeBodyByRef[_RepositoryFixture.sha] =
+              '# README A marker-aaa';
+          notice.onRetry!();
+          await settleWorkspace(tester);
+          expect(
+            fixture.readmeRawReads,
+            2,
+            reason: 'failed README remains retryable',
+          );
+        } else {
+          _expectReadmeRequests(fixture, [_RepositoryFixture.sha]);
+        }
+        expect(
+          find.textContaining('marker-aaa', findRichText: true),
+          findsOneWidget,
+        );
+        expect(fixture.branchReads, 2);
+        expect(fixture.treeReads, 1);
+      },
+    );
+  }
+
+  testWidgets(
+    '§3.4 fixture README A retry queued foreground full viewport 412x900 clock +61s completion branch B background response: superseded README sends no HTTP',
+    (tester) async {
+      final fixture = _RepositoryFixture()..treeStatus = 500;
+      addTearDown(fixture.close);
+      _viewport(tester);
+      await tester.pumpWidget(workspaceHost(fixture.tab()));
+      await settleWorkspace(tester);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      fixture.now = fixture.now.add(const Duration(seconds: 61));
+      fixture.treeStatus = null;
+      final occupied = Completer<void>();
+      fixture.intercept = (request) {
+        if (request.uri.path.contains('/projects/8/issues/')) {
+          return occupied.future.then((_) => jsonResponse({'id': 1}));
+        }
+        return null;
+      };
+      fixture.readmePending[_RepositoryFixture.sha] = Completer<ResponseBody>()
+        ..complete(ResponseBody.fromString('', 500));
+      final heldBranchB = Completer<ResponseBody>();
+      fixture.nextBranch = heldBranchB;
+      await tester.pumpWidget(workspaceHost(fixture.tab()));
+      await pumpUntil(
+        tester,
+        () => fixture.readmeRawReads == 1,
+        description: 'README A fails before retry',
+      );
+      await settleWorkspace(tester);
+      final notice = tester.widget<FailureNotice>(
+        find.descendant(
+          of: find.byType(RepositoryReadmeCard),
+          matching: find.byType(FailureNotice),
+        ),
+      );
+      expect(notice.onRetry, isNotNull);
+      final blockers = [
+        for (var id = 1; id <= 16; id++)
+          fixture.api.cachedRecord([
+            'projects',
+            '8',
+            'issues',
+            '$id',
+          ], fresh: true),
+      ];
+      await pumpUntil(
+        tester,
+        () => fixture.blockerReads == 16,
+        description: 'all foreground slots occupied',
+      );
+      // Invoke the explicit retry outside the tree's read Zone so only the
+      // README request's own generation fence can cancel this queued read.
+      notice.onRetry!();
+      await settleNetworkWidgets(tester);
+      expect(fixture.readmeHeadReads, 1, reason: 'README A retry is queued');
+      expect(
+        find.descendant(
+          of: find.byType(RepositoryReadmeCard),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+      final state = tester.state<RepositoryTabState>(
+        find.byType(RepositoryTab),
+      );
+      expect(state.revalidating, isTrue);
+      heldBranchB.complete(
+        jsonResponse({
+          'name': 'main',
+          'commit': {'id': _RepositoryFixture.shaB},
+        }),
+      );
+      await pumpUntil(
+        tester,
+        () => state.currentRef?.sha == _RepositoryFixture.shaB,
+        description: 'branch B supersedes queued README A',
+      );
+      occupied.complete();
+      await settleNetworkWidgets(tester);
+      await tester.runAsync(() => Future.wait(blockers));
+      await settleWorkspace(tester);
+      _expectReadmeRequests(fixture, [
+        _RepositoryFixture.sha,
+        _RepositoryFixture.shaB,
+      ]);
+      expect(
+        find.textContaining('Synthetic README', findRichText: true),
+        findsOneWidget,
+      );
+      expect(fixture.branchReads, 2);
+      expect(fixture.treeReads, 3);
+    },
+  );
+
+  testWidgets(
+    '§3.4 fixture README retry queued foreground full viewport 412x900 clock fixed completion explicit refresh: same SHA refresh preserves queued README',
+    (tester) async {
+      final fixture = _RepositoryFixture();
+      addTearDown(fixture.close);
+      _viewport(tester);
+      fixture.readmePending[_RepositoryFixture.sha] = Completer<ResponseBody>()
+        ..complete(ResponseBody.fromString('', 500));
+      await tester.pumpWidget(workspaceHost(fixture.tab()));
+      await settleWorkspace(tester);
+      final notice = tester.widget<FailureNotice>(
+        find.descendant(
+          of: find.byType(RepositoryReadmeCard),
+          matching: find.byType(FailureNotice),
+        ),
+      );
+      expect(notice.onRetry, isNotNull);
+      final occupied = Completer<void>();
+      fixture.intercept = (request) =>
+          request.uri.path.contains('/projects/8/issues/')
+          ? occupied.future.then((_) => jsonResponse({'id': 1}))
+          : null;
+      final blockers = [
+        for (var id = 1; id <= 16; id++)
+          fixture.api.cachedRecord([
+            'projects',
+            '8',
+            'issues',
+            '$id',
+          ], fresh: true),
+      ];
+      await pumpUntil(
+        tester,
+        () => fixture.blockerReads == 16,
+        description: 'all foreground slots occupied',
+      );
+      fixture.readmePending.clear();
+      fixture.readmeBodyByRef[_RepositoryFixture.sha] = '# README A marker-aaa';
+      notice.onRetry!();
+      await settleNetworkWidgets(tester);
+      expect(fixture.readmeHeadReads, 1, reason: 'README retry remains queued');
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.refresh));
+      await tester.pump();
+      occupied.complete();
+      await settleNetworkWidgets(tester);
+      await tester.runAsync(() => Future.wait(blockers));
+      await settleWorkspace(tester);
+      expect(fixture.branchReads, 2);
+      expect(fixture.treeReads, 1);
+      _expectReadmeRequests(fixture, [
+        _RepositoryFixture.sha,
+        _RepositoryFixture.sha,
+      ]);
+      expect(
+        find.textContaining('marker-aaa', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(RepositoryReadmeCard),
+          matching: find.byType(FailureNotice),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets(
     '§3.4 fixture file cold dropped viewport 412x900 clock fixed completion retry notice: dropped cold read shows retry and recovers',
     (tester) async {
@@ -322,6 +727,45 @@ void _viewport(WidgetTester tester) {
   tester.view.physicalSize = const Size(412, 900);
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+List<Json> _rootTree() => [
+  {'id': '1', 'name': 'lib', 'path': 'lib', 'type': 'tree', 'mode': '040000'},
+  {
+    'id': '2',
+    'name': 'README.md',
+    'path': 'README.md',
+    'type': 'blob',
+    'mode': '100644',
+  },
+];
+
+void _expectReadmeRequests(_RepositoryFixture fixture, List<String> refs) {
+  expect(fixture.readmeHeadReads, refs.length);
+  expect(fixture.readmeRawReads, refs.length);
+  final heads = fixture.adapter.requests
+      .where(
+        (r) =>
+            r.method == 'HEAD' &&
+            r.uri.path ==
+                '/gitlab/api/v4/projects/42/repository/files/README.md',
+      )
+      .toList();
+  final raws = fixture.adapter.requests
+      .where(
+        (r) =>
+            r.method == 'GET' &&
+            r.uri.path ==
+                '/gitlab/api/v4/projects/42/repository/files/README.md/raw',
+      )
+      .toList();
+  for (var i = 0; i < refs.length; i++) {
+    expect(heads[i].uri.queryParameters, equals({'ref': refs[i]}));
+    expect(
+      raws[i].uri.queryParameters,
+      equals({'ref': refs[i], 'lfs': 'false'}),
+    );
+  }
 }
 
 final class _RepositoryFixture {
