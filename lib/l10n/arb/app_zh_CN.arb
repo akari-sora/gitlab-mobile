@@ -2716,5 +2716,10 @@
   "cacheResumesInMinutes": "约 {minutes} 分钟后恢复",
   "activityVerbTarget": "{verb}{target}",
   "refreshEveryThirtySeconds": "30 秒刷新",
-  "refreshEveryMinute": "每分钟刷新"
+  "refreshEveryMinute": "每分钟刷新",
+  "aiSendPausedBudget": "GitLab 请求额度快用完了，暂停发送",
+  "aiSendPausedRateLimited": "GitLab 正在限制请求，暂停发送",
+  "aiSendResumesAfterReset": "请求额度重置后恢复",
+  "aiGitLabBudgetTitle": "GitLab 请求额度暂时不足",
+  "aiGitLabBudgetDetail": "此消息未发送。“发送”按钮恢复可用后再发送一次。"
 }

@@ -2716,5 +2716,10 @@
   "cacheResumesInMinutes": "Tiếp tục sau khoảng {minutes} phút",
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "Làm mới mỗi 30 giây",
-  "refreshEveryMinute": "Làm mới mỗi phút"
+  "refreshEveryMinute": "Làm mới mỗi phút",
+  "aiSendPausedBudget": "Hạn mức yêu cầu GitLab gần cạn; tạm dừng gửi",
+  "aiSendPausedRateLimited": "GitLab đang giới hạn yêu cầu; tạm dừng gửi",
+  "aiSendResumesAfterReset": "Tiếp tục khi hạn mức yêu cầu được đặt lại",
+  "aiGitLabBudgetTitle": "Hạn mức yêu cầu GitLab gần cạn",
+  "aiGitLabBudgetDetail": "Tin nhắn này chưa được gửi. Gửi lại khi nút “Gửi” khả dụng trở lại."
 }

@@ -2716,5 +2716,10 @@
   "cacheResumesInMinutes": "Wznowienie za ok. {minutes} min",
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "Odświeżaj co 30 s",
-  "refreshEveryMinute": "Odświeżaj co minutę"
+  "refreshEveryMinute": "Odświeżaj co minutę",
+  "aiSendPausedBudget": "Limit żądań w GitLab jest prawie wyczerpany; wysyłanie wstrzymane",
+  "aiSendPausedRateLimited": "GitLab ogranicza żądania; wysyłanie wstrzymane",
+  "aiSendResumesAfterReset": "Wznowienie po odnowieniu limitu żądań",
+  "aiGitLabBudgetTitle": "Limit żądań w GitLab jest prawie wyczerpany",
+  "aiGitLabBudgetDetail": "Ta wiadomość nie została wysłana. Wyślij ją ponownie, gdy przycisk „Wyślij” będzie znów dostępny."
 }

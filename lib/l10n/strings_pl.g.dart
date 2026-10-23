@@ -2719,4 +2719,9 @@ const _messagesPl = <String>[
   '{verb} {target}',
   'Odświeżaj co 30 s',
   'Odświeżaj co minutę',
+  'Limit żądań w GitLab jest prawie wyczerpany; wysyłanie wstrzymane',
+  'GitLab ogranicza żądania; wysyłanie wstrzymane',
+  'Wznowienie po odnowieniu limitu żądań',
+  'Limit żądań w GitLab jest prawie wyczerpany',
+  'Ta wiadomość nie została wysłana. Wyślij ją ponownie, gdy przycisk „Wyślij” będzie znów dostępny.',
 ];
