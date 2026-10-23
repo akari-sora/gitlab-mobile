@@ -1013,13 +1013,22 @@ class _BoardsPageState extends State<BoardsPage> {
       visible: column.kind == BoardColumnKind.open
           ? (issue) => boardOpenIssueMatches(board, issue)
           : null,
-      cached: ({required fresh, required background}) =>
-          widget.api.cachedRecords(
-            ['projects', '${widget.project.id}', 'issues'],
-            query: query.parameters,
-            fresh: freshColumns.remove(column.key) || fresh,
-            background: background,
-          ),
+      // The refresh intent is spent only by a fresh read that reached the
+      // network: a read dropped because the column went away keeps it.
+      cached: ({required fresh, required background}) async {
+        final force = fresh || freshColumns.contains(column.key);
+        final read = await widget.api.cachedRecords(
+          ['projects', '${widget.project.id}', 'issues'],
+          query: query.parameters,
+          fresh: force,
+          background: background,
+        );
+        if (force && read.lineage == CacheLineage.network &&
+            !read.superseded && !read.dropped) {
+          freshColumns.remove(column.key);
+        }
+        return read;
+      },
       load: (next) => widget.api.records(
         ['projects', '${widget.project.id}', 'issues'],
         query: query.parameters,
