@@ -406,9 +406,11 @@ class _DeletePreview extends StatelessWidget {
         todos ? l10n.accountLabel : l10n.aiPreviewDeleteTarget,
         isolated(delete.targetName),
       ),
-      if (delete.path case final path?)
+      // A branch or tag delete names the same thing twice; show it once.
+      if (delete.path case final path? when path != delete.targetName)
         _Fact(l10n.aiPreviewPath, isolated(path)),
-      if (delete.ref case final ref?) _Fact(l10n.aiPreviewRef, isolated(ref)),
+      if (delete.ref case final ref? when ref != delete.targetName)
+        _Fact(l10n.aiPreviewRef, isolated(ref)),
       if (delete.count case final count?)
         _Fact(
           todos ? l10n.todoLabel : l10n.aiPreviewDeleteCount,

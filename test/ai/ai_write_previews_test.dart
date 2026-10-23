@@ -162,6 +162,9 @@ void main() {
     );
     expect(find.byKey(const ValueKey('ai-preview-cannot-undo')), findsOne);
     expect(find.text(l10n.aiPreviewAtLeast('30')), findsOneWidget);
+    // The ref equals the target, so it is not repeated.
+    expect(find.text(l10n.aiPreviewRef), findsNothing);
+    expect(find.text('v1.2.0'), findsOneWidget);
   });
 
   testWidgets('marking all to-dos done is not shown as a delete', (
