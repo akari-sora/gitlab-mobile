@@ -2716,4 +2716,5 @@ const _messagesTh = <String>[
   'GitLab กำลังจำกัดคำขอ',
   'รีเฟรชไม่ได้',
   'กลับมาในอีกประมาณ {minutes} นาที',
+  '{verb} {target}',
 ];

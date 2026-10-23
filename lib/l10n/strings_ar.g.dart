@@ -2716,4 +2716,5 @@ const _messagesAr = <String>[
   'يقيّد GitLab الطلبات',
   'تعذّر التحديث',
   'يستأنف بعد {minutes} د تقريبًا',
+  '{verb} {target}',
 ];

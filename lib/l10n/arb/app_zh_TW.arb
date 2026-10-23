@@ -11482,5 +11482,12 @@
     "placeholders": {
       "minutes": {}
     }
+  },
+  "activityVerbTarget": "{verb}{target}",
+  "@activityVerbTarget": {
+    "placeholders": {
+      "verb": {},
+      "target": {}
+    }
   }
 }

@@ -2713,5 +2713,6 @@
   "cacheRefreshing": "正在刷新…",
   "cacheRateLimited": "GitLab 正在限制请求",
   "cacheRefreshFailed": "无法刷新",
-  "cacheResumesInMinutes": "约 {minutes} 分钟后恢复"
+  "cacheResumesInMinutes": "约 {minutes} 分钟后恢复",
+  "activityVerbTarget": "{verb}{target}"
 }

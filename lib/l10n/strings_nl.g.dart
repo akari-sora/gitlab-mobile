@@ -2716,4 +2716,5 @@ const _messagesNl = <String>[
   'GitLab beperkt verzoeken',
   'Kan niet vernieuwen',
   'Hervatting over ca. {minutes} min',
+  '{verb} {target}',
 ];

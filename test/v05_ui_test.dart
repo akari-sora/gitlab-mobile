@@ -19,6 +19,7 @@ import 'package:gitlab_mobile/features/workspace/search_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
 import 'package:gitlab_mobile/shared/scroll_chrome.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
@@ -303,6 +304,25 @@ void main() {
     expect(activitySentence({'action_name': 'commented on', 'target_type': 'Note',
       'note': {'noteable_type': 'Issue', 'noteable_iid': 12, 'body': 'hi'}}), '留言於議題 #12');
     expect(activitySentence({'action_name': 'joined'}), '加入了專案');
+  });
+
+  test('activity sentences use the language\'s spacing between verb and target', () {
+    useLanguage(languageForTag('en')!);
+    addTearDown(() => useLanguage(sourceLanguage));
+    expect(activitySentence({'action_name': 'commented on', 'target_type': 'Note',
+      'note': {'noteable_type': 'Issue', 'noteable_iid': 12, 'body': 'hi'}}), 'Commented on Issue #12');
+    expect(activitySentence({'action_name': 'opened', 'target_type': 'MergeRequest', 'target_iid': 7}),
+      'Opened Merge request !7');
+    expect(activitySentence({'action_name': 'opened', 'target_type': 'Unknown', 'target_iid': 3}), 'Opened #3');
+
+    useLanguage(languageForTag('ja')!);
+    expect(activitySentence({'action_name': 'opened', 'target_type': 'MergeRequest', 'target_iid': 7}),
+      'オープンしました（マージリクエスト） !7');
+
+    // Arabic isolates the verb and the target separately and keeps the reference in one isolate.
+    useLanguage(languageForTag('ar')!);
+    expect(activitySentence({'action_name': 'opened', 'target_type': 'MergeRequest', 'target_iid': 7}),
+      '\u2068فتح\u2069 \u2068طلب دمج\u2069 \u2068!7\u2069');
   });
 
   test('draft toggling adds Draft: and strips every prefix GitLab recognises', () {
