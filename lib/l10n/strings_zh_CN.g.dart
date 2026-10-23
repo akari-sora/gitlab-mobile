@@ -2709,6 +2709,6 @@ const _messagesZhCn = <String>[
   '已计划删除',
   '所属',
   '另外还有 {count} 个文件会变更',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  '你在消息里提到了这个名称，但没有用反引号（`）标出来，所以这条写入需要你确认。',
+  'GitLab 可能会延后删除，保留期内仍可还原。',
 ];

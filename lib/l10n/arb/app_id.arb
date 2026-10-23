@@ -2707,6 +2707,6 @@
   "aiWriteDeletionScheduled": "Penghapusan dijadwalkan",
   "aiPreviewParent": "Milik",
   "aiPreviewMoreFiles": "{count} berkas lain juga akan berubah",
-  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
+  "aiConfirmTargetNamedNotMarked": "Anda menyebut nama ini dalam pesan, tetapi tidak menandainya dengan backtick (`, sehingga penulisan ini memerlukan konfirmasi Anda.",
+  "aiPreviewDeletionMayBeDelayed": "GitLab dapat menunda penghapusan; item dapat dipulihkan selama masa penyimpanan."
 }

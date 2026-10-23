@@ -2707,6 +2707,6 @@
   "aiWriteDeletionScheduled": "Видалення заплановано",
   "aiPreviewParent": "Належить до",
   "aiPreviewMoreFiles": "Також зміниться ще {count} файлів",
-  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
+  "aiConfirmTargetNamedNotMarked": "Ви згадували це ім'я в повідомленні, але не позначили його зворотним апострофом (`, тому ця дія потребує підтвердження.",
+  "aiPreviewDeletionMayBeDelayed": "GitLab може відкласти видалення; його можна відновити протягом терміну зберігання."
 }

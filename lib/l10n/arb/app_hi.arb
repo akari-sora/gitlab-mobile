@@ -2707,6 +2707,6 @@
   "aiWriteDeletionScheduled": "हटाना शेड्यूल किया गया",
   "aiPreviewParent": "इससे जुड़ा है",
   "aiPreviewMoreFiles": "{count} और फ़ाइलें भी बदलेंगी",
-  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
+  "aiConfirmTargetNamedNotMarked": "आपने संदेश में इस नाम का उल्लेख किया है, लेकिन बैकटिक (`) से इसे चिन्हित नहीं किया है, इसलिए इस लेखन के लिए आपकी पुष्टि आवश्यक है।",
+  "aiPreviewDeletionMayBeDelayed": "GitLab जनमत पर तब तक रुक सकता है, जब तक को डिलीट किए गए लूप को संग्रहीत समय सीमा तक ले जाया जा सकै॥"
 }

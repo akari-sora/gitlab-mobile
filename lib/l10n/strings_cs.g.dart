@@ -2709,6 +2709,6 @@ const _messagesCs = <String>[
   'Smazání je naplánováno',
   'Patří k',
   'Změní se i {count} dalších souborů',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Tento název jste v zprávě zmínili, ale neoznačili jste jej zpětným apostrofem (`), takže tento zápis vyžaduje vaše potvrzení.',
+  'GitLab může odstranění zpozdit; dokud trží lhůta uchování, položku lze obnovit.',
 ];

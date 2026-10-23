@@ -2709,6 +2709,6 @@ const _messagesNl = <String>[
   'Verwijdering ingepland',
   'Hoort bij',
   'Nog {count} bestanden wijzigen ook',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Je hebt deze naam in het bericht genoemd maar niet gemarkeerd met een backtick (`, dus deze schrijfactie vereist jouw bevestiging.',
+  'GitLab kan de verwijdering uitstellen; tijdens de bewaartermijn kan het item worden hersteld.',
 ];

@@ -2707,6 +2707,6 @@
   "aiWriteDeletionScheduled": "Zaplanowano usunięcie",
   "aiPreviewParent": "Należy do",
   "aiPreviewMoreFiles": "Zmieni się też {count} innych plików",
-  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
+  "aiConfirmTargetNamedNotMarked": "O tej nazwie była mowa w wiadomości, ale nie została jednak oznaczona backtickiem (`, więc ten zapis wymaga potwierdzenia.",
+  "aiPreviewDeletionMayBeDelayed": "GitLab może opóźnić usunięcie; element można przywrócić w okresie przechowywania."
 }

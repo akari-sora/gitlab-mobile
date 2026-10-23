@@ -2709,6 +2709,6 @@ const _messagesHi = <String>[
   'हटाना शेड्यूल किया गया',
   'इससे जुड़ा है',
   '{count} और फ़ाइलें भी बदलेंगी',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'आपने संदेश में इस नाम का उल्लेख किया है, लेकिन बैकटिक (`) से इसे चिन्हित नहीं किया है, इसलिए इस लेखन के लिए आपकी पुष्टि आवश्यक है।',
+  'GitLab जनमत पर तब तक रुक सकता है, जब तक को डिलीट किए गए लूप को संग्रहीत समय सीमा तक ले जाया जा सकै॥',
 ];

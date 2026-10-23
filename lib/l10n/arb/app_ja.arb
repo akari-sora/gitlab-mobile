@@ -2707,6 +2707,6 @@
   "aiWriteDeletionScheduled": "削除を予約しました",
   "aiPreviewParent": "所属",
   "aiPreviewMoreFiles": "ほかに {count} 個のファイルも変更されます",
-  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
+  "aiConfirmTargetNamedNotMarked": "この名前をメッセージで言及しましたが、バッククォート (`) で囲っていないため、この書き込みにはあなたの確認が必要です。",
+  "aiPreviewDeletionMayBeDelayed": "GitLab は削除を遅らせることがあります。保持期間中であれば元に戻せます。"
 }

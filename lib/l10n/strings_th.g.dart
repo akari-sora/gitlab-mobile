@@ -2709,6 +2709,6 @@ const _messagesTh = <String>[
   'ตั้งเวลาลบแล้ว',
   'เป็นของ',
   'ยังมีไฟล์อีก {count} ไฟล์ที่จะเปลี่ยนด้วย',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'คุณได้พูดถึงชื่อนี้ในข้อความแต่ยังไม่ได้ทำเครื่องหมายด้วยเครื่องหมาย ` (แบ็คทิก) คุณจึงต้องยืนยันการทำงานนี้',
+  'GitLab อาจเลื่อนการลบออกไป และสามารถกู้คืนได้ในช่วงระยะเวลาเก็บรักษา',
 ];

@@ -2707,6 +2707,6 @@
   "aiWriteDeletionScheduled": "Exclusão agendada",
   "aiPreviewParent": "Pertence a",
   "aiPreviewMoreFiles": "Mais {count} arquivos também serão alterados",
-  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
+  "aiConfirmTargetNamedNotMarked": "Você mencionou esse nome na mensagem, mas não o marcou com um backtick (`, por isso esta escrita precisa da sua confirmação.",
+  "aiPreviewDeletionMayBeDelayed": "O GitLab pode atrasar a exclusão; é possível restaurá-lo durante o período de retenção."
 }

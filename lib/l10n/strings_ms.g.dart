@@ -2709,6 +2709,6 @@ const _messagesMs = <String>[
   'Pemadaman telah dijadualkan',
   'Milik',
   '{count} fail lagi turut berubah',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Anda menyebut nama ini dalam mesej, tetapi tidak menandainya dengan backtick (`, jadi penulisan ini memerlukan pengesahan anda.',
+  'GitLab mungkin menunda pemadaman; item boleh dipulihkan semasa tempoh penahanan.',
 ];

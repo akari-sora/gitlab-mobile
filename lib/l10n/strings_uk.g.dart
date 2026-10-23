@@ -2709,6 +2709,6 @@ const _messagesUk = <String>[
   'Видалення заплановано',
   'Належить до',
   'Також зміниться ще {count} файлів',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Ви згадували це ім\'я в повідомленні, але не позначили його зворотним апострофом (`, тому ця дія потребує підтвердження.',
+  'GitLab може відкласти видалення; його можна відновити протягом терміну зберігання.',
 ];

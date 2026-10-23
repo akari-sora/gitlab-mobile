@@ -2709,6 +2709,6 @@ const _messagesPtBr = <String>[
   'Exclusão agendada',
   'Pertence a',
   'Mais {count} arquivos também serão alterados',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Você mencionou esse nome na mensagem, mas não o marcou com um backtick (`, por isso esta escrita precisa da sua confirmação.',
+  'O GitLab pode atrasar a exclusão; é possível restaurá-lo durante o período de retenção.',
 ];

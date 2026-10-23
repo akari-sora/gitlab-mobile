@@ -2709,6 +2709,6 @@ const _messagesAr = <String>[
   'تمت جدولة الحذف',
   'ينتمي إلى',
   'سيتغير {count} ملفات أخرى أيضًا',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'لقد ذكرت هذا الاسم في الرسالة ولم تحدده بعلامة الاقتباس المائلة (`)، لذا يحتاج هذا الإجراء إلى موافقتك.',
+  'قد يؤجل GitLab عملية الحذف؛ ويمكنك استعادة العنصر خلال فترة الاستبقاء.',
 ];

@@ -2709,6 +2709,6 @@ const _messagesFr = <String>[
   'Suppression planifiée',
   'Appartient à',
   '{count} autres fichiers changent aussi',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Vous avez mentionné ce nom dans le message sans le marquer d\'un backtick (`, cette écriture doit donc être confirmée.',
+  'GitLab est susceptible de différer la suppression ; l\'éélément peutêêtre restauré pendant la période de rétention.',
 ];

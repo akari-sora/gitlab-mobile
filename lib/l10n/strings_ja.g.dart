@@ -2709,6 +2709,6 @@ const _messagesJa = <String>[
   '削除を予約しました',
   '所属',
   'ほかに {count} 個のファイルも変更されます',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'この名前をメッセージで言及しましたが、バッククォート (`) で囲っていないため、この書き込みにはあなたの確認が必要です。',
+  'GitLab は削除を遅らせることがあります。保持期間中であれば元に戻せます。',
 ];

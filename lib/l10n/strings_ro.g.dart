@@ -2709,6 +2709,6 @@ const _messagesRo = <String>[
   'Ștergere programată',
   'Aparține de',
   'Se mai modifică și alte {count} fișiere',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Ai menționat acest nume în mesaj, dar nu l-ai marcat cu un backtick (`, deci această scriere necesită confirmarea ta.',
+  'GitLab poate întârzia ștergerea; elementul poate fi restaurat în perioada de reținere.',
 ];

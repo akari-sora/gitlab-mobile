@@ -2709,6 +2709,6 @@ const _messagesId = <String>[
   'Penghapusan dijadwalkan',
   'Milik',
   '{count} berkas lain juga akan berubah',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Anda menyebut nama ini dalam pesan, tetapi tidak menandainya dengan backtick (`, sehingga penulisan ini memerlukan konfirmasi Anda.',
+  'GitLab dapat menunda penghapusan; item dapat dipulihkan selama masa penyimpanan.',
 ];

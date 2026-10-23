@@ -2707,6 +2707,6 @@
   "aiWriteDeletionScheduled": "Smazání je naplánováno",
   "aiPreviewParent": "Patří k",
   "aiPreviewMoreFiles": "Změní se i {count} dalších souborů",
-  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
+  "aiConfirmTargetNamedNotMarked": "Tento název jste v zprávě zmínili, ale neoznačili jste jej zpětným apostrofem (`), takže tento zápis vyžaduje vaše potvrzení.",
+  "aiPreviewDeletionMayBeDelayed": "GitLab může odstranění zpozdit; dokud trží lhůta uchování, položku lze obnovit."
 }

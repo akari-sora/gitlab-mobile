@@ -2709,6 +2709,6 @@ const _messagesRu = <String>[
   'Удаление запланировано',
   'Относится к',
   'Также изменится ещё {count} файлов',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Вы упомянули это имя в сообщении, но не выделили его обратной кавычкой (`, поэтому эта запись требует вашего подтверждения.',
+  'GitLab может отложить удаление; его можно восстановить в течение срока хранения.',
 ];

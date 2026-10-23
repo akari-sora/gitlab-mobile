@@ -2709,6 +2709,6 @@ const _messagesKo = <String>[
   '삭제 예약됨',
   '소속',
   '파일 {count}개도 추가로 변경됩니다',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  '이 이름을 메시지에서 언급했지만 역따옴표(`)로 표시하지 않았으므로, 이 쓰기에는 확인이 필요합니다.',
+  'GitLab이 삭제를 지연할 수 있습니다. 보존 기간 동안에는 복원할 수 있습니다.',
 ];

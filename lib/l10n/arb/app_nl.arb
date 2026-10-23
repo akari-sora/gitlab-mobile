@@ -2707,6 +2707,6 @@
   "aiWriteDeletionScheduled": "Verwijdering ingepland",
   "aiPreviewParent": "Hoort bij",
   "aiPreviewMoreFiles": "Nog {count} bestanden wijzigen ook",
-  "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period."
+  "aiConfirmTargetNamedNotMarked": "Je hebt deze naam in het bericht genoemd maar niet gemarkeerd met een backtick (`, dus deze schrijfactie vereist jouw bevestiging.",
+  "aiPreviewDeletionMayBeDelayed": "GitLab kan de verwijdering uitstellen; tijdens de bewaartermijn kan het item worden hersteld."
 }

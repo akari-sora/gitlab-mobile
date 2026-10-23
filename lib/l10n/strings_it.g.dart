@@ -2709,6 +2709,6 @@ const _messagesIt = <String>[
   'Eliminazione pianificata',
   'Appartiene a',
   'Cambiano anche altri {count} file',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Hai menzionato questo nome nel messaggio, ma non l\'hai delimitato con un backtick (`, quindi questa scrittura richiede la tua conferma.',
+  'GitLab potrebbe ritardare l\'eliminazione; l\'elemento può essere ripristinato durante il periodo di conservazione.',
 ];

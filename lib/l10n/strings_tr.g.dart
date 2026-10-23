@@ -2709,6 +2709,6 @@ const _messagesTr = <String>[
   'Silme zamanlandı',
   'Ait olduğu öğe',
   '{count} dosya daha değişecek',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Bu ismi mesajda andın ama ters tik (`) ile işaretlemedin, bu yüzden bu yazma işlemini onaylaman gerekiyor.',
+  'GitLab silmeyi erteleyebilir; öğe saklama süresi içinde geri getirilebilir.',
 ];

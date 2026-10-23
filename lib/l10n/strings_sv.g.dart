@@ -2709,6 +2709,6 @@ const _messagesSv = <String>[
   'Borttagning schemalagd',
   'Tillhör',
   'Ytterligare {count} filer ändras också',
-  'You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.',
-  'GitLab may delay the deletion; it can be restored during the retention period.',
+  'Du nämnde det här namnet i meddelandet men markerade det inte med ett backtick (`, så den här skrivningen behöver din bekräftelse.',
+  'GitLab kan fördröja borttagningen; objektet kan återställas under lagringstiden.',
 ];
