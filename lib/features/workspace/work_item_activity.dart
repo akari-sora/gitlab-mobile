@@ -434,6 +434,11 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
       switch (result) {
         case _EditWorkItemNoteAction(:final target):
           await _openEditNote(target, ownerEpoch, feedEpoch);
+          // A saved edit already refreshed (and moved the feed epoch on);
+          // leaving the editor after a reaction must refresh too.
+          if (reacted && _noteActionCurrent(ownerEpoch, feedEpoch)) {
+            _refreshAfterWrite();
+          }
         case _WorkItemNoteChangedAction():
           _refreshAfterWrite();
         case null:
