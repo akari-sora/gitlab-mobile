@@ -653,6 +653,17 @@ void main() {
     });
   }
 
+  test('a Markdown link ends a raw anchor the whole-DOM view cannot see', () {
+    // The unclosed raw code swallows both anchors in the whole-DOM view, so
+    // only the fragment view counts the Markdown link and the reference
+    // after it. Without ending the raw-anchor context at the Markdown link,
+    // the trailing reference is discounted as inside the raw anchor.
+    _expectDraft(
+      '<code><a href="/g/p/-/issues/5">[x](/g/p/-/issues/6)!8',
+      references: 2,
+    );
+  });
+
   test('raw anchor reference paths exclude queries and unrelated attributes', () {
     _expectDraft(
       '<div title="/g/p/-/issues/123">'

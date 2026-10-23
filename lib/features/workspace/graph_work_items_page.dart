@@ -2295,7 +2295,9 @@ final class _AiWorkspaceWorkItemWriteRegistry
         api,
         lease.gid,
         token: lease.token,
-        mutationSent: mutationSent,
+        // Dates borrows STATUS solely for mutual exclusion; its own registry
+        // records the date result without manufacturing STATUS freshness.
+        mutationSent: lease.kind == AiWorkItemWriteKind.status && mutationSent,
         confirmedRevision: confirmedRevision,
       );
     }

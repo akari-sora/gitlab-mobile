@@ -329,8 +329,11 @@ List<AiChatItem> _conversation() => [
 ];
 
 /// The draft check in place, so a test need not wait for another isolate.
-Future<AiDraftAnalysis> _now(String text, String existing) async =>
-    analyzeAiDraftNow(text, existing);
+Future<AiDraftAnalysis> _now(
+  String text,
+  String existing, {
+  Future<void>? cancel,
+}) async => analyzeAiDraftNow(text, existing);
 
 AiDraftTarget _target({
   String existing = '',
@@ -1698,7 +1701,8 @@ void main() {
         _host(
           AiChatPage(
             session: answer('Answer'),
-            analyzeDraft: (_, _) async => throw TimeoutException('check'),
+            analyzeDraft: (_, _, {cancel}) async =>
+                throw TimeoutException('check'),
             draftTarget: _target(insert: (text) async => inserted.add(text)),
           ),
         ),
@@ -1709,6 +1713,58 @@ void main() {
       expect(find.text(l10n.aiDraftPreviewTitle), findsNothing);
       expect(find.text(l10n.aiDraftCheckFailed), findsOneWidget);
       expect(inserted, isEmpty);
+    });
+
+    testWidgets('closing the page cancels a draft check in flight', (
+      tester,
+    ) async {
+      final inserted = <String>[];
+      final checkStarted = Completer<void>();
+      var checkCancelled = false;
+      Future<AiDraftAnalysis> hangingCheck(
+        String text,
+        String existing, {
+        Future<void>? cancel,
+      }) async {
+        checkStarted.complete();
+        if (cancel == null) {
+          // Without page cancellation the check runs until its deadline.
+          await Completer<void>().future;
+          throw StateError('unreachable');
+        }
+        // Like the production check: stop when the page closes.
+        await cancel;
+        checkCancelled = true;
+        throw StateError('cancelled');
+      }
+
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: answer('Answer'),
+            analyzeDraft: hangingCheck,
+            draftTarget: _target(insert: (text) async => inserted.add(text)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(l10n.aiChatInsertDraft));
+      for (
+        var tries = 0;
+        tries < 100 && !checkStarted.isCompleted;
+        tries++
+      ) {
+        await tester.pump();
+      }
+      expect(checkStarted.isCompleted, isTrue);
+      // Close the chat while the check runs: the check stops, and nothing
+      // it would have appended reaches the editor.
+      await tester.pumpWidget(_host(const SizedBox()));
+      await tester.pumpAndSettle();
+      expect(checkCancelled, isTrue);
+      expect(inserted, isEmpty);
+      expect(find.text(l10n.aiDraftPreviewTitle), findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('a long answer is previewed in part and appended whole', (
