@@ -124,6 +124,27 @@ void main() {
     }
   });
 
+  test(
+    'singular merge_request and snippets are rejected without HTTP',
+    () async {
+      for (final resource in ['merge_request', 'snippets']) {
+        for (final operation in _resourceOps) {
+          f.reset();
+          final args = {..._validArgs(operation), 'resource': resource};
+          expect(await f.propose(operation, args), isNull, reason: operation);
+          expect(
+            f.coordinator.outcomeFor('call')?.reasonCode,
+            'invalidArguments',
+            reason: operation,
+          );
+          expect(f.freshnessReads, 0, reason: operation);
+          expect(f.captured, isEmpty, reason: operation);
+          expect(f.adapter.requests, isEmpty, reason: operation);
+        }
+      }
+    },
+  );
+
   test('issues still passes argument validation', () async {
     for (final operation in _resourceOps) {
       f.reset();
@@ -142,6 +163,43 @@ void main() {
       );
       expect(f.adapter.requests, isEmpty, reason: operation);
     }
+  });
+
+  test('merge_requests still passes argument validation', () async {
+    for (final operation in _resourceOps) {
+      f.reset();
+      final args = {..._validArgs(operation), 'resource': 'merge_requests'};
+      await f.propose(operation, args);
+      expect(f.captured, hasLength(1), reason: operation);
+      expect(
+        (f.captured.single.arguments['resource']),
+        'merge_requests',
+        reason: operation,
+      );
+      expect(f.freshnessReads, 1, reason: operation);
+      expect(
+        f.coordinator.outcomeFor('call')?.reasonCode,
+        isNot('invalidArguments'),
+        reason: operation,
+      );
+      expect(f.adapter.requests, isEmpty, reason: operation);
+    }
+  });
+
+  test('AiArgSpec enumValues requires a string type', () {
+    expect(
+      () => AiArgSpec(AiArgType.integer, enumValues: const ['issues']),
+      throwsA(isA<AssertionError>()),
+    );
+    expect(
+      () => AiArgSpec(AiArgType.object, enumValues: const ['issues']),
+      throwsA(isA<AssertionError>()),
+    );
+    expect(
+      const AiArgSpec(AiArgType.string, enumValues: ['issues']),
+      isA<AiArgSpec>(),
+    );
+    expect(const AiArgSpec(AiArgType.integer), isA<AiArgSpec>());
   });
 }
 

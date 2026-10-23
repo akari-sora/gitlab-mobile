@@ -216,7 +216,7 @@ final class AiArgSpec {
     this.modelVisible = true,
     this.portVisible = true,
     this.enumValues,
-  });
+  }) : assert(enumValues == null || type == AiArgType.string);
 
   final AiArgType type;
   final bool required;
