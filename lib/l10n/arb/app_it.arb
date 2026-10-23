@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "Appartiene a",
   "aiPreviewMoreFiles": "Cambiano anche altri {count} file",
   "aiConfirmTargetNamedNotMarked": "Hai menzionato questo nome nel messaggio, ma non l'hai delimitato con un backtick (`, quindi questa scrittura richiede la tua conferma.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab potrebbe ritardare l'eliminazione; l'elemento può essere ripristinato durante il periodo di conservazione."
+  "aiPreviewDeletionMayBeDelayed": "GitLab potrebbe ritardare l'eliminazione; l'elemento può essere ripristinato durante il periodo di conservazione.",
+  "activityVerbTarget": "{verb} {target}"
 }

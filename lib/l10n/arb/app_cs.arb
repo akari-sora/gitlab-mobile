@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "Patří k",
   "aiPreviewMoreFiles": "Změní se i {count} dalších souborů",
   "aiConfirmTargetNamedNotMarked": "Tento název jste v zprávě zmínili, ale neoznačili jste jej zpětným apostrofem (`), takže tento zápis vyžaduje vaše potvrzení.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab může odstranění zpozdit; dokud trží lhůta uchování, položku lze obnovit."
+  "aiPreviewDeletionMayBeDelayed": "GitLab může odstranění zpozdit; dokud trží lhůta uchování, položku lze obnovit.",
+  "activityVerbTarget": "{verb} {target}"
 }

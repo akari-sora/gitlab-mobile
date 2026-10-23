@@ -2711,4 +2711,5 @@ const _messagesVi = <String>[
   '{count} tệp khác cũng sẽ thay đổi',
   'Bạn đã nhắc tới tên này trong tin nhắn nhưng chưa đánh dấu bằng dấu gạch ngược (`, nên lượt ghi này cần bạn xác nhận.',
   'GitLab có thể trì hoãn việc xóa; mục có thể được khôi phục trong thời gian lưu giữ.',
+  '{verb} {target}',
 ];

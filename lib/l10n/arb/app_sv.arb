@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "Tillhör",
   "aiPreviewMoreFiles": "Ytterligare {count} filer ändras också",
   "aiConfirmTargetNamedNotMarked": "Du nämnde det här namnet i meddelandet men markerade det inte med ett backtick (`, så den här skrivningen behöver din bekräftelse.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab kan fördröja borttagningen; objektet kan återställas under lagringstiden."
+  "aiPreviewDeletionMayBeDelayed": "GitLab kan fördröja borttagningen; objektet kan återställas under lagringstiden.",
+  "activityVerbTarget": "{verb} {target}"
 }

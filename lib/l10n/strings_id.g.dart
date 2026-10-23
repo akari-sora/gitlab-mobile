@@ -2711,4 +2711,5 @@ const _messagesId = <String>[
   '{count} berkas lain juga akan berubah',
   'Anda menyebut nama ini dalam pesan, tetapi tidak menandainya dengan backtick (`, sehingga penulisan ini memerlukan konfirmasi Anda.',
   'GitLab dapat menunda penghapusan; item dapat dipulihkan selama masa penyimpanan.',
+  '{verb} {target}',
 ];

@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "Належить до",
   "aiPreviewMoreFiles": "Також зміниться ще {count} файлів",
   "aiConfirmTargetNamedNotMarked": "Ви згадували це ім'я в повідомленні, але не позначили його зворотним апострофом (`, тому ця дія потребує підтвердження.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab може відкласти видалення; його можна відновити протягом терміну зберігання."
+  "aiPreviewDeletionMayBeDelayed": "GitLab може відкласти видалення; його можна відновити протягом терміну зберігання.",
+  "activityVerbTarget": "{verb} {target}"
 }

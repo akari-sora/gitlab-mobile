@@ -394,7 +394,9 @@ String activitySentence(Json event) {
     _ => action,
   };
   if (action == 'joined' || action == 'left' || action == 'imported' || action == 'expired') return verb;
-  return '$verb$target$reference';
+  // Word order and spacing are the language's, e.g. 留言於議題 but "Commented on Issue".
+  final head = target.isEmpty ? verb : l10n.activityVerbTarget(verb, target);
+  return '$head$reference';
 }
 
 IconData _activityIcon(Json event) {

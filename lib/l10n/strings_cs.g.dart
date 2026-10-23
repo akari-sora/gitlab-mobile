@@ -2711,4 +2711,5 @@ const _messagesCs = <String>[
   'Změní se i {count} dalších souborů',
   'Tento název jste v zprávě zmínili, ale neoznačili jste jej zpětným apostrofem (`), takže tento zápis vyžaduje vaše potvrzení.',
   'GitLab může odstranění zpozdit; dokud trží lhůta uchování, položku lze obnovit.',
+  '{verb} {target}',
 ];

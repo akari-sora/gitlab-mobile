@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "Thuộc về",
   "aiPreviewMoreFiles": "{count} tệp khác cũng sẽ thay đổi",
   "aiConfirmTargetNamedNotMarked": "Bạn đã nhắc tới tên này trong tin nhắn nhưng chưa đánh dấu bằng dấu gạch ngược (`, nên lượt ghi này cần bạn xác nhận.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab có thể trì hoãn việc xóa; mục có thể được khôi phục trong thời gian lưu giữ."
+  "aiPreviewDeletionMayBeDelayed": "GitLab có thể trì hoãn việc xóa; mục có thể được khôi phục trong thời gian lưu giữ.",
+  "activityVerbTarget": "{verb} {target}"
 }
