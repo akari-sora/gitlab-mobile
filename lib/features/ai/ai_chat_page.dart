@@ -152,6 +152,11 @@ class _AiChatPageState extends State<AiChatPage> {
   var _preparingDraft = false;
   var _reporting = false;
 
+  /// Completes when the page closes, cancelling a draft check in flight, so
+  /// closing the chat stops the check instead of leaving it until its
+  /// 30 s deadline.
+  final _pageClosed = Completer<void>();
+
   /// "AI summary" sends its request once, when the empty session is ready.
   late bool _pendingSummary;
 
@@ -185,6 +190,8 @@ class _AiChatPageState extends State<AiChatPage> {
   @override
   void dispose() {
     // The run goes on without the page; a cleartext prompt cannot be shown.
+    // A draft check in flight stops here rather than at its deadline.
+    _pageClosed.complete();
     _session.confirmCleartext = null;
     _session.removeListener(_maybeSummarize);
     _input
@@ -234,7 +241,11 @@ class _AiChatPageState extends State<AiChatPage> {
       }
       final AiDraftAnalysis analysis;
       try {
-        analysis = await widget.analyzeDraft(text, existing);
+        analysis = await widget.analyzeDraft(
+          text,
+          existing,
+          cancel: _pageClosed.future,
+        );
       } on Object {
         _notice(l10n.aiDraftCheckFailed);
         return;
