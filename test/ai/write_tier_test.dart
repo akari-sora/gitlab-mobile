@@ -609,8 +609,16 @@ void main() {
     test('project, merge request and todo scopes offer different tools', () {
       expect(
         toolsForScope(_projectScope),
-        hasLength(productionAiLedger.modelVisible.length),
+        hasLength(productionAiLedger.modelVisible.length - 1),
       );
+      final Set<String> projectTools = toolsForScope(
+        _projectScope,
+      ).map((AiCapability row) => row.operationId).toSet();
+      expect(
+        projectTools,
+        containsAll(<String>['createProject', 'forkProject']),
+      );
+      expect(projectTools, isNot(contains('markAllTodosDone')));
       final AiWriteScope merge = AiWriteScope(
         accountKey: _account,
         grants: <AiScopeGrant>[
@@ -646,7 +654,7 @@ void main() {
         toolsForScope(
           todos,
         ).map((AiCapability row) => row.operationId).toList(),
-        <String>['markTodoDone'],
+        <String>['markTodoDone', 'markAllTodosDone'],
       );
       final AiWriteScope groupOnly = AiWriteScope(
         accountKey: _account,
@@ -741,12 +749,12 @@ void main() {
         productionAiLedger.modelVisible
             .map((AiCapability row) => row.operationId)
             .toSet(),
-        _mr6b1Operations,
+        _productionOperations,
       );
       for (final AiCapability row in ProductionAiLedger.rows) {
         expect(
           row.modelVisible,
-          _mr6b1Operations.contains(row.operationId),
+          _productionOperations.contains(row.operationId),
           reason: row.operationId,
         );
       }
@@ -1345,6 +1353,60 @@ const Set<String> _mr6b1Operations = <String>{
   'moveBoardList',
   'moveBoardCard',
   'upload_attachment',
+};
+
+const Set<String> _mr6b2Operations = <String>{
+  'edit_file',
+  'createFile',
+  'deleteFile',
+  'applySuggestion',
+  'batchApplySuggestions',
+  'createBranch',
+  'deleteBranch',
+  'createTag',
+  'deleteTag',
+  'createRelease',
+  'updateRelease',
+  'deleteRelease',
+  'mergeRequest',
+  'approveMergeRequest',
+  'rebaseMergeRequest',
+  'cancelAutoMerge',
+  'publishDraftNotes',
+  'deleteDraftNote',
+  'createPipeline',
+  'pipelineAction',
+  'jobAction',
+  'playPipelineSchedule',
+  'deletePipeline',
+  'createSnippet',
+  'updateSnippetMetadata',
+  'updateSnippet',
+  'updateSnippetFiles',
+  'deleteSnippetFile',
+  'deleteSnippet',
+  'deleteNote',
+  'deleteDiscussionNote',
+  'deleteIssue',
+  'deleteMergeRequest',
+  'deleteLabel',
+  'deleteMilestone',
+  'deleteBoard',
+  'deleteBoardList',
+  'markAllTodosDone',
+  'deletePackage',
+  'deletePackageFile',
+  'deleteContainerRepository',
+  'deleteContainerTag',
+  'createProject',
+  'editProject',
+  'deleteProject',
+  'forkProject',
+};
+
+const Set<String> _productionOperations = <String>{
+  ..._mr6b1Operations,
+  ..._mr6b2Operations,
 };
 
 AiGateDecision _matrix(AiAutonomyLevel level, AiWriteTier tier) {

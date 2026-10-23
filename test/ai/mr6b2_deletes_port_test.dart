@@ -218,7 +218,7 @@ void main() {
   tearDown(() => server.api.close());
 
   test(
-    'p11 ledger has nine closed hidden T4 rows and independent HTTP caps',
+    'p11 ledger has nine closed model-visible T4 rows and independent HTTP caps',
     () {
       expect(
         aiDeleteRows.map((r) => r.operationId).toSet(),
@@ -227,7 +227,7 @@ void main() {
       for (final entry in deleteCases.entries) {
         final row = productionAiLedger.find(entry.key)!;
         expect(row.baseTier, AiWriteTier.t4);
-        expect(row.modelVisible, isFalse);
+        expect(row.modelVisible, isTrue);
         expect(row.namedMethod, entry.key);
         expect(row.readback, isFalse);
         expect(row.editableField, isNull);
@@ -242,8 +242,8 @@ void main() {
           _ => AiScopeClass.project,
         });
       }
-      for (final row in productionAiLedger.modelVisible) {
-        expect(deleteCases, isNot(contains(row.operationId)));
+      for (final row in aiDeleteRows) {
+        expect(productionAiLedger.modelVisible, contains(row));
       }
     },
   );

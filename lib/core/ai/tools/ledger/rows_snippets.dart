@@ -21,7 +21,7 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     operationId: 'createSnippet',
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     httpCap: 19, // fresh 1, prepare 2, readback 3.
     readback: true,
     arguments: {
@@ -38,7 +38,7 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     operationId: 'updateSnippetMetadata',
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     httpCap: 19, // fresh 1, prepare 3, readback 1.
     readback: true,
     editableField: 'description',
@@ -55,7 +55,7 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     operationId: 'updateSnippet',
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     httpCap: 31, // fresh 1, prepare 5, readback 3.
     readback: true,
     arguments: {
@@ -68,7 +68,7 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     operationId: 'updateSnippetFiles',
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     httpCap: 37, // fresh 1, prepare 6, readback 4 (two affected files).
     readback: true,
     arguments: {
@@ -86,7 +86,7 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     operationId: 'deleteSnippetFile',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     httpCap: 27, // fresh 1, prepare 5, readback 1.
     readback: true,
     arguments: {..._snippetId, 'path': _requiredPathOrRef},
@@ -95,7 +95,7 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     operationId: 'deleteSnippet',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     httpCap: 37, // fresh 1, prepare 8 (four affected files), no readback.
     arguments: _snippetId,
   ),

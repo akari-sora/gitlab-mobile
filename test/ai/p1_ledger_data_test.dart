@@ -35,11 +35,60 @@ const _baselineOperations = <String>{
   'upload_attachment',
 };
 
+const _mr6b2Operations = <String>{
+  'edit_file',
+  'createFile',
+  'deleteFile',
+  'applySuggestion',
+  'batchApplySuggestions',
+  'createBranch',
+  'deleteBranch',
+  'createTag',
+  'deleteTag',
+  'createRelease',
+  'updateRelease',
+  'deleteRelease',
+  'mergeRequest',
+  'approveMergeRequest',
+  'rebaseMergeRequest',
+  'cancelAutoMerge',
+  'publishDraftNotes',
+  'deleteDraftNote',
+  'createPipeline',
+  'pipelineAction',
+  'jobAction',
+  'playPipelineSchedule',
+  'deletePipeline',
+  'createSnippet',
+  'updateSnippetMetadata',
+  'updateSnippet',
+  'updateSnippetFiles',
+  'deleteSnippetFile',
+  'deleteSnippet',
+  'deleteNote',
+  'deleteDiscussionNote',
+  'deleteIssue',
+  'deleteMergeRequest',
+  'deleteLabel',
+  'deleteMilestone',
+  'deleteBoard',
+  'deleteBoardList',
+  'markAllTodosDone',
+  'deletePackage',
+  'deletePackageFile',
+  'deleteContainerRepository',
+  'deleteContainerTag',
+  'createProject',
+  'editProject',
+  'deleteProject',
+  'forkProject',
+};
+
 void main() {
-  test('the MR6b-1 ledger keeps exactly 31 visible rows', () {
+  test('the ledger exposes exactly the MR6b-1 and MR6b-2 rows', () {
     expect(
       productionAiLedger.modelVisible.map((row) => row.operationId).toSet(),
-      _baselineOperations,
+      {..._baselineOperations, ..._mr6b2Operations},
     );
     expect(
       ProductionAiLedger.rows.map((row) => row.operationId).toSet(),

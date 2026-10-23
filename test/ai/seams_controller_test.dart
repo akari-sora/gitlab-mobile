@@ -196,7 +196,7 @@ void main() {
       await f.controller.rejectWrite(f.controller.proposals.single);
       await sending.timeout(_timeout);
       expect(f.server.mutations, 0);
-      expect(productionAiLedger.find(op)!.modelVisible, isFalse);
+      expect(productionAiLedger.find(op)!.modelVisible, isTrue);
     });
 
     test(

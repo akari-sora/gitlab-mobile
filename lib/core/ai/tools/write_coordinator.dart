@@ -9,6 +9,7 @@ import '../../../features/ai/ai_write_journal.dart';
 import '../../instance.dart';
 import '../ai_transcript.dart';
 import '../app_text.dart';
+import '../exact_edit.dart' as exact;
 import '../wire/wire_format.dart';
 import '../write_text.dart' as text;
 import 'gitlab_write_port.dart' as port;
@@ -329,6 +330,16 @@ typedef AiWriteFragmentChecker =
       required text.AiVisibilityContext visibility,
     });
 
+/// Production checks retain packet 4's unchanged-secret warning count. The
+/// older reason-only injection remains available for existing family tests.
+typedef AiWriteFragmentCheckerWithCount =
+    exact.AiFragmentCheck Function(
+      port.AiTextScan scan, {
+      required Set<String> knownSecrets,
+      required GitLabInstance instance,
+      required text.AiVisibilityContext visibility,
+    });
+
 /// Until packet 5 adds the journal member, keep its key associated with the
 /// injected journal, once per process. The real member takes precedence when
 /// integrated; neither path persists the key or puts it in model arguments.
@@ -361,6 +372,7 @@ final class PolicyAiWriteCoordinator
     this.attachments,
     this.attachmentSubstitution,
     this.checkFragments,
+    this.checkFragmentsWithCount,
     this.onChanged,
     this.onOutcome,
     this.interfaceLanguage = 'en',
@@ -387,6 +399,7 @@ final class PolicyAiWriteCoordinator
   final text.AttachmentSubstitution? Function(int projectId)?
   attachmentSubstitution;
   final AiWriteFragmentChecker? checkFragments;
+  final AiWriteFragmentCheckerWithCount? checkFragmentsWithCount;
   final void Function()? onChanged;
   final void Function(AiToolCall call, AiWriteOutcome outcome)? onOutcome;
   final String interfaceLanguage;
@@ -668,7 +681,7 @@ final class PolicyAiWriteCoordinator
       final scanReasons = _checkTextScan(prepared, policy, fresh);
       if (ownerFromPreRead) target = _todoTarget(prepared, policy.scope);
       final extra = <AiFixedConfirmReason>[
-        ...preparedText.reasons, ...scanReasons,
+        ...preparedText.reasons, ...scanReasons.reasons,
       ];
       final keys = {...prepared.writeKeys, ...prepared.dependencyKeys};
       if (journal.proposalEpoch(policy.scope.accountKey) != proposalEpoch) {
@@ -730,7 +743,8 @@ final class PolicyAiWriteCoordinator
         consentHash: policy.consentHash,
         scopeRevision: policy.scopeRevision,
         releaseName: safeDisplay(prepared.releaseName),
-        preview: prepared.preview,
+        preview: redactAiWritePreview(prepared.preview, safeDisplay,
+            preexistingSecretHits: scanReasons.preexistingSecretHits),
         fields: _fields(request, capability, safeDisplay),
         closingRefs: [
           for (final ref in preparedText.closingRefs) safeDisplay(ref),
@@ -818,7 +832,9 @@ final class PolicyAiWriteCoordinator
           processed.request, ledger.find(proposal.operationId)!, safeDisplay,
         );
         if (proposal.preview is port.AiFieldsPreview) {
-          proposal.preview = port.AiFieldsPreview(processed.request.arguments);
+          proposal.preview = redactAiWritePreview(
+            port.AiFieldsPreview(processed.request.arguments), safeDisplay,
+          );
         }
         proposal.payloadDigest = _digest(processed.request);
         proposal.closingRefs = [
@@ -962,7 +978,7 @@ final class PolicyAiWriteCoordinator
         pending.target,
         snapshot(),
         fresh,
-        extra: [...pending.reasons, ...processed.reasons, ...scanReasons],
+        extra: [...pending.reasons, ...processed.reasons, ...scanReasons.reasons],
         prepared: prepared,
       );
       if (!tier.canPropose) throw const _WriteBlocked('policyDenied');
@@ -1006,7 +1022,7 @@ final class PolicyAiWriteCoordinator
             pending.target,
             snapshot(),
             fresh,
-            extra: [...pending.reasons, ...processed.reasons, ...scanReasons],
+            extra: [...pending.reasons, ...processed.reasons, ...scanReasons.reasons],
             prepared: prepared,
           );
           if (!currentTier.canPropose ||
@@ -1610,7 +1626,7 @@ final class PolicyAiWriteCoordinator
       closingRefs: closingRefs,
     );
   }
-  List<AiFixedConfirmReason> _checkTextScan(
+  ({List<AiFixedConfirmReason> reasons, int? preexistingSecretHits}) _checkTextScan(
     port.AiWritePrepared prepared,
     AiWritePolicySnapshot policy,
     AiWriteFreshness fresh,
@@ -1620,7 +1636,7 @@ final class PolicyAiWriteCoordinator
         _argumentSpecs(ledger.find(prepared.request.operationId)!));
     if (scan == null) {
       if (hasFragments) throw const _WriteBlocked('fragmentCheckUnavailable');
-      return const [];
+      return (reasons: const [], preexistingSecretHits: null);
     }
     final visibility = text.AiVisibilityContext(
       polluted: fresh.polluted,
@@ -1630,13 +1646,24 @@ final class PolicyAiWriteCoordinator
       scopeGrants: policy.scope.grants,
     );
     final reasons = <AiFixedConfirmReason>[];
+    int? preexistingSecretHits;
     if (hasFragments || scan.newTexts.isNotEmpty || scan.windows.isNotEmpty) {
+      final countedChecker = checkFragmentsWithCount;
       final checker = checkFragments;
-      if (checker == null) throw const _WriteBlocked('fragmentCheckUnavailable');
-      final checked = checker(scan, knownSecrets: knownSecrets(),
-          instance: placeholders.instance, visibility: visibility);
-      if (checked.blockCode != null) throw _WriteBlocked(checked.blockCode!);
-      reasons.addAll(checked.confirmReasons);
+      if (countedChecker != null) {
+        final checked = countedChecker(scan, knownSecrets: knownSecrets(),
+            instance: placeholders.instance, visibility: visibility);
+        if (checked.blockCode != null) throw _WriteBlocked(checked.blockCode!);
+        reasons.addAll(checked.confirmReasons);
+        preexistingSecretHits = checked.preexistingSecretHits;
+      } else if (checker != null) {
+        final checked = checker(scan, knownSecrets: knownSecrets(),
+            instance: placeholders.instance, visibility: visibility);
+        if (checked.blockCode != null) throw _WriteBlocked(checked.blockCode!);
+        reasons.addAll(checked.confirmReasons);
+      } else {
+        throw const _WriteBlocked('fragmentCheckUnavailable');
+      }
     }
     for (final body in scan.serverClassA) {
       final checked = text.prepareWriteText(
@@ -1653,7 +1680,7 @@ final class PolicyAiWriteCoordinator
       }
       reasons.addAll(_confirmReasons(checked));
     }
-    return reasons;
+    return (reasons: reasons, preexistingSecretHits: preexistingSecretHits);
   }
 
   AiTargetRef _boundTarget(AiTargetRef target, AiWritePolicySnapshot policy) {
@@ -2168,6 +2195,85 @@ bool _hasFragmentRole(Map<String, Object?> values, Map<String, AiArgSpec> specs)
     }
   }
   return false;
+}
+
+/// Copies every display string through the live redactor. The prepared scan
+/// and mutation retain their original bytes; only this card projection changes.
+port.AiWritePreview redactAiWritePreview(
+  port.AiWritePreview preview,
+  String Function(String) safeDisplay, {
+  int? preexistingSecretHits,
+}) {
+  Object? value(Object? item) => switch (item) {
+    String() => safeDisplay(item),
+    List<Object?>() => [for (final child in item) value(child)],
+    Map<Object?, Object?>() => {
+      for (final entry in item.entries) value(entry.key): value(entry.value),
+    },
+    _ => item,
+  };
+  String? optional(String? item) => item == null ? null : safeDisplay(item);
+  return switch (preview) {
+    port.AiFieldsPreview(:final fields) => port.AiFieldsPreview({
+      for (final entry in fields.entries)
+        safeDisplay(entry.key): value(entry.value),
+    }),
+    port.AiDiffPreview() => port.AiDiffPreview(
+      path: safeDisplay(preview.path),
+      ref: safeDisplay(preview.ref),
+      lines: [
+        for (final line in preview.lines)
+          port.AiDiffLine(kind: line.kind, text: safeDisplay(line.text),
+              oldLine: line.oldLine, newLine: line.newLine),
+      ],
+      newFile: preview.newFile,
+      preexistingSecretHits:
+          preexistingSecretHits ?? preview.preexistingSecretHits,
+      ciPath: preview.ciPath,
+    ),
+    port.AiMergePreview() => port.AiMergePreview(
+      sourceBranch: safeDisplay(preview.sourceBranch),
+      targetBranch: safeDisplay(preview.targetBranch),
+      shortSha: safeDisplay(preview.shortSha),
+      pathCount: preview.pathCount,
+      squash: preview.squash,
+      removeSourceBranch: preview.removeSourceBranch,
+      autoMerge: preview.autoMerge,
+      ciPaths: preview.ciPaths.map(safeDisplay).toList(),
+      closingIssues: preview.closingIssues,
+      headMovedCommits: preview.headMovedCommits.map(safeDisplay).toList(),
+    ),
+    port.AiPipelinePreview() => port.AiPipelinePreview(
+      ref: safeDisplay(preview.ref),
+      pipelineId: preview.pipelineId,
+      jobId: preview.jobId,
+      jobName: optional(preview.jobName),
+      stage: optional(preview.stage),
+      environment: optional(preview.environment),
+      scheduleVariableNames:
+          preview.scheduleVariableNames.map(safeDisplay).toList(),
+      scheduleParamsUnreadable: preview.scheduleParamsUnreadable,
+      newVariableNames: preview.newVariableNames.map(safeDisplay).toList(),
+    ),
+    port.AiDraftPublishPreview() => port.AiDraftPublishPreview(drafts: [
+      for (final draft in preview.drafts)
+        port.AiDraftPreview(id: draft.id, body: safeDisplay(draft.body),
+            createdInSegment: draft.createdInSegment),
+    ]),
+    port.AiDeletePreview() => port.AiDeletePreview(
+      targetName: safeDisplay(preview.targetName),
+      path: optional(preview.path),
+      ref: optional(preview.ref),
+      count: preview.count,
+      hasMore: preview.hasMore,
+    ),
+    port.AiCancelAutoMergePreview() => port.AiCancelAutoMergePreview(
+      iid: preview.iid,
+      sourceBranch: safeDisplay(preview.sourceBranch),
+      targetBranch: safeDisplay(preview.targetBranch),
+      mayLackPermission: preview.mayLackPermission,
+    ),
+  };
 }
 
 List<AiFixedConfirmReason> _confirmReasons(text.AiTextOutcome outcome) => [

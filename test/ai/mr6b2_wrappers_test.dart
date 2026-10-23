@@ -456,7 +456,7 @@ void main() {
         throwsA(_validation),
       );
       expect(
-        () => api.saveFile(
+        () => api.updateRepositoryFile(
           42,
           'a.txt',
           branch: 'feature',
@@ -471,19 +471,19 @@ void main() {
   });
 
   test(
-    'legacy saveFile delegates create and locked update unchanged',
+    'named file wrappers preserve create and locked update wire contracts',
     () async {
       final adapter = FakeAdapter((_) => jsonResponse({}));
       final api = testApi(adapter);
       addTearDown(api.close);
-      await api.saveFile(
+      await api.createRepositoryFile(
         42,
         'a.txt',
         branch: 'feature',
         content: 'new',
         message: 'create',
       );
-      await api.saveFile(
+      await api.updateRepositoryFile(
         42,
         'a.txt',
         branch: 'feature',
@@ -492,6 +492,11 @@ void main() {
         lastCommit: 'old',
       );
       expect(adapter.requests.map((r) => r.method), ['POST', 'PUT']);
+      for (final request in adapter.requests) {
+        expect(request.uri.pathSegments, [
+          'gitlab', 'api', 'v4', 'projects', '42', 'repository', 'files', 'a.txt',
+        ]);
+      }
       expect(adapter.requests.first.data, {
         'branch': 'feature',
         'content': 'new',

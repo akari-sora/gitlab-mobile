@@ -21,7 +21,7 @@ void main() {
     s.close();
   });
 
-  test('P10 six closed hidden rows use independent counted budgets', () {
+  test('P10 six closed model-visible rows use independent counted budgets', () {
     const counts = {
       'createSnippet': (2, 3, 19),
       'updateSnippetMetadata': (3, 1, 19),
@@ -34,12 +34,12 @@ void main() {
     for (final row in aiSnippetRows) {
       final count = counts[row.operationId]!;
       expect(row.namedMethod, row.operationId);
-      expect(row.modelVisible, isFalse);
+      expect(row.modelVisible, isTrue);
       expect(row.scopeClass, AiScopeClass.project);
       expect(row.httpCap, 2 * (2 * (1 + count.$1) + count.$2) + 1);
       expect(row.httpCap, count.$3);
       expect(row.httpCap, lessThanOrEqualTo(40));
-      expect(productionAiLedger.modelVisible, isNot(contains(row)));
+      expect(productionAiLedger.modelVisible, contains(row));
     }
     final metadata = productionAiLedger.find('updateSnippetMetadata')!;
     expect(metadata.editableField, 'description');

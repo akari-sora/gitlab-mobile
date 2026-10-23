@@ -251,7 +251,7 @@ void main() {
       () async {
         final f = _Fixture(op);
         final row = productionAiLedger.find(op)!;
-        expect(row.modelVisible, isFalse);
+        expect(row.modelVisible, isTrue);
         expect(row.namedMethod, op);
         expect(row.readback, isTrue);
         expect(
@@ -262,7 +262,7 @@ void main() {
         );
         expect(
           toolsForScope(_scope).map((row) => row.operationId),
-          isNot(contains(op)),
+          contains(op),
         );
         final prepared = await f.port.prepare(_request(op));
         expect(prepared.confirmName, _confirm[op]);

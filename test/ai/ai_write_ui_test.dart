@@ -809,7 +809,7 @@ void main() {
       for (final status in AiWriteResultStatus.values) {
         expect(aiWriteStatusLabel(status), isNotEmpty);
       }
-      for (final row in ProductionAiLedger.rows) {
+      for (final row in productionAiLedger.modelVisible) {
         expect(
           aiOperationLabel(row.operationId),
           isNot(l10n.aiOpUnknown),

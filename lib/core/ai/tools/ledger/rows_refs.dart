@@ -16,7 +16,7 @@ const List<AiCapability> aiRefRows = <AiCapability>[
     operationId: 'createBranch',
     baseTier: AiWriteTier.t3,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': _projectId,
       'branch': _requiredPathOrRef,
@@ -29,7 +29,7 @@ const List<AiCapability> aiRefRows = <AiCapability>[
     operationId: 'deleteBranch',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {'projectId': _projectId, 'branch': _requiredPathOrRef},
     httpCap: 17,
   ),
@@ -37,7 +37,7 @@ const List<AiCapability> aiRefRows = <AiCapability>[
     operationId: 'createTag',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': _projectId,
       'tag_name': _requiredPathOrRef,
@@ -51,7 +51,7 @@ const List<AiCapability> aiRefRows = <AiCapability>[
     operationId: 'deleteTag',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {'projectId': _projectId, 'tag_name': _requiredPathOrRef},
     httpCap: 17,
   ),
@@ -59,7 +59,7 @@ const List<AiCapability> aiRefRows = <AiCapability>[
     operationId: 'createRelease',
     baseTier: AiWriteTier.t3,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': _projectId,
       'fields': AiArgSpec(AiArgType.object, required: true, properties: {
@@ -76,7 +76,7 @@ const List<AiCapability> aiRefRows = <AiCapability>[
     operationId: 'updateRelease',
     baseTier: AiWriteTier.t3,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': _projectId,
       'tag_name': _requiredPathOrRef,
@@ -93,7 +93,7 @@ const List<AiCapability> aiRefRows = <AiCapability>[
     operationId: 'deleteRelease',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {'projectId': _projectId, 'tag_name': _requiredPathOrRef},
     httpCap: 17,
   ),
