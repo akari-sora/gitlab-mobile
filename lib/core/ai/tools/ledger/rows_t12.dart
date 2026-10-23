@@ -4,6 +4,11 @@ const _projectId = AiArgSpec(AiArgType.integer, required: true);
 const _iid = AiArgSpec(AiArgType.integer, required: true);
 const _integer = AiArgSpec(AiArgType.integer);
 const _requiredString = AiArgSpec(AiArgType.string, required: true);
+const _requiredResource = AiArgSpec(
+  AiArgType.string,
+  required: true,
+  enumValues: ['issues', 'merge_requests'],
+);
 const _string = AiArgSpec(AiArgType.string);
 const _requiredBoolean = AiArgSpec(AiArgType.boolean, required: true);
 const _integerList = AiArgSpec(AiArgType.integerList);
@@ -135,7 +140,7 @@ const List<AiCapability> aiT12Rows = <AiCapability>[
     scopeClass: AiScopeClass.resource,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'name': _requiredString,
       'noteId': _integer,
@@ -148,7 +153,7 @@ const List<AiCapability> aiT12Rows = <AiCapability>[
     scopeClass: AiScopeClass.resource,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'awardId': AiArgSpec(AiArgType.integer, required: true),
       'noteId': _integer,
@@ -171,7 +176,7 @@ const List<AiCapability> aiT12Rows = <AiCapability>[
     scopeClass: AiScopeClass.resource,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'subscribed': _requiredBoolean,
     },
@@ -192,7 +197,7 @@ const List<AiCapability> aiT12Rows = <AiCapability>[
     scopeClass: AiScopeClass.resource,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'body': AiArgSpec(
         AiArgType.string,
@@ -211,7 +216,7 @@ const List<AiCapability> aiT12Rows = <AiCapability>[
     scopeClass: AiScopeClass.resource,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'noteId': AiArgSpec(AiArgType.integer, required: true),
       'body': AiArgSpec(
@@ -304,7 +309,7 @@ const List<AiCapability> aiT12Rows = <AiCapability>[
     scopeClass: AiScopeClass.resource,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
     },
     httpCap: 21,
@@ -315,7 +320,7 @@ const List<AiCapability> aiT12Rows = <AiCapability>[
     scopeClass: AiScopeClass.resource,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'body': AiArgSpec(
         AiArgType.string,
@@ -334,7 +339,7 @@ const List<AiCapability> aiT12Rows = <AiCapability>[
     scopeClass: AiScopeClass.resource,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'discussionId': _requiredString,
       'body': AiArgSpec(
@@ -354,7 +359,7 @@ const List<AiCapability> aiT12Rows = <AiCapability>[
     scopeClass: AiScopeClass.resource,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'discussionId': _requiredString,
       'noteId': AiArgSpec(AiArgType.integer, required: true),
@@ -375,7 +380,7 @@ const List<AiCapability> aiT12Rows = <AiCapability>[
     scopeClass: AiScopeClass.resource,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'discussionId': _requiredString,
       'resolved': _requiredBoolean,

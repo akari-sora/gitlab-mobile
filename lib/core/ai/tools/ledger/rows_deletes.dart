@@ -10,7 +10,7 @@ const List<AiCapability> aiDeleteRows = <AiCapability>[
     modelVisible: true,
     arguments: {
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'noteId': _iid,
     },
@@ -23,7 +23,7 @@ const List<AiCapability> aiDeleteRows = <AiCapability>[
     modelVisible: true,
     arguments: {
       'projectId': _projectId,
-      'resource': _requiredString,
+      'resource': _requiredResource,
       'iid': _iid,
       'discussionId': _requiredString,
       'noteId': _iid,

@@ -215,6 +215,7 @@ final class AiArgSpec {
     this.properties = const <String, AiArgSpec>{},
     this.modelVisible = true,
     this.portVisible = true,
+    this.enumValues,
   });
 
   final AiArgType type;
@@ -230,6 +231,10 @@ final class AiArgSpec {
   /// metadata. These flags retain each boundary's narrower whitelist.
   final bool modelVisible;
   final bool portVisible;
+
+  /// Allowed string values shown to the model as a closed enum. Null means
+  /// the string accepts any value.
+  final List<String>? enumValues;
 }
 
 final class AiCapability {

@@ -167,14 +167,14 @@ void main() {
     });
   }
 
-  test('existing UI refusal mapping and generic fallbacks remain unchanged', () {
+  test('prepare refusal codes map to their own texts', () {
     expect(aiRefusalText('forbidden'), l10n.aiRefusedPermission);
     expect(aiRefusalText('invisible'), l10n.aiRefusedGone);
     for (final code in ['validation', 'unsupported']) {
       expect(aiRefusalText(code), l10n.aiRefusedNotAllowed);
     }
-    for (final code in ['invalidResponse', 'rateLimited', 'network']) {
-      expect(aiRefusalText(code), isNull);
+    for (final kind in [FailureKind.invalidResponse, FailureKind.rateLimited, FailureKind.network]) {
+      expect(aiRefusalText(kind.name), ApiFailure(kind).title);
     }
   });
 

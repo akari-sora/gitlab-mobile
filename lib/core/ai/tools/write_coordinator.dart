@@ -2202,7 +2202,9 @@ bool _validObject(Map<String, Object?> values, Map<String, AiArgSpec> specs) =>
     values.entries.every((entry) => _validArg(entry.value, specs[entry.key]!));
 
 bool _validArg(Object? value, AiArgSpec spec) => switch (spec.type) {
-  AiArgType.string => value is String,
+  AiArgType.string =>
+    value is String &&
+        (spec.enumValues == null || spec.enumValues!.contains(value)),
   AiArgType.integer => value is int,
   AiArgType.boolean => value is bool,
   AiArgType.object => value is Map<String, Object?> &&
@@ -2396,7 +2398,12 @@ Map<String, Object?> _objectSchema(
 };
 
 Map<String, Object?> _argSchema(AiArgSpec spec) => switch (spec.type) {
-  AiArgType.string => {'type': 'string'},
+  AiArgType.string => spec.enumValues == null
+      ? {'type': 'string'}
+      : {
+          'type': 'string',
+          'enum': spec.enumValues,
+        },
   AiArgType.integer => {'type': 'integer'},
   AiArgType.boolean => {'type': 'boolean'},
   AiArgType.object => _objectSchema(_nestedProperties(spec)),
