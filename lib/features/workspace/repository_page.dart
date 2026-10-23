@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../ai/ai_chat_page.dart';
@@ -69,22 +70,36 @@ class RepositoryTab extends StatefulWidget {
   /// default branch's current head.
   final RepositoryRef? initialRef;
   @override
-  State<RepositoryTab> createState() => _RepositoryTabState();
+  State<RepositoryTab> createState() => RepositoryTabState();
 }
 
-class _RepositoryTabState extends State<RepositoryTab> {
+class RepositoryTabState extends State<RepositoryTab> {
   RepositoryRef? _currentRef;
   String _folder = '';
   ApiFailure? _error;
   bool _loading = true;
-  int _epoch = 0;
+  int _epoch = 0, _readEpoch = 0;
   final _feed = GlobalKey<RecordsFeedState>();
+  ValueListenable<TickerModeData>? _tickerMode;
+  bool _backgroundEnabled = true, _resumeWhenVisible = false;
+  bool _stale = false, _revalidating = false;
+  FailureKind? _backgroundFailure;
+  DateTime? _backgroundRetryAt;
+  CachedRead<Json>? _branchRead;
 
   RepositoryReadme? _readme;
   bool _readmeLoading = false;
   ApiFailure? _readmeError;
   bool _readmeExpanded = true;
   String? _readmeCandidatePath;
+
+  RepositoryRef? get currentRef => _currentRef;
+  ApiFailure? get loadError => _error;
+  DateTime? get fetchedAt => _branchRead?.fetchedAt;
+  bool get stale => _stale;
+  bool get revalidating => _revalidating;
+  FailureKind? get backgroundFailure => _backgroundFailure;
+  DateTime? get backgroundRetryAt => _backgroundRetryAt;
 
   @override
   void initState() {
@@ -110,11 +125,93 @@ class _RepositoryTabState extends State<RepositoryTab> {
     }
   }
 
-  Future<void> _resolve() async {
-    final epoch = ++_epoch;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateTickerMode();
+  }
+
+  void _updateTickerMode() {
+    final mode = TickerMode.getValuesNotifier(context);
+    if (!identical(mode, _tickerMode)) {
+      _tickerMode?.removeListener(_tickerModeChanged);
+      _tickerMode = mode;
+      mode.addListener(_tickerModeChanged);
+    }
+    _tickerModeChanged();
+  }
+
+  void _tickerModeChanged() {
+    _backgroundEnabled = _tickerMode!.value.enabled;
+    if (!_backgroundEnabled && _revalidating) _resumeWhenVisible = true;
+    if (_backgroundEnabled) _startRevalidation(_generationForTest);
+  }
+
+  int get _generationForTest => _epoch;
+
+  bool _readCurrent(int generation, int readEpoch) =>
+      mounted && generation == _epoch && readEpoch == _readEpoch && !widget.api.isClosed;
+
+  bool _canApplyRead(int generation, int readEpoch, {required bool background}) {
+    if (!_readCurrent(generation, readEpoch)) return false;
+    if (background && !_backgroundEnabled) {
+      _stale = true;
+      _resumeWhenVisible = true;
+      return false;
+    }
+    return true;
+  }
+
+  bool _revoked(ApiFailure failure) => switch (failure.kind) {
+    FailureKind.unauthenticated ||
+    FailureKind.forbidden ||
+    FailureKind.invisible => true,
+    _ => false,
+  };
+
+  Future<CachedRead<Json>?> _readBranch(
+    List<String> refPath, {
+    required int generation,
+    required int readEpoch,
+    required bool fresh,
+    required bool background,
+  }) async {
+    Future<CachedRead<Json>> readPage(bool force, {bool quiet = false}) => CachedRead.run(
+      () => widget.api.cachedRecord(refPath, fresh: force, background: background),
+      mayStart: () => _readCurrent(generation, readEpoch) &&
+          (!background || _backgroundEnabled),
+      waitForQuiet: quiet,
+    );
+    var read = await readPage(fresh);
+    if (!_canApplyRead(generation, readEpoch, background: background)) return null;
+    if (read.superseded) {
+      read = await readPage(true);
+      if (!_canApplyRead(generation, readEpoch, background: background)) return null;
+      if (read.superseded) {
+        read = await readPage(true, quiet: true);
+        if (!_canApplyRead(generation, readEpoch, background: background)) return null;
+      }
+      if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    }
+    return read.dropped ? null : read;
+  }
+
+  void _withdrawBranch() {
+    _currentRef = null;
+    _branchRead = null;
+    _stale = false;
+  }
+
+  Future<void> _resolve({bool fresh = false}) async {
+    final generation = ++_epoch;
+    final readEpoch = ++_readEpoch;
     setState(() {
       _loading = true;
       _error = null;
+      _revalidating = false;
+      _backgroundFailure = null;
+      _backgroundRetryAt = null;
+      _resumeWhenVisible = false;
     });
     try {
       final ref =
@@ -127,32 +224,113 @@ class _RepositoryTabState extends State<RepositoryTab> {
             isDefault: true,
           );
 
-      final Json value;
-      final RepositoryRef resolved;
-      if (ref.kind == RepositoryRefKind.branch) {
-        value = await widget.api.record([
+      final List<String> refPath;
+      final bool isBranch = ref.kind == RepositoryRefKind.branch;
+      if (isBranch) {
+        refPath = [
           'projects',
           '${widget.project.id}',
           'repository',
           'branches',
           ref.name,
-        ]);
-        resolved = RepositoryRef.fromBranch(value);
+        ];
       } else {
-        value = await widget.api.record([
+        refPath = [
           'projects',
           '${widget.project.id}',
           'repository',
           'tags',
           ref.name,
-        ]);
-        resolved = RepositoryRef.fromTag(value);
+        ];
       }
-
-      if (mounted && epoch == _epoch) {
-        final shaChanged = _currentRef?.sha != resolved.sha;
+      final read = await _readBranch(
+        refPath,
+        generation: generation,
+        readEpoch: readEpoch,
+        fresh: fresh,
+        background: false,
+      );
+      if (!_readCurrent(generation, readEpoch)) return;
+      if (read == null) {
+        if (_currentRef?.sha.isEmpty != false) {
+          setState(() => _error = const ApiFailure(FailureKind.cancelled));
+        }
+        return;
+      }
+      final RepositoryRef resolved = isBranch
+          ? RepositoryRef.fromBranch(read.value)
+          : RepositoryRef.fromTag(read.value);
+      if (!_readCurrent(generation, readEpoch)) return;
+      final shaChanged = _currentRef?.sha != resolved.sha;
+      setState(() {
+        _currentRef = resolved;
+        _branchRead = read;
+        _stale = read.stale;
+        _loading = false;
+        if (shaChanged) {
+          _readme = null;
+          _readmeCandidatePath = null;
+          _readmeError = null;
+          _readmeExpanded = true;
+        }
+      });
+      _startRevalidation(generation, readEpoch: readEpoch);
+    } catch (e) {
+      if (_readCurrent(generation, readEpoch)) {
+        final failure = safeFailure(e);
         setState(() {
+          _error = failure;
+          if (_revoked(failure)) _withdrawBranch();
+        });
+      }
+    } finally {
+      if (_readCurrent(generation, readEpoch) && _loading) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  void _startRevalidation(int generation, {int? readEpoch}) {
+    final epoch = readEpoch ?? _readEpoch;
+    if (!_readCurrent(generation, epoch) ||
+        !_backgroundEnabled ||
+        !_stale ||
+        _loading ||
+        _revalidating ||
+        _backgroundFailure != null ||
+        _error != null) {
+      return;
+    }
+    setState(() {
+      _revalidating = true;
+      _resumeWhenVisible = false;
+    });
+    unawaited(_revalidate(generation, epoch));
+  }
+
+  Future<void> _revalidate(int generation, int readEpoch) async {
+    try {
+      final ref = _currentRef;
+      if (ref == null) return;
+      final List<String> refPath = ref.kind == RepositoryRefKind.branch
+          ? ['projects', '${widget.project.id}', 'repository', 'branches', ref.name]
+          : ['projects', '${widget.project.id}', 'repository', 'tags', ref.name];
+      final read = await _readBranch(
+        refPath,
+        generation: generation,
+        readEpoch: readEpoch,
+        fresh: true,
+        background: true,
+      );
+      if (_canApplyRead(generation, readEpoch, background: true) && read != null) {
+        final resolved = ref.kind == RepositoryRefKind.branch
+            ? RepositoryRef.fromBranch(read.value)
+            : RepositoryRef.fromTag(read.value);
+        setState(() {
+          final shaChanged = _currentRef?.sha != resolved.sha;
           _currentRef = resolved;
+          _branchRead = read;
+          _stale = read.stale;
           if (shaChanged) {
             _readme = null;
             _readmeCandidatePath = null;
@@ -162,12 +340,24 @@ class _RepositoryTabState extends State<RepositoryTab> {
         });
       }
     } catch (e) {
-      if (mounted && epoch == _epoch) {
-        setState(() => _error = safeFailure(e));
-      }
+      if (!_readCurrent(generation, readEpoch)) return;
+      final failure = safeFailure(e);
+      if (!_revoked(failure) && !_canApplyRead(generation, readEpoch, background: true)) return;
+      setState(() {
+        if (_revoked(failure)) {
+          _withdrawBranch();
+          _error = failure;
+        } else {
+          _backgroundFailure = failure.kind;
+          _backgroundRetryAt = failure.retryAt;
+        }
+      });
     } finally {
-      if (mounted && epoch == _epoch) {
-        setState(() => _loading = false);
+      if (_readCurrent(generation, readEpoch)) {
+        setState(() => _revalidating = false);
+        if (_resumeWhenVisible && _backgroundEnabled) {
+          _startRevalidation(generation, readEpoch: readEpoch);
+        }
       }
     }
   }
@@ -200,15 +390,66 @@ class _RepositoryTabState extends State<RepositoryTab> {
     if (selected != null && mounted && selected != _currentRef) {
       setState(() {
         _epoch++;
+        _readEpoch++;
         _currentRef = selected;
         _folder = '';
         _readme = null;
         _readmeCandidatePath = null;
         _readmeError = null;
         _readmeExpanded = true;
+        _branchRead = null;
+        _stale = false;
+        _backgroundFailure = null;
+        _backgroundRetryAt = null;
       });
       unawaited(_feed.currentState?.refresh() ?? Future.value());
     }
+  }
+
+  @override
+  void didUpdateWidget(covariant RepositoryTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account.key != widget.account.key ||
+        oldWidget.project.id != widget.project.id ||
+        !identical(oldWidget.api, widget.api)) {
+      _epoch++;
+      _readEpoch++;
+      _currentRef = null;
+      _folder = '';
+      _error = null;
+      _branchRead = null;
+      _stale = false;
+      _revalidating = false;
+      _backgroundFailure = null;
+      _backgroundRetryAt = null;
+      _resumeWhenVisible = false;
+      _readme = null;
+      _readmeCandidatePath = null;
+      _readmeError = null;
+      _readmeExpanded = true;
+      _loading = true;
+      final defaultBranch = widget.project.defaultBranch;
+      if (defaultBranch != null && defaultBranch.isNotEmpty) {
+        _currentRef = RepositoryRef(
+          kind: RepositoryRefKind.branch,
+          name: defaultBranch,
+          sha: '',
+          protected: false,
+          isDefault: true,
+        );
+        unawaited(_resolve());
+      } else {
+        _loading = false;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _epoch++;
+    _readEpoch++;
+    _tickerMode?.removeListener(_tickerModeChanged);
+    super.dispose();
   }
 
   void _detectReadmeCandidate(List<Json> items, String sha) {
@@ -229,7 +470,10 @@ class _RepositoryTabState extends State<RepositoryTab> {
       _readmeError = null;
     });
     try {
-      final text = await widget.api.textFile(widget.project.id, sha, path);
+      final text = await CachedRead.run(
+        () => widget.api.textFile(widget.project.id, sha, path),
+        mayStart: () => mounted && _epoch == epoch && !widget.api.isClosed,
+      );
       if (utf8.encode(text).length > 256 * 1024) {
         throw const ApiFailure(FailureKind.tooLarge);
       }
@@ -285,7 +529,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
       },
     );
     if (saved && mounted) {
-      await _resolve();
+      await _resolve(fresh: true);
     }
   }
 
@@ -322,7 +566,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
       ),
     );
     if (changed == true && mounted) {
-      await _resolve();
+      await _resolve(fresh: true);
     }
   }
 
@@ -401,7 +645,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
             ),
           IconButton(
             tooltip: l10n.reloadLatestRevision,
-            onPressed: _loading ? null : _resolve,
+            onPressed: _loading ? null : () => _resolve(fresh: true),
             icon: const Icon(Icons.refresh, size: 20),
           ),
           if (ref?.writable == true)
@@ -555,7 +799,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
         if (_error != null)
           FailureNotice(
             _error!,
-            onRetry: _resolve,
+            onRetry: () => _resolve(fresh: true),
             account: widget.account,
             resourceLabel:
                 '${widget.project.path} · ${_currentRef?.name ?? ""}',
@@ -588,6 +832,27 @@ class _RepositoryTabState extends State<RepositoryTab> {
                       if (_folder.isNotEmpty) _breadcrumbs(context),
                     ],
                   ),
+                  cached: ({required bool fresh, required bool background}) async {
+                    final read = await widget.api.cachedRecords(
+                      [
+                        'projects',
+                        '${widget.project.id}',
+                        'repository',
+                        'tree',
+                      ],
+                      query: {
+                        'ref': _currentRef!.sha,
+                        'path': _folder,
+                        'per_page': '50',
+                      },
+                      fresh: fresh,
+                      background: background,
+                    );
+                    if (_folder.isEmpty && !read.dropped && !read.superseded) {
+                      _detectReadmeCandidate(read.value.items, _currentRef!.sha);
+                    }
+                    return read;
+                  },
                   load: (next) async {
                     final page = await widget.api.records(
                       [
