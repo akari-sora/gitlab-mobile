@@ -218,6 +218,27 @@ void main() {
     });
   }
 
+  test(
+    'delete access exposes distinct actor and author evidence for maintainers',
+    () async {
+      final adapter = FakeAdapter((_) => jsonResponse(_access()));
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      final access = await api.workItemActivityDeleteAccess(
+        _summary(),
+        _discussion(),
+        _displayedNote(),
+      );
+
+      expect(access.actorId, _actorId);
+      expect(access.authorId, _authorId);
+      expect(access.actorId, isNot(access.authorId));
+      expect(access.canDeleteNote, isTrue);
+      expect(access.target, isNotNull);
+    },
+  );
+
   final denied = <String, Map<String, Object?>>{
     'server denies adminNote': _access(
       noteChanges: const {
@@ -313,6 +334,65 @@ void main() {
       expect(adapter.requests.where(_mutation), isEmpty);
     });
   }
+
+  test(
+    'missing note validates its parent first and never reaches dispatch hooks',
+    () async {
+      for (final drift in [false, true]) {
+        Map<String, Object?> missingResponse() {
+          final response = _access(
+            workItemChanges: drift ? const {'iid': '8'} : const {},
+          );
+          (response['data']! as Map<String, Object?>)['note'] = null;
+          return response;
+        }
+
+        final expectedKind = drift
+            ? FailureKind.invalidResponse
+            : FailureKind.invisible;
+        final accessAdapter = FakeAdapter(
+          (_) => jsonResponse(missingResponse()),
+        );
+        final accessApi = testApi(accessAdapter);
+        await expectLater(
+          accessApi.workItemActivityDeleteAccess(
+            _summary(),
+            _discussion(),
+            _displayedNote(),
+          ),
+          throwsA(_failure(expectedKind)),
+        );
+        expect(accessAdapter.requests.where(_mutation), isEmpty);
+        accessApi.close();
+
+        var reads = 0;
+        var beforeMutationCalled = false;
+        var mayStartCalled = false;
+        final dispatchAdapter = FakeAdapter((_) {
+          reads++;
+          return jsonResponse(reads == 1 ? _access() : missingResponse());
+        });
+        final dispatchApi = testApi(dispatchAdapter);
+        final target = await _target(dispatchApi);
+        await expectLater(
+          dispatchApi.deleteWorkItemActivityNote(
+            target,
+            beforeMutation: () async => beforeMutationCalled = true,
+            mayStart: () {
+              mayStartCalled = true;
+              return true;
+            },
+          ),
+          throwsA(_failure(expectedKind)),
+        );
+        expect(beforeMutationCalled, isFalse);
+        expect(mayStartCalled, isFalse);
+        expect(dispatchAdapter.requests.where(_mutation), isEmpty);
+        expect(dispatchAdapter.requests, hasLength(2));
+        dispatchApi.close();
+      }
+    },
+  );
 
   for (final changes in [
     {'body': 'A concurrent edit'},

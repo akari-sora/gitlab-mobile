@@ -30,10 +30,16 @@ query MobileWorkItemActivityDeleteReadback(
 final class WorkItemActivityDeleteAccess {
   const WorkItemActivityDeleteAccess._({
     required this.canDeleteNote,
+    required this.actorId,
+    required this.authorId,
     required this.target,
   });
 
   final bool canDeleteNote;
+
+  /// Validated GraphQL evidence; UI permission is independent of authorship.
+  final String? actorId;
+  final String? authorId;
   final WorkItemActivityDeleteTarget? target;
 }
 
@@ -83,6 +89,8 @@ extension WorkItemActivityDeleteApi on GitLabApi {
     _requireDisplayedActivityNote(preflight.value.note, expectedNote);
     return WorkItemActivityDeleteAccess._(
       canDeleteNote: preflight.canEditNote,
+      actorId: preflight.actorId,
+      authorId: preflight.value.note.author?.id,
       target: preflight.canEditNote
           ? WorkItemActivityDeleteTarget._(
               owner: this,
