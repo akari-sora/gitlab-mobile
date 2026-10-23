@@ -35,6 +35,9 @@ class FileHistoryPage extends StatelessWidget {
       empty: l10n.noFileRevisions,
       emptyIcon: Icons.history,
       grouped: true,
+      cached: ({required bool fresh, required bool background}) => api.cachedRecords(
+        ['projects', '${project.id}', 'repository', 'commits'],
+        query: {'path': path, 'ref_name': ref}, fresh: fresh, background: background),
       load: (next) => api.fileHistory(project.id, path, ref, next: next),
       itemBuilder: (context, value) => ListTile(
         minTileHeight: 60,

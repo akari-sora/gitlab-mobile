@@ -2711,5 +2711,10 @@ const _messagesDe = <String>[
   '{count} weitere Dateien ändern sich ebenfalls',
   'Sie haben diesen Namen in der Nachricht genannt, ihn aber nicht mit einem Backtick (`) markiert, daher muss dieser Schreibvorgang von Ihnen bestätigt werden.',
   'GitLab kann die Löschung verzögert vornehmen; während der Aufbewahrungsfrist lässt sich das Element wiederherstellen.',
+  'Zuletzt aktualisiert: {time}',
+  'Wird aktualisiert…',
+  'GitLab begrenzt derzeit die Anfragen',
+  'Aktualisierung nicht möglich',
+  'Fortsetzung in ca. {minutes} Min.',
   '{verb} {target}',
 ];

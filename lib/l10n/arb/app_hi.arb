@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "{count} और फ़ाइलें भी बदलेंगी",
   "aiConfirmTargetNamedNotMarked": "आपने संदेश में इस नाम का उल्लेख किया है, लेकिन बैकटिक (`) से इसे चिन्हित नहीं किया है, इसलिए इस लेखन के लिए आपकी पुष्टि आवश्यक है।",
   "aiPreviewDeletionMayBeDelayed": "GitLab जनमत पर तब तक रुक सकता है, जब तक को डिलीट किए गए लूप को संग्रहीत समय सीमा तक ले जाया जा सकै॥",
+  "cacheLastUpdated": "अंतिम अपडेट: {time}",
+  "cacheRefreshing": "अपडेट हो रहा है…",
+  "cacheRateLimited": "GitLab अनुरोध सीमित कर रहा है",
+  "cacheRefreshFailed": "अपडेट नहीं हो सका",
+  "cacheResumesInMinutes": "लगभग {minutes} मिनट में फिर से शुरू होगा",
   "activityVerbTarget": "{verb} ({target})"
 }

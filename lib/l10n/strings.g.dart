@@ -8221,6 +8221,21 @@ final class AppStrings {
   /// GitLab 可能會延後刪除，保留期內仍可還原。
   String get aiPreviewDeletionMayBeDelayed => language._messages[2708];
 
+  /// 最後更新：{time}
+  String cacheLastUpdated(Object? time) => _format(language, language._messages[2709], {'time': time});
+
+  /// 正在更新
+  String get cacheRefreshing => language._messages[2710];
+
+  /// GitLab 正在限制請求
+  String get cacheRateLimited => language._messages[2711];
+
+  /// 無法更新
+  String get cacheRefreshFailed => language._messages[2712];
+
+  /// 約 {minutes} 分鐘後恢復
+  String cacheResumesInMinutes(Object? minutes) => _format(language, language._messages[2713], {'minutes': minutes});
+
   /// {verb}{target}
-  String activityVerbTarget(Object? verb, Object? target) => _format(language, language._messages[2709], {'verb': verb, 'target': target});
+  String activityVerbTarget(Object? verb, Object? target) => _format(language, language._messages[2714], {'verb': verb, 'target': target});
 }

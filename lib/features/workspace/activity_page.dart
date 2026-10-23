@@ -529,6 +529,9 @@ class ActivityFeed extends StatelessWidget {
     emptyIcon: Icons.timeline,
     grouped: true,
     underShell: underShell,
+    cached: ({required bool fresh, required bool background}) => api.cachedRecords([
+      if (project != null) ...['projects', '${project!.id}', 'events'] else 'events',
+    ], fresh: fresh, background: background),
     load: (next) => api.events(projectId: project?.id, next: next),
     itemBuilder: (context, value) => activityRow(context, value, account: account, api: api, showProject: project == null),
   );

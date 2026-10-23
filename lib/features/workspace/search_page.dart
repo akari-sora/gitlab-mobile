@@ -227,6 +227,10 @@ class _SearchPageState extends State<SearchPage> {
               empty: l10n.queryNotFound(_query),
               emptyDetail: l10n.tryAnotherQuery,
               emptyIcon: Icons.search_off,
+              cached: ({required bool fresh, required bool background}) => widget.api.cachedRecords([
+                if (project != null) ...['projects', '${project.id}'],
+                'search',
+              ], query: {'scope': _scope, 'search': _query.trim()}, fresh: fresh, background: background),
               load: (next) => widget.api.search(_scope, _query, projectId: project?.id, next: next),
               itemBuilder: _item,
             )),
@@ -268,6 +272,8 @@ class UserPage extends StatelessWidget {
             ])),
           ]),
         ),
+        cached: ({required bool fresh, required bool background}) => api.cachedRecords(
+          ['users', '$id', 'events'], fresh: fresh, background: background),
         load: (next) => api.events(userId: id, next: next),
         itemBuilder: (context, value) => activityRow(context, value, account: account, api: api),
       )),
