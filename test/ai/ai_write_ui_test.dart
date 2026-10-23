@@ -262,23 +262,20 @@ void main() {
   testWidgets('the edit button follows the ledger, not the field names', (
     tester,
   ) async {
-    // createRelease edits its description; editProject has no editable text,
-    // so a name-only edit would always be refused.
-    for (final (operation, fields, editable, offered) in [
-      (
-        'createRelease',
-        const {'tagName': 'v1.0', 'description': 'Notes'},
-        'description',
-        true,
-      ),
-      ('editProject', const {'name': 'Renamed'}, null, false),
-      ('renameBoard', const {'name': 'Sprint'}, null, false),
-      ('createIssue', const {'title': 'Only a title'}, 'description', false),
+    // The editable field comes from the production ledger: createRelease
+    // edits its description and renameBoard its name; editProject has no
+    // editable text, so a name-only edit would always be refused; a title-only
+    // issue does not carry the description it would edit.
+    for (final (operation, fields, offered) in [
+      ('createRelease', const {'tagName': 'v1.0', 'description': 'Notes'}, true),
+      ('editProject', const {'name': 'Renamed'}, false),
+      ('renameBoard', const {'name': 'Sprint'}, true),
+      ('createIssue', const {'title': 'Only a title'}, false),
     ]) {
       final proposal = _proposal(
         operationId: operation,
         fields: fields,
-        editableField: editable,
+        editableField: productionAiLedger.find(operation)!.editableField,
       );
       await tester.pumpWidget(
         _host(
