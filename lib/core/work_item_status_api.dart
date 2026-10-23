@@ -184,7 +184,12 @@ extension WorkItemStatusApi on GitLabApi {
     required String candidateId,
     required WorkItemStatusMutationSent onMutationSent,
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     if (target._consumed) {
       throw WorkItemStatusWriteFailure(
         failure: _statusSpent,
@@ -236,6 +241,8 @@ extension WorkItemStatusApi on GitLabApi {
       throw _statusWriteFailure(failure);
     }
 
+    if (beforeMutation != null) await beforeMutation();
+
     var handoff = WorkItemStatusHandoff.none;
     var reportedStart = false;
     void started(Object operationToken) {
@@ -252,6 +259,14 @@ extension WorkItemStatusApi on GitLabApi {
         throw StateError('STATUS mutation START was not reported');
       }
     } on Object {
+      throw WorkItemStatusWriteFailure(
+        failure: _statusCancelled,
+        mutationSent: false,
+        handoff: handoff,
+      );
+    }
+
+    if (mayStart != null && !mayStart()) {
       throw WorkItemStatusWriteFailure(
         failure: _statusCancelled,
         mutationSent: false,

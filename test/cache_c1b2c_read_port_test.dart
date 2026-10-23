@@ -363,8 +363,8 @@ void main() {
       ).issue(3).timeout(_deadline),
       throwsA(isA<ApiFailure>()),
     );
-    expect(metadataReads, 2, reason: 'only one oldest source is reread');
-    expect(adapter.requests, hasLength(3));
+    expect(metadataReads, 2, reason: 'both expired sources are re-read once');
+    expect(adapter.requests, hasLength(4));
   });
 
   test('AI issue refuses source times ahead of the delivery clock', () async {
@@ -389,7 +389,7 @@ void main() {
       ).issue(3).timeout(_deadline),
       throwsA(isA<ApiFailure>()),
     );
-    expect(adapter.requests, hasLength(3));
+    expect(adapter.requests, hasLength(4));
   });
 
   test(

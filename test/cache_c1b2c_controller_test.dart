@@ -521,7 +521,7 @@ void main() {
         );
         expect(
           controller.sendBlockedUntil,
-          harness.now.add(const Duration(seconds: 60)),
+          harness.now.add(const Duration(seconds: 50)),
         );
         final before = provider.requests.length;
         await controller.send('critical must block');

@@ -6,6 +6,19 @@ export 'write_levels.dart';
 part 'ledger/rows_ci.dart';
 part 'ledger/rows_deletes.dart';
 part 'ledger/rows_files.dart';
+part 'ledger/rows_graphql_activity_create.dart';
+part 'ledger/rows_graphql_activity_delete.dart';
+part 'ledger/rows_graphql_assignees.dart';
+part 'ledger/rows_graphql_dates.dart';
+part 'ledger/rows_graphql_health.dart';
+part 'ledger/rows_graphql_incident.dart';
+part 'ledger/rows_graphql_milestone.dart';
+part 'ledger/rows_graphql_notifications.dart';
+part 'ledger/rows_graphql_reaction.dart';
+part 'ledger/rows_graphql_snooze.dart';
+part 'ledger/rows_graphql_state.dart';
+part 'ledger/rows_graphql_status.dart';
+part 'ledger/rows_graphql_weight.dart';
 part 'ledger/rows_merge.dart';
 part 'ledger/rows_project.dart';
 part 'ledger/rows_refs.dart';
@@ -186,6 +199,7 @@ GitLabInstance? instanceFromAccountKey(String accountKey) {
 enum AiArgType {
   integer,
   string,
+  stringList,
   boolean,
   object,
   integerList,
@@ -194,6 +208,8 @@ enum AiArgType {
   suggestionList,
   snippetActions,
 }
+
+enum AiWriteBoundary { rest, graph }
 
 enum AiTextRole {
   none,
@@ -248,6 +264,7 @@ final class AiCapability {
     this.httpCap = 39,
     this.readback = false,
     this.editableField,
+    this.boundary = AiWriteBoundary.rest,
   }) : namedMethod = namedMethod ?? operationId;
 
   final String operationId;
@@ -269,6 +286,8 @@ final class AiCapability {
   final int httpCap;
   final bool readback;
 
+  final AiWriteBoundary boundary;
+
   /// The one text field a confirmation card may replace.
   final String? editableField;
 }
@@ -284,6 +303,19 @@ final class ProductionAiLedger implements AiCapabilityLedger {
   static const List<AiCapability> rows = <AiCapability>[
     ...aiT12Rows,
     ...aiFileRows,
+    ...aiGraphqlActivityCreateRows,
+    ...aiGraphqlActivityDeleteRows,
+    ...aiGraphqlAssigneesRows,
+    ...aiGraphqlDatesRows,
+    ...aiGraphqlHealthRows,
+    ...aiGraphqlIncidentRows,
+    ...aiGraphqlMilestoneRows,
+    ...aiGraphqlNotificationsRows,
+    ...aiGraphqlReactionRows,
+    ...aiGraphqlSnoozeRows,
+    ...aiGraphqlStateRows,
+    ...aiGraphqlStatusRows,
+    ...aiGraphqlWeightRows,
     ...aiRefRows,
     ...aiMergeRows,
     ...aiCiRows,
