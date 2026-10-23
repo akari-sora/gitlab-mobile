@@ -8187,4 +8187,13 @@ final class AppStrings {
 
   /// 幫我把全部待辦標為完成
   String get aiSuggestInboxMarkAll => language._messages[2697];
+
+  /// 標籤版本名稱
+  String get aiFieldTagName => language._messages[2698];
+
+  /// 原本的路徑
+  String get aiFieldPreviousPath => language._messages[2699];
+
+  /// 變數
+  String get aiFieldVariables => language._messages[2700];
 }

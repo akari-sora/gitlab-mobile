@@ -2700,4 +2700,7 @@ const _messagesUk = <String>[
   'Запитати AI про справи',
   'Помічник зі справ',
   'Познач усі мої справи виконаними',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

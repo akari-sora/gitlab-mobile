@@ -2700,4 +2700,7 @@ const _messagesPl = <String>[
   'Zapytaj AI o swoje to-do',
   'Asystent to-do',
   'Oznacz wszystkie moje to-do jako wykonane',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

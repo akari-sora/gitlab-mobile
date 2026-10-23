@@ -2700,4 +2700,7 @@ const _messagesRo = <String>[
   'Întreabă AI despre to-do-urile tale',
   'Asistent to-do',
   'Marchează toate to-do-urile mele ca finalizate',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

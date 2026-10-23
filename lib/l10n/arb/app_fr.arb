@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab vérifie encore si la fusion est possible ; rien n'a été fait. Réessayez dans un instant.",
   "aiInboxAsk": "Demander à l’IA pour vos tâches à faire",
   "aiInboxChatTitle": "Assistant de tâches à faire",
-  "aiSuggestInboxMarkAll": "Marque toutes mes tâches à faire comme terminées"
+  "aiSuggestInboxMarkAll": "Marque toutes mes tâches à faire comme terminées",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

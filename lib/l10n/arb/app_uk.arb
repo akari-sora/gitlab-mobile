@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab ще перевіряє, чи можна виконати злиття, тому нічого не виконано. Спробуйте трохи пізніше.",
   "aiInboxAsk": "Запитати AI про справи",
   "aiInboxChatTitle": "Помічник зі справ",
-  "aiSuggestInboxMarkAll": "Познач усі мої справи виконаними"
+  "aiSuggestInboxMarkAll": "Познач усі мої справи виконаними",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

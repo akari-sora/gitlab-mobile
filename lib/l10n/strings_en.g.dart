@@ -2700,4 +2700,7 @@ const _messagesEn = <String>[
   'Ask AI about your to-dos',
   'To-do assistant',
   'Mark all my to-dos as done',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab prüft noch, ob sich dies mergen lässt. Es wurde nichts ausgeführt. Versuchen Sie es gleich noch einmal.",
   "aiInboxAsk": "KI zu Ihren To-dos fragen",
   "aiInboxChatTitle": "To-do-Assistent",
-  "aiSuggestInboxMarkAll": "Markiere alle meine To-dos als erledigt"
+  "aiSuggestInboxMarkAll": "Markiere alle meine To-dos als erledigt",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

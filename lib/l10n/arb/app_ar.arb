@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "لا يزال GitLab يتحقق من إمكانية الدمج، لذا لم يُنفَّذ شيء. حاول مرة أخرى بعد قليل.",
   "aiInboxAsk": "اسأل AI عن مهامك",
   "aiInboxChatTitle": "مساعد المهام",
-  "aiSuggestInboxMarkAll": "علّم كل مهامي كمكتملة"
+  "aiSuggestInboxMarkAll": "علّم كل مهامي كمكتملة",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

@@ -2700,4 +2700,7 @@ const _messagesRu = <String>[
   'Спросить AI о задачах',
   'Помощник по задачам',
   'Отметь все мои задачи выполненными',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab ยังตรวจสอบอยู่ว่ารวมได้หรือไม่ จึงไม่ได้ดำเนินการใดๆ โปรดลองใหม่อีกครั้งในอีกสักครู่",
   "aiInboxAsk": "ถาม AI เกี่ยวกับรายการที่ต้องทำ",
   "aiInboxChatTitle": "ผู้ช่วยรายการที่ต้องทำ",
-  "aiSuggestInboxMarkAll": "ช่วยทำเครื่องหมายรายการที่ต้องทำทั้งหมดของฉันว่าเสร็จสิ้น"
+  "aiSuggestInboxMarkAll": "ช่วยทำเครื่องหมายรายการที่ต้องทำทั้งหมดของฉันว่าเสร็จสิ้น",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

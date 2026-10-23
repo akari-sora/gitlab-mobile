@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab kontrollerar fortfarande om detta kan slås samman, så ingenting gjordes. Försök igen om en stund.",
   "aiInboxAsk": "Fråga AI om dina att göra",
   "aiInboxChatTitle": "Assistent för att göra",
-  "aiSuggestInboxMarkAll": "Markera alla mina att göra som klara"
+  "aiSuggestInboxMarkAll": "Markera alla mina att göra som klara",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

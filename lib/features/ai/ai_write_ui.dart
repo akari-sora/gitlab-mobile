@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -5,7 +7,15 @@ import '../../core/ai/ai_display.dart';
 import '../../core/ai/tools/write_coordinator.dart';
 import '../../core/ai/tools/write_ledger.dart';
 import '../../core/ai/tools/write_preview.dart'
-    show AiFieldsPreview, AiMergePreview, AiPipelinePreview;
+    show
+        AiCancelAutoMergePreview,
+        AiDeletePreview,
+        AiDiffPreview,
+        AiDraftPublishPreview,
+        AiFieldsPreview,
+        AiMergePreview,
+        AiPipelinePreview,
+        AiWritePreview;
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/theme.dart';
@@ -172,7 +182,59 @@ String aiFieldValue(String key, String value) => switch ((key, value)) {
   (_, 'false') => l10n.noLabel,
   ('state_event', 'close') => l10n.closeAction,
   ('state_event', 'reopen') => l10n.reopen,
+  ('visibility', 'private') => l10n.visibilityPrivate,
+  ('visibility', 'internal') => l10n.visibilityInternal,
+  ('visibility', 'public') => l10n.visibilityPublic,
+  ('variables', _) => _variableLines(value) ?? value,
   _ => value,
+};
+
+/// Pipeline variables as `KEY = value` lines, so the user sees every value
+/// the AI would send. The value was already display-redacted.
+String? _variableLines(String json) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(json);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! List) return null;
+  final lines = <String>[];
+  for (final item in decoded) {
+    if (item is! Map || item['key'] is! String) return null;
+    final file = item['variable_type'] == 'file' ? ' (file)' : '';
+    lines.add('${item['key']}$file = ${item['value'] ?? ''}');
+  }
+  return lines.join('\n');
+}
+
+/// Fields a structured preview already shows; the card does not repeat them.
+bool aiFieldInPreview(AiWritePreview preview, String key) => switch (preview) {
+  AiFieldsPreview() => false,
+  AiMergePreview() => const {
+    'squash',
+    'removeSourceBranch',
+    'autoMerge',
+  }.contains(key),
+  AiDiffPreview() => const {
+    'edits',
+    'content',
+    'path',
+    'file_path',
+    'ref',
+    'branch',
+    'suggestions',
+  }.contains(key),
+  AiPipelinePreview() => key == 'ref' || key == 'action',
+  AiDeletePreview() => const {
+    'branch',
+    'tag_name',
+    'path',
+    'file_path',
+    'ref',
+    'name',
+  }.contains(key),
+  AiDraftPublishPreview() || AiCancelAutoMergePreview() => true,
 };
 
 /// Field names on the approval card, reusing the editors' own labels.
@@ -197,6 +259,16 @@ String aiFieldLabel(String key) => switch (key) {
   'filename' => l10n.fileName,
   'contentType' => l10n.aiFieldFileType,
   'list' => l10n.aiFieldBoardList,
+  'branch' => l10n.branchNoun,
+  'ref' => l10n.aiPreviewRef,
+  'tag_name' || 'tag' => l10n.aiFieldTagName,
+  'commitMessage' => l10n.commitMessage,
+  'message' => l10n.tagMessage,
+  'content' => l10n.content,
+  'path' || 'file_path' => l10n.filePath,
+  'previous_path' => l10n.aiFieldPreviousPath,
+  'visibility' => l10n.visibility,
+  'variables' => l10n.aiFieldVariables,
   _ => key,
 };
 
@@ -572,6 +644,7 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
             ],
             for (final MapEntry(:key, :value) in proposal.fields.entries)
               if (!aiFieldInTitle(proposal.operationId, key) &&
+                  !aiFieldInPreview(preview, key) &&
                   !(upload != null && _uploadFields.contains(key))) ...[
                 const SizedBox(height: 8),
                 Text(aiFieldLabel(key), style: theme.textTheme.labelMedium),

@@ -2703,5 +2703,8 @@
   "aiRefusedMergeChecking": "GitLab is still checking whether this can be merged, so nothing was done. Try again shortly.",
   "aiInboxAsk": "Ask AI about your to-dos",
   "aiInboxChatTitle": "To-do assistant",
-  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
+  "aiSuggestInboxMarkAll": "Mark all my to-dos as done",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

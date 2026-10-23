@@ -2700,4 +2700,7 @@ const _messagesZhCn = <String>[
   '请 AI 处理待办',
   '待办助手',
   '帮我把全部待办标为完成',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

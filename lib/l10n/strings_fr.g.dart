@@ -2700,4 +2700,7 @@ const _messagesFr = <String>[
   'Demander à l’IA pour vos tâches à faire',
   'Assistant de tâches à faire',
   'Marque toutes mes tâches à faire comme terminées',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

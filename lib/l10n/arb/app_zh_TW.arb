@@ -11451,5 +11451,8 @@
   "aiRefusedMergeChecking": "GitLab 還在檢查能不能合併，所以沒有執行。請稍後再試。",
   "aiInboxAsk": "請 AI 處理待辦",
   "aiInboxChatTitle": "待辦助手",
-  "aiSuggestInboxMarkAll": "幫我把全部待辦標為完成"
+  "aiSuggestInboxMarkAll": "幫我把全部待辦標為完成",
+  "aiFieldTagName": "標籤版本名稱",
+  "aiFieldPreviousPath": "原本的路徑",
+  "aiFieldVariables": "變數"
 }

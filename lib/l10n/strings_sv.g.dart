@@ -2700,4 +2700,7 @@ const _messagesSv = <String>[
   'Fråga AI om dina att göra',
   'Assistent för att göra',
   'Markera alla mina att göra som klara',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

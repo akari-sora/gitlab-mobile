@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab ещё проверяет, можно ли выполнить слияние, поэтому ничего не выполнено. Повторите чуть позже.",
   "aiInboxAsk": "Спросить AI о задачах",
   "aiInboxChatTitle": "Помощник по задачам",
-  "aiSuggestInboxMarkAll": "Отметь все мои задачи выполненными"
+  "aiSuggestInboxMarkAll": "Отметь все мои задачи выполненными",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

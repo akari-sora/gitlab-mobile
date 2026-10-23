@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab stále kontroluje, zda lze sloučit, takže nebylo nic provedeno. Zkuste to za chvíli znovu.",
   "aiInboxAsk": "Zeptat se AI na úkoly",
   "aiInboxChatTitle": "Asistent úkolů",
-  "aiSuggestInboxMarkAll": "Označ všechny mé úkoly jako hotové"
+  "aiSuggestInboxMarkAll": "Označ všechny mé úkoly jako hotové",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

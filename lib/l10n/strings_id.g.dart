@@ -2700,4 +2700,7 @@ const _messagesId = <String>[
   'Tanya AI tentang to-do Anda',
   'Asisten to-do',
   'Tandai semua to-do saya selesai',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

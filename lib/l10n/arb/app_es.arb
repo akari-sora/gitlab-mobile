@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab aún está comprobando si se puede fusionar, así que no se hizo nada. Inténtalo de nuevo en un momento.",
   "aiInboxAsk": "Preguntar a la IA sobre tus tareas pendientes",
   "aiInboxChatTitle": "Asistente de tareas pendientes",
-  "aiSuggestInboxMarkAll": "Marca todas mis tareas pendientes como completadas"
+  "aiSuggestInboxMarkAll": "Marca todas mis tareas pendientes como completadas",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

@@ -2700,4 +2700,7 @@ const _messagesEs = <String>[
   'Preguntar a la IA sobre tus tareas pendientes',
   'Asistente de tareas pendientes',
   'Marca todas mis tareas pendientes como completadas',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

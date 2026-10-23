@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab nadal sprawdza, czy można scalić, więc nic nie zostało zrobione. Spróbuj ponownie za chwilę.",
   "aiInboxAsk": "Zapytaj AI o swoje to-do",
   "aiInboxChatTitle": "Asystent to-do",
-  "aiSuggestInboxMarkAll": "Oznacz wszystkie moje to-do jako wykonane"
+  "aiSuggestInboxMarkAll": "Oznacz wszystkie moje to-do jako wykonane",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

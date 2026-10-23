@@ -2700,4 +2700,7 @@ const _messagesMs = <String>[
   'Tanya AI tentang tugasan anda',
   'Pembantu tugasan',
   'Tandakan semua tugasan saya selesai',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

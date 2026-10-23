@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab がまだマージ可能か確認中のため、何も実行されませんでした。しばらくしてからもう一度お試しください。",
   "aiInboxAsk": "AI にタスクについて相談",
   "aiInboxChatTitle": "タスクアシスタント",
-  "aiSuggestInboxMarkAll": "すべてのタスクを完了にして"
+  "aiSuggestInboxMarkAll": "すべてのタスクを完了にして",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

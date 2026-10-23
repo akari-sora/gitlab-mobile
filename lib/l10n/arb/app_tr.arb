@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab hâlâ birleştirilip birleştirilemeyeceğini denetliyor, bu yüzden hiçbir şey yapılmadı. Kısa süre sonra yeniden deneyin.",
   "aiInboxAsk": "AI’ye yapılacaklarınızı sorun",
   "aiInboxChatTitle": "Yapılacaklar asistanı",
-  "aiSuggestInboxMarkAll": "Tüm yapılacaklarımı tamamlandı olarak işaretle"
+  "aiSuggestInboxMarkAll": "Tüm yapılacaklarımı tamamlandı olarak işaretle",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab이 아직 병합 가능 여부를 확인 중이어서 아무것도 실행하지 않았습니다. 잠시 후 다시 시도하세요.",
   "aiInboxAsk": "AI에게 할 일 물어보기",
   "aiInboxChatTitle": "할 일 도우미",
-  "aiSuggestInboxMarkAll": "내 할 일을 모두 완료로 표시해 줘"
+  "aiSuggestInboxMarkAll": "내 할 일을 모두 완료로 표시해 줘",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

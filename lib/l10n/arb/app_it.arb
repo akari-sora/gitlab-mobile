@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab sta ancora verificando se l'unione è possibile, quindi non è stato fatto nulla. Riprova tra poco.",
   "aiInboxAsk": "Chiedi all’IA dei tuoi to-do",
   "aiInboxChatTitle": "Assistente to-do",
-  "aiSuggestInboxMarkAll": "Segna tutti i miei to-do come completati"
+  "aiSuggestInboxMarkAll": "Segna tutti i miei to-do come completati",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

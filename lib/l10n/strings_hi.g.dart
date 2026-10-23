@@ -2700,4 +2700,7 @@ const _messagesHi = <String>[
   'अपने टू-डू के बारे में AI से पूछें',
   'टू-डू सहायक',
   'मेरे सभी टू-डू पूरे चिह्नित करो',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

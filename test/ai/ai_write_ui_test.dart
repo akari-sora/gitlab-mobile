@@ -374,9 +374,9 @@ void main() {
     tester,
   ) async {
     final proposal = _proposal(
-      operationId: 'mergeMergeRequest',
+      operationId: 'mergeRequest',
       tier: AiWriteTier.t4,
-      fields: const {},
+      fields: const {'squash': 'true'},
       showSquash: true,
       closingRefs: const ['#3'],
       preview: AiMergePreview(
@@ -400,6 +400,57 @@ void main() {
     expect(find.text(l10n.aiProposalSquash), findsNothing);
     expect(find.text(l10n.aiProposalClosesOnMerge('#3')), findsOneWidget);
     expect(find.byKey(const ValueKey('ai-proposal-closes')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('ai-proposal-field-squash')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('pipeline variables read as KEY = value lines', (tester) async {
+    final proposal = _proposal(
+      operationId: 'createPipeline',
+      tier: AiWriteTier.t3,
+      fields: const {
+        'ref': 'main',
+        'variables':
+            '[{"key":"DEPLOY_TARGET","value":"staging"},'
+            '{"key":"CFG","value":"x","variable_type":"file"}]',
+      },
+      preview: AiPipelinePreview(
+        ref: 'main',
+        newVariableNames: const ['DEPLOY_TARGET', 'CFG'],
+      ),
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(find.text(l10n.aiFieldVariables), findsOneWidget);
+    expect(
+      find.text('DEPLOY_TARGET = staging\nCFG (file) = x'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('ai-proposal-field-ref')), findsNothing);
+  });
+
+  testWidgets('a delete card leaves its target to the preview', (tester) async {
+    final proposal = _proposal(
+      operationId: 'deleteBranch',
+      tier: AiWriteTier.t4,
+      fields: const {'branch': 'feature/old'},
+      preview: const AiDeletePreview(targetName: 'feature/old'),
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(find.byKey(const ValueKey('ai-preview-delete')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ai-proposal-field-branch')),
+      findsNothing,
+    );
   });
 
   testWidgets('a rerun card warns about stored variables once', (tester) async {

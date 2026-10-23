@@ -2700,4 +2700,7 @@ const _messagesAr = <String>[
   'اسأل AI عن مهامك',
   'مساعد المهام',
   'علّم كل مهامي كمكتملة',
+  'Tag name',
+  'Previous path',
+  'Variables',
 ];

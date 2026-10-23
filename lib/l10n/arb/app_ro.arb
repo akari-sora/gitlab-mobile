@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab încă verifică dacă se poate îmbina, deci nu s-a făcut nimic. Încearcă din nou în scurt timp.",
   "aiInboxAsk": "Întreabă AI despre to-do-urile tale",
   "aiInboxChatTitle": "Asistent to-do",
-  "aiSuggestInboxMarkAll": "Marchează toate to-do-urile mele ca finalizate"
+  "aiSuggestInboxMarkAll": "Marchează toate to-do-urile mele ca finalizate",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }

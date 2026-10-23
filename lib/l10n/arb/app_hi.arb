@@ -2697,5 +2697,8 @@
   "aiRefusedMergeChecking": "GitLab अभी जाँच रहा है कि मर्ज हो सकता है या नहीं, इसलिए कुछ भी निष्पादित नहीं हुआ। थोड़ी देर बाद फिर कोशिश करें।",
   "aiInboxAsk": "अपने टू-डू के बारे में AI से पूछें",
   "aiInboxChatTitle": "टू-डू सहायक",
-  "aiSuggestInboxMarkAll": "मेरे सभी टू-डू पूरे चिह्नित करो"
+  "aiSuggestInboxMarkAll": "मेरे सभी टू-डू पूरे चिह्नित करो",
+  "aiFieldTagName": "Tag name",
+  "aiFieldPreviousPath": "Previous path",
+  "aiFieldVariables": "Variables"
 }
