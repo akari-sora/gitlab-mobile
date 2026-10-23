@@ -354,8 +354,9 @@ void main() {
           second.currentState!.backgroundRetryAt,
           failure == FailureKind.rateLimited ? isNotNull : isNull,
         );
-        // The details are fresh; only the README's refresh failed, and the
-        // README section reports that itself — no page strip (review I2).
+        // The details are fresh; only the README's refresh failed, so the
+        // page strip stays down — the stale README keeps its cached value
+        // until a later successful refresh (review I2).
         await tester.pump();
         expect(find.byType(CacheFreshnessBar), findsNothing);
         expect(
