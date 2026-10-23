@@ -2711,5 +2711,10 @@ const _messagesRo = <String>[
   'Se mai modifică și alte {count} fișiere',
   'Ai menționat acest nume în mesaj, dar nu l-ai marcat cu un backtick (`, deci această scriere necesită confirmarea ta.',
   'GitLab poate întârzia ștergerea; elementul poate fi restaurat în perioada de reținere.',
+  'Ultima actualizare: {time}',
+  'Se reîmprospătează…',
+  'GitLab limitează cererile',
+  'Nu se poate reîmprospăta',
+  'Se reia în aproximativ {minutes} min',
   '{verb} {target}',
 ];

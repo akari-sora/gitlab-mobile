@@ -117,6 +117,8 @@ class _MyWorkPageState extends State<MyWorkPage> {
         resourceLabel: l10n.scopeTitle(_scopeLabel(_scope), title),
         onSwitchAccount: endSessionFrom(context),
         leading: (context, _) => _filters(context),
+        cached: ({required bool fresh, required bool background}) => widget.api.cachedRecords(
+          [_resource], query: _query, fresh: fresh, background: background),
         load: (next) => widget.api.records([_resource], query: _query, next: next),
         itemBuilder: (context, data) => inboxWorkItem(context, widget.account, widget.api, data, _resource),
       )),

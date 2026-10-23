@@ -613,6 +613,17 @@ class _ProjectsPageState extends State<ProjectsPage> {
             ? null
             : idleAllScope ? l10n.searchBeyondMembership : l10n.openByPathHint,
         emptyIcon: groups ? Icons.workspaces_outline : idleAllScope ? Icons.search : Icons.folder_off_outlined,
+        cached: groups
+            ? ({required bool fresh, required bool background}) => api.cachedRecords(['groups'], query: {
+                'min_access_level': '10', 'order_by': 'name', 'sort': 'asc',
+                if (_query.trim().isNotEmpty) 'search': _query.trim(),
+              }, fresh: fresh, background: background)
+            : idleAllScope ? null : ({required bool fresh, required bool background}) => api.cachedRecords(
+                ['projects'], query: {
+                  'order_by': sort.$2, 'sort': sort.$3,
+                  if (_scope == 0) 'membership': 'true', if (_scope == 1) 'starred': 'true',
+                  if (_query.isNotEmpty) 'search': _query,
+                }, fresh: fresh, background: background),
         load: groups
             ? (next) => api.groups(search: _query, next: next)
             : idleAllScope ? (_) async => const ApiPage<Json>([]) : (next) => api.records(['projects'], query: {

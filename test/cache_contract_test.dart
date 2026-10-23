@@ -68,7 +68,7 @@ void main() {
     });
 
     test(
-      'query order is normalized but Accept remains part of the key',
+      'equivalent query order shares one cached response',
       () async {
         final adapter = FakeAdapter(
           (request) => jsonResponse({'accept': request.headers['Accept']}),

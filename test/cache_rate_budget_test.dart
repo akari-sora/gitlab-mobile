@@ -24,30 +24,133 @@ void main() {
 
   tearDown(() => budget.close());
 
-  test('exact level formula covers small limits and reset boundaries', () {
-    RateLevel level(int limit, int remaining, int seconds) {
-      final single = GitLabRateBudget(now: () => now);
-      addTearDown(single.close);
-      single.noteResponse(
-        headers: rateHeaders(
-          limit: limit,
-          remaining: remaining,
-          reset: now.add(Duration(seconds: seconds)),
-        ),
-        statusCode: 200,
-        requestClass: RateRequestClass.global,
-        sequence: 1,
-        trusted: true,
-      );
-      return single.snapshot().level;
-    }
+  group('level formula matches small limits and strict reset thresholds', () {
+    final cases =
+        <
+          ({
+            String name,
+            int limit,
+            int remaining,
+            Duration untilReset,
+            RateLevel expected,
+          })
+        >[
+          (
+            name: 'limit 1 full',
+            limit: 1,
+            remaining: 1,
+            untilReset: const Duration(seconds: 60),
+            expected: RateLevel.low,
+          ),
+          (
+            name: 'limit 1 after one request',
+            limit: 1,
+            remaining: 0,
+            untilReset: const Duration(seconds: 60),
+            expected: RateLevel.critical,
+          ),
+          (
+            name: 'limit 2 full',
+            limit: 2,
+            remaining: 2,
+            untilReset: const Duration(seconds: 60),
+            expected: RateLevel.normal,
+          ),
+          (
+            name: 'limit 2 after one request',
+            limit: 2,
+            remaining: 1,
+            untilReset: const Duration(seconds: 60),
+            expected: RateLevel.low,
+          ),
+          (
+            name: 'limit 3 full',
+            limit: 3,
+            remaining: 3,
+            untilReset: const Duration(seconds: 60),
+            expected: RateLevel.normal,
+          ),
+          (
+            name: 'limit 3 after one request',
+            limit: 3,
+            remaining: 2,
+            untilReset: const Duration(seconds: 60),
+            expected: RateLevel.normal,
+          ),
+          (
+            name: 'critical just below 10 seconds',
+            limit: 100,
+            remaining: 0,
+            untilReset: const Duration(seconds: 9, microseconds: 999999),
+            expected: RateLevel.normal,
+          ),
+          (
+            name: 'critical at 10 seconds',
+            limit: 100,
+            remaining: 0,
+            untilReset: const Duration(seconds: 10),
+            expected: RateLevel.normal,
+          ),
+          (
+            name: 'critical just above 10 seconds',
+            limit: 100,
+            remaining: 0,
+            untilReset: const Duration(seconds: 10, microseconds: 1),
+            expected: RateLevel.critical,
+          ),
+          (
+            name: 'low just below 20 seconds',
+            limit: 100,
+            remaining: 14,
+            untilReset: const Duration(seconds: 19, microseconds: 999999),
+            expected: RateLevel.normal,
+          ),
+          (
+            name: 'low at 20 seconds',
+            limit: 100,
+            remaining: 14,
+            untilReset: const Duration(seconds: 20),
+            expected: RateLevel.normal,
+          ),
+          (
+            name: 'low just above 20 seconds',
+            limit: 100,
+            remaining: 14,
+            untilReset: const Duration(seconds: 20, microseconds: 1),
+            expected: RateLevel.low,
+          ),
+        ];
 
-    expect(level(1, 1, 60), RateLevel.low);
-    expect(level(2, 2, 60), RateLevel.normal);
-    expect(level(2, 1, 60), RateLevel.low);
-    expect(level(3, 0, 60), RateLevel.critical);
-    expect(level(100, 0, 10), RateLevel.normal);
-    expect(level(100, 14, 20), RateLevel.normal);
+    for (final testCase in cases) {
+      test(testCase.name, () {
+        final observed = GitLabRateBudget(now: () => now);
+        addTearDown(observed.close);
+        final reset = now.add(testCase.untilReset);
+        observed.noteResponse(
+          headers: rateHeaders(
+            limit: testCase.limit,
+            remaining: testCase.remaining,
+            reset: reset,
+            name: testCase.name,
+          ),
+          statusCode: 200,
+          requestClass: RateRequestClass.global,
+          sequence: 1,
+          trusted: true,
+        );
+        final snapshot = observed.snapshot();
+        final bucket = snapshot.buckets[testCase.name];
+
+        expect(snapshot.buckets, hasLength(1), reason: testCase.name);
+        expect(bucket, isNotNull, reason: testCase.name);
+        expect(bucket?.name, testCase.name, reason: testCase.name);
+        expect(bucket?.limit, testCase.limit, reason: testCase.name);
+        expect(bucket?.remaining, testCase.remaining, reason: testCase.name);
+        expect(bucket?.resetAt, reset, reason: testCase.name);
+        expect(bucket?.level, testCase.expected, reason: testCase.name);
+        expect(snapshot.level, testCase.expected, reason: testCase.name);
+      });
+    }
   });
 
   test('send ordering cannot raise remaining in the same window', () {
@@ -77,7 +180,7 @@ void main() {
     expect(budget.snapshot().buckets['user']?.remaining, 8);
   });
 
-  test('send ordering is tracked independently for each bucket', () {
+  test('responses populate independently named buckets', () {
     final reset = now.add(const Duration(minutes: 5));
     budget.noteResponse(
       headers: rateHeaders(
@@ -145,7 +248,7 @@ void main() {
   });
 
   test(
-    'validates numeric header ranges and uses server Date for clock skew',
+    'rejects remaining above limit and uses server Date for clock skew',
     () {
       final serverDate = DateTime.utc(2026, 10, 22, 23);
       final serverReset = serverDate.add(const Duration(minutes: 2));
@@ -321,7 +424,7 @@ void main() {
     expect(budget.mayStart(RateRequestClass.search), isFalse);
   });
 
-  test('missing 429 headers use capped exponential backoff and jitter', () {
+  test('missing 429 headers respect per-class cooldown caps', () {
     budget.close();
     budget = GitLabRateBudget(
       now: () => now,
@@ -431,7 +534,7 @@ void main() {
     await subscription.cancel();
   });
 
-  test('stale responses cannot advance or reset fallback attempts', () {
+  test('stale success cannot reset fallback attempts', () {
     budget.noteResponse(
       headers: const <String, List<String>>{},
       statusCode: 429,
@@ -534,7 +637,7 @@ void main() {
     );
   });
 
-  test('allocator caps concurrency and returns unconsumed reservations', () {
+  test('allocator caps concurrency and tracks unconsumed reservations', () {
     final allocator = RunBudgetAllocator(budget);
     final first = allocator.acquire(100)!;
     final second = allocator.acquire(100)!;

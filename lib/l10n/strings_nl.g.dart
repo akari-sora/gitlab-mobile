@@ -2711,5 +2711,10 @@ const _messagesNl = <String>[
   'Nog {count} bestanden wijzigen ook',
   'Je hebt deze naam in het bericht genoemd maar niet gemarkeerd met een backtick (`, dus deze schrijfactie vereist jouw bevestiging.',
   'GitLab kan de verwijdering uitstellen; tijdens de bewaartermijn kan het item worden hersteld.',
+  'Laatst bijgewerkt: {time}',
+  'Wordt vernieuwd…',
+  'GitLab beperkt verzoeken',
+  'Kan niet vernieuwen',
+  'Hervatting over ca. {minutes} min',
   '{verb} {target}',
 ];

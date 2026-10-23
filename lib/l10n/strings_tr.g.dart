@@ -2711,5 +2711,10 @@ const _messagesTr = <String>[
   '{count} dosya daha değişecek',
   'Bu ismi mesajda andın ama ters tik (`) ile işaretlemedin, bu yüzden bu yazma işlemini onaylaman gerekiyor.',
   'GitLab silmeyi erteleyebilir; öğe saklama süresi içinde geri getirilebilir.',
+  'Son güncelleme: {time}',
+  'Yenileniyor…',
+  'GitLab istekleri sınırlıyor',
+  'Yenilenemedi',
+  'Yaklaşık {minutes} dk. sonra devam eder',
   '{verb} ({target})',
 ];

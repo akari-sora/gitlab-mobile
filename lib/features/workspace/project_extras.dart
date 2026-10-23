@@ -65,6 +65,8 @@ class MembersPage extends StatelessWidget {
     empty: l10n.noMembersToShow,
     emptyIcon: Icons.group_outlined,
     grouped: true,
+    cached: ({required bool fresh, required bool background}) => api.cachedRecords(
+      ['projects', '${project.id}', 'members', 'all'], fresh: fresh, background: background),
     load: (next) => api.records(['projects', '${project.id}', 'members', 'all'], next: next),
     itemBuilder: (context, value) {
       final theme = Theme.of(context);
@@ -110,6 +112,8 @@ class WikiPagesPage extends StatelessWidget {
     empty: l10n.projectHasNoWiki,
     emptyIcon: Icons.menu_book_outlined,
     grouped: true,
+    cached: ({required bool fresh, required bool background}) => api.cachedRecords(
+      ['projects', '${project.id}', 'wikis'], fresh: fresh, background: background),
     load: (next) => api.records(['projects', '${project.id}', 'wikis'], next: next),
     itemBuilder: (context, value) {
       final slug = valueText(value, 'slug');
@@ -342,6 +346,8 @@ class _EnvironmentsPageState extends State<EnvironmentsPage> {
     emptyDetail: l10n.environmentsAfterCiDeploy,
     emptyIcon: Icons.dns_outlined,
     grouped: true,
+    cached: ({required bool fresh, required bool background}) => owner.api.cachedRecords(
+      ['projects', '${owner.projectId}', 'environments'], fresh: fresh, background: background),
     load: (next) => owner.api.records(['projects', '${owner.projectId}', 'environments'], next: next),
     itemBuilder: (context, value) {
       final environmentId = valueInt(value, 'id');
@@ -487,6 +493,10 @@ class _DeploymentsPageState extends State<DeploymentsPage> {
     empty: l10n.noDeployments,
     emptyIcon: Icons.rocket_launch_outlined,
     grouped: true,
+    cached: ({required bool fresh, required bool background}) => owner.api.cachedRecords(
+      ['projects', '${owner.projectId}', 'deployments'], query: {
+        'order_by': 'created_at', 'sort': 'desc', 'environment': ?environment,
+      }, fresh: fresh, background: background),
     load: (next) => owner.api.records(['projects', '${owner.projectId}', 'deployments'], query: {
       'order_by': 'created_at', 'sort': 'desc', 'environment': ?environment,
     }, next: next),
@@ -692,6 +702,8 @@ class _PipelineSchedulesPageState extends State<PipelineSchedulesPage> {
     empty: l10n.noPipelineSchedules,
     emptyIcon: Icons.event_repeat_outlined,
     grouped: true,
+    cached: ({required bool fresh, required bool background}) => owner.api.cachedRecords(
+      ['projects', '${owner.projectId}', 'pipeline_schedules'], fresh: fresh, background: background),
     load: (next) => owner.api.records(['projects', '${owner.projectId}', 'pipeline_schedules'], next: next),
     itemBuilder: (context, value) {
       final active = valueBool(value, 'active');
