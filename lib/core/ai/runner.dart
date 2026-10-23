@@ -586,6 +586,9 @@ final class AiRunner {
               (tool) => tool.name == tc.name,
             );
             if (!offeredInSegment) {
+              // A write tool the segment never offered was still proposed: the
+              // turn's writes stop, exactly as any other refused write (§7.5).
+              previousWriteIncomplete |= writeCoordinator?.handles(tc.name) ?? false;
               results.add(synthetic(tc, 'unavailable'));
               _notifyToolResult(results.last);
               continue;

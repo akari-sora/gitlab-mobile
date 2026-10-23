@@ -28,10 +28,39 @@ void main() {
       (await runner.run('try an unavailable write')).reason,
       AiRunEnd.done,
     );
-    expect(coordinator.handledNames, isEmpty);
+    // Not offered in the segment: it never reaches the gate (execute is never
+    // called), but the ledger still recognises it as a write, so the turn's
+    // writes stop (§7.5) — proven by the next test.
     expect(coordinator.executedNames, isEmpty);
     expect(results.single.notExecuted, isTrue);
     expect(results.single.content, contains('unavailable'));
+  });
+
+  test("a refused unavailable write stops the same turn's later writes", () async {
+    final h = base.Harness();
+    final coordinator = _RecordingCoordinator();
+    final results = <AiToolResult>[];
+    var modelCalls = 0;
+    h.respond = (_, _) async => ++modelCalls == 1
+        ? h.turn(calls: [_call('createNote'), _call(_writeSpec.name)])
+        : h.turn(text: 'done');
+
+    final runner = _runner(
+      h,
+      coordinator: coordinator,
+      tools: [_writeSpec],
+      onToolResult: results.add,
+    );
+
+    expect(
+      (await runner.run('unavailable write then an offered one')).reason,
+      AiRunEnd.done,
+    );
+    expect(coordinator.executedNames, isEmpty, reason: 'the gate never runs');
+    expect(results.length, 2);
+    expect(results.first.content, contains('unavailable'));
+    expect(results.last.notExecuted, isTrue);
+    expect(results.last.content, contains('previousWriteIncomplete'));
   });
 
   test('an advertised read-only tool still executes normally', () async {
@@ -142,7 +171,7 @@ final class _RecordingCoordinator implements AiWriteCoordinator {
   @override
   bool handles(String name) {
     handledNames.add(name);
-    return name == _writeSpec.name;
+    return name == _writeSpec.name || name == 'createNote';
   }
 
   @override

@@ -428,7 +428,6 @@ final class PolicyAiWriteCoordinator
   String _runId = _nonce();
   String? _stopped;
   bool _previousIncomplete = false;
-  bool _resuming = false;
   Timer? _approvalTimer;
   static final List<_WriteLease> _leases = [];
   // A failed graph boundary flush cannot be inferred safe from the cached
@@ -563,7 +562,6 @@ final class PolicyAiWriteCoordinator
     _pending.removeWhere((_, pending) => pending.done.isCompleted);
     _results.clear();
     _runId = _nonce();
-    _resuming = false;
     _userUtterance = userUtterance;
     _stopped = null;
     _previousIncomplete = false;
@@ -575,7 +573,6 @@ final class PolicyAiWriteCoordinator
   /// paired with their original outcomes; pending approvals are never revived.
   void resumeRun() {
     stop('superseded');
-    _resuming = true;
     _stopped = null;
     _previousIncomplete = false;
     _uploadedThisBatch.clear();
@@ -739,7 +736,10 @@ final class PolicyAiWriteCoordinator
           .where((entry) => entry.operationId == call.name &&
               entry.writeKeys.length == prepared.writeKeys.length &&
               entry.writeKeys.containsAll(prepared.writeKeys));
-      if (_resuming && settled.any((entry) =>
+      // §15.8: an identical proposal to a write this same run already settled
+      // as succeeded or uncertain is always confirmed, resumed or not. Writes
+      // from other runs or conversations only matter once runs resume (MR6c).
+      if (settled.any((entry) =>
           entry.runId == runId &&
           entry.conversationId == conversationId &&
           (entry.state == AiJournalState.succeeded ||

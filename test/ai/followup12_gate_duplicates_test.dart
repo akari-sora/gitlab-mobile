@@ -123,16 +123,15 @@ void main() {
   }
 
   test(
-    'same-run success is not a resume duplicate until explicit continuation',
+    'a same-run success is always a duplicate, resumed or not',
     () async {
       final h = await settled();
       final ordinary = (await h.coordinator.propose(starCall('ordinary')))!;
-      expect(ordinary.tier.decision, AiGateDecision.execute);
+      expect(ordinary.tier.decision, AiGateDecision.requireApproval);
       expect(
         ordinary.tier.reasons,
-        isNot(contains(AiFixedConfirmReason.duplicateOfSettledWrite)),
+        contains(AiFixedConfirmReason.duplicateOfSettledWrite),
       );
-      h.coordinator.resumeRun();
       final duplicate = (await h.coordinator.propose(starCall('resumed')))!;
       expect(duplicate.tier.decision, AiGateDecision.requireApproval);
       expect(
