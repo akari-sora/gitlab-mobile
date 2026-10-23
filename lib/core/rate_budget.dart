@@ -90,7 +90,9 @@ final class GitLabRateBudget {
   int _sequence = 0;
   final Map<RateRequestClass, int> _fallbackAttempts =
       <RateRequestClass, int>{};
-  final Map<RateRequestClass, int> _acknowledgedSequences =
+  final Map<RateRequestClass, int> _last429Sequences =
+      <RateRequestClass, int>{};
+  final Map<RateRequestClass, int> _lastSuccessSequences =
       <RateRequestClass, int>{};
   bool _closed = false;
 
@@ -158,9 +160,6 @@ final class GitLabRateBudget {
     required bool trusted,
   }) {
     if (_closed || !trusted) return;
-    final acknowledged = _acknowledgedSequences[requestClass];
-    if (acknowledged != null && sequence <= acknowledged) return;
-    _acknowledgedSequences[requestClass] = sequence;
     final normalized = <String, List<String>>{
       for (final entry in headers.entries) entry.key.toLowerCase(): entry.value,
     };
@@ -191,14 +190,29 @@ final class GitLabRateBudget {
     }
 
     if (statusCode == 429) {
-      final cooldownAt = resetAt ?? _fallbackReset(now, requestClass);
+      final last429Sequence = _last429Sequences[requestClass];
+      final isNewer429 = last429Sequence == null || sequence > last429Sequence;
+      if (isNewer429) _last429Sequences[requestClass] = sequence;
+      final lastSuccessSequence = _lastSuccessSequences[requestClass];
+      final advancesFallback =
+          isNewer429 &&
+          (lastSuccessSequence == null || sequence > lastSuccessSequence);
+      final cooldownAt =
+          resetAt ??
+          _fallbackReset(now, requestClass, advance: advancesFallback);
       final capped = _capCooldown(now, cooldownAt, requestClass);
       final previous = _cooldowns[requestClass];
-      if (previous == null || sequence >= previous.sequence) {
-        _cooldowns[requestClass] = _Cooldown(capped, sequence);
+      if (previous == null || capped.isAfter(previous.until)) {
+        _cooldowns[requestClass] = _Cooldown(capped);
       }
-    } else if (resetAt != null || limit != null || remaining != null) {
-      _fallbackAttempts.remove(requestClass);
+    } else if (statusCode >= 200 && statusCode < 300) {
+      final lastSuccessSequence = _lastSuccessSequences[requestClass];
+      if (lastSuccessSequence == null || sequence > lastSuccessSequence) {
+        _lastSuccessSequences[requestClass] = sequence;
+      }
+      if (sequence > (_last429Sequences[requestClass] ?? sequence)) {
+        _fallbackAttempts.remove(requestClass);
+      }
     }
     _expireAndSchedule();
     _publish(_snapshotNow());
@@ -211,9 +225,14 @@ final class GitLabRateBudget {
     unawaited(_changes.close());
   }
 
-  DateTime _fallbackReset(DateTime now, RateRequestClass requestClass) {
-    final attempt = _fallbackAttempts[requestClass] ?? 0;
-    _fallbackAttempts[requestClass] = attempt + 1;
+  DateTime _fallbackReset(
+    DateTime now,
+    RateRequestClass requestClass, {
+    required bool advance,
+  }) {
+    final attempts = _fallbackAttempts[requestClass] ?? 0;
+    final attempt = advance ? attempts : math.max(0, attempts - 1);
+    if (advance) _fallbackAttempts[requestClass] = attempts + 1;
     final base = _backoff(attempt);
     final jittered = Duration(
       milliseconds: (base.inMilliseconds * (1 + _jitter() * 0.2)).round(),
@@ -438,8 +457,7 @@ final class _Bucket {
 }
 
 final class _Cooldown {
-  const _Cooldown(this.until, this.sequence);
+  const _Cooldown(this.until);
 
   final DateTime until;
-  final int sequence;
 }

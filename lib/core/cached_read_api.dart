@@ -63,6 +63,18 @@ extension CachedReadApi on GitLabApi {
   String? get readCacheAccountKey => _cache.accountKey;
   int? get readCacheGeneration => _cache.generation;
 
+  /// Bounded state sizes, without resource identifiers or cached content.
+  Map<String, int> get readCacheMetadataCounts => Map.unmodifiable({
+    'aliases': _cache.aliases.length,
+    'versions': _cache.versions.length,
+    'writes': _cache.writes.length,
+    'revocations': _cache.revocations.length,
+    'sourceWrites': _cache.sourceWriteTimes.length,
+    'sourceRevocations': _cache.sourceRevocations.length,
+    'publications': _cache.publicationTickets.length,
+    'superseded': _cache.supersededFresh.length,
+  });
+
   Future<CachedRead<Json>> cachedRecord(
     List<String> path, {
     Map<String, String> query = const {},
@@ -71,7 +83,10 @@ extension CachedReadApi on GitLabApi {
     bool allowDisk = true,
     bool background = false,
   }) {
-    final uri = _cache.canonical(instance.api(path, query));
+    final uri = _cache.canonical(
+      instance.api(path, query),
+      resolveAlias: false,
+    );
     final policy = _cache.classify(uri, page: false);
     return _cache.read<Json>(
       uri,
@@ -80,7 +95,7 @@ extension CachedReadApi on GitLabApi {
         final response = await _read(uri);
         try {
           final value = objectJson(jsonDecode(utf8.decode(response.bytes)));
-          _cache.observe(uri, value);
+          _cache.observe(uri, value, learnAlias: false);
           return _LoadedRead(
             _freezeJson(value),
             response.bytes.length,
@@ -109,6 +124,7 @@ extension CachedReadApi on GitLabApi {
   }) {
     final first = _cache.canonical(
       instance.api(path, {'per_page': '30', ...query}),
+      resolveAlias: false,
     );
     _validateContinuation(first, next);
     if (next != null) {
@@ -229,15 +245,19 @@ final class _ReadCache {
   final versions = <String, int>{};
   final writes = <String, int>{};
   final revocations = <String, int>{};
-  final aliases = <String, String>{};
+  final aliases = <String, ({String id, DateTime expiresAt})>{};
   final confirmed = <String, bool>{};
   final confidentialIssues = <String, bool>{};
   final supersededFresh = <String, int>{};
-  final publicationTickets = <String, Object>{};
+  final publicationTickets = <String, int>{};
+  int publicationSequence = 0, publicationFloor = 0;
+  final closing = StreamController<void>.broadcast(sync: true);
   final sourceWriteTimes = <String, DateTime>{};
   final sourceRevocations = <String, DateTime>{};
   DateTime? sourceAccountRevokedAt;
-  int revocationSequence = 0;
+  static const metadataLimit = 4096;
+  int revocationSequence = 0, revocationFloor = 0, versionSequence = 0;
+  DateTime? sourceMutableWrittenAt;
   final foregroundQueue = <_ReadAdmission>[];
   final backgroundQueue = <_ReadAdmission>[];
   Completer<void> changed = Completer<void>();
@@ -275,7 +295,21 @@ final class _ReadCache {
   }
 
   void clear({bool revoke = true}) {
-    if (revoke) epoch++;
+    if (revoke) {
+      epoch++;
+      revocations.clear();
+      for (final time in sourceRevocations.values) {
+        retainSourceRevocation(time);
+      }
+      sourceRevocations.clear();
+      versions.clear();
+      versions['global'] = ++versionSequence;
+      for (final time in sourceWriteTimes.values) {
+        retainSourceWrite(time);
+      }
+      sourceWriteTimes.clear();
+      confidentialIssues.clear();
+    }
     api._readEpoch++;
     entries.clear();
     pending.clear();
@@ -288,6 +322,9 @@ final class _ReadCache {
   }
 
   void close() {
+    if (closing.isClosed) return;
+    closing.add(null);
+    unawaited(closing.close());
     enabled = false;
     clear();
     for (final admission in [...foregroundQueue, ...backgroundQueue]) {
@@ -301,10 +338,21 @@ final class _ReadCache {
       .skip(api.instance.api(['_']).pathSegments.length - 1)
       .toList(growable: false);
 
-  Uri canonical(Uri uri) {
+  String? alias(String path) {
+    final name = path.toLowerCase();
+    final value = aliases[name];
+    if (value == null) return null;
+    if (!api._readCacheClock().isBefore(value.expiresAt)) {
+      aliases.remove(name);
+      return null;
+    }
+    return value.id;
+  }
+
+  Uri canonical(Uri uri, {bool resolveAlias = true}) {
     final segments = path(uri);
     if (segments.length >= 2 && segments[0] == 'projects') {
-      segments[1] = aliases[segments[1]] ?? segments[1];
+      if (resolveAlias) segments[1] = alias(segments[1]) ?? segments[1];
     }
     final query = <String, String>{...uri.queryParameters};
     if (segments.length == 2 && segments[0] == 'projects') {
@@ -331,7 +379,7 @@ final class _ReadCache {
     final p = path(uri);
     if (p.isEmpty) return 'default';
     if (p.first == 'projects' && p.length >= 2) {
-      final id = aliases[p[1]] ?? p[1];
+      final id = alias(p[1]) ?? p[1];
       return int.tryParse(id) != null ? 'project:$id' : 'default';
     }
     if (p.first == 'groups' &&
@@ -376,7 +424,7 @@ final class _ReadCache {
     }
   }
 
-  void observe(Uri uri, Json json) {
+  void observe(Uri uri, Json json, {bool learnAlias = true}) {
     final p = path(uri);
     if (p.length == 1 && p.first == 'user' && json['id'] is int) {
       verifiedUserId = json['id'] as int;
@@ -385,7 +433,7 @@ final class _ReadCache {
         clear();
       }
     }
-    observeProjectAlias(uri, json);
+    if (learnAlias) observeProjectAlias(uri, json);
     if (p.length >= 4 && p[0] == 'projects' && p[2] == 'repository') {
       if (p[3] == 'branches') {
         final commit = json['commit'];
@@ -409,8 +457,19 @@ final class _ReadCache {
     if (p.length == 2 && p.first == 'projects' && json['id'] is int) {
       final id = '${json['id']}';
       final fullPath = json['path_with_namespace'];
-      if (fullPath is String) aliases[fullPath] = id;
-      if (int.tryParse(p[1]) == null) aliases[p[1]] = id;
+      void remember(String name) {
+        aliases.remove(name.toLowerCase());
+        aliases[name.toLowerCase()] = (
+          id: id,
+          expiresAt: api._readCacheClock().add(const Duration(minutes: 30)),
+        );
+        while (aliases.length > 4096) {
+          aliases.remove(aliases.keys.first);
+        }
+      }
+
+      if (fullPath is String) remember(fullPath);
+      if (int.tryParse(p[1]) == null) remember(p[1]);
     }
   }
 
@@ -428,16 +487,30 @@ final class _ReadCache {
     final previous = confidentialIssues.remove(identity);
     confidentialIssues[identity] = json['confidential'] as bool;
     while (confidentialIssues.length > 4096) {
-      confidentialIssues.remove(confidentialIssues.keys.first);
+      final forgotten = confidentialIssues.keys.first;
+      final wasPublic = confidentialIssues.remove(forgotten) == false;
+      if (wasPublic) {
+        final parts = forgotten.split(':');
+        invalidateIssuePrivacy(parts[0], parts[1]);
+      }
     }
-    if (json['confidential'] != true || previous == true) return;
-    // The authorized current response remains displayable. Revoke older
-    // publications and list snapshots that can contain its former visibility.
-    revoke(api.instance.api(['projects', '$project', 'issues', '$iid']), 403);
+    if (json['confidential'] != true || previous != false) return;
+    invalidateIssuePrivacy('$project', '$iid');
+  }
+
+  void invalidateIssuePrivacy(String project, String iid) {
+    // Current authorized responses remain displayable. Forgetting a public
+    // marker must first retire both its subtree and any former list visibility.
+    revoke(
+      api.instance.api(['projects', project, 'issues', iid]),
+      403,
+      privacy: true,
+    );
     for (final scope in ['userLists', 'groupWorkItems']) {
-      versions[scope] = (versions[scope] ?? 0) + 1;
+      versions[scope] = ++versionSequence;
       sourceWriteTimes[scope] = api._readCacheClock();
     }
+    boundMetadata();
     evictWhere(
       (_, scope, _) => scope == 'userLists' || scope == 'groupWorkItems',
     );
@@ -571,7 +644,10 @@ final class _ReadCache {
   }
 
   bool permitted(Map<String, int> stamp, Uri uri) {
-    if (stamp['account'] != epoch) return false;
+    if (stamp['account'] != epoch ||
+        (stamp['sequence'] ?? 0) < revocationFloor) {
+      return false;
+    }
     final current = permissions(canonical(uri));
     return current.entries
         .where((e) => e.key != 'account' && e.key != 'sequence')
@@ -591,6 +667,8 @@ final class _ReadCache {
       if (revoked != null && !fetchedAt.isAfter(revoked)) return false;
     }
     if (!pinned) {
+      final compacted = sourceMutableWrittenAt;
+      if (compacted != null && !fetchedAt.isAfter(compacted)) return false;
       for (final name in ['global', scope(uri)]) {
         final written = sourceWriteTimes[name];
         if (written != null && !fetchedAt.isAfter(written)) return false;
@@ -659,6 +737,62 @@ final class _ReadCache {
     }
   }
 
+  int claimPublication(String cacheKey, Uri uri, String accept) {
+    final ticket = ++publicationSequence;
+    rememberPublication(cacheKey, ticket);
+    rememberPublication(pathPublicationKey(uri, accept), ticket);
+    return ticket;
+  }
+
+  String pathPublicationKey(Uri uri, String accept, {Object? value}) {
+    final p = path(uri);
+    if (p.length == 2 && p.first == 'projects') {
+      final fullPath = value is Json ? value['path_with_namespace'] : null;
+      p[1] = (fullPath is String ? fullPath : p[1]).toLowerCase();
+      uri = api.instance.api(p, uri.queryParameters);
+    }
+    return key(uri, accept);
+  }
+
+  void rememberPublication(String cacheKey, int ticket) {
+    publicationTickets.remove(cacheKey);
+    publicationTickets[cacheKey] = ticket;
+    while (publicationTickets.length > 4096) {
+      final removed = publicationTickets.remove(publicationTickets.keys.first)!;
+      if (removed > publicationFloor) publicationFloor = removed;
+    }
+  }
+
+  Uri publicationUri(Uri uri, Object? value) {
+    final p = path(uri);
+    if (p.length == 2 &&
+        p.first == 'projects' &&
+        value is Json &&
+        value['id'] is int) {
+      return api.instance.api([
+        'projects',
+        '${value['id']}',
+      ], uri.queryParameters);
+    }
+    return canonical(uri);
+  }
+
+  bool ownsPublication(
+    String initialKey,
+    Uri uri,
+    String accept,
+    int ticket, {
+    Object? value,
+  }) =>
+      ticket > publicationFloor &&
+      publicationTickets[initialKey] == ticket &&
+      publicationTickets[pathPublicationKey(uri, accept)] == ticket &&
+      (publicationTickets[key(publicationUri(uri, value), accept)] ?? ticket) <=
+          ticket &&
+      (publicationTickets[pathPublicationKey(uri, accept, value: value)] ??
+              ticket) <=
+          ticket;
+
   Future<CachedRead<T>> read<T extends Object>(
     Uri uri,
     _ReadClass? policy,
@@ -676,11 +810,11 @@ final class _ReadCache {
       throw const ApiFailure(FailureKind.unsupported);
     }
     final canCache = enabled && policy != null;
-    final cacheKey = key(uri, accept);
+    var cacheKey = key(canonical(uri), accept);
     final pinned = policy == _ReadClass.pinned;
-    final readScope = scope(uri);
+    var readScope = scope(uri);
     final permission = permissions(uri);
-    final lookupVersion = snapshot(readScope, pinned);
+    var lookupVersion = snapshot(readScope, pinned);
     bool usable(_ReadEntry entry) {
       final age = api._readCacheClock().difference(entry.fetchedAt);
       return (allowDisk || entry.lineage != CacheLineage.disk) &&
@@ -713,28 +847,61 @@ final class _ReadCache {
         if (age >= Duration.zero && age < retention(cached.policy)) {
           entries[cacheKey] = cached;
           bytes += cached.cost;
-          if (usable(cached)) return result(cached);
+          if (usable(cached)) {
+            final p = path(uri);
+            final value = cached.value;
+            final requestedAlias =
+                p.length == 2 &&
+                p.first == 'projects' &&
+                int.tryParse(p[1]) == null;
+            if (requestedAlias &&
+                value is Json &&
+                value['path_with_namespace'] is String &&
+                (value['path_with_namespace'] as String).toLowerCase() !=
+                    p[1].toLowerCase()) {
+              aliases.remove(p[1].toLowerCase());
+              readScope = scope(uri);
+              lookupVersion = snapshot(readScope, pinned);
+              cacheKey = key(canonical(uri), accept);
+            } else {
+              return result(cached);
+            }
+          }
         }
+      }
+      final inFlight = pending[cacheKey];
+      if (inFlight != null) {
+        final shared = await inFlight.future as CachedRead<T>;
+        // A disk-forbidden caller never joins a disk hydration result.
+        if (allowDisk || shared.lineage != CacheLineage.disk) return shared;
       }
       final source = api._readCacheSource;
       if (allowDisk && source != null) {
-        final hydrationTicket = Object();
-        publicationTickets[cacheKey] = hydrationTicket;
+        final hydrationTicket = claimPublication(cacheKey, uri, accept);
+        final cancelled = Completer<CacheDiskEntry?>();
+        final subscription = closing.stream.listen((_) {
+          cancelled.completeError(const ApiFailure(FailureKind.cancelled));
+        });
         final CacheDiskEntry? hydrated;
         try {
-          hydrated = await source(uri, accept);
-        } catch (_) {
-          if (identical(publicationTickets[cacheKey], hydrationTicket)) {
-            publicationTickets.remove(cacheKey);
-          }
-          rethrow;
+          hydrated = await Future.any<CacheDiskEntry?>([
+            source(uri, accept),
+            cancelled.future,
+          ]);
+        } finally {
+          await subscription.cancel();
         }
-        final ownsHydration = identical(
-          publicationTickets[cacheKey],
+        final ownsHydration = ownsPublication(
+          cacheKey,
+          uri,
+          accept,
           hydrationTicket,
+          value: hydrated?.value,
         );
-        if (ownsHydration) publicationTickets.remove(cacheKey);
-        if (!permitted(permission, uri) || api._closed) {
+        if (api._closed ||
+            !permitted(permission, uri) ||
+            (hydrated != null &&
+                !permitted(permission, publicationUri(uri, hydrated.value)))) {
           throw const ApiFailure(FailureKind.cancelled);
         }
         final newer = entries[cacheKey];
@@ -750,10 +917,7 @@ final class _ReadCache {
           // Only project aliases are learned from disk; SHA confirmation
           // remains restricted to trusted network response types.
           final p = path(uri);
-          if (value is Json && p.length == 2 && p.first == 'projects') {
-            observeProjectAlias(uri, value);
-          }
-          final canonicalUri = canonical(uri);
+          final canonicalUri = publicationUri(uri, value);
           final entry = _ReadEntry(
             canonicalUri,
             value,
@@ -763,25 +927,37 @@ final class _ReadCache {
             scope(canonicalUri),
             hydrated.responseBytes * 4,
           );
-          if (usable(entry) &&
+          if (ownsPublication(
+                cacheKey,
+                uri,
+                accept,
+                hydrationTicket,
+                value: value,
+              ) &&
+              usable(entry) &&
               sourceAllowed(canonicalUri, hydrated.fetchedAt, pinned) &&
               stable(lookupVersion) &&
               (pinned || !active(readScope))) {
             validate?.call(value);
+            observeLoadedPrivacy(uri, value);
+            if (value is Json && p.length == 2 && p.first == 'projects') {
+              observeProjectAlias(uri, value);
+            }
+            rememberPublication(key(canonicalUri, accept), hydrationTicket);
+            rememberPublication(
+              pathPublicationKey(uri, accept, value: value),
+              hydrationTicket,
+            );
             store(key(canonicalUri, accept), entry);
             return result(entry);
           }
         }
       }
-      final inFlight = pending[cacheKey];
-      if (inFlight != null) {
-        final shared = await inFlight.future as CachedRead<T>;
-        // A disk-forbidden caller never joins a disk hydration result.
-        if (allowDisk || shared.lineage != CacheLineage.disk) return shared;
-      }
     }
-    final ticket = Object();
-    if (canCache) publicationTickets[cacheKey] = ticket;
+    if (canCache && !fresh && pending[cacheKey] != null) {
+      return await pending[cacheKey]!.future as CachedRead<T>;
+    }
+    final ticket = canCache ? claimPublication(cacheKey, uri, accept) : 0;
     late final Future<CachedRead<T>> operation;
     operation = () async {
       var admitted = false;
@@ -815,48 +991,59 @@ final class _ReadCache {
           }
           final start = snapshot(readScope, !canCache || pinned);
           final loaded = await load();
-          if (api._closed || !permitted(permission, uri)) {
+          if (api._closed ||
+              !permitted(permission, uri) ||
+              !permitted(permission, publicationUri(uri, loaded.value))) {
             throw const ApiFailure(FailureKind.cancelled);
           }
+          observeLoadedPrivacy(uri, loaded.value);
           final consistent = stable(start) && (pinned || !active(readScope));
           if (canCache && !pinned && !consistent && waited && attempt == 0) {
             release(background);
             admitted = false;
             continue;
           }
-          final invalid =
-              canCache &&
-              ((!pinned && !consistent && waited) ||
-                  !identical(publicationTickets[cacheKey], ticket));
+          final invalid = canCache && !pinned && !consistent && waited;
           final timedOut = !waited;
           final fetchedAt = api._readCacheClock();
           if (invalid) {
             supersededFresh[cacheKey] =
                 (supersededFresh[cacheKey] ?? 0) + (fresh ? 1 : 0);
+            boundMetadata();
           } else if (!timedOut) {
             supersededFresh.remove(cacheKey);
           }
           final value = _freezeCached(loaded.value) as T;
           validate?.call(value);
-          if (!invalid) observeLoadedPrivacy(uri, value);
           if (canCache &&
               !invalid &&
               !timedOut &&
-              loaded.store &&
-              loaded.bytes <= entryLimit) {
-            final canonicalUri = canonical(uri);
-            store(
-              key(canonicalUri, accept),
-              _ReadEntry(
-                canonicalUri,
-                value,
-                fetchedAt,
-                CacheLineage.network,
-                policy,
-                scope(canonicalUri),
-                loaded.bytes * 4,
-              ),
+              ownsPublication(cacheKey, uri, accept, ticket, value: value)) {
+            final canonicalUri = publicationUri(uri, value);
+            if (value is Json) observeProjectAlias(uri, value);
+            final finalKey = key(canonicalUri, accept);
+            rememberPublication(finalKey, ticket);
+            rememberPublication(
+              pathPublicationKey(uri, accept, value: value),
+              ticket,
             );
+            if (!loaded.store || loaded.bytes > entryLimit) {
+              final removed = entries.remove(finalKey);
+              if (removed != null) bytes -= removed.cost;
+            } else {
+              store(
+                finalKey,
+                _ReadEntry(
+                  canonicalUri,
+                  value,
+                  fetchedAt,
+                  CacheLineage.network,
+                  policy,
+                  scope(canonicalUri),
+                  loaded.bytes * 4,
+                ),
+              );
+            }
           }
           return CachedRead<T>(
             value: value,
@@ -868,9 +1055,6 @@ final class _ReadCache {
         }
       } finally {
         if (admitted) release(background);
-        if (identical(publicationTickets[cacheKey], ticket)) {
-          publicationTickets.remove(cacheKey);
-        }
         if (identical(pending[cacheKey]?.future, operation)) {
           pending.remove(cacheKey);
         }
@@ -904,7 +1088,7 @@ final class _ReadCache {
     if (p.isEmpty) return {'global'};
     if (p.first == 'projects') {
       if (p.length == 1) return {'projectLists', 'default'};
-      final id = aliases[p[1]] ?? p[1];
+      final id = alias(p[1]) ?? p[1];
       if (int.tryParse(id) == null) return {'global'};
       if (p.length >= 5 && p[2] == 'merge_requests' && p[4] == 'merge') {
         return {'global'};
@@ -935,11 +1119,26 @@ final class _ReadCache {
 
   void write(Set<String> scopes, {required bool starting}) {
     api._readEpoch++;
-    for (final scope in scopes) {
-      versions[scope] = (versions[scope] ?? 0) + 1;
-      sourceWriteTimes[scope] = api._readCacheClock();
-      writes[scope] = (writes[scope] ?? 0) + (starting ? 1 : -1);
+    // Saturation degrades only mutable scopes to the existing global barrier.
+    // The same set is held by _send until its matching completion.
+    if (starting &&
+        writes.length + scopes.where((s) => !writes.containsKey(s)).length >
+            metadataLimit - 1) {
+      scopes
+        ..clear()
+        ..add('global');
     }
+    for (final scope in scopes) {
+      versions[scope] = ++versionSequence;
+      sourceWriteTimes[scope] = api._readCacheClock();
+      final count = (writes[scope] ?? 0) + (starting ? 1 : -1);
+      if (count == 0) {
+        writes.remove(scope);
+      } else {
+        writes[scope] = count;
+      }
+    }
+    boundMetadata();
     if (starting) lastWriteStart = api._readCacheClock();
     evictWhere(
       (uri, scope, pinned) =>
@@ -948,12 +1147,17 @@ final class _ReadCache {
     if (scopes.contains('global')) {
       aliases.clear();
     } else {
-      aliases.removeWhere((_, id) => scopes.contains('project:$id'));
+      aliases.removeWhere((_, value) => scopes.contains('project:${value.id}'));
     }
     signal();
   }
 
-  void revoke(Uri uri, int status, {bool terminal401 = true}) {
+  void revoke(
+    Uri uri,
+    int status, {
+    bool terminal401 = true,
+    bool privacy = false,
+  }) {
     if (status == 401) {
       if (terminal401) sourceAccountRevokedAt = api._readCacheClock();
       clear(revoke: terminal401);
@@ -965,9 +1169,10 @@ final class _ReadCache {
     // /projects or /groups. Only a project detail revokes its whole project.
     if (p.length == 1) {
       final request = requestRevocationKey(uri);
-      api._readEpoch++;
+      if (!privacy) api._readEpoch++;
       revocations[request] = ++revocationSequence;
       sourceRevocations[request] = api._readCacheClock();
+      boundMetadata();
       evictWhere((target, _, _) => requestRevocationKey(target) == request);
       signal();
       return;
@@ -977,10 +1182,11 @@ final class _ReadCache {
         const {'issues', 'merge_requests'}.contains(p[2])) {
       p = p.take(4).toList();
     }
-    api._readEpoch++;
+    if (!privacy) api._readEpoch++;
     final revoked = jsonEncode(p);
     revocations[revoked] = ++revocationSequence;
     sourceRevocations[revoked] = api._readCacheClock();
+    boundMetadata();
     bool matches(Uri uri) {
       final target = path(canonical(uri));
       return target.length >= p.length &&
@@ -989,9 +1195,50 @@ final class _ReadCache {
 
     evictWhere((uri, _, _) => matches(uri));
     if (p.length == 2 && p.first == 'projects') {
-      aliases.removeWhere((_, id) => id == p[1]);
+      aliases.removeWhere((_, value) => value.id == p[1]);
     }
     signal();
+  }
+
+  void retainSourceWrite(DateTime time) {
+    if (sourceMutableWrittenAt == null ||
+        time.isAfter(sourceMutableWrittenAt!)) {
+      sourceMutableWrittenAt = time;
+    }
+  }
+
+  void retainSourceRevocation(DateTime time) {
+    if (sourceAccountRevokedAt == null ||
+        time.isAfter(sourceAccountRevokedAt!)) {
+      sourceAccountRevokedAt = time;
+    }
+  }
+
+  void boundMetadata() {
+    // Compact to monotonic fences instead of forgetting an invalidation. Only
+    // mutable snapshots use the global version and write-time floors.
+    if (versions.length > metadataLimit) {
+      versions.clear();
+      versions['global'] = ++versionSequence;
+    }
+    if (sourceWriteTimes.length > metadataLimit) {
+      for (final time in sourceWriteTimes.values) {
+        retainSourceWrite(time);
+      }
+      sourceWriteTimes.clear();
+    }
+    while (revocations.length > metadataLimit) {
+      final removed = revocations.remove(revocations.keys.first)!;
+      if (removed > revocationFloor) revocationFloor = removed;
+    }
+    while (sourceRevocations.length > metadataLimit) {
+      retainSourceRevocation(
+        sourceRevocations.remove(sourceRevocations.keys.first)!,
+      );
+    }
+    while (supersededFresh.length > metadataLimit) {
+      supersededFresh.remove(supersededFresh.keys.first);
+    }
   }
 
   void evictWhere(bool Function(Uri, String, bool) test) {

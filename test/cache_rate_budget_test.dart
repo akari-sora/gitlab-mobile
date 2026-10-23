@@ -77,6 +77,39 @@ void main() {
     expect(budget.snapshot().buckets['user']?.remaining, 8);
   });
 
+  test('send ordering is tracked independently for each bucket', () {
+    final reset = now.add(const Duration(minutes: 5));
+    budget.noteResponse(
+      headers: rateHeaders(
+        limit: 100,
+        remaining: 20,
+        reset: reset,
+        name: 'newer',
+      ),
+      statusCode: 200,
+      requestClass: RateRequestClass.global,
+      sequence: 2,
+      trusted: true,
+    );
+    budget.noteResponse(
+      headers: rateHeaders(
+        limit: 50,
+        remaining: 10,
+        reset: reset,
+        name: 'older',
+      ),
+      statusCode: 200,
+      requestClass: RateRequestClass.global,
+      sequence: 1,
+      trusted: true,
+    );
+
+    expect(
+      budget.snapshot().buckets.keys,
+      containsAll(<String>['newer', 'older']),
+    );
+  });
+
   test('unknown and untrusted responses do not clear an active limit', () {
     budget.noteResponse(
       headers: rateHeaders(
@@ -173,6 +206,56 @@ void main() {
     expect(budget.mayStart(RateRequestClass.groupList), isFalse);
     expect(budget.mayStart(RateRequestClass.projectList), isTrue);
     expect(budget.mayStart(RateRequestClass.create), isTrue);
+  });
+
+  test('late 429 still sets its class cooldown after a newer success', () {
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 200,
+      requestClass: RateRequestClass.global,
+      sequence: 2,
+      trusted: true,
+    );
+    budget.noteResponse(
+      headers: const <String, List<String>>{
+        'Retry-After': <String>['60'],
+      },
+      statusCode: 429,
+      requestClass: RateRequestClass.global,
+      sequence: 1,
+      trusted: true,
+    );
+
+    expect(
+      budget.retryAtFor(RateRequestClass.global),
+      now.add(const Duration(minutes: 1)),
+    );
+  });
+
+  test('late 429 cannot shorten an existing class cooldown', () {
+    budget.noteResponse(
+      headers: const <String, List<String>>{
+        'Retry-After': <String>['300'],
+      },
+      statusCode: 429,
+      requestClass: RateRequestClass.global,
+      sequence: 2,
+      trusted: true,
+    );
+    budget.noteResponse(
+      headers: const <String, List<String>>{
+        'Retry-After': <String>['60'],
+      },
+      statusCode: 429,
+      requestClass: RateRequestClass.global,
+      sequence: 1,
+      trusted: true,
+    );
+
+    expect(
+      budget.retryAtFor(RateRequestClass.global),
+      now.add(const Duration(minutes: 5)),
+    );
   });
 
   test('HTTP-date Retry-After uses server Date to correct clock skew', () {
@@ -383,6 +466,71 @@ void main() {
     expect(
       budget.retryAtFor(RateRequestClass.archive),
       now.add(const Duration(seconds: 120)),
+    );
+  });
+
+  test('newer success without rate headers resets fallback attempts', () {
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 429,
+      requestClass: RateRequestClass.archive,
+      sequence: 1,
+      trusted: true,
+    );
+    now = now.add(const Duration(seconds: 61));
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 200,
+      requestClass: RateRequestClass.archive,
+      sequence: 2,
+      trusted: true,
+    );
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 429,
+      requestClass: RateRequestClass.archive,
+      sequence: 3,
+      trusted: true,
+    );
+
+    expect(
+      budget.retryAtFor(RateRequestClass.archive),
+      now.add(const Duration(seconds: 60)),
+    );
+  });
+
+  test('newer success keeps a late older 429 out of fallback streak', () {
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 200,
+      requestClass: RateRequestClass.archive,
+      sequence: 2,
+      trusted: true,
+    );
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 429,
+      requestClass: RateRequestClass.archive,
+      sequence: 1,
+      trusted: true,
+    );
+    expect(
+      budget.retryAtFor(RateRequestClass.archive),
+      now.add(const Duration(seconds: 60)),
+    );
+
+    now = now.add(const Duration(seconds: 61));
+    budget.noteResponse(
+      headers: const <String, List<String>>{},
+      statusCode: 429,
+      requestClass: RateRequestClass.archive,
+      sequence: 3,
+      trusted: true,
+    );
+
+    expect(
+      budget.retryAtFor(RateRequestClass.archive),
+      now.add(const Duration(seconds: 60)),
     );
   });
 
