@@ -2599,9 +2599,9 @@
   "aiProposalClosesOnMerge": "기본 브랜치에 병합하면 다음 이슈가 닫힙니다: {issues}",
   "aiSettledEditWritten": "기록되었지만 앱이 확인을 위해 다시 읽지 못했습니다. 수정한 내용은 여기에 남아 있습니다. 다시 보내기 전에 GitLab을 확인하세요.",
   "aiSettledEditUncertain": "이 변경이 이루어졌는지 알 수 없습니다. 수정한 내용은 여기에 남아 있습니다. 다시 보내기 전에 GitLab을 확인하세요.",
-  "cacheLastUpdated": "Last updated {time}",
-  "cacheRefreshing": "Refreshing",
-  "cacheRateLimited": "GitLab is limiting requests",
-  "cacheRefreshFailed": "Couldn't refresh",
-  "cacheResumesInMinutes": "Resumes in about {minutes} min"
+  "cacheLastUpdated": "마지막 업데이트: {time}",
+  "cacheRefreshing": "새로 고침 중…",
+  "cacheRateLimited": "GitLab이 요청을 제한하고 있습니다",
+  "cacheRefreshFailed": "새로 고침할 수 없습니다",
+  "cacheResumesInMinutes": "약 {minutes}분 후 다시 시작"
 }

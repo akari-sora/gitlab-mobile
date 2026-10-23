@@ -2599,9 +2599,9 @@
   "aiProposalClosesOnMerge": "Po sloučení do výchozí větve se zavřou tyto úkoly: {issues}",
   "aiSettledEditWritten": "Zapsáno, ale aplikace to znovu nenačetla k potvrzení. Váš upravený text zůstává zde; před opětovným odesláním zkontrolujte GitLab.",
   "aiSettledEditUncertain": "Není jasné, zda se změna provedla. Váš upravený text zůstává zde; před opětovným odesláním zkontrolujte GitLab.",
-  "cacheLastUpdated": "Last updated {time}",
-  "cacheRefreshing": "Refreshing",
-  "cacheRateLimited": "GitLab is limiting requests",
-  "cacheRefreshFailed": "Couldn't refresh",
-  "cacheResumesInMinutes": "Resumes in about {minutes} min"
+  "cacheLastUpdated": "Poslední aktualizace: {time}",
+  "cacheRefreshing": "Probíhá aktualizace…",
+  "cacheRateLimited": "GitLab omezuje požadavky",
+  "cacheRefreshFailed": "Nelze obnovit",
+  "cacheResumesInMinutes": "Obnoví se přibližně za {minutes} min"
 }

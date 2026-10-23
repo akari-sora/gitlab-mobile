@@ -2599,9 +2599,9 @@
   "aiProposalClosesOnMerge": "Після злиття в гілку за замовчуванням буде закрито ці завдання: {issues}",
   "aiSettledEditWritten": "Записано, але застосунок не перечитав це для підтвердження. Ваш змінений текст збережено тут; перед повторним надсиланням перевірте GitLab.",
   "aiSettledEditUncertain": "Незрозуміло, чи цю зміну було виконано. Ваш змінений текст збережено тут; перед повторним надсиланням перевірте GitLab.",
-  "cacheLastUpdated": "Last updated {time}",
-  "cacheRefreshing": "Refreshing",
-  "cacheRateLimited": "GitLab is limiting requests",
-  "cacheRefreshFailed": "Couldn't refresh",
-  "cacheResumesInMinutes": "Resumes in about {minutes} min"
+  "cacheLastUpdated": "Оновлено: {time}",
+  "cacheRefreshing": "Оновлення…",
+  "cacheRateLimited": "GitLab обмежує запити",
+  "cacheRefreshFailed": "Не вдалося оновити",
+  "cacheResumesInMinutes": "Відновиться приблизно за {minutes} хв"
 }

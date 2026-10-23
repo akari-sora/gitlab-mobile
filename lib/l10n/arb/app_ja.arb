@@ -2599,9 +2599,9 @@
   "aiProposalClosesOnMerge": "デフォルトブランチにマージすると、次のイシューが閉じます：{issues}",
   "aiSettledEditWritten": "書き込み済みですが、アプリは確認のための再読み込みをしていません。編集した内容はここに残してあります。再送する前に GitLab を確認してください。",
   "aiSettledEditUncertain": "この変更が行われたかどうか不明です。編集した内容はここに残してあります。再送する前に GitLab を確認してください。",
-  "cacheLastUpdated": "Last updated {time}",
-  "cacheRefreshing": "Refreshing",
-  "cacheRateLimited": "GitLab is limiting requests",
-  "cacheRefreshFailed": "Couldn't refresh",
-  "cacheResumesInMinutes": "Resumes in about {minutes} min"
+  "cacheLastUpdated": "最終更新：{time}",
+  "cacheRefreshing": "更新中…",
+  "cacheRateLimited": "GitLab によりリクエストが制限されています",
+  "cacheRefreshFailed": "更新できません",
+  "cacheResumesInMinutes": "約 {minutes} 分後に再開"
 }

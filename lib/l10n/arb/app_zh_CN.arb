@@ -2599,9 +2599,9 @@
   "aiProposalClosesOnMerge": "合并到默认分支后，会关闭这些议题：{issues}",
   "aiSettledEditWritten": "已写入，但应用没有读回确认。你修改过的内容保留在这里，重新发送前请先到 GitLab 查看。",
   "aiSettledEditUncertain": "不确定这次写入是否完成。你修改过的内容保留在这里，重新发送前请先到 GitLab 查看。",
-  "cacheLastUpdated": "Last updated {time}",
-  "cacheRefreshing": "Refreshing",
-  "cacheRateLimited": "GitLab is limiting requests",
-  "cacheRefreshFailed": "Couldn't refresh",
-  "cacheResumesInMinutes": "Resumes in about {minutes} min"
+  "cacheLastUpdated": "最后更新：{time}",
+  "cacheRefreshing": "正在刷新…",
+  "cacheRateLimited": "GitLab 正在限制请求",
+  "cacheRefreshFailed": "无法刷新",
+  "cacheResumesInMinutes": "约 {minutes} 分钟后恢复"
 }

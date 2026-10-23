@@ -2599,9 +2599,9 @@
   "aiProposalClosesOnMerge": "Bij samenvoegen in de standaardbranch worden deze issues gesloten: {issues}",
   "aiSettledEditWritten": "Weggeschreven, maar de app heeft het niet teruggelezen ter bevestiging. Uw bewerkte tekst blijft hier staan; controleer GitLab voordat u opnieuw verstuurt.",
   "aiSettledEditUncertain": "Het is onduidelijk of deze wijziging is doorgevoerd. Uw bewerkte tekst blijft hier staan; controleer GitLab voordat u opnieuw verstuurt.",
-  "cacheLastUpdated": "Last updated {time}",
-  "cacheRefreshing": "Refreshing",
-  "cacheRateLimited": "GitLab is limiting requests",
-  "cacheRefreshFailed": "Couldn't refresh",
-  "cacheResumesInMinutes": "Resumes in about {minutes} min"
+  "cacheLastUpdated": "Laatst bijgewerkt: {time}",
+  "cacheRefreshing": "Wordt vernieuwd…",
+  "cacheRateLimited": "GitLab beperkt verzoeken",
+  "cacheRefreshFailed": "Kan niet vernieuwen",
+  "cacheResumesInMinutes": "Hervatting over ca. {minutes} min"
 }

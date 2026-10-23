@@ -2599,9 +2599,9 @@
   "aiProposalClosesOnMerge": "Vid sammanfogning med standardgrenen stängs dessa ärenden: {issues}",
   "aiSettledEditWritten": "Skrivet, men appen läste inte tillbaka det för att bekräfta. Din redigerade text finns kvar här; kontrollera GitLab innan du skickar igen.",
   "aiSettledEditUncertain": "Det är oklart om ändringen genomfördes. Din redigerade text finns kvar här; kontrollera GitLab innan du skickar igen.",
-  "cacheLastUpdated": "Last updated {time}",
-  "cacheRefreshing": "Refreshing",
-  "cacheRateLimited": "GitLab is limiting requests",
-  "cacheRefreshFailed": "Couldn't refresh",
-  "cacheResumesInMinutes": "Resumes in about {minutes} min"
+  "cacheLastUpdated": "Senast uppdaterad: {time}",
+  "cacheRefreshing": "Uppdaterar…",
+  "cacheRateLimited": "GitLab begränsar begäranden",
+  "cacheRefreshFailed": "Kan inte uppdatera",
+  "cacheResumesInMinutes": "Återupptas om ca {minutes} min"
 }
