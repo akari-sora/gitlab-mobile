@@ -2710,5 +2710,7 @@
   "aiWriteMerged": "Merged",
   "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
   "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion"
+  "aiWriteDeletionScheduled": "Scheduled for deletion",
+  "aiPreviewParent": "Belongs to",
+  "aiPreviewMoreFiles": "{count} more files change too"
 }

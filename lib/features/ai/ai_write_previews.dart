@@ -108,6 +108,43 @@ class _Notice extends StatelessWidget {
   );
 }
 
+/// A short excerpt of what would be deleted, set apart from the facts.
+class _Quote extends StatelessWidget {
+  const _Quote(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: BorderDirectional(
+            start: BorderSide(
+              color: theme.colorScheme.outlineVariant,
+              width: 3,
+            ),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsetsDirectional.only(start: 8),
+          child: Text(
+            text,
+            key: const ValueKey('ai-preview-excerpt'),
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DiffPreview extends StatelessWidget {
   const _DiffPreview({required this.diff});
 
@@ -142,6 +179,12 @@ class _DiffPreview extends StatelessWidget {
             l10n.aiPreviewCiFile,
             icon: Icons.warning_amber_rounded,
             noticeKey: const ValueKey('ai-preview-ci-file'),
+          ),
+        if (diff.moreFiles > 0)
+          _Notice(
+            l10n.aiPreviewMoreFiles('${diff.moreFiles}'),
+            icon: Icons.description_outlined,
+            noticeKey: const ValueKey('ai-preview-more-files'),
           ),
         if (diff.preexistingSecretHits > 0)
           _Notice(
@@ -232,8 +275,11 @@ class _MergePreview extends StatelessWidget {
       for (final issue in merge.closingIssues)
         if (issue.outOfScope) issue,
     ];
-    String refs(List<AiClosingIssue> issues) =>
-        issues.map((issue) => isolated('#${issue.iid}')).join(', ');
+    // GitLab's full reference names the project, so two `#7` in different
+    // projects stay apart.
+    String refs(List<AiClosingIssue> issues) => issues
+        .map((issue) => isolated(issue.fullReference ?? '#${issue.iid}'))
+        .join(', ');
     return Column(
       key: const ValueKey('ai-preview-merge'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -410,10 +456,17 @@ class _DeletePreview extends StatelessWidget {
     key: const ValueKey('ai-preview-delete'),
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _Fact(
-        todos ? l10n.accountLabel : l10n.aiPreviewDeleteTarget,
-        isolated(delete.targetName),
-      ),
+      if (delete.targetName.isNotEmpty)
+        _Fact(
+          todos ? l10n.accountLabel : l10n.aiPreviewDeleteTarget,
+          isolated(delete.targetName),
+        ),
+      if (delete.parentName case final parent?)
+        _Fact(l10n.aiPreviewParent, isolated(parent)),
+      if (delete.author case final author?)
+        _Fact(l10n.author, isolated(author)),
+      if (delete.excerpt case final excerpt? when excerpt.trim().isNotEmpty)
+        _Quote(excerpt),
       // A branch or tag delete names the same thing twice; show it once.
       if (delete.path case final path? when path != delete.targetName)
         _Fact(l10n.aiPreviewPath, isolated(path)),

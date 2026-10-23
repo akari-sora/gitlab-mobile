@@ -512,6 +512,37 @@ void main() {
     expect(dismissed, 1);
   });
 
+  testWidgets('an edited card the user rejected says so', (tester) async {
+    late CoordHarness h;
+    late AiWriteProposal kept;
+    await tester.runAsync(() async {
+      h = await CoordHarness.create();
+      h.newRun('Start a thread on #3 in team/example-9');
+      final proposal = (await h.coordinator.propose(
+        AiToolCall(
+          id: 'thread',
+          name: 'createDiscussion',
+          arguments: const {
+            'projectId': 9,
+            'resource': 'issues',
+            'iid': 3,
+            'body': 'synthetic thread',
+            'reason': 'The user asked for a thread.',
+          },
+        ),
+      ))!;
+      await h.coordinator.approve(proposal, editedText: 'my own words');
+      await h.coordinator.reject(proposal);
+      kept = h.coordinator.settledEdits.single;
+    });
+    addTearDown(() => tester.runAsync(h.dispose));
+    expect(kept.outcome?.reasonCode, 'userRejected');
+    await tester.pumpWidget(
+      _host(AiSettledEditCard(proposal: kept, onDismiss: () {})),
+    );
+    expect(find.textContaining(l10n.aiSettledEditRejected), findsOneWidget);
+  });
+
   testWidgets('an edited write that ran is never called not made', (
     tester,
   ) async {

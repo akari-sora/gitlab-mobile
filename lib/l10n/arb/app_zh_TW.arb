@@ -11458,5 +11458,12 @@
   "aiWriteMerged": "已合併",
   "aiWriteAutoMergeScheduled": "已排程自動合併",
   "aiWriteMergeAccepted": "GitLab 已接受合併，請查看最新狀態",
-  "aiWriteDeletionScheduled": "已排程刪除"
+  "aiWriteDeletionScheduled": "已排程刪除",
+  "aiPreviewParent": "所屬",
+  "aiPreviewMoreFiles": "另外還有 {count} 個檔案會變更",
+  "@aiPreviewMoreFiles": {
+    "placeholders": {
+      "count": {}
+    }
+  }
 }

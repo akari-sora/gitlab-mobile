@@ -167,6 +167,79 @@ void main() {
     expect(find.text('v1.2.0'), findsOneWidget);
   });
 
+  testWidgets('a note delete names its parent, author and an excerpt', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        const AiWritePreviewView(
+          operationId: 'deleteNote',
+          preview: AiDeletePreview(
+            targetName: '',
+            parentName: '#12',
+            author: '@alice',
+            excerpt: 'Please rename this helper.',
+          ),
+        ),
+      ),
+    );
+    expect(find.text(l10n.aiPreviewDeleteTarget), findsNothing);
+    expect(find.text('#12'), findsOneWidget);
+    expect(find.text('@alice'), findsOneWidget);
+    expect(find.byKey(const ValueKey('ai-preview-excerpt')), findsOneWidget);
+  });
+
+  testWidgets('closing issues in two projects stay apart', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        AiWritePreviewView(
+          preview: AiMergePreview(
+            sourceBranch: 'a',
+            targetBranch: 'main',
+            shortSha: 'a1b2c3d4',
+            pathCount: 1,
+            closingIssues: const [
+              AiClosingIssue(
+                projectId: 9,
+                iid: 7,
+                outOfScope: true,
+                fullReference: 'team/one#7',
+              ),
+              AiClosingIssue(
+                projectId: 10,
+                iid: 7,
+                outOfScope: true,
+                fullReference: 'team/two#7',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.text(l10n.aiPreviewClosesOutOfScope('team/one#7, team/two#7')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a suggestion over several files says how many more', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        AiWritePreviewView(
+          preview: AiDiffPreview(
+            path: 'a.dart',
+            ref: 'feature',
+            lines: const [],
+            moreFiles: 2,
+          ),
+        ),
+      ),
+    );
+    expect(find.text(l10n.aiPreviewMoreFiles('2')), findsOneWidget);
+  });
+
   testWidgets('an approval shows no file count or merge options', (
     tester,
   ) async {

@@ -822,7 +822,7 @@ class AiSettledEditCard extends StatelessWidget {
     // A write that ran but was not read back is kept too (§7.2 clears only
     // after readback); it must never read as "not made".
     final (status, explanation) = switch (outcome) {
-      AiWriteOutcome(reasonCode: 'rejected') => (
+      AiWriteOutcome(reasonCode: 'rejected' || 'userRejected') => (
         l10n.aiSettledEditRejected,
         l10n.aiSettledEditKept,
       ),

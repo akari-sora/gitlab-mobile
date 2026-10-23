@@ -8208,4 +8208,10 @@ final class AppStrings {
 
   /// 已排程刪除
   String get aiWriteDeletionScheduled => language._messages[2704];
+
+  /// 所屬
+  String get aiPreviewParent => language._messages[2705];
+
+  /// 另外還有 {count} 個檔案會變更
+  String aiPreviewMoreFiles(Object? count) => _format(language, language._messages[2706], {'count': count});
 }
