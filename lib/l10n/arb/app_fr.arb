@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "Demander à l’IA pour vos tâches à faire",
   "aiInboxChatTitle": "Assistant de tâches à faire",
   "aiSuggestInboxMarkAll": "Marque toutes mes tâches à faire comme terminées",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "Nom du tag",
+  "aiFieldPreviousPath": "Chemin précédent",
+  "aiFieldVariables": "Variables du pipeline"
 }

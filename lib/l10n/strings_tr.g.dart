@@ -2700,7 +2700,7 @@ const _messagesTr = <String>[
   'AI’ye yapılacaklarınızı sorun',
   'Yapılacaklar asistanı',
   'Tüm yapılacaklarımı tamamlandı olarak işaretle',
-  'Tag name',
-  'Previous path',
-  'Variables',
+  'Etiket adı',
+  'Önceki yol',
+  'Değişkenler',
 ];

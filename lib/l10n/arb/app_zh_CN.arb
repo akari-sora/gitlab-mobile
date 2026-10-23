@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "请 AI 处理待办",
   "aiInboxChatTitle": "待办助手",
   "aiSuggestInboxMarkAll": "帮我把全部待办标为完成",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "标签版本名称",
+  "aiFieldPreviousPath": "原来的路径",
+  "aiFieldVariables": "变量"
 }

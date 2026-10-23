@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "Întreabă AI despre to-do-urile tale",
   "aiInboxChatTitle": "Asistent to-do",
   "aiSuggestInboxMarkAll": "Marchează toate to-do-urile mele ca finalizate",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "Nume tag",
+  "aiFieldPreviousPath": "Cale anterioară",
+  "aiFieldVariables": "Variabile"
 }

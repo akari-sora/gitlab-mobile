@@ -2700,7 +2700,7 @@ const _messagesKo = <String>[
   'AI에게 할 일 물어보기',
   '할 일 도우미',
   '내 할 일을 모두 완료로 표시해 줘',
-  'Tag name',
-  'Previous path',
-  'Variables',
+  '태그 이름',
+  '이전 경로',
+  '변수',
 ];

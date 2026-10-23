@@ -2700,7 +2700,7 @@ const _messagesDe = <String>[
   'KI zu Ihren To-dos fragen',
   'To-do-Assistent',
   'Markiere alle meine To-dos als erledigt',
-  'Tag name',
-  'Previous path',
-  'Variables',
+  'Tag-Name',
+  'Vorheriger Pfad',
+  'Variablen',
 ];

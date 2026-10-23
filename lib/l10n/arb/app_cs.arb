@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "Zeptat se AI na úkoly",
   "aiInboxChatTitle": "Asistent úkolů",
   "aiSuggestInboxMarkAll": "Označ všechny mé úkoly jako hotové",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "Název tagu",
+  "aiFieldPreviousPath": "Předchozí cesta",
+  "aiFieldVariables": "Proměnné"
 }

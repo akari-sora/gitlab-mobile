@@ -2700,7 +2700,7 @@ const _messagesNl = <String>[
   'Vraag AI naar uw to-do’s',
   'To-do-assistent',
   'Markeer al mijn to-do’s als voltooid',
-  'Tag name',
-  'Previous path',
-  'Variables',
+  'Tagnaam',
+  'Vorig pad',
+  'Variabelen',
 ];

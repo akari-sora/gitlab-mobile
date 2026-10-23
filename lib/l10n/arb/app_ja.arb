@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "AI にタスクについて相談",
   "aiInboxChatTitle": "タスクアシスタント",
   "aiSuggestInboxMarkAll": "すべてのタスクを完了にして",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "タグ名",
+  "aiFieldPreviousPath": "変更前のパス",
+  "aiFieldVariables": "変数"
 }

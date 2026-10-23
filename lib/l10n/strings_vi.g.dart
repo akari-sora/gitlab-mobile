@@ -2700,7 +2700,7 @@ const _messagesVi = <String>[
   'Hỏi AI về việc cần làm của bạn',
   'Trợ lý việc cần làm',
   'Đánh dấu tất cả việc cần làm của tôi là xong',
-  'Tag name',
-  'Previous path',
-  'Variables',
+  'Tên tag',
+  'Đường dẫn trước đây',
+  'Biến',
 ];

@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "Hỏi AI về việc cần làm của bạn",
   "aiInboxChatTitle": "Trợ lý việc cần làm",
   "aiSuggestInboxMarkAll": "Đánh dấu tất cả việc cần làm của tôi là xong",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "Tên tag",
+  "aiFieldPreviousPath": "Đường dẫn trước đây",
+  "aiFieldVariables": "Biến"
 }

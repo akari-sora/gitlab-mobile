@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "अपने टू-डू के बारे में AI से पूछें",
   "aiInboxChatTitle": "टू-डू सहायक",
   "aiSuggestInboxMarkAll": "मेरे सभी टू-डू पूरे चिह्नित करो",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "टैग का नाम",
+  "aiFieldPreviousPath": "पिछला पाथ",
+  "aiFieldVariables": "चर"
 }

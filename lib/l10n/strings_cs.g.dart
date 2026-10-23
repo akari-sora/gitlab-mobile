@@ -2700,7 +2700,7 @@ const _messagesCs = <String>[
   'Zeptat se AI na úkoly',
   'Asistent úkolů',
   'Označ všechny mé úkoly jako hotové',
-  'Tag name',
-  'Previous path',
-  'Variables',
+  'Název tagu',
+  'Předchozí cesta',
+  'Proměnné',
 ];

@@ -2700,7 +2700,7 @@ const _messagesIt = <String>[
   'Chiedi all’IA dei tuoi to-do',
   'Assistente to-do',
   'Segna tutti i miei to-do come completati',
-  'Tag name',
-  'Previous path',
-  'Variables',
+  'Nome del tag',
+  'Percorso precedente',
+  'Variabili',
 ];

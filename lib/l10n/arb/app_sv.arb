@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "Fråga AI om dina att göra",
   "aiInboxChatTitle": "Assistent för att göra",
   "aiSuggestInboxMarkAll": "Markera alla mina att göra som klara",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "Taggnamn",
+  "aiFieldPreviousPath": "Tidigare sökväg",
+  "aiFieldVariables": "Variabler"
 }

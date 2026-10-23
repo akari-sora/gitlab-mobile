@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "Tanya AI tentang to-do Anda",
   "aiInboxChatTitle": "Asisten to-do",
   "aiSuggestInboxMarkAll": "Tandai semua to-do saya selesai",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "Nama tag",
+  "aiFieldPreviousPath": "Path sebelumnya",
+  "aiFieldVariables": "Variabel"
 }

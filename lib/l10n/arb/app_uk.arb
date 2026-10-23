@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "Запитати AI про справи",
   "aiInboxChatTitle": "Помічник зі справ",
   "aiSuggestInboxMarkAll": "Познач усі мої справи виконаними",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "Назва тегу",
+  "aiFieldPreviousPath": "Попередній шлях",
+  "aiFieldVariables": "Змінні"
 }

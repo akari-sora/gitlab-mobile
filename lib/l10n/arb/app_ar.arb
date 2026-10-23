@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "اسأل AI عن مهامك",
   "aiInboxChatTitle": "مساعد المهام",
   "aiSuggestInboxMarkAll": "علّم كل مهامي كمكتملة",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "اسم الوسم",
+  "aiFieldPreviousPath": "المسار السابق",
+  "aiFieldVariables": "المتغيرات"
 }

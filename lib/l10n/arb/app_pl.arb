@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "Zapytaj AI o swoje to-do",
   "aiInboxChatTitle": "Asystent to-do",
   "aiSuggestInboxMarkAll": "Oznacz wszystkie moje to-do jako wykonane",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "Nazwa tagu",
+  "aiFieldPreviousPath": "Poprzednia ścieżka",
+  "aiFieldVariables": "Zmienne"
 }

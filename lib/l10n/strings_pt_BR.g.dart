@@ -2700,7 +2700,7 @@ const _messagesPtBr = <String>[
   'Perguntar à IA sobre suas tarefas pendentes',
   'Assistente de tarefas pendentes',
   'Marque todas as minhas tarefas pendentes como concluídas',
-  'Tag name',
-  'Previous path',
-  'Variables',
+  'Nome da tag',
+  'Caminho anterior',
+  'Variáveis',
 ];

@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "Preguntar a la IA sobre tus tareas pendientes",
   "aiInboxChatTitle": "Asistente de tareas pendientes",
   "aiSuggestInboxMarkAll": "Marca todas mis tareas pendientes como completadas",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "Nombre del tag",
+  "aiFieldPreviousPath": "Ruta anterior",
+  "aiFieldVariables": "Variables del pipeline"
 }

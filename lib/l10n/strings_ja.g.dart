@@ -2700,7 +2700,7 @@ const _messagesJa = <String>[
   'AI にタスクについて相談',
   'タスクアシスタント',
   'すべてのタスクを完了にして',
-  'Tag name',
-  'Previous path',
-  'Variables',
+  'タグ名',
+  '変更前のパス',
+  '変数',
 ];

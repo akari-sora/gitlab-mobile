@@ -2698,7 +2698,7 @@
   "aiInboxAsk": "AI’ye yapılacaklarınızı sorun",
   "aiInboxChatTitle": "Yapılacaklar asistanı",
   "aiSuggestInboxMarkAll": "Tüm yapılacaklarımı tamamlandı olarak işaretle",
-  "aiFieldTagName": "Tag name",
-  "aiFieldPreviousPath": "Previous path",
-  "aiFieldVariables": "Variables"
+  "aiFieldTagName": "Etiket adı",
+  "aiFieldPreviousPath": "Önceki yol",
+  "aiFieldVariables": "Değişkenler"
 }
