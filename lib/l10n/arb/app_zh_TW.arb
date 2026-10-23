@@ -11386,7 +11386,6 @@
     }
   },
   "aiPreviewCannotUndo": "刪除後無法復原。",
-  "aiPreviewMergeRequest": "合併請求",
   "aiPreviewCancelMayLackPermission": "你可能沒有取消自動合併的權限；GitLab 拒絕時不會有任何改變。",
   "aiOpApplySuggestion": "套用建議修改",
   "aiOpBatchApplySuggestions": "一次套用多項建議修改",

@@ -7990,195 +7990,192 @@ final class AppStrings {
   /// 刪除後無法復原。
   String get aiPreviewCannotUndo => language._messages[2631];
 
-  /// 合併請求
-  String get aiPreviewMergeRequest => language._messages[2632];
-
   /// 你可能沒有取消自動合併的權限；GitLab 拒絕時不會有任何改變。
-  String get aiPreviewCancelMayLackPermission => language._messages[2633];
+  String get aiPreviewCancelMayLackPermission => language._messages[2632];
 
   /// 套用建議修改
-  String get aiOpApplySuggestion => language._messages[2634];
+  String get aiOpApplySuggestion => language._messages[2633];
 
   /// 一次套用多項建議修改
-  String get aiOpBatchApplySuggestions => language._messages[2635];
+  String get aiOpBatchApplySuggestions => language._messages[2634];
 
   /// 核准合併請求
-  String get aiOpApproveMergeRequest => language._messages[2636];
+  String get aiOpApproveMergeRequest => language._messages[2635];
 
   /// 取消自動合併
-  String get aiOpCancelAutoMerge => language._messages[2637];
+  String get aiOpCancelAutoMerge => language._messages[2636];
 
   /// 合併到目標分支
-  String get aiOpMergeRequest => language._messages[2638];
+  String get aiOpMergeRequest => language._messages[2637];
 
   /// 把來源分支 Rebase 到目標分支
-  String get aiOpRebaseMergeRequest => language._messages[2639];
+  String get aiOpRebaseMergeRequest => language._messages[2638];
 
   /// 建立分支
-  String get aiOpCreateBranch => language._messages[2640];
+  String get aiOpCreateBranch => language._messages[2639];
 
   /// 刪除分支
-  String get aiOpDeleteBranch => language._messages[2641];
+  String get aiOpDeleteBranch => language._messages[2640];
 
   /// 建立標籤版本
-  String get aiOpCreateTag => language._messages[2642];
+  String get aiOpCreateTag => language._messages[2641];
 
   /// 刪除標籤版本
-  String get aiOpDeleteTag => language._messages[2643];
+  String get aiOpDeleteTag => language._messages[2642];
 
   /// 建立 Release
-  String get aiOpCreateRelease => language._messages[2644];
+  String get aiOpCreateRelease => language._messages[2643];
 
   /// 編輯 Release
-  String get aiOpUpdateRelease => language._messages[2645];
+  String get aiOpUpdateRelease => language._messages[2644];
 
   /// 刪除 Release
-  String get aiOpDeleteRelease => language._messages[2646];
+  String get aiOpDeleteRelease => language._messages[2645];
 
   /// 新增檔案
-  String get aiOpCreateFile => language._messages[2647];
+  String get aiOpCreateFile => language._messages[2646];
 
   /// 編輯檔案
-  String get aiOpEditFile => language._messages[2648];
+  String get aiOpEditFile => language._messages[2647];
 
   /// 刪除檔案
-  String get aiOpDeleteFile => language._messages[2649];
+  String get aiOpDeleteFile => language._messages[2648];
 
   /// 執行新的 Pipeline
-  String get aiOpCreatePipeline => language._messages[2650];
+  String get aiOpCreatePipeline => language._messages[2649];
 
   /// 重試 Pipeline
-  String get aiOpRetryPipeline => language._messages[2651];
+  String get aiOpRetryPipeline => language._messages[2650];
 
   /// 取消 Pipeline
-  String get aiOpCancelPipeline => language._messages[2652];
+  String get aiOpCancelPipeline => language._messages[2651];
 
   /// 操作 Pipeline
-  String get aiOpPipelineAction => language._messages[2653];
+  String get aiOpPipelineAction => language._messages[2652];
 
   /// 刪除 Pipeline
-  String get aiOpDeletePipeline => language._messages[2654];
+  String get aiOpDeletePipeline => language._messages[2653];
 
   /// 重試工作
-  String get aiOpRetryJob => language._messages[2655];
+  String get aiOpRetryJob => language._messages[2654];
 
   /// 取消工作
-  String get aiOpCancelJob => language._messages[2656];
+  String get aiOpCancelJob => language._messages[2655];
 
   /// 啟動手動工作
-  String get aiOpPlayJob => language._messages[2657];
+  String get aiOpPlayJob => language._messages[2656];
 
   /// 操作工作
-  String get aiOpJobAction => language._messages[2658];
+  String get aiOpJobAction => language._messages[2657];
 
   /// 立即執行排程
-  String get aiOpPlayPipelineSchedule => language._messages[2659];
+  String get aiOpPlayPipelineSchedule => language._messages[2658];
 
   /// 建立專案
-  String get aiOpCreateProject => language._messages[2660];
+  String get aiOpCreateProject => language._messages[2659];
 
   /// 編輯專案
-  String get aiOpEditProject => language._messages[2661];
+  String get aiOpEditProject => language._messages[2660];
 
   /// 刪除專案
-  String get aiOpDeleteProject => language._messages[2662];
+  String get aiOpDeleteProject => language._messages[2661];
 
   /// 建立專案的 Fork
-  String get aiOpForkProject => language._messages[2663];
+  String get aiOpForkProject => language._messages[2662];
 
   /// 刪除看板
-  String get aiOpDeleteBoard => language._messages[2664];
+  String get aiOpDeleteBoard => language._messages[2663];
 
   /// 刪除看板欄位
-  String get aiOpDeleteBoardList => language._messages[2665];
+  String get aiOpDeleteBoardList => language._messages[2664];
 
   /// 刪除容器映像庫
-  String get aiOpDeleteContainerRepository => language._messages[2666];
+  String get aiOpDeleteContainerRepository => language._messages[2665];
 
   /// 刪除容器映像標籤
-  String get aiOpDeleteContainerTag => language._messages[2667];
+  String get aiOpDeleteContainerTag => language._messages[2666];
 
   /// 刪除留言
-  String get aiOpDeleteNote => language._messages[2668];
+  String get aiOpDeleteNote => language._messages[2667];
 
   /// 刪除討論回覆
-  String get aiOpDeleteDiscussionNote => language._messages[2669];
+  String get aiOpDeleteDiscussionNote => language._messages[2668];
 
   /// 刪除草稿留言
-  String get aiOpDeleteDraftNote => language._messages[2670];
+  String get aiOpDeleteDraftNote => language._messages[2669];
 
   /// 刪除議題
-  String get aiOpDeleteIssue => language._messages[2671];
+  String get aiOpDeleteIssue => language._messages[2670];
 
   /// 刪除合併請求
-  String get aiOpDeleteMergeRequest => language._messages[2672];
+  String get aiOpDeleteMergeRequest => language._messages[2671];
 
   /// 刪除標籤
-  String get aiOpDeleteLabel => language._messages[2673];
+  String get aiOpDeleteLabel => language._messages[2672];
 
   /// 刪除里程碑
-  String get aiOpDeleteMilestone => language._messages[2674];
+  String get aiOpDeleteMilestone => language._messages[2673];
 
   /// 刪除套件
-  String get aiOpDeletePackage => language._messages[2675];
+  String get aiOpDeletePackage => language._messages[2674];
 
   /// 刪除套件檔案
-  String get aiOpDeletePackageFile => language._messages[2676];
+  String get aiOpDeletePackageFile => language._messages[2675];
 
   /// 把全部待辦標為完成
-  String get aiOpMarkAllTodosDone => language._messages[2677];
+  String get aiOpMarkAllTodosDone => language._messages[2676];
 
   /// 送出草稿留言
-  String get aiOpPublishDraftNotes => language._messages[2678];
+  String get aiOpPublishDraftNotes => language._messages[2677];
 
   /// 建立 Snippet
-  String get aiOpCreateSnippet => language._messages[2679];
+  String get aiOpCreateSnippet => language._messages[2678];
 
   /// 編輯 Snippet
-  String get aiOpUpdateSnippet => language._messages[2680];
+  String get aiOpUpdateSnippet => language._messages[2679];
 
   /// 編輯 Snippet 資訊
-  String get aiOpUpdateSnippetMetadata => language._messages[2681];
+  String get aiOpUpdateSnippetMetadata => language._messages[2680];
 
   /// 編輯 Snippet 的檔案
-  String get aiOpUpdateSnippetFiles => language._messages[2682];
+  String get aiOpUpdateSnippetFiles => language._messages[2681];
 
   /// 刪除 Snippet 的檔案
-  String get aiOpDeleteSnippetFile => language._messages[2683];
+  String get aiOpDeleteSnippetFile => language._messages[2682];
 
   /// 刪除 Snippet
-  String get aiOpDeleteSnippet => language._messages[2684];
+  String get aiOpDeleteSnippet => language._messages[2683];
 
   /// 這張卡片建立之後，GitLab 上的內容已經變了，所以沒有執行。可以請 AI 重新讀取後再提議。
-  String get aiRefusedChanged => language._messages[2685];
+  String get aiRefusedChanged => language._messages[2684];
 
   /// 找不到目標：它可能已被刪除，也可能是你沒有權限看到，所以沒有執行。
-  String get aiRefusedGone => language._messages[2686];
+  String get aiRefusedGone => language._messages[2685];
 
   /// 你在 GitLab 上沒有這個操作需要的權限，所以沒有執行。
-  String get aiRefusedPermission => language._messages[2687];
+  String get aiRefusedPermission => language._messages[2686];
 
   /// GitLab 目前不允許這個操作，所以沒有執行。
-  String get aiRefusedNotAllowed => language._messages[2688];
+  String get aiRefusedNotAllowed => language._messages[2687];
 
   /// 內容超出 AI 可以寫入的範圍（例如檔案太大、是二進位檔，或屬於敏感路徑），所以沒有執行。
-  String get aiRefusedContent => language._messages[2689];
+  String get aiRefusedContent => language._messages[2688];
 
   /// 需要核對的資料無法完整讀取，所以沒有執行。
-  String get aiRefusedUnverifiable => language._messages[2690];
+  String get aiRefusedUnverifiable => language._messages[2689];
 
   /// 這個合併請求已經合併了，所以沒有執行。
-  String get aiRefusedAlreadyMerged => language._messages[2691];
+  String get aiRefusedAlreadyMerged => language._messages[2690];
 
   /// 專案已封存，無法變更，所以沒有執行。
-  String get aiRefusedArchived => language._messages[2692];
+  String get aiRefusedArchived => language._messages[2691];
 
   /// 這是受保護的分支，AI 不能刪除或改寫它，所以沒有執行。
-  String get aiRefusedProtectedBranch => language._messages[2693];
+  String get aiRefusedProtectedBranch => language._messages[2692];
 
   /// 不能刪除預設分支，所以沒有執行。
-  String get aiRefusedDefaultBranch => language._messages[2694];
+  String get aiRefusedDefaultBranch => language._messages[2693];
 
   /// GitLab 還在檢查能不能合併，所以沒有執行。請稍後再試。
-  String get aiRefusedMergeChecking => language._messages[2695];
+  String get aiRefusedMergeChecking => language._messages[2694];
 }

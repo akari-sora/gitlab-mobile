@@ -2634,7 +2634,6 @@ const _messagesEn = <String>[
   'Count',
   'At least {count}',
   'This can\'t be undone.',
-  'Merge request',
   'You may not have permission to cancel the automatic merge; if GitLab refuses, nothing changes.',
   'Apply a suggested change',
   'Apply several suggested changes',

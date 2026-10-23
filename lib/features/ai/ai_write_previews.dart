@@ -418,7 +418,7 @@ class _CancelAutoMergePreview extends StatelessWidget {
     key: const ValueKey('ai-preview-cancel-auto-merge'),
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _Fact(l10n.aiPreviewMergeRequest, isolated('!${cancel.iid}')),
+      _Fact(l10n.mergeRequestLabel, isolated('!${cancel.iid}')),
       _Fact(
         l10n.aiPreviewBranches,
         l10n.aiPreviewBranchFlow(
