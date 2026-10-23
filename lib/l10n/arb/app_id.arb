@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "{count} berkas lain juga akan berubah",
   "aiConfirmTargetNamedNotMarked": "Anda menyebut nama ini dalam pesan, tetapi tidak menandainya dengan backtick (`, sehingga penulisan ini memerlukan konfirmasi Anda.",
   "aiPreviewDeletionMayBeDelayed": "GitLab dapat menunda penghapusan; item dapat dipulihkan selama masa penyimpanan.",
+  "cacheLastUpdated": "Terakhir diperbarui: {time}",
+  "cacheRefreshing": "Memperbarui…",
+  "cacheRateLimited": "GitLab sedang membatasi permintaan",
+  "cacheRefreshFailed": "Tidak dapat memperbarui",
+  "cacheResumesInMinutes": "Lanjut lagi dalam sekitar {minutes} mnt",
   "activityVerbTarget": "{verb} {target}"
 }

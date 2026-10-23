@@ -325,13 +325,16 @@ final class GitLabRateBudget {
   }
 
   static RateLevel _level(_Bucket bucket, DateTime now) {
-    final seconds = bucket.resetAt.difference(now).inMilliseconds / 1000;
+    final untilReset = bucket.resetAt.difference(now);
     final reserve = math.min(3, math.max(1, (bucket.limit * 0.05).ceil()));
-    if (bucket.remaining < reserve && seconds > 10) {
+    if (bucket.remaining < reserve &&
+        untilReset > const Duration(seconds: 10)) {
       return RateLevel.critical;
     }
     final low = math.min(15, math.max(2, (bucket.limit * 0.15).ceil()));
-    if (bucket.remaining < low && seconds > 20) return RateLevel.low;
+    if (bucket.remaining < low && untilReset > const Duration(seconds: 20)) {
+      return RateLevel.low;
+    }
     return RateLevel.normal;
   }
 

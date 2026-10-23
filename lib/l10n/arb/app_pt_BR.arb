@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "Mais {count} arquivos também serão alterados",
   "aiConfirmTargetNamedNotMarked": "Você mencionou esse nome na mensagem, mas não o marcou com um backtick (`, por isso esta escrita precisa da sua confirmação.",
   "aiPreviewDeletionMayBeDelayed": "O GitLab pode atrasar a exclusão; é possível restaurá-lo durante o período de retenção.",
+  "cacheLastUpdated": "Última atualização: {time}",
+  "cacheRefreshing": "Atualizando…",
+  "cacheRateLimited": "O GitLab está limitando solicitações",
+  "cacheRefreshFailed": "Não foi possível atualizar",
+  "cacheResumesInMinutes": "Retoma em cerca de {minutes} min",
   "activityVerbTarget": "{verb} {target}"
 }

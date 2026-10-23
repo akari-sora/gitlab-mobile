@@ -2711,5 +2711,10 @@ const _messagesMs = <String>[
   '{count} fail lagi turut berubah',
   'Anda menyebut nama ini dalam mesej, tetapi tidak menandainya dengan backtick (`, jadi penulisan ini memerlukan pengesahan anda.',
   'GitLab mungkin menunda pemadaman; item boleh dipulihkan semasa tempoh penahanan.',
+  'Kemas kini terakhir: {time}',
+  'Sedang memperbarui…',
+  'GitLab sedang mengehadkan permintaan',
+  'Tidak dapat memuat semula',
+  'Sambung semula dalam sekitar {minutes} min',
   '{verb} {target}',
 ];

@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "ยังมีไฟล์อีก {count} ไฟล์ที่จะเปลี่ยนด้วย",
   "aiConfirmTargetNamedNotMarked": "คุณได้พูดถึงชื่อนี้ในข้อความแต่ยังไม่ได้ทำเครื่องหมายด้วยเครื่องหมาย ` (แบ็คทิก) คุณจึงต้องยืนยันการทำงานนี้",
   "aiPreviewDeletionMayBeDelayed": "GitLab อาจเลื่อนการลบออกไป และสามารถกู้คืนได้ในช่วงระยะเวลาเก็บรักษา",
+  "cacheLastUpdated": "อัปเดตล่าสุด {time}",
+  "cacheRefreshing": "กำลังรีเฟรช…",
+  "cacheRateLimited": "GitLab กำลังจำกัดคำขอ",
+  "cacheRefreshFailed": "รีเฟรชไม่ได้",
+  "cacheResumesInMinutes": "กลับมาในอีกประมาณ {minutes} นาที",
   "activityVerbTarget": "{verb} {target}"
 }

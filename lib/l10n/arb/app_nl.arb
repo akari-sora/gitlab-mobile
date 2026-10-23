@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "Nog {count} bestanden wijzigen ook",
   "aiConfirmTargetNamedNotMarked": "Je hebt deze naam in het bericht genoemd maar niet gemarkeerd met een backtick (`, dus deze schrijfactie vereist jouw bevestiging.",
   "aiPreviewDeletionMayBeDelayed": "GitLab kan de verwijdering uitstellen; tijdens de bewaartermijn kan het item worden hersteld.",
+  "cacheLastUpdated": "Laatst bijgewerkt: {time}",
+  "cacheRefreshing": "Wordt vernieuwd…",
+  "cacheRateLimited": "GitLab beperkt verzoeken",
+  "cacheRefreshFailed": "Kan niet vernieuwen",
+  "cacheResumesInMinutes": "Hervatting over ca. {minutes} min",
   "activityVerbTarget": "{verb} {target}"
 }

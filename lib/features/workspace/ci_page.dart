@@ -616,6 +616,11 @@ class _PipelinesTabState extends State<PipelinesTab> {
       account: widget.account, resourceLabel: '${widget.project.path} · Pipeline',
       onSwitchAccount: endSessionFrom(context),
       leading: (context, _) => _controls(context),
+      cached: ({required bool fresh, required bool background}) => widget.api.cachedRecords(
+        ['projects', '${widget.project.id}', 'pipelines'], query: {
+          'order_by': 'id', 'sort': 'desc',
+          if (_state.isNotEmpty) 'status': _state, if (_ref.isNotEmpty) 'ref': _ref,
+        }, fresh: fresh, background: background),
       load: _loadPipelines,
       itemBuilder: (context, value) {
         final id = requiredInt(value, 'id');
@@ -982,6 +987,10 @@ class _PipelinePageState extends State<PipelinePage> {
                   onSwitchAccount: endSessionFrom(context),
                   arrange: stageOrder,
                   sectionOf: (value) => valueText(value, 'stage', l10n.pipelineSourceOther),
+                  cached: ({required bool fresh, required bool background}) => widget.api.cachedRecords(
+                    ['projects', '${widget.project.id}', 'pipelines', '${widget.id}', 'jobs'],
+                    query: {'include_retried': 'true', 'per_page': '100'},
+                    fresh: fresh, background: background),
                   load: (next) => widget.api.records(
                     ['projects', '${widget.project.id}', 'pipelines', '${widget.id}', 'jobs'],
                     query: {'include_retried': 'true', 'per_page': '100'},

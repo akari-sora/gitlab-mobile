@@ -80,6 +80,10 @@ class _GroupsPageState extends State<GroupsPage> {
           onSubmitted: (value) => setState(() => _query = value.trim()),
         ),
       ),
+      cached: ({required bool fresh, required bool background}) => widget.api.cachedRecords(['groups'], query: {
+        'min_access_level': '10', 'order_by': 'name', 'sort': 'asc',
+        if (_query.trim().isNotEmpty) 'search': _query.trim(),
+      }, fresh: fresh, background: background),
       load: (next) => widget.api.groups(search: _query, next: next),
       itemBuilder: (context, value) => groupRow(context, value, onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => GroupPage(account: widget.account, api: widget.api, group: value)))),
@@ -191,6 +195,9 @@ class _GroupPageState extends State<GroupPage> {
     empty: l10n.groupHasNoProjects,
     emptyIcon: Icons.folder_off_outlined,
     grouped: true,
+    cached: ({required bool fresh, required bool background}) => widget.api.cachedRecords(
+      ['groups', '$_id', 'projects'], query: {'order_by': 'last_activity_at', 'sort': 'desc'},
+      fresh: fresh, background: background),
     load: (next) => widget.api.groupProjects(_id, next: next),
     itemBuilder: (context, value) {
       final theme = Theme.of(context);
@@ -234,6 +241,9 @@ class _GroupPageState extends State<GroupPage> {
     empty: l10n.noSubgroups,
     emptyIcon: Icons.workspaces_outline,
     grouped: true,
+    cached: ({required bool fresh, required bool background}) => widget.api.cachedRecords(
+      ['groups', '$_id', 'subgroups'], query: {'order_by': 'name', 'sort': 'asc'},
+      fresh: fresh, background: background),
     load: (next) => widget.api.subgroups(_id, next: next),
     itemBuilder: (context, value) => groupRow(context, value, onTap: () => Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => GroupPage(account: widget.account, api: widget.api, group: value,
@@ -247,6 +257,10 @@ class _GroupPageState extends State<GroupPage> {
     onSwitchAccount: endSessionFrom(context),
     empty: resource == 'issues' ? l10n.noOpenIssues : l10n.noOpenMergeRequests,
     emptyIcon: resource == 'issues' ? Icons.adjust : Icons.merge,
+    cached: ({required bool fresh, required bool background}) => widget.api.cachedRecords(
+      ['groups', '$_id', resource],
+      query: {'state': 'opened', 'order_by': 'updated_at', 'sort': 'desc', 'with_labels_details': 'true'},
+      fresh: fresh, background: background),
     load: (next) => widget.api.records(['groups', '$_id', resource],
       query: {'state': 'opened', 'order_by': 'updated_at', 'sort': 'desc', 'with_labels_details': 'true'}, next: next),
     itemBuilder: (context, value) => workItemCard(context, value, mr: resource == 'merge_requests',

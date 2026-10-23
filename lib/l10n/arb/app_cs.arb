@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "Změní se i {count} dalších souborů",
   "aiConfirmTargetNamedNotMarked": "Tento název jste v zprávě zmínili, ale neoznačili jste jej zpětným apostrofem (`), takže tento zápis vyžaduje vaše potvrzení.",
   "aiPreviewDeletionMayBeDelayed": "GitLab může odstranění zpozdit; dokud trží lhůta uchování, položku lze obnovit.",
+  "cacheLastUpdated": "Poslední aktualizace: {time}",
+  "cacheRefreshing": "Probíhá aktualizace…",
+  "cacheRateLimited": "GitLab omezuje požadavky",
+  "cacheRefreshFailed": "Nelze obnovit",
+  "cacheResumesInMinutes": "Obnoví se přibližně za {minutes} min",
   "activityVerbTarget": "{verb} {target}"
 }

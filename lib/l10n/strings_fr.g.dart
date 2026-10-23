@@ -2711,5 +2711,10 @@ const _messagesFr = <String>[
   '{count} autres fichiers changent aussi',
   'Vous avez mentionné ce nom dans le message sans le marquer d\'un backtick (`, cette écriture doit donc être confirmée.',
   'GitLab est susceptible de différer la suppression ; l\'éélément peutêêtre restauré pendant la période de rétention.',
+  'Dernière mise à jour : {time}',
+  'Actualisation…',
+  'GitLab limite les requêtes',
+  'Actualisation impossible',
+  'Reprise dans environ {minutes} min',
   '{verb} {target}',
 ];

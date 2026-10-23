@@ -2711,5 +2711,10 @@ const _messagesSv = <String>[
   'Ytterligare {count} filer ändras också',
   'Du nämnde det här namnet i meddelandet men markerade det inte med ett backtick (`, så den här skrivningen behöver din bekräftelse.',
   'GitLab kan fördröja borttagningen; objektet kan återställas under lagringstiden.',
+  'Senast uppdaterad: {time}',
+  'Uppdaterar…',
+  'GitLab begränsar begäranden',
+  'Kan inte uppdatera',
+  'Återupptas om ca {minutes} min',
   '{verb} {target}',
 ];
