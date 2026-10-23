@@ -2697,7 +2697,7 @@ const _messagesMs = <String>[
   'Ini branch yang dilindungi; AI tidak boleh memadam atau menulis semulanya, jadi tiada apa-apa yang dilakukan.',
   'Branch lalai tidak boleh dipadam, jadi tiada apa-apa yang dilakukan.',
   'GitLab masih menyemak sama ada ini boleh digabungkan, jadi tiada apa-apa yang dilakukan. Cuba lagi sebentar nanti.',
-  'Ask AI about your to-dos',
-  'To-do assistant',
-  'Mark all my to-dos as done',
+  'Tanya AI tentang tugasan anda',
+  'Pembantu tugasan',
+  'Tandakan semua tugasan saya selesai',
 ];

@@ -2697,7 +2697,7 @@ const _messagesPl = <String>[
   'To gałąź chroniona; AI nie może jej usunąć ani przepisać, więc nic nie zostało zrobione.',
   'Nie można usunąć gałęzi domyślnej, więc nic nie zostało zrobione.',
   'GitLab nadal sprawdza, czy można scalić, więc nic nie zostało zrobione. Spróbuj ponownie za chwilę.',
-  'Ask AI about your to-dos',
-  'To-do assistant',
-  'Mark all my to-dos as done',
+  'Zapytaj AI o swoje to-do',
+  'Asystent to-do',
+  'Oznacz wszystkie moje to-do jako wykonane',
 ];

@@ -2695,7 +2695,7 @@
   "aiRefusedProtectedBranch": "Это защищённая ветка: AI не может удалять или перезаписывать её, поэтому ничего не выполнено.",
   "aiRefusedDefaultBranch": "Ветку по умолчанию удалить нельзя, поэтому ничего не выполнено.",
   "aiRefusedMergeChecking": "GitLab ещё проверяет, можно ли выполнить слияние, поэтому ничего не выполнено. Повторите чуть позже.",
-  "aiInboxAsk": "Ask AI about your to-dos",
-  "aiInboxChatTitle": "To-do assistant",
-  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
+  "aiInboxAsk": "Спросить AI о задачах",
+  "aiInboxChatTitle": "Помощник по задачам",
+  "aiSuggestInboxMarkAll": "Отметь все мои задачи выполненными"
 }

@@ -2695,7 +2695,7 @@
   "aiRefusedProtectedBranch": "Dies ist ein geschützter Branch; die KI darf ihn nicht löschen oder überschreiben. Es wurde nichts ausgeführt.",
   "aiRefusedDefaultBranch": "Der Standard-Branch kann nicht gelöscht werden. Es wurde nichts ausgeführt.",
   "aiRefusedMergeChecking": "GitLab prüft noch, ob sich dies mergen lässt. Es wurde nichts ausgeführt. Versuchen Sie es gleich noch einmal.",
-  "aiInboxAsk": "Ask AI about your to-dos",
-  "aiInboxChatTitle": "To-do assistant",
-  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
+  "aiInboxAsk": "KI zu Ihren To-dos fragen",
+  "aiInboxChatTitle": "To-do-Assistent",
+  "aiSuggestInboxMarkAll": "Markiere alle meine To-dos als erledigt"
 }

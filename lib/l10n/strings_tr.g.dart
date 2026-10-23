@@ -2697,7 +2697,7 @@ const _messagesTr = <String>[
   'Bu korumalı bir daldır; AI onu silemez veya yeniden yazamaz, bu yüzden hiçbir şey yapılmadı.',
   'Varsayılan dal silinemez, bu yüzden hiçbir şey yapılmadı.',
   'GitLab hâlâ birleştirilip birleştirilemeyeceğini denetliyor, bu yüzden hiçbir şey yapılmadı. Kısa süre sonra yeniden deneyin.',
-  'Ask AI about your to-dos',
-  'To-do assistant',
-  'Mark all my to-dos as done',
+  'AI’ye yapılacaklarınızı sorun',
+  'Yapılacaklar asistanı',
+  'Tüm yapılacaklarımı tamamlandı olarak işaretle',
 ];

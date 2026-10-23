@@ -2695,7 +2695,7 @@
   "aiRefusedProtectedBranch": "保護されたブランチのため、AI は削除や書き換えができません。何も実行されていません。",
   "aiRefusedDefaultBranch": "デフォルトブランチは削除できないため、何も実行されませんでした。",
   "aiRefusedMergeChecking": "GitLab がまだマージ可能か確認中のため、何も実行されませんでした。しばらくしてからもう一度お試しください。",
-  "aiInboxAsk": "Ask AI about your to-dos",
-  "aiInboxChatTitle": "To-do assistant",
-  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
+  "aiInboxAsk": "AI にタスクについて相談",
+  "aiInboxChatTitle": "タスクアシスタント",
+  "aiSuggestInboxMarkAll": "すべてのタスクを完了にして"
 }

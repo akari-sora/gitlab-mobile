@@ -2697,7 +2697,7 @@ const _messagesFr = <String>[
   'Cette branche est protégée ; l\'IA ne peut ni la supprimer ni la réécrire. Rien n\'a été fait.',
   'La branche par défaut ne peut pas être supprimée ; rien n\'a été fait.',
   'GitLab vérifie encore si la fusion est possible ; rien n\'a été fait. Réessayez dans un instant.',
-  'Ask AI about your to-dos',
-  'To-do assistant',
-  'Mark all my to-dos as done',
+  'Demander à l’IA pour vos tâches à faire',
+  'Assistant de tâches à faire',
+  'Marque toutes mes tâches à faire comme terminées',
 ];

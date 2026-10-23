@@ -2697,7 +2697,7 @@ const _messagesVi = <String>[
   'Đây là nhánh được bảo vệ; AI không thể xóa hoặc ghi đè nó, nên chưa có gì được thực hiện.',
   'Không thể xóa nhánh mặc định, nên chưa có gì được thực hiện.',
   'GitLab vẫn đang kiểm tra xem có thể gộp hay không, nên chưa có gì được thực hiện. Hãy thử lại sau ít phút.',
-  'Ask AI about your to-dos',
-  'To-do assistant',
-  'Mark all my to-dos as done',
+  'Hỏi AI về việc cần làm của bạn',
+  'Trợ lý việc cần làm',
+  'Đánh dấu tất cả việc cần làm của tôi là xong',
 ];

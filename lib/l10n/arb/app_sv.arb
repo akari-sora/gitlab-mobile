@@ -2695,7 +2695,7 @@
   "aiRefusedProtectedBranch": "Det här är en skyddad gren; AI kan inte ta bort eller skriva om den, så ingenting gjordes.",
   "aiRefusedDefaultBranch": "Standardgrenen kan inte tas bort, så ingenting gjordes.",
   "aiRefusedMergeChecking": "GitLab kontrollerar fortfarande om detta kan slås samman, så ingenting gjordes. Försök igen om en stund.",
-  "aiInboxAsk": "Ask AI about your to-dos",
-  "aiInboxChatTitle": "To-do assistant",
-  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
+  "aiInboxAsk": "Fråga AI om dina att göra",
+  "aiInboxChatTitle": "Assistent för att göra",
+  "aiSuggestInboxMarkAll": "Markera alla mina att göra som klara"
 }

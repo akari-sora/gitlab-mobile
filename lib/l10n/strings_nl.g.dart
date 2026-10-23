@@ -2697,7 +2697,7 @@ const _messagesNl = <String>[
   'Dit is een beschermde branch; de AI kan hem niet verwijderen of herschrijven, dus er is niets gedaan.',
   'De standaardbranch kan niet worden verwijderd, dus er is niets gedaan.',
   'GitLab controleert nog of dit gemerged kan worden, dus er is niets gedaan. Probeer het zo opnieuw.',
-  'Ask AI about your to-dos',
-  'To-do assistant',
-  'Mark all my to-dos as done',
+  'Vraag AI naar uw to-do’s',
+  'To-do-assistent',
+  'Markeer al mijn to-do’s als voltooid',
 ];

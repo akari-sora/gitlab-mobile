@@ -2695,7 +2695,7 @@
   "aiRefusedProtectedBranch": "यह सुरक्षित ब्रांच है; AI इसे हटा या दोबारा नहीं लिख सकता, इसलिए कुछ भी निष्पादित नहीं हुआ।",
   "aiRefusedDefaultBranch": "डिफ़ॉल्ट ब्रांच हटाई नहीं जा सकती, इसलिए कुछ भी निष्पादित नहीं हुआ।",
   "aiRefusedMergeChecking": "GitLab अभी जाँच रहा है कि मर्ज हो सकता है या नहीं, इसलिए कुछ भी निष्पादित नहीं हुआ। थोड़ी देर बाद फिर कोशिश करें।",
-  "aiInboxAsk": "Ask AI about your to-dos",
-  "aiInboxChatTitle": "To-do assistant",
-  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
+  "aiInboxAsk": "अपने टू-डू के बारे में AI से पूछें",
+  "aiInboxChatTitle": "टू-डू सहायक",
+  "aiSuggestInboxMarkAll": "मेरे सभी टू-डू पूरे चिह्नित करो"
 }

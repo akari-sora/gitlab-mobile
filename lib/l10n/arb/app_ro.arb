@@ -2695,7 +2695,7 @@
   "aiRefusedProtectedBranch": "Aceasta este o ramură protejată; AI nu o poate șterge sau rescrie, deci nu s-a făcut nimic.",
   "aiRefusedDefaultBranch": "Ramura implicită nu poate fi ștearsă, deci nu s-a făcut nimic.",
   "aiRefusedMergeChecking": "GitLab încă verifică dacă se poate îmbina, deci nu s-a făcut nimic. Încearcă din nou în scurt timp.",
-  "aiInboxAsk": "Ask AI about your to-dos",
-  "aiInboxChatTitle": "To-do assistant",
-  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
+  "aiInboxAsk": "Întreabă AI despre to-do-urile tale",
+  "aiInboxChatTitle": "Asistent to-do",
+  "aiSuggestInboxMarkAll": "Marchează toate to-do-urile mele ca finalizate"
 }

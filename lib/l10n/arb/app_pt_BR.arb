@@ -2695,7 +2695,7 @@
   "aiRefusedProtectedBranch": "Esta é uma branch protegida; a IA não pode excluí-la nem reescrevê-la, então nada foi feito.",
   "aiRefusedDefaultBranch": "A branch padrão não pode ser excluída, então nada foi feito.",
   "aiRefusedMergeChecking": "O GitLab ainda está verificando se é possível mesclar, então nada foi feito. Tente novamente em instantes.",
-  "aiInboxAsk": "Ask AI about your to-dos",
-  "aiInboxChatTitle": "To-do assistant",
-  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
+  "aiInboxAsk": "Perguntar à IA sobre suas tarefas pendentes",
+  "aiInboxChatTitle": "Assistente de tarefas pendentes",
+  "aiSuggestInboxMarkAll": "Marque todas as minhas tarefas pendentes como concluídas"
 }

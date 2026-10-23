@@ -2697,7 +2697,7 @@ const _messagesKo = <String>[
   '보호된 브랜치라서 AI가 삭제하거나 덮어쓸 수 없어 아무것도 실행하지 않았습니다.',
   '기본 브랜치는 삭제할 수 없어서 아무것도 실행하지 않았습니다.',
   'GitLab이 아직 병합 가능 여부를 확인 중이어서 아무것도 실행하지 않았습니다. 잠시 후 다시 시도하세요.',
-  'Ask AI about your to-dos',
-  'To-do assistant',
-  'Mark all my to-dos as done',
+  'AI에게 할 일 물어보기',
+  '할 일 도우미',
+  '내 할 일을 모두 완료로 표시해 줘',
 ];

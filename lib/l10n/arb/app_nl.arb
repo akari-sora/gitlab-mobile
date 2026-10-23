@@ -2695,7 +2695,7 @@
   "aiRefusedProtectedBranch": "Dit is een beschermde branch; de AI kan hem niet verwijderen of herschrijven, dus er is niets gedaan.",
   "aiRefusedDefaultBranch": "De standaardbranch kan niet worden verwijderd, dus er is niets gedaan.",
   "aiRefusedMergeChecking": "GitLab controleert nog of dit gemerged kan worden, dus er is niets gedaan. Probeer het zo opnieuw.",
-  "aiInboxAsk": "Ask AI about your to-dos",
-  "aiInboxChatTitle": "To-do assistant",
-  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
+  "aiInboxAsk": "Vraag AI naar uw to-do’s",
+  "aiInboxChatTitle": "To-do-assistent",
+  "aiSuggestInboxMarkAll": "Markeer al mijn to-do’s als voltooid"
 }

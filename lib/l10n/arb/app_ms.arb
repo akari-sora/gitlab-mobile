@@ -2695,7 +2695,7 @@
   "aiRefusedProtectedBranch": "Ini branch yang dilindungi; AI tidak boleh memadam atau menulis semulanya, jadi tiada apa-apa yang dilakukan.",
   "aiRefusedDefaultBranch": "Branch lalai tidak boleh dipadam, jadi tiada apa-apa yang dilakukan.",
   "aiRefusedMergeChecking": "GitLab masih menyemak sama ada ini boleh digabungkan, jadi tiada apa-apa yang dilakukan. Cuba lagi sebentar nanti.",
-  "aiInboxAsk": "Ask AI about your to-dos",
-  "aiInboxChatTitle": "To-do assistant",
-  "aiSuggestInboxMarkAll": "Mark all my to-dos as done"
+  "aiInboxAsk": "Tanya AI tentang tugasan anda",
+  "aiInboxChatTitle": "Pembantu tugasan",
+  "aiSuggestInboxMarkAll": "Tandakan semua tugasan saya selesai"
 }
