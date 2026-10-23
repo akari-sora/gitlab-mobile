@@ -877,19 +877,13 @@ void main() {
       expect(sent, isEmpty);
       final note = find.byKey(const ValueKey('ai-report-preview-updated'));
       expect(note, findsOne);
-      // The note is on screen next to Send and is read out when it appears.
+      // The note is on screen and Send announced it.
       final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
       expect(tester.getRect(note).bottom, lessThanOrEqualTo(screen.height));
       expect(tester.getRect(note).top, greaterThanOrEqualTo(0));
       expect(
-        find.ancestor(
-          of: note,
-          matching: find.byWidgetPredicate(
-            (widget) =>
-                widget is Semantics && (widget.properties.liveRegion ?? false),
-          ),
-        ),
-        findsOne,
+        tester.takeAnnouncements().map((a) => a.message),
+        [l10n.aiReportPreviewUpdated],
       );
       expect(tester.widget<Text>(preview).data, contains('two files'));
       await send(tester);
@@ -1087,14 +1081,84 @@ void main() {
         expect(tester.getRect(button).bottom, lessThanOrEqualTo(640 - 280));
         final scroll = find.byKey(const ValueKey('ai-report-scroll'));
         expect(tester.getSize(scroll).height, greaterThan(40));
-        final preview = tester.getRect(
-          find.byKey(const ValueKey('ai-report-preview')),
-        );
         final area = tester.getRect(scroll);
+        // The note starts in view at the top of the form, right above the
+        // preview it points at (at this size the note alone can fill the
+        // form, so the preview follows it on scrolling).
+        final noteFinder = find.byKey(const ValueKey('ai-report-preview-updated'));
+        final note = tester.getRect(noteFinder);
+        final previewFinder = find.byKey(const ValueKey('ai-report-preview'));
+        expect(note.top, greaterThanOrEqualTo(area.top));
+        expect(note.top, lessThan(area.bottom));
+        expect(note.bottom, lessThanOrEqualTo(tester.getRect(previewFinder).top));
+        await tester.drag(scroll, Offset(0, -(note.height + 40)));
+        await tester.pumpAndSettle();
+        final preview = tester.getRect(previewFinder);
         expect(preview.top, lessThan(area.bottom));
         expect(preview.bottom, greaterThan(area.top));
+        expect(tester.getRect(button).bottom, lessThanOrEqualTo(640 - 280));
       });
     }
+
+    testWidgets('the update is announced with the keyboard up', (tester) async {
+      final ratio = tester.view.devicePixelRatio;
+      tester.view.physicalSize = const Size(360, 640) * ratio;
+      addTearDown(tester.view.reset);
+      const token = 'synthetic-rotated-oauth-token';
+      final session = answered()..rotatedSecret = token;
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      final description = find.byKey(const ValueKey('ai-report-description'));
+      await tester.ensureVisible(description);
+      await tester.pumpAndSettle();
+      await tester.showKeyboard(description);
+      tester.view.viewInsets = FakeViewPadding(bottom: 300 * ratio);
+      await tester.enterText(description, 'pasted $token');
+      await tester.pumpAndSettle();
+      tester.takeAnnouncements();
+      await tester.tap(find.byKey(const ValueKey('ai-report-send')));
+      await tester.pumpAndSettle();
+      expect(sent, isEmpty);
+      // Announced even though the note was outside the form's viewport in
+      // the frame it appeared.
+      expect(
+        tester.takeAnnouncements().map((a) => a.message),
+        [l10n.aiReportPreviewUpdated],
+      );
+    });
+
+    testWidgets('Send stays pinned above the keyboard on a 640 dp phone', (
+      tester,
+    ) async {
+      final ratio = tester.view.devicePixelRatio;
+      tester.view.physicalSize = const Size(360, 640) * ratio;
+      tester.view.padding = FakeViewPadding(top: 24 * ratio, bottom: 16 * ratio);
+      addTearDown(tester.view.reset);
+      final session = answered();
+      await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      final description = find.byKey(const ValueKey('ai-report-description'));
+      await tester.ensureVisible(description);
+      await tester.pumpAndSettle();
+      await tester.showKeyboard(description);
+      tester.view.viewInsets = FakeViewPadding(bottom: 300 * ratio);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      // Pinned under the form, not inside its scroller, and on screen
+      // without scrolling.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ai-report-scroll')),
+          matching: button,
+        ),
+        findsNothing,
+      );
+      expect(tester.getRect(button).bottom, lessThanOrEqualTo(640 - 300));
+      expect(tester.getRect(button).top, greaterThanOrEqualTo(0));
+    });
 
     testWidgets('keys typed just before Send are shown before they go', (
       tester,
