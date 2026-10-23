@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "{count} fail lagi turut berubah",
   "aiConfirmTargetNamedNotMarked": "Anda menyebut nama ini dalam mesej, tetapi tidak menandainya dengan backtick (`, jadi penulisan ini memerlukan pengesahan anda.",
   "aiPreviewDeletionMayBeDelayed": "GitLab mungkin menunda pemadaman; item boleh dipulihkan semasa tempoh penahanan.",
+  "cacheLastUpdated": "Kemas kini terakhir: {time}",
+  "cacheRefreshing": "Sedang memperbarui…",
+  "cacheRateLimited": "GitLab sedang mengehadkan permintaan",
+  "cacheRefreshFailed": "Tidak dapat memuat semula",
+  "cacheResumesInMinutes": "Sambung semula dalam sekitar {minutes} min",
   "activityVerbTarget": "{verb} {target}"
 }

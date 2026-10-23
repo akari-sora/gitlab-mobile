@@ -11468,6 +11468,21 @@
   },
   "aiConfirmTargetNamedNotMarked": "你在訊息裡提到了這個名稱，但沒有用反引號（`）標出來，所以這筆寫入需要你確認。",
   "aiPreviewDeletionMayBeDelayed": "GitLab 可能會延後刪除，保留期內仍可還原。",
+  "cacheLastUpdated": "最後更新：{time}",
+  "@cacheLastUpdated": {
+    "placeholders": {
+      "time": {}
+    }
+  },
+  "cacheRefreshing": "正在更新",
+  "cacheRateLimited": "GitLab 正在限制請求",
+  "cacheRefreshFailed": "無法更新",
+  "cacheResumesInMinutes": "約 {minutes} 分鐘後恢復",
+  "@cacheResumesInMinutes": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
   "activityVerbTarget": "{verb}{target}",
   "@activityVerbTarget": {
     "placeholders": {

@@ -2711,5 +2711,10 @@ const _messagesPl = <String>[
   'Zmieni się też {count} innych plików',
   'O tej nazwie była mowa w wiadomości, ale nie została jednak oznaczona backtickiem (`, więc ten zapis wymaga potwierdzenia.',
   'GitLab może opóźnić usunięcie; element można przywrócić w okresie przechowywania.',
+  'Ostatnia aktualizacja: {time}',
+  'Odświeżanie…',
+  'GitLab ogranicza żądania',
+  'Nie można odświeżyć',
+  'Wznowienie za ok. {minutes} min',
   '{verb} {target}',
 ];

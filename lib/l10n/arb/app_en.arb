@@ -2715,5 +2715,10 @@
   "aiPreviewMoreFiles": "{count} more files change too",
   "aiConfirmTargetNamedNotMarked": "You mentioned this name but did not mark it with backticks (`), so this write needs your confirmation.",
   "aiPreviewDeletionMayBeDelayed": "GitLab may delay the deletion; it can be restored during the retention period.",
+  "cacheLastUpdated": "Last updated {time}",
+  "cacheRefreshing": "Refreshing",
+  "cacheRateLimited": "GitLab is limiting requests",
+  "cacheRefreshFailed": "Couldn't refresh",
+  "cacheResumesInMinutes": "Resumes in about {minutes} min",
   "activityVerbTarget": "{verb} {target}"
 }

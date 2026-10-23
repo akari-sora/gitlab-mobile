@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "Также изменится ещё {count} файлов",
   "aiConfirmTargetNamedNotMarked": "Вы упомянули это имя в сообщении, но не выделили его обратной кавычкой (`, поэтому эта запись требует вашего подтверждения.",
   "aiPreviewDeletionMayBeDelayed": "GitLab может отложить удаление; его можно восстановить в течение срока хранения.",
+  "cacheLastUpdated": "Обновлено: {time}",
+  "cacheRefreshing": "Обновление…",
+  "cacheRateLimited": "GitLab ограничивает запросы",
+  "cacheRefreshFailed": "Не удалось обновить",
+  "cacheResumesInMinutes": "Возобновится примерно через {minutes} мин",
   "activityVerbTarget": "{verb} {target}"
 }

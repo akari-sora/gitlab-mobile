@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "Ytterligare {count} filer ändras också",
   "aiConfirmTargetNamedNotMarked": "Du nämnde det här namnet i meddelandet men markerade det inte med ett backtick (`, så den här skrivningen behöver din bekräftelse.",
   "aiPreviewDeletionMayBeDelayed": "GitLab kan fördröja borttagningen; objektet kan återställas under lagringstiden.",
+  "cacheLastUpdated": "Senast uppdaterad: {time}",
+  "cacheRefreshing": "Uppdaterar…",
+  "cacheRateLimited": "GitLab begränsar begäranden",
+  "cacheRefreshFailed": "Kan inte uppdatera",
+  "cacheResumesInMinutes": "Återupptas om ca {minutes} min",
   "activityVerbTarget": "{verb} {target}"
 }

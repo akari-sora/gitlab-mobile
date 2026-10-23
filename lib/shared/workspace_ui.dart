@@ -84,6 +84,10 @@ final class RouteExit {
 String relativeDate(String value) {
   final parsed = DateTime.tryParse(value);
   if (parsed == null) return '';
+  return relativeTime(parsed);
+}
+
+String relativeTime(DateTime parsed) {
   final diff = DateTime.now().difference(parsed);
   if (diff.inMinutes < 1) return l10n.justNow;
   if (diff.inHours < 1) return l10n.minutesAgo(diff.inMinutes);

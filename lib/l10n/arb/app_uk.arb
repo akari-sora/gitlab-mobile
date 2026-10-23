@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "Також зміниться ще {count} файлів",
   "aiConfirmTargetNamedNotMarked": "Ви згадували це ім'я в повідомленні, але не позначили його зворотним апострофом (`, тому ця дія потребує підтвердження.",
   "aiPreviewDeletionMayBeDelayed": "GitLab може відкласти видалення; його можна відновити протягом терміну зберігання.",
+  "cacheLastUpdated": "Оновлено: {time}",
+  "cacheRefreshing": "Оновлення…",
+  "cacheRateLimited": "GitLab обмежує запити",
+  "cacheRefreshFailed": "Не вдалося оновити",
+  "cacheResumesInMinutes": "Відновиться приблизно за {minutes} хв",
   "activityVerbTarget": "{verb} {target}"
 }

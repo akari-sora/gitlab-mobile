@@ -2709,5 +2709,10 @@
   "aiPreviewMoreFiles": "{count} dosya daha değişecek",
   "aiConfirmTargetNamedNotMarked": "Bu ismi mesajda andın ama ters tik (`) ile işaretlemedin, bu yüzden bu yazma işlemini onaylaman gerekiyor.",
   "aiPreviewDeletionMayBeDelayed": "GitLab silmeyi erteleyebilir; öğe saklama süresi içinde geri getirilebilir.",
+  "cacheLastUpdated": "Son güncelleme: {time}",
+  "cacheRefreshing": "Yenileniyor…",
+  "cacheRateLimited": "GitLab istekleri sınırlıyor",
+  "cacheRefreshFailed": "Yenilenemedi",
+  "cacheResumesInMinutes": "Yaklaşık {minutes} dk. sonra devam eder",
   "activityVerbTarget": "{verb} ({target})"
 }
