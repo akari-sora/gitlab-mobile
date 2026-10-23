@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "البيئة",
   "aiPreviewStoredVariables": "قد تعيد إعادة التشغيل أو التشغيل اليدوي استخدام متغيرات وقيم إدخال محفوظة على GitLab؛ وخط الأنابيب الذي يبدأه جدول يستخدم أيضًا المتغيرات الحالية للجدول. لا يستطيع التطبيق قراءتها ولا التحقق منها.",
   "aiPreviewScheduleVariables": "المتغيرات الحالية للجدول: {names}",
-  "aiPreviewScheduleUnreadable": "تعذّرت قراءة معلمات الجدول، لذا لا يمكن التحقق منها.",
+  "aiPreviewScheduleUnreadable": "لا يمكن قراءة معلمات الجدول، لذا لا يمكن التحقق منها. سيستخدم التشغيل المعلمات الموجودة على GitLab في ذلك الوقت، وقد تكون تغيرت منذ اقتراح هذا الإجراء.",
   "aiPreviewNewVariables": "يعمل بمتغيرات جديدة: {names}",
   "aiPreviewDraftCount": "المسودات",
   "aiPreviewDraftSplit": "المجموع {total}، منها {ours} أُنشئت في هذه المحادثة",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "اسم الوسم",
   "aiFieldPreviousPath": "المسار السابق",
   "aiFieldVariables": "المتغيرات",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "تم الدمج",
+  "aiWriteAutoMergeScheduled": "تمت جدولة الدمج التلقائي",
+  "aiWriteMergeAccepted": "قبل GitLab الدمج؛ راجع أحدث حالة له",
+  "aiWriteDeletionScheduled": "تمت جدولة الحذف",
+  "aiPreviewParent": "ينتمي إلى",
+  "aiPreviewMoreFiles": "سيتغير {count} ملفات أخرى أيضًا"
 }

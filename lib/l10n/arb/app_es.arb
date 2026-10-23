@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Entorno",
   "aiPreviewStoredVariables": "Reejecutar o iniciar puede reutilizar variables y entradas guardadas en GitLab; un pipeline iniciado por una programación también usa las variables actuales de esa programación. La app no puede leerlas ni comprobarlas.",
   "aiPreviewScheduleVariables": "Variables actuales de la programación: {names}",
-  "aiPreviewScheduleUnreadable": "No se pueden leer los parámetros de la programación, así que no se pueden comprobar.",
+  "aiPreviewScheduleUnreadable": "No se pueden leer los parámetros de la programación, así que no se pueden comprobar. La ejecución usará los parámetros que haya en GitLab en ese momento, que pueden haber cambiado desde esta propuesta.",
   "aiPreviewNewVariables": "Se ejecuta con variables nuevas: {names}",
   "aiPreviewDraftCount": "Borradores",
   "aiPreviewDraftSplit": "{total} en total, {ours} creados en esta conversación",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Nombre del tag",
   "aiFieldPreviousPath": "Ruta anterior",
   "aiFieldVariables": "Variables del pipeline",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Fusionada",
+  "aiWriteAutoMergeScheduled": "Fusión automática programada",
+  "aiWriteMergeAccepted": "GitLab aceptó la fusión; revisa su estado más reciente",
+  "aiWriteDeletionScheduled": "Eliminación programada",
+  "aiPreviewParent": "Pertenece a",
+  "aiPreviewMoreFiles": "También cambian {count} archivos más"
 }

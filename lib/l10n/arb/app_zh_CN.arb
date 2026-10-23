@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "环境",
   "aiPreviewStoredVariables": "重新运行或手动启动可能沿用 GitLab 上已存的变量和输入值；由计划任务创建的 Pipeline 还会使用该计划当前的变量。应用无法读取，也无法核对。",
   "aiPreviewScheduleVariables": "计划当前的变量：{names}",
-  "aiPreviewScheduleUnreadable": "读取不到计划的参数，无法核对。",
+  "aiPreviewScheduleUnreadable": "读不到计划的参数，无法核对；运行时会使用 GitLab 上当时的参数，无法确认提议之后有没有改过。",
   "aiPreviewNewVariables": "将带入新的变量：{names}",
   "aiPreviewDraftCount": "草稿",
   "aiPreviewDraftSplit": "共 {total} 条，其中 {ours} 条是这段对话创建的",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "标签版本名称",
   "aiFieldPreviousPath": "原来的路径",
   "aiFieldVariables": "变量",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "已合并",
+  "aiWriteAutoMergeScheduled": "已计划自动合并",
+  "aiWriteMergeAccepted": "GitLab 已接受合并，请查看最新状态",
+  "aiWriteDeletionScheduled": "已计划删除",
+  "aiPreviewParent": "所属",
+  "aiPreviewMoreFiles": "另外还有 {count} 个文件会变更"
 }

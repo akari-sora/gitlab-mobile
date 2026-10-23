@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Umgebung",
   "aiPreviewStoredVariables": "Ein erneuter Lauf oder Start kann auf GitLab gespeicherte Variablen und Eingaben wiederverwenden; eine durch einen Zeitplan gestartete Pipeline nutzt zudem die aktuellen Variablen des Zeitplans. Die App kann sie weder lesen noch prüfen.",
   "aiPreviewScheduleVariables": "Aktuelle Variablen des Zeitplans: {names}",
-  "aiPreviewScheduleUnreadable": "Die Parameter des Zeitplans können nicht gelesen und daher nicht geprüft werden.",
+  "aiPreviewScheduleUnreadable": "Die Parameter des Zeitplans können nicht gelesen und daher nicht geprüft werden. Der Lauf verwendet die Parameter, die zu diesem Zeitpunkt auf GitLab stehen; sie können sich seit diesem Vorschlag geändert haben.",
   "aiPreviewNewVariables": "Läuft mit neuen Variablen: {names}",
   "aiPreviewDraftCount": "Entwürfe",
   "aiPreviewDraftSplit": "Insgesamt {total}, davon {ours} in dieser Unterhaltung erstellt",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Tag-Name",
   "aiFieldPreviousPath": "Vorheriger Pfad",
   "aiFieldVariables": "Variablen",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Gemergt",
+  "aiWriteAutoMergeScheduled": "Automatisches Mergen geplant",
+  "aiWriteMergeAccepted": "GitLab hat den Merge angenommen; prüfen Sie den aktuellen Stand",
+  "aiWriteDeletionScheduled": "Löschen ist geplant",
+  "aiPreviewParent": "Gehört zu",
+  "aiPreviewMoreFiles": "{count} weitere Dateien ändern sich ebenfalls"
 }

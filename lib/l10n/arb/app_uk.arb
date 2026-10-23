@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Середовище",
   "aiPreviewStoredVariables": "Повторний або ручний запуск може використати змінні та вхідні значення, збережені на GitLab; конвеєр, запущений за розкладом, також бере поточні змінні розкладу. Застосунок не може їх прочитати й перевірити.",
   "aiPreviewScheduleVariables": "Поточні змінні розкладу: {names}",
-  "aiPreviewScheduleUnreadable": "Параметри розкладу не вдалося прочитати, тому їх не можна перевірити.",
+  "aiPreviewScheduleUnreadable": "Параметри розкладу не вдається прочитати, тому їх не можна перевірити. Під час запуску буде використано параметри, які на той момент будуть на GitLab; вони могли змінитися після цієї пропозиції.",
   "aiPreviewNewVariables": "Запуск із новими змінними: {names}",
   "aiPreviewDraftCount": "Чернетки",
   "aiPreviewDraftSplit": "Усього {total}, з них створено в цій розмові: {ours}",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Назва тегу",
   "aiFieldPreviousPath": "Попередній шлях",
   "aiFieldVariables": "Змінні",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Злито",
+  "aiWriteAutoMergeScheduled": "Автозлиття заплановано",
+  "aiWriteMergeAccepted": "GitLab прийняв злиття; перевірте його актуальний стан",
+  "aiWriteDeletionScheduled": "Видалення заплановано",
+  "aiPreviewParent": "Належить до",
+  "aiPreviewMoreFiles": "Також зміниться ще {count} файлів"
 }

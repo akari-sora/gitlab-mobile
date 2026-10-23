@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Ambiente",
   "aiPreviewStoredVariables": "Executar de novo ou iniciar pode reutilizar variáveis e entradas salvas no GitLab; um pipeline iniciado por um agendamento também usa as variáveis atuais do agendamento. O app não consegue lê-las nem conferi-las.",
   "aiPreviewScheduleVariables": "Variáveis atuais do agendamento: {names}",
-  "aiPreviewScheduleUnreadable": "Não é possível ler os parâmetros do agendamento, portanto não dá para conferi-los.",
+  "aiPreviewScheduleUnreadable": "Não é possível ler os parâmetros do agendamento, então não dá para conferi-los. A execução usa os parâmetros que estiverem no GitLab naquele momento, que podem ter mudado desde esta proposta.",
   "aiPreviewNewVariables": "Executa com novas variáveis: {names}",
   "aiPreviewDraftCount": "Rascunhos",
   "aiPreviewDraftSplit": "{total} no total, {ours} criados nesta conversa",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Nome da tag",
   "aiFieldPreviousPath": "Caminho anterior",
   "aiFieldVariables": "Variáveis",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Merge feito",
+  "aiWriteAutoMergeScheduled": "Merge automático agendado",
+  "aiWriteMergeAccepted": "O GitLab aceitou o merge; confira o estado mais recente",
+  "aiWriteDeletionScheduled": "Exclusão agendada",
+  "aiPreviewParent": "Pertence a",
+  "aiPreviewMoreFiles": "Mais {count} arquivos também serão alterados"
 }

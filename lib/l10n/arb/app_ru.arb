@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Окружение",
   "aiPreviewStoredVariables": "Повторный или ручной запуск может использовать переменные и входные значения, сохранённые на GitLab; пайплайн, запущенный по расписанию, также берёт текущие переменные расписания. Приложение не может их прочитать и проверить.",
   "aiPreviewScheduleVariables": "Текущие переменные расписания: {names}",
-  "aiPreviewScheduleUnreadable": "Параметры расписания не удалось прочитать, поэтому их нельзя проверить.",
+  "aiPreviewScheduleUnreadable": "Параметры расписания не удаётся прочитать, поэтому их нельзя проверить. При запуске будут использованы параметры, которые окажутся на GitLab в тот момент; они могли измениться после этого предложения.",
   "aiPreviewNewVariables": "Запуск с новыми переменными: {names}",
   "aiPreviewDraftCount": "Черновики",
   "aiPreviewDraftSplit": "Всего {total}, из них создано в этом диалоге: {ours}",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Имя тега",
   "aiFieldPreviousPath": "Прежний путь",
   "aiFieldVariables": "Переменные",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Слито",
+  "aiWriteAutoMergeScheduled": "Автослияние запланировано",
+  "aiWriteMergeAccepted": "GitLab принял слияние; проверьте его актуальное состояние",
+  "aiWriteDeletionScheduled": "Удаление запланировано",
+  "aiPreviewParent": "Относится к",
+  "aiPreviewMoreFiles": "Также изменится ещё {count} файлов"
 }

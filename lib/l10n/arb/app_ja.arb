@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "環境",
   "aiPreviewStoredVariables": "再実行や手動開始では、GitLab に保存されている変数や入力値が再利用される場合があります。スケジュールで開始されたパイプラインは、スケジュールの現在の変数も使います。アプリはそれらを読み取れず、確認もできません。",
   "aiPreviewScheduleVariables": "スケジュールの現在の変数：{names}",
-  "aiPreviewScheduleUnreadable": "スケジュールのパラメーターを読み取れないため、確認できません。",
+  "aiPreviewScheduleUnreadable": "スケジュールのパラメーターを読み取れないため、確認できません。実行時には、その時点で GitLab にあるパラメーターが使われ、この提案の後に変更されている可能性があります。",
   "aiPreviewNewVariables": "新しい変数を付けて実行：{names}",
   "aiPreviewDraftCount": "下書き",
   "aiPreviewDraftSplit": "合計 {total} 件、うち {ours} 件はこの会話で作成",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "タグ名",
   "aiFieldPreviousPath": "変更前のパス",
   "aiFieldVariables": "変数",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "マージ済み",
+  "aiWriteAutoMergeScheduled": "自動マージを予約しました",
+  "aiWriteMergeAccepted": "GitLab はマージを受け付けました。最新の状態を確認してください",
+  "aiWriteDeletionScheduled": "削除を予約しました",
+  "aiPreviewParent": "所属",
+  "aiPreviewMoreFiles": "ほかに {count} 個のファイルも変更されます"
 }

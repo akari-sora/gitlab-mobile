@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Persekitaran",
   "aiPreviewStoredVariables": "Menjalankan semula atau memainkan job mungkin menggunakan semula pemboleh ubah dan input yang disimpan di GitLab; pipeline yang dimulakan oleh jadual turut menggunakan pemboleh ubah semasa jadual itu. Aplikasi tidak dapat membaca atau menyemaknya.",
   "aiPreviewScheduleVariables": "Pemboleh ubah semasa jadual: {names}",
-  "aiPreviewScheduleUnreadable": "Parameter jadual tidak dapat dibaca, jadi tidak dapat disemak.",
+  "aiPreviewScheduleUnreadable": "Parameter jadual tidak dapat dibaca, jadi tidak dapat disemak. Larian menggunakan parameter di GitLab pada ketika itu, yang mungkin telah berubah sejak cadangan ini dibuat.",
   "aiPreviewNewVariables": "Dijalankan dengan pemboleh ubah baharu: {names}",
   "aiPreviewDraftCount": "Draf",
   "aiPreviewDraftSplit": "Jumlah {total}, {ours} dicipta dalam perbualan ini",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Nama tag",
   "aiFieldPreviousPath": "Laluan sebelumnya",
   "aiFieldVariables": "Pemboleh ubah",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Telah digabungkan",
+  "aiWriteAutoMergeScheduled": "Gabungan automatik telah dijadualkan",
+  "aiWriteMergeAccepted": "GitLab menerima penggabungan; semak keadaan terkininya",
+  "aiWriteDeletionScheduled": "Pemadaman telah dijadualkan",
+  "aiPreviewParent": "Milik",
+  "aiPreviewMoreFiles": "{count} fail lagi turut berubah"
 }

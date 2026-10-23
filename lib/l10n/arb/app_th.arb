@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "สภาพแวดล้อม",
   "aiPreviewStoredVariables": "การรันซ้ำหรือสั่งรันเองอาจใช้ตัวแปรและค่าอินพุตที่เก็บไว้บน GitLab ซ้ำ ส่วนไพพ์ไลน์ที่เริ่มจากตารางเวลาจะใช้ตัวแปรปัจจุบันของตารางเวลาด้วย แอปอ่านหรือตรวจสอบสิ่งเหล่านี้ไม่ได้",
   "aiPreviewScheduleVariables": "ตัวแปรปัจจุบันของตารางเวลา: {names}",
-  "aiPreviewScheduleUnreadable": "อ่านพารามิเตอร์ของตารางเวลาไม่ได้ จึงตรวจสอบไม่ได้",
+  "aiPreviewScheduleUnreadable": "อ่านพารามิเตอร์ของตารางเวลาไม่ได้ จึงตรวจสอบไม่ได้ เมื่อรันจะใช้พารามิเตอร์ที่อยู่บน GitLab ในขณะนั้น ซึ่งอาจเปลี่ยนไปแล้วหลังมีข้อเสนอนี้",
   "aiPreviewNewVariables": "รันด้วยตัวแปรใหม่: {names}",
   "aiPreviewDraftCount": "ฉบับร่าง",
   "aiPreviewDraftSplit": "ทั้งหมด {total} รายการ ในนี้ {ours} รายการสร้างในการสนทนานี้",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "ชื่อแท็ก",
   "aiFieldPreviousPath": "พาธเดิม",
   "aiFieldVariables": "ตัวแปร",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "รวมแล้ว",
+  "aiWriteAutoMergeScheduled": "ตั้งเวลารวมอัตโนมัติแล้ว",
+  "aiWriteMergeAccepted": "GitLab รับการรวมแล้ว โปรดตรวจสอบสถานะล่าสุด",
+  "aiWriteDeletionScheduled": "ตั้งเวลาลบแล้ว",
+  "aiPreviewParent": "เป็นของ",
+  "aiPreviewMoreFiles": "ยังมีไฟล์อีก {count} ไฟล์ที่จะเปลี่ยนด้วย"
 }

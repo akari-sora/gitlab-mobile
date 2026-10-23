@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "एनवायरनमेंट",
   "aiPreviewStoredVariables": "फिर से चलाने या मैन्युअल रूप से चलाने पर GitLab पर सहेजे गए चर और इनपुट मान दोबारा उपयोग हो सकते हैं; शेड्यूल से शुरू हुई पाइपलाइन शेड्यूल के मौजूदा चर भी उपयोग करती है। ऐप इन्हें पढ़ या जाँच नहीं सकता।",
   "aiPreviewScheduleVariables": "शेड्यूल के मौजूदा चर: {names}",
-  "aiPreviewScheduleUnreadable": "शेड्यूल के पैरामीटर पढ़े नहीं जा सके, इसलिए उन्हें जाँचा नहीं जा सकता।",
+  "aiPreviewScheduleUnreadable": "शेड्यूल के पैरामीटर पढ़े नहीं जा सकते, इसलिए उनकी जाँच नहीं हो सकती। चलने के समय GitLab पर जो पैरामीटर होंगे वही उपयोग होंगे, और प्रस्ताव के बाद वे बदले हो सकते हैं।",
   "aiPreviewNewVariables": "नए चर के साथ चलेगा: {names}",
   "aiPreviewDraftCount": "मसौदे",
   "aiPreviewDraftSplit": "कुल {total}, जिनमें से {ours} इस बातचीत में बनाए गए",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "टैग का नाम",
   "aiFieldPreviousPath": "पिछला पाथ",
   "aiFieldVariables": "चर",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "मर्ज हो गया",
+  "aiWriteAutoMergeScheduled": "ऑटो-मर्ज शेड्यूल किया गया",
+  "aiWriteMergeAccepted": "GitLab ने मर्ज स्वीकार कर लिया; इसकी ताज़ा स्थिति देखें",
+  "aiWriteDeletionScheduled": "हटाना शेड्यूल किया गया",
+  "aiPreviewParent": "इससे जुड़ा है",
+  "aiPreviewMoreFiles": "{count} और फ़ाइलें भी बदलेंगी"
 }

@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Środowisko",
   "aiPreviewStoredVariables": "Ponowne uruchomienie lub odtworzenie może użyć zmiennych i danych wejściowych zapisanych na GitLab; pipeline uruchomiony z harmonogramu używa też bieżących zmiennych harmonogramu. Aplikacja nie może ich odczytać ani sprawdzić.",
   "aiPreviewScheduleVariables": "Bieżące zmienne harmonogramu: {names}",
-  "aiPreviewScheduleUnreadable": "Nie można odczytać parametrów harmonogramu, więc nie da się ich sprawdzić.",
+  "aiPreviewScheduleUnreadable": "Nie można odczytać parametrów harmonogramu, więc nie można ich sprawdzić. Uruchomienie użyje parametrów, które w tym momencie będą na GitLab, a mogły się zmienić od czasu tej propozycji.",
   "aiPreviewNewVariables": "Uruchomi się z nowymi zmiennymi: {names}",
   "aiPreviewDraftCount": "Szkice",
   "aiPreviewDraftSplit": "Łącznie {total}, w tym {ours} utworzonych w tej rozmowie",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Nazwa tagu",
   "aiFieldPreviousPath": "Poprzednia ścieżka",
   "aiFieldVariables": "Zmienne",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Scalono",
+  "aiWriteAutoMergeScheduled": "Zaplanowano automatyczne scalanie",
+  "aiWriteMergeAccepted": "GitLab przyjął scalanie; sprawdź jego najnowszy stan",
+  "aiWriteDeletionScheduled": "Zaplanowano usunięcie",
+  "aiPreviewParent": "Należy do",
+  "aiPreviewMoreFiles": "Zmieni się też {count} innych plików"
 }

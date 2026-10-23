@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Environnement",
   "aiPreviewStoredVariables": "Une nouvelle exécution ou un lancement peut réutiliser des variables et des entrées stockées sur GitLab ; un pipeline lancé par une planification utilise aussi les variables actuelles de la planification. L'application ne peut ni les lire ni les vérifier.",
   "aiPreviewScheduleVariables": "Variables actuelles de la planification : {names}",
-  "aiPreviewScheduleUnreadable": "Les paramètres de la planification sont illisibles et ne peuvent donc pas être vérifiés.",
+  "aiPreviewScheduleUnreadable": "Les paramètres de la planification sont illisibles et ne peuvent donc pas être vérifiés. L'exécution utilise les paramètres présents sur GitLab à ce moment-là, qui ont pu changer depuis cette proposition.",
   "aiPreviewNewVariables": "S'exécute avec de nouvelles variables : {names}",
   "aiPreviewDraftCount": "Brouillons",
   "aiPreviewDraftSplit": "{total} au total, dont {ours} créés dans cette conversation",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Nom du tag",
   "aiFieldPreviousPath": "Chemin précédent",
   "aiFieldVariables": "Variables du pipeline",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Fusionnée",
+  "aiWriteAutoMergeScheduled": "Fusion automatique planifiée",
+  "aiWriteMergeAccepted": "GitLab a accepté la fusion ; vérifiez son état le plus récent",
+  "aiWriteDeletionScheduled": "Suppression planifiée",
+  "aiPreviewParent": "Appartient à",
+  "aiPreviewMoreFiles": "{count} autres fichiers changent aussi"
 }

@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Ambiente",
   "aiPreviewStoredVariables": "Una nuova esecuzione o un avvio può riusare variabili e input salvati su GitLab; una pipeline avviata da una pianificazione usa anche le variabili attuali della pianificazione. L'app non può leggerli né verificarli.",
   "aiPreviewScheduleVariables": "Variabili attuali della pianificazione: {names}",
-  "aiPreviewScheduleUnreadable": "I parametri della pianificazione non sono leggibili, quindi non possono essere verificati.",
+  "aiPreviewScheduleUnreadable": "I parametri della pianificazione non possono essere letti, quindi non si possono verificare. L'esecuzione userà i parametri presenti su GitLab in quel momento, che potrebbero essere cambiati dopo questa proposta.",
   "aiPreviewNewVariables": "Viene eseguita con nuove variabili: {names}",
   "aiPreviewDraftCount": "Bozze",
   "aiPreviewDraftSplit": "{total} in totale, {ours} create in questa conversazione",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Nome del tag",
   "aiFieldPreviousPath": "Percorso precedente",
   "aiFieldVariables": "Variabili",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Unita",
+  "aiWriteAutoMergeScheduled": "Unione automatica pianificata",
+  "aiWriteMergeAccepted": "GitLab ha accettato l'unione; controlla il suo stato più recente",
+  "aiWriteDeletionScheduled": "Eliminazione pianificata",
+  "aiPreviewParent": "Appartiene a",
+  "aiPreviewMoreFiles": "Cambiano anche altri {count} file"
 }

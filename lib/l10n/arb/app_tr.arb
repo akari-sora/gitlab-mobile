@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Ortam",
   "aiPreviewStoredVariables": "Yeniden çalıştırma veya başlatma, GitLab'da kayıtlı değişkenleri ve girdileri yeniden kullanabilir; bir zamanlama tarafından başlatılan pipeline ayrıca zamanlamanın güncel değişkenlerini kullanır. Uygulama bunları okuyamaz ve denetleyemez.",
   "aiPreviewScheduleVariables": "Zamanlamanın güncel değişkenleri: {names}",
-  "aiPreviewScheduleUnreadable": "Zamanlamanın parametreleri okunamıyor, bu yüzden denetlenemiyor.",
+  "aiPreviewScheduleUnreadable": "Zamanlamanın parametreleri okunamıyor, bu yüzden denetlenemiyor. Çalıştırma, o anda GitLab'da bulunan parametreleri kullanır; bunlar bu öneriden sonra değişmiş olabilir.",
   "aiPreviewNewVariables": "Yeni değişkenlerle çalışır: {names}",
   "aiPreviewDraftCount": "Taslaklar",
   "aiPreviewDraftSplit": "Toplam {total}, bunların {ours} tanesi bu konuşmada oluşturuldu",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Etiket adı",
   "aiFieldPreviousPath": "Önceki yol",
   "aiFieldVariables": "Değişkenler",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Birleştirildi",
+  "aiWriteAutoMergeScheduled": "Otomatik birleştirme zamanlandı",
+  "aiWriteMergeAccepted": "GitLab birleştirmeyi kabul etti; en son durumunu kontrol edin",
+  "aiWriteDeletionScheduled": "Silme zamanlandı",
+  "aiPreviewParent": "Ait olduğu öğe",
+  "aiPreviewMoreFiles": "{count} dosya daha değişecek"
 }

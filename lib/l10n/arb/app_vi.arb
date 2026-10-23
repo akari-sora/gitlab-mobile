@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Môi trường",
   "aiPreviewStoredVariables": "Chạy lại hoặc kích hoạt có thể dùng lại biến và giá trị đầu vào đã lưu trên GitLab; pipeline do lịch tạo ra còn dùng các biến hiện tại của lịch. Ứng dụng không thể đọc hay đối chiếu chúng.",
   "aiPreviewScheduleVariables": "Các biến hiện tại của lịch: {names}",
-  "aiPreviewScheduleUnreadable": "Không đọc được tham số của lịch nên không thể đối chiếu.",
+  "aiPreviewScheduleUnreadable": "Không đọc được tham số của lịch nên không thể đối chiếu. Lần chạy sẽ dùng tham số có trên GitLab vào lúc đó, có thể đã thay đổi kể từ khi đề xuất này được đưa ra.",
   "aiPreviewNewVariables": "Chạy với biến mới: {names}",
   "aiPreviewDraftCount": "Bản nháp",
   "aiPreviewDraftSplit": "Tổng cộng {total}, trong đó {ours} do cuộc trò chuyện này tạo",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Tên tag",
   "aiFieldPreviousPath": "Đường dẫn trước đây",
   "aiFieldVariables": "Biến",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Đã gộp",
+  "aiWriteAutoMergeScheduled": "Đã lên lịch tự động gộp",
+  "aiWriteMergeAccepted": "GitLab đã chấp nhận việc gộp; hãy kiểm tra trạng thái mới nhất",
+  "aiWriteDeletionScheduled": "Đã lên lịch xóa",
+  "aiPreviewParent": "Thuộc về",
+  "aiPreviewMoreFiles": "{count} tệp khác cũng sẽ thay đổi"
 }

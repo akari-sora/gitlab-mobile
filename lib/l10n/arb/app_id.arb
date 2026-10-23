@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Lingkungan",
   "aiPreviewStoredVariables": "Menjalankan ulang atau memutar job dapat memakai ulang variabel dan input yang tersimpan di GitLab; pipeline yang dimulai oleh jadwal juga memakai variabel jadwal saat ini. Aplikasi tidak dapat membaca atau memeriksanya.",
   "aiPreviewScheduleVariables": "Variabel jadwal saat ini: {names}",
-  "aiPreviewScheduleUnreadable": "Parameter jadwal tidak dapat dibaca sehingga tidak dapat diperiksa.",
+  "aiPreviewScheduleUnreadable": "Parameter jadwal tidak dapat dibaca sehingga tidak dapat diperiksa. Eksekusi memakai parameter di GitLab pada saat itu, yang mungkin sudah berubah sejak usulan ini dibuat.",
   "aiPreviewNewVariables": "Berjalan dengan variabel baru: {names}",
   "aiPreviewDraftCount": "Draf",
   "aiPreviewDraftSplit": "Total {total}, {ours} dibuat dalam percakapan ini",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Nama tag",
   "aiFieldPreviousPath": "Path sebelumnya",
   "aiFieldVariables": "Variabel",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Sudah digabungkan",
+  "aiWriteAutoMergeScheduled": "Penggabungan otomatis dijadwalkan",
+  "aiWriteMergeAccepted": "GitLab menerima penggabungan; periksa status terbarunya",
+  "aiWriteDeletionScheduled": "Penghapusan dijadwalkan",
+  "aiPreviewParent": "Milik",
+  "aiPreviewMoreFiles": "{count} berkas lain juga akan berubah"
 }

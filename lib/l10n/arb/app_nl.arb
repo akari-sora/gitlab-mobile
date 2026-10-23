@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Omgeving",
   "aiPreviewStoredVariables": "Opnieuw uitvoeren of starten kan op GitLab opgeslagen variabelen en invoer hergebruiken; een pipeline die door een schema is gestart gebruikt ook de huidige variabelen van het schema. De app kan ze niet lezen of controleren.",
   "aiPreviewScheduleVariables": "Huidige variabelen van het schema: {names}",
-  "aiPreviewScheduleUnreadable": "De parameters van het schema kunnen niet worden gelezen en dus niet worden gecontroleerd.",
+  "aiPreviewScheduleUnreadable": "De parameters van het schema kunnen niet worden gelezen en dus ook niet worden gecontroleerd. De run gebruikt de parameters die op dat moment op GitLab staan; die kunnen sinds dit voorstel zijn gewijzigd.",
   "aiPreviewNewVariables": "Draait met nieuwe variabelen: {names}",
   "aiPreviewDraftCount": "Concepten",
   "aiPreviewDraftSplit": "{total} in totaal, {ours} gemaakt in dit gesprek",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Tagnaam",
   "aiFieldPreviousPath": "Vorig pad",
   "aiFieldVariables": "Variabelen",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Samengevoegd",
+  "aiWriteAutoMergeScheduled": "Automatisch samenvoegen ingepland",
+  "aiWriteMergeAccepted": "GitLab heeft het samenvoegen geaccepteerd; controleer de nieuwste status",
+  "aiWriteDeletionScheduled": "Verwijdering ingepland",
+  "aiPreviewParent": "Hoort bij",
+  "aiPreviewMoreFiles": "Nog {count} bestanden wijzigen ook"
 }

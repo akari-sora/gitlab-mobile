@@ -2621,7 +2621,7 @@
   "aiPreviewEnvironment": "Mediu",
   "aiPreviewStoredVariables": "O rulare repetată sau pornirea manuală poate refolosi variabile și intrări stocate pe GitLab; un pipeline pornit de un program folosește și variabilele curente ale programului. Aplicația nu le poate citi și nici verifica.",
   "aiPreviewScheduleVariables": "Variabilele curente ale programului: {names}",
-  "aiPreviewScheduleUnreadable": "Parametrii programului nu pot fi citiți, deci nu pot fi verificați.",
+  "aiPreviewScheduleUnreadable": "Parametrii programului nu pot fi citiți, deci nu pot fi verificați. Rularea folosește parametrii din GitLab din acel moment, care ar fi putut să se schimbe de la această propunere.",
   "aiPreviewNewVariables": "Rulează cu variabile noi: {names}",
   "aiPreviewDraftCount": "Ciorne",
   "aiPreviewDraftSplit": "{total} în total, din care {ours} create în această conversație",
@@ -2701,10 +2701,10 @@
   "aiFieldTagName": "Nume tag",
   "aiFieldPreviousPath": "Cale anterioară",
   "aiFieldVariables": "Variabile",
-  "aiWriteMerged": "Merged",
-  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
-  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
-  "aiWriteDeletionScheduled": "Scheduled for deletion",
-  "aiPreviewParent": "Belongs to",
-  "aiPreviewMoreFiles": "{count} more files change too"
+  "aiWriteMerged": "Îmbinat",
+  "aiWriteAutoMergeScheduled": "Merge automat programat",
+  "aiWriteMergeAccepted": "GitLab a acceptat merge-ul; verifică starea lui cea mai recentă",
+  "aiWriteDeletionScheduled": "Ștergere programată",
+  "aiPreviewParent": "Aparține de",
+  "aiPreviewMoreFiles": "Se mai modifică și alte {count} fișiere"
 }
