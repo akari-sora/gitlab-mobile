@@ -1,4 +1,5 @@
 import '../l10n/l10n.dart';
+import 'read_cache_disk_contract.dart';
 
 /// A [FormatException] whose message is written for the user (and already in
 /// their language), unlike a parser's technical message. Callers may show it
@@ -9,7 +10,7 @@ final class InputFormatException extends FormatException {
 enum FailureKind {
   unauthenticated, forbidden, invisible, rateLimited, network,
   server, tooLarge, attachmentTooLarge, unsupported, redirectBlocked, invalidResponse, cancelled,
-  validation, conflict, writeUncertain, aiHistoryCleanup,
+  validation, conflict, writeUncertain, aiHistoryCleanup, readCacheCleanup,
 }
 
 /// Shared presentation contract; provider failures keep their own semantics.
@@ -20,12 +21,17 @@ abstract interface class UserFacingFailure {
 
 /// Diagnostics contain only allowlisted status information, never request data.
 final class ApiFailure implements Exception, UserFacingFailure {
-  const ApiFailure(this.kind, {this.status, this.retryAt, String? title, String? detail})
-      : _title = title,
+  const ApiFailure(this.kind, {this.status, this.retryAt, this.cleanup, String? title, String? detail})
+      : assert(kind != FailureKind.readCacheCleanup || cleanup != null),
+        _title = title,
         _detail = detail;
+  const ApiFailure.readCacheCleanup(ReadCacheCleanupState state)
+      : this(FailureKind.readCacheCleanup, cleanup: state);
+
   final FailureKind kind;
   final int? status;
   final DateTime? retryAt;
+  final ReadCacheCleanupState? cleanup;
   final String? _title;
   final String? _detail;
 
@@ -78,6 +84,7 @@ final class ApiFailure implements Exception, UserFacingFailure {
     FailureKind.conflict => l10n.contentHasChanged,
     FailureKind.writeUncertain => l10n.actionResultUnconfirmed,
     FailureKind.aiHistoryCleanup => l10n.aiHistoryCleanupTitle,
+    FailureKind.readCacheCleanup => l10n.tryAgainLater,
   };
   @override
   String get detail => _detail ?? switch (kind) {
@@ -97,9 +104,21 @@ final class ApiFailure implements Exception, UserFacingFailure {
     FailureKind.conflict => l10n.reloadLatestThenSubmit,
     FailureKind.writeUncertain => l10n.writeInterruptedCheckList,
     FailureKind.aiHistoryCleanup => l10n.aiHistoryCleanupDetail,
+    FailureKind.readCacheCleanup => l10n.retryAction,
   };
   @override
   String toString() => 'ApiFailure(${kind.name}, status: $status)';
 }
+/// A non-fatal cleanup report kept separately from an operation's outcome.
+final class ReadCacheNotice {
+  ReadCacheNotice(this.failure)
+      : assert(failure.kind == FailureKind.readCacheCleanup),
+        assert(failure.cleanup != null);
+
+  final ApiFailure failure;
+}
+
+typedef ReadCacheNoticeSink = void Function(ReadCacheNotice notice);
+
 ApiFailure safeFailure(Object error) => error is ApiFailure
     ? error : const ApiFailure(FailureKind.invalidResponse);
