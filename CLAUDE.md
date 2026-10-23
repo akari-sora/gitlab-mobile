@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-`AGENTS.md` is the binding development contract (identity model, ambiguous 404 handling, credential and validation rules, evidence reporting). It is loaded alongside this file; nothing from it is repeated here. Read `README.md`, `docs/CI.md` and `docs/ROADMAP.md` before working. `docs/V0_2_VERIFICATION.md`, `docs/V0_3_VERIFICATION.md` and `docs/V0_5_VERIFICATION.md` are the evidence ledgers, `docs/UI_REDESIGN.md` the UX rules, and `docs/AUDIT_REPORT.md` the defect inventory (`ISSUE-H*` / `ISSUE-M*`). The audit body is the 2026-09-21 text; the 2026-09-22 status block at the top of that file lists what has since landed. Cross-check an issue against that block and `git log` before treating it as open.
+`AGENTS.md` is the binding development contract (identity model, ambiguous 404 handling, credential and validation rules, evidence reporting). It is loaded alongside this file; nothing from it is repeated here. Read `README.md`, `docs/CI.md`, `docs/ROADMAP.md` and `docs/PLAN_STATUS.md` (current plan, order and status; keep it updated in the MR that changes a status) before working. `docs/V0_2_VERIFICATION.md`, `docs/V0_3_VERIFICATION.md` and `docs/V0_5_VERIFICATION.md` are the evidence ledgers, `docs/UI_REDESIGN.md` the UX rules, and `docs/AUDIT_REPORT.md` the defect inventory (`ISSUE-H*` / `ISSUE-M*`). The audit body is the 2026-09-21 text; the 2026-09-22 status block at the top of that file lists what has since landed. Cross-check an issue against that block and `git log` before treating it as open.
 
 ## Toolchain and commands
 

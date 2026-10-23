@@ -1,5 +1,7 @@
 # Product roadmap and acceptance boundaries
 
+> The current plan, order of work and per-MR status are in [Plan and status](PLAN_STATUS.md); the detailed designs are in [`docs/plans/`](plans/).
+
 This repository imports the G0 R1 application slice, its Flutter regression tests and the native bootstrap from the September 19, 2026 handoff. CI-specific fixes and tests are subsequent commits. The full earlier 105-operation research/specification ZIP is a separate handoff artifact; it has not all been imported into this repository. Do not interpret these implementation notes as a replacement for that catalogue or a claim that all 105 APIs work.
 
 ## Current follow-up — mobile parity and performance (2026-10-02–03)
