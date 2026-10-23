@@ -26,6 +26,14 @@ extension _GraphqlSnoozePrepare on GitLabAiWritePort {
           ? await _api.pendingTodosForSnooze(maxPages: 4)
           : await _api.snoozedTodosForUnsnooze(maxPages: 4);
     } on ApiFailure catch (failure) {
+      if (const {
+        FailureKind.rateLimited,
+        FailureKind.network,
+        FailureKind.cancelled,
+        FailureKind.unsupported,
+      }.contains(failure.kind)) {
+        rethrow;
+      }
       throw AiWriteRefused(
         failure.kind == FailureKind.unauthenticated
             ? 'todoForeign'
@@ -39,7 +47,7 @@ extension _GraphqlSnoozePrepare on GitLabAiWritePort {
       throw const AiWriteRefused('todoUnsupportedTarget');
     }
     final matches = owned.items.where((item) => item['id'] == id).toList();
-    if (matches.isEmpty) throw const AiWriteRefused('todoForeign');
+    if (matches.isEmpty) throw const AiWriteRefused('todoNotFound');
     if (matches.length != 1) throw const AiWriteRefused('todoUnverifiable');
     final todo = matches.single;
     // The fixed reader has checked the exact GID, both projects and typed
@@ -172,5 +180,17 @@ DateTime _snoozeUntil(String value) {
   if (date.year != year || date.month != month || date.day != day) {
     throw const ApiFailure(FailureKind.validation);
   }
-  return parsed.toUtc();
+  final utc = parsed.toUtc();
+  final normalized = DateTime.utc(
+    utc.year,
+    utc.month,
+    utc.day,
+    utc.hour,
+    utc.minute,
+    utc.second,
+  );
+  if (!normalized.isAfter(DateTime.now())) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  return normalized;
 }

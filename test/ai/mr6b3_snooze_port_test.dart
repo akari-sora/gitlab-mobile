@@ -31,6 +31,10 @@ const _global = AiWriteScope(
 );
 final _future = DateTime.now().toUtc().add(const Duration(days: 30));
 
+// GitLab's Time scalar emits whole seconds, without a fractional part.
+String _timeScalar(DateTime time) =>
+    '${time.toUtc().toIso8601String().split('.').first}Z';
+
 Map<String, Object?> _args(String op) => {
   'todoId': op == 'snoozeTodo' ? 1 : 2,
   if (op == 'snoozeTodo') 'until': _future.toIso8601String(),
@@ -52,7 +56,7 @@ Map<String, Object?> _node(
     'MergeRequest': 'MERGEREQUEST',
     'WorkItem': 'WORKITEM',
   }[type],
-  'snoozedUntil': snoozed ? _future.toIso8601String() : null,
+  'snoozedUntil': snoozed ? _timeScalar(_future) : null,
   'project': _project(),
   'targetEntity': <String, Object?>{
     '__typename': type,
@@ -88,6 +92,10 @@ final class _Server {
       final read =
           request.method == 'GET' ||
           (query is String && query.startsWith('query '));
+      if (read) {
+        final failure = readFailure?.call(request);
+        if (failure != null) return failure;
+      }
       if (oauthReplay && read) {
         _replayNext = !_replayNext;
         if (_replayNext) return jsonResponse({}, status: 401);
@@ -167,7 +175,9 @@ final class _Server {
       final field = snooze ? 'todoSnooze' : 'todoUnSnooze';
       final todo = <String, Object?>{
         'id': variables['id'],
-        'snoozedUntil': snooze ? variables['until'] : null,
+        'snoozedUntil': snooze
+            ? _timeScalar(DateTime.parse(variables['until'] as String))
+            : null,
       };
       final payload = <String, Object?>{'todo': todo, 'errors': <String>[]};
       editAck?.call(payload);
@@ -216,6 +226,7 @@ final class _Server {
   bool cancelMutation = false;
   bool _replayNext = false;
   FutureOr<void> Function(RequestOptions)? beforeRequest;
+  ResponseBody? Function(RequestOptions)? readFailure;
   FutureOr<void> Function()? onMutation;
   void Function(Map<String, Object?>, int)? editPage;
   void Function(Map<String, Object?>)? editAck;
@@ -436,6 +447,58 @@ void main() {
   );
 
   for (final op in _operations) {
+    for (final kind in [
+      FailureKind.rateLimited,
+      FailureKind.network,
+      FailureKind.cancelled,
+      FailureKind.unsupported,
+    ]) {
+      for (final stage in [
+        if (kind != FailureKind.unsupported) 'user',
+        'ownership',
+      ]) {
+        test('$op preserves prepare $stage failure $kind', () async {
+          s.readFailure = (request) {
+            if ((stage == 'user') != request.uri.path.endsWith('/user')) {
+              return null;
+            }
+            return switch (kind) {
+              FailureKind.rateLimited => jsonResponse({}, status: 429),
+              FailureKind.unsupported => jsonResponse({
+                'errors': [
+                  {
+                    'extensions': {'code': 'undefinedField'},
+                  },
+                ],
+              }),
+              _ => throw DioException(
+                requestOptions: request,
+                type: kind == FailureKind.cancelled
+                    ? DioExceptionType.cancel
+                    : DioExceptionType.connectionError,
+              ),
+            };
+          };
+          await expectLater(
+            s.writePort.prepare(s.request(op)),
+            throwsA(
+              isA<ApiFailure>().having((error) => error.kind, 'kind', kind),
+            ),
+          );
+          harness = await _Harness.create(s);
+          final h = harness!;
+          expect(await h.propose(op), isNull);
+          final outcome = h.coordinator.outcomeFor(h.lastCall)!;
+          expect(outcome.state, AiJournalState.notExecuted);
+          expect(
+            outcome.reasonCode,
+            kind == FailureKind.cancelled ? 'preflightFailed' : kind.name,
+          );
+          expect(s.mutations, 0);
+        });
+      }
+    }
+
     test(
       '$op succeeds only on checked ack, no observation/REST/target read',
       () async {
@@ -470,7 +533,9 @@ void main() {
         expect(preview, containsPair('targetType', 'WorkItem'));
         expect(
           preview['until'],
-          op == 'snoozeTodo' ? _future.toIso8601String() : null,
+          op == 'snoozeTodo'
+              ? DateTime.parse(_timeScalar(_future)).toIso8601String()
+              : null,
         );
         final events = <String>[];
         s.onMutation = () => events.add('mutation');
@@ -607,7 +672,7 @@ void main() {
                 args: {..._args(op), if (foreign == 'missing') 'todoId': 999},
               ),
             ),
-            _refused('todoForeign'),
+            _refused(foreign == 'missing' ? 'todoNotFound' : 'todoForeign'),
             reason: foreign,
           );
         }
@@ -698,8 +763,8 @@ void main() {
               todo['id'] = 'gid://gitlab/Todo/999';
             case 'mismatch':
               todo['snoozedUntil'] = op == 'snoozeTodo'
-                  ? _future.add(const Duration(seconds: 1)).toIso8601String()
-                  : _future.toIso8601String();
+                  ? _timeScalar(_future.add(const Duration(seconds: 1)))
+                  : _timeScalar(_future);
             case 'errors':
               payload['errors'] = ['synthetic refusal'];
           }
@@ -927,7 +992,7 @@ void main() {
           s.writePort.prepare(
             s.request(op, args: {..._args(op), 'todoId': id}),
           ),
-          _refused('todoForeign'),
+          _refused('todoNotFound'),
         );
       }
     },
@@ -974,19 +1039,89 @@ void main() {
   );
 
   test(
+    'fractional-second snooze succeeds with whole-second preview digest dispatch and payload',
+    () async {
+      final whole = DateTime.parse(_timeScalar(_future));
+      final fractional = whole.add(const Duration(microseconds: 123456));
+      final fractionalArgs = {
+        'todoId': 1,
+        'until': fractional.toIso8601String(),
+      };
+      final fractionalPrepared = await s.writePort.prepare(
+        s.request('snoozeTodo', args: fractionalArgs),
+      );
+      final wholePrepared = await s.writePort.prepare(
+        s.request(
+          'snoozeTodo',
+          args: {'todoId': 1, 'until': whole.toIso8601String()},
+        ),
+      );
+      expect(fractionalPrepared.bindingDigest, wholePrepared.bindingDigest);
+      expect(
+        (fractionalPrepared.preview as port.AiFieldsPreview).fields['until'],
+        whole.toIso8601String(),
+      );
+      harness = await _Harness.create(s);
+      final h = harness!;
+      final proposal = (await h.propose('snoozeTodo', args: fractionalArgs))!;
+      expect(
+        (proposal.preview as port.AiFieldsPreview).fields['until'],
+        whole.toIso8601String(),
+      );
+      expect((await h.approve(proposal)).state, AiJournalState.succeeded);
+      final variables = (s.requests.last.data as Map)['variables'] as Map;
+      expect(variables['until'], whole.toIso8601String());
+      expect(
+        s.userReads,
+        4,
+      ); // Two direct prepares, proposal, dispatch re-read.
+      expect(s.ownershipReads, 4);
+      expect(s.mutations, 1);
+    },
+  );
+
+  test(
+    'snooze refuses a future input normalized into the past before requests',
+    () async {
+      final sampled = DateTime.now().toUtc();
+      if (sampled.millisecond >= 500) {
+        await Future<void>.delayed(
+          Duration(milliseconds: 1000 - sampled.millisecond),
+        );
+      }
+      final now = DateTime.now().toUtc();
+      final whole = DateTime.parse(_timeScalar(now));
+      final fractional = whole.add(const Duration(microseconds: 999999));
+      expect(fractional.isAfter(DateTime.now()), isTrue);
+      expect(whole.isBefore(DateTime.now()), isTrue);
+      await expectLater(
+        s.writePort.prepare(
+          s.request(
+            'snoozeTodo',
+            args: {'todoId': 1, 'until': fractional.toIso8601String()},
+          ),
+        ),
+        _validation,
+      );
+      expect(s.requests, isEmpty);
+    },
+  );
+
+  test(
     'snooze normalizes timezone offsets and compares acknowledged UTC instant',
     () async {
       final local = _future
           .add(const Duration(hours: 2))
           .toIso8601String()
           .replaceAll('Z', '+02:00');
-      s.editAck = (payload) => (payload['todo'] as Map)['snoozedUntil'] = local;
+      s.editAck = (payload) => (payload['todo'] as Map)['snoozedUntil'] =
+          _timeScalar(_future).replaceAll('Z', '+00:00');
       final p = await s.writePort.prepare(
         s.request('snoozeTodo', args: {'todoId': 1, 'until': local}),
       );
       expect(
         (p.preview as port.AiFieldsPreview).fields['until'],
-        _future.toIso8601String(),
+        DateTime.parse(_timeScalar(_future)).toIso8601String(),
       );
       expect(
         (await s.commit(p) as port.AiWriteSettled).state,
