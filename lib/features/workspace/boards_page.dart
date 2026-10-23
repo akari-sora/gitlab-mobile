@@ -209,15 +209,14 @@ class _BoardsPageState extends State<BoardsPage> {
         results[1] as List<Json>,
       );
       _feeds.clear();
-      if (fresh) {
-        _freshColumns = {for (final column in definition.columns) column.key};
-        _freshSpent = {};
-        _freshAttempts = {};
-      } else {
-        _freshColumns = {};
-        _freshSpent = {};
-        _freshAttempts = {};
-      }
+      // Every structural reload starts over. A toolbar refresh arms new intent;
+      // non-fresh reloads after board writes or board switches drop pending
+      // intent, as before.
+      _freshSpent = {};
+      _freshAttempts = {};
+      _freshColumns = fresh
+          ? {for (final column in definition.columns) column.key}
+          : <String>{};
       setState(() {
         _board = definition;
         _columnIndex = 0;
@@ -930,6 +929,7 @@ class _BoardsPageState extends State<BoardsPage> {
             ),
             const SizedBox(height: 10),
             TextField(
+              key: const ValueKey('board-search-field'),
               controller: _search,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
@@ -1008,6 +1008,9 @@ class _BoardsPageState extends State<BoardsPage> {
     final pairEntries =
         query.parameters.entries.toList()
           ..sort((a, b) => a.key.compareTo(b.key));
+    // This pair key is local to one board load: _loadBoard replaces all three
+    // intent structures together, and account/project/API changes advance the
+    // generation and reload. Board, project and account need not be in the key.
     final pairKey =
         '${column.key}\x00${pairEntries.map((e) => '${e.key}=${e.value}').join('&')}';
     return RecordsFeed(
@@ -1033,15 +1036,16 @@ class _BoardsPageState extends State<BoardsPage> {
       // started, a dropped read, or a failure keeps it. Intent is per
       // column and query, so a refresh while searching leaves the
       // unsearched query pending.
+      // Attempts deliberately share a counter per column. A newer pending
+      // query prevents an older query from spending its intent; revisiting
+      // that older query can cost an extra GET, which is safe.
       cached: ({required fresh, required background}) async {
         final pending =
             freshColumns.contains(column.key) && !freshSpent.contains(pairKey);
         final force = fresh || pending;
-        final int? attempt = pending
-            ? (freshAttempts[column.key] ?? 0) + 1
-            : null;
+        final attempt = (freshAttempts[column.key] ?? 0) + 1;
         if (pending) {
-          freshAttempts[column.key] = attempt!;
+          freshAttempts[column.key] = attempt;
         }
         final read = await widget.api.cachedRecords(
           ['projects', '${widget.project.id}', 'issues'],
@@ -1050,7 +1054,6 @@ class _BoardsPageState extends State<BoardsPage> {
           background: background,
         );
         if (pending &&
-            force &&
             read.lineage == CacheLineage.network &&
             !read.superseded &&
             !read.dropped &&
