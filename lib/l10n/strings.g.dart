@@ -8220,4 +8220,7 @@ final class AppStrings {
 
   /// GitLab 可能會延後刪除，保留期內仍可還原。
   String get aiPreviewDeletionMayBeDelayed => language._messages[2708];
+
+  /// {verb}{target}
+  String activityVerbTarget(Object? verb, Object? target) => _format(language, language._messages[2709], {'verb': verb, 'target': target});
 }

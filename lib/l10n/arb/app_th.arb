@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "เป็นของ",
   "aiPreviewMoreFiles": "ยังมีไฟล์อีก {count} ไฟล์ที่จะเปลี่ยนด้วย",
   "aiConfirmTargetNamedNotMarked": "คุณได้พูดถึงชื่อนี้ในข้อความแต่ยังไม่ได้ทำเครื่องหมายด้วยเครื่องหมาย ` (แบ็คทิก) คุณจึงต้องยืนยันการทำงานนี้",
-  "aiPreviewDeletionMayBeDelayed": "GitLab อาจเลื่อนการลบออกไป และสามารถกู้คืนได้ในช่วงระยะเวลาเก็บรักษา"
+  "aiPreviewDeletionMayBeDelayed": "GitLab อาจเลื่อนการลบออกไป และสามารถกู้คืนได้ในช่วงระยะเวลาเก็บรักษา",
+  "activityVerbTarget": "{verb} {target}"
 }

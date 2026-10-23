@@ -2711,4 +2711,5 @@ const _messagesIt = <String>[
   'Cambiano anche altri {count} file',
   'Hai menzionato questo nome nel messaggio, ma non l\'hai delimitato con un backtick (`, quindi questa scrittura richiede la tua conferma.',
   'GitLab potrebbe ritardare l\'eliminazione; l\'elemento può essere ripristinato durante il periodo di conservazione.',
+  '{verb} {target}',
 ];

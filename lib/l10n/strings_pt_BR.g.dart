@@ -2711,4 +2711,5 @@ const _messagesPtBr = <String>[
   'Mais {count} arquivos também serão alterados',
   'Você mencionou esse nome na mensagem, mas não o marcou com um backtick (`, por isso esta escrita precisa da sua confirmação.',
   'O GitLab pode atrasar a exclusão; é possível restaurá-lo durante o período de retenção.',
+  '{verb} {target}',
 ];

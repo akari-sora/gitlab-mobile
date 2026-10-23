@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "Hoort bij",
   "aiPreviewMoreFiles": "Nog {count} bestanden wijzigen ook",
   "aiConfirmTargetNamedNotMarked": "Je hebt deze naam in het bericht genoemd maar niet gemarkeerd met een backtick (`, dus deze schrijfactie vereist jouw bevestiging.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab kan de verwijdering uitstellen; tijdens de bewaartermijn kan het item worden hersteld."
+  "aiPreviewDeletionMayBeDelayed": "GitLab kan de verwijdering uitstellen; tijdens de bewaartermijn kan het item worden hersteld.",
+  "activityVerbTarget": "{verb} {target}"
 }

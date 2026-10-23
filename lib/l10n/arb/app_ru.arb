@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "Относится к",
   "aiPreviewMoreFiles": "Также изменится ещё {count} файлов",
   "aiConfirmTargetNamedNotMarked": "Вы упомянули это имя в сообщении, но не выделили его обратной кавычкой (`, поэтому эта запись требует вашего подтверждения.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab может отложить удаление; его можно восстановить в течение срока хранения."
+  "aiPreviewDeletionMayBeDelayed": "GitLab может отложить удаление; его можно восстановить в течение срока хранения.",
+  "activityVerbTarget": "{verb} {target}"
 }
