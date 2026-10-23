@@ -11438,5 +11438,16 @@
   "aiOpUpdateSnippetMetadata": "編輯 Snippet 資訊",
   "aiOpUpdateSnippetFiles": "編輯 Snippet 的檔案",
   "aiOpDeleteSnippetFile": "刪除 Snippet 的檔案",
-  "aiOpDeleteSnippet": "刪除 Snippet"
+  "aiOpDeleteSnippet": "刪除 Snippet",
+  "aiRefusedChanged": "這張卡片建立之後，GitLab 上的內容已經變了，所以沒有執行。可以請 AI 重新讀取後再提議。",
+  "aiRefusedGone": "找不到目標：它可能已被刪除，也可能是你沒有權限看到，所以沒有執行。",
+  "aiRefusedPermission": "你在 GitLab 上沒有這個操作需要的權限，所以沒有執行。",
+  "aiRefusedNotAllowed": "GitLab 目前不允許這個操作，所以沒有執行。",
+  "aiRefusedContent": "內容超出 AI 可以寫入的範圍（例如檔案太大、是二進位檔，或屬於敏感路徑），所以沒有執行。",
+  "aiRefusedUnverifiable": "需要核對的資料無法完整讀取，所以沒有執行。",
+  "aiRefusedAlreadyMerged": "這個合併請求已經合併了，所以沒有執行。",
+  "aiRefusedArchived": "專案已封存，無法變更，所以沒有執行。",
+  "aiRefusedProtectedBranch": "這是受保護的分支，AI 不能刪除或改寫它，所以沒有執行。",
+  "aiRefusedDefaultBranch": "不能刪除預設分支，所以沒有執行。",
+  "aiRefusedMergeChecking": "GitLab 還在檢查能不能合併，所以沒有執行。請稍後再試。"
 }

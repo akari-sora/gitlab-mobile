@@ -8148,4 +8148,37 @@ final class AppStrings {
 
   /// 刪除 Snippet
   String get aiOpDeleteSnippet => language._messages[2684];
+
+  /// 這張卡片建立之後，GitLab 上的內容已經變了，所以沒有執行。可以請 AI 重新讀取後再提議。
+  String get aiRefusedChanged => language._messages[2685];
+
+  /// 找不到目標：它可能已被刪除，也可能是你沒有權限看到，所以沒有執行。
+  String get aiRefusedGone => language._messages[2686];
+
+  /// 你在 GitLab 上沒有這個操作需要的權限，所以沒有執行。
+  String get aiRefusedPermission => language._messages[2687];
+
+  /// GitLab 目前不允許這個操作，所以沒有執行。
+  String get aiRefusedNotAllowed => language._messages[2688];
+
+  /// 內容超出 AI 可以寫入的範圍（例如檔案太大、是二進位檔，或屬於敏感路徑），所以沒有執行。
+  String get aiRefusedContent => language._messages[2689];
+
+  /// 需要核對的資料無法完整讀取，所以沒有執行。
+  String get aiRefusedUnverifiable => language._messages[2690];
+
+  /// 這個合併請求已經合併了，所以沒有執行。
+  String get aiRefusedAlreadyMerged => language._messages[2691];
+
+  /// 專案已封存，無法變更，所以沒有執行。
+  String get aiRefusedArchived => language._messages[2692];
+
+  /// 這是受保護的分支，AI 不能刪除或改寫它，所以沒有執行。
+  String get aiRefusedProtectedBranch => language._messages[2693];
+
+  /// 不能刪除預設分支，所以沒有執行。
+  String get aiRefusedDefaultBranch => language._messages[2694];
+
+  /// GitLab 還在檢查能不能合併，所以沒有執行。請稍後再試。
+  String get aiRefusedMergeChecking => language._messages[2695];
 }

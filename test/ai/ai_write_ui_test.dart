@@ -402,9 +402,7 @@ void main() {
     expect(find.byKey(const ValueKey('ai-proposal-closes')), findsNothing);
   });
 
-  testWidgets('a rerun card warns about stored variables once', (
-    tester,
-  ) async {
+  testWidgets('a rerun card warns about stored variables once', (tester) async {
     final proposal = _proposal(
       operationId: 'retryPipeline',
       tier: AiWriteTier.t3,
@@ -605,6 +603,79 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
     await tester.pumpAndSettle();
     expect(find.text(l10n.aiProposalTooManyRunning), findsOneWidget);
+  });
+
+  for (final (code, text) in [
+    ('alreadyMerged', () => l10n.aiRefusedAlreadyMerged),
+    ('headMoved', () => l10n.aiRefusedChanged),
+    ('refMissing', () => l10n.aiRefusedGone),
+    ('maintainerRequired', () => l10n.aiRefusedPermission),
+    ('sensitivePath', () => l10n.aiRefusedContent),
+    ('somethingNew', () => l10n.aiProposalNotRun),
+  ]) {
+    testWidgets('a write GitLab refused as $code says so', (tester) async {
+      final proposal = _proposal();
+      final writes = _Writes([proposal])
+        ..answer = (_) => AiWriteOutcome(
+          state: AiJournalState.failedCertain,
+          reasonCode: code,
+        );
+      await tester.pumpWidget(
+        _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+      await tester.pumpAndSettle();
+      expect(find.text(text()), findsOneWidget);
+    });
+  }
+
+  test('every refusal the write port names has words', () {
+    // The codes MR6b-2's families and the coordinator return.
+    for (final code in const [
+      'targetChanged',
+      'previewChanged',
+      'draftsChanged',
+      'settingsChanged',
+      'superseded',
+      'proposalInvalidated',
+      'fileExists',
+      'fileMissing',
+      'fragmentNotFound',
+      'fragmentNotUnique',
+      'fragmentsOverlap',
+      'releaseMissing',
+      'tagMissing',
+      'scheduleMissing',
+      'containerMissing',
+      'jobNotInPipeline',
+      'packageNotDeletable',
+      'projectArchived',
+      'protectedBranch',
+      'defaultBranch',
+      'autoMergeNotEnabled',
+      'mergeCheckIncomplete',
+      'mergeCheckUnsupported',
+      'autoMergeCancelError',
+      'cancelEndpointUnavailable',
+      'suggestionForeign',
+      'suggestionNotAppliable',
+      'personalNamespaceUnknown',
+      'batchTooLarge',
+      'binaryFile',
+      'fileTooLarge',
+      'invalidPath',
+      'noEditableText',
+      'pipelineVariableForbidden',
+      'pipelineVariableSecret',
+      'scheduleParamsUnreadable',
+      'conflict',
+      'validation',
+      'forbidden',
+      'invisible',
+      'unsupported',
+    ]) {
+      expect(aiRefusalText(code), isNotNull, reason: code);
+    }
   });
 
   testWidgets('an edit the checks refused can be changed again', (

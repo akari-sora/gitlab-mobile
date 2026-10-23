@@ -223,6 +223,66 @@ String aiConfirmReasonText(AiFixedConfirmReason reason) => switch (reason) {
   AiFixedConfirmReason.intentNotUnique => l10n.aiConfirmIntentNotUnique,
 };
 
+/// Why GitLab or a recheck stopped an approved write, for the card. Codes
+/// come from the write port and the coordinator; an unknown code is null so
+/// the card falls back to "not made". A missing target is ambiguous (it may
+/// be hidden from you), never "deleted".
+String? aiRefusalText(String code) => switch (code) {
+  'alreadyMerged' => l10n.aiRefusedAlreadyMerged,
+  'projectArchived' => l10n.aiRefusedArchived,
+  'protectedBranch' => l10n.aiRefusedProtectedBranch,
+  'defaultBranch' => l10n.aiRefusedDefaultBranch,
+  'mergeCheckIncomplete' => l10n.aiRefusedMergeChecking,
+  'targetChanged' ||
+  'previewChanged' ||
+  'headMoved' ||
+  'draftsChanged' ||
+  'settingsChanged' ||
+  'superseded' ||
+  'proposalInvalidated' ||
+  'fileExists' ||
+  'fragmentNotFound' ||
+  'fragmentNotUnique' ||
+  'fragmentsOverlap' ||
+  'snippetChanged' ||
+  'conflict' => l10n.aiRefusedChanged,
+  'refMissing' ||
+  'releaseMissing' ||
+  'tagMissing' ||
+  'scheduleMissing' ||
+  'containerMissing' ||
+  'fileMissing' ||
+  'jobNotInPipeline' ||
+  'invisible' => l10n.aiRefusedGone,
+  'maintainerRequired' ||
+  'packageNotDeletable' ||
+  'forbidden' => l10n.aiRefusedPermission,
+  'autoMergeNotEnabled' ||
+  'mergeCheckUnsupported' ||
+  'autoMergeCancelError' ||
+  'cancelEndpointUnavailable' ||
+  'suggestionForeign' ||
+  'suggestionNotAppliable' ||
+  'personalNamespaceUnknown' ||
+  'snippetLastFile' ||
+  'validation' ||
+  'unsupported' => l10n.aiRefusedNotAllowed,
+  'batchTooLarge' ||
+  'binaryFile' ||
+  'fileTooLarge' ||
+  'invalidPath' ||
+  'sensitivePath' ||
+  'noEditableText' ||
+  'snippetBinary' ||
+  'snippetTooLarge' ||
+  'snippetPathInvalid' ||
+  'pipelineVariableForbidden' ||
+  'pipelineVariableSecret' => l10n.aiRefusedContent,
+  'scheduleParamsUnreadable' ||
+  'snippetFilesUnreadable' => l10n.aiRefusedUnverifiable,
+  _ => null,
+};
+
 String aiTierLabel(AiWriteTier tier) => switch (tier) {
   AiWriteTier.t1 => l10n.aiTierLow,
   AiWriteTier.t2 => l10n.aiTierNormal,
@@ -356,7 +416,7 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
             when _proposal.editedText != null &&
                 widget.session.proposals.contains(_proposal) =>
           l10n.aiProposalEditRefused,
-        _ => l10n.aiProposalNotRun,
+        final code => aiRefusalText(code) ?? l10n.aiProposalNotRun,
       };
     });
   }
