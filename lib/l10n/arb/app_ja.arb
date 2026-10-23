@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "所属",
   "aiPreviewMoreFiles": "ほかに {count} 個のファイルも変更されます",
   "aiConfirmTargetNamedNotMarked": "この名前をメッセージで言及しましたが、バッククォート (`) で囲っていないため、この書き込みにはあなたの確認が必要です。",
-  "aiPreviewDeletionMayBeDelayed": "GitLab は削除を遅らせることがあります。保持期間中であれば元に戻せます。"
+  "aiPreviewDeletionMayBeDelayed": "GitLab は削除を遅らせることがあります。保持期間中であれば元に戻せます。",
+  "activityVerbTarget": "{verb}（{target}）"
 }

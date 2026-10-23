@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "Ait olduğu öğe",
   "aiPreviewMoreFiles": "{count} dosya daha değişecek",
   "aiConfirmTargetNamedNotMarked": "Bu ismi mesajda andın ama ters tik (`) ile işaretlemedin, bu yüzden bu yazma işlemini onaylaman gerekiyor.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab silmeyi erteleyebilir; öğe saklama süresi içinde geri getirilebilir."
+  "aiPreviewDeletionMayBeDelayed": "GitLab silmeyi erteleyebilir; öğe saklama süresi içinde geri getirilebilir.",
+  "activityVerbTarget": "{verb} ({target})"
 }

@@ -2708,5 +2708,6 @@
   "aiPreviewParent": "소속",
   "aiPreviewMoreFiles": "파일 {count}개도 추가로 변경됩니다",
   "aiConfirmTargetNamedNotMarked": "이 이름을 메시지에서 언급했지만 역따옴표(`)로 표시하지 않았으므로, 이 쓰기에는 확인이 필요합니다.",
-  "aiPreviewDeletionMayBeDelayed": "GitLab이 삭제를 지연할 수 있습니다. 보존 기간 동안에는 복원할 수 있습니다."
+  "aiPreviewDeletionMayBeDelayed": "GitLab이 삭제를 지연할 수 있습니다. 보존 기간 동안에는 복원할 수 있습니다.",
+  "activityVerbTarget": "{verb} ({target})"
 }

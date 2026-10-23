@@ -11467,5 +11467,12 @@
     }
   },
   "aiConfirmTargetNamedNotMarked": "你在訊息裡提到了這個名稱，但沒有用反引號（`）標出來，所以這筆寫入需要你確認。",
-  "aiPreviewDeletionMayBeDelayed": "GitLab 可能會延後刪除，保留期內仍可還原。"
+  "aiPreviewDeletionMayBeDelayed": "GitLab 可能會延後刪除，保留期內仍可還原。",
+  "activityVerbTarget": "{verb}{target}",
+  "@activityVerbTarget": {
+    "placeholders": {
+      "verb": {},
+      "target": {}
+    }
+  }
 }
