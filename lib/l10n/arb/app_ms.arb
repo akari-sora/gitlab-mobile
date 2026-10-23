@@ -2714,5 +2714,10 @@
   "cacheRateLimited": "GitLab sedang mengehadkan permintaan",
   "cacheRefreshFailed": "Tidak dapat memuat semula",
   "cacheResumesInMinutes": "Sambung semula dalam sekitar {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "Kuota permintaan GitLab hampir habis; penghantaran dijeda",
+  "aiSendPausedRateLimited": "GitLab sedang mengehadkan permintaan; penghantaran dijeda",
+  "aiSendResumesAfterReset": "Sambung semula apabila kuota permintaan ditetapkan semula",
+  "aiGitLabBudgetTitle": "Kuota permintaan GitLab hampir habis",
+  "aiGitLabBudgetDetail": "Mesej ini tidak dihantar. Hantar semula apabila butang “Hantar” tersedia semula."
 }

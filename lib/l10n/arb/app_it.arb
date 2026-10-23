@@ -2714,5 +2714,10 @@
   "cacheRateLimited": "GitLab sta limitando le richieste",
   "cacheRefreshFailed": "Impossibile aggiornare",
   "cacheResumesInMinutes": "Riprende tra circa {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "La quota di richieste GitLab è quasi esaurita; invio in pausa",
+  "aiSendPausedRateLimited": "GitLab sta limitando le richieste; invio in pausa",
+  "aiSendResumesAfterReset": "Riprende quando la quota di richieste viene ripristinata",
+  "aiGitLabBudgetTitle": "La quota di richieste GitLab è quasi esaurita",
+  "aiGitLabBudgetDetail": "Questo messaggio non è stato inviato. Invialo di nuovo quando il pulsante «Invia» sarà nuovamente disponibile."
 }

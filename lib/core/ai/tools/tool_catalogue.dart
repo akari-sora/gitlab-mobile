@@ -2,6 +2,7 @@ import '../app_text.dart';
 import 'dart:convert';
 import 'dart:math';
 
+import '../../request_meter.dart';
 import '../ai_transcript.dart';
 import '../redaction.dart';
 import '../wire/wire_format.dart';
@@ -70,6 +71,16 @@ final class AiToolBudget {
       throw RangeError.value(requests, 'requests');
     }
     _gitLabRequests -= requests;
+  }
+
+  void settleRequests({required int reserved, required int measured}) {
+    if (reserved < 0 || reserved > _gitLabRequests) {
+      throw RangeError.value(reserved, 'reserved');
+    }
+    if (measured < 0) throw RangeError.value(measured, 'measured');
+    // Physical sends remain chargeable even when a lower reservation was
+    // breached by a transport hidden behind the narrow read port.
+    _gitLabRequests += measured - reserved;
   }
 
   int availableOutput(int requested) {
@@ -253,13 +264,19 @@ final class AiToolCatalogue {
     final fallback = _live('bound project');
     var reservedRequests = 0;
     var completedRequests = 0;
+    RequestMeter? requestMeter;
     try {
       final arguments = _arguments(call);
       final requestCost = _requestCost(call.name);
-      // GitLabApi may retry each logical read once after a 401 token refresh.
-      // Reserve that worst case because the narrow port intentionally exposes
-      // logical reads rather than GitLabApi transport internals.
-      final reservedCost = requestCost * 2;
+      // GitLabApi may retry each logical read after a 401 token refresh. Its
+      // cache-backed composite reads may also repeat once after a concurrent
+      // write. Reserve both bounded transport paths before dispatch because
+      // the narrow port intentionally hides those internals.
+      final reservedCost = _reservationCost(
+        call.name,
+        requestCost: requestCost,
+        port: port,
+      );
       final budgetError = budget.reserve(
         requests: reservedCost,
         search: call.name == 'search_project',
@@ -268,20 +285,30 @@ final class AiToolCatalogue {
         return await _error(call, fallback, budgetError, budget: budget);
       }
       reservedRequests = reservedCost;
-      final raw = await _dispatch(call.name, arguments);
-      completedRequests = raw.requestCount;
-      if (completedRequests > requestCost) {
+      requestMeter = RequestMeter();
+      var raw = await requestMeter.runAsync(
+        () => _dispatch(call.name, arguments),
+      );
+      await refreshSecrets?.call();
+      if (_expired(raw.fetchedAt)) {
+        if (raw.freshnessRetried) {
+          throw const _ToolValidation('read failed');
+        }
+        raw = await requestMeter.runAsync(
+          () => _dispatch(call.name, arguments),
+        );
+        await refreshSecrets?.call();
+        if (_expired(raw.fetchedAt)) {
+          throw const _ToolValidation('read failed');
+        }
+      }
+      completedRequests = requestMeter.count;
+      if (completedRequests > reservedCost) {
         throw _ToolValidation(
           'tool exceeded its request allowance',
           requestCount: completedRequests,
         );
       }
-      final completedRequestAllowance = raw.requestCount * 2;
-      if (completedRequestAllowance < reservedCost) {
-        budget.refundRequests(reservedCost - completedRequestAllowance);
-        reservedRequests = completedRequestAllowance;
-      }
-      await refreshSecrets?.call();
       final provenance = raw.provenance;
       final cleanValue = _sanitizeJson(raw.value);
       final cleanText = raw.json
@@ -340,14 +367,10 @@ final class AiToolCatalogue {
         withheldPrivateKeyContext:
             redacted.withheldPrivateKeyContext ||
             redactedProvenance.withheldPrivateKeyContext,
-        gitLabRequests: raw.requestCount,
+        gitLabRequests: completedRequests,
       );
     } on _ToolValidation catch (error) {
-      completedRequests = completedRequests > error.requestCount
-          ? completedRequests
-          : error.requestCount;
-      final refundable = reservedRequests - (completedRequests * 2);
-      if (refundable > 0) budget.refundRequests(refundable);
+      completedRequests = requestMeter?.count ?? 0;
       return await _error(
         call,
         fallback,
@@ -356,13 +379,22 @@ final class AiToolCatalogue {
         gitLabRequests: completedRequests,
       );
     } on Object {
+      completedRequests = requestMeter?.count ?? 0;
       return await _error(
         call,
         fallback,
         'read failed',
         budget: budget,
-        gitLabRequests: reservedRequests ~/ 2,
+        gitLabRequests: completedRequests,
       );
+    } finally {
+      if (reservedRequests > 0) {
+        completedRequests = requestMeter?.count ?? 0;
+        budget.settleRequests(
+          reserved: reservedRequests,
+          measured: completedRequests,
+        );
+      }
     }
   }
 
@@ -385,6 +417,12 @@ final class AiToolCatalogue {
     'search_project' => _search(arguments),
     _ => throw const _ToolValidation('unknown tool'),
   };
+
+  bool _expired(DateTime? fetchedAt) {
+    if (fetchedAt == null) return false;
+    final age = _now().difference(fetchedAt);
+    return age.isNegative || age >= const Duration(seconds: 60);
+  }
 
   Future<_RawToolResult> _readFile(Map<String, Object?> args) async {
     _exactKeys(args, required: const {'path', 'revision'});
@@ -433,6 +471,8 @@ final class AiToolCatalogue {
       readConfidential: read.value['confidential'] == true,
       readInternal: _readInternalNote(read.value),
       restorable: _discussionFields('issues', iid),
+      fetchedAt: read.fetchedAt,
+      freshnessRetried: read.freshnessRetried,
     );
   }
 
@@ -446,6 +486,8 @@ final class AiToolCatalogue {
       requestCount: read.requestCount,
       readInternal: _readInternalNote(read.value),
       restorable: _discussionFields('merge_requests', iid),
+      fetchedAt: read.fetchedAt,
+      freshnessRetried: read.freshnessRetried,
     );
   }
 
@@ -461,7 +503,11 @@ final class AiToolCatalogue {
     final read = await _fieldPort.release(tagName);
     return _RawToolResult.json(
       _pick(read.value, const [
-        'tag_name', 'name', 'description', 'created_at', 'released_at',
+        'tag_name',
+        'name',
+        'description',
+        'created_at',
+        'released_at',
         'upcoming_release',
       ]),
       _live('release $tagName'),
@@ -483,8 +529,16 @@ final class AiToolCatalogue {
     final read = await _fieldPort.milestone(id);
     return _RawToolResult.json(
       _pick(read.value, const [
-        'id', 'iid', 'project_id', 'title', 'description', 'state',
-        'created_at', 'updated_at', 'due_date', 'start_date',
+        'id',
+        'iid',
+        'project_id',
+        'title',
+        'description',
+        'state',
+        'created_at',
+        'updated_at',
+        'due_date',
+        'start_date',
       ]),
       _live('milestone #$id'),
       requestCount: read.requestCount,
@@ -507,23 +561,36 @@ final class AiToolCatalogue {
       optional: const {'file_path', 'ref'},
     );
     final id = _positiveInt(args['snippet_id'], 'snippet_id');
-    final path = args.containsKey('file_path') ? _path(args['file_path']) : null;
+    final path = args.containsKey('file_path')
+        ? _path(args['file_path'])
+        : null;
     if (path == '') throw const _ToolValidation('invalidSnippetPath');
-    final ref = args.containsKey('ref') ? _resourceSegment(args['ref']) : 'HEAD';
+    final ref = args.containsKey('ref')
+        ? _resourceSegment(args['ref'])
+        : 'HEAD';
     final read = await _fieldPort.snippet(id, filePath: path, ref: ref);
     final file = read.value['file'];
     return _RawToolResult.json(
       {
         ..._pick(read.value, const [
-          'id', 'project_id', 'title', 'description', 'visibility',
-          'created_at', 'updated_at', 'file_name', 'files',
+          'id',
+          'project_id',
+          'title',
+          'description',
+          'visibility',
+          'created_at',
+          'updated_at',
+          'file_name',
+          'files',
           'content_unavailable',
         ]),
-        if (file is AiJson) 'file': _pick(file, const ['path', 'ref', 'content']),
+        if (file is AiJson)
+          'file': _pick(file, const ['path', 'ref', 'content']),
       },
       _live('snippet #$id'),
       requestCount: read.requestCount,
-      readConfidential: read.value['visibility'] != 'public' &&
+      readConfidential:
+          read.value['visibility'] != 'public' &&
           read.value['visibility'] != 'internal',
       readInternal: read.value['visibility'] == 'internal',
       restorable: _descriptionField(
@@ -534,13 +601,14 @@ final class AiToolCatalogue {
           snippetId: id,
         ),
       ),
+      fetchedAt: read.fetchedAt,
+      freshnessRetried: read.freshnessRetried,
     );
   }
 
   _RestorableFields _descriptionField(AiFieldProvenance Function() field) =>
-      (path, owner) => path.length == 1 && path.single == 'description'
-          ? field()
-          : null;
+      (path, owner) =>
+          path.length == 1 && path.single == 'description' ? field() : null;
 
   /// The complete values in a `_projectDiscussion` projection that a write
   /// can put back whole: the description and each note's body, keyed by the
@@ -602,6 +670,8 @@ final class AiToolCatalogue {
       _pinned('merge request !${scope.current.id} diff', _headRevision()),
       requestCount: read.requestCount,
       incomplete: read.incomplete,
+      fetchedAt: read.fetchedAt,
+      freshnessRetried: read.freshnessRetried,
     );
   }
 
@@ -650,6 +720,8 @@ final class AiToolCatalogue {
       _live('job #$jobId log'),
       requestCount: read.requestCount,
       tailLines: tailLines,
+      fetchedAt: read.fetchedAt,
+      freshnessRetried: read.freshnessRetried,
     );
   }
 
@@ -743,6 +815,8 @@ final class AiToolCatalogue {
     AiToolProvenance provenance, {
     required int requestCount,
     required bool incomplete,
+    DateTime? fetchedAt,
+    bool freshnessRetried = false,
   }) {
     var blocked = false;
     final projected = <AiJson>[];
@@ -770,6 +844,8 @@ final class AiToolCatalogue {
       blocked: blocked,
       fragmentFields: const {'diff'},
       requestCount: requestCount,
+      fetchedAt: fetchedAt,
+      freshnessRetried: freshnessRetried,
     );
   }
 
@@ -965,6 +1041,8 @@ final class _RawToolResult {
     this.blocked = false,
     this.requestCount = 0,
     this.tailLines,
+    this.fetchedAt,
+    this.freshnessRetried = false,
   }) : json = false,
        readConfidential = false,
        readInternal = false,
@@ -980,6 +1058,8 @@ final class _RawToolResult {
     this.requestCount = 0,
     this.fragmentFields = const {},
     this.restorable,
+    this.fetchedAt,
+    this.freshnessRetried = false,
   }) : json = true,
        tailLines = null;
 
@@ -992,6 +1072,8 @@ final class _RawToolResult {
   final Set<String> fragmentFields;
   final int requestCount;
   final int? tailLines;
+  final DateTime? fetchedAt;
+  final bool freshnessRetried;
 
   /// Which string values, by their path of map keys, are a complete
   /// restorable field. Null for every other tool.
@@ -1112,8 +1194,10 @@ String _sha(Object? value) {
 
 String _resourceSegment(Object? value) {
   final segment = _nonEmptyString(value, 'resource', max: 1024);
-  if (segment == '.' || segment == '..' ||
-      _controlCharacters.hasMatch(segment) || segment.contains('\\')) {
+  if (segment == '.' ||
+      segment == '..' ||
+      _controlCharacters.hasMatch(segment) ||
+      segment.contains('\\')) {
     throw const _ToolValidation('invalidResourceSegment');
   }
   return segment;
@@ -1156,6 +1240,30 @@ int _requestCost(String name) => switch (name) {
   'get_job_log' => 4,
   _ => 1,
 };
+
+int _reservationCost(
+  String name, {
+  required int requestCost,
+  required AiGitLabReadPort port,
+}) {
+  if (port is GitLabAiReadPort) {
+    final physicalMaximum = switch (name) {
+      // An unconfirmed SHA can be reread after a racing write; each physical
+      // request can replay once after OAuth refresh.
+      'read_file' => 8,
+      'list_directory' => 16,
+      // Composite reads may be dispatched once more if secret refresh makes
+      // their oldest network value stale before provider delivery.
+      'get_issue' || 'get_merge_request' => 24,
+      'get_merge_request_diff' => 32,
+      'get_snippet' => 12,
+      'get_job_log' => 32,
+      _ => null,
+    };
+    if (physicalMaximum != null) return physicalMaximum;
+  }
+  return requestCost * 2;
+}
 
 AiJson _pick(AiJson source, List<String> keys) => {
   for (final key in keys)
