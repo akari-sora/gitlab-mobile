@@ -180,3 +180,4 @@ The answers:
 - **Unsnooze acknowledgement.** `unsnoozeTodo()` accepts a reply only when the to-do carries the `snoozedUntil` key with a null value. An omitted key is an invalid response. The selection already requests the field. Lead-authorised seam repair, landed with P13.
 - **Snooze time precision.** The AI's snooze time is normalised to whole seconds (never rounded up) before the preview, the digest and the mutation, and must still be in the future. GitLab's `Time` scalar serialises whole seconds, so an exact comparison with fractional input would turn real successes into uncertain writes.
 - **Reaction readback.** GitLab bumps a note's `updatedAt` when a reaction changes, so the readback after a reaction mutation does not compare `updatedAt`. The checks before acceptance still do. This is a separate fix on `main` (it also affected the UI).
+
