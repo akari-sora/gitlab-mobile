@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/work_item_labels_fixture.dart';
 
 const _limit = 4096;
 const _deadline = Duration(seconds: 20);
@@ -200,39 +201,74 @@ void main() {
     );
   }
 
-  test('alias hydration reuses a newer numeric publication', () async {
-    final now = DateTime.utc(2026, 10, 23);
-    final disk = Completer<CacheDiskEntry?>();
-    final started = Completer<void>();
-    var calls = 0;
-    final api = _api(
-      FakeAdapter((_) {
-        calls++;
-        return jsonResponse({...projectJson(8), 'name': 'network'});
-      }),
-      clock: () => now,
-      source: (_, _) {
-        started.complete();
-        return disk.future;
-      },
-    );
-    addTearDown(api.close);
-    final pending = api.cachedRecord(['projects', 'team/example-8']);
-    await started.future.timeout(_deadline);
-    await api.cachedRecord(['projects', '8'], fresh: true);
-    disk.complete(
-      CacheDiskEntry(
-        value: {...projectJson(8), 'name': 'disk'},
-        fetchedAt: now.subtract(const Duration(minutes: 1)),
-        responseBytes: 128,
-      ),
-    );
+  test(
+    'held alias hydration reads the caller URI after a project rename',
+    () async {
+      final now = DateTime.utc(2026, 10, 23);
+      final disk = Completer<CacheDiskEntry?>();
+      final started = Completer<void>();
+      var renamed = false;
+      final adapter = FakeAdapter((request) {
+        final project = request.uri.pathSegments.last;
+        if (project == '8') {
+          return jsonResponse({
+            ...projectJson(8),
+            'path_with_namespace': renamed ? 'team/new' : 'team/old',
+          });
+        }
+        if (project == 'team/old') {
+          return jsonResponse({
+            ...projectJson(renamed ? 9 : 8),
+            'path_with_namespace': 'team/old',
+          });
+        }
+        throw StateError('Unexpected project URI: ${request.uri}');
+      });
+      final api = _api(
+        adapter,
+        clock: () => now,
+        source: (_, _) {
+          started.complete();
+          return disk.future;
+        },
+      );
+      addTearDown(api.close);
+      final pending = api.cachedRecord(['projects', 'team/old']);
+      await started.future.timeout(_deadline);
+      expect(
+        (await api.cachedRecord([
+          'projects',
+          '8',
+        ], fresh: true)).value['path_with_namespace'],
+        'team/old',
+      );
+      renamed = true;
+      expect(
+        (await api.cachedRecord([
+          'projects',
+          '8',
+        ], fresh: true)).value['path_with_namespace'],
+        'team/new',
+      );
+      disk.complete(
+        CacheDiskEntry(
+          value: {...projectJson(8), 'path_with_namespace': 'team/old'},
+          fetchedAt: now.subtract(const Duration(minutes: 1)),
+          responseBytes: 128,
+        ),
+      );
 
-    final result = await pending.timeout(_deadline);
-    expect(result.value['name'], 'network');
-    expect(result.lineage, CacheLineage.memory);
-    expect(calls, 1);
-  });
+      final result = await pending.timeout(_deadline);
+      expect(result.value['id'], 9);
+      expect(result.value['path_with_namespace'], 'team/old');
+      expect(result.lineage, CacheLineage.network);
+      expect(adapter.requests.map((request) => request.uri), [
+        api.instance.api(['projects', '8'], {'license': 'true'}),
+        api.instance.api(['projects', '8'], {'license': 'true'}),
+        api.instance.api(['projects', 'team/old'], {'license': 'true'}),
+      ]);
+    },
+  );
 
   for (final scenario in [
     'network',
@@ -311,71 +347,92 @@ void main() {
   );
 
   for (final status in [403, 404]) {
-    test(
-      'GraphQL $status preserves pinned memory and disk; REST $status revokes',
-      () async {
-        final now = DateTime.utc(2026, 10, 23);
-        var denyRest = false;
-        final adapter = FakeAdapter((request) {
-          if (request.uri.path.endsWith('/api/graphql') || denyRest) {
-            return jsonResponse({}, status: status);
-          }
-          if (request.uri.path.endsWith('/branches/main')) {
-            return jsonResponse({
-              'commit': {'id': _sha},
-            });
-          }
-          return jsonResponse(<Object>[]);
-        });
-        final api = _api(
-          adapter,
-          clock: () => now,
-          source: (_, _) async => CacheDiskEntry(
-            value: ApiPage<Json>(const []),
-            fetchedAt: now.subtract(const Duration(minutes: 1)),
-            responseBytes: 2,
-          ),
-        );
-        addTearDown(api.close);
-        await api.record(['projects', '8', 'repository', 'branches', 'main']);
-        await api.cachedRecords(
+    test('GraphQL $status advances epoch and preserves pinned memory; '
+        'disk control; REST $status revokes', () async {
+      final now = DateTime.utc(2026, 10, 23);
+      final labels = WorkItemLabelsFixture(initialLabelCount: 0);
+      addTearDown(labels.api.close);
+      var denyGraph = false;
+      var denyRest = false;
+      final adapter = FakeAdapter((request) {
+        if (request.uri.path.endsWith('/api/graphql')) {
+          return denyGraph
+              ? jsonResponse({}, status: status)
+              : labels.adapter.respond(request);
+        }
+        if (denyRest) {
+          return jsonResponse({}, status: status);
+        }
+        if (request.uri.path.endsWith('/branches/main')) {
+          return jsonResponse({
+            'commit': {'id': _sha},
+          });
+        }
+        return jsonResponse(<Object>[]);
+      });
+      final api = _api(
+        adapter,
+        clock: () => now,
+        source: (_, _) async => CacheDiskEntry(
+          value: ApiPage<Json>(const []),
+          fetchedAt: now.subtract(const Duration(minutes: 1)),
+          responseBytes: 2,
+        ),
+      );
+      addTearDown(api.close);
+      final detail = await api.projectWorkItem(labels.project, 100);
+      Future<int> readEpoch() async => (await api.workItemLabels(
+        detail,
+        expectedUserId: 7,
+        generation: 1,
+      )).snapshot.readEpoch;
+      final beforeEpoch = await readEpoch();
+      await api.record(['projects', '8', 'repository', 'branches', 'main']);
+      await api.cachedRecords(
+        _treePath,
+        query: {'ref': _sha, 'path': 'memory'},
+        allowDisk: false,
+      );
+      final beforeMetadata = api.readCacheMetadataCounts;
+      denyGraph = true;
+      await expectLater(
+        api.pipelineGraphPage(Project.fromJson(projectJson(8)), 1),
+        throwsA(isA<ApiFailure>()),
+      );
+      denyGraph = false;
+      final afterEpoch = await readEpoch();
+      // Memory preservation catches the GraphQL revocation regression.
+      expect(
+        (await api.cachedRecords(
           _treePath,
           query: {'ref': _sha, 'path': 'memory'},
-          allowDisk: false,
-        );
-        await expectLater(
-          api.pipelineGraphPage(Project.fromJson(projectJson(8)), 1),
-          throwsA(isA<ApiFailure>()),
-        );
-        expect(
-          (await api.cachedRecords(
-            _treePath,
-            query: {'ref': _sha, 'path': 'memory'},
-          )).lineage,
-          CacheLineage.memory,
-        );
-        expect(
-          (await api.cachedRecords(
-            _treePath,
-            query: {'ref': _sha, 'path': 'disk'},
-          )).lineage,
-          CacheLineage.disk,
-        );
-        denyRest = true;
-        await expectLater(
-          api.record(['projects', '8']),
-          throwsA(isA<ApiFailure>()),
-        );
-        denyRest = false;
-        expect(
-          (await api.cachedRecords(
-            _treePath,
-            query: {'ref': _sha, 'path': 'disk'},
-          )).lineage,
-          CacheLineage.network,
-        );
-      },
-    );
+        )).lineage,
+        CacheLineage.memory,
+      );
+      expect(afterEpoch, beforeEpoch + 1);
+      expect(api.readCacheMetadataCounts, beforeMetadata);
+      // Disk hydration is a control: it also passed before the scope fix.
+      expect(
+        (await api.cachedRecords(
+          _treePath,
+          query: {'ref': _sha, 'path': 'disk'},
+        )).lineage,
+        CacheLineage.disk,
+      );
+      denyRest = true;
+      await expectLater(
+        api.record(['projects', '8']),
+        throwsA(isA<ApiFailure>()),
+      );
+      denyRest = false;
+      expect(
+        (await api.cachedRecords(
+          _treePath,
+          query: {'ref': _sha, 'path': 'disk'},
+        )).lineage,
+        CacheLineage.network,
+      );
+    });
   }
 }
 

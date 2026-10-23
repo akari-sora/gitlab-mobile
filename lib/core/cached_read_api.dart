@@ -989,7 +989,7 @@ final class _ReadCache {
                   ))) {
             throw const ApiFailure(FailureKind.cancelled);
           }
-          final newer = entries[key(publicationUri(uri, null), accept)];
+          final newer = entries[cacheKey];
           if (!ownsHydration && newer != null && usable(newer)) {
             return result(newer);
           }
@@ -1268,7 +1268,10 @@ final class _ReadCache {
       return;
     }
     if (status != 403 && status != 404) return;
-    if (!api.instance.allowsApi(uri)) return;
+    if (!api.instance.allowsApi(uri)) {
+      if (!privacy) api._readEpoch++;
+      return;
+    }
     var p = path(canonical(uri));
     // A collection failure revokes that query, not every resource below
     // /projects or /groups. Only a project detail revokes its whole project.
