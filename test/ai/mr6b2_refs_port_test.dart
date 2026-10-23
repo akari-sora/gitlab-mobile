@@ -60,7 +60,7 @@ port.AiWriteRequest _request(
 
 void main() {
   test(
-    'P7 ledger declares seven hidden rows, closed B fields and counted caps',
+    'P7 ledger declares seven model-visible rows, closed B fields and counted caps',
     () {
       expect(
         aiRefRows.map((row) => row.operationId).toSet(),
@@ -68,7 +68,7 @@ void main() {
       );
       for (final row in aiRefRows) {
         expect(row.namedMethod, row.operationId);
-        expect(row.modelVisible, isFalse);
+        expect(row.modelVisible, isTrue);
         expect(row.scopeClass, AiScopeClass.project);
         expect(
           row.baseTier,
@@ -82,7 +82,7 @@ void main() {
         );
         expect(row.httpCap, row.operationId.startsWith('delete') ? 17 : 19);
         expect(row.readback, !row.operationId.startsWith('delete'));
-        expect(productionAiLedger.modelVisible, isNot(contains(row)));
+        expect(productionAiLedger.modelVisible, contains(row));
       }
       final create = productionAiLedger.find('createRelease')!;
       final update = productionAiLedger.find('updateRelease')!;

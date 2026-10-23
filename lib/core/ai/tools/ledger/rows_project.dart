@@ -8,7 +8,7 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     operationId: 'deletePackage',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {'projectId': _projectId, 'packageId': _projectId},
     httpCap: 19, // 2 * (2 * (fresh 1 + prepare 3) + readback 1) + 1.
     readback: true,
@@ -17,7 +17,7 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     operationId: 'deletePackageFile',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': _projectId,
       'packageId': _projectId,
@@ -30,7 +30,7 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     operationId: 'deleteContainerRepository',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {'projectId': _projectId, 'repositoryId': _projectId},
     httpCap: 23, // 2 * (2 * (fresh 1 + prepare 4) + readback 1) + 1.
     readback: true,
@@ -39,7 +39,7 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     operationId: 'deleteContainerTag',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': _projectId,
       'repositoryId': _projectId,
@@ -52,7 +52,7 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     operationId: 'createProject',
     baseTier: AiWriteTier.hardLine,
     scopeClass: AiScopeClass.personalNamespace,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'name': _requiredPlain,
       'path': _requiredPathOrRef,
@@ -65,7 +65,7 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     operationId: 'editProject',
     baseTier: AiWriteTier.hardLine,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': _projectId,
       'name': _plain,
@@ -78,7 +78,7 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     operationId: 'deleteProject',
     baseTier: AiWriteTier.hardLine,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {'projectId': _projectId},
     httpCap: 15,
     readback: true,
@@ -87,7 +87,7 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     operationId: 'forkProject',
     baseTier: AiWriteTier.hardLine,
     scopeClass: AiScopeClass.personalNamespace,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {'projectId': _projectId},
     httpCap: 15,
     readback: true,

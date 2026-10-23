@@ -262,7 +262,7 @@ void main() {
   setUp(() async => f = await _Fixture.create());
   tearDown(() async => f.h.dispose());
 
-  test('CI ledger is closed, hidden and independently HTTP-counted', () {
+  test('CI ledger is closed, model-visible and independently HTTP-counted', () {
     expect(aiCiRows.map((r) => r.operationId).toSet(), {
       'createPipeline',
       'pipelineAction',
@@ -278,7 +278,7 @@ void main() {
       'deletePipeline': 15,
     };
     for (final row in aiCiRows) {
-      expect(row.modelVisible, isFalse);
+      expect(row.modelVisible, isTrue);
       expect(row.httpCap, expected[row.operationId]);
       expect(row.readback, isTrue);
       expect(row.namedMethod, row.operationId);

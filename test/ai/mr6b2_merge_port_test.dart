@@ -245,7 +245,7 @@ void main() {
   tearDown(() => s.close());
 
   test(
-    'six ledger rows stay hidden, closed arguments and independent caps',
+    'six ledger rows are model-visible, closed arguments and independent caps',
     () {
       const expected = {
         'mergeRequest': 37,
@@ -260,7 +260,7 @@ void main() {
         expected.keys.toSet(),
       );
       for (final row in aiMergeRows) {
-        expect(row.modelVisible, false);
+        expect(row.modelVisible, true);
         expect(row.httpCap, expected[row.operationId]);
         expect(row.readback, true);
         expect(row.namedMethod, row.operationId);

@@ -26,11 +26,11 @@ void main() {
   setUp(() async => h = await _Harness.create());
   tearDown(() async => h.dispose());
 
-  test('packet 12 rows stay hidden, bounded, and read back', () {
+  test('packet 12 rows are model-visible, bounded, and read back', () {
     final rows = _projectRows;
     expect(rows, hasLength(8));
     for (final row in rows) {
-      expect(row.modelVisible, isFalse, reason: row.operationId);
+      expect(row.modelVisible, isTrue, reason: row.operationId);
       expect(row.httpCap, inInclusiveRange(1, 40), reason: row.operationId);
       expect(row.readback, isTrue, reason: row.operationId);
     }

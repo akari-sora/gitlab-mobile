@@ -254,11 +254,6 @@ extension WorkspaceApi on GitLabApi {
       'branch': branch, 'content': content, 'commit_message': message, 'last_commit_id': lastCommit,
     });
   }
-  Future<Json> saveFile(int project, String path, {required String branch, required String content,
-      required String message, String? lastCommit}) =>
-    lastCommit == null
-      ? createRepositoryFile(project, path, branch: branch, content: content, message: message)
-      : updateRepositoryFile(project, path, branch: branch, content: content, message: message, lastCommit: lastCommit);
   Future<void> deleteFile(int project, String path, {required String branch, required String message, required String lastCommit}) =>
     removeRecord(['projects', '$project', 'repository', 'files', path], data: {
       'branch': branch, 'commit_message': message, 'last_commit_id': lastCommit,

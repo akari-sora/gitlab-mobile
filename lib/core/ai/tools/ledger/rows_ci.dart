@@ -14,7 +14,7 @@ const List<AiCapability> aiCiRows = <AiCapability>[
     operationId: 'createPipeline',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': AiArgSpec(AiArgType.integer, required: true),
       'ref': AiArgSpec(AiArgType.string, required: true,
@@ -34,7 +34,7 @@ const List<AiCapability> aiCiRows = <AiCapability>[
     operationId: 'pipelineAction',
     baseTier: AiWriteTier.t3,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': AiArgSpec(AiArgType.integer, required: true),
       'pipelineId': AiArgSpec(AiArgType.integer, required: true),
@@ -49,7 +49,7 @@ const List<AiCapability> aiCiRows = <AiCapability>[
     operationId: 'jobAction',
     baseTier: AiWriteTier.t3,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': AiArgSpec(AiArgType.integer, required: true),
       'jobId': AiArgSpec(AiArgType.integer, required: true),
@@ -64,7 +64,7 @@ const List<AiCapability> aiCiRows = <AiCapability>[
     operationId: 'playPipelineSchedule',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': AiArgSpec(AiArgType.integer, required: true),
       'scheduleId': AiArgSpec(AiArgType.integer, required: true),
@@ -76,7 +76,7 @@ const List<AiCapability> aiCiRows = <AiCapability>[
     operationId: 'deletePipeline',
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': AiArgSpec(AiArgType.integer, required: true),
       'pipelineId': AiArgSpec(AiArgType.integer, required: true),

@@ -15,7 +15,7 @@ void main() {
   tearDown(() => s.close());
 
   test(
-    'P6 ledger preserves five hidden closed named operations and counted caps',
+    'P6 ledger preserves five model-visible closed named operations and counted caps',
     () {
       final expected = {
         'edit_file': ('updateRepositoryFile', 31, true),
@@ -26,7 +26,7 @@ void main() {
       };
       expect(aiFileRows, hasLength(5));
       for (final row in aiFileRows) {
-        expect(row.modelVisible, isFalse);
+        expect(row.modelVisible, isTrue);
         expect(row.namedMethod, expected[row.operationId]!.$1);
         expect(row.httpCap, expected[row.operationId]!.$2);
         expect(row.readback, expected[row.operationId]!.$3);
@@ -42,7 +42,7 @@ void main() {
         productionAiLedger.modelVisible.any(
           (r) => expected.containsKey(r.operationId),
         ),
-        isFalse,
+        isTrue,
       );
     },
   );
