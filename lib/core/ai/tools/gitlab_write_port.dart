@@ -13,8 +13,28 @@ import '../../models.dart';
 import '../../snippet_models.dart';
 import '../../suggestion.dart';
 import '../../upload_names.dart';
+import '../../work_item_activity_models.dart';
+import '../../work_item_graph_models.dart';
+// Model namespaces reserved for the eleven graph family parts.
+// ignore: unused_import
+import '../../work_item_assignee_models.dart';
+// ignore: unused_import
+import '../../work_item_dates_models.dart';
+// ignore: unused_import
+import '../../work_item_health_edit_models.dart';
+// ignore: unused_import
+import '../../work_item_milestone_models.dart';
+// ignore: unused_import
+import '../../work_item_state_models.dart';
+// ignore: unused_import
+import '../../work_item_status_models.dart';
+// ignore: unused_import
+import '../../work_item_weight_models.dart';
+import '../ai_work_item_write_registry.dart';
 import '../exact_edit.dart';
 import 'ci_rules.dart';
+import 'graphql_write_classify.dart';
+import 'graphql_write_hooks.dart';
 import 'schedule_params.dart';
 import 'sensitive_paths.dart';
 import 'target_binding.dart';
@@ -34,6 +54,18 @@ part 'gitlab_write_port_ci.dart';
 part 'gitlab_write_port_snippets.dart';
 part 'gitlab_write_port_deletes.dart';
 part 'gitlab_write_port_project.dart';
+part 'gitlab_write_port_graphql_locator.dart';
+part 'gitlab_write_port_graphql_state.dart';
+part 'gitlab_write_port_graphql_status.dart';
+part 'gitlab_write_port_graphql_dates.dart';
+part 'gitlab_write_port_graphql_health.dart';
+part 'gitlab_write_port_graphql_assignees.dart';
+part 'gitlab_write_port_graphql_milestone_weight.dart';
+part 'gitlab_write_port_graphql_activity_create.dart';
+part 'gitlab_write_port_graphql_activity_delete.dart';
+part 'gitlab_write_port_graphql_reactions_notifications.dart';
+part 'gitlab_write_port_graphql_incident.dart';
+part 'gitlab_write_port_graphql_snooze.dart';
 
 /// A family preflight refusal; journal failures retain their separate type.
 final class AiWriteRefused implements Exception {
@@ -84,7 +116,13 @@ sealed class AiWriteOutcome {
 }
 
 final class AiWriteNotSent extends AiWriteOutcome {
-  const AiWriteNotSent() : super(0);
+  const AiWriteNotSent([this.reasonCode = 'notAccepted']) : super(0);
+  final String reasonCode;
+}
+
+/// A method-level noop still has a prepared journal entry, never dispatching.
+final class AiGraphNoChange extends AiWriteOutcome {
+  const AiGraphNoChange() : super(0);
 }
 
 final class AiWriteSettled extends AiWriteOutcome {
@@ -169,7 +207,37 @@ final class AiWritePrepared {
        preview = preview ?? AiFieldsPreview(request.arguments),
        _owner = owner,
        _mutation = mutation,
+       _graphCall = null,
        _readback = readback;
+
+  AiWritePrepared.graph({
+    required this.request,
+    required this.releaseName,
+    required Set<AiConflictKey> writeKeys,
+    Set<AiConflictKey> dependencyKeys = const {},
+    Object? owner,
+    required Future<Object?> Function(GraphHooks hooks) mutation,
+    this.todoTarget,
+    this.projectPath,
+    this.projectVisibility,
+    this.confirmName,
+    this.facts = const AiTierFacts(),
+    List<AiTargetRef> bindingTargets = const [],
+    this.bindingDigest = '',
+    this.journal = const AiJournalBindings(),
+    AiWritePreview? preview,
+    this.textScan,
+  }) : writeKeys = Set.unmodifiable(writeKeys),
+       dependencyKeys = Set.unmodifiable(dependencyKeys),
+       bindingTargets = List.unmodifiable(bindingTargets),
+       preview = preview ?? AiFieldsPreview(request.arguments),
+       _owner = owner ?? Object(),
+       _graphCall = mutation,
+       _mutation = null,
+       _readback = null,
+       _createdOnSuccess = null,
+       _resolveCreatedOnSuccess = null,
+       classify = null;
 
   final AiWriteRequest request;
   final String releaseName;
@@ -201,9 +269,90 @@ final class AiWritePrepared {
       _resolveCreatedOnSuccess?.call() ?? _createdOnSuccess;
   final AiResultClassifier? classify;
   final Object _owner;
-  final Future<Object?> Function() _mutation;
+  final Future<Object?> Function()? _mutation;
+  final Future<Object?> Function(GraphHooks hooks)? _graphCall;
   final Future<Object?> Function(Object? result)? _readback;
+  GraphBeforeMutation? _beforeGraph;
   bool _used = false;
+
+  AiWriteBoundary get boundary =>
+      _graphCall == null ? AiWriteBoundary.rest : AiWriteBoundary.graph;
+
+  /// The coordinator installs the durable boundary only after re-preparing.
+  void bindGraphBeforeMutation(GraphBeforeMutation beforeMutation) {
+    if (boundary != AiWriteBoundary.graph || _used || _beforeGraph != null) {
+      throw const GraphHookContractException();
+    }
+    _beforeGraph = beforeMutation;
+  }
+
+  /// Also usable by an injected typed test port; no transport is exposed here.
+  Future<AiWriteOutcome> commitGraph({required bool Function() mayStart}) {
+    if (_used || _graphCall == null || _beforeGraph == null) {
+      return Future.value(const AiWriteNotSent('graphBoundaryUnavailable'));
+    }
+    _used = true;
+    return _settleGraph(
+      this,
+      GraphHooks(beforeMutation: _beforeGraph!, mayStart: mayStart),
+    );
+  }
+}
+
+Future<AiWriteOutcome> _settleGraph(AiWritePrepared prepared, GraphHooks span) async {
+  Object? result;
+  Object? error;
+  try {
+    result = await prepared._graphCall!(span);
+  } on Object catch (failure) {
+    error = failure;
+  }
+  try {
+    await span.beforeCompletion;
+  } on Object catch (failure) {
+    error ??= failure;
+  }
+  if (span.state == GraphWriteSpanState.hookFailed && error != null) {
+    throw error;
+  }
+  final disposition = classifyGraphWrite(
+    prepared.request.operationId,
+    span,
+    result: result,
+    error: error,
+  );
+  return switch (disposition) {
+    GraphWriteDisposition.noChange => const AiGraphNoChange(),
+    GraphWriteDisposition.notExecuted => AiWriteNotSent(
+      span.contractViolated ||
+              span.state == GraphWriteSpanState.hookReturned ||
+              (span.state == GraphWriteSpanState.notHooked && error == null)
+          ? 'graphContractViolation'
+          : switch (error) {
+              AiWriteRefused(:final reason) => reason,
+              ApiFailure(:final kind) => kind.name,
+              _ => 'notAccepted',
+            },
+    ),
+    GraphWriteDisposition.succeeded || GraphWriteDisposition.writeUncertain =>
+      AiWriteSettled(
+        state: disposition == GraphWriteDisposition.succeeded
+            ? AiJournalState.succeeded
+            : AiJournalState.writeUncertain,
+        resultCode: disposition == GraphWriteDisposition.succeeded
+            ? 'succeeded'
+            : 'writeUncertain',
+        releaseName: prepared.releaseName,
+        writeKeys: prepared.writeKeys,
+        dependencyKeys: prepared.dependencyKeys,
+        readbackVerified: disposition == GraphWriteDisposition.succeeded &&
+            result is GraphWriteResult && result.readbackVerified,
+        projection: disposition == GraphWriteDisposition.succeeded &&
+                result is GraphWriteResult
+            ? result.projection
+            : const {},
+      ),
+  };
 }
 
 abstract interface class AiGitLabWritePort {
@@ -214,17 +363,19 @@ abstract interface class AiGitLabWritePort {
   });
 }
 
-/// REST only. Journal flush, approval, policy and execution permits belong to
+/// Journal flush, approval, policy and execution permits belong to
 /// the coordinator. This port never retries a mutation or writes to disk.
 final class GitLabAiWritePort implements AiGitLabWritePort {
   GitLabAiWritePort(
     this._api, {
     required this.accountKey,
     AiResultClassifier? resultClassifier,
+    this.workItemWriteRegistry,
   }) : _resultClassifier = resultClassifier;
 
   final GitLabApi _api;
   final String accountKey;
+  final AiWorkItemWriteRegistry? workItemWriteRegistry;
   final AiResultClassifier? _resultClassifier;
   final Object _owner = Object();
   final Set<String> _claimedExecutions = <String>{};
@@ -274,9 +425,25 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       _prepareSnippets,
       _prepareDeletes,
       _prepareProject,
+      _prepareGraphqlState,
+      _prepareGraphqlStatus,
+      _prepareGraphqlDates,
+      _prepareGraphqlHealth,
+      _prepareGraphqlAssignees,
+      _prepareGraphqlMilestoneWeight,
+      _prepareGraphqlActivityCreate,
+      _prepareGraphqlActivityDelete,
+      _prepareGraphqlReactionsNotifications,
+      _prepareGraphqlIncident,
+      _prepareGraphqlSnooze,
     ]) {
       final prepared = await prepareFamily(request);
       if (prepared != null) return prepared;
+    }
+    if (capability.boundary == AiWriteBoundary.graph) {
+      throw AiWriteRefused(
+        workItemWriteRegistry == null ? 'registryUnavailable' : 'unsupported',
+      );
     }
     final user = await _api.currentUser();
     if ('${_api.instance.key}#${user.id}' != accountKey) {
@@ -756,9 +923,12 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
         !_claimedExecutions.add(prepared.request.executionId)) {
       return Future.value(const AiWriteNotSent());
     }
+    if (prepared.boundary == AiWriteBoundary.graph) {
+      return prepared.commitGraph(mayStart: mayStart);
+    }
     prepared._used = true;
     if (!mayStart()) return Future.value(const AiWriteNotSent());
-    return _settle(prepared, prepared._mutation, classify: prepared.classify);
+    return _settle(prepared, prepared._mutation!, classify: prepared.classify);
   }
 
   Future<AiWriteOutcome> _settle(

@@ -157,6 +157,7 @@ final class WorkItemAssigneeTarget {
     required this.expectedUserId,
     required WorkItemAssigneeSnapshot snapshot,
     required this.readEpoch,
+    required this.maxPages,
   }) : _owner = owner,
        _snapshot = snapshot,
        setWorkItemMetadata = true,
@@ -169,6 +170,7 @@ final class WorkItemAssigneeTarget {
   final String actorId;
   final int expectedUserId;
   final int readEpoch;
+  final int maxPages;
   final bool setWorkItemMetadata;
   final bool assigneesWidgetPresent;
 
@@ -190,12 +192,15 @@ extension WorkItemAssigneeApi on GitLabApi {
     WorkItemGraphDetail detail, {
     required int expectedUserId,
     bool Function()? isCurrent,
+    int maxPages = _assigneeMaxPages,
   }) {
+    _validateAssigneeMaxPages(maxPages);
     _validateAssigneeExpected(detail.summary, expectedUserId);
     return _readWorkItemAssignees(
       detail.summary,
       expectedUserId: expectedUserId,
       isCurrent: isCurrent,
+      maxPages: maxPages,
     );
   }
 
@@ -288,7 +293,12 @@ extension WorkItemAssigneeApi on GitLabApi {
     required List<String> assigneeIds,
     bool Function()? isCurrent,
     void Function()? onMutationSent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _validateAssigneeSelection(
       assigneeIds,
       allowsMultiple: target.allowsMultiple,
@@ -300,6 +310,7 @@ extension WorkItemAssigneeApi on GitLabApi {
       target.summary,
       expectedUserId: target.expectedUserId,
       isCurrent: isCurrent,
+      maxPages: target.maxPages,
     );
     if (before.actorId != target.actorId ||
         !before.canWrite ||
@@ -320,8 +331,12 @@ extension WorkItemAssigneeApi on GitLabApi {
       return before.snapshot;
     }
 
+    if (beforeMutation != null) await beforeMutation();
     ({Uint8List bytes, Headers headers, int statusCode}) response;
     onMutationSent?.call();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
     try {
       response = await _send(
         instance.graphQL,
@@ -373,6 +388,7 @@ extension WorkItemAssigneeApi on GitLabApi {
         target.summary,
         expectedUserId: target.expectedUserId,
         isCurrent: isCurrent,
+        maxPages: target.maxPages,
       );
       if (readback.actorId != target.actorId ||
           !_sameAssigneeIdentity(readback.snapshot.summary, target.summary) ||
@@ -388,8 +404,10 @@ extension WorkItemAssigneeApi on GitLabApi {
   Future<WorkItemAssigneeAccess> _readWorkItemAssignees(
     WorkItemGraphSummary expected, {
     required int expectedUserId,
+    required int maxPages,
     bool Function()? isCurrent,
   }) async {
+    _validateAssigneeMaxPages(maxPages);
     _requireCurrentWorkItemRequest(isCurrent);
     final users = <WorkItemAssigneeUser>[];
     final seenUsers = <String>{};
@@ -400,7 +418,7 @@ extension WorkItemAssigneeApi on GitLabApi {
     var allowsMultiple = false;
     var canWrite = false;
     WorkItemGraphSummary? summary;
-    for (var page = 0; page < _assigneeMaxPages; page++) {
+    for (var page = 0; page < maxPages; page++) {
       _requireCurrentWorkItemRequest(isCurrent);
       final response = await _read(
         instance.graphQL,
@@ -454,6 +472,7 @@ extension WorkItemAssigneeApi on GitLabApi {
                   expectedUserId: expectedUserId,
                   snapshot: snapshot,
                   readEpoch: _readEpoch,
+                  maxPages: maxPages,
                 )
               : null,
         );
@@ -487,7 +506,7 @@ extension WorkItemAssigneeApi on GitLabApi {
         throw const FormatException('Invalid assignee acknowledgement');
       }
     }
-    for (var page = 1; hasNext && page < _assigneeMaxPages; page++) {
+    for (var page = 1; hasNext && page < target.maxPages; page++) {
       _requireCurrentWorkItemRequest(isCurrent);
       final response = await _read(
         instance.graphQL,
@@ -537,6 +556,12 @@ extension WorkItemAssigneeApi on GitLabApi {
         summary: first.summary,
       ),
     );
+  }
+}
+
+void _validateAssigneeMaxPages(int maxPages) {
+  if (maxPages < 1 || maxPages > _assigneeMaxPages) {
+    throw ArgumentError.value(maxPages, 'maxPages');
   }
 }
 

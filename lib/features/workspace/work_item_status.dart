@@ -51,6 +51,7 @@ final class WorkItemStatusWriteRegistry extends ChangeNotifier {
   static final instance = WorkItemStatusWriteRegistry._();
 
   final _active = Expando<Set<String>>();
+  final _externalOwners = Expando<Map<String, Object>>();
   final _terminals = Expando<Map<String, WorkItemStatusTerminal>>();
 
   bool isActive(GitLabApi api, String workItemId) =>
@@ -63,6 +64,46 @@ final class WorkItemStatusWriteRegistry extends ChangeNotifier {
 
   void _start(GitLabApi api, String workItemId) {
     (_active[api] ??= <String>{}).add(workItemId);
+    notifyListeners();
+  }
+
+  /// Reserves the same STATUS lock used by the UI for an external writer.
+  /// The reservation is synchronous so callers can finish preflight only
+  /// after every UI surface can observe the lease.
+  bool tryStartExternal(GitLabApi api, String workItemId, Object token) {
+    final active = _active[api] ??= <String>{};
+    if (!active.add(workItemId)) return false;
+    (_externalOwners[api] ??= <String, Object>{})[workItemId] = token;
+    notifyListeners();
+    return true;
+  }
+
+  /// Releases an external reservation and records only authoritative
+  /// freshness. An unsent attempt leaves no terminal; a sent write without a
+  /// confirmed revision leaves an unconfirmed terminal and preserves the
+  /// earlier revision floor.
+  void settleExternal(
+    GitLabApi api,
+    String workItemId, {
+    required Object token,
+    required bool mutationSent,
+    DateTime? confirmedRevision,
+  }) {
+    final owners = _externalOwners[api];
+    if (!identical(owners?[workItemId], token)) return;
+    owners!.remove(workItemId);
+    if (!(_active[api]?.remove(workItemId) ?? false)) return;
+    final earlier = _terminals[api]?[workItemId]?.revision;
+    if (mutationSent) {
+      (_terminals[api] ??= {})[workItemId] = WorkItemStatusTerminal._(
+        confirmedRevision == null
+            ? earlier
+            : earlier != null && earlier.isAfter(confirmedRevision)
+            ? earlier
+            : confirmedRevision,
+        confirmed: confirmedRevision != null,
+      );
+    }
     notifyListeners();
   }
 

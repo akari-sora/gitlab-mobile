@@ -178,7 +178,12 @@ extension WorkItemHealthEditApi on GitLabApi {
     required int generation,
     required bool Function() isCurrent,
     void Function()? onMutationSent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     if (target._consumed) {
       throw WorkItemHealthEditFailure(_healthUncertain, false);
     }
@@ -244,10 +249,14 @@ extension WorkItemHealthEditApi on GitLabApi {
     } on Object catch (error) {
       throw WorkItemHealthEditFailure(_healthPreflightFailure(error), false);
     }
+    if (beforeMutation != null) await beforeMutation();
     try {
       onMutationSent?.call();
     } on Object {
       throw const WorkItemHealthEditFailure(_healthInvalid, false);
+    }
+    if (mayStart != null && !mayStart()) {
+      throw const WorkItemHealthEditFailure(_healthCancelled, false);
     }
 
     try {
