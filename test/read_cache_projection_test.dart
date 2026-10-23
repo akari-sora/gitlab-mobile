@@ -188,6 +188,316 @@ Map<String, Object?> _note([int id = 5]) => {
   'private_token': 'strip',
 };
 
+const _otherSha = 'fedcba9876543210fedcba9876543210fedcba98';
+final _issueKeys = _issue().keys.toSet()..removeAll({'token', 'downloadURL'});
+final _mrKeys = _mr().keys.toSet();
+
+Map<String, Object?> _projectMilestone() => {
+  'id': 12,
+  'iid': 1,
+  'project_id': 1,
+  'title': 'M1',
+  'description': 'strip',
+  'state': 'active',
+  'created_at': '2026-10-01T00:00:00.000Z',
+  'updated_at': '2026-10-01T00:00:00.000Z',
+  'due_date': '2026-11-01',
+  'start_date': '2026-10-01',
+  'expired': false,
+  'web_url': 'https://gitlab.example/root/group/project/-/milestones/1',
+};
+
+/// PipelineBasic as GitLab embeds it (an MR's deprecated `pipeline`, a Job's
+/// `pipeline`): it has an `iid` but is not an issue.
+Map<String, Object?> _pipelineBasic({int project = 1}) => {
+  'id': 60,
+  'iid': 6,
+  'project_id': project,
+  'sha': _sha,
+  'ref': 'refs/merge-requests/3/head',
+  'status': 'success',
+  'source': 'merge_request_event',
+  'created_at': '2026-10-22T10:00:00.000Z',
+  'updated_at': '2026-10-22T10:05:00.000Z',
+  'web_url': 'https://gitlab.example/root/group/project/-/pipelines/60',
+};
+
+/// Real REST Issue entity shape (synthetic values), including the stripped
+/// Premium `epic` (EpicBaseEntity) and `iteration` objects that carry `iid`.
+Map<String, Object?> _realIssue({int project = 1, int iid = 2}) => {
+  ..._issue(project: project, iid: iid),
+  'type': 'ISSUE',
+  'issue_type': 'issue',
+  'closed_by': null,
+  'milestone': _projectMilestone(),
+  'merge_requests_count': 0,
+  'blocking_issues_count': 0,
+  'discussion_locked': null,
+  'has_tasks': true,
+  'task_status': '1 of 2 checklist items completed',
+  'subscribed': false,
+  'moved_to_id': null,
+  'imported': false,
+  'imported_from': 'none',
+  'service_desk_reply_to': null,
+  'severity': 'UNKNOWN',
+  'weight': null,
+  'health_status': null,
+  'epic_iid': 4,
+  'epic': {
+    'id': 40,
+    'iid': 4,
+    'title': 'Epic 4',
+    'url': '/groups/group/-/epics/4',
+    'group_id': 9,
+    'human_readable_end_date': 'Nov 1, 2026',
+    'human_readable_timestamp': '<strong>9</strong> days remaining',
+  },
+  'iteration': {
+    'id': 50,
+    'iid': 5,
+    'sequence': 5,
+    'group_id': 9,
+    'title': null,
+    'description': null,
+    'state': 2,
+    'created_at': '2026-10-01T00:00:00.000Z',
+    'updated_at': '2026-10-01T00:00:00.000Z',
+    'start_date': '2026-10-20',
+    'due_date': '2026-11-02',
+    'web_url': 'https://gitlab.example/root/groups/group/-/iterations/50',
+  },
+  '_links': {
+    'self': 'https://gitlab.example/root/api/v4/projects/$project/issues/$iid',
+    'notes':
+        'https://gitlab.example/root/api/v4/projects/$project/issues/$iid/notes',
+    'award_emoji':
+        'https://gitlab.example/root/api/v4/projects/$project/issues/$iid/award_emoji',
+    'project': 'https://gitlab.example/root/api/v4/projects/$project',
+    'closed_as_duplicate_of': null,
+  },
+};
+
+/// Real single-MR (MergeRequest entity) shape: the stripped PipelineBasic
+/// `pipeline`, a full `head_pipeline`, a group milestone and other extras.
+Map<String, Object?> _realMr({int project = 1, int iid = 3}) => {
+  ..._mr(project: project, iid: iid),
+  'merged_by': null,
+  'closed_by': null,
+  'imported': false,
+  'imported_from': 'none',
+  'merge_after': null,
+  'merge_commit_sha': null,
+  'squash_commit_sha': null,
+  'discussion_locked': null,
+  'should_remove_source_branch': null,
+  'force_remove_source_branch': true,
+  'prepared_at': '2026-10-22T10:00:01.000Z',
+  'allow_collaboration': false,
+  'allow_maintainer_to_push': false,
+  'reference': '!$iid',
+  'squash': false,
+  'squash_on_merge': false,
+  'task_completion_status': {'count': 0, 'completed_count': 0},
+  'blocking_discussions_resolved': true,
+  'approvals_before_merge': null,
+  'subscribed': false,
+  'milestone': {
+    'id': 13,
+    'iid': 2,
+    'group_id': 9,
+    'title': 'Group M2',
+    'description': 'strip',
+    'state': 'active',
+    'created_at': '2026-10-01T00:00:00.000Z',
+    'updated_at': '2026-10-01T00:00:00.000Z',
+    'due_date': null,
+    'start_date': null,
+    'expired': false,
+    'web_url': 'https://gitlab.example/root/groups/group/-/milestones/2',
+  },
+  'latest_build_started_at': '2026-10-22T10:01:00.000Z',
+  'latest_build_finished_at': '2026-10-22T10:05:00.000Z',
+  'first_deployed_to_production_at': null,
+  'pipeline': _pipelineBasic(project: project),
+  'head_pipeline': {
+    ..._pipelineBasic(project: project),
+    'before_sha': '0000000000000000000000000000000000000000',
+    'tag': false,
+    'yaml_errors': null,
+    'user': _actor(2),
+    'started_at': '2026-10-22T10:01:00.000Z',
+    'finished_at': '2026-10-22T10:05:00.000Z',
+    'committed_at': null,
+    'duration': 240,
+    'queued_duration': 1.5,
+    'coverage': null,
+    'detailed_status': {
+      'icon': 'status_success',
+      'text': 'Passed',
+      'label': 'passed',
+      'group': 'success',
+      'tooltip': 'passed',
+      'has_details': true,
+      'details_path': '/root/group/project/-/pipelines/60',
+      'illustration': null,
+      'favicon': '/assets/ci_favicons/favicon_status_success.png',
+    },
+  },
+  'diff_refs': {
+    'base_sha': _sha,
+    'head_sha': _sha,
+    'start_sha': _sha,
+    'extra': 'strip',
+  },
+  'merge_error': null,
+  'user': {'can_merge': false},
+  'first_contribution': false,
+};
+
+Map<String, Object?> _pipelineDetail() => {
+  'id': 6,
+  'iid': 1,
+  'project_id': 1,
+  'name': 'pipe',
+  'status': 'success',
+  'source': 'push',
+  'ref': 'main',
+  'sha': _sha,
+  'before_sha': _sha,
+  'tag': false,
+  'yaml_errors': null,
+  'web_url': 'https://gitlab.example/root/group/project/-/pipelines/6',
+  'created_at': '2026-10-22T10:00:00Z',
+  'updated_at': '2026-10-22T11:00:00Z',
+  'started_at': null,
+  'finished_at': null,
+  'committed_at': null,
+  'duration': null,
+  'queued_duration': null,
+  'coverage': null,
+  'user': _actor(),
+  'detailed_status': {'icon': 'status_success', 'group': 'success'},
+  'variables': ['strip'],
+};
+
+Map<String, Object?> _jobDetail() => {
+  'id': 9,
+  'name': 'test',
+  'status': 'success',
+  'stage': 'test',
+  'ref': 'main',
+  'tag': false,
+  'coverage': null,
+  'allow_failure': false,
+  'created_at': '2026-10-22T10:00:00Z',
+  'started_at': null,
+  'finished_at': null,
+  'erased_at': null,
+  'duration': null,
+  'queued_duration': null,
+  'failure_reason': null,
+  'web_url': 'https://gitlab.example/root/group/project/-/jobs/9',
+  'user': _actor(),
+  'commit': {
+    'id': _sha,
+    'short_id': '01234567',
+    'title': 'Commit title',
+    'message': 'Commit title',
+    'author_name': 'User 1',
+    'author_email': 'must-strip@example.invalid',
+    'created_at': '2026-10-22T09:00:00Z',
+    'parent_ids': [_otherSha],
+    'web_url': 'https://gitlab.example/root/group/project/-/commit/$_sha',
+  },
+  'pipeline': _pipelineBasic(),
+  'project': {'ci_job_token_scope_enabled': false},
+  'artifacts_file': {'filename': 'a.zip', 'size': 4},
+  'artifacts': [
+    {'download_url': 'strip'},
+  ],
+  'runner': {'token': 'strip'},
+  'tag_list': ['docker'],
+  'archived': false,
+};
+
+Map<String, Object?> _fileDetail() => {
+  'file_name': 'README.md',
+  'file_path': 'README.md',
+  'size': 2,
+  'encoding': 'base64',
+  'content': base64.encode(utf8.encode('ok')),
+  'content_sha256': _sha,
+  'ref': _sha,
+  'blob_id': _sha,
+  'commit_id': _sha,
+  'last_commit_id': _sha,
+  'execute_filemode': false,
+  'download_url': 'strip',
+};
+
+Map<String, Object?> _versionDetail() => {
+  'id': 4,
+  'created_at': '2026-10-22T10:00:00Z',
+  'base_commit_sha': _sha,
+  'start_commit_sha': _sha,
+  'head_commit_sha': _sha,
+  'state': 'collected',
+  'real_size': '1',
+  'diffs': [
+    {
+      'old_path': 'a',
+      'new_path': 'b',
+      'a_mode': '100644',
+      'b_mode': '100644',
+      'new_file': false,
+      'renamed_file': false,
+      'deleted_file': false,
+      'generated_file': false,
+      'collapsed': false,
+      'too_large': false,
+      'diff': 'x',
+      'extra': 'strip',
+    },
+  ],
+};
+
+ReadCacheTerminalJobProof _jobProof({
+  DiskBinding? binding,
+  DateTime? finishedAt,
+}) => ReadCacheTerminalJobProof(
+  binding: binding ?? _binding,
+  projectId: 1,
+  jobId: 9,
+  status: 'success',
+  finishedAt: finishedAt ?? _now.subtract(const Duration(minutes: 1)),
+  fetchedAt: _now.subtract(const Duration(seconds: 1)),
+  lineage: ReadCacheProofLineage.network,
+  erased: false,
+);
+
+ReadCacheTerminalLog _tail(List<int> bytes, {DateTime? finishedAt}) =>
+    ReadCacheTerminalLog(
+      projectId: 1,
+      jobId: 9,
+      finishedAt: finishedAt ?? _jobProof().finishedAt,
+      startOffset: 0,
+      nextOffset: bytes.length,
+      totalBytes: bytes.length,
+      isEof: true,
+      truncated: false,
+      bytes: bytes,
+    );
+
+_Input _trace(ReadCacheTerminalLog log, {int responseBytes = 100}) =>
+    _candidate(
+      ['projects', '1', 'jobs', '9', 'trace'],
+      log,
+      kind: ReadCacheBodyKind.terminalLog,
+      typedPinned: true,
+      responseBytes: responseBytes,
+    );
+
 ReadCachePublicIssueProof _proof({
   DiskBinding? binding,
   ReadCacheProofLineage lineage = ReadCacheProofLineage.network,
@@ -634,29 +944,12 @@ void main() {
           ),
           (
             id: 'E14 pipeline',
-            candidate: _candidate(
-              ['projects', '1', 'pipelines', '6'],
-              {
-                'id': 6,
-                'iid': 1,
-                'project_id': 1,
-                'name': 'pipe',
-                'status': 'success',
-                'source': 'push',
-                'ref': 'main',
-                'sha': _sha,
-                'web_url':
-                    'https://gitlab.example/root/group/project/-/pipelines/6',
-                'created_at': '2026-10-22T10:00:00Z',
-                'updated_at': '2026-10-22T11:00:00Z',
-                'started_at': null,
-                'finished_at': null,
-                'duration': null,
-                'queued_duration': null,
-                'user': _actor(),
-                'variables': ['strip'],
-              },
-            ),
+            candidate: _candidate([
+              'projects',
+              '1',
+              'pipelines',
+              '6',
+            ], _pipelineDetail()),
             keys: {
               'id',
               'iid',
@@ -679,38 +972,7 @@ void main() {
           ),
           (
             id: 'E15 job',
-            candidate: _candidate(
-              ['projects', '1', 'jobs', '9'],
-              {
-                'id': 9,
-                'name': 'test',
-                'status': 'success',
-                'stage': 'test',
-                'ref': 'main',
-                'created_at': '2026-10-22T10:00:00Z',
-                'started_at': null,
-                'finished_at': null,
-                'erased_at': null,
-                'duration': null,
-                'queued_duration': null,
-                'failure_reason': null,
-                'web_url': 'https://gitlab.example/root/group/project/-/jobs/9',
-                'user': _actor(),
-                'pipeline': {
-                  'id': 6,
-                  'iid': 1,
-                  'project_id': 1,
-                  'status': 'success',
-                  'ref': 'main',
-                  'sha': _sha,
-                },
-                'artifacts_file': {'filename': 'a.zip', 'size': 4},
-                'artifacts': [
-                  {'download_url': 'strip'},
-                ],
-                'runner': {'token': 'strip'},
-              },
-            ),
+            candidate: _candidate(['projects', '1', 'jobs', '9'], _jobDetail()),
             keys: {
               'id',
               'name',
@@ -755,20 +1017,7 @@ void main() {
             id: 'E17 file',
             candidate: _candidate(
               ['projects', '1', 'repository', 'files', 'README.md'],
-              {
-                'file_name': 'README.md',
-                'file_path': 'README.md',
-                'size': 2,
-                'encoding': 'base64',
-                'content': base64.encode(utf8.encode('ok')),
-                'content_sha256': _sha,
-                'ref': _sha,
-                'blob_id': _sha,
-                'commit_id': _sha,
-                'last_commit_id': _sha,
-                'execute_filemode': false,
-                'download_url': 'strip',
-              },
+              _fileDetail(),
               query: {'ref': _sha},
             ),
             keys: {
@@ -790,31 +1039,7 @@ void main() {
             id: 'E18 MR version',
             candidate: _candidate(
               ['projects', '1', 'merge_requests', '3', 'versions', '4'],
-              {
-                'id': 4,
-                'created_at': '2026-10-22T10:00:00Z',
-                'base_commit_sha': _sha,
-                'start_commit_sha': _sha,
-                'head_commit_sha': _sha,
-                'state': 'collected',
-                'real_size': '1',
-                'diffs': [
-                  {
-                    'old_path': 'a',
-                    'new_path': 'b',
-                    'a_mode': '100644',
-                    'b_mode': '100644',
-                    'new_file': false,
-                    'renamed_file': false,
-                    'deleted_file': false,
-                    'generated_file': false,
-                    'collapsed': false,
-                    'too_large': false,
-                    'diff': 'x',
-                    'extra': 'strip',
-                  },
-                ],
-              },
+              _versionDetail(),
               typedPinned: true,
             ),
             keys: {
@@ -2268,6 +2493,615 @@ void main() {
           (truncated.body as ReadCacheTerminalLog).startOffset,
           greaterThan(0),
         );
+      },
+    );
+  });
+
+  group('raw walker on real GitLab shapes (I-1)', () {
+    test(
+      'E10 single MR with PipelineBasic pipeline and full head_pipeline',
+      () {
+        final entry = _projected(
+          _candidate(['projects', '1', 'merge_requests', '3'], _realMr()),
+        );
+        expect(entry, isNotNull);
+        final body = entry!.body as Map;
+        expect(_keys(body), _mrKeys);
+        expect(body, isNot(contains('pipeline')));
+        expect(_keys(body['head_pipeline']), {'id', 'status'});
+        expect(entry.issueIdentities, isEmpty);
+      },
+    );
+
+    test('E07 related MR rows with PipelineBasic and embedded real issues', () {
+      final entry = _projected(
+        _candidate(
+          ['projects', '1', 'issues', '2', 'related_merge_requests'],
+          [
+            _realMr(),
+            {
+              ..._realMr(project: 2, iid: 4),
+              'closes_issues': [_realIssue(project: 2, iid: 7)],
+            },
+          ],
+          kind: ReadCacheBodyKind.page,
+        ),
+      );
+      expect(entry, isNotNull);
+      final items = (entry!.body as Map)['items'] as List;
+      expect(_keys(items.first), _mrKeys);
+      expect(_keys(items.last), {..._mrKeys, 'closes_issues'});
+      expect(
+        _keys(((items.last as Map)['closes_issues'] as List).single),
+        _issueKeys,
+      );
+      expect(entry.issueIdentities, {
+        const ReadCacheIssueIdentity(1, 2),
+        const ReadCacheIssueIdentity(2, 7),
+      });
+    });
+
+    test('E02 user, group and project pages with epic and iteration', () {
+      for (final path in [
+        ['issues'],
+        ['groups', '4', 'issues'],
+        ['projects', '1', 'issues'],
+      ]) {
+        final entry = _projected(
+          _candidate(
+            path,
+            [
+              _realIssue(),
+              _realIssue(iid: 4)
+                ..['epic'] = null
+                ..['iteration'] = null,
+            ],
+            kind: ReadCacheBodyKind.page,
+            query: const {'with_labels_details': 'true'},
+          ),
+        );
+        expect(entry, isNotNull, reason: path.join('/'));
+        for (final item in (entry!.body as Map)['items'] as List) {
+          expect(_keys(item), _issueKeys, reason: path.join('/'));
+        }
+        expect(entry.issueIdentities, {
+          const ReadCacheIssueIdentity(1, 2),
+          const ReadCacheIssueIdentity(1, 4),
+        });
+      }
+    });
+
+    test('E03 single issue with epic and iteration', () {
+      final entry = _projected(
+        _candidate(['projects', '1', 'issues', '2'], _realIssue()),
+      );
+      expect(entry, isNotNull);
+      final body = entry!.body as Map;
+      expect(_keys(body), _issueKeys);
+      expect(body, isNot(contains('epic')));
+      expect(body, isNot(contains('iteration')));
+      expect(entry.issueIdentities, {const ReadCacheIssueIdentity(1, 2)});
+    });
+
+    test('E08 linked issues with epic and iteration', () {
+      final entry = _projected(
+        _candidate(
+          ['projects', '1', 'issues', '2', 'links'],
+          [
+            {
+              ..._realIssue(project: 2, iid: 8),
+              'issue_link_id': 4,
+              'link_type': 'relates_to',
+              'link_created_at': '2026-10-22T10:00:00.000Z',
+              'link_updated_at': '2026-10-22T10:00:00.000Z',
+            },
+          ],
+          kind: ReadCacheBodyKind.page,
+        ),
+      );
+      expect(entry, isNotNull);
+      expect(_keys(((entry!.body as Map)['items'] as List).single), {
+        ..._issueKeys,
+        'issue_link_id',
+        'link_type',
+      });
+      expect(entry.issueIdentities, {
+        const ReadCacheIssueIdentity(1, 2),
+        const ReadCacheIssueIdentity(2, 8),
+      });
+    });
+
+    test(
+      'unknown iid objects and misplaced, mistyped or suspect hints reject',
+      () {
+        const issuePath = ['projects', '1', 'issues', '2'];
+        const mrPath = ['projects', '1', 'merge_requests', '3'];
+        final epic = _realIssue()['epic']! as Map<String, Object?>;
+        final rejects = <String, _Input>{
+          'unknown key with iid': _candidate(
+            mrPath,
+            _realMr()..['unknown_pipeline'] = _pipelineBasic(),
+          ),
+          'pipeline is not known under an issue': _candidate(
+            issuePath,
+            _realIssue()..['pipeline'] = _pipelineBasic(),
+          ),
+          'epic is not known under an MR': _candidate(
+            mrPath,
+            _realMr()..['epic'] = epic,
+          ),
+          'pipeline list': _candidate(
+            mrPath,
+            _realMr()..['pipeline'] = [_pipelineBasic()],
+          ),
+          'epic string': _candidate(issuePath, _realIssue()..['epic'] = 'epic'),
+          'iteration list': _candidate(
+            issuePath,
+            _realIssue()..['iteration'] = [1],
+          ),
+          'epic carrying confidential': _candidate(
+            issuePath,
+            _realIssue()..['epic'] = {...epic, 'confidential': true},
+          ),
+          'pipeline with Issue type': _candidate(
+            mrPath,
+            _realMr()..['pipeline'] = {..._pipelineBasic(), 'type': 'issue'},
+          ),
+          'object nested in a hinted object': _candidate(
+            mrPath,
+            _realMr()
+              ..['pipeline'] = {
+                ..._pipelineBasic(),
+                'nested': {'iid': 1, 'project_id': 1, 'title': 'x'},
+              },
+          ),
+        };
+        for (final MapEntry(:key, :value) in rejects.entries) {
+          expect(_projected(value), isNull, reason: key);
+        }
+      },
+    );
+  });
+
+  group('guard mutations are observable (I-2)', () {
+    test('C final confidential fence rejects listed and nested identities', () {
+      final fenced = _context(
+        confidential: {const ReadCacheIssueIdentity(1, 2)},
+      );
+      final e03 = _candidate(['projects', '1', 'issues', '2'], _issue());
+      final e02 = _candidate(
+        ['projects', '1', 'issues'],
+        [_issue()],
+        kind: ReadCacheBodyKind.page,
+      );
+      final e10 = _candidate([
+        'projects',
+        '1',
+        'merge_requests',
+        '3',
+      ], _mr()..['related_issues'] = [_issue(project: 3, iid: 9)]);
+      for (final input in [e03, e02, e10]) {
+        expect(_projected(input), isNotNull, reason: input.uri.toString());
+      }
+      expect(_projected(e03, context: fenced), isNull);
+      expect(_projected(e02, context: fenced), isNull);
+      expect(
+        _projected(
+          e10,
+          context: _context(confidential: {const ReadCacheIssueIdentity(3, 9)}),
+        ),
+        isNull,
+      );
+    });
+
+    test('A single issue/MR iid and project_id must match the route', () {
+      const issuePath = ['projects', '1', 'issues', '2'];
+      const mrPath = ['projects', '1', 'merge_requests', '3'];
+      expect(_projected(_candidate(issuePath, _issue())), isNotNull);
+      expect(_projected(_candidate(mrPath, _mr())), isNotNull);
+      for (final input in [
+        _candidate(issuePath, _issue(iid: 3)),
+        _candidate(issuePath, _issue(project: 2)),
+        _candidate(mrPath, _mr(iid: 4)),
+        _candidate(mrPath, _mr(project: 2)),
+      ]) {
+        expect(_projected(input), isNull, reason: '${input.value}');
+      }
+    });
+
+    test('I single note id must match the route (E04/E12)', () {
+      for (final parent in [
+        ['projects', '1', 'issues', '2'],
+        ['projects', '1', 'merge_requests', '3'],
+      ]) {
+        final path = [...parent, 'notes', '5'];
+        expect(_projected(_candidate(path, _note())), isNotNull);
+        expect(_projected(_candidate(path, _note(6))), isNull);
+      }
+    });
+
+    test('J single discussion id must match the route (E05/E13)', () {
+      Map<String, Object?> discussion(String id) => {
+        'id': id,
+        'individual_note': false,
+        'notes': [_note()],
+      };
+      for (final parent in [
+        ['projects', '1', 'issues', '2'],
+        ['projects', '1', 'merge_requests', '3'],
+      ]) {
+        final path = [...parent, 'discussions', 'thread'];
+        expect(_projected(_candidate(path, discussion('thread'))), isNotNull);
+        expect(_projected(_candidate(path, discussion('other'))), isNull);
+      }
+    });
+
+    test('K pipeline id and project_id must match the route (E14)', () {
+      const path = ['projects', '1', 'pipelines', '6'];
+      expect(_projected(_candidate(path, _pipelineDetail())), isNotNull);
+      expect(
+        _projected(_candidate(path, _pipelineDetail()..['project_id'] = 2)),
+        isNull,
+      );
+      expect(
+        _projected(_candidate(path, _pipelineDetail()..['id'] = 7)),
+        isNull,
+      );
+    });
+
+    test('F job id and embedded pipeline project must match (E15)', () {
+      const path = ['projects', '1', 'jobs', '9'];
+      expect(_projected(_candidate(path, _jobDetail())), isNotNull);
+      expect(
+        _projected(
+          _candidate(
+            path,
+            _jobDetail()..['pipeline'] = _pipelineBasic(project: 2),
+          ),
+        ),
+        isNull,
+      );
+      expect(_projected(_candidate(path, _jobDetail()..['id'] = 8)), isNull);
+    });
+
+    test('E file path, ref, encoding and decoded size must match (E17)', () {
+      _Input file(Map<String, Object?> value) => _candidate(
+        ['projects', '1', 'repository', 'files', 'README.md'],
+        value,
+        query: const {'ref': _sha},
+      );
+      expect(_projected(file(_fileDetail())), isNotNull);
+      final mutations = <String, void Function(Map<String, Object?>)>{
+        'file_path': (v) => v['file_path'] = 'other.md',
+        'size': (v) => v['size'] = 3,
+        'ref': (v) => v['ref'] = _otherSha,
+        'encoding': (v) => v['encoding'] = 'text',
+      };
+      for (final MapEntry(:key, :value) in mutations.entries) {
+        final invalid = _fileDetail();
+        value(invalid);
+        expect(_projected(file(invalid)), isNull, reason: key);
+      }
+    });
+
+    test('H MR version id must match the route (E18)', () {
+      _Input version(Map<String, Object?> value) => _candidate(
+        ['projects', '1', 'merge_requests', '3', 'versions', '4'],
+        value,
+        typedPinned: true,
+      );
+      expect(_projected(version(_versionDetail())), isNotNull);
+      expect(_projected(version(_versionDetail()..['id'] = 5)), isNull);
+    });
+
+    test('D log attempt, proof binding and finish time are exact (E19)', () {
+      final proof = _jobProof();
+      final log = utf8.encode('log');
+      expect(
+        _projected(_trace(_tail(log)), context: _context(terminal: proof)),
+        isNotNull,
+      );
+      expect(
+        _projected(
+          _trace(
+            _tail(
+              log,
+              finishedAt: proof.finishedAt.add(const Duration(seconds: 1)),
+            ),
+          ),
+          context: _context(terminal: proof),
+        ),
+        isNull,
+      );
+      expect(
+        _projected(
+          _trace(_tail(log)),
+          context: _context(
+            terminal: _jobProof(
+              binding: DiskBinding(
+                accountKey: _binding.accountKey,
+                generation: _binding.generation + 1,
+              ),
+            ),
+          ),
+        ),
+        isNull,
+      );
+      final future = _now.add(const Duration(seconds: 1));
+      expect(
+        _projected(
+          _trace(_tail(log, finishedAt: future)),
+          context: _context(terminal: _jobProof(finishedAt: future)),
+        ),
+        isNull,
+      );
+    });
+
+    test(
+      'B a truncated tail starts on a UTF-8 lead byte at every alignment',
+      () {
+        final context = _context(terminal: _jobProof());
+        final chars = readCacheTerminalLogLimit ~/ 3 + 8;
+        // A suffix shifts the cut point across all three byte positions of the
+        // three-byte character without moving the character boundaries.
+        for (var pad = 0; pad < 3; pad++) {
+          final original = utf8.encode('${'尾' * chars}${'x' * pad}');
+          final entry = _projected(_trace(_tail(original)), context: context);
+          expect(entry, isNotNull, reason: '$pad');
+          final tail = entry!.body as ReadCacheTerminalLog;
+          expect(tail.truncated, isTrue);
+          expect(tail.startOffset, greaterThan(0));
+          expect(tail.nextOffset, original.length);
+          expect(
+            entry.serializedLength,
+            lessThanOrEqualTo(readCacheTerminalLogLimit),
+          );
+          expect(
+            original[tail.startOffset] & 0xc0,
+            isNot(0x80),
+            reason: '$pad',
+          );
+          expect(tail.bytes.length, original.length - tail.startOffset);
+          expect(
+            utf8.decode(tail.bytes, allowMalformed: false),
+            utf8.decode(original.sublist(tail.startOffset)),
+            reason: '$pad',
+          );
+        }
+      },
+    );
+
+    test('G responseBytes cap is exact for JSON entries and terminal logs', () {
+      const path = ['projects', '1'];
+      expect(
+        _projected(
+          _candidate(path, _project(), responseBytes: readCacheEntryLimit),
+        ),
+        isNotNull,
+      );
+      for (final bytes in [readCacheEntryLimit + 1, -1]) {
+        expect(
+          _projected(_candidate(path, _project(), responseBytes: bytes)),
+          isNull,
+          reason: '$bytes',
+        );
+      }
+      final context = _context(terminal: _jobProof());
+      final log = _tail(utf8.encode('log'));
+      expect(
+        _projected(
+          _trace(log, responseBytes: readCacheTerminalLogLimit),
+          context: context,
+        ),
+        isNotNull,
+      );
+      expect(
+        _projected(
+          _trace(log, responseBytes: readCacheTerminalLogLimit + 1),
+          context: context,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('classify rejects and nested exact keys (m-6)', () {
+    test(
+      'single refs, labels, milestones, releases and branch refs reject',
+      () {
+        final rejects = [
+          _candidate(
+            ['projects', '1', 'repository', 'branches', 'main'],
+            {
+              'name': 'main',
+              'commit': {'id': _sha},
+            },
+          ),
+          _candidate(
+            ['projects', '1', 'repository', 'tags', 'v1'],
+            {'name': 'v1', 'target': _sha},
+          ),
+          _candidate(
+            ['projects', '1', 'repository', 'commits', _sha],
+            {'id': _sha, 'title': 'Commit title'},
+          ),
+          _candidate(
+            ['projects', '1', 'labels', '5'],
+            {'id': 5, 'name': 'bug', 'color': '#f00'},
+          ),
+          _candidate([
+            'projects',
+            '1',
+            'milestones',
+            '12',
+          ], _projectMilestone()),
+          _candidate(
+            ['projects', '1', 'releases', 'v1'],
+            {'tag_name': 'v1', 'name': 'v1'},
+          ),
+        ];
+        for (final input in rejects) {
+          expect(_projected(input), isNull, reason: input.uri.toString());
+        }
+        final tree = [
+          {
+            'id': _sha,
+            'name': 'README.md',
+            'type': 'blob',
+            'path': 'README.md',
+            'mode': '100644',
+          },
+        ];
+        final branchRefs = [
+          _candidate(
+            ['projects', '1', 'repository', 'tree'],
+            tree,
+            kind: ReadCacheBodyKind.page,
+            query: const {'ref': 'main'},
+          ),
+          _candidate(
+            ['projects', '1', 'repository', 'files', 'README.md'],
+            _fileDetail()..['ref'] = 'main',
+            query: const {'ref': 'main'},
+          ),
+          _candidate(
+            ['projects', '1', 'repository', 'files', 'README.md', 'raw'],
+            'hello',
+            kind: ReadCacheBodyKind.text,
+            query: const {'ref': 'main'},
+          ),
+        ];
+        // Even a caller that wrongly "confirms" a branch name cannot pin it.
+        final branchConfirmed = _context(shas: const {_sha, 'main'});
+        for (final input in branchRefs) {
+          expect(_projected(input), isNull, reason: input.uri.toString());
+          expect(
+            _projected(input, context: branchConfirmed),
+            isNull,
+            reason: input.uri.toString(),
+          );
+        }
+      },
+    );
+
+    test(
+      'milestone, head_pipeline, diff_refs, position, job and diff keys',
+      () {
+        final mr =
+            _projected(
+                  _candidate([
+                    'projects',
+                    '1',
+                    'merge_requests',
+                    '3',
+                  ], _realMr()..['milestone'] = _projectMilestone()),
+                )!.body
+                as Map;
+        expect(_keys(mr['milestone']), {
+          'id',
+          'iid',
+          'title',
+          'state',
+          'due_date',
+        });
+        expect(_keys(mr['head_pipeline']), {'id', 'status'});
+        expect(_keys(mr['diff_refs']), {'base_sha', 'head_sha', 'start_sha'});
+
+        Map<String, Object?> line() => {
+          'line_code': 'abc_1_1',
+          'type': 'new',
+          'old_line': 1,
+          'new_line': 1,
+          'extra': 'strip',
+        };
+        final note = _note()
+          ..['position'] = {
+            'base_sha': _sha,
+            'start_sha': _sha,
+            'head_sha': _sha,
+            'old_path': 'a',
+            'new_path': 'a',
+            'position_type': 'text',
+            'old_line': 1,
+            'new_line': 1,
+            'line_range': {'start': line(), 'end': line(), 'extra': 'strip'},
+            'ignore_whitespace_change': false,
+          };
+        final position =
+            (_projected(
+                      _candidate([
+                        'projects',
+                        '1',
+                        'merge_requests',
+                        '3',
+                        'notes',
+                        '5',
+                      ], note),
+                    )!.body
+                    as Map)['position']
+                as Map;
+        expect(_keys(position), {
+          'position_type',
+          'base_sha',
+          'start_sha',
+          'head_sha',
+          'old_path',
+          'new_path',
+          'old_line',
+          'new_line',
+          'line_range',
+        });
+        final range = position['line_range'] as Map;
+        expect(_keys(range), {'start', 'end'});
+        for (final edge in [range['start'], range['end']]) {
+          expect(_keys(edge), {'type', 'old_line', 'new_line', 'line_code'});
+        }
+
+        final job =
+            _projected(
+                  _candidate(
+                    ['projects', '1', 'jobs', '9'],
+                    _jobDetail()
+                      ..['artifacts_file'] = {
+                        'filename': 'a.zip',
+                        'size': 4,
+                        'extra': 'strip',
+                      },
+                  ),
+                )!.body
+                as Map;
+        expect(_keys(job['pipeline']), {
+          'id',
+          'iid',
+          'project_id',
+          'status',
+          'ref',
+          'sha',
+        });
+        expect(_keys(job['artifacts_file']), {'filename', 'size'});
+
+        final version =
+            _projected(
+                  _candidate(
+                    ['projects', '1', 'merge_requests', '3', 'versions', '4'],
+                    _versionDetail(),
+                    typedPinned: true,
+                  ),
+                )!.body
+                as Map;
+        expect(_keys((version['diffs'] as List).single), {
+          'old_path',
+          'new_path',
+          'a_mode',
+          'b_mode',
+          'new_file',
+          'renamed_file',
+          'deleted_file',
+          'generated_file',
+          'collapsed',
+          'too_large',
+          'diff',
+        });
       },
     );
   });

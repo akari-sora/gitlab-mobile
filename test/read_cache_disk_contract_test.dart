@@ -79,18 +79,28 @@ void main() {
         'barrierTimedOut',
       ]);
 
+      var completes = 0;
       for (var bits = 0; bits < 16; bits++) {
-        final result = DiskClearResult(
+        DiskClearResult build() => DiskClearResult(
           keyGoneConfirmed: bits & 1 != 0,
           directoryGoneConfirmed: bits & 2 != 0,
           markerDurable: bits & 4 != 0,
           complete: bits & 8 != 0,
         );
+        // Complete only when both key and directory are confirmed gone; the
+        // marker flag stays independent (a removal may keep its marker).
+        if (bits & 8 != 0 && bits & 3 != 3) {
+          expect(build, throwsA(isA<AssertionError>()), reason: '$bits');
+          continue;
+        }
+        final result = build();
         expect(result.keyGoneConfirmed, bits & 1 != 0);
         expect(result.directoryGoneConfirmed, bits & 2 != 0);
         expect(result.markerDurable, bits & 4 != 0);
         expect(result.complete, bits & 8 != 0);
+        if (result.complete) completes++;
       }
+      expect(completes, 2);
     },
   );
 
@@ -135,6 +145,9 @@ void main() {
         fetchedAt: DateTime.utc(2026, 10, 23),
         responseBytes: 8,
         lease: lease,
+        cacheable: true,
+        noStore: false,
+        firstPage: true,
         scopeVersions: versions,
         scopeTags: tags,
       );
@@ -212,6 +225,7 @@ void main() {
       fetchedAt: DateTime.utc(2026, 10, 23),
       responseBytes: 123,
       lease: backend.lease,
+      cacheable: false,
       noStore: true,
       firstPage: false,
       typedPinned: true,
@@ -235,6 +249,7 @@ void main() {
     expect(backend.accepted.single.$1, same(candidate));
     expect(backend.accepted.single.$2, same(entry));
     expect(candidate.responseBytes, 123);
+    expect(candidate.cacheable, isFalse);
     expect(candidate.noStore, isTrue);
     expect(candidate.firstPage, isFalse);
     expect(candidate.typedPinned, isTrue);

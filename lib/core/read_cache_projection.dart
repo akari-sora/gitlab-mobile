@@ -269,6 +269,8 @@ final _sensitiveQuery = RegExp(
   r'token|secret|password|authorization|credential|signature|api[_-]?key|jwt',
   caseSensitive: false,
 );
+// Pagination cursors (`id_after`, ...) and search (with its `search_in`
+// modifier) are never admitted, so neither appears here.
 const _semanticQueryKeys = {
   'per_page',
   'scope',
@@ -310,7 +312,6 @@ const _semanticQueryKeys = {
   'approver_ids[]',
   'approved_by_ids[]',
   'merge_user_id',
-  'search_in',
   'membership',
   'starred',
   'simple',
@@ -318,7 +319,6 @@ const _semanticQueryKeys = {
   'archived',
   'visibility',
   'min_access_level',
-  'id_after',
   'id_before',
   'last_activity_after',
   'last_activity_before',
@@ -782,11 +782,16 @@ final class _Schema {
     this.issue = false,
     this.note = false,
     this.name = '',
+    this.walkHints = const {},
   });
   final Map<String, _Field> fields;
   final Set<String> required;
   final bool issue, note;
   final String name;
+
+  /// Raw-walker-only hints for GitLab objects that projection strips. They
+  /// never reach [_project], so they add no projected key to §3.
+  final Map<String, _Schema> walkHints;
 }
 
 Map<String, _Field> _fields(
@@ -851,6 +856,19 @@ final _timeStats = _Schema({
   ),
 });
 final _completion = _Schema(_fields(_Type.integer, 'count completed_count'));
+
+// Known GitLab non-issue objects, used only by the raw walker. Their keys are
+// all scalars (PipelineBasic: id iid project_id sha ref status source
+// created_at updated_at web_url; EpicBase: id iid title url group_id ...;
+// Iteration: id iid sequence group_id title ...), so no field hints: a nested
+// object inside them is still unknown. A `confidential` key or Issue `type`
+// keeps the issue guard, and a value that is not an object/null rejects.
+const _pipelineBasicWalk = _Schema({}, name: 'pipelineBasic');
+const _epicWalk = _Schema({}, name: 'epic');
+const _iterationWalk = _Schema({}, name: 'iteration');
+const _issueWalkHints = {'epic': _epicWalk, 'iteration': _iterationWalk};
+const _mrWalkHints = {'pipeline': _pipelineBasicWalk};
+
 Map<String, _Field> get _workItemFields => {
   ..._fields(
     _Type.integer,
@@ -879,6 +897,7 @@ final _issue = _Schema(
   required: {'id', 'iid', 'project_id', 'title', 'confidential'},
   issue: true,
   name: 'issue',
+  walkHints: _issueWalkHints,
 );
 final _diffRefs = _Schema(_fields(_Type.sha, 'base_sha head_sha start_sha'));
 final _headPipeline = _Schema({
@@ -913,6 +932,7 @@ final _mr = _Schema(
   },
   required: {'id', 'iid', 'project_id', 'title'},
   name: 'mr',
+  walkHints: _mrWalkHints,
 );
 final _positionLine = _Schema({
   ..._fields(_Type.string, 'type line_code'),
@@ -972,6 +992,7 @@ final _linkedIssue = _Schema(
   required: _issue.required,
   issue: true,
   name: 'issue',
+  walkHints: _issueWalkHints,
 );
 final _relatedMr = _Schema(
   {
@@ -981,6 +1002,7 @@ final _relatedMr = _Schema(
   },
   required: _mr.required,
   name: 'mr',
+  walkHints: _mrWalkHints,
 );
 final _approvedBy = _Schema(
   {'user': _Field(_Type.object, schema: _actor)},
@@ -1084,7 +1106,9 @@ final _mrVersion = _Schema(
 );
 
 /// Walk the original, including fields that projection will remove. Schema
-/// hints distinguish MR/pipeline/milestone identities from embedded Issues.
+/// hints (and walker-only hints for stripped GitLab objects such as an MR's
+/// PipelineBasic or an Issue's epic/iteration) distinguish non-issue
+/// identities from embedded Issues; any other `iid` object stays suspect.
 void _scanRaw(
   Object root,
   _Schema? schema,
@@ -1139,6 +1163,12 @@ void _scanRaw(
       }
       for (final entry in value.entries) {
         final field = hint?.fields[entry.key];
+        final walkOnly = field == null ? hint?.walkHints[entry.key] : null;
+        if (walkOnly != null &&
+            entry.value != null &&
+            entry.value is! Map<String, Object?>) {
+          throw const _InvalidProjection();
+        }
         final key = entry.key.toLowerCase();
         final issueKey =
             const {
@@ -1159,7 +1189,7 @@ void _scanRaw(
         }
         walk(
           entry.value,
-          field?.schema,
+          field?.schema ?? walkOnly,
           depth + 1,
           list: field?.type == _Type.array,
           issueNamed: issueKey,

@@ -170,7 +170,7 @@ void main() {
     expect(failure.detail, l10n.retryAction);
   });
 
-  test('generic construction asserts that the cleanup kind carries state', () {
+  test('generic construction asserts cleanup state exactly for its kind', () {
     expect(
       () => ApiFailure(FailureKind.readCacheCleanup),
       throwsA(isA<AssertionError>()),
@@ -179,6 +179,16 @@ void main() {
       () => ApiFailure(FailureKind.readCacheCleanup, cleanup: _state),
       returnsNormally,
     );
+    // No other kind may carry cleanup state and pose as a cleanup failure.
+    for (final kind in FailureKind.values.where(
+      (kind) => kind != FailureKind.readCacheCleanup,
+    )) {
+      expect(
+        () => ApiFailure(kind, cleanup: _state),
+        throwsA(isA<AssertionError>()),
+        reason: kind.name,
+      );
+    }
   });
 
   test(

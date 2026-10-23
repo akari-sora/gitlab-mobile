@@ -22,7 +22,7 @@ abstract interface class UserFacingFailure {
 /// Diagnostics contain only allowlisted status information, never request data.
 final class ApiFailure implements Exception, UserFacingFailure {
   const ApiFailure(this.kind, {this.status, this.retryAt, this.cleanup, String? title, String? detail})
-      : assert(kind != FailureKind.readCacheCleanup || cleanup != null),
+      : assert((kind == FailureKind.readCacheCleanup) == (cleanup != null)),
         _title = title,
         _detail = detail;
   const ApiFailure.readCacheCleanup(ReadCacheCleanupState state)

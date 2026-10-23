@@ -70,10 +70,11 @@ final class DiskWriteCandidate {
     required this.fetchedAt,
     required this.responseBytes,
     required this.lease,
+    // Safety gates have no permissive default: the owner states each one.
+    required this.cacheable,
+    required this.noStore,
+    required this.firstPage,
     this.method = 'GET',
-    this.cacheable = true,
-    this.noStore = false,
-    this.firstPage = true,
     this.typedPinned = false,
     this.next,
     this.privacyEpoch = 0,
@@ -291,12 +292,14 @@ abstract interface class DiskInvalidationFence {
 }
 
 final class DiskClearResult {
+  /// [complete] requires both the key and the directory confirmed gone (§5.3);
+  /// [markerDurable] is independent (a removal may keep its marker).
   const DiskClearResult({
     required this.keyGoneConfirmed,
     required this.directoryGoneConfirmed,
     required this.markerDurable,
     required this.complete,
-  });
+  }) : assert(!complete || (keyGoneConfirmed && directoryGoneConfirmed));
 
   final bool keyGoneConfirmed, directoryGoneConfirmed, markerDurable, complete;
 }
