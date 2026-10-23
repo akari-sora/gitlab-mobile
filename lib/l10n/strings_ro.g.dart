@@ -2716,4 +2716,5 @@ const _messagesRo = <String>[
   'GitLab limitează cererile',
   'Nu se poate reîmprospăta',
   'Se reia în aproximativ {minutes} min',
+  '{verb} {target}',
 ];

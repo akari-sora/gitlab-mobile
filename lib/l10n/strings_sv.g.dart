@@ -2716,4 +2716,5 @@ const _messagesSv = <String>[
   'GitLab begränsar begäranden',
   'Kan inte uppdatera',
   'Återupptas om ca {minutes} min',
+  '{verb} {target}',
 ];

@@ -2716,4 +2716,5 @@ const _messagesTr = <String>[
   'GitLab istekleri sınırlıyor',
   'Yenilenemedi',
   'Yaklaşık {minutes} dk. sonra devam eder',
+  '{verb} ({target})',
 ];

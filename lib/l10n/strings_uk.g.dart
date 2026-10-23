@@ -2716,4 +2716,5 @@ const _messagesUk = <String>[
   'GitLab обмежує запити',
   'Не вдалося оновити',
   'Відновиться приблизно за {minutes} хв',
+  '{verb} {target}',
 ];

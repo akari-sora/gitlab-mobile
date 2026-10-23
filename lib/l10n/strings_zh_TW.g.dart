@@ -2716,4 +2716,5 @@ const _messagesZhTw = <String>[
   'GitLab 正在限制請求',
   '無法更新',
   '約 {minutes} 分鐘後恢復',
+  '{verb}{target}',
 ];

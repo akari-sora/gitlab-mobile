@@ -2713,5 +2713,6 @@
   "cacheRefreshing": "Оновлення…",
   "cacheRateLimited": "GitLab обмежує запити",
   "cacheRefreshFailed": "Не вдалося оновити",
-  "cacheResumesInMinutes": "Відновиться приблизно за {minutes} хв"
+  "cacheResumesInMinutes": "Відновиться приблизно за {minutes} хв",
+  "activityVerbTarget": "{verb} {target}"
 }

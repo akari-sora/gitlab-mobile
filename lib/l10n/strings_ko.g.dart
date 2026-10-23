@@ -2716,4 +2716,5 @@ const _messagesKo = <String>[
   'GitLab이 요청을 제한하고 있습니다',
   '새로 고침할 수 없습니다',
   '약 {minutes}분 후 다시 시작',
+  '{verb} ({target})',
 ];

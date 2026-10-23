@@ -2716,4 +2716,5 @@ const _messagesJa = <String>[
   'GitLab によりリクエストが制限されています',
   '更新できません',
   '約 {minutes} 分後に再開',
+  '{verb}（{target}）',
 ];

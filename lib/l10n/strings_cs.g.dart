@@ -2716,4 +2716,5 @@ const _messagesCs = <String>[
   'GitLab omezuje požadavky',
   'Nelze obnovit',
   'Obnoví se přibližně za {minutes} min',
+  '{verb} {target}',
 ];

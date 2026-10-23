@@ -8235,4 +8235,7 @@ final class AppStrings {
 
   /// 約 {minutes} 分鐘後恢復
   String cacheResumesInMinutes(Object? minutes) => _format(language, language._messages[2713], {'minutes': minutes});
+
+  /// {verb}{target}
+  String activityVerbTarget(Object? verb, Object? target) => _format(language, language._messages[2714], {'verb': verb, 'target': target});
 }
