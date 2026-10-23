@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import '../../gitlab_api.dart';
+import '../../snippet_models.dart' show validatedSnippetPath;
+import 'sensitive_paths.dart';
 
 typedef AiJson = Map<String, Object?>;
 
@@ -45,11 +47,107 @@ abstract interface class AiGitLabReadPort {
   Future<AiPortRead<List<AiJson>>> search(String scope, String query);
 }
 
-final class GitLabAiReadPort implements AiGitLabReadPort {
+/// Additional project reads, kept separate so existing narrow read ports do
+/// not advertise tools they cannot execute.
+abstract interface class AiGitLabFieldReadPort {
+  Future<AiPortRead<AiJson>> release(String tagName);
+  Future<AiPortRead<AiJson>> milestone(int milestoneId);
+  Future<AiPortRead<AiJson>> snippet(
+    int snippetId, {
+    String? filePath,
+    String ref = 'HEAD',
+  });
+}
+
+final class GitLabAiReadPort
+    implements AiGitLabReadPort, AiGitLabFieldReadPort {
   GitLabAiReadPort(this._api, this.projectId);
 
   final GitLabApi _api;
   final int projectId;
+
+  @override
+  Future<AiPortRead<AiJson>> release(String tagName) async {
+    final value = await _api.record([
+      'projects', '$projectId', 'releases', tagName,
+    ]);
+    if (value['tag_name'] != tagName) {
+      throw const FormatException('releaseIdentityMismatch');
+    }
+    return AiPortRead(value, requestCount: 1);
+  }
+
+  @override
+  Future<AiPortRead<AiJson>> milestone(int milestoneId) async {
+    final value = await _api.record([
+      'projects', '$projectId', 'milestones', '$milestoneId',
+    ]);
+    final iid = value['iid'];
+    if (value['id'] != milestoneId || value['project_id'] != projectId ||
+        iid is! int || iid <= 0) {
+      throw const FormatException('milestoneIdentityMismatch');
+    }
+    return AiPortRead(value, requestCount: 1);
+  }
+
+  @override
+  Future<AiPortRead<AiJson>> snippet(
+    int snippetId, {
+    String? filePath,
+    String ref = 'HEAD',
+  }) async {
+    if (filePath != null && validatedSnippetPath(filePath) != filePath) {
+      throw const FormatException('invalidSnippetPath');
+    }
+    final value = await _api.record([
+      'projects', '$projectId', 'snippets', '$snippetId',
+    ]);
+    if (value['id'] != snippetId || value['project_id'] != projectId) {
+      throw const FormatException('snippetIdentityMismatch');
+    }
+    final files = value['files'];
+    final paths = <String>[];
+    if (files is List<Object?>) {
+      for (final file in files) {
+        if (file is! AiJson) {
+          throw const FormatException('invalidSnippetFiles');
+        }
+        final path = file['path'] ?? file['file_path'];
+        if (path is! String || validatedSnippetPath(path) != path ||
+            paths.contains(path)) {
+          throw const FormatException('invalidSnippetFiles');
+        }
+        paths.add(path);
+      }
+    } else if (files != null) {
+      throw const FormatException('invalidSnippetFiles');
+    }
+    final result = <String, Object?>{
+      ...value,
+      'files': [for (final path in paths) {'path': path}],
+    };
+    if (paths.isEmpty) {
+      result['content_unavailable'] = 'snippetFileListUnknown';
+      return AiPortRead(result, requestCount: 1);
+    }
+    final selected = filePath ?? paths.first;
+    if (!paths.contains(selected)) {
+      result['content_unavailable'] = 'snippetFileNotFound';
+      return AiPortRead(result, requestCount: 1);
+    }
+    if (isSensitiveRepositoryPath(selected)) {
+      result['content_unavailable'] = 'sensitivePath';
+      return AiPortRead(result, requestCount: 1);
+    }
+    final content = await _api.snippetText(
+      projectId,
+      snippetId,
+      ref: ref,
+      filePath: selected,
+    );
+    result['file'] = {'path': selected, 'ref': ref, 'content': content};
+    return AiPortRead(result, requestCount: 2);
+  }
 
   @override
   Future<AiPortRead<String>> readFile(String sha, String path) async =>

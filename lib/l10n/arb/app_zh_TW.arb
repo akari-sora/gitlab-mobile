@@ -11305,5 +11305,167 @@
     }
   },
   "aiSettledEditWritten": "已寫入，但沒有讀回確認。你改過的內容留在這裡，重送前請先到 GitLab 查看。",
-  "aiSettledEditUncertain": "不確定這筆寫入是否完成。你改過的內容留在這裡，重送前請先到 GitLab 查看。"
+  "aiSettledEditUncertain": "不確定這筆寫入是否完成。你改過的內容留在這裡，重送前請先到 GitLab 查看。",
+  "aiPreviewNewFile": "新檔案",
+  "aiPreviewFile": "檔案",
+  "aiPreviewCiFile": "這是 Pipeline 設定相關的檔案，改動會影響 Pipeline 怎麼執行。",
+  "aiPreviewExistingSecrets": "檔案裡已有 {count} 處疑似秘密；這次編輯不會移除它們。",
+  "@aiPreviewExistingSecrets": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiPreviewBranches": "分支",
+  "aiPreviewBranchFlow": "{source} 合併到 {target}",
+  "@aiPreviewBranchFlow": {
+    "placeholders": {
+      "source": {},
+      "target": {}
+    }
+  },
+  "aiPreviewCommit": "要合併的提交",
+  "aiPreviewChangedFiles": "變更的檔案",
+  "aiPreviewMergeOptions": "合併方式",
+  "aiPreviewSquashOn": "壓縮成一個提交",
+  "aiPreviewSquashOff": "保留所有提交",
+  "aiPreviewRemoveSource": "合併後刪除來源分支",
+  "aiPreviewAutoMerge": "Pipeline 通過後自動合併",
+  "aiPreviewHeadMoved": "提議之後，來源分支又多了 {count} 個提交，合併會包含它們。",
+  "@aiPreviewHeadMoved": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiPreviewMergeCiPaths": "這次合併會改到 Pipeline 設定：{paths}",
+  "@aiPreviewMergeCiPaths": {
+    "placeholders": {
+      "paths": {}
+    }
+  },
+  "aiPreviewClosesOutOfScope": "合併後還會關閉這段對話範圍外的議題：{issues}",
+  "@aiPreviewClosesOutOfScope": {
+    "placeholders": {
+      "issues": {}
+    }
+  },
+  "aiPreviewRef": "分支或標籤",
+  "aiPreviewPipeline": "Pipeline 執行",
+  "aiPreviewJob": "工作",
+  "aiPreviewEnvironment": "環境",
+  "aiPreviewStoredVariables": "重新執行或播放可能沿用 GitLab 上已存的變數與輸入值；由排程建立的 Pipeline 還會使用排程目前的變數。應用程式讀不到，也無法核對。",
+  "aiPreviewScheduleVariables": "排程目前的變數：{names}",
+  "@aiPreviewScheduleVariables": {
+    "placeholders": {
+      "names": {}
+    }
+  },
+  "aiPreviewScheduleUnreadable": "讀不到排程的參數，無法核對；執行時會使用 GitLab 上當下的參數，無法確認提議之後有沒有改過。",
+  "aiPreviewNewVariables": "會帶入新的變數：{names}",
+  "@aiPreviewNewVariables": {
+    "placeholders": {
+      "names": {}
+    }
+  },
+  "aiPreviewDraftCount": "草稿",
+  "aiPreviewDraftSplit": "共 {total} 則，其中 {ours} 則是這段對話建立的",
+  "@aiPreviewDraftSplit": {
+    "placeholders": {
+      "total": {},
+      "ours": {}
+    }
+  },
+  "aiPreviewDraftByAi": "這段對話建立的草稿",
+  "aiPreviewDraftByYou": "其他草稿",
+  "aiPreviewDeleteTarget": "要刪除",
+  "aiPreviewPath": "路徑",
+  "aiPreviewDeleteCount": "數量",
+  "aiPreviewAtLeast": "至少 {count}",
+  "@aiPreviewAtLeast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiPreviewCannotUndo": "刪除後無法復原。",
+  "aiPreviewCancelMayLackPermission": "你可能沒有取消自動合併的權限；GitLab 拒絕時不會有任何改變。",
+  "aiOpApplySuggestion": "套用建議修改",
+  "aiOpBatchApplySuggestions": "一次套用多項建議修改",
+  "aiOpApproveMergeRequest": "核准合併請求",
+  "aiOpCancelAutoMerge": "取消自動合併",
+  "aiOpMergeRequest": "合併到目標分支",
+  "aiOpRebaseMergeRequest": "把來源分支 Rebase 到目標分支",
+  "aiOpCreateBranch": "建立分支",
+  "aiOpDeleteBranch": "刪除分支",
+  "aiOpCreateTag": "建立標籤版本",
+  "aiOpDeleteTag": "刪除標籤版本",
+  "aiOpCreateRelease": "建立 Release",
+  "aiOpUpdateRelease": "編輯 Release",
+  "aiOpDeleteRelease": "刪除 Release",
+  "aiOpCreateFile": "新增檔案",
+  "aiOpEditFile": "編輯檔案",
+  "aiOpDeleteFile": "刪除檔案",
+  "aiOpCreatePipeline": "執行新的 Pipeline",
+  "aiOpRetryPipeline": "重試 Pipeline",
+  "aiOpCancelPipeline": "取消 Pipeline",
+  "aiOpPipelineAction": "操作 Pipeline",
+  "aiOpDeletePipeline": "刪除 Pipeline",
+  "aiOpRetryJob": "重試工作",
+  "aiOpCancelJob": "取消工作",
+  "aiOpPlayJob": "啟動手動工作",
+  "aiOpJobAction": "操作工作",
+  "aiOpPlayPipelineSchedule": "立即執行排程",
+  "aiOpCreateProject": "建立專案",
+  "aiOpEditProject": "編輯專案",
+  "aiOpDeleteProject": "刪除專案",
+  "aiOpForkProject": "建立專案的 Fork",
+  "aiOpDeleteBoard": "刪除看板",
+  "aiOpDeleteBoardList": "刪除看板欄位",
+  "aiOpDeleteContainerRepository": "刪除容器映像庫",
+  "aiOpDeleteContainerTag": "刪除容器映像標籤",
+  "aiOpDeleteNote": "刪除留言",
+  "aiOpDeleteDiscussionNote": "刪除討論回覆",
+  "aiOpDeleteDraftNote": "刪除草稿留言",
+  "aiOpDeleteIssue": "刪除議題",
+  "aiOpDeleteMergeRequest": "刪除合併請求",
+  "aiOpDeleteLabel": "刪除標籤",
+  "aiOpDeleteMilestone": "刪除里程碑",
+  "aiOpDeletePackage": "刪除套件",
+  "aiOpDeletePackageFile": "刪除套件檔案",
+  "aiOpMarkAllTodosDone": "把全部待辦標為完成",
+  "aiOpPublishDraftNotes": "送出草稿留言",
+  "aiOpCreateSnippet": "建立 Snippet",
+  "aiOpUpdateSnippet": "編輯 Snippet",
+  "aiOpUpdateSnippetMetadata": "編輯 Snippet 資訊",
+  "aiOpUpdateSnippetFiles": "編輯 Snippet 的檔案",
+  "aiOpDeleteSnippetFile": "刪除 Snippet 的檔案",
+  "aiOpDeleteSnippet": "刪除 Snippet",
+  "aiRefusedChanged": "這張卡片建立之後，GitLab 上的內容已經變了，所以沒有執行。可以請 AI 重新讀取後再提議。",
+  "aiRefusedGone": "找不到目標：它可能已被刪除，也可能是你沒有權限看到，所以沒有執行。",
+  "aiRefusedPermission": "你在 GitLab 上沒有這個操作需要的權限，所以沒有執行。",
+  "aiRefusedNotAllowed": "GitLab 目前不允許這個操作，所以沒有執行。",
+  "aiRefusedContent": "內容超出 AI 可以寫入的範圍（例如檔案太大、是二進位檔，或屬於敏感路徑），所以沒有執行。",
+  "aiRefusedUnverifiable": "需要核對的資料無法完整讀取，所以沒有執行。",
+  "aiRefusedAlreadyMerged": "這個合併請求已經合併了，所以沒有執行。",
+  "aiRefusedArchived": "專案已封存，無法變更，所以沒有執行。",
+  "aiRefusedProtectedBranch": "這是受保護的分支，AI 不能刪除或改寫它，所以沒有執行。",
+  "aiRefusedDefaultBranch": "不能刪除預設分支，所以沒有執行。",
+  "aiRefusedMergeChecking": "GitLab 還在檢查能不能合併，所以沒有執行。請稍後再試。",
+  "aiInboxAsk": "請 AI 處理待辦",
+  "aiInboxChatTitle": "待辦助手",
+  "aiSuggestInboxMarkAll": "幫我把全部待辦標為完成",
+  "aiFieldTagName": "標籤版本名稱",
+  "aiFieldPreviousPath": "原本的路徑",
+  "aiFieldVariables": "變數",
+  "aiWriteMerged": "已合併",
+  "aiWriteAutoMergeScheduled": "已排程自動合併",
+  "aiWriteMergeAccepted": "GitLab 已接受合併，請查看最新狀態",
+  "aiWriteDeletionScheduled": "已排程刪除",
+  "aiPreviewParent": "所屬",
+  "aiPreviewMoreFiles": "另外還有 {count} 個檔案會變更",
+  "@aiPreviewMoreFiles": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiConfirmTargetNamedNotMarked": "你在訊息裡提到了這個名稱，但沒有用反引號（`）標出來，所以這筆寫入需要你確認。",
+  "aiPreviewDeletionMayBeDelayed": "GitLab 可能會延後刪除，保留期內仍可還原。"
 }

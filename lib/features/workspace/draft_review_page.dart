@@ -482,7 +482,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
       if (valueText(current, 'note') != valueText(draft, 'note')) {
         throw const ApiFailure(FailureKind.conflict);
       }
-      await scope.api.removeRecord([...scope.draftPath, '$id']);
+      await scope.api.deleteDraftNote(scope.project.id, scope.iid, id);
       _requireCurrent(scope);
       final verified = await _readBackAcceptedWrite(
         scope,
@@ -554,7 +554,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
           detail: l10n.publishCanceledDraftsChanged,
         );
       }
-      await scope.api.writeEmpty('POST', [...scope.draftPath, 'bulk_publish']);
+      await scope.api.publishDraftNotes(scope.project.id, scope.iid);
       _requireCurrent(scope);
       final verified = await _readBackAcceptedWrite(
         scope,

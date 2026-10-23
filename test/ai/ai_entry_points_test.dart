@@ -21,6 +21,7 @@ import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_scope.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
+import 'package:gitlab_mobile/features/workspace/inbox_page.dart';
 import 'package:gitlab_mobile/features/workspace/repository_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
@@ -416,6 +417,38 @@ void main() {
     expect(find.byKey(const ValueKey('job-ai')), findsNothing);
     await _openMenu(tester, l10n.jobActions);
     expect(find.text(l10n.aiDiscuss), findsOneWidget);
+  });
+
+  testWidgets('the inbox opens a to-do conversation', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    final registry = await _pump(
+      tester,
+      fixture,
+      InboxPage(account: fixture.account, api: fixture.api),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('inbox-ai')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(AiChatPage), findsOneWidget);
+    expect(registry!.opened.single, isA<AiInboxOrigin>());
+    expect(
+      aiOriginTitle(const AiInboxOrigin(), safe: (text) => text),
+      l10n.aiInboxChatTitle,
+    );
+  });
+
+  testWidgets('without AI the inbox has no AI entry', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    await _pump(
+      tester,
+      fixture,
+      InboxPage(account: fixture.account, api: fixture.api),
+      ai: false,
+    );
+    expect(find.byKey(const ValueKey('inbox-ai')), findsNothing);
   });
 
   testWidgets('without AI no page shows an AI entry', (tester) async {

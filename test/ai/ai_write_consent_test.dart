@@ -237,7 +237,7 @@ void main() {
   );
 
   test('§15 row 11 versions 1, 2, 3 and 4 require different consent', () {
-    expect(aiToolCatalogueVersion, 2);
+    expect(aiToolCatalogueVersion, 3);
     expect(aiDisclosureVersion, 2);
     final provider = _provider('a');
     final current = aiConsentContractFor(provider, writePolicy: _policy());

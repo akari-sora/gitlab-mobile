@@ -106,20 +106,20 @@ Future<void> main() async {
       require((await api.record([...root, 'repository', 'branches', scratch]))['name'] == scratch);
     });
     await check('files.create_unicode_path_and_read_back', () async {
-      await api.saveFile(p, file, branch: scratch, content: 'first\n第二行\n', message: 'smoke create [skip ci]');
+      await api.createRepositoryFile(p, file, branch: scratch, content: 'first\n第二行\n', message: 'smoke create [skip ci]');
       require(await api.textFile(p, scratch, file) == 'first\n第二行\n');
     });
     var oldCommit = '';
     await check('files.update_with_last_commit_and_read_back', () async {
       oldCommit = (await api.fileMetadata(p, file, scratch))['last_commit_id'] as String;
-      await api.saveFile(p, file, branch: scratch, content: 'updated\n', message: 'smoke update [skip ci]', lastCommit: oldCommit);
+      await api.updateRepositoryFile(p, file, branch: scratch, content: 'updated\n', message: 'smoke update [skip ci]', lastCommit: oldCommit);
       require(await api.textFile(p, scratch, file) == 'updated\n');
     });
     await check('files.stale_write_rejected_without_overwriting', () async {
       var rejected = false;
       Object? outcome = 'accepted';
       try {
-        await api.saveFile(p, file, branch: scratch, content: 'must not overwrite', message: 'stale [skip ci]', lastCommit: oldCommit);
+        await api.updateRepositoryFile(p, file, branch: scratch, content: 'must not overwrite', message: 'stale [skip ci]', lastCommit: oldCommit);
       } on ApiFailure catch (e) {
         outcome = e.status ?? e.kind.name;
         rejected = const [400, 409, 412, 422].contains(e.status);
@@ -267,7 +267,7 @@ Future<void> main() async {
     var mr = 0;
     await check('merge_requests.create_and_read', () async {
       await api.createBranch(p, source, branch);
-      await api.saveFile(p, 'review.txt', branch: source, content: 'review fixture\n', message: 'smoke review [skip ci]');
+      await api.createRepositoryFile(p, 'review.txt', branch: source, content: 'review fixture\n', message: 'smoke review [skip ci]');
       mr = requiredInt(await api.createMergeRequest(p, {
         'source_branch': source, 'target_branch': branch, 'title': 'Smoke MR', 'description': 'Synthetic review',
       }), 'iid');
@@ -345,7 +345,7 @@ retry_probe:
   script: ["exit 1"]
 ''';
     await check('pipelines.create_read_and_jobs', () async {
-      await api.saveFile(p, '.gitlab-ci.yml', branch: branch, content: config, message: 'smoke CI fixture [skip ci]');
+      await api.createRepositoryFile(p, '.gitlab-ci.yml', branch: branch, content: config, message: 'smoke CI fixture [skip ci]');
       pipeline = requiredInt(await api.createPipeline(p, branch), 'id');
       require((await api.record([...root, 'pipelines', '$pipeline']))['id'] == pipeline);
       await waitPipeline(p, pipeline);
