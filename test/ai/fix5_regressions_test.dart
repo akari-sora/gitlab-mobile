@@ -7,6 +7,7 @@ import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
+import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 
 import 'runner_test.dart' as base;
 
@@ -25,6 +26,7 @@ void main() {
           'notes': <Object?>[],
         };
       final catalogue = _catalogue(port, h.secrets);
+      _advertiseTools(h, catalogue.specs);
       var returned = false;
       var refreshes = 0;
       h.refresh = () {
@@ -225,6 +227,29 @@ void main() {
       },
     );
   }
+}
+
+void _advertiseTools(base.Harness h, List<AiToolSpec> tools) {
+  h.runner = AiRunner(
+    config: h.config(),
+    wire: h.wire,
+    complete: h.complete,
+    secrets: h.secrets,
+    refreshSecrets: () async => h.refresh?.call(),
+    guard: AiRunGuard(
+      expectedGeneration: 1,
+      ownerApi: h.owner,
+      generation: () => h.generation,
+      api: () => h.api,
+      recipientRevision: () => h.revision,
+      consentValid: () => h.consent,
+    ),
+    system: 'You answer questions about repository data.',
+    tools: tools,
+    close: () => h.closed++,
+    cancelActive: () => h.cancelled++,
+    executeTool: (call) async => h.execute!(call),
+  );
 }
 
 void _expectNoPrefix(String actual, String secret) {

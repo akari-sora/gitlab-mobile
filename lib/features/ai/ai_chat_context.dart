@@ -19,10 +19,14 @@ final class AiChatContext {
     required this.scope,
     this.field,
     this.fetchedAt,
+    this.readConfidential = false,
   });
 
   final AiBuiltContext built;
   final AiResourceScope? scope;
+
+  /// Trusted metadata from the issue read, independent of its display text.
+  final bool readConfidential;
 
   /// The oldest network timestamp, or null for empty / SHA-pinned context.
   final DateTime? fetchedAt;
@@ -171,6 +175,7 @@ Future<AiChatContext> loadAiChatContext({
     built: context.built,
     scope: context.scope,
     field: context.field,
+    readConfidential: context.readConfidential,
     fetchedAt: origin is AiGeneralOrigin || origin is AiFileOrigin
         ? null
         : reads.fetchedAt,
@@ -367,6 +372,7 @@ Future<AiChatContext> _loadIssue(
   );
   return AiChatContext(
     built: built,
+    readConfidential: item['confidential'] == true,
     field: _descriptionField(
       api: api,
       redactor: builder.redactor,

@@ -4,13 +4,38 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
+import 'package:gitlab_mobile/core/instance.dart';
+import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_settings_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
+import 'package:gitlab_mobile/features/security/app_lock.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 
 const _account = 'https://synthetic.example/gitlab#7';
 final _key = Uint8List.fromList(List<int>.filled(32, 7));
+final _identity = Account(
+  instance: GitLabInstance.parse('https://synthetic.example/gitlab'),
+  user: const GitLabUser(id: 7, username: 'developer', name: 'Developer'),
+  token: 'synthetic-test-token',
+);
+
+final class _DeviceCheck implements AppLockAuthenticator {
+  _DeviceCheck(this.onAuthenticate);
+
+  final Future<void> Function() onAuthenticate;
+  var calls = 0;
+
+  @override
+  Future<bool> available() async => true;
+
+  @override
+  Future<bool> authenticate(String reason) async {
+    calls++;
+    await onAuthenticate();
+    return true;
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -175,6 +200,109 @@ void main() {
     expect(harness.store.destructiveCalls, isEmpty);
   });
 
+  testWidgets(
+    'unreadable history still allows lowering only the autonomy ceiling',
+    (tester) async {
+      final harness = await _Harness.create(
+        historyEnabled: true,
+        withKey: true,
+        ceiling: AiAutonomyLevel.bypass,
+        startingLevel: AiAutonomyLevel.bypass,
+      );
+      addTearDown(harness.dispose);
+      harness.store.historyKeyUnavailable = true;
+
+      await harness.pump(tester);
+
+      final ceiling = find.byKey(const ValueKey('ai-write-ceiling'));
+      await tester.scrollUntilVisible(
+        ceiling,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(ceiling);
+      await tester.pumpAndSettle();
+      await tester.tap(ceiling);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-level-bypass')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('ai-level-conversationGrant')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('ai-level-confirmEach')));
+      await tester.pumpAndSettle();
+
+      final record = (await harness.store.memory.loadAccount(_account)).value!;
+      expect(record.ceiling, AiAutonomyLevel.confirmEach);
+      expect(record.startingLevel, AiAutonomyLevel.confirmEach);
+      _expectHistoryControls(tester, enabled: false, clearEnabled: false);
+
+      await tester.ensureVisible(ceiling);
+      await tester.pumpAndSettle();
+      await tester.tap(ceiling);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-level-bypass')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ai-level-conversationGrant')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-level-confirmEach')));
+      await tester.pumpAndSettle();
+      harness.store.historyKeyUnavailable = false;
+      await harness.history.onResume();
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'history becoming unreadable during bypass confirmation blocks the raise',
+    (tester) async {
+      var failRoot = false;
+      late _Harness harness;
+      final device = _DeviceCheck(() async {
+        failRoot = true;
+        expect(await harness.history.read(_account), isNull);
+        expect(harness.history.state(_account), AiHistoryState.readFailed);
+      });
+      harness = await _Harness.create(
+        historyEnabled: true,
+        withKey: true,
+        failRoot: () => failRoot,
+        account: _identity,
+        deviceCheck: device,
+      );
+      addTearDown(harness.dispose);
+
+      await harness.pump(tester);
+      final ceiling = find.byKey(const ValueKey('ai-write-ceiling'));
+      await tester.scrollUntilVisible(
+        ceiling,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(ceiling);
+      await tester.pumpAndSettle();
+      await tester.tap(ceiling);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-level-bypass')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-bypass-username')),
+        'developer',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('ai-bypass-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(device.calls, 1);
+      expect(harness.history.state(_account), AiHistoryState.readFailed);
+      final record = (await harness.store.memory.loadAccount(_account)).value!;
+      expect(record.ceiling, AiAutonomyLevel.lowRiskAuto);
+      expect(record.startingLevel, AiAutonomyLevel.lowRiskAuto);
+    },
+  );
+
   for (final failure in ['file deletion', 'key deletion']) {
     testWidgets(
       'failed history $failure preserves the key and retry requires confirmation',
@@ -286,12 +414,18 @@ final class _Harness {
     required this.store,
     required this.settings,
     required this.history,
+    this.account,
+    this.deviceCheck,
   });
 
   static Future<_Harness> create({
     required bool historyEnabled,
     bool withKey = false,
     bool Function()? failRoot,
+    AiAutonomyLevel ceiling = AiAutonomyLevel.lowRiskAuto,
+    AiAutonomyLevel startingLevel = AiAutonomyLevel.lowRiskAuto,
+    Account? account,
+    AppLockAuthenticator? deviceCheck,
   }) async {
     final directory = Directory.systemTemp.createTempSync(
       'ai-settings-history-states-',
@@ -299,7 +433,11 @@ final class _Harness {
     final store = _ForwardingStore();
     await store.memory.saveAccount(
       _account,
-      AiAccountRecord(historyEnabled: historyEnabled),
+      AiAccountRecord(
+        historyEnabled: historyEnabled,
+        ceiling: ceiling,
+        startingLevel: startingLevel,
+      ),
     );
     if (withKey) await store.memory.writeHistoryKey(_account, _key);
     final settings = AiSettingsController(store);
@@ -319,6 +457,8 @@ final class _Harness {
       store: store,
       settings: settings,
       history: history,
+      account: account,
+      deviceCheck: deviceCheck,
     );
   }
 
@@ -326,6 +466,8 @@ final class _Harness {
   final _ForwardingStore store;
   final AiSettingsController settings;
   final AiHistoryCoordinator history;
+  final Account? account;
+  final AppLockAuthenticator? deviceCheck;
 
   Future<File> historyFile(String name) async {
     final directory = await history.files.directory(_account);
@@ -340,6 +482,8 @@ final class _Harness {
           settings: settings,
           history: history,
           accountKey: _account,
+          account: account,
+          deviceCheck: deviceCheck,
           isAccountRetained: (key) => key == _account,
         ),
       ),

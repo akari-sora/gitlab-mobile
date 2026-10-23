@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
+import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 
 import 'runner_test.dart' as base;
 
@@ -27,6 +28,7 @@ void main() {
           final h = base.Harness(format: format);
           final port = _Port()..setToolContent(tool, content);
           final catalogue = _catalogue(port, h.secrets);
+          _advertiseTools(h, catalogue.specs);
           AiToolResult? catalogueResult;
           var toolReturned = false;
           var refreshesAfterTool = 0;
@@ -93,6 +95,7 @@ void main() {
                     : List.filled(10000, secret).join(separator.$2);
                 final port = _Port()..setToolContent(tool, content);
                 final catalogue = _catalogue(port, h.secrets);
+                _advertiseTools(h, catalogue.specs);
                 var toolReturned = false;
                 var refreshesAfterTool = 0;
                 h.refresh = () {
@@ -476,6 +479,29 @@ void main() {
     expect(result.plainData.plainStrings.length, lessThan(6000));
     expect(result.plainData.plainText.length, lessThanOrEqualTo(20000));
   });
+}
+
+void _advertiseTools(base.Harness h, List<AiToolSpec> tools) {
+  h.runner = AiRunner(
+    config: h.config(),
+    wire: h.wire,
+    complete: h.complete,
+    secrets: h.secrets,
+    refreshSecrets: () async => h.refresh?.call(),
+    guard: AiRunGuard(
+      expectedGeneration: 1,
+      ownerApi: h.owner,
+      generation: () => h.generation,
+      api: () => h.api,
+      recipientRevision: () => h.revision,
+      consentValid: () => h.consent,
+    ),
+    system: 'You answer questions about repository data.',
+    tools: tools,
+    close: () => h.closed++,
+    cancelActive: () => h.cancelled++,
+    executeTool: (call) async => h.execute!(call),
+  );
 }
 
 void _expectNoSecretPrefix(String actual, String secret) {

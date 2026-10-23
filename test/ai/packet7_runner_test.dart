@@ -53,7 +53,7 @@ void main() {
       final runner = _runner(
         h,
         writeCoordinator: coordinator,
-        currentTools: () => const [],
+        currentTools: () => [_writeSpec],
         toolDeadline: const Duration(milliseconds: 1),
         onToolResult: results.add,
       );

@@ -428,6 +428,7 @@ final class PolicyAiWriteCoordinator
   String _runId = _nonce();
   String? _stopped;
   bool _previousIncomplete = false;
+  bool _resuming = false;
   Timer? _approvalTimer;
   static final List<_WriteLease> _leases = [];
   // A failed graph boundary flush cannot be inferred safe from the cached
@@ -562,7 +563,19 @@ final class PolicyAiWriteCoordinator
     _pending.removeWhere((_, pending) => pending.done.isCompleted);
     _results.clear();
     _runId = _nonce();
+    _resuming = false;
     _userUtterance = userUtterance;
+    _stopped = null;
+    _previousIncomplete = false;
+    _uploadedThisBatch.clear();
+  }
+
+  /// Explicit continuation of this process-local run. New user sends and
+  /// history/projection rebuilds use [beginRun] instead. Recorded call ids stay
+  /// paired with their original outcomes; pending approvals are never revived.
+  void resumeRun() {
+    stop('superseded');
+    _resuming = true;
     _stopped = null;
     _previousIncomplete = false;
     _uploadedThisBatch.clear();
@@ -671,7 +684,8 @@ final class PolicyAiWriteCoordinator
         policy,
         const AiWriteFreshness(),
       );
-      if (initialTier.decision == AiGateDecision.deny && !ownerFromPreRead) {
+      if (initialTier.decision == AiGateDecision.deny &&
+          !(ownerFromPreRead && initialTier.scopeDenied)) {
         throw const _WriteBlocked('policyDenied');
       }
       if (allowance < 1 ||
@@ -720,16 +734,23 @@ final class PolicyAiWriteCoordinator
       if (journal.requiresConfirmation(policy.scope.accountKey, keys)) {
         extra.add(AiFixedConfirmReason.confirmMarkAfterManualRelease);
       }
-      if (journal
+      final settled = journal
           .entries(policy.scope.accountKey)
-          .any(
-            (entry) =>
-                entry.operationId == call.name &&
-                entry.state != AiJournalState.notExecuted &&
-                entry.state != AiJournalState.prepared &&
-                entry.writeKeys.any((key) => prepared.writeKeys.contains(key)),
-          )) {
+          .where((entry) => entry.operationId == call.name &&
+              entry.writeKeys.length == prepared.writeKeys.length &&
+              entry.writeKeys.containsAll(prepared.writeKeys));
+      if (_resuming && settled.any((entry) =>
+          entry.runId == runId &&
+          entry.conversationId == conversationId &&
+          (entry.state == AiJournalState.succeeded ||
+              entry.state == AiJournalState.writeUncertain))) {
         extra.add(AiFixedConfirmReason.duplicateOfSettledWrite);
+      }
+      // §3.1 separately requires successful identical uploads to be confirmed
+      // across runs and conversations, unlike §7.7's resume-only rule.
+      if (call.name == 'upload_attachment' && settled.any((entry) =>
+          entry.state == AiJournalState.succeeded)) {
+        extra.add(AiFixedConfirmReason.duplicateUpload);
       }
       final tier = _tier(
         capability,

@@ -74,6 +74,7 @@ final class AiTierDecision {
     this.showSquash = false,
     this.cancelMayRunAfterScript = false,
     this.known = true,
+    this.scopeDenied = false,
   });
 
   const AiTierDecision.unknown()
@@ -85,9 +86,10 @@ final class AiTierDecision {
       reusesStoredVariables = false,
       showSquash = false,
       cancelMayRunAfterScript = false,
-      known = false;
+      known = false,
+      scopeDenied = false;
 
-  const AiTierDecision.denied(this.tier)
+  const AiTierDecision.denied(this.tier, {this.scopeDenied = false})
     : decision = AiGateDecision.deny,
       requiresTypedName = false,
       typedName = null,
@@ -113,6 +115,10 @@ final class AiTierDecision {
   /// False when the operation is not on the ledger passed to the gate.
   final bool known;
 
+  /// Only an unresolved owner/scope check may wait for a todo pre-read.
+  /// A level denial remains final even when the owner is not known yet.
+  final bool scopeDenied;
+
   bool get canPropose {
     final String? name = typedName;
     return known &&
@@ -134,11 +140,6 @@ AiTierDecision decideListed({
 
 AiTierDecision decideTier(AiTierInput input) {
   final AiCapability capability = input.capability;
-  if (capability.scopeClass == AiScopeClass.groupWorkItem ||
-      input.target.kind == AiTargetKind.groupWorkItem ||
-      !scopeAdmits(input.scope, capability, input.target)) {
-    return AiTierDecision.denied(capability.baseTier);
-  }
   final AiWriteTier tier = _effectiveTier(
     capability.operationId,
     capability.baseTier,
@@ -147,6 +148,11 @@ AiTierDecision decideTier(AiTierInput input) {
   );
   if (input.level == AiAutonomyLevel.readOnly) {
     return AiTierDecision.denied(tier);
+  }
+  if (capability.scopeClass == AiScopeClass.groupWorkItem ||
+      input.target.kind == AiTargetKind.groupWorkItem ||
+      !scopeAdmits(input.scope, capability, input.target)) {
+    return AiTierDecision.denied(tier, scopeDenied: true);
   }
   var decision = _matrix(input.level, tier);
   final bool confirmOnly = _confirmOnly(

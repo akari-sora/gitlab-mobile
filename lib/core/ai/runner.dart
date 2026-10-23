@@ -582,6 +582,14 @@ final class AiRunner {
                 arguments: _displayArguments(tc.arguments),
               ),
             );
+            final offeredInSegment = _segmentTools.any(
+              (tool) => tool.name == tc.name,
+            );
+            if (!offeredInSegment) {
+              results.add(synthetic(tc, 'unavailable'));
+              _notifyToolResult(results.last);
+              continue;
+            }
             final handlesWrite = writeCoordinator?.handles(tc.name) ?? false;
             if (handlesWrite && previousWriteIncomplete) {
               results.add(synthetic(tc, 'previousWriteIncomplete'));
@@ -699,6 +707,7 @@ final class AiRunner {
               notExecuted: toolResult.notExecuted,
               readConfidential: successfulRead && toolResult.readConfidential,
               readInternal: successfulRead && toolResult.readInternal,
+              readVisibility: successfulRead ? toolResult.readVisibility : null,
               uploadPlaceholders: toolResult.uploadPlaceholders,
             );
             results.add(safeResult);

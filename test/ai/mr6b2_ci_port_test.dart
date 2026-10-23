@@ -407,7 +407,7 @@ void main() {
   }
 
   test(
-    'bypass fixed confirmation still applies to retry without a name',
+    'bypass fixed confirmation still applies to a resumed retry without a name',
     () async {
       f.h.level = AiAutonomyLevel.bypass;
       final first = await f.propose(
@@ -416,11 +416,12 @@ void main() {
         user: _pipelineUrl,
       );
       await f.automatic(first!);
-      final again = await f.propose(
-        'pipelineAction',
-        _actionArgs('pipelineAction', 'retry'),
-        user: _pipelineUrl,
-      );
+      f.h.coordinator.resumeRun();
+      final again = await f.h.coordinator.propose(AiToolCall(
+        id: 'resumed-retry', name: 'pipelineAction',
+        arguments: {'projectId': 9, ..._actionArgs('pipelineAction', 'retry'),
+          'reason': 'synthetic request'},
+      ));
       expect(again!.tier.decision, AiGateDecision.requireApproval);
       expect(
         again.tier.reasons,
