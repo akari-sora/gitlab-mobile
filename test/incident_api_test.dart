@@ -47,6 +47,12 @@ bool _mutation(RequestOptions request) =>
 Matcher _failure(FailureKind kind) =>
     isA<ApiFailure>().having((error) => error.kind, 'kind', kind);
 
+GitLabApi _boundApi(FakeAdapter adapter) {
+  final api = testApi(adapter);
+  api.bindReadCache('${api.instance.key}#7', 1);
+  return api;
+}
+
 void main() {
   test(
     'GraphQL mutation stream reset is uncertain with one mutation',
@@ -538,7 +544,7 @@ void main() {
           ),
         );
       });
-      final api = testApi(adapter);
+      final api = _boundApi(adapter);
       addTearDown(api.close);
       await api.project('42');
       await api.incidentStatus(_project, 7);
