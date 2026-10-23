@@ -527,6 +527,10 @@ final class _ReadCache {
 
   _ReadClass? classify(Uri uri, {required bool page}) {
     final p = path(uri), q = uri.queryParameters;
+    // Only project detail can resolve a full path into a cacheable numeric id.
+    if (p.length > 2 && p.first == 'projects' && int.tryParse(p[1]) == null) {
+      return null;
+    }
     if (q.keys.any(paginationKeys.contains)) return null;
     if (q.containsKey('search') || p.contains('search')) {
       return _ReadClass.volatile;
@@ -654,22 +658,6 @@ final class _ReadCache {
         .every((e) => e.value <= (stamp['sequence'] ?? 0));
   }
 
-  bool permittedResponse(Map<String, int> stamp, Uri uri, Object value) {
-    if (!permitted(stamp, publicationUri(uri, value))) return false;
-    final p = path(uri);
-    if (p.length < 3 || p.first != 'projects') return true;
-    final items = value is ApiPage<Json> ? value.items : [value];
-    for (final item in items) {
-      if (item is! Json || item['project_id'] is! int) continue;
-      // A full path can move while its cached alias still names the old project.
-      p[1] = '${item['project_id']}';
-      if (!permitted(stamp, api.instance.api(p, uri.queryParameters))) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   bool sourceAllowed(Uri uri, DateTime fetchedAt, bool pinned) {
     final account = sourceAccountRevokedAt;
     if (account != null && !fetchedAt.isAfter(account)) return false;
@@ -790,12 +778,7 @@ final class _ReadCache {
         '${value['id']}',
       ], uri.queryParameters);
     }
-    // Only project details can safely share an alias key: their response id
-    // decides the final key. Sub-resource cursors retain the caller's path.
-    return canonical(
-      uri,
-      resolveAlias: p.length == 2 && p.first == 'projects',
-    );
+    return canonical(uri);
   }
 
   bool ownsPublication(
@@ -922,7 +905,7 @@ final class _ReadCache {
         if (api._closed ||
             !permitted(permission, uri) ||
             (hydrated != null &&
-                !permittedResponse(permission, uri, hydrated.value))) {
+                !permitted(permission, publicationUri(uri, hydrated.value)))) {
           throw const ApiFailure(FailureKind.cancelled);
         }
         final newer = entries[cacheKey];
@@ -1014,7 +997,7 @@ final class _ReadCache {
           final loaded = await load();
           if (api._closed ||
               !permitted(permission, uri) ||
-              !permittedResponse(permission, uri, loaded.value)) {
+              !permitted(permission, publicationUri(uri, loaded.value))) {
             throw const ApiFailure(FailureKind.cancelled);
           }
           observeLoadedPrivacy(uri, loaded.value);
