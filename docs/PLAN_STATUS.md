@@ -1,6 +1,6 @@
 # Plan and status
 
-Last updated: 2026-10-23 (late night, before a reboot).
+Last updated: 2026-10-24 (early hours).
 
 This page is the single place for **what we are building, in what order, and where each piece stands**.
 - Update it in the same MR that changes a status.
