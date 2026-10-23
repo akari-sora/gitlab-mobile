@@ -498,6 +498,7 @@ final class SessionController extends ChangeNotifier {
     active = account;
     api = client;
     generation++;
+    client.bindReadCache(account.key, generation);
     unawaited(
       _enqueueLastActive(
         account.key,

@@ -31,6 +31,12 @@ Map<String, dynamic> _envelope() => {
 Matcher _failure(FailureKind kind) =>
     isA<ApiFailure>().having((e) => e.kind, 'kind', kind);
 
+GitLabApi _boundApi(FakeAdapter adapter) {
+  final api = testApi(adapter);
+  api.bindReadCache('${api.instance.key}#7', 1);
+  return api;
+}
+
 void main() {
   test('GraphQL allowlist is exact and independent of REST paths', () {
     final instance = GitLabInstance.parse('https://example.com:8443/gitlab');
@@ -92,7 +98,7 @@ void main() {
             ? jsonResponse(_envelope())
             : jsonResponse(projectJson(42)),
       );
-      final api = testApi(adapter);
+      final api = _boundApi(adapter);
       addTearDown(api.close);
       await api.project('42');
       await api.pipelineGraphPage(_project, 99);

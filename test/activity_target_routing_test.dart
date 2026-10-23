@@ -83,9 +83,10 @@ void main() {
         GitLabApi api,
       })> createSession(
     WidgetTester tester,
-    ActivityEventServer server,
-  ) async {
-    final session = controllerFor(MemoryAccountStore(), server.adapter);
+    ActivityEventServer server, {
+    FakeAdapter? adapter,
+  }) async {
+    final session = controllerFor(MemoryAccountStore(), adapter ?? server.adapter);
     addTearDown(session.dispose);
     await tester.runAsync(session.initialize);
     await tester.runAsync(
@@ -326,14 +327,14 @@ void main() {
       'cache-control': ['no-store'],
     });
     await pumpActivity(tester, server);
-    final projectGetsBefore = server.projectGets;
+    final projectGetsBefore = server.projectDetailGets;
 
     await tester.tap(find.textContaining('刪除了分支 feature-x'));
     await settleNetworkWidgets(tester);
 
-    // Old source RED: old source silently pushed ProjectPage and incremented projectGets.
+    // Removed pushes must leave project navigation to the explicit sheet action.
     expect(find.byType(ProjectPage), findsNothing);
-    expect(server.projectGets - projectGetsBefore, 0,
+    expect(server.projectDetailGets - projectGetsBefore, 0,
         reason: 'Removed push must not silently open project');
     expect(find.byType(BottomSheet), findsOneWidget);
     expect(inSheet(find.byKey(const ValueKey('activity-target-view-project'))),
@@ -345,7 +346,8 @@ void main() {
     await settleNetworkWidgets(tester);
     expect(find.byType(ProjectPage), findsOneWidget);
     expect(tester.widget<ProjectPage>(find.byType(ProjectPage)).project.id, 10);
-    expect(server.projectGets - projectGetsBefore, 1);
+    expect(server.projectDetailGets - projectGetsBefore, 2,
+        reason: 'Licensed project lookup and uncached overview decoration');
   });
 
   testWidgets(
@@ -564,6 +566,7 @@ void main() {
       'T13: session switch cancels held project lookup before push (conditional check)',
       (tester) async {
     final completer = Completer<ResponseBody>();
+    final lookupStarted = Completer<void>();
     final server = ActivityEventServer([
       activityEvent(
         id: 17,
@@ -573,9 +576,17 @@ void main() {
         targetIid: 42,
         targetTitle: 'Gated Issue Target',
       ),
-    ])..projectGate = () => completer.future;
+    ]);
+    final adapter = FakeAdapter((request) {
+      if (request.method == 'GET' &&
+          request.uri == activityInstance.api(['projects', '10'], {'license': 'true'})) {
+        lookupStarted.complete();
+        return completer.future;
+      }
+      return server.adapter.respond(request);
+    });
 
-    final sessionData = await createSession(tester, server);
+    final sessionData = await createSession(tester, server, adapter: adapter);
     await pumpActivityWithSession(
       tester,
       sessionData.session,
@@ -585,6 +596,9 @@ void main() {
 
     await tester.tap(find.text('Gated Issue Target'));
     await tester.pump();
+    await tester.runAsync(
+        () => lookupStarted.future.timeout(const Duration(seconds: 20)));
+    expect(find.byType(WorkItemPage), findsNothing);
 
     // End or switch session while lookup is held in flight
     await tester.runAsync(sessionData.session.endSession);
@@ -1073,7 +1087,7 @@ void main() {
       sessionData.account,
     );
 
-    final projectGetsBefore = server.projectGets;
+    final projectGetsBefore = server.projectDetailGets;
     await tester.tap(find.text('Positive In-Scope Project Milestone'));
     await settleNetworkWidgets(tester);
     expect(find.byType(BottomSheet), findsOneWidget);
@@ -1084,7 +1098,8 @@ void main() {
 
     expect(find.byType(ProjectPage), findsOneWidget);
     expect(tester.widget<ProjectPage>(find.byType(ProjectPage)).project.id, 10);
-    expect(server.projectGets - projectGetsBefore, 1);
+    expect(server.projectDetailGets - projectGetsBefore, 2,
+        reason: 'Licensed project lookup and uncached overview decoration');
     expect(find.byType(BottomSheet), findsNothing);
   });
 

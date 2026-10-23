@@ -311,7 +311,11 @@ void main() {
           api.downloadJobArtifacts(8, 3, sink: _CollectingSink()),
           throwsA(failure(FailureKind.rateLimited)),
         );
-        expect(adapter.requests, hasLength(2));
+        expect(adapter.requests, hasLength(4));
+        expect(adapter.requests[2].uri.path, endsWith('/projects/8/jobs/3/artifacts'));
+        expect(adapter.requests[2].uri.host, 'example.com');
+        expect(adapter.requests[3].uri.host, 'cdn.artifacts.gitlab-static.net');
+        expectNoCredential(adapter.requests[3]);
       }
     });
   }
