@@ -14,11 +14,15 @@ final class AiPortRead<T> {
     this.value, {
     required this.requestCount,
     this.incomplete = false,
+    this.fetchedAt,
+    this.freshnessRetried = false,
   });
 
   final T value;
   final int requestCount;
   final bool incomplete;
+  final DateTime? fetchedAt;
+  final bool freshnessRetried;
 }
 
 final class AiTreeItem {
@@ -64,17 +68,22 @@ abstract interface class AiGitLabFieldReadPort {
 
 final class GitLabAiReadPort
     implements AiGitLabReadPort, AiGitLabFieldReadPort {
-  GitLabAiReadPort(this._api, this.projectId);
+  GitLabAiReadPort(this._api, this.projectId, {DateTime Function()? now})
+    : _now = now ?? DateTime.now;
 
   static const _aiMaxAge = Duration(seconds: 60);
 
   final GitLabApi _api;
   final int projectId;
+  final DateTime Function() _now;
 
   @override
   Future<AiPortRead<AiJson>> release(String tagName) async {
     final value = await _api.record([
-      'projects', '$projectId', 'releases', tagName,
+      'projects',
+      '$projectId',
+      'releases',
+      tagName,
     ]);
     if (value['tag_name'] != tagName) {
       throw const FormatException('releaseIdentityMismatch');
@@ -85,11 +94,16 @@ final class GitLabAiReadPort
   @override
   Future<AiPortRead<AiJson>> milestone(int milestoneId) async {
     final value = await _api.record([
-      'projects', '$projectId', 'milestones', '$milestoneId',
+      'projects',
+      '$projectId',
+      'milestones',
+      '$milestoneId',
     ]);
     final iid = value['iid'];
-    if (value['id'] != milestoneId || value['project_id'] != projectId ||
-        iid is! int || iid <= 0) {
+    if (value['id'] != milestoneId ||
+        value['project_id'] != projectId ||
+        iid is! int ||
+        iid <= 0) {
       throw const FormatException('milestoneIdentityMismatch');
     }
     return AiPortRead(value, requestCount: 1);
@@ -104,9 +118,85 @@ final class GitLabAiReadPort
     if (filePath != null && validatedSnippetPath(filePath) != filePath) {
       throw const FormatException('invalidSnippetPath');
     }
-    final value = await _api.record([
-      'projects', '$projectId', 'snippets', '$snippetId',
-    ]);
+    final measured = await _measure(() async {
+      var metadata = _validatedSnippetMetadata(
+        await _api.record(['projects', '$projectId', 'snippets', '$snippetId']),
+        snippetId,
+      );
+      var metadataAt = _now();
+      final selected = filePath ?? metadata.paths.firstOrNull;
+      if (selected == null) {
+        metadata.result['content_unavailable'] = 'snippetFileListUnknown';
+        return (
+          value: metadata.result,
+          fetchedAt: metadataAt,
+          freshnessRetried: false,
+        );
+      }
+      if (!metadata.paths.contains(selected)) {
+        metadata.result['content_unavailable'] = 'snippetFileNotFound';
+        return (
+          value: metadata.result,
+          fetchedAt: metadataAt,
+          freshnessRetried: false,
+        );
+      }
+      if (isSensitiveRepositoryPath(selected)) {
+        metadata.result['content_unavailable'] = 'sensitivePath';
+        return (
+          value: metadata.result,
+          fetchedAt: metadataAt,
+          freshnessRetried: false,
+        );
+      }
+      final content = await _api.snippetText(
+        projectId,
+        snippetId,
+        ref: ref,
+        filePath: selected,
+      );
+      final contentAt = _now();
+      var freshnessRetried = false;
+      if (_compositionExpired([metadataAt, contentAt])) {
+        freshnessRetried = true;
+        metadata = _validatedSnippetMetadata(
+          await _api.record([
+            'projects',
+            '$projectId',
+            'snippets',
+            '$snippetId',
+          ]),
+          snippetId,
+        );
+        metadataAt = _now();
+        if (!metadata.paths.contains(selected)) {
+          throw const ApiFailure(FailureKind.network);
+        }
+        _requireFreshComposition([metadataAt, contentAt]);
+      }
+      metadata.result['file'] = {
+        'path': selected,
+        'ref': ref,
+        'content': content,
+      };
+      return (
+        value: metadata.result,
+        fetchedAt: _oldest([metadataAt, contentAt]),
+        freshnessRetried: freshnessRetried,
+      );
+    });
+    return AiPortRead(
+      measured.value.value,
+      requestCount: measured.requestCount,
+      fetchedAt: measured.value.fetchedAt,
+      freshnessRetried: measured.value.freshnessRetried,
+    );
+  }
+
+  ({AiJson result, List<String> paths}) _validatedSnippetMetadata(
+    AiJson value,
+    int snippetId,
+  ) {
     if (value['id'] != snippetId || value['project_id'] != projectId) {
       throw const FormatException('snippetIdentityMismatch');
     }
@@ -118,7 +208,8 @@ final class GitLabAiReadPort
           throw const FormatException('invalidSnippetFiles');
         }
         final path = file['path'] ?? file['file_path'];
-        if (path is! String || validatedSnippetPath(path) != path ||
+        if (path is! String ||
+            validatedSnippetPath(path) != path ||
             paths.contains(path)) {
           throw const FormatException('invalidSnippetFiles');
         }
@@ -127,31 +218,15 @@ final class GitLabAiReadPort
     } else if (files != null) {
       throw const FormatException('invalidSnippetFiles');
     }
-    final result = <String, Object?>{
-      ...value,
-      'files': [for (final path in paths) {'path': path}],
-    };
-    if (paths.isEmpty) {
-      result['content_unavailable'] = 'snippetFileListUnknown';
-      return AiPortRead(result, requestCount: 1);
-    }
-    final selected = filePath ?? paths.first;
-    if (!paths.contains(selected)) {
-      result['content_unavailable'] = 'snippetFileNotFound';
-      return AiPortRead(result, requestCount: 1);
-    }
-    if (isSensitiveRepositoryPath(selected)) {
-      result['content_unavailable'] = 'sensitivePath';
-      return AiPortRead(result, requestCount: 1);
-    }
-    final content = await _api.snippetText(
-      projectId,
-      snippetId,
-      ref: ref,
-      filePath: selected,
+    return (
+      result: <String, Object?>{
+        ...value,
+        'files': [
+          for (final path in paths) {'path': path},
+        ],
+      },
+      paths: paths,
     );
-    result['file'] = {'path': selected, 'ref': ref, 'content': content};
-    return AiPortRead(result, requestCount: 2);
   }
 
   @override
@@ -213,25 +288,47 @@ final class GitLabAiReadPort
     int iid,
   ) async {
     final measured = await _measure(() async {
-      final value = await _cachedRecord([
-        'projects',
-        '$projectId',
-        resource,
-        '$iid',
-      ]);
-      final notes = await _cachedRecords(
-        ['projects', '$projectId', resource, '$iid', 'notes'],
+      final resourcePath = ['projects', '$projectId', resource, '$iid'];
+      final notesPath = [...resourcePath, 'notes'];
+      var value = await _cachedRecord(resourcePath);
+      var notes = await _cachedRecords(
+        notesPath,
         query: const {
           'order_by': 'created_at',
           'sort': 'desc',
           'per_page': '30',
         },
       );
-      return <String, Object?>{...value, 'notes': notes.items};
+      var freshnessRetried = false;
+      if (_compositionExpired([value.fetchedAt, notes.fetchedAt])) {
+        freshnessRetried = true;
+        if (!notes.fetchedAt.isBefore(value.fetchedAt)) {
+          value = await _cachedRecord(resourcePath, fresh: true);
+        } else {
+          notes = await _cachedRecords(
+            notesPath,
+            query: const {
+              'order_by': 'created_at',
+              'sort': 'desc',
+              'per_page': '30',
+            },
+            fresh: true,
+          );
+        }
+        _requireFreshComposition([value.fetchedAt, notes.fetchedAt]);
+      }
+      return (
+        value: <String, Object?>{...value.value, 'notes': notes.value.items},
+        fetchedAt: _oldest([value.fetchedAt, notes.fetchedAt]),
+        freshnessRetried: freshnessRetried,
+      );
     });
-    return AiPortRead(<String, Object?>{
-      ...measured.value,
-    }, requestCount: measured.requestCount);
+    return AiPortRead(
+      measured.value.value,
+      requestCount: measured.requestCount,
+      fetchedAt: measured.value.fetchedAt,
+      freshnessRetried: measured.value.freshnessRetried,
+    );
   }
 
   @override
@@ -241,42 +338,75 @@ final class GitLabAiReadPort
     required String baseSha,
   }) async {
     final measured = await _measure(() async {
-      final versions = await _cachedRecords(
-        ['projects', '$projectId', 'merge_requests', '$iid', 'versions'],
-        query: const {'per_page': '100'},
-      );
-      final version = versions.items.cast<AiJson?>().firstWhere(
-        (candidate) =>
-            candidate?['head_commit_sha'] == headSha &&
-            candidate?['base_commit_sha'] == baseSha,
-        orElse: () => null,
-      );
-      final versionId = version?['id'];
-      if (versionId is! int) {
-        throw const FormatException('Merge request has no diff version.');
-      }
-      final value = await _cachedRecord([
+      final versionsPath = [
         'projects',
         '$projectId',
         'merge_requests',
         '$iid',
         'versions',
-        '$versionId',
-      ]);
-      return <String, Object?>{
-        'diff_refs': {
-          'head_sha': value['head_commit_sha'] ?? version?['head_commit_sha'],
-          'base_sha': value['base_commit_sha'] ?? version?['base_commit_sha'],
+      ];
+      var versions = await _cachedRecords(
+        versionsPath,
+        query: const {'per_page': '100'},
+      );
+      var version = _matchingVersion(versions.value, headSha, baseSha);
+      var versionId = _versionId(version);
+      var value = await _cachedRecord([...versionsPath, '$versionId']);
+      var freshnessRetried = false;
+      if (_compositionExpired([versions.fetchedAt, value.fetchedAt])) {
+        freshnessRetried = true;
+        if (!value.fetchedAt.isBefore(versions.fetchedAt)) {
+          versions = await _cachedRecords(
+            versionsPath,
+            query: const {'per_page': '100'},
+            fresh: true,
+          );
+          version = _matchingVersion(versions.value, headSha, baseSha);
+          final refreshedVersionId = _versionId(version);
+          if (refreshedVersionId != versionId) {
+            versionId = refreshedVersionId;
+            value = await _cachedRecord([
+              ...versionsPath,
+              '$versionId',
+            ], fresh: true);
+          }
+        } else {
+          value = await _cachedRecord([
+            ...versionsPath,
+            '$versionId',
+          ], fresh: true);
+        }
+        _requireFreshComposition([versions.fetchedAt, value.fetchedAt]);
+      }
+      return (
+        value: <String, Object?>{
+          'diff_refs': {
+            'head_sha':
+                value.value['head_commit_sha'] ?? version['head_commit_sha'],
+            'base_sha':
+                value.value['base_commit_sha'] ?? version['base_commit_sha'],
+          },
+          'changes': value.value['diffs'],
         },
-        'changes': value['diffs'],
-      };
+        fetchedAt: _oldest([versions.fetchedAt, value.fetchedAt]),
+        freshnessRetried: freshnessRetried,
+      );
     });
-    return AiPortRead(measured.value, requestCount: measured.requestCount);
+    return AiPortRead(
+      measured.value.value,
+      requestCount: measured.requestCount,
+      fetchedAt: measured.value.fetchedAt,
+      freshnessRetried: measured.value.freshnessRetried,
+    );
   }
 
-  Future<AiJson> _cachedRecord(List<String> path) async {
+  Future<CachedRead<AiJson>> _cachedRecord(
+    List<String> path, {
+    bool fresh = false,
+  }) async {
     var read = await _api.cachedRecord(
       path,
+      fresh: fresh,
       maxAge: _aiMaxAge,
       allowDisk: false,
     );
@@ -289,16 +419,18 @@ final class GitLabAiReadPort
       );
     }
     _requirePublishable(read);
-    return read.value;
+    return read;
   }
 
-  Future<ApiPage<AiJson>> _cachedRecords(
+  Future<CachedRead<ApiPage<AiJson>>> _cachedRecords(
     List<String> path, {
     Map<String, String> query = const {},
+    bool fresh = false,
   }) async {
     var read = await _api.cachedRecords(
       path,
       query: query,
+      fresh: fresh,
       maxAge: _aiMaxAge,
       allowDisk: false,
     );
@@ -312,7 +444,49 @@ final class GitLabAiReadPort
       );
     }
     _requirePublishable(read);
-    return read.value;
+    return read;
+  }
+
+  AiJson _matchingVersion(
+    ApiPage<AiJson> versions,
+    String headSha,
+    String baseSha,
+  ) {
+    final version = versions.items.cast<AiJson?>().firstWhere(
+      (candidate) =>
+          candidate?['head_commit_sha'] == headSha &&
+          candidate?['base_commit_sha'] == baseSha,
+      orElse: () => null,
+    );
+    if (version == null) {
+      throw const FormatException('Merge request has no diff version.');
+    }
+    return version;
+  }
+
+  int _versionId(AiJson version) {
+    final versionId = version['id'];
+    if (versionId is! int) {
+      throw const FormatException('Merge request has no diff version.');
+    }
+    return versionId;
+  }
+
+  bool _compositionExpired(Iterable<DateTime> fetchedAt) {
+    final age = _now().difference(_oldest(fetchedAt));
+    return age.isNegative || age >= _aiMaxAge;
+  }
+
+  DateTime _oldest(Iterable<DateTime> fetchedAt) {
+    return fetchedAt.reduce(
+      (left, right) => left.isBefore(right) ? left : right,
+    );
+  }
+
+  void _requireFreshComposition(Iterable<DateTime> fetchedAt) {
+    if (_compositionExpired(fetchedAt)) {
+      throw const ApiFailure(FailureKind.network);
+    }
   }
 
   void _requirePublishable<T>(CachedRead<T> read) {
@@ -350,7 +524,26 @@ final class GitLabAiReadPort
 
   @override
   Future<AiPortRead<String>> jobLog(int jobId) async {
+    var requests = 0;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final read = await _jobLogAttempt(jobId);
+      requests += read.requestCount;
+      if (!_compositionExpired(read.fetchedAt)) {
+        return AiPortRead(
+          read.value,
+          requestCount: requests,
+          fetchedAt: _oldest(read.fetchedAt),
+          freshnessRetried: attempt > 0,
+        );
+      }
+    }
+    throw const ApiFailure(FailureKind.network);
+  }
+
+  Future<({String value, int requestCount, List<DateTime> fetchedAt})>
+  _jobLogAttempt(int jobId) async {
     final bytes = <int>[];
+    final fetchedAt = <DateTime>[];
     int? declaredTotal;
     var offset = 0;
     var requests = 0;
@@ -361,6 +554,7 @@ final class GitLabAiReadPort
         offset: offset,
         maxBytes: GitLabApi.maxTextBytes,
       );
+      fetchedAt.add(_now());
       requests += chunk.requestCount;
       if (chunk.startOffset != offset) {
         throw const FormatException('Job trace chunks are not contiguous.');
@@ -394,9 +588,10 @@ final class GitLabAiReadPort
       }
       offset = nextOffset;
     }
-    return AiPortRead(
-      utf8.decode(bytes, allowMalformed: true),
+    return (
+      value: utf8.decode(bytes, allowMalformed: true),
       requestCount: requests,
+      fetchedAt: fetchedAt,
     );
   }
 

@@ -163,7 +163,9 @@ void main() {
 
     test('$name reserves OAuth replay worst case before any GET', () async {
       final h = _Harness();
-      final cost = name == 'get_snippet' ? 4 : 2;
+      // A snippet can reread metadata internally and the catalogue can repeat
+      // the whole composite once if secret refresh ages it before delivery.
+      final cost = name == 'get_snippet' ? 12 : 2;
       final denied = await h.read(
         name,
         budget: AiToolBudget(maxGitLabRequests: cost - 1),
@@ -172,7 +174,7 @@ void main() {
       expect(h.adapter.requests, isEmpty);
       final budget = AiToolBudget(maxGitLabRequests: cost);
       final read = await h.read(name, budget: budget);
-      final expectedRequests = cost ~/ 2;
+      final expectedRequests = name == 'get_snippet' ? 2 : 1;
       expect(read.result.isError, isFalse);
       expect(read.gitLabRequests, expectedRequests);
       expect(budget.gitLabRequests, expectedRequests);

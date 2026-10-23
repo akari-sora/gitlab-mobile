@@ -24,7 +24,7 @@ final class AiChatContext {
   final AiBuiltContext built;
   final AiResourceScope? scope;
 
-  /// The oldest network timestamp in this projection, never its hydration time.
+  /// The oldest network timestamp, or null for empty / SHA-pinned context.
   final DateTime? fetchedAt;
 
   bool isExpired(DateTime now) {
@@ -107,11 +107,12 @@ Future<AiChatContext> loadAiChatContext({
   required Future<void> Function() refreshSecrets,
   required bool Function() isCurrent,
   DateTime Function()? now,
+  void Function(int maxRequests)? beforeRead,
 }) async {
   _requireCurrent(isCurrent);
   final builder = AiContextBuilders(redactor: redactor);
   final nonce = _nonce();
-  final reads = _AiContextReads(api, now ?? DateTime.now);
+  final reads = _AiContextReads(api, now ?? DateTime.now, beforeRead);
 
   final context = switch (origin) {
     AiGeneralOrigin() => AiChatContext(
@@ -144,16 +145,17 @@ Future<AiChatContext> loadAiChatContext({
       refreshSecrets,
       isCurrent,
     ),
-    AiWorkItemOrigin(kind: AiWorkItemKind.mergeRequest) => await _loadMergeRequest(
-      origin,
-      api,
-      reads,
-      builder,
-      nonce,
-      accountKey,
-      refreshSecrets,
-      isCurrent,
-    ),
+    AiWorkItemOrigin(kind: AiWorkItemKind.mergeRequest) =>
+      await _loadMergeRequest(
+        origin,
+        api,
+        reads,
+        builder,
+        nonce,
+        accountKey,
+        refreshSecrets,
+        isCurrent,
+      ),
     AiFileOrigin() => await _loadFile(
       origin,
       api,
@@ -169,7 +171,9 @@ Future<AiChatContext> loadAiChatContext({
     built: context.built,
     scope: context.scope,
     field: context.field,
-    fetchedAt: origin is AiGeneralOrigin ? null : reads.fetchedAt,
+    fetchedAt: origin is AiGeneralOrigin || origin is AiFileOrigin
+        ? null
+        : reads.fetchedAt,
   );
 }
 
@@ -177,19 +181,22 @@ const _aiContextMaxAge = Duration(seconds: 60);
 
 /// Keeps the original timestamps while composing several cache-backed reads.
 final class _AiContextReads {
-  _AiContextReads(this.api, this.now) : fetchedAt = now();
+  _AiContextReads(this.api, this.now, this.beforeRead) : fetchedAt = now();
 
   final GitLabApi api;
   final DateTime Function() now;
+  final void Function(int maxRequests)? beforeRead;
   DateTime fetchedAt;
 
   Future<Json> record(List<String> path) async {
+    beforeRead?.call(4);
     var read = await api.cachedRecord(
       path,
       maxAge: _aiContextMaxAge,
       allowDisk: false,
     );
     if (!_usable(read)) {
+      beforeRead?.call(4);
       read = await api.cachedRecord(
         path,
         fresh: true,
@@ -205,6 +212,7 @@ final class _AiContextReads {
     Map<String, String> query = const {},
     Uri? next,
   }) async {
+    beforeRead?.call(4);
     var read = await api.cachedRecords(
       path,
       query: query,
@@ -213,6 +221,7 @@ final class _AiContextReads {
       allowDisk: false,
     );
     if (!_usable(read)) {
+      beforeRead?.call(4);
       read = await api.cachedRecords(
         path,
         query: query,
@@ -256,6 +265,7 @@ Future<AiChatContext> _loadJob(
     '${origin.jobId}',
   ]);
   _requireCurrent(isCurrent);
+  reads.beforeRead?.call(2);
   final trace = await api.jobTrace(origin.project.id, origin.jobId);
   _requireCurrent(isCurrent);
   await refreshSecrets();
@@ -525,6 +535,7 @@ Future<AiChatContext> _loadFile(
       ),
     );
   }
+  reads.beforeRead?.call(8);
   final text = await api.textFile(
     origin.project.id,
     origin.sha,

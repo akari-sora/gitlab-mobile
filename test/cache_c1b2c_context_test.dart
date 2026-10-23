@@ -137,6 +137,26 @@ final class _Fixture {
 }
 
 void main() {
+  for (final path in ['README.md', '.env']) {
+    test('SHA-pinned context has no expiry, including $path', () async {
+      final fixture = _Fixture();
+      final context = await fixture.load(
+        origin: AiFileOrigin(project: _project, path: path, sha: _sha),
+      );
+      expect(context.fetchedAt, isNull);
+      expect(
+        context.isExpired(fixture.now.add(const Duration(days: 1))),
+        isFalse,
+      );
+      if (path == '.env') {
+        expect(fixture.adapter.requests, isEmpty);
+        expect(context.built.blockedSensitivePaths, [path]);
+      } else {
+        expect(fixture.adapter.requests, hasLength(2));
+      }
+    });
+  }
+
   for (final warmIssue in [false, true]) {
     test(
       'AI issue opening: metadata warm, issue warm=$warmIssue, notes=1 page, '

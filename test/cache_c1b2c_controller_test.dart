@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_display.dart';
+import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
@@ -67,8 +69,9 @@ ResponseBody _tool(
   },
 );
 
-ResponseBody _answer() => ResponseBody.fromString(
+ResponseBody _answer({int? inputTokens}) => ResponseBody.fromString(
   'data: ${jsonEncode({
+    if (inputTokens != null) 'usage': {'prompt_tokens': inputTokens},
     'choices': [
       {
         'index': 0,
@@ -113,7 +116,8 @@ final class _Harness {
             ? jsonResponse({'message': 'unavailable'}, status: 503)
             : jsonResponse(workspace.issue(3, title));
       }
-      if (request.uri.path.endsWith('/issues/3/notes')) {
+      if (request.uri.path.endsWith('/issues/3/notes') ||
+          request.uri.path.endsWith('/issues/4/notes')) {
         return jsonResponse(<Object?>[]);
       }
       return workspace.respond(request);
@@ -147,23 +151,27 @@ final class _Harness {
       settings.dispose();
       session.dispose();
       workspace.api.close();
+      api.close();
     });
   }
 
   Future<AiChatController> controller(
     HttpClientAdapter adapter, {
     bool issue = false,
+    AiChatOrigin? origin,
     Future<void> Function()? refreshSecrets,
   }) async {
     final controller = AiChatController(
-      origin: issue
-          ? AiWorkItemOrigin(
-              project: workspace.project,
-              kind: AiWorkItemKind.issue,
-              iid: 3,
-              title: title,
-            )
-          : const AiGeneralOrigin(),
+      origin:
+          origin ??
+          (issue
+              ? AiWorkItemOrigin(
+                  project: workspace.project,
+                  kind: AiWorkItemKind.issue,
+                  iid: 3,
+                  title: title,
+                )
+              : const AiGeneralOrigin()),
       session: session,
       settings: settings,
       runningCount: () => 0,
@@ -238,6 +246,197 @@ final class _HeldProvider implements HttpClientAdapter {
 }
 
 void main() {
+  test('fix4 cooldown during refresh retains user text and notSent', () async {
+    final harness = _Harness();
+    await harness.initialize();
+    var armed = false;
+    final provider = FakeAdapter((_) => _answer());
+    final controller = await harness.controller(
+      provider,
+      refreshSecrets: () async {
+        if (armed) {
+          harness.api.rateBudget.noteResponse(
+            headers: {
+              'retry-after': ['60'],
+            },
+            statusCode: 429,
+            requestClass: RateRequestClass.global,
+            sequence: harness.api.rateBudget.nextSequence(),
+            trusted: true,
+          );
+        }
+      },
+    );
+    armed = true;
+    await controller.send('keep this cooldown message');
+    expect(provider.requests, isEmpty);
+    expect(controller.sendBlockReason, AiChatSendBlockReason.serverCooldown);
+    expect(
+      controller.items.whereType<AiUserItem>().single.text,
+      'keep this cooldown message',
+    );
+    expect(
+      controller.items.whereType<AiNoticeItem>().map((item) => item.kind),
+      contains(AiNoticeKind.notSent),
+    );
+    expect((controller.failure as AiFailure?)?.kind, AiFailureKind.rateLimited);
+    expect((controller.failure as AiFailure?)?.notSent, isTrue);
+    expect(
+      (controller.failure as AiFailure?)?.retryAt,
+      controller.sendBlockedUntil,
+    );
+    expect(controller.budgetAllocator.activeLeases, 0);
+  });
+
+  test(
+    'fix5 unchanged refresh keeps earlier tool contents and meters refresh',
+    () async {
+      final harness = _Harness();
+      await harness.initialize(tools: true);
+      final provider = _HeldProvider();
+      final controller = await harness.controller(provider, issue: true);
+      final initial = controller.send('read issue four');
+      await _until(() => provider.requests.length == 1);
+      provider.pending[0].complete(_tool('get_issue', {'iid': 4}));
+      await _until(() => provider.requests.length == 2);
+      expect(provider.requests.last.data, contains('tool-only issue'));
+      provider.pending[1].complete(_answer());
+      await initial;
+      final beforeRefresh = harness.gitlab.requests.length;
+      harness.now = harness.now.add(const Duration(seconds: 61));
+      final followUp = controller.send('what was its title');
+      await _until(() => provider.requests.length == 3);
+      expect(provider.requests.last.data, contains('tool-only issue'));
+      expect(
+        provider.requests.last.data,
+        isNot(contains('conversation_summary')),
+      );
+      expect(
+        controller.items.whereType<AiNoticeItem>().map((item) => item.kind),
+        isNot(contains(AiNoticeKind.segmentSummary)),
+      );
+      expect(
+        harness.gitlab.requests.where((r) => r.uri.path.endsWith('/issues/3')),
+        hasLength(2),
+      );
+      expect(harness.gitlab.requests.length - beforeRefresh, 4);
+      expect(controller.budgetAllocator.unconsumedReservations, 36);
+      provider.pending[2].complete(_answer());
+      await followUp;
+      expect(controller.lastEnd, AiRunEnd.done);
+      expect(controller.budgetAllocator.activeLeases, 0);
+    },
+  );
+
+  for (final usage in [true, false]) {
+    test('fix5 changed refresh preserves token cap usage=$usage', () async {
+      final harness = _Harness();
+      await harness.initialize();
+      await harness.settings.setConversationTokenCap(
+        harness.workspace.account.key,
+        50000,
+      );
+      final provider = FakeAdapter(
+        (_) => _answer(inputTokens: usage ? 50001 : null),
+      );
+      final controller = await harness.controller(provider, issue: true);
+      final id = controller.id;
+      await controller.send(
+        usage
+            ? 'use the token cap'
+            : List.filled(10000, 'synthetic question ').join(),
+      );
+      expect(provider.requests, hasLength(1));
+      await controller.send('already over cap');
+      expect(controller.lastEnd, AiRunEnd.tokenBudget);
+      harness.title = 'changed title after token cap';
+      harness.now = harness.now.add(const Duration(seconds: 61));
+      await controller.send('still over cap after context refresh');
+      expect(controller.id, id);
+      expect(controller.lastEnd, AiRunEnd.tokenBudget);
+      expect(provider.requests, hasLength(1));
+      expect(controller.budgetAllocator.activeLeases, 0);
+      expect(
+        controller.items.whereType<AiNoticeItem>().where(
+          (item) => item.kind == AiNoticeKind.segmentSummary,
+        ),
+        hasLength(1),
+      );
+    });
+  }
+
+  for (final path in ['README.md', '.env']) {
+    test('fix5 pinned file context never expires path=$path', () async {
+      final harness = _Harness();
+      await harness.initialize();
+      harness.gitlabOverride = (request) {
+        if (request.uri.path.contains('/repository/files/')) {
+          return ResponseBody.fromString(
+            request.method == 'HEAD' ? '' : 'immutable source',
+            200,
+            headers: {
+              Headers.contentTypeHeader: ['text/plain'],
+            },
+          );
+        }
+        return null;
+      };
+      final provider = FakeAdapter((_) => _answer());
+      final controller = await harness.controller(
+        provider,
+        origin: AiFileOrigin(
+          project: harness.workspace.project,
+          path: path,
+          sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        ),
+      );
+      await controller.send('first pinned question');
+      final reads = harness.gitlab.requests.length;
+      harness.now = harness.now.add(const Duration(seconds: 61));
+      await controller.send('followup pinned question');
+      expect(harness.gitlab.requests, hasLength(reads));
+      expect(provider.requests, hasLength(2));
+      expect(
+        provider.requests.last.data,
+        isNot(contains('conversation_summary')),
+      );
+    });
+  }
+
+  test(
+    'fix5 failed refresh consumes physical requests before releasing lease',
+    () async {
+      final harness = _Harness();
+      await harness.initialize();
+      final provider = FakeAdapter((_) => _answer());
+      final controller = await harness.controller(provider, issue: true);
+      await controller.send('initial');
+      harness.now = harness.now.add(const Duration(seconds: 61));
+      final pending = Completer<ResponseBody>();
+      harness.gitlabOverride = (request) =>
+          request.uri.path.endsWith('/issues/3/notes') ? pending.future : null;
+      final sending = controller.send('refresh with pending notes');
+      await _until(
+        () =>
+            harness.gitlab.requests
+                .where((r) => r.uri.path.endsWith('/issues/3/notes'))
+                .length ==
+            2,
+      );
+      // The successful metadata request has settled; notes is physically in flight.
+      expect(controller.budgetAllocator.activeLeases, 1);
+      final lease = controller.runBudgetLease!;
+      expect(lease.granted, 40);
+      pending.complete(jsonResponse({}, status: 503));
+      await sending;
+      expect(controller.blocker, AiChatBlocker.contextUnavailable);
+      expect(provider.requests, hasLength(1));
+      expect(controller.budgetAllocator.activeLeases, 0);
+      expect(lease.isReleased, isTrue);
+      expect(lease.remaining, 38, reason: 'both physical sends remain charged');
+    },
+  );
+
   test(
     'every send checks the 60s context age and refreshes before provider delivery',
     () async {
@@ -358,6 +557,23 @@ void main() {
         AiChatSendBlockReason.criticalRateBudget,
       );
       expect(controller.budgetAllocator.activeLeases, 0);
+      expect(
+        controller.items.whereType<AiUserItem>().single.text,
+        'becomes critical while preparing',
+      );
+      expect(
+        controller.items.whereType<AiNoticeItem>().map((item) => item.kind),
+        contains(AiNoticeKind.notSent),
+      );
+      expect(
+        (controller.failure as AiFailure?)?.kind,
+        AiFailureKind.rateLimited,
+      );
+      expect((controller.failure as AiFailure?)?.notSent, isTrue);
+      expect(
+        (controller.failure as AiFailure?)?.retryAt,
+        controller.sendBlockedUntil,
+      );
     },
   );
 

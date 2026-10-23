@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
@@ -7,7 +8,13 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/failure.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/instance.dart';
+import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/core/request_meter.dart';
+
+import 'support/fake_adapter.dart';
 
 const _head = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -49,6 +56,9 @@ AiToolCall _readCall(String id, String path) => AiToolCall(
   name: 'read_file',
   arguments: {'path': path, 'revision': 'head'},
 );
+
+AiToolCall _issueCall(String id) =>
+    AiToolCall(id: id, name: 'get_issue', arguments: const {'iid': 3});
 
 void main() {
   test('catalogue charges one HTTP unit for a normal transport send', () async {
@@ -134,33 +144,44 @@ void main() {
     },
   );
 
-  test('catalogue charges sends completed before a partial failure', () async {
-    final catalogue = _catalogue(
-      _MeterPort((_) async {
-        RequestMeter.current!
-          ..increment()
-          ..increment();
-        throw StateError('synthetic second-stage failure');
-      }),
-    );
-    final budget = AiToolBudget(maxGitLabRequests: 4);
-
-    final result = await catalogue.execute(
-      _readCall('partial-failure', 'failure.dart'),
-      budget: budget,
-    );
-
-    expect(result.result.isError, isTrue);
-    expect(result.gitLabRequests, 2);
-    expect(budget.gitLabRequests, 2);
-  });
-
   test(
-    'catalogue charges a dispatched request when the read is cancelled',
+    'catalogue charges all five sends when an error exceeds reservation four',
     () async {
       final catalogue = _catalogue(
         _MeterPort((_) async {
-          RequestMeter.current!.increment();
+          RequestMeter.current!
+            ..increment()
+            ..increment()
+            ..increment()
+            ..increment()
+            ..increment();
+          throw StateError('synthetic second-stage failure');
+        }),
+      );
+      final budget = AiToolBudget(maxGitLabRequests: 4);
+
+      final result = await catalogue.execute(
+        _readCall('partial-failure', 'failure.dart'),
+        budget: budget,
+      );
+
+      expect(result.result.isError, isTrue);
+      expect(result.gitLabRequests, 5);
+      expect(budget.gitLabRequests, 5);
+    },
+  );
+
+  test(
+    'catalogue charges all five sends when the read is cancelled',
+    () async {
+      final catalogue = _catalogue(
+        _MeterPort((_) async {
+          RequestMeter.current!
+            ..increment()
+            ..increment()
+            ..increment()
+            ..increment()
+            ..increment();
           throw const ApiFailure(FailureKind.cancelled);
         }),
       );
@@ -172,8 +193,159 @@ void main() {
       );
 
       expect(result.result.isError, isTrue);
-      expect(result.gitLabRequests, 1);
-      expect(budget.gitLabRequests, 1);
+      expect(result.gitLabRequests, 5);
+      expect(budget.gitLabRequests, 5);
+    },
+  );
+
+  test(
+    'cache reread plus OAuth replay charges five physical requests',
+    () async {
+      final firstIssueStarted = Completer<void>();
+      final firstIssueResponse = Completer<ResponseBody>();
+      var issueGets = 0;
+      var noteGets = 0;
+      final apiAdapter = FakeAdapter((request) async {
+        final path = request.uri.path;
+        if (request.method == 'PUT') {
+          return jsonResponse({'iid': 3, 'title': 'updated outside tool'});
+        }
+        if (path.endsWith('/issues/3/notes')) {
+          noteGets += 1;
+          return noteGets == 1
+              ? jsonResponse({'message': 'expired'}, status: 401)
+              : jsonResponse(<Object?>[]);
+        }
+        if (path.endsWith('/issues/3')) {
+          issueGets += 1;
+          if (issueGets == 1) {
+            firstIssueStarted.complete();
+            return firstIssueResponse.future;
+          }
+          return jsonResponse({'iid': 3, 'title': 'fixture'});
+        }
+        throw StateError('unexpected request: ${request.method} $path');
+      });
+      var refreshes = 0;
+      final tokenAdapter = FakeAdapter((_) {
+        refreshes += 1;
+        return jsonResponse({
+          'access_token': 'new-access-$refreshes',
+          'refresh_token': 'new-refresh-$refreshes',
+          'token_type': 'bearer',
+        });
+      });
+      final instance = GitLabInstance.parse('https://example.com/gitlab');
+      final api = GitLabApi(
+        instance: instance,
+        credential: const OAuthCredential(
+          accessToken: 'old-access',
+          refreshToken: 'old-refresh',
+          clientId: 'synthetic-client',
+        ),
+        dio: Dio()..httpClientAdapter = apiAdapter,
+        oauth: OAuthTokenClient(
+          instance: instance,
+          clientId: 'synthetic-client',
+          dio: Dio()..httpClientAdapter = tokenAdapter,
+        ),
+      );
+      api.bindReadCache('${instance.key}#7', 1);
+      addTearDown(api.close);
+      final catalogue = AiToolCatalogue(
+        port: GitLabAiReadPort(api, 9),
+        scope: const AiResourceScope(
+          accountKey: 'instance|7',
+          instanceKey: 'https://example.com/gitlab',
+          projectId: 9,
+          projectPath: 'group/project',
+          current: AiResourceRef(kind: AiResourceKind.issue, id: 3),
+          headSha: _head,
+          defaultBranch: 'main',
+        ),
+        redactor: Redactor(secrets: _Secrets()),
+      );
+      final budget = AiToolBudget(maxGitLabRequests: 40);
+
+      final pending = catalogue.execute(
+        _issueCall('cache-reread-oauth'),
+        budget: budget,
+      );
+      await firstIssueStarted.future.timeout(const Duration(seconds: 5));
+      await api.updateIssue(9, 3, {'title': 'updated outside tool'});
+      firstIssueResponse.complete(
+        jsonResponse({'message': 'expired'}, status: 401),
+      );
+      final result = await pending.timeout(const Duration(seconds: 5));
+
+      expect(result.result.isError, isFalse);
+      expect(issueGets, 3);
+      expect(noteGets, 2);
+      expect(result.gitLabRequests, 5);
+      expect(budget.gitLabRequests, 5);
+      expect(tokenAdapter.requests, hasLength(2));
+      expect(
+        apiAdapter.requests.where((request) => request.method == 'PUT'),
+        hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'production cache reads stop before a grant that cannot cover reread replay',
+    () async {
+      final apiAdapter = FakeAdapter(
+        (_) => jsonResponse({'iid': 3, 'title': 'must not be sent'}),
+      );
+      final tokenAdapter = FakeAdapter(
+        (_) => jsonResponse({
+          'access_token': 'new-access',
+          'refresh_token': 'new-refresh',
+          'token_type': 'bearer',
+        }),
+      );
+      final instance = GitLabInstance.parse('https://example.com/gitlab');
+      final api = GitLabApi(
+        instance: instance,
+        credential: const OAuthCredential(
+          accessToken: 'old-access',
+          refreshToken: 'old-refresh',
+          clientId: 'synthetic-client',
+        ),
+        dio: Dio()..httpClientAdapter = apiAdapter,
+        oauth: OAuthTokenClient(
+          instance: instance,
+          clientId: 'synthetic-client',
+          dio: Dio()..httpClientAdapter = tokenAdapter,
+        ),
+      );
+      addTearDown(api.close);
+      final catalogue = AiToolCatalogue(
+        port: GitLabAiReadPort(api, 9),
+        scope: const AiResourceScope(
+          accountKey: 'instance|7',
+          instanceKey: 'https://example.com/gitlab',
+          projectId: 9,
+          projectPath: 'group/project',
+          current: AiResourceRef(kind: AiResourceKind.issue, id: 3),
+          headSha: _head,
+          defaultBranch: 'main',
+        ),
+        redactor: Redactor(secrets: _Secrets()),
+      );
+      final budget = AiToolBudget(maxGitLabRequests: 11);
+
+      final result = await catalogue.execute(
+        _issueCall('guarded-cache-read'),
+        budget: budget,
+      );
+
+      expect(result.result.isError, isTrue);
+      expect(result.result.content, contains('GitLab request limit reached'));
+      expect(result.gitLabRequests, 0);
+      expect(budget.gitLabRequests, 0);
+      expect(apiAdapter.requests, isEmpty);
+      expect(tokenAdapter.requests, isEmpty);
     },
   );
 

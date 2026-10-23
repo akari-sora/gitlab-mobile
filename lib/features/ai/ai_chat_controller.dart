@@ -33,6 +33,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart' show OAuthCredential;
 import '../../core/rate_budget.dart';
+import '../../core/request_meter.dart';
 import '../../l10n/l10n.dart';
 import '../auth/session_controller.dart';
 import '../workspace/attachment_picker.dart';
@@ -87,11 +88,36 @@ final class _AiRunBudget {
     return pending;
   }
 
+  Future<T> measureContext<T>(
+    Future<T> Function(void Function(int) beforeRead) load,
+  ) async {
+    final meter = RequestMeter();
+    try {
+      return await meter.runAsync(
+        () => load((maximum) {
+          // Each context read bounds cache invalidation and OAuth retries.
+          // Reserve that path before transport; settle only actual sends below.
+          if (meter.count + maximum > lease.remaining) {
+            throw const AiFailure(AiFailureKind.rateLimited, notSent: true);
+          }
+        }),
+      );
+    } finally {
+      tools.settleRequests(reserved: 0, measured: meter.count);
+      consumeTools();
+    }
+  }
+
   void consumeTools() {
-    if (lease.isReleased) return;
+    // Pending calls still include conservative reservations, not settled HTTP.
+    if (lease.isReleased ||
+        _reads.isNotEmpty ||
+        (writes?.inFlightWrites.isNotEmpty ?? false)) {
+      return;
+    }
     final delta = tools.gitLabRequests - _consumed;
     if (delta <= 0) return;
-    lease.consume(min(delta, lease.remaining));
+    lease.consume(delta);
     _consumed += delta;
   }
 
@@ -105,8 +131,11 @@ final class _AiRunBudget {
       ];
       if (pending.isNotEmpty) await Future.wait(pending);
     } finally {
-      consumeTools();
-      lease.release();
+      try {
+        consumeTools();
+      } finally {
+        lease.release();
+      }
     }
   }
 }
@@ -212,6 +241,9 @@ class AiChatController extends ChangeNotifier
   @visibleForTesting
   RunBudgetAllocator get budgetAllocator => _budgetAllocator;
 
+  @visibleForTesting
+  RunBudgetLease? get runBudgetLease => _runBudget?.lease;
+
   AiChatSendBlockReason? get sendBlockReason {
     if (_api.rateBudget.snapshot().level == RateLevel.critical) {
       return AiChatSendBlockReason.criticalRateBudget;
@@ -240,8 +272,8 @@ class AiChatController extends ChangeNotifier
 
   PolicyAiWriteCoordinator? _writes;
 
-  /// This conversation's upload placeholder table, created with its runner
-  /// and dropped with it. It lives only in memory.
+  /// This conversation's upload placeholder table, retained across context
+  /// refreshes and dropped with the conversation. It lives only in memory.
   write_text.UploadPlaceholderTable? _placeholders;
   AiAttachmentSession? _attachments;
   AiAutonomyLevel? _autonomyLevel;
@@ -1447,7 +1479,7 @@ class AiChatController extends ChangeNotifier
   AiComplete _rateCheckedComplete(
     AiWireClient client, {
     required _AiRunBudget? Function() budget,
-    required AiChatContext context,
+    required AiChatContext Function() context,
     required bool Function() isCurrent,
   }) => (plan, {onEvent}) {
     if (!isCurrent()) {
@@ -1462,7 +1494,7 @@ class AiChatController extends ChangeNotifier
           notSent: true,
         );
       }
-      if (context.isExpired(_now())) {
+      if (context().isExpired(_now())) {
         _contextFailed = true;
         _blocker = AiChatBlocker.contextUnavailable;
         throw const AiFailure(AiFailureKind.network, notSent: true);
@@ -1472,22 +1504,25 @@ class AiChatController extends ChangeNotifier
     return client.complete(plan, onEvent: onEvent);
   };
 
-  void _createRunner() {
+  void _createRunner({
+    write_text.UploadPlaceholderTable? retainedPlaceholders,
+  }) {
     final config = _provider!;
     final context = _context!;
     final scope = context.scope;
-    final placeholders = write_text.UploadPlaceholderTable(
-      instance: _api.instance,
-    );
+    final placeholders =
+        retainedPlaceholders ??
+        write_text.UploadPlaceholderTable(instance: _api.instance);
     _placeholders = placeholders;
     final catalogue = scope == null || !config.toolsEnabled
         ? null
         : AiToolCatalogue(
-            port: GitLabAiReadPort(_api, scope.projectId),
+            port: GitLabAiReadPort(_api, scope.projectId, now: _now),
             scope: scope,
             redactor: _redactor,
             refreshSecrets: _refreshSecrets,
             placeholders: placeholders,
+            now: _now,
           );
     var runBudget = _runBudget;
     final noBudget = AiToolBudget(maxGitLabRequests: 0);
@@ -1501,7 +1536,7 @@ class AiChatController extends ChangeNotifier
     AiComplete complete(AiWireClient client) => _rateCheckedComplete(
       client,
       budget: () => runBudget,
-      context: context,
+      context: () => _context!,
       isCurrent: current,
     );
     _completeForRunner = complete;
@@ -1622,7 +1657,7 @@ class AiChatController extends ChangeNotifier
         // summary that cut it means no whole-field write of it.
         if (!_contextDeliveryRecorded) {
           if (_runner case final active?) {
-            context.recordDelivery(placeholders, active.sentContext);
+            _context!.recordDelivery(placeholders, active.sentContext);
             _contextDeliveryRecorded = true;
           }
         }
@@ -1762,7 +1797,13 @@ class AiChatController extends ChangeNotifier
       await _refreshContextForSend(epoch);
       if (!_current(epoch)) return;
       // A refresh or another run may have depleted the shared API budget.
-      if (_phase != AiChatPhase.stopping && sendBlockReason != null) return;
+      if (_phase != AiChatPhase.stopping && sendBlockReason != null) {
+        throw AiFailure(
+          AiFailureKind.rateLimited,
+          retryAt: sendBlockedUntil,
+          notSent: true,
+        );
+      }
       final clean = _redactor.redactSource(text);
       // The page context goes with the first request this segment delivers;
       // its "What was sent" chips go with that message.
@@ -1942,14 +1983,17 @@ class AiChatController extends ChangeNotifier
     if (!(_context?.isExpired(_now()) ?? false)) return;
     final AiChatContext refreshed;
     try {
-      refreshed = await loadAiChatContext(
-        origin: origin,
-        api: _api,
-        redactor: _redactor,
-        accountKey: _accountKey,
-        refreshSecrets: _refreshSecrets,
-        isCurrent: () => _current(epoch),
-        now: _now,
+      refreshed = await _runBudget!.measureContext(
+        (beforeRead) => loadAiChatContext(
+          origin: origin,
+          api: _api,
+          redactor: _redactor,
+          accountKey: _accountKey,
+          refreshSecrets: _refreshSecrets,
+          isCurrent: () => _current(epoch),
+          now: _now,
+          beforeRead: beforeRead,
+        ),
       );
     } on Object {
       if (_current(epoch)) {
@@ -1962,9 +2006,40 @@ class AiChatController extends ChangeNotifier
     if (refreshed.isExpired(_now())) {
       throw const ApiFailure(FailureKind.network);
     }
+    final previous = _context!;
+    final unchanged =
+        listEquals(
+          [
+            for (final block in previous.built.blocks)
+              (block.source, block.plainData.plainText),
+          ],
+          [
+            for (final block in refreshed.built.blocks)
+              (block.source, block.plainData.plainText),
+          ],
+        ) &&
+        previous.scope?.headSha == refreshed.scope?.headSha &&
+        previous.scope?.baseSha == refreshed.scope?.baseSha;
+    if (unchanged) {
+      _context = AiChatContext(
+        built: previous.built,
+        scope: previous.scope,
+        field: previous.field,
+        fetchedAt: refreshed.fetchedAt,
+      );
+      return;
+    }
+    final oldRunner = _runner;
+    final placeholders = _placeholders;
+    _context = refreshed;
+    if (oldRunner == null) return;
+    // AiSegment freezes context into its private wire prefix (ai_transcript.dart
+    // freezeWith); it has no context replacement API. A changed delivered page
+    // therefore needs the permitted projection fallback. Retain conversation
+    // usage and the entire placeholder table, including cut/target restrictions.
     _binding?.dispose();
     _binding = null;
-    _runner?.stop(AiRunEnd.stoppedBySettings);
+    oldRunner.stop(AiRunEnd.stoppedBySettings);
     _writes?.stop('contextChanged');
     for (final pending
         in _writes?.inFlightWrites ?? const <Future<AiWriteOutcome>>[]) {
@@ -1972,13 +2047,18 @@ class AiChatController extends ChangeNotifier
       unawaited(pending.then<void>((_) => _retiredWrites.remove(pending)));
     }
     _writes = null;
-    _placeholders = null;
     _runner = null;
     _completeForRunner = null;
     _transportClosed = false;
-    _context = refreshed;
-    _createRunner();
-    _runner!.restoreFromDisplay(_conversationItems);
+    _createRunner(retainedPlaceholders: placeholders);
+    _runner!
+      ..actualInputTokens = oldRunner.actualInputTokens
+      ..estimatedInputTokens = oldRunner.estimatedInputTokens
+      ..lateRedactions = oldRunner.lateRedactions
+      ..restoreFromDisplay(_conversationItems);
+    if (oldRunner.segment != null) {
+      _items.add(const AiNoticeItem(AiNoticeKind.segmentSummary));
+    }
   }
 
   /// What the page was about, for the chip label. The block source stays
@@ -2269,21 +2349,24 @@ class AiChatController extends ChangeNotifier
     if (previous is! AiToolRunItem) return;
     final status = _writeStatus(outcome);
     _writeRowInfo[index] = _writeRow(call.name, outcome);
-    _replaceItem(index, AiToolRunItem(
-      name: _toolName(call.name),
-      argsPreview: outcome.targetName == null
-          ? previous.argsPreview
-          : displaySafe(outcome.targetName!),
-      status: status.legacyStatus,
-      writeStatus: status,
-      sizeChars: outcome.summary.length,
-      provenance: previous.provenance,
-      resultExcerpt: displaySafe(outcome.summary),
-      blocked: previous.blocked,
-      truncated: previous.truncated,
-      confidential: previous.confidential,
-      internal: previous.internal,
-    ));
+    _replaceItem(
+      index,
+      AiToolRunItem(
+        name: _toolName(call.name),
+        argsPreview: outcome.targetName == null
+            ? previous.argsPreview
+            : displaySafe(outcome.targetName!),
+        status: status.legacyStatus,
+        writeStatus: status,
+        sizeChars: outcome.summary.length,
+        provenance: previous.provenance,
+        resultExcerpt: displaySafe(outcome.summary),
+        blocked: previous.blocked,
+        truncated: previous.truncated,
+        confidential: previous.confidential,
+        internal: previous.internal,
+      ),
+    );
     _notify();
     _saveReportedHistory();
   }
