@@ -2534,7 +2534,7 @@ const _messagesVi = <String>[
   'Không thành công. Hãy thử lại.',
   'Đặt lại nhật ký ghi',
   'Đặt lại nhật ký ghi?',
-  'Đặt lại sẽ xóa nhật ký ghi của AI cho tài khoản này trên thiết bị này và gỡ mọi khóa của các lần ghi bị gián đoạn. Trong 24 giờ tiếp theo, mọi lần ghi của AI đều cần bạn xác nhận. Nhập {username} để xác nhận.',
+  'Đặt lại sẽ xóa nhật ký ghi của AI cho tài khoản này trên thiết bị này và gỡ mọi khóa của các lần ghi bị gián đoạn. Trong 24 giờ tiếp theo, mọi lần ghi của AI đều cần bạn xác nhận.',
   'Đã đặt lại nhật ký ghi.',
   '{count} lần ghi bị gián đoạn cần bạn xem xét',
   'Đang chuẩn bị',

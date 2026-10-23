@@ -2532,7 +2532,7 @@
   "aiWriteLogActionFailed": "Cela n'a pas fonctionné. Réessayez.",
   "aiWriteLogReset": "Réinitialiser le journal des écritures",
   "aiWriteLogResetTitle": "Réinitialiser le journal des écritures ?",
-  "aiWriteLogResetDetail": "La réinitialisation supprime le journal des écritures de l'AI pour ce compte sur cet appareil et lève tous les verrous des écritures interrompues. Pendant les 24 prochaines heures, chaque écriture de l'AI demandera votre confirmation. Saisissez {username} pour confirmer.",
+  "aiWriteLogResetDetail": "La réinitialisation supprime le journal des écritures de l'AI pour ce compte sur cet appareil et lève tous les verrous des écritures interrompues. Pendant les 24 prochaines heures, chaque écriture de l'AI demandera votre confirmation.",
   "aiWriteLogResetDone": "Le journal des écritures a été réinitialisé.",
   "aiWriteLogNeedsAttention": "{count} écritures interrompues demandent votre attention",
   "aiJournalPrepared": "Préparation",

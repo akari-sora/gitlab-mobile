@@ -7690,8 +7690,8 @@ final class AppStrings {
   /// 重設寫入紀錄？
   String get aiWriteLogResetTitle => language._messages[2531];
 
-  /// 重設會刪除這個帳號在這台裝置上的 AI 寫入紀錄，也會解除所有中斷寫入的鎖。接下來 24 小時內，AI 的每一筆寫入都要你確認。輸入 {username} 以確認。
-  String aiWriteLogResetDetail(Object? username) => _format(language, language._messages[2532], {'username': username});
+  /// 重設會刪除這個帳號在這台裝置上的 AI 寫入紀錄，也會解除所有中斷寫入的鎖。接下來 24 小時內，AI 的每一筆寫入都要你確認。
+  String get aiWriteLogResetDetail => language._messages[2532];
 
   /// 已重設寫入紀錄。
   String get aiWriteLogResetDone => language._messages[2533];

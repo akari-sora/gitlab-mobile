@@ -11166,12 +11166,7 @@
   "aiWriteLogActionFailed": "沒有完成，請再試一次。",
   "aiWriteLogReset": "重設寫入紀錄",
   "aiWriteLogResetTitle": "重設寫入紀錄？",
-  "aiWriteLogResetDetail": "重設會刪除這個帳號在這台裝置上的 AI 寫入紀錄，也會解除所有中斷寫入的鎖。接下來 24 小時內，AI 的每一筆寫入都要你確認。輸入 {username} 以確認。",
-  "@aiWriteLogResetDetail": {
-    "placeholders": {
-      "username": {}
-    }
-  },
+  "aiWriteLogResetDetail": "重設會刪除這個帳號在這台裝置上的 AI 寫入紀錄，也會解除所有中斷寫入的鎖。接下來 24 小時內，AI 的每一筆寫入都要你確認。",
   "aiWriteLogResetDone": "已重設寫入紀錄。",
   "aiWriteLogNeedsAttention": "{count} 筆中斷的寫入需要你查看",
   "@aiWriteLogNeedsAttention": {

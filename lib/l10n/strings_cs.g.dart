@@ -2534,7 +2534,7 @@ const _messagesCs = <String>[
   'Nepovedlo se. Zkuste to znovu.',
   'Resetovat protokol zápisů',
   'Resetovat protokol zápisů?',
-  'Reset smaže protokol zápisů AI pro tento účet na tomto zařízení a zruší všechny zámky přerušených zápisů. Následujících 24 hodin bude každý zápis AI vyžadovat vaše potvrzení. Pro potvrzení napište {username}.',
+  'Reset smaže protokol zápisů AI pro tento účet na tomto zařízení a zruší všechny zámky přerušených zápisů. Následujících 24 hodin bude každý zápis AI vyžadovat vaše potvrzení.',
   'Protokol zápisů byl resetován.',
   'Přerušené zápisy vyžadující vaši pozornost: {count}',
   'Příprava',

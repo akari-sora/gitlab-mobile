@@ -2534,7 +2534,7 @@ const _messagesPtBr = <String>[
   'Não funcionou. Tente novamente.',
   'Redefinir o registro de escritas',
   'Redefinir o registro de escritas?',
-  'Redefinir exclui o registro de escritas da AI desta conta neste dispositivo e remove todos os bloqueios das escritas interrompidas. Nas próximas 24 horas, cada escrita da AI precisará da sua confirmação. Digite {username} para confirmar.',
+  'Redefinir exclui o registro de escritas da AI desta conta neste dispositivo e remove todos os bloqueios das escritas interrompidas. Nas próximas 24 horas, cada escrita da AI precisará da sua confirmação.',
   'O registro de escritas foi redefinido.',
   '{count} escritas interrompidas precisam da sua atenção',
   'Preparando',

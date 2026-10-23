@@ -2534,7 +2534,7 @@ const _messagesFr = <String>[
   'Cela n\'a pas fonctionné. Réessayez.',
   'Réinitialiser le journal des écritures',
   'Réinitialiser le journal des écritures ?',
-  'La réinitialisation supprime le journal des écritures de l\'AI pour ce compte sur cet appareil et lève tous les verrous des écritures interrompues. Pendant les 24 prochaines heures, chaque écriture de l\'AI demandera votre confirmation. Saisissez {username} pour confirmer.',
+  'La réinitialisation supprime le journal des écritures de l\'AI pour ce compte sur cet appareil et lève tous les verrous des écritures interrompues. Pendant les 24 prochaines heures, chaque écriture de l\'AI demandera votre confirmation.',
   'Le journal des écritures a été réinitialisé.',
   '{count} écritures interrompues demandent votre attention',
   'Préparation',
