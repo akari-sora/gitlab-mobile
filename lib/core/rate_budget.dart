@@ -70,6 +70,13 @@ final class RateBudgetSnapshot {
 }
 
 final class GitLabRateBudget {
+  /// How early the critical level clears before the server reset.
+  static const criticalLeadTime = Duration(seconds: 10);
+
+  /// When a critical bucket actually stops blocking sends.
+  static DateTime criticalClearedAt(DateTime resetAt) =>
+      resetAt.subtract(criticalLeadTime);
+
   GitLabRateBudget({
     DateTime Function()? now,
     Duration Function(int attempt)? backoff,
@@ -88,6 +95,7 @@ final class GitLabRateBudget {
       StreamController<RateBudgetSnapshot>.broadcast(sync: true);
   Timer? _timer;
   int _sequence = 0;
+  RateLevel _lastLevel = RateLevel.normal;
   final Map<RateRequestClass, int> _fallbackAttempts =
       <RateRequestClass, int>{};
   final Map<RateRequestClass, int> _last429Sequences =
@@ -298,25 +306,42 @@ final class GitLabRateBudget {
     _buckets.removeWhere((_, bucket) => !bucket.resetAt.isAfter(now));
     _cooldowns.removeWhere((_, cooldown) => !cooldown.until.isAfter(now));
     _timer?.cancel();
-    DateTime? next;
-    for (final at in <DateTime>[
+    final candidates = <DateTime>[
       ..._buckets.values.map((bucket) => bucket.resetAt),
       ..._cooldowns.values.map((cooldown) => cooldown.until),
-    ]) {
+    ];
+
+    // A critical bucket stops blocking at reset - leadTime, so wake up then
+    // to publish the recovery instead of waiting for the reset itself.
+    var level = RateLevel.normal;
+    for (final bucket in _buckets.values) {
+      final bucketLevel = _level(bucket, now);
+      if (bucketLevel.index > level.index) level = bucketLevel;
+      if (bucketLevel == RateLevel.critical) {
+        final cleared = criticalClearedAt(bucket.resetAt);
+        if (cleared.isAfter(now)) candidates.add(cleared);
+      }
+    }
+    DateTime? next;
+    for (final at in candidates) {
       if (next == null || at.isBefore(next)) next = at;
     }
-    if (next != null) {
-      final delay = next.difference(now);
+    final wakeAt = next;
+    if (wakeAt != null) {
+      final delay = wakeAt.difference(now);
       _timer = Timer(delay.isNegative ? Duration.zero : delay, () {
         if (_expireAndSchedule()) _publish(_snapshotNow());
       });
     }
     return oldBucketCount != _buckets.length ||
-        oldCooldownCount != _cooldowns.length;
+        oldCooldownCount != _cooldowns.length ||
+        level != _lastLevel;
   }
 
   void _publish(RateBudgetSnapshot value) {
-    if (!_closed) _changes.add(value);
+    if (_closed) return;
+    _lastLevel = value.level;
+    _changes.add(value);
   }
 
   static Duration _defaultBackoff(int attempt) {
@@ -327,8 +352,7 @@ final class GitLabRateBudget {
   static RateLevel _level(_Bucket bucket, DateTime now) {
     final untilReset = bucket.resetAt.difference(now);
     final reserve = math.min(3, math.max(1, (bucket.limit * 0.05).ceil()));
-    if (bucket.remaining < reserve &&
-        untilReset > const Duration(seconds: 10)) {
+    if (bucket.remaining < reserve && untilReset > criticalLeadTime) {
       return RateLevel.critical;
     }
     final low = math.min(15, math.max(2, (bucket.limit * 0.15).ceil()));
@@ -383,11 +407,35 @@ final class RunBudgetAllocator {
 
   final GitLabRateBudget rateBudget;
   final Set<RunBudgetLease> _leases = <RunBudgetLease>{};
+  // Async broadcast with one queued delivery per microtask: a listener that
+  // acquires/releases on notification must not re-enter the controller
+  // while it is still firing (that throws and leaks an ownerless lease).
+  final StreamController<void> _changes = StreamController<void>.broadcast();
+  bool _notifyScheduled = false;
+
+  /// Notifies when capacity frees or is taken, so idle send gates re-read.
+  Stream<void> get changes => _changes.stream;
 
   int get activeLeases => _leases.length;
 
   int get unconsumedReservations =>
       _leases.fold<int>(0, (total, lease) => total + lease.remaining);
+
+  /// Test-only: production allocators live in an [Expando] keyed by the API
+  /// client and are reclaimed with it; controllers cancel their subscription
+  /// on dispose, so no event can reach a dead listener.
+  void close() {
+    if (!_changes.isClosed) unawaited(_changes.close());
+  }
+
+  void _notify() {
+    if (_changes.isClosed || _notifyScheduled) return;
+    _notifyScheduled = true;
+    scheduleMicrotask(() {
+      _notifyScheduled = false;
+      if (!_changes.isClosed) _changes.add(null);
+    });
+  }
 
   RunBudgetLease? acquire(int max) {
     if (max < 0) throw RangeError.value(max, 'max');
@@ -411,11 +459,13 @@ final class RunBudgetAllocator {
           );
     final lease = RunBudgetLease._(this, allocation);
     _leases.add(lease);
+    _notify();
     return lease;
   }
 
   void _release(RunBudgetLease lease) {
     _leases.remove(lease);
+    _notify();
   }
 }
 
@@ -430,12 +480,22 @@ final class RunBudgetLease {
   int get remaining => _remaining;
   bool get isReleased => _released;
 
+  /// Requests consumed beyond the grant. Saturating keeps the measured count
+  /// authoritative for settlement; the excess is recorded here, not shown.
+  int _overrun = 0;
+  int get overrun => _overrun;
+
   void consume(int count) {
     if (_released) throw StateError('The rate-budget lease was released.');
-    if (count < 0 || count > _remaining) {
-      throw RangeError.range(count, 0, _remaining, 'count');
+    if (count < 0) {
+      throw RangeError.range(count, 0, null, 'count');
     }
-    _remaining -= count;
+    if (count <= _remaining) {
+      _remaining -= count;
+    } else {
+      _overrun += count - _remaining;
+      _remaining = 0;
+    }
   }
 
   void release() {

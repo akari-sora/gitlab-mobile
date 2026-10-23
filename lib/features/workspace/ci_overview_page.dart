@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
@@ -11,16 +12,31 @@ import 'ci_page.dart';
 import 'project_page.dart';
 
 import '../../l10n/l10n.dart';
+enum ProjectCiLoadState { unknown, loading, known, error }
+
 final class ProjectCiItem {
   const ProjectCiItem({
     required this.project,
+    this.state = ProjectCiLoadState.unknown,
     this.latestPipeline,
     this.error,
   });
 
   final Project project;
+  final ProjectCiLoadState state;
   final Json? latestPipeline;
   final ApiFailure? error;
+
+  ProjectCiItem copyWith({
+    ProjectCiLoadState? state,
+    Json? latestPipeline,
+    ApiFailure? error,
+  }) => ProjectCiItem(
+    project: project,
+    state: state ?? this.state,
+    latestPipeline: latestPipeline,
+    error: error,
+  );
 
   String get status {
     if (error != null) return 'error';
@@ -76,12 +92,17 @@ class CiOverviewPage extends StatefulWidget {
 }
 
 class _CiOverviewPageState extends State<CiOverviewPage> {
+  static const _pipelineBatchSize = 8;
+
   int _loadEpoch = 0;
   bool _loading = false;
   bool _loadingMore = false;
   Uri? _nextPageUri;
   ApiFailure? _error;
   List<ProjectCiItem> _items = const [];
+  ValueListenable<TickerModeData>? _tickerMode;
+  bool _tickerEnabled = true;
+  bool _resumeWhenVisible = false;
   String _filter = ''; // '', 'running', 'failed'
   String _search = '';
   final _searchController = TextEditingController();
@@ -89,6 +110,8 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
 
   Account? get _account => widget.account ?? widget.session?.active;
   GitLabApi? get _api => widget.api ?? widget.session?.api;
+  bool get _backgroundEnabled =>
+      _tickerEnabled && (ModalRoute.of(context)?.isCurrent ?? true);
 
   @override
   void initState() {
@@ -96,15 +119,66 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     unawaited(_load());
   }
 
+  void _updateTickerMode() {
+    final mode = TickerMode.getValuesNotifier(context);
+    if (!identical(mode, _tickerMode)) {
+      _tickerMode?.removeListener(_tickerModeChanged);
+      _tickerMode = mode;
+      mode.addListener(_tickerModeChanged);
+    }
+    _tickerModeChanged();
+  }
+
+  void _tickerModeChanged() {
+    _tickerEnabled = _tickerMode!.value.enabled;
+    if (_backgroundEnabled) _resumeBackgroundRead();
+  }
+
+  void _resumeBackgroundRead() {
+    if (!_resumeWhenVisible || !_backgroundEnabled || _loading) return;
+    _resumeWhenVisible = false;
+    unawaited(_load(background: true));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateTickerMode();
+  }
+
+  @override
+  void didUpdateWidget(CiOverviewPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final accountChanged = oldWidget.account?.key != widget.account?.key;
+    final apiChanged = !identical(oldWidget.api, widget.api);
+    final sessionChanged = !identical(oldWidget.session, widget.session);
+    if (accountChanged || apiChanged || sessionChanged) {
+      _loadEpoch++;
+      _loading = false;
+      _loadingMore = false;
+      _nextPageUri = null;
+      _error = null;
+      _items = const [];
+      _resumeWhenVisible = false;
+      unawaited(_load());
+    }
+  }
+
   @override
   void dispose() {
+    _tickerMode?.removeListener(_tickerModeChanged);
     _searchController.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool fresh = false, bool background = false}) async {
     if (_loading || !mounted) return;
+    if (background && !_backgroundEnabled) {
+      _resumeWhenVisible = true;
+      return;
+    }
+    if (background) _resumeWhenVisible = false;
     final curAccount = _account;
     final curApi = _api;
     if (curAccount == null || curApi == null) return;
@@ -114,68 +188,95 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     bool current() =>
         mounted &&
         epoch == _loadEpoch &&
+        identical(_api, curApi) &&
+        _account?.key == startAccountKey &&
         (widget.session == null || widget.session!.generation == startGeneration) &&
         (widget.session == null || widget.session!.active?.key == startAccountKey);
+    bool canApply({required bool background}) {
+      if (!current()) return false;
+      if (background && !_backgroundEnabled) {
+        _resumeWhenVisible = true;
+        return false;
+      }
+      return true;
+    }
 
     setState(() {
       _loading = true;
       _error = null;
     });
 
+    var revalidateStaleProjects = false;
     try {
-      final page = await curApi.records(
+      final read = await _cachedPage(
+        curApi,
         ['projects'],
         query: {
           'membership': 'true',
           'order_by': 'last_activity_at',
           'sort': 'desc',
         },
+        fresh: fresh,
+        background: background,
+        current: current,
       );
-      if (!current()) return;
+      if (!canApply(background: background)) return;
+      if (read == null) {
+        if (!background && _items.isEmpty) {
+          setState(() => _error = const ApiFailure(FailureKind.cancelled));
+        }
+        return;
+      }
+      final page = read.value;
+      revalidateStaleProjects = read.stale && !fresh;
       _nextPageUri = page.next;
 
       final projects = page.items.map(Project.fromJson).toList();
-
-      final items = await poolMap(
-        projects,
-        (project) async {
-          if (!current()) {
-            return ProjectCiItem(project: project);
-          }
-          try {
-            final pipelinePage = await curApi.records(
-              ['projects', '${project.id}', 'pipelines'],
-              query: {'per_page': '1'},
-            );
-            return ProjectCiItem(
-              project: project,
-              latestPipeline: pipelinePage.items.isNotEmpty ? pipelinePage.items.first : null,
-            );
-          } catch (e) {
-            return ProjectCiItem(
-              project: project,
-              error: safeFailure(e),
-            );
-          }
-        },
-        maxConcurrent: widget.maxConcurrent,
-      );
-
-      if (!current()) return;
       setState(() {
-        _items = items;
+        final previous = {for (final item in _items) item.project.id: item};
+        _items = projects.map((project) {
+          final item = previous[project.id];
+          return item == null
+              ? ProjectCiItem(project: project)
+              : ProjectCiItem(
+                  project: project,
+                  state: item.state,
+                  latestPipeline: item.latestPipeline,
+                  error: item.error,
+                );
+        }).toList();
       });
+      await _loadPipelineRows(
+        projects,
+        api: curApi,
+        current: current,
+        fresh: fresh && !background,
+        background: background,
+        revalidateStale: !revalidateStaleProjects,
+      );
     } catch (e) {
       if (current()) {
+        final failure = safeFailure(e);
+        final revoked = switch (failure.kind) {
+          FailureKind.unauthenticated ||
+          FailureKind.forbidden ||
+          FailureKind.invisible => true,
+          _ => false,
+        };
+        if (background && !revoked && !canApply(background: true)) return;
         setState(() {
-          _error = safeFailure(e);
+          _error = failure;
         });
       }
     } finally {
-      if (mounted) {
+      if (current()) {
         setState(() {
           _loading = false;
         });
+        if (revalidateStaleProjects) {
+          unawaited(_load(fresh: true, background: true));
+        }
+        _resumeBackgroundRead();
       }
     }
   }
@@ -191,6 +292,8 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     bool current() =>
         mounted &&
         epoch == _loadEpoch &&
+        identical(_api, curApi) &&
+        _account?.key == startAccountKey &&
         (widget.session == null || widget.session!.generation == startGeneration) &&
         (widget.session == null || widget.session!.active?.key == startAccountKey);
 
@@ -212,40 +315,17 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       _nextPageUri = page.next;
 
       final projects = page.items.map(Project.fromJson).toList();
-
-      final newItems = await poolMap(
-        projects,
-        (project) async {
-          if (!current()) {
-            return ProjectCiItem(project: project);
-          }
-          try {
-            final pipelinePage = await curApi.records(
-              ['projects', '${project.id}', 'pipelines'],
-              query: {'per_page': '1'},
-            );
-            return ProjectCiItem(
-              project: project,
-              latestPipeline: pipelinePage.items.isNotEmpty ? pipelinePage.items.first : null,
-            );
-          } catch (e) {
-            return ProjectCiItem(
-              project: project,
-              error: safeFailure(e),
-            );
-          }
-        },
-        maxConcurrent: widget.maxConcurrent,
-      );
-
-      if (!current()) return;
       setState(() {
-        _items = [..._items, ...newItems];
+        _items = [
+          ..._items,
+          ...projects.map((project) => ProjectCiItem(project: project)),
+        ];
       });
+      await _loadPipelineRows(projects, api: curApi, current: current);
     } catch (_) {
       // Keep existing items on failure
     } finally {
-      if (mounted) {
+      if (current()) {
         setState(() {
           _loadingMore = false;
         });
@@ -254,21 +334,224 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
   }
 
   List<ProjectCiItem> get _filteredItems {
-    var list = _items;
+    Iterable<ProjectCiItem> list = _items;
     if (_filter == 'running') {
-      list = list.where((i) => i.isRunning).toList();
+      list = list.where((i) => i.isRunning || _isUnresolved(i));
     } else if (_filter == 'failed') {
-      list = list.where((i) => i.isFailed).toList();
+      list = list.where((i) => i.isFailed || _isUnresolved(i));
     }
     if (_search.isNotEmpty) {
       final q = _search.toLowerCase();
       list = list
           .where((i) =>
               i.project.name.toLowerCase().contains(q) ||
-              i.project.path.toLowerCase().contains(q))
-          .toList();
+              i.project.path.toLowerCase().contains(q));
     }
-    return list;
+    final results = list.toList();
+    final sourceIndex = <int, int>{
+      for (var index = 0; index < _items.length; index++)
+        _items[index].project.id: index,
+    };
+    results.sort((a, b) {
+      final stateOrder = _stateOrder(a.state).compareTo(_stateOrder(b.state));
+      if (stateOrder != 0) return stateOrder;
+      return sourceIndex[a.project.id]!.compareTo(sourceIndex[b.project.id]!);
+    });
+    return results;
+  }
+
+  int _stateOrder(ProjectCiLoadState state) => switch (state) {
+    ProjectCiLoadState.known => 0,
+    ProjectCiLoadState.error => 1,
+    ProjectCiLoadState.loading => 2,
+    ProjectCiLoadState.unknown => 3,
+  };
+
+  bool _isUnresolved(ProjectCiItem item) =>
+      item.state == ProjectCiLoadState.unknown ||
+      item.state == ProjectCiLoadState.loading;
+
+  Future<void> _loadPipelineRows(
+    List<Project> projects, {
+    required GitLabApi api,
+    required bool Function() current,
+    bool fresh = false,
+    bool background = false,
+    bool revalidateStale = true,
+  }) async {
+    final stale = <Project>[];
+    for (var start = 0; start < projects.length; start += _pipelineBatchSize) {
+      if (!current()) return;
+      final proposedEnd = start + _pipelineBatchSize;
+      final end = proposedEnd < projects.length ? proposedEnd : projects.length;
+      final batch = projects.sublist(start, end);
+      final results = await poolMap(
+        batch,
+        (project) => _loadPipelineRow(
+          project,
+          api: api,
+          current: current,
+          fresh: fresh,
+          background: background,
+        ),
+        maxConcurrent: widget.maxConcurrent,
+      );
+      for (var index = 0; index < results.length; index++) {
+        if (results[index]) stale.add(batch[index]);
+      }
+    }
+    if (revalidateStale && stale.isNotEmpty && current()) {
+      unawaited(_loadPipelineRows(
+        stale,
+        api: api,
+        current: current,
+        fresh: true,
+        background: true,
+        revalidateStale: false,
+      ));
+    }
+  }
+
+  Future<bool> _loadPipelineRow(
+    Project project, {
+    required GitLabApi api,
+    required bool Function() current,
+    bool fresh = false,
+    bool background = false,
+  }) async {
+    if (!current()) return false;
+    if (background && !_backgroundEnabled) {
+      _resumeWhenVisible = true;
+      return false;
+    }
+    _replaceItem(
+      project.id,
+      (item) => item.state == ProjectCiLoadState.known
+          ? item
+          : item.copyWith(state: ProjectCiLoadState.loading),
+    );
+    try {
+      final read = await _cachedPage(
+        api,
+        ['projects', '${project.id}', 'pipelines'],
+        query: {'per_page': '1'},
+        fresh: fresh,
+        background: background,
+        current: current,
+      );
+      if (!current()) return false;
+      if (background && !_backgroundEnabled) {
+        _resumeWhenVisible = true;
+        return false;
+      }
+      if (read == null) {
+        if (!background) {
+          _replaceItem(
+            project.id,
+            (item) => item.state == ProjectCiLoadState.known
+                ? item
+                : item.copyWith(
+                    state: ProjectCiLoadState.error,
+                    error: const ApiFailure(FailureKind.cancelled),
+                  ),
+          );
+        }
+        return false;
+      }
+      final pipelinePage = read.value;
+      _replaceItem(
+        project.id,
+        (item) => item.copyWith(
+          state: ProjectCiLoadState.known,
+          latestPipeline: pipelinePage.items.isNotEmpty ? pipelinePage.items.first : null,
+        ),
+      );
+      return read.stale && !fresh;
+    } catch (e) {
+      if (!current()) return false;
+      final failure = safeFailure(e);
+      final revoked = switch (failure.kind) {
+        FailureKind.unauthenticated ||
+        FailureKind.forbidden ||
+        FailureKind.invisible => true,
+        _ => false,
+      };
+      if (background && !revoked && !_backgroundEnabled) {
+        _resumeWhenVisible = true;
+        return false;
+      }
+      _replaceItem(
+        project.id,
+        (item) => background && !revoked && item.state == ProjectCiLoadState.known
+            ? item
+            : item.copyWith(
+                state: ProjectCiLoadState.error,
+                error: failure,
+              ),
+      );
+      return false;
+    }
+  }
+
+  Future<CachedRead<ApiPage<Json>>?> _cachedPage(
+    GitLabApi api,
+    List<String> path, {
+    required Map<String, String> query,
+    required bool fresh,
+    required bool background,
+    required bool Function() current,
+  }) async {
+    Future<CachedRead<ApiPage<Json>>> readPage({
+      required bool fresh,
+      bool quiet = false,
+    }) => CachedRead.run(
+      () => api.cachedRecords(
+        path,
+        query: query,
+        fresh: fresh,
+        background: background,
+      ),
+      mayStart: () => current() && (!background || _backgroundEnabled),
+      waitForQuiet: quiet,
+    );
+
+    bool canContinue() {
+      if (!current()) return false;
+      if (background && !_backgroundEnabled) {
+        _resumeWhenVisible = true;
+        return false;
+      }
+      return true;
+    }
+
+    var read = await readPage(fresh: fresh);
+    if (!canContinue()) return null;
+    if (read.superseded) {
+      read = await readPage(fresh: true);
+      if (!canContinue()) return null;
+      if (read.superseded) {
+        read = await readPage(fresh: true, quiet: true);
+        if (!canContinue()) return null;
+      }
+      if (read.superseded) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+    }
+    return read.dropped ? null : read;
+  }
+
+  void _replaceItem(
+    int projectId,
+    ProjectCiItem Function(ProjectCiItem item) replace,
+  ) {
+    if (!mounted) return;
+    final index = _items.indexWhere((item) => item.project.id == projectId);
+    if (index < 0) return;
+    setState(() {
+      final items = List<ProjectCiItem>.of(_items);
+      items[index] = replace(items[index]);
+      _items = items;
+    });
   }
 
   Future<void> _openItem(ProjectCiItem item) async {
@@ -303,7 +586,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       );
     }
     if (mounted) {
-      unawaited(_load());
+      unawaited(_load(background: true));
     }
   }
 
@@ -325,7 +608,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         actions: [
           IconButton(
             tooltip: l10n.refreshAction,
-            onPressed: _loading ? null : _load,
+            onPressed: _loading ? null : () => _load(fresh: true),
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -333,7 +616,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       body: SafeArea(
         top: false,
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: () => _load(fresh: true),
           child: ScrollToTopOnSignal(
             controller: _scroll,
             child: CustomScrollView(
@@ -398,6 +681,9 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
+                        key: ValueKey(
+                          'ci-overview-filter-${entry.key.isEmpty ? 'all' : entry.key}',
+                        ),
                         label: Text(entry.value),
                         selected: _filter == entry.key,
                         showCheckmark: false,
@@ -476,13 +762,16 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Card(
+        key: ValueKey(
+          'ci-overview-state-${item.project.id}-${item.state.name}',
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: side,
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => _openItem(item),
+          onTap: _isUnresolved(item) ? null : () => _openItem(item),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: Column(
@@ -514,7 +803,19 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (item.latestPipeline != null)
+                  if (item.state == ProjectCiLoadState.loading)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else if (item.state == ProjectCiLoadState.unknown)
+                    Icon(
+                      Icons.help_outline,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    )
+                  else if (item.latestPipeline != null)
                     StatusBadge(valueText(item.latestPipeline!, 'status'))
                   else if (item.error != null)
                     Tooltip(

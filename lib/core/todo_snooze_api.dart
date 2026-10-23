@@ -111,7 +111,7 @@ extension TodoSnoozeApi on GitLabApi {
     bool Function()? mayStart,
   }) async {
     if ((beforeMutation == null) != (mayStart == null)) {
-      throw const ApiFailure(FailureKind.validation);
+      throw ArgumentError('beforeMutation and mayStart must be paired');
     }
     if (id <= 0 || !until.isAfter(DateTime.now())) throw const ApiFailure(FailureKind.validation);
     if (beforeMutation != null) await beforeMutation();
@@ -132,7 +132,7 @@ extension TodoSnoozeApi on GitLabApi {
     bool Function()? mayStart,
   }) async {
     if ((beforeMutation == null) != (mayStart == null)) {
-      throw const ApiFailure(FailureKind.validation);
+      throw ArgumentError('beforeMutation and mayStart must be paired');
     }
     if (id <= 0) throw const ApiFailure(FailureKind.validation);
     if (beforeMutation != null) await beforeMutation();
@@ -146,16 +146,20 @@ extension TodoSnoozeApi on GitLabApi {
   }
 
   /// A complete, actor-bound pending ownership set, including expired snoozes.
-  Future<({String actorId, List<Json> items})> pendingTodosForSnooze({
+  /// `items` contains only supported project targets. IDs in `unsupportedIds`
+  /// are known but must be refused as todoUnsupportedTarget; an ID absent from
+  /// both collections is foreign to this complete set (todoForeign).
+  Future<({String actorId, List<Json> items, Set<int> unsupportedIds})> pendingTodosForSnooze({
     int maxPages = 4,
   }) => _todosForSnoozeOwnership(_pendingTodosForSnoozeQuery, maxPages);
 
   /// A complete, actor-bound set of currently snoozed pending todos.
-  Future<({String actorId, List<Json> items})> snoozedTodosForUnsnooze({
+  /// Uses the same supported/unsupported/absent contract as [pendingTodosForSnooze].
+  Future<({String actorId, List<Json> items, Set<int> unsupportedIds})> snoozedTodosForUnsnooze({
     int maxPages = 4,
   }) => _todosForSnoozeOwnership(_snoozedTodosForUnsnoozeQuery, maxPages);
 
-  Future<({String actorId, List<Json> items})> _todosForSnoozeOwnership(
+  Future<({String actorId, List<Json> items, Set<int> unsupportedIds})> _todosForSnoozeOwnership(
     String query,
     int maxPages,
   ) async {
@@ -165,6 +169,7 @@ extension TodoSnoozeApi on GitLabApi {
     final cursors = <String>{};
     final ids = <int>{};
     final items = <Json>[];
+    final unsupportedIds = <int>{};
     for (var page = 0; page < maxPages; page++) {
       final response = await _read(instance.graphQL, method: 'POST', graphQuery: true, data: {
         'query': query,
@@ -186,12 +191,23 @@ extension TodoSnoozeApi on GitLabApi {
           throw const FormatException('Invalid todo page');
         }
         for (final raw in nodes) {
-          final item = _snoozeOwnershipTodo(objectJson(raw));
-          if (!ids.add(item['id'] as int)) throw const FormatException('Duplicate todo');
-          items.add(item);
+          final todo = _snoozeOwnershipTodo(objectJson(raw));
+          if (!ids.add(todo.id)) throw const FormatException('Duplicate todo');
+          final item = todo.item;
+          if (item == null) {
+            unsupportedIds.add(todo.id);
+          } else {
+            items.add(item);
+          }
         }
         final next = _nextWorkItemCursor(connection, previous: after);
-        if (next == null) return (actorId: currentActor, items: List<Json>.unmodifiable(items));
+        if (next == null) {
+          return (
+            actorId: currentActor,
+            items: List<Json>.unmodifiable(items),
+            unsupportedIds: Set<int>.unmodifiable(unsupportedIds),
+          );
+        }
         if (!cursors.add(next) || page + 1 == maxPages) {
           throw const FormatException('Incomplete todo ownership');
         }
@@ -229,60 +245,83 @@ extension TodoSnoozeApi on GitLabApi {
   }
 }
 
-Json _snoozeOwnershipTodo(Json node) {
+({int id, Json? item}) _snoozeOwnershipTodo(Json node) {
   final todo = _todoGid.firstMatch(requiredString(node, 'id'));
   if (todo == null) throw const FormatException('Invalid todo identity');
-  final project = objectJson(node['project']);
-  final projectId = _projectGid.firstMatch(requiredString(project, 'id'));
-  final path = requiredString(project, 'fullPath');
-  if (projectId == null || _validatedNamespacePathOrNull(path) != path) {
-    throw const FormatException('Invalid todo project');
-  }
-  final type = requiredString(node, 'targetType');
-  final entity = objectJson(node['targetEntity']);
-  final entityType = requiredString(entity, '__typename');
-  final expected = _todoTargetTypes[type];
-  if (expected == null || entityType != expected || entityType == 'Commit') {
-    throw const FormatException('Unsupported todo target');
-  }
-  final entityId = requiredString(entity, 'id');
-  if (!RegExp('^gid://gitlab/$entityType/[1-9][0-9]*\$').hasMatch(entityId)) {
-    throw const FormatException('Invalid todo target identity');
-  }
-  final rawIid = '${entity['iid']}';
-  final iid = RegExp(r'^[1-9][0-9]*$').hasMatch(rawIid) ? int.tryParse(rawIid) : null;
-  final ownProject = objectJson(entity['project']);
-  if (iid == null || iid <= 0 || ownProject['id'] != project['id'] ||
-      ownProject['fullPath'] != path) {
-    throw const FormatException('Wrong todo target project');
-  }
-  if (entityType == 'WorkItem') {
-    final namespace = objectJson(entity['namespace']);
-    final namespaceId = requiredString(namespace, 'id');
-    final namespacePath = requiredString(namespace, 'fullPath');
-    final projectNamespace = RegExp(r'^gid://gitlab/Namespaces::ProjectNamespace/[1-9][0-9]*$').hasMatch(namespaceId);
-    final groupNamespace = RegExp(r'^gid://gitlab/Group/[1-9][0-9]*$').hasMatch(namespaceId);
-    if (!((projectNamespace && namespacePath == path) ||
-        (groupNamespace && path.startsWith('$namespacePath/') &&
-            _validatedNamespacePathOrNull(namespacePath) == namespacePath))) {
-      throw const FormatException('Wrong todo work item namespace');
-    }
+  final id = int.parse(todo.group(1)!);
+  // Null is a valid unsupported target; an omitted field is a schema error.
+  if (!node.containsKey('project') || !node.containsKey('targetEntity') ||
+      !node.containsKey('snoozedUntil')) {
+    throw const FormatException('Incomplete todo node');
   }
   final until = node['snoozedUntil'];
   if (until != null && (until is! String || DateTime.tryParse(until) == null)) {
     throw const FormatException('Invalid snooze time');
   }
-  return Map.unmodifiable({
-    'id': int.parse(todo.group(1)!),
+  final project = _snoozeOwnershipProject(node['project']);
+  final type = requiredString(node, 'targetType');
+  final entity = node['targetEntity'] == null ? null : objectJson(node['targetEntity']);
+  final entityType = entity == null ? null : requiredString(entity, '__typename');
+  final expected = _todoTargetTypes[type];
+  String? entityId;
+  int? iid;
+  ({int id, String path})? ownProject;
+  var namespaceMatches = true;
+  // Only these fragments select an ID, iid and project. Unknown target types
+  // and Commit can legally return only __typename, so do not demand fragments
+  // that the query did not select for them.
+  if (entity != null && const {'Issue', 'MergeRequest', 'WorkItem'}.contains(entityType)) {
+    entityId = requiredString(entity, 'id');
+    if (!RegExp('^gid://gitlab/$entityType/[1-9][0-9]*\$').hasMatch(entityId)) {
+      throw const FormatException('Invalid todo target identity');
+    }
+    final rawIid = '${entity['iid']}';
+    iid = RegExp(r'^[1-9][0-9]*$').hasMatch(rawIid) ? int.tryParse(rawIid) : null;
+    if (iid == null || iid <= 0 || !entity.containsKey('project')) {
+      throw const FormatException('Invalid todo target coordinates');
+    }
+    ownProject = _snoozeOwnershipProject(entity['project']);
+    if (entityType == 'WorkItem') {
+      final namespace = objectJson(entity['namespace']);
+      final namespaceId = requiredString(namespace, 'id');
+      final namespacePath = requiredString(namespace, 'fullPath');
+      final projectNamespace = RegExp(r'^gid://gitlab/Namespaces::ProjectNamespace/[1-9][0-9]*$').hasMatch(namespaceId);
+      final groupNamespace = RegExp(r'^gid://gitlab/Group/[1-9][0-9]*$').hasMatch(namespaceId);
+      if ((!projectNamespace && !groupNamespace) ||
+          _validatedNamespacePathOrNull(namespacePath) != namespacePath) {
+        throw const FormatException('Invalid todo work item namespace');
+      }
+      namespaceMatches = project != null &&
+          ((projectNamespace && namespacePath == project.path) ||
+              (groupNamespace && project.path.startsWith('$namespacePath/')));
+    }
+  }
+  if (project == null || expected == null || entityType != expected ||
+      entityId == null || iid == null || ownProject != project || !namespaceMatches) {
+    return (id: id, item: null);
+  }
+  return (id: id, item: Map<String, dynamic>.unmodifiable({
+    'id': id,
     'target_type': expected,
     'snoozed_until': until,
     'project': Map<String, dynamic>.unmodifiable({
-      'id': int.parse(projectId.group(1)!), 'path_with_namespace': path,
+      'id': project.id, 'path_with_namespace': project.path,
     }),
     'target': Map<String, dynamic>.unmodifiable({
       'id': entityId, 'iid': iid,
     }),
-  });
+  }));
+}
+
+({int id, String path})? _snoozeOwnershipProject(Object? raw) {
+  if (raw == null) return null;
+  final project = objectJson(raw);
+  final projectId = _projectGid.firstMatch(requiredString(project, 'id'));
+  final path = requiredString(project, 'fullPath');
+  if (projectId == null || _validatedNamespacePathOrNull(path) != path) {
+    throw const FormatException('Invalid todo project');
+  }
+  return (id: int.parse(projectId.group(1)!), path: path);
 }
 
 Json _todoGraphData(Uint8List bytes) {
