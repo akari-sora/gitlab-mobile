@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab omezuje požadavky",
   "cacheRefreshFailed": "Nelze obnovit",
   "cacheResumesInMinutes": "Obnoví se přibližně za {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "Kvóta požadavků pro GitLab je téměř vyčerpaná; odesílání je pozastaveno",
+  "aiSendPausedRateLimited": "GitLab omezuje požadavky; odesílání je pozastaveno",
+  "aiSendResumesAfterReset": "Obnoví se po obnovení kvóty požadavků"
 }

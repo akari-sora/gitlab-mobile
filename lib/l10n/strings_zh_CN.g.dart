@@ -2717,4 +2717,7 @@ const _messagesZhCn = <String>[
   '无法刷新',
   '约 {minutes} 分钟后恢复',
   '{verb}{target}',
+  'GitLab 请求额度快用完了，暂停发送',
+  'GitLab 正在限制请求，暂停发送',
+  '请求额度重置后恢复',
 ];

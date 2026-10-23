@@ -2717,4 +2717,7 @@ const _messagesTr = <String>[
   'Yenilenemedi',
   'Yaklaşık {minutes} dk. sonra devam eder',
   '{verb} ({target})',
+  'GitLab istek kotası tükenmek üzere; gönderim duraklatıldı',
+  'GitLab istekleri sınırlıyor; gönderim duraklatıldı',
+  'İstek kotası sıfırlandığında devam eder',
 ];

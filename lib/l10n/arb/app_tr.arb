@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab istekleri sınırlıyor",
   "cacheRefreshFailed": "Yenilenemedi",
   "cacheResumesInMinutes": "Yaklaşık {minutes} dk. sonra devam eder",
-  "activityVerbTarget": "{verb} ({target})"
+  "activityVerbTarget": "{verb} ({target})",
+  "aiSendPausedBudget": "GitLab istek kotası tükenmek üzere; gönderim duraklatıldı",
+  "aiSendPausedRateLimited": "GitLab istekleri sınırlıyor; gönderim duraklatıldı",
+  "aiSendResumesAfterReset": "İstek kotası sıfırlandığında devam eder"
 }

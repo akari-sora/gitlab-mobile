@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab 正在限制请求",
   "cacheRefreshFailed": "无法刷新",
   "cacheResumesInMinutes": "约 {minutes} 分钟后恢复",
-  "activityVerbTarget": "{verb}{target}"
+  "activityVerbTarget": "{verb}{target}",
+  "aiSendPausedBudget": "GitLab 请求额度快用完了，暂停发送",
+  "aiSendPausedRateLimited": "GitLab 正在限制请求，暂停发送",
+  "aiSendResumesAfterReset": "请求额度重置后恢复"
 }

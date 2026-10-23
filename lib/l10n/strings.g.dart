@@ -8238,4 +8238,13 @@ final class AppStrings {
 
   /// {verb}{target}
   String activityVerbTarget(Object? verb, Object? target) => _format(language, language._messages[2714], {'verb': verb, 'target': target});
+
+  /// GitLab 請求額度快用完了，暫停送出
+  String get aiSendPausedBudget => language._messages[2715];
+
+  /// GitLab 正在限制請求，暫停送出
+  String get aiSendPausedRateLimited => language._messages[2716];
+
+  /// 額度重設後恢復
+  String get aiSendResumesAfterReset => language._messages[2717];
 }

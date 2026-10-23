@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab обмежує запити",
   "cacheRefreshFailed": "Не вдалося оновити",
   "cacheResumesInMinutes": "Відновиться приблизно за {minutes} хв",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "Квоту запитів GitLab майже вичерпано; надсилання призупинено",
+  "aiSendPausedRateLimited": "GitLab обмежує запити; надсилання призупинено",
+  "aiSendResumesAfterReset": "Відновиться після скидання квоти запитів"
 }

@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab limite les requêtes",
   "cacheRefreshFailed": "Actualisation impossible",
   "cacheResumesInMinutes": "Reprise dans environ {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "Le quota de requêtes GitLab est presque épuisé ; envoi en pause",
+  "aiSendPausedRateLimited": "GitLab limite les requêtes ; envoi en pause",
+  "aiSendResumesAfterReset": "Reprise à la réinitialisation du quota de requêtes"
 }

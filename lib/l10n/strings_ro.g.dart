@@ -2717,4 +2717,7 @@ const _messagesRo = <String>[
   'Nu se poate reîmprospăta',
   'Se reia în aproximativ {minutes} min',
   '{verb} {target}',
+  'Cota de cereri GitLab este aproape epuizată; trimiterea este suspendată',
+  'GitLab limitează cererile; trimiterea este suspendată',
+  'Se reia când se resetează cota de cereri',
 ];

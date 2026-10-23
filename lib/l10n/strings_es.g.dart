@@ -2717,4 +2717,7 @@ const _messagesEs = <String>[
   'No se puede actualizar',
   'Se reanuda en unos {minutes} min',
   '{verb} {target}',
+  'La cuota de solicitudes de GitLab está casi agotada; envío en pausa',
+  'GitLab está limitando las solicitudes; envío en pausa',
+  'Se reanuda cuando se restablezca la cuota de solicitudes',
 ];

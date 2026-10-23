@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab กำลังจำกัดคำขอ",
   "cacheRefreshFailed": "รีเฟรชไม่ได้",
   "cacheResumesInMinutes": "กลับมาในอีกประมาณ {minutes} นาที",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "โควตาคำขอของ GitLab ใกล้หมดแล้ว จึงหยุดส่งชั่วคราว",
+  "aiSendPausedRateLimited": "GitLab กำลังจำกัดคำขอ จึงหยุดส่งชั่วคราว",
+  "aiSendResumesAfterReset": "กลับมาส่งได้เมื่อโควตาคำขอถูกรีเซ็ต"
 }

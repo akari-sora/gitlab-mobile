@@ -2717,4 +2717,7 @@ const _messagesPl = <String>[
   'Nie można odświeżyć',
   'Wznowienie za ok. {minutes} min',
   '{verb} {target}',
+  'Limit żądań w GitLab jest prawie wyczerpany; wysyłanie wstrzymane',
+  'GitLab ogranicza żądania; wysyłanie wstrzymane',
+  'Wznowienie po odnowieniu limitu żądań',
 ];

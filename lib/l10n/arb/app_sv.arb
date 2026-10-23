@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab begränsar begäranden",
   "cacheRefreshFailed": "Kan inte uppdatera",
   "cacheResumesInMinutes": "Återupptas om ca {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "Kvoten för begäranden hos GitLab är nästan förbrukad; sändningen är pausad",
+  "aiSendPausedRateLimited": "GitLab begränsar begäranden; sändningen är pausad",
+  "aiSendResumesAfterReset": "Återupptas när kvoten för begäranden återställs"
 }

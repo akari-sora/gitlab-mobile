@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab beperkt verzoeken",
   "cacheRefreshFailed": "Kan niet vernieuwen",
   "cacheResumesInMinutes": "Hervatting over ca. {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "Het verzoekenquotum van GitLab is bijna opgebruikt; verzenden is gepauzeerd",
+  "aiSendPausedRateLimited": "GitLab beperkt verzoeken; verzenden is gepauzeerd",
+  "aiSendResumesAfterReset": "Hervatting zodra het verzoekenquotum opnieuw is ingesteld"
 }

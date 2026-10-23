@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab begrenzt derzeit die Anfragen",
   "cacheRefreshFailed": "Aktualisierung nicht möglich",
   "cacheResumesInMinutes": "Fortsetzung in ca. {minutes} Min.",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "Das GitLab-Anfragekontingent ist fast aufgebraucht; Senden pausiert",
+  "aiSendPausedRateLimited": "GitLab begrenzt derzeit die Anfragen; Senden pausiert",
+  "aiSendResumesAfterReset": "Fortsetzung nach Zurücksetzen des Anfragekontingents"
 }
