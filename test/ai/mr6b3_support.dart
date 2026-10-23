@@ -301,6 +301,7 @@ final class Mr6b3Harness {
   final AiWriteJournal journal;
   final Mr6b3GraphPort port;
   final Mr6b3Policy policy = Mr6b3Policy();
+  String Function(String)? safeDisplay;
   DateTime clock = DateTime.utc(2026, 10, 23, 12);
   late AiToolBudget budget;
   late PolicyAiWriteCoordinator coordinator;
@@ -331,7 +332,7 @@ final class Mr6b3Harness {
       instance: GitLabInstance.parse('https://example.com/gitlab'),
     ),
     knownSecrets: () => const {},
-    safeDisplay: (value) => value,
+    safeDisplay: (value) => safeDisplay?.call(value) ?? value,
     ledger: const Mr6b3Ledger(),
     checkFragments:
         (
