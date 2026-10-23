@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/ci_overview_page.dart';
@@ -346,6 +347,358 @@ void main() {
       expect(_requestCount(newAdapter, '/projects/2/pipelines'), 1);
     },
   );
+
+  testWidgets(
+    'fixture=one project cache=warm viewport=800x2400 clock=inside freshness completion=row known: warm reopen sends zero requests per endpoint',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var now = DateTime.utc(2026, 10, 23, 12);
+      final adapter = FakeAdapter((request) {
+        if (request.uri.path.endsWith('/projects')) {
+          return jsonResponse([projectJson(1)]);
+        }
+        if (request.uri.path.endsWith('/projects/1/pipelines')) {
+          return _pipelineResponse(1, status: 'failed');
+        }
+        return jsonResponse({}, status: 404);
+      });
+      final account = _account();
+      final api = _boundApi(adapter, account, clock: () => now);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        workspaceHost(CiOverviewPage(account: account, api: api)),
+      );
+      await pumpUntil(
+        tester,
+        () => _stateFinder(1, ProjectCiLoadState.known).evaluate().isNotEmpty,
+      );
+      expect(_requestCount(adapter, '/projects'), 1);
+      expect(_requestCount(adapter, '/projects/1/pipelines'), 1);
+
+      await tester.pumpWidget(workspaceHost(const SizedBox()));
+      await tester.pump();
+      now = now.add(const Duration(seconds: 30));
+      await tester.pumpWidget(
+        workspaceHost(CiOverviewPage(account: account, api: api)),
+      );
+      await pumpUntil(
+        tester,
+        () => _stateFinder(1, ProjectCiLoadState.known).evaluate().isNotEmpty,
+      );
+
+      expect(_requestCount(adapter, '/projects'), 1);
+      expect(_requestCount(adapter, '/projects/1/pipelines'), 1);
+      expect(_statusText(1, '失敗'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'fixture=one failed project cache=stale viewport=800x2400 clock=after freshness completion=held revalidation done: stale open renders known status then updates in background',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var now = DateTime.utc(2026, 10, 23, 12);
+      final projectsRefresh = Completer<ResponseBody>();
+      final pipelineRefresh = Completer<ResponseBody>();
+      var projectReads = 0;
+      var pipelineReads = 0;
+      final adapter = FakeAdapter((request) {
+        if (request.uri.path.endsWith('/projects')) {
+          projectReads++;
+          return projectReads == 1
+              ? jsonResponse([projectJson(1)])
+              : projectsRefresh.future;
+        }
+        if (request.uri.path.endsWith('/projects/1/pipelines')) {
+          pipelineReads++;
+          return pipelineReads == 1
+              ? _pipelineResponse(1, status: 'failed')
+              : pipelineRefresh.future;
+        }
+        return jsonResponse({}, status: 404);
+      });
+      final account = _account();
+      final api = _boundApi(adapter, account, clock: () => now);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        workspaceHost(CiOverviewPage(account: account, api: api)),
+      );
+      await pumpUntil(
+        tester,
+        () => _stateFinder(1, ProjectCiLoadState.known).evaluate().isNotEmpty,
+      );
+      await tester.pumpWidget(workspaceHost(const SizedBox()));
+      await tester.pump();
+
+      now = now.add(const Duration(seconds: 61));
+      await tester.pumpWidget(
+        workspaceHost(CiOverviewPage(account: account, api: api)),
+      );
+      await pumpUntil(
+        tester,
+        () =>
+            projectReads == 2 &&
+            _stateFinder(1, ProjectCiLoadState.known).evaluate().isNotEmpty,
+      );
+      expect(_statusText(1, '失敗'), findsOneWidget);
+
+      projectsRefresh.complete(jsonResponse([projectJson(1)]));
+      await pumpUntil(tester, () => pipelineReads == 2);
+      expect(_stateFinder(1, ProjectCiLoadState.known), findsOneWidget);
+      expect(_statusText(1, '失敗'), findsOneWidget);
+
+      pipelineRefresh.complete(_pipelineResponse(1, status: 'success'));
+      await pumpUntil(
+        tester,
+        () => _statusText(1, '失敗').evaluate().isEmpty,
+      );
+      expect(_requestCount(adapter, '/projects'), 2);
+      expect(_requestCount(adapter, '/projects/1/pipelines'), 2);
+    },
+  );
+
+  testWidgets(
+    'fixture=one failed project cache=stale viewport=800x2400 clock=after freshness completion=denied revalidation done: stale open withdraws known status on pipeline 403',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var now = DateTime.utc(2026, 10, 23, 12);
+      final pipelineRefresh = Completer<ResponseBody>();
+      var pipelineReads = 0;
+      final adapter = FakeAdapter((request) {
+        if (request.uri.path.endsWith('/projects')) {
+          return jsonResponse([projectJson(1)]);
+        }
+        if (request.uri.path.endsWith('/projects/1/pipelines')) {
+          pipelineReads++;
+          return pipelineReads == 1
+              ? _pipelineResponse(1, status: 'failed')
+              : pipelineRefresh.future;
+        }
+        return jsonResponse({}, status: 404);
+      });
+      final account = _account();
+      final api = _boundApi(adapter, account, clock: () => now);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        workspaceHost(CiOverviewPage(account: account, api: api)),
+      );
+      await pumpUntil(
+        tester,
+        () => _stateFinder(1, ProjectCiLoadState.known).evaluate().isNotEmpty,
+      );
+      await tester.pumpWidget(workspaceHost(const SizedBox()));
+      await tester.pump();
+
+      now = now.add(const Duration(seconds: 61));
+      await tester.pumpWidget(
+        workspaceHost(CiOverviewPage(account: account, api: api)),
+      );
+      await pumpUntil(
+        tester,
+        () =>
+            pipelineReads == 2 &&
+            _stateFinder(1, ProjectCiLoadState.known).evaluate().isNotEmpty,
+      );
+      expect(_statusText(1, '失敗'), findsOneWidget);
+
+      pipelineRefresh.complete(jsonResponse({'message': 'denied'}, status: 403));
+      await pumpUntil(
+        tester,
+        () => _stateFinder(1, ProjectCiLoadState.error).evaluate().isNotEmpty,
+      );
+      expect(_statusText(1, '失敗'), findsNothing);
+      expect(_requestCount(adapter, '/projects/1/pipelines'), 2);
+    },
+  );
+
+  testWidgets(
+    'fixture=one project cache=warm viewport=800x2400 clock=fixed completion=refresh done: explicit refresh sends exactly one request per endpoint',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final now = DateTime.utc(2026, 10, 23, 12);
+      final adapter = FakeAdapter((request) {
+        if (request.uri.path.endsWith('/projects')) {
+          return jsonResponse([projectJson(1)]);
+        }
+        if (request.uri.path.endsWith('/projects/1/pipelines')) {
+          return _pipelineResponse(1);
+        }
+        return jsonResponse({}, status: 404);
+      });
+      final account = _account();
+      final api = _boundApi(adapter, account, clock: () => now);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        workspaceHost(CiOverviewPage(account: account, api: api)),
+      );
+      await pumpUntil(
+        tester,
+        () => _stateFinder(1, ProjectCiLoadState.known).evaluate().isNotEmpty,
+      );
+
+      await tester.tap(find.byIcon(Icons.refresh));
+      await pumpUntil(
+        tester,
+        () =>
+            _requestCount(adapter, '/projects') == 2 &&
+            _requestCount(adapter, '/projects/1/pipelines') == 2,
+      );
+
+      expect(_requestCount(adapter, '/projects'), 2);
+      expect(_requestCount(adapter, '/projects/1/pipelines'), 2);
+      expect(_stateFinder(1, ProjectCiLoadState.known), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'fixture=one failed project cache=warm viewport=800x2400 clock=fixed completion=return refresh done: pipeline return retains known status while revalidating',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final now = DateTime.utc(2026, 10, 23, 12);
+      final projectsRefresh = Completer<ResponseBody>();
+      final pipelineRefresh = Completer<ResponseBody>();
+      var projectReads = 0;
+      var pipelineReads = 0;
+      final adapter = FakeAdapter((request) {
+        if (request.uri.path.endsWith('/projects')) {
+          projectReads++;
+          return projectReads == 1
+              ? jsonResponse([projectJson(1)])
+              : projectsRefresh.future;
+        }
+        if (request.uri.path.endsWith('/projects/1/pipelines')) {
+          pipelineReads++;
+          return pipelineReads == 1
+              ? _pipelineResponse(1, status: 'failed')
+              : pipelineRefresh.future;
+        }
+        if (request.uri.path.endsWith('/projects/1/pipelines/101')) {
+          return jsonResponse(_pipelineJson(1, status: 'failed'));
+        }
+        return jsonResponse({}, status: 404);
+      });
+      final account = _account();
+      final api = _boundApi(adapter, account, clock: () => now);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        workspaceHost(CiOverviewPage(account: account, api: api)),
+      );
+      await pumpUntil(
+        tester,
+        () => _stateFinder(1, ProjectCiLoadState.known).evaluate().isNotEmpty,
+      );
+      expect(_statusText(1, '失敗'), findsOneWidget);
+
+      await tester.tap(_stateFinder(1, ProjectCiLoadState.known));
+      await tester.pump();
+      Navigator.of(tester.element(find.byType(Scaffold).last)).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await pumpUntil(tester, () => projectReads == 2);
+
+      expect(_stateFinder(1, ProjectCiLoadState.known), findsOneWidget);
+      expect(_statusText(1, '失敗'), findsOneWidget);
+
+      projectsRefresh.complete(jsonResponse([projectJson(1)]));
+      await pumpUntil(tester, () => pipelineReads == 2);
+      expect(_stateFinder(1, ProjectCiLoadState.known), findsOneWidget);
+      expect(_statusText(1, '失敗'), findsOneWidget);
+
+      pipelineRefresh.complete(_pipelineResponse(1, status: 'success'));
+      await pumpUntil(
+        tester,
+        () =>
+            _stateFinder(1, ProjectCiLoadState.known).evaluate().isNotEmpty &&
+            _statusText(1, '失敗').evaluate().isEmpty,
+      );
+      expect(_requestCount(adapter, '/projects'), 2);
+      expect(_requestCount(adapter, '/projects/1/pipelines'), 2);
+    },
+  );
+
+  testWidgets(
+    'fixture=one project without pipeline cache=warm viewport=800x2400 clock=fixed completion=return refresh done: project return retains known row while revalidating',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final now = DateTime.utc(2026, 10, 23, 12);
+      final projectsRefresh = Completer<ResponseBody>();
+      final pipelineRefresh = Completer<ResponseBody>();
+      var projectReads = 0;
+      var overviewPipelineReads = 0;
+      final adapter = FakeAdapter((request) {
+        if (request.uri.path.endsWith('/projects')) {
+          projectReads++;
+          return projectReads == 1
+              ? jsonResponse([projectJson(1)])
+              : projectsRefresh.future;
+        }
+        if (request.uri.path.endsWith('/projects/1/pipelines') &&
+            request.uri.queryParameters['per_page'] == '1') {
+          overviewPipelineReads++;
+          return overviewPipelineReads == 1
+              ? jsonResponse([])
+              : pipelineRefresh.future;
+        }
+        if (request.uri.path.endsWith('/projects/1/pipelines')) {
+          return jsonResponse([]);
+        }
+        if (request.uri.path.endsWith('/projects/1')) {
+          return jsonResponse(projectJson(1));
+        }
+        return jsonResponse({}, status: 404);
+      });
+      final account = _account();
+      final api = _boundApi(adapter, account, clock: () => now);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        workspaceHost(CiOverviewPage(account: account, api: api)),
+      );
+      await pumpUntil(
+        tester,
+        () => _stateFinder(1, ProjectCiLoadState.known).evaluate().isNotEmpty,
+      );
+
+      await tester.tap(_stateFinder(1, ProjectCiLoadState.known));
+      await tester.pump();
+      Navigator.of(tester.element(find.byType(Scaffold).last)).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await pumpUntil(tester, () => projectReads == 2);
+      expect(_stateFinder(1, ProjectCiLoadState.known), findsOneWidget);
+
+      projectsRefresh.complete(jsonResponse([projectJson(1)]));
+      await pumpUntil(tester, () => overviewPipelineReads == 2);
+      expect(_stateFinder(1, ProjectCiLoadState.known), findsOneWidget);
+
+      pipelineRefresh.complete(jsonResponse([]));
+      await tester.pumpAndSettle();
+      expect(_requestCount(adapter, '/projects'), 2);
+      expect(overviewPipelineReads, 2);
+    },
+  );
 }
 
 Account _account({int userId = 1}) => Account(
@@ -360,18 +713,38 @@ Map<String, Object?> _namedProjectJson(int id, String name) => {
 };
 
 ResponseBody _pipelineResponse(int id, {String status = 'running'}) =>
-    jsonResponse([
-      {
-        'id': 100 + id,
-        'status': status,
-        'ref': 'main',
-        'sha': '1234567890abcdef',
-        'updated_at': '2026-10-23T12:00:00Z',
-      },
-    ]);
+    jsonResponse([_pipelineJson(id, status: status)]);
+
+Map<String, Object?> _pipelineJson(int id, {String status = 'running'}) => {
+  'id': 100 + id,
+  'status': status,
+  'ref': 'main',
+  'sha': '1234567890abcdef',
+  'updated_at': '2026-10-23T12:00:00Z',
+};
+
+GitLabApi _boundApi(
+  FakeAdapter adapter,
+  Account account, {
+  required DateTime Function() clock,
+}) {
+  final api = GitLabApi(
+    instance: account.instance,
+    token: account.token,
+    dio: Dio()..httpClientAdapter = adapter,
+    readCacheClock: clock,
+  );
+  api.bindReadCache(account.key, 1);
+  return api;
+}
 
 Finder _stateFinder(int id, ProjectCiLoadState state) =>
     find.byKey(ValueKey('ci-overview-state-$id-${state.name}'));
+
+Finder _statusText(int id, String text) => find.descendant(
+  of: _stateFinder(id, ProjectCiLoadState.known),
+  matching: find.text(text),
+);
 
 int _requestCount(FakeAdapter adapter, String suffix) => adapter.requests
     .where(

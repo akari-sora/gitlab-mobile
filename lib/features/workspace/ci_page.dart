@@ -737,9 +737,19 @@ class PipelinePageState extends State<PipelinePage> {
   final Set<Route<dynamic>> _ownedRoutes = {};
   ValueListenable<TickerModeData>? _tickerMode;
   bool _backgroundEnabled = true;
+  bool _resumeWhenVisible = false;
   bool _current(int generation) => mounted && !widget.api.isClosed && generation == _generation;
   bool _readCurrent(int generation, int readEpoch) =>
       _current(generation) && readEpoch == _readEpoch;
+  bool _canApplyRead(int generation, int readEpoch, {required bool background}) {
+    if (!_readCurrent(generation, readEpoch)) return false;
+    if (background && !_backgroundEnabled) {
+      _stale = true;
+      _resumeWhenVisible = true;
+      return false;
+    }
+    return true;
+  }
   Json? get data => _data;
   ApiFailure? get error => _error;
   DateTime? get fetchedAt => _fetchedAt;
@@ -758,6 +768,7 @@ class PipelinePageState extends State<PipelinePage> {
   }
   void _tickerModeChanged() {
     _backgroundEnabled = _tickerMode!.value.enabled;
+    if (!_backgroundEnabled && _revalidating) _resumeWhenVisible = true;
     if (_backgroundEnabled) _startRevalidation(_generation);
   }
   @override
@@ -797,6 +808,7 @@ class PipelinePageState extends State<PipelinePage> {
       _revalidating = false;
       _backgroundFailure = null;
       _backgroundRetryAt = null;
+      _resumeWhenVisible = false;
       _busy = false;
       _loading = false;
       unawaited(_load());
@@ -831,22 +843,28 @@ class PipelinePageState extends State<PipelinePage> {
     required bool fresh,
     required bool background,
   }) async {
-    var read = await owner.api.cachedRecord(
-      ['projects', '${owner.project.id}', 'pipelines', '${owner.id}'],
-      fresh: fresh,
-      background: background,
-    );
-    if (!_readCurrent(generation, readEpoch)) return null;
-    if (read.superseded) {
-      if (background && !_backgroundEnabled) return null;
-      read = await owner.api.cachedRecord(
+    Future<CachedRead<Json>> readPage(bool force, {bool quiet = false}) => CachedRead.run(
+      () => owner.api.cachedRecord(
         ['projects', '${owner.project.id}', 'pipelines', '${owner.id}'],
-        fresh: true,
+        fresh: force,
         background: background,
-      );
-      if (!_readCurrent(generation, readEpoch)) return null;
+      ),
+      mayStart: () => _readCurrent(generation, readEpoch) &&
+          (!background || _backgroundEnabled),
+      waitForQuiet: quiet,
+    );
+    var read = await readPage(fresh);
+    if (!_canApplyRead(generation, readEpoch, background: background)) return null;
+    if (read.superseded) {
+      read = await readPage(true);
+      if (!_canApplyRead(generation, readEpoch, background: background)) return null;
+      if (read.superseded) {
+        read = await readPage(true, quiet: true);
+        if (!_canApplyRead(generation, readEpoch, background: background)) return null;
+      }
+      if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
     }
-    return read.superseded || read.dropped ? null : read;
+    return read.dropped ? null : read;
   }
   void _apply(CachedRead<Json> read) {
     _data = read.value;
@@ -867,6 +885,7 @@ class PipelinePageState extends State<PipelinePage> {
       _revalidating = false;
       _backgroundFailure = null;
       _backgroundRetryAt = null;
+      _resumeWhenVisible = false;
     });
     try {
       final read = await _read(
@@ -897,7 +916,7 @@ class PipelinePageState extends State<PipelinePage> {
         _backgroundFailure != null || _loading) {
       return;
     }
-    setState(() => _revalidating = true);
+    setState(() { _revalidating = true; _resumeWhenVisible = false; });
     unawaited(_revalidate(widget, generation, epoch));
   }
   Future<void> _revalidate(PipelinePage owner, int generation, int readEpoch) async {
@@ -909,25 +928,28 @@ class PipelinePageState extends State<PipelinePage> {
         fresh: true,
         background: true,
       );
-      if (_readCurrent(generation, readEpoch) && read != null) {
+      if (_canApplyRead(generation, readEpoch, background: true) && read != null) {
         setState(() => _apply(read));
       }
     } catch (e) {
-      if (_readCurrent(generation, readEpoch)) {
-        final failure = safeFailure(e);
-        setState(() {
-          if (_revoked(failure)) {
-            _withdraw();
-            _error = failure;
-          } else {
-            _backgroundFailure = failure.kind;
-            _backgroundRetryAt = failure.retryAt;
-          }
-        });
-      }
+      if (!_readCurrent(generation, readEpoch)) return;
+      final failure = safeFailure(e);
+      if (!_revoked(failure) && !_canApplyRead(generation, readEpoch, background: true)) return;
+      setState(() {
+        if (_revoked(failure)) {
+          _withdraw();
+          _error = failure;
+        } else {
+          _backgroundFailure = failure.kind;
+          _backgroundRetryAt = failure.retryAt;
+        }
+      });
     } finally {
       if (_readCurrent(generation, readEpoch)) {
         setState(() => _revalidating = false);
+        if (_resumeWhenVisible && _backgroundEnabled) {
+          _startRevalidation(generation, readEpoch: readEpoch);
+        }
       }
     }
   }

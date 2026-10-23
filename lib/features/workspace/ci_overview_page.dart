@@ -137,7 +137,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool fresh = false, bool background = false}) async {
     if (_loading || !mounted) return;
     final curAccount = _account;
     final curApi = _api;
@@ -158,23 +158,48 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       _error = null;
     });
 
+    var revalidateStaleProjects = false;
     try {
-      final page = await curApi.records(
+      final read = await _cachedPage(
+        curApi,
         ['projects'],
         query: {
           'membership': 'true',
           'order_by': 'last_activity_at',
           'sort': 'desc',
         },
+        fresh: fresh,
+        background: background,
+        current: current,
       );
-      if (!current()) return;
+      if (read == null || !current()) return;
+      final page = read.value;
+      revalidateStaleProjects = read.stale && !fresh;
       _nextPageUri = page.next;
 
       final projects = page.items.map(Project.fromJson).toList();
       setState(() {
-        _items = projects.map((project) => ProjectCiItem(project: project)).toList();
+        final previous = {for (final item in _items) item.project.id: item};
+        _items = projects.map((project) {
+          final item = previous[project.id];
+          return item == null
+              ? ProjectCiItem(project: project)
+              : ProjectCiItem(
+                  project: project,
+                  state: item.state,
+                  latestPipeline: item.latestPipeline,
+                  error: item.error,
+                );
+        }).toList();
       });
-      await _loadPipelineRows(projects, api: curApi, current: current);
+      await _loadPipelineRows(
+        projects,
+        api: curApi,
+        current: current,
+        fresh: fresh,
+        background: background,
+        revalidateStale: !revalidateStaleProjects,
+      );
     } catch (e) {
       if (current()) {
         setState(() {
@@ -186,6 +211,9 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         setState(() {
           _loading = false;
         });
+        if (revalidateStaleProjects) {
+          unawaited(_load(fresh: true, background: true));
+        }
       }
     }
   }
@@ -284,36 +312,68 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     List<Project> projects, {
     required GitLabApi api,
     required bool Function() current,
+    bool fresh = false,
+    bool background = false,
+    bool revalidateStale = true,
   }) async {
+    final stale = <Project>[];
     for (var start = 0; start < projects.length; start += _pipelineBatchSize) {
       if (!current()) return;
       final proposedEnd = start + _pipelineBatchSize;
       final end = proposedEnd < projects.length ? proposedEnd : projects.length;
       final batch = projects.sublist(start, end);
-      await poolMap(
+      final results = await poolMap(
         batch,
-        (project) => _loadPipelineRow(project, api: api, current: current),
+        (project) => _loadPipelineRow(
+          project,
+          api: api,
+          current: current,
+          fresh: fresh,
+          background: background,
+        ),
         maxConcurrent: widget.maxConcurrent,
       );
+      for (var index = 0; index < results.length; index++) {
+        if (results[index]) stale.add(batch[index]);
+      }
+    }
+    if (revalidateStale && stale.isNotEmpty && current()) {
+      unawaited(_loadPipelineRows(
+        stale,
+        api: api,
+        current: current,
+        fresh: true,
+        background: true,
+        revalidateStale: false,
+      ));
     }
   }
 
-  Future<void> _loadPipelineRow(
+  Future<bool> _loadPipelineRow(
     Project project, {
     required GitLabApi api,
     required bool Function() current,
+    bool fresh = false,
+    bool background = false,
   }) async {
-    if (!current()) return;
+    if (!current()) return false;
     _replaceItem(
       project.id,
-      (item) => item.copyWith(state: ProjectCiLoadState.loading),
+      (item) => item.state == ProjectCiLoadState.known
+          ? item
+          : item.copyWith(state: ProjectCiLoadState.loading),
     );
     try {
-      final pipelinePage = await api.records(
+      final read = await _cachedPage(
+        api,
         ['projects', '${project.id}', 'pipelines'],
         query: {'per_page': '1'},
+        fresh: fresh,
+        background: background,
+        current: current,
       );
-      if (!current()) return;
+      if (read == null || !current()) return false;
+      final pipelinePage = read.value;
       _replaceItem(
         project.id,
         (item) => item.copyWith(
@@ -321,16 +381,62 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
           latestPipeline: pipelinePage.items.isNotEmpty ? pipelinePage.items.first : null,
         ),
       );
+      return read.stale && !fresh;
     } catch (e) {
-      if (!current()) return;
+      if (!current()) return false;
+      final failure = safeFailure(e);
+      final revoked = switch (failure.kind) {
+        FailureKind.unauthenticated ||
+        FailureKind.forbidden ||
+        FailureKind.invisible => true,
+        _ => false,
+      };
       _replaceItem(
         project.id,
-        (item) => item.copyWith(
-          state: ProjectCiLoadState.error,
-          error: safeFailure(e),
-        ),
+        (item) => background && !revoked && item.state == ProjectCiLoadState.known
+            ? item
+            : item.copyWith(
+                state: ProjectCiLoadState.error,
+                error: failure,
+              ),
       );
+      return false;
     }
+  }
+
+  Future<CachedRead<ApiPage<Json>>?> _cachedPage(
+    GitLabApi api,
+    List<String> path, {
+    required Map<String, String> query,
+    required bool fresh,
+    required bool background,
+    required bool Function() current,
+  }) async {
+    Future<CachedRead<ApiPage<Json>>> readPage({
+      required bool fresh,
+      bool quiet = false,
+    }) => CachedRead.run(
+      () => api.cachedRecords(
+        path,
+        query: query,
+        fresh: fresh,
+        background: background,
+      ),
+      mayStart: current,
+      waitForQuiet: quiet,
+    );
+
+    var read = await readPage(fresh: fresh);
+    if (read.superseded) {
+      read = await readPage(fresh: true);
+      if (read.superseded) {
+        read = await readPage(fresh: true, quiet: true);
+      }
+      if (read.superseded) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+    }
+    return read.dropped ? null : read;
   }
 
   void _replaceItem(
@@ -379,7 +485,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       );
     }
     if (mounted) {
-      unawaited(_load());
+      unawaited(_load(fresh: true, background: true));
     }
   }
 
@@ -401,7 +507,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         actions: [
           IconButton(
             tooltip: l10n.refreshAction,
-            onPressed: _loading ? null : _load,
+            onPressed: _loading ? null : () => _load(fresh: true),
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -409,7 +515,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       body: SafeArea(
         top: false,
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: () => _load(fresh: true),
           child: ScrollToTopOnSignal(
             controller: _scroll,
             child: CustomScrollView(

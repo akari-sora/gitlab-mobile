@@ -74,6 +74,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
   ApiFailure? error;
   bool loading = false, revalidating = false;
   bool _readmePending = false;
+  bool _resumeWhenVisible = false;
   FailureKind? backgroundFailure;
   DateTime? backgroundRetryAt;
   bool get stale =>
@@ -105,6 +106,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
   }
 
   void _tickerModeChanged() {
+    if (!_backgroundEnabled && revalidating) _resumeWhenVisible = true;
     if (_backgroundEnabled) _startRevalidation(_epoch);
   }
 
@@ -162,6 +164,15 @@ class ProjectOverviewState extends State<ProjectOverview> {
       !api.isClosed &&
       widget.isCurrent();
 
+  bool _canApplyRead(int epoch, GitLabApi api, {required bool background}) {
+    if (!_current(epoch, api)) return false;
+    if (background && !_backgroundEnabled) {
+      _resumeWhenVisible = true;
+      return false;
+    }
+    return true;
+  }
+
   void _withdraw() {
     _details = null;
     _ref = null;
@@ -186,16 +197,28 @@ class ProjectOverviewState extends State<ProjectOverview> {
     required bool background,
     bool repository = false,
   }) {
-    if (_revoked(failure)) {
+    if (failure.kind == FailureKind.unauthenticated ||
+        !repository && _revoked(failure)) {
       _withdraw();
       error = failure;
+      _readmeError = null;
+    } else if (repository && _revoked(failure)) {
+      _ref = null;
+      _readme = null;
+      _branchRead = null;
+      _treeRead = null;
+      _readmeMissing = false;
+      _readmeLoading = false;
+      _readmePending = false;
       _readmeError = failure;
-    } else if (background || (repository ? _ref != null : _details != null)) {
+    } else if (background) {
       backgroundFailure = failure.kind;
       backgroundRetryAt = failure.retryAt;
+    } else if (repository) {
+      _readmeError = failure;
     } else {
       error = failure;
-      if (repository) _readmeError = failure;
+      _readmeError = null;
     }
   }
 
@@ -206,28 +229,41 @@ class ProjectOverviewState extends State<ProjectOverview> {
     required bool fresh,
     required bool background,
   }) async {
-    var read = await loader(fresh);
-    if (!_current(epoch, api)) return null;
+    Future<CachedRead<T>> readPage(bool force, {bool quiet = false}) => CachedRead.run(
+      () => loader(force),
+      mayStart: () => _current(epoch, api) &&
+          (!background || _backgroundEnabled),
+      waitForQuiet: quiet,
+    );
+    var read = await readPage(fresh);
+    if (!_canApplyRead(epoch, api, background: background)) return null;
     if (read.superseded) {
-      if (background && !_backgroundEnabled) return null;
-      read = await loader(true);
-      if (!_current(epoch, api)) return null;
+      read = await readPage(true);
+      if (!_canApplyRead(epoch, api, background: background)) return null;
+      if (read.superseded) {
+        read = await readPage(true, quiet: true);
+        if (!_canApplyRead(epoch, api, background: background)) return null;
+      }
+      if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
     }
-    return read.superseded || read.dropped ? null : read;
+    return read.dropped ? null : read;
   }
 
   Future<void> refresh() => _load(fresh: true);
 
   Future<void> _load({bool fresh = false}) async {
     final epoch = ++_epoch, api = widget.api;
-    loading = true;
-    revalidating = false;
-    backgroundFailure = null;
-    backgroundRetryAt = null;
-    error = null;
+    setState(() {
+      loading = true;
+      revalidating = false;
+      backgroundFailure = null;
+      backgroundRetryAt = null;
+      _resumeWhenVisible = false;
+      error = null;
+    });
     try {
       await _loadDetails(epoch, fresh: fresh);
-      if (!_current(epoch, api) || error != null && _revoked(error!)) return;
+      if (!_current(epoch, api) || error != null) return;
       await _loadReadme(epoch, fresh: fresh);
     } finally {
       if (_current(epoch, api)) {
@@ -256,7 +292,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
         fresh: fresh,
         background: background,
       );
-      if (!_current(epoch, api) || read == null) return;
+      if (!_canApplyRead(epoch, api, background: background) || read == null) return;
       setState(() {
         _details = read.value;
         _detailsRead = read;
@@ -264,7 +300,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
     } catch (e) {
       if (!_current(epoch, api)) return;
       final failure = safeFailure(e);
-      if (failure.kind == FailureKind.cancelled) return;
+      if (!_revoked(failure) && !_canApplyRead(epoch, api, background: background)) return;
       setState(() => _failed(failure, background: background));
     }
   }
@@ -303,7 +339,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
         fresh: fresh || background && _branchRead?.stale == true,
         background: background,
       );
-      if (!_current(epoch, api) || branchRead == null) return;
+      if (!_canApplyRead(epoch, api, background: background) || branchRead == null) return;
       setState(() {
         _branchRead = branchRead;
         _readmePending = true;
@@ -322,7 +358,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
         fresh: fresh || background && _treeRead?.stale == true,
         background: background,
       );
-      if (!_current(epoch, api) || treeRead == null) return;
+      if (!_canApplyRead(epoch, api, background: background) || treeRead == null) return;
       setState(() => _treeRead = treeRead);
       if (background && !_backgroundEnabled) return;
       final path = findReadmePath(treeRead.value.items);
@@ -330,19 +366,18 @@ class ProjectOverviewState extends State<ProjectOverview> {
       if (path != null) {
         // textFile already shares the core's immutable SHA-pinned cache with
         // the file viewer, including its bounded HEAD/raw representation.
-        final text = await api.textFile(
-          project.id,
-          ref.sha,
-          path,
-          refresh: fresh,
+        final text = await CachedRead.run(
+          () => api.textFile(project.id, ref.sha, path, refresh: fresh),
+          mayStart: () => _current(epoch, api) &&
+              (!background || _backgroundEnabled),
         );
-        if (!_current(epoch, api)) return;
+        if (!_canApplyRead(epoch, api, background: background)) return;
         if (utf8.encode(text).length > 256 * 1024) {
           throw const ApiFailure(FailureKind.tooLarge);
         }
         readme = RepositoryReadme(path: path, sha: ref.sha, markdown: text);
       }
-      if (!_current(epoch, api)) return;
+      if (!_canApplyRead(epoch, api, background: background)) return;
       setState(() {
         _ref = ref;
         _readme = readme;
@@ -355,11 +390,10 @@ class ProjectOverviewState extends State<ProjectOverview> {
     } catch (e) {
       if (!_current(epoch, api)) return;
       final failure = safeFailure(e);
-      if (failure.kind != FailureKind.cancelled) {
-        setState(
-          () => _failed(failure, background: background, repository: true),
-        );
-      }
+      if (!_revoked(failure) && !_canApplyRead(epoch, api, background: background)) return;
+      setState(
+        () => _failed(failure, background: background, repository: true),
+      );
     } finally {
       if (_current(epoch, api)) setState(() => _readmeLoading = false);
     }
@@ -376,7 +410,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
         error != null) {
       return;
     }
-    setState(() => revalidating = true);
+    setState(() { revalidating = true; _resumeWhenVisible = false; });
     unawaited(_revalidate(epoch, api));
   }
 
@@ -384,7 +418,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
     try {
       if (_detailsRead?.stale == true) {
         await _loadDetails(epoch, fresh: true, background: true);
-        if (!_current(epoch, api) || error != null) return;
+        if (!_current(epoch, api) || error != null || backgroundFailure != null) return;
       }
       if (_backgroundEnabled &&
           (_readmePending ||
@@ -394,7 +428,10 @@ class ProjectOverviewState extends State<ProjectOverview> {
         await _loadReadme(epoch, background: true);
       }
     } finally {
-      if (_current(epoch, api)) setState(() => revalidating = false);
+      if (_current(epoch, api)) {
+        setState(() => revalidating = false);
+        if (_resumeWhenVisible && _backgroundEnabled) _startRevalidation(epoch);
+      }
     }
   }
 
@@ -762,6 +799,9 @@ class ProjectOverviewState extends State<ProjectOverview> {
       controller: widget.controller,
       padding: EdgeInsets.zero,
       children: [
+        if (error != null) FailureNotice(error!, account: widget.account,
+          resourceLabel: widget.project.path, onRetry: () => unawaited(refresh()),
+          onSwitchAccount: endSessionFrom(context)),
         ColoredBox(
           color: dark ? theme.scaffoldBackgroundColor : theme.colorScheme.surface,
           child: _hero(context),
