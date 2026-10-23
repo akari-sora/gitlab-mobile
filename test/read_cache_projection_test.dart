@@ -1722,6 +1722,166 @@ void main() {
       expect(_projected(candidate), isNotNull);
     });
 
+    test('M408a every thread endpoint requires a fresh public parent proof',
+        () {
+      // E05 discussion, E06 emoji, E07 related MRs, E08 links: each carries
+      // issueParent, so a context without a fresh public parent proof refuses
+      // the whole read.
+      final candidates = <(String, _Input)>[
+        (
+          'discussions',
+          _candidate(
+            ['projects', '1', 'issues', '2', 'discussions'],
+            [
+              {'id': 'd', 'individual_note': false, 'notes': [_note()]},
+            ],
+            kind: ReadCacheBodyKind.page,
+          ),
+        ),
+        (
+          'award_emoji',
+          _candidate(
+            ['projects', '1', 'issues', '2', 'award_emoji'],
+            [
+              {
+                'id': 1,
+                'name': 'thumbsup',
+                'user': _actor(),
+                'created_at': '2026-10-22T10:00:00Z',
+                'updated_at': '2026-10-22T11:00:00Z',
+              },
+            ],
+            kind: ReadCacheBodyKind.page,
+          ),
+        ),
+        (
+          'related_merge_requests',
+          _candidate(
+            ['projects', '1', 'issues', '2', 'related_merge_requests'],
+            [
+              {
+                ..._mr(),
+                'issues': [_issue(project: 2, iid: 7)],
+              },
+            ],
+            kind: ReadCacheBodyKind.page,
+          ),
+        ),
+        (
+          'links',
+          _candidate(
+            ['projects', '1', 'issues', '2', 'links'],
+            [
+              {
+                ..._issue(project: 2, iid: 8),
+                'issue_link_id': 4,
+                'link_type': 'relates_to',
+              },
+            ],
+            kind: ReadCacheBodyKind.page,
+          ),
+        ),
+      ];
+      for (final (name, candidate) in candidates) {
+        expect(
+          _projected(candidate, context: _context(proofs: const [])),
+          isNull,
+          reason: name,
+        );
+        expect(_projected(candidate), isNotNull, reason: name);
+      }
+    });
+
+    test('M410 a confidential identity in the body fails the final check', () {
+      // The parent proof is fresh and public, so only the final index check
+      // over the identities scanned from the body can refuse this read.
+      final candidate = _candidate(
+        ['projects', '1', 'issues', '2', 'links'],
+        [
+          {
+            ..._issue(project: 2, iid: 8),
+            'issue_link_id': 4,
+            'link_type': 'relates_to',
+          },
+        ],
+        kind: ReadCacheBodyKind.page,
+      );
+      expect(
+        _projected(
+          candidate,
+          context: _context(confidential: {const ReadCacheIssueIdentity(2, 8)}),
+        ),
+        isNull,
+      );
+      expect(_projected(candidate), isNotNull);
+    });
+
+    test('C2-D4 real shapes: added-line DiffNote and nameless pipeline', () {
+      // A DiffNote on an added line has old_line null (one side always is);
+      // a project without workflow:name answers "name": null.
+      final diffNote = {
+        ..._note(),
+        'position': {
+          'position_type': 'text',
+          'old_path': 'a.txt',
+          'new_path': 'a.txt',
+          'base_sha': _sha,
+          'start_sha': _sha,
+          'head_sha': _sha,
+          'old_line': null,
+          'new_line': 20,
+          'line_range': {
+            'start': {
+              'line_code': 'a_20_1',
+              'type': null,
+              'old_line': null,
+              'new_line': 1,
+            },
+            'end': {
+              'line_code': 'a_20_20',
+              'type': null,
+              'old_line': null,
+              'new_line': 20,
+            },
+          },
+        },
+      };
+      expect(
+        _projected(
+          _candidate(
+            ['projects', '1', 'merge_requests', '3', 'discussions', 'd'],
+            {'id': 'd', 'individual_note': false, 'notes': [diffNote]},
+          ),
+        ),
+        isNotNull,
+      );
+      expect(
+        _projected(
+          _candidate(
+            ['projects', '1', 'pipelines', '6'],
+            {..._pipelineDetail(), 'name': null},
+          ),
+        ),
+        isNotNull,
+      );
+    });
+
+    test('C2-D5 the app text read of a file admits as E17', () {
+      // GitLabApi.textFile requests the files path with a text/plain
+      // Accept — the same path as the JSON metadata, keyed by Accept.
+      final text = _candidate(
+        ['projects', '1', 'repository', 'files', 'README.md'],
+        'hello',
+        kind: ReadCacheBodyKind.text,
+        query: {'ref': _sha},
+      );
+      expect(_projected(text), isNotNull);
+      expect(
+        _projected(text, context: _context(shas: const {})),
+        isNull,
+      );
+    });
+
     test('M409 every discussion note is guarded with internal precedence', () {
       final base = {
         'id': 'd',

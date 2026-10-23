@@ -585,7 +585,11 @@ _Endpoint? _endpoint(
             project: project,
           );
         } else if (p[3] == 'files' &&
-            ((p.length == 5 && json) ||
+            // C2-D5: the app's text read is the same files path keyed by a
+            // text/plain Accept; the /raw variant stays admissible for it.
+            ((p.length == 5 &&
+                    (json ||
+                        candidate.bodyKind == ReadCacheBodyKind.text)) ||
                 (p.length == 6 &&
                     p[5] == 'raw' &&
                     candidate.bodyKind == ReadCacheBodyKind.text))) {
@@ -934,9 +938,12 @@ final _mr = _Schema(
   name: 'mr',
   walkHints: _mrWalkHints,
 );
+// C2-D4: one of old_line/new_line is null on every added or removed line,
+// and type may be absent; all are display-only.
 final _positionLine = _Schema({
-  ..._fields(_Type.string, 'type line_code'),
-  ..._fields(_Type.integer, 'old_line new_line'),
+  ..._fields(_Type.string, 'line_code'),
+  ..._fields(_Type.string, 'type', nullable: true),
+  ..._fields(_Type.integer, 'old_line new_line', nullable: true),
 });
 final _lineRange = _Schema({
   'start': _Field(_Type.object, schema: _positionLine),
@@ -945,8 +952,8 @@ final _lineRange = _Schema({
 final _position = _Schema({
   ..._fields(_Type.string, 'position_type old_path new_path'),
   ..._fields(_Type.sha, 'base_sha start_sha head_sha'),
-  ..._fields(_Type.integer, 'old_line new_line'),
-  'line_range': _Field(_Type.object, schema: _lineRange),
+  ..._fields(_Type.integer, 'old_line new_line', nullable: true),
+  'line_range': _Field(_Type.object, schema: _lineRange, nullable: true),
 });
 final _note = _Schema(
   {
@@ -1032,7 +1039,9 @@ final _jobPipeline = _Schema(
 final _pipeline = _Schema(
   {
     ..._pipelineFields,
-    ..._fields(_Type.string, 'name source'),
+    // C2-D4: no workflow:name means GitLab answers "name": null.
+    'name': const _Field(_Type.string, nullable: true),
+    ..._fields(_Type.string, 'source'),
     'web_url': const _Field(_Type.url),
     ..._fields(_Type.time, 'created_at updated_at'),
     ..._fields(_Type.time, 'started_at finished_at', nullable: true),
