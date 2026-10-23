@@ -2,6 +2,7 @@ import '../app_text.dart';
 import 'dart:convert';
 import 'dart:math';
 
+import '../../request_meter.dart';
 import '../ai_transcript.dart';
 import '../redaction.dart';
 import '../wire/wire_format.dart';
@@ -253,6 +254,7 @@ final class AiToolCatalogue {
     final fallback = _live('bound project');
     var reservedRequests = 0;
     var completedRequests = 0;
+    RequestMeter? requestMeter;
     try {
       final arguments = _arguments(call);
       final requestCost = _requestCost(call.name);
@@ -268,18 +270,16 @@ final class AiToolCatalogue {
         return await _error(call, fallback, budgetError, budget: budget);
       }
       reservedRequests = reservedCost;
-      final raw = await _dispatch(call.name, arguments);
-      completedRequests = raw.requestCount;
-      if (completedRequests > requestCost) {
+      requestMeter = RequestMeter();
+      final raw = await requestMeter.runAsync(
+        () => _dispatch(call.name, arguments),
+      );
+      completedRequests = requestMeter.count;
+      if (completedRequests > reservedCost) {
         throw _ToolValidation(
           'tool exceeded its request allowance',
           requestCount: completedRequests,
         );
-      }
-      final completedRequestAllowance = raw.requestCount * 2;
-      if (completedRequestAllowance < reservedCost) {
-        budget.refundRequests(reservedCost - completedRequestAllowance);
-        reservedRequests = completedRequestAllowance;
       }
       await refreshSecrets?.call();
       final provenance = raw.provenance;
@@ -340,14 +340,10 @@ final class AiToolCatalogue {
         withheldPrivateKeyContext:
             redacted.withheldPrivateKeyContext ||
             redactedProvenance.withheldPrivateKeyContext,
-        gitLabRequests: raw.requestCount,
+        gitLabRequests: completedRequests,
       );
     } on _ToolValidation catch (error) {
-      completedRequests = completedRequests > error.requestCount
-          ? completedRequests
-          : error.requestCount;
-      final refundable = reservedRequests - (completedRequests * 2);
-      if (refundable > 0) budget.refundRequests(refundable);
+      completedRequests = requestMeter?.count ?? 0;
       return await _error(
         call,
         fallback,
@@ -356,13 +352,23 @@ final class AiToolCatalogue {
         gitLabRequests: completedRequests,
       );
     } on Object {
+      completedRequests = requestMeter?.count ?? 0;
       return await _error(
         call,
         fallback,
         'read failed',
         budget: budget,
-        gitLabRequests: reservedRequests ~/ 2,
+        gitLabRequests: completedRequests,
       );
+    } finally {
+      if (reservedRequests > 0) {
+        completedRequests = requestMeter?.count ?? 0;
+        final chargedRequests = completedRequests < reservedRequests
+            ? completedRequests
+            : reservedRequests;
+        final refundable = reservedRequests - chargedRequests;
+        if (refundable > 0) budget.refundRequests(refundable);
+      }
     }
   }
 

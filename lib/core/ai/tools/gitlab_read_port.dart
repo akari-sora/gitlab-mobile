@@ -1,6 +1,9 @@
 import 'dart:convert';
 
+import '../../failure.dart';
 import '../../gitlab_api.dart';
+import '../../models.dart' show ApiPage;
+import '../../request_meter.dart';
 import '../../snippet_models.dart' show validatedSnippetPath;
 import 'sensitive_paths.dart';
 
@@ -62,6 +65,8 @@ abstract interface class AiGitLabFieldReadPort {
 final class GitLabAiReadPort
     implements AiGitLabReadPort, AiGitLabFieldReadPort {
   GitLabAiReadPort(this._api, this.projectId);
+
+  static const _aiMaxAge = Duration(seconds: 60);
 
   final GitLabApi _api;
   final int projectId;
@@ -150,32 +155,48 @@ final class GitLabAiReadPort
   }
 
   @override
-  Future<AiPortRead<String>> readFile(String sha, String path) async =>
-      AiPortRead(await _api.textFile(projectId, sha, path), requestCount: 2);
+  Future<AiPortRead<String>> readFile(String sha, String path) async {
+    final measured = await _measure(
+      () => _api.textFile(projectId, sha, path, allowDisk: false),
+    );
+    return AiPortRead(measured.value, requestCount: measured.requestCount);
+  }
 
   @override
   Future<AiPortRead<List<AiTreeItem>>> listDirectory(
     String sha,
     String path,
   ) async {
-    final items = <AiTreeItem>[];
-    Uri? next;
-    var requests = 0;
-    do {
-      final page = await _api.tree(projectId, sha, path: path, next: next);
-      requests++;
-      items.addAll(
-        page.items.map(
-          (item) =>
-              AiTreeItem(name: item.name, path: item.path, type: item.type),
-        ),
+    final measured = await _measure(() async {
+      final items = <AiTreeItem>[];
+      Uri? next;
+      var pages = 0;
+      do {
+        final page = await _api.tree(
+          projectId,
+          sha,
+          path: path,
+          next: next,
+          allowDisk: false,
+        );
+        pages++;
+        items.addAll(
+          page.items.map(
+            (item) =>
+                AiTreeItem(name: item.name, path: item.path, type: item.type),
+          ),
+        );
+        next = page.next;
+      } while (next != null && pages < 4);
+      return (
+        items: List<AiTreeItem>.unmodifiable(items),
+        incomplete: next != null,
       );
-      next = page.next;
-    } while (next != null && requests < 4);
+    });
     return AiPortRead(
-      List.unmodifiable(items),
-      requestCount: requests,
-      incomplete: next != null,
+      measured.value.items,
+      requestCount: measured.requestCount,
+      incomplete: measured.value.incomplete,
     );
   }
 
@@ -191,20 +212,26 @@ final class GitLabAiReadPort
     String resource,
     int iid,
   ) async {
-    final value = await _api.record([
-      'projects',
-      '$projectId',
-      resource,
-      '$iid',
-    ]);
-    final notes = await _api.records(
-      ['projects', '$projectId', resource, '$iid', 'notes'],
-      query: const {'order_by': 'created_at', 'sort': 'desc', 'per_page': '30'},
-    );
+    final measured = await _measure(() async {
+      final value = await _cachedRecord([
+        'projects',
+        '$projectId',
+        resource,
+        '$iid',
+      ]);
+      final notes = await _cachedRecords(
+        ['projects', '$projectId', resource, '$iid', 'notes'],
+        query: const {
+          'order_by': 'created_at',
+          'sort': 'desc',
+          'per_page': '30',
+        },
+      );
+      return <String, Object?>{...value, 'notes': notes.items};
+    });
     return AiPortRead(<String, Object?>{
-      ...value,
-      'notes': notes.items,
-    }, requestCount: 2);
+      ...measured.value,
+    }, requestCount: measured.requestCount);
   }
 
   @override
@@ -213,35 +240,99 @@ final class GitLabAiReadPort
     required String headSha,
     required String baseSha,
   }) async {
-    final versions = await _api.records(
-      ['projects', '$projectId', 'merge_requests', '$iid', 'versions'],
-      query: const {'per_page': '100'},
+    final measured = await _measure(() async {
+      final versions = await _cachedRecords(
+        ['projects', '$projectId', 'merge_requests', '$iid', 'versions'],
+        query: const {'per_page': '100'},
+      );
+      final version = versions.items.cast<AiJson?>().firstWhere(
+        (candidate) =>
+            candidate?['head_commit_sha'] == headSha &&
+            candidate?['base_commit_sha'] == baseSha,
+        orElse: () => null,
+      );
+      final versionId = version?['id'];
+      if (versionId is! int) {
+        throw const FormatException('Merge request has no diff version.');
+      }
+      final value = await _cachedRecord([
+        'projects',
+        '$projectId',
+        'merge_requests',
+        '$iid',
+        'versions',
+        '$versionId',
+      ]);
+      return <String, Object?>{
+        'diff_refs': {
+          'head_sha': value['head_commit_sha'] ?? version?['head_commit_sha'],
+          'base_sha': value['base_commit_sha'] ?? version?['base_commit_sha'],
+        },
+        'changes': value['diffs'],
+      };
+    });
+    return AiPortRead(measured.value, requestCount: measured.requestCount);
+  }
+
+  Future<AiJson> _cachedRecord(List<String> path) async {
+    var read = await _api.cachedRecord(
+      path,
+      maxAge: _aiMaxAge,
+      allowDisk: false,
     );
-    final version = versions.items.cast<AiJson?>().firstWhere(
-      (candidate) =>
-          candidate?['head_commit_sha'] == headSha &&
-          candidate?['base_commit_sha'] == baseSha,
-      orElse: () => null,
-    );
-    final versionId = version?['id'];
-    if (versionId is! int) {
-      throw const FormatException('Merge request has no diff version.');
+    if (read.lineage == CacheLineage.disk) {
+      read = await _api.cachedRecord(
+        path,
+        fresh: true,
+        maxAge: _aiMaxAge,
+        allowDisk: false,
+      );
     }
-    final value = await _api.record([
-      'projects',
-      '$projectId',
-      'merge_requests',
-      '$iid',
-      'versions',
-      '$versionId',
-    ]);
-    return AiPortRead(<String, Object?>{
-      'diff_refs': {
-        'head_sha': value['head_commit_sha'] ?? version?['head_commit_sha'],
-        'base_sha': value['base_commit_sha'] ?? version?['base_commit_sha'],
-      },
-      'changes': value['diffs'],
-    }, requestCount: 2);
+    _requirePublishable(read);
+    return read.value;
+  }
+
+  Future<ApiPage<AiJson>> _cachedRecords(
+    List<String> path, {
+    Map<String, String> query = const {},
+  }) async {
+    var read = await _api.cachedRecords(
+      path,
+      query: query,
+      maxAge: _aiMaxAge,
+      allowDisk: false,
+    );
+    if (read.lineage == CacheLineage.disk) {
+      read = await _api.cachedRecords(
+        path,
+        query: query,
+        fresh: true,
+        maxAge: _aiMaxAge,
+        allowDisk: false,
+      );
+    }
+    _requirePublishable(read);
+    return read.value;
+  }
+
+  void _requirePublishable<T>(CachedRead<T> read) {
+    if (read.dropped || read.superseded || read.lineage == CacheLineage.disk) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+  }
+
+  Future<({T value, int requestCount})> _measure<T>(
+    Future<T> Function() operation,
+  ) async {
+    final inherited = RequestMeter.current;
+    if (inherited != null) {
+      final before = inherited.count;
+      final value = await operation();
+      return (value: value, requestCount: inherited.count - before);
+    }
+    final meter = RequestMeter();
+    final value = await meter.runAsync(operation);
+    return (value: value, requestCount: meter.count);
   }
 
   @override

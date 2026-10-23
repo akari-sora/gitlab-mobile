@@ -32,6 +32,7 @@ import '../../core/ai/write_text.dart' as write_text;
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart' show OAuthCredential;
+import '../../core/rate_budget.dart';
 import '../../l10n/l10n.dart';
 import '../auth/session_controller.dart';
 import '../workspace/attachment_picker.dart';
@@ -50,6 +51,65 @@ typedef AiChatWireClientFactory =
       required String? apiKey,
       required String conversationId,
     });
+
+enum AiChatSendBlockReason {
+  criticalRateBudget,
+  serverCooldown,
+  runBudgetUnavailable,
+}
+
+final _accountRunBudgets = Expando<RunBudgetAllocator>();
+
+final class _AiRunBudget {
+  _AiRunBudget(this.lease)
+    : tools = AiToolBudget(maxGitLabRequests: lease.granted);
+
+  final RunBudgetLease lease;
+  final AiToolBudget tools;
+  int _consumed = 0;
+  bool modelStarted = false;
+  final Set<Future<void>> _reads = {};
+  PolicyAiWriteCoordinator? writes;
+
+  Future<AiToolResult> read(Future<AiToolResult> Function() execute) {
+    final pending = Future<AiToolResult>.sync(execute);
+    final settled = pending.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    _reads.add(settled);
+    unawaited(
+      settled.then((_) {
+        _reads.remove(settled);
+        consumeTools();
+      }),
+    );
+    return pending;
+  }
+
+  void consumeTools() {
+    if (lease.isReleased) return;
+    final delta = tools.gitLabRequests - _consumed;
+    if (delta <= 0) return;
+    lease.consume(min(delta, lease.remaining));
+    _consumed += delta;
+  }
+
+  Future<void> release() async {
+    try {
+      final pending = [
+        ..._reads,
+        for (final pending
+            in writes?.inFlightWrites ?? const <Future<AiWriteOutcome>>[])
+          pending.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+      ];
+      if (pending.isNotEmpty) await Future.wait(pending);
+    } finally {
+      consumeTools();
+      lease.release();
+    }
+  }
+}
 
 /// Owns a conversation independently of its route. Only display models escape
 /// this owner; provider replay and transports stay in the existing runner.
@@ -75,6 +135,7 @@ class AiChatController extends ChangeNotifier
     AiWriteFreshnessReader? readWriteFreshness,
     writes.AiGitLabWritePort Function()? writePortFactory,
     AttachmentPicker? attachmentPicker,
+    DateTime Function()? now,
   }) : assert(
          historyRetryDelays.length == 3,
          'one delay per retry after the first attempt',
@@ -88,9 +149,16 @@ class AiChatController extends ChangeNotifier
        _readWriteFreshness = readWriteFreshness,
        _writePortFactory = writePortFactory,
        _attachmentPicker = attachmentPicker ?? const PluginAttachmentPicker(),
+       _now = now ?? DateTime.now,
        _generation = session.generation,
        _api = session.api!,
        _accountKey = session.active!.key {
+    _budgetAllocator = _accountRunBudgets[_api] ??= RunBudgetAllocator(
+      _api.rateBudget,
+    );
+    _rateChanges = _api.rateBudget.stream.listen((_) {
+      if (_alive) _notify();
+    });
     _secrets = KnownSecretsLive(
       session,
       settings,
@@ -136,6 +204,40 @@ class AiChatController extends ChangeNotifier
   final AiWriteFreshnessReader? _readWriteFreshness;
   final writes.AiGitLabWritePort Function()? _writePortFactory;
   final AttachmentPicker _attachmentPicker;
+  final DateTime Function() _now;
+  late final RunBudgetAllocator _budgetAllocator;
+  StreamSubscription<RateBudgetSnapshot>? _rateChanges;
+  _AiRunBudget? _runBudget;
+
+  @visibleForTesting
+  RunBudgetAllocator get budgetAllocator => _budgetAllocator;
+
+  AiChatSendBlockReason? get sendBlockReason {
+    if (_api.rateBudget.snapshot().level == RateLevel.critical) {
+      return AiChatSendBlockReason.criticalRateBudget;
+    }
+    if (!_api.rateBudget.mayStart(RateRequestClass.global)) {
+      return AiChatSendBlockReason.serverCooldown;
+    }
+    if (_budgetAllocator.activeLeases >= AiRunRegistry.maxRunning &&
+        _runBudget == null) {
+      return AiChatSendBlockReason.runBudgetUnavailable;
+    }
+    return null;
+  }
+
+  DateTime? get sendBlockedUntil {
+    final snapshot = _api.rateBudget.snapshot();
+    DateTime? until = snapshot.cooldowns[RateRequestClass.global];
+    for (final bucket in snapshot.buckets.values) {
+      if (bucket.level == RateLevel.critical &&
+          (until == null || bucket.resetAt.isAfter(until))) {
+        until = bucket.resetAt;
+      }
+    }
+    return until;
+  }
+
   PolicyAiWriteCoordinator? _writes;
 
   /// This conversation's upload placeholder table, created with its runner
@@ -164,6 +266,7 @@ class AiChatController extends ChangeNotifier
   Future<AiAccountRecord>? _accountRead;
   bool _accountLoaded = false;
   AiRunner? _runner;
+  AiComplete Function(AiWireClient)? _completeForRunner;
 
   /// Whether this run's page context delivery is already recorded (§3.1).
   var _contextDeliveryRecorded = false;
@@ -594,6 +697,7 @@ class AiChatController extends ChangeNotifier
       _phase == AiChatPhase.idle &&
       blocker == AiChatBlocker.none &&
       _context != null &&
+      sendBlockReason == null &&
       runningCount() < AiRunRegistry.maxRunning;
   @override
   set confirmCleartext(Future<bool> Function()? callback) =>
@@ -975,6 +1079,7 @@ class AiChatController extends ChangeNotifier
           accountKey: _accountKey,
           isCurrent: () => _current(epoch),
           refreshSecrets: _refreshSecrets,
+          now: _now,
         );
         if (!_current(epoch)) return;
         _context = loaded;
@@ -986,7 +1091,7 @@ class AiChatController extends ChangeNotifier
         try {
           runner.replaceKeyRecipient(
             config: selected,
-            complete: client.complete,
+            complete: _completeForRunner!(client),
             close: client.transport.close,
             cancelActive: client.transport.cancelActive,
           );
@@ -1339,6 +1444,34 @@ class AiChatController extends ChangeNotifier
     );
   }
 
+  AiComplete _rateCheckedComplete(
+    AiWireClient client, {
+    required _AiRunBudget? Function() budget,
+    required AiChatContext context,
+    required bool Function() isCurrent,
+  }) => (plan, {onEvent}) {
+    if (!isCurrent()) {
+      throw const AiFailure(AiFailureKind.cancelled, notSent: true);
+    }
+    final runBudget = budget();
+    if (!(runBudget?.modelStarted ?? false)) {
+      if (sendBlockReason != null) {
+        throw AiFailure(
+          AiFailureKind.rateLimited,
+          retryAt: sendBlockedUntil,
+          notSent: true,
+        );
+      }
+      if (context.isExpired(_now())) {
+        _contextFailed = true;
+        _blocker = AiChatBlocker.contextUnavailable;
+        throw const AiFailure(AiFailureKind.network, notSent: true);
+      }
+      runBudget?.modelStarted = true;
+    }
+    return client.complete(plan, onEvent: onEvent);
+  };
+
   void _createRunner() {
     final config = _provider!;
     final context = _context!;
@@ -1356,13 +1489,22 @@ class AiChatController extends ChangeNotifier
             refreshSecrets: _refreshSecrets,
             placeholders: placeholders,
           );
-    var budget = AiToolBudget();
+    var runBudget = _runBudget;
+    final noBudget = AiToolBudget(maxGitLabRequests: 0);
+    AiToolBudget budget() => runBudget?.tools ?? noBudget;
     final client = _client(config);
     final conversationId = _id;
     // This conversation's attachments and the uploads it finished; both go
     // with the conversation, the account and the process (§3.1).
     final attachments = _attachments;
     bool current() => _alive && _id == conversationId;
+    AiComplete complete(AiWireClient client) => _rateCheckedComplete(
+      client,
+      budget: () => runBudget,
+      context: context,
+      isCurrent: current,
+    );
+    _completeForRunner = complete;
     final coordinator = PolicyAiWriteCoordinator(
       snapshot: () => _writeSnapshot(config),
       createPort:
@@ -1370,7 +1512,7 @@ class AiChatController extends ChangeNotifier
           () => writes.GitLabAiWritePort(_api, accountKey: _accountKey),
       journal: _writeJournal,
       conversationId: conversationId,
-      budget: () => budget,
+      budget: budget,
       readFreshness:
           _readWriteFreshness ??
           (request) => _freshWrite(request, placeholders),
@@ -1405,7 +1547,7 @@ class AiChatController extends ChangeNotifier
     final runner = AiRunner(
       config: config,
       wire: client.wire,
-      complete: client.complete,
+      complete: complete(client),
       secrets: _secrets,
       refreshSecrets: _refreshSecrets,
       guard: AiRunGuard(
@@ -1450,10 +1592,17 @@ class AiChatController extends ChangeNotifier
       },
       executeTool: catalogue == null
           ? null
-          : (call) => catalogue.executeResult(call, budget: budget),
-      resetToolBudget: () => budget = AiToolBudget(),
-      beginToolTurn: () => budget.beginTurn(),
-      toolBudgetExhausted: () => budget.exhausted,
+          : (call) => runBudget!.read(
+              () => catalogue.executeResult(call, budget: budget()),
+            ),
+      resetToolBudget: () {
+        if (current()) {
+          runBudget = _runBudget;
+          runBudget?.writes = coordinator;
+        }
+      },
+      beginToolTurn: () => budget().beginTurn(),
+      toolBudgetExhausted: () => budget().exhausted,
       context: context.built.blocks,
       contextWithheldPrivateKeyContext: context.built.withheldPrivateKeyContext,
       conversationTokenCap:
@@ -1493,6 +1642,7 @@ class AiChatController extends ChangeNotifier
         _notifyStream();
       },
       onToolResult: (result) {
+        runBudget?.consumeTools();
         if (!current()) return;
         if (!result.notExecuted && !result.isError) {
           _readConfidential |= result.readConfidential;
@@ -1587,6 +1737,13 @@ class AiChatController extends ChangeNotifier
       return;
     }
     if (!canSend) return;
+    final lease = _budgetAllocator.acquire(40);
+    if (lease == null) {
+      _notify();
+      return;
+    }
+    final runBudget = _AiRunBudget(lease);
+    _runBudget = runBudget;
     final epoch = _epoch;
     _phase = AiChatPhase.running;
     _blocker = AiChatBlocker.none;
@@ -1602,6 +1759,10 @@ class AiChatController extends ChangeNotifier
       await _refreshSecrets();
       if (!_current(epoch)) return;
       _redactDisplayIfNeeded();
+      await _refreshContextForSend(epoch);
+      if (!_current(epoch)) return;
+      // A refresh or another run may have depleted the shared API budget.
+      if (_phase != AiChatPhase.stopping && sendBlockReason != null) return;
       final clean = _redactor.redactSource(text);
       // The page context goes with the first request this segment delivers;
       // its "What was sent" chips go with that message.
@@ -1744,6 +1905,10 @@ class AiChatController extends ChangeNotifier
         _setAssistant('', AiAssistantState.interrupted);
       }
     } finally {
+      // A stopped runner can return while its GitLab operation still settles.
+      // Keep its lease until metering refunds the reservation to actual HTTP.
+      unawaited(runBudget.release());
+      if (identical(_runBudget, runBudget)) _runBudget = null;
       if (_current(epoch)) {
         _phase = AiChatPhase.idle;
         _assistantIndex = null;
@@ -1771,6 +1936,49 @@ class AiChatController extends ChangeNotifier
         }
       }
     }
+  }
+
+  Future<void> _refreshContextForSend(int epoch) async {
+    if (!(_context?.isExpired(_now()) ?? false)) return;
+    final AiChatContext refreshed;
+    try {
+      refreshed = await loadAiChatContext(
+        origin: origin,
+        api: _api,
+        redactor: _redactor,
+        accountKey: _accountKey,
+        refreshSecrets: _refreshSecrets,
+        isCurrent: () => _current(epoch),
+        now: _now,
+      );
+    } on Object {
+      if (_current(epoch)) {
+        _contextFailed = true;
+        _blocker = AiChatBlocker.contextUnavailable;
+      }
+      rethrow;
+    }
+    if (!_current(epoch) || _phase == AiChatPhase.stopping) return;
+    if (refreshed.isExpired(_now())) {
+      throw const ApiFailure(FailureKind.network);
+    }
+    _binding?.dispose();
+    _binding = null;
+    _runner?.stop(AiRunEnd.stoppedBySettings);
+    _writes?.stop('contextChanged');
+    for (final pending
+        in _writes?.inFlightWrites ?? const <Future<AiWriteOutcome>>[]) {
+      _retiredWrites.add(pending);
+      unawaited(pending.then<void>((_) => _retiredWrites.remove(pending)));
+    }
+    _writes = null;
+    _placeholders = null;
+    _runner = null;
+    _completeForRunner = null;
+    _transportClosed = false;
+    _context = refreshed;
+    _createRunner();
+    _runner!.restoreFromDisplay(_conversationItems);
   }
 
   /// What the page was about, for the chip label. The block source stays
@@ -2199,6 +2407,7 @@ class AiChatController extends ChangeNotifier
     _readConfidential = false;
     _readInternal = false;
     _runner = null;
+    _completeForRunner = null;
     _transportClosed = false;
     _streamNotification?.cancel();
     _streamNotification = null;
@@ -2254,6 +2463,9 @@ class AiChatController extends ChangeNotifier
     if (_disposed) return;
     _disposed = true;
     ++_epoch;
+    // The active send retains its lease until cancelled reads settle and its
+    // unconditional finally can charge them before returning unused capacity.
+    unawaited(_rateChanges?.cancel());
     _historyRetry?.cancel();
     _history.removeListener(_historyChanged);
     _pendingReportedHistory.clear();

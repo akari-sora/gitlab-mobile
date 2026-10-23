@@ -172,10 +172,12 @@ void main() {
       expect(h.adapter.requests, isEmpty);
       final budget = AiToolBudget(maxGitLabRequests: cost);
       final read = await h.read(name, budget: budget);
+      final expectedRequests = cost ~/ 2;
       expect(read.result.isError, isFalse);
-      expect(read.gitLabRequests, cost ~/ 2);
-      expect(budget.gitLabRequests, cost);
-      expect(h.adapter.requests, hasLength(cost ~/ 2));
+      expect(read.gitLabRequests, expectedRequests);
+      expect(budget.gitLabRequests, expectedRequests);
+      expect(h.adapter.requests, hasLength(expectedRequests));
+      expect(budget.gitLabRequests, h.adapter.requests.length);
       for (final request in h.adapter.requests) {
         expect(request.method, 'GET');
         expect(request.uri.origin, 'https://example.com:8443');
@@ -313,7 +315,8 @@ void main() {
         expect(read.result.content, contains('[[upload:u-1]]'));
         expect(h.adapter.requests, hasLength(1));
         expect(read.gitLabRequests, 1);
-        expect(budget.gitLabRequests, 2);
+        expect(budget.gitLabRequests, 1);
+        expect(budget.gitLabRequests, h.adapter.requests.length);
       },
     );
   }
