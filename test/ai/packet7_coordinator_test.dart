@@ -253,7 +253,7 @@ void main() {
     expect(h.adapter.requests, hasLength(requests));
   });
 
-  test('a settled duplicate still requires confirmation at bypass', () async {
+  test('a same-run settled duplicate on resume still requires confirmation at bypass', () async {
     h.level = AiAutonomyLevel.bypass;
     h.coordinator.beginRun('Star team/example-9');
     h.coordinator.beginTurn();
@@ -261,7 +261,7 @@ void main() {
     expect(first.tier.decision, AiGateDecision.execute);
     expect((await h.coordinator.approve(first)).successful, isTrue);
 
-    h.coordinator.beginRun('Star team/example-9 again');
+    h.coordinator.resumeRun();
     h.coordinator.beginTurn();
     final duplicate = (await h.coordinator.propose(
       _starCall('duplicate-bypass'),

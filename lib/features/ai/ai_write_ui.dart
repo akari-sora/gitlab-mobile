@@ -283,7 +283,8 @@ String aiConfirmReasonText(AiFixedConfirmReason reason) => switch (reason) {
     l10n.aiConfirmExternalMedia,
   AiFixedConfirmReason.foreignClosingOrCrossProject =>
     l10n.aiConfirmClosingOrCrossProject,
-  AiFixedConfirmReason.duplicateOfSettledWrite => l10n.aiConfirmDuplicate,
+  AiFixedConfirmReason.duplicateOfSettledWrite ||
+  AiFixedConfirmReason.duplicateUpload => l10n.aiConfirmDuplicate,
   AiFixedConfirmReason.wholeFieldDropsHiddenSpans =>
     l10n.aiConfirmDropsHiddenContent,
   AiFixedConfirmReason.headMovedSincePreview => l10n.aiConfirmHeadMoved,
