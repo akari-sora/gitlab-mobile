@@ -44,8 +44,10 @@ There are two tracks.
 | MR6c | Background runs: Android foreground service, notifications, app lock, stop protocol | Not started | plan v6 §12, §14 |
 | MR7 | Open the AI gate: full CI on the release commit, sandbox writes, Play declarations, listing | Not started | plan v6 §13, §14 |
 | Play listing | Store listing, screenshots, data safety | After MR7 | [Store listing](STORE_LISTING.md) |
-| **Cache C1a** | Opt-in read cache (`CachedRead<T>`), scope versions and write barrier, pinned entries, per-class rate limits, request meter, AI run leases, binding after validation | **In review.** Rounds 1–2 fixed; the round-3 fix is in progress (full-path sub-resources are no longer cached, plan v3 V21) | !103 |
-| Cache C1b-1 | Screens adopt cached reads (activity, CI, file history, groups, inbox, my work, project extras, projects, search) | Not started; needs C1a | cache plan v3 V9, V20 |
+| Cache C1a | Opt-in read cache (`CachedRead<T>`), scope versions and write barrier, pinned entries, per-class rate limits, request meter, AI run leases, binding after validation | Merged 2026-10-23 | !103; follow-ups #14 |
+| Cache C1b-1 prerequisites | Background reads joined correctly, uncacheable reads skip admission, archive-class 429s, confidential-marker limits | Merged 2026-10-23 | !106; follow-ups #14 |
+| **Cache C1b-1a** | Cached first pages with stale-while-revalidate in `RecordsFeed` (activity, CI, file history, groups, inbox, my work, project extras, projects, search) and the freshness strip (refreshing, offline, rate limited, refresh failed) | **In review** | this MR |
+| Cache C1b-1b | Detail pages: issue, MR, pipeline and project overview read through the cache | Not started | cache plan v3 §3.1 |
 | Cache C1b-2 | Remaining screens (boards, project more, snippets, registries, work item, discussions, repository) and the AI side: read-port and tool-catalogue metering, AI budget leases and the critical-level send block | Not started; after MR6b-2 | cache plan v3 V9, V20 |
 | Cache C2 | Encrypted disk cache, clear markers, startup order | Plan final; not started; after C1b-2 | cache plan v3 §4, V13, V14, V17 |
 | Cache C3 | Offline repository saving (archive fetch, verified blobs) and an offline read-only mode | Plan approved in two review rounds (v2.1); not started; C3a needs C1a, C1b-2 and C2. Split: C3a core, C3b save and browse UI, C3c offline mode, C3d optional | [C3 plan](plans/cache-c3-offline-plan-v2.md) |
@@ -79,21 +81,12 @@ There are two tracks.
   - an emulator re-test;
   - merge and mirror.
 
-### C1a: open items before merge
-- Round-3 fix (V21), then an Opus check of that fix only.
-- File the Minor follow-ups as an issue. Items to fix before C1b-1:
-  - a background read dropped under a foreground join;
-  - uncacheable reads going through admission;
-  - archive-class 429s;
-  - confidential-marker saturation.
-
 ## Next steps
-1. Merge C1a as soon as its round-3 check passes, without waiting for MR6b-2.
-2. Finish MR6b-2 (above) and merge it.
-3. C1b-1, as a small MR.
-4. MR6b-3, split into small MRs by family.
-5. C1b-2 (after MR6b-2), then C2, then C3 (C3a core, C3b UI, C3c offline mode, C3d optional).
-6. MR6c, MR7, Play listing.
+1. Finish MR6b-2 (above) and merge it.
+2. C1b-1a (this MR), then C1b-1b.
+3. MR6b-3, split into small MRs by family.
+4. C1b-2 (after MR6b-2), then C2, then C3 (C3a core, C3b UI, C3c offline mode, C3d optional).
+5. MR6c, MR7, Play listing.
 
 ## Plan documents
 | Document | Covers |
