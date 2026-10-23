@@ -314,6 +314,15 @@ void main() {
     expect(activitySentence({'action_name': 'opened', 'target_type': 'MergeRequest', 'target_iid': 7}),
       'Opened Merge request !7');
     expect(activitySentence({'action_name': 'opened', 'target_type': 'Unknown', 'target_iid': 3}), 'Opened #3');
+
+    useLanguage(languageForTag('ja')!);
+    expect(activitySentence({'action_name': 'opened', 'target_type': 'MergeRequest', 'target_iid': 7}),
+      'オープンしました（マージリクエスト） !7');
+
+    // Arabic isolates the verb and the target separately and keeps the reference in one isolate.
+    useLanguage(languageForTag('ar')!);
+    expect(activitySentence({'action_name': 'opened', 'target_type': 'MergeRequest', 'target_iid': 7}),
+      '\u2068فتح\u2069 \u2068طلب دمج\u2069 \u2068!7\u2069');
   });
 
   test('draft toggling adds Draft: and strips every prefix GitLab recognises', () {
