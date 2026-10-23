@@ -2714,5 +2714,10 @@
   "cacheRateLimited": "GitLab ограничивает запросы",
   "cacheRefreshFailed": "Не удалось обновить",
   "cacheResumesInMinutes": "Возобновится примерно через {minutes} мин",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "Квота запросов GitLab почти исчерпана; отправка приостановлена",
+  "aiSendPausedRateLimited": "GitLab ограничивает запросы; отправка приостановлена",
+  "aiSendResumesAfterReset": "Возобновится после сброса квоты запросов",
+  "aiGitLabBudgetTitle": "Квота запросов GitLab почти исчерпана",
+  "aiGitLabBudgetDetail": "Это сообщение не отправлено. Отправьте его снова, когда кнопка «Отправить» снова станет доступна."
 }

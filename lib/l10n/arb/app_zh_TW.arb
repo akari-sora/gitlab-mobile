@@ -11489,5 +11489,10 @@
       "verb": {},
       "target": {}
     }
-  }
+  },
+  "aiSendPausedBudget": "GitLab 請求額度快用完了，暫停送出",
+  "aiSendPausedRateLimited": "GitLab 正在限制請求，暫停送出",
+  "aiSendResumesAfterReset": "額度重設後恢復",
+  "aiGitLabBudgetTitle": "GitLab 請求額度暫時不足",
+  "aiGitLabBudgetDetail": "這則訊息沒有送出。送出按鈕恢復後再送一次。"
 }

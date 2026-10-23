@@ -11,6 +11,8 @@ PORT = AI_ROOT / "tools" / "gitlab_read_port.dart"
 READ_PORT_MEMBERS = {
     "textFile",
     "tree",
+    "cachedRecord",
+    "cachedRecords",
     "record",
     "records",
     "jobTraceChunk",
@@ -196,6 +198,19 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertEqual(self._api_members("_api.snippetText(1, 2);"), {"snippetText"})
         self.assertNotIn("snippetText", previous_members)
         self.assertNotIn("projectSnippetSnapshot", READ_PORT_MEMBERS)
+
+    def test_ai_cached_reads_refuse_disk_and_bound_age(self):
+        source = PORT.read_text(encoding="utf-8")
+        self.assertRegex(source, r"_aiMaxAge\s*=\s*Duration\(seconds:\s*60\)")
+        self.assertRegex(source, r"cachedRecord\([\s\S]*?allowDisk:\s*false")
+        self.assertRegex(source, r"cachedRecords\([\s\S]*?allowDisk:\s*false")
+        self.assertRegex(source, r"lineage\s*==\s*CacheLineage\.disk")
+        self.assertRegex(source, r"read\.dropped\s*\|\|\s*read\.superseded")
+
+    def test_ai_typed_cache_reads_disable_disk(self):
+        source = PORT.read_text(encoding="utf-8")
+        self.assertRegex(source, r"textFile\([\s\S]*?allowDisk:\s*false")
+        self.assertRegex(source, r"tree\([\s\S]*?allowDisk:\s*false")
 
     def test_row13_write_port_calls_only_whitelisted_members(self):
         sources = self._write_port_sources()

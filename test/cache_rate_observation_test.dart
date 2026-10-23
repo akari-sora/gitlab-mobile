@@ -123,7 +123,18 @@ void main() {
           RateRequestClass.global: _reset,
         });
         expect(api.mayStartRequest, isFalse);
-        await expectLater(api.currentUser(), throwsA(isA<ApiFailure>()));
+        await expectLater(
+          api.currentUser(),
+          throwsA(
+            isA<ApiFailure>()
+                .having(
+                  (failure) => failure.kind,
+                  'kind',
+                  FailureKind.rateLimited,
+                )
+                .having((failure) => failure.retryAt, 'retryAt', _reset),
+          ),
+        );
         expect(adapter.requests, hasLength(1));
         expect(
           adapter.requests.single.uri,

@@ -2720,5 +2720,10 @@
   "cacheRateLimited": "GitLab is limiting requests",
   "cacheRefreshFailed": "Couldn't refresh",
   "cacheResumesInMinutes": "Resumes in about {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "GitLab request budget is almost used up; sending is paused",
+  "aiSendPausedRateLimited": "GitLab is limiting requests; sending is paused",
+  "aiSendResumesAfterReset": "Resumes when the budget resets",
+  "aiGitLabBudgetTitle": "GitLab request budget is low",
+  "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back."
 }

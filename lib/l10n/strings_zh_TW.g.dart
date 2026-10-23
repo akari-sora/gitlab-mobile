@@ -2717,4 +2717,9 @@ const _messagesZhTw = <String>[
   '無法更新',
   '約 {minutes} 分鐘後恢復',
   '{verb}{target}',
+  'GitLab 請求額度快用完了，暫停送出',
+  'GitLab 正在限制請求，暫停送出',
+  '額度重設後恢復',
+  'GitLab 請求額度暫時不足',
+  '這則訊息沒有送出。送出按鈕恢復後再送一次。',
 ];

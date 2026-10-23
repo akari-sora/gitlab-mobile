@@ -418,6 +418,7 @@ final class PolicyAiWriteCoordinator
   final Map<String, _PendingWrite> _pending = {};
   final Map<String, AiWriteOutcome> _results = {};
   final List<AiWriteProposal> _settledEdits = [];
+  final Map<Future<AiWriteOutcome>, String> _activeOperations = {};
 
   /// Attachments uploaded in the current batch of tool calls. §3.1: an
   /// upload and a write quoting it cannot be proposed in the same batch.
@@ -457,8 +458,11 @@ final class PolicyAiWriteCoordinator
 
   @override
   List<Future<AiWriteOutcome>> get inFlightWrites => List.unmodifiable([
+    ..._activeOperations.keys,
     for (final pending in _pending.values)
-      if (!pending.done.isCompleted && pending.flight != null) pending.flight!,
+      if (!pending.done.isCompleted &&
+          pending.flight != null &&
+          !_activeOperations.containsValue(pending.call.id)) pending.flight!,
   ]);
 
   @override
@@ -592,8 +596,16 @@ final class PolicyAiWriteCoordinator
   Future<AiWriteOutcome> execute(
     AiToolCall call, {
     void Function(bool)? onAwaitingApproval,
+  }) => _registerOperation(
+    call,
+    () => _execute(call, onAwaitingApproval: onAwaitingApproval),
+  );
+
+  Future<AiWriteOutcome> _execute(
+    AiToolCall call, {
+    void Function(bool)? onAwaitingApproval,
   }) async {
-    final proposal = await propose(call);
+    final proposal = await _propose(call);
     if (proposal == null) return _results[call.id]!;
     final pending = _pending[proposal.executionId]!;
     if (proposal.tier.decision == AiGateDecision.execute) {
@@ -608,7 +620,10 @@ final class PolicyAiWriteCoordinator
   }
 
   @override
-  Future<AiWriteProposal?> propose(AiToolCall call) async {
+  Future<AiWriteProposal?> propose(AiToolCall call) =>
+      _registerOperation(call, () => _propose(call));
+
+  Future<AiWriteProposal?> _propose(AiToolCall call) async {
     final existing = _results[call.id];
     if (existing != null) {
       if (!existing.successful) _previousIncomplete = true;
@@ -801,8 +816,54 @@ final class PolicyAiWriteCoordinator
     }
   }
 
+  Future<T> _registerOperation<T>(
+    AiToolCall call,
+    Future<T> Function() operation,
+  ) {
+    final done = Completer<AiWriteOutcome>();
+    final settlement = done.future;
+    _activeOperations[settlement] = call.id;
+    final result = Future<T>.sync(operation);
+    unawaited(result.then<void>((_) {
+      if (!done.isCompleted) {
+        done.complete(
+          _results[call.id] ?? _notExecuted(call, 'operationSettled'),
+        );
+      }
+      _activeOperations.remove(settlement);
+    }, onError: (Object _) {
+      if (!done.isCompleted) {
+        done.complete(
+          _results[call.id] ?? _notExecuted(call, 'operationSettled'),
+        );
+      }
+      _activeOperations.remove(settlement);
+    }));
+    return result;
+  }
+
   @override
   Future<AiWriteOutcome> approve(
+    AiWriteProposal proposal, {
+    String? typedName,
+    String? editedText,
+  }) {
+    final pending = _pending[proposal.executionId];
+    if (pending != null && _activeOperations.containsValue(pending.call.id)) {
+      return _approve(proposal, typedName: typedName, editedText: editedText);
+    }
+    final call = pending?.call ?? AiToolCall(
+      id: proposal.executionId,
+      name: proposal.operationId,
+      arguments: const {},
+    );
+    return _registerOperation(
+      call,
+      () => _approve(proposal, typedName: typedName, editedText: editedText),
+    );
+  }
+
+  Future<AiWriteOutcome> _approve(
     AiWriteProposal proposal, {
     String? typedName,
     String? editedText,
