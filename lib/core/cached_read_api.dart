@@ -224,10 +224,16 @@ final class _ReadEntry {
 }
 
 final class _PendingRead {
-  const _PendingRead(this.uri, this.scope, this.pinned, this.future);
+  const _PendingRead(
+    this.uri,
+    this.scope,
+    this.pinned,
+    this.background,
+    this.future,
+  );
   final Uri uri;
   final String scope;
-  final bool pinned;
+  final bool pinned, background;
   final Future<Object> future;
 }
 
@@ -248,6 +254,7 @@ final class _ReadCache {
   final aliases = <String, ({String id, DateTime expiresAt})>{};
   final confirmed = <String, bool>{};
   final confidentialIssues = <String, bool>{};
+  bool publicIssueMarkerEvicted = false;
   final supersededFresh = <String, int>{};
   final publicationTickets = <String, int>{};
   int publicationSequence = 0, publicationFloor = 0;
@@ -309,6 +316,7 @@ final class _ReadCache {
       }
       sourceWriteTimes.clear();
       confidentialIssues.clear();
+      publicIssueMarkerEvicted = false;
     }
     api._readEpoch++;
     entries.clear();
@@ -488,19 +496,22 @@ final class _ReadCache {
     confidentialIssues[identity] = json['confidential'] as bool;
     while (confidentialIssues.length > 4096) {
       final forgotten = confidentialIssues.keys.first;
-      final wasPublic = confidentialIssues.remove(forgotten) == false;
-      if (wasPublic) {
-        final parts = forgotten.split(':');
-        invalidateIssuePrivacy(parts[0], parts[1]);
+      if (confidentialIssues.remove(forgotten) == false) {
+        publicIssueMarkerEvicted = true;
       }
     }
-    if (json['confidential'] != true || previous != false) return;
+    // Once a public marker was forgotten, an unknown confidential issue may
+    // be a former public issue. Defer invalidation until that observation.
+    if (json['confidential'] != true ||
+        !(previous == false || (previous == null && publicIssueMarkerEvicted))) {
+      return;
+    }
     invalidateIssuePrivacy('$project', '$iid');
   }
 
   void invalidateIssuePrivacy(String project, String iid) {
-    // Current authorized responses remain displayable. Forgetting a public
-    // marker must first retire both its subtree and any former list visibility.
+    // Current authorized responses remain displayable. A known or possible
+    // public-to-confidential change retires its subtree and list visibility.
     revoke(
       api.instance.api(['projects', project, 'issues', iid]),
       403,
@@ -814,6 +825,17 @@ final class _ReadCache {
       throw const ApiFailure(FailureKind.unsupported);
     }
     final canCache = enabled && policy != null;
+    if (!canCache) {
+      final loaded = await load();
+      final value = _freezeCached(loaded.value) as T;
+      observeLoadedPrivacy(uri, value);
+      validate?.call(value);
+      return CachedRead<T>(
+        value: value,
+        fetchedAt: api._readCacheClock(),
+        lineage: CacheLineage.network,
+      );
+    }
     var cacheKey = key(publicationUri(uri, null), accept);
     final pinned = policy == _ReadClass.pinned;
     var readScope = scope(uri);
@@ -874,7 +896,7 @@ final class _ReadCache {
         }
       }
       final inFlight = pending[cacheKey];
-      if (inFlight != null) {
+      if (inFlight != null && (background || !inFlight.background)) {
         final shared = await inFlight.future as CachedRead<T>;
         // A disk-forbidden caller never joins a disk hydration result.
         if (allowDisk || shared.lineage != CacheLineage.disk) return shared;
@@ -958,8 +980,12 @@ final class _ReadCache {
         }
       }
     }
-    if (canCache && !fresh && pending[cacheKey] != null) {
-      return await pending[cacheKey]!.future as CachedRead<T>;
+    final inFlight = pending[cacheKey];
+    if (canCache &&
+        !fresh &&
+        inFlight != null &&
+        (background || !inFlight.background)) {
+      return await inFlight.future as CachedRead<T>;
     }
     final ticket = canCache ? claimPublication(cacheKey, uri, accept) : 0;
     late final Future<CachedRead<T>> operation;
@@ -1065,7 +1091,13 @@ final class _ReadCache {
       }
     }();
     if (canCache && !fresh) {
-      pending[cacheKey] = _PendingRead(uri, readScope, pinned, operation);
+      pending[cacheKey] = _PendingRead(
+        uri,
+        readScope,
+        pinned,
+        background,
+        operation,
+      );
     }
     return operation;
   }
