@@ -42,7 +42,7 @@ int _endpointCount(FakeAdapter adapter, String suffix) => adapter.requests
 
 void main() {
   testWidgets(
-    'board open column fixture with one issue, warm fresh cache, 800x600 viewport, clock +30s: cold URI carries the column query and reopen adds zero GET projects/42/issues requests',
+    'board toolbar refresh within 20s fetches each warm column once and shows new issues; plain reopen within 60s adds zero issue GETs',
     (tester) async {
       var now = DateTime.utc(2026, 10, 23, 8);
       final board = {
@@ -51,18 +51,21 @@ void main() {
         'hide_backlog_list': false,
         'hide_closed_list': false,
       };
-      final issue = {
-        'id': 1001,
-        'iid': 1,
-        'project_id': 42,
-        'title': 'Board issue',
-        'description': 'Synthetic board issue.',
-        'state': 'opened',
-        'labels': <Object?>[],
-        'author': {'id': 7, 'username': 'developer'},
-        'assignees': <Object?>[],
-        'created_at': '2026-10-01T00:00:00Z',
-        'updated_at': '2026-10-02T00:00:00Z',
+      final issues = {
+        for (final state in ['opened', 'closed'])
+          state: {
+            'id': state == 'opened' ? 1001 : 1002,
+            'iid': state == 'opened' ? 1 : 2,
+            'project_id': 42,
+            'title': 'Original $state issue',
+            'description': 'Synthetic board issue.',
+            'state': state,
+            'labels': <Object?>[],
+            'author': {'id': 7, 'username': 'developer'},
+            'assignees': <Object?>[],
+            'created_at': '2026-10-01T00:00:00Z',
+            'updated_at': '2026-10-02T00:00:00Z',
+          },
       };
       final adapter = FakeAdapter((request) {
         final path = request.uri.path;
@@ -72,7 +75,7 @@ void main() {
         }
         if (path.endsWith('/projects/42/boards/1')) return jsonResponse(board);
         if (path.endsWith('/projects/42/issues')) {
-          return jsonResponse([issue]);
+          return jsonResponse([issues[request.uri.queryParameters['state']]!]);
         }
         return jsonResponse([]);
       });
@@ -88,42 +91,67 @@ void main() {
         ),
       );
 
+      Future<void> visitColumns(String revision) async {
+        for (final column in [
+          (key: 'open', state: 'opened'),
+          (key: 'closed', state: 'closed'),
+        ]) {
+          await tester.tap(find.byKey(ValueKey('board-column-${column.key}')));
+          await settleNetworkWidgets(tester);
+          expect(find.text('$revision ${column.state} issue'), findsOneWidget);
+        }
+      }
+
+      void expectIssueGets(int perColumn) {
+        final requests = adapter.requests
+            .where((request) => request.uri.path.endsWith('/projects/42/issues'))
+            .toList();
+        expect(requests, hasLength(2 * perColumn));
+        for (final state in ['opened', 'closed']) {
+          final columnRequests = requests.where(
+            (request) => request.uri.queryParameters['state'] == state,
+          );
+          expect(columnRequests, hasLength(perColumn));
+          for (final request in columnRequests) {
+            expect(request.method, 'GET');
+            expect(request.uri.path, '/gitlab/api/v4/projects/42/issues');
+            expect(request.uri.queryParameters, {
+              'per_page': '30',
+              'scope': 'all',
+              'state': state,
+              'order_by': 'relative_position',
+              'sort': 'asc',
+              'with_labels_details': 'true',
+            });
+          }
+        }
+      }
+
       await tester.pumpWidget(host(const ValueKey('board-first-open')));
       await settleNetworkWidgets(tester);
-      expect(find.text('Board issue'), findsOneWidget);
+      await visitColumns('Original');
+      expectIssueGets(1);
 
-      final firstIssues = adapter.requests
-          .where((request) => request.uri.path.endsWith('/projects/42/issues'))
-          .toList();
-      expect(firstIssues, isNotEmpty);
-      final open = firstIssues.firstWhere(
-        (request) => request.uri.queryParameters['state'] == 'opened',
-      );
-      expect(open.uri.queryParameters['per_page'], '30');
-      expect(open.uri.queryParameters, containsPair('scope', 'all'));
-      expect(
-        open.uri.queryParameters,
-        containsPair('order_by', 'relative_position'),
-      );
-      expect(open.uri.queryParameters, containsPair('sort', 'asc'));
-      expect(
-        open.uri.queryParameters,
-        containsPair('with_labels_details', 'true'),
-      );
-      final firstCount = firstIssues.length;
+      now = now.add(const Duration(seconds: 20));
+      for (final entry in issues.entries) {
+        entry.value['title'] = 'Updated ${entry.key} issue';
+      }
+      await tester.tap(find.byIcon(Icons.refresh));
+      await settleNetworkWidgets(tester);
+      await visitColumns('Updated');
+      expectIssueGets(2);
+
+      await visitColumns('Updated');
+      expectIssueGets(2);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
-      now = now.add(const Duration(seconds: 30));
+      now = now.add(const Duration(seconds: 10));
 
       await tester.pumpWidget(host(const ValueKey('board-reopen')));
       await settleNetworkWidgets(tester);
-      expect(find.text('Board issue'), findsOneWidget);
-      expect(
-        _endpointCount(adapter, '/projects/42/issues'),
-        firstCount,
-        reason: 'the reopen itself must add zero GET projects/42/issues requests',
-      );
+      await visitColumns('Updated');
+      expectIssueGets(2);
     },
   );
 
@@ -248,17 +276,12 @@ void main() {
             .where((request) => request.uri.path.endsWith(entry.suffix))
             .toList();
         expect(first, hasLength(1));
-        expect(first.single.uri.queryParameters['per_page'], '30');
-        for (final pair in entry.extra.entries) {
-          expect(
-            first.single.uri.queryParameters,
-            containsPair(pair.key, pair.value),
-          );
-        }
-        expect(
-          first.single.uri.queryParameters.containsKey('page'),
-          isFalse,
-        );
+        expect(first.single.method, 'GET');
+        expect(first.single.uri.path, '/gitlab/api/v4${entry.suffix}');
+        expect(first.single.uri.queryParameters, {
+          'per_page': '30',
+          ...entry.extra,
+        });
 
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
@@ -344,11 +367,15 @@ void main() {
           )
           .toList();
       expect(first, hasLength(1));
-      expect(first.single.uri.queryParameters['per_page'], '30');
+      expect(first.single.method, 'GET');
       expect(
-        first.single.uri.queryParameters,
-        containsPair('with_labels_details', 'true'),
+        first.single.uri.path,
+        '/gitlab/api/v4/projects/42/milestones/101/issues',
       );
+      expect(first.single.uri.queryParameters, {
+        'per_page': '30',
+        'with_labels_details': 'true',
+      });
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
@@ -423,13 +450,14 @@ void main() {
           .where((request) => request.uri.path.endsWith('/projects/42/issues'))
           .toList();
       expect(first, hasLength(1));
-      expect(first.single.uri.queryParameters['per_page'], '30');
-      expect(first.single.uri.queryParameters, containsPair('labels', 'bug'));
-      expect(first.single.uri.queryParameters, containsPair('state', 'opened'));
-      expect(
-        first.single.uri.queryParameters,
-        containsPair('with_labels_details', 'true'),
-      );
+      expect(first.single.method, 'GET');
+      expect(first.single.uri.path, '/gitlab/api/v4/projects/42/issues');
+      expect(first.single.uri.queryParameters, {
+        'per_page': '30',
+        'labels': 'bug',
+        'state': 'opened',
+        'with_labels_details': 'true',
+      });
       final firstCount = first.length;
 
       await tester.pumpWidget(const SizedBox.shrink());
