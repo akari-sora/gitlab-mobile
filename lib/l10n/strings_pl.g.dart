@@ -2724,4 +2724,5 @@ const _messagesPl = <String>[
   'Wznowienie po odnowieniu limitu żądań',
   'Limit żądań w GitLab jest prawie wyczerpany',
   'Ta wiadomość nie została wysłana. Wyślij ją ponownie, gdy przycisk „Wyślij” będzie znów dostępny.',
+  '{verb} {target} {ref}',
 ];
