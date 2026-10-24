@@ -1,6 +1,6 @@
 # Plan and status
 
-Last updated: 2026-10-24 (early hours).
+Last updated: 2026-10-25 (night).
 
 This page is the single place for **what we are building, in what order, and where each piece stands**.
 - Update it in the same MR that changes a status.
@@ -40,7 +40,7 @@ There are two tracks.
 | MR6a | Chat page and entry points, draft append and preview, report | Merged 2026-10-21/22 | !96, !97, !98, !99, !100 |
 | MR6b-1 | AI writes, first batch: T1 and T2 REST writes, consent v2, autonomy levels, coordinator, journal, approval cards | Merged 2026-10-22 | !102; follow-ups #12 (in !139) |
 | MR6b-2 | AI writes, second batch: files and suggestions, branches/tags/releases, merge requests, CI, snippets, content deletes, mark-all to-dos, registry and project hard lines, read tools for releases/milestones/snippets. Also structured previews, card titles, refusal reasons and the Inbox AI entry | Merged 2026-10-23 after four review rounds and three emulator rounds (every write proposed and rejected; GitLab unchanged) | !104; follow-ups #13 |
-| **MR6b-3** | GraphQL writes for project Work Items (state, status, dates, health, assignees, milestone, weight, activity notes create/delete), reactions and notifications, incidents and to-do snooze, split into small MRs (shared seams S0a–S0c, then one family per MR) | **Building.** The seams merged 2026-10-23 (!116). P2, P5 and P12 merged (!125–!127, 2026-10-24). P3, P4, P6, P8, P13 and the seam follow-up S0d have reviewed MRs open (!132–!135, !137, !130). P9 and P10 are built on S0d with reviews prepared. P11 waits for the reaction readback fix (!123). P14 (opening the families to the model) is not started. Group Work Items move to MR6b-3g (D1); whole-field text writes and labels move to MR6b-3t (D18, D19) | plan v6 §14; [breakdown](plans/mr6b3-breakdown.md), [decisions](plans/mr6b3-decisions.md) |
+| **MR6b-3** | GraphQL writes for project Work Items (state, status, dates, health, assignees, milestone, weight, activity notes create/delete), reactions and notifications, incidents and to-do snooze, split into small MRs (shared seams S0a–S0c, then one family per MR) | **Building.** Seams merged 2026-10-23 (!116). All families through P13 merged 2026-10-24/25: S0d (!130), P3/P4/P6/P8/P13 (!132–!135, !137), P11 after the reaction readback fix (!123, !141), plus the #12 and #13 follow-ups (!139, !131). P9 (activity comment/reply) and P10 (note delete) are review-approved after round-2 mutation-verified fixes with MRs open (!143, !144). P14 (opening the families to the model) is not started. Group Work Items move to MR6b-3g (D1); whole-field text writes and labels move to MR6b-3t (D18, D19) | plan v6 §14; [breakdown](plans/mr6b3-breakdown.md), [decisions](plans/mr6b3-decisions.md) |
 | MR6c | Background runs: Android foreground service, notifications, app lock, stop protocol | Not started | plan v6 §12, §14 |
 | MR7 | Open the AI gate: full CI on the release commit, sandbox writes, Play declarations, listing | Not started | plan v6 §13, §14 |
 | Play listing | Store listing, screenshots, data safety | After MR7 | [Store listing](STORE_LISTING.md) |
@@ -50,14 +50,14 @@ There are two tracks.
 | Cache C1b-1b | Hot spots: project overview, pipeline detail, CI overview queue, job-log polling by rate budget | Merged 2026-10-23 after three review rounds. Emulator self-test passed | !115 |
 | Cache C1b-2a | Boards and project metadata lists (branches, tags, commits, releases, labels, milestones, and the label and milestone Work Item lists) read cached first pages | Merged 2026-10-23 (!111, board fix !114). Board follow-ups in !120 | follow-ups #16 |
 | Cache C1b-2b | Remaining screens (project more, work item, discussions, repository; snippets and registries once their list paths are in the read-class table) | Merged 2026-10-23 after four review rounds (!122). The detail pages' freshness strip (pipeline and overview, then work item and repository) is in !136 | cache plan v3 V9 |
-| Cache C1b-2c | AI side: cached reads within 60 s, read-port and tool-catalogue metering, AI budget leases, and the send-paused card | Merged 2026-10-23 (!112, follow-ups !118). Emulator self-test passed. The #17 N-2/N-4 follow-up (per-read budget admission, fresh delivery) is in !138 | follow-ups #17 |
+| Cache C1b-2c | AI side: cached reads within 60 s, read-port and tool-catalogue metering, AI budget leases, and the send-paused card | Merged 2026-10-23 (!112, follow-ups !118). Emulator self-test passed. The #17 N-2/N-4 follow-up (per-read budget admission, fresh delivery) is re-reviewed and awaiting CI in !138 | follow-ups #17 |
 | Cache C2 prerequisites | The six "before C2" items from #14 and GraphQL 403/404 scope | Merged 2026-10-23 | !109 |
-| **Cache C2** | Encrypted disk cache, clear markers, startup order | **Building.** P-C2a round 1 fixed the real GitLab shapes (non-issue objects, pipeline objects) and mutation-proofed guards; the two open items are decided (C2-D4 nullable display fields, C2-D5 E17 text admission by Accept) and the fix round implementing them is next. P-C2b follows | cache plan v3 §4, V13, V14, V17; [breakdown](plans/cache-c2-breakdown.md), [decisions](plans/cache-c2-decisions.md) |
+| **Cache C2** | Encrypted disk cache, clear markers, startup order | **Building.** C2a merged 2026-10-25 (!140) with C2-D4/D5 implemented and mutation-proofed guards (round-2 approve). P-C2b is rebased on the merged C2a but its implementation is an unfinished, unverified draft (cipher, files, key store). Then C2c–e | cache plan v3 §4, V13, V14, V17; [breakdown](plans/cache-c2-breakdown.md), [decisions](plans/cache-c2-decisions.md) |
 | Cache C3 | Offline repository saving (archive fetch, verified blobs) and an offline read-only mode | Plan approved in two review rounds (v2.1); not started; C3a needs C1a, C1b-2 and C2. Split: C3a core, C3b save and browse UI, C3c offline mode, C3d optional | [C3 plan](plans/cache-c3-offline-plan-v2.md) |
 
 ## Next steps
-1. Merge the reviewed MRs when CI is green: !121, !125–!127 are done (2026-10-24); !123, !124, !128 passed their incremental checks; open and green-awaiting are !129–!139 (docs, S0d, fu13, P3/P4/P8/P6/P13, detail freshness, #17 N-2/N-4, #12 follow-ups). P11 after !123; then P14.
-2. C2: P-C2a fix round 2 (C2-D4/D5 implementation plus the guard tests), then P-C2b to e in order; then C3 (C3a core, C3b UI, C3c offline mode, C3d optional).
+1. Merge when CI is green: !138 (#17 N-2/N-4, conflict resolved and re-verified), !142 (main analyze fix: the #12 frozen-tools coordinator needs `beginSegment` from !131 — a semantic merge conflict both branch pipelines missed), !143 (P9) and !144 (P10). Then P14.
+2. C2: finish P-C2b (the rebased draft is unverified), then c, d1–d3, e in order; then C3 (C3a core, C3b UI, C3c offline mode, C3d optional).
 3. MR6b-3t (text fields, labels), MR6b-3g (group Work Items), MR6c, MR7, Play listing.
 
 ## Plan documents
