@@ -28,6 +28,7 @@ Future<String> activityProjectName(GitLabApi api, int id) {
 String _targetLabel(String type) => switch (type) {
   'Issue' => l10n.issueTypeName,
   'MergeRequest' => l10n.mergeRequestLabel,
+  'Commit' => l10n.commitLabel,
   'Milestone' => l10n.milestoneLabel,
   'WikiPage::Meta' || 'WikiPage' => l10n.wikiPageLabel,
   'Project' => l10n.projectLabel,
@@ -375,7 +376,10 @@ String activitySentence(Json event) {
   final targetType = note.isNotEmpty ? valueText(note, 'noteable_type') : valueText(event, 'target_type');
   final target = _targetLabel(targetType);
   final iid = note.isNotEmpty ? valueInt(note, 'noteable_iid') : valueInt(event, 'target_iid');
-  final reference = iid > 0 ? ' ${isolated('${targetType == 'MergeRequest' ? '!' : '#'}$iid')}' : '';
+  // One value, sigil included, so a right-to-left interface isolates it whole.
+  // A commit note carries no reference: the Events API exposes commit_id only
+  // on merge-request diff notes, never on a note about a commit.
+  final reference = iid > 0 ? '${targetType == 'MergeRequest' ? '!' : '#'}$iid' : '';
   final verb = switch (action) {
     'opened' => l10n.activityOpened,
     'closed' => l10n.activityClosed,
@@ -394,9 +398,19 @@ String activitySentence(Json event) {
     _ => action,
   };
   if (action == 'joined' || action == 'left' || action == 'imported' || action == 'expired') return verb;
-  // Word order and spacing are the language's, e.g. 留言於議題 but "Commented on Issue".
-  final head = target.isEmpty ? verb : l10n.activityVerbTarget(verb, target);
-  return '$head$reference';
+  // Word order and spacing are the language's, e.g. 留言於議題 but "Commented on
+  // Issue"; the reference sits inside the message so verb-final languages can
+  // end with the verb.
+  if (target.isEmpty) {
+    return [verb, if (reference.isNotEmpty) isolated(reference)]
+        .where((part) => part.isNotEmpty).join(' ');
+  }
+  if (verb.isEmpty) {
+    return [target, if (reference.isNotEmpty) isolated(reference)].join(' ');
+  }
+  return reference.isEmpty
+      ? l10n.activityVerbTarget(verb, target)
+      : l10n.activityVerbTargetRef(verb, target, reference);
 }
 
 IconData _activityIcon(Json event) {

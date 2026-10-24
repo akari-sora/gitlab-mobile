@@ -2721,5 +2721,6 @@
   "aiSendPausedRateLimited": "GitLab đang giới hạn yêu cầu; tạm dừng gửi",
   "aiSendResumesAfterReset": "Tiếp tục khi hạn mức yêu cầu được đặt lại",
   "aiGitLabBudgetTitle": "Hạn mức yêu cầu GitLab gần cạn",
-  "aiGitLabBudgetDetail": "Tin nhắn này chưa được gửi. Gửi lại khi nút “Gửi” khả dụng trở lại."
+  "aiGitLabBudgetDetail": "Tin nhắn này chưa được gửi. Gửi lại khi nút “Gửi” khả dụng trở lại.",
+  "activityVerbTargetRef": "{verb} {target} {ref}"
 }

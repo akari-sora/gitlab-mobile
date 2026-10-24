@@ -2721,5 +2721,6 @@
   "aiSendPausedRateLimited": "يقيّد GitLab الطلبات؛ الإرسال متوقف مؤقتًا",
   "aiSendResumesAfterReset": "يستأنف عند إعادة تعيين حصة الطلبات",
   "aiGitLabBudgetTitle": "حصة طلبات GitLab على وشك النفاد",
-  "aiGitLabBudgetDetail": "لم تُرسل هذه الرسالة. أعد إرسالها عندما يصبح زر «إرسال» متاحًا مجددًا."
+  "aiGitLabBudgetDetail": "لم تُرسل هذه الرسالة. أعد إرسالها عندما يصبح زر «إرسال» متاحًا مجددًا.",
+  "activityVerbTargetRef": "{verb} {target} {ref}"
 }

@@ -2724,4 +2724,5 @@ const _messagesIt = <String>[
   'Riprende quando la quota di richieste viene ripristinata',
   'La quota di richieste GitLab è quasi esaurita',
   'Questo messaggio non è stato inviato. Invialo di nuovo quando il pulsante «Invia» sarà nuovamente disponibile.',
+  '{verb} {target} {ref}',
 ];
