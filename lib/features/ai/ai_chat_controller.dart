@@ -1692,8 +1692,13 @@ class AiChatController extends ChangeNotifier
                 if (!result.isError &&
                     !result.notExecuted &&
                     !result.blockedSensitive) {
-                  _readConfidential |= result.readConfidential;
-                  _readInternal |= result.readInternal;
+                  // Snippets carry their restriction in readVisibility, handled
+                  // by the onToolResult rank split; their readInternal flag is
+                  // the snippet's own visibility, not an internal-note read.
+                  if (result.name != 'get_snippet') {
+                    _readConfidential |= result.readConfidential;
+                    _readInternal |= result.readInternal;
+                  }
                 }
               }
               return delivered;
