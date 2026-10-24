@@ -5,6 +5,7 @@ import 'package:gitlab_mobile/core/ai/exact_edit.dart' as exact;
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_preview.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_tier.dart' show AiGateDecision;
 import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
@@ -199,7 +200,7 @@ void main() {
       final prepared = await s.writePort.prepare(
         p10Request('updateSnippet', args),
       );
-      final scan = prepared.textScan!;
+      final scan = prepared.textScan!.files.single;
       expect(scan.markdown, isFalse);
       expect(scan.original, original);
       expect(scan.windows, isNotEmpty);
@@ -758,6 +759,71 @@ void main() {
       },
     );
   }
+
+  for (final markdownFirst in [false, true]) {
+    test('issue13 mixed snippet files keep Markdown rules per file '
+        '(Markdown first: $markdownFirst)', () async {
+      h = await P10Coordinator.create(s, level: AiAutonomyLevel.bypass);
+      final code = _create('code.py',
+          '@all\n![image](https://outside.example/a.png)\n');
+      final markdown = _create('README.md', 'ordinary Markdown\n');
+      final args = _actions(markdownFirst ? [markdown, code] : [code, markdown]);
+      final p = await h!.propose('updateSnippetFiles', args: args);
+      expect(p, isNotNull);
+      expect(p!.tier.reasons, isNot(contains(AiFixedConfirmReason.massMention)));
+      expect(p.tier.reasons,
+          isNot(contains(AiFixedConfirmReason.externalMediaInRenderedMarkdown)));
+      expect((await h!.coordinator.approve(p)).successful, isTrue);
+      expect(s.contents['code.py'], code['content']);
+      expect(s.contents['README.md'], markdown['content']);
+    });
+  }
+
+  test('issue13 Markdown snippet file still requires media and mention approval',
+      () async {
+    h = await P10Coordinator.create(s, level: AiAutonomyLevel.bypass);
+    final p = await h!.propose('updateSnippetFiles', args: _actions([
+      _create('code.py', 'plain code\n'),
+      _create('README.md', '@all\n![image](https://outside.example/a.png)\n'),
+    ]));
+    expect(p, isNotNull);
+    expect(p!.tier.decision, AiGateDecision.requireApproval);
+    expect(p.tier.reasons, containsAll([
+      AiFixedConfirmReason.massMention,
+      AiFixedConfirmReason.externalMediaInRenderedMarkdown,
+    ]));
+    expect(s.writes, isEmpty);
+  });
+
+  test('issue13 snippet sources never count a secret across file boundaries',
+      () async {
+    const first = 'alpha\nopaque';
+    const second = 'Credential\nalpha\n';
+    final server = P10Server(initialContents: {'b.txt': second});
+    s.close();
+    s = server;
+    s.contents['a.txt'] = first;
+    const args = <String, Object?>{
+      'projectId': 9,
+      'snippetId': 12,
+      'actions': [
+        {'action': 'update', 'file_path': 'a.txt', 'edits': [
+          {'old': 'alpha', 'new': 'beta'},
+        ]},
+        {'action': 'update', 'file_path': 'b.txt', 'edits': [
+          {'old': 'alpha', 'new': 'beta'},
+        ]},
+      ],
+    };
+    final prepared = await s.writePort.prepare(p10Request('updateSnippetFiles', args));
+    final checked = exact.checkFragments(prepared.textScan!,
+        knownSecrets: {'opaqueCredential'}, instance: s.api.instance,
+        visibility: const text.AiVisibilityContext());
+    expect(checked.blockCode, isNull);
+    expect(checked.preexistingSecretHits, 0);
+    expect(prepared.textScan!.files.map((file) => file.original), [first, second]);
+    expect(s.writes, isEmpty);
+  });
 
   test(
     'P10 existing Markdown exact windows classify mentions and media',

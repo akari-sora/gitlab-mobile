@@ -96,6 +96,7 @@ final class AiToolResult {
     this.notExecuted = false,
     this.readConfidential = false,
     this.readInternal = false,
+    this.readVisibility,
     this.uploadPlaceholders = false,
   }) : _content = content,
        data = null {
@@ -113,6 +114,7 @@ final class AiToolResult {
     this.notExecuted = false,
     this.readConfidential = false,
     this.readInternal = false,
+    this.readVisibility,
     this.uploadPlaceholders = false,
   }) : _content = '',
        // ignore: prefer_initializing_formals
@@ -136,6 +138,9 @@ final class AiToolResult {
   /// Display-only metadata; never encoded in provider requests.
   final bool readInternal;
 
+  /// Trusted snippet metadata; null means its visibility could not be read.
+  final String? readVisibility;
+
   /// The producer numbered restorable upload links through the
   /// conversation's placeholder table and already turned every
   /// source-authored `[[upload:` or `[[attachment:` into an ordinary marker,
@@ -154,6 +159,7 @@ final class AiToolResult {
     notExecuted: notExecuted,
     readConfidential: readConfidential,
     readInternal: readInternal,
+    readVisibility: readVisibility,
     uploadPlaceholders: uploadPlaceholders,
   );
 }

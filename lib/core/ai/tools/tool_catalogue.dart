@@ -253,6 +253,7 @@ final class AiToolCatalogue {
       blockedSensitive: execution.blocked,
       readConfidential: execution.result.readConfidential,
       readInternal: execution.result.readInternal,
+      readVisibility: execution.result.readVisibility,
       uploadPlaceholders: execution.result.uploadPlaceholders,
     );
   }
@@ -358,6 +359,7 @@ final class AiToolCatalogue {
           data: clipped,
           readConfidential: !raw.blocked && raw.readConfidential,
           readInternal: !raw.blocked && raw.readInternal,
+          readVisibility: raw.blocked ? null : raw.readVisibility,
           uploadPlaceholders: restorable != null,
         ),
         provenance: provenance,
@@ -593,6 +595,8 @@ final class AiToolCatalogue {
           read.value['visibility'] != 'public' &&
           read.value['visibility'] != 'internal',
       readInternal: read.value['visibility'] == 'internal',
+      readVisibility: read.value['visibility'] is String
+          ? read.value['visibility'] as String : null,
       restorable: _descriptionField(
         () => AiProjectFieldProvenance.snippetDescription(
           instance: placeholders!.instance,
@@ -1046,6 +1050,7 @@ final class _RawToolResult {
   }) : json = false,
        readConfidential = false,
        readInternal = false,
+       readVisibility = null,
        fragmentFields = const {},
        restorable = null;
 
@@ -1055,6 +1060,7 @@ final class _RawToolResult {
     this.blocked = false,
     this.readConfidential = false,
     this.readInternal = false,
+    this.readVisibility,
     this.requestCount = 0,
     this.fragmentFields = const {},
     this.restorable,
@@ -1068,6 +1074,7 @@ final class _RawToolResult {
   final bool blocked;
   final bool readConfidential;
   final bool readInternal;
+  final String? readVisibility;
   final bool json;
   final Set<String> fragmentFields;
   final int requestCount;

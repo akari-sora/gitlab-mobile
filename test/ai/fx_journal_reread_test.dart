@@ -4,7 +4,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart'
     show AiWriteLimits;
+import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
+import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/features/ai/ai_journal_key_store.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_reread.dart';
@@ -246,7 +249,7 @@ void main() {
   });
 
   test(
-    'a create compares this account\'s items within five minutes of dispatch',
+    'a create stays uncertain without server-time or content identity',
     () async {
       final notes = _key(['project:5', 'mergeRequest', '12', 'notes']);
       final id = await interrupted(
@@ -254,56 +257,42 @@ void main() {
         operation: 'createNote',
         release: '!12',
       );
-      var page = <Map<String, Object?>>[
-        {
-          'id': 70,
-          'author': {'id': 7},
-          'created_at': clock.add(const Duration(minutes: 1)).toIso8601String(),
-        },
-      ];
       final adapter = FakeAdapter(
         (request) =>
             request.uri.path == '$_api/projects/5/merge_requests/12/notes'
-            ? jsonResponse(page)
+            ? jsonResponse([
+                {
+                  'id': 70,
+                  'author': {'id': 7},
+                  'created_at': clock
+                      .add(const Duration(minutes: 1))
+                      .toIso8601String(),
+                },
+              ])
             : server(request),
       );
-      final found = await rereadInterruptedWrite(
+      final result = await rereadInterruptedWrite(
         journal: journal,
         accountKey: _account,
         executionId: id,
         api: testApi(adapter),
       );
-      expect(found.observation.presence, AiRereadPresence.present);
-      expect(found.observation.subject, AiRereadSubject.note);
-      expect(found.observation.matches, 1);
-
-      page = [
-        {
-          'id': 71,
-          'author': {'id': 8},
-          'created_at': clock.toIso8601String(),
-        },
-        {
-          'id': 69,
-          'author': {'id': 7},
-          'created_at': clock
-              .subtract(const Duration(minutes: 6))
-              .toIso8601String(),
-        },
-      ];
-      final none = await rereadInterruptedWrite(
-        journal: journal,
-        accountKey: _account,
-        executionId: id,
-        api: testApi(adapter),
+      expect(result.observation.presence, AiRereadPresence.unknown);
+      expect(result.observation.subject, AiRereadSubject.note);
+      expect(result.observation.detail, AiRereadDetail.notComparable);
+      expect(result.observation.matches, isNull);
+      expect(
+        adapter.requests.where(
+          (request) =>
+              request.uri.path == '$_api/projects/5/merge_requests/12/notes',
+        ),
+        isEmpty,
       );
-      expect(none.observation.presence, AiRereadPresence.absent);
-      expect(none.observation.matches, 0);
       expect(
         AiRereadObservation.decode(
           journal.entries(_account).single.observation,
         )!.presence,
-        AiRereadPresence.absent,
+        AiRereadPresence.unknown,
       );
       _onlyGet(adapter);
     },
@@ -311,26 +300,17 @@ void main() {
 
   test('requests are capped at rereadHttp', () async {
     expect(AiWriteLimits.rereadHttp, 10);
-    final id = await interrupted(
-      {
-        _key(['project:5', 'mergeRequest', '12', 'notes']),
-      },
-      operation: 'createNote',
-      release: '!12',
-    );
-    // Every page is inside the window, by someone else, with a next page.
+    final id = await interrupted({
+      _key(['todos', '99']),
+    });
     final adapter = FakeAdapter((request) {
-      if (request.uri.path != '$_api/projects/5/merge_requests/12/notes') {
+      if (request.uri.path != '$_api/todos') {
         return server(request);
       }
       final page = int.parse(request.uri.queryParameters['page'] ?? '1');
       return jsonResponse(
         [
-          {
-            'id': 1000 - page,
-            'author': {'id': 8},
-            'created_at': clock.toIso8601String(),
-          },
+          <String, Object?>{'id': page},
         ],
         headers: {
           'x-next-page': ['${page + 1}'],
@@ -350,6 +330,73 @@ void main() {
     _onlyGet(adapter);
   });
 
+  test('OAuth 401 replay is included in the physical reread cap', () async {
+    expect(AiWriteLimits.rereadHttp, 10);
+    final id = await interrupted({
+      _key(['todos', '99']),
+    });
+    var userRequests = 0;
+    final apiAdapter = FakeAdapter((request) {
+      if (request.uri.path == '$_api/user') {
+        userRequests++;
+        return userRequests == 1
+            ? jsonResponse({'message': 'expired'}, status: 401)
+            : jsonResponse(_user(7));
+      }
+      if (request.uri.path == '$_api/todos') {
+        final page = int.parse(request.uri.queryParameters['page'] ?? '1');
+        return jsonResponse(
+          [
+            <String, Object?>{'id': page},
+          ],
+          headers: {
+            'x-next-page': ['${page + 1}'],
+          },
+        );
+      }
+      return _notFound();
+    });
+    final tokenAdapter = FakeAdapter(
+      (_) => jsonResponse({
+        'access_token': 'rotated-access',
+        'refresh_token': 'rotated-refresh',
+        'token_type': 'bearer',
+      }),
+    );
+    final instance = GitLabInstance.parse(_instance);
+    final api = GitLabApi(
+      instance: instance,
+      credential: const OAuthCredential(
+        accessToken: 'old-access',
+        refreshToken: 'old-refresh',
+        clientId: 'synthetic-client',
+      ),
+      dio: Dio()..httpClientAdapter = apiAdapter,
+      oauth: OAuthTokenClient(
+        instance: instance,
+        clientId: 'synthetic-client',
+        dio: Dio()..httpClientAdapter = tokenAdapter,
+      ),
+    );
+    api.bindReadCache(_account, 1);
+    addTearDown(api.close);
+
+    final result = await rereadInterruptedWrite(
+      journal: journal,
+      accountKey: _account,
+      executionId: id,
+      api: api,
+    );
+
+    expect(result.observation.presence, AiRereadPresence.unknown);
+    expect(result.observation.detail, AiRereadDetail.budgetExhausted);
+    expect(apiAdapter.requests.length, lessThanOrEqualTo(10));
+    expect(result.requests, apiAdapter.requests.length);
+    expect(userRequests, 2);
+    expect(tokenAdapter.requests, hasLength(1));
+    _onlyGet(apiAdapter);
+  });
+
   final shapes =
       <
         String,
@@ -363,9 +410,9 @@ void main() {
         ),
         'createIssue': (
           ['project:5', 'workItem'],
-          AiRereadPresence.absent,
+          AiRereadPresence.unknown,
           AiRereadSubject.issue,
-          null,
+          AiRereadDetail.notComparable,
         ),
         'subscription': (
           ['project:5', 'workItem', '12', 'subscription', '7'],

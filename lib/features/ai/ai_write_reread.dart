@@ -3,6 +3,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/instance.dart';
 import '../../core/models.dart';
+import '../../core/request_meter.dart';
 import 'ai_write_journal.dart';
 
 // Plan v6 §7.6 「重新讀取以確認（只產生觀察，不解除）」 and the GitLab link of
@@ -75,8 +76,8 @@ final class AiRereadObservation {
   final AiRereadSubject subject;
   final AiRereadDetail? detail;
 
-  /// For a create: items by this account found within [rereadMatchWindow] of
-  /// the dispatch time. A lower bound when the read stopped early.
+  /// Reserved for create observations that have a conservative server identity.
+  /// This version does not infer identity from a device-clock window or count.
   final int? matches;
   final DateTime observedAt;
 
@@ -135,10 +136,6 @@ final class AiRereadResult {
   final String? projectPath;
 }
 
-/// §7.6: a create is compared with items by this account created this long
-/// before or after the dispatch time.
-const rereadMatchWindow = Duration(minutes: 5);
-
 /// Re-reads the target of an interrupted write and records the observation.
 ///
 /// Throws [AiJournalException] without any request when the entry is not
@@ -165,7 +162,7 @@ Future<AiRereadResult> rereadInterruptedWrite({
     // Never reads, or records, through another account's credentials.
     final user = await reads.user();
     if (user.id != userId) throw const AiJournalException('accountMismatch');
-    seen = await _observe(reads, entry, userId);
+    seen = await _observe(reads, entry);
   } on AiJournalException {
     rethrow;
   } on _Exhausted {
@@ -269,7 +266,7 @@ Uri? aiJournalTargetWebUri(
   }
 }
 
-Future<_Seen> _observe(_Reads reads, AiJournalEntry entry, int userId) async {
+Future<_Seen> _observe(_Reads reads, AiJournalEntry entry) async {
   final parts = entry.writeKeys.first.parts;
   if (parts.length < 2 || parts.first != entry.accountKey) {
     return const _Seen.unknown(
@@ -322,13 +319,7 @@ Future<_Seen> _observe(_Reads reads, AiJournalEntry entry, int userId) async {
   }
   if (read.value == null) return read.seen(AiRereadSubject.project);
   final path = _projectPathOrNull(read.value!['path_with_namespace']);
-  final seen = await _observeInProject(
-    reads,
-    project,
-    parts.sublist(2),
-    userId,
-    entry.dispatchedAt,
-  );
+  final seen = await _observeInProject(reads, project, parts.sublist(2));
   return seen.withPath(path);
 }
 
@@ -336,40 +327,21 @@ Future<_Seen> _observeInProject(
   _Reads reads,
   int project,
   List<String> rest,
-  int userId,
-  DateTime? dispatchedAt,
 ) async {
   final base = ['projects', '$project'];
   switch (rest) {
     case [] || ['star', _]:
       return const _Seen(AiRereadPresence.present, AiRereadSubject.project);
     case [final kind] when kind == 'workItem' || kind == 'mergeRequest':
-      final issue = kind == 'workItem';
-      final subject = issue
+      final subject = kind == 'workItem'
           ? AiRereadSubject.issue
           : AiRereadSubject.mergeRequest;
-      final window = _window(dispatchedAt);
-      if (window == null) {
-        return _Seen.unknown(subject, AiRereadDetail.unavailable);
-      }
-      final scan = await _scan(
-        reads,
-        [...base, issue ? 'issues' : 'merge_requests'],
-        {
-          'author_id': '$userId',
-          'created_after': window.start.toIso8601String(),
-          'created_before': window.end.toIso8601String(),
-          'scope': 'all',
-          'state': 'all',
-          'per_page': '100',
-        },
-        match: (item) =>
-            item['project_id'] == project &&
-            _authorId(item) == userId &&
-            window.contains(item['created_at']),
-        firstMatchEnough: true,
-      );
-      return scan.created(subject);
+      // The journal intentionally stores neither create bodies nor a server
+      // timestamp that identifies the accepted request. Author plus a count
+      // around the device's dispatch clock can match an unrelated create, so
+      // the conservative result is unknown until either content or server-time
+      // identity is available.
+      return _Seen.unknown(subject, AiRereadDetail.notComparable);
     case [final kind, final rawIid, ...final tail]
         when kind == 'workItem' || kind == 'mergeRequest':
       return _observeResource(
@@ -378,8 +350,6 @@ Future<_Seen> _observeInProject(
         kind == 'workItem' ? 'issues' : 'merge_requests',
         rawIid,
         tail,
-        userId,
-        dispatchedAt,
       );
     case ['labels', final id]:
       return _direct(reads, [...base, 'labels'], id, AiRereadSubject.label);
@@ -427,8 +397,6 @@ Future<_Seen> _observeResource(
   String resource,
   String rawIid,
   List<String> tail,
-  int userId,
-  DateTime? dispatchedAt,
 ) async {
   final subject = resource == 'issues'
       ? AiRereadSubject.issue
@@ -463,25 +431,10 @@ Future<_Seen> _observeResource(
             : null,
       );
     case [final kind] when kind == 'notes' || kind == 'discussions':
-      final window = _window(dispatchedAt);
       final created = kind == 'notes'
           ? AiRereadSubject.note
           : AiRereadSubject.discussion;
-      if (window == null) {
-        return _Seen.unknown(created, AiRereadDetail.unavailable);
-      }
-      // Newest first, so the scan ends at the first note before the window.
-      final scan = await _scan(
-        reads,
-        [...owner, 'notes'],
-        const {'order_by': 'created_at', 'sort': 'desc', 'per_page': '100'},
-        match: (item) =>
-            item['system'] != true &&
-            _authorId(item) == userId &&
-            window.contains(item['created_at']),
-        past: (item) => window.before(item['created_at']),
-      );
-      return scan.created(created);
+      return _Seen.unknown(created, AiRereadDetail.notComparable);
     case ['notes', final id]:
       return _direct(reads, [...owner, 'notes'], id, AiRereadSubject.note);
     case ['notes', final id, 'award', final user, final name]:
@@ -621,12 +574,6 @@ final class _Scan {
   /// Null when the scan saw everything it needed.
   final AiRereadDetail? failure;
   bool get complete => failure == null;
-
-  _Seen created(AiRereadSubject subject) => matches > 0
-      ? _Seen(AiRereadPresence.present, subject, matches: matches)
-      : complete
-      ? _Seen(AiRereadPresence.absent, subject, matches: 0)
-      : _Seen.unknown(subject, failure);
 }
 
 final class _Got {
@@ -688,59 +635,39 @@ final class _Seen {
 final class _Reads {
   _Reads(this._api);
   final GitLabApi _api;
-  int used = 0;
+  final RequestMeter _meter = RequestMeter();
+  int get used => _meter.count;
 
   void _take() {
-    if (used >= AiWriteLimits.rereadHttp) throw const _Exhausted();
-    used++;
+    // A GET may be replayed once after an OAuth 401. Reserve room for that
+    // physical replay before dispatch; the meter then reports actual sends.
+    final maximum = _api.credential is OAuthCredential ? 2 : 1;
+    if (used + maximum > AiWriteLimits.rereadHttp) throw const _Exhausted();
   }
 
-  Future<GitLabUser> user() {
+  Future<GitLabUser> user() async {
     _take();
-    return _api.currentUser();
+    return _meter.runAsync(_api.currentUser);
   }
 
-  Future<Json> record(List<String> path) {
+  Future<Json> record(List<String> path) async {
     _take();
-    return _api.record(path);
+    return _meter.runAsync(() => _api.record(path));
   }
 
   Future<ApiPage<Json>> page(
     List<String> path,
     Map<String, String> query,
     Uri? next,
-  ) {
+  ) async {
     _take();
-    return _api.records(path, query: query, next: next);
+    return _meter.runAsync(() => _api.records(path, query: query, next: next));
   }
 }
 
 final class _Exhausted implements Exception {
   const _Exhausted();
 }
-
-final class _Window {
-  const _Window(this.start, this.end);
-  final DateTime start;
-  final DateTime end;
-
-  bool contains(Object? value) {
-    final at = value is String ? DateTime.tryParse(value) : null;
-    return at != null && !at.isBefore(start) && !at.isAfter(end);
-  }
-
-  bool before(Object? value) {
-    final at = value is String ? DateTime.tryParse(value) : null;
-    return at != null && at.isBefore(start);
-  }
-}
-
-_Window? _window(DateTime? dispatchedAt) => dispatchedAt == null
-    ? null
-    : _Window(
-        dispatchedAt.toUtc().subtract(rereadMatchWindow),
-        dispatchedAt.toUtc().add(rereadMatchWindow),
-      );
 
 AiRereadDetail _detailFor(ApiFailure failure) => switch (failure.kind) {
   FailureKind.forbidden => AiRereadDetail.forbidden,
@@ -767,11 +694,6 @@ AiRereadDetail? _resolvedDetail(Object? notes) {
   return resolvable.every((note) => note['resolved'] == true)
       ? AiRereadDetail.resolved
       : AiRereadDetail.unresolved;
-}
-
-int? _authorId(Json item) {
-  final author = item['author'];
-  return author is Map && author['id'] is int ? author['id'] as int : null;
 }
 
 int? _userOf(Json item) {

@@ -20,8 +20,8 @@ const _suggestionCoordinates = <String, AiArgSpec>{
 };
 const _suggestionItem = <String, AiArgSpec>{
   'discussionId': _requiredString,
-  'noteId': _projectId,
-  'suggestionId': _projectId,
+  'noteId': _noteId,
+  'suggestionId': _suggestionId,
 };
 
 // Reads reserve two HTTP requests each for OAuth replay, including the HEAD

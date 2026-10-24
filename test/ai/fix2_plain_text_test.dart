@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/ai/context_builders.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/sse.dart';
+import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 
 import 'runner_test.dart' as base;
 
@@ -205,6 +206,7 @@ void main() {
     ]) {
       test('FIX3 frozen $tool result re-verifies plain $secret', () async {
         final h = base.Harness();
+        _advertiseTools(h, [_toolSpec(tool)]);
         h.execute = (call) async => AiToolResult.fromData(
           callId: call.id,
           name: call.name,
@@ -471,6 +473,35 @@ void main() {
     expect(snapshots.last, isNot(contains('FIRST_VISIBLE_')));
     expect(snapshots.last, contains('SECOND_VISIBLE_'));
   });
+}
+
+AiToolSpec _toolSpec(String name) => AiToolSpec(
+  name: name,
+  description: 'Synthetic read tool.',
+  parameters: {'type': 'object', 'properties': <String, Object?>{}},
+);
+
+void _advertiseTools(base.Harness h, List<AiToolSpec> tools) {
+  h.runner = AiRunner(
+    config: h.config(),
+    wire: h.wire,
+    complete: h.complete,
+    secrets: h.secrets,
+    refreshSecrets: () async => h.refresh?.call(),
+    guard: AiRunGuard(
+      expectedGeneration: 1,
+      ownerApi: h.owner,
+      generation: () => h.generation,
+      api: () => h.api,
+      recipientRevision: () => h.revision,
+      consentValid: () => h.consent,
+    ),
+    system: 'You answer questions about repository data.',
+    tools: tools,
+    close: () => h.closed++,
+    cancelActive: () => h.cancelled++,
+    executeTool: (call) async => h.execute!(call),
+  );
 }
 
 AiToolCall _toolCall(String name) =>

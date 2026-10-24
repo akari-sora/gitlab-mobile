@@ -24,6 +24,26 @@ import '../support/fake_adapter.dart';
 import '../support/workspace_fixture.dart';
 
 void main() {
+  test('a missing account record uses one autonomy default', () async {
+    final harness = await _Harness.create(
+      persistAutonomySettings: false,
+      recheck: false,
+    );
+    addTearDown(harness.dispose);
+
+    expect(harness.settings.accountRecord(harness.accountKey), isNull);
+    expect(harness.controller.autonomyCeiling, AiAutonomyLevel.readOnly);
+    expect(harness.controller.autonomyLevel, AiAutonomyLevel.readOnly);
+    expect(
+      aiConversationConsentContract(
+        harness.settings,
+        harness.accountKey,
+        harness.settings.providers.single,
+      ).writePolicy,
+      isNull,
+    );
+  });
+
   test('§15 row 1 explicit write grant enables a T1 mutation', () async {
     final harness = await _Harness.create(clientMayStart: () => true);
     addTearDown(harness.dispose);
@@ -131,6 +151,8 @@ final class _Harness {
   static Future<_Harness> create({
     bool Function()? clientMayStart,
     int Function()? runningCount,
+    bool persistAutonomySettings = true,
+    bool recheck = true,
   }) async {
     final workspace = WorkspaceFixture();
     var stars = 0;
@@ -154,21 +176,23 @@ final class _Harness {
     final settings = AiSettingsController(MemoryAiStore());
     await settings.initialize();
     final provider = await settings.saveProvider(_provider);
-    await settings.loadAccount(workspace.account.key);
-    await settings.setAutonomySettings(
-      workspace.account.key,
-      ceiling: AiAutonomyLevel.lowRiskAuto,
-      startingLevel: AiAutonomyLevel.lowRiskAuto,
-    );
-    final contract = settings.consentContractFor(
-      workspace.account.key,
-      provider,
-      writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.lowRiskAuto),
-      agreedCeiling: AiAutonomyLevel.lowRiskAuto,
-    );
-    await settings.grantConsent(workspace.account.key, contract, const {
-      'synthetic': true,
-    });
+    if (persistAutonomySettings) {
+      await settings.loadAccount(workspace.account.key);
+      await settings.setAutonomySettings(
+        workspace.account.key,
+        ceiling: AiAutonomyLevel.lowRiskAuto,
+        startingLevel: AiAutonomyLevel.lowRiskAuto,
+      );
+      final contract = settings.consentContractFor(
+        workspace.account.key,
+        provider,
+        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.lowRiskAuto),
+        agreedCeiling: AiAutonomyLevel.lowRiskAuto,
+      );
+      await settings.grantConsent(workspace.account.key, contract, const {
+        'synthetic': true,
+      });
+    }
 
     final root = Directory.systemTemp.createTempSync('packet7-controller-');
     final journal = AiWriteJournal(
@@ -243,8 +267,10 @@ final class _Harness {
     harness._starCount = () => stars;
     harness._portCount = () => portCreations;
     harness._providerCount = () => providerCalls;
-    await controller.recheck();
-    expect(controller.canSend, isTrue);
+    if (recheck) {
+      await controller.recheck();
+      expect(controller.canSend, isTrue);
+    }
     return harness;
   }
 
@@ -252,6 +278,7 @@ final class _Harness {
   final SessionController session;
   final AiSettingsController settings;
   final AiChatController controller;
+  String get accountKey => session.active!.key;
   late int Function() _starCount;
   late int Function() _portCount;
   late int Function() _providerCount;
