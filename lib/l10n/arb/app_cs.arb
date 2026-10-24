@@ -2721,5 +2721,6 @@
   "aiSendPausedRateLimited": "GitLab omezuje požadavky; odesílání je pozastaveno",
   "aiSendResumesAfterReset": "Obnoví se po obnovení kvóty požadavků",
   "aiGitLabBudgetTitle": "Kvóta požadavků pro GitLab je téměř vyčerpaná",
-  "aiGitLabBudgetDetail": "Tato zpráva nebyla odeslána. Odešlete ji znovu, až bude tlačítko „Odeslat“ opět dostupné."
+  "aiGitLabBudgetDetail": "Tato zpráva nebyla odeslána. Odešlete ji znovu, až bude tlačítko „Odeslat“ opět dostupné.",
+  "activityVerbTargetRef": "{verb} {target} {ref}"
 }

@@ -2721,5 +2721,6 @@
   "aiSendPausedRateLimited": "GitLab sta limitando le richieste; invio in pausa",
   "aiSendResumesAfterReset": "Riprende quando la quota di richieste viene ripristinata",
   "aiGitLabBudgetTitle": "La quota di richieste GitLab è quasi esaurita",
-  "aiGitLabBudgetDetail": "Questo messaggio non è stato inviato. Invialo di nuovo quando il pulsante «Invia» sarà nuovamente disponibile."
+  "aiGitLabBudgetDetail": "Questo messaggio non è stato inviato. Invialo di nuovo quando il pulsante «Invia» sarà nuovamente disponibile.",
+  "activityVerbTargetRef": "{verb} {target} {ref}"
 }

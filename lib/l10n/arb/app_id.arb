@@ -2721,5 +2721,6 @@
   "aiSendPausedRateLimited": "GitLab sedang membatasi permintaan; pengiriman dijeda",
   "aiSendResumesAfterReset": "Lanjut lagi saat kuota permintaan diatur ulang",
   "aiGitLabBudgetTitle": "Kuota permintaan GitLab hampir habis",
-  "aiGitLabBudgetDetail": "Pesan ini tidak terkirim. Kirim ulang saat tombol “Kirim” tersedia kembali."
+  "aiGitLabBudgetDetail": "Pesan ini tidak terkirim. Kirim ulang saat tombol “Kirim” tersedia kembali.",
+  "activityVerbTargetRef": "{verb} {target} {ref}"
 }

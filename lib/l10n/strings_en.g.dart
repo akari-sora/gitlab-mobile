@@ -2724,4 +2724,5 @@ const _messagesEn = <String>[
   'Resumes when the budget resets',
   'GitLab request budget is low',
   'This message was not sent. Send it again when the send button is back.',
+  '{verb} {target} {ref}',
 ];
