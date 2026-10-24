@@ -76,31 +76,43 @@ Map<String, Object?> _identity({int project = 9, int iid = 3}) => {
   'namespace': {'id': _namespaceId, 'fullPath': _path},
 };
 
-Map<String, Object?> _summary({int project = 9, int iid = 3}) => {
+Map<String, Object?> _summary({
+  int project = 9,
+  int iid = 3,
+  String? updatedAt,
+}) => {
   ..._identity(project: project, iid: iid),
   'title': 'Synthetic work item',
   'state': 'OPEN',
   'createdAt': '2026-10-01T00:00:00Z',
-  'updatedAt': '2026-10-23T00:00:00Z',
+  'updatedAt': updatedAt ?? '2026-10-23T00:00:00Z',
   'workItemType': {
     'id': 'gid://gitlab/WorkItems::Type/server-owned',
     'name': 'Task',
   },
 };
 
-Map<String, Object?> _detail({int project = 9, int iid = 3}) => {
-  ..._summary(project: project, iid: iid),
+Map<String, Object?> _detail({
+  int project = 9,
+  int iid = 3,
+  String? updatedAt,
+}) => {
+  ..._summary(project: project, iid: iid, updatedAt: updatedAt),
   'description': 'Synthetic',
   'widgets': const <Object?>[],
 };
 
-Map<String, Object?> _projectDetail({int project = 9, int iid = 3}) => {
+Map<String, Object?> _projectDetail({
+  int project = 9,
+  int iid = 3,
+  String? updatedAt,
+}) => {
   'data': {
     'project': {
       'id': 'gid://gitlab/Project/$project',
       'fullPath': _path,
       'workItems': {
-        'nodes': [_detail(project: project, iid: iid)],
+        'nodes': [_detail(project: project, iid: iid, updatedAt: updatedAt)],
         'pageInfo': _pageInfo(),
       },
     },
@@ -112,6 +124,7 @@ Map<String, Object?> _activityNote({
   String body = 'Anchor',
   String createdAt = '2026-10-01T01:02:03Z',
   String updatedAt = '2026-10-01T01:03:04Z',
+  String authorId = 'gid://gitlab/User/7',
 }) => {
   'id': id,
   'system': false,
@@ -119,11 +132,7 @@ Map<String, Object?> _activityNote({
   'body': body,
   'createdAt': createdAt,
   'updatedAt': updatedAt,
-  'author': {
-    'id': 'gid://gitlab/User/7',
-    'name': 'Synthetic User',
-    'username': 'tester',
-  },
+  'author': {'id': authorId, 'name': 'Synthetic User', 'username': 'tester'},
 };
 
 Map<String, Object?> _discussion({
@@ -240,6 +249,7 @@ final class _Server {
   bool nested = false;
   bool needThirdRead = false;
   bool outerSecondPage = false;
+  String workItemUpdatedAt = '2026-10-23T00:00:00Z';
   String locatedDiscussionId = _discussionId;
   String locatedReplyId = _replyId;
   String locatedDiscussionCreatedAt = '2026-10-01T01:00:00Z';
@@ -247,6 +257,7 @@ final class _Server {
   String locatedNoteCreatedAt = '2026-10-01T01:02:03Z';
   String locatedNoteUpdatedAt = '2026-10-01T01:03:04Z';
   String locatedNoteBody = 'Anchor';
+  String locatedNoteAuthor = 'gid://gitlab/User/7';
   bool sent = false;
   int activityReads = 0;
   int accessReads = 0;
@@ -264,7 +275,12 @@ final class _Server {
     final data = request.data as Map;
     final query = data['query'] as String;
     if (query.startsWith('query MobileProjectWorkItem')) {
-      return jsonResponse(_projectDetail(project: wrongDetailProject ? 10 : 9));
+      return jsonResponse(
+        _projectDetail(
+          project: wrongDetailProject ? 10 : 9,
+          updatedAt: workItemUpdatedAt,
+        ),
+      );
     }
     if (query.startsWith('query MobileWorkItemActivity(')) {
       activityReads++;
@@ -332,6 +348,7 @@ final class _Server {
                   body: locatedNoteBody,
                   createdAt: locatedNoteCreatedAt,
                   updatedAt: locatedNoteUpdatedAt,
+                  authorId: locatedNoteAuthor,
                 ),
               ],
             ),
@@ -717,22 +734,27 @@ void main() {
       );
     });
 
-    test('$operation readback mismatch is uncertain', () async {
-      final f = await _Fixture.create();
-      addTearDown(f.dispose);
-      f.server.wrongReadbackBody = true;
-      final outcome = await f.commit(operation);
-      expect(
-        outcome,
-        isA<port.AiWriteSettled>().having(
-          (value) => value.state,
-          'state',
-          AiJournalState.writeUncertain,
-        ),
-      );
-      expect(outcome.mutationCount, 1);
-      expect(f.server.writes, 1);
-    });
+    for (final drift in <(String, void Function(_Server))>[
+      ('body', (server) => server.wrongReadbackBody = true),
+      ('author', (server) => server.wrongReadbackAuthor = true),
+    ]) {
+      test('$operation readback ${drift.$1} mismatch is uncertain', () async {
+        final f = await _Fixture.create();
+        addTearDown(f.dispose);
+        drift.$2(f.server);
+        final outcome = await f.commit(operation);
+        expect(
+          outcome,
+          isA<port.AiWriteSettled>().having(
+            (value) => value.state,
+            'state',
+            AiJournalState.writeUncertain,
+          ),
+        );
+        expect(outcome.mutationCount, 1);
+        expect(f.server.writes, 1);
+      });
+    }
 
     test('$operation rejects model-only GID and extra arguments', () async {
       final f = await _Fixture.create();
@@ -743,7 +765,13 @@ void main() {
       ]) {
         await expectLater(
           f.writer.prepare(f.request(operation, extra: extra)),
-          throwsA(anything),
+          throwsA(
+            isA<ApiFailure>().having(
+              (failure) => failure.kind,
+              'kind',
+              FailureKind.validation,
+            ),
+          ),
         );
       }
       expect(f.adapter.requests, isEmpty);
@@ -804,7 +832,6 @@ void main() {
       );
       expect(f.server.writes, 1);
     },
-    tags: 'sharedSeamBlocked',
   );
 
   test(
@@ -904,7 +931,6 @@ void main() {
       expect(f.server.activityReads, 2);
       expect(f.server.writes, 0);
     },
-    tags: 'sharedSeamBlocked',
   );
 
   test(
@@ -923,32 +949,47 @@ void main() {
         throwsA(_refusal('activityUnverifiable')),
       );
     },
-    tags: 'sharedSeamBlocked',
   );
 
-  for (final entry in <(String, void Function(_Server))>[
-    ('forbidden', (server) => server.allowed = false),
-    ('locked', (server) => server.locked = true),
-    ('creator drift', (server) => server.actorDriftsOnFreshPreflight = true),
-    ('parent drift', (server) => server.wrongAnchorParent = true),
+  for (final entry in <(String, String, void Function(_Server))>[
+    ('forbidden', 'createWorkItemActivityComment', (s) => s.allowed = false),
+    ('locked', 'createWorkItemActivityComment', (s) => s.locked = true),
+    (
+      'creator drift',
+      'createWorkItemActivityComment',
+      (s) => s.actorDriftsOnFreshPreflight = true,
+    ),
+    (
+      'creator drift',
+      'createWorkItemActivityReply',
+      (s) => s.actorDriftsOnFreshPreflight = true,
+    ),
+    (
+      'parent drift',
+      'createWorkItemActivityReply',
+      (s) => s.wrongAnchorParent = true,
+    ),
   ]) {
     test('fresh ${entry.$1} preflight refuses before send', () async {
       final f = await _Fixture.create();
       addTearDown(f.dispose);
-      entry.$2(f.server);
-      final operation = entry.$1 == 'parent drift'
-          ? 'createWorkItemActivityReply'
-          : 'createWorkItemActivityComment';
+      entry.$3(f.server);
       if (entry.$1 == 'forbidden' || entry.$1 == 'locked') {
         await expectLater(
-          f.writer.prepare(f.request(operation)),
+          f.writer.prepare(f.request(entry.$2)),
           throwsA(isA<port.AiWriteRefused>()),
         );
       } else {
-        final prepared = await f.writer.prepare(f.request(operation));
-        prepared.bindGraphBeforeMutation(() async {});
+        var hooks = 0;
+        final prepared = await f.writer.prepare(f.request(entry.$2));
+        prepared.bindGraphBeforeMutation(() async {
+          hooks++;
+        });
         final outcome = await f.writer.commit(prepared, mayStart: () => true);
         expect(outcome, isA<port.AiWriteNotSent>());
+        if (entry.$2 == 'createWorkItemActivityReply') {
+          expect(hooks, 0, reason: 'a drifted actor must not reach a mutation');
+        }
       }
       expect(f.server.writes, 0);
     });
@@ -966,7 +1007,7 @@ void main() {
         mutate(f.server);
         await expectLater(
           f.writer.prepare(f.request('createWorkItemActivityComment')),
-          throwsA(anything),
+          throwsA(_refusal('activityUnverifiable')),
         );
         expect(f.server.writes, 0);
         await f.dispose();
@@ -977,7 +1018,7 @@ void main() {
   test(
     'every requested anchor tuple component binds the dispatch digest',
     () async {
-      final mutations = <void Function(_Server)>[
+      final anchorDrifts = <void Function(_Server)>[
         (server) =>
             server.locatedDiscussionId = 'gid://gitlab/Discussion/drift',
         (server) => server.locatedReplyId =
@@ -986,26 +1027,43 @@ void main() {
         (server) => server.locatedNoteCreatedAt = '2026-10-01T01:02:04Z',
         (server) => server.locatedNoteUpdatedAt = '2026-10-01T01:03:05Z',
         (server) => server.locatedNoteBody = 'Anchor drift',
+        (server) => server.locatedNoteAuthor = 'gid://gitlab/User/9',
       ];
-      final stable = await _Fixture.create();
-      final baseline = await stable.writer.prepare(
-        stable.request('createWorkItemActivityReply'),
-      );
-      await stable.dispose();
-      for (var index = 0; index < mutations.length; index++) {
-        final drifted = await _Fixture.create();
-        mutations[index](drifted.server);
-        final prepared = await drifted.writer.prepare(
-          drifted.request('createWorkItemActivityReply'),
-        );
-        expect(
-          prepared.bindingDigest,
-          isNot(baseline.bindingDigest),
-          reason: 'tuple component $index must bind the digest',
-        );
-        await drifted.dispose();
+      for (final operation in [
+        'createWorkItemActivityComment',
+        'createWorkItemActivityReply',
+      ]) {
+        final stable = await _Fixture.create();
+        final baseline = await stable.writer.prepare(stable.request(operation));
+        final drifts = operation == 'createWorkItemActivityComment'
+            ? <void Function(_Server)>[
+                (server) => server.workItemUpdatedAt = '2026-10-24T00:00:00Z',
+              ]
+            : <void Function(_Server)>[
+                (server) => server.workItemUpdatedAt = '2026-10-24T00:00:00Z',
+                ...anchorDrifts,
+              ];
+        for (final drift in drifts) {
+          final drifted = await _Fixture.create();
+          drift(drifted.server);
+          final prepared = await drifted.writer.prepare(
+            drifted.request(operation),
+          );
+          expect(
+            prepared.bindingDigest,
+            isNot(baseline.bindingDigest),
+            reason: '$operation digest must drift',
+          );
+          await drifted.dispose();
+        }
+        await stable.dispose();
       }
 
+      final noteStable = await _Fixture.create();
+      final noteBaseline = await noteStable.writer.prepare(
+        noteStable.request('createWorkItemActivityReply'),
+      );
+      await noteStable.dispose();
       final noteDrift = await _Fixture.create();
       noteDrift.server.locatedNoteId = 'gid://gitlab/Note/402';
       final prepared = await noteDrift.writer.prepare(
@@ -1014,8 +1072,32 @@ void main() {
           extra: {'anchorNoteId': 402},
         ),
       );
-      expect(prepared.bindingDigest, isNot(baseline.bindingDigest));
+      expect(prepared.bindingDigest, isNot(noteBaseline.bindingDigest));
       await noteDrift.dispose();
+    },
+  );
+
+  test(
+    'prepared conflict keys pin the work item and the anchor note',
+    () async {
+      final comment = await _Fixture.create();
+      final commentPrepared = await comment.writer.prepare(
+        comment.request('createWorkItemActivityComment'),
+      );
+      expect(commentPrepared.writeKeys.map((key) => key.parts), {
+        [_account, 'project:9', 'workItem', '3'],
+      });
+      await comment.dispose();
+
+      final reply = await _Fixture.create();
+      final replyPrepared = await reply.writer.prepare(
+        reply.request('createWorkItemActivityReply'),
+      );
+      expect(replyPrepared.writeKeys.map((key) => key.parts), {
+        [_account, 'project:9', 'workItem', '3'],
+        [_account, 'project:9', 'workItem', '3', 'note', '401'],
+      });
+      await reply.dispose();
     },
   );
 
@@ -1065,21 +1147,6 @@ void main() {
   }
 
   test(
-    'required contract: stable Graph creator mismatch refuses preaccept',
-    () async {
-      final f = await _Fixture.create();
-      addTearDown(f.dispose);
-      f.server.wrongActor = true;
-      await expectLater(
-        f.writer.prepare(f.request('createWorkItemActivityComment')),
-        throwsA(_refusal('activityUnverifiable')),
-      );
-      expect(f.server.writes, 0);
-    },
-    tags: 'sharedSeamBlocked',
-  );
-
-  test(
     'detected unsupported controls refuse comments in the access read',
     () async {
       final f = await _Fixture.create();
@@ -1121,7 +1188,12 @@ void main() {
       final f = await _Fixture.create(maxRequests: entry.$2 - 1);
       final call = f.call(entry.$1);
       final proposal = await f.coordinator.propose(call);
-      expect(proposal, isNull);
+      expect(proposal, isNull, reason: entry.$1);
+      expect(
+        f.coordinator.outcomeFor(call.id)?.reasonCode,
+        'httpBudgetExceeded',
+        reason: entry.$1,
+      );
       expect(f.adapter.requests, isEmpty);
       await f.dispose();
     }
@@ -1130,20 +1202,29 @@ void main() {
   test(
     'class-A body, placeholder and upload provenance are checked by coordinator',
     () async {
-      final f = await _Fixture.create();
-      addTearDown(f.dispose);
-      for (final body in [
-        'glpat-ABCDEFGHIJKLMNOPQRST',
-        '[REDACTED]',
-        '![shot](/uploads/0123456789abcdef0123456789abcdef/shot.png)',
+      for (final entry in [
+        ('glpat-ABCDEFGHIJKLMNOPQRST', 'secret'),
+        ('[REDACTED]', 'redactionMarker'),
+        (
+          'see uploads/0123456789abcdef0123456789abcdef/shot.png inline',
+          'rawUpload',
+        ),
+        ('[[attachment:att-9]]', 'attachmentNotUploaded'),
+        ('[[upload:u-1]]', 'rereadField'),
       ]) {
+        final f = await _Fixture.create();
         final call = f.call(
           'createWorkItemActivityComment',
-          extra: {'body': body},
+          extra: {'body': entry.$1},
         );
-        expect(await f.coordinator.propose(call), isNull, reason: body);
-        expect(f.server.writes, 0);
-        f.beginRun(body);
+        expect(await f.coordinator.propose(call), isNull, reason: entry.$1);
+        expect(
+          f.coordinator.outcomeFor(call.id)?.reasonCode,
+          entry.$2,
+          reason: entry.$1,
+        );
+        expect(f.server.writes, 0, reason: entry.$1);
+        await f.dispose();
       }
     },
   );
