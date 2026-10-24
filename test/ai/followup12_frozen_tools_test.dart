@@ -181,6 +181,9 @@ final class _RecordingCoordinator implements AiWriteCoordinator {
   void beginTurn() {}
 
   @override
+  void beginSegment() {}
+
+  @override
   Future<AiWriteOutcome> execute(
     AiToolCall call, {
     void Function(bool)? onAwaitingApproval,

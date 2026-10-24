@@ -46,6 +46,20 @@ typedef AiComplete =
       void Function(AiEvent)? onEvent,
     });
 
+/// Prepares only the unsent tool-result tail. Call [beforeDelivery] before
+/// starting another read and after the last read to check ownership/secrets.
+typedef AiToolDelivery = ({
+  List<AiToolResult> results,
+  void Function(List<AiToolResult>) delivered,
+});
+
+typedef AiPrepareToolResults =
+    Future<AiToolDelivery> Function(
+      List<AiToolCall> calls,
+      List<AiToolResult> results,
+      Future<void> Function() beforeDelivery,
+    );
+
 enum AiRunEnd {
   done,
   maxTokens,
@@ -100,6 +114,7 @@ final class AiRunner {
     this.onAwaitingApproval,
     DateTime Function()? now,
     this.executeTool,
+    this.prepareToolResults,
     this.resetToolBudget,
     this.beginToolTurn,
     this.toolBudgetExhausted,
@@ -154,6 +169,7 @@ final class AiRunner {
   final void Function(bool awaiting)? onAwaitingApproval;
   final DateTime Function() _now;
   final Future<AiToolResult> Function(AiToolCall)? executeTool;
+  final AiPrepareToolResults? prepareToolResults;
   final void Function()? resetToolBudget;
   final void Function()? beginToolTurn;
   final bool Function()? toolBudgetExhausted;
@@ -184,6 +200,7 @@ final class AiRunner {
   var _verifiedLength = -1;
   var _epoch = 0;
   var _running = false;
+  List<AiToolCall> _pendingToolCalls = const [];
   var _pendingGitLab = false;
   var _pendingGitLabWrite = false;
   var _needsProjection = false;
@@ -437,7 +454,7 @@ final class AiRunner {
         }
         beforeFinishingNote = seg.tail;
         if (finishing && !config.caps.toolChoice) seg.addFinalAnswerNote();
-        await _redactTail(seg, epoch);
+        final delivered = await _redactTail(seg, epoch);
         // _redactTail performs the last asynchronous secret refresh. Verify
         // the frozen prefix against that same snapshot immediately before send.
         if (!_verify(seg)) {
@@ -526,6 +543,7 @@ final class AiRunner {
           if (!refused) _recordUsage(latestUsage, encoded.length);
         }
         _check(epoch);
+        delivered?.call();
         seg.freezeWith(
           turn.output,
           (entry) => wire.encodeEntry(entry, config.caps),
@@ -726,6 +744,7 @@ final class AiRunner {
             for (final tc in calls.skip(results.length))
               synthetic(tc, exitReason.name),
           ]);
+          _pendingToolCalls = calls;
           seg.setTail(paired);
           for (final result in paired.results.skip(results.length)) {
             _notifyToolResult(result);
@@ -948,7 +967,7 @@ final class AiRunner {
     return redacted.text;
   }
 
-  Future<void> _redactTail(AiSegment seg, int epoch) async {
+  Future<void Function()?> _redactTail(AiSegment seg, int epoch) async {
     await _refresh(epoch);
     final tail = seg.tail;
     if (tail is AppUserEntry) {
@@ -964,28 +983,99 @@ final class AiRunner {
       );
       _sentContext = List.unmodifiable(context);
     } else if (tail is AppToolResultsEntry) {
+      var results = tail.results;
+      void Function(List<AiToolResult>)? delivered;
+      final prepare = prepareToolResults;
+      if (prepare != null && _pendingToolCalls.length == results.length) {
+        if (_pendingGitLab) {
+          results = [
+            for (final tc in _pendingToolCalls) _synthetic(tc, 'read_pending'),
+          ];
+        } else {
+          // Delivery rereads obey the same soft deadline and ownership as the
+          // original tools, including when the run stops while they are held.
+          _pendingGitLab = true;
+          final pending = Future<AiToolDelivery>.sync(
+            () => prepare(_pendingToolCalls, results, () => _refresh(epoch)),
+          );
+          unawaited(
+            pending.then<void>(
+              (_) => _pendingGitLab = false,
+              onError: (Object _, StackTrace _) {
+                _pendingGitLab = false;
+              },
+            ),
+          );
+          try {
+            final delivery = await _interruptible(
+              pending.timeout(toolDeadline),
+              epoch,
+            );
+            _check(epoch);
+            results = delivery.results;
+            delivered = delivery.delivered;
+            if (results.length != tail.results.length) {
+              throw const FormatException();
+            }
+          } on _RunStopped {
+            rethrow;
+          } on Object {
+            results = [
+              for (final tc in _pendingToolCalls) _synthetic(tc, 'read_failed'),
+            ];
+          }
+        }
+      }
+      AiToolResult redactedResult(int index) {
+        final result = results[index];
+        _withheld |= result.withheldPrivateKeyContext;
+        final data = result.plainData.redact(
+          _redactor,
+          source: (s) => _redact(
+            s,
+            late: true,
+            keepAppPlaceholders: result.uploadPlaceholders,
+          ),
+        );
+        // Replacements use the original result's output allowance, so a larger
+        // refreshed source cannot expand this run's output or request budget.
+        final clipped = identical(result, tail.results[index])
+            ? data
+            : data.clipped(tail.results[index].content.length);
+        final cut = clipped.encode().length < data.encode().length;
+        if (cut && result.uploadPlaceholders) onRestorableResultCut?.call();
+        return AiToolResult.fromData(
+          callId: result.callId,
+          name: result.name,
+          data: clipped,
+          isError: result.isError,
+          withheldPrivateKeyContext: result.withheldPrivateKeyContext,
+          truncated: result.truncated || cut,
+          blockedSensitive: result.blockedSensitive,
+          notExecuted: result.notExecuted,
+          readConfidential: result.readConfidential,
+          readInternal: result.readInternal,
+          uploadPlaceholders: result.uploadPlaceholders,
+        );
+      }
+
+      final finalResults = [
+        for (var i = 0; i < results.length; i++) redactedResult(i),
+      ];
       seg.setTail(
         tail.copyWith(
-          results: [
-            for (final result in tail.results)
-              result.copyWith(
-                data: result.plainData.redact(
-                  _redactor,
-                  source: (s) => _redact(
-                    s,
-                    late: true,
-                    keepAppPlaceholders: result.uploadPlaceholders,
-                  ),
-                ),
-              ),
-          ],
+          results: finalResults,
           followUpText: tail.followUpText == null
               ? null
               : _redact(tail.followUpText!, late: true),
           preserveFinalAnswerNote: true,
         ),
       );
+      // Whole-field permissions only advance after an accepted provider turn.
+      // Failed, refused or interrupted sends retain the previous cut state.
+      return delivered == null ? null : () => delivered!(finalResults);
     }
+    return null;
   }
 
   bool _verify(AiSegment seg) {
