@@ -294,58 +294,113 @@ void main() {
   test(
     'production cache reads stop before a grant that cannot cover reread replay',
     () async {
-      final apiAdapter = FakeAdapter(
-        (_) => jsonResponse({'iid': 3, 'title': 'must not be sent'}),
-      );
-      final tokenAdapter = FakeAdapter(
-        (_) => jsonResponse({
-          'access_token': 'new-access',
-          'refresh_token': 'new-refresh',
-          'token_type': 'bearer',
-        }),
-      );
-      final instance = GitLabInstance.parse('https://example.com/gitlab');
-      final api = GitLabApi(
-        instance: instance,
-        credential: const OAuthCredential(
-          accessToken: 'old-access',
-          refreshToken: 'old-refresh',
-          clientId: 'synthetic-client',
-        ),
-        dio: Dio()..httpClientAdapter = apiAdapter,
-        oauth: OAuthTokenClient(
+      // Each cached read holds 4 sends (one cache reread, each replayable once
+      // after OAuth refresh) and then settles to its physical sends. The issue
+      // record and its notes are two such reads.
+      Future<
+        ({
+          AiToolExecution result,
+          AiToolBudget budget,
+          FakeAdapter apiAdapter,
+          FakeAdapter tokenAdapter,
+        })
+      >
+      run(int grant) async {
+        final apiAdapter = FakeAdapter(
+          (request) => request.uri.path.endsWith('/issues/3/notes')
+              ? jsonResponse(<Object?>[])
+              : jsonResponse({'iid': 3, 'title': 'synthetic issue'}),
+        );
+        final tokenAdapter = FakeAdapter(
+          (_) => jsonResponse({
+            'access_token': 'new-access',
+            'refresh_token': 'new-refresh',
+            'token_type': 'bearer',
+          }),
+        );
+        final instance = GitLabInstance.parse('https://example.com/gitlab');
+        final api = GitLabApi(
           instance: instance,
-          clientId: 'synthetic-client',
-          dio: Dio()..httpClientAdapter = tokenAdapter,
-        ),
-      );
-      addTearDown(api.close);
-      final catalogue = AiToolCatalogue(
-        port: GitLabAiReadPort(api, 9),
-        scope: const AiResourceScope(
-          accountKey: 'instance|7',
-          instanceKey: 'https://example.com/gitlab',
-          projectId: 9,
-          projectPath: 'group/project',
-          current: AiResourceRef(kind: AiResourceKind.issue, id: 3),
-          headSha: _head,
-          defaultBranch: 'main',
-        ),
-        redactor: Redactor(secrets: _Secrets()),
-      );
-      final budget = AiToolBudget(maxGitLabRequests: 11);
+          credential: const OAuthCredential(
+            accessToken: 'old-access',
+            refreshToken: 'old-refresh',
+            clientId: 'synthetic-client',
+          ),
+          dio: Dio()..httpClientAdapter = apiAdapter,
+          oauth: OAuthTokenClient(
+            instance: instance,
+            clientId: 'synthetic-client',
+            dio: Dio()..httpClientAdapter = tokenAdapter,
+          ),
+        );
+        addTearDown(api.close);
+        final catalogue = AiToolCatalogue(
+          port: GitLabAiReadPort(api, 9),
+          scope: const AiResourceScope(
+            accountKey: 'instance|7',
+            instanceKey: 'https://example.com/gitlab',
+            projectId: 9,
+            projectPath: 'group/project',
+            current: AiResourceRef(kind: AiResourceKind.issue, id: 3),
+            headSha: _head,
+            defaultBranch: 'main',
+          ),
+          redactor: Redactor(secrets: _Secrets()),
+        );
+        final budget = AiToolBudget(maxGitLabRequests: grant);
+        final result = await catalogue.execute(
+          _issueCall('guarded-cache-read'),
+          budget: budget,
+        );
+        return (
+          result: result,
+          budget: budget,
+          apiAdapter: apiAdapter,
+          tokenAdapter: tokenAdapter,
+        );
+      }
 
-      final result = await catalogue.execute(
-        _issueCall('guarded-cache-read'),
-        budget: budget,
+      // Grant 3 cannot hold the first cached read: nothing is sent.
+      final none = await run(3);
+      expect(none.result.result.isError, isTrue);
+      expect(
+        none.result.result.content,
+        contains('GitLab request limit reached'),
       );
+      expect(none.result.gitLabRequests, 0);
+      expect(none.budget.gitLabRequests, 0);
+      expect(none.apiAdapter.requests, isEmpty);
+      expect(none.tokenAdapter.requests, isEmpty);
 
-      expect(result.result.isError, isTrue);
-      expect(result.result.content, contains('GitLab request limit reached'));
-      expect(result.gitLabRequests, 0);
-      expect(budget.gitLabRequests, 0);
-      expect(apiAdapter.requests, isEmpty);
-      expect(tokenAdapter.requests, isEmpty);
+      // Grant 4 admits the issue read (settled to one send), then cannot hold
+      // the notes read: the notes are refused before their send.
+      final partial = await run(4);
+      expect(partial.result.result.isError, isTrue);
+      expect(
+        partial.result.result.content,
+        contains('GitLab request limit reached'),
+      );
+      expect(partial.result.gitLabRequests, 1);
+      expect(partial.budget.gitLabRequests, 1);
+      expect(partial.apiAdapter.requests, hasLength(1));
+      expect(
+        partial.apiAdapter.requests.single.uri.path,
+        endsWith('/issues/3'),
+      );
+      expect(partial.tokenAdapter.requests, isEmpty);
+
+      // Grant 5 holds the notes read after the settled issue send; the tool
+      // succeeds and is charged exactly its two physical sends.
+      final whole = await run(5);
+      expect(whole.result.result.isError, isFalse);
+      expect(whole.result.gitLabRequests, 2);
+      expect(whole.budget.gitLabRequests, 2);
+      expect(whole.apiAdapter.requests, hasLength(2));
+      expect(
+        whole.apiAdapter.requests.last.uri.path,
+        endsWith('/issues/3/notes'),
+      );
+      expect(whole.tokenAdapter.requests, isEmpty);
     },
   );
 
