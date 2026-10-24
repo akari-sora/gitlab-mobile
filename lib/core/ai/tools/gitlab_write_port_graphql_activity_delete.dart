@@ -34,6 +34,10 @@ extension _GraphqlActivityDeletePrepare on GitLabAiWritePort {
     );
     final note = located.note;
     final author = note.author!;
+    // Three deliberate own-note defenses: the located note's author must be
+    // the REST account (this line), and in the access read the GraphQL actor
+    // must be that same REST user while still equalling the access-reported
+    // author — each catches a different drift window, so none is redundant.
     if (!_validAiUserId(author.id) ||
         int.tryParse(author.id.split('/').last) != user.id) {
       throw const AiWriteRefused('notOwnNote');

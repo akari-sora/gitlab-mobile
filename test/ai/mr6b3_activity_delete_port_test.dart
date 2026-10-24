@@ -599,7 +599,12 @@ void main() {
   test(
     'initial GraphQL actor mismatch cannot delete another actor own note',
     () async {
-      final server = _Server()..actorId = 'gid://gitlab/User/8';
+      // Author and GraphQL actor agree on User/8, so the access-level
+      // author==actor check passes; only the REST account binding
+      // (user 7) refuses the delete.
+      final server = _Server()
+        ..authorId = 'gid://gitlab/User/8'
+        ..actorId = 'gid://gitlab/User/8';
       addTearDown(server.api.close);
       Object? result;
       try {
@@ -612,7 +617,9 @@ void main() {
       expect(
         server.mutations,
         0,
-        reason: 'REST user/author 7 must not authorize GraphQL actor 8',
+        reason:
+            'REST user 7 must not authorize an actor-8 owned note even '
+            'when the GraphQL actor equals the author',
       );
       expect(result, _refused('notOwnNote'));
     },
