@@ -161,17 +161,36 @@ void main() {
       },
     );
 
-    test('$name reserves OAuth replay worst case before any GET', () async {
+    test('$name reserves OAuth replay worst case before each GET', () async {
       final h = _Harness();
-      // A snippet can reread metadata internally and the catalogue can repeat
-      // the whole composite once if secret refresh ages it before delivery.
-      final cost = name == 'get_snippet' ? 12 : 2;
+      // Each direct read holds 2 sends (one OAuth replay) and then settles to
+      // its physical sends. A snippet reads its metadata, then its file.
+      final cost = name == 'get_snippet' ? 3 : 2;
       final denied = await h.read(
         name,
-        budget: AiToolBudget(maxGitLabRequests: cost - 1),
+        budget: AiToolBudget(maxGitLabRequests: 1),
       );
       expect(denied.result.isError, isTrue);
+      expect(denied.result.content, contains('GitLab request limit reached'));
       expect(h.adapter.requests, isEmpty);
+      if (name == 'get_snippet') {
+        // Grant 2 admits the metadata read but cannot hold the file read.
+        final p = _Harness();
+        final partialBudget = AiToolBudget(maxGitLabRequests: 2);
+        final partial = await p.read(name, budget: partialBudget);
+        expect(partial.result.isError, isTrue);
+        expect(
+          partial.result.content,
+          contains('GitLab request limit reached'),
+        );
+        expect(partial.gitLabRequests, 1);
+        expect(partialBudget.gitLabRequests, 1);
+        expect(p.adapter.requests, hasLength(1));
+        expect(p.adapter.requests.single.uri.pathSegments.skip(5), [
+          'snippets',
+          '7',
+        ]);
+      }
       final budget = AiToolBudget(maxGitLabRequests: cost);
       final read = await h.read(name, budget: budget);
       final expectedRequests = name == 'get_snippet' ? 2 : 1;
