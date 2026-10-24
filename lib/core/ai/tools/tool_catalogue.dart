@@ -52,17 +52,29 @@ final class AiToolBudget {
 
   void beginTurn() => _turnCalls = 0;
 
-  String? reserve({required int requests, required bool search}) {
-    if (_turnCalls >= maxCallsPerTurn) return 'per-turn tool limit reached';
-    if (_runCalls >= maxCallsPerRun) return 'per-send tool limit reached';
+  String? reserve({
+    required int requests,
+    required bool search,
+    bool countCall = true,
+  }) {
+    if (countCall && _turnCalls >= maxCallsPerTurn) {
+      return 'per-turn tool limit reached';
+    }
+    if (countCall && _runCalls >= maxCallsPerRun) {
+      return 'per-send tool limit reached';
+    }
     if (_gitLabRequests + requests > maxGitLabRequests) {
       return 'GitLab request limit reached';
     }
-    if (search && _searches >= maxSearches) return 'search limit reached';
-    _turnCalls++;
-    _runCalls++;
+    if (countCall && search && _searches >= maxSearches) {
+      return 'search limit reached';
+    }
+    if (countCall) {
+      _turnCalls++;
+      _runCalls++;
+    }
     _gitLabRequests += requests;
-    if (search) _searches++;
+    if (countCall && search) _searches++;
     return null;
   }
 
@@ -104,6 +116,8 @@ final class AiToolExecution {
     required this.redactions,
     required this.withheldPrivateKeyContext,
     required this.gitLabRequests,
+    this.fetchedAt,
+    this.recordDelivery,
   });
 
   final AiToolResult result;
@@ -113,6 +127,8 @@ final class AiToolExecution {
   final int redactions;
   final bool withheldPrivateKeyContext;
   final int gitLabRequests;
+  final DateTime? fetchedAt;
+  final void Function(AiAppText delivered)? recordDelivery;
 }
 
 final class AiToolCatalogue {
@@ -137,6 +153,7 @@ final class AiToolCatalogue {
   final UploadPlaceholderTable? placeholders;
   final DateTime Function() _now;
   final Random _nonceRandom = Random.secure();
+  final _fetchedAt = Expando<DateTime>();
 
   static final List<AiToolSpec> _specs = List.unmodifiable([
     _spec(
@@ -242,69 +259,152 @@ final class AiToolCatalogue {
     AiToolCall call, {
     required AiToolBudget budget,
   }) async {
-    final execution = await execute(call, budget: budget);
-    return AiToolResult.fromData(
-      callId: execution.result.callId,
-      name: execution.result.name,
-      data: execution.result.plainData,
-      isError: execution.result.isError,
-      withheldPrivateKeyContext: execution.withheldPrivateKeyContext,
-      truncated: execution.truncated,
-      blockedSensitive: execution.blocked,
-      readConfidential: execution.result.readConfidential,
-      readInternal: execution.result.readInternal,
-      readVisibility: execution.result.readVisibility,
-      uploadPlaceholders: execution.result.uploadPlaceholders,
+    return _result(await execute(call, budget: budget));
+  }
+
+  AiToolResult _result(AiToolExecution execution) => AiToolResult.fromData(
+    callId: execution.result.callId,
+    name: execution.result.name,
+    data: execution.result.plainData,
+    isError: execution.result.isError,
+    withheldPrivateKeyContext: execution.withheldPrivateKeyContext,
+    truncated: execution.truncated,
+    blockedSensitive: execution.blocked,
+    readConfidential: execution.result.readConfidential,
+    readInternal: execution.result.readInternal,
+    readVisibility: execution.result.readVisibility,
+    uploadPlaceholders: execution.result.uploadPlaceholders,
+  );
+
+  /// Re-read each expired pending result once, then fail closed after the last
+  /// asynchronous secret/owner check. Already delivered transcript entries are
+  /// never passed here.
+  Future<
+    ({List<AiToolResult> results, void Function(List<AiToolResult>) delivered})
+  >
+  prepareDelivery(
+    List<AiToolCall> calls,
+    List<AiToolResult> results, {
+    required AiToolBudget budget,
+    required Future<void> Function() beforeDelivery,
+  }) async {
+    final prepared = [...results];
+    final fetchedAt = [for (final call in calls) _fetchedAt[call]];
+    final recordDelivery = <void Function(AiAppText)?>[
+      for (final _ in results) null,
+    ];
+    for (var i = 0; i < prepared.length; i++) {
+      if (!prepared[i].isError && _expired(fetchedAt[i])) {
+        // The owner checks cancellation before every new source operation.
+        await beforeDelivery();
+        final execution = await _execute(
+          calls[i],
+          budget: budget,
+          reread: true,
+        );
+        prepared[i] = _result(execution);
+        fetchedAt[i] = execution.fetchedAt;
+        recordDelivery[i] = execution.recordDelivery;
+      }
+    }
+    await beforeDelivery();
+    final delivery = [
+      for (var i = 0; i < prepared.length; i++)
+        if (!prepared[i].isError && _expired(fetchedAt[i]))
+          AiToolResult.fromData(
+            callId: calls[i].id,
+            name: calls[i].name,
+            data: const AiAppText.plain('read failed'),
+            isError: true,
+          )
+        else
+          prepared[i],
+    ];
+    return (
+      results: delivery,
+      delivered: (List<AiToolResult> results) {
+        for (var i = 0; i < results.length; i++) {
+          if (!results[i].isError) {
+            recordDelivery[i]?.call(results[i].plainData);
+          }
+        }
+      },
     );
   }
 
   Future<AiToolExecution> execute(
     AiToolCall call, {
     required AiToolBudget budget,
+  }) => _execute(call, budget: budget);
+
+  Future<AiToolExecution> _execute(
+    AiToolCall call, {
+    required AiToolBudget budget,
+    bool reread = false,
   }) async {
     final fallback = _live('bound project');
+    if (!reread) _fetchedAt[call] = null;
     var reservedRequests = 0;
     var completedRequests = 0;
     RequestMeter? requestMeter;
     try {
       final arguments = _arguments(call);
       final requestCost = _requestCost(call.name);
-      // GitLabApi may retry each logical read after a 401 token refresh. Its
-      // cache-backed composite reads may also repeat once after a concurrent
-      // write. Reserve both bounded transport paths before dispatch because
-      // the narrow port intentionally hides those internals.
-      final reservedCost = _reservationCost(
-        call.name,
-        requestCost: requestCost,
-        port: port,
-      );
+      final nativePort = port is GitLabAiReadPort
+          ? port as GitLabAiReadPort
+          : null;
+      // Narrow custom ports retain their conservative allowance. The native
+      // port reserves and settles each bounded read immediately around the API.
+      final reservedCost = nativePort == null ? requestCost * 2 : 0;
       final budgetError = budget.reserve(
         requests: reservedCost,
         search: call.name == 'search_project',
+        countCall: !reread,
       );
       if (budgetError != null) {
-        return await _error(call, fallback, budgetError, budget: budget);
+        return await _error(
+          call,
+          fallback,
+          budgetError,
+          budget: budget,
+          countOutput: !reread,
+        );
       }
       reservedRequests = reservedCost;
       requestMeter = RequestMeter();
-      var raw = await requestMeter.runAsync(
-        () => _dispatch(call.name, arguments),
+      Future<_RawToolResult> dispatch() => requestMeter!.runAsync(
+        () => nativePort == null
+            ? _dispatch(call.name, arguments)
+            : nativePort.withBeforeRead(
+                () => _dispatch(call.name, arguments),
+                beforeRead: (maximum) {
+                  if (budget.gitLabRequests + maximum >
+                      budget.maxGitLabRequests) {
+                    throw const _ToolValidation('GitLab request limit reached');
+                  }
+                  final before = requestMeter!.count;
+                  budget.settleRequests(reserved: 0, measured: maximum);
+                  return () => budget.settleRequests(
+                    reserved: maximum,
+                    measured: requestMeter!.count - before,
+                  );
+                },
+              ),
       );
+      var raw = await dispatch();
       await refreshSecrets?.call();
       if (_expired(raw.fetchedAt)) {
-        if (raw.freshnessRetried) {
+        if (reread || raw.freshnessRetried) {
           throw const _ToolValidation('read failed');
         }
-        raw = await requestMeter.runAsync(
-          () => _dispatch(call.name, arguments),
-        );
+        raw = await dispatch();
         await refreshSecrets?.call();
         if (_expired(raw.fetchedAt)) {
           throw const _ToolValidation('read failed');
         }
       }
       completedRequests = requestMeter.count;
-      if (completedRequests > reservedCost) {
+      if (nativePort == null && completedRequests > reservedCost) {
         throw _ToolValidation(
           'tool exceeded its request allowance',
           requestCount: completedRequests,
@@ -344,14 +444,28 @@ final class AiToolCatalogue {
         ),
       ]);
       final completeContent = data.encode();
-      final available = budget.availableOutput(completeContent.length);
+      // Delivery replaces already charged output; the runner clips it to the
+      // original result's allowance before encoding the provider request.
+      final available = reread
+          ? min(completeContent.length, budget.maxSingleOutputChars)
+          : budget.availableOutput(completeContent.length);
       final clipped = data.clipped(available);
       final content = clipped.encode();
       final truncated = content.length != completeContent.length;
-      budget.recordOutput(content.length);
+      if (!reread) budget.recordOutput(content.length);
       if (structured != null && restorable != null) {
-        _recordDeliveries(data, clipped, structured.value, restorable);
+        _recordDeliveries(
+          data,
+          clipped,
+          structured.value,
+          restorable,
+          allowWhole: !reread,
+        );
       }
+      final fetchedAt = raw.fetchedAt ?? raw.provenance.observedAt;
+      // A failed provider send restores the original pending result. Keep its
+      // timestamp paired with that result; refreshed delivery data is local.
+      if (!reread) _fetchedAt[call] = fetchedAt;
       return AiToolExecution(
         result: AiToolResult.fromData(
           callId: call.id,
@@ -370,6 +484,15 @@ final class AiToolCatalogue {
             redacted.withheldPrivateKeyContext ||
             redactedProvenance.withheldPrivateKeyContext,
         gitLabRequests: completedRequests,
+        fetchedAt: fetchedAt,
+        recordDelivery: structured != null && restorable != null
+            ? (delivered) => _recordDeliveries(
+                data,
+                delivered,
+                structured.value,
+                restorable,
+              )
+            : null,
       );
     } on _ToolValidation catch (error) {
       completedRequests = requestMeter?.count ?? 0;
@@ -379,6 +502,7 @@ final class AiToolCatalogue {
         error.message,
         budget: budget,
         gitLabRequests: completedRequests,
+        countOutput: !reread,
       );
     } on Object {
       completedRequests = requestMeter?.count ?? 0;
@@ -388,6 +512,7 @@ final class AiToolCatalogue {
         'read failed',
         budget: budget,
         gitLabRequests: completedRequests,
+        countOutput: !reread,
       );
     } finally {
       if (reservedRequests > 0) {
@@ -859,6 +984,7 @@ final class AiToolCatalogue {
     String message, {
     required AiToolBudget budget,
     int gitLabRequests = 0,
+    bool countOutput = true,
   }) async {
     try {
       await refreshSecrets?.call();
@@ -876,10 +1002,12 @@ final class AiToolCatalogue {
       ], ''),
     ]);
     final completeContent = data.encode();
-    final available = budget.availableOutput(completeContent.length);
+    final available = countOutput
+        ? budget.availableOutput(completeContent.length)
+        : min(completeContent.length, budget.maxSingleOutputChars);
     final clipped = data.clipped(available);
     final content = clipped.encode();
-    budget.recordOutput(content.length);
+    if (countOutput) budget.recordOutput(content.length);
     return AiToolExecution(
       result: AiToolResult.fromData(
         callId: call.id,
@@ -995,8 +1123,9 @@ final class AiToolCatalogue {
     AiAppText complete,
     AiAppText clipped,
     Object? structured,
-    _RestorableFields restorable,
-  ) {
+    _RestorableFields restorable, {
+    bool allowWhole = true,
+  }) {
     final table = placeholders;
     if (table == null) return;
     final all = complete.plainStrings.toList();
@@ -1011,7 +1140,11 @@ final class AiToolCatalogue {
           index < kept.length &&
           all[index] == entry.value &&
           kept[index] == entry.value;
-      table.recordFieldDelivery(entry.field, whole: whole);
+      // Preparation can be rolled back after a failed provider send. It may
+      // conservatively mark a cut, but cannot upgrade an earlier cut to whole.
+      if (!whole || allowWhole) {
+        table.recordFieldDelivery(entry.field, whole: whole);
+      }
     }
   }
 
@@ -1247,30 +1380,6 @@ int _requestCost(String name) => switch (name) {
   'get_job_log' => 4,
   _ => 1,
 };
-
-int _reservationCost(
-  String name, {
-  required int requestCost,
-  required AiGitLabReadPort port,
-}) {
-  if (port is GitLabAiReadPort) {
-    final physicalMaximum = switch (name) {
-      // An unconfirmed SHA can be reread after a racing write; each physical
-      // request can replay once after OAuth refresh.
-      'read_file' => 8,
-      'list_directory' => 16,
-      // Composite reads may be dispatched once more if secret refresh makes
-      // their oldest network value stale before provider delivery.
-      'get_issue' || 'get_merge_request' => 24,
-      'get_merge_request_diff' => 32,
-      'get_snippet' => 12,
-      'get_job_log' => 32,
-      _ => null,
-    };
-    if (physicalMaximum != null) return physicalMaximum;
-  }
-  return requestCost * 2;
-}
 
 AiJson _pick(AiJson source, List<String> keys) => {
   for (final key in keys)
