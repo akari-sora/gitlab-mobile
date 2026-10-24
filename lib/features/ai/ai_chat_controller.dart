@@ -189,6 +189,9 @@ class AiChatController extends ChangeNotifier
     _rateChanges = _api.rateBudget.stream.listen((_) {
       if (_alive) _notify();
     });
+    _budgetChanges = _budgetAllocator.changes.listen((_) {
+      if (_alive) _notify();
+    });
     _secrets = KnownSecretsLive(
       session,
       settings,
@@ -237,6 +240,7 @@ class AiChatController extends ChangeNotifier
   final DateTime Function() _now;
   late final RunBudgetAllocator _budgetAllocator;
   StreamSubscription<RateBudgetSnapshot>? _rateChanges;
+  StreamSubscription<void>? _budgetChanges;
   _AiRunBudget? _runBudget;
 
   @visibleForTesting
@@ -265,9 +269,9 @@ class AiChatController extends ChangeNotifier
     final snapshot = _api.rateBudget.snapshot();
     DateTime? until = snapshot.cooldowns[RateRequestClass.global];
     for (final bucket in snapshot.buckets.values) {
-      if (bucket.level == RateLevel.critical &&
-          (until == null || bucket.resetAt.isAfter(until))) {
-        until = bucket.resetAt;
+      if (bucket.level == RateLevel.critical) {
+        final cleared = GitLabRateBudget.criticalClearedAt(bucket.resetAt);
+        if (until == null || cleared.isAfter(until)) until = cleared;
       }
     }
     return until;
@@ -284,6 +288,7 @@ class AiChatController extends ChangeNotifier
   String? _writeScopeFingerprint;
   bool _readConfidential = false;
   bool _readInternal = false;
+  int? _readVisibilityRank;
   final int _generation;
   final GitLabApi _api;
   final String _accountKey;
@@ -788,8 +793,9 @@ class AiChatController extends ChangeNotifier
       if (!_alive) return false;
       // As in recheck: what is shown could not be checked against the
       // larger secret set, so the chat stops until it can. A run in flight
-      // keeps its phase (and Stop); the failed display it left blocks the
-      // chat when the run ends.
+      // keeps its phase (and Stop); only a failed display re-redaction
+      // leaves _displayFailed to block the chat when the run ends — a
+      // failed secret read leaves nothing behind.
       if (_phase == AiChatPhase.idle) {
         _failure = error is AiFailure ? error : safeFailure(error);
         _contextFailed = true;
@@ -1286,17 +1292,17 @@ class AiChatController extends ChangeNotifier
     }
     final operation = request.operationId;
     final fields = args['fields'];
-    // New-family caps reserve one freshness GET. When replacing a description,
-    // spend it on that field's current value; the port independently reads the
-    // project. Missing fresh visibility conservatively requires confirmation.
-    final descriptionPath = fields is Map<String, Object?> &&
+    // New-family caps reserve one freshness GET. Read snippet metadata for its
+    // own visibility, or a replacement description's current value; the port
+    // independently reads the project.
+    final snippetWrite = ledger.aiSnippetRows.any((row) => row.operationId == operation);
+    final descriptionPath = snippetWrite && operation != 'createSnippet'
+        ? ['projects', '$project', 'snippets', _writeId(args, 'snippetId')]
+        : fields is Map<String, Object?> &&
             fields.containsKey('description')
         ? switch (operation) {
             'updateRelease' => [
               'projects', '$project', 'releases', args['tag_name']! as String,
-            ],
-            'updateSnippetMetadata' => [
-              'projects', '$project', 'snippets', _writeId(args, 'snippetId'),
             ],
             _ => null,
           }
@@ -1391,7 +1397,12 @@ class AiChatController extends ChangeNotifier
         fields is Map<String, Object?> &&
         fields['confidential'] == false &&
         target['confidential'] != false;
-    final visibility = projectData['visibility'];
+    final visibility = operation == 'createSnippet'
+        ? args['visibility'] ?? 'private'
+        : snippetWrite && fields is Map && fields.containsKey('visibility')
+        ? fields['visibility']
+        : snippetWrite ? target['visibility']
+        : target['visibility'] ?? projectData['visibility'];
     final originProject = projectForAiChatOrigin(origin);
     final sourceVisibility = originProject?.visibility;
     int rank(Object? value) => switch (value) {
@@ -1400,6 +1411,18 @@ class AiChatController extends ChangeNotifier
       'public' => 2,
       _ => -1,
     };
+    final projectRank = rank(projectData['visibility']);
+    final targetRank = projectRank < 0
+        ? rank(visibility)
+        : min(rank(visibility), projectRank);
+    final originRank = rank(sourceVisibility);
+    final sourceRank = originRank < 0
+        ? -1
+        : min(originRank, _readVisibilityRank ?? originRank);
+    final targetConfidential = operation == 'createIssue'
+        ? fields is Map && fields['confidential'] == true
+        : target['confidential'] == true &&
+            !(fields is Map && fields['confidential'] == false);
     // The written field's own provenance: only placeholders the table issued
     // for this resource and field are restored. Other writes get none.
     final projectPath = projectData['path_with_namespace'] ??
@@ -1471,13 +1494,13 @@ class AiChatController extends ChangeNotifier
           : null,
       noChange: noChange,
       facts: tiers.AiTierFacts(confidentialLowered: confidentialLowered),
-      visibilityUnreadable: rank(visibility) < 0 || rank(sourceVisibility) < 0,
+      visibilityUnreadable: targetRank < 0 || sourceRank < 0,
       polluted:
-          _readConfidential ||
+          ((_readConfidential || (_context?.readConfidential ?? false)) &&
+              !targetConfidential) ||
           _readInternal ||
           (_context?.built.readInternal ?? false) ||
-          (rank(sourceVisibility) >= 0 &&
-              rank(visibility) > rank(sourceVisibility)),
+          (sourceRank >= 0 && targetRank > sourceRank),
       // §3.1, whole-field write back: only a write back to the same field
       // has a current value whose hidden spans the new text could drop.
       currentFields: {
@@ -1678,6 +1701,7 @@ class AiChatController extends ChangeNotifier
       onRestorableResultCut: placeholders.markWholeFieldsCut,
       onToolStarted: (call) {
         if (!current()) return;
+        _readConfidential |= _context?.readConfidential ?? false;
         // §3.1: before any tool of this run can write, note whether the
         // page context this run sent carried the description whole. A
         // summary that cut it means no whole-field write of it.
@@ -1706,8 +1730,20 @@ class AiChatController extends ChangeNotifier
         runBudget?.consumeTools();
         if (!current()) return;
         if (!result.notExecuted && !result.isError) {
-          _readConfidential |= result.readConfidential;
-          _readInternal |= result.readInternal;
+          if (result.name == 'get_snippet') {
+            // Snippets use these flags for their visibility, rather than the
+            // additional restrictions of confidential issues/internal notes.
+            final rank = switch (result.readVisibility) {
+              'private' => 0,
+              'internal' => 1,
+              'public' => 2,
+              _ => -1,
+            };
+            _readVisibilityRank = min(_readVisibilityRank ?? rank, rank);
+          } else {
+            _readConfidential |= result.readConfidential;
+            _readInternal |= result.readInternal;
+          }
         }
         final pending = _pendingTools.indexWhere((p) => p.id == result.callId);
         final completed = pending < 0 ? null : _pendingTools.removeAt(pending);
@@ -2052,6 +2088,7 @@ class AiChatController extends ChangeNotifier
         built: previous.built,
         scope: previous.scope,
         field: previous.field,
+        readConfidential: previous.readConfidential || refreshed.readConfidential,
         fetchedAt: refreshed.fetchedAt,
       );
       return;
@@ -2516,6 +2553,7 @@ class AiChatController extends ChangeNotifier
     _writeScopeRevision = 0;
     _readConfidential = false;
     _readInternal = false;
+    _readVisibilityRank = null;
     _runner = null;
     _completeForRunner = null;
     _transportClosed = false;
@@ -2576,6 +2614,7 @@ class AiChatController extends ChangeNotifier
     // The active send retains its lease until cancelled reads settle and its
     // unconditional finally can charge them before returning unused capacity.
     unawaited(_rateChanges?.cancel());
+    unawaited(_budgetChanges?.cancel());
     _historyRetry?.cancel();
     _history.removeListener(_historyChanged);
     _pendingReportedHistory.clear();
@@ -2805,7 +2844,7 @@ AiConsentContract aiConversationConsentContract(
 ) {
   if (!provider.toolsEnabled) return aiCurrentConsentContractFor(provider);
   final account = settings.accountRecord(accountKey);
-  final ceiling = account?.ceiling ?? AiAutonomyLevel.lowRiskAuto;
+  final ceiling = account?.ceiling ?? AiAutonomyLevel.readOnly;
   final saved =
       account?.consents[provider.id]?.agreedCeiling ?? AiAutonomyLevel.readOnly;
   final agreed = ceiling.index > saved.index ? ceiling : saved;

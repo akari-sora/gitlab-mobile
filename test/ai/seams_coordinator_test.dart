@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
@@ -5,7 +7,7 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
-import 'package:gitlab_mobile/core/ai/write_text.dart';
+import 'package:gitlab_mobile/core/ai/write_text.dart' show UploadPlaceholderTable;
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import '../support/fake_adapter.dart';
@@ -118,6 +120,7 @@ final class _CapturedPort implements port.AiGitLabWritePort {
   final requests = <port.AiWriteRequest>[];
   Object? prepareError;
   AiJournalState? overrideState;
+  Future<void> Function()? afterCommit;
   port.AiWritePrepared? committed;
   @override
   Future<port.AiWritePrepared> prepare(port.AiWriteRequest request) async {
@@ -133,6 +136,7 @@ final class _CapturedPort implements port.AiGitLabWritePort {
   }) async {
     committed = prepared;
     final result = await delegate.commit(prepared, mayStart: mayStart);
+    await afterCommit?.call();
     if (overrideState case final state? when result is port.AiWriteSettled) {
       return port.AiWriteSettled(
         state: state,
@@ -286,6 +290,56 @@ void main() {
       });
     },
   );
+
+  test('issue13 created resources survive sends and clear at a new segment',
+      () async {
+    final p = (await f.propose('createPipeline', {
+      'projectId': 9,
+      'ref': 'work',
+    }))!;
+    expect((await f.approve(p)).state, AiJournalState.succeeded);
+    f.h.level = AiAutonomyLevel.bypass;
+    final firstJob = (await f.propose('jobAction', {
+      'projectId': 9, 'jobId': 21, 'action': 'cancel',
+    }))!;
+    expect(firstJob.tier.decision, AiGateDecision.execute);
+    expect(f.writePort.requests.last.segmentCreated, hasLength(1));
+    await f.h.coordinator.reject(firstJob);
+    f.h.coordinator.beginSegment();
+    final nextJob = (await f.propose('jobAction', {
+      'projectId': 9, 'jobId': 21, 'action': 'cancel',
+    }))!;
+    expect(f.writePort.requests.last.segmentCreated, isEmpty);
+    expect(nextJob.tier.decision, AiGateDecision.requireApproval);
+    expect(nextJob.tier.reasons, contains(AiFixedConfirmReason.targetUnbound));
+    expect(f.server.pipelineWrites, 1);
+  });
+
+  test('issue13 late creation cannot populate a newer segment', () async {
+    final p = (await f.propose('createPipeline', {
+      'projectId': 9, 'ref': 'work',
+    }))!;
+    final settled = Completer<void>();
+    final release = Completer<void>();
+    f.writePort.afterCommit = () async {
+      settled.complete();
+      await release.future;
+    };
+    final result = f.approve(p);
+    await settled.future.timeout(_timeout);
+    f.h.coordinator.beginSegment();
+    release.complete();
+    expect((await result).state, AiJournalState.succeeded);
+    f.writePort.afterCommit = null;
+    f.h.level = AiAutonomyLevel.bypass;
+    final job = (await f.propose('jobAction', {
+      'projectId': 9, 'jobId': 21, 'action': 'cancel',
+    }))!;
+    expect(f.writePort.requests.last.segmentCreated, isEmpty);
+    expect(job.tier.decision, AiGateDecision.requireApproval);
+    expect(job.tier.reasons, contains(AiFixedConfirmReason.targetUnbound));
+    expect(f.server.pipelineWrites, 1);
+  });
 
   for (final state in [
     AiJournalState.failedCertain,

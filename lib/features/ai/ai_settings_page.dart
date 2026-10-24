@@ -117,7 +117,18 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     }
   }
 
+  bool _canSetCeiling(AiAutonomyLevel level) {
+    final current =
+        widget.settings.accountRecord(widget.accountKey) ?? AiAccountRecord();
+    final historyReadable = {
+      AiHistoryState.ready,
+      AiHistoryState.disabled,
+    }.contains(_history.state(widget.accountKey));
+    return historyReadable || level.index <= current.ceiling.index;
+  }
+
   Future<void> _setCeiling(AiAutonomyLevel level) async {
+    if (!_canSetCeiling(level)) return;
     final account = widget.account;
     if (level == AiAutonomyLevel.bypass) {
       // Only for a known account, on this page, after the username and the
@@ -130,12 +141,13 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       );
       if (!allowed || !mounted) return;
     }
-    await _act(
-      () => widget.settings.setAutonomySettings(
+    await _act(() async {
+      if (!_canSetCeiling(level)) return;
+      await widget.settings.setAutonomySettings(
         widget.accountKey,
         ceiling: level,
-      ),
-    );
+      );
+    });
   }
 
   void _saveCap() {
@@ -726,6 +738,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     return AiWriteSettingsSection(
       record: record,
       enabled: editable,
+      ceilingEnabled:
+          !_busy && (editable || record.ceiling != AiAutonomyLevel.readOnly),
       onCeiling: (level) => unawaited(_setCeiling(level)),
       onStartingLevel: (level) => unawaited(
         _act(

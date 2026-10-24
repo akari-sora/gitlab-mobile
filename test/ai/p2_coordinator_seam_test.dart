@@ -17,6 +17,13 @@ import 'fx_coord_support.dart';
 const _timeout = Duration(seconds: 20);
 
 void main() {
+  test('issue13 journal solely owns the process schedule HMAC key', () {
+    final source = File('lib/core/ai/tools/write_coordinator.dart').readAsStringSync();
+    expect(source, isNot(contains('extension AiWriteJournalScheduleKey')));
+    expect(source, isNot(contains('_scheduleKeys')));
+    expect(source, isNot(contains('_newScheduleKey')));
+  });
+
   late _Fixture f;
   setUp(() async => f = await _Fixture.create());
   tearDown(() async => f.dispose());
@@ -436,6 +443,24 @@ void main() {
     expect(f.h.mutations, 0);
   });
 
+  test('the proposal carries the editable field only when the write has it', () async {
+    f.configure(row: _issueRow(AiTextRole.renderedMarkdown, editable: 'description'));
+    final withText = (await f.propose('createIssue', {
+      'projectId': 9,
+      'title': 'Before',
+      'description': 'Original',
+    }))!;
+    expect(withText.editableField, 'description');
+    final titleOnly = (await f.propose('createIssue', {
+      'projectId': 9,
+      'title': 'Only a title',
+    }, id: 'call-2'))!;
+    expect(titleOnly.editableField, isNull);
+    final outcome = await f.coordinator.approve(titleOnly, editedText: 'After');
+    expect(outcome.reasonCode, 'noEditableText');
+    expect(f.h.mutations, 0);
+  });
+
   test('null editableField refuses replacement', () async {
     f.configure(row: _issueRow(AiTextRole.renderedMarkdown));
     final proposal = (await f.propose('createIssue', {
@@ -443,6 +468,7 @@ void main() {
       'title': 'Before',
       'description': 'Original',
     }))!;
+    expect(proposal.editableField, isNull);
     final outcome = await f.coordinator.approve(proposal, editedText: 'After');
     expect(outcome.reasonCode, 'noEditableText');
     expect(proposal.fields['description'], 'Original');

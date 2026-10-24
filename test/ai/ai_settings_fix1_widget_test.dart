@@ -187,6 +187,7 @@ void main() {
     final account = _account();
     final provider = _provider('provider');
     await settings.saveProvider(provider);
+    await settings.loadAccount(account.key);
     // What the chat page grants: the write contract up to the ceiling.
     final contract = aiConversationConsentContract(
       settings,

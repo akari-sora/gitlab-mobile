@@ -63,6 +63,7 @@ enum AiFixedConfirmReason {
   externalMediaInRenderedMarkdown,
   foreignClosingOrCrossProject,
   duplicateOfSettledWrite,
+  duplicateUpload,
   wholeFieldDropsHiddenSpans,
   headMovedSincePreview,
   confirmMarkAfterManualRelease,
@@ -85,6 +86,7 @@ const Set<AiFixedConfirmReason> aiAlwaysConfirmReasons = <AiFixedConfirmReason>{
   AiFixedConfirmReason.externalMediaInRenderedMarkdown,
   AiFixedConfirmReason.foreignClosingOrCrossProject,
   AiFixedConfirmReason.duplicateOfSettledWrite,
+  AiFixedConfirmReason.duplicateUpload,
   AiFixedConfirmReason.wholeFieldDropsHiddenSpans,
 };
 

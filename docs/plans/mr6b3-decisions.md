@@ -157,3 +157,27 @@ v4 contains the spec text itself, not a reference to a section that does not exi
 
 ## D23. Minors
 Fold in the round-3 Minors that cost a line. List the rest under "follow-ups"; they never block.
+
+
+## D24. Open questions in the family packets
+Accept the drafter's proposed answer for every open question (Q-P2-1 … Q-P13-2, listed below). They are the conservative choice in each case: refuse when unclear, reuse the method's own helpers and preflights unchanged, and keep v4's cap numbers verbatim. On m5, refuse both variants: on instances without activity controls, P9b, P10 and P11a stay unavailable to the AI, which affects availability only. Each family packet re-verifies its anchors against the seams-merge head before it starts.
+
+The answers:
+- P2: Q-P2-1 `stateNotApplied` vs `stateConflict` mapping → validation-shaped notApplied ⇒ `stateNotApplied`, revision mismatch ⇒ `stateConflict`. Q-P2-2 preview fields unspecified → show final `stateEvent` only.
+- P3: Q-P3-1 candidate-drift checkpoint → enforce in both port dispatch and method preflight. Q-P3-2 START token content/timeout unspecified → reuse existing START semantics unchanged.
+- P4: Q-P4-1 Mpre=2/Mrb=2 reader mapping → keep v4 numbers verbatim, no re-derivation. Q-P4-2 inherited→manual snapshot edition → base edition; base/probe disagreement ⇒ `datesConflict`.
+- P5: Q-P5-1 registry-`tryStart` vs B order → `tryStart` first; refusal ⇒ notHooked. Q-P5-2 `healthUnsupported` trigger → pre-accept unsupported ⇒ refuse; accepted `Failure(false)` ⇒ same code as uncertain.
+- P6: Q-P6-1 raw-item validation source → reuse the search method's own validation verbatim. Q-P6-2 readback multiplicity semantics → multiset-of-IDs equality.
+- P8: Q-P8-1 `search`+uniqueness with m8 → rule applies to the complete filtered page; hasNextPage ⇒ refuse. Q-P8-2 selection helpers uncited → reuse method's own helpers unchanged.
+- P9: Q-P9-1 m5 pre-set cache flag → REFUSE both variants (permanent AI-unavailability on controls-less instances; availability-only consequence). Q-P9-2 writeAccess=1 over-count (review §3.2) → keep v4 numbers verbatim.
+- P10: Q-P10-1 m5 scope for `_readActivityEditPreflight` → flag takes effect; follow S0b's actual scope if narrower and note deviation. Q-P10-2 `noteChanged` vs `noteMissing` precedence → pre-accept `noteChanged`, post-accept `noteMissing`.
+- P11: Q-P11-1 three-stage↔formula split → opening→P, preflight→Mpre, readback→Mrb; assert per-stage ≤2 pages plus totals. Q-P11-2 `intentUnclear` vs lead confirmation UX → family only refuses unclear booleans; 24-word table marks UI-owned words.
+- P12: Q-P12-1 digest key format → `incidentUpdatedAt:<raw>` under existing digest; mismatch ⇒ `targetChanged`. Q-P12-2 escalation/actor checks uncited → reuse `:148` preflight unchanged; add nothing.
+- P13: Q-P13-1 expired-snooze unsnooze code → `todoNotFound`. Q-P13-2 `AiAppTarget` kind table → mirror existing kinds read-only; unknown kind ⇒ `todoUnsupportedTarget`, never invent.
+
+## D25. Lead decisions during the family builds (2026-10-23)
+- **S0d, a seams follow-up.** P9 (comment create) and P10 (note delete) need four shared contracts the seams lack. They are validated actor evidence (or an AI-only "own note" constraint) for create and delete; parent identity before a missing note in the delete preflight (so drift plus a missing note is `noteChanged`); a continuation note's own reply target; and the controls-support state on the create access. They land as S0d before P9 and P10; the UI paths keep their behaviour.
+- **Unsnooze acknowledgement.** `unsnoozeTodo()` accepts a reply only when the to-do carries the `snoozedUntil` key with a null value. An omitted key is an invalid response. The selection already requests the field. Lead-authorised seam repair, landed with P13.
+- **Snooze time precision.** The AI's snooze time is normalised to whole seconds (never rounded up) before the preview, the digest and the mutation, and must still be in the future. GitLab's `Time` scalar serialises whole seconds, so an exact comparison with fractional input would turn real successes into uncertain writes.
+- **Reaction readback.** GitLab bumps a note's `updatedAt` when a reaction changes, so the readback after a reaction mutation does not compare `updatedAt`. The checks before acceptance still do. This is a separate fix on `main` (it also affected the UI).
+

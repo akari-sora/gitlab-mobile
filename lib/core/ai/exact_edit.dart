@@ -91,7 +91,7 @@ AiExactEditResult applyExactEdits(
     diff: unifiedDiff(original, finalText),
     scan: AiTextScan(
       original: original,
-      newTexts: [for (final edit in located) edit.replacement],
+      newTexts: [for (final edit in changed) edit.replacement],
       windows: _windows(original, finalText, changed),
     ),
   );
@@ -194,6 +194,13 @@ AiFragmentCheck checkFragments(
           reasons.add(AiFixedConfirmReason.confidentialOrVisibilityMix);
         }
       }
+    }
+    for (final file in scan.files) {
+      final checked = checkFragments(file,
+          knownSecrets: knownSecrets, instance: instance, visibility: visibility);
+      if (checked.blockCode != null) return checked;
+      reasons.addAll(checked.confirmReasons);
+      preexisting += checked.preexistingSecretHits;
     }
     return AiFragmentCheck(
       confirmReasons: reasons.toList(),

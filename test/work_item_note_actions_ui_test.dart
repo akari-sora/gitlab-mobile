@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_activity.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 
 import '../tool/emulator_ui.dart';
 
@@ -240,7 +241,120 @@ void main() {
     });
   }
 
-  testWidgets('reactions load on demand and add then remove explicitly', (
+  testWidgets('after a reaction, delete, close and reopen use the fresh note', (
+    tester,
+  ) async {
+    final fixture = EmulatorQaFixture();
+    addTearDown(fixture.api.close);
+
+    await _openFirstNoteActions(tester, fixture);
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-note-reactions')),
+    );
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-add-reaction')),
+    );
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-pick-reaction:heart')),
+    );
+    expect(find.text('❤️ 1'), findsOneWidget);
+    // GitLab bumped updatedAt; the dialog's delete must not call the note
+    // changed.
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-delete-note')),
+    );
+    expect(find.text(l10n.commentHasBeenModified), findsNothing);
+    expect(find.textContaining('刪除後無法復原'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('work-item-activity-confirm-delete-note')),
+      findsOneWidget,
+    );
+
+    // Closing without another write still refreshes the activity, so the
+    // reopened dialog loads edit and reactions from the fresh note.
+    int feedReads() => fixture.adapter.requests
+        .where(
+          (request) => ((request.data as Map)['query'] as String).contains(
+            'query MobileWorkItemActivity(',
+          ),
+        )
+        .length;
+    final activityReads = feedReads();
+    await tester.tap(find.widgetWithText(TextButton, '關閉'));
+    await _drainAsync(tester);
+    expect(feedReads(), greaterThan(activityReads));
+    await _tap(
+      tester,
+      find.byKey(
+        const ValueKey('work-item-activity-note-actions:$_projectNoteId'),
+      ),
+    );
+    expect(find.text(l10n.commentHasBeenModified), findsNothing);
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-note-reactions')),
+    );
+    expect(find.text(l10n.commentHasBeenModified), findsNothing);
+    expect(find.text('❤️ 1'), findsOneWidget);
+    expect(fixture.workItemNoteDeleteEvents, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('after a reaction, leaving the editor unsaved refreshes too', (
+    tester,
+  ) async {
+    final fixture = EmulatorQaFixture();
+    addTearDown(fixture.api.close);
+    int feedReads() => fixture.adapter.requests
+        .where(
+          (request) => ((request.data as Map)['query'] as String).contains(
+            'query MobileWorkItemActivity(',
+          ),
+        )
+        .length;
+
+    await _openFirstNoteActions(tester, fixture);
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-note-reactions')),
+    );
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-add-reaction')),
+    );
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-pick-reaction:heart')),
+    );
+    expect(find.text('❤️ 1'), findsOneWidget);
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-edit-note')),
+    );
+    final before = feedReads();
+    await _tap(tester, find.byTooltip(l10n.keepDraftAndGoBack));
+    expect(feedReads(), greaterThan(before));
+    await _tap(
+      tester,
+      find.byKey(
+        const ValueKey('work-item-activity-note-actions:$_projectNoteId'),
+      ),
+    );
+    expect(find.text(l10n.commentHasBeenModified), findsNothing);
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-note-reactions')),
+    );
+    expect(find.text(l10n.commentHasBeenModified), findsNothing);
+    expect(find.text('❤️ 1'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('reactions add then remove when updatedAt advances', (
     tester,
   ) async {
     final fixture = EmulatorQaFixture();
@@ -254,6 +368,10 @@ void main() {
     );
     expect(_operationReads(fixture, 'MobileWorkItemActivityReactionAccess'), 1);
     expect(find.text('👍 1'), findsOneWidget);
+    final originalUpdatedAt = fixture.workItemActivityNoteRecord(
+      _projectNoteId,
+      group: false,
+    )!['updatedAt'];
 
     await _tap(
       tester,
@@ -286,6 +404,19 @@ void main() {
       'awarded': true,
     });
     expect(find.text('❤️ 1'), findsOneWidget);
+    final addedUpdatedAt = fixture.workItemActivityNoteRecord(
+      _projectNoteId,
+      group: false,
+    )!['updatedAt'];
+    expect(addedUpdatedAt, isNot(originalUpdatedAt));
+    expect(
+      tester.widget<FilterChip>(
+        find.byKey(const ValueKey('work-item-activity-reaction:heart')),
+      ).selected,
+      isTrue,
+    );
+    expect(find.text(l10n.actionResultUnconfirmed), findsNothing);
+    expect(find.text(l10n.emojiReactionUnconfirmed), findsNothing);
 
     await _tap(
       tester,
@@ -294,6 +425,15 @@ void main() {
     expect(fixture.workItemNoteReactionEvents, hasLength(2));
     expect(fixture.workItemNoteReactionEvents.last['awarded'], isFalse);
     expect(find.text('❤️ 1'), findsNothing);
+    expect(
+      fixture.workItemActivityNoteRecord(
+        _projectNoteId,
+        group: false,
+      )!['updatedAt'],
+      isNot(addedUpdatedAt),
+    );
+    expect(find.text(l10n.actionResultUnconfirmed), findsNothing);
+    expect(find.text(l10n.emojiReactionUnconfirmed), findsNothing);
 
     await _tap(
       tester,

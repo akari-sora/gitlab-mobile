@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
@@ -7,6 +8,7 @@ import '../../core/models.dart';
 import '../../core/work_item_types.dart';
 import '../../shared/external_link.dart';
 import '../../shared/resource_share.dart';
+import '../../shared/cache_freshness.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
@@ -520,22 +522,44 @@ class WorkItemPage extends StatefulWidget {
   final VoidCallback? onDeleted;
   final ValueChanged<Json>? onMutated;
   @override
-  State<WorkItemPage> createState() => _WorkItemPageState();
+  State<WorkItemPage> createState() => WorkItemPageState();
 }
 
-class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderStateMixin {
+/// Thread-class freshness for the approvals, related-MR and link reads below.
+const _threadMaxAge = Duration(seconds: 30);
+
+class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderStateMixin {
   Json? _data;
   Json? _approvalsData;
+  int _relatedRevision = 0;
   IncidentStatusSnapshot? _incidentStatus;
   ApiFailure? _incidentStatusError;
   ApiFailure? _error;
   bool _loading = true, _busy = false;
-  int _epoch = 0, _generation = 0;
+  int _epoch = 0, _generation = 0, _readEpoch = 0;
   int _graphEpoch = 0, _graphReadyEpoch = 0;
   final _chrome = ScrollChromeController();
   final Set<Route<dynamic>> _ownedRoutes = {};
   NavigatorState? _navigator;
   late TabController _tabs = _newTabs();
+  ValueListenable<TickerModeData>? _tickerMode;
+  bool _backgroundEnabled = true, _resumeWhenVisible = false;
+  bool _stale = false, _revalidating = false;
+  FailureKind? _backgroundFailure;
+  DateTime? _backgroundRetryAt;
+  CachedRead<Json>? _detailRead;
+  Json? get data => _data;
+  ApiFailure? get readError => _error;
+  DateTime? get fetchedAt => _detailRead?.fetchedAt;
+  bool get stale => _stale;
+  bool get revalidating => _revalidating;
+  FailureKind? get backgroundFailure => _backgroundFailure;
+  DateTime? get backgroundRetryAt => _backgroundRetryAt;
+
+  // Metadata shown from an earlier read: say so while it is refreshed in the
+  // background or after that refresh failed. Fresh data gets no strip.
+  DateTime? get _freshnessAt => _data == null || _loading || _error != null ||
+      !(_stale || _revalidating || _backgroundFailure != null) ? null : fetchedAt;
   bool get mr => widget.resource == 'merge_requests';
   ProjectWorkItemType get type => mr ? ProjectWorkItemType.issue : widget.type;
   List<String> get path => ['projects', '${widget.project.id}', widget.resource, '${widget.iid}'];
@@ -594,7 +618,47 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
   void didChangeDependencies() {
     super.didChangeDependencies();
     _navigator = Navigator.of(context);
+    _updateTickerMode();
   }
+
+  void _updateTickerMode() {
+    final mode = TickerMode.getValuesNotifier(context);
+    if (!identical(mode, _tickerMode)) {
+      _tickerMode?.removeListener(_tickerModeChanged);
+      _tickerMode = mode;
+      mode.addListener(_tickerModeChanged);
+    }
+    _tickerModeChanged();
+  }
+
+  void _tickerModeChanged() {
+    _backgroundEnabled = _tickerMode!.value.enabled;
+    if (!_backgroundEnabled && _revalidating) _resumeWhenVisible = true;
+    if (_backgroundEnabled) _startRevalidation(_generation);
+  }
+
+  bool _readCurrent(int generation, int readEpoch) =>
+      mounted &&
+      generation == _generation &&
+      readEpoch == _readEpoch &&
+      !widget.api.isClosed;
+
+  bool _canApplyRead(int generation, int readEpoch, {required bool background}) {
+    if (!_readCurrent(generation, readEpoch)) return false;
+    if (background && !_backgroundEnabled) {
+      _stale = true;
+      _resumeWhenVisible = true;
+      return false;
+    }
+    return true;
+  }
+
+  bool _revoked(ApiFailure failure) => switch (failure.kind) {
+    FailureKind.unauthenticated ||
+    FailureKind.forbidden ||
+    FailureKind.invisible => true,
+    _ => false,
+  };
 
   void _ownRoute(Route<dynamic> route) {
     if (!_ownedRoutes.add(route)) return;
@@ -634,14 +698,17 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     final oldMr = oldWidget.resource == 'merge_requests';
     _generation++;
     _epoch++;
+    _readEpoch++;
     _dismissRoutes();
-    _data = null;
-    _approvalsData = null;
+    _withdraw();
     _incidentStatus = null;
     _incidentStatusError = null;
     _error = null;
     _busy = false;
     _loading = true;
+    _backgroundFailure = null;
+    _backgroundRetryAt = null;
+    _resumeWhenVisible = false;
     if (oldMr != mr) {
       _tabs.dispose();
       _tabs = _newTabs();
@@ -655,50 +722,246 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
   void dispose() {
     _generation++;
     _epoch++;
+    _readEpoch++;
     _dismissRoutes();
+    _tickerMode?.removeListener(_tickerModeChanged);
     _tabs.dispose();
     _chrome.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<CachedRead<Json>?> _readDetail(
+    ({Account account, GitLabApi api, Project project, String resource, int iid, ProjectWorkItemType type, int generation}) owner,
+    int generation, {
+    required int readEpoch,
+    required List<String> ownerPath,
+    required bool fresh,
+    required bool background,
+  }) async {
+    Future<CachedRead<Json>> readPage(bool force, {bool quiet = false}) => CachedRead.run(
+      () => owner.api.cachedRecord(ownerPath, fresh: force, background: background),
+      mayStart: () => _readCurrent(generation, readEpoch) &&
+          (!background || _backgroundEnabled),
+      waitForQuiet: quiet,
+    );
+    var read = await readPage(fresh);
+    if (!_canApplyRead(generation, readEpoch, background: background)) return null;
+    if (read.superseded) {
+      read = await readPage(true);
+      if (!_canApplyRead(generation, readEpoch, background: background)) return null;
+      if (read.superseded) {
+        read = await readPage(true, quiet: true);
+        if (!_canApplyRead(generation, readEpoch, background: background)) return null;
+      }
+      if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    }
+    return read.dropped ? null : read;
+  }
+
+  /// Approvals share the detail read's bounded-retry shape (two superseded
+  /// reads → one quiet-wait read → retryable failure) so a superseded
+  /// approvals read is retried, never silently swallowed. Reads older than
+  /// the thread freshness window go to the network via [maxAge].
+  Future<CachedRead<Json>?> _readApprovals(
+    ({Account account, GitLabApi api, Project project, String resource, int iid, ProjectWorkItemType type, int generation}) owner,
+    int generation, {
+    required int readEpoch,
+    required List<String> ownerPath,
+    required bool fresh,
+  }) async {
+    Future<CachedRead<Json>> readPage(bool force, {bool quiet = false}) => CachedRead.run(
+      () => owner.api.cachedRecord([...ownerPath, 'approvals'], fresh: force, maxAge: _threadMaxAge),
+      mayStart: () => _readCurrent(generation, readEpoch),
+      waitForQuiet: quiet,
+    );
+    var read = await readPage(fresh);
+    if (!_readCurrent(generation, readEpoch)) return null;
+    if (read.superseded) {
+      read = await readPage(true);
+      if (!_readCurrent(generation, readEpoch)) return null;
+      if (read.superseded) {
+        read = await readPage(true, quiet: true);
+        if (!_readCurrent(generation, readEpoch)) return null;
+      }
+      if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    }
+    return read.dropped ? null : read;
+  }
+
+  void _withdraw() {
+    _data = null;
+    _approvalsData = null;
+    _detailRead = null;
+    _stale = false;
+  }
+
+  void _failedDetail(ApiFailure failure, {required bool background}) {
+    if (failure.kind == FailureKind.unauthenticated) {
+      _withdraw();
+      _error = failure;
+      _incidentStatus = null;
+      _incidentStatusError = null;
+    } else if (!_revoked(failure)) {
+      if (background) {
+        _backgroundFailure = failure.kind;
+        _backgroundRetryAt = failure.retryAt;
+      } else {
+        _error = failure;
+      }
+    } else {
+      _withdraw();
+      _error = failure;
+    }
+  }
+
+  Future<void> _load({bool fresh = false}) async {
     final owner = _owner;
     final ownerPath = _ownerPath(owner);
-    final epoch = ++_epoch;
+    final generation = _generation;
+    ++_epoch;
+    final readEpoch = ++_readEpoch;
     final graphEpoch = ++_graphEpoch;
-    if (mounted) { setState(() { _loading = true; _error = null; }); }
+    if (fresh) _relatedRevision++;
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+        _revalidating = false;
+        _backgroundFailure = null;
+        _backgroundRetryAt = null;
+        _resumeWhenVisible = false;
+      });
+    }
     try {
-      final data = await owner.api.record(ownerPath);
+      final read = await _readDetail(owner, generation, readEpoch: readEpoch, ownerPath: ownerPath, fresh: fresh, background: false);
+      if (!_readCurrent(generation, readEpoch)) return;
+      if (read == null) {
+        if (_data == null) {
+          setState(() => _error = const ApiFailure(FailureKind.cancelled));
+        }
+        return;
+      }
       if (owner.resource != 'merge_requests') {
-        validateWorkItemIdentity(data, expectedType: owner.type, expectedProjectId: owner.project.id);
+        validateWorkItemIdentity(read.value, expectedType: owner.type, expectedProjectId: owner.project.id);
       }
       Json? approvals;
+      bool clearApprovals = false;
       IncidentStatusSnapshot? incidentStatus;
       ApiFailure? incidentStatusError;
       if (owner.resource == 'merge_requests') {
         try {
-          approvals = await owner.api.record([...ownerPath, 'approvals']);
-        } catch (_) {
-          // fail-soft if approvals not supported
+          final approvalsRead = await _readApprovals(owner, generation, readEpoch: readEpoch, ownerPath: ownerPath, fresh: fresh);
+          if (!_readCurrent(generation, readEpoch)) return;
+          if (approvalsRead != null) approvals = approvalsRead.value;
+        } on ApiFailure catch (failure) {
+          if (!_readCurrent(generation, readEpoch)) return;
+          if (failure.kind == FailureKind.unauthenticated) {
+            setState(() => _failedDetail(failure, background: false));
+            return;
+          }
+          if (_revoked(failure)) {
+            // A revoked approvals read withdraws the approvals part only;
+            // the parent detail stays on screen.
+            clearApprovals = true;
+          }
+          // Other failures (including a bounded-retry-exhausted superseded
+          // read) keep the previous approvals value: fail-soft.
         }
       } else if (owner.type == ProjectWorkItemType.incident) {
         try {
           final raw = await owner.api.incidentStatus(owner.project, owner.iid);
+          if (!_readCurrent(generation, readEpoch)) return;
           incidentStatus = IncidentStatusSnapshot.fromJson(raw, expectedProjectId: owner.project.id, expectedIid: owner.iid);
         } catch (error) {
+          if (!_readCurrent(generation, readEpoch)) return;
           incidentStatusError = safeFailure(error);
         }
       }
-      if (_currentOwner(owner) && epoch == _epoch) {
-        setState(() {
-          _data = data;
+      if (!_readCurrent(generation, readEpoch)) return;
+      setState(() {
+        _data = read.value;
+        _detailRead = read;
+        _stale = read.stale;
+        if (clearApprovals) {
+          _approvalsData = null;
+        } else if (approvals != null) {
           _approvalsData = approvals;
-          _incidentStatus = incidentStatus;
-          _incidentStatusError = incidentStatusError;
-          _graphReadyEpoch = graphEpoch;
+        }
+        _incidentStatus = incidentStatus;
+        _incidentStatusError = incidentStatusError;
+        _graphReadyEpoch = graphEpoch;
+        _loading = false;
+      });
+      _startRevalidation(generation, readEpoch: readEpoch);
+    } catch (e) {
+      if (_readCurrent(generation, readEpoch)) {
+        final failure = safeFailure(e);
+        setState(() => _failedDetail(failure, background: false));
+      }
+    } finally {
+      if (_readCurrent(generation, readEpoch) && _loading) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  void _startRevalidation(int generation, {int? readEpoch}) {
+    final epoch = readEpoch ?? _readEpoch;
+    if (!_readCurrent(generation, epoch) ||
+        !_backgroundEnabled ||
+        !_stale ||
+        _loading ||
+        _revalidating ||
+        _backgroundFailure != null ||
+        _error != null) {
+      return;
+    }
+    setState(() {
+      _revalidating = true;
+      _resumeWhenVisible = false;
+    });
+    unawaited(_revalidate(_owner, generation, epoch));
+  }
+
+  Future<void> _revalidate(
+    ({Account account, GitLabApi api, Project project, String resource, int iid, ProjectWorkItemType type, int generation}) owner,
+    int generation,
+    int readEpoch,
+  ) async {
+    try {
+      if (_detailRead?.stale != true) return;
+      final ownerPath = _ownerPath(owner);
+      final read = await _readDetail(owner, generation, readEpoch: readEpoch, ownerPath: ownerPath, fresh: true, background: true);
+      if (_canApplyRead(generation, readEpoch, background: true) && read != null) {
+        if (owner.resource != 'merge_requests') {
+          validateWorkItemIdentity(read.value, expectedType: owner.type, expectedProjectId: owner.project.id);
+        }
+        setState(() {
+          _data = read.value;
+          _detailRead = read;
+          _stale = read.stale;
         });
       }
-    } catch (e) { if (mounted && epoch == _epoch) { setState(() => _error = safeFailure(e)); } } finally { if (mounted && epoch == _epoch) { setState(() => _loading = false); } }
+    } catch (e) {
+      if (!_readCurrent(generation, readEpoch)) return;
+      final failure = safeFailure(e);
+      if (!_revoked(failure) && !_canApplyRead(generation, readEpoch, background: true)) return;
+      setState(() {
+        if (_revoked(failure)) {
+          _failedDetail(failure, background: true);
+        } else {
+          _backgroundFailure = failure.kind;
+          _backgroundRetryAt = failure.retryAt;
+        }
+      });
+    } finally {
+      if (_readCurrent(generation, readEpoch)) {
+        setState(() => _revalidating = false);
+        if (_resumeWhenVisible && _backgroundEnabled) {
+          _startRevalidation(generation, readEpoch: readEpoch);
+        }
+      }
+    }
   }
 
   Future<void> _onOpenEditor() async {
@@ -741,12 +1004,12 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         !routeSessionMatches(capturedSessionGeneration, session, oldOwner.account, oldOwner.api)) {
       return;
     }
-    unawaited(_load());
+    unawaited(_load(fresh: true));
   }
 
   Future<void> _loadAfterMutation() async {
     final expectedEpoch = _epoch + 1;
-    await _load();
+    await _load(fresh: true);
     if (mounted && _epoch == expectedEpoch && _error == null && _data != null) {
       widget.onMutated?.call(_data!);
     }
@@ -1303,7 +1566,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
               if (status == null) ...[
                 const SizedBox(height: 10),
                 Text(error?.kind == FailureKind.unsupported ? l10n.incidentStatusUnavailable : l10n.incidentStatusTemporarilyUnavailable, key: const ValueKey('incident-lifecycle-unavailable'), style: Theme.of(context).textTheme.bodySmall),
-                TextButton.icon(onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh, size: 18), label: Text(l10n.retryIncidentStatus)),
+                TextButton.icon(onPressed: _loading || _busy ? null : () => _load(fresh: true), icon: const Icon(Icons.refresh, size: 18), label: Text(l10n.retryIncidentStatus)),
               ] else ...[
                 const SizedBox(height: 10),
                 Text(l10n.incidentStatusDoesNotCloseIssue, style: Theme.of(context).textTheme.bodySmall),
@@ -1331,7 +1594,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       setState(() => _data = {...?_data, 'subscribed': subscribed});
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(subscribed ? l10n.notificationsOn : l10n.notificationsOff)));
       // A failed refresh must not erase a confirmed subscription write.
-      await _load();
+      await _load(fresh: true);
     } catch (e) {
       if (!mounted || !_currentOwner(owner)) return;
       showFailure(context, e);
@@ -1573,7 +1836,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         ResourceShareButton(uri: web,
           ownerKey: (owner.account.key, owner.api, owner.project.id, owner.resource, owner.iid, owner.generation),
           isCurrent: () => _currentOwner(owner) && !owner.api.isClosed),
-        IconButton(tooltip: l10n.refreshAction, onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh)),
+        IconButton(tooltip: l10n.refreshAction, onPressed: _loading || _busy ? null : () => _load(fresh: true), icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(
           tooltip: l10n.moreOptions,
           enabled: !_busy && data != null,
@@ -1610,7 +1873,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                       ? SingleChildScrollView(
                           child: FailureNotice(
                             _error!,
-                            onRetry: _load,
+                            onRetry: () => _load(fresh: true),
                             account: widget.account,
                             resourceLabel: '${widget.project.path} · $label',
                             onSwitchAccount: endSessionFrom(context, ResumeTarget(projectId: widget.project.id, projectPath: widget.project.path, resource: widget.resource, iid: widget.iid)),
@@ -1688,6 +1951,17 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                   ),
                 ),
                 if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
+                if (_freshnessAt case final fetchedAt?)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: CacheFreshnessBar(
+                      fetchedAt: fetchedAt,
+                      refreshing: _revalidating,
+                      failure: _backgroundFailure,
+                      retryAt: _backgroundRetryAt,
+                      onRetry: () => unawaited(_load(fresh: true)),
+                    ),
+                  ),
                 TabBar(
                   controller: _tabs,
                   indicatorSize: TabBarIndicatorSize.tab,
@@ -1710,7 +1984,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                           if (_error != null)
                             FailureNotice(
                               _error!,
-                              onRetry: _load,
+                              onRetry: () => _load(fresh: true),
                               account: widget.account,
                               resourceLabel: '${widget.project.path} · $label',
                               onSwitchAccount: endSessionFrom(context, ResumeTarget(projectId: widget.project.id, projectPath: widget.project.path, resource: widget.resource, iid: widget.iid)),
@@ -1796,7 +2070,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                           if (!mr)
                             _WorkItemKeepAlive(
                               key: ValueKey('work-item-related-issues/${owner.account.key}/${owner.project.id}/${owner.iid}/${owner.generation}'),
-                              child: _RelatedIssueItems(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid),
+                              child: _RelatedIssueItems(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid, revision: _relatedRevision),
                             ),
                           if (mr) _MergeRequestHistory(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid),
                           const SizedBox(height: 12),
@@ -2004,13 +2278,24 @@ class _MergeChecks extends StatefulWidget {
 
 class _MergeChecksState extends State<_MergeChecks> {
   late Future<Json> _approvals;
+  Future<Json> _cachedApprovals({bool fresh = false}) async {
+    var read = await widget.api.cachedRecord([...widget.path, 'approvals'], fresh: fresh, maxAge: _threadMaxAge);
+    if (read.superseded) {
+      read = await widget.api.cachedRecord([...widget.path, 'approvals'], fresh: true, maxAge: _threadMaxAge);
+    }
+    if (read.dropped || read.superseded) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    return read.value;
+  }
+
   @override
-  void initState() { super.initState(); _approvals = widget.api.record([...widget.path, 'approvals']); }
+  void initState() { super.initState(); _approvals = _cachedApprovals(); }
 
   @override
   void didUpdateWidget(covariant _MergeChecks oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.data != widget.data) { _approvals = widget.api.record([...widget.path, 'approvals']); }
+    if (oldWidget.data != widget.data) { _approvals = _cachedApprovals(); }
   }
 
   @override
@@ -2038,7 +2323,7 @@ class _MergeChecksState extends State<_MergeChecks> {
               resourceLabel: l10n.mergeChecks,
               onSwitchAccount: endSessionFrom(context),
               onRetry: () => setState(() {
-        _approvals = widget.api.record([...widget.path, 'approvals']);
+        _approvals = _cachedApprovals(fresh: true);
       }),
             );
           }
@@ -2065,11 +2350,15 @@ class _MergeChecksState extends State<_MergeChecks> {
 
 /// Merge requests that mention or close an issue, and its linked issues.
 class _RelatedIssueItems extends StatefulWidget {
-  const _RelatedIssueItems({required this.account, required this.api, required this.project, required this.iid});
+  const _RelatedIssueItems({required this.account, required this.api, required this.project, required this.iid, this.revision = 0});
   final Account account;
   final GitLabApi api;
   final Project project;
   final int iid;
+  /// Bumped by the page on every explicit (fresh) load so the list refreshes
+  /// together with the detail; stale cache entries already re-read through
+  /// [maxAge] on reopen.
+  final int revision;
   @override
   State<_RelatedIssueItems> createState() => _RelatedIssueItemsState();
 }
@@ -2091,19 +2380,33 @@ class _RelatedIssueItemsState extends State<_RelatedIssueItems> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  @override
+  void didUpdateWidget(covariant _RelatedIssueItems oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.revision != widget.revision) {
+      unawaited(_load(fresh: true));
+    }
+  }
+
+  Future<void> _load({bool fresh = false}) async {
     final epoch = ++_epoch;
     final base = ['projects', '${widget.project.id}', 'issues', '${widget.iid}'];
     if (_error != null) setState(() => _error = null);
     try {
-      final results = await Future.wait([
-        widget.api.records([...base, 'related_merge_requests']),
-        widget.api.records([...base, 'links']),
+      final reads = await Future.wait([
+        widget.api.cachedRecords([...base, 'related_merge_requests'], fresh: fresh, maxAge: _threadMaxAge),
+        widget.api.cachedRecords([...base, 'links'], fresh: fresh, maxAge: _threadMaxAge),
       ]);
       if (!mounted || epoch != _epoch) return;
+      for (final read in reads) {
+        if (read.dropped || read.superseded) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+      }
+      if (!mounted || epoch != _epoch) return;
       setState(() {
-        _mergeRequests = results[0].items;
-        _links = results[1].items;
+        _mergeRequests = reads[0].value.items;
+        _links = reads[1].value.items;
       });
     } catch (e) {
       if (mounted && epoch == _epoch) setState(() => _error = safeFailure(e));
@@ -2114,7 +2417,7 @@ class _RelatedIssueItemsState extends State<_RelatedIssueItems> {
   Widget build(BuildContext context) {
     final error = _error;
     if (error != null) {
-      return FailureNotice(error, account: widget.account, onRetry: _load, onSwitchAccount: endSessionFrom(context),
+      return FailureNotice(error, account: widget.account, onRetry: () => _load(fresh: true), onSwitchAccount: endSessionFrom(context),
         resourceLabel: l10n.relatedMergeRequestsAndIssues(widget.project.path, widget.iid));
     }
     if (_mergeRequests.isEmpty && _links.isEmpty) return const SizedBox.shrink();
@@ -2180,6 +2483,7 @@ class _MergeRequestHistory extends StatelessWidget {
           onSwitchAccount: endSessionFrom(context),
           empty: l10n.noCommits,
           grouped: true,
+          cached: ({required bool fresh, required bool background}) => api.cachedRecords([...base, 'commits'], fresh: fresh, background: background),
           load: (next) => api.records([...base, 'commits'], next: next),
           itemBuilder: (context, value) => ListTile(
             minTileHeight: 56,
@@ -2204,6 +2508,7 @@ class _MergeRequestHistory extends StatelessWidget {
           onSwitchAccount: endSessionFrom(context),
           empty: l10n.noPipelines2,
           grouped: true,
+          cached: ({required bool fresh, required bool background}) => api.cachedRecords([...base, 'pipelines'], fresh: fresh, background: background),
           load: (next) => api.records([...base, 'pipelines'], next: next),
           itemBuilder: (context, value) => pipelineRow(context, value,
             onTap: () => open.pipeline(context, '${project.id}', valueInt(value, 'id'))),
