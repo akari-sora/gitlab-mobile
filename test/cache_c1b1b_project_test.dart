@@ -9,6 +9,8 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/project_more_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_overview.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
+import 'package:gitlab_mobile/shared/cache_freshness.dart';
 
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
@@ -177,6 +179,8 @@ void main() {
         await _loaded(tester, second);
         expect(second.currentState!.stale, isFalse);
         expect(second.currentState!.backgroundFailure, isNull);
+        // Fresh details get no freshness strip.
+        expect(find.byType(CacheFreshnessBar), findsNothing);
         _counts(fixture, files: hasReadme ? 1 : 0);
       },
     );
@@ -349,6 +353,19 @@ void main() {
         expect(
           second.currentState!.backgroundRetryAt,
           failure == FailureKind.rateLimited ? isNotNull : isNull,
+        );
+        // The details are fresh; only the README's refresh failed, so the
+        // page strip stays down — the stale README keeps its cached value
+        // until a later successful refresh (review I2).
+        await tester.pump();
+        expect(find.byType(CacheFreshnessBar), findsNothing);
+        expect(
+          find.text(
+            failure == FailureKind.network
+                ? l10n.cannotConnect
+                : l10n.cacheRateLimited,
+          ),
+          findsNothing,
         );
         _counts(fixture, branches: 2);
         // Dispose the cooldown timer before the binding checks pending timers.

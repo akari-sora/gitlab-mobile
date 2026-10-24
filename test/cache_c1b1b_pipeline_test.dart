@@ -9,6 +9,8 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
+import 'package:gitlab_mobile/shared/cache_freshness.dart';
 
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
@@ -174,6 +176,17 @@ void main() {
         expect(state.backgroundRetryAt != null, failure.$4);
         expect(state.revalidating, isFalse);
         expect(fixture.pipelineReads, 2);
+        // Kept metadata says the refresh failed; withdrawn metadata has none.
+        final strip = find.descendant(
+          of: find.byType(PipelinePage),
+          matching: find.byType(CacheFreshnessBar),
+        );
+        expect(strip, failure.$2 ? findsNothing : findsWidgets);
+        if (failure.$3 == FailureKind.rateLimited) {
+          expect(find.text(l10n.cacheRateLimited), findsWidgets);
+        } else if (!failure.$2) {
+          expect(find.text(l10n.cacheRefreshFailed), findsWidgets);
+        }
         // Dispose the cooldown timer before the binding checks pending timers.
         fixture.close();
       },
@@ -201,6 +214,14 @@ void main() {
       expect(state.backgroundFailure, FailureKind.network);
       expect(state.revalidating, isFalse);
       expect(fixture.pipelineReads, 2);
+      // The header data is old and the refresh could not connect: say so,
+      // with a refresh that reads fresh.
+      expect(find.text(l10n.cannotConnect), findsWidgets);
+      fixture.pipelineNetworkFailure = false;
+      await tester.tap(find.widgetWithText(TextButton, l10n.refreshAction).first);
+      await settleWorkspace(tester);
+      expect(fixture.pipelineReads, 3);
+      expect(state.backgroundFailure, isNull);
     },
   );
 

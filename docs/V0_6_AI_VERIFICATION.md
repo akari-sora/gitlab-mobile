@@ -1999,3 +1999,27 @@ Its Minors go to the follow-up issue:
 - coverage for the unknown-outcome sentence and the m1 scenario;
 - a card offering "edit" for a top-level `name` that the coordinator
   cannot edit.
+
+## Issue #12 follow-ups — review round 1 fixes (2026-10-24)
+
+Round 1 (Opus and claude2, REQUEST CHANGES) found three items; all three are
+fixed in one commit:
+
+- **C1/I1 frozen-tools fail-stop.** A write tool the segment never offered
+  returned `unavailable` without stopping the turn's later writes (§7.5).
+  The runner now marks `previousWriteIncomplete` for it too. A regression
+  test sends [unavailable write, offered write] and expects the second to
+  stop with `previousWriteIncomplete` while the gate never runs.
+- **`duplicateOfSettledWrite`.** An identical proposal to a write the same
+  run already settled (succeeded or uncertain) is now confirmed, resumed or
+  not (§15.8's literal wording); writes from other runs or conversations
+  stay out of scope until runs resume (MR6c). Uploads keep their own
+  cross-run confirmation.
+- **Item (f), create-type re-read — recorded deviation.** The re-read
+  answers `unknown / notComparable` for every create type. It does NOT
+  match by content and server time as plan §7.6 describes and the original
+  commit message claimed. The journal stores a payload digest but no server
+  timestamp, and a digest cannot be recomputed reliably from the item the
+  server returns. Observations never unlock isolation, so the behaviour is
+  conservative; implementing §7.6's `Date`-header window plus a name/digest
+  match is a follow-up, not done here.

@@ -9,7 +9,7 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
     modelVisible: true,
-    arguments: {'projectId': _projectId, 'packageId': _projectId},
+    arguments: {'projectId': _projectId, 'packageId': _packageId},
     httpCap: 19, // 2 * (2 * (fresh 1 + prepare 3) + readback 1) + 1.
     readback: true,
   ),
@@ -20,8 +20,8 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     modelVisible: true,
     arguments: {
       'projectId': _projectId,
-      'packageId': _projectId,
-      'fileId': _projectId,
+      'packageId': _packageId,
+      'fileId': _packageFileId,
     },
     httpCap: 35, // 2 * (2 * (fresh 1 + prepare 6) + readback 3) + 1.
     readback: true,
@@ -31,7 +31,10 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.project,
     modelVisible: true,
-    arguments: {'projectId': _projectId, 'repositoryId': _projectId},
+    arguments: {
+      'projectId': _projectId,
+      'repositoryId': _containerRepositoryId,
+    },
     httpCap: 23, // 2 * (2 * (fresh 1 + prepare 4) + readback 1) + 1.
     readback: true,
   ),
@@ -42,7 +45,7 @@ const List<AiCapability> aiProjectRows = <AiCapability>[
     modelVisible: true,
     arguments: {
       'projectId': _projectId,
-      'repositoryId': _projectId,
+      'repositoryId': _containerRepositoryId,
       'tag': _requiredPathOrRef,
     },
     httpCap: 27, // 2 * (2 * (fresh 1 + prepare 5) + readback 1) + 1.

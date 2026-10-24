@@ -32,6 +32,7 @@ class AiWriteSettingsSection extends StatelessWidget {
     super.key,
     required this.record,
     required this.enabled,
+    required this.ceilingEnabled,
     required this.onCeiling,
     required this.onStartingLevel,
     required this.onAttribution,
@@ -39,6 +40,7 @@ class AiWriteSettingsSection extends StatelessWidget {
 
   final AiAccountRecord record;
   final bool enabled;
+  final bool ceilingEnabled;
   final ValueChanged<AiAutonomyLevel> onCeiling;
   final ValueChanged<AiAutonomyLevel> onStartingLevel;
   final ValueChanged<bool> onAttribution;
@@ -56,6 +58,12 @@ class AiWriteSettingsSection extends StatelessWidget {
             level != AiAutonomyLevel.conversationGrant)
           level,
     ];
+    final ceilings = ceilingEnabled && !enabled
+        ? [
+            for (final level in AiAutonomyLevel.values)
+              if (level.index <= record.ceiling.index) level,
+          ]
+        : AiAutonomyLevel.values;
     return HubSection(
       title: l10n.aiWriteSettingsTitle,
       children: [
@@ -65,7 +73,7 @@ class AiWriteSettingsSection extends StatelessWidget {
         ),
         ListTile(
           key: const ValueKey('ai-write-ceiling'),
-          enabled: enabled,
+          enabled: ceilingEnabled,
           leading: const Icon(Icons.vertical_align_top),
           title: Text(l10n.aiWriteCeiling),
           subtitle: Text(
@@ -78,7 +86,7 @@ class AiWriteSettingsSection extends StatelessWidget {
               context,
               title: l10n.aiWriteCeiling,
               current: record.ceiling,
-              options: AiAutonomyLevel.values,
+              options: ceilings,
             );
             if (picked != null && picked != record.ceiling) onCeiling(picked);
           },

@@ -600,6 +600,17 @@ final class AiRunner {
                 arguments: _displayArguments(tc.arguments),
               ),
             );
+            final offeredInSegment = _segmentTools.any(
+              (tool) => tool.name == tc.name,
+            );
+            if (!offeredInSegment) {
+              // A write tool the segment never offered was still proposed: the
+              // turn's writes stop, exactly as any other refused write (§7.5).
+              previousWriteIncomplete |= writeCoordinator?.handles(tc.name) ?? false;
+              results.add(synthetic(tc, 'unavailable'));
+              _notifyToolResult(results.last);
+              continue;
+            }
             final handlesWrite = writeCoordinator?.handles(tc.name) ?? false;
             if (handlesWrite && previousWriteIncomplete) {
               results.add(synthetic(tc, 'previousWriteIncomplete'));
@@ -717,6 +728,7 @@ final class AiRunner {
               notExecuted: toolResult.notExecuted,
               readConfidential: successfulRead && toolResult.readConfidential,
               readInternal: successfulRead && toolResult.readInternal,
+              readVisibility: successfulRead ? toolResult.readVisibility : null,
               uploadPlaceholders: toolResult.uploadPlaceholders,
             );
             results.add(safeResult);
@@ -860,6 +872,7 @@ final class AiRunner {
       ];
     }
     _segment = next;
+    writeCoordinator?.beginSegment();
     _verifiedSecrets = null;
     _verifiedLength = -1;
     _segmentToolFingerprint = _toolFingerprint(_nextTools);

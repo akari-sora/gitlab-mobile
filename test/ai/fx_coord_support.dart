@@ -143,7 +143,9 @@ final class CoordHarness {
   /// The fresh read (1-based) that waits on [freshnessEntered]; null: any.
   int? barrierRead;
 
-  PolicyAiWriteCoordinator newCoordinator() => PolicyAiWriteCoordinator(
+  PolicyAiWriteCoordinator newCoordinator({
+    String conversationId = 'fx-coord-conversation',
+  }) => PolicyAiWriteCoordinator(
     snapshot: () => AiWritePolicySnapshot(
       scope: coordScope,
       level: level,
@@ -157,7 +159,7 @@ final class CoordHarness {
     ),
     createPort: () => GitLabAiWritePort(api, accountKey: coordAccount),
     journal: journal,
-    conversationId: 'fx-coord-conversation',
+    conversationId: conversationId,
     budget: () => budget,
     readFreshness: (_) async {
       freshnessReads++;

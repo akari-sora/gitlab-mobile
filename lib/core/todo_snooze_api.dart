@@ -142,13 +142,15 @@ extension TodoSnoozeApi on GitLabApi {
       'variables': {'id': 'gid://gitlab/Todo/$id'},
     });
     final todo = _todoMutationTodo(response.bytes, 'todoUnSnooze', id);
-    if (todo['snoozedUntil'] != null) throw const ApiFailure(FailureKind.invalidResponse);
+    if (!todo.containsKey('snoozedUntil') || todo['snoozedUntil'] != null) {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
   }
 
   /// A complete, actor-bound pending ownership set, including expired snoozes.
   /// `items` contains only supported project targets. IDs in `unsupportedIds`
   /// are known but must be refused as todoUnsupportedTarget; an ID absent from
-  /// both collections is foreign to this complete set (todoForeign).
+  /// both collections is not found in this complete set (todoNotFound).
   Future<({String actorId, List<Json> items, Set<int> unsupportedIds})> pendingTodosForSnooze({
     int maxPages = 4,
   }) => _todosForSnoozeOwnership(_pendingTodosForSnoozeQuery, maxPages);

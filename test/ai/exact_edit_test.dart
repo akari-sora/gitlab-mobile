@@ -66,7 +66,20 @@ void main() {
         AiExactEdit('second\n', ''), AiExactEdit('third', 'third'),
       ]);
       expect(result.finalText, 'first\nthird\n');
-      expect(result.scan.newTexts, ['', 'third']);
+      expect(result.scan.newTexts, ['']);
+    });
+
+    test('mixed no-op markers and secrets are not new replacement text', () {
+      for (final existing in ['[REDACTED]', _token, 'opaqueCredential']) {
+        final result = _apply('$existing\nold\n', [
+          AiExactEdit(existing, existing),
+          const AiExactEdit('old', 'new'),
+        ]);
+        expect(result.finalText, '$existing\nnew\n');
+        expect(result.scan.newTexts, ['new']);
+        expect(_check(result.scan, secrets: {'opaqueCredential'}).blockCode,
+            isNull, reason: existing);
+      }
     });
 
     test('multiline strings, decorators, slashes and Unicode keep exact bytes', () {

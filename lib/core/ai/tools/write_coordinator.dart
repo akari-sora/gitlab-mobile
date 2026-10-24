@@ -222,6 +222,7 @@ final class AiWriteOutcome {
 
 abstract interface class AiWriteCoordinator {
   bool handles(String name);
+  void beginSegment();
   void beginRun(String userUtterance);
   void beginTurn();
   Future<AiWriteOutcome> execute(
@@ -350,20 +351,6 @@ typedef AiWriteFragmentCheckerWithCount =
       required text.AiVisibilityContext visibility,
     });
 
-/// Until packet 5 adds the journal member, keep its key associated with the
-/// injected journal, once per process. The real member takes precedence when
-/// integrated; neither path persists the key or puts it in model arguments.
-final _scheduleKeys = Expando<List<int>>();
-extension AiWriteJournalScheduleKey on AiWriteJournal {
-  List<int> get scheduleHmacKey => _scheduleKeys[this] ??=
-      _newScheduleKey();
-}
-
-List<int> _newScheduleKey() {
-  final random = Random.secure();
-  return List<int>.unmodifiable(List.generate(32, (_) => random.nextInt(256)));
-}
-
 /// REST write orchestration. Waiting approvals stay in memory. The only disk
 /// writes are to the existing journal, after confirmation and before dispatch.
 final class PolicyAiWriteCoordinator
@@ -420,6 +407,7 @@ final class PolicyAiWriteCoordinator
   final DateTime Function() _now;
   final int Function(String)? _httpCost;
   final Set<port.AiCreatedRef> _segmentCreated = {};
+  int _segmentGeneration = 0;
   final Map<String, _PendingWrite> _pending = {};
   final Map<String, AiWriteOutcome> _results = {};
   final List<AiWriteProposal> _settledEdits = [];
@@ -562,12 +550,28 @@ final class PolicyAiWriteCoordinator
   }
 
   @override
+  void beginSegment() {
+    _segmentGeneration++;
+    _segmentCreated.clear();
+  }
+
+  @override
   void beginRun(String userUtterance) {
     stop('superseded');
     _pending.removeWhere((_, pending) => pending.done.isCompleted);
     _results.clear();
     _runId = _nonce();
     _userUtterance = userUtterance;
+    _stopped = null;
+    _previousIncomplete = false;
+    _uploadedThisBatch.clear();
+  }
+
+  /// Explicit continuation of this process-local run. New user sends and
+  /// history/projection rebuilds use [beginRun] instead. Recorded call ids stay
+  /// paired with their original outcomes; pending approvals are never revived.
+  void resumeRun() {
+    stop('superseded');
     _stopped = null;
     _previousIncomplete = false;
     _uploadedThisBatch.clear();
@@ -643,6 +647,7 @@ final class PolicyAiWriteCoordinator
     }
     final policy = snapshot();
     final runId = _runId;
+    final segmentGeneration = _segmentGeneration;
     final proposalEpoch = journal.proposalEpoch(policy.scope.accountKey);
     final initialFailure = _previousIncomplete
         ? 'previousWriteIncomplete'
@@ -676,7 +681,8 @@ final class PolicyAiWriteCoordinator
         policy,
         const AiWriteFreshness(),
       );
-      if (initialTier.decision == AiGateDecision.deny && !ownerFromPreRead) {
+      if (initialTier.decision == AiGateDecision.deny &&
+          !(ownerFromPreRead && initialTier.scopeDenied)) {
         throw const _WriteBlocked('policyDenied');
       }
       if (allowance < 1 ||
@@ -725,16 +731,26 @@ final class PolicyAiWriteCoordinator
       if (journal.requiresConfirmation(policy.scope.accountKey, keys)) {
         extra.add(AiFixedConfirmReason.confirmMarkAfterManualRelease);
       }
-      if (journal
+      final settled = journal
           .entries(policy.scope.accountKey)
-          .any(
-            (entry) =>
-                entry.operationId == call.name &&
-                entry.state != AiJournalState.notExecuted &&
-                entry.state != AiJournalState.prepared &&
-                entry.writeKeys.any((key) => prepared.writeKeys.contains(key)),
-          )) {
+          .where((entry) => entry.operationId == call.name &&
+              entry.writeKeys.length == prepared.writeKeys.length &&
+              entry.writeKeys.containsAll(prepared.writeKeys));
+      // §15.8: an identical proposal to a write this same run already settled
+      // as succeeded or uncertain is always confirmed, resumed or not. Writes
+      // from other runs or conversations only matter once runs resume (MR6c).
+      if (settled.any((entry) =>
+          entry.runId == runId &&
+          entry.conversationId == conversationId &&
+          (entry.state == AiJournalState.succeeded ||
+              entry.state == AiJournalState.writeUncertain))) {
         extra.add(AiFixedConfirmReason.duplicateOfSettledWrite);
+      }
+      // §3.1 separately requires successful identical uploads to be confirmed
+      // across runs and conversations, unlike §7.7's resume-only rule.
+      if (call.name == 'upload_attachment' && settled.any((entry) =>
+          entry.state == AiJournalState.succeeded)) {
+        extra.add(AiFixedConfirmReason.duplicateUpload);
       }
       final tier = _tier(
         capability,
@@ -798,6 +814,7 @@ final class PolicyAiWriteCoordinator
       _pending[id] = _PendingWrite(
         call,
         runId,
+        segmentGeneration,
         proposal,
         policy,
         rawRequest,
@@ -1214,7 +1231,8 @@ final class PolicyAiWriteCoordinator
       );
       graphTerminalAttempted = false;
       graphTerminalCompleted = graph;
-      if (settled.state == AiJournalState.succeeded) {
+      if (settled.state == AiJournalState.succeeded &&
+          pending.segmentGeneration == _segmentGeneration) {
         final created = prepared.createdOnSuccess;
         if (created != null && created.accountKey == pending.policy.scope.accountKey) {
           _segmentCreated.add(created);
@@ -1836,7 +1854,8 @@ final class PolicyAiWriteCoordinator
     );
     final reasons = <AiFixedConfirmReason>[];
     int? preexistingSecretHits;
-    if (hasFragments || scan.newTexts.isNotEmpty || scan.windows.isNotEmpty) {
+    if (hasFragments || scan.newTexts.isNotEmpty || scan.windows.isNotEmpty ||
+        scan.files.isNotEmpty) {
       final countedChecker = checkFragmentsWithCount;
       final checker = checkFragments;
       if (countedChecker != null) {
@@ -1860,6 +1879,7 @@ final class PolicyAiWriteCoordinator
         modelText: body,
         field: null,
         aiAttribution: false,
+        keepNotifications: true,
         placeholders: placeholders,
         knownSecrets: knownSecrets(),
         visibility: visibility,
@@ -1922,6 +1942,7 @@ final class _PendingWrite {
   _PendingWrite(
     this.call,
     this.runId,
+    this.segmentGeneration,
     this.proposal,
     this.policy,
     this.request,
@@ -1934,6 +1955,7 @@ final class _PendingWrite {
   );
   final AiToolCall call;
   final String runId;
+  final int segmentGeneration;
   final AiWriteProposal proposal;
   final AiWritePolicySnapshot policy;
   port.AiWriteRequest request;

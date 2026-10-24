@@ -8,6 +8,7 @@ import '../../core/models.dart';
 import '../../core/work_item_types.dart';
 import '../../shared/external_link.dart';
 import '../../shared/resource_share.dart';
+import '../../shared/cache_freshness.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
@@ -554,6 +555,11 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
   bool get revalidating => _revalidating;
   FailureKind? get backgroundFailure => _backgroundFailure;
   DateTime? get backgroundRetryAt => _backgroundRetryAt;
+
+  // Metadata shown from an earlier read: say so while it is refreshed in the
+  // background or after that refresh failed. Fresh data gets no strip.
+  DateTime? get _freshnessAt => _data == null || _loading || _error != null ||
+      !(_stale || _revalidating || _backgroundFailure != null) ? null : fetchedAt;
   bool get mr => widget.resource == 'merge_requests';
   ProjectWorkItemType get type => mr ? ProjectWorkItemType.issue : widget.type;
   List<String> get path => ['projects', '${widget.project.id}', widget.resource, '${widget.iid}'];
@@ -1945,6 +1951,17 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                   ),
                 ),
                 if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
+                if (_freshnessAt case final fetchedAt?)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: CacheFreshnessBar(
+                      fetchedAt: fetchedAt,
+                      refreshing: _revalidating,
+                      failure: _backgroundFailure,
+                      retryAt: _backgroundRetryAt,
+                      onRetry: () => unawaited(_load(fresh: true)),
+                    ),
+                  ),
                 TabBar(
                   controller: _tabs,
                   indicatorSize: TabBarIndicatorSize.tab,

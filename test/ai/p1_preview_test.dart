@@ -63,12 +63,14 @@ void main() {
       ),
     ];
     final serverClassA = <String>['draft'];
+    final files = <AiTextScan>[AiTextScan(original: 'file source')];
     final scan = AiTextScan(
       original: 'context\nold\nend',
       newTexts: newTexts,
       windows: windows,
       markdown: true,
       serverClassA: serverClassA,
+      files: files,
     );
     lines.clear();
     paths.clear();
@@ -79,6 +81,7 @@ void main() {
     newTexts.clear();
     windows.clear();
     serverClassA.clear();
+    files.clear();
 
     expect(diff.lines.map((line) => line.text), ['old', 'new']);
     expect(diff.lines.first.oldLine, 4);
@@ -96,6 +99,7 @@ void main() {
     expect(scan.windows.single.before, scan.original);
     expect(scan.windows.single.after, 'context\nnew\nend');
     expect(scan.serverClassA, ['draft']);
+    expect(scan.files.single.original, 'file source');
     for (final list in <List<Object?>>[
       diff.lines,
       merge.ciPaths,
@@ -107,6 +111,7 @@ void main() {
       scan.newTexts,
       scan.windows,
       scan.serverClassA,
+      scan.files,
     ]) {
       expect(list.clear, throwsUnsupportedError);
     }

@@ -489,6 +489,112 @@ void main() {
   );
 
   test(
+    'per-note reply targets preserve exact anchors across continuation pages',
+    () async {
+      const firstNoteId = 'gid://gitlab/Note/400';
+      const continuedNoteId = 'gid://gitlab/Note/402';
+      var call = 0;
+      final adapter = FakeAdapter((request) {
+        call++;
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (call == 1) {
+          return jsonResponse(
+            _activityEnvelope(
+              widgets: [
+                _notesWidget(
+                  nodes: [
+                    _discussion(
+                      nodes: [
+                        _note(id: firstNoteId),
+                        _note(),
+                      ],
+                      notesNext: true,
+                      notesCursor: 'notes-a',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+        if (call == 2) {
+          expect(query, contains('query MobileWorkItemDiscussionNotes'));
+          expect(body['variables'], {
+            'workItemId': _workItemId,
+            'anchorNoteId': _noteId,
+            'after': 'notes-a',
+          });
+          return jsonResponse({
+            'data': {
+              'workItem': _identity(),
+              'anchor': {
+                'id': _noteId,
+                'project': {'id': _projectId, 'fullPath': _path},
+                'discussion': _discussion(nodes: [_note(id: continuedNoteId)]),
+              },
+            },
+          });
+        }
+        if (call == 3) {
+          expect(
+            query,
+            startsWith('query MobileWorkItemActivityReplyPreflight'),
+          );
+          expect(body['variables'], {
+            'workItemId': _workItemId,
+            'anchorNoteId': continuedNoteId,
+          });
+          return jsonResponse(
+            _writeAccess(anchor: _writeNote(id: continuedNoteId)),
+          );
+        }
+        if (call == 4) {
+          expect(_isMutation(request), isTrue);
+          return jsonResponse(
+            _writeAck(note: _writeNote(body: 'Continuation reply')),
+          );
+        }
+        return jsonResponse(
+          _writeReadback(note: _writeNote(body: 'Continuation reply')),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      final first = await api.workItemActivity(_expected);
+      expect(
+        first.replyTargetsByNote.keys,
+        unorderedEquals([firstNoteId, _noteId]),
+      );
+      expect(first.replyTargetsByNote[firstNoteId]!.anchorNoteId, firstNoteId);
+      expect(first.replyTargetsByNote[_noteId]!.anchorNoteId, _noteId);
+      expect(
+        first.replyTargetsByDiscussion[_discussionId]!.anchorNoteId,
+        _noteId,
+      );
+
+      final continued = await api.workItemDiscussionNotesNext(
+        first.nextNotesByDiscussion[_discussionId]!,
+      );
+      expect(
+        continued.replyTargetsByNote.keys,
+        unorderedEquals([continuedNoteId]),
+      );
+      final continuedTarget = continued.replyTargetsByNote[continuedNoteId]!;
+      expect(continuedTarget.anchorNoteId, continuedNoteId);
+
+      final created = await api.createWorkItemActivityReply(
+        continuedTarget,
+        'Continuation reply',
+      );
+      expect(created.note.body, 'Continuation reply');
+      expect(adapter.requests.where(_isMutation), hasLength(1));
+      expect(call, 5);
+    },
+  );
+
+  test(
     'nested continuation rejects wrong anchor scope and cursor history',
     () async {
       Future<WorkItemDiscussionNotesContinuation> tokenFor(
@@ -1187,12 +1293,16 @@ void main() {
       final access = await api.workItemActivityWriteAccess(_expected);
       expect(access.canCreateNote, isTrue);
       expect(access.discussionLocked, isFalse);
+      expect(access.actorId, _authorId);
+      expect(access.controlsSupported, isNull);
       expect(access.commentTarget, isNotNull);
 
       allowed = false;
       final denied = await api.workItemActivityWriteAccess(_expected);
       expect(denied.canCreateNote, isFalse);
       expect(denied.discussionLocked, isFalse);
+      expect(denied.actorId, _authorId);
+      expect(denied.controlsSupported, isNull);
       expect(denied.commentTarget, isNull);
 
       allowed = true;
@@ -1200,6 +1310,8 @@ void main() {
       final lockedAccess = await api.workItemActivityWriteAccess(_expected);
       expect(lockedAccess.canCreateNote, isTrue);
       expect(lockedAccess.discussionLocked, isTrue);
+      expect(lockedAccess.actorId, _authorId);
+      expect(lockedAccess.controlsSupported, isNull);
       expect(lockedAccess.commentTarget, isNull);
 
       final anonymous = testApi(
@@ -1213,6 +1325,8 @@ void main() {
       );
       expect(anonymousAccess.canCreateNote, isFalse);
       expect(anonymousAccess.discussionLocked, isFalse);
+      expect(anonymousAccess.actorId, isNull);
+      expect(anonymousAccess.controlsSupported, isNull);
       expect(anonymousAccess.commentTarget, isNull);
       anonymous.close();
 
@@ -1231,8 +1345,84 @@ void main() {
           .workItemActivityWriteAccess(_expected);
       expect(signedOutAccess.canCreateNote, isFalse);
       expect(signedOutAccess.discussionLocked, isFalse);
+      expect(signedOutAccess.actorId, isNull);
+      expect(signedOutAccess.controlsSupported, isNull);
       expect(signedOutAccess.commentTarget, isNull);
       anonymousServerAllowed.close();
+    },
+  );
+
+  test(
+    'required controls probe is in access read and unsupported state is cached',
+    () async {
+      var calls = 0;
+      final adapter = FakeAdapter((request) {
+        calls++;
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (calls == 1) {
+          expect(query, contains(r'$filter: NotesFilterType!'));
+          expect(query, contains(r'$sort: WorkItemDiscussionsSort!'));
+          expect(
+            query,
+            contains(r'discussions(first: 1, filter: $filter, sort: $sort)'),
+          );
+          expect(body['variables'], {
+            'id': _workItemId,
+            'filter': 'ALL_NOTES',
+            'sort': 'CREATED_ASC',
+          });
+          return jsonResponse(_writeAccess());
+        }
+        if (calls == 2) {
+          expect(query, contains(r'discussions(first: 1'));
+          return jsonResponse(
+            _schemaError(
+              'argumentNotAccepted',
+              "Field 'discussions' doesn't accept argument 'filter'",
+              details: const {
+                'name': 'discussions',
+                'typeName': 'Field',
+                'argumentName': 'filter',
+              },
+            ),
+          );
+        }
+        expect(query, isNot(contains('NotesFilterType')));
+        expect(body['variables'], {'id': _workItemId});
+        return jsonResponse(_writeAccess());
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      final supported = await api.workItemActivityWriteAccess(
+        _expected,
+        requireControlsSupported: true,
+      );
+      expect(supported.controlsSupported, isTrue);
+      expect(supported.commentTarget, isNotNull);
+
+      final detected = await api.workItemActivityWriteAccess(
+        _expected,
+        requireControlsSupported: true,
+      );
+      expect(detected.controlsSupported, isFalse);
+      expect(detected.canCreateNote, isFalse);
+      expect(detected.commentTarget, isNull);
+
+      final cached = await api.workItemActivityWriteAccess(
+        _expected,
+        requireControlsSupported: true,
+      );
+      expect(cached.controlsSupported, isFalse);
+      expect(cached.commentTarget, isNull);
+      expect(calls, 2);
+
+      final defaultAccess = await api.workItemActivityWriteAccess(_expected);
+      expect(defaultAccess.controlsSupported, isFalse);
+      expect(defaultAccess.canCreateNote, isTrue);
+      expect(defaultAccess.commentTarget, isNotNull);
+      expect(calls, 3);
     },
   );
 
@@ -1277,6 +1467,7 @@ void main() {
       final created = await api.createWorkItemActivityComment(
         access.commentTarget!,
         '  Hello **mobile**  ',
+        expectedActorId: _authorId,
       );
 
       expect(created.note.body, 'Hello **mobile**');
@@ -1377,6 +1568,7 @@ void main() {
       final created = await api.createWorkItemActivityReply(
         target!,
         'Group reply',
+        expectedActorId: _authorId,
       );
       expect(created.replyId, _replyId);
       expect(adapter.requests.where(_isMutation), hasLength(1));
@@ -1541,6 +1733,227 @@ void main() {
         expect(adapter.requests.where(_isMutation), isEmpty);
         api.close();
       }
+    },
+  );
+
+  test(
+    'supplied actor mismatch rejects comments and replies before dispatch hooks',
+    () async {
+      for (final reply in [false, true]) {
+        var beforeMutationCalled = false;
+        var mayStartCalled = false;
+        final adapter = FakeAdapter((request) {
+          final query = (request.data as Map)['query'] as String;
+          if (query.contains('MobileWorkItemActivity(')) {
+            return jsonResponse(
+              _activityEnvelope(
+                widgets: [
+                  _notesWidget(
+                    nodes: [
+                      _discussion(nodes: [_note()]),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }
+          if (query.startsWith('query MobileWorkItemActivityReplyPreflight')) {
+            return jsonResponse(_writeAccess(anchor: _writeNote(id: _noteId)));
+          }
+          expect(query, startsWith('query MobileWorkItemActivityWriteAccess'));
+          return jsonResponse(_writeAccess());
+        });
+        final api = testApi(adapter);
+        final Future<WorkItemActivityCreatedNote> operation;
+        if (reply) {
+          final page = await api.workItemActivity(_expected);
+          operation = api.createWorkItemActivityReply(
+            page.replyTargetsByNote[_noteId]!,
+            'Reply',
+            expectedActorId: 'gid://gitlab/User/7',
+            beforeMutation: () async => beforeMutationCalled = true,
+            mayStart: () {
+              mayStartCalled = true;
+              return true;
+            },
+          );
+        } else {
+          final access = await api.workItemActivityWriteAccess(_expected);
+          expect(access.actorId, _authorId);
+          operation = api.createWorkItemActivityComment(
+            access.commentTarget!,
+            'Comment',
+            expectedActorId: 'gid://gitlab/User/7',
+            beforeMutation: () async => beforeMutationCalled = true,
+            mayStart: () {
+              mayStartCalled = true;
+              return true;
+            },
+          );
+        }
+        await expectLater(operation, throwsA(_failure(FailureKind.cancelled)));
+        expect(beforeMutationCalled, isFalse);
+        expect(mayStartCalled, isFalse);
+        expect(adapter.requests.where(_isMutation), isEmpty);
+        api.close();
+      }
+    },
+  );
+
+  test(
+    'required-controls targets reject detected and cached unsupported preflight',
+    () async {
+      var call = 0;
+      var beforeMutationCalled = false;
+      var mayStartCalled = false;
+      final adapter = FakeAdapter((request) {
+        call++;
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (call == 1) {
+          return jsonResponse(
+            _activityEnvelope(
+              widgets: [
+                _notesWidget(
+                  nodes: [
+                    _discussion(nodes: [_note()]),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+        if (call == 2) {
+          expect(query, startsWith('query MobileWorkItemActivityWriteAccess'));
+          expect(query, contains(r'discussions(first: 1'));
+          return jsonResponse(_writeAccess());
+        }
+        expect(call, 3);
+        expect(query, startsWith('query MobileWorkItemActivityWriteAccess'));
+        expect(query, contains(r'discussions(first: 1'));
+        return jsonResponse(
+          _schemaError(
+            'argumentNotAccepted',
+            "Field 'discussions' doesn't accept argument 'sort'",
+            details: const {
+              'name': 'discussions',
+              'typeName': 'Field',
+              'argumentName': 'sort',
+            },
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final page = await api.workItemActivity(_expected);
+      final access = await api.workItemActivityWriteAccess(
+        _expected,
+        requireControlsSupported: true,
+      );
+
+      await expectLater(
+        api.createWorkItemActivityComment(
+          access.commentTarget!,
+          'Comment',
+          beforeMutation: () async => beforeMutationCalled = true,
+          mayStart: () {
+            mayStartCalled = true;
+            return true;
+          },
+        ),
+        throwsA(_failure(FailureKind.unsupported)),
+      );
+      await expectLater(
+        api.createWorkItemActivityReply(
+          page.replyTargetsByNote[_noteId]!,
+          'Reply',
+          requireControlsSupported: true,
+          beforeMutation: () async => beforeMutationCalled = true,
+          mayStart: () {
+            mayStartCalled = true;
+            return true;
+          },
+        ),
+        throwsA(_failure(FailureKind.unsupported)),
+      );
+      expect(beforeMutationCalled, isFalse);
+      expect(mayStartCalled, isFalse);
+      expect(adapter.requests.where(_isMutation), isEmpty);
+      expect(call, 3);
+    },
+  );
+
+  test(
+    'reply controls probe rejects fresh unsupported schema before hooks',
+    () async {
+      var call = 0;
+      var beforeMutationCalled = false;
+      var mayStartCalled = false;
+      final adapter = FakeAdapter((request) {
+        call++;
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (call == 1) {
+          return jsonResponse(
+            _activityEnvelope(
+              widgets: [
+                _notesWidget(
+                  nodes: [
+                    _discussion(nodes: [_note()]),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+        expect(call, 2);
+        expect(query, startsWith('query MobileWorkItemActivityReplyPreflight'));
+        expect(query, contains(r'$filter: NotesFilterType!'));
+        expect(query, contains(r'$sort: WorkItemDiscussionsSort!'));
+        expect(
+          query,
+          contains(r'discussions(first: 1, filter: $filter, sort: $sort)'),
+        );
+        expect(body['variables'], {
+          'workItemId': _workItemId,
+          'anchorNoteId': _noteId,
+          'filter': 'ALL_NOTES',
+          'sort': 'CREATED_ASC',
+        });
+        return jsonResponse(
+          _schemaError(
+            'argumentNotAccepted',
+            "Field 'discussions' doesn't accept argument 'filter'",
+            details: const {
+              'name': 'discussions',
+              'typeName': 'Field',
+              'argumentName': 'filter',
+            },
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final page = await api.workItemActivity(_expected);
+
+      await expectLater(
+        api.createWorkItemActivityReply(
+          page.replyTargetsByNote[_noteId]!,
+          'Reply',
+          expectedActorId: _authorId,
+          requireControlsSupported: true,
+          beforeMutation: () async => beforeMutationCalled = true,
+          mayStart: () {
+            mayStartCalled = true;
+            return true;
+          },
+        ),
+        throwsA(_failure(FailureKind.unsupported)),
+      );
+      expect(beforeMutationCalled, isFalse);
+      expect(mayStartCalled, isFalse);
+      expect(adapter.requests.where(_isMutation), isEmpty);
+      expect(call, 2);
     },
   );
 

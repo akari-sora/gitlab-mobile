@@ -186,15 +186,20 @@ final class AiTextScan {
     this.original = '',
     this.markdown = false,
     List<String> serverClassA = const [],
+    List<AiTextScan> files = const [],
   }) : newTexts = List.unmodifiable(newTexts),
        windows = List.unmodifiable(windows),
-       serverClassA = List.unmodifiable(serverClassA);
+       serverClassA = List.unmodifiable(serverClassA),
+       files = List.unmodifiable(files);
 
   final List<String> newTexts;
   final List<AiTextWindow> windows;
   final String original;
   final bool markdown;
   final List<String> serverClassA;
+
+  /// Independent file sources and Markdown rules; never concatenate sources.
+  final List<AiTextScan> files;
 }
 
 /// App-owned successful-create identity; it is never decoded from model input.
