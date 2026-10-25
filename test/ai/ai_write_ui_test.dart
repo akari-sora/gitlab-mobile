@@ -832,12 +832,84 @@ void main() {
       'forbidden',
       'invisible',
       'unsupported',
+      // MR6b-3 graph writes.
+      'activityForbidden',
+      'activityLocked',
+      'activityUnverifiable',
+      'anchorMismatch',
+      'assigneeConflict',
+      'assigneeForbidden',
+      'assigneeInvalidSelection',
+      'assigneeRejected',
+      'datesConflict',
+      'datesForbidden',
+      'datesNotApplied',
+      'healthConflict',
+      'healthForbidden',
+      'healthUnsupported',
+      'incidentInvalidStatus',
+      'incidentRejected',
+      'intentUnclear',
+      'milestoneForbidden',
+      'milestoneRejected',
+      'notOwnNote',
+      'noteChanged',
+      'noteMissing',
+      'notificationConflict',
+      'notificationForbidden',
+      'reactionConflict',
+      'reactionForbidden',
+      'registryUnavailable',
+      'stateConflict',
+      'stateForbidden',
+      'stateNotApplied',
+      'statusInvalidCandidate',
+      'statusNotStarted',
+      'statusStaleFence',
+      'todoForeign',
+      'todoNotFound',
+      'todoUnsupportedTarget',
+      'todoUnverifiable',
+      'weightForbidden',
+      'weightRejected',
+      'workItemUnverifiable',
       'rateLimited',
       'network',
       'invalidResponse',
     ]) {
       expect(aiRefusalText(code), isNotNull, reason: code);
     }
+  });
+
+  test('graph write titles name their direction and values their words', () {
+    String title(String operationId, Map<String, String> fields) =>
+        aiProposalTitle(_proposal(operationId: operationId, fields: fields));
+    expect(
+      title('setWorkItemActivityNoteReaction', {'add': 'true'}),
+      l10n.aiOpAddAwardEmoji,
+    );
+    expect(
+      title('setWorkItemActivityNoteReaction', {'add': 'false'}),
+      l10n.aiOpRemoveAwardEmoji,
+    );
+    expect(
+      title('setWorkItemNotifications', {'enabled': 'true'}),
+      l10n.aiOpSubscribeOn,
+    );
+    expect(
+      title('updateWorkItemState', {'stateEvent': 'close'}),
+      l10n.closeWorkItem,
+    );
+    expect(
+      title('updateWorkItemState', {'stateEvent': 'reopen'}),
+      l10n.aiOpReopenWorkItem,
+    );
+    expect(aiFieldValue('healthStatus', 'onTrack'), l10n.healthOnTrack);
+    expect(aiFieldValue('healthStatus', 'none'), l10n.clearHealthStatus);
+    expect(aiFieldValue('mode', 'manual'), l10n.manualDates);
+    expect(aiFieldValue('mode', 'inherited'), l10n.datesRolledUpFromHierarchy);
+    expect(aiFieldValue('status', 'RESOLVED'), l10n.resolvedLabel);
+    expect(aiFieldValue('stateEvent', 'reopen'), l10n.reopen);
   });
 
   testWidgets('an edit the checks refused can be changed again', (
@@ -964,12 +1036,29 @@ void main() {
       for (final status in AiWriteResultStatus.values) {
         expect(aiWriteStatusLabel(status), isNotEmpty);
       }
-      for (final row in productionAiLedger.modelVisible) {
+      // Every ledger row, hidden or not: the MR6b-3 graph rows stay
+      // modelVisible false until P14, but their wording must exist first.
+      for (final row in ProductionAiLedger.rows) {
         expect(
           aiOperationLabel(row.operationId),
           isNot(l10n.aiOpUnknown),
           reason: row.operationId,
         );
+      }
+      for (final key in [
+        'assigneeUsernames',
+        'startDate',
+        'dueDate',
+        'healthStatus',
+        'weight',
+        'stateEvent',
+        'mode',
+        'clearStart',
+        'clearDue',
+        'targetType',
+        'until',
+      ]) {
+        expect(aiFieldLabel(key), isNot(key), reason: key);
       }
     });
   });
