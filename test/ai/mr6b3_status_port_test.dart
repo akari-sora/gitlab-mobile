@@ -445,7 +445,7 @@ Matcher _refused(String reason) => isA<writes.AiWriteRefused>().having(
 );
 
 void main() {
-  test('P3 row stays hidden with exact graph args, T2 and fixed cap 21', () {
+  test('P3 row is visible with exact graph args, T2 and fixed cap 21', () {
     final row = productionAiLedger.find(_operation)!;
     expect(row.boundary, AiWriteBoundary.graph);
     expect(row.baseTier, AiWriteTier.t2);
