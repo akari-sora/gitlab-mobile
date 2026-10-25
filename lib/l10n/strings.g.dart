@@ -8215,7 +8215,7 @@ final class AppStrings {
   /// AI 的指示沒有說清楚要做哪一種變更，所以沒有執行。
   String get aiRefusedIntentUnclear => language._messages[2706];
 
-  /// 已送出，但重新讀取後欄位還是原本的值，這次變更沒有生效。請重新讀取後再試一次。
+  /// 這次變更沒有生效，欄位仍是原本的值。請重新讀取後再試一次。
   String get aiRefusedNotApplied => language._messages[2707];
 
   /// 這個討論已鎖定，不能新增留言或回覆，所以沒有執行。
@@ -8266,72 +8266,78 @@ final class AppStrings {
   /// 清除到期日期
   String get aiFieldClearDue => language._messages[2723];
 
+  /// 清除里程碑
+  String get aiFieldClearMilestone => language._messages[2724];
+
+  /// 清除權重
+  String get aiFieldClearWeight => language._messages[2725];
+
   /// 目標類型
-  String get aiFieldTargetType => language._messages[2724];
+  String get aiFieldTargetType => language._messages[2726];
 
   /// 已合併
-  String get aiWriteMerged => language._messages[2725];
+  String get aiWriteMerged => language._messages[2727];
 
   /// 已排程自動合併
-  String get aiWriteAutoMergeScheduled => language._messages[2726];
+  String get aiWriteAutoMergeScheduled => language._messages[2728];
 
   /// GitLab 已接受合併，請查看最新狀態
-  String get aiWriteMergeAccepted => language._messages[2727];
+  String get aiWriteMergeAccepted => language._messages[2729];
 
   /// 已排程刪除
-  String get aiWriteDeletionScheduled => language._messages[2728];
+  String get aiWriteDeletionScheduled => language._messages[2730];
 
   /// 所屬
-  String get aiPreviewParent => language._messages[2729];
+  String get aiPreviewParent => language._messages[2731];
 
   /// 另外還有 {count} 個檔案會變更
-  String aiPreviewMoreFiles(Object? count) => _format(language, language._messages[2730], {'count': count});
+  String aiPreviewMoreFiles(Object? count) => _format(language, language._messages[2732], {'count': count});
 
   /// 你在訊息裡提到了這個名稱，但沒有用反引號（`）標出來，所以這筆寫入需要你確認。
-  String get aiConfirmTargetNamedNotMarked => language._messages[2731];
+  String get aiConfirmTargetNamedNotMarked => language._messages[2733];
 
   /// GitLab 可能會延後刪除，保留期內仍可還原。
-  String get aiPreviewDeletionMayBeDelayed => language._messages[2732];
+  String get aiPreviewDeletionMayBeDelayed => language._messages[2734];
 
   /// 最後更新：{time}
-  String cacheLastUpdated(Object? time) => _format(language, language._messages[2733], {'time': time});
+  String cacheLastUpdated(Object? time) => _format(language, language._messages[2735], {'time': time});
 
   /// 正在更新
-  String get cacheRefreshing => language._messages[2734];
+  String get cacheRefreshing => language._messages[2736];
 
   /// GitLab 正在限制請求
-  String get cacheRateLimited => language._messages[2735];
+  String get cacheRateLimited => language._messages[2737];
 
   /// 無法更新
-  String get cacheRefreshFailed => language._messages[2736];
+  String get cacheRefreshFailed => language._messages[2738];
 
   /// 約 {minutes} 分鐘後恢復
-  String cacheResumesInMinutes(Object? minutes) => _format(language, language._messages[2737], {'minutes': minutes});
+  String cacheResumesInMinutes(Object? minutes) => _format(language, language._messages[2739], {'minutes': minutes});
 
   /// {verb}{target}
-  String activityVerbTarget(Object? verb, Object? target) => _format(language, language._messages[2738], {'verb': verb, 'target': target});
+  String activityVerbTarget(Object? verb, Object? target) => _format(language, language._messages[2740], {'verb': verb, 'target': target});
 
   /// 30 秒更新
-  String get refreshEveryThirtySeconds => language._messages[2739];
+  String get refreshEveryThirtySeconds => language._messages[2741];
 
   /// 每分鐘更新
-  String get refreshEveryMinute => language._messages[2740];
+  String get refreshEveryMinute => language._messages[2742];
 
   /// GitLab 請求額度快用完了，暫停送出
-  String get aiSendPausedBudget => language._messages[2741];
+  String get aiSendPausedBudget => language._messages[2743];
 
   /// GitLab 正在限制請求，暫停送出
-  String get aiSendPausedRateLimited => language._messages[2742];
+  String get aiSendPausedRateLimited => language._messages[2744];
 
   /// 額度重設後恢復
-  String get aiSendResumesAfterReset => language._messages[2743];
+  String get aiSendResumesAfterReset => language._messages[2745];
 
   /// GitLab 請求額度暫時不足
-  String get aiGitLabBudgetTitle => language._messages[2744];
+  String get aiGitLabBudgetTitle => language._messages[2746];
 
   /// 這則訊息沒有送出。送出按鈕恢復後再送一次。
-  String get aiGitLabBudgetDetail => language._messages[2745];
+  String get aiGitLabBudgetDetail => language._messages[2747];
 
   /// {verb}{target} {ref}
-  String activityVerbTargetRef(Object? verb, Object? target, Object? ref) => _format(language, language._messages[2746], {'verb': verb, 'target': target, 'ref': ref});
+  String activityVerbTargetRef(Object? verb, Object? target, Object? ref) => _format(language, language._messages[2748], {'verb': verb, 'target': target, 'ref': ref});
 }

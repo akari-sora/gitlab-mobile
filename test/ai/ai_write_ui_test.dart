@@ -847,9 +847,11 @@ void main() {
       'healthConflict',
       'healthForbidden',
       'healthUnsupported',
+      'incidentConflict',
       'incidentInvalidStatus',
       'incidentRejected',
       'intentUnclear',
+      'milestoneConflict',
       'milestoneForbidden',
       'milestoneRejected',
       'notOwnNote',
@@ -870,6 +872,7 @@ void main() {
       'todoNotFound',
       'todoUnsupportedTarget',
       'todoUnverifiable',
+      'weightConflict',
       'weightForbidden',
       'weightRejected',
       'workItemUnverifiable',
@@ -910,6 +913,8 @@ void main() {
     expect(aiFieldValue('mode', 'inherited'), l10n.datesRolledUpFromHierarchy);
     expect(aiFieldValue('status', 'RESOLVED'), l10n.resolvedLabel);
     expect(aiFieldValue('stateEvent', 'reopen'), l10n.reopen);
+    expect(aiFieldValue('assigneeUsernames', '["alice","bob"]'), 'alice, bob');
+    expect(aiFieldValue('assigneeUsernames', 'not json'), 'not json');
   });
 
   testWidgets('an edit the checks refused can be changed again', (
@@ -1051,10 +1056,14 @@ void main() {
         'dueDate',
         'healthStatus',
         'weight',
+        'clearWeight',
         'stateEvent',
+        'status',
         'mode',
         'clearStart',
         'clearDue',
+        'clearMilestone',
+        'milestoneTitle',
         'targetType',
         'until',
       ]) {

@@ -233,6 +233,18 @@ String aiFieldValue(String key, String value) => switch ((key, value)) {
   ('status', 'TRIGGERED') => l10n.incidentTriggered,
   ('status', 'ACKNOWLEDGED') => l10n.incidentAcknowledged,
   ('status', 'RESOLVED') => l10n.resolvedLabel,
+  // The port hands the assignee set over as a JSON array; the editors show
+  // a plain list of names.
+  ('assigneeUsernames', _) => () {
+    try {
+      final names = (jsonDecode(value) as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList();
+      return names.isEmpty ? value : names.join(', ');
+    } on FormatException {
+      return value;
+    }
+  }(),
   ('variables', _) => _variableLines(value) ?? value,
   _ => value,
 };
@@ -325,10 +337,14 @@ String aiFieldLabel(String key) => switch (key) {
   'dueDate' => l10n.dueDate,
   'healthStatus' => l10n.healthStatus,
   'weight' => l10n.weight,
+  'clearWeight' => l10n.aiFieldClearWeight,
   'stateEvent' => l10n.status,
+  'status' => l10n.status,
   'mode' => l10n.aiFieldDateMode,
   'clearStart' => l10n.aiFieldClearStart,
   'clearDue' => l10n.aiFieldClearDue,
+  'clearMilestone' => l10n.aiFieldClearMilestone,
+  'milestoneTitle' => l10n.milestoneLabel,
   'targetType' => l10n.aiFieldTargetType,
   'until' => l10n.aiFieldSnoozeUntil,
   _ => key,
@@ -392,6 +408,9 @@ String? aiRefusalText(String code) => switch (code) {
   'reactionConflict' ||
   'notificationConflict' ||
   'statusStaleFence' ||
+  'incidentConflict' ||
+  'milestoneConflict' ||
+  'weightConflict' ||
   'conflict' => l10n.aiRefusedChanged,
   'refMissing' ||
   'releaseMissing' ||
@@ -456,8 +475,10 @@ String? aiRefusalText(String code) => switch (code) {
   'workItemUnverifiable' ||
   'todoUnverifiable' ||
   'registryUnavailable' => l10n.aiRefusedUnverifiable,
-  // MR6b-3: the mutation went out but the independent readback found the
-  // field still on its old value, so the write did not take effect.
+  // MR6b-3: the ports throw these both when the mutation never started
+  // (a gate failed, the request errored before acceptance) and when the
+  // server or the readback reports the old value, so the sentence claims
+  // only what is true on every path: nothing took effect.
   'datesNotApplied' ||
   'stateNotApplied' ||
   'statusNotStarted' ||
