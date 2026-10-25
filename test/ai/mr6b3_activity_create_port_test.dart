@@ -679,7 +679,7 @@ final class _Fixture {
 }
 
 void main() {
-  test('rows are hidden, closed and independently capped', () {
+  test('rows are visible, closed and independently capped', () {
     expect(aiGraphqlActivityCreateRows, hasLength(2));
     expect(aiGraphqlActivityCreateRows.map((row) => row.operationId), [
       'createWorkItemActivityComment',
@@ -689,15 +689,13 @@ void main() {
     for (final row in aiGraphqlActivityCreateRows) {
       expect(row.baseTier, AiWriteTier.t2);
       expect(row.boundary, AiWriteBoundary.graph);
-      expect(row.modelVisible, isFalse);
+      expect(row.modelVisible, isTrue);
       expect(row.readback, isTrue);
       expect(row.arguments.keys, isNot(contains('discussionId')));
     }
     expect(
       productionAiLedger.modelVisible.map((row) => row.operationId),
-      isNot(
-        containsAll(aiGraphqlActivityCreateRows.map((row) => row.operationId)),
-      ),
+      containsAll(aiGraphqlActivityCreateRows.map((row) => row.operationId)),
     );
   });
 

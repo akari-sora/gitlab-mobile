@@ -620,15 +620,15 @@ final class _RealP5CoordinatorHarness {
 }
 
 void main() {
-  test('P5 ledger row is hidden T2 graph with the fixed cap and enum', () {
+  test('P5 ledger row is a visible T2 graph with the fixed cap and enum', () {
     final row = productionAiLedger.find(_operation)!;
     expect(row.baseTier, AiWriteTier.t2);
     expect(row.scopeClass, AiScopeClass.workItem);
     expect(row.boundary, AiWriteBoundary.graph);
     expect(row.httpCap, 21);
     expect(row.readback, isTrue);
-    expect(row.modelVisible, isFalse);
-    expect(productionAiLedger.modelVisible, isNot(contains(row)));
+    expect(row.modelVisible, isTrue);
+    expect(productionAiLedger.modelVisible, contains(row));
     expect(row.arguments.keys, {'projectId', 'iid', 'healthStatus'});
     expect(row.arguments['healthStatus']!.enumValues, [
       'onTrack',

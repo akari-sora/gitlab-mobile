@@ -59,15 +59,15 @@ Matcher _apiFailure(FailureKind kind) =>
     isA<ApiFailure>().having((failure) => failure.kind, 'kind', kind);
 
 void main() {
-  test('P12 hidden T2 graph row has closed args and static cap 21', () {
+  test('P12 visible T2 graph row has closed args and static cap 21', () {
     final row = aiGraphqlIncidentRows.single;
     expect(productionAiLedger.find(_operation), same(row));
     expect(row.namedMethod, _operation);
     expect(row.baseTier, AiWriteTier.t2);
     expect(row.scopeClass, AiScopeClass.workItem);
     expect(row.boundary, AiWriteBoundary.graph);
-    expect(row.modelVisible, isFalse);
-    expect(productionAiLedger.modelVisible, isNot(contains(row)));
+    expect(row.modelVisible, isTrue);
+    expect(productionAiLedger.modelVisible, contains(row));
     expect(row.readback, isTrue);
     expect(row.arguments.keys.toSet(), {'projectId', 'iid', 'status'});
     expect(row.arguments.values.every((arg) => arg.required), isTrue);
@@ -378,12 +378,17 @@ void main() {
     });
   }
 
-  test('P12 production ledger still refuses the hidden operation', () async {
-    final h = await _Harness.create(ledger: productionAiLedger);
-    addTearDown(h.dispose);
-    expect(await h.propose(), isNull);
-    expect(h.server.adapter.requests, isEmpty);
-  });
+  test(
+    'P12 production ledger offers the operation and holds it for approval',
+    () async {
+      final h = await _Harness.create(ledger: productionAiLedger);
+      addTearDown(h.dispose);
+      final proposal = await h.propose();
+      expect(proposal, isNotNull);
+      expect(proposal!.tier.decision.name, 'requireApproval');
+      expect(h.server.mutations, 0);
+    },
+  );
 
   test(
     'P12 coordinator noop refunds write hold and continues same round',

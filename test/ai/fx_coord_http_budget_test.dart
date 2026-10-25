@@ -105,6 +105,27 @@ const _mr6b2CountedCaps = <String, int>{
   'forkProject': 15,
 };
 
+// MR6b-3 graph caps independently counted in the family port tests. The
+// caps are the ledger's own numbers (OAuth 2L+1, PAT L+1); each graph write
+// reserves exactly one mutation.
+const _mr6b3CountedCaps = <String, int>{
+  'createWorkItemActivityComment': 21,
+  'createWorkItemActivityReply': 29,
+  'deleteWorkItemActivityNote': 29,
+  'updateWorkItemDates': 29,
+  'updateWorkItemAssignees': 37,
+  'updateWorkItemHealthStatus': 21,
+  'setWorkItemNotifications': 21,
+  'setIncidentStatus': 21,
+  'updateWorkItemMilestone': 25,
+  'setWorkItemActivityNoteReaction': 37,
+  'updateWorkItemStatus': 21,
+  'snoozeTodo': 21,
+  'unsnoozeTodo': 21,
+  'updateWorkItemState': 21,
+  'updateWorkItemWeight': 21,
+};
+
 int _worstReads(String operation) {
   final (fresh, prepare, readback) = _counted[operation]!;
   return 2 * (fresh + prepare) + readback;
@@ -133,10 +154,17 @@ final _issueOrigin = AiWorkItemOrigin(
 void main() {
   group('C4 the per-operation reservation table', () {
     test('covers every write the model can call', () {
-      expect({
-        for (final capability in productionAiLedger.modelVisible)
-          capability.operationId,
-      }, {..._counted.keys, ..._mr6b2CountedCaps.keys});
+      expect(
+        {
+          for (final capability in productionAiLedger.modelVisible)
+            capability.operationId,
+        },
+        {
+          ..._counted.keys,
+          ..._mr6b2CountedCaps.keys,
+          ..._mr6b3CountedCaps.keys,
+        },
+      );
       expect(aiWriteRequestCounts.keys.toSet(), _counted.keys.toSet());
     });
 
@@ -166,10 +194,21 @@ void main() {
       });
     }
 
+    for (final entry in _mr6b3CountedCaps.entries) {
+      test('${entry.key} reserves its counted worst case', () {
+        expect(aiWriteRequestAllowance(entry.key), entry.value);
+        expect(
+          aiWriteRequestAllowance(entry.key, oauthReplay: false),
+          (entry.value - 1) ~/ 2 + 1,
+        );
+      });
+    }
+
     test('an unknown operation reserves the largest row', () {
       final largest = [
         for (final operation in _counted.keys) 2 * _worstReads(operation) + 1,
         ..._mr6b2CountedCaps.values,
+        ..._mr6b3CountedCaps.values,
       ].reduce((a, b) => a > b ? a : b);
       expect(aiWriteRequestAllowance('notAnOperation'), largest);
       expect(

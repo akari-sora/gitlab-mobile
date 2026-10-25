@@ -435,12 +435,12 @@ void _uncertain(port.AiWriteOutcome outcome) {
 
 void main() {
   // Appendix C: 8/11/13/19/21. P14 alone makes this row model-visible.
-  test('P6 hidden T2 graph row has exact arguments and static cap 37', () {
+  test('P6 visible T2 graph row has exact arguments and static cap 37', () {
     final row = productionAiLedger.find(_operation)!;
     expect(row.baseTier, AiWriteTier.t2);
     expect(row.scopeClass, AiScopeClass.workItem);
     expect(row.boundary, AiWriteBoundary.graph);
-    expect(row.modelVisible, isFalse);
+    expect(row.modelVisible, isTrue);
     expect(row.readback, isTrue);
     expect(row.httpCap, 37);
     expect(row.namedMethod, _operation);
@@ -452,11 +452,11 @@ void main() {
     expect(row.arguments['assigneeUsernames']!.type, AiArgType.stringList);
     expect(
       productionAiLedger.modelVisible.map((row) => row.operationId),
-      isNot(contains(_operation)),
+      contains(_operation),
     );
     expect(
       toolsForScope(mr6b3Scope).map((row) => row.operationId),
-      isNot(contains(_operation)),
+      contains(_operation),
     );
     expect(aiWriteRequestAllowance(_operation), 37);
     expect(aiWriteRequestAllowance(_operation, oauthReplay: false), 19);

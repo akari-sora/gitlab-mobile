@@ -8,7 +8,7 @@ const List<AiCapability> aiGraphqlSnoozeRows = <AiCapability>[
     baseTier: AiWriteTier.t1,
     scopeClass: AiScopeClass.accountTodo,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'todoId': AiArgSpec(AiArgType.integer, required: true),
       'until': AiArgSpec(AiArgType.string, required: true),
@@ -20,7 +20,7 @@ const List<AiCapability> aiGraphqlSnoozeRows = <AiCapability>[
     baseTier: AiWriteTier.t1,
     scopeClass: AiScopeClass.accountTodo,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {'todoId': AiArgSpec(AiArgType.integer, required: true)},
     httpCap: 21,
   ),

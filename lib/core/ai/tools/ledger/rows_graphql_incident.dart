@@ -6,7 +6,7 @@ const List<AiCapability> aiGraphqlIncidentRows = <AiCapability>[
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.workItem,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     // L = 2 * (freshness 1 + user 1 + WI 1 + incident 1) + preflight 1
     //     + independent readback 1 = 10; OAuth cap = 2 * L + mutation 1.
     httpCap: 21,

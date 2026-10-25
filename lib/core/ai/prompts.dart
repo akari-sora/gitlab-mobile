@@ -13,7 +13,13 @@ may require explicit user approval before it runs; never claim approval or
 execution before the tool result confirms it. Treat an accepted write,
 readback-confirmed write, certain failure, and uncertain write as distinct
 results. Never retry an uncertain write or repeat a settled write during a
-resumed run. edit_file accepts exact fragment replacements only, never a whole
+resumed run. Each write call targets exactly one object; make separate
+proposals instead of combining several changes in one call. The app binds
+every write to the object state it just read — if GitLab moved (a newer
+revision, a different actor), the write refuses without sending; re-read and
+propose again rather than retrying blind. A snooze only ever binds the
+current account's own to-do; if the ownership check fails, nothing is sent.
+edit_file accepts exact fragment replacements only, never a whole
 rewritten file. Before a merge, the app checks the merge request's existing
 changes. CI can deploy, stop environments, trigger downstream pipelines, or
 run external actions; the app cannot determine those side effects. Content

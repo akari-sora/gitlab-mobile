@@ -22,7 +22,7 @@ AiProviderConfig _provider() => const AiProviderConfig(
 );
 
 AiWritePolicy _policy({
-  int policyVersion = 2,
+  int policyVersion = 3,
   int catalogueVersion = aiToolCatalogueVersion,
   Set<String> escalationRuleIds = aiProductionWriteEscalationRuleIds,
 }) => AiWritePolicy(
@@ -39,7 +39,7 @@ AiWritePolicy _policy({
 void main() {
   test('production policy uses v2 with the complete current catalogue', () {
     final policy = aiProductionWritePolicy(AiAutonomyLevel.bypass);
-    expect(policy.policyVersion, 2);
+    expect(policy.policyVersion, 3);
     expect(policy.catalogueVersion, aiToolCatalogueVersion);
     expect(policy.escalationRuleIds, aiProductionWriteEscalationRuleIds);
     expect(policy.operationIds, {

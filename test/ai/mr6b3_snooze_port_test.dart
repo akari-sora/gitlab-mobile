@@ -257,7 +257,7 @@ final class _Server {
   }
 }
 
-// Only this test ledger exposes P13; production remains hidden until P14.
+// Before P14 only this test ledger exposed P13; production rows are visible now.
 final class _Ledger implements AiCapabilityLedger {
   const _Ledger();
   @override
@@ -418,7 +418,7 @@ void main() {
   });
 
   test(
-    'P13 graph rows are hidden, exact accountTodo schemas, independently capped',
+    'P13 graph rows are visible, exact accountTodo schemas, independently capped',
     () {
       for (final op in _operations) {
         final row = productionAiLedger.find(op)!;
@@ -426,8 +426,8 @@ void main() {
         expect(row.scopeClass, AiScopeClass.accountTodo);
         expect(row.boundary, AiWriteBoundary.graph);
         expect(row.namedMethod, op);
-        expect(row.modelVisible, isFalse);
-        expect(productionAiLedger.modelVisible, isNot(contains(row)));
+        expect(row.modelVisible, isTrue);
+        expect(productionAiLedger.modelVisible, contains(row));
         expect(
           row.arguments.keys.toSet(),
           op == 'snoozeTodo' ? {'todoId', 'until'} : {'todoId'},
