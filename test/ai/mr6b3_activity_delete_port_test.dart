@@ -316,7 +316,7 @@ final class _Server {
   }
 }
 
-/// Test-only visibility; the production row stays hidden until P14.
+/// Test-only visibility; the production row has been visible since P14.
 final class _P10Ledger implements AiCapabilityLedger {
   const _P10Ledger();
 
@@ -432,16 +432,16 @@ final class _Harness {
 
 void main() {
   test(
-    'P10 row is hidden graph T4 with exact numeric arguments and fixed cap',
+    'P10 row is visible graph T4 with exact numeric arguments and fixed cap',
     () {
       final row = productionAiLedger.find(_operation)!;
       expect(row.baseTier, AiWriteTier.t4);
       expect(row.scopeClass, AiScopeClass.workItem);
       expect(row.boundary, AiWriteBoundary.graph);
       expect(row.namedMethod, _operation);
-      expect(row.modelVisible, isFalse);
+      expect(row.modelVisible, isTrue);
       expect(row.readback, isTrue);
-      expect(productionAiLedger.modelVisible, isNot(contains(row)));
+      expect(productionAiLedger.modelVisible, contains(row));
       expect(row.arguments.keys, unorderedEquals(_args.keys));
       for (final argument in row.arguments.values) {
         expect(argument.type, AiArgType.integer);

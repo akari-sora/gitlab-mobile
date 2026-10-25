@@ -35,6 +35,24 @@ const _baselineOperations = <String>{
   'upload_attachment',
 };
 
+const _mr6b3Operations = <String>{
+  'createWorkItemActivityComment',
+  'createWorkItemActivityReply',
+  'deleteWorkItemActivityNote',
+  'updateWorkItemAssignees',
+  'updateWorkItemDates',
+  'updateWorkItemHealthStatus',
+  'updateWorkItemMilestone',
+  'updateWorkItemWeight',
+  'updateWorkItemState',
+  'updateWorkItemStatus',
+  'setIncidentStatus',
+  'setWorkItemNotifications',
+  'setWorkItemActivityNoteReaction',
+  'snoozeTodo',
+  'unsnoozeTodo',
+};
+
 const _mr6b2Operations = <String>{
   'edit_file',
   'createFile',
@@ -84,10 +102,10 @@ const _mr6b2Operations = <String>{
 };
 
 void main() {
-  test('the ledger exposes exactly the MR6b-1 and MR6b-2 rows', () {
+  test('the ledger exposes exactly the MR6b-1, MR6b-2 and MR6b-3 rows', () {
     expect(
       productionAiLedger.modelVisible.map((row) => row.operationId).toSet(),
-      {..._baselineOperations, ..._mr6b2Operations},
+      {..._baselineOperations, ..._mr6b2Operations, ..._mr6b3Operations},
     );
     expect(
       ProductionAiLedger.rows.map((row) => row.operationId).toSet(),

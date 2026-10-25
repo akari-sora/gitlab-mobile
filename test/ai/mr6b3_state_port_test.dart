@@ -348,16 +348,16 @@ final class _StateHarness {
 
 void main() {
   test(
-    'P2 hidden ledger has the exact schema, tier, method and static cap',
+    'P2 ledger has the exact schema, tier, method and static cap',
     () {
       final row = productionAiLedger.find(_operation)!;
       expect(row.namedMethod, _operation);
       expect(row.baseTier, AiWriteTier.t2);
       expect(row.scopeClass, AiScopeClass.workItem);
       expect(row.boundary, AiWriteBoundary.graph);
-      expect(row.modelVisible, isFalse);
+      expect(row.modelVisible, isTrue);
       expect(row.readback, isTrue);
-      expect(productionAiLedger.modelVisible, isNot(contains(row)));
+      expect(productionAiLedger.modelVisible, contains(row));
       expect(row.arguments.keys.toSet(), {'projectId', 'iid', 'stateEvent'});
       for (final arg in row.arguments.values) {
         expect(arg.required, isTrue);

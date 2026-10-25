@@ -335,7 +335,7 @@ final class _Server {
       .length;
 }
 
-// Test-only visibility: production rows stay hidden until P14. All other row
+// Test-only visibility before P14; production rows are visible now. All other row
 // properties come from the actual family ledger, including its independent cap.
 final class _P8Ledger implements AiCapabilityLedger {
   const _P8Ledger();
@@ -470,18 +470,18 @@ final class _Harness {
 }
 
 void main() {
-  test('P8 rows are hidden T2 graph rows with closed independent schemas', () {
+  test('P8 rows are visible T2 graph rows with closed independent schemas', () {
     for (final op in _operations) {
       final row = productionAiLedger.find(op)!;
       expect(row.namedMethod, op);
       expect(row.baseTier, AiWriteTier.t2);
       expect(row.scopeClass, AiScopeClass.workItem);
       expect(row.boundary, AiWriteBoundary.graph);
-      expect(row.modelVisible, isFalse);
+      expect(row.modelVisible, isTrue);
       expect(row.readback, isTrue);
       expect(
         productionAiLedger.modelVisible.map((row) => row.operationId),
-        isNot(contains(op)),
+        contains(op),
       );
       expect(
         row.arguments.keys,

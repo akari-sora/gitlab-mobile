@@ -154,14 +154,17 @@ final _issueOrigin = AiWorkItemOrigin(
 void main() {
   group('C4 the per-operation reservation table', () {
     test('covers every write the model can call', () {
-      expect({
-        for (final capability in productionAiLedger.modelVisible)
-          capability.operationId,
-      }, {
-        ..._counted.keys,
-        ..._mr6b2CountedCaps.keys,
-        ..._mr6b3CountedCaps.keys,
-      });
+      expect(
+        {
+          for (final capability in productionAiLedger.modelVisible)
+            capability.operationId,
+        },
+        {
+          ..._counted.keys,
+          ..._mr6b2CountedCaps.keys,
+          ..._mr6b3CountedCaps.keys,
+        },
+      );
       expect(aiWriteRequestCounts.keys.toSet(), _counted.keys.toSet());
     });
 

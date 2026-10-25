@@ -772,14 +772,14 @@ const _localeDirections =
 
 void main() {
   test(
-    'P11 ledger rows stay hidden, graph, T1, closed and independently capped',
+    'P11 ledger rows are visible, graph, T1, closed and independently capped',
     () {
       for (final op in _operations) {
         final row = productionAiLedger.find(op)!;
-        expect(row.modelVisible, isFalse);
+        expect(row.modelVisible, isTrue);
         expect(
           productionAiLedger.modelVisible.map((entry) => entry.operationId),
-          isNot(contains(op)),
+          contains(op),
         );
         expect(row.boundary, AiWriteBoundary.graph);
         expect(row.baseTier, AiWriteTier.t1);

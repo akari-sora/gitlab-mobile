@@ -52,12 +52,12 @@ Matcher _refused(String reason) => isA<port.AiWriteRefused>().having(
 void main() {
   // Appendix C / parent §15: 8, 10, 11, 13, 19, 21, 24-project.
   test(
-    'hidden graph row has a closed dates schema and independent fixed cap',
+    'visible graph row has a closed dates schema and independent fixed cap',
     () {
       final row = productionAiLedger.find(_operation)!;
       expect(row.boundary, AiWriteBoundary.graph);
-      expect(row.modelVisible, isFalse);
-      expect(productionAiLedger.modelVisible, isNot(contains(row)));
+      expect(row.modelVisible, isTrue);
+      expect(productionAiLedger.modelVisible, contains(row));
       expect(row.baseTier, AiWriteTier.t2);
       expect(row.scopeClass, AiScopeClass.workItem);
       expect(row.namedMethod, _operation);
@@ -516,7 +516,7 @@ void main() {
   );
 
   // Appendix C / parent §15: 1, 5, 6, 7, 8, 10, 11, 13, 16, 19,
-  // 21, 24-project, 25, 29. The test ledger exposes only this hidden row.
+  // 21, 24-project, 25, 29. The test ledger exposes only this row.
   test(
     'confirmation, durable dispatching, at-most-once approval and project key alias',
     () async {
@@ -1084,7 +1084,7 @@ final class _DatesServer {
   }
 }
 
-// Only tests expose the dates row; production stays hidden until P14.
+// Only tests exposed the dates row before P14 made it visible.
 final class _DatesLedger implements AiCapabilityLedger {
   const _DatesLedger();
   @override

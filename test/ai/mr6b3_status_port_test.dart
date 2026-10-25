@@ -450,10 +450,10 @@ void main() {
     expect(row.boundary, AiWriteBoundary.graph);
     expect(row.baseTier, AiWriteTier.t2);
     expect(row.scopeClass, AiScopeClass.workItem);
-    expect(row.modelVisible, isFalse);
+    expect(row.modelVisible, isTrue);
     expect(
       productionAiLedger.modelVisible.map((row) => row.operationId),
-      isNot(contains(_operation)),
+      contains(_operation),
     );
     expect(row.namedMethod, _operation);
     expect(row.readback, isTrue);

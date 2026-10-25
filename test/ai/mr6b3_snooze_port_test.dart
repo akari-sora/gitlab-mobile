@@ -426,8 +426,8 @@ void main() {
         expect(row.scopeClass, AiScopeClass.accountTodo);
         expect(row.boundary, AiWriteBoundary.graph);
         expect(row.namedMethod, op);
-        expect(row.modelVisible, isFalse);
-        expect(productionAiLedger.modelVisible, isNot(contains(row)));
+        expect(row.modelVisible, isTrue);
+        expect(productionAiLedger.modelVisible, contains(row));
         expect(
           row.arguments.keys.toSet(),
           op == 'snoozeTodo' ? {'todoId', 'until'} : {'todoId'},
