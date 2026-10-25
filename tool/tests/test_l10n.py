@@ -156,9 +156,19 @@ class CatalogTest(unittest.TestCase):
         # Both Chinese catalogs call a job log "Log" everywhere (viewJobLog)
         # and keep "Pipeline", "Snippet", "Rebase", "Fork" and "Release"
         # untranslated (runPipeline, newSnippet, rebaseBranchPrompt,
-        # forkProjectQuestion, viewRelease).
-        chinese_words = {'Log', 'Pipeline', 'Snippet', 'Rebase', 'Fork', 'Release'}
-        local_words = {'zh-TW': chinese_words, 'zh-CN': chinese_words}
+        # forkProjectQuestion, viewRelease). The same catalogs — and ko, hi,
+        # th and ar — keep the GitLab "Incident" noun untranslated
+        # (incidentStatus in each catalog).
+        chinese_words = {'Log', 'Pipeline', 'Snippet', 'Rebase', 'Fork', 'Release', 'Incident'}
+        incident_words = {'Incident'}
+        local_words = {
+            'zh-TW': chinese_words,
+            'zh-CN': chinese_words,
+            'ko': incident_words,
+            'hi': incident_words,
+            'th': incident_words,
+            'ar': incident_words,
+        }
         keys, catalogs = l10n.load()
         ai_keys = [key for key in keys if key.startswith('ai')]
         self.assertTrue(ai_keys)

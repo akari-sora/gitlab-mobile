@@ -110,6 +110,24 @@ String aiOperationLabel(String operationId) => switch (operationId) {
   'updateSnippetFiles' => l10n.aiOpUpdateSnippetFiles,
   'deleteSnippetFile' => l10n.aiOpDeleteSnippetFile,
   'deleteSnippet' => l10n.aiOpDeleteSnippet,
+  // MR6b-3 GraphQL writes. The note rows reuse the REST note wording: to the
+  // user a work item comment is a comment; only the delete names its
+  // own-note limit, because that limit is the row's whole safety story.
+  'createWorkItemActivityComment' => l10n.aiOpCreateNote,
+  'createWorkItemActivityReply' => l10n.aiOpCreateDiscussionNote,
+  'deleteWorkItemActivityNote' => l10n.aiOpDeleteOwnComment,
+  'updateWorkItemAssignees' => l10n.aiOpSetWorkItemAssignees,
+  'updateWorkItemDates' => l10n.aiOpSetWorkItemDates,
+  'updateWorkItemHealthStatus' => l10n.aiOpSetHealthStatus,
+  'updateWorkItemMilestone' => l10n.aiOpSetMilestone,
+  'updateWorkItemWeight' => l10n.aiOpSetWeight,
+  'updateWorkItemState' => l10n.aiOpSetWorkItemState,
+  'updateWorkItemStatus' => l10n.aiOpSetStatus,
+  'setIncidentStatus' => l10n.aiOpSetIncidentStatus,
+  'setWorkItemNotifications' => l10n.aiOpSetNotifications,
+  'setWorkItemActivityNoteReaction' => l10n.aiOpSetCommentReaction,
+  'snoozeTodo' => l10n.aiOpSnoozeTodo,
+  'unsnoozeTodo' => l10n.aiOpUnsnoozeTodo,
   _ => l10n.aiOpUnknown,
 };
 
@@ -143,6 +161,21 @@ String aiProposalTitle(AiWriteProposal proposal) {
       false => l10n.aiOpShowBoardList,
       null => aiOperationLabel(proposal.operationId),
     },
+    'setWorkItemActivityNoteReaction' => switch (flag('add')) {
+      true => l10n.aiOpAddAwardEmoji,
+      false => l10n.aiOpRemoveAwardEmoji,
+      null => aiOperationLabel(proposal.operationId),
+    },
+    'setWorkItemNotifications' => switch (flag('enabled')) {
+      true => l10n.aiOpSubscribeOn,
+      false => l10n.aiOpSubscribeOff,
+      null => aiOperationLabel(proposal.operationId),
+    },
+    'updateWorkItemState' => switch (fields['stateEvent']) {
+      'close' => l10n.closeWorkItem,
+      'reopen' => l10n.aiOpReopenWorkItem,
+      _ => aiOperationLabel(proposal.operationId),
+    },
     'setMilestoneState' => switch (fields['stateEvent']) {
       'close' => l10n.closeMilestone,
       'activate' => l10n.aiOpReopenMilestone,
@@ -171,6 +204,9 @@ bool aiFieldInTitle(String operationId, String key) =>
       ('setDiscussionResolved', 'resolved') ||
       ('setBoardSystemListHidden', 'hidden') ||
       ('setMilestoneState', 'stateEvent') ||
+      ('updateWorkItemState', 'stateEvent') ||
+      ('setWorkItemActivityNoteReaction', 'add') ||
+      ('setWorkItemNotifications', 'enabled') ||
       ('pipelineAction', 'action') ||
       ('jobAction', 'action') => true,
       _ => false,
@@ -183,9 +219,32 @@ String aiFieldValue(String key, String value) => switch ((key, value)) {
   (_, 'false') => l10n.noLabel,
   ('state_event', 'close') => l10n.closeAction,
   ('state_event', 'reopen') => l10n.reopen,
+  ('stateEvent', 'close') => l10n.closeAction,
+  ('stateEvent', 'reopen') => l10n.reopen,
   ('visibility', 'private') => l10n.visibilityPrivate,
   ('visibility', 'internal') => l10n.visibilityInternal,
   ('visibility', 'public') => l10n.visibilityPublic,
+  ('healthStatus', 'onTrack') => l10n.healthOnTrack,
+  ('healthStatus', 'needsAttention') => l10n.healthNeedsAttention,
+  ('healthStatus', 'atRisk') => l10n.healthAtRisk,
+  ('healthStatus', 'none') => l10n.clearHealthStatus,
+  ('mode', 'manual') => l10n.manualDates,
+  ('mode', 'inherited') => l10n.datesRolledUpFromHierarchy,
+  ('status', 'TRIGGERED') => l10n.incidentTriggered,
+  ('status', 'ACKNOWLEDGED') => l10n.incidentAcknowledged,
+  ('status', 'RESOLVED') => l10n.resolvedLabel,
+  // The port hands the assignee set over as a JSON array; the editors show
+  // a plain list of names.
+  ('assigneeUsernames', _) => () {
+    try {
+      final names = (jsonDecode(value) as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList();
+      return names.isEmpty ? value : names.join(', ');
+    } on FormatException {
+      return value;
+    }
+  }(),
   ('variables', _) => _variableLines(value) ?? value,
   _ => value,
 };
@@ -270,6 +329,24 @@ String aiFieldLabel(String key) => switch (key) {
   'previous_path' => l10n.aiFieldPreviousPath,
   'visibility' => l10n.visibility,
   'variables' => l10n.aiFieldVariables,
+  // MR6b-3 GraphQL writes: the editors' own labels for the same fields,
+  // camelCase as the model arguments spell them. Identifier arguments
+  // (*Id, iid) never reach the card — the target line names them.
+  'assigneeUsernames' => l10n.assignee,
+  'startDate' => l10n.startDate,
+  'dueDate' => l10n.dueDate,
+  'healthStatus' => l10n.healthStatus,
+  'weight' => l10n.weight,
+  'clearWeight' => l10n.aiFieldClearWeight,
+  'stateEvent' => l10n.status,
+  'status' => l10n.status,
+  'mode' => l10n.aiFieldDateMode,
+  'clearStart' => l10n.aiFieldClearStart,
+  'clearDue' => l10n.aiFieldClearDue,
+  'clearMilestone' => l10n.aiFieldClearMilestone,
+  'milestoneTitle' => l10n.milestoneLabel,
+  'targetType' => l10n.aiFieldTargetType,
+  'until' => l10n.aiFieldSnoozeUntil,
   _ => key,
 };
 
@@ -320,6 +397,20 @@ String? aiRefusalText(String code) => switch (code) {
   'fragmentNotUnique' ||
   'fragmentsOverlap' ||
   'snippetChanged' ||
+  // MR6b-3: the pre-read lost a race with the live object (a fence moved,
+  // the anchor note or the work item changed under the proposal).
+  'anchorMismatch' ||
+  'noteChanged' ||
+  'assigneeConflict' ||
+  'stateConflict' ||
+  'datesConflict' ||
+  'healthConflict' ||
+  'reactionConflict' ||
+  'notificationConflict' ||
+  'statusStaleFence' ||
+  'incidentConflict' ||
+  'milestoneConflict' ||
+  'weightConflict' ||
   'conflict' => l10n.aiRefusedChanged,
   'refMissing' ||
   'releaseMissing' ||
@@ -328,9 +419,23 @@ String? aiRefusalText(String code) => switch (code) {
   'containerMissing' ||
   'fileMissing' ||
   'jobNotInPipeline' ||
+  // MR6b-3: the todo was gone before the write could bind to it.
+  'todoNotFound' ||
+  'noteMissing' ||
   'invisible' => l10n.aiRefusedGone,
   'maintainerRequired' ||
   'packageNotDeletable' ||
+  // MR6b-3: the account cannot do this to the work item, its notes, its
+  // fields or its todos.
+  'activityForbidden' ||
+  'assigneeForbidden' ||
+  'datesForbidden' ||
+  'healthForbidden' ||
+  'milestoneForbidden' ||
+  'notificationForbidden' ||
+  'reactionForbidden' ||
+  'stateForbidden' ||
+  'weightForbidden' ||
   'forbidden' => l10n.aiRefusedPermission,
   'autoMergeNotEnabled' ||
   'mergeCheckUnsupported' ||
@@ -340,6 +445,13 @@ String? aiRefusalText(String code) => switch (code) {
   'suggestionNotAppliable' ||
   'personalNamespaceUnknown' ||
   'snippetLastFile' ||
+  // MR6b-3: the instance or the work item type does not offer this field,
+  // or the requested value is not one the item accepts.
+  'healthUnsupported' ||
+  'todoUnsupportedTarget' ||
+  'incidentInvalidStatus' ||
+  'statusInvalidCandidate' ||
+  'assigneeInvalidSelection' ||
   'validation' ||
   'unsupported' => l10n.aiRefusedNotAllowed,
   'batchTooLarge' ||
@@ -355,7 +467,33 @@ String? aiRefusalText(String code) => switch (code) {
   'pipelineVariableForbidden' ||
   'pipelineVariableSecret' => l10n.aiRefusedContent,
   'scheduleParamsUnreadable' ||
-  'snippetFilesUnreadable' => l10n.aiRefusedUnverifiable,
+  'snippetFilesUnreadable' ||
+  // MR6b-3: the identities or access records a graph write must bind to
+  // (the account, the work item, the todo's owner) could not be read in
+  // full, so nothing was sent.
+  'activityUnverifiable' ||
+  'workItemUnverifiable' ||
+  'todoUnverifiable' ||
+  'registryUnavailable' => l10n.aiRefusedUnverifiable,
+  // MR6b-3: the ports throw these both when the mutation never started
+  // (a gate failed, the request errored before acceptance) and when the
+  // server or the readback reports the old value, so the sentence claims
+  // only what is true on every path: nothing took effect.
+  'datesNotApplied' ||
+  'stateNotApplied' ||
+  'statusNotStarted' ||
+  'assigneeRejected' ||
+  'milestoneRejected' ||
+  'weightRejected' ||
+  'incidentRejected' => l10n.aiRefusedNotApplied,
+  // MR6b-3: the model's own instruction did not name one direction.
+  'intentUnclear' => l10n.aiRefusedIntentUnclear,
+  // MR6b-3: the discussion rejects new activity while locked.
+  'activityLocked' => l10n.aiRefusedDiscussionLocked,
+  // MR6b-3: note delete is restricted to the account's own notes.
+  'notOwnNote' => l10n.aiRefusedNotOwnNote,
+  // MR6b-3: the todo belongs to a different account.
+  'todoForeign' => l10n.aiRefusedTodoForeign,
   // A pre-read that hit a transport limit says which, in the app's own words.
   'rateLimited' => const ApiFailure(FailureKind.rateLimited).title,
   'network' => const ApiFailure(FailureKind.network).title,
@@ -403,6 +541,16 @@ String aiWriteStatusLabel(AiWriteResultStatus status) => switch (status) {
 
 // Fields that hold prose, shown in a box with their line breaks.
 const _proseFields = {'body', 'description', 'note'};
+
+/// The snooze deadline in the user's words. A parseable timestamp becomes a
+/// local date and time; anything else shows exactly as the model sent it.
+String _snoozeUntilText(BuildContext context, String value) {
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) return value;
+  final localizations = MaterialLocalizations.of(context);
+  return '${localizations.formatMediumDate(parsed.toLocal())} '
+      '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(parsed.toLocal()))}';
+}
 
 /// One write the AI asks to make, with everything it would send. Nothing is
 /// written until the user approves; editing the text asks again.
@@ -687,7 +835,9 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                   )
                 else
                   Text(
-                    aiFieldValue(key, value),
+                    key == 'until'
+                        ? _snoozeUntilText(context, value)
+                        : aiFieldValue(key, value),
                     key: ValueKey('ai-proposal-field-$key'),
                     style: theme.textTheme.bodySmall,
                   ),
