@@ -6,7 +6,7 @@ const List<AiCapability> aiGraphqlStatusRows = <AiCapability>[
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.workItem,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     arguments: <String, AiArgSpec>{
       'projectId': _projectId,
       'iid': _iid,

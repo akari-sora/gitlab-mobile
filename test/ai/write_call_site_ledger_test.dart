@@ -101,10 +101,9 @@ void main() {
     expect(_currentMr6b3GraphSites, hasLength(14));
     expect(_deferredMr6b3Methods, hasLength(3));
     expect(_deferredMr6b3GraphSites, hasLength(3));
-    expect(
-      pending3CurrentNamed,
-      _currentMr6b3Methods.difference(ledgerMethods.keys.toSet()),
-    );
+    // P14: all fifteen current MR6b-3 methods are ledger rows, so nothing
+    // from this batch stays pending; the §7t deferrals stay pending.
+    expect(pending3CurrentNamed, isEmpty, reason: 'current MR6b-3 methods');
     expect(pending3DeferredNamed, _deferredMr6b3Methods);
     expect(
       _graphInventoryProblems(sites),
@@ -113,14 +112,15 @@ void main() {
     );
     expect(
       pending3CurrentGraph,
-      {
-        for (final entry in _currentMr6b3GraphSites.entries)
-          if (!entry.value.every(ledgerMethods.containsKey)) entry.key,
-      },
-      reason:
-          'current MR6b-3 sites remain pending until every mapped row lands',
+      isEmpty,
+      reason: 'the 14 current MR6b-3 graph sites are ledger-covered',
     );
     expect(pending3DeferredGraph, _deferredMr6b3GraphSites.keys.toSet());
+    // §7t deferrals stay out of the model's tool list.
+    for (final String method in _deferredMr6b3Methods) {
+      final row = productionAiLedger.find(method);
+      expect(row == null || !row.modelVisible, isTrue, reason: method);
+    }
 
     for (final (String file, String method) in _rewiredNamedCalls) {
       expect(

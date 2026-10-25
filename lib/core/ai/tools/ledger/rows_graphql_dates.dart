@@ -6,7 +6,7 @@ const List<AiCapability> aiGraphqlDatesRows = <AiCapability>[
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.workItem,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': _projectId,
       'iid': _projectId,

@@ -2752,7 +2752,7 @@ String _writeId(Map<String, Object?> args, String key) {
 /// this same policy when requesting a new write grant.
 AiWritePolicy aiProductionWritePolicy(AiAutonomyLevel agreedCeiling) =>
     AiWritePolicy(
-      policyVersion: 2,
+      policyVersion: 3,
       agreedCeiling: agreedCeiling,
       catalogueVersion: aiToolCatalogueVersion,
       operationIds: {

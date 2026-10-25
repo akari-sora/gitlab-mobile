@@ -6,7 +6,7 @@ const List<AiCapability> aiGraphqlHealthRows = <AiCapability>[
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.workItem,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'projectId': AiArgSpec(AiArgType.integer, required: true),
       'iid': AiArgSpec(AiArgType.integer, required: true),

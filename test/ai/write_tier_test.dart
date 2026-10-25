@@ -335,8 +335,10 @@ void main() {
             );
           }
         }
-        expect(productionAiLedger.find('markAllTodosDone')!.baseTier,
-            AiWriteTier.t4);
+        expect(
+          productionAiLedger.find('markAllTodosDone')!.baseTier,
+          AiWriteTier.t4,
+        );
         final AiTierDecision mention = _decide(
           operationId: 'createNote',
           tier: AiWriteTier.t2,
@@ -654,7 +656,12 @@ void main() {
         toolsForScope(
           todos,
         ).map((AiCapability row) => row.operationId).toList(),
-        <String>['markTodoDone', 'markAllTodosDone'],
+        <String>[
+          'markTodoDone',
+          'snoozeTodo',
+          'unsnoozeTodo',
+          'markAllTodosDone',
+        ],
       );
       final AiWriteScope groupOnly = AiWriteScope(
         accountKey: _account,
@@ -762,11 +769,10 @@ void main() {
         productionAiLedger.find('upload_attachment')!.namedMethod,
         'uploadProjectFile',
       );
-      expect(
-        productionAiLedger.find('snoozeTodo') == null ||
-            !productionAiLedger.find('snoozeTodo')!.modelVisible,
-        isTrue,
-      );
+      // Visible since catalogue 4: the graph families and their snooze
+      // directions are offered to the model.
+      expect(productionAiLedger.find('snoozeTodo')!.modelVisible, isTrue);
+      expect(productionAiLedger.find('unsnoozeTodo')!.modelVisible, isTrue);
       expect(aiFixedConfirmOperationIds, <String>{'markAllTodosDone'});
       expect(AiWriteLimits.writesPerSend, 8);
       expect(AiWriteLimits.t4PerSend, 3);
@@ -1410,6 +1416,26 @@ const Set<String> _mr6b2Operations = <String>{
 const Set<String> _productionOperations = <String>{
   ..._mr6b1Operations,
   ..._mr6b2Operations,
+  ..._mr6b3Operations,
+};
+
+// MR6b-3 graph writes, visible since catalogue 4 (P14).
+const Set<String> _mr6b3Operations = <String>{
+  'createWorkItemActivityComment',
+  'createWorkItemActivityReply',
+  'deleteWorkItemActivityNote',
+  'updateWorkItemAssignees',
+  'updateWorkItemDates',
+  'updateWorkItemHealthStatus',
+  'updateWorkItemMilestone',
+  'updateWorkItemWeight',
+  'updateWorkItemState',
+  'updateWorkItemStatus',
+  'setIncidentStatus',
+  'setWorkItemNotifications',
+  'setWorkItemActivityNoteReaction',
+  'snoozeTodo',
+  'unsnoozeTodo',
 };
 
 AiGateDecision _matrix(AiAutonomyLevel level, AiWriteTier tier) {
