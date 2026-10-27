@@ -118,11 +118,6 @@ extension _GraphqlLabelsPrepare on GitLabAiWritePort {
             )
             .toString(),
         journal: AiJournalBindings(updatedAt: revision),
-        currentFields: {
-          'labels': jsonEncode([
-            for (final label in before.labels) label.title,
-          ]),
-        },
         preview: AiFieldsPreview({'labels': names}),
         mutation: (hooks) async {
           try {

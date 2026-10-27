@@ -4,7 +4,10 @@
 // or a dismissal.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import 'fx_coord_support.dart';
@@ -82,6 +85,140 @@ void main() {
     expect(proposal.outcome?.reasonCode, 'approvalExpired');
     expect(proposal.editedText, 'my own words for expired');
   });
+
+  for (final expired in [true, false]) {
+    for (final blocked in [false, true]) {
+      test(
+        'identical edit reports ${expired ? 'expiry' : 'invalidation'} before ${blocked ? 'edit failure' : 'approvalRequired'}',
+        () async {
+          final proposal = await editedProposal('pending-failure');
+          final edited = blocked ? '[REDACTED]' : proposal.editedText!;
+          if (blocked) {
+            expect(
+              (await h.coordinator.approve(
+                proposal,
+                editedText: edited,
+              )).reasonCode,
+              'redactionMarker',
+            );
+          }
+          final requests = h.adapter.requests.length;
+          if (expired) {
+            h.clock = h.clock.add(const Duration(minutes: 31));
+          } else {
+            h.journal.bumpProposalEpoch(coordAccount);
+          }
+          // No checkNow: cover the interval before the periodic card refresh.
+          final outcome = await h.coordinator.approve(
+            proposal,
+            editedText: edited,
+          );
+          expect(outcome.state, AiJournalState.notExecuted);
+          expect(
+            outcome.reasonCode,
+            expired ? 'approvalExpired' : 'proposalInvalidated',
+          );
+          expect(proposal.editedText, edited);
+          expect(h.adapter.requests, hasLength(requests));
+          expect(h.mutations, 0);
+        },
+      );
+    }
+  }
+
+  test(
+    'edited text removes, retains and reintroduces its own massMention reason',
+    () async {
+      h.level = AiAutonomyLevel.bypass;
+      final proposal = (await h.coordinator.propose(
+        coordNoteCall('retier', body: 'Hello @all'),
+      ))!;
+      expect(proposal.tier.reasons, contains(AiFixedConfirmReason.massMention));
+      final requests = h.adapter.requests.length;
+      for (final (body, mention) in [
+        ('Still @all', true),
+        ('Only ordinary text', false),
+        ('Again @all', true),
+      ]) {
+        expect(
+          (await h.coordinator.approve(proposal, editedText: body)).reasonCode,
+          'approvalRequired',
+        );
+        expect(
+          proposal.tier.reasons.contains(AiFixedConfirmReason.massMention),
+          mention,
+        );
+        expect(
+          proposal.tier.decision,
+          mention ? AiGateDecision.requireApproval : AiGateDecision.execute,
+        );
+        expect(h.adapter.requests, hasLength(requests));
+        expect(h.mutations, 0);
+      }
+      expect(
+        (await h.coordinator.approve(proposal)).state,
+        AiJournalState.succeeded,
+      );
+      final sent = h.adapter.requests.singleWhere(
+        (request) => request.method == 'POST',
+      );
+      expect((sent.data as Map)['body'], proposal.fields['body']);
+      expect(h.mutations, 1);
+    },
+  );
+
+  test(
+    'editing away a mention preserves a settled-write confirmation reason',
+    () async {
+      h.level = AiAutonomyLevel.bypass;
+      final first = (await h.coordinator.propose(coordNoteCall('first')))!;
+      expect(
+        (await h.coordinator.approve(first)).state,
+        AiJournalState.succeeded,
+      );
+      // A new tool turn gets a fresh HTTP allowance within the same run.
+      h.budget = AiToolBudget();
+      h.coordinator.beginTurn();
+      final duplicate = await h.coordinator.propose(
+        coordNoteCall('duplicate', body: 'Hello @all'),
+      );
+      expect(
+        duplicate,
+        isNotNull,
+        reason: h.coordinator.outcomeFor('duplicate')?.reasonCode,
+      );
+      final proposal = duplicate!;
+      expect(
+        proposal.tier.reasons,
+        containsAll([
+          AiFixedConfirmReason.massMention,
+          AiFixedConfirmReason.duplicateOfSettledWrite,
+        ]),
+      );
+      expect(
+        (await h.coordinator.approve(
+          proposal,
+          editedText: 'Ordinary text',
+        )).reasonCode,
+        'approvalRequired',
+      );
+      expect(
+        proposal.tier.reasons,
+        isNot(contains(AiFixedConfirmReason.massMention)),
+      );
+      expect(
+        proposal.tier.reasons,
+        contains(AiFixedConfirmReason.duplicateOfSettledWrite),
+      );
+      expect(proposal.tier.decision, AiGateDecision.requireApproval);
+      expect(h.mutations, 1);
+      expect(
+        (await h.coordinator.approve(proposal)).state,
+        AiJournalState.succeeded,
+      );
+      expect(h.mutations, 2);
+    },
+  );
 
   test('C9 a success confirmed by readback clears the text', () async {
     final proposal = await editedProposal('success');

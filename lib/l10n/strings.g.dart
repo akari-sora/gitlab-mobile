@@ -8346,4 +8346,7 @@ final class AppStrings {
 
   /// 要設定的標籤不在這個專案的標籤清單裡，或有多個同名標籤，所以沒有執行。
   String get aiRefusedLabelUnknown => language._messages[2750];
+
+  /// 內容有以 / 開頭的一行，GitLab 可能把它當成快捷指令執行，為了安全這筆寫入沒有送出。請刪除那一行，或改放進程式碼區塊。
+  String get aiRefusedQuickAction => language._messages[2751];
 }

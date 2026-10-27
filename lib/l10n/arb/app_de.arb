@@ -2750,5 +2750,6 @@
   "aiGitLabBudgetDetail": "Diese Nachricht wurde nicht gesendet. Sende sie erneut, sobald die Schaltfläche „Senden“ wieder verfügbar ist.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Labels festlegen",
-  "aiRefusedLabelUnknown": "Das zu setzende Label steht nicht in der Label-Liste dieses Projekts oder mehrere Labels haben denselben Namen, daher wurde nichts ausgeführt."
+  "aiRefusedLabelUnknown": "Das zu setzende Label steht nicht in der Label-Liste dieses Projekts oder mehrere Labels haben denselben Namen, daher wurde nichts ausgeführt.",
+  "aiRefusedQuickAction": "Der Text enthält eine Zeile, die mit / beginnt und die GitLab als Quick Action ausführen könnte, daher wurde dieser Vorgang sicherheitshalber nicht gesendet. Entfernen Sie die Zeile oder setzen Sie sie in einen Codeblock."
 }

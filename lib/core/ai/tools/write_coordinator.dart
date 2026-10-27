@@ -331,12 +331,14 @@ final class AiWriteFreshness {
 typedef AiWriteFreshnessReader =
     Future<AiWriteFreshness> Function(port.AiWriteRequest request);
 
-bool _graphWriteBack(String operation) => const {
+/// Graph operations whose complete current fields come from the prepared port.
+const aiGraphWriteBackOperations = {
   'updateWorkItemContent',
   'editWorkItemActivityNote',
   'updateWorkItemLabels',
-}.contains(operation);
+};
 
+// test_freshness_prepared_merge_copies_every_field guards future fields.
 AiWriteFreshness _withPreparedFields(
   AiWriteFreshness fresh,
   port.AiWritePrepared prepared,
@@ -734,7 +736,7 @@ final class PolicyAiWriteCoordinator
       // Whole-field GraphQL writes open their target before the shared text
       // policy, so even bypass sees the current field's hidden spans. Reuse
       // that capability after sanitizing; do not add a second opening read.
-      final opened = _graphWriteBack(request.operationId)
+      final opened = aiGraphWriteBackOperations.contains(request.operationId)
           ? await (_port ??= createPort()).prepare(request)
           : null;
       _requirePolicy(policy, runId: runId);
@@ -749,9 +751,9 @@ final class PolicyAiWriteCoordinator
       }
       final scanReasons = _checkTextScan(prepared, policy, fresh);
       if (ownerFromPreRead) target = _todoTarget(prepared, policy.scope);
-      final extra = <AiFixedConfirmReason>[
-        ...preparedText.reasons, ...scanReasons.reasons,
-      ];
+      // Only non-text reasons survive edits. Text and scan reasons are
+      // recomputed from the edited payload at approval and dispatch.
+      final fixedReasons = <AiFixedConfirmReason>[];
       final keys = {...prepared.writeKeys, ...prepared.dependencyKeys};
       if (journal.proposalEpoch(policy.scope.accountKey) != proposalEpoch) {
         throw const _WriteBlocked('proposalInvalidated');
@@ -760,7 +762,7 @@ final class PolicyAiWriteCoordinator
         throw const _WriteBlocked('isolated');
       }
       if (journal.requiresConfirmation(policy.scope.accountKey, keys)) {
-        extra.add(AiFixedConfirmReason.confirmMarkAfterManualRelease);
+        fixedReasons.add(AiFixedConfirmReason.confirmMarkAfterManualRelease);
       }
       final settled = journal
           .entries(policy.scope.accountKey)
@@ -775,13 +777,13 @@ final class PolicyAiWriteCoordinator
           entry.conversationId == conversationId &&
           (entry.state == AiJournalState.succeeded ||
               entry.state == AiJournalState.writeUncertain))) {
-        extra.add(AiFixedConfirmReason.duplicateOfSettledWrite);
+        fixedReasons.add(AiFixedConfirmReason.duplicateOfSettledWrite);
       }
       // §3.1 separately requires successful identical uploads to be confirmed
       // across runs and conversations, unlike §7.7's resume-only rule.
       if (call.name == 'upload_attachment' && settled.any((entry) =>
           entry.state == AiJournalState.succeeded)) {
-        extra.add(AiFixedConfirmReason.duplicateUpload);
+        fixedReasons.add(AiFixedConfirmReason.duplicateUpload);
       }
       final tier = _tier(
         capability,
@@ -789,7 +791,7 @@ final class PolicyAiWriteCoordinator
         target,
         policy,
         fresh,
-        extra: extra,
+        extra: [...fixedReasons, ...preparedText.reasons, ...scanReasons.reasons],
         prepared: prepared,
       );
       if (!tier.canPropose) throw const _WriteBlocked('policyDenied');
@@ -853,7 +855,7 @@ final class PolicyAiWriteCoordinator
         fresh,
         hold,
         target,
-        extra,
+        fixedReasons,
         attachment?.id,
       );
       if (attachment != null) attachments?.noteProposed(attachment.id);
@@ -935,7 +937,9 @@ final class PolicyAiWriteCoordinator
       if (editedText == proposal.editedText) {
         return _notExecuted(
           pending.call,
-          pending.editBlocked ?? 'approvalRequired',
+          _pendingFailure(pending, pauses: false) ??
+              pending.editBlocked ??
+              'approvalRequired',
         );
       }
       proposal.editedText = editedText;
@@ -953,7 +957,11 @@ final class PolicyAiWriteCoordinator
           pending.target,
           snapshot(),
           pending.fresh,
-          extra: [...pending.reasons, ...processed.reasons],
+          extra: [
+            ...pending.fixedReasons,
+            ...processed.reasons,
+            ..._checkTextScan(pending.prepared, snapshot(), pending.fresh).reasons,
+          ],
           prepared: pending.prepared,
         );
         if (!tier.canPropose) throw const _WriteBlocked('policyDenied');
@@ -1096,7 +1104,7 @@ final class PolicyAiWriteCoordinator
       _requirePending(pending);
       final port.AiWritePrepared? opened;
       try {
-        opened = _graphWriteBack(request.operationId)
+        opened = aiGraphWriteBackOperations.contains(request.operationId)
             ? await _port!.prepare(request)
             : null;
       } on port.AiWriteRefused catch (failure) {
@@ -1142,7 +1150,9 @@ final class PolicyAiWriteCoordinator
         pending.target,
         snapshot(),
         fresh,
-        extra: [...pending.reasons, ...processed.reasons, ...scanReasons.reasons],
+        extra: [
+          ...pending.fixedReasons, ...processed.reasons, ...scanReasons.reasons,
+        ],
         prepared: prepared,
       );
       if (!tier.canPropose) throw const _WriteBlocked('policyDenied');
@@ -1212,7 +1222,9 @@ final class PolicyAiWriteCoordinator
             pending.target,
             snapshot(),
             fresh,
-            extra: [...pending.reasons, ...processed.reasons, ...scanReasons.reasons],
+            extra: [
+              ...pending.fixedReasons, ...processed.reasons, ...scanReasons.reasons,
+            ],
             prepared: prepared,
           );
           if (!currentTier.canPropose ||
@@ -2022,7 +2034,7 @@ final class _PendingWrite {
     this.fresh,
     this.hold,
     this.target,
-    this.reasons,
+    this.fixedReasons,
     this.attachmentId,
   );
   final AiToolCall call;
@@ -2035,7 +2047,7 @@ final class _PendingWrite {
   final AiWriteFreshness fresh;
   final AiBudgetHold hold;
   final AiTargetRef target;
-  final List<AiFixedConfirmReason> reasons;
+  final List<AiFixedConfirmReason> fixedReasons;
   final String? attachmentId;
   final Completer<AiWriteOutcome> done = Completer();
   AiWriteOutcome? outcome;
