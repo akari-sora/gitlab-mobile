@@ -487,7 +487,11 @@ final class ReadCacheDiskCoordinator {
 
   void _scheduleBatch(DiskBinding binding) {
     final account = _account(binding.accountKey);
-    if (account.cancelBatch != null || account.pending.isEmpty) return;
+    if (account.cancelBatch != null ||
+        (account.pending.isEmpty && !account.indexDirty)) {
+      return;
+    }
+    account.batchDeadline ??= _clock().add(batchDelay);
     final delay = account.batchDeadline!.difference(_clock());
     account.cancelBatch = _schedule(
       delay.isNegative ? Duration.zero : delay,
@@ -525,8 +529,7 @@ final class ReadCacheDiskCoordinator {
               final epoch = account.epoch;
               final indexRevision = account.indexRevision;
               bool current() => _ready(binding) && account.epoch == epoch;
-              final deadline =
-                  account.batchDeadline ?? _clock().add(batchDelay);
+              final deadline = _clock().add(batchDelay);
               account.cancelBatch?.call();
               account.cancelBatch = null;
               final keyRead = await _keys!.readKey(account.key);
@@ -545,21 +548,8 @@ final class ReadCacheDiskCoordinator {
                 return;
               }
               account.keyBytes = keyRead.value;
-              for (final publication in account.unindexed.entries.toList()) {
-                if (publication.value.isCurrent) continue;
-                final record = account.entries[publication.key];
-                if (record != null) {
-                  await _files!.evict(
-                    account.key,
-                    keyRead.value,
-                    record.index.fileName,
-                  );
-                  account.entries.remove(publication.key);
-                }
-                account.unindexed.remove(publication.key);
-                account.indexDirty = true;
-                if (!current()) return;
-              }
+              await _evictStalePublications(account, current);
+              if (!current()) return;
               var processed = 0;
               while (account.pending.isNotEmpty &&
                   current() &&
@@ -619,14 +609,22 @@ final class ReadCacheDiskCoordinator {
               }
               bool indexCurrent() =>
                   current() && account.indexRevision == indexRevision;
-              if (account.indexDirty && indexCurrent()) {
-                await _commitIndex(account, indexCurrent);
+              while (account.indexDirty && indexCurrent()) {
+                if (await _commitIndex(account, indexCurrent)) break;
+                if (!indexCurrent() ||
+                    !account.unindexed.values.any(
+                      (lease) => !lease.isCurrent,
+                    )) {
+                  break;
+                }
+                await _evictStalePublications(account, indexCurrent);
               }
               if (!current()) return;
               if (account.pending.isEmpty) {
-                account.batchDeadline = null;
                 account.cancelBatch?.call();
                 account.cancelBatch = null;
+                account.batchDeadline = null;
+                if (account.indexDirty) _scheduleBatch(binding);
                 return;
               }
               account.batchDeadline = _clock().add(batchDelay);
@@ -642,6 +640,27 @@ final class ReadCacheDiskCoordinator {
         });
     account.flush = flight;
     return flight;
+  }
+
+  Future<void> _evictStalePublications(
+    _Account account,
+    bool Function() current,
+  ) async {
+    for (final publication in account.unindexed.entries.toList()) {
+      if (!current()) return;
+      if (publication.value.isCurrent) continue;
+      final record = account.entries[publication.key];
+      if (record != null) {
+        await _files!.evict(
+          account.key,
+          account.keyBytes,
+          record.index.fileName,
+        );
+        account.entries.remove(publication.key);
+      }
+      account.unindexed.remove(publication.key);
+      account.indexDirty = true;
+    }
   }
 
   Future<bool> _makeRoom(
@@ -713,6 +732,7 @@ final class ReadCacheDiskCoordinator {
         indexBytes + readCacheEnvelopeOverhead,
         permitted,
       )) {
+        if (!permitted()) return false;
         throw const ReadCacheFileException(ReadCacheFileFailure.capacity);
       }
       if (!permitted()) return false;
@@ -1016,11 +1036,7 @@ final class ReadCacheDiskCoordinator {
         markerReady: markerReady,
       );
       if (result.complete && account.intent == null && intent.valid) {
-        // Removal/session clears stay fenced even after all storage is gone.
-        if (operation == ReadCacheCleanupOperation.settingsClear &&
-            account.sessionFence == null) {
-          account.cleanup = false;
-        }
+        // Activation decides whether the verified binding may reopen its fence.
         account.state = account.cleanup
             ? ReadCacheDiskState.cleaning
             : ReadCacheDiskState.closed;
@@ -1039,7 +1055,7 @@ final class ReadCacheDiskCoordinator {
       if (result.complete &&
           intent.valid &&
           operation == ReadCacheCleanupOperation.settingsClear &&
-          _gates(binding)) {
+          _domain.active == binding) {
         unawaited(activate(binding));
       }
       return result;
@@ -1254,7 +1270,13 @@ final class ReadCacheDiskCoordinator {
         bool current() =>
             fence.isCurrent && account.intent == intent && !account.cleanup;
         if (!current()) return _none;
-        if (!await _commitIndex(account, current)) return _none;
+        await _evictStalePublications(account, current);
+        if (!current()) return _none;
+        if (!await _commitIndex(account, current)) {
+          if (!current()) return _none;
+          final full = _fullIntent(account, ReadCacheClearReason.accountClear);
+          return await _clearNow(account, full, hadWork: true);
+        }
         if (!current()) return _none;
         intent.users--;
         if (intent.users == 0 && !await _removeIntent(account, intent)) {
@@ -1348,6 +1370,9 @@ final class ReadCacheDiskCoordinator {
       for (final key in {
         ...inventory.markers.keys,
         ...inventory.keys.keys.where((k) => !retained.contains(k)),
+        ..._domain.accounts.values
+            .where((a) => a.intent?.full == true && a.intent!.valid)
+            .map((a) => a.key),
       }) {
         if (revision != _domain.startupRevision) return false;
         final account = _account(key);
@@ -1470,16 +1495,21 @@ final class ReadCacheDiskCoordinator {
             ...inventory.markers.keys,
           }) {
             final account = _account(key);
-            final intent =
-                intents[key] ??
-                _fullIntent(account, ReadCacheClearReason.accountClear);
+            final intent = intents[key] ??= _fullIntent(
+              account,
+              ReadCacheClearReason.accountClear,
+            );
             final result = await _clearNow(
               account,
               intent,
               hadWork: markers.containsKey(key),
               markerReady: markers[key],
             );
-            if (!result.complete) return false;
+            if (!result.complete &&
+                !(account.intent == null && account.clearComplete)) {
+              return false;
+            }
+            // Recovery's activate compares the verified binding with this fence.
             account.cleanup = account.sessionFence != null;
           }
           await _files!.clearAccountDirectoriesExcept({});
@@ -1501,7 +1531,34 @@ final class ReadCacheDiskCoordinator {
           return false;
         }
       });
-      if (!cleared) return false;
+      if (!cleared) {
+        for (final key in intents.keys) {
+          final account = _account(key);
+          final pending = account.intent;
+          if (pending != null && pending.full && pending.valid) {
+            await _persist(account, pending);
+          }
+          final active = _domain.active;
+          final binding = active?.accountKey == key
+              ? active!
+              : account.sessionFence ??
+                    DiskBinding(accountKey: key, generation: 0);
+          reportCleanup(
+            binding,
+            _cleanup(
+              ReadCacheCleanupOperation.settingsClear,
+              DiskClearResult(
+                keyGoneConfirmed: false,
+                directoryGoneConfirmed: false,
+                markerDurable: pending?.durable ?? false,
+                complete: false,
+              ),
+              ReadCacheCleanupCode.cleanupFailed,
+            ),
+          );
+        }
+        return false;
+      }
     }
     // Re-enabling still requires a fresh startup decision and verified binding.
     return stored;
