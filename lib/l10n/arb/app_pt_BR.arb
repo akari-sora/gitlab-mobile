@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "Fechar item de trabalho do grupo",
   "aiOpReopenGroupWorkItem": "Reabrir o item de trabalho do grupo",
   "aiOpSetGroupWorkItemAssignees": "Definir responsáveis do item de trabalho do grupo",
-  "aiOpSetGroupWorkItemDates": "Definir datas do item de trabalho do grupo"
+  "aiOpSetGroupWorkItemDates": "Definir datas do item de trabalho do grupo",
+  "aiRunNoticeApprovalChannel": "Trabalho de IA aguardando aprovação",
+  "aiRunNoticeResultChannel": "Resultados do trabalho de IA",
+  "aiRunNoticeTitle": "Assistente de IA",
+  "aiRunNoticeNeedsApproval": "Uma tarefa aguarda sua aprovação",
+  "aiRunNoticeCompleted": "Uma tarefa terminou",
+  "aiRunNoticeFailed": "Uma tarefa falhou",
+  "aiRunNoticeInterrupted": "Uma tarefa foi interrompida",
+  "aiRunNoticeAskTitle": "Ativar as notificações do trabalho de IA?",
+  "aiRunNoticeAskDetail": "Depois que você sair do app, uma notificação avisa quando o trabalho de IA precisar da sua aprovação ou terminar. Ela mostra só o status do trabalho, nunca contas, projetos ou conteúdo.",
+  "aiRunNoticeAskSkip": "Agora não",
+  "aiRunNoticeAskContinue": "Continuar",
+  "aiRunNoticeDenied": "As notificações estão desativadas: você não será avisado quando o trabalho em segundo plano precisar de aprovação, e as propostas expiram após 30 minutos.",
+  "aiRunNoticeFinishEditFirst": "Conclua ou feche a edição atual antes de abrir a notificação."
 }

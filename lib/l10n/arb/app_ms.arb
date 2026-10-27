@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "Tutup item kerja kumpulan",
   "aiOpReopenGroupWorkItem": "Buka semula item kerja kumpulan",
   "aiOpSetGroupWorkItemAssignees": "Tetapkan orang yang ditugaskan item kerja kumpulan",
-  "aiOpSetGroupWorkItemDates": "Tetapkan tarikh item kerja kumpulan"
+  "aiOpSetGroupWorkItemDates": "Tetapkan tarikh item kerja kumpulan",
+  "aiRunNoticeApprovalChannel": "Kerja AI menunggu kelulusan",
+  "aiRunNoticeResultChannel": "Hasil kerja AI",
+  "aiRunNoticeTitle": "Pembantu AI",
+  "aiRunNoticeNeedsApproval": "Ada tugas yang menunggu kelulusan anda",
+  "aiRunNoticeCompleted": "Satu tugas selesai",
+  "aiRunNoticeFailed": "Satu tugas gagal",
+  "aiRunNoticeInterrupted": "Satu tugas terganggu",
+  "aiRunNoticeAskTitle": "Hidupkan pemberitahuan kerja AI?",
+  "aiRunNoticeAskDetail": "Selepas anda meninggalkan apl, pemberitahuan akan memaklumkan apabila kerja AI memerlukan kelulusan anda atau selesai. Ia hanya menunjukkan status kerja, tidak sekali-kali akaun, projek atau kandungan.",
+  "aiRunNoticeAskSkip": "Bukan sekarang",
+  "aiRunNoticeAskContinue": "Teruskan",
+  "aiRunNoticeDenied": "Pemberitahuan dimatikan: anda tidak akan diingatkan apabila kerja di latar belakang memerlukan kelulusan, dan cadangan luput selepas 30 minit.",
+  "aiRunNoticeFinishEditFirst": "Selesaikan atau tutup suntingan semasa sebelum membuka pemberitahuan."
 }

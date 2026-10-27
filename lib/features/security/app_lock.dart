@@ -91,6 +91,7 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
   bool _authenticating = false;
   bool _started = false;
   bool _disposed = false;
+  int _refusedUnlocks = 0;
   DateTime? _awaySince;
 
   /// False until the stored choice is known; the app stays covered until then.
@@ -104,6 +105,15 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Whether the app content must be covered right now.
   bool get covering => !_loaded || locked;
+
+  /// Unlock attempts that ended with the app still locked: cancelled or not
+  /// passed. A notification tap waiting behind the lock is dropped when this
+  /// changes, so a refused unlock never navigates.
+  int get refusedUnlocks => _refusedUnlocks;
+
+  /// The lock is on and the app is away: coming back may lock it again, so
+  /// nothing opens for a notification tap until the app is back.
+  bool get away => _enabled && _awaySince != null;
 
   Future<void> start() async {
     if (_started) return;
@@ -131,10 +141,15 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> unlock() async {
     if (!locked || _authenticating) return !locked;
     final passed = await _check(l10n.unlockNamedApp(appName));
-    if (passed && !_disposed) {
+    if (_disposed) return passed;
+    // The check reports its end before this point, still locked either way;
+    // only here is a pass told apart from a refusal.
+    if (passed) {
       _locked = false;
-      notifyListeners();
+    } else {
+      _refusedUnlocks++;
     }
+    notifyListeners();
     return passed;
   }
 
@@ -183,6 +198,9 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
             !_locked &&
             _clock().difference(since) >= relockAfter) {
           _locked = true;
+          notifyListeners();
+        } else if (since != null) {
+          // Back without locking again; a tap waiting for that may open.
           notifyListeners();
         }
       case AppLifecycleState.inactive || AppLifecycleState.detached:

@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "Tutup item kerja grup",
   "aiOpReopenGroupWorkItem": "Buka kembali item kerja grup",
   "aiOpSetGroupWorkItemAssignees": "Atur penerima tugas item kerja grup",
-  "aiOpSetGroupWorkItemDates": "Atur tanggal item kerja grup"
+  "aiOpSetGroupWorkItemDates": "Atur tanggal item kerja grup",
+  "aiRunNoticeApprovalChannel": "Pekerjaan AI menunggu persetujuan",
+  "aiRunNoticeResultChannel": "Hasil pekerjaan AI",
+  "aiRunNoticeTitle": "Asisten AI",
+  "aiRunNoticeNeedsApproval": "Ada tugas yang menunggu persetujuan Anda",
+  "aiRunNoticeCompleted": "Sebuah tugas selesai",
+  "aiRunNoticeFailed": "Sebuah tugas gagal",
+  "aiRunNoticeInterrupted": "Sebuah tugas terhenti",
+  "aiRunNoticeAskTitle": "Aktifkan notifikasi pekerjaan AI?",
+  "aiRunNoticeAskDetail": "Setelah Anda meninggalkan aplikasi, notifikasi memberi tahu saat pekerjaan AI memerlukan persetujuan Anda atau selesai. Notifikasi hanya menampilkan status pekerjaan, tidak pernah akun, proyek, atau konten.",
+  "aiRunNoticeAskSkip": "Nanti saja",
+  "aiRunNoticeAskContinue": "Lanjutkan",
+  "aiRunNoticeDenied": "Notifikasi nonaktif: Anda tidak akan diingatkan saat pekerjaan di latar belakang memerlukan persetujuan, dan proposal kedaluwarsa setelah 30 menit.",
+  "aiRunNoticeFinishEditFirst": "Selesaikan atau tutup pengeditan saat ini sebelum membuka notifikasi."
 }

@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "Werkitem van de groep sluiten",
   "aiOpReopenGroupWorkItem": "Werkitem van de groep opnieuw openen",
   "aiOpSetGroupWorkItemAssignees": "Toegewezenen van het werkitem van de groep instellen",
-  "aiOpSetGroupWorkItemDates": "Datums van het werkitem van de groep instellen"
+  "aiOpSetGroupWorkItemDates": "Datums van het werkitem van de groep instellen",
+  "aiRunNoticeApprovalChannel": "AI-werk wacht op goedkeuring",
+  "aiRunNoticeResultChannel": "Resultaten van AI-werk",
+  "aiRunNoticeTitle": "AI-assistent",
+  "aiRunNoticeNeedsApproval": "Een taak wacht op je goedkeuring",
+  "aiRunNoticeCompleted": "Een taak is klaar",
+  "aiRunNoticeFailed": "Een taak is mislukt",
+  "aiRunNoticeInterrupted": "Een taak is onderbroken",
+  "aiRunNoticeAskTitle": "Meldingen voor AI-werk aanzetten?",
+  "aiRunNoticeAskDetail": "Als je de app verlaat, laat een melding weten wanneer AI-werk je goedkeuring nodig heeft of klaar is. Die toont alleen de status van het werk, nooit accounts, projecten of inhoud.",
+  "aiRunNoticeAskSkip": "Niet nu",
+  "aiRunNoticeAskContinue": "Doorgaan",
+  "aiRunNoticeDenied": "Meldingen staan uit: je krijgt geen herinnering als werk op de achtergrond goedkeuring nodig heeft, en voorstellen vervallen na 30 minuten.",
+  "aiRunNoticeFinishEditFirst": "Rond de huidige bewerking af of sluit die voordat je de melding opent."
 }

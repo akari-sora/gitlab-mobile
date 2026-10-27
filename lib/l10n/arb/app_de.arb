@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "Arbeitselement der Gruppe schließen",
   "aiOpReopenGroupWorkItem": "Arbeitselement der Gruppe erneut öffnen",
   "aiOpSetGroupWorkItemAssignees": "Zuständige für das Arbeitselement der Gruppe festlegen",
-  "aiOpSetGroupWorkItemDates": "Daten für das Arbeitselement der Gruppe festlegen"
+  "aiOpSetGroupWorkItemDates": "Daten für das Arbeitselement der Gruppe festlegen",
+  "aiRunNoticeApprovalChannel": "KI-Arbeit wartet auf Genehmigung",
+  "aiRunNoticeResultChannel": "Ergebnisse der KI-Arbeit",
+  "aiRunNoticeTitle": "KI-Assistent",
+  "aiRunNoticeNeedsApproval": "Eine Aufgabe wartet auf Ihre Genehmigung",
+  "aiRunNoticeCompleted": "Eine Aufgabe ist fertig",
+  "aiRunNoticeFailed": "Eine Aufgabe ist fehlgeschlagen",
+  "aiRunNoticeInterrupted": "Eine Aufgabe wurde unterbrochen",
+  "aiRunNoticeAskTitle": "Benachrichtigungen für KI-Arbeit einschalten?",
+  "aiRunNoticeAskDetail": "Nachdem Sie die App verlassen haben, meldet eine Benachrichtigung, wenn KI-Arbeit Ihre Genehmigung braucht oder endet. Sie zeigt nur den Arbeitsstatus, nie Konten, Projekte oder Inhalte.",
+  "aiRunNoticeAskSkip": "Nicht jetzt",
+  "aiRunNoticeAskContinue": "Weiter",
+  "aiRunNoticeDenied": "Benachrichtigungen sind aus: Sie werden nicht erinnert, wenn Arbeit im Hintergrund eine Genehmigung braucht, und Vorschläge verfallen nach 30 Minuten.",
+  "aiRunNoticeFinishEditFirst": "Schließen Sie die aktuelle Bearbeitung ab, bevor Sie die Benachrichtigung öffnen."
 }

@@ -2767,5 +2767,18 @@
   "aiOpCloseGroupWorkItem": "Close group work item",
   "aiOpReopenGroupWorkItem": "Reopen group work item",
   "aiOpSetGroupWorkItemAssignees": "Set group work item assignees",
-  "aiOpSetGroupWorkItemDates": "Set group work item dates"
+  "aiOpSetGroupWorkItemDates": "Set group work item dates",
+  "aiRunNoticeApprovalChannel": "AI work awaiting approval",
+  "aiRunNoticeResultChannel": "AI work results",
+  "aiRunNoticeTitle": "AI assistant",
+  "aiRunNoticeNeedsApproval": "A task is waiting for your approval",
+  "aiRunNoticeCompleted": "A task finished",
+  "aiRunNoticeFailed": "A task failed",
+  "aiRunNoticeInterrupted": "A task was interrupted",
+  "aiRunNoticeAskTitle": "Turn on AI work notifications?",
+  "aiRunNoticeAskDetail": "After you leave the app, a notification tells you when AI work needs your approval or ends. It shows only the work status, never accounts, projects or content.",
+  "aiRunNoticeAskSkip": "Not now",
+  "aiRunNoticeAskContinue": "Continue",
+  "aiRunNoticeDenied": "Notifications are off: you won’t be reminded when work in the background needs approval, and proposals expire after 30 minutes.",
+  "aiRunNoticeFinishEditFirst": "Finish or close the current edit before opening the notification."
 }

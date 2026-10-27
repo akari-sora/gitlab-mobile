@@ -9,6 +9,7 @@ import '../../core/ai/ai_report.dart';
 import '../../core/ai/quick_actions.dart';
 import '../../core/brand.dart';
 import '../../core/ai/runner.dart';
+import '../../core/ai/tools/write_coordinator.dart' show AiWriteProposal;
 import '../../core/ai/tools/write_levels.dart';
 import '../../core/failure.dart';
 import '../../core/providers.dart';
@@ -24,6 +25,7 @@ import 'ai_draft_preview.dart';
 import 'ai_draft_target.dart';
 import 'ai_report_sender.dart';
 import 'ai_report_sheet.dart';
+import 'ai_run_notification_ui.dart';
 import 'ai_message_body.dart';
 import 'ai_attachment_session.dart';
 import 'ai_scope.dart';
@@ -55,6 +57,38 @@ Future<bool> openAiChat(
         summarize: summarize,
         draftTarget: draftTarget,
       ),
+    ),
+  );
+  registry.release(session);
+  return true;
+}
+
+/// Opens [session], the registry's own conversation a tapped run notification
+/// leads to, at [proposal]'s card while it still waits. False, opening
+/// nothing, when AI is not here or the registry no longer holds [session].
+/// Showing the card never approves it.
+Future<bool> openAiChatSession(
+  BuildContext context,
+  AiChatSession session, {
+  AiWriteProposal? proposal,
+}) async {
+  final registry = AiRunRegistry.maybeOf(context);
+  if (registry == null || AiScope.maybeOf(context) == null) return false;
+  final AiChatSession opened;
+  try {
+    // Counts this page as a visit, as [openAiChat] does.
+    opened = registry.open(session.origin);
+  } on StateError {
+    return false;
+  }
+  if (!identical(opened, session)) {
+    registry.release(opened);
+    return false;
+  }
+  await Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) =>
+          AiChatPage(session: session, focusProposal: proposal?.executionId),
     ),
   );
   registry.release(session);
@@ -111,6 +145,7 @@ class AiChatPage extends StatefulWidget {
     super.key,
     required this.session,
     this.summarize = false,
+    this.focusProposal,
     this.draftTarget,
     this.analyzeDraft = analyzeAiDraft,
     this.sendReport = sendAiReport,
@@ -145,6 +180,10 @@ class AiChatPage extends StatefulWidget {
   /// conversation is ready.
   final bool summarize;
 
+  /// The execution ID of the approval card a tapped notification opened this
+  /// conversation at. The card is brought into view once if it still waits.
+  final String? focusProposal;
+
   @override
   State<AiChatPage> createState() => _AiChatPageState();
 }
@@ -170,6 +209,9 @@ class _AiChatPageState extends State<AiChatPage> {
   /// "AI summary" sends its request once, when the empty session is ready.
   late bool _pendingSummary;
 
+  /// The card named by [AiChatPage.focusProposal], to scroll it into view.
+  final _focusCard = GlobalKey();
+
   AiChatSession get _session => widget.session;
 
   @override
@@ -185,6 +227,35 @@ class _AiChatPageState extends State<AiChatPage> {
     _input.addListener(_inputChanged);
     _session.addListener(_maybeSummarize);
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeSummarize());
+    if (widget.focusProposal != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _revealProposal());
+    }
+  }
+
+  /// Scrolls the card a notification pointed to into view. A card that is
+  /// gone (approved, rejected or expired) leaves the conversation as it is.
+  void _revealProposal({bool retried = false}) {
+    if (!mounted) return;
+    final card = _focusCard.currentContext;
+    if (card == null) {
+      // The list builds lazily from the newest end, where waiting cards sit.
+      if (!retried && _scroll.hasClients && _scroll.offset > 0) {
+        _scroll.jumpTo(0);
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _revealProposal(retried: true),
+        );
+      }
+      return;
+    }
+    unawaited(
+      Scrollable.ensureVisible(
+        card,
+        alignment: 0.5,
+        duration: MediaQuery.of(context).disableAnimations
+            ? Duration.zero
+            : const Duration(milliseconds: 250),
+      ),
+    );
   }
 
   void _maybeSummarize() {
@@ -514,12 +585,29 @@ class _AiChatPageState extends State<AiChatPage> {
   Future<void> _send([String? suggestion]) async {
     final text = (suggestion ?? _input.text).trim();
     if (text.isEmpty || !_session.canSend) return;
+    // A run may go on in the background, so the first one started in this
+    // process explains the notifications and asks for them; it is sent
+    // whatever the answer.
+    await askForAiRunNotifications(context, disclose: _discloseNoReminders);
+    if (!mounted || !_session.canSend) return;
     if (suggestion == null) _input.clear();
     _toNewest();
     // The page that sends is the one that can ask about a cleartext send;
     // another page on this session may have cleared the callback on closing.
     _session.confirmCleartext = _confirmCleartext;
     await _session.send(text);
+  }
+
+  void _discloseNoReminders(String text) {
+    if (!mounted) return;
+    _messenger.currentState?.showSnackBar(
+      SnackBar(
+        key: const ValueKey('ai-run-notice-denied'),
+        content: Text(text),
+        duration: const Duration(seconds: 10),
+        showCloseIcon: true,
+      ),
+    );
   }
 
   /// Brings the newest content (the list is reversed) back into view.
@@ -754,6 +842,13 @@ class _AiChatPageState extends State<AiChatPage> {
     );
   }
 
+  /// The focused card keeps one wrapper for the page's life, so its typed
+  /// text and state survive rebuilds.
+  Widget _withFocus(String executionId, Widget card) =>
+      executionId == widget.focusProposal
+      ? KeyedSubtree(key: _focusCard, child: card)
+      : card;
+
   Widget _conversation(BuildContext context) {
     final items = _session.items;
     // The blocker or preparing card scrolls with the conversation, so a long
@@ -827,10 +922,13 @@ class _AiChatPageState extends State<AiChatPage> {
       // it, until the user approves or rejects it.
       if (_session case final AiWriteChatSession writes)
         for (final proposal in writes.proposals)
-          AiWriteProposalCard(
-            key: ValueKey('ai-proposal-card-${proposal.executionId}'),
-            proposal: proposal,
-            session: writes,
+          _withFocus(
+            proposal.executionId,
+            AiWriteProposalCard(
+              key: ValueKey('ai-proposal-card-${proposal.executionId}'),
+              proposal: proposal,
+              session: writes,
+            ),
           ),
       // Edited cards keep the user's text until a readback confirms the
       // write (§7.2).

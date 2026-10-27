@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "إغلاق عنصر عمل المجموعة",
   "aiOpReopenGroupWorkItem": "إعادة فتح عنصر عمل المجموعة",
   "aiOpSetGroupWorkItemAssignees": "تعيين المسؤولين عن عنصر عمل المجموعة",
-  "aiOpSetGroupWorkItemDates": "تعيين تواريخ عنصر عمل المجموعة"
+  "aiOpSetGroupWorkItemDates": "تعيين تواريخ عنصر عمل المجموعة",
+  "aiRunNoticeApprovalChannel": "عمل AI بانتظار الموافقة",
+  "aiRunNoticeResultChannel": "نتائج عمل AI",
+  "aiRunNoticeTitle": "مساعد AI",
+  "aiRunNoticeNeedsApproval": "توجد مهمة بانتظار موافقتك",
+  "aiRunNoticeCompleted": "انتهت مهمة",
+  "aiRunNoticeFailed": "فشلت مهمة",
+  "aiRunNoticeInterrupted": "توقفت مهمة قبل اكتمالها",
+  "aiRunNoticeAskTitle": "هل تريد تشغيل إشعارات عمل AI؟",
+  "aiRunNoticeAskDetail": "بعد مغادرة التطبيق، يُعلمك إشعار عندما يحتاج عمل AI إلى موافقتك أو عندما ينتهي. لا يعرض الإشعار سوى حالة العمل، ولا يعرض أبدًا الحسابات أو المشاريع أو المحتوى.",
+  "aiRunNoticeAskSkip": "ليس الآن",
+  "aiRunNoticeAskContinue": "متابعة",
+  "aiRunNoticeDenied": "الإشعارات متوقفة: لن تتلقى تذكيرًا عندما يحتاج العمل في الخلفية إلى موافقة، وتنتهي صلاحية الاقتراحات بعد 30 دقيقة.",
+  "aiRunNoticeFinishEditFirst": "أنهِ التعديل الحالي أو أغلقه قبل فتح الإشعار."
 }

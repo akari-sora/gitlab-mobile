@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "Fermer l’élément de travail du groupe",
   "aiOpReopenGroupWorkItem": "Rouvrir l’élément de travail du groupe",
   "aiOpSetGroupWorkItemAssignees": "Définir les responsables de l’élément de travail du groupe",
-  "aiOpSetGroupWorkItemDates": "Définir les dates de l’élément de travail du groupe"
+  "aiOpSetGroupWorkItemDates": "Définir les dates de l’élément de travail du groupe",
+  "aiRunNoticeApprovalChannel": "Travail IA en attente d’approbation",
+  "aiRunNoticeResultChannel": "Résultats du travail IA",
+  "aiRunNoticeTitle": "Assistant IA",
+  "aiRunNoticeNeedsApproval": "Une tâche attend votre approbation",
+  "aiRunNoticeCompleted": "Une tâche est terminée",
+  "aiRunNoticeFailed": "Une tâche a échoué",
+  "aiRunNoticeInterrupted": "Une tâche a été interrompue",
+  "aiRunNoticeAskTitle": "Activer les notifications du travail IA ?",
+  "aiRunNoticeAskDetail": "Après avoir quitté l’app, une notification vous prévient quand le travail IA a besoin de votre approbation ou se termine. Elle n’affiche que l’état du travail, jamais de comptes, de projets ni de contenu.",
+  "aiRunNoticeAskSkip": "Plus tard",
+  "aiRunNoticeAskContinue": "Continuer",
+  "aiRunNoticeDenied": "Les notifications sont désactivées : aucun rappel quand le travail en arrière-plan a besoin d’approbation, et les propositions expirent après 30 minutes.",
+  "aiRunNoticeFinishEditFirst": "Terminez ou fermez la modification en cours avant d’ouvrir la notification."
 }

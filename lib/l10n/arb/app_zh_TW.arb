@@ -11538,5 +11538,50 @@
   "aiOpCloseGroupWorkItem": "關閉群組工作項目",
   "aiOpReopenGroupWorkItem": "重新開啟群組工作項目",
   "aiOpSetGroupWorkItemAssignees": "設定群組工作項目負責人",
-  "aiOpSetGroupWorkItemDates": "設定群組工作項目日期"
+  "aiOpSetGroupWorkItemDates": "設定群組工作項目日期",
+  "aiRunNoticeApprovalChannel": "AI 工作待核准",
+  "@aiRunNoticeApprovalChannel": {
+    "description": "Android channel name for AI run notifications that wait for approval. Generic: no account, project or content.",
+    "placeholders": {}
+  },
+  "aiRunNoticeResultChannel": "AI 工作結果",
+  "@aiRunNoticeResultChannel": {
+    "description": "Android channel name for AI run result notifications. Generic: no account, project or content.",
+    "placeholders": {}
+  },
+  "aiRunNoticeTitle": "AI 助理",
+  "@aiRunNoticeTitle": {
+    "description": "Title of every AI run notification, also on the lock screen. Generic.",
+    "placeholders": {}
+  },
+  "aiRunNoticeNeedsApproval": "有一項工作等你核准",
+  "@aiRunNoticeNeedsApproval": {
+    "description": "Body of the notification for a run that waits for approval. Generic and short for the lock screen.",
+    "placeholders": {}
+  },
+  "aiRunNoticeCompleted": "工作已完成",
+  "@aiRunNoticeCompleted": {
+    "description": "Body of the notification for a run that finished. Generic and short.",
+    "placeholders": {}
+  },
+  "aiRunNoticeFailed": "工作失敗",
+  "@aiRunNoticeFailed": {
+    "description": "Body of the notification for a run that failed. Generic and short.",
+    "placeholders": {}
+  },
+  "aiRunNoticeInterrupted": "工作已中斷",
+  "@aiRunNoticeInterrupted": {
+    "description": "Body of the notification for a run that was cut short. Generic and short.",
+    "placeholders": {}
+  },
+  "aiRunNoticeAskTitle": "開啟 AI 工作通知？",
+  "aiRunNoticeAskDetail": "離開應用程式後，AI 工作需要你核准或結束時，會用通知提醒你。通知只顯示工作狀態，不含帳號、專案或內容。",
+  "aiRunNoticeAskSkip": "暫時不要",
+  "aiRunNoticeAskContinue": "繼續",
+  "aiRunNoticeDenied": "通知已關閉：工作在背景中需要核准時不會提醒你，提議會在 30 分鐘後作廢。",
+  "@aiRunNoticeDenied": {
+    "description": "Shown in the chat when notifications are not allowed; the 30-minute proposal expiry is fixed.",
+    "placeholders": {}
+  },
+  "aiRunNoticeFinishEditFirst": "請先完成或關閉目前的編輯，再開啟通知"
 }

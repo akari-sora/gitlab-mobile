@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "ปิดรายการงานของกลุ่ม",
   "aiOpReopenGroupWorkItem": "เปิดรายการงานของกลุ่มอีกครั้ง",
   "aiOpSetGroupWorkItemAssignees": "ตั้งผู้รับผิดชอบรายการงานของกลุ่ม",
-  "aiOpSetGroupWorkItemDates": "ตั้งวันที่ของรายการงานของกลุ่ม"
+  "aiOpSetGroupWorkItemDates": "ตั้งวันที่ของรายการงานของกลุ่ม",
+  "aiRunNoticeApprovalChannel": "งาน AI ที่รออนุมัติ",
+  "aiRunNoticeResultChannel": "ผลของงาน AI",
+  "aiRunNoticeTitle": "ผู้ช่วย AI",
+  "aiRunNoticeNeedsApproval": "มีงานหนึ่งรอให้คุณอนุมัติ",
+  "aiRunNoticeCompleted": "งานหนึ่งเสร็จแล้ว",
+  "aiRunNoticeFailed": "งานหนึ่งล้มเหลว",
+  "aiRunNoticeInterrupted": "งานหนึ่งถูกขัดจังหวะ",
+  "aiRunNoticeAskTitle": "เปิดการแจ้งเตือนงาน AI ไหม",
+  "aiRunNoticeAskDetail": "หลังจากออกจากแอป การแจ้งเตือนจะบอกคุณเมื่องาน AI ต้องการการอนุมัติหรือทำเสร็จ โดยแสดงเพียงสถานะของงาน ไม่แสดงบัญชี โปรเจกต์ หรือเนื้อหาใด ๆ",
+  "aiRunNoticeAskSkip": "ไม่ใช่ตอนนี้",
+  "aiRunNoticeAskContinue": "ดำเนินการต่อ",
+  "aiRunNoticeDenied": "การแจ้งเตือนปิดอยู่: เมื่องานเบื้องหลังต้องการการอนุมัติ คุณจะไม่ได้รับการเตือน และข้อเสนอจะหมดอายุหลัง 30 นาที",
+  "aiRunNoticeFinishEditFirst": "ทำการแก้ไขปัจจุบันให้เสร็จหรือปิดก่อนเปิดการแจ้งเตือน"
 }

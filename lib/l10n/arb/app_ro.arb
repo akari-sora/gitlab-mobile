@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "Închide elementul de lucru al grupului",
   "aiOpReopenGroupWorkItem": "Redeschide elementul de lucru al grupului",
   "aiOpSetGroupWorkItemAssignees": "Setează responsabilii elementului de lucru al grupului",
-  "aiOpSetGroupWorkItemDates": "Setează datele elementului de lucru al grupului"
+  "aiOpSetGroupWorkItemDates": "Setează datele elementului de lucru al grupului",
+  "aiRunNoticeApprovalChannel": "Activitate AI în așteptarea aprobării",
+  "aiRunNoticeResultChannel": "Rezultatele activității AI",
+  "aiRunNoticeTitle": "Asistent AI",
+  "aiRunNoticeNeedsApproval": "O sarcină așteaptă aprobarea ta",
+  "aiRunNoticeCompleted": "O sarcină s-a încheiat",
+  "aiRunNoticeFailed": "O sarcină a eșuat",
+  "aiRunNoticeInterrupted": "O sarcină a fost întreruptă",
+  "aiRunNoticeAskTitle": "Activezi notificările pentru activitatea AI?",
+  "aiRunNoticeAskDetail": "După ce ieși din aplicație, o notificare te anunță când activitatea AI are nevoie de aprobarea ta sau se încheie. Arată doar starea activității, niciodată conturi, proiecte sau conținut.",
+  "aiRunNoticeAskSkip": "Nu acum",
+  "aiRunNoticeAskContinue": "Continuă",
+  "aiRunNoticeDenied": "Notificările sunt dezactivate: nu vei primi un memento când activitatea din fundal are nevoie de aprobare, iar propunerile expiră după 30 de minute.",
+  "aiRunNoticeFinishEditFirst": "Termină sau închide editarea curentă înainte de a deschide notificarea."
 }

@@ -8379,4 +8379,43 @@ final class AppStrings {
 
   /// 設定群組工作項目日期
   String get aiOpSetGroupWorkItemDates => language._messages[2761];
+
+  /// AI 工作待核准
+  String get aiRunNoticeApprovalChannel => language._messages[2762];
+
+  /// AI 工作結果
+  String get aiRunNoticeResultChannel => language._messages[2763];
+
+  /// AI 助理
+  String get aiRunNoticeTitle => language._messages[2764];
+
+  /// 有一項工作等你核准
+  String get aiRunNoticeNeedsApproval => language._messages[2765];
+
+  /// 工作已完成
+  String get aiRunNoticeCompleted => language._messages[2766];
+
+  /// 工作失敗
+  String get aiRunNoticeFailed => language._messages[2767];
+
+  /// 工作已中斷
+  String get aiRunNoticeInterrupted => language._messages[2768];
+
+  /// 開啟 AI 工作通知？
+  String get aiRunNoticeAskTitle => language._messages[2769];
+
+  /// 離開應用程式後，AI 工作需要你核准或結束時，會用通知提醒你。通知只顯示工作狀態，不含帳號、專案或內容。
+  String get aiRunNoticeAskDetail => language._messages[2770];
+
+  /// 暫時不要
+  String get aiRunNoticeAskSkip => language._messages[2771];
+
+  /// 繼續
+  String get aiRunNoticeAskContinue => language._messages[2772];
+
+  /// 通知已關閉：工作在背景中需要核准時不會提醒你，提議會在 30 分鐘後作廢。
+  String get aiRunNoticeDenied => language._messages[2773];
+
+  /// 請先完成或關閉目前的編輯，再開啟通知
+  String get aiRunNoticeFinishEditFirst => language._messages[2774];
 }

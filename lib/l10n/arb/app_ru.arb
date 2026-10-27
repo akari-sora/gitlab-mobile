@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "Закрыть рабочий элемент группы",
   "aiOpReopenGroupWorkItem": "Заново открыть рабочий элемент группы",
   "aiOpSetGroupWorkItemAssignees": "Назначить ответственных рабочего элемента группы",
-  "aiOpSetGroupWorkItemDates": "Установить даты рабочего элемента группы"
+  "aiOpSetGroupWorkItemDates": "Установить даты рабочего элемента группы",
+  "aiRunNoticeApprovalChannel": "Работа ИИ ждёт одобрения",
+  "aiRunNoticeResultChannel": "Результаты работы ИИ",
+  "aiRunNoticeTitle": "Помощник AI",
+  "aiRunNoticeNeedsApproval": "Задача ждёт вашего одобрения",
+  "aiRunNoticeCompleted": "Задача завершена",
+  "aiRunNoticeFailed": "Задача не выполнена",
+  "aiRunNoticeInterrupted": "Задача прервана",
+  "aiRunNoticeAskTitle": "Включить уведомления о работе ИИ?",
+  "aiRunNoticeAskDetail": "Когда вы выйдете из приложения, уведомление сообщит, что работе ИИ нужно ваше одобрение или что она закончилась. В нём только состояние работы — без аккаунтов, проектов и содержимого.",
+  "aiRunNoticeAskSkip": "Не сейчас",
+  "aiRunNoticeAskContinue": "Продолжить",
+  "aiRunNoticeDenied": "Уведомления выключены: если фоновой работе понадобится одобрение, напоминания не будет, а предложения утратят силу через 30 минут.",
+  "aiRunNoticeFinishEditFirst": "Завершите или закройте текущее редактирование, прежде чем открыть уведомление."
 }

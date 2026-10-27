@@ -2761,5 +2761,18 @@
   "aiOpCloseGroupWorkItem": "Zamknij element roboczy grupy",
   "aiOpReopenGroupWorkItem": "Otwórz ponownie element roboczy grupy",
   "aiOpSetGroupWorkItemAssignees": "Ustaw przypisanych elementu roboczego grupy",
-  "aiOpSetGroupWorkItemDates": "Ustaw daty elementu roboczego grupy"
+  "aiOpSetGroupWorkItemDates": "Ustaw daty elementu roboczego grupy",
+  "aiRunNoticeApprovalChannel": "Praca AI czeka na zatwierdzenie",
+  "aiRunNoticeResultChannel": "Wyniki pracy AI",
+  "aiRunNoticeTitle": "Asystent AI",
+  "aiRunNoticeNeedsApproval": "Zadanie czeka na Twoje zatwierdzenie",
+  "aiRunNoticeCompleted": "Zadanie zakończone",
+  "aiRunNoticeFailed": "Zadanie nie powiodło się",
+  "aiRunNoticeInterrupted": "Zadanie zostało przerwane",
+  "aiRunNoticeAskTitle": "Włączyć powiadomienia o pracy AI?",
+  "aiRunNoticeAskDetail": "Po wyjściu z aplikacji powiadomienie poinformuje Cię, gdy praca AI będzie wymagać zatwierdzenia lub się zakończy. Pokazuje tylko stan pracy, nigdy konta, projekty ani treść.",
+  "aiRunNoticeAskSkip": "Nie teraz",
+  "aiRunNoticeAskContinue": "Dalej",
+  "aiRunNoticeDenied": "Powiadomienia są wyłączone: nie dostaniesz przypomnienia, gdy praca w tle będzie wymagać zatwierdzenia, a propozycje wygasną po 30 minutach.",
+  "aiRunNoticeFinishEditFirst": "Zakończ lub zamknij bieżącą edycję przed otwarciem powiadomienia."
 }
