@@ -150,7 +150,8 @@ final class ReadCacheStagedWrite {
 /// files cannot be removed in the app, so the cache stays closed.
 ///
 /// Capacity checks are best effort across accounts: separate staging isolates
-/// can each observe room before either temporary or rename becomes visible.
+/// can each observe room before the other's temporary is fully written or
+/// renamed.
 /// C2c must serialize device-wide capacity checks through staging and commit or
 /// discard; per-account queues alone do not close this check-then-rename window.
 final class ReadCacheFileStore {
@@ -253,7 +254,10 @@ final class ReadCacheFileStore {
   /// [expectedBodyKind] selects the pre-read and decrypt ceiling: JSON, page and
   /// text use 1 MiB, terminal logs use 2 MiB (plus the 29-byte envelope on disk).
   /// Omitting it retains the terminal-log ceiling for unknown recovery entries.
-  /// The authenticated body kind must also match a supplied expectation.
+  /// The authenticated body kind must also match a supplied expectation. With
+  /// [expectedBodyKind], an entry of another kind throws bindingMismatch (even
+  /// when expired) and one above that kind's ceiling throws tooLarge; the
+  /// caller treats both like null and evicts.
   Future<ProjectedDiskEntry?> readEntry(
     String accountKey,
     List<int>? key,
@@ -272,7 +276,8 @@ final class ReadCacheFileStore {
   /// Recovery can authenticate an entry discovered by its opaque file name.
   /// This does not scan, delete, rebuild an index or choose an eviction policy.
   /// Returns null when missing or expired; the caller evicts on null.
-  /// [expectedBodyKind] has the same ceiling and binding checks as [readEntry].
+  /// [expectedBodyKind] has the same ceiling and binding checks, and the same
+  /// bindingMismatch and tooLarge failures, as [readEntry].
   Future<ProjectedDiskEntry?> readEntryFile(
     String accountKey,
     List<int>? key,
