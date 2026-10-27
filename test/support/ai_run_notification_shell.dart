@@ -64,7 +64,8 @@ final class FakeNotificationPlatform {
   String? launchPayload;
   Completer<void>? launchBarrier;
   Completer<void>? launchRequested;
-  bool? notificationsEnabled;
+  bool? notificationsEnabled = false;
+  Completer<void>? permissionBarrier;
   List<Map<String, Object?>>? channels = [];
 
   /// The system's answer to the permission request; null is an error.
@@ -102,9 +103,14 @@ final class FakeNotificationPlatform {
       'getActiveNotifications' => const <Object?>[],
       'areNotificationsEnabled' => notificationsEnabled,
       'getNotificationChannels' => channels,
-      'requestNotificationsPermission' => notificationsEnabled = permission,
+      'requestNotificationsPermission' => await _requestPermission(),
       _ => throw StateError('Unexpected platform call: ${call.method}'),
     };
+  }
+
+  Future<bool?> _requestPermission() async {
+    await permissionBarrier?.future;
+    return notificationsEnabled = permission;
   }
 
   Future<Object?> _launchDetails() async {
@@ -138,6 +144,28 @@ final class FakeNotificationPlatform {
           (_) => done.complete(),
         );
     await done.future;
+  }
+}
+
+final class MemoryRunNoticeStore implements AiRunNoticeStore {
+  bool asked = false;
+  bool failRead = false;
+  bool failWrite = false;
+  int reads = 0;
+  int writes = 0;
+
+  @override
+  Future<bool> readAsked() async {
+    reads++;
+    if (failRead) throw StateError('synthetic marker read failure');
+    return asked;
+  }
+
+  @override
+  Future<void> markAsked() async {
+    writes++;
+    if (failWrite) throw StateError('synthetic marker write failure');
+    asked = true;
   }
 }
 

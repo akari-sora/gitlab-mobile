@@ -656,6 +656,27 @@ Future<AiSecureCleanupResult> cleanupOrphanAiSecureData(
   );
 }
 
+/// Device-scoped history of the Android run-notification permission request.
+/// It contains no account or repository data and survives account removal.
+abstract interface class AiRunNoticeStore {
+  Future<bool> readAsked();
+  Future<void> markAsked();
+}
+
+final class SecureAiRunNoticeStore implements AiRunNoticeStore {
+  SecureAiRunNoticeStore([FlutterSecureStorage? storage])
+    : _storage = storage ?? _aiSecureStorage;
+
+  static const key = 'gitlab_mobile_ai_run_notice_asked_v1';
+  final FlutterSecureStorage _storage;
+
+  @override
+  Future<bool> readAsked() async => await _storage.read(key: key) == '1';
+
+  @override
+  Future<void> markAsked() => _storage.write(key: key, value: '1');
+}
+
 final class SecureAiStore
     implements
         AiStore,

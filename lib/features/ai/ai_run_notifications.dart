@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../core/ai/tools/write_coordinator.dart';
 import 'ai_chat_session.dart';
+import 'ai_stores.dart';
 
 /// The UI supplies translated, generic text. No account, resource, prompt or
 /// model output is passed to this provider. Read it again for every delivery
@@ -103,12 +104,32 @@ enum AiRunNotificationFailure {
   idRangeFull,
 }
 
+/// App permission and channel settings are independent. Unknown channel state
+/// must not hide a known app permission or claim that approval reminders are off.
+final class AiRunNotificationState {
+  const AiRunNotificationState({
+    this.appEnabled,
+    this.approvalChannelEnabled,
+    this.resultChannelEnabled,
+  });
+
+  final bool? appEnabled;
+  final bool? approvalChannelEnabled;
+  final bool? resultChannelEnabled;
+
+  bool get approvalRemindersDisabled =>
+      appEnabled == false || approvalChannelEnabled == false;
+}
+
 /// Device-lifetime notification owner, above the account-keyed shell. Bind the
 /// current registry and unbind it on sign-out. This never opens/restores chats,
 /// switches accounts, approves writes, or invokes an app-lock authenticator.
 final class AiRunNotifications extends ChangeNotifier {
-  AiRunNotifications({required AiRunNotificationText Function() text})
-    : _text = text;
+  AiRunNotifications({
+    required AiRunNotificationText Function() text,
+    AiRunNoticeStore? noticeStore,
+  }) : _text = text,
+       _noticeStore = noticeStore ?? SecureAiRunNoticeStore();
 
   static const approvalFirstId = 6200;
   static const approvalLastId = 6299;
@@ -116,10 +137,12 @@ final class AiRunNotifications extends ChangeNotifier {
   static const resultLastId = 6399;
 
   final AiRunNotificationText Function() _text;
+  final AiRunNoticeStore _noticeStore;
   final _plugin = FlutterLocalNotificationsPlugin();
   final _approvalIds = _NotificationIds(approvalFirstId, approvalLastId);
   final _resultIds = _NotificationIds(resultFirstId, resultLastId);
   final _approvalWatches = <int, ({VoidCallback check, VoidCallback stop})>{};
+  final _pendingApprovalCancellations = <int>{};
   AiRunRegistry? _registry;
   StreamSubscription<AiRunNotificationEvent>? _events;
   Future<bool>? _initialization;
@@ -138,6 +161,25 @@ final class AiRunNotifications extends ChangeNotifier {
       _failure ??
       (_resultRangeFull ? AiRunNotificationFailure.idRangeFull : null);
   AiRunPendingOpen? get pendingOpen => _pending;
+
+  @visibleForTesting
+  int get debugApprovalWatchCount => _approvalWatches.length;
+
+  Future<bool> wasPermissionAsked() async {
+    try {
+      return await _noticeStore.readAsked();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _rememberPermissionAsked() async {
+    try {
+      await _noticeStore.markAsked();
+    } catch (_) {
+      // Leave the marker absent so the next send can ask and retry the write.
+    }
+  }
 
   /// Call once before run events. Repeated calls share the same Future and do
   /// not cancel notifications again. Only C3 owns this startup cancellation:
@@ -194,11 +236,14 @@ final class AiRunNotifications extends ChangeNotifier {
   Future<bool?> requestPermission() async {
     if (!await initialize() || _disposed) return null;
     try {
-      return await _plugin
+      final android = _plugin
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
-          >()
-          ?.requestNotificationsPermission();
+          >();
+      if (android == null) return null;
+      final allowed = await android.requestNotificationsPermission();
+      await _rememberPermissionAsked();
+      return allowed;
     } catch (_) {
       _setFailure(AiRunNotificationFailure.permission);
       return null;
@@ -208,25 +253,42 @@ final class AiRunNotifications extends ChangeNotifier {
   /// Android's current app permission and the two notification channels.
   /// Missing channels have not been created yet; a blocked channel has none
   /// importance. Unsupported platforms or unreadable state remain unknown.
-  Future<bool?> areNotificationsEnabled() async {
-    if (!await initialize() || _disposed) return null;
+  Future<AiRunNotificationState> areNotificationsEnabled() async {
+    if (!await initialize() || _disposed) {
+      return const AiRunNotificationState();
+    }
+    bool? appEnabled;
     try {
       final android = _plugin
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
           >();
-      final enabled = await android?.areNotificationsEnabled();
-      if (_disposed || enabled != true) return _disposed ? null : enabled;
+      appEnabled = await android?.areNotificationsEnabled();
+      if (_disposed) return const AiRunNotificationState();
+      if (appEnabled != true) {
+        return AiRunNotificationState(appEnabled: appEnabled);
+      }
       final channels = await android?.getNotificationChannels();
-      if (_disposed || channels == null) return null;
-      return !channels.any(
-        (channel) =>
-            (channel.id == 'ai_run_approvals_v1' ||
-                channel.id == 'ai_run_results_v1') &&
-            channel.importance == Importance.none,
+      if (_disposed) return const AiRunNotificationState();
+      return AiRunNotificationState(
+        appEnabled: appEnabled,
+        approvalChannelEnabled: channels == null
+            ? null
+            : !channels.any(
+                (channel) =>
+                    channel.id == 'ai_run_approvals_v1' &&
+                    channel.importance == Importance.none,
+              ),
+        resultChannelEnabled: channels == null
+            ? null
+            : !channels.any(
+                (channel) =>
+                    channel.id == 'ai_run_results_v1' &&
+                    channel.importance == Importance.none,
+              ),
       );
     } catch (_) {
-      return null;
+      return AiRunNotificationState(appEnabled: _disposed ? null : appEnabled);
     }
   }
 
@@ -253,7 +315,11 @@ final class AiRunNotifications extends ChangeNotifier {
   }
 
   void bindRegistry(AiRunRegistry? registry) {
-    if (_disposed || identical(_registry, registry)) return;
+    if (_disposed) return;
+    if (_pendingApprovalCancellations.isNotEmpty) {
+      _delivery = _delivery.then((_) => _retryApprovalCancellations());
+    }
+    if (identical(_registry, registry)) return;
     unawaited(_events?.cancel());
     _registry = registry;
     for (final watch in _approvalWatches.values.toList()) {
@@ -302,36 +368,50 @@ final class AiRunNotifications extends ChangeNotifier {
     int id,
   ) {
     _approvalWatches.remove(id)?.stop();
-    var cancelling = false;
     late final VoidCallback check;
     void stop() => session.removeListener(check);
     check = () {
       if (_disposed ||
-          cancelling ||
           (_current(owner, session, route) && _awaitingApproval(session))) {
         return;
       }
-      cancelling = true;
-      // Serialize cancellation after any in-flight show. A reused ID's new
-      // watch cannot be cancelled by this old conversation's callback.
-      _delivery = _delivery
-          .then((_) async {
-            if (_disposed || !identical(_approvalWatches[id]?.stop, stop)) {
-              return;
-            }
-            await _plugin.cancel(id: id);
-            if (identical(_approvalWatches[id]?.stop, stop)) {
-              _approvalWatches.remove(id)?.stop();
-              _approvalIds.remove(payload);
-            }
-          })
-          .catchError((Object _) {
-            cancelling = false;
-            _setFailure(AiRunNotificationFailure.delivery);
-          });
+      if (!identical(_approvalWatches[id]?.stop, stop)) return;
+      _approvalWatches.remove(id)?.stop();
+      _approvalIds.remove(payload);
+      // Reserve only the ID until cancellation succeeds. Neither the retry
+      // state nor its queued work retains the old session/owner callbacks.
+      _pendingApprovalCancellations.add(id);
+      _approvalIds.reserveActive(_pendingApprovalCancellations);
+      _scheduleApprovalCancellation(id);
     };
     _approvalWatches[id] = (check: check, stop: stop);
     session.addListener(check);
+  }
+
+  void _scheduleApprovalCancellation(int id) {
+    // Run after any in-flight show, without capturing its owner/session.
+    _delivery = _delivery.then((_) => _cancelApproval(id));
+  }
+
+  Future<void> _cancelApproval(int id) async {
+    if (_disposed || !_pendingApprovalCancellations.contains(id)) return;
+    try {
+      await _plugin.cancel(id: id);
+      _pendingApprovalCancellations.remove(id);
+      _approvalIds.reserveActive(_pendingApprovalCancellations);
+      if (_pendingApprovalCancellations.isEmpty &&
+          _failure == AiRunNotificationFailure.delivery) {
+        _setFailure(null);
+      }
+    } catch (_) {
+      _setFailure(AiRunNotificationFailure.delivery);
+    }
+  }
+
+  Future<void> _retryApprovalCancellations() async {
+    for (final id in _pendingApprovalCancellations.toList()) {
+      await _cancelApproval(id);
+    }
   }
 
   void _enqueue(AiRunRegistry owner, AiRunNotificationEvent event) {
@@ -351,6 +431,8 @@ final class AiRunNotifications extends ChangeNotifier {
     _delivery = _delivery
         .then((_) async {
           if (!await initialize() || !_current(owner, session, route)) return;
+          await _retryApprovalCancellations();
+          if (!_current(owner, session, route)) return;
           final approval = event.kind == AiRunNotificationKind.needsApproval;
           if (approval && !_awaitingApproval(session)) return;
           final payload = route.encode();
@@ -388,7 +470,7 @@ final class AiRunNotifications extends ChangeNotifier {
             ),
             payload: payload,
           );
-          _setFailure(null);
+          if (_pendingApprovalCancellations.isEmpty) _setFailure(null);
         })
         .catchError((Object _) {
           _setFailure(AiRunNotificationFailure.delivery);
@@ -472,6 +554,7 @@ final class AiRunNotifications extends ChangeNotifier {
       watch.stop();
     }
     _approvalWatches.clear();
+    _pendingApprovalCancellations.clear();
     super.dispose();
   }
 }

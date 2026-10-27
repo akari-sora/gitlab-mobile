@@ -464,9 +464,15 @@ void main() {
     late AiRunNotifications notifications;
     late AiRunNotificationGate gate;
     late NotificationChat chat;
+    late MemoryRunNoticeStore noticeStore;
+
+    setUp(() => noticeStore = MemoryRunNoticeStore());
 
     Future<void> pumpChat(WidgetTester tester) async {
-      notifications = AiRunNotifications(text: aiRunNotificationText);
+      notifications = AiRunNotifications(
+        text: aiRunNotificationText,
+        noticeStore: noticeStore,
+      );
       gate = AiRunNotificationGate(notifications);
       chat = NotificationChat()..phase = AiChatPhase.idle;
       addTearDown(chat.dispose);
@@ -502,13 +508,16 @@ void main() {
         expect(platform.permissionRequests, 0);
         expect(chat.sent, ['hello']);
         expect(disclosure(), findsNothing);
+        expect(noticeStore.reads, 0);
+        expect(noticeStore.writes, 0);
       },
       variant: _android,
     );
 
-    testWidgets('known disabled notifications disclose without asking again', (
+    testWidgets('denied with the marker discloses without asking again', (
       tester,
     ) async {
+      noticeStore.asked = true;
       platform.notificationsEnabled = false;
       await pumpChat(tester);
       await send(tester, 'hello');
@@ -517,6 +526,118 @@ void main() {
       expect(platform.permissionRequests, 0);
       expect(chat.sent, ['hello']);
       expect(disclosure(), findsOneWidget);
+      expect(noticeStore.writes, 0);
+    }, variant: _android);
+
+    for (final answer in <bool?>[true, false, null]) {
+      testWidgets(
+        'fresh install explains then requests then writes marker: $answer',
+        (tester) async {
+          expect(platform.notificationsEnabled, isFalse);
+          platform.permission = answer;
+          platform.permissionBarrier = Completer<void>();
+          await pumpChat(tester);
+          await send(tester, 'hello');
+          expect(
+            find.byKey(const ValueKey('ai-run-notice-ask')),
+            findsOneWidget,
+          );
+          expect(platform.permissionRequests, 0);
+          expect(noticeStore.writes, 0);
+          expect(chat.sent, isEmpty);
+
+          await tester.tap(
+            find.byKey(const ValueKey('ai-run-notice-continue')),
+          );
+          await tester.pump();
+          expect(platform.permissionRequests, 1);
+          expect(noticeStore.writes, 0, reason: 'request has not returned');
+          expect(noticeStore.asked, isFalse);
+          platform.permissionBarrier!.complete();
+          await tester.pumpAndSettle();
+          expect(noticeStore.writes, 1);
+          expect(noticeStore.asked, isTrue);
+          expect(chat.sent, ['hello']);
+          expect(disclosure(), answer == false ? findsOneWidget : findsNothing);
+
+          // A new gate consults the device marker; granted app permission
+          // bypasses the explanation altogether.
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pumpAndSettle();
+          await pumpChat(tester);
+          await send(tester, 'after restart');
+          await tester.pumpAndSettle();
+          expect(find.byKey(const ValueKey('ai-run-notice-ask')), findsNothing);
+          expect(platform.permissionRequests, 1);
+          expect(noticeStore.writes, 1);
+          expect(chat.sent, ['after restart']);
+          expect(disclosure(), answer == false ? findsOneWidget : findsNothing);
+        },
+        variant: _android,
+      );
+    }
+
+    testWidgets('unreadable marker still explains and asks', (tester) async {
+      noticeStore
+        ..asked = true
+        ..failRead = true;
+      await pumpChat(tester);
+      await send(tester, 'hello');
+      expect(find.byKey(const ValueKey('ai-run-notice-ask')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ai-run-notice-continue')));
+      await tester.pumpAndSettle();
+      expect(platform.permissionRequests, 1);
+      expect(noticeStore.writes, 1);
+      expect(chat.sent, ['hello']);
+    }, variant: _android);
+
+    testWidgets('failed marker write asks and retries on the next send', (
+      tester,
+    ) async {
+      noticeStore.failWrite = true;
+      platform.permission = false;
+      await pumpChat(tester);
+      await send(tester, 'first');
+      expect(find.byKey(const ValueKey('ai-run-notice-ask')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ai-run-notice-continue')));
+      await tester.pumpAndSettle();
+      expect(platform.permissionRequests, 1);
+      expect(noticeStore.writes, 1);
+      expect(noticeStore.asked, isFalse);
+      expect(chat.sent, ['first']);
+
+      await tester.pump(const Duration(seconds: 11));
+      await tester.pumpAndSettle();
+      noticeStore.failWrite = false;
+      await send(tester, 'second');
+      expect(find.byKey(const ValueKey('ai-run-notice-ask')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ai-run-notice-continue')));
+      await tester.pumpAndSettle();
+      expect(platform.permissionRequests, 2);
+      expect(noticeStore.writes, 2);
+      expect(noticeStore.asked, isTrue);
+      expect(chat.sent, ['first', 'second']);
+      expect(
+        disclosure(),
+        findsNothing,
+        reason: 'disclosure is once per process',
+      );
+    }, variant: _android);
+
+    testWidgets('results channel off alone does not disclose reminders off', (
+      tester,
+    ) async {
+      platform.notificationsEnabled = true;
+      platform.channels = [
+        notificationChannel('ai_run_results_v1', importance: 0),
+      ];
+      await pumpChat(tester);
+      await send(tester, 'hello');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-run-notice-ask')), findsNothing);
+      expect(platform.permissionRequests, 0);
+      expect(chat.sent, ['hello']);
+      expect(disclosure(), findsNothing);
     }, variant: _android);
 
     testWidgets(
@@ -556,6 +677,7 @@ void main() {
         'unknown notification state never discloses off: '
         '${appEnabled ? "enabled app with unreadable channels" : "unreadable app permission"}',
         (tester) async {
+          platform.notificationsEnabled = null;
           if (appEnabled) {
             platform.notificationsEnabled = true;
             platform.channels = null;
@@ -564,9 +686,11 @@ void main() {
           await send(tester, 'hello');
           expect(
             find.byKey(const ValueKey('ai-run-notice-ask')),
-            findsOneWidget,
+            appEnabled ? findsNothing : findsOneWidget,
           );
-          await tester.tap(find.byKey(const ValueKey('ai-run-notice-skip')));
+          if (!appEnabled) {
+            await tester.tap(find.byKey(const ValueKey('ai-run-notice-skip')));
+          }
           await tester.pumpAndSettle();
           expect(platform.permissionRequests, 0);
           expect(chat.sent, ['hello']);
@@ -630,6 +754,7 @@ void main() {
         expect(platform.permissionRequests, 0);
         expect(chat.sent, ['hello']);
         expect(disclosure(), findsOneWidget);
+        expect(noticeStore.writes, 0, reason: 'not now made no system request');
       },
       variant: _android,
     );
@@ -655,6 +780,8 @@ void main() {
       expect(find.byKey(const ValueKey('ai-run-notice-ask')), findsNothing);
       expect(platform.calls, isEmpty);
       expect(chat.sent, ['hello']);
+      expect(noticeStore.reads, 0);
+      expect(noticeStore.writes, 0);
     }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
   });
 }

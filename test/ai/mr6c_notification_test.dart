@@ -4,14 +4,18 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_run_notifications.dart';
+import 'package:gitlab_mobile/features/ai/ai_stores.dart';
+import 'package:gitlab_mobile/features/auth/account_store.dart';
 
-import '../support/ai_run_notification_shell.dart' show notificationChannel;
+import '../support/ai_run_notification_shell.dart'
+    show MemoryRunNoticeStore, notificationChannel;
 
 const _channel = MethodChannel('dexterous.com/flutter/local_notifications');
 const _sentinels = [
@@ -55,6 +59,8 @@ final class _Chat extends ChangeNotifier
   }
 
   void changed() => notifyListeners();
+
+  bool get notificationListenerAttached => hasListeners;
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -113,7 +119,7 @@ final class _Native {
   Completer<void>? showRequested;
   int? failCancel;
   bool permission = true;
-  bool? notificationsEnabled = true;
+  bool? notificationsEnabled = false;
   List<Map<String, Object?>>? channels = [];
   bool failState = false;
   bool failShow = false;
@@ -237,7 +243,10 @@ void main() {
     chat = _Chat('conversation-1')..proposals = [_proposal('approval-1')];
     registry = _Registry(chat);
     currentText = _text;
-    notifications = AiRunNotifications(text: () => currentText);
+    notifications = AiRunNotifications(
+      text: () => currentText,
+      noticeStore: MemoryRunNoticeStore(),
+    );
   });
 
   tearDown(() {
@@ -254,6 +263,29 @@ void main() {
         appLockLoaded: loaded,
         appLockUnlocked: unlocked,
       );
+
+  test(
+    'permission marker stores only device-scoped 1 and survives account removal',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      const storage = FlutterSecureStorage();
+      final store = SecureAiRunNoticeStore(storage);
+      expect(
+        SecureAiRunNoticeStore.key,
+        'gitlab_mobile_ai_run_notice_asked_v1',
+      );
+      expect(await store.readAsked(), isFalse);
+      await store.markAsked();
+      expect(await store.readAsked(), isTrue);
+      expect(await storage.readAll(), {SecureAiRunNoticeStore.key: '1'});
+      await SecureAccountStore(storage).save([]);
+      expect(await store.readAsked(), isTrue);
+      for (final malformed in ['', '0', 'true']) {
+        await storage.write(key: SecureAiRunNoticeStore.key, value: malformed);
+        expect(await store.readAsked(), isFalse);
+      }
+    },
+  );
 
   test(
     'late cold payload is invalid after cancelled unlock; new tap works',
@@ -330,6 +362,97 @@ void main() {
       expect(native.liveIds, contains(otherId));
     });
   }
+
+  for (final retry in ['bind', 'delivery']) {
+    test(
+      'cancel failure detaches old owner; next $retry retries its ID',
+      () async {
+        notifications.bindRegistry(registry);
+        await notifications.initialize();
+        registry.emit(AiRunNotificationKind.needsApproval);
+        await _drain();
+        final id = native.shows.single['id'] as int;
+        expect(chat.notificationListenerAttached, isTrue);
+        native.calls.clear();
+        native.failCancel = id;
+        final nextChat = _Chat('next-owner')..proposals = [_proposal('next')];
+        final nextRegistry = _Registry(nextChat);
+        addTearDown(nextRegistry.dispose);
+        addTearDown(nextChat.dispose);
+        notifications.bindRegistry(nextRegistry);
+        await _drain();
+
+        expect(native.liveIds, contains(id));
+        expect(notifications.failure, AiRunNotificationFailure.delivery);
+        expect(
+          notifications.debugApprovalWatchCount,
+          0,
+          reason: 'no map entry may retain the old session/owner callbacks',
+        );
+        expect(
+          chat.notificationListenerAttached,
+          isFalse,
+          reason: 'old owner/session watch must not survive cancel failure',
+        );
+        final attempts = native.calls.where((c) => c.method == 'cancel').length;
+        chat.changed();
+        await _drain();
+        expect(
+          native.calls.where((c) => c.method == 'cancel'),
+          hasLength(attempts),
+        );
+
+        native.failCancel = null;
+        if (retry == 'bind') {
+          notifications.bindRegistry(nextRegistry);
+        } else {
+          nextRegistry.emit(AiRunNotificationKind.completed);
+        }
+        await _drain();
+        expect(
+          native.calls
+              .where((c) => c.method == 'cancel')
+              .map((c) => (c.arguments as Map)['id']),
+          [id, id],
+        );
+        expect(native.liveIds, isNot(contains(id)));
+        expect(chat.notificationListenerAttached, isFalse);
+      },
+    );
+  }
+
+  test(
+    'failed cancellation reserves its ID until the retry succeeds',
+    () async {
+      notifications.bindRegistry(registry);
+      await notifications.initialize();
+      registry.emit(AiRunNotificationKind.needsApproval);
+      await _drain();
+      final oldId = native.shows.single['id'] as int;
+      native.failCancel = oldId;
+      // Reusing the same routing coordinates in another owner must not let a
+      // later retry cancel that owner's new approval notification.
+      final nextChat = _Chat(chat.id)..proposals = [_proposal('next')];
+      final nextRegistry = _Registry(nextChat);
+      addTearDown(nextRegistry.dispose);
+      addTearDown(nextChat.dispose);
+      notifications.bindRegistry(nextRegistry);
+      await _drain();
+      nextRegistry.emit(AiRunNotificationKind.needsApproval);
+      await _drain();
+      final newId = native.shows.last['id'] as int;
+      expect(newId, isNot(oldId));
+      expect(native.liveIds, containsAll([oldId, newId]));
+      expect(chat.notificationListenerAttached, isFalse);
+      expect(notifications.debugApprovalWatchCount, 1);
+      native.failCancel = null;
+      notifications.bindRegistry(nextRegistry);
+      await _drain();
+      expect(native.liveIds, isNot(contains(oldId)));
+      expect(native.liveIds, contains(newId));
+      expect(nextChat.notificationListenerAttached, isTrue);
+    },
+  );
 
   test(
     'proposal expiry cancels approval even before phase catches up',
@@ -895,7 +1018,10 @@ void main() {
       expect(notifications.supported, isFalse);
       expect(await notifications.initialize(), isFalse);
       expect(await notifications.requestPermission(), isNull);
-      expect(await notifications.areNotificationsEnabled(), isNull);
+      expect(
+        (await notifications.areNotificationsEnabled()).appEnabled,
+        isNull,
+      );
       expect(native.calls, isEmpty);
     },
   );
@@ -903,13 +1029,35 @@ void main() {
   test(
     'notification state reads app permission without requesting it',
     () async {
-      expect(await notifications.areNotificationsEnabled(), isTrue);
+      expect(
+        native.notificationsEnabled,
+        isFalse,
+        reason: 'Android fresh install',
+      );
+      expect(
+        (await notifications.areNotificationsEnabled()).appEnabled,
+        isFalse,
+      );
+      native.notificationsEnabled = true;
+      expect(
+        (await notifications.areNotificationsEnabled()).appEnabled,
+        isTrue,
+      );
       native.notificationsEnabled = false;
-      expect(await notifications.areNotificationsEnabled(), isFalse);
+      expect(
+        (await notifications.areNotificationsEnabled()).appEnabled,
+        isFalse,
+      );
       native.notificationsEnabled = null;
-      expect(await notifications.areNotificationsEnabled(), isNull);
+      expect(
+        (await notifications.areNotificationsEnabled()).appEnabled,
+        isNull,
+      );
       native.failState = true;
-      expect(await notifications.areNotificationsEnabled(), isNull);
+      expect(
+        (await notifications.areNotificationsEnabled()).appEnabled,
+        isNull,
+      );
       expect(
         native.calls.where((c) => c.method == 'requestNotificationsPermission'),
         isEmpty,
@@ -918,23 +1066,44 @@ void main() {
   );
 
   for (final id in ['ai_run_approvals_v1', 'ai_run_results_v1']) {
-    test('blocked $id channel counts as notifications disabled', () async {
-      native.channels = [notificationChannel(id, importance: 0)];
-      expect(await notifications.areNotificationsEnabled(), isFalse);
-      native.channels = [notificationChannel(id)];
-      expect(await notifications.areNotificationsEnabled(), isTrue);
-    });
+    test(
+      'blocked $id channel retains independent notification state',
+      () async {
+        native.notificationsEnabled = true;
+        native.channels = [notificationChannel(id, importance: 0)];
+        final state = await notifications.areNotificationsEnabled();
+        expect(state.appEnabled, isTrue);
+        expect(state.approvalChannelEnabled, id != 'ai_run_approvals_v1');
+        expect(state.resultChannelEnabled, id != 'ai_run_results_v1');
+        expect(state.approvalRemindersDisabled, id == 'ai_run_approvals_v1');
+        native.channels = [notificationChannel(id)];
+        final enabled = await notifications.areNotificationsEnabled();
+        expect(enabled.approvalChannelEnabled, isTrue);
+        expect(enabled.resultChannelEnabled, isTrue);
+      },
+    );
   }
 
   test(
     'absent or unrelated channels are allowed; unreadable is unknown',
     () async {
+      native.notificationsEnabled = true;
       native.channels = [];
-      expect(await notifications.areNotificationsEnabled(), isTrue);
+      expect(
+        (await notifications.areNotificationsEnabled()).approvalChannelEnabled,
+        isTrue,
+      );
       native.channels = [notificationChannel('unrelated', importance: 0)];
-      expect(await notifications.areNotificationsEnabled(), isTrue);
+      expect(
+        (await notifications.areNotificationsEnabled()).approvalChannelEnabled,
+        isTrue,
+      );
       native.channels = null;
-      expect(await notifications.areNotificationsEnabled(), isNull);
+      final unknownChannels = await notifications.areNotificationsEnabled();
+      expect(unknownChannels.appEnabled, isTrue);
+      expect(unknownChannels.approvalChannelEnabled, isNull);
+      expect(unknownChannels.resultChannelEnabled, isNull);
+      expect(unknownChannels.approvalRemindersDisabled, isFalse);
     },
   );
 

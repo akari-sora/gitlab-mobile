@@ -47,10 +47,10 @@ final class AiRunNotificationGate extends ChangeNotifier
   bool _disposed = false;
   AppLifecycleState? _lifecycle;
 
-  /// Whether this process already explained the notifications and asked for
-  /// the permission. Kept in memory only: the persisted keys are a closed
-  /// list, and the system remembers the answer itself.
+  /// Whether this process handled the explanation. A failed marker write
+  /// allows the next send to retry; the durable request history is C-D8.
   bool permissionAsked = false;
+  bool _remindersDisclosed = false;
 
   /// A tap waits for the shell (and the lock) to take it.
   bool get waiting => !_disposed && notifications.pendingOpen != null;
@@ -159,11 +159,23 @@ Future<void> askForAiRunNotifications(
     return;
   }
   gate.permissionAsked = true;
-  final enabled = await gate.notifications.areNotificationsEnabled();
+  void discloseDisabled(AiRunNotificationState state) {
+    if (state.approvalRemindersDisabled && !gate._remindersDisclosed) {
+      gate._remindersDisclosed = true;
+      disclose(l10n.aiRunNoticeDenied);
+    }
+  }
+
+  final state = await gate.notifications.areNotificationsEnabled();
   if (!context.mounted || gate._disposed) return;
-  if (enabled == true) return;
-  if (enabled == false) {
-    disclose(l10n.aiRunNoticeDenied);
+  if (state.appEnabled == true) {
+    discloseDisabled(state);
+    return;
+  }
+  final asked = await gate.notifications.wasPermissionAsked();
+  if (!context.mounted || gate._disposed) return;
+  if (asked) {
+    discloseDisabled(state);
     return;
   }
   final proceed = await showDialog<bool>(
@@ -188,10 +200,13 @@ Future<void> askForAiRunNotifications(
     ),
   );
   if (!context.mounted || gate._disposed) return;
-  if (proceed == true) await gate.notifications.requestPermission();
+  if (proceed == true) {
+    await gate.notifications.requestPermission();
+    gate.permissionAsked = await gate.notifications.wasPermissionAsked();
+  }
   // Settings can change while the explanation/system prompt is open. Even
   // "not now" must read the actual state before claiming reminders are off.
   final allowed = await gate.notifications.areNotificationsEnabled();
   if (!context.mounted || gate._disposed) return;
-  if (allowed == false) disclose(l10n.aiRunNoticeDenied);
+  discloseDisabled(allowed);
 }
