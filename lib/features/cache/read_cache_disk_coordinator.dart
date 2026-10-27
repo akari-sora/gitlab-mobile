@@ -19,8 +19,15 @@ typedef ReadCacheScheduler =
     void Function() Function(Duration delay, void Function() callback);
 
 final class ReadCacheDiskStats {
-  const ReadCacheDiskStats(this.queuedEntries, this.queuedBytes, this.dropped);
+  const ReadCacheDiskStats(
+    this.queuedEntries,
+    this.queuedBytes,
+    this.dropped, {
+    this.retainedEntries = 0,
+    this.unindexedEntries = 0,
+  });
   final int queuedEntries, queuedBytes, dropped;
+  final int retainedEntries, unindexedEntries;
 }
 
 /// The only owner of read-cache keys, intents and transactions. No production
@@ -77,6 +84,14 @@ final class ReadCacheDiskCoordinator {
     _domain.accounts.values.fold(0, (n, a) => n + a.pending.length),
     _domain.accounts.values.fold(0, (n, a) => n + a.queuedBytes),
     _domain.dropped,
+    retainedEntries: _domain.accounts.values.fold(
+      0,
+      (n, a) => n + a.entries.length,
+    ),
+    unindexedEntries: _domain.accounts.values.fold(
+      0,
+      (n, a) => n + a.unindexed.length,
+    ),
   );
 
   void configure({
@@ -151,6 +166,8 @@ final class ReadCacheDiskCoordinator {
     try {
       return await action();
     } on Object catch (error) {
+      // Any clearRoot failure conservatively fences the entire device, even
+      // ordinary I/O: the failed last resort cannot establish a trusted root.
       if (clearingRoot ||
           (error is ReadCacheFileException &&
               error.code == ReadCacheFileFailure.untrustedPath)) {
@@ -169,6 +186,9 @@ final class ReadCacheDiskCoordinator {
   }) async {
     _domain.recovered = false;
     _domain.pathRevision++;
+    // Reuse the existing full-clear reason/notice labels for path incidents.
+    // Recovery treats these markers identically; settingsClear reports the
+    // existing diskClosed disposition without adding a separate UI operation.
     final intents = <_Account, _Intent>{
       for (final account in _domain.accounts.values)
         account: _fullIntent(account, ReadCacheClearReason.accountClear),
@@ -494,6 +514,7 @@ final class ReadCacheDiskCoordinator {
           return null;
         }
         ProjectedDiskEntry? value;
+        var rejected = false;
         try {
           value = await _file(
             () => _files!.readEntry(
@@ -505,12 +526,16 @@ final class ReadCacheDiskCoordinator {
           );
         } on ReadCacheCodecException catch (error) {
           if (error.error != ReadCacheCodecError.bindingMismatch) rethrow;
+          rejected = true;
         } on ReadCacheFileException catch (error) {
           if (error.code != ReadCacheFileFailure.tooLarge) rethrow;
+          rejected = true;
         }
         if (!lease.isCurrent) return null;
         final record = account.entries[lookup.canonicalKey];
-        if (value == null) {
+        // A cold miss changes no deletion set. A rejected file still needs
+        // eviction when it was never represented by an in-memory record.
+        if (value == null && (record != null || rejected)) {
           final name =
               record?.index.fileName ??
               await const ReadCacheCipher().entryFileName(
@@ -523,7 +548,7 @@ final class ReadCacheDiskCoordinator {
           account.unindexed.remove(lookup.canonicalKey);
           account.indexTrusted = false;
           account.indexDirty = true;
-        } else if (record != null) {
+        } else if (value != null && record != null) {
           account.entries[lookup.canonicalKey] = _Record(
             value,
             _used(record.index, _clock()),
@@ -1062,6 +1087,7 @@ final class ReadCacheDiskCoordinator {
     Future<bool>? markerReady,
   }) async {
     if (!configured) return _none;
+    final pathRevision = _domain.pathRevision;
     // Revoked callers can have abandoned an already dispatched native marker
     // write. Drain that lane before taking the inventory used to prove empty.
     await account.markerTail;
@@ -1081,7 +1107,10 @@ final class ReadCacheDiskCoordinator {
     } on Object {
       // Unknown is not empty. Still attempt both independent explicit deletes.
     }
-    if (account.intent != intent || !intent.valid) return _none;
+    // Caller timeout or a same-owner join must still allow late key/directory
+    // deletion. Only a new path incident retires this work entirely; marker
+    // persistence/removal retain their separate exact-owner checks.
+    if (pathRevision != _domain.pathRevision) return _none;
     final durable = await (markerReady ?? _persist(account, intent));
     var keyGone = false, directoryGone = false;
     try {
@@ -1098,6 +1127,9 @@ final class ReadCacheDiskCoordinator {
     } on Object {
       // Neither an acknowledgement nor an I/O error is evidence of absence.
     }
+    // A path incident during either delete/proof installed a replacement owner.
+    // Even a previously observed key deletion cannot complete that old caller.
+    if (pathRevision != _domain.pathRevision) return _none;
     account.entries.clear();
     account.unindexed.clear();
     account.indexTrusted = false;
@@ -1127,6 +1159,7 @@ final class ReadCacheDiskCoordinator {
     ReadCacheCleanupOperation operation,
   ) {
     final account = _account(binding.accountKey);
+    final pathRevision = _domain.pathRevision;
     _domain.startupRevision++;
     if (operation == ReadCacheCleanupOperation.accountRemoval ||
         operation == ReadCacheCleanupOperation.signOut) {
@@ -1146,6 +1179,7 @@ final class ReadCacheDiskCoordinator {
         ? _persist(account, intent)
         : null;
     final future = _serial(account, () async {
+      if (pathRevision != _domain.pathRevision) return _none;
       final result = await _clearNow(
         account,
         intent,
@@ -1164,7 +1198,7 @@ final class ReadCacheDiskCoordinator {
       return result;
     });
     return _wait(binding, operation, future, () {
-      if (account.intent == intent) {
+      if (pathRevision == _domain.pathRevision && account.intent == intent) {
         intent.valid = false;
         account.epoch++;
         account.cleanup = true;
@@ -1172,6 +1206,7 @@ final class ReadCacheDiskCoordinator {
       }
     }).then((result) {
       if (result.complete &&
+          pathRevision == _domain.pathRevision &&
           intent.valid &&
           operation == ReadCacheCleanupOperation.settingsClear &&
           _domain.active == binding) {
@@ -1268,6 +1303,7 @@ final class ReadCacheDiskCoordinator {
   DiskInvalidationFence invalidate(DiskInvalidation invalidation) {
     final binding = invalidation.binding;
     final account = _account(binding.accountKey);
+    final pathRevision = _domain.pathRevision;
     final fence = _Fence();
     if (invalidation.kind == DiskInvalidationKind.account) {
       final barrier = clear(binding, ReadCacheCleanupOperation.signOut);
@@ -1319,7 +1355,11 @@ final class ReadCacheDiskCoordinator {
     var scopeSucceeded = false;
     final raw = _serial(account, () async {
       try {
-        if (!configured || !fence.isCurrent) return _none;
+        if (!configured ||
+            !fence.isCurrent ||
+            pathRevision != _domain.pathRevision) {
+          return _none;
+        }
         if (preferencePending && !account.cleanup) {
           // Settings owns the sweep until this serial section starts. Do not
           // dispatch a marker write behind its final inventory proof.
@@ -1327,6 +1367,9 @@ final class ReadCacheDiskCoordinator {
           return await _clearNow(account, full, hadWork: false);
         }
         if (account.cleanup) {
+          // Queued barriers, including another account's on this shared lane,
+          // may join an ordinary live full clear. A path incident retires older
+          // work at the revision check above before it can take the new owner.
           if (account.clearComplete && account.intent == null) {
             account.invalidations.remove(invalidation);
             return const DiskClearResult(
@@ -1389,14 +1432,24 @@ final class ReadCacheDiskCoordinator {
           account.unindexed.remove(record.entry.canonicalKey);
         }
         bool current() =>
-            fence.isCurrent && account.intent == intent && !account.cleanup;
+            fence.isCurrent &&
+            pathRevision == _domain.pathRevision &&
+            account.intent == intent &&
+            !account.cleanup;
         if (!current()) return _none;
         await _evictStalePublications(account, current);
         if (!current()) return _none;
         while (!await _commitIndex(account, current)) {
           if (!current()) return _none;
-          // A fresh staged handle can only be refused by permitted(): with
-          // current() still true, an unindexed publication lost its lease.
+          // Match flush's progress check. Escalate if a refusal cannot be
+          // explained by a stale publication instead of retrying without work.
+          if (!account.unindexed.values.any((lease) => !lease.isCurrent)) {
+            final full = _fullIntent(
+              account,
+              ReadCacheClearReason.accountClear,
+            );
+            return await _clearNow(account, full, hadWork: true);
+          }
           await _evictStalePublications(account, current);
         }
         if (!current()) return _none;
@@ -1417,19 +1470,24 @@ final class ReadCacheDiskCoordinator {
           complete: false,
         );
       } on Object {
-        if (account.intent != intent) return _none;
+        if (pathRevision != _domain.pathRevision || account.intent != intent) {
+          return _none;
+        }
         final full = _fullIntent(account, ReadCacheClearReason.accountClear);
         return await _clearNow(account, full, hadWork: true);
       }
     });
     final waited = _wait(binding, operation, raw, () {
       fence.revoke();
+      if (pathRevision != _domain.pathRevision || account.intent != intent) {
+        return;
+      }
       intent?.valid = false;
       _fullIntent(account, ReadCacheClearReason.accountClear);
     }, succeeded: (value) => scopeSucceeded || value.complete);
     final barrier = waited.then((result) {
       if (scopeSucceeded || result.complete) return result;
-      if (!account.cleanup) {
+      if (pathRevision == _domain.pathRevision && !account.cleanup) {
         _fullIntent(account, ReadCacheClearReason.accountClear);
       }
       throw ApiFailure.readCacheCleanup(

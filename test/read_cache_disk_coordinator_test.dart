@@ -192,8 +192,16 @@ final class _Harness {
 
 final class _Lease implements DiskCommitLease {
   bool current = true;
+  bool refuseNext = false;
   @override
-  bool get isCurrent => current;
+  bool get isCurrent {
+    if (refuseNext) {
+      refuseNext = false;
+      return false;
+    }
+    return current;
+  }
+
   @override
   void revoke() => current = false;
 }
@@ -3393,7 +3401,483 @@ void _fix2Tests() {
   );
 }
 
+void _followupFix1Tests() {
+  for (final ordinal in [1, 2, 3]) {
+    test(
+      'C2FU FIX1 incident during removal rejects old proof: file=$ordinal',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await _readyHarness(h);
+        await _save(h, _entry(h, 1));
+        final fault = _PathFault(h, atRoot: ordinal);
+        h.coordinator.configure(
+          keys: h.keys,
+          files: fault.files,
+          settings: h.settings,
+        );
+        await expectLater(
+          h.coordinator.clearReadCacheDisk(_account),
+          throwsA(
+            isA<ApiFailure>().having(
+              (failure) => failure.cleanup?.code,
+              'cleanup code',
+              ReadCacheCleanupCode.cleanupFailed,
+            ),
+          ),
+        );
+        expect(fault.clearAttempts, 1);
+        expect((await h.keys.readMarker(_account)).isFound, isTrue);
+        expect((await h.keys.readMarker(_other)).isFound, isTrue);
+        expect(h.coordinator.state(_account), ReadCacheDiskState.cleaning);
+        expect(h.coordinator.startupRecovered, isFalse);
+      },
+    );
+  }
+
+  test(
+    'C2FU FIX1 m1 unexplained scoped refusal escalates without retry',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _readyHarness(h);
+      final events = ReceivePort();
+      final messages = StreamIterator<Object?>(events);
+      addTearDown(events.close);
+      final release = File('${h.root.path}/release');
+      h.coordinator.configure(
+        keys: h.keys,
+        settings: h.settings,
+        files: ReadCacheFileStore(
+          root: () async => h.root,
+          clock: () => h.clock.now,
+          checkpoint: _pauseAt(
+            ReadCacheFileCheckpoint.beforeIndexRename,
+            events.sendPort,
+            release.path,
+          ),
+        ),
+      );
+      final entry = _entry(h, 1);
+      final lease = _Lease();
+      h.coordinator.accept(_candidate(entry, lease), entry);
+      final writing = h.coordinator.flush(_binding);
+      expect(
+        await messages.moveNext().timeout(const Duration(seconds: 10)),
+        isTrue,
+      );
+      final barrier = h.coordinator.invalidate(_mutation('project:99')).barrier;
+      var roots = 0;
+      h.coordinator.configure(
+        keys: h.keys,
+        settings: h.settings,
+        files: ReadCacheFileStore(
+          root: () async {
+            // The barrier's first call is usage, its second resolves stageIndex.
+            // Inject one refusal that has no stale publication on the next check.
+            if (++roots == 2) lease.refuseNext = true;
+            return h.root;
+          },
+          clock: () => h.clock.now,
+        ),
+      );
+      release.createSync();
+      await writing;
+      final result = await barrier;
+      await messages.cancel();
+      expect(result.complete, isTrue);
+      expect(result.keyGoneConfirmed, isTrue);
+      expect(result.directoryGoneConfirmed, isTrue);
+      expect((await h.keys.readMarker(_account)).isFound, isFalse);
+      expect(h.coordinator.state(_account), ReadCacheDiskState.cleaning);
+    },
+  );
+
+  test('C2FU FIX1 M15 fence drops retained and unindexed records', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await _readyHarness(h);
+    await _save(h, _entry(h, 1));
+    expect(h.coordinator.stats.retainedEntries, 1);
+    expect(h.coordinator.stats.unindexedEntries, 0);
+    final signal = '${h.root.path}/path-fault';
+    int? retainedAtClear, unindexedAtClear;
+    h.coordinator.configure(
+      keys: h.keys,
+      settings: h.settings,
+      files: ReadCacheFileStore(
+        root: () async {
+          if (File(signal).existsSync()) {
+            retainedAtClear = h.coordinator.stats.retainedEntries;
+            unindexedAtClear = h.coordinator.stats.unindexedEntries;
+          }
+          return h.root;
+        },
+        clock: () => h.clock.now,
+        checkpoint: _untrustedAt(
+          ReadCacheFileCheckpoint.beforeIndexRename,
+          signal,
+        ),
+      ),
+    );
+    await _save(h, _entry(h, 2));
+    expect(retainedAtClear, 2);
+    expect(unindexedAtClear, 1);
+    expect(h.coordinator.stats.retainedEntries, 0);
+    expect(h.coordinator.stats.unindexedEntries, 0);
+    expect(h.coordinator.stats.queuedEntries, 0);
+    expect(h.coordinator.startupRecovered, isFalse);
+  });
+
+  for (final operation in [
+    ReadCacheCleanupOperation.settingsClear,
+    ReadCacheCleanupOperation.accountRemoval,
+    ReadCacheCleanupOperation.signOut,
+  ]) {
+    test(
+      'C2FU FIX1 P2b late clear still deletes after timeout: $operation',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await _readyHarness(h);
+        final entry = _entry(h, 1);
+        await _save(h, entry);
+        await h.coordinator.quiesced;
+        final at = Completer<void>(), release = Completer<void>();
+        var held = false;
+        h.storage.intercept = (operation, name) async {
+          if (operation == 'inventory' && !held) {
+            held = true;
+            at.complete();
+            await release.future;
+          }
+        };
+        final clearing = operation == ReadCacheCleanupOperation.accountRemoval
+            ? h.coordinator.clearReadCacheDisk(_account).then((_) => null)
+            : h.coordinator.clear(_binding, operation);
+        final outcome = clearing.then<Object?>(
+          (result) => result,
+          onError: (Object error) => error,
+        );
+        await at.future.timeout(const Duration(seconds: 10));
+        h.clock.advance(ReadCacheDiskCoordinator.barrierLimit);
+        final result = await outcome;
+        release.complete();
+        await h.coordinator.quiesced;
+        h.storage.intercept = null;
+        if (operation == ReadCacheCleanupOperation.accountRemoval) {
+          expect(result, isA<ApiFailure>());
+        } else {
+          expect((result! as DiskClearResult).complete, isFalse);
+        }
+        expect(
+          h.coordinator.notice(_binding)!.failure.cleanup!.code,
+          ReadCacheCleanupCode.barrierTimedOut,
+        );
+        expect((await h.keys.readKey(_account)).isFound, isFalse);
+        expect(h.dir().existsSync(), isFalse);
+        expect(h.coordinator.state(_account), ReadCacheDiskState.cleaning);
+        final fresh = _fresh(h);
+        expect(await fresh.recover(_decision, accountKeys: {_account}), isTrue);
+        expect(await fresh.activate(_binding), isTrue);
+        expect(
+          await fresh.lookup(
+            DiskLookup(
+              binding: _binding,
+              canonicalKey: entry.canonicalKey,
+              bodyKind: ReadCacheBodyKind.text,
+              lease: _Lease(),
+            ),
+          ),
+          isNull,
+          reason: 'a new process cannot serve the explicitly cleared entry',
+        );
+      },
+    );
+  }
+
+  for (final active in [false, true]) {
+    test(
+      'C2FU FIX1 P3b completed barrier permits removal: active=$active',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await _readyHarness(h);
+        await _save(h, _entry(h, 1));
+        final target = active ? _account : _other;
+        final binding = DiskBinding(
+          accountKey: target,
+          generation: active ? 1 : 0,
+        );
+        if (!active) {
+          await h.seedKey(_other);
+          h.seedFile(_other);
+        }
+        final barrier = h.coordinator
+            .invalidate(
+              DiskInvalidation(
+                binding: binding,
+                kind: DiskInvalidationKind.mutation,
+                scopeTags: {'project:1'},
+              ),
+            )
+            .barrier;
+        // This ordinary full clear replaces the scope owner before its queued
+        // action runs. The barrier may finish that same live full-clear owner.
+        final removal = h.coordinator.clearReadCacheDisk(target);
+        final removed = expectLater(removal, completes);
+        expect((await barrier).complete, isTrue);
+        await removed;
+        await h.coordinator.quiesced;
+        expect((await h.keys.readKey(target)).isFound, isFalse);
+        expect((await h.keys.readMarker(target)).isFound, isFalse);
+        expect(h.dir(target).existsSync(), isFalse);
+      },
+    );
+  }
+
+  for (final otherAccount in [false, true]) {
+    for (final clear in [false, true]) {
+      for (final phase in ['dequeue', 'markerTimeout', 'rootTimeout']) {
+        test(
+          'C2FU FIX1 pre-incident work keeps replacement fence: other=$otherAccount clear=$clear $phase',
+          () async {
+            final h = _Harness();
+            addTearDown(h.dispose);
+            await _readyHarness(h);
+            final entry = _entry(h, 1);
+            await _save(h, entry);
+            final target = otherAccount ? _other : _account;
+            final binding = DiskBinding(
+              accountKey: target,
+              generation: otherAccount ? 0 : 1,
+            );
+            final events = ReceivePort();
+            final messages = StreamIterator<Object?>(events);
+            addTearDown(events.close);
+            final releaseRead = File('${h.root.path}/release');
+            final atReplacement = Completer<void>();
+            final releaseReplacement = Completer<void>();
+            var roots = 0, targetWrites = 0;
+            final replacementWrite = clear || !otherAccount ? 2 : 1;
+            h.coordinator.configure(
+              keys: h.keys,
+              settings: h.settings,
+              files: ReadCacheFileStore(
+                root: () async {
+                  roots++;
+                  if (roots == 2 && phase == 'rootTimeout') {
+                    atReplacement.complete();
+                    await releaseReplacement.future;
+                  }
+                  return h.root;
+                },
+                clock: () => h.clock.now,
+                checkpoint: _untrustedAfterPause(
+                  events.sendPort,
+                  releaseRead.path,
+                ),
+              ),
+            );
+            final reading = h.coordinator.lookup(
+              DiskLookup(
+                binding: _binding,
+                canonicalKey: entry.canonicalKey,
+                bodyKind: ReadCacheBodyKind.text,
+                lease: _Lease(),
+              ),
+            );
+            expect(
+              await messages.moveNext().timeout(const Duration(seconds: 10)),
+              isTrue,
+            );
+            h.storage.intercept = (operation, name) async {
+              if (operation == 'write' &&
+                  name == ReadCacheKeyStore.markerName(target) &&
+                  ++targetWrites == replacementWrite &&
+                  phase == 'markerTimeout') {
+                atReplacement.complete();
+                await releaseReplacement.future;
+              }
+            };
+            final oldWork = clear
+                ? h.coordinator.clear(
+                    binding,
+                    ReadCacheCleanupOperation.accountRemoval,
+                  )
+                : h.coordinator
+                      .invalidate(
+                        DiskInvalidation(
+                          binding: binding,
+                          kind: DiskInvalidationKind.mutation,
+                          scopeTags: {'project:99'},
+                        ),
+                      )
+                      .barrier;
+            final outcome = oldWork.then<Object?>(
+              (result) => result,
+              onError: (Object error) => error,
+            );
+            releaseRead.createSync();
+            if (phase != 'dequeue') {
+              await atReplacement.future.timeout(const Duration(seconds: 10));
+              h.clock.advance(ReadCacheDiskCoordinator.barrierLimit);
+              await outcome;
+              releaseReplacement.complete();
+            }
+            expect(await reading, isNull);
+            final result = await outcome;
+            await h.coordinator.quiesced;
+            await messages.cancel();
+            h.storage.intercept = null;
+            if (clear) {
+              final cleared = result! as DiskClearResult;
+              expect(cleared.complete, isFalse);
+              expect(cleared.keyGoneConfirmed, isFalse);
+              expect(cleared.directoryGoneConfirmed, isFalse);
+            } else {
+              expect(result, isA<ApiFailure>());
+            }
+            expect(
+              roots,
+              2,
+              reason: 'only the old read and the incident root clear',
+            );
+            final replacement = await h.keys.readMarker(target);
+            expect(replacement.isFound, isTrue);
+            expect(
+              (replacement.value! as ReadCacheClearMarker).reason,
+              ReadCacheClearReason.accountClear,
+            );
+            expect(h.coordinator.state(target), ReadCacheDiskState.cleaning);
+            expect(h.coordinator.startupRecovered, isFalse);
+            expect(await h.coordinator.activate(_binding), isFalse);
+            final writes = h.storage.markerWrites;
+            // Explicit post-incident cleanup joins the durable replacement.
+            // An old timeout must not replace it with an unpersisted owner.
+            final joined = await h.coordinator
+                .invalidate(
+                  DiskInvalidation(
+                    binding: binding,
+                    kind: DiskInvalidationKind.mutation,
+                    scopeTags: {'project:99'},
+                  ),
+                )
+                .barrier;
+            expect(joined.complete, isTrue);
+            expect(
+              h.storage.markerWrites,
+              writes,
+              reason: 'same live owner is reused',
+            );
+            h.coordinator.configure(
+              keys: h.keys,
+              files: h.files,
+              settings: h.settings,
+            );
+            expect(await h.recover(), isTrue);
+            expect(
+              await h.coordinator.activate(_binding),
+              !(clear && !otherAccount),
+              reason:
+                  'account removal retains its session fence after recovery',
+            );
+          },
+        );
+      }
+    }
+  }
+
+  test('C2FU FIX1 M5 incident during empty proof stops late deletes', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await _readyHarness(h);
+    await _save(h, _entry(h, 1));
+    await h.coordinator.quiesced;
+    await h.keys.deleteKey(_account);
+    final deletes = h.storage.calls
+        .where((call) => call.startsWith('delete:'))
+        .length;
+    final fault = _PathFault(h, atRoot: 1);
+    h.coordinator.configure(
+      keys: h.keys,
+      files: fault.files,
+      settings: h.settings,
+    );
+    final result = await h.coordinator.clear(
+      _binding,
+      ReadCacheCleanupOperation.accountRemoval,
+    );
+    expect(result.keyGoneConfirmed, isFalse);
+    expect(result.directoryGoneConfirmed, isFalse);
+    expect(result.complete, isFalse);
+    expect(fault.calls, 2, reason: 'empty proof and incident root clear only');
+    expect(
+      h.storage.calls.where((call) => call.startsWith('delete:')).length,
+      deletes,
+    );
+    expect((await h.keys.readMarker(_account)).isFound, isTrue);
+  });
+
+  test('C2FU FIX1 M11 root clear waits for every marker readback', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await _readyHarness(h);
+    final entry = _entry(h, 1);
+    await _save(h, entry);
+    final at = Completer<void>(), release = Completer<void>();
+    final acknowledged = <String>{};
+    final expected = {
+      _account,
+      _other,
+    }.map(ReadCacheKeyStore.markerName).toSet();
+    h.storage.intercept = (operation, name) async {
+      if (operation == 'read' && expected.contains(name)) {
+        if (name == ReadCacheKeyStore.markerName(_account)) {
+          at.complete();
+          await release.future;
+        }
+        acknowledged.add(name);
+      }
+    };
+    var roots = 0;
+    Set<String>? acknowledgedAtClear;
+    h.coordinator.configure(
+      keys: h.keys,
+      settings: h.settings,
+      files: ReadCacheFileStore(
+        root: () async {
+          if (++roots == 2) acknowledgedAtClear = Set.of(acknowledged);
+          return h.root;
+        },
+        clock: () => h.clock.now,
+        checkpoint: _untrustedAt(
+          ReadCacheFileCheckpoint.beforeRead,
+          '${h.root.path}/fault',
+        ),
+      ),
+    );
+    final reading = h.coordinator.lookup(
+      DiskLookup(
+        binding: _binding,
+        canonicalKey: entry.canonicalKey,
+        bodyKind: ReadCacheBodyKind.text,
+        lease: _Lease(),
+      ),
+    );
+    await at.future.timeout(const Duration(seconds: 10));
+    final rootsBeforeReadback = roots;
+    release.complete();
+    expect(await reading, isNull);
+    h.storage.intercept = null;
+    expect(rootsBeforeReadback, 1);
+    expect(acknowledgedAtClear, expected);
+    expect(roots, 2);
+  });
+}
+
 void main() {
+  _followupFix1Tests();
   _pathFailureTests();
   TestWidgetsFlutterBinding.ensureInitialized();
   _fix1Tests();

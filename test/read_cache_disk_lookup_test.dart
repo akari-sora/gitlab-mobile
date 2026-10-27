@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/read_cache_cipher.dart';
 import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/core/read_cache_files.dart';
 import 'package:gitlab_mobile/features/cache/read_cache_disk_coordinator.dart';
@@ -23,6 +24,12 @@ const _decision = ReadCacheStartupDecision(
 void Function(ReadCacheFileCheckpoint) _recordRead(String path) => (step) {
   if (step == ReadCacheFileCheckpoint.beforeRead) {
     File(path).writeAsStringSync('read');
+  }
+};
+
+void Function(ReadCacheFileCheckpoint) _recordEviction(String path) => (step) {
+  if (step == ReadCacheFileCheckpoint.evictionFileDeleted) {
+    File(path).writeAsStringSync('evicted');
   }
 };
 
@@ -142,9 +149,27 @@ final class _Harness {
   );
   Future<void> expectEvicted(ProjectedDiskEntry entry) async {
     final key = (await keys.readKey(_account)).value!;
+    final fileName = await const ReadCacheCipher().entryFileName(
+      key,
+      entry.canonicalKey,
+    );
+    final directory =
+        '${root.path}/read_cache/${ReadCacheCipher.accountDirectoryName(_account)}';
+    expect(File('$directory/$fileName').existsSync(), isFalse);
     expect(await files.readEntry(_account, key, entry.canonicalKey), isNull);
     await coordinator.flush(_binding);
     expect((await files.readIndex(_account, key))!.entries, isEmpty);
+    // readIndex filters missing files, so inspect the authenticated index itself.
+    const cipher = ReadCacheCipher();
+    final indexBytes = await File('$directory/index.v1.bin').readAsBytes();
+    final plain = await cipher.decrypt(
+      key: key,
+      accountKey: _account,
+      fileName: 'index.v1.bin',
+      envelope: indexBytes,
+      plaintextLimit: readCacheIndexLimit,
+    );
+    expect(cipher.decodeIndex(plain).entries, isEmpty);
   }
 
   void dispose() {
@@ -153,6 +178,82 @@ final class _Harness {
 }
 
 void main() {
+  test('P1 cold miss keeps unrelated entry through mutation barrier', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await h.start(h.coordinator);
+    final kept = h.entry(ReadCacheBodyKind.text, 'synthetic');
+    await h.save(kept);
+    final keyBefore = (await h.keys.readKey(_account)).value!;
+    final evictionMarker = '${h.root.path}/eviction';
+    h.coordinator.configure(
+      keys: h.keys,
+      settings: h.settings,
+      files: ReadCacheFileStore(
+        root: () async => h.root,
+        clock: () => h.now,
+        checkpoint: _recordEviction(evictionMarker),
+      ),
+    );
+    final missingKey = kept.canonicalKey.replaceFirst('/items/1', '/items/42');
+    expect(
+      await h.coordinator.lookup(
+        DiskLookup(
+          binding: _binding,
+          canonicalKey: missingKey,
+          bodyKind: ReadCacheBodyKind.text,
+          lease: _Lease(),
+        ),
+      ),
+      isNull,
+    );
+    final result = await h.coordinator
+        .invalidate(
+          DiskInvalidation(
+            binding: _binding,
+            kind: DiskInvalidationKind.mutation,
+            scopeTags: {'project:2'},
+          ),
+        )
+        .barrier;
+    expect(result.complete, isFalse);
+    expect(File(evictionMarker).existsSync(), isFalse);
+    final keyAfter = await h.keys.readKey(_account);
+    expect(keyAfter.value, orderedEquals(keyBefore));
+    expect(
+      await h.files.readEntry(_account, keyBefore, kept.canonicalKey),
+      isNotNull,
+    );
+    expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+  });
+
+  test(
+    'lookup evicts an unindexed file with an authenticated mismatch',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.start(h.coordinator);
+      final entry = h.entry(ReadCacheBodyKind.text, 'synthetic');
+      final key = (await h.keys.readKey(_account)).value!;
+      // Write behind the coordinator so the file exists without an in-memory record.
+      await h.files.writeEntry(entry, key);
+      final fileName = await const ReadCacheCipher().entryFileName(
+        key,
+        entry.canonicalKey,
+      );
+      final path =
+          '${h.root.path}/read_cache/'
+          '${ReadCacheCipher.accountDirectoryName(_account)}/$fileName';
+      expect(File(path).existsSync(), isTrue);
+      expect(
+        await h.lookup(h.coordinator, entry, ReadCacheBodyKind.json),
+        isNull,
+      );
+      expect(File(path).existsSync(), isFalse);
+      await h.expectEvicted(entry);
+    },
+  );
+
   for (final requested in ReadCacheBodyKind.values.where(
     (kind) => kind != ReadCacheBodyKind.text,
   )) {
@@ -205,6 +306,15 @@ void main() {
       await h.start(h.coordinator);
       final entry = h.entry(ReadCacheBodyKind.text, 'synthetic');
       await h.save(entry);
+      final key = (await h.keys.readKey(_account)).value!;
+      final fileName = await const ReadCacheCipher().entryFileName(
+        key,
+        entry.canonicalKey,
+      );
+      final path =
+          '${h.root.path}/read_cache/'
+          '${ReadCacheCipher.accountDirectoryName(_account)}/$fileName';
+      expect(File(path).existsSync(), isTrue);
       h.now = h.now.add(readCacheRetention + const Duration(seconds: 1));
       expect(
         await h.lookup(h.coordinator, entry, ReadCacheBodyKind.text),

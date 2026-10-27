@@ -249,6 +249,8 @@ final class ProjectedDiskEntry {
       bodyBytes.length;
 }
 
+/// [bodyKind] comes from the same projection as the write candidate; lookup
+/// evicts authenticated kind mismatches and files above that kind's ceiling.
 final class DiskLookup {
   const DiskLookup({
     required this.binding,
