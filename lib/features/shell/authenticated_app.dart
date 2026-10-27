@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/read_cache_disk_contract.dart';
 import '../../shared/adaptive_breakpoints.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/in_app_links.dart';
@@ -14,6 +15,7 @@ import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
+import '../cache/read_cache_settings_page.dart';
 import '../ai/ai_account_removal.dart';
 import '../ai/ai_chat_page.dart' show openAiChatSession;
 import '../ai/ai_chat_session.dart';
@@ -401,6 +403,11 @@ class _MobileShellState extends State<_MobileShell> {
   final Set<int> _visited = {_home};
 
   static const _home = 0, _inbox = 1, _explore = 2, _me = 3;
+  /// Cancels this shell's read-cache notice subscription.
+  void Function()? _cancelReadCacheNotices;
+
+  /// The last cleanup notice shown as a snack bar, so repeats merge (§4.6).
+  String? _shownReadCacheNotice;
   ApiFailure? _recentFailure;
   Account? _recentAccount;
   int? _recentProjectId;
@@ -423,9 +430,16 @@ class _MobileShellState extends State<_MobileShell> {
     if (account != null) {
       unawaited(widget.shortcuts.publish(account.key));
     }
+    _installReadCacheControls();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _showLeftRemovalResults();
+        // A notice raised before this shell existed, e.g. during start-up.
+        if (widget.session.active case final active?) {
+          _presentReadCacheNotice(
+            widget.session.readCache.notice(_readCacheBinding(active)),
+          );
+        }
         unawaited(_consumeResumeTarget());
         unawaited(_consumeShortcut());
         // A link may have arrived before sign-in or while the tree was rebuilt.
@@ -445,6 +459,7 @@ class _MobileShellState extends State<_MobileShell> {
     if (oldWidget.session != widget.session) {
       oldWidget.session.removeListener(_onSession);
       widget.session.addListener(_onSession);
+      _installReadCacheControls();
     }
     if (oldWidget.pops != widget.pops) {
       oldWidget.pops.removeListener(_chrome.show);
@@ -491,8 +506,83 @@ class _MobileShellState extends State<_MobileShell> {
     }
   }
 
+  /// The settings entry, the central failure renderer, these notices and the
+  /// typed diff/log screens all exist once this shell is built, so the
+  /// coordinator's user-controls gate opens here (C2e). The gate is not
+  /// identity evidence: start-up recovery and this session's verified
+  /// activation still decide whether the disk opens.
+  void _installReadCacheControls() {
+    final session = widget.session;
+    final cache = session.readCache;
+    _cancelReadCacheNotices?.call();
+    _cancelReadCacheNotices = cache.subscribe(_onReadCacheNotice);
+    cache.installUserControls();
+    final active = session.active;
+    if (active != null && session.api != null) {
+      // Recovery may have finished before this shell existed. Re-deliver the
+      // session's own verified binding, as an app resume does; the coordinator
+      // rejects it unless every other gate is open.
+      unawaited(cache.activate(_readCacheBinding(active)));
+    }
+  }
+
+  DiskBinding _readCacheBinding(Account account) =>
+      DiskBinding(accountKey: account.key, generation: widget.session.generation);
+
+  /// Runs inside the coordinator; only the snapshot for this account and
+  /// generation may reach this shell, never an earlier generation's notice.
+  void _onReadCacheNotice(ReadCacheNotice notice) {
+    final account = widget.session.active;
+    if (!mounted || account == null) return;
+    final binding = _readCacheBinding(account);
+    if (!identical(widget.session.readCache.notice(binding), notice)) return;
+    // The notice can arrive while the app is idle: ask for the frame too.
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) => _presentReadCacheNotice(notice))
+      ..ensureVisualUpdate();
+  }
+
+  void _presentReadCacheNotice(ReadCacheNotice? notice) {
+    final account = widget.session.active;
+    if (!mounted || notice == null || account == null) return;
+    final cache = widget.session.readCache;
+    final binding = _readCacheBinding(account);
+    if (!identical(cache.notice(binding), notice)) return;
+    final state = notice.failure.cleanup!;
+    // The failed operation, the removal flow, the sign-in screen and the
+    // settings page present these themselves; the 我的 row keeps the status.
+    if (state.operation == ReadCacheCleanupOperation.settingsClear) return;
+    switch (state.disposition) {
+      case ReadCacheCleanupDisposition.requestBlockedBeforeSend:
+      case ReadCacheCleanupDisposition.accountRetained:
+      case ReadCacheCleanupDisposition.signedOutCleanupPending:
+        return;
+      case ReadCacheCleanupDisposition.originalOutcomePreserved:
+      case ReadCacheCleanupDisposition.legalNetworkValueReturned:
+      case ReadCacheCleanupDisposition.diskClosed:
+        break;
+    }
+    final key = '${state.operation.name}/${state.disposition.name}';
+    if (key == _shownReadCacheNotice) return;
+    _shownReadCacheNotice = key;
+    showFailure(
+      context,
+      notice.failure,
+      onRetryCleanup: () => unawaited(retryOfflineCacheCleanup(
+        context,
+        cache,
+        binding,
+        onDone: () {
+          if (cache.notice(binding) == null) _shownReadCacheNotice = null;
+        },
+      )),
+    );
+  }
+
   @override
   void dispose() {
+    _cancelReadCacheNotices?.call();
+    _cancelReadCacheNotices = null;
     AiAccountRemoval.changes.removeListener(_onRemovalChanged);
     // Before the final confirmation this stops the job; after it, the job
     // runs to its end without a page.
@@ -1336,6 +1426,15 @@ class _MobileShellState extends State<_MobileShell> {
               ),
             if (widget.updates case final updates? when updates.enabled)
               UpdateSection(controller: updates),
+            HubSection(
+              title: l10n.storageAndCacheLabel,
+              children: [
+                ReadCacheSettingsEntry(
+                  cache: session.readCache,
+                  binding: _readCacheBinding(account),
+                ),
+              ],
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

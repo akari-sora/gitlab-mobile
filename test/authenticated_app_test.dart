@@ -8,6 +8,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_settings_page.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_account_removal.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
@@ -804,5 +806,116 @@ void main() {
         reason: '$label wraps instead of truncating to 我的…');
     }
     expect(tester.takeException(), isNull);
+  });
+
+  group('C2e read cache in the authenticated shell', () {
+    ReadCacheCleanupState state(
+      ReadCacheCleanupOperation operation,
+      ReadCacheCleanupDisposition disposition,
+    ) => ReadCacheCleanupState(
+      operation: operation,
+      disposition: disposition,
+      code: ReadCacheCleanupCode.cleanupFailed,
+      clearResult: const DiskClearResult(
+        keyGoneConfirmed: false,
+        directoryGoneConfirmed: false,
+        markerDurable: false,
+        complete: false,
+      ),
+    );
+    final preserved = state(
+      ReadCacheCleanupOperation.mutation,
+      ReadCacheCleanupDisposition.originalOutcomePreserved,
+    );
+    const preservedText = '離線快取待清除。操作的結果不受影響。離線快取已暫停使用，清除完成後才會恢復。';
+    Finder snack(String text) =>
+        find.descendant(of: find.byType(SnackBar), matching: find.text(text));
+
+    Future<(SessionController, MemoryAccountStore)> signIn(WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final fixture = WorkspaceFixture();
+      final store = MemoryAccountStore();
+      final session = controllerFor(store, fixture.adapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      });
+      return (session, store);
+    }
+
+    testWidgets('我的 › 儲存與快取 exists and the shell installs the user controls', (tester) async {
+      final (session, store) = await signIn(tester);
+      expect(store.readCache.controlsInstalled, isFalse, reason: 'nothing opens the gate before the shell');
+      await tester.pumpWidget(
+        AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
+      );
+      await settleNetworkWidgets(tester);
+      expect(store.readCache.controlsInstalled, isTrue);
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('我的')));
+      await settleNetworkWidgets(tester);
+      final row = find.byKey(const ValueKey('read-cache-row'));
+      await tester.scrollUntilVisible(row, 200);
+      expect(find.text('儲存與快取'), findsOneWidget);
+      expect(find.descendant(of: row, matching: find.text('離線快取')), findsOneWidget);
+      await tester.tap(row);
+      await settleNetworkWidgets(tester);
+      expect(find.byType(ReadCacheSettingsPage), findsOneWidget);
+      expect(find.byKey(const ValueKey('read-cache-switch')), findsOneWidget);
+      expect(find.byKey(const ValueKey('read-cache-clear')), findsOneWidget);
+    });
+
+    testWidgets('notices reach only this account and generation, merge, and mark the 我的 row', (tester) async {
+      final (session, store) = await signIn(tester);
+      final cache = store.readCache;
+      final key = session.active!.key;
+      final binding = DiskBinding(accountKey: key, generation: session.generation);
+      // Raised before the shell exists (start-up): shown once it mounts.
+      cache.reportCleanup(binding, state(
+        ReadCacheCleanupOperation.startup, ReadCacheCleanupDisposition.diskClosed));
+      await tester.pumpWidget(
+        AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
+      );
+      await settleNetworkWidgets(tester);
+      expect(snack('無法清除離線快取。離線快取已暫停使用，重試清除完成後才會恢復。'), findsOneWidget);
+      ScaffoldMessenger.of(tester.element(find.byType(NavigationBar))).hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+
+      // An earlier generation of this account, or another account: never shown.
+      cache.reportCleanup(DiskBinding(accountKey: key, generation: session.generation - 1), preserved);
+      cache.reportCleanup(DiskBinding(accountKey: 'synthetic-other#9', generation: session.generation), preserved);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(snack(preservedText), findsNothing);
+
+      // A blocked request is presented by the operation that failed.
+      cache.reportCleanup(binding, state(
+        ReadCacheCleanupOperation.mutation, ReadCacheCleanupDisposition.requestBlockedBeforeSend));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(SnackBar), findsNothing);
+
+      // This account and generation: shown once, repeats merge.
+      cache.reportCleanup(binding, preserved);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(snack(preservedText), findsOneWidget);
+      expect(find.descendant(of: find.byType(SnackBar), matching: find.text('重試清除')), findsOneWidget);
+      cache.reportCleanup(binding, preserved);
+      await tester.pump();
+      ScaffoldMessenger.of(tester.element(find.byType(NavigationBar))).hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+      expect(find.byType(SnackBar), findsNothing, reason: 'a repeated notice is not queued again');
+
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('我的')));
+      await settleNetworkWidgets(tester);
+      final row = find.byKey(const ValueKey('read-cache-row'));
+      await tester.scrollUntilVisible(row, 200);
+      expect(find.descendant(of: row, matching: find.text('清除未完成，暫停使用')), findsOneWidget);
+    });
   });
 }

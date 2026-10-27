@@ -25,9 +25,14 @@ final class ReadCacheDiskStats {
     this.dropped, {
     this.retainedEntries = 0,
     this.unindexedEntries = 0,
+    this.retainedBytes = 0,
   });
   final int queuedEntries, queuedBytes, dropped;
   final int retainedEntries, unindexedEntries;
+
+  /// Encrypted bytes of the indexed entries known to this process (C2e, read
+  /// only for the settings page). No names, keys or paths.
+  final int retainedBytes;
 }
 
 /// The only owner of read-cache keys, intents and transactions. No production
@@ -80,6 +85,12 @@ final class ReadCacheDiskCoordinator {
   List<ReadCacheNotice> get signedOutNotices =>
       List.unmodifiable(_signedOut.values);
 
+  /// Read-only C2e accessors: the login retry needs each signed-out binding,
+  /// and the settings page shows the effective device preference.
+  Map<DiskBinding, ReadCacheNotice> get signedOutSnapshot =>
+      Map.unmodifiable(_signedOut);
+  ReadCacheSettingsState get setting => _domain.setting;
+
   ReadCacheDiskStats get stats => ReadCacheDiskStats(
     _domain.accounts.values.fold(0, (n, a) => n + a.pending.length),
     _domain.accounts.values.fold(0, (n, a) => n + a.queuedBytes),
@@ -91,6 +102,10 @@ final class ReadCacheDiskCoordinator {
     unindexedEntries: _domain.accounts.values.fold(
       0,
       (n, a) => n + a.unindexed.length,
+    ),
+    retainedBytes: _domain.accounts.values.fold(
+      0,
+      (n, a) => a.entries.values.fold(n, (m, r) => m + r.index.sizeBytes),
     ),
   );
 

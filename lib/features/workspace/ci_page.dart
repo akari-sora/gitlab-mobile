@@ -11,6 +11,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/job_trace.dart';
 import '../../core/models.dart';
 import '../../core/rate_budget.dart';
+import '../../core/read_cache_disk_contract.dart';
 import '../../shared/external_link.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
@@ -1958,6 +1959,14 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   JobTrace _indexed = JobTrace.empty;
   BytesBuilder _rawBytes = BytesBuilder(copy: false);
   int _traceOffset = 0;
+
+  /// The verified tail of this attempt's finished log, when one is shown. Its
+  /// offsets are absolute; it may start after byte 0 (C2 §4.5).
+  ReadCacheTerminalLog? _tail;
+
+  /// Whether leading lines of the tail were also left out, to stay within the
+  /// screen's line limit.
+  bool _tailClipped = false;
   List<int> _sectionOrder = const <int>[];
   List<List<int>> _sectionChildren = const <List<int>>[];
   List<int> _sectionRoots = const <int>[];
@@ -2059,13 +2068,36 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _auto = false; _timer?.cancel();
         }
       });
-      final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
+      // A finished job read from its start (or already shown as a tail) uses
+      // the pinned terminal tail; a job seen running keeps the polled path.
+      final terminal = const {'success', 'failed', 'canceled', 'skipped'}.contains(job['status']);
+      final tail = terminal && (_tail != null || (_traceOffset == 0 && _rawBytes.isEmpty))
+          ? await _terminalTail(jobId, current) : null;
       if (!current()) { return; }
-      if (chunk.isEof) {
+      var changed = false;
+      if (tail != null) {
+        // A fresh builder: the tail never joins bytes of an earlier read or
+        // attempt, and the next offset is the tail's absolute end.
+        _rawBytes = BytesBuilder(copy: false)..add(tail.bytes);
+        _traceOffset = tail.nextOffset;
+        _tail = tail;
         _auto = false;
         _timer?.cancel();
-      }
-      if (chunk.bytes.isNotEmpty || _rawBytes.isEmpty) {
+        changed = true;
+      } else {
+        if (_tail != null) {
+          // The tail no longer applies; restart the original path from byte 0.
+          _tail = null;
+          _rawBytes = BytesBuilder(copy: false);
+          _traceOffset = 0;
+        }
+        final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
+        if (!current()) { return; }
+        if (chunk.isEof) {
+          _auto = false;
+          _timer?.cancel();
+        }
+        changed = chunk.bytes.isNotEmpty || _rawBytes.isEmpty;
         if (chunk.bytes.isNotEmpty) {
           if (chunk.nextOffset != null && chunk.nextOffset! < _traceOffset) {
             _rawBytes = BytesBuilder(copy: false);
@@ -2076,7 +2108,17 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             _traceOffset = chunk.nextOffset ?? _rawBytes.length;
           }
         }
-        final text = utf8.decode(_rawBytes.toBytes(), allowMalformed: true);
+      }
+      if (changed) {
+        var text = utf8.decode(_rawBytes.toBytes(), allowMalformed: true);
+        // A 2 MiB tail can hold more lines than the screen parses; keep its
+        // last lines. Display only: offsets and stored bytes are unchanged.
+        _tailClipped = false;
+        if (_tail != null) {
+          final kept = _lastLines(text, GitLabApi.maxTextLines - 1);
+          _tailClipped = kept.length != text.length;
+          text = kept;
+        }
         final parsed = JobTrace.parse(text);
         setState(() {
           _trace = parsed;
@@ -2098,6 +2140,34 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     } catch (e) {
       if (current()) { setState(() { _error = safeFailure(e); _auto = false; _timer?.cancel(); }); }
     } finally { if (current()) { setState(() => _loading = false); } }
+  }
+
+  /// The end of [text] holding at most [newlines] line breaks.
+  static String _lastLines(String text, int newlines) {
+    var seen = 0;
+    for (var i = text.length - 1; i >= 0; i--) {
+      if (text.codeUnitAt(i) != 0x0A) continue;
+      if (++seen > newlines) return text.substring(i + 1);
+    }
+    return text;
+  }
+
+  /// The finished job's verified tail, from memory, the offline cache or one
+  /// bounded range read. Null only when GitLab cannot serve it that way
+  /// (`unsupported`); every other failure is the page's failure. A read that
+  /// would start after the page went away is dropped.
+  Future<ReadCacheTerminalLog?> _terminalTail(int jobId, bool Function() current) async {
+    try {
+      final read = await CachedRead.run(
+        () => widget.api.cachedTerminalJobTrace(widget.project.id, jobId),
+        mayStart: current,
+      );
+      if (read.dropped) throw const ApiFailure(FailureKind.cancelled);
+      return read.value;
+    } on ApiFailure catch (failure) {
+      if (failure.kind == FailureKind.unsupported) return null;
+      rethrow;
+    }
   }
   Future<void> _openAi() async {
     final job = _job;
@@ -2132,6 +2202,8 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _currentMatch = 0; _searchController.clear(); _follow = true; _sectionOpen.clear();
           _rawBytes = BytesBuilder(copy: false);
           _traceOffset = 0;
+          _tail = null;
+          _tailClipped = false;
         }
       });
       await _load();
@@ -2652,6 +2724,15 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
               ],
             ],
           ),
+        ),
+        if ((_tail?.truncated ?? false) || _tailClipped) Padding(
+          key: const ValueKey('job-log-truncated'),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Row(children: [
+            Icon(Icons.vertical_align_top, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Expanded(child: Text(l10n.readCacheLogTruncated, style: Theme.of(context).textTheme.bodySmall)),
+          ]),
         ),
         if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _load,

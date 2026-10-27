@@ -8418,4 +8418,97 @@ final class AppStrings {
 
   /// 請先完成或關閉目前的編輯，再開啟通知
   String get aiRunNoticeFinishEditFirst => language._messages[2774];
+
+  /// 儲存與快取
+  String get storageAndCacheLabel => language._messages[2775];
+
+  /// 離線快取
+  String get offlineCacheLabel => language._messages[2776];
+
+  /// 看過的內容會加密存在這台裝置，網路不穩時先顯示上次的內容，再於背景更新。登出、切換或移除帳號時會清除。
+  String get offlineCacheDescription => language._messages[2777];
+
+  /// 使用中
+  String get offlineCacheStatusOn => language._messages[2778];
+
+  /// 已關閉
+  String get offlineCacheStatusOff => language._messages[2779];
+
+  /// 下次開啟 App 或切換帳號後開始保存
+  String get offlineCacheStatusWaiting => language._messages[2780];
+
+  /// 正在清除
+  String get offlineCacheStatusCleaning => language._messages[2781];
+
+  /// 安全儲存空間無法使用，暫不保存
+  String get offlineCacheStatusUnavailable => language._messages[2782];
+
+  /// 無法讀取設定，這次使用期間不保存
+  String get offlineCacheStatusSettingUnreadable => language._messages[2783];
+
+  /// 清除未完成，暫停使用
+  String get offlineCacheStatusCleanupPending => language._messages[2784];
+
+  /// 已使用 {size}
+  String offlineCacheSize(Object? size) => _format(language, language._messages[2785], {'size': size});
+
+  /// 清除離線快取
+  String get offlineCacheClearAction => language._messages[2786];
+
+  /// 清除離線快取？
+  String get offlineCacheClearConfirmTitle => language._messages[2787];
+
+  /// 會刪除這台裝置上此帳號的離線快取。GitLab 上的資料不受影響。
+  String get offlineCacheClearConfirmDetail => language._messages[2788];
+
+  /// 已清除離線快取
+  String get offlineCacheCleared => language._messages[2789];
+
+  /// 已關閉離線快取並清除資料
+  String get offlineCacheTurnedOff => language._messages[2790];
+
+  /// 無法確認離線快取已關閉並清除。這次使用期間保持關閉，請重試清除。
+  String get offlineCacheTurnOffUnconfirmed => language._messages[2791];
+
+  /// 無法儲存設定。離線快取保持關閉。
+  String get offlineCacheTurnOnFailed => language._messages[2792];
+
+  /// 重試清除
+  String get offlineCacheRetryCleanup => language._messages[2793];
+
+  /// 變更尚未送出
+  String get readCacheBlockedTitle => language._messages[2794];
+
+  /// 離線快取無法清除，所以這項變更沒有送到 GitLab。請先重試清除，再重新送出。
+  String get readCacheBlockedDetail => language._messages[2795];
+
+  /// 離線快取待清除
+  String get readCachePreservedTitle => language._messages[2796];
+
+  /// 操作的結果不受影響。離線快取已暫停使用，清除完成後才會恢復。
+  String get readCachePreservedDetail => language._messages[2797];
+
+  /// 離線快取已暫停
+  String get readCachePrivacyTitle => language._messages[2798];
+
+  /// 畫面上是剛從 GitLab 取得的內容。舊的離線快取還沒清除，已暫停使用。
+  String get readCachePrivacyDetail => language._messages[2799];
+
+  /// 無法清除離線快取
+  String get readCacheCleanupFailedTitle => language._messages[2800];
+
+  /// 離線快取尚未清除。帳號已保留，請重試移除。
+  String get readCacheRetainedDetail => language._messages[2801];
+
+  /// 離線快取尚未清除
+  String get readCacheSignedOutTitle => language._messages[2802];
+
+  /// 已登出，但這台裝置上的離線快取還沒清除完成。可以重試清除。
+  String get readCacheSignedOutDetail => language._messages[2803];
+
+  /// 離線快取已暫停使用，重試清除完成後才會恢復。
+  String get readCacheClosedDetail => language._messages[2804];
+
+  /// Log 太長，前段已截掉，只顯示最後一部分。
+  String get readCacheLogTruncated => language._messages[2805];
 }

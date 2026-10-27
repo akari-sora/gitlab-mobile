@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/failure.dart';
 import '../core/gitlab_api.dart';
 import '../core/models.dart';
+import '../core/read_cache_disk_contract.dart';
 import '../core/providers.dart';
 import 'resume_target.dart';
 import 'theme.dart';
@@ -590,6 +591,56 @@ class EmptyState extends StatelessWidget {
   );
 }
 
+/// The one renderer for read-cache cleanup states (§4.6). Text comes from the
+/// state and the current language at display time; nothing translated is
+/// stored on the failure or on disk.
+(String, String) readCacheCleanupText(ReadCacheCleanupState state) =>
+    switch (state.disposition) {
+      ReadCacheCleanupDisposition.requestBlockedBeforeSend =>
+        (l10n.readCacheBlockedTitle, l10n.readCacheBlockedDetail),
+      ReadCacheCleanupDisposition.originalOutcomePreserved =>
+        (l10n.readCachePreservedTitle, l10n.readCachePreservedDetail),
+      ReadCacheCleanupDisposition.legalNetworkValueReturned =>
+        (l10n.readCachePrivacyTitle, l10n.readCachePrivacyDetail),
+      ReadCacheCleanupDisposition.accountRetained =>
+        (l10n.readCacheCleanupFailedTitle, l10n.readCacheRetainedDetail),
+      ReadCacheCleanupDisposition.signedOutCleanupPending =>
+        (l10n.readCacheSignedOutTitle, l10n.readCacheSignedOutDetail),
+      ReadCacheCleanupDisposition.diskClosed =>
+        (l10n.readCacheCleanupFailedTitle, l10n.readCacheClosedDetail),
+    };
+
+String failureTitle(UserFacingFailure failure) => switch (failure) {
+  ApiFailure(kind: FailureKind.readCacheCleanup, :final cleanup?) =>
+    readCacheCleanupText(cleanup).$1,
+  _ => failure.title,
+};
+
+String failureDetail(UserFacingFailure failure) => switch (failure) {
+  ApiFailure(kind: FailureKind.readCacheCleanup, :final cleanup?) =>
+    readCacheCleanupText(cleanup).$2,
+  _ => failure.detail,
+};
+
+/// A cleanup notice can only retry the cleanup. A retained account is retried
+/// by removing it again from its account row, not from the notice.
+bool offersCleanupRetry(UserFacingFailure failure) => switch (failure) {
+  ApiFailure(kind: FailureKind.readCacheCleanup, :final cleanup?) =>
+    cleanup.disposition != ReadCacheCleanupDisposition.accountRetained,
+  _ => false,
+};
+
+/// Whether the screen's own retry may be offered. It is never offered for an
+/// uncertain write, nor for a cleanup notice whose request already reached
+/// GitLab; only a request the barrier stopped before sending may be retried.
+bool _offersOriginalRetry(ApiFailure error) => switch (error.kind) {
+  FailureKind.writeUncertain => false,
+  FailureKind.readCacheCleanup =>
+    error.cleanup?.disposition ==
+        ReadCacheCleanupDisposition.requestBlockedBeforeSend,
+  _ => true,
+};
+
 class FailureNotice extends StatelessWidget {
   const FailureNotice(
     this.error, {
@@ -599,6 +650,7 @@ class FailureNotice extends StatelessWidget {
     this.onRetry,
     this.onSwitchAccount,
     this.resumeTarget,
+    this.onRetryCleanup,
   });
   final ApiFailure error;
   final Account? account;
@@ -606,11 +658,19 @@ class FailureNotice extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onSwitchAccount;
   final ResumeTarget? resumeTarget;
+
+  /// Retries only the offline-cache cleanup of a read-cache notice.
+  final VoidCallback? onRetryCleanup;
   @override
   Widget build(BuildContext context) {
     Account? effectiveAccount = account;
     VoidCallback? effectiveSwitch = onSwitchAccount;
-    if (effectiveAccount == null || effectiveSwitch == null) {
+    // A cleanup notice is about this device's cache, not account access:
+    // switching accounts would not resolve it.
+    final cacheNotice = error.kind == FailureKind.readCacheCleanup;
+    if (cacheNotice) {
+      effectiveSwitch = null;
+    } else if (effectiveAccount == null || effectiveSwitch == null) {
       try {
         final session = ProviderScope.containerOf(
           context,
@@ -655,14 +715,14 @@ class FailureNotice extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      error.title,
+                      failureTitle(error),
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
-              Text(error.detail),
+              Text(failureDetail(error)),
               if (effectiveAccount != null) ...[
                 const SizedBox(height: 12),
                 Text(l10n.instanceKey(effectiveAccount.instance.key)),
@@ -673,12 +733,18 @@ class FailureNotice extends StatelessWidget {
               Wrap(
                 spacing: 8,
                 children: [
-                  if (onRetry != null &&
-                      error.kind != FailureKind.writeUncertain)
+                  if (onRetry != null && _offersOriginalRetry(error))
                     TextButton.icon(
                       onPressed: onRetry,
                       icon: const Icon(Icons.refresh, size: 18),
                       label: Text(l10n.refreshAction),
+                    ),
+                  if (onRetryCleanup != null && offersCleanupRetry(error))
+                    TextButton.icon(
+                      key: const ValueKey('read-cache-retry-cleanup'),
+                      onPressed: onRetryCleanup,
+                      icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+                      label: Text(l10n.offlineCacheRetryCleanup),
                     ),
                   if (effectiveSwitch != null)
                     TextButton(
@@ -699,7 +765,14 @@ class FailureNotice extends StatelessWidget {
                       key: const PageStorageKey<String>(
                         'failure-notice-diagnostics-detail',
                       ),
-                      '${error.kind.name}${error.status == null ? '' : ' · HTTP ${error.status}'}',
+                      [
+                        error.kind.name,
+                        if (error.status != null) 'HTTP ${error.status}',
+                        if (error.cleanup case final state?) ...[
+                          state.disposition.name,
+                          state.code.name,
+                        ],
+                      ].join(' · '),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
@@ -786,11 +859,20 @@ Future<bool> confirmAction(
   return answer ?? false;
 }
 
-void showFailure(BuildContext context, Object error) {
+/// [onRetryCleanup] is offered only for a read-cache cleanup notice, and it
+/// retries the cleanup alone; it is never a way to repeat the operation.
+void showFailure(
+  BuildContext context,
+  Object error, {
+  VoidCallback? onRetryCleanup,
+}) {
   final failure = error is UserFacingFailure ? error : safeFailure(error);
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text(l10n.titleThenDetail(failure.title, failure.detail))));
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    content: Text(l10n.titleThenDetail(failureTitle(failure), failureDetail(failure))),
+    action: onRetryCleanup != null && offersCleanupRetry(failure)
+        ? SnackBarAction(label: l10n.offlineCacheRetryCleanup, onPressed: onRetryCleanup)
+        : null,
+  ));
 }
 
 /// Text without the invisible direction marks an Arabic interface wraps
