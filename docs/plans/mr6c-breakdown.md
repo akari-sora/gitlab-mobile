@@ -19,7 +19,20 @@
 | Opus Minor 3–7、18 | 明確 type、數值界限、啟停序列、stop intent、Dart 翻譯與更新節流 | D1–D3／D12、C1／C2b／C4；各包測試 |
 | Opus Minor 8–14 | 額度決定 D13、back 可觀察證據、R8 檢查、固定模板／CI 範圍、完整 Python suite、timeout 設定還原 | D13、G0、C1／C3／C5／C6／C8、§4.1–4.3 |
 
-本輪採納所有 Codex M1–M3 與 Opus Minor 1–18；具體實作選項及非既有能力的界限列於各節。
+v2 採納所有 Codex M1–M3 與 Opus Minor 1–18；具體實作選項及非既有能力的界限列於各節。
+
+### v3 修訂
+
+本輪依第 2 輪審查採納 M1–M6，只改本計畫、不提交；以下程式碼依同 checkout 核對，新增測試與裝置操作仍是未來要求。
+
+| 審查項目 | 本版修正／owner | 解決位置與 repository 核對依據 |
+|---|---|---|
+| Opus R2 M1 | 慢速工具重讀／delivery 準備在取票前；取票後只做一次最後 refresh 與同步遮蔽，C2a | D4、C2a；`lib/core/ai/runner.dart:970`、`:998`、`:1010`，`lib/core/ai/tools/tool_catalogue.dart:285`、`:548`：重讀可能等 20 秒，結果 60 秒到期；補重讀超過 1 秒且取票中加入新秘密的測試 |
+| Opus R2 M2 | 專用純合成 sandbox、持久合成帳號與真 journal key；安裝前記錄／保存 APK、同 versionCode 更新及事後還原，C8 | C8、§4.2；`docs/ANDROID_SIGNING.md:298`、`:307` 記載擁有者帳號；`lib/features/auth/account_store.dart:20`、`lib/features/auth/session_controller.dart:87`、`lib/main.dart:112`、`lib/features/ai/ai_write_journal.dart:1049` 核對持久化、auto-resume 與 orphan cleanup；未知／非合成資料 NOT_RUN |
+| Opus R2 M3 | 兩 flavor release 命令移除 `--no-pub`，逐次比對 lockfile SHA-256，C8 | §4.1；`ci/build_android.sh:84`–`:93` 明定重生 GeneratedPluginRegistrant 並鎖住 lockfile bytes |
+| Opus R2 M4 | V7 用保留通知的程序終止子案；啟動前後反讀 ID，禁止以 force-stop／stop-app 清空後驗取消，C8 | §4.2、V7；父計畫 `docs/plans/ai-writes-plan-v6.md:487` 要精確取消，對照 C3 唯一取消 owner；OS 是否保留通知須當次反讀，不當作已驗證 |
+| Opus R2 M5 | 分開量 channel 與 model／REST／Graph 全程 TTL、逾期及 flush 後 rollback，C8 | D3、V3；`lib/core/ai/tools/write_coordinator.dart:1121`、`:1142`、`:1148` 與 `lib/features/ai/ai_write_journal.dart:1781`、`:1887`：加密 flush／rename 位於最終同步送出前 |
+| Opus R2 M6 | 明列總 TTL 比父計畫 channel 逾時更嚴格、一般通知用系統遮蔽版＋泛用欄位的父計畫修正提案 | D3、§7 第 8–9 點；父計畫 `docs/plans/ai-writes-plan-v6.md:464`、`:483`、`:735` 對照 D10／S7；不修改父計畫、不宣稱外掛／鎖屏已驗收 |
 
 ## §0 交付範圍與停止條件
 
@@ -27,7 +40,7 @@
 - 原生執行許可、一次性 continuation ticket、最後同步送出檢查；REST／GraphQL／模型三條邊界都接上。
 - 原生擁有前景通知與「全部停止」；鎖定穩定版的 `flutter_local_notifications` 只投遞一般通知與開啟 app。
 - 沒有服務時的安全暫停、前景明確續跑、啟動被拒降級、app lock 後通知導頁、根頁返回、移除工作與日誌恢復。
-- 每個小 MR 都可獨立 analyze／執行自己的測試；最後在專案的 Pixel_9 與受控 API 34／35／36 AVD 矩陣驗收。缺少的環境或未跑的案例逐項標 `NOT_RUN`。
+- 每個小 MR 都可獨立 analyze／執行自己的測試；最後在通過 §4.2 純合成資料前置檢查的專案 API 34／35／36 AVD 矩陣驗收。Pixel_9 的 package 若有擁有者資料或狀態未知，該目標標 `NOT_RUN`，改用專用 AVD／乾淨的另一 flavor package，不為補矩陣覆蓋擁有者 app。
 
 MR6c 完成條件為 §15 第 22／27 列、實際服務下的第 28 列，以及 §12.5／§12.7 對應證據全部有明確結果；未執行的系統 timeout 不得用合成回呼填 PASS。iOS 實作、建置與裝置驗證維持 `NOT_RUN`，不藉本批宣稱跨平台背景能力完成。AI release gate 保持關閉，Play 申報 G6／沙箱真實寫入／開 gate 仍由 MR7 承接（父計畫 `docs/plans/ai-writes-plan-v6.md:493`、`docs/plans/ai-writes-plan-v6.md:526`）。
 
@@ -63,11 +76,11 @@ C1 在 API ≥29 使用平台 `startForeground(id, notification, ServiceInfo.FOR
 
 C2b 將 start／release 放在同一序列佇列；每個命令帶程序內單調遞增 `opSeq`，native 忽略舊序號。`startRuns` 另帶 Dart 預先建立的 `startRequestId`；`releaseRuns` 以互斥模式指定正常 `permitId` 或逾時清理的 `startRequestId`，不能要求逾時端知道尚未收到的 permitId。正常 release 比對 permit；清理僅取消由該 start request 建立、且未被更晚 start 採用的服務，不停無關 active permit。native 先記較新取消序號再清理，cancel 先於遲到 start 亦使舊 start 無效，不能讓晚到 release 停掉較新 start 的工作。`startRuns` 回覆上限 1 秒；逾時即放棄綁定，送較新序號的 request-scoped release，晚到 active 不復活 run；清理未確認則保留 unavailable、禁止自動重試。native stop／timeout 立即失效，不等 Dart 佇列。C1／C2b 測晚到 start、cancel-before-start、無 permitId 的 timeout 清理、release→approve/start 交錯、無關／較新 permit 不被停、舊 release 拒絕與清理失敗。
 
-**D3 — 票只有一次機會。** kind 僅 `model`／`mutation`；nonce 為每次續點的新值。native 在同一序列化狀態機內檢查 active permit、kind、nonce 重放，再一次核發回覆；回覆綁 permit／kind／nonce／ticketId。Dart bridge 檢查回覆形狀、當前 run 綁定、請求未取消，回傳具同步 consumeOnce 的記憶體物件。不同 run／kind、舊 permit、重放、異常回覆、channel unavailable 與 **1 秒逾時**都拒絕；晚到回覆永不復活暫停的 run。票不落盤、不進 notification payload／log／history，不以第二次 channel consume（會 await）作最後關卡。數值預設：Dart 自 acquire 發出起用單調時鐘計 **1000 ms** 的總有效期，涵蓋 channel 等待與後續 refresh／flush，consume 時已達期限即拒絕；不比較 native／Dart 不同時鐘。native 每 permit 最多記 **4096** 個 nonce，直至 released／invalidated 才整表釋放；飽和拒發且暫停，不逐筆淘汰後接受舊 nonce。C1 測容量／生命周期，C2a／C2b 用 fake clock 測邊界、慢 refresh／flush、晚回覆與不可重用；失敗按 D4／D6 還原，不延長 TTL。
+**D3 — 票只有一次機會。** kind 僅 `model`／`mutation`；nonce 為每次續點的新值。native 在同一序列化狀態機內檢查 active permit、kind、nonce 重放，再一次核發回覆；回覆綁 permit／kind／nonce／ticketId。Dart bridge 檢查回覆形狀、當前 run 綁定、請求未取消，回傳具同步 consumeOnce 的記憶體物件。不同 run／kind、舊 permit、重放、異常回覆、channel unavailable 與 **1 秒逾時**都拒絕；晚到回覆永不復活暫停的 run。票不落盤、不進 notification payload／log／history，不以第二次 channel consume（會 await）作最後關卡。數值預設：Dart 自 acquire 發出起用單調時鐘計 **1000 ms** 的總有效期，涵蓋 channel 等待與後續 refresh／flush，consume 時已達期限即拒絕；不比較 native／Dart 不同時鐘。這是**比父計畫 §12.2 的 channel 逾時更嚴格**的新增總 TTL，不是父計畫既有要求的原文；取票前的工具重讀不計入 TTL，仍計 D13 主動時間。native 每 permit 最多記 **4096** 個 nonce，直至 released／invalidated 才整表釋放；飽和拒發且暫停，不逐筆淘汰後接受舊 nonce。C1 測容量／生命周期，C2a／C2b 用 fake clock 測邊界、慢 refresh／flush、晚回覆與不可重用；失敗按 D4／D6 還原，不延長 TTL。
 
 **D4 — 三個送出位置。** core 只依賴新純 Dart execution-gate 介面（不 import Flutter／MethodChannel），feature bridge 實作它。
 
-1. 模型：**await acquire ticket → 重驗 guard／stop／deadline／run → 完成最後的 known-secrets refresh 與 tail redaction → 同快照 verify frozen prefix／encode／重算大小 → 同步重驗 guard／stop／deadline／run、失效 latch 與票 TTL → consume → `_complete`**。所有非同步 tail 準備都在最後 refresh 之前或其內完成，最後 refresh 返回後同步 redact／verify 至 `_complete` 呼叫之間無 await；不得先固定 payload 再等待票。現有錨點為 `lib/core/ai/runner.dart:457`–`lib/core/ai/runner.dart:485`、`lib/core/ai/runner.dart:970` 與 `lib/features/ai/ai_secrets.dart:35`。票等待期間新增其他 provider key／同 API OAuth credential，最後 refresh 必須讀入：可編輯 tail 重新遮蔽，frozen prefix 命中新秘密則安全拒送／標需 projection，不能改寫 provider replay。TTL 因 refresh 過期亦拒送；重試須重走 acquire 與最後 refresh，不能拿舊 payload 換票直送。
+1. 模型分兩段：**取票前**先完成現有 `_refresh`、`prepareToolResults`／`catalogue.prepareDelivery` 的所有非同步重讀與 delivery 準備；其中 `beforeDelivery` 的 refresh 不是最後 refresh，只保留 `delivered` callback，未送出不執行它。**取票後**固定為 **await acquire ticket → 重驗 guard／stop／deadline／run → 只 await 一次最後 `_refresh` → 對已備妥的 user tail／工具結果同步遮蔽 → 同快照 verify frozen prefix／encode／重算大小 → 同步重驗 guard／stop／deadline／run、失效 latch 與票 TTL → consume → `_complete`**。不得把整個現有 `_redactTail` 搬到 acquire 後；其中工具結果 60 秒到期的重讀可能等到 20 秒 toolDeadline，必須在 TTL 起算前完成。取票後不再重讀工具、準備 delivery 或引入其他 await；最後 refresh 返回後至 `_complete` 呼叫間全為同步，亦不得先固定 payload 再等票。現有錨點為 `lib/core/ai/runner.dart:457`–`lib/core/ai/runner.dart:485`、`:970`、`:998`、`:1010`，`lib/core/ai/tools/tool_catalogue.dart:285`、`:548` 與 `lib/features/ai/ai_secrets.dart:35`。票等待期間新增其他 provider key／同 API OAuth credential，最後 refresh 必須讀入，對剛重讀的結果也重新遮蔽；frozen prefix 命中新秘密則安全拒送／標需 projection，不能改寫 provider replay。TTL 因最後 refresh 過期亦拒送；重試須重走 acquire 與最後 refresh，不能拿舊 payload 換票直送。
 2. REST：現有 client precheck → 取票 → journal markDispatching／flush → 同步重驗所有既有 guard＋票與背景條件 → consume → 唯一 mutation，中間無 await。
 3. Graph：先保留方法原有 preflight／noop；在 beforeMutation 裡才 precheck／取票／flush；方法的 mayStart 同步重驗並 consume，再唯一 mutation。不得在呼叫整個 Graph 方法前先取票冒充最終授權。
 
@@ -155,7 +168,7 @@ python3 -m unittest discover -s tool/tests -p 'test_android_signing.py' -v
 
 契約 D3–D6；模型最後送出、REST flush 前、Graph hook 內各接一次。保存 owner／nonce／票的用一次性，mayStart 不 await；不改 REST／Graph 結果分類與 API preflight。fake barrier 分別卡住取票、journal flush、Graph preflight，測停止／generation／policy／consent／removal／429／無服務背景；fake 模型與 mutation counter 分別為 0。驗「有效回覆排隊後失效」的容許在途界限，不能把 callback 正常的測試當丟失 callback 證據。
 
-`mr6c_ticket_boundary_test.dart` 必須在 acquire barrier 內分別注入「非當前 recipient 的另一 provider 新 key」與「同 API 原地 OAuth credential 更新」；放票後確認最後 refresh 看見新秘密，tail 已遮蔽或 frozen prefix 拒送，任何模型 request 都沒有該秘密。記 acquire→guard→最後 refresh→redact／verify→consume→send 次序，最後 refresh 後沒有 async gap。另測拒票／channel timeout／慢 refresh 耗盡 TTL：model counter 不增、未送 tail／projection 可恢復、delivered／freeze 次數為零、票永久不可再用；REST／Graph 保留 D6 rollback／退款測試。
+`mr6c_ticket_boundary_test.dart` 必須在 acquire barrier 內分別注入「非當前 recipient 的另一 provider 新 key」與「同 API 原地 OAuth credential 更新」；放票後確認最後 refresh 看見新秘密，tail 已遮蔽或 frozen prefix 拒送，任何模型 request 都沒有該秘密。另有過期工具結果案：模擬核准等待超過 60 秒、重讀花 2 秒（小於既有 20 秒 toolDeadline），斷言重讀／delivery 準備在 acquire 前完成、不消耗 1000 ms TTL；取票等待期間分別加入上述新秘密，重讀內容仍同步重新遮蔽且可在 TTL 內送出一次。記重讀完成→acquire→guard→唯一最後 refresh→同步 redact／verify→consume→send 次序，取票後不再重讀、最後 refresh 後沒有 async gap。另測拒票／channel timeout／慢最後 refresh 耗盡 TTL：model counter 不增、未送 tail／projection 可恢復、delivered／freeze 次數為零、票永久不可再用；REST／Graph 保留 D6 rollback／退款測試。
 
 必須有正向測試：真實 foreground=false、有合法 run binding／未失效 permit，fresh ticket 能讓模型與自動等級 REST／Graph 各前進一次；撤 permit 後下一次為零。同一情境在背景呼 approve 必須拒絕並保留待核准狀態，防止以放寬共用 `_pauseOf` 同時放寬核准。
 
@@ -274,11 +287,15 @@ fvm flutter test --no-pub test/ai/mr6c_task_recovery_test.dart test/ai/ai_write_
 
 harness 只用合成帳號與合成內容：一般交錯／journal 案例可用行程內 provider／GitLab adapter；**V1 網路證據必須使用下述真 HTTPS sockets，不能用這些 adapter 填 PASS**。輸出 commit、flavor、SDK／target、AVD／API、APK digest／公用 signer digest、case、native stop 時序、call counters、ticket 交錯、延遲統計與 verdict。不輸出 token／許可值／私有內容；故障注入只由明確 QA target／`MR6C_QA=true` 開啟，不能從 exported intent 或 production UI 啟動。不新增測試套件。
 
+**資料隔離／跨程序帳號契約：** 只能在 §4.2 證明沒有擁有者資料的獨立 package sandbox 執行。每次載入帳號先比對該 phase 預期的完整已知合成集合；僅首次 prepare 可在確認 store 為空後，將已知合成帳號／last-account 寫入該 sandbox 的 production `SecureAccountStore`，使用其真 secure-storage journal key 與 Application Support 加密檔。recover 先載入同一份持久帳號清單，再跑 production history／journal recovery，不重新 seed 帳號、key 或 journal，不用記憶體帳號清單搭配共享的 production 磁碟。`SessionController` 的 `createApi` 在 initialize／auto-resume 前即注入 fixture，`/user` 亦只到合成 adapter（V1 到受限 HTTPS fixture）；QA main 不執行 production main／預設 providers 的自動登入。出現非合成或未知資料就停在前置檢查、該案 NOT_RUN，不 save／recovery／orphan cleanup／發網路請求。核對依據為 `lib/features/auth/account_store.dart:20`、`lib/features/auth/session_controller.dart:87`、`:148`、`lib/main.dart:112`、`lib/features/ai/ai_write_journal.dart:1049`；現有 `tool/emulator_ui.dart:131` 是記憶體帳號，不能直接套用於本跨程序案。host 只留合成身分核對結果與 journal 非敏感 digest，不讀出帳號／key／私有內容。
+
 **host／fixture 契約：** Python host 是唯一 case orchestrator。`integration_test/mr6c_background_test.dart` 是可建成 APK 的獨立 QA `main()`：初始化 Widgets binding、啟動 production controller／registry／native service 與顯式 async fixture，所有錯誤輸出 typed FAIL／error marker；不用 testWidgets／IntegrationTestWidgetsFlutterBinding 充當自動執行器，也不依賴 VM service 或 flutter test 子程序。只在 QA define 開啟時運作，release production entry 不匯入它。host 等 app ready／指定 barrier 才操作 adb／AVD；不得以假 registry 或 native state 替代。以 debug package 的 `run-as` app-private `files/mr6c_qa/` JSON mailbox 雙向 step／ack，命令綁 QA session nonce、case、phase、sequence，舊／重複命令拒絕；QA nonce 與 native permit 完全不同，mailbox 不存 permit、ticket、approval 或帳號內容，只存合成案例旗標／counter／安全時序（V1 另可傳公開 fixture 憑證）。未取得 ready／barrier ack 不可操作或跳過成 PASS。C4 debug adapter 提供 native 注入，C8 不修改 generator。
 
 **V1 device-network fixture（C8 同包交付）：** Python host 使用標準庫 HTTPS server（憑證由本機 openssl 於本 session scratch 產生，SAN 含 emulator host alias **10.0.2.2**），提供合成 provider SSE 及最小 GitLab HTTPS read／mutation-response 路徑。QA main 的專用 socket transport 只對該 host／port 信任本 session 公開憑證，仍驗主機與憑證；不設全域 HttpOverrides／accept-all callback、不改 production TLS／cleartext=false、不安裝裝置 CA。沿現有可注入 transport 接到真 runner／GitLab port，V1 不裝 in-process Dio fake，不用 adb reverse／forward 承載測量流量。host 連續送每 **5 秒**一個 SSE heartbeat、GitLab 路徑每 **30 秒**一個真 request；用多個正常模型回合涵蓋 12 分鐘（每回合低於既有 5 分鐘 model deadline，不放寬總主動預算）。host 記實際 socket request／write 時序，device 記實收 bytes／heartbeat／readback 與最長 gap，基線定連續性容許 gap **≤15 秒 SSE、≤60 秒 GitLab**；只看 server write 不代表 device 收到。強制 Doze 時確定 `dumpsys deviceidle` 已進 idle，分別報服務／Dart 存活與網路是否持續。路由／受限 TLS fixture 未建好或未跑，網路結論 **NOT_VERIFIED（執行狀態 NOT_RUN）**；已跑但斷網／超 gap 則 FAIL＋限制，不換合成流冒充 PASS。手動補驗亦照 §4.2 啟同 QA APK／host TLS fixture、確認 baseline socket 往返後熄屏／force-idle 12 分鐘，讀雙端時序並還原 idle／battery，不能只讀 running 通知。
 
-對 V9 與任何會殺程序的案例，host 先保存 dispatch-accepted／journal-flushed barrier 與 baseline，再操作 recents／user-stop／force-stop；app 終止只記 expected termination，**不是測試通過**。host 另外反讀 process／service 已停，再用同一已安裝 APK 的 recover phase 啟動新 fixture，**兩 phase 之間不安裝、不 uninstall／clear data**，反讀真 journal 的 uncertain／隔離／無 permit 與零重送。prepare 在加密真 journal 寫入合成 execution，host 只保留其非敏感 digest／存在性證據，recover 必須由 production recovery 讀到同一 execution；不可重建 fixture journal。兩階段各有 deadline 與獨立完成標記才可判 PASS。host stdout／小型 evidence 在 app 外，死亡後仍可完成 verdict。非預期 app 失敗、缺恢復標記、掛住一律 FAIL；無環境且未啟動才 NOT_RUN。`test_mr6c_emulator_checks.py` 鎖住一次 install -r、失敗不重試刪除、phase 間零 install／uninstall／pm clear、marker／journal identity／barrier／恢復規則，不把 kill 或 am start 成功當通過。mailbox 僅清本 session 合成資料，不清整個 app。
+對 V9 與其他含在途 journal 恢復的程序終止案例，host 先保存 dispatch-accepted／journal-flushed barrier 與 baseline，再操作 recents／user-stop／force-stop；V7 純通知重啟子案另依下表保留通知，不要求製造一筆在途 mutation。app 終止只記 expected termination，**不是測試通過**。host 另外反讀 process／service 已停，再用同一已安裝 APK 的 recover phase 啟動新 fixture，**兩 phase 之間不安裝、不 uninstall／clear data**，反讀真 journal 的 uncertain／隔離／無 permit 與零重送。prepare 在加密真 journal 寫入合成 execution，host 只保留其非敏感 digest／存在性證據，recover 必須由 production recovery 讀到同一 execution；不可重建 fixture journal。兩階段各有 deadline 與獨立完成標記才可判 PASS。host stdout／小型 evidence 在 app 外，死亡後仍可完成 verdict。非預期 app 失敗、缺恢復標記、掛住一律 FAIL；無環境且未啟動才 NOT_RUN。`test_mr6c_emulator_checks.py` 鎖住一次 QA install -r（事後原 APK 還原另計）、失敗不重試刪除、phase 間零 install／uninstall／pm clear、marker／journal identity／barrier／恢復規則，不把 kill 或 am start 成功當通過。mailbox 僅清本 session 合成資料，不清整個 app。
+
+`test_mr6c_emulator_checks.py` 另鎖住資料前置檢查**早於安裝／host reset／啟動**、非合成／未知資料零修改、持久合成帳號於 recover 先載入且不重建、APK 保存／原 versionCode 相等／還原失敗分支、V7 通知保留與 ID 反讀前置條件，以及 V3 channel／三種邊界全程分開計時、TTL 逾期與 rollback 計數。這些是 C8 要新增的測試，本輪未建立或執行。
 
 **驗收命令：** G0 加 §4.1 全部生成／build／反讀命令、§4.2 host 命令與 §4.3 每案操作；不得挑完容易案例就關包。**§15 所有權：** 22 最終生成物／雙 flavor 編譯、27 實際服務與丟 callback 交集、28 實際服務 Android 續跑。**NOT_RUN：** iOS 全部、未跑的預設六小時 timeout、缺 API／裝置環境與未取得完整證據的個別案例維持逐項 NOT_RUN；不得將其列成 PASS。
 
@@ -314,11 +331,11 @@ MR6C_GENERATED_ROOT="$PWD" python3 -m unittest discover -s tool/tests -p 'test_b
 
 生成、模板重跑、merged manifest、雙 flavor build 各一列證據；模板重跑限管理函式，測試 CLI 第二次拒覆寫。iOS 只生成 templates 也仍是 iOS build／device NOT_RUN。輸出完成後僅刪除本 session 自有且已確認無需保留的大型 build scratch，不碰原專案或 AVD 資料。
 
-C8 另跑 `fvm flutter build apk --release --flavor gitlab --no-pub` 與 `fvm flutter build apk --release --flavor play --no-pub`，讀兩 flavor release merged manifest 無 QA 元件、release 的 R8 前 class 清單無 QA adapter／handler，再用該產物的 `mapping.txt`（若 R8 產出）核對轉名後 DEX，證明 release source set 未帶測試接縫；debug QA 版則正向找到接縫。R8 會改類名，單搜 release DEX 原類名未命中不能證明不存在。缺 mapping 時須有可核對 APK digest 的 R8 前輸入清單，缺產物證據不填 PASS；只查 Dart define 或原始碼亦不算。這是測試入口隔離驗收，不等同 release／Play 發布。
+C8 另跑 `fvm flutter build apk --release --flavor gitlab` 與 `fvm flutter build apk --release --flavor play`。比照 `ci/build_android.sh:84`–`:93`，release **不加 `--no-pub`**，讓 build 重生 GeneratedPluginRegistrant，避免先前 debug／QA resolve 留下 dev-only integration_test plugin。host 在**每個 flavor build 前與結束後**用 Python 標準庫 hashlib 讀 `pubspec.lock` 的 SHA-256，記錄並確認與 build 前及已核定的 lock 相同；即使 build 非零也記錄後值，任一變動或 build 失敗即 FAIL，不覆寫 lock 或忽略差異。再讀兩 flavor release merged manifest 無 QA 元件、release 的 R8 前 class 清單無 QA adapter／handler，再用該產物的 `mapping.txt`（若 R8 產出）核對轉名後 DEX，證明 release source set 未帶測試接縫；debug QA 版則正向找到接縫。R8 會改類名，單搜 release DEX 原類名未命中不能證明不存在。缺 mapping 時須有可核對 APK digest 的 R8 前輸入清單，缺產物證據不填 PASS；只查 Dart define 或原始碼亦不算。這是測試入口隔離驗收，不等同 release／Play 發布。
 
 ### §4.2 AVD 身分與固定命令（C8 script 必須實作後才可執行）
 
-**指定環境是專案 Pixel_9，禁止實體手機。** 執行前 `adb devices -l`，再以明確 serial 核對：
+**只用專案 AVD，禁止實體手機；預設使用純合成資料的專用 AVD。** 執行前 `adb devices -l`，再以明確 serial 核對：
 
 ```sh
 adb devices -l
@@ -327,16 +344,16 @@ adb -s "$MR6C_SERIAL" emu avd name
 adb -s "$MR6C_SERIAL" shell getprop ro.build.version.sdk
 ```
 
-qemu 必須 1，AVD 必須 Pixel_9 或本專案事先登記的 API 專用 Pixel_9_MR6c_API34／35／36。Pixel_9 本身一定要有一筆本次實跑；它目前使用哪個 API 由 readback 決定，不能從歷史 serial 猜。API 專用 AVD 只補缺少的版本、沿現有官方 system image，不複製大 image、不換別人的 emulator、不刪既有 Pixel_9 資料。沒有某 API image／空間時該列 NOT_RUN；建立額外 AVD 的成本由 lead 先核對空間再處理，不假裝一個 AVD snapshot 能切換 OS API。
+qemu 必須 1，AVD 必須 Pixel_9 或本專案事先登記的 API 專用 Pixel_9_MR6c_API34／35／36。Pixel_9 已有擁有者登入的歷史紀錄（`docs/ANDROID_SIGNING.md:298`、`:307`），不能假定乾淨，也不強制覆蓋它湊一筆實跑。它目前使用哪個 API 由 readback 決定，不能從歷史 serial 猜。對選定 package，先以專用 AVD 建立紀錄或可核對的純合成 QA receipt 證明無真帳號／history／journal／其他擁有者資料；**已有非合成資料或無法證明純合成時，該 AVD／flavor 案 NOT_RUN，安裝、啟動、force-stop、寫帳號與清理一律不執行**，另選專用 AVD 或經同樣檢查的乾淨 play package，不能把另一 flavor 的乾淨狀態套到它。package 未安裝亦不單憑此判定無舊資料，須有乾淨 sandbox 來源證據。API 專用 AVD 沿現有官方 system image，不複製大 image、不換別人的 emulator、不刪既有 Pixel_9 資料。沒有某 API image／空間時該列 NOT_RUN；建立額外 AVD 的成本由 lead 先核對空間再處理，不假裝一個 AVD snapshot 能切換 OS API。
 
 下面工具由 C8 新建；它驗 serial／AVD／API 與安裝包身分，錯誤立即拒絕，不 fallback 第一台裝置。`--cases all` 對應 §4.3 的 case IDs，逐個報告；API 版本／AVD 必須與上面的當次 readback 相符。
 
 ```sh
 python3 -m unittest discover -s tool/tests -p 'test_mr6c_emulator_checks.py' -v
-python3 tool/mr6c_emulator_checks.py --serial "$MR6C_SERIAL" --avd Pixel_9 --api "$MR6C_API" --cases all --output "$MR6C_EVIDENCE"
+python3 tool/mr6c_emulator_checks.py --serial "$MR6C_SERIAL" --avd "$MR6C_AVD" --api "$MR6C_API" --cases all --output "$MR6C_EVIDENCE"
 ```
 
-host 使用以下**建置一次、相容更新一次、分階段只啟動**的路徑。先驗 APK／installed applicationId、公開 signer、versionCode 可相容更新（build-number 取不低於 installed 的本 session 值）；失敗立即停止，不自動解除安裝。`MR6C_FLAVOR` 僅 gitlab／play，package 分別為 io.gitlabmobile.gitlab_mobile／app.mergeline；MainActivity namespace 兩者皆為 io.gitlabmobile.gitlab_mobile。每個 flavor session 在任何 prepare 寫 journal **之前**執行一次：
+host 使用以下**建置一次、安裝 QA 一次、分階段只啟動、最後還原既有 APK**的路徑。`MR6C_AVD` 取上述白名單中的當次 readback；`MR6C_FLAVOR` 僅 gitlab／play，package 分別為 io.gitlabmobile.gitlab_mobile／app.mergeline；MainActivity namespace 兩者皆為 io.gitlabmobile.gitlab_mobile。資料前置檢查通過後、安裝 QA **之前**，host 依明確 serial／package 用 `pm path` 反讀已安裝 APK，記錄 SHA-256／versionName／versionCode／applicationId／公開 signer，將原 APK 保存到本 session scratch 並核對 digest，先落盤還原 receipt；未安裝則記錄 `original=absent`。已有 APK 時本方案只接受可保存、可同 signer 相容回裝的單一 base APK，split／無法保存或核對一律 NOT_RUN，不猜修。QA 的 build-number 必須**等於原 versionCode**，確保之後可用 `install -r` 回裝原 APK；不能提高版號後才發現無法降回，也不用 `-d`／uninstall／clear data。原未安裝時採本 session 的固定版號，只在已證明乾淨的 sandbox 首裝。先驗候選 APK 的 package／signer／versionCode 與 receipt，任一不符即停止、不安裝。每個 flavor session 在任何 prepare 寫 journal **之前**執行一次：
 
 ```sh
 fvm flutter build apk --debug --no-pub --flavor "$MR6C_FLAVOR" --build-number "$MR6C_BUILD_NUMBER" --target integration_test/mr6c_background_test.dart --dart-define=MR6C_QA=true
@@ -344,7 +361,7 @@ MR6C_QA_APK="$PWD/build/app/outputs/flutter-apk/app-$MR6C_FLAVOR-debug.apk"
 adb -s "$MR6C_SERIAL" install -r "$MR6C_QA_APK"
 ```
 
-上述是 host 依序執行的命令，不是無視 exit status 的 shell 清單；install 非零立即 FAIL，不執行後續啟動。**每個獨立 case 的 prepare 前**，host 執行 `adb -s "$MR6C_SERIAL" shell am force-stop "$MR6C_PACKAGE"`、確認程序消失，記作 `host_case_reset`，再建立新 baseline；這不是被測的 V9 force-stop，且不在同案 prepare→recover 之間執行。如此下一案不會只 bring-to-front 舊 Activity 而漏跑 Dart main。host 將 `MR6C_CASE`（V1–V12）、`MR6C_PHASE`（prepare／recover）、nonce／sequence 序列化為本機小檔 `$MR6C_COMMAND_JSON`，再逐 phase 執行：
+上述是 host 依序執行的命令，不是無視 exit status 的 shell 清單；install 非零立即 FAIL，不執行後續啟動。**每個獨立 case 的 prepare 前**，host 執行 `adb -s "$MR6C_SERIAL" shell am force-stop "$MR6C_PACKAGE"`、確認程序消失，記作 `host_case_reset`，再建立新 baseline；這不是被測的 V9 force-stop，且不在同案 prepare→recover 之間執行。V7 的通知必須在此 reset **之後**才建立；保留通知的重啟子案內不再執行 reset／force-stop／stop-app，詳見 V7。如此下一案不會只 bring-to-front 舊 Activity 而漏跑 Dart main。host 將 `MR6C_CASE`（V1–V12）、`MR6C_PHASE`（prepare／recover）、nonce／sequence 序列化為本機小檔 `$MR6C_COMMAND_JSON`，再逐 phase 執行：
 
 ```sh
 adb -s "$MR6C_SERIAL" shell run-as "$MR6C_PACKAGE" mkdir -p files/mr6c_qa
@@ -354,6 +371,8 @@ adb -s "$MR6C_SERIAL" shell am start -W -n "$MR6C_PACKAGE/io.gitlabmobile.gitlab
 ```
 
 Python 用 argument arrays／直接 stdin 與單一已引用遠端 shell 字串實作上述 mailbox 寫入（package 已按 flavor 白名單驗證，不讓 adb 去掉 sh -c 內引號）；每步檢查 return code。fixture main 讀 command.json 再發布對應 ready／barrier／done，host 設每 phase 30 分鐘 deadline；非終止案例 prepare 完成，終止案例須先證明被測操作已終止程序才跑 recover。**prepare→recover 沒有 build／install／uninstall／pm clear／額外 force-stop**。固定 Flutter 3.47.2 的 test runner 預設結束會卸載（`commands/test.dart:308`），即使加 `--no-uninstall`，`android/android_device.dart:406` 仍可能在安裝失敗時 uninstall 重試，且 start／teardown 都會 stopApp；故本路徑不使用 `flutter test -d`／`flutter run` 來啟動這些 phases。Python 單測鎖住此命令策略與反例，包含 A 案完成後 B 案 main 真重啟、同案 recover 無 host reset、遠端引號／package 白名單；資料連續性靠真 journal readback 證明。
+
+全部 cases 結束或失敗時，host 的 finally／中斷後 recovery 依事前 receipt 停止 QA 並還原**原先已安裝的合成 sandbox APK**：核對保存 bytes，再 `adb -s "$MR6C_SERIAL" install -r "$MR6C_ORIGINAL_APK"`；重讀 installed APK 的 SHA-256／versionCode／signer 與原紀錄相同才記 `restored`，不啟動它作真帳號登入。此還原只在所有 prepare→recover 結束後，不得插在兩 phase 之間；失敗明列 FAIL／restore pending，保留 receipt 與原 APK，不刪資料或更換 signer。`original=absent` 沒有原 APK 可回裝，測後停止 QA、關閉本 session 專用 AVD，明列 QA package 保留於該 sandbox，不冒稱回到未安裝狀態、不自動 uninstall；Pixel_9 上若不允許留下新 QA package 就在事前標 NOT_RUN，選專用 AVD。不得覆蓋或還原擁有者的日常 app。
 
 缺版本時分別以 `--avd Pixel_9_MR6c_API34 --api 34`、`--avd Pixel_9_MR6c_API35 --api 35`、`--avd Pixel_9_MR6c_API36 --api 36` 重跑同一命令，serial 取各自 readback，不盲抄。必要時 play flavor 重跑 service／notification／back smoke（`--flavor play` 與 package app.mergeline），gitlab 預設 package 是 io.gitlabmobile.gitlab_mobile；不得將兩個 package 的資料／票混用。
 
@@ -365,16 +384,18 @@ Python 用 argument arrays／直接 stdin 與單一已引用遠端 shell 字串�
 |---|---|---|
 | V1／12.5 | API 34、35、36，Pixel_9 矩陣；可見 UI 啟服務，熄屏／另案確定進 Doze，12 分鐘 host 10.0.2.2 HTTPS provider SSE＋GitLab fixture 真 socket 請求，規格見 C8；三段並行，第四段拒絕 | 雙端時序證明 device 實收 bytes／heartbeat／GitLab 回應，SSE gap≤15秒／GitLab gap≤60秒，主動時間／既有 deadline 不放寬。三 run 共用許可，最後活動結束或全 awaitingApproval 停服務，核准前無模型／mutation。服務／Dart 存活與網路分列；未跑 socket fixture 為網路 NOT_VERIFIED／NOT_RUN，Doze 斷網或超 gap 為 FAIL／限制，不用 in-process adapter／wake lock／豁免湊 PASS。 |
 | V2／12.7-1、22、27 | API 35、36；分開跑 QA 合成 onTimeout 與系統縮短 dataSync 額度 timeout，兩者各測 callback 送達／丟棄；先保存 model／mutation baseline 並排空／另列 D5 舊票，再 timeout 後推進兩種續點 | native invalidate→stop 不等 Dart，寬限內停止，無 RemoteServiceException／ANR；**fgsTimeout 後新增 model=0、mutation=0**，不以 V4 替代。在途 settlement 保留，沒有新核票；合成／系統各自標記。未跑預設六小時另列 NOT_RUN，不把縮短額度稱六小時耗盡。API 34 系統 dataSync timeout 不適用，不填 PASS。 |
-| V3／12.7-2、27 | API 34–36，Activity 在背景且 engine 活；三 run 持續取票；各種 idle／screen off／Doze，正常往返每種至少 100 次；另注入 >1 秒與晚到回覆 | 記 N／p50／p95／max／timeout 次數，每張已使用票只 consume 一次；正常測項記實際 ≤1 秒比例，逾時一律暫停、不得放寬 1 秒或默認放行。看不到穩定往返就報風險／降級，不能把 fail-closed 當 latency 過關。 |
+| V3／12.7-2、27 | API 34–36，Activity 在背景且 engine 活；三 run 持續取票；各種 idle／screen off／Doze，正常往返每種至少 100 次；同時量 channel 往返與 model／REST／Graph 三種邊界 acquire 發出→consume 的全程（含 model 最後 refresh、REST／Graph 加密 journal flush）；另注入 >1 秒／晚到回覆／慢 flush | channel 與三種全程各記 N／p50／p95／max／分母、channel timeout 次數；各邊界另記總 TTL 逾期次數、acquire→拒絕耗時及原因、flush 後因 TTL 拒絕的 rollback 嘗試／成功／失敗次數，未 consume 的失敗不從報告消失。每張已使用票只 consume 一次；正常測項分別記 channel ≤1 秒比例及全程 **<1000 ms** 比例，consume 時已達 1000 ms 一律拒絕、按 D6 rollback，不放寬 TTL。全程逾期偏高就如實報風險／降級，不能以 channel 過關或 fail-closed 當全程 latency 過關。 |
 | V4／12.5 交集、27 | API 34–36，先證明背景＋有效 permit 可前進模型／自動等級 REST／Graph；再在背景＋Dart／engine 活時 native 停服務，故意丟 callback／切斷 stop channel，推進下一續點 | 正向各一次、背景 approval 仍拒絕；native 不等 Dart；停止後下一次 acquire 不核票或超時，新增 model=0／mutation=0。必須同一交集案例；「callback 正常零 dispatch」＋「壞 channel 能停服務」兩份證據不足。 |
 | V5／27、29 | API 34–36＋fake barrier：先失效再 acquire；有效回覆排 channel 後才失效；Graph preflight 中失效；flush 期間切背景／撤 guard；同票第二次 consume | 前者零送出，後者最多已核發的一次在途且不再發新票；Graph mutation=0／notExecuted 不上鎖；flush 後拒絕 rollback／退款按 D6；不能以後者證明「失效後絕無 HTTP」。 |
 | V6／12.3 | API 34–36，通知權限允許／拒絕；鎖屏／解鎖；通知抽屜與 app 內提示，app 語言與裝置語言不同 | 拒絕時 FGS 能運行，但一般提醒缺席、app 內揭露；FGS 有安全 publicVersion，一般通知全部泛用欄位＋private，反讀 OS 實際公開呈現無名稱；Dart 安全文案跟 app 語言。冷／熱點擊先鎖後定位當前提議卡（無卡片只開安全對話），取消 unlock 不導頁；foreign／stale generation／未知 conversation 只首頁，不切帳號／核准。 |
-| V7／12.7-4 | API 34–36（重點 34+），單獨滑掉原生前景通知後再 update；需確認與完成通知同時存在；重啟精確清 6200–6299 | 記 OS 是否重現／仍可見、service／permit 是否仍 active、6100 與一般範圍無衝突；滑掉不等於 stop。不能宣稱 notification 常駐。其他 ID 不被取消。 |
+| V7／12.7-4 | API 34–36（重點 34+），單獨滑掉原生前景通知後再 update；另做保留通知的冷重啟子案，需確認與完成通知同時存在，背景以 `am kill` 或限定本 package 的 run-as 結束程序；重啟子案內禁止 force-stop／stop-app／host reset | 記 OS 是否重現／仍可見、service／permit 是否仍 active、6100 與一般範圍無衝突；滑掉不等於 stop，不宣稱常駐。以 `dumpsys notification` 在終止前、程序已死但尚未啟動、啟動完成後各反讀 6100／6200–6299／6300–6399，僅留 ID／存在性。啟動前必須仍有舊 6200–6299 及非目標 6300–6399，啟動後只前者清空、後者保留；6100 依服務生命週期另列，不能以通知早已全消失當精確取消 PASS。 |
 | V8／12.5、27 | API 34–36，notification stopAll；鎖住 app；另測 callback 丟棄／engine detach／MainActivity destroy | 先失效再停，無新票／新呼叫；在途 journal settle；無殭屍服務／僅剩通知；前景中被 stop 的 run 也不自動續跑。 |
 | V9／12.7-3、12.5 | API 34–36，recents swipe，另案 Task Manager Stop，再冷啟動；另案 settings force-stop／冷啟動 | 反讀 service 已停、許可不存在；記 onDestroy 有／無送達，不依賴它發中斷通知；殘留 dispatching 恢復 uncertain、隔離保留；journal unreadable 提供安全重試；無 callback 時不要求有終止當下通知。三種操作分開，Android user-stop 指令不冒稱 force-stop。 |
 | V10／12.2 back | API 34–36，detail／非首頁／首頁、awaitingApproval／paused／無工作、app lock、predictive back | 每次 back 次序 D11；根頁 live work canPop=false，QA native counter 證明 moveTaskToBack 恰一次，detail／非首頁分支不呼叫；Activity／engine 未 destroy 僅為輔助證據，無工作照舊。真正防舊版 finish 的 API 24–30 缺環境即完成條件列 NOT_RUN，不從 34–36 外推。 |
 | V11／28 | API 34–36，正常無服務背景暫停、start 拒絕、fgsTimeout 三條，各以前景明確續跑；含 dispatching 與所有終態 | 舊 execution mutation 不增加、每筆投影一行；同 run 同 operation／keys 的新成功／uncertain 重複需確認（bypass 亦然），uncertain 不自動解鎖；計數與主動時間不歸零，沒有舊核准復活。 |
 | V12／12.1 | API 34–36，背景服務執行中切帳號／登出／兩入口移除；等待／立即切換／取消；settlement 延遲 | 保留既有提示、等待上限、removal hold／tombstone／epoch；新帳號看不到舊結果，資料清理不被 native stop 越權執行；本案用 synthetic adapter，不作真私人帳號移除。 |
+
+V7 的滑掉／更新與啟動取消是兩個子案。取消子案先完成 host_case_reset，再建立合成 needsApproval／completed 通知；等 serviceWorkCount=0、服務正常 release，將 app 移背景後 `adb -s "$MR6C_SERIAL" shell am kill "$MR6C_PACKAGE"`，反讀程序真的消失且上述兩類一般通知仍在，才啟同 APK 的 recover phase。若 `am kill` 未殺掉程序，僅可改用經驗證只結束該 QA package 程序的 run-as 方法；不以 force-stop／stop-app 代替。若 OS 先清了通知或未取得啟動前 ID 證據，此子案缺證據／FAIL，不能填 PASS；6100 因正常 release 已移除須單列，不能歸因於 C3 啟動取消。host 只在記憶體解析 dumpsys 的 package／ID，不保存原始通知 dump 或顯示內容。
 
 **官方系統 timeout 指令**（僅 API 35／36 的專案 AVD，`MR6C_PACKAGE` 由 flavor 決定並經 script 驗證）：
 
@@ -434,6 +455,8 @@ Task Manager user stop 的官方測試命令為 `adb -s "$MR6C_SERIAL" shell cmd
 5. 一般跨 run／conversation 去重的延後註記（`docs/V0_6_AI_VERIFICATION.md:2016`、`lib/core/ai/tools/write_coordinator.dart:741`）須改成 D9 的實際範圍決定：同邏輯 run 續跑不重複、uploads 原跨 run 規則保留；一般全域去重未交付，不宣稱那些歷史註解已被實作。
 6. `docs/PLAN_STATUS.md:43` 仍記 MR6b-3 P15／3t 在 review，`docs/PLAN_STATUS.md:44` MR6c 未開始；每個實作 MR 只更新自己真正完成的子項，C8 證據齊全後才關 MR6c，MR7 gate／G6／iOS 仍分開。不要由歷史 breakdown 的舊行號或代理人「完成」訊息推定上游已合。
 7. 父計畫 §12.6 的 iOS 有限 background task **實作**及回前景／第28列驗收另指定後續 `MR6c-iOS`：Codex 承接非 UI bridge／lifecycle，Claude 承接 UI／l10n 與實機驗收；先另寫小包邊界再交付，本批不實作。請在父計畫 §14 增列此歸屬，實作／build／真機均維持 NOT_RUN，不只寫「測試未跑」。此為本文提出的後續安排，未改父計畫或開 MR。
+8. 父計畫 §12.2／§18 的 1 秒是 acquireContinuation **channel 逾時**（`docs/plans/ai-writes-plan-v6.md:464`、`:735`）；本文 D3 另加自 acquire 發出至 consume 的 **1000 ms 總 TTL**，包含最後 refresh／journal flush，比父計畫更嚴格。提議父計畫明列此新增限制及 V3 分開量兩種延遲，不能把它說成父計畫原有總 TTL，也不把取票前慢工具重讀放進 TTL。
+9. 父計畫 §12.3（`docs/plans/ai-writes-plan-v6.md:483`–`:484`）的「提供公開版本」提議區分通知 owner：一般通知沿 D10／S7，改為 private＋全部顯示欄位泛用，公開呈現使用**系統產生的遮蔽版**，不要求 22.3.3 外掛自訂 publicVersion，也不承諾固定公開文字；FGS 通知仍由 native 自建安全 `setPublicVersion`。兩者都不得顯示專案／MR 等敏感名稱，V6 真鎖屏驗收仍不可省略。本點只提出父計畫措辭修正，未改父計畫或取得新外掛／OS 執行證據。
 
 ## 附錄 A：範圍搜尋與驗收列責任索引
 
