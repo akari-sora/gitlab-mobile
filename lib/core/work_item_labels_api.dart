@@ -3,6 +3,7 @@ part of 'gitlab_api.dart';
 const _labelPageSize = 100;
 const _labelPageLimit = 20;
 const _labelCandidatePageSize = 20;
+const _aiLabelCandidatePageSize = 100;
 const _labelCandidatePageLimit = 5;
 const _labelTitleLimit = 255;
 
@@ -132,6 +133,22 @@ query MobileGroupLabelCandidates(
 }
 ''';
 
+// Complete, search-free project candidates for bounded AI proposals. A partial
+// page never registers candidates; callers must not send unseen identifiers.
+const _aiWorkItemLabelCandidatesQuery = r'''
+query MobileProjectWorkItemLabelCandidates($fullPath: ID!) {
+  currentUser { id }
+  project(fullPath: $fullPath) {
+    id
+    fullPath
+    labels(includeAncestorGroups: true, archived: false, first: 100) {
+      nodes { id title color textColor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
 const _workItemLabelMutation = r'''
 mutation MobileUpdateWorkItemLabels($input: WorkItemUpdateInput!) {
   workItemUpdate(input: $input) {
@@ -162,16 +179,19 @@ final class WorkItemLabelTarget {
     required int expectedUserId,
     required int generation,
     required int handoffEpoch,
+    required int maxPages,
   }) : _owner = owner,
        _expectedUserId = expectedUserId,
        _generation = generation,
-       _handoffEpoch = handoffEpoch;
+       _handoffEpoch = handoffEpoch,
+       _maxPages = maxPages;
 
   final WorkItemLabelSnapshot opening;
   final GitLabApi _owner;
   final int _expectedUserId;
   final int _generation;
   final int _handoffEpoch;
+  final int _maxPages;
   final Set<String> _knownCandidateIds = <String>{};
   bool _consumed = false;
   bool get consumed => _consumed;
@@ -186,8 +206,12 @@ extension WorkItemLabelApi on GitLabApi {
     WorkItemGraphDetail detail, {
     required int expectedUserId,
     required int generation,
+    int maxPages = _labelPageLimit,
     bool Function()? isCurrent,
   }) async {
+    if (maxPages < 1 || maxPages > _labelPageLimit) {
+      throw const ApiFailure(FailureKind.validation);
+    }
     final loaded = await _readLabelCatalog(
       detail.summary,
       expectedUserId: expectedUserId,
@@ -195,6 +219,7 @@ extension WorkItemLabelApi on GitLabApi {
       readEpoch: 0,
       isCurrent: isCurrent,
       role: _LabelReadRole.load,
+      maxPages: maxPages,
     );
     final handoffEpoch = _readEpoch;
     final snapshot = WorkItemLabelSnapshot(
@@ -223,9 +248,54 @@ extension WorkItemLabelApi on GitLabApi {
               expectedUserId: expectedUserId,
               generation: generation,
               handoffEpoch: handoffEpoch,
+              maxPages: maxPages,
             )
           : null,
     );
+  }
+
+  /// Reads one complete project catalog without search, then registers every
+  /// returned identifier on this target. Partial catalogs fail closed.
+  Future<List<WorkItemLabel>> workItemLabelCandidates(
+    WorkItemLabelTarget target, {
+    bool Function()? isCurrent,
+  }) async {
+    _requireLabelCaller(this, target, isCurrent);
+    if (target._consumed) throw _labelsSpent;
+    final scope = _labelCandidateScope(target.opening.summary);
+    if (scope.group) throw _labelsUnsupported;
+    final response = await _read(
+      instance.graphQL,
+      method: 'POST',
+      graphQuery: true,
+      data: {
+        'query': _aiWorkItemLabelCandidatesQuery,
+        'variables': {'fullPath': scope.fullPath},
+      },
+    );
+    _requireLabelCaller(this, target, isCurrent);
+    try {
+      final data = _labelGraphData(response.bytes);
+      if (_requiredLabelActor(data, target._expectedUserId) !=
+          target.opening.actorId) {
+        throw _labelsCancelled;
+      }
+      final project = objectJson(data['project']);
+      if (requiredString(project, 'id') != scope.containerId ||
+          requiredString(project, 'fullPath') != scope.fullPath) {
+        throw _labelsUnsupported;
+      }
+      final page = _parseCandidateConnection(
+        project['labels'],
+        0,
+        pageSize: _aiLabelCandidatePageSize,
+      );
+      if (page.hasNextPage) throw _labelsUnsupported;
+      target._knownCandidateIds.addAll(page.labels.map((label) => label.id));
+      return List<WorkItemLabel>.unmodifiable(page.labels);
+    } on FormatException {
+      throw _labelsUnsupported;
+    }
   }
 
   /// Completed pages stay selectable. A later page failure does not remove them.
@@ -289,7 +359,11 @@ extension WorkItemLabelApi on GitLabApi {
           requiredString(container, 'fullPath') != scope.fullPath) {
         throw _labelsUnsupported;
       }
-      page = _parseCandidateConnection(container['labels'], pageIndex);
+      page = _parseCandidateConnection(
+        container['labels'],
+        pageIndex,
+        pageSize: _labelCandidatePageSize,
+      );
     } on ApiFailure {
       rethrow;
     } on FormatException {
@@ -317,7 +391,12 @@ extension WorkItemLabelApi on GitLabApi {
     required List<String> desiredLabelIds,
     bool Function()? isCurrent,
     void Function()? onMutationSent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     if (target._consumed) {
       throw WorkItemLabelWriteFailure(
         failure: _labelsSpent,
@@ -351,6 +430,7 @@ extension WorkItemLabelApi on GitLabApi {
         readEpoch: target._handoffEpoch,
         isCurrent: isCurrent,
         role: _LabelReadRole.fence,
+        maxPages: target._maxPages,
       );
     } on WorkItemLabelWriteFailure {
       rethrow;
@@ -399,6 +479,8 @@ extension WorkItemLabelApi on GitLabApi {
     } on ApiFailure catch (failure) {
       throw WorkItemLabelWriteFailure(failure: failure, mutationSent: false);
     }
+    if (beforeMutation != null) await beforeMutation();
+    if (mayStart != null && !mayStart()) throw _labelsCancelled;
     onMutationSent?.call();
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
     try {
@@ -443,6 +525,7 @@ extension WorkItemLabelApi on GitLabApi {
         readEpoch: target._handoffEpoch,
         isCurrent: isCurrent,
         role: _LabelReadRole.confirm,
+        maxPages: target._maxPages,
         requiredUpdatedAt: acknowledged,
       );
     } on Object {
@@ -478,6 +561,7 @@ extension WorkItemLabelApi on GitLabApi {
     required int readEpoch,
     required bool Function()? isCurrent,
     required _LabelReadRole role,
+    required int maxPages,
     DateTime? requiredUpdatedAt,
   }) async {
     if (expectedUserId <= 0 || generation < 0) {
@@ -499,7 +583,7 @@ extension WorkItemLabelApi on GitLabApi {
     bool? widgetPresent;
     WorkItemLabelAllowsScoped? scoped;
     String? after;
-    for (var page = 0; page < _labelPageLimit; page++) {
+    for (var page = 0; page < maxPages; page++) {
       if (isClosed || (isCurrent != null && !isCurrent())) {
         throw _labelsCancelled;
       }
@@ -552,7 +636,7 @@ extension WorkItemLabelApi on GitLabApi {
       }
       labels.addAll(parsed.labels);
       if (!parsed.hasNextPage) break;
-      if (page == _labelPageLimit - 1 || parsed.endCursor == null) {
+      if (page == maxPages - 1 || parsed.endCursor == null) {
         throw _labelsUnsupported;
       }
       after = parsed.endCursor;
@@ -777,12 +861,13 @@ WorkItemLabelAllowsScoped _parseScopedDefinition(Object? rawType) {
 
 WorkItemLabelCandidatePage _parseCandidateConnection(
   Object? raw,
-  int pageIndex,
-) {
+  int pageIndex, {
+  required int pageSize,
+}) {
   if (raw is! Map) throw _labelsUnsupported;
   final connection = objectJson(raw);
   final nodes = connection['nodes'];
-  if (nodes is! List || nodes.length > _labelCandidatePageSize) {
+  if (nodes is! List || nodes.length > pageSize) {
     throw _labelsUnsupported;
   }
   final pageInfo = objectJson(connection['pageInfo']);

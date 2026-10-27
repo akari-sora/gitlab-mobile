@@ -2751,4 +2751,6 @@ const _messagesDe = <String>[
   'Das GitLab-Anfragekontingent ist fast aufgebraucht',
   'Diese Nachricht wurde nicht gesendet. Sende sie erneut, sobald die Schaltfläche „Senden“ wieder verfügbar ist.',
   '{verb} {target} {ref}',
+  'Labels festlegen',
+  'Das zu setzende Label steht nicht in der Label-Liste dieses Projekts oder mehrere Labels haben denselben Namen, daher wurde nichts ausgeführt.',
 ];

@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "요청 한도가 초기화되면 다시 시작",
   "aiGitLabBudgetTitle": "GitLab 요청 한도가 거의 소진되었습니다",
   "aiGitLabBudgetDetail": "이 메시지는 전송되지 않았습니다. “전송” 버튼을 다시 사용할 수 있게 되면 다시 전송하세요.",
-  "activityVerbTargetRef": "{target} {ref}: {verb}"
+  "activityVerbTargetRef": "{target} {ref}: {verb}",
+  "aiOpSetWorkItemLabels": "라벨 설정",
+  "aiRefusedLabelUnknown": "설정할 라벨이 이 프로젝트의 라벨 목록에 없거나 같은 이름의 라벨이 여러 개 있어 아무것도 실행하지 않았습니다."
 }

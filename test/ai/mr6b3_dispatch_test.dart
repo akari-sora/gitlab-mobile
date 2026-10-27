@@ -112,11 +112,11 @@ void main() {
       );
     });
 
-    test('all 15 classifier rules enforce their exact noop contract', () {
-      expect(graphWriteRules, hasLength(15));
+    test('all 18 classifier rules enforce their exact noop contract', () {
+      expect(graphWriteRules, hasLength(18));
       expect(
         graphWriteRules.values.where((rule) => rule.allowsNoop),
-        hasLength(10),
+        hasLength(13),
       );
       for (final entry in graphWriteRules.entries) {
         final span = GraphHooks(
@@ -137,7 +137,7 @@ void main() {
       }
     });
 
-    test('all 15 accepted rules require positive mutation evidence', () async {
+    test('all 18 accepted rules require positive mutation evidence', () async {
       for (final entry in graphWriteRules.entries) {
         final valid = acceptedSpan();
         await valid.beforeMutation();

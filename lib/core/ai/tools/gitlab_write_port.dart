@@ -15,6 +15,7 @@ import '../../suggestion.dart';
 import '../../upload_names.dart';
 import '../../work_item_activity_models.dart';
 import '../../work_item_graph_models.dart';
+import '../../work_item_labels_models.dart';
 // Model namespaces reserved for the eleven graph family parts.
 // ignore: unused_import
 import '../../work_item_assignee_models.dart';
@@ -63,6 +64,9 @@ part 'gitlab_write_port_graphql_assignees.dart';
 part 'gitlab_write_port_graphql_milestone_weight.dart';
 part 'gitlab_write_port_graphql_activity_create.dart';
 part 'gitlab_write_port_graphql_activity_delete.dart';
+part 'gitlab_write_port_graphql_activity_edit.dart';
+part 'gitlab_write_port_graphql_content.dart';
+part 'gitlab_write_port_graphql_labels.dart';
 part 'gitlab_write_port_graphql_reactions_notifications.dart';
 part 'gitlab_write_port_graphql_incident.dart';
 part 'gitlab_write_port_graphql_snooze.dart';
@@ -169,7 +173,7 @@ typedef AiResultClassifier = AiWriteSettled? Function(
 /// Process-local, single-use capability. Cannot be forged or moved to a peer.
 final class AiWritePrepared {
   AiWritePrepared._({
-    required this.request,
+    required AiWriteRequest request,
     required this.releaseName,
     required Set<AiConflictKey> writeKeys,
     required Set<AiConflictKey> dependencyKeys,
@@ -199,24 +203,30 @@ final class AiWritePrepared {
     AiCreatedRef? createdOnSuccess,
     AiCreatedRef? Function()? resolveCreatedOnSuccess,
     this.classify,
-  }) : _createdOnSuccess = createdOnSuccess,
+  }) : _originalRequest = request,
+       currentFields = const {},
+       _createdOnSuccess = createdOnSuccess,
        _resolveCreatedOnSuccess = resolveCreatedOnSuccess,
        writeKeys = Set.unmodifiable(writeKeys),
        dependencyKeys = Set.unmodifiable(dependencyKeys),
        bindingTargets = List.unmodifiable(bindingTargets),
-       preview = preview ?? AiFieldsPreview(request.arguments),
+       _preview = preview ?? AiFieldsPreview(request.arguments),
        _owner = owner,
        _mutation = mutation,
        _graphCall = null,
+       _validatePreparedText = null,
        _readback = readback;
 
   AiWritePrepared.graph({
-    required this.request,
+    required AiWriteRequest request,
     required this.releaseName,
     required Set<AiConflictKey> writeKeys,
     Set<AiConflictKey> dependencyKeys = const {},
     Object? owner,
-    required Future<Object?> Function(GraphHooks hooks) mutation,
+    Future<Object?> Function(GraphHooks hooks)? mutation,
+    Future<Object?> Function(GraphHooks hooks, AiWriteRequest request)?
+    textMutation,
+    void Function(AiWriteRequest request)? validatePreparedText,
     this.todoTarget,
     this.projectPath,
     this.projectVisibility,
@@ -227,19 +237,30 @@ final class AiWritePrepared {
     this.journal = const AiJournalBindings(),
     AiWritePreview? preview,
     this.textScan,
-  }) : writeKeys = Set.unmodifiable(writeKeys),
+    Map<String, String> currentFields = const {},
+  }) : assert((mutation == null) != (textMutation == null)),
+       _originalRequest = request,
+       currentFields = Map.unmodifiable(currentFields),
+       writeKeys = Set.unmodifiable(writeKeys),
        dependencyKeys = Set.unmodifiable(dependencyKeys),
        bindingTargets = List.unmodifiable(bindingTargets),
-       preview = preview ?? AiFieldsPreview(request.arguments),
+       _preview = preview ?? AiFieldsPreview(request.arguments),
        _owner = owner ?? Object(),
-       _graphCall = mutation,
+       _graphCall = textMutation ?? ((hooks, _) => mutation!(hooks)),
+       _validatePreparedText = validatePreparedText,
        _mutation = null,
        _readback = null,
        _createdOnSuccess = null,
        _resolveCreatedOnSuccess = null,
        classify = null;
 
-  final AiWriteRequest request;
+  final AiWriteRequest _originalRequest;
+  AiWriteRequest? _textRequest;
+  AiWriteRequest get request => _textRequest ?? _originalRequest;
+
+  /// Fresh whole-field values from this capability's opening read. The
+  /// coordinator feeds these into the shared AiWriteFreshness text policy.
+  final Map<String, String> currentFields;
   final String releaseName;
   final Set<AiConflictKey> writeKeys;
   final Set<AiConflictKey> dependencyKeys;
@@ -259,7 +280,21 @@ final class AiWritePrepared {
   final List<AiTargetRef> bindingTargets;
   final String bindingDigest;
   final AiJournalBindings journal;
-  final AiWritePreview preview;
+  final AiWritePreview _preview;
+  AiWritePreview get preview {
+    final original = _preview;
+    final processed = _textRequest;
+    if (processed != null && original is AiFieldsPreview) {
+      return AiFieldsPreview({
+        for (final entry in original.fields.entries)
+          entry.key: processed.arguments.containsKey(entry.key)
+              ? processed.arguments[entry.key]
+              : entry.value,
+      });
+    }
+    return original;
+  }
+
   final AiTextScan? textScan;
   final AiCreatedRef? _createdOnSuccess;
   final AiCreatedRef? Function()? _resolveCreatedOnSuccess;
@@ -270,13 +305,41 @@ final class AiWritePrepared {
   final AiResultClassifier? classify;
   final Object _owner;
   final Future<Object?> Function()? _mutation;
-  final Future<Object?> Function(GraphHooks hooks)? _graphCall;
+  final Future<Object?> Function(GraphHooks hooks, AiWriteRequest request)?
+  _graphCall;
+  final void Function(AiWriteRequest request)? _validatePreparedText;
   final Future<Object?> Function(Object? result)? _readback;
   GraphBeforeMutation? _beforeGraph;
   bool _used = false;
 
   AiWriteBoundary get boundary =>
       _graphCall == null ? AiWriteBoundary.rest : AiWriteBoundary.graph;
+
+  /// Checks a card edit without binding or consuming the opened target.
+  void validatePreparedText(AiWriteRequest processed) =>
+      _validatePreparedText?.call(processed);
+
+  /// Binds the shared text pipeline's result without re-reading or replacing
+  /// the single-use target. Text mutations consume this request at dispatch.
+  void bindPreparedText(AiWriteRequest processed) {
+    if (boundary != AiWriteBoundary.graph ||
+        _used ||
+        _beforeGraph != null ||
+        _textRequest != null ||
+        processed.operationId != request.operationId ||
+        processed.executionId != request.executionId ||
+        processed.scope.accountKey != request.scope.accountKey ||
+        const ['projectId', 'iid', 'noteId'].any(
+          (key) =>
+              processed.arguments.containsKey(key) !=
+                  request.arguments.containsKey(key) ||
+              processed.arguments[key] != request.arguments[key],
+        )) {
+      throw const GraphHookContractException();
+    }
+    validatePreparedText(processed);
+    _textRequest = processed;
+  }
 
   /// The coordinator installs the durable boundary only after re-preparing.
   void bindGraphBeforeMutation(GraphBeforeMutation beforeMutation) {
@@ -303,7 +366,7 @@ Future<AiWriteOutcome> _settleGraph(AiWritePrepared prepared, GraphHooks span) a
   Object? result;
   Object? error;
   try {
-    result = await prepared._graphCall!(span);
+    result = await prepared._graphCall!(span, prepared.request);
   } on Object catch (failure) {
     error = failure;
   }
@@ -433,6 +496,9 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       _prepareGraphqlMilestoneWeight,
       _prepareGraphqlActivityCreate,
       _prepareGraphqlActivityDelete,
+      _prepareGraphqlActivityEdit,
+      _prepareGraphqlContent,
+      _prepareGraphqlLabels,
       _prepareGraphqlReactionsNotifications,
       _prepareGraphqlIncident,
       _prepareGraphqlSnooze,

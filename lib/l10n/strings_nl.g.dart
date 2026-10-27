@@ -2751,4 +2751,6 @@ const _messagesNl = <String>[
   'Het verzoekenquotum van GitLab is bijna opgebruikt',
   'Dit bericht is niet verzonden. Verzend het opnieuw zodra de knop ‘Verzenden’ weer beschikbaar is.',
   '{verb} {target} {ref}',
+  'Labels instellen',
+  'Het in te stellen label staat niet in de labellijst van dit project of meerdere labels hebben deze naam, dus er is niets gedaan.',
 ];

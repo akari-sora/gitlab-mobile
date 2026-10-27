@@ -2751,4 +2751,6 @@ const _messagesId = <String>[
   'Kuota permintaan GitLab hampir habis',
   'Pesan ini tidak terkirim. Kirim ulang saat tombol “Kirim” tersedia kembali.',
   '{verb} {target} {ref}',
+  'Atur label',
+  'Label yang akan diatur tidak ada dalam daftar label proyek ini, atau beberapa label memiliki nama yang sama, jadi tidak ada yang dilakukan.',
 ];

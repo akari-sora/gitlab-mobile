@@ -1291,6 +1291,12 @@ class AiChatController extends ChangeNotifier
       throw const AiJournalException('invalidArguments');
     }
     final operation = request.operationId;
+    final graphWriteBack = operation == 'updateWorkItemContent' ||
+        operation == 'editWorkItemActivityNote' ||
+        operation == 'updateWorkItemLabels';
+    if (graphWriteBack && (args['iid'] is! int || (args['iid']! as int) < 1)) {
+      throw const AiJournalException('invalidArguments');
+    }
     final fields = args['fields'];
     // New-family caps reserve one freshness GET. Read snippet metadata for its
     // own visibility, or a replacement description's current value; the port
@@ -1437,13 +1443,29 @@ class AiChatController extends ChangeNotifier
           instance: placeholders.instance,
           projectId: project,
           projectPath: projectPath is String ? projectPath : null,
-          resource: resource as String,
+          resource: graphWriteBack ? 'issues' : resource as String,
           iid: iid as int,
           noteId: note,
         );
     final provenance = <String, write_text.AiFieldProvenance>{
+      // Titles and label names have no restorable upload field. Retain their
+      // exact resource identity while description/body share REST provenance.
+      if (operation == 'updateWorkItemContent' || operation == 'updateWorkItemLabels')
+        for (final field in [operation == 'updateWorkItemContent' ? 'title' : 'labels'])
+          field: write_text.AiFieldProvenance(
+            resourceKey: write_text.AiConflictKey('project:$project/issue:$iid'),
+            fieldName: field,
+            completeValue: true,
+            resourceWeb: restorable().resourceWeb,
+            projectId: project,
+            projectFullPath: projectPath is String ? projectPath : null,
+          ),
       if (operation == 'updateIssue' || operation == 'updateMergeRequest')
         'description': restorable(),
+      if (operation == 'updateWorkItemContent')
+        'description': restorable(),
+      if (operation == 'editWorkItemActivityNote' && noteId is int)
+        'body': restorable(note: noteId),
       if ((operation == 'updateNote' || operation == 'updateDiscussionNote') &&
           noteId is int)
         'body': restorable(note: noteId),
@@ -1504,7 +1526,7 @@ class AiChatController extends ChangeNotifier
       // §3.1, whole-field write back: only a write back to the same field
       // has a current value whose hidden spans the new text could drop.
       currentFields: {
-        if (_writeBackOperations.contains(operation))
+        if (_writeBackOperations.contains(operation) && !graphWriteBack)
           for (final key in ['body', 'description', 'title', 'name'])
             if (target[key] is String) key: target[key] as String,
       },
@@ -2667,6 +2689,9 @@ const _projectCreates = {
 /// Writes that replace a field of the resource they read, so the field's
 /// current value is what the new text replaces (§3.1).
 const _writeBackOperations = {
+  'updateWorkItemContent',
+  'editWorkItemActivityNote',
+  'updateWorkItemLabels',
   'updateIssue',
   'updateMergeRequest',
   'updateNote',
