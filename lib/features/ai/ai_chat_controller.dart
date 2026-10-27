@@ -36,6 +36,7 @@ import '../../core/group_work_item_identity.dart';
 import '../../core/models.dart' show OAuthCredential;
 import '../../core/rate_budget.dart';
 import '../../core/request_meter.dart';
+import '../../core/work_item_graph_models.dart' show GraphResourceRef;
 import '../../l10n/l10n.dart';
 import '../auth/session_controller.dart';
 import '../workspace/attachment_picker.dart';
@@ -47,6 +48,7 @@ import 'ai_background_execution.dart';
 import 'ai_attachment_session.dart';
 import 'ai_history.dart';
 import 'ai_runner_binding.dart';
+import 'ai_scope_add.dart';
 import 'ai_secrets.dart';
 import 'ai_stores.dart';
 import 'ai_write_journal.dart';
@@ -153,7 +155,8 @@ class AiChatController extends ChangeNotifier
         AiWriteAuditSession,
         AiExecutionChatSession,
         AiRunNotificationSource,
-        AiWriteSettlementSource {
+        AiWriteSettlementSource,
+        AiScopeAddSession {
   AiChatController({
     required this.origin,
     required this.session,
@@ -1357,7 +1360,9 @@ class AiChatController extends ChangeNotifier
   AiConsentContract _consentContract(AiProviderConfig provider) =>
       aiConversationConsentContract(settings, _accountKey, provider);
 
-  ledger.AiWriteScope _writeScope() {
+  ledger.AiWriteScope _writeScope() => _withUiAdded(_originWriteScope());
+
+  ledger.AiWriteScope _originWriteScope() {
     // Each group-page entry grants only its fresh item and children,
     // regardless of a supplied project-wide override. Group tools stay gated.
     if (origin case AiGroupWorkItemOrigin(:final groupId, :final iid)) {
@@ -1424,6 +1429,383 @@ class AiChatController extends ChangeNotifier
       ],
     );
   }
+
+  // ---- U-add: user-added group work items (MR6b-3g §6.1, D27) ----
+  //
+  // Only an explicit user action in the chat page reaches these members; no
+  // tool, model output or restored history calls them. A check reads GitLab
+  // and changes nothing. An add takes the single verified identity the last
+  // check issued, after the user confirmed it, and grants that one item.
+
+  /// Logical reads of one check: the numeric owner of the typed path, the
+  /// context's strict namespace read with its owner lookup, and the read
+  /// port's own strict read. Each may replay once after an OAuth refresh.
+  static const _scopeAddMaxRequests = 8;
+
+  final List<
+    ({VerifiedGroupWorkItemIdentity identity, AiAddedGroupWorkItem shown})
+  >
+  _uiAdded = [];
+  final Expando<VerifiedGroupWorkItemIdentity> _candidateIdentity = Expando();
+  AiGroupWorkItemCandidate? _issuedCandidate;
+  String? _issuedConversation;
+  int _scopeAddTicket = 0;
+  bool _scopeAddBusy = false;
+
+  /// Identities still bound to this account, client and generation. The
+  /// controller is disposed when any of them changes; this only fails closed.
+  List<VerifiedGroupWorkItemIdentity> _currentUiAdded() => !_alive
+      ? const []
+      : [
+          for (final added in _uiAdded)
+            if (added.identity.accountKey == _accountKey &&
+                added.identity.instance.key == _api.instance.key &&
+                identical(added.identity.apiOwner, _api) &&
+                added.identity.generation == _generation)
+              added.identity,
+        ];
+
+  /// Adds one grant per verified identity: that item and its children, never
+  /// the group or a project. The identities go to G0e's trusted set.
+  ledger.AiWriteScope _withUiAdded(ledger.AiWriteScope base) {
+    final added = _currentUiAdded();
+    if (added.isEmpty || base.accountKey != _accountKey) return base;
+    return ledger.AiWriteScope(
+      accountKey: base.accountKey,
+      instance: base.instance,
+      grants: [
+        ...base.grants,
+        for (final identity in added)
+          ledger.AiScopeGrant(
+            kind: ledger.AiScopeKind.groupWorkItem,
+            groupId: identity.groupId,
+            groupFullPath: identity.fullPath,
+            iid: identity.iid,
+          ),
+      ],
+      uiAddedGroupWorkItems: [...base.uiAddedGroupWorkItems, ...added],
+    );
+  }
+
+  /// Whether the conversation already covers this group item: its own entry
+  /// or an earlier add. Another group's item with the same iid is different.
+  bool _groupItemInScope(int groupId, int iid) =>
+      (origin is AiGroupWorkItemOrigin &&
+          (origin as AiGroupWorkItemOrigin).groupId == groupId &&
+          (origin as AiGroupWorkItemOrigin).iid == iid) ||
+      _originWriteScope().grants.any(
+        (grant) =>
+            grant.kind == ledger.AiScopeKind.groupWorkItem &&
+            grant.groupId == groupId &&
+            grant.iid == iid,
+      ) ||
+      _uiAdded.any(
+        (added) =>
+            added.identity.groupId == groupId && added.identity.iid == iid,
+      );
+
+  @override
+  bool get offersGroupWorkItemAdd =>
+      _alive &&
+      origin is! AiInboxOrigin &&
+      (_provider?.toolsEnabled ?? false) &&
+      autonomyCeiling != AiAutonomyLevel.readOnly;
+
+  @override
+  String get scopeAddInstance => _api.instance.key;
+
+  @override
+  bool get canAddGroupWorkItem =>
+      offersGroupWorkItemAdd &&
+      !_scopeAddBusy &&
+      _phase == AiChatPhase.idle &&
+      _blocker == AiChatBlocker.none &&
+      _executionPause == null &&
+      proposals.isEmpty &&
+      inFlightWrites.isEmpty;
+
+  @override
+  List<AiAddedGroupWorkItem> get addedGroupWorkItems =>
+      List.unmodifiable([for (final added in _uiAdded) added.shown]);
+
+  @override
+  Future<AiGroupWorkItemCheck> checkGroupWorkItem(String link) async {
+    if (!canAddGroupWorkItem) {
+      return const AiGroupWorkItemRefused(AiGroupWorkItemRefusal.unavailable);
+    }
+    // A new check voids any earlier candidate, whatever its outcome.
+    _issuedCandidate = null;
+    // Before any request: same origin and installation path, group item only.
+    final AiGroupWorkItemLink typed;
+    switch (parseAiGroupWorkItemLink(link, _api.instance)) {
+      case AiGroupWorkItemLinkRefused(:final reason):
+        return AiGroupWorkItemRefused(switch (reason) {
+          AiGroupWorkItemLinkRefusal.malformed =>
+            AiGroupWorkItemRefusal.malformed,
+          AiGroupWorkItemLinkRefusal.otherInstance =>
+            AiGroupWorkItemRefusal.otherInstance,
+          AiGroupWorkItemLinkRefusal.projectLink =>
+            AiGroupWorkItemRefusal.projectLink,
+          AiGroupWorkItemLinkRefusal.notWorkItem =>
+            AiGroupWorkItemRefusal.notWorkItem,
+        });
+      case final AiGroupWorkItemLink parsed:
+        typed = parsed;
+    }
+    if (_uiAdded.any(
+      (added) =>
+          added.identity.fullPath == typed.fullPath &&
+          added.identity.iid == typed.iid,
+    )) {
+      return const AiGroupWorkItemRefused(
+        AiGroupWorkItemRefusal.alreadyInScope,
+      );
+    }
+    // The reads count against the account's shared AI read budget, like a
+    // run; a write later reserves its own full cap again.
+    final lease = sendBlockReason == null
+        ? _budgetAllocator.acquire(_scopeAddMaxRequests)
+        : null;
+    if (lease == null || lease.granted < _scopeAddMaxRequests) {
+      lease?.release();
+      return const AiGroupWorkItemRefused(
+        AiGroupWorkItemRefusal.readFailed,
+        failure: AiFailure(
+          AiFailureKind.rateLimited,
+          notSent: true,
+          gitLabBudget: true,
+        ),
+      );
+    }
+    final ticket = ++_scopeAddTicket;
+    final epoch = _epoch;
+    final conversationId = _id;
+    bool current() =>
+        _alive &&
+        ticket == _scopeAddTicket &&
+        epoch == _epoch &&
+        conversationId == _id;
+    _scopeAddBusy = true;
+    _notify();
+    final meter = RequestMeter();
+    try {
+      final read = await meter.runAsync(
+        () => _readUiAddedGroupWorkItem(typed, meter, current),
+      );
+      if (!current()) {
+        return const AiGroupWorkItemRefused(AiGroupWorkItemRefusal.unavailable);
+      }
+      final identity = read.identity;
+      if (_groupItemInScope(identity.groupId, identity.iid)) {
+        return const AiGroupWorkItemRefused(
+          AiGroupWorkItemRefusal.alreadyInScope,
+        );
+      }
+      final candidate = AiGroupWorkItemCandidate(
+        fullPath: identity.fullPath,
+        iid: identity.iid,
+        title: displaySafe(read.title),
+        endsConversationGrant:
+            autonomyLevel == AiAutonomyLevel.conversationGrant,
+      );
+      _candidateIdentity[candidate] = identity;
+      _issuedCandidate = candidate;
+      _issuedConversation = conversationId;
+      return candidate;
+    } on ApiFailure catch (failure) {
+      if (!current() || failure.kind == FailureKind.cancelled) {
+        return const AiGroupWorkItemRefused(AiGroupWorkItemRefusal.unavailable);
+      }
+      // A reply that does not prove direct group ownership: a project item,
+      // another group, missing owner fields or a malformed response.
+      if (failure.kind == FailureKind.invalidResponse ||
+          failure.kind == FailureKind.validation) {
+        return const AiGroupWorkItemRefused(
+          AiGroupWorkItemRefusal.notGroupOwned,
+        );
+      }
+      return AiGroupWorkItemRefused(
+        AiGroupWorkItemRefusal.readFailed,
+        failure: failure,
+        fullPath: typed.fullPath,
+        iid: typed.iid,
+      );
+    } on AiFailure catch (failure) {
+      return AiGroupWorkItemRefused(
+        AiGroupWorkItemRefusal.readFailed,
+        failure: failure,
+        fullPath: typed.fullPath,
+        iid: typed.iid,
+      );
+    } on FormatException {
+      // The identity drifted between reads or did not match the link.
+      return AiGroupWorkItemRefused(
+        current()
+            ? AiGroupWorkItemRefusal.notGroupOwned
+            : AiGroupWorkItemRefusal.unavailable,
+      );
+    } finally {
+      lease.consume(meter.count);
+      lease.release();
+      if (ticket == _scopeAddTicket) _scopeAddBusy = false;
+      if (_alive) _notify();
+    }
+  }
+
+  /// The numeric Group ID is never taken from the link or a model: GitLab
+  /// resolves the typed path, the strict namespace read checks the item in
+  /// that group, and the read port's own strict read must agree on every
+  /// part of the identity.
+  Future<({VerifiedGroupWorkItemIdentity identity, String title})>
+  _readUiAddedGroupWorkItem(
+    AiGroupWorkItemLink typed,
+    RequestMeter meter,
+    bool Function() current,
+  ) async {
+    void reserve(int maximum) {
+      if (!current()) throw const ApiFailure(FailureKind.cancelled);
+      if (meter.count + maximum > _scopeAddMaxRequests) {
+        throw const AiFailure(
+          AiFailureKind.rateLimited,
+          notSent: true,
+          gitLabBudget: true,
+        );
+      }
+    }
+
+    reserve(2);
+    final group = await _api.groupByPath(typed.fullPath, isCurrent: current);
+    if (!current()) throw const ApiFailure(FailureKind.cancelled);
+    final groupId = group['id'];
+    if (groupId is! int ||
+        groupId < 1 ||
+        group['full_path'] != typed.fullPath) {
+      throw const FormatException('groupPathChanged');
+    }
+    final origin = AiGroupWorkItemOrigin.tryCreate(
+      group: GraphResourceRef(
+        id: 'gid://gitlab/Group/$groupId',
+        fullPath: typed.fullPath,
+      ),
+      iid: typed.iid,
+      title: '',
+    );
+    if (origin == null) throw const FormatException('invalidGroupItem');
+    // The context loader is the only producer of a group read scope. Its
+    // redacted text is discarded; nothing here is sent to a provider.
+    final context = await loadAiChatContext(
+      origin: origin,
+      api: _api,
+      redactor: _redactor,
+      accountKey: _accountKey,
+      refreshSecrets: _refreshSecrets,
+      isCurrent: current,
+      now: _now,
+      beforeRead: reserve,
+    );
+    if (!current()) throw const ApiFailure(FailureKind.cancelled);
+    final scope = context.groupScope;
+    if (scope == null ||
+        scope.accountKey != _accountKey ||
+        scope.instanceKey != _api.instance.key ||
+        scope.groupId != groupId ||
+        scope.groupFullPath != typed.fullPath ||
+        scope.iid != typed.iid) {
+      throw const FormatException('groupScopeChanged');
+    }
+    reserve(2);
+    final port = GitLabAiGroupReadPort(
+      _api,
+      instance: _api.instance,
+      actorUserId: session.active!.user.id,
+      generation: _generation,
+      isCurrent: current,
+    );
+    final read = await port.workItem(scope);
+    if (!current()) throw const ApiFailure(FailureKind.cancelled);
+    final identity = read.value.identity;
+    if (identity.accountKey != _accountKey ||
+        identity.instance.key != _api.instance.key ||
+        !identical(identity.apiOwner, _api) ||
+        identity.generation != _generation ||
+        identity.groupId != groupId ||
+        identity.fullPath != typed.fullPath ||
+        identity.iid != typed.iid ||
+        identity.workItemGid != scope.workItemGid) {
+      throw const FormatException('groupIdentityChanged');
+    }
+    final title = read.value.value['title'];
+    return (identity: identity, title: title is String ? title : '');
+  }
+
+  @override
+  Future<AiGroupWorkItemRefusal?> addGroupWorkItem(
+    AiGroupWorkItemCandidate candidate,
+  ) async {
+    final identity = _candidateIdentity[candidate];
+    final issued =
+        identity != null &&
+        identical(candidate, _issuedCandidate) &&
+        _issuedConversation == _id;
+    // One confirmation, one add: a candidate is never accepted twice.
+    _issuedCandidate = null;
+    if (!issued) return AiGroupWorkItemRefusal.stale;
+    if (!canAddGroupWorkItem) return AiGroupWorkItemRefusal.unavailable;
+    if (identity.accountKey != _accountKey ||
+        identity.instance.key != _api.instance.key ||
+        !identical(identity.apiOwner, _api) ||
+        identity.generation != _generation) {
+      return AiGroupWorkItemRefusal.stale;
+    }
+    if (_groupItemInScope(identity.groupId, identity.iid)) {
+      return AiGroupWorkItemRefusal.alreadyInScope;
+    }
+    // A wider scope needs the provider consent to hold now; otherwise the
+    // page asks for it before anything is added.
+    final config = _provider;
+    if (config == null ||
+        !settings.isValid(_accountKey, _consentContract(config))) {
+      if (config != null) _contract = _consentContract(config);
+      _setBlocked(AiChatBlocker.consentRequired);
+      return AiGroupWorkItemRefusal.unavailable;
+    }
+    _uiAdded.add((
+      identity: identity,
+      shown: AiAddedGroupWorkItem(
+        key: 'group:${identity.groupId}:${identity.iid}',
+        fullPath: identity.fullPath,
+        iid: identity.iid,
+        title: candidate.title,
+      ),
+    ));
+    // "This conversation only" was granted for the scope the conversation had
+    // then. Writes to the wider scope go back to the account's starting level
+    // until the user grants the conversation again.
+    if (autonomyLevel == AiAutonomyLevel.conversationGrant) {
+      _autonomyLevel = null;
+    }
+    // A new scope revision makes the runner open a new segment on the next
+    // send, with the tools and policy of the wider scope.
+    _updateWriteScopeRevision(_writeScope());
+    _writes?.checkNow();
+    _notify();
+    return null;
+  }
+
+  @override
+  void removeGroupWorkItem(AiAddedGroupWorkItem item) {
+    if (_disposed) return;
+    final before = _uiAdded.length;
+    _uiAdded.removeWhere((added) => added.shown.key == item.key);
+    if (_uiAdded.length == before) return;
+    // Narrowing is always safe; proposals bound to the old scope revision
+    // are invalidated by the coordinator.
+    _updateWriteScopeRevision(_writeScope());
+    _writes?.checkNow();
+    _notify();
+  }
+
+  // ---- end U-add ----
 
   /// Whether the app-level write gates are open now: execution is eligible and
   /// the GitLab client may start a request. [_writeSnapshot] reads the same.
@@ -1500,6 +1882,15 @@ class AiChatController extends ChangeNotifier
           grant.iid,
           grant.groupFullPath,
           grant.groupId,
+        ],
+      // U-add: a re-added item with another identity is another scope.
+      for (final identity in scope.uiAddedGroupWorkItems)
+        [
+          identity.accountKey,
+          identity.groupId,
+          identity.fullPath,
+          identity.iid,
+          identity.workItemGid,
         ],
     ]);
     if (_writeScopeFingerprint == fingerprint) return;
@@ -3056,6 +3447,11 @@ class AiChatController extends ChangeNotifier
     _attachments?.discardAll();
     _attachments = null;
     _autonomyLevel = null;
+    // U-add: user-added items belong to this conversation only.
+    _uiAdded.clear();
+    _issuedCandidate = null;
+    _scopeAddTicket++;
+    _scopeAddBusy = false;
     _writeScopeFingerprint = null;
     _writeScopeRevision = 0;
     _readConfidential = false;

@@ -29,6 +29,7 @@ import 'ai_run_notification_ui.dart';
 import 'ai_message_body.dart';
 import 'ai_attachment_session.dart';
 import 'ai_scope.dart';
+import 'ai_scope_add.dart';
 import 'ai_settings_page.dart';
 import 'ai_write_ui.dart';
 
@@ -446,6 +447,38 @@ class _AiChatPageState extends State<AiChatPage> {
     }
   }
 
+  // ---- U-add entry (MR6b-3g §6.1, D27) ----
+
+  static const _addGroupItemMenu = '#add-group-item';
+
+  /// Asks for a group work-item link, shows what GitLab verified and adds it
+  /// only after the user confirms. A model or tool result never opens this.
+  Future<void> _addGroupWorkItem() async {
+    final session = _session;
+    if (session is! AiScopeAddSession) return;
+    final adds = session as AiScopeAddSession;
+    if (!adds.canAddGroupWorkItem) return;
+    final outcome = await showModalBottomSheet<Object>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (context) => _AddGroupWorkItemSheet(chat: session, adds: adds),
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case final AiGroupWorkItemCandidate added:
+        _notice(l10n.aiAddedGroupWorkItem(added.fullPath, added.iid));
+      case _AddSheetFailure(:final error):
+        // A context under this page's own messenger, so the snack bar shows.
+        final below = _pageBody.currentContext;
+        if (below != null && below.mounted) showFailure(below, error);
+    }
+  }
+
+  /// The page body, below [_messenger]: failure snack bars land here.
+  final _pageBody = GlobalKey();
+
   /// Reports [item] (plan v5 §6.7): the user picks what is wrong and sees
   /// the exact text; mail is tried first, then the share sheet. The answer is
   /// then folded away here, whether or not the user finishes sending.
@@ -747,6 +780,8 @@ class _AiChatPageState extends State<AiChatPage> {
                   onSelected: (value) {
                     if (value == '#new') {
                       _newConversation();
+                    } else if (value == _addGroupItemMenu) {
+                      unawaited(_addGroupWorkItem());
                     } else if (value == '#settings') {
                       _openSettings();
                     } else {
@@ -758,6 +793,14 @@ class _AiChatPageState extends State<AiChatPage> {
                       value: '#new',
                       child: Text(l10n.aiChatNewConversation),
                     ),
+                    if (_session case final AiScopeAddSession adds
+                        when adds.offersGroupWorkItemAdd)
+                      PopupMenuItem(
+                        key: const ValueKey('ai-chat-add-group-item'),
+                        value: _addGroupItemMenu,
+                        enabled: adds.canAddGroupWorkItem,
+                        child: Text(l10n.aiAddGroupWorkItem),
+                      ),
                     PopupMenuItem(
                       value: '#settings',
                       child: Text(l10n.aiChatOpenSettings),
@@ -779,6 +822,7 @@ class _AiChatPageState extends State<AiChatPage> {
               ],
             ),
             body: Column(
+              key: _pageBody,
               children: [
                 if (AiAutoWriteBanner.shows(_session.autonomyLevel))
                   AiAutoWriteBanner(
@@ -808,6 +852,19 @@ class _AiChatPageState extends State<AiChatPage> {
                               canSend: _session.canSend,
                               onSend: _send,
                               onStop: _session.stop,
+                              scope: switch (_session) {
+                                final AiScopeAddSession adds
+                                    when adds.addedGroupWorkItems.isNotEmpty =>
+                                  _AddedGroupWorkItems(
+                                    items: adds.addedGroupWorkItems,
+                                    // Like attachments: changed only while
+                                    // nothing runs.
+                                    onRemove: _session.phase == AiChatPhase.idle
+                                        ? adds.removeGroupWorkItem
+                                        : null,
+                                  ),
+                                _ => null,
+                              },
                               attach: switch (_session) {
                                 final AiWriteChatSession writes
                                     when writes.autonomyCeiling !=
@@ -2024,10 +2081,14 @@ class _Composer extends StatelessWidget {
     required this.onStop,
     this.attach,
     this.attachments,
+    this.scope,
   });
 
   /// The attach button, for a conversation that can upload files.
   final Widget? attach;
+
+  /// The group work items the user added to this conversation.
+  final Widget? scope;
 
   /// The files held for the next message.
   final Widget? attachments;
@@ -2054,6 +2115,7 @@ class _Composer extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              ?scope,
               ?attachments,
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -2277,6 +2339,413 @@ class _FailureCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ---- U-add entry (MR6b-3g §6.1, D27) ----
+
+/// The sheet's result when a check or an add threw unexpectedly.
+final class _AddSheetFailure {
+  const _AddSheetFailure(this.error);
+
+  final Object error;
+}
+
+/// The add sheet: a link, what GitLab verified, then the user's confirmation.
+/// A refused or failed check adds nothing; the conversation's scope changes
+/// only when the user confirms the verified item.
+class _AddGroupWorkItemSheet extends StatefulWidget {
+  const _AddGroupWorkItemSheet({required this.chat, required this.adds});
+
+  /// The same conversation as [adds], listened to for its idle state.
+  final AiChatSession chat;
+  final AiScopeAddSession adds;
+
+  @override
+  State<_AddGroupWorkItemSheet> createState() => _AddGroupWorkItemSheetState();
+}
+
+class _AddGroupWorkItemSheetState extends State<_AddGroupWorkItemSheet> {
+  final _link = TextEditingController();
+  var _busy = false;
+  AiGroupWorkItemCandidate? _candidate;
+  AiGroupWorkItemRefusal? _refusal;
+  UserFacingFailure? _failure;
+  String? _resource;
+
+  @override
+  void dispose() {
+    _link.dispose();
+    super.dispose();
+  }
+
+  void _clearOutcome() {
+    _refusal = null;
+    _failure = null;
+    _resource = null;
+  }
+
+  Future<void> _check() async {
+    if (_busy || _link.text.trim().isEmpty) return;
+    setState(() {
+      _busy = true;
+      _clearOutcome();
+    });
+    Object? unexpected;
+    try {
+      final result = await widget.adds.checkGroupWorkItem(_link.text);
+      if (!mounted) return;
+      setState(() {
+        switch (result) {
+          case final AiGroupWorkItemCandidate candidate:
+            _candidate = candidate;
+          case final AiGroupWorkItemRefused refused:
+            _refusal = refused.reason;
+            _failure = refused.failure;
+            final path = refused.fullPath;
+            final iid = refused.iid;
+            _resource = path == null || iid == null
+                ? null
+                : '${isolated(path)} ${isolated('#$iid')}';
+        }
+      });
+    } on Object catch (error) {
+      unexpected = error;
+    } finally {
+      _settle(unexpected);
+    }
+  }
+
+  Future<void> _confirm() async {
+    final candidate = _candidate;
+    if (_busy || candidate == null) return;
+    setState(() => _busy = true);
+    Object? unexpected;
+    try {
+      final refusal = await widget.adds.addGroupWorkItem(candidate);
+      if (!mounted) return;
+      if (refusal == null) {
+        Navigator.of(context).pop(candidate);
+        return;
+      }
+      setState(() {
+        _candidate = null;
+        _clearOutcome();
+        _refusal = refusal;
+      });
+    } on Object catch (error) {
+      unexpected = error;
+    } finally {
+      _settle(unexpected);
+    }
+  }
+
+  /// Never leaves the sheet waiting. An unexpected error adds nothing: the
+  /// sheet closes and the page shows it through `showFailure`, because a
+  /// snack bar of the page would sit under this sheet.
+  void _settle(Object? unexpected) {
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (unexpected != null) {
+      Navigator.of(context).pop(_AddSheetFailure(unexpected));
+    }
+  }
+
+  String? _refusalText(AiGroupWorkItemRefusal reason) => switch (reason) {
+    AiGroupWorkItemRefusal.malformed => l10n.aiAddGroupWorkItemMalformed,
+    AiGroupWorkItemRefusal.otherInstance =>
+      l10n.aiAddGroupWorkItemOtherInstance(widget.adds.scopeAddInstance),
+    AiGroupWorkItemRefusal.projectLink => l10n.aiAddGroupWorkItemProjectLink,
+    AiGroupWorkItemRefusal.notWorkItem => l10n.aiAddGroupWorkItemNotWorkItem,
+    AiGroupWorkItemRefusal.alreadyInScope =>
+      l10n.aiAddGroupWorkItemAlreadyAdded,
+    AiGroupWorkItemRefusal.notGroupOwned =>
+      l10n.aiAddGroupWorkItemNotGroupOwned,
+    AiGroupWorkItemRefusal.unavailable => l10n.aiAddGroupWorkItemUnavailable,
+    AiGroupWorkItemRefusal.stale => l10n.aiAddGroupWorkItemStale,
+    // Shown through the failure itself.
+    AiGroupWorkItemRefusal.readFailed => null,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListenableBuilder(
+      listenable: widget.chat,
+      builder: (context, _) {
+        final can = widget.adds.canAddGroupWorkItem;
+        final candidate = _candidate;
+        final failure = _failure;
+        final refusal = _refusal;
+        final message = refusal == null
+            ? (!can && !_busy ? l10n.aiAddGroupWorkItemUnavailable : null)
+            : _refusalText(refusal);
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            0,
+            16,
+            16 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              key: const ValueKey('ai-add-group-item-sheet'),
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  l10n.aiAddGroupWorkItem,
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  l10n.aiAddGroupWorkItemIntro(widget.adds.scopeAddInstance),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (candidate == null)
+                  TextField(
+                    key: const ValueKey('ai-add-group-item-link'),
+                    controller: _link,
+                    enabled: !_busy,
+                    // A link reads left to right in every interface language.
+                    textDirection: TextDirection.ltr,
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    textInputAction: TextInputAction.done,
+                    onChanged: (_) => setState(_clearOutcome),
+                    onSubmitted: (_) => can ? unawaited(_check()) : null,
+                    decoration: InputDecoration(
+                      labelText: l10n.aiAddGroupWorkItemLink,
+                      border: const OutlineInputBorder(),
+                    ),
+                  )
+                else
+                  _AddCandidateCard(candidate: candidate),
+                if (candidate != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    l10n.aiAddGroupWorkItemConfirmDetail,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  if (candidate.endsConversationGrant) ...[
+                    const SizedBox(height: 8),
+                    _AddNoticeLine(
+                      icon: Icons.info_outline,
+                      color: theme.colorScheme.tertiary,
+                      text: l10n.aiAddGroupWorkItemGrantEnds(
+                        l10n.aiLevelConversationGrant,
+                      ),
+                    ),
+                  ],
+                ],
+                if (_busy) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    key: const ValueKey('ai-add-group-item-busy'),
+                    children: [
+                      const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(l10n.aiAddGroupWorkItemChecking)),
+                    ],
+                  ),
+                ],
+                if (message != null) ...[
+                  const SizedBox(height: 12),
+                  _AddNoticeLine(
+                    key: const ValueKey('ai-add-group-item-refused'),
+                    icon: Icons.error_outline,
+                    color: theme.colorScheme.error,
+                    text: message,
+                  ),
+                ],
+                // A GitLab read failure keeps its own kind: a 404 stays
+                // ambiguous and names the account, instance and resource.
+                if (failure case final ApiFailure apiFailure)
+                  FailureNotice(
+                    apiFailure,
+                    key: const ValueKey('ai-add-group-item-failure'),
+                    resourceLabel: _resource,
+                    onRetry: can && !_busy ? () => unawaited(_check()) : null,
+                  )
+                else if (failure != null) ...[
+                  const SizedBox(height: 12),
+                  _AddNoticeLine(
+                    key: const ValueKey('ai-add-group-item-failure'),
+                    icon: Icons.error_outline,
+                    color: theme.colorScheme.error,
+                    text: l10n.titleThenDetail(failure.title, failure.detail),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                OverflowBar(
+                  alignment: MainAxisAlignment.end,
+                  overflowAlignment: OverflowBarAlignment.end,
+                  spacing: 8,
+                  overflowSpacing: 8,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(l10n.cancelAction),
+                    ),
+                    if (candidate == null)
+                      FilledButton(
+                        key: const ValueKey('ai-add-group-item-check'),
+                        onPressed: can && !_busy && _link.text.trim().isNotEmpty
+                            ? () => unawaited(_check())
+                            : null,
+                        child: Text(l10n.aiAddGroupWorkItemCheck),
+                      )
+                    else
+                      FilledButton(
+                        key: const ValueKey('ai-add-group-item-confirm'),
+                        onPressed: can && !_busy
+                            ? () => unawaited(_confirm())
+                            : null,
+                        child: Text(l10n.aiAddGroupWorkItemConfirm),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The verified item: group full path, `#iid` and title, each isolated.
+class _AddCandidateCard extends StatelessWidget {
+  const _AddCandidateCard({required this.candidate});
+
+  final AiGroupWorkItemCandidate candidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      key: const ValueKey('ai-add-group-item-candidate'),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.workspaces_outline, color: theme.colorScheme.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${isolated(candidate.fullPath)} '
+                    '${isolated('#${candidate.iid}')}',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  if (candidate.title.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      isolated(candidate.title),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A status line: always an icon and its text.
+class _AddNoticeLine extends StatelessWidget {
+  const _AddNoticeLine({
+    super.key,
+    required this.icon,
+    required this.color,
+    required this.text,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 18, color: color),
+      const SizedBox(width: 8),
+      Expanded(child: Text(text)),
+    ],
+  );
+}
+
+/// The group work items the user added to this conversation, above the
+/// message box. Removing one takes it and its grant out of scope at once.
+class _AddedGroupWorkItems extends StatelessWidget {
+  const _AddedGroupWorkItems({required this.items, required this.onRemove});
+
+  final List<AiAddedGroupWorkItem> items;
+
+  /// Null while the conversation runs.
+  final ValueChanged<AiAddedGroupWorkItem>? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Room for the icon and the remove button on the narrowest phone.
+        final labelWidth = constraints.maxWidth.isFinite
+            ? (constraints.maxWidth - 96).clamp(80.0, 240.0)
+            : 240.0;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final item in items)
+                InputChip(
+                  key: ValueKey('ai-added-group-item-${item.key}'),
+                  visualDensity: VisualDensity.compact,
+                  avatar: Icon(
+                    Icons.workspaces_outline,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  tooltip: l10n.aiAddedGroupWorkItemHint,
+                  label: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: labelWidth),
+                    child: Text(
+                      '${isolated(item.fullPath)} ${isolated('#${item.iid}')}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  deleteButtonTooltipMessage: l10n.aiRemoveGroupWorkItem,
+                  onDeleted: onRemove == null ? null : () => onRemove!(item),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
