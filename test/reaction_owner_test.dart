@@ -20,7 +20,8 @@ void main() {
   testWidgets('session ending dismisses the picker without a reaction write', (tester) async {
     final fixture = WorkspaceFixture();
     fixture.issues[1] = fixture.issue(1, 'Synthetic');
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = fixture.account ..api = fixture.api ..initializing = false;
     addTearDown(session.dispose);
     await tester.pumpWidget(ProviderScope(overrides: [sessionProvider.overrideWithValue(session)],

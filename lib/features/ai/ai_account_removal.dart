@@ -218,6 +218,7 @@ final class AiAccountRemoval {
     var dataState = AiRemovalDataState.untouched;
     var finalShown = false;
     var accepted = false;
+    var accountRemovalCommitted = false;
     var timedOut = false;
 
     AiRemovalResult done(
@@ -225,6 +226,12 @@ final class AiAccountRemoval {
       String reason, [
       Object? error,
     ]) {
+      if (accepted && status != AiRemovalStatus.cancelled) {
+        session.readCache.finishAccountRemoval(
+          account.key,
+          removed: accountRemovalCommitted,
+        );
+      }
       final result = AiRemovalResult(status, reason, dataState, error);
       if (result.presentable) {
         _results[account.key] = result;
@@ -307,7 +314,8 @@ final class AiAccountRemoval {
         clearDrafts ?? clearSecureDrafts,
         clearArtifacts ?? clearAccountArtifacts,
         clearRecent ?? clearRecentProject,
-        clearReadCacheDisk ?? _readCacheDisabledByConstruction,
+        clearReadCacheDisk ??
+            (saved) => session.readCache.clearReadCacheDisk(saved.key),
       ]) {
         _requireToken(job);
         await step(account);
@@ -327,12 +335,18 @@ final class AiAccountRemoval {
       await (clearAi ?? clearAiAccountData)(account);
       _requireToken(job);
       dataState = AiRemovalDataState.cleared;
-      // SessionController.remove never throws: it returns while busy, and
-      // restores the list when saving fails. Judge by the list it leaves.
-      await session.remove(account);
+      // A staged list is not proof of a persisted removal, especially when
+      // another session operation supersedes a save that subsequently fails.
+      final removal = await session.remove(account);
+      accountRemovalCommitted = removal.removed;
       _requireToken(job);
-      if (session.accounts.any((saved) => saved.key == account.key)) {
-        return done(AiRemovalStatus.notRemoved, 'accountRetained');
+      if (!removal.removed ||
+          session.accounts.any((saved) => saved.key == account.key)) {
+        return done(
+          AiRemovalStatus.notRemoved,
+          'accountRetained',
+          removal.failure,
+        );
       }
       return done(AiRemovalStatus.removed, 'removed');
     } on Object catch (error) {
@@ -402,12 +416,6 @@ final class AiAccountRemoval {
     }
   }
 }
-
-// This intermediate build has no production read-cache writer or reader.
-// Later integration must supply the real coordinator, including its proof of
-// an empty cache or its clear failure; an unconfigured coordinator is not
-// equivalent to this build's disabled-by-construction adapter.
-Future<void> _readCacheDisabledByConstruction(Account account) async {}
 
 enum AiSwitchChoice { proceedAndWait, switchNow, cancel }
 

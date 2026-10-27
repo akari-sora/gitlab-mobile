@@ -142,7 +142,7 @@ void main() {
     account = _account(7, 'tester');
     other = _account(8, 'other');
     accountStore = MemoryAccountStore()..accounts = [account, other];
-    session = SessionController(accountStore);
+    session = SessionController(accountStore, readCache: accountStore.readCache);
     await session.initialize();
     calls = [];
   });

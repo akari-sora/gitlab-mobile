@@ -7,13 +7,50 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/providers.dart';
+import 'package:gitlab_mobile/features/auth/session_controller.dart';
+import 'package:gitlab_mobile/features/ai/ai_history.dart';
+import 'package:gitlab_mobile/features/ai/ai_stores.dart';
 import 'package:gitlab_mobile/main.dart';
 import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
 
+Future<void> _settleReadCache(WidgetTester tester, SessionController session) async {
+  for (var i = 0; i < 100 && !session.readCache.startupRecovered; i++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await tester.pump();
+  }
+  expect(session.readCache.startupRecovered, isTrue,
+    reason: 'readable=${session.readCacheStartupDecision?.readable}; '
+      'current=${session.readCacheStartupDecision == null ? false : session.isReadCacheDecisionCurrent(session.readCacheStartupDecision!)}; '
+      'active=${session.active != null}; pending=${session.pendingSignOutCleanup}');
+  var quiesced = false;
+  unawaited(session.readCache.quiesced.then((_) => quiesced = true));
+  for (var i = 0; i < 100 && !quiesced; i++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await tester.pump();
+  }
+  expect(quiesced, isTrue);
+  var recovered = false;
+  unawaited(startupRecoveryQuiescedForTesting(session).then((_) => recovered = true));
+  for (var i = 0; i < 100 && !recovered; i++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await tester.pump();
+  }
+  expect(recovered, isTrue);
+}
+
 void main() {
-  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+  setUp(() async {
+    FlutterSecureStorage.setMockInitialValues({});
+    AiHistoryCoordinator.debugReset(store: MemoryAiStore());
+    // Configure the process singleton outside a widget's disposable fake zone.
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache);
+    await session.initialize();
+    await startAiWriteJournal(session);
+    session.dispose();
+  });
   testWidgets('full application boots to the login screen', (tester) async {
     final adapter = FakeAdapter((_) => jsonResponse([]));
     final session = controllerFor(MemoryAccountStore(), adapter);
@@ -23,6 +60,7 @@ void main() {
       child: const GitLabMobileApp(),
     ));
     await tester.pumpAndSettle();
+    await _settleReadCache(tester, session);
     expect(find.byKey(const Key('instanceField')), findsOneWidget);
     expect(tester.takeException(), isNull);
     expect(adapter.requests, isEmpty);
@@ -79,6 +117,7 @@ void main() {
       );
     }
     await tester.pumpAndSettle();
+    await _settleReadCache(tester, session);
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('我的工作'), findsOneWidget, reason: 'the shell opens on Home');
     await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('探索')));
@@ -141,6 +180,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(session.active, isNull);
     expect(find.byKey(const Key('instanceField')), findsOneWidget);
+    await _settleReadCache(tester, session);
     } finally {
       semantics.dispose();
     }

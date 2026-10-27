@@ -380,6 +380,7 @@ final class StackHarness {
     AiWriteScope Function(StackServer server)? writeScope,
     List<PickedAttachment?> picks = const [],
     void Function(StackServer server)? configure,
+    Future<void> Function(SessionController session, StackServer server)? prepareSession,
   }) async {
     final server = StackServer();
     configure?.call(server);
@@ -389,6 +390,7 @@ final class StackHarness {
       ..lastActive = workspace.account.key;
     final session = controllerFor(accounts, server.adapter);
     await session.initialize();
+    await prepareSession?.call(session, server);
 
     final settings = AiSettingsController(MemoryAiStore());
     await settings.initialize();

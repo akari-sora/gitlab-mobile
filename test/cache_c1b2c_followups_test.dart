@@ -72,6 +72,7 @@ final class _Harness {
       ..lastActive = workspace.account.key;
     session = SessionController(
       accounts,
+      readCache: accounts.readCache,
       createApi: (instance, credential, oauth, onOAuthRotated) => api,
     );
     await session.initialize();

@@ -305,7 +305,7 @@ void main() {
 
     // Retrying from the account list rereads the journal and asks for @username.
     final accounts = MemoryAccountStore()..accounts = [account];
-    final session = SessionController(accounts);
+    final session = SessionController(accounts, readCache: accounts.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     final job = AiAccountRemoval.begin(account.key, journal: journal)!;
@@ -368,7 +368,7 @@ void main() {
     )..now = () => clock;
     debugWriteJournalForCleanup = journal;
     final accounts = MemoryAccountStore()..accounts = [account];
-    final session = SessionController(accounts);
+    final session = SessionController(accounts, readCache: accounts.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     await history.startRecovery(session);
@@ -435,7 +435,7 @@ void main() {
     // Retrying the removal: no name for the journal, no mark, no new journal.
     store.failDeleteAccount = false;
     final accounts = MemoryAccountStore()..accounts = [account];
-    final session = SessionController(accounts);
+    final session = SessionController(accounts, readCache: accounts.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     final job = AiAccountRemoval.begin(account.key, journal: journal)!;

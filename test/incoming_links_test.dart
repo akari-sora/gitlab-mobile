@@ -89,7 +89,8 @@ void main() {
     (tester) async {
       final adapter = FakeAdapter((_) => jsonResponse([]));
       final api = testApi(adapter);
-      final session = SessionController(MemoryAccountStore())
+      final sessionStore = MemoryAccountStore();
+      final session = SessionController(sessionStore, readCache: sessionStore.readCache)
         ..active = Account(
           instance: api.instance,
           user: const GitLabUser(id: 7, username: 'first', name: 'First'),

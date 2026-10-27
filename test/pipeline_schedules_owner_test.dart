@@ -114,7 +114,8 @@ void main() {
     tester,
   ) async {
     final fixture = _SchedulesFixture(rows: [_schedule(3, 'Unbuilt old schedule')]);
-    final session = SessionController(MemoryAccountStore())
+    final store = MemoryAccountStore();
+    final session = SessionController(store, readCache: store.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
@@ -135,6 +136,7 @@ void main() {
     expect(find.text('立即執行排程？'), findsNothing);
     expect(find.textContaining('Unbuilt old schedule'), findsNothing);
     expect(fixture.writes, 0);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
   });
 
   testWidgets('rapid Play taps open one confirmation and cancel unlocks Play', (
@@ -193,7 +195,8 @@ void main() {
     final fixture = _SchedulesFixture(
       rows: [_schedule(3, 'Session private schedule')],
     );
-    final session = SessionController(MemoryAccountStore())
+    final store = MemoryAccountStore();
+    final session = SessionController(store, readCache: store.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
@@ -213,6 +216,7 @@ void main() {
     expect(find.textContaining('Session private schedule'), findsNothing);
     expect(find.byTooltip('立即執行'), findsNothing);
     expect(fixture.writes, 0);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
   });
 
   testWidgets('an initially mismatched session cannot show schedules', (
@@ -225,7 +229,8 @@ void main() {
       rows: const [],
       host: 'https://active.example/gitlab',
     );
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = active.account
       ..api = active.api
       ..initializing = false;

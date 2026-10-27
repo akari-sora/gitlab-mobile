@@ -899,12 +899,24 @@ void main() {
   test(
     '_freshWrite uses network while its project disk read is held',
     () async {
-      final harness = await StackHarness.create();
-      addTearDown(harness.dispose);
-      final api = harness.session.api!;
       final held = Completer<ProjectedDiskEntry?>();
       final backend = _Backend()..read = (_) => held.future;
-      api.attachReadCacheDiskBackend(backend);
+      final harness = await StackHarness.create(prepareSession: (session, server) async {
+        // d2 attached the original client. This held-lookup fixture needs its
+        // own verified client, attached once before the controller captures it.
+        final api = GitLabApi(
+          instance: session.active!.instance,
+          credential: session.active!.credential,
+          dio: Dio()..httpClientAdapter = server.adapter,
+        );
+        await api.currentUser();
+        api.bindReadCache(session.active!.key, session.generation);
+        api.attachReadCacheDiskBackend(backend);
+        session.api!.close();
+        session.api = api;
+      });
+      addTearDown(harness.dispose);
+      final api = harness.session.api!;
       final pending = api.cachedRecord(['projects', '42']);
       await Future<void>.delayed(Duration.zero);
       expect(backend.lookups, 1);

@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
+import 'package:gitlab_mobile/features/ai/ai_account_removal.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
@@ -321,6 +322,9 @@ void main() {
     // Confirm dialog
     expect(find.text('移除此帳號？'), findsOneWidget);
     await tester.tap(find.text('確認'));
+    await pumpUntil(tester, () => !AiAccountRemoval.anyRunning,
+        description: 'shell removal finishes acknowledged storage cleanup');
+    await pumpUntilComplete(tester, session.readCache.quiesced);
     await tester.pumpAndSettle();
 
     expect(store.accounts.any((a) => a.key == secondaryAccount.key), isFalse);
@@ -359,6 +363,9 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('確認'));
+    await pumpUntil(tester, () => !AiAccountRemoval.anyRunning,
+        description: 'shell removal finishes acknowledged storage cleanup');
+    await pumpUntilComplete(tester, session.readCache.quiesced);
     await tester.pumpAndSettle();
 
     expect(store.accounts, isEmpty);
@@ -392,6 +399,9 @@ void main() {
     await settleNetworkWidgets(tester);
 
     await tester.tap(find.text('新增或重新連接帳號'));
+    await pumpUntil(tester, () => session.active == null,
+        description: 'sign-out advances the visible session');
+    await pumpUntilComplete(tester, session.readCache.quiesced);
     await tester.pumpAndSettle();
 
     expect(session.active, isNull);
@@ -609,6 +619,9 @@ void main() {
     await tester.tap(find.byTooltip('從此裝置移除帳號'));
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('確認'));
+    await pumpUntil(tester, () => !AiAccountRemoval.anyRunning,
+        description: 'shell removal finishes acknowledged storage cleanup');
+    await pumpUntilComplete(tester, session.readCache.quiesced);
     await settleNetworkWidgets(tester);
 
     expect(session.accounts, isEmpty);
@@ -649,6 +662,9 @@ void main() {
     await tester.tap(find.byTooltip('從此裝置移除帳號'));
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('確認'));
+    await pumpUntil(tester, () => !AiAccountRemoval.anyRunning,
+        description: 'shell removal finishes acknowledged storage cleanup');
+    await pumpUntilComplete(tester, session.readCache.quiesced);
     await settleNetworkWidgets(tester);
 
     expect(session.accounts, isNotEmpty);

@@ -54,8 +54,10 @@ class _Fixture {
         token: 'synthetic-token-$index',
       ),
     );
+    final accountStore = MemoryAccountStore()..accounts = accounts;
     final session = SessionController(
-      MemoryAccountStore()..accounts = accounts,
+      accountStore,
+      readCache: accountStore.readCache,
     );
     addTearDown(() {
       session.dispose();

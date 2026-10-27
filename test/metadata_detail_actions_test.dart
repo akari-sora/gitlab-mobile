@@ -412,7 +412,8 @@ void main() {
     WidgetTester tester,
     _DetailFixture fixture,
   ) async {
-    final session = SessionController(MemoryAccountStore())
+    final store = MemoryAccountStore();
+    final session = SessionController(store, readCache: store.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
@@ -452,6 +453,7 @@ void main() {
     expect(find.text('Session sprint'), findsNothing);
     expect(_detailRow('issues'), findsNothing);
     expect(tester.takeException(), isNull);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
   });
 
   testWidgets(
@@ -483,6 +485,7 @@ void main() {
       expect(find.text('Late private request'), findsNothing);
       expect(find.text('session-label'), findsNothing);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     },
   );
 

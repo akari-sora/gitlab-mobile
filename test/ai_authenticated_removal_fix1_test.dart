@@ -5,8 +5,12 @@ import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/read_cache_files.dart';
+import 'package:gitlab_mobile/features/ai/ai_account_removal.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_key_store.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_settings_store.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
@@ -14,7 +18,7 @@ import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/artifact_storage.dart';
 
-import 'session_test.dart' show MemoryAccountStore, controllerFor;
+import 'session_test.dart' show EmptyReadCacheStorage, MemoryAccountStore, controllerFor;
 import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
@@ -43,7 +47,7 @@ class _RemovalAiStore implements AiStore {
   @override
   Future<void> setTombstone(String account) async {
     expect(await const FlutterSecureStorage().read(key: recentKey), isNull);
-    calls.addAll(['clearRecentProject', 'clearAiAccountData']);
+    calls.add('clearAiAccountData');
     await memory.setTombstone(account);
   }
 
@@ -112,6 +116,18 @@ void main() {
         key: recentKey,
         value: 'synthetic recent',
       );
+      final cacheStorage = EmptyReadCacheStorage();
+      session.readCache.configure(
+        keys: ReadCacheKeyStore(cacheStorage),
+        settings: ReadCacheSettingsStore(cacheStorage),
+        files: ReadCacheFileStore(root: () async {
+          expect(await const FlutterSecureStorage().read(key: recentKey), isNull);
+          if (!calls.contains('clearReadCacheDisk')) {
+            calls.addAll(['clearRecentProject', 'clearReadCacheDisk']);
+          }
+          return root;
+        }),
+      );
       artifactStorageRoot = () async {
         expect(await const FlutterSecureStorage().read(key: draftKey), isNull);
         // SessionController.remove clears artifacts again inside its save
@@ -148,14 +164,21 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('確認'));
       await tester.pump();
-      await tester.runAsync(() => completed.future);
+      await pumpUntil(tester, () => completed.isCompleted,
+          description: 'account removal reaches its save or cleanup failure');
+      await pumpUntil(tester, () => !session.busy,
+          description: 'removal releases its session commit fence');
+      await pumpUntil(tester, () => !AiAccountRemoval.anyRunning,
+          description: 'the removal job releases its hold');
+      await pumpUntilComplete(tester, session.readCache.quiesced);
       await tester.pumpAndSettle();
       await tester.pump(const Duration(milliseconds: 500));
       // A failure may reassert the tombstone. Compare the first ordered pass.
-      expect(calls.take(4), [
+      expect(calls.take(5), [
         'clearSecureDrafts',
         'clearAccountArtifacts',
         'clearRecentProject',
+        'clearReadCacheDisk',
         'clearAiAccountData',
       ]);
       if (failed) {
@@ -176,6 +199,7 @@ void main() {
           'clearSecureDrafts',
           'clearAccountArtifacts',
           'clearRecentProject',
+          'clearReadCacheDisk',
           'clearAiAccountData',
           'clearAccountArtifacts in the session save fence',
           'session.remove',
