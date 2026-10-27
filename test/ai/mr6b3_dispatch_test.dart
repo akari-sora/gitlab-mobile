@@ -112,12 +112,49 @@ void main() {
       );
     });
 
-    test('all 18 classifier rules enforce their exact noop contract', () {
-      expect(graphWriteRules, hasLength(18));
+    test('all 33 classifier rules enforce their exact noop contract', () {
+      expect(graphWriteRules, hasLength(33));
       expect(
         graphWriteRules.values.where((rule) => rule.allowsNoop),
-        hasLength(13),
+        hasLength(25),
       );
+      expect(graphWriteRules.keys.toSet(), <String>{
+        'updateWorkItemState',
+        'updateWorkItemStatus',
+        'updateWorkItemDates',
+        'updateWorkItemHealthStatus',
+        'updateWorkItemAssignees',
+        'updateWorkItemMilestone',
+        'updateWorkItemWeight',
+        'createWorkItemActivityComment',
+        'createWorkItemActivityReply',
+        'deleteWorkItemActivityNote',
+        'editWorkItemActivityNote',
+        'updateWorkItemContent',
+        'updateWorkItemLabels',
+        'setWorkItemActivityNoteReaction',
+        'setWorkItemNotifications',
+        'setIncidentStatus',
+        'snoozeTodo',
+        'unsnoozeTodo',
+        'updateGroupWorkItemState',
+        'updateGroupWorkItemStatus',
+        'updateGroupWorkItemDates',
+        'updateGroupWorkItemHealthStatus',
+        'updateGroupWorkItemAssignees',
+        'updateGroupWorkItemMilestone',
+        'updateGroupWorkItemWeight',
+        'createGroupWorkItemActivityComment',
+        'createGroupWorkItemActivityReply',
+        'deleteGroupWorkItemActivityNote',
+        'editGroupWorkItemActivityNote',
+        'updateGroupWorkItemContent',
+        'updateGroupWorkItemLabels',
+        'setGroupWorkItemActivityNoteReaction',
+        'setGroupWorkItemNotifications',
+      });
+      expect(graphWriteRules['snoozeTodo']!.readback, isFalse);
+      expect(graphWriteRules['unsnoozeTodo']!.readback, isFalse);
       for (final entry in graphWriteRules.entries) {
         final span = GraphHooks(
           beforeMutation: () async {},
@@ -137,7 +174,7 @@ void main() {
       }
     });
 
-    test('all 18 accepted rules require positive mutation evidence', () async {
+    test('all 33 accepted rules require positive mutation evidence', () async {
       for (final entry in graphWriteRules.entries) {
         final valid = acceptedSpan();
         await valid.beforeMutation();
@@ -521,38 +558,51 @@ void main() {
       Mr6b3MutationMode.hookReturnedResult,
       Mr6b3MutationMode.accepted,
     ]) {
-      test('$mode display failure after durable settlement is not a journal failure', () async {
-        harness.port.mode = mode;
-        var failed = false;
-        harness.safeDisplay = (value) {
-          final entries = harness.journal.entries(mr6b3Account);
-          if (!failed && entries.isNotEmpty &&
-              const {AiJournalState.notExecuted, AiJournalState.succeeded}
-                  .contains(entries.last.state)) {
-            failed = true;
-            throw StateError('syntheticPostSettlementDisplayFailure');
-          }
-          return value;
-        };
-        final proposal = (await harness.proposeState())!;
-        final writesBefore = harness.files.writeCount;
-        final outcome = await harness.approve(proposal);
-        expect(failed, isTrue);
-        expect(outcome.reasonCode, isNot('journalUnavailable'));
-        final sent = mode == Mr6b3MutationMode.accepted;
-        expect(outcome.mutationCount, sent ? 1 : 0);
-        expect(harness.port.sends, sent ? 1 : 0);
-        final marked = sent || mode == Mr6b3MutationMode.hookReturnedResult;
-        expect(harness.files.writeCount - writesBefore, marked ? 3 : 2);
-        expect(harness.journal.entries(mr6b3Account).last.state,
-            sent ? AiJournalState.succeeded : AiJournalState.notExecuted);
-        final durable = await harness.readDurableJournal();
-        expect(((durable['entries']! as List).last as Map)['state'],
-            sent ? 'succeeded' : 'notExecuted');
-        expect(harness.journal.isolated(mr6b3Account, {mr6b3WriteKey}), isFalse);
-        harness.beginRun();
-        expect(await harness.proposeState(), isNotNull);
-      });
+      test(
+        '$mode display failure after durable settlement is not a journal failure',
+        () async {
+          harness.port.mode = mode;
+          var failed = false;
+          harness.safeDisplay = (value) {
+            final entries = harness.journal.entries(mr6b3Account);
+            if (!failed &&
+                entries.isNotEmpty &&
+                const {
+                  AiJournalState.notExecuted,
+                  AiJournalState.succeeded,
+                }.contains(entries.last.state)) {
+              failed = true;
+              throw StateError('syntheticPostSettlementDisplayFailure');
+            }
+            return value;
+          };
+          final proposal = (await harness.proposeState())!;
+          final writesBefore = harness.files.writeCount;
+          final outcome = await harness.approve(proposal);
+          expect(failed, isTrue);
+          expect(outcome.reasonCode, isNot('journalUnavailable'));
+          final sent = mode == Mr6b3MutationMode.accepted;
+          expect(outcome.mutationCount, sent ? 1 : 0);
+          expect(harness.port.sends, sent ? 1 : 0);
+          final marked = sent || mode == Mr6b3MutationMode.hookReturnedResult;
+          expect(harness.files.writeCount - writesBefore, marked ? 3 : 2);
+          expect(
+            harness.journal.entries(mr6b3Account).last.state,
+            sent ? AiJournalState.succeeded : AiJournalState.notExecuted,
+          );
+          final durable = await harness.readDurableJournal();
+          expect(
+            ((durable['entries']! as List).last as Map)['state'],
+            sent ? 'succeeded' : 'notExecuted',
+          );
+          expect(
+            harness.journal.isolated(mr6b3Account, {mr6b3WriteKey}),
+            isFalse,
+          );
+          harness.beginRun();
+          expect(await harness.proposeState(), isNotNull);
+        },
+      );
     }
 
     for (final scenario in <({String name, Object? value, Object? error})>[

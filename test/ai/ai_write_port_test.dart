@@ -76,6 +76,59 @@ final class _ObservedDio extends DioForNative {
 }
 
 void main() {
+  test('accountGlobal markTodoDone retains null owner compatibility', () async {
+    final adapter = FakeAdapter((r) {
+      if (r.uri.path.endsWith('/todos') && r.method == 'GET') {
+        return jsonResponse([
+          {'id': 18, 'project': null, 'target_type': 'Unknown', 'target': null},
+        ]);
+      }
+      if (r.method != 'GET') return jsonResponse({'id': 18});
+      return preflight(r);
+    });
+    final api = testApi(adapter);
+    final writePort = GitLabAiWritePort(api, accountKey: account);
+    final prepared = await writePort.prepare(
+      request(
+        'markTodoDone',
+        {'todoId': 18},
+        granted: const AiWriteScope(
+          accountKey: account,
+          grants: [AiScopeGrant(kind: AiScopeKind.accountGlobal)],
+        ),
+      ),
+    );
+    expect(prepared.todoTarget, isNull);
+    expect(prepared.groupTodoTarget, isNull);
+    expect(
+      (await writePort.commit(prepared, mayStart: () => true)).mutationCount,
+      1,
+    );
+    api.close();
+  });
+
+  test('graph todo cannot bind two owners', () {
+    final writeRequest = request('snoozeTodo', {
+      'todoId': 18,
+      'until': '2030-01-01T00:00:00Z',
+    });
+    expect(
+      () => AiWritePrepared.graph(
+        request: writeRequest,
+        releaseName: '@tester',
+        writeKeys: {},
+        todoTarget: (projectId: 9, resource: 'issues', iid: 3),
+        groupTodoTarget: (
+          groupId: 5,
+          groupFullPath: 'team',
+          iid: 3,
+          workItemGid: 'gid://gitlab/WorkItem/33',
+        ),
+        mutation: (_) async => null,
+      ),
+      throwsA(isA<AiWriteRefused>()),
+    );
+  });
   test(
     '§15 row29 mayStart immediately precedes mutation; one-shot permit',
     () async {

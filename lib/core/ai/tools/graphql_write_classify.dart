@@ -45,6 +45,22 @@ const graphWriteRules = <String, GraphWriteRule>{
   'setWorkItemActivityNoteReaction': GraphWriteRule(allowsNoop: true),
   'setWorkItemNotifications': GraphWriteRule(allowsNoop: true),
   'setIncidentStatus': GraphWriteRule(allowsNoop: true),
+  // Group aliases retain the original operation's noop and readback contract.
+  'updateGroupWorkItemState': GraphWriteRule(allowsNoop: true),
+  'updateGroupWorkItemStatus': GraphWriteRule(allowsNoop: true),
+  'updateGroupWorkItemDates': GraphWriteRule(allowsNoop: true),
+  'updateGroupWorkItemHealthStatus': GraphWriteRule(allowsNoop: true),
+  'updateGroupWorkItemAssignees': GraphWriteRule(allowsNoop: true),
+  'updateGroupWorkItemMilestone': GraphWriteRule(allowsNoop: true),
+  'updateGroupWorkItemWeight': GraphWriteRule(allowsNoop: true),
+  'createGroupWorkItemActivityComment': GraphWriteRule(allowsNoop: false),
+  'createGroupWorkItemActivityReply': GraphWriteRule(allowsNoop: false),
+  'deleteGroupWorkItemActivityNote': GraphWriteRule(allowsNoop: false),
+  'editGroupWorkItemActivityNote': GraphWriteRule(allowsNoop: true),
+  'updateGroupWorkItemContent': GraphWriteRule(allowsNoop: true),
+  'updateGroupWorkItemLabels': GraphWriteRule(allowsNoop: true),
+  'setGroupWorkItemActivityNoteReaction': GraphWriteRule(allowsNoop: true),
+  'setGroupWorkItemNotifications': GraphWriteRule(allowsNoop: true),
   // Exact Todo GID and the normalized requested UTC instant (or null on clear)
   // must be checked by the family before setting acknowledged. No extra read.
   'snoozeTodo': GraphWriteRule(allowsNoop: false, readback: false),
