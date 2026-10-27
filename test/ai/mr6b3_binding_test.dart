@@ -670,7 +670,7 @@ void _makeGroupTodo(Mr6b3ApiServer server) {
         if (node['id'] != 'gid://gitlab/Todo/400') continue;
         node['project'] = null;
         final target = node['targetEntity'] as Map;
-        target['project'] = null;
+        target['workItemProject'] = null;
         target['namespace'] = {
           'id': 'gid://gitlab/Group/5',
           'fullPath': 'team',

@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/namespace_work_item_query.dart';
 
 final _project = Project.fromJson(projectJson(42));
 
@@ -492,6 +493,9 @@ void main() {
       final adapter = FakeAdapter((request) {
         final body = request.data as Map;
         expect(body['variables'], {'path': groupPath, 'iid': '7'});
+        expect(body['query'], namespaceWorkItemQuery);
+        expect(request.method, 'POST');
+        expect((body['query'] as String).trimLeft(), startsWith('query '));
         final detail = _detail(namespaceId: groupId, namespacePath: groupPath)
           ..['project'] = null;
         return jsonResponse({
@@ -515,6 +519,15 @@ void main() {
 
       expect(detail.summary.project, isNull);
       expect(detail.summary.namespace!.id, groupId);
+      expect(adapter.requests, hasLength(1));
+      expect(
+        adapter.requests.where(
+          (request) => ((request.data as Map)['query'] as String)
+              .trimLeft()
+              .startsWith('mutation '),
+        ),
+        isEmpty,
+      );
     },
   );
 
