@@ -254,6 +254,69 @@ def configure_flavors(path: Path) -> bool:
     return True
 
 
+# The Flutter 3.47.2 Android template already targets Java and Kotlin 17.
+# Keep its AGP 9 compilerOptions and Flutter-owned SDK values intact.
+NOTIFICATION_DESUGAR_BEGIN = '        // GITLAB_MOBILE_NOTIFICATION_DESUGAR_BEGIN'
+NOTIFICATION_DESUGAR_END = '        // GITLAB_MOBILE_NOTIFICATION_DESUGAR_END'
+NOTIFICATION_DESUGAR = f'''{NOTIFICATION_DESUGAR_BEGIN}
+        isCoreLibraryDesugaringEnabled = true
+{NOTIFICATION_DESUGAR_END}
+'''
+NOTIFICATION_DEPENDENCIES_BEGIN = '// GITLAB_MOBILE_NOTIFICATION_DEPENDENCIES_BEGIN'
+NOTIFICATION_DEPENDENCIES_END = '// GITLAB_MOBILE_NOTIFICATION_DEPENDENCIES_END'
+NOTIFICATION_DEPENDENCIES = f'''{NOTIFICATION_DEPENDENCIES_BEGIN}
+dependencies {{
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}}
+{NOTIFICATION_DEPENDENCIES_END}
+'''
+_JAVA_COMPILE_BLOCK = '''    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+'''
+_KOTLIN_COMPILER_BLOCK = '''kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}'''
+
+
+def configure_notification_gradle(path: Path) -> bool:
+    """Upgrade only the known pinned template or an exact managed version."""
+    text = path.read_text(encoding='utf-8')
+    if (text.count(_KOTLIN_COMPILER_BLOCK) != 1 or 'kotlinOptions' in text or
+            any(text.count(value) != 1 for value in (
+                'compileSdk = flutter.compileSdkVersion',
+                'minSdk = flutter.minSdkVersion',
+                'targetSdk = flutter.targetSdkVersion'))):
+        raise RuntimeError('Unknown Android SDK or Kotlin compiler template.')
+    if text.count(_JAVA_COMPILE_BLOCK) != 1:
+        raise RuntimeError('Unknown Android Java compileOptions template.')
+    markers = (NOTIFICATION_DESUGAR_BEGIN, NOTIFICATION_DESUGAR_END,
+               NOTIFICATION_DEPENDENCIES_BEGIN, NOTIFICATION_DEPENDENCIES_END)
+    counts = tuple(text.count(marker) for marker in markers)
+    if counts == (1, 1, 1, 1):
+        options = text[text.index(markers[0]):text.index(markers[1]) + len(markers[1])]
+        dependencies = text[text.index(markers[2]):text.index(markers[3]) + len(markers[3])]
+        if (options != NOTIFICATION_DESUGAR.rstrip('\n') or
+                dependencies != NOTIFICATION_DEPENDENCIES.rstrip('\n') or
+                text.count('isCoreLibraryDesugaringEnabled') != 1 or
+                text.count('coreLibraryDesugaring(') != 1 or
+                _JAVA_COMPILE_BLOCK + NOTIFICATION_DESUGAR + '    }' not in text):
+            raise RuntimeError('Stale managed notification Gradle configuration.')
+        return False
+    if counts != (0, 0, 0, 0):
+        raise RuntimeError('Incomplete notification Gradle markers.')
+    if ('isCoreLibraryDesugaringEnabled' in text or
+            'coreLibraryDesugaring' in text or
+            _JAVA_COMPILE_BLOCK + '    }' not in text):
+        raise RuntimeError('Unknown notification Gradle configuration.')
+    text = text.replace(_JAVA_COMPILE_BLOCK, _JAVA_COMPILE_BLOCK + NOTIFICATION_DESUGAR, 1)
+    text = text.rstrip('\n') + '\n\n' + NOTIFICATION_DEPENDENCIES
+    path.write_text(text, encoding='utf-8')
+    return True
+
+
 KOTLIN_PACKAGE = 'io/gitlabmobile/gitlab_mobile'
 TEMPLATE_MAIN_ACTIVITY = '''package io.gitlabmobile.gitlab_mobile
 
@@ -1225,6 +1288,7 @@ def configure_android(folder: Path) -> None:
         candidate.write_text(gradle.read_text(encoding='utf-8'), encoding='utf-8')
         android_signing.configure_gradle(candidate)
         configure_flavors(candidate)
+        configure_notification_gradle(candidate)
         configured_gradle = candidate.read_text(encoding='utf-8')
     harden_android(folder)
     _write_text(gradle, configured_gradle)

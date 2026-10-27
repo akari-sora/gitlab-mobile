@@ -20,6 +20,7 @@ MERGED_COMMON_PERMISSIONS = {
     'android.permission.WAKE_LOCK', 'android.permission.USE_BIOMETRIC',
     'android.permission.USE_FINGERPRINT', 'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_DATA_SYNC', 'android.permission.POST_NOTIFICATIONS',
+    'android.permission.VIBRATE',
 }
 
 
@@ -75,6 +76,9 @@ def verify_merged_manifest(path, flavor):
         _require(action.get(a + 'name') not in {
             'android.intent.action.BOOT_COMPLETED', 'android.intent.action.LOCKED_BOOT_COMPLETED',
         }, f'{path}: boot receiver')
+    for receiver in app.findall('receiver'):
+        _require(not receiver.get(a + 'name', '').startswith(
+            'com.dexterous.flutterlocalnotifications.'), f'{path}: unexpected notification receiver')
     def activity(name):
         matches = [node for node in app.findall('activity') if node.get(a + 'name', '').split('.')[-1] == name]
         _require(len(matches) == 1, f'{path}: {name} must be unique')
@@ -189,6 +193,15 @@ def verify_android_build_config(root):
     for key in ('sourceCompatibility', 'targetCompatibility'):
         values = re.findall(r'^\s*' + key + r'\s*=\s*([^\s]+)\s*$', blocks[0], re.MULTILINE)
         _require(values == ['JavaVersion.VERSION_17'], f'{app}: {key} must be Java 17')
+    _require(bootstrap._KOTLIN_COMPILER_BLOCK in app_text and 'kotlinOptions' not in app_text,
+             f'{app}: Kotlin compiler target must be JVM 17 using AGP 9 DSL')
+    for value in ('compileSdk = flutter.compileSdkVersion', 'minSdk = flutter.minSdkVersion',
+                  'targetSdk = flutter.targetSdkVersion'):
+        _require(app_text.count(value) == 1, f'{app}: expected Flutter SDK setting {value}')
+    _require(blocks[0].count('isCoreLibraryDesugaringEnabled = true') == 1,
+             f'{app}: desugaring must be enabled')
+    _require(app_text.count('coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")') == 1,
+             f'{app}: expected desugar_jdk_libs 2.1.4')
 
 
 def verify_generated_apks(root):
@@ -468,10 +481,7 @@ class BootstrapTests(unittest.TestCase):
         activity.parent.mkdir(parents=True)
         activity.write_text(bootstrap.TEMPLATE_MAIN_ACTIVITY)
         gradle = self.root / 'app/build.gradle.kts'
-        gradle.write_text(
-            'plugins { id("com.android.application") }\n'
-            'android { buildTypes { release { '
-            'signingConfig = signingConfigs.getByName("debug") } } }\n')
+        gradle.write_text(self.GRADLE)
         bootstrap.configure_android(self.root)
         bootstrap.configure_android(self.root)
         text = gradle.read_text()
@@ -549,8 +559,15 @@ class BootstrapTests(unittest.TestCase):
     GRADLE = (
         'plugins {\n    id("com.android.application")\n}\n\n'
         'android {\n    namespace = "io.gitlabmobile.gitlab_mobile"\n'
+        '    compileSdk = flutter.compileSdkVersion\n'
+        '    compileOptions {\n        sourceCompatibility = JavaVersion.VERSION_17\n'
+        '        targetCompatibility = JavaVersion.VERSION_17\n    }\n'
+        '    defaultConfig {\n        minSdk = flutter.minSdkVersion\n'
+        '        targetSdk = flutter.targetSdkVersion\n    }\n'
         '    buildTypes {\n        release {\n'
         '            signingConfig = signingConfigs.getByName("debug")\n        }\n    }\n}\n'
+        '\nkotlin {\n    compilerOptions {\n'
+        '        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17\n    }\n}\n'
     )
 
     def test_flavors_follow_the_signing_block_once(self):
@@ -591,6 +608,52 @@ class BootstrapTests(unittest.TestCase):
         android_signing.configure_gradle(gradle)
         with self.assertRaisesRegex(RuntimeError, 'flavors already defined'):
             bootstrap.configure_flavors(gradle)
+
+    def test_notification_gradle_uses_pinned_template_and_is_idempotent(self):
+        gradle = self.root / 'build.gradle.kts'
+        gradle.write_text(self.GRADLE)
+        self.assertTrue(bootstrap.configure_notification_gradle(gradle))
+        configured = gradle.read_text()
+        self.assertEqual(configured.count('isCoreLibraryDesugaringEnabled = true'), 1)
+        self.assertEqual(configured.count('coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")'), 1)
+        self.assertIn(bootstrap._KOTLIN_COMPILER_BLOCK, configured)
+        self.assertNotIn('kotlinOptions', configured)
+        self.assertNotIn('multiDex', configured)
+        self.assertFalse(bootstrap.configure_notification_gradle(gradle))
+        self.assertEqual(gradle.read_text(), configured)
+
+    def test_notification_gradle_rejects_stale_partial_or_foreign_before_writing(self):
+        gradle = self.root / 'build.gradle.kts'
+        gradle.write_text(self.GRADLE)
+        bootstrap.configure_notification_gradle(gradle)
+        managed = gradle.read_text()
+        for changed in (
+            managed.replace(bootstrap.NOTIFICATION_DESUGAR_END, ''),
+            managed.replace(bootstrap.NOTIFICATION_DEPENDENCIES_END, ''),
+            managed.replace('desugar_jdk_libs:2.1.4', 'desugar_jdk_libs:2.0.0'),
+            managed.replace('isCoreLibraryDesugaringEnabled = true', 'isCoreLibraryDesugaringEnabled = false'),
+            managed.replace('JavaVersion.VERSION_17', 'JavaVersion.VERSION_11', 1),
+            managed.replace('JvmTarget.JVM_17', 'JvmTarget.JVM_11'),
+            managed.replace('compileSdk = flutter.compileSdkVersion', 'compileSdk = 35'),
+            self.GRADLE.replace('    compileOptions {',
+                                '    compileOptions {\n        isCoreLibraryDesugaringEnabled = true'),
+        ):
+            with self.subTest(changed=changed):
+                gradle.write_text(changed)
+                with self.assertRaises(RuntimeError):
+                    bootstrap.configure_notification_gradle(gradle)
+                self.assertEqual(gradle.read_text(), changed)
+
+    def test_notification_plugin_has_exact_stable_pin_and_matching_lock(self):
+        root = Path(__file__).resolve().parents[2]
+        pubspec = (root / 'pubspec.yaml').read_text()
+        lock = (root / 'pubspec.lock').read_text()
+        pins = re.findall(r'^  flutter_local_notifications:\s*(\S+)\s*$', pubspec, re.MULTILINE)
+        self.assertEqual(pins, ['22.3.3'], 'the notification plugin must be pinned exactly')
+        block = re.search(r'^  flutter_local_notifications:\n(?:(?!  [a-zA-Z_][^\n]*:\n).+\n)+',
+                          lock, re.MULTILINE)
+        self.assertIsNotNone(block)
+        self.assertRegex(block.group(), r'(?m)^    version: "22\.3\.3"$')
 
 
     def _app(self):
@@ -1169,6 +1232,25 @@ class BootstrapTests(unittest.TestCase):
                                   for path in app.rglob('*') if path.is_file()}, before)
         gradle.write_text(original)
 
+    def test_invalid_notification_blocks_are_refused_before_any_write(self):
+        app = self._managed_android()
+        gradle = app / 'build.gradle.kts'
+        original = gradle.read_text()
+        for changed in (
+            original.replace(bootstrap.NOTIFICATION_DESUGAR_END, ''),
+            original.replace(bootstrap.NOTIFICATION_DEPENDENCIES_END, ''),
+            original.replace('desugar_jdk_libs:2.1.4', 'desugar_jdk_libs:2.0.0'),
+            original.replace('JvmTarget.JVM_17', 'JvmTarget.JVM_11'),
+        ):
+            with self.subTest(gradle=changed):
+                gradle.write_text(changed)
+                before = {path.relative_to(app): path.read_bytes() for path in app.rglob('*') if path.is_file()}
+                with self.assertRaises(RuntimeError):
+                    bootstrap.configure_android(self.root)
+                self.assertEqual({path.relative_to(app): path.read_bytes()
+                                  for path in app.rglob('*') if path.is_file()}, before)
+        gradle.write_text(original)
+
     def test_fresh_activity_with_partial_update_block_is_refused_before_writes(self):
         app = self._app()
         (app / 'src/main/AndroidManifest.xml').write_text(self.FRESH_MANIFEST)
@@ -1254,6 +1336,9 @@ class BootstrapTests(unittest.TestCase):
         original = play.read_text()
         for mutated in (
             original.replace('</manifest>', '<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" /></manifest>'),
+            original.replace('</manifest>', '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" /></manifest>'),
+            original.replace('</application>', '<receiver android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" /></application>'),
+            original.replace('</application>', '<receiver android:name="foreign.BootReceiver"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver></application>'),
             original.replace('</manifest>', '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" /></manifest>'),
             original.replace('android:stopWithTask="true"', 'android:stopWithTask="false"'),
             original.replace('android:foregroundServiceType="dataSync"', 'android:foregroundServiceType="location"'),
@@ -1321,9 +1406,10 @@ class BootstrapTests(unittest.TestCase):
         app.parent.mkdir(parents=True)
         settings = android / 'settings.gradle.kts'
         good_settings = 'plugins {\n    id("com.android.application") version "9.1.0" apply false\n}\n'
-        good_app = ('android {\n    compileOptions {\n'
-                    '        sourceCompatibility = JavaVersion.VERSION_17\n'
-                    '        targetCompatibility = JavaVersion.VERSION_17\n    }\n}\n')
+        gradle_fixture = self.root / 'fixture.gradle.kts'
+        gradle_fixture.write_text(self.GRADLE)
+        bootstrap.configure_notification_gradle(gradle_fixture)
+        good_app = gradle_fixture.read_text()
         settings.write_text(good_settings)
         app.write_text(good_app)
         verify_android_build_config(self.root)
@@ -1331,7 +1417,12 @@ class BootstrapTests(unittest.TestCase):
                            (app, good_app.replace('sourceCompatibility = JavaVersion.VERSION_17',
                                                   'sourceCompatibility = JavaVersion.VERSION_11')),
                            (app, good_app.replace('targetCompatibility = JavaVersion.VERSION_17',
-                                                  'targetCompatibility = JavaVersion.VERSION_11'))):
+                                                  'targetCompatibility = JavaVersion.VERSION_11')),
+                           (app, good_app.replace('JvmTarget.JVM_17', 'JvmTarget.JVM_11')),
+                           (app, good_app.replace('desugar_jdk_libs:2.1.4', 'desugar_jdk_libs:2.0.0')),
+                           (app, good_app.replace('isCoreLibraryDesugaringEnabled = true',
+                                                  'isCoreLibraryDesugaringEnabled = false')),
+                           (app, good_app.replace('compileSdk = flutter.compileSdkVersion', 'compileSdk = 35'))):
             with self.subTest(path=path, text=text):
                 path.write_text(text)
                 with self.assertRaises(AssertionError):
