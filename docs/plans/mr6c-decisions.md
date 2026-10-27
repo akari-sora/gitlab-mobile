@@ -49,3 +49,11 @@ C2b found that D7 (release the service when every run only awaits approval) conf
 - After the transition, approval and execution use the local foreground gate: real visibility at acquire and consume, no TTL (C-D4). Approval already requires real visibility. Tickets issued under the old binding stay invalid, and a stale reply is still discarded.
 - If the app goes to the background again, the run needs a new permit (a new `startRuns`). Nothing executes in the background under the old permit.
 - An **invalidation** (`permitInvalidated`) never rebinds. It ends or pauses the run as before.
+
+## C-D6. Notification event kinds and the run-limit refusal (lead, 2026-10-27, C2b review round 1)
+Codex I1 found a finishing-mode model failure (`AiRunEnd.toolBudget` with a non-null failure) published as `completed`; GLM noted that every budget or limit end maps to `completed` and that the fourth-run refusal publishes `failed`. C3 consumes only these typed events, so the kind must not overstate the outcome. Conservative mapping, decided by the lead:
+- `failed`: the run recorded a final failure, whatever its `AiRunEnd` (including `toolBudget` with a failure), or ended `failed`.
+- `completed`: only `done` with no recorded failure.
+- `interrupted`: `stopped`, `stoppedBySettings`, `newSecret`, and every end that cut the answer short without a failure: `maxTokens`, `contentFilter`, `refusal`, `toolBudget`, `toolBudgetNoAnswer`, `contextTooLong`, `tokenBudget`.
+- `needsApproval` is unchanged.
+- The fourth-run refusal (three running) is **not sent**. It publishes no notification event and is not a generic failure. The controller records it as an execution pause with a dedicated reason (`AiExecutionPauseReason.runLimit`) and no new strings. C5 owns the pause UI and its text.
