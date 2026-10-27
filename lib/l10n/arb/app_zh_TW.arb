@@ -11594,9 +11594,9 @@
     "description": "Name of the encrypted on-device read cache and its switch",
     "placeholders": {}
   },
-  "offlineCacheDescription": "看過的內容會加密存在這台裝置，網路不穩時先顯示上次的內容，再於背景更新。登出、切換或移除帳號時會清除。",
+  "offlineCacheDescription": "你看過的部分內容（符合條件者）會加密保存在這台裝置。網路不穩時可先顯示上次的版本，並在背景更新。開啟 App 時仍需先成功驗證登入。登出、切換或移除帳號時會清除。",
   "@offlineCacheDescription": {
-    "description": "Explains what the offline cache stores and when it is cleared",
+    "description": "Explains, without over-promising, that only eligible parts of viewed content are kept, that opening the app still needs a sign-in check, and when it is cleared",
     "placeholders": {}
   },
   "offlineCacheStatusOn": "使用中",
@@ -11742,6 +11742,31 @@
   "readCacheLogTruncated": "Log 太長，前段已截掉，只顯示最後一部分。",
   "@readCacheLogTruncated": {
     "description": "Shown above a finished job log shown as its tail (at most 2 MiB, and the screen line limit); the beginning was cut off",
+    "placeholders": {}
+  },
+  "offlineCacheOnNeedsCleanup": "上次的清除完成後，才能重新開啟離線快取。",
+  "@offlineCacheOnNeedsCleanup": {
+    "description": "Why the switch cannot be turned on: the previous device-wide clear has not finished",
+    "placeholders": {}
+  },
+  "offlineCacheOffNotSaved": "無法儲存設定。離線快取已清除，這次使用期間保持關閉。",
+  "@offlineCacheOffNotSaved": {
+    "description": "Turning off cleared the whole device cache for certain, but the off setting could not be saved",
+    "placeholders": {}
+  },
+  "offlineCacheSizeApprox": "已使用約 {size}",
+  "@offlineCacheSizeApprox": {
+    "description": "Estimated space used, from indexed entries only; size is already formatted, such as 1.2 MB",
+    "placeholders": {
+      "size": {
+        "type": "String",
+        "example": "1.2 MB"
+      }
+    }
+  },
+  "offlineCacheSizeUnknown": "已使用：無法確認",
+  "@offlineCacheSizeUnknown": {
+    "description": "Space used cannot be confirmed because a clear is pending or failed",
     "placeholders": {}
   }
 }

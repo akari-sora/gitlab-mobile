@@ -2779,7 +2779,7 @@ const _messagesIt = <String>[
   'Completa o chiudi la modifica in corso prima di aprire la notifica.',
   'Archiviazione e cache',
   'Cache offline',
-  'I contenuti visualizzati vengono salvati cifrati su questo dispositivo. Se la rete è instabile, viene mostrata prima l’ultima copia, poi aggiornata in background. Vengono cancellati quando esci, cambi account o rimuovi un account.',
+  'Le parti idonee dei contenuti visualizzati vengono salvate cifrate su questo dispositivo. Se la rete è instabile, può essere mostrata prima l’ultima copia mentre si aggiorna in background. All’apertura dell’app serve comunque una verifica dell’accesso riuscita. Vengono cancellate quando esci, cambi account o rimuovi un account.',
   'Attiva',
   'Disattivata',
   'Inizia a salvare alla prossima apertura dell’app o al prossimo cambio di account',
@@ -2808,4 +2808,8 @@ const _messagesIt = <String>[
   'Sei uscito, ma la cache offline di questo dispositivo non è stata cancellata del tutto. Puoi riprovare la cancellazione.',
   'La cache offline è in pausa e riprenderà solo dopo una cancellazione riuscita.',
   'Il log è troppo lungo. L’inizio è stato tagliato; viene mostrata solo la parte finale.',
+  'La cache offline potrà essere riattivata solo al termine della cancellazione precedente.',
+  'Impossibile salvare l’impostazione. La cache offline è stata cancellata e resta disattivata in questa sessione.',
+  'Circa {size} in uso',
+  'Spazio usato: sconosciuto',
 ];

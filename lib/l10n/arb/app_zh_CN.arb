@@ -2777,7 +2777,7 @@
   "aiRunNoticeFinishEditFirst": "请先完成或关闭当前的编辑，再打开通知",
   "storageAndCacheLabel": "存储与缓存",
   "offlineCacheLabel": "离线缓存",
-  "offlineCacheDescription": "看过的内容会加密保存在此设备上，网络不稳定时先显示上次的内容，再在后台更新。退出登录、切换或移除账号时会清除。",
+  "offlineCacheDescription": "你看过的部分内容（符合条件者）会加密保存在此设备上。网络不稳定时可先显示上次的版本，并在后台更新。打开 App 时仍需先成功验证登录。退出登录、切换或移除账号时会清除。",
   "offlineCacheStatusOn": "使用中",
   "offlineCacheStatusOff": "已关闭",
   "offlineCacheStatusWaiting": "下次打开 App 或切换账号后开始保存",
@@ -2805,5 +2805,9 @@
   "readCacheSignedOutTitle": "离线缓存尚未清除",
   "readCacheSignedOutDetail": "已退出登录，但此设备上的离线缓存尚未清除完成。可以重试清除。",
   "readCacheClosedDetail": "离线缓存已暂停使用，重试清除完成后才会恢复。",
-  "readCacheLogTruncated": "Log 太长，前段已截掉，只显示最后一部分。"
+  "readCacheLogTruncated": "Log 太长，前段已截掉，只显示最后一部分。",
+  "offlineCacheOnNeedsCleanup": "上次的清除完成后，才能重新开启离线缓存。",
+  "offlineCacheOffNotSaved": "无法保存设置。离线缓存已清除，本次使用期间保持关闭。",
+  "offlineCacheSizeApprox": "已使用约 {size}",
+  "offlineCacheSizeUnknown": "已使用：无法确认"
 }

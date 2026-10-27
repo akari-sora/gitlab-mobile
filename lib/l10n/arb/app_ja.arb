@@ -2777,7 +2777,7 @@
   "aiRunNoticeFinishEditFirst": "通知を開く前に、今の編集を終えるか閉じてください。",
   "storageAndCacheLabel": "ストレージとキャッシュ",
   "offlineCacheLabel": "オフラインキャッシュ",
-  "offlineCacheDescription": "表示した内容はこのデバイスに暗号化して保存されます。ネットワークが不安定なときは前回の内容を先に表示し、バックグラウンドで更新します。サインアウト、アカウントの切り替えや削除のときに消去されます。",
+  "offlineCacheDescription": "表示した内容のうち条件を満たす一部が、このデバイスに暗号化して保存されます。ネットワークが不安定なときは前回の内容を先に表示し、バックグラウンドで更新します。アプリを開くときは、引き続きサインインの確認が必要です。サインアウト、アカウントの切り替えや削除のときに消去されます。",
   "offlineCacheStatusOn": "使用中",
   "offlineCacheStatusOff": "オフ",
   "offlineCacheStatusWaiting": "次回アプリを開くか、アカウントを切り替えた後に保存を開始します",
@@ -2805,5 +2805,9 @@
   "readCacheSignedOutTitle": "オフラインキャッシュはまだ消去されていません",
   "readCacheSignedOutDetail": "サインアウトしましたが、このデバイスのオフラインキャッシュの消去が完了していません。消去を再試行できます。",
   "readCacheClosedDetail": "オフラインキャッシュは一時停止しています。消去が完了するまで再開しません。",
-  "readCacheLogTruncated": "ログが長すぎるため前半を省略し、最後の部分だけを表示しています。"
+  "readCacheLogTruncated": "ログが長すぎるため前半を省略し、最後の部分だけを表示しています。",
+  "offlineCacheOnNeedsCleanup": "前回の消去が完了するまで、オフラインキャッシュを再びオンにすることはできません。",
+  "offlineCacheOffNotSaved": "設定を保存できませんでした。オフラインキャッシュは消去済みで、今回の使用中はオフのままです。",
+  "offlineCacheSizeApprox": "使用量 約 {size}",
+  "offlineCacheSizeUnknown": "使用量：不明"
 }

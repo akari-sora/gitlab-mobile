@@ -2779,7 +2779,7 @@ const _messagesVi = <String>[
   'Hãy hoàn tất hoặc đóng phần chỉnh sửa hiện tại trước khi mở thông báo.',
   'Bộ nhớ và bộ nhớ đệm',
   'Bộ nhớ đệm ngoại tuyến',
-  'Nội dung bạn đã xem được lưu mã hóa trên thiết bị này. Khi mạng không ổn định, bản sao gần nhất sẽ hiện trước rồi được làm mới trong nền. Dữ liệu này bị xóa khi bạn đăng xuất, chuyển hoặc gỡ tài khoản.',
+  'Các phần đủ điều kiện của nội dung bạn đã xem được lưu mã hóa trên thiết bị này. Khi mạng không ổn định, bản sao gần nhất có thể hiện trước rồi được làm mới trong nền. Khi mở ứng dụng, vẫn cần xác minh đăng nhập thành công. Dữ liệu này bị xóa khi bạn đăng xuất, chuyển hoặc gỡ tài khoản.',
   'Đang bật',
   'Đã tắt',
   'Sẽ bắt đầu lưu vào lần mở ứng dụng hoặc chuyển tài khoản tiếp theo',
@@ -2808,4 +2808,8 @@ const _messagesVi = <String>[
   'Bạn đã đăng xuất, nhưng bộ nhớ đệm ngoại tuyến trên thiết bị này chưa được xóa hết. Bạn có thể thử xóa lại.',
   'Bộ nhớ đệm ngoại tuyến đang tạm dừng và chỉ hoạt động lại sau khi xóa thành công.',
   'Log quá dài. Phần đầu đã bị cắt; chỉ hiển thị phần cuối.',
+  'Chỉ có thể bật lại bộ nhớ đệm ngoại tuyến sau khi lần xóa trước hoàn tất.',
+  'Không thể lưu cài đặt. Bộ nhớ đệm ngoại tuyến đã được xóa và vẫn tắt trong phiên này.',
+  'Đã dùng khoảng {size}',
+  'Dung lượng đã dùng: không rõ',
 ];

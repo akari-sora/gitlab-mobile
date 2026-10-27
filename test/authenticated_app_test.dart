@@ -869,6 +869,47 @@ void main() {
       expect(find.byKey(const ValueKey('read-cache-clear')), findsOneWidget);
     });
 
+    // FIX1 (review P2-3): merging follows the pending notice. A clear from the
+    // settings page supersedes it; the next same-kind failure shows again.
+    testWidgets('after a settings clear the next same-kind notice is shown again', (tester) async {
+      final (session, store) = await signIn(tester);
+      final cache = store.readCache;
+      final binding = DiskBinding(accountKey: session.active!.key, generation: session.generation);
+      await tester.pumpWidget(
+        AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
+      );
+      await settleNetworkWidgets(tester);
+      cache.reportCleanup(binding, preserved);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(snack(preservedText), findsOneWidget);
+      ScaffoldMessenger.of(tester.element(find.byType(NavigationBar))).hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('我的')));
+      await settleNetworkWidgets(tester);
+      final row = find.byKey(const ValueKey('read-cache-row'));
+      await tester.scrollUntilVisible(row, 200);
+      await tester.tap(row);
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('確認'));
+      await pumpUntil(tester, () => cache.notice(binding) == null,
+        description: 'the settings clear supersedes the notice');
+      await pumpUntil(tester, () => find.text('已清除離線快取').evaluate().isNotEmpty);
+      await tester.pump(const Duration(milliseconds: 500)); // confirm dialog cleanup
+      Navigator.of(tester.element(find.byType(ReadCacheSettingsPage))).pop();
+      await tester.pumpAndSettle();
+      ScaffoldMessenger.of(tester.element(find.byType(NavigationBar))).hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+
+      cache.reportCleanup(binding, preserved);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(snack(preservedText), findsOneWidget, reason: 'an independent new failure is not merged away');
+    });
+
     testWidgets('notices reach only this account and generation, merge, and mark the 我的 row', (tester) async {
       final (session, store) = await signIn(tester);
       final cache = store.readCache;

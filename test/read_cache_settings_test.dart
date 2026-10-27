@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,14 +21,19 @@ import 'support/widget_settle.dart';
 final _instance = GitLabInstance.parse('https://cache.example/subpath');
 final _account = '${_instance.key}#7';
 final _binding = DiskBinding(accountKey: _account, generation: 1);
+// Another account's leftovers on the device (not signed in now).
+final _other = '${_instance.key}#8';
 
 final class _Storage implements ReadCacheSecureStorage {
   final values = <String, String>{};
   bool failSettingWrite = false, failInventory = false, failKeyDelete = false;
+  final failDeleteNames = <String>{};
+  int settingWrites = 0;
   @override
   Future<String?> read(String key) async => values[key];
   @override
   Future<void> write(String key, String value) async {
+    if (key == ReadCacheSettingsStore.key) settingWrites++;
     if (failSettingWrite && key == ReadCacheSettingsStore.key) {
       throw StateError('synthetic setting write failure');
     }
@@ -36,7 +42,8 @@ final class _Storage implements ReadCacheSecureStorage {
 
   @override
   Future<void> delete(String key) async {
-    if (failKeyDelete && key == ReadCacheKeyStore.keyName(_account)) {
+    if ((failKeyDelete && key == ReadCacheKeyStore.keyName(_account)) ||
+        failDeleteNames.contains(key)) {
       throw StateError('synthetic key delete failure');
     }
     values.remove(key);
@@ -198,7 +205,9 @@ void main() {
     final onDisk = h.entryFiles().fold<int>(0, (n, file) => n + file.lengthSync());
     expect(onDisk, greaterThan(0));
     expect(h.coordinator.stats.retainedBytes, onDisk);
-    expect(find.text('已使用 ${formatByteCount(onDisk)}'), findsOneWidget);
+    // No confirmed device total yet: the indexed bytes are an estimate.
+    expect(find.text('已使用約 ${formatByteCount(onDisk)}'), findsOneWidget);
+    expect(find.text('已使用 ${formatByteCount(onDisk)}'), findsNothing);
     expect(_status('使用中'), findsOneWidget);
     expect(find.descendant(of: find.byKey(const ValueKey('read-cache-status')),
       matching: find.byIcon(Icons.check_circle_outline)), findsOneWidget);
@@ -217,6 +226,8 @@ void main() {
     expect(h.storage.values.containsKey(ReadCacheKeyStore.keyName(_account)), isFalse);
     expect(_switchValue(tester), isFalse);
     expect(_status('已關閉'), findsOneWidget);
+    // The confirmed empty device sweep is the only source of a plain zero.
+    expect(h.coordinator.stats.diskUsageBytes, 0);
     expect(find.text('已使用 ${formatByteCount(0)}'), findsOneWidget);
   });
 
@@ -227,7 +238,8 @@ void main() {
     h.storage.failSettingWrite = true;
     await tester.pumpWidget(_page(h));
     await tester.tap(find.byKey(const ValueKey('read-cache-switch')));
-    await pumpUntil(tester, () => find.text('無法確認離線快取已關閉並清除。這次使用期間保持關閉，請重試清除。').evaluate().isNotEmpty);
+    // The device sweep completed, the preference did not: say exactly that.
+    await pumpUntil(tester, () => find.text('無法儲存設定。離線快取已清除，這次使用期間保持關閉。').evaluate().isNotEmpty);
     expect(find.text('已關閉離線快取並清除資料'), findsNothing);
     expect(h.storage.values[ReadCacheSettingsStore.key], isNull, reason: 'nothing claims a stored 0');
     expect(h.accountDirectory.existsSync(), isFalse, reason: 'storage failure still clears');
@@ -268,6 +280,92 @@ void main() {
     expect(_status('已關閉'), findsOneWidget, reason: 'the stored 0 still applies');
   });
 
+  // FIX1 (review P1-1): turning on is refused, without writing the preference,
+  // until the last turn-off's device sweep is confirmed.
+  testWidgets('turning on is refused without a preference write while the device clear is pending', (tester) async {
+    final seeded = _Harness();
+    addTearDown(seeded.dispose);
+    await _run(tester, seeded.ready);
+    // A stored 0 seen by a fresh process before its start-up sweep ran.
+    seeded.storage.values[ReadCacheSettingsStore.key] = '0';
+    final h = _Harness(storage: seeded.storage, root: seeded.root);
+    final writes = h.storage.settingWrites;
+    await tester.pumpWidget(_page(h));
+    expect(_switchValue(tester), isFalse);
+    await tester.tap(find.byKey(const ValueKey('read-cache-switch')));
+    await pumpUntil(tester, () => find.text('無法清除離線快取。離線快取已暫停使用，重試清除完成後才會恢復。').evaluate().isNotEmpty);
+    expect(h.storage.settingWrites, writes, reason: 'refused before anything was written');
+    expect(h.storage.values[ReadCacheSettingsStore.key], '0');
+    expect(find.text('下次開啟 App 或切換帳號後開始保存'), findsNothing);
+    await tester.pump();
+    final tile = tester.widget<SwitchListTile>(find.byKey(const ValueKey('read-cache-switch')));
+    expect(tile.onChanged, isNull, reason: 'the switch cannot be turned on while pending');
+    expect(find.text('上次的清除完成後，才能重新開啟離線快取。'), findsOneWidget);
+    expect(find.text('已使用：無法確認'), findsOneWidget);
+    expect(seeded.entryFiles(), hasLength(2), reason: 'a refused enable deletes nothing by itself');
+
+    // The retry is the whole device sweep; once confirmed, turning on works.
+    ScaffoldMessenger.of(tester.element(find.byType(ListView))).hideCurrentSnackBar();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('read-cache-retry-device-off')));
+    await pumpUntil(tester, () => find.text('已清除離線快取').evaluate().isNotEmpty);
+    expect(seeded.entryFiles(), isEmpty);
+    expect(find.byKey(const ValueKey('read-cache-on-blocked')), findsNothing);
+    expect(find.text('已使用 ${formatByteCount(0)}'), findsOneWidget, reason: 'confirmed empty device');
+    ScaffoldMessenger.of(tester.element(find.byType(ListView))).hideCurrentSnackBar();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('read-cache-switch')));
+    await pumpUntil(tester, () => find.descendant(of: find.byType(SnackBar),
+      matching: find.text('下次開啟 App 或切換帳號後開始保存')).evaluate().isNotEmpty);
+    expect(h.storage.values[ReadCacheSettingsStore.key], '1');
+  });
+
+  // FIX1 (review P1-2): the retry after a failed turn-off repeats the device
+  // sweep. Another account's residue keeps it pending; a single-account clear
+  // must never report this as cleared.
+  testWidgets('retry after a failed turn-off sweeps the device; residue keeps it pending', (tester) async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await _run(tester, h.ready);
+    await _run(tester, () => h.keys.writeKey(_other, Uint8List.fromList(List.generate(32, (i) => 31 - i))));
+    final orphan = Directory('${h.root.path}/read_cache/${ReadCacheCipher.accountDirectoryName(_other)}')
+      ..createSync(recursive: true);
+    File('${orphan.path}/index.v1.bin').writeAsBytesSync(List.filled(40, 7));
+    h.storage.failInventory = true;
+    await tester.pumpWidget(_page(h));
+    await tester.tap(find.byKey(const ValueKey('read-cache-switch')));
+    await pumpUntil(tester, () => find.text('無法確認離線快取已關閉並清除。這次使用期間保持關閉，請重試清除。').evaluate().isNotEmpty);
+    ScaffoldMessenger.of(tester.element(find.byType(ListView))).hideCurrentSnackBar();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('read-cache-on-blocked')), findsOneWidget);
+
+    // Inventory is back, but the other account's key cannot be deleted yet.
+    h.storage.failInventory = false;
+    h.storage.failDeleteNames.add(ReadCacheKeyStore.keyName(_other));
+    await tester.tap(find.byKey(const ValueKey('read-cache-retry-device-off')));
+    await pumpUntil(tester, () => find.text('無法清除離線快取。離線快取已暫停使用，重試清除完成後才會恢復。').evaluate().isNotEmpty);
+    expect(find.text('已清除離線快取'), findsNothing, reason: 'this account alone is not the device');
+    expect(h.storage.values.containsKey(ReadCacheKeyStore.keyName(_other)), isTrue);
+    expect(h.coordinator.deviceOffPending, isTrue);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('read-cache-on-blocked')), findsOneWidget);
+    expect(tester.widget<SwitchListTile>(find.byKey(const ValueKey('read-cache-switch'))).onChanged, isNull);
+    expect(find.text('已使用：無法確認'), findsOneWidget);
+
+    h.storage.failDeleteNames.clear();
+    ScaffoldMessenger.of(tester.element(find.byType(ListView))).hideCurrentSnackBar();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('read-cache-retry-device-off')));
+    await pumpUntil(tester, () => find.text('已清除離線快取').evaluate().isNotEmpty);
+    expect(h.storage.values.containsKey(ReadCacheKeyStore.keyName(_other)), isFalse);
+    expect(orphan.existsSync(), isFalse, reason: 'unknown leftovers are swept too');
+    expect(h.entryFiles(), isEmpty);
+    expect(h.coordinator.deviceOffPending, isFalse);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('read-cache-on-blocked')), findsNothing);
+    expect(find.byKey(const ValueKey('read-cache-retry-cleanup')), findsNothing);
+  });
+
   testWidgets('clear asks first, deletes, and reopens the same session (m-10)', (tester) async {
     final h = _Harness();
     addTearDown(h.dispose);
@@ -285,7 +383,8 @@ void main() {
       description: 'a completed settings clear reopens this session');
     expect(await _run(tester, () => h.lookup(_binding, 1)), isNull);
     await tester.pumpWidget(_page(h, DiskBinding(accountKey: _account, generation: 1)));
-    expect(find.text('已使用 ${formatByteCount(0)}'), findsOneWidget);
+    expect(find.text('已使用約 ${formatByteCount(0)}'), findsOneWidget,
+      reason: 'reopened: an estimate again, never a confirmed plain zero');
   });
 
   testWidgets('cancelled confirmation clears nothing', (tester) async {
@@ -318,6 +417,8 @@ void main() {
     await tester.pump();
     expect(find.byKey(const ValueKey('read-cache-retry-cleanup')), findsOneWidget);
     expect(_status('清除未完成，暫停使用'), findsOneWidget);
+    expect(find.text('已使用：無法確認'), findsOneWidget, reason: 'a failed clear leaves the size unknown');
+    expect(find.textContaining('已使用約'), findsNothing);
     expect(await _run(tester, () => h.lookup(_binding, 1)), isNull);
     await tester.pump(const Duration(milliseconds: 500)); // confirm dialog cleanup
   });

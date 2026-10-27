@@ -2779,7 +2779,7 @@ const _messagesPtBr = <String>[
   'Conclua ou feche a edição atual antes de abrir a notificação.',
   'Armazenamento e cache',
   'Cache offline',
-  'O conteúdo que você viu fica salvo com criptografia neste dispositivo. Quando a rede está instável, a última cópia aparece primeiro e é atualizada em segundo plano. Ele é limpo quando você sai, troca de conta ou remove uma conta.',
+  'Partes elegíveis do conteúdo que você viu ficam salvas com criptografia neste dispositivo. Quando a rede está instável, a última cópia pode aparecer primeiro enquanto é atualizada em segundo plano. Ao abrir o app, ainda é preciso uma verificação de login bem-sucedida. Ele é limpo quando você sai, troca de conta ou remove uma conta.',
   'Ativado',
   'Desativado',
   'Começa a salvar na próxima vez que você abrir o app ou trocar de conta',
@@ -2808,4 +2808,8 @@ const _messagesPtBr = <String>[
   'Você saiu, mas o cache offline deste dispositivo ainda não foi totalmente limpo. Você pode tentar limpar novamente.',
   'O cache offline está pausado e só volta depois que a limpeza for concluída.',
   'O log é longo demais. O início foi cortado; só a parte final é exibida.',
+  'O cache offline só pode ser reativado depois que a limpeza anterior terminar.',
+  'Não foi possível salvar a configuração. O cache offline foi limpo e continua desativado nesta sessão.',
+  'Cerca de {size} em uso',
+  'Espaço usado: desconhecido',
 ];

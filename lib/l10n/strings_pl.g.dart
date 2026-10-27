@@ -2779,7 +2779,7 @@ const _messagesPl = <String>[
   'Zakończ lub zamknij bieżącą edycję przed otwarciem powiadomienia.',
   'Pamięć i pamięć podręczna',
   'Pamięć podręczna offline',
-  'Wyświetlone treści są zapisywane w postaci zaszyfrowanej na tym urządzeniu. Gdy sieć jest niestabilna, najpierw pokazywana jest ostatnia kopia, a potem odświeżana w tle. Pamięć jest czyszczona po wylogowaniu, przełączeniu lub usunięciu konta.',
+  'Część wyświetlonych treści, która się do tego kwalifikuje, jest zapisywana w postaci zaszyfrowanej na tym urządzeniu. Gdy sieć jest niestabilna, najpierw może być pokazywana ostatnia kopia, odświeżana w tle. Otwarcie aplikacji nadal wymaga udanej weryfikacji logowania. Pamięć jest czyszczona po wylogowaniu, przełączeniu lub usunięciu konta.',
   'Włączona',
   'Wyłączona',
   'Zapisywanie zacznie się po następnym otwarciu aplikacji lub przełączeniu konta',
@@ -2808,4 +2808,8 @@ const _messagesPl = <String>[
   'Wylogowano, ale pamięć podręczna offline na tym urządzeniu nie została jeszcze w pełni wyczyszczona. Możesz ponowić czyszczenie.',
   'Pamięć podręczna offline jest wstrzymana i wznowi działanie dopiero po udanym czyszczeniu.',
   'Log jest za długi. Początek został obcięty; widać tylko ostatnią część.',
+  'Pamięć podręczną offline można włączyć ponownie dopiero po zakończeniu poprzedniego czyszczenia.',
+  'Nie udało się zapisać ustawienia. Pamięć podręczna offline została wyczyszczona i w tej sesji pozostaje wyłączona.',
+  'Zajęte ok. {size}',
+  'Zajęte: nieznane',
 ];

@@ -27,7 +27,11 @@ OfflineCacheStatus offlineCacheStatus(
   ReadCacheDiskCoordinator cache,
   DiskBinding binding,
 ) {
-  if (cache.notice(binding) != null) return OfflineCacheStatus.cleanupPending;
+  final device = cache.settingsSnapshot;
+  if (device.deviceOffInFlight) return OfflineCacheStatus.cleaning;
+  if (device.deviceOffPending || cache.notice(binding) != null) {
+    return OfflineCacheStatus.cleanupPending;
+  }
   switch (cache.setting) {
     case ReadCacheSettingsState.disabled:
       return OfflineCacheStatus.off;
@@ -67,9 +71,35 @@ void _afterFrame(VoidCallback action) {
     ..ensureVisualUpdate();
 }
 
-/// Retries a pending cleanup of the signed-in account from the settings
-/// surfaces. It is a settings clear (m-10): the coordinator reopens the same
-/// session only after the clear completes; a failure keeps the cache closed.
+/// The size line. A confirmed device total is shown as is. Without one, the
+/// indexed entry bytes are shown as an estimate, but only while no cleanup is
+/// pending or failed; otherwise the size is unknown. Never a bare zero unless
+/// the coordinator confirmed an empty device.
+String offlineCacheSizeLabel(ReadCacheDiskCoordinator cache, DiskBinding binding) {
+  final stats = cache.stats;
+  final usage = stats.diskUsageBytes;
+  if (usage != null) return l10n.offlineCacheSize(formatByteCount(usage));
+  if (cache.deviceOffPending || cache.notice(binding) != null) {
+    return l10n.offlineCacheSizeUnknown;
+  }
+  return l10n.offlineCacheSizeApprox(formatByteCount(stats.retainedBytes));
+}
+
+/// The failure shown when a device-wide clear is still unfinished.
+ApiFailure _deviceCleanupPending(DiskClearResult result) =>
+    ApiFailure.readCacheCleanup(ReadCacheCleanupState(
+      operation: ReadCacheCleanupOperation.settingsClear,
+      disposition: ReadCacheCleanupDisposition.diskClosed,
+      code: ReadCacheCleanupCode.cleanupFailed,
+      clearResult: result,
+    ));
+
+/// Retries a pending cleanup from the settings surfaces. While a device-wide
+/// turn-off is unfinished it repeats that whole device sweep (every account,
+/// unknown leftovers, final confirmation); one account's clear can never
+/// complete it. Otherwise it is a settings clear of the signed-in account
+/// (m-10): the coordinator reopens the same session only after the clear
+/// completes, and a failure keeps the cache closed.
 Future<void> retryOfflineCacheCleanup(
   BuildContext context,
   ReadCacheDiskCoordinator cache,
@@ -77,11 +107,18 @@ Future<void> retryOfflineCacheCleanup(
   VoidCallback? onDone,
 }) async {
   ApiFailure? failure;
-  final result = await cache.clear(
-    binding,
-    ReadCacheCleanupOperation.settingsClear,
-    onFailure: (value) => failure = value,
-  );
+  final DiskClearResult result;
+  if (cache.deviceOffPending) {
+    result = await cache.retryDeviceOff();
+    // A confirmed empty device resolves this account's pending notice too.
+    if (result.complete) cache.supersedeNotice(binding);
+  } else {
+    result = await cache.clear(
+      binding,
+      ReadCacheCleanupOperation.settingsClear,
+      onFailure: (value) => failure = value,
+    );
+  }
   onDone?.call();
   if (!context.mounted) return;
   if (result.complete) {
@@ -92,15 +129,7 @@ Future<void> retryOfflineCacheCleanup(
   }
   showFailure(
     context,
-    failure ??
-        ApiFailure.readCacheCleanup(
-          ReadCacheCleanupState(
-            operation: ReadCacheCleanupOperation.settingsClear,
-            disposition: ReadCacheCleanupDisposition.diskClosed,
-            code: ReadCacheCleanupCode.cleanupFailed,
-            clearResult: result,
-          ),
-        ),
+    failure ?? _deviceCleanupPending(result),
     onRetryCleanup: () => unawaited(
       retryOfflineCacheCleanup(context, cache, binding, onDone: onDone),
     ),
@@ -191,6 +220,13 @@ class ReadCacheSettingsPage extends StatefulWidget {
   State<ReadCacheSettingsPage> createState() => _ReadCacheSettingsPageState();
 }
 
+const _noClear = DiskClearResult(
+  keyGoneConfirmed: false,
+  directoryGoneConfirmed: false,
+  markerDurable: false,
+  complete: false,
+);
+
 class _ReadCacheSettingsPageState extends State<ReadCacheSettingsPage> {
   void Function()? _cancel;
   bool _busy = false;
@@ -214,34 +250,41 @@ class _ReadCacheSettingsPageState extends State<ReadCacheSettingsPage> {
   Future<void> _setEnabled(bool enabled) async {
     if (_busy) return;
     setState(() => _busy = true);
-    var stored = false;
+    var result = ReadCacheSettingChangeResult.storageUnavailable;
     try {
-      stored = await _cache.setEnabled(enabled);
+      result = await _cache.setEnabledResult(enabled);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    if (enabled) {
+    void say(String Function() text, {bool retry = false}) =>
+        messenger.showSnackBar(SnackBar(
+          content: LiveText(text),
+          action: retry
+              ? RetryCleanupSnackAction(onPressed: () => unawaited(_retryCleanup()))
+              : null,
+        ));
+    switch ((enabled, result)) {
       // A new setting never opens the cache now: it waits for a verified
       // activation after a fresh start-up decision.
-      messenger.showSnackBar(SnackBar(
-        content: Text(stored ? l10n.offlineCacheStatusWaiting : l10n.offlineCacheTurnOnFailed),
-      ));
-      return;
+      case (true, ReadCacheSettingChangeResult.complete):
+        say(() => l10n.offlineCacheStatusWaiting);
+      // Refused before anything was written: the last turn-off is unfinished.
+      case (true, ReadCacheSettingChangeResult.cleanupPending):
+        showFailure(context, _deviceCleanupPending(_noClear),
+          onRetryCleanup: () => unawaited(_retryCleanup()));
+      case (true, ReadCacheSettingChangeResult.storageUnavailable):
+        say(() => l10n.offlineCacheTurnOnFailed);
+      case (false, ReadCacheSettingChangeResult.complete):
+        say(() => l10n.offlineCacheTurnedOff);
+      // The device sweep is unfinished, whatever happened to the preference.
+      case (false, ReadCacheSettingChangeResult.cleanupPending):
+        say(() => l10n.offlineCacheTurnOffUnconfirmed, retry: true);
+      // Cleared for certain, but "off" was not saved.
+      case (false, ReadCacheSettingChangeResult.storageUnavailable):
+        say(() => l10n.offlineCacheOffNotSaved);
     }
-    if (stored) {
-      messenger.showSnackBar(SnackBar(content: Text(l10n.offlineCacheTurnedOff)));
-      return;
-    }
-    // Neither the saved "off" nor the deletion is confirmed; say neither.
-    messenger.showSnackBar(SnackBar(
-      content: Text(l10n.offlineCacheTurnOffUnconfirmed),
-      action: SnackBarAction(
-        label: l10n.offlineCacheRetryCleanup,
-        onPressed: () => unawaited(_retryCleanup()),
-      ),
-    ));
   }
 
   Future<void> _retryCleanup() async {
@@ -271,6 +314,10 @@ class _ReadCacheSettingsPageState extends State<ReadCacheSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final device = _cache.settingsSnapshot;
+    final on = device.setting == ReadCacheSettingsState.enabled;
+    // Turning on waits until the last turn-off's device sweep is confirmed.
+    final onBlocked = !on && (device.deviceOffPending || device.deviceOffInFlight);
     final status = offlineCacheStatus(_cache, widget.binding);
     final (icon, label) = offlineCacheStatusLabel(status);
     final notice = _cache.notice(widget.binding);
@@ -294,11 +341,25 @@ class _ReadCacheSettingsPageState extends State<ReadCacheSettingsPage> {
                 secondary: const Icon(Icons.offline_pin_outlined),
                 title: Text(l10n.offlineCacheLabel),
                 subtitle: Text(l10n.offlineCacheDescription),
-                value: _cache.setting == ReadCacheSettingsState.enabled,
-                onChanged: _busy || !_cache.configured
+                value: on,
+                onChanged: _busy || !_cache.configured || device.deviceOffInFlight || onBlocked
                     ? null
                     : (value) => unawaited(_setEnabled(value)),
               ),
+              if (onBlocked)
+                ListTile(
+                  key: const ValueKey('read-cache-on-blocked'),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  leading: Icon(Icons.info_outline, color: theme.colorScheme.error),
+                  title: Text(l10n.offlineCacheOnNeedsCleanup),
+                  trailing: TextButton(
+                    key: const ValueKey('read-cache-retry-device-off'),
+                    onPressed: _busy || device.deviceOffInFlight
+                        ? null
+                        : () => unawaited(_retryCleanup()),
+                    child: Text(l10n.offlineCacheRetryCleanup),
+                  ),
+                ),
               ListTile(
                 key: const ValueKey('read-cache-status'),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -312,9 +373,7 @@ class _ReadCacheSettingsPageState extends State<ReadCacheSettingsPage> {
                 key: const ValueKey('read-cache-size'),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                 leading: const Icon(Icons.data_usage),
-                title: Text(l10n.offlineCacheSize(
-                  formatByteCount(_cache.stats.retainedBytes),
-                )),
+                title: Text(offlineCacheSizeLabel(_cache, widget.binding)),
               ),
             ],
           ),

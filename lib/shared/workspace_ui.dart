@@ -867,12 +867,39 @@ void showFailure(
   VoidCallback? onRetryCleanup,
 }) {
   final failure = error is UserFacingFailure ? error : safeFailure(error);
+  // Text and action label are read when built, so a snack bar on screen or
+  // still queued follows a language change (rebuildForLanguage).
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(l10n.titleThenDetail(failureTitle(failure), failureDetail(failure))),
+    content: _FailureSnackText(failure),
     action: onRetryCleanup != null && offersCleanupRetry(failure)
-        ? SnackBarAction(label: l10n.offlineCacheRetryCleanup, onPressed: onRetryCleanup)
+        ? RetryCleanupSnackAction(onPressed: onRetryCleanup)
         : null,
   ));
+}
+
+class _FailureSnackText extends StatelessWidget {
+  const _FailureSnackText(this.failure);
+  final UserFacingFailure failure;
+  @override
+  Widget build(BuildContext context) =>
+      Text(l10n.titleThenDetail(failureTitle(failure), failureDetail(failure)));
+}
+
+/// Snack bar text read from the current language whenever it is built, so a
+/// snack bar on screen or queued follows a language change.
+class LiveText extends StatelessWidget {
+  const LiveText(this.text, {super.key});
+  final String Function() text;
+  @override
+  Widget build(BuildContext context) => Text(text());
+}
+
+/// A snack bar action that retries only an offline-cache cleanup; its label is
+/// read from the current language on every build.
+class RetryCleanupSnackAction extends SnackBarAction {
+  const RetryCleanupSnackAction({super.key, required super.onPressed}) : super(label: '');
+  @override
+  String get label => l10n.offlineCacheRetryCleanup;
 }
 
 /// Text without the invisible direction marks an Arabic interface wraps

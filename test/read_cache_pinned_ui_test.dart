@@ -505,6 +505,83 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    // FIX1 (review P2-5): a finished job's tail path neither starts nor shows
+    // anything while the page is hidden, and loads again on return.
+    for (final hide in ['ticker', 'covered route']) {
+      testWidgets('metadata in flight across hide ($hide): no tail read, loads on return', (tester) async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        expect(await _run(tester, h.recover), isTrue);
+        final hold = Completer<void>();
+        var metadataCalls = 0;
+        final adapter = FakeAdapter((request) async {
+          if (_isTrace(request, 7)) return _suffix(utf8.encode('${_line(0)}\n'));
+          if (request.uri.path.endsWith('/jobs/7')) {
+            if (metadataCalls++ == 0) await hold.future;
+            return jsonResponse(_job(7));
+          }
+          return jsonResponse({}, status: 404);
+        });
+        final api = await _run(tester, () => h.client(adapter));
+        final visible = ValueNotifier(true);
+        addTearDown(visible.dispose);
+        await tester.pumpWidget(_jobPage(api, visible: visible));
+        await _until(tester, () => metadataCalls == 1, 'metadata requested');
+        final navigator = Navigator.of(tester.element(find.byType(JobLogPage)));
+        if (hide == 'ticker') {
+          visible.value = false;
+        } else {
+          unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('cover')))));
+        }
+        await tester.pumpAndSettle();
+        hold.complete();
+        await settleNetworkWidgets(tester);
+        expect(adapter.requests.where((r) => _isTrace(r, 7)), isEmpty, reason: 'no tail read starts while hidden');
+        expect(find.text(_line(0), skipOffstage: false), findsNothing, reason: 'nothing is shown while hidden');
+        if (hide == 'ticker') {
+          visible.value = true;
+        } else {
+          navigator.pop();
+        }
+        await _until(tester, () => _shown(find.text(_line(0))), 'loaded on return');
+        expect(adapter.requests.where((r) => _isTrace(r, 7)).map(_isSuffix), [true]);
+        expect(metadataCalls, greaterThan(1), reason: 'the skipped load ran again');
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('tail in flight across backgrounding is not shown; it refreshes on resume', (tester) async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      addTearDown(() => tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed));
+      expect(await _run(tester, h.recover), isTrue);
+      final hold = Completer<void>();
+      var traceCalls = 0;
+      final adapter = FakeAdapter((request) async {
+        if (_isTrace(request, 7)) {
+          if (traceCalls++ == 0) await hold.future;
+          return _suffix(utf8.encode('${_line(1)}\n'));
+        }
+        if (request.uri.path.endsWith('/jobs/7')) return jsonResponse(_job(7));
+        return jsonResponse({}, status: 404);
+      });
+      final api = await _run(tester, () => h.client(adapter));
+      await tester.pumpWidget(_jobPage(api));
+      await _until(tester, () => traceCalls == 1, 'tail requested');
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      hold.complete();
+      await settleNetworkWidgets(tester);
+      expect(find.text(_line(1), skipOffstage: false), findsNothing, reason: 'a tail finished in the background is not shown');
+      final metadataBefore = adapter.requests.where((r) => r.uri.path.endsWith('/jobs/7')).length;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _until(tester, () => _shown(find.text(_line(1))), 'refreshed on resume');
+      expect(adapter.requests.where((r) => r.uri.path.endsWith('/jobs/7')).length, greaterThan(metadataBefore),
+        reason: 'fresh terminal metadata on return');
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('a page disposed while its tail is read publishes nothing afterwards', (tester) async {
       final h = _Harness();
       addTearDown(h.dispose);

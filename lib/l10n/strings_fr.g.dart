@@ -2779,7 +2779,7 @@ const _messagesFr = <String>[
   'Terminez ou fermez la modification en cours avant d’ouvrir la notification.',
   'Stockage et cache',
   'Cache hors ligne',
-  'Le contenu consulté est enregistré chiffré sur cet appareil. Si le réseau est instable, la dernière copie s’affiche d’abord et se met à jour en arrière-plan. Il est effacé lorsque vous vous déconnectez, changez de compte ou supprimez un compte.',
+  'Certaines parties admissibles du contenu consulté sont enregistrées chiffrées sur cet appareil. Si le réseau est instable, la dernière copie peut s’afficher d’abord pendant la mise à jour en arrière-plan. L’ouverture de l’app exige toujours une vérification de connexion réussie. Il est effacé lorsque vous vous déconnectez, changez de compte ou supprimez un compte.',
   'Activé',
   'Désactivé',
   'L’enregistrement commencera à la prochaine ouverture de l’app ou au prochain changement de compte',
@@ -2808,4 +2808,8 @@ const _messagesFr = <String>[
   'Vous êtes déconnecté, mais le cache hors ligne de cet appareil n’a pas été entièrement effacé. Vous pouvez réessayer l’effacement.',
   'Le cache hors ligne est en pause et ne reprendra qu’une fois l’effacement réussi.',
   'Le journal est trop long. Le début a été coupé ; seule la fin est affichée.',
+  'Le cache hors ligne ne pourra être réactivé qu’une fois l’effacement précédent terminé.',
+  'Impossible d’enregistrer le réglage. Le cache hors ligne a été effacé et reste désactivé pendant cette session.',
+  'Environ {size} utilisés',
+  'Espace utilisé : inconnu',
 ];

@@ -2777,7 +2777,7 @@
   "aiRunNoticeFinishEditFirst": "Schließen Sie die aktuelle Bearbeitung ab, bevor Sie die Benachrichtigung öffnen.",
   "storageAndCacheLabel": "Speicher und Cache",
   "offlineCacheLabel": "Offline-Cache",
-  "offlineCacheDescription": "Angesehene Inhalte werden verschlüsselt auf diesem Gerät gespeichert. Bei instabilem Netz wird zuerst der letzte Stand angezeigt und im Hintergrund aktualisiert. Beim Abmelden, Wechseln oder Entfernen eines Kontos wird er gelöscht.",
+  "offlineCacheDescription": "Geeignete Teile angesehener Inhalte werden verschlüsselt auf diesem Gerät gespeichert. Bei instabilem Netz kann zuerst der letzte Stand angezeigt werden, während er im Hintergrund aktualisiert wird. Beim Öffnen der App ist weiterhin eine erfolgreiche Anmeldeprüfung nötig. Beim Abmelden, Wechseln oder Entfernen eines Kontos wird er gelöscht.",
   "offlineCacheStatusOn": "Aktiv",
   "offlineCacheStatusOff": "Aus",
   "offlineCacheStatusWaiting": "Speichert ab dem nächsten Öffnen der App oder Kontowechsel",
@@ -2805,5 +2805,9 @@
   "readCacheSignedOutTitle": "Offline-Cache noch nicht geleert",
   "readCacheSignedOutDetail": "Sie sind abgemeldet, aber der Offline-Cache auf diesem Gerät ist noch nicht vollständig geleert. Sie können das Leeren erneut versuchen.",
   "readCacheClosedDetail": "Der Offline-Cache ist pausiert und wird erst nach erfolgreichem Leeren fortgesetzt.",
-  "readCacheLogTruncated": "Das Log ist zu lang. Der Anfang wurde abgeschnitten; nur der letzte Teil wird angezeigt."
+  "readCacheLogTruncated": "Das Log ist zu lang. Der Anfang wurde abgeschnitten; nur der letzte Teil wird angezeigt.",
+  "offlineCacheOnNeedsCleanup": "Der Offline-Cache kann erst wieder eingeschaltet werden, wenn das vorherige Leeren abgeschlossen ist.",
+  "offlineCacheOffNotSaved": "Die Einstellung konnte nicht gespeichert werden. Der Offline-Cache wurde geleert und bleibt in dieser Sitzung aus.",
+  "offlineCacheSizeApprox": "Etwa {size} belegt",
+  "offlineCacheSizeUnknown": "Belegter Speicher: unbekannt"
 }

@@ -2777,7 +2777,7 @@
   "aiRunNoticeFinishEditFirst": "Termina o cierra la edición actual antes de abrir la notificación.",
   "storageAndCacheLabel": "Almacenamiento y caché",
   "offlineCacheLabel": "Caché sin conexión",
-  "offlineCacheDescription": "El contenido que has visto se guarda cifrado en este dispositivo. Si la red falla, se muestra primero la última copia y se actualiza en segundo plano. Se borra al cerrar sesión, cambiar de cuenta o eliminarla.",
+  "offlineCacheDescription": "Algunas partes aptas del contenido que has visto se guardan cifradas en este dispositivo. Si la red falla, puede mostrarse primero la última copia mientras se actualiza en segundo plano. Al abrir la app sigue siendo necesario verificar el inicio de sesión. Se borra al cerrar sesión, cambiar de cuenta o eliminarla.",
   "offlineCacheStatusOn": "Activada",
   "offlineCacheStatusOff": "Desactivada",
   "offlineCacheStatusWaiting": "Empezará a guardar la próxima vez que abras la app o cambies de cuenta",
@@ -2805,5 +2805,9 @@
   "readCacheSignedOutTitle": "La caché sin conexión aún no se ha borrado",
   "readCacheSignedOutDetail": "Cerraste sesión, pero la caché sin conexión de este dispositivo no se ha borrado por completo. Puedes volver a intentar el borrado.",
   "readCacheClosedDetail": "La caché sin conexión está en pausa y solo se reanudará cuando se complete el borrado.",
-  "readCacheLogTruncated": "El registro es demasiado largo. Se recortó el principio; solo se muestra la parte final."
+  "readCacheLogTruncated": "El registro es demasiado largo. Se recortó el principio; solo se muestra la parte final.",
+  "offlineCacheOnNeedsCleanup": "La caché sin conexión no puede volver a activarse hasta que termine el borrado anterior.",
+  "offlineCacheOffNotSaved": "No se pudo guardar el ajuste. La caché sin conexión se borró y seguirá desactivada en esta sesión.",
+  "offlineCacheSizeApprox": "Aprox. {size} en uso",
+  "offlineCacheSizeUnknown": "Espacio usado: desconocido"
 }

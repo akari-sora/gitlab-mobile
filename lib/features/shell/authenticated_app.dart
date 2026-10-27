@@ -422,6 +422,7 @@ class _MobileShellState extends State<_MobileShell> {
     widget.session.addListener(_onSession);
     widget.shortcuts.addListener(_onShortcut);
     widget.pops.addListener(_chrome.show);
+    widget.pops.addListener(_syncReadCacheNoticeMerge);
     widget.updates?.addListener(_onUpdates);
     widget.incoming?.addListener(_onIncoming);
     widget.runNotifications?.addListener(_onRunNotification);
@@ -463,7 +464,9 @@ class _MobileShellState extends State<_MobileShell> {
     }
     if (oldWidget.pops != widget.pops) {
       oldWidget.pops.removeListener(_chrome.show);
+      oldWidget.pops.removeListener(_syncReadCacheNoticeMerge);
       widget.pops.addListener(_chrome.show);
+      widget.pops.addListener(_syncReadCacheNoticeMerge);
     }
     if (oldWidget.updates != widget.updates) {
       oldWidget.updates?.removeListener(_onUpdates);
@@ -542,6 +545,17 @@ class _MobileShellState extends State<_MobileShell> {
       ..ensureVisualUpdate();
   }
 
+  /// Repeats merge only while the shown notice is still pending. Once a clear
+  /// (here, on the settings page or anywhere else) supersedes it, the next
+  /// independent failure of the same kind is shown again.
+  void _syncReadCacheNoticeMerge() {
+    final account = widget.session.active;
+    if (_shownReadCacheNotice == null || account == null) return;
+    if (widget.session.readCache.notice(_readCacheBinding(account)) == null) {
+      _shownReadCacheNotice = null;
+    }
+  }
+
   void _presentReadCacheNotice(ReadCacheNotice? notice) {
     final account = widget.session.active;
     if (!mounted || notice == null || account == null) return;
@@ -572,9 +586,7 @@ class _MobileShellState extends State<_MobileShell> {
         context,
         cache,
         binding,
-        onDone: () {
-          if (cache.notice(binding) == null) _shownReadCacheNotice = null;
-        },
+        onDone: _syncReadCacheNoticeMerge,
       )),
     );
   }
@@ -591,6 +603,7 @@ class _MobileShellState extends State<_MobileShell> {
     _ownDialogs?.close();
     if (!_gone.isCompleted) _gone.complete();
     widget.pops.removeListener(_chrome.show);
+    widget.pops.removeListener(_syncReadCacheNoticeMerge);
     _backDispatcher.dispose();
     _chrome.dispose();
     _meScroll.dispose();

@@ -2777,7 +2777,7 @@
   "aiRunNoticeFinishEditFirst": "Bildirimi açmadan önce geçerli düzenlemeyi bitirin veya kapatın.",
   "storageAndCacheLabel": "Depolama ve önbellek",
   "offlineCacheLabel": "Çevrimdışı önbellek",
-  "offlineCacheDescription": "Görüntülediğiniz içerik bu cihazda şifrelenmiş olarak saklanır. Ağ kararsız olduğunda önce son kopya gösterilir ve arka planda yenilenir. Oturumu kapattığınızda, hesap değiştirdiğinizde veya bir hesabı kaldırdığınızda temizlenir.",
+  "offlineCacheDescription": "Görüntülediğiniz içeriğin uygun kısımları bu cihazda şifrelenmiş olarak saklanır. Ağ kararsız olduğunda önce son kopya gösterilebilir ve arka planda yenilenir. Uygulamayı açarken yine de başarılı bir oturum doğrulaması gerekir. Oturumu kapattığınızda, hesap değiştirdiğinizde veya bir hesabı kaldırdığınızda temizlenir.",
   "offlineCacheStatusOn": "Açık",
   "offlineCacheStatusOff": "Kapalı",
   "offlineCacheStatusWaiting": "Uygulamayı bir sonraki açışınızda veya hesap değiştirdiğinizde kaydetmeye başlar",
@@ -2805,5 +2805,9 @@
   "readCacheSignedOutTitle": "Çevrimdışı önbellek henüz temizlenmedi",
   "readCacheSignedOutDetail": "Oturumunuz kapatıldı ancak bu cihazdaki çevrimdışı önbellek henüz tamamen temizlenmedi. Temizlemeyi yeniden deneyebilirsiniz.",
   "readCacheClosedDetail": "Çevrimdışı önbellek duraklatıldı; ancak temizleme başarılı olduktan sonra devam eder.",
-  "readCacheLogTruncated": "Log çok uzun. Baş kısmı kesildi; yalnızca son kısım gösteriliyor."
+  "readCacheLogTruncated": "Log çok uzun. Baş kısmı kesildi; yalnızca son kısım gösteriliyor.",
+  "offlineCacheOnNeedsCleanup": "Çevrimdışı önbellek, önceki temizleme bitmeden yeniden açılamaz.",
+  "offlineCacheOffNotSaved": "Ayar kaydedilemedi. Çevrimdışı önbellek temizlendi ve bu oturumda kapalı kalır.",
+  "offlineCacheSizeApprox": "Yaklaşık {size} kullanılıyor",
+  "offlineCacheSizeUnknown": "Kullanılan alan: bilinmiyor"
 }

@@ -1934,6 +1934,11 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
 
 // Storage, progress and sharing primitives are exported from artifact_storage.dart.
 
+/// A finished job's tail load reached a moment when the page was hidden.
+final class _HiddenLoad implements Exception {
+  const _HiddenLoad();
+}
+
 class JobLogPage extends StatefulWidget {
   const JobLogPage({super.key, required this.account, required this.api, required this.project, required this.id,
     this.generation = 0, this.sharer = const SystemArtifactSharer(), this.artifactDirectory = jobArtifactDirectory,
@@ -1967,6 +1972,10 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   /// Whether leading lines of the tail were also left out, to stay within the
   /// screen's line limit.
   bool _tailClipped = false;
+
+  /// A finished-job load stopped because the page was hidden; it runs again
+  /// once the page is visible.
+  bool _reloadWhenVisible = false;
   List<int> _sectionOrder = const <int>[];
   List<List<int>> _sectionChildren = const <List<int>>[];
   List<int> _sectionRoots = const <int>[];
@@ -2011,7 +2020,33 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     }
     _tickerModeChanged();
   }
-  void _tickerModeChanged() => _schedule();
+  void _tickerModeChanged() {
+    _schedule();
+    _resumeWhenVisible();
+  }
+
+  /// On screen: ticker on, route on top and the app in front. Before the first
+  /// lifecycle event the app counts as in front.
+  bool get _visible {
+    if (!mounted) return false;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return _tickerMode?.value.enabled != false &&
+        ModalRoute.isCurrentOf(context) != false &&
+        (lifecycle == null || lifecycle == AppLifecycleState.resumed);
+  }
+
+  /// Repeats a load the page skipped while hidden. Notifications can arrive
+  /// during a build, so the load starts after the frame.
+  void _resumeWhenVisible() {
+    if (!_reloadWhenVisible) return;
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (!_reloadWhenVisible || !_visible || _loading || _busy || _confirming) return;
+        _reloadWhenVisible = false;
+        unawaited(_load());
+      })
+      ..ensureVisualUpdate();
+  }
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -2030,7 +2065,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) { _timer?.cancel(); }
-    else { _schedule(); }
+    else { _schedule(); _resumeWhenVisible(); }
   }
   void _schedule() {
     if (!_auto || !mounted || _tickerMode?.value.enabled != true ||
@@ -2060,6 +2095,13 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     try {
       final job = await widget.api.record(['projects', '${widget.project.id}', 'jobs', '$jobId']);
       if (!current()) { return; }
+      // A finished job read from its start (or already shown as a tail) uses
+      // the pinned terminal tail; a job seen running keeps the polled path.
+      // That tail path neither starts nor shows anything while the page is
+      // hidden: it runs again when the page is visible.
+      final terminal = const {'success', 'failed', 'canceled', 'skipped'}.contains(job['status']);
+      final useTail = terminal && (_tail != null || (_traceOffset == 0 && _rawBytes.isEmpty));
+      if (useTail && !_visible) throw const _HiddenLoad();
       // Metadata and trace have independent failure modes. Keep the controls
       // usable even when an expired or oversized trace cannot be displayed.
       setState(() {
@@ -2068,12 +2110,10 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _auto = false; _timer?.cancel();
         }
       });
-      // A finished job read from its start (or already shown as a tail) uses
-      // the pinned terminal tail; a job seen running keeps the polled path.
-      final terminal = const {'success', 'failed', 'canceled', 'skipped'}.contains(job['status']);
-      final tail = terminal && (_tail != null || (_traceOffset == 0 && _rawBytes.isEmpty))
-          ? await _terminalTail(jobId, current) : null;
+      final tail = useTail ? await _terminalTail(jobId, () => current() && _visible) : null;
       if (!current()) { return; }
+      // Also covers the bounded fallback after `unsupported`.
+      if (useTail && !_visible) throw const _HiddenLoad();
       var changed = false;
       if (tail != null) {
         // A fresh builder: the tail never joins bytes of an earlier read or
@@ -2137,9 +2177,17 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           if (current() && _scroll.hasClients) { _scroll.jumpTo(_scroll.position.maxScrollExtent); }
         });
       }
+    } on _HiddenLoad {
+      if (current()) _reloadWhenVisible = true;
     } catch (e) {
       if (current()) { setState(() { _error = safeFailure(e); _auto = false; _timer?.cancel(); }); }
-    } finally { if (current()) { setState(() => _loading = false); } }
+    } finally {
+      if (current()) {
+        setState(() => _loading = false);
+        // The page may have come back while this load was still running.
+        _resumeWhenVisible();
+      }
+    }
   }
 
   /// The end of [text] holding at most [newlines] line breaks.
@@ -2155,14 +2203,18 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   /// The finished job's verified tail, from memory, the offline cache or one
   /// bounded range read. Null only when GitLab cannot serve it that way
   /// (`unsupported`); every other failure is the page's failure. A read that
-  /// would start after the page went away is dropped.
+  /// would start after the page went away or out of sight is dropped.
   Future<ReadCacheTerminalLog?> _terminalTail(int jobId, bool Function() current) async {
     try {
       final read = await CachedRead.run(
         () => widget.api.cachedTerminalJobTrace(widget.project.id, jobId),
         mayStart: current,
       );
-      if (read.dropped) throw const ApiFailure(FailureKind.cancelled);
+      if (read.dropped) {
+        // Hidden before the read could start: not a failure, it runs later.
+        if (mounted && !_visible) throw const _HiddenLoad();
+        throw const ApiFailure(FailureKind.cancelled);
+      }
       return read.value;
     } on ApiFailure catch (failure) {
       if (failure.kind == FailureKind.unsupported) return null;

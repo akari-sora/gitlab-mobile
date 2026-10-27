@@ -2779,7 +2779,7 @@ const _messagesCs = <String>[
   'Před otevřením oznámení dokončete nebo zavřete aktuální úpravy.',
   'Úložiště a mezipaměť',
   'Offline mezipaměť',
-  'Zobrazený obsah se ukládá šifrovaně do tohoto zařízení. Při nestabilní síti se nejprve zobrazí poslední kopie a na pozadí se obnoví. Mezipaměť se vymaže při odhlášení, přepnutí nebo odebrání účtu.',
+  'Vhodné části zobrazeného obsahu se ukládají šifrovaně do tohoto zařízení. Při nestabilní síti se může nejprve zobrazit poslední kopie a na pozadí se obnoví. Při otevření aplikace je stále nutné úspěšné ověření přihlášení. Mezipaměť se vymaže při odhlášení, přepnutí nebo odebrání účtu.',
   'Zapnuto',
   'Vypnuto',
   'Ukládání začne při příštím otevření aplikace nebo přepnutí účtu',
@@ -2808,4 +2808,8 @@ const _messagesCs = <String>[
   'Jste odhlášeni, ale offline mezipaměť v tomto zařízení ještě nebyla úplně vymazána. Mazání můžete zkusit znovu.',
   'Offline mezipaměť je pozastavena a obnoví se až po úspěšném vymazání.',
   'Log je příliš dlouhý. Začátek byl oříznut; zobrazuje se jen poslední část.',
+  'Offline mezipaměť lze znovu zapnout až po dokončení předchozího mazání.',
+  'Nastavení nelze uložit. Offline mezipaměť byla vymazána a v této relaci zůstává vypnutá.',
+  'Využito přibližně {size}',
+  'Využito: neznámo',
 ];

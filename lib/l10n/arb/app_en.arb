@@ -2783,7 +2783,7 @@
   "aiRunNoticeFinishEditFirst": "Finish or close the current edit before opening the notification.",
   "storageAndCacheLabel": "Storage & cache",
   "offlineCacheLabel": "Offline cache",
-  "offlineCacheDescription": "Content you have viewed is stored encrypted on this device. When the network is unreliable, the last copy is shown first and refreshed in the background. It is cleared when you sign out, switch or remove an account.",
+  "offlineCacheDescription": "Eligible parts of content you have viewed are kept encrypted on this device. When the network is unreliable, the last copy can be shown while it refreshes in the background. Opening the app still needs a successful sign-in check. It is cleared when you sign out, switch or remove an account.",
   "offlineCacheStatusOn": "On",
   "offlineCacheStatusOff": "Off",
   "offlineCacheStatusWaiting": "Starts saving the next time you open the app or switch accounts",
@@ -2811,5 +2811,9 @@
   "readCacheSignedOutTitle": "Offline cache not cleared yet",
   "readCacheSignedOutDetail": "You are signed out, but the offline cache on this device hasn’t been fully cleared. You can retry clearing.",
   "readCacheClosedDetail": "The offline cache is paused and resumes only after clearing succeeds.",
-  "readCacheLogTruncated": "This log is too long. The beginning was cut off; only the last part is shown."
+  "readCacheLogTruncated": "This log is too long. The beginning was cut off; only the last part is shown.",
+  "offlineCacheOnNeedsCleanup": "The previous clear has to finish before the offline cache can be turned on again.",
+  "offlineCacheOffNotSaved": "Couldn’t save the setting. The offline cache was cleared and stays off this session.",
+  "offlineCacheSizeApprox": "About {size} used",
+  "offlineCacheSizeUnknown": "Space used: unknown"
 }

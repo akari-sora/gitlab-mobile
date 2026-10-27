@@ -8,11 +8,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gitlab_mobile/core/providers.dart';
 import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
+import 'package:gitlab_mobile/features/shell/language.dart' show rebuildForLanguage;
 import 'package:gitlab_mobile/features/workspace/records_feed.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
+
+/// A snack bar action with this label, including SnackBarAction subclasses.
+Finder _snackAction(String label) => find.ancestor(
+  of: find.text(label),
+  matching: find.byWidgetPredicate((widget) => widget is SnackBarAction),
+);
 
 Account _account() => Account(
   instance: GitLabInstance.parse('https://example.com/gitlab'),
@@ -292,7 +299,7 @@ void main() {
           onRetryCleanup: () => cleaned++);
         await tester.pump();
         expect(find.text(l10n.titleThenDetail(title, detail)), findsOneWidget);
-        final action = find.widgetWithText(SnackBarAction, '重試清除');
+        final action = _snackAction('重試清除');
         expect(action, cleanupRetry ? findsOneWidget : findsNothing);
         if (cleanupRetry) {
           // The long zh-TW text can push the action past an 800x600 test view.
@@ -313,6 +320,39 @@ void main() {
       expect(find.text('重試清除'), findsNothing);
       await tester.tap(find.text('重新整理'));
       expect(retried, 1);
+    });
+
+    // FIX1 (review P2-6): snack bars are built from the current language, so
+    // one on screen and one still queued both follow a switch.
+    testWidgets('shown and queued cleanup snack bars follow a language switch', (tester) async {
+      late BuildContext captured;
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: Builder(builder: (context) {
+        captured = context;
+        return const SizedBox();
+      }))));
+      showFailure(captured, failure(ReadCacheCleanupDisposition.originalOutcomePreserved,
+        ReadCacheCleanupCode.cleanupFailed), onRetryCleanup: () {});
+      showFailure(captured, failure(ReadCacheCleanupDisposition.signedOutCleanupPending,
+        ReadCacheCleanupCode.cleanupFailed), onRetryCleanup: () {});
+      await tester.pumpAndSettle();
+      expect(find.text('離線快取待清除。操作的結果不受影響。離線快取已暫停使用，清除完成後才會恢復。'), findsOneWidget);
+      expect(_snackAction('重試清除'), findsOneWidget);
+
+      useLanguage(languageForTag('en')!);
+      // What the app does on a language change (above the ScaffoldMessenger).
+      rebuildForLanguage(tester.element(find.byType(MaterialApp)));
+      await tester.pump();
+      expect(find.text('Offline cache needs clearing. The result of your action is not affected. '
+        'The offline cache is paused until clearing finishes.'), findsOneWidget);
+      expect(_snackAction('Retry clearing'), findsOneWidget);
+      expect(find.textContaining('離線快取'), findsNothing);
+
+      ScaffoldMessenger.of(captured).hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+      expect(find.text('Offline cache not cleared yet. You are signed out, but the offline cache on this '
+        'device hasn’t been fully cleared. You can retry clearing.'), findsOneWidget,
+        reason: 'the queued snack bar shows in the new language');
+      expect(_snackAction('Retry clearing'), findsOneWidget);
     });
 
     testWidgets('text follows a language switch; nothing translated is stored', (tester) async {

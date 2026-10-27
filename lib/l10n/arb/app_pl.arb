@@ -2777,7 +2777,7 @@
   "aiRunNoticeFinishEditFirst": "Zakończ lub zamknij bieżącą edycję przed otwarciem powiadomienia.",
   "storageAndCacheLabel": "Pamięć i pamięć podręczna",
   "offlineCacheLabel": "Pamięć podręczna offline",
-  "offlineCacheDescription": "Wyświetlone treści są zapisywane w postaci zaszyfrowanej na tym urządzeniu. Gdy sieć jest niestabilna, najpierw pokazywana jest ostatnia kopia, a potem odświeżana w tle. Pamięć jest czyszczona po wylogowaniu, przełączeniu lub usunięciu konta.",
+  "offlineCacheDescription": "Część wyświetlonych treści, która się do tego kwalifikuje, jest zapisywana w postaci zaszyfrowanej na tym urządzeniu. Gdy sieć jest niestabilna, najpierw może być pokazywana ostatnia kopia, odświeżana w tle. Otwarcie aplikacji nadal wymaga udanej weryfikacji logowania. Pamięć jest czyszczona po wylogowaniu, przełączeniu lub usunięciu konta.",
   "offlineCacheStatusOn": "Włączona",
   "offlineCacheStatusOff": "Wyłączona",
   "offlineCacheStatusWaiting": "Zapisywanie zacznie się po następnym otwarciu aplikacji lub przełączeniu konta",
@@ -2805,5 +2805,9 @@
   "readCacheSignedOutTitle": "Pamięć podręczna offline nie jest jeszcze wyczyszczona",
   "readCacheSignedOutDetail": "Wylogowano, ale pamięć podręczna offline na tym urządzeniu nie została jeszcze w pełni wyczyszczona. Możesz ponowić czyszczenie.",
   "readCacheClosedDetail": "Pamięć podręczna offline jest wstrzymana i wznowi działanie dopiero po udanym czyszczeniu.",
-  "readCacheLogTruncated": "Log jest za długi. Początek został obcięty; widać tylko ostatnią część."
+  "readCacheLogTruncated": "Log jest za długi. Początek został obcięty; widać tylko ostatnią część.",
+  "offlineCacheOnNeedsCleanup": "Pamięć podręczną offline można włączyć ponownie dopiero po zakończeniu poprzedniego czyszczenia.",
+  "offlineCacheOffNotSaved": "Nie udało się zapisać ustawienia. Pamięć podręczna offline została wyczyszczona i w tej sesji pozostaje wyłączona.",
+  "offlineCacheSizeApprox": "Zajęte ok. {size}",
+  "offlineCacheSizeUnknown": "Zajęte: nieznane"
 }

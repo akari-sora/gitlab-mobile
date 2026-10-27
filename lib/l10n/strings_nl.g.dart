@@ -2779,7 +2779,7 @@ const _messagesNl = <String>[
   'Rond de huidige bewerking af of sluit die voordat je de melding opent.',
   'Opslag en cache',
   'Offlinecache',
-  'Inhoud die je hebt bekeken, wordt versleuteld op dit apparaat bewaard. Bij een onstabiel netwerk wordt eerst de laatste kopie getoond en op de achtergrond vernieuwd. De cache wordt gewist als je uitlogt of een account wisselt of verwijdert.',
+  'Geschikte delen van inhoud die je hebt bekeken, worden versleuteld op dit apparaat bewaard. Bij een onstabiel netwerk kan eerst de laatste kopie worden getoond terwijl die op de achtergrond wordt vernieuwd. Bij het openen van de app is nog steeds een geslaagde aanmeldcontrole nodig. De cache wordt gewist als je uitlogt of een account wisselt of verwijdert.',
   'Aan',
   'Uit',
   'Begint met bewaren zodra je de app opnieuw opent of van account wisselt',
@@ -2808,4 +2808,8 @@ const _messagesNl = <String>[
   'Je bent uitgelogd, maar de offlinecache op dit apparaat is nog niet volledig gewist. Je kunt het wissen opnieuw proberen.',
   'De offlinecache is gepauzeerd en gaat pas verder nadat het wissen is gelukt.',
   'De log is te lang. Het begin is weggelaten; alleen het laatste deel wordt getoond.',
+  'De offlinecache kan pas weer worden ingeschakeld als het vorige wissen is voltooid.',
+  'Kan de instelling niet opslaan. De offlinecache is gewist en blijft deze sessie uit.',
+  'Ongeveer {size} in gebruik',
+  'Gebruikte ruimte: onbekend',
 ];

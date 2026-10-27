@@ -2779,7 +2779,7 @@ const _messagesDe = <String>[
   'Schließen Sie die aktuelle Bearbeitung ab, bevor Sie die Benachrichtigung öffnen.',
   'Speicher und Cache',
   'Offline-Cache',
-  'Angesehene Inhalte werden verschlüsselt auf diesem Gerät gespeichert. Bei instabilem Netz wird zuerst der letzte Stand angezeigt und im Hintergrund aktualisiert. Beim Abmelden, Wechseln oder Entfernen eines Kontos wird er gelöscht.',
+  'Geeignete Teile angesehener Inhalte werden verschlüsselt auf diesem Gerät gespeichert. Bei instabilem Netz kann zuerst der letzte Stand angezeigt werden, während er im Hintergrund aktualisiert wird. Beim Öffnen der App ist weiterhin eine erfolgreiche Anmeldeprüfung nötig. Beim Abmelden, Wechseln oder Entfernen eines Kontos wird er gelöscht.',
   'Aktiv',
   'Aus',
   'Speichert ab dem nächsten Öffnen der App oder Kontowechsel',
@@ -2808,4 +2808,8 @@ const _messagesDe = <String>[
   'Sie sind abgemeldet, aber der Offline-Cache auf diesem Gerät ist noch nicht vollständig geleert. Sie können das Leeren erneut versuchen.',
   'Der Offline-Cache ist pausiert und wird erst nach erfolgreichem Leeren fortgesetzt.',
   'Das Log ist zu lang. Der Anfang wurde abgeschnitten; nur der letzte Teil wird angezeigt.',
+  'Der Offline-Cache kann erst wieder eingeschaltet werden, wenn das vorherige Leeren abgeschlossen ist.',
+  'Die Einstellung konnte nicht gespeichert werden. Der Offline-Cache wurde geleert und bleibt in dieser Sitzung aus.',
+  'Etwa {size} belegt',
+  'Belegter Speicher: unbekannt',
 ];

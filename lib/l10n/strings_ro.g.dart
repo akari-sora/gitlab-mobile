@@ -2779,7 +2779,7 @@ const _messagesRo = <String>[
   'Termină sau închide editarea curentă înainte de a deschide notificarea.',
   'Stocare și cache',
   'Cache offline',
-  'Conținutul vizualizat este salvat criptat pe acest dispozitiv. Când rețeaua este instabilă, se afișează mai întâi ultima copie, care se actualizează în fundal. Cache-ul se golește când te deconectezi, schimbi sau elimini un cont.',
+  'Părțile eligibile din conținutul vizualizat sunt salvate criptat pe acest dispozitiv. Când rețeaua este instabilă, se poate afișa mai întâi ultima copie, care se actualizează în fundal. La deschiderea aplicației este în continuare necesară o verificare reușită a autentificării. Cache-ul se golește când te deconectezi, schimbi sau elimini un cont.',
   'Activat',
   'Dezactivat',
   'Salvarea începe data viitoare când deschizi aplicația sau schimbi contul',
@@ -2808,4 +2808,8 @@ const _messagesRo = <String>[
   'Te-ai deconectat, dar cache-ul offline de pe acest dispozitiv nu a fost golit complet. Poți reîncerca golirea.',
   'Cache-ul offline este în pauză și se reia doar după ce golirea reușește.',
   'Jurnalul este prea lung. Începutul a fost tăiat; se afișează doar ultima parte.',
+  'Cache-ul offline poate fi reactivat doar după ce golirea anterioară se încheie.',
+  'Setarea nu a putut fi salvată. Cache-ul offline a fost golit și rămâne dezactivat în această sesiune.',
+  'Aproximativ {size} folosiți',
+  'Spațiu folosit: necunoscut',
 ];

@@ -2777,7 +2777,7 @@
   "aiRunNoticeFinishEditFirst": "알림을 열기 전에 현재 편집을 마치거나 닫으세요.",
   "storageAndCacheLabel": "저장 공간 및 캐시",
   "offlineCacheLabel": "오프라인 캐시",
-  "offlineCacheDescription": "본 내용은 이 기기에 암호화되어 저장됩니다. 네트워크가 불안정하면 지난 내용을 먼저 보여 주고 백그라운드에서 새로 고칩니다. 로그아웃하거나 계정을 전환 또는 제거하면 지워집니다.",
+  "offlineCacheDescription": "본 내용 중 조건에 맞는 일부가 이 기기에 암호화되어 저장됩니다. 네트워크가 불안정하면 지난 내용을 먼저 보여 주고 백그라운드에서 새로 고칩니다. 앱을 열 때는 여전히 로그인 확인이 성공해야 합니다. 로그아웃하거나 계정을 전환 또는 제거하면 지워집니다.",
   "offlineCacheStatusOn": "사용 중",
   "offlineCacheStatusOff": "꺼짐",
   "offlineCacheStatusWaiting": "다음에 앱을 열거나 계정을 전환하면 저장을 시작합니다",
@@ -2805,5 +2805,9 @@
   "readCacheSignedOutTitle": "오프라인 캐시가 아직 지워지지 않았습니다",
   "readCacheSignedOutDetail": "로그아웃했지만 이 기기의 오프라인 캐시가 아직 완전히 지워지지 않았습니다. 지우기를 다시 시도할 수 있습니다.",
   "readCacheClosedDetail": "오프라인 캐시가 일시 중지되었습니다. 지우기가 완료되어야 다시 사용됩니다.",
-  "readCacheLogTruncated": "로그가 너무 길어 앞부분을 잘라 내고 마지막 부분만 표시합니다."
+  "readCacheLogTruncated": "로그가 너무 길어 앞부분을 잘라 내고 마지막 부분만 표시합니다.",
+  "offlineCacheOnNeedsCleanup": "이전 지우기가 끝나야 오프라인 캐시를 다시 켤 수 있습니다.",
+  "offlineCacheOffNotSaved": "설정을 저장할 수 없습니다. 오프라인 캐시는 지워졌으며 이번 사용 중에는 꺼진 상태로 유지됩니다.",
+  "offlineCacheSizeApprox": "약 {size} 사용 중",
+  "offlineCacheSizeUnknown": "사용량: 확인할 수 없음"
 }

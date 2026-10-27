@@ -2777,10 +2777,10 @@
   "aiRunNoticeFinishEditFirst": "Selesaikan atau tutup suntingan semasa sebelum membuka pemberitahuan.",
   "storageAndCacheLabel": "Storan & cache",
   "offlineCacheLabel": "Cache luar talian",
-  "offlineCacheDescription": "Kandungan yang telah anda lihat disimpan secara tersulit pada peranti ini. Apabila rangkaian tidak stabil, salinan terakhir dipaparkan dahulu kemudian dimuat semula di latar belakang. Cache dikosongkan apabila anda log keluar, menukar atau mengalih keluar akaun.",
+  "offlineCacheDescription": "Bahagian yang layak daripada kandungan yang telah anda lihat disimpan secara tersulit pada peranti ini. Apabila rangkaian tidak stabil, salinan terakhir boleh dipaparkan dahulu sementara ia dimuat semula di latar belakang. Membuka apl masih memerlukan semakan log masuk yang berjaya. Cache dikosongkan apabila anda log keluar, menukar atau mengalih keluar akaun.",
   "offlineCacheStatusOn": "Aktif",
   "offlineCacheStatusOff": "Tidak aktif",
-  "offlineCacheStatusWaiting": "Mula menyimpan apabila anda membuka apl seterusnya atau menukar akaun",
+  "offlineCacheStatusWaiting": "Mula menyimpan pada kali seterusnya anda membuka apl atau menukar akaun",
   "offlineCacheStatusCleaning": "Sedang mengosongkan",
   "offlineCacheStatusUnavailable": "Storan selamat tidak tersedia; buat masa ini tiada apa-apa disimpan",
   "offlineCacheStatusSettingUnreadable": "Tidak dapat membaca tetapan; tiada apa-apa disimpan dalam sesi ini",
@@ -2805,5 +2805,9 @@
   "readCacheSignedOutTitle": "Cache luar talian belum dikosongkan",
   "readCacheSignedOutDetail": "Anda telah log keluar, tetapi cache luar talian pada peranti ini belum dikosongkan sepenuhnya. Anda boleh cuba mengosongkannya semula.",
   "readCacheClosedDetail": "Cache luar talian dijeda dan hanya disambung semula selepas pengosongan berjaya.",
-  "readCacheLogTruncated": "Log terlalu panjang. Bahagian awal dipotong; hanya bahagian akhir dipaparkan."
+  "readCacheLogTruncated": "Log terlalu panjang. Bahagian awal dipotong; hanya bahagian akhir dipaparkan.",
+  "offlineCacheOnNeedsCleanup": "Cache luar talian hanya boleh dihidupkan semula selepas pengosongan sebelumnya selesai.",
+  "offlineCacheOffNotSaved": "Tidak dapat menyimpan tetapan. Cache luar talian telah dikosongkan dan kekal dimatikan dalam sesi ini.",
+  "offlineCacheSizeApprox": "Kira-kira {size} digunakan",
+  "offlineCacheSizeUnknown": "Ruang digunakan: tidak diketahui"
 }

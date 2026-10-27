@@ -2779,7 +2779,7 @@ const _messagesEn = <String>[
   'Finish or close the current edit before opening the notification.',
   'Storage & cache',
   'Offline cache',
-  'Content you have viewed is stored encrypted on this device. When the network is unreliable, the last copy is shown first and refreshed in the background. It is cleared when you sign out, switch or remove an account.',
+  'Eligible parts of content you have viewed are kept encrypted on this device. When the network is unreliable, the last copy can be shown while it refreshes in the background. Opening the app still needs a successful sign-in check. It is cleared when you sign out, switch or remove an account.',
   'On',
   'Off',
   'Starts saving the next time you open the app or switch accounts',
@@ -2808,4 +2808,8 @@ const _messagesEn = <String>[
   'You are signed out, but the offline cache on this device hasn’t been fully cleared. You can retry clearing.',
   'The offline cache is paused and resumes only after clearing succeeds.',
   'This log is too long. The beginning was cut off; only the last part is shown.',
+  'The previous clear has to finish before the offline cache can be turned on again.',
+  'Couldn’t save the setting. The offline cache was cleared and stays off this session.',
+  'About {size} used',
+  'Space used: unknown',
 ];

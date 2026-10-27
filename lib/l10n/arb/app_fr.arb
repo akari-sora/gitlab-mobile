@@ -2777,7 +2777,7 @@
   "aiRunNoticeFinishEditFirst": "Terminez ou fermez la modification en cours avant d’ouvrir la notification.",
   "storageAndCacheLabel": "Stockage et cache",
   "offlineCacheLabel": "Cache hors ligne",
-  "offlineCacheDescription": "Le contenu consulté est enregistré chiffré sur cet appareil. Si le réseau est instable, la dernière copie s’affiche d’abord et se met à jour en arrière-plan. Il est effacé lorsque vous vous déconnectez, changez de compte ou supprimez un compte.",
+  "offlineCacheDescription": "Certaines parties admissibles du contenu consulté sont enregistrées chiffrées sur cet appareil. Si le réseau est instable, la dernière copie peut s’afficher d’abord pendant la mise à jour en arrière-plan. L’ouverture de l’app exige toujours une vérification de connexion réussie. Il est effacé lorsque vous vous déconnectez, changez de compte ou supprimez un compte.",
   "offlineCacheStatusOn": "Activé",
   "offlineCacheStatusOff": "Désactivé",
   "offlineCacheStatusWaiting": "L’enregistrement commencera à la prochaine ouverture de l’app ou au prochain changement de compte",
@@ -2805,5 +2805,9 @@
   "readCacheSignedOutTitle": "Cache hors ligne pas encore effacé",
   "readCacheSignedOutDetail": "Vous êtes déconnecté, mais le cache hors ligne de cet appareil n’a pas été entièrement effacé. Vous pouvez réessayer l’effacement.",
   "readCacheClosedDetail": "Le cache hors ligne est en pause et ne reprendra qu’une fois l’effacement réussi.",
-  "readCacheLogTruncated": "Le journal est trop long. Le début a été coupé ; seule la fin est affichée."
+  "readCacheLogTruncated": "Le journal est trop long. Le début a été coupé ; seule la fin est affichée.",
+  "offlineCacheOnNeedsCleanup": "Le cache hors ligne ne pourra être réactivé qu’une fois l’effacement précédent terminé.",
+  "offlineCacheOffNotSaved": "Impossible d’enregistrer le réglage. Le cache hors ligne a été effacé et reste désactivé pendant cette session.",
+  "offlineCacheSizeApprox": "Environ {size} utilisés",
+  "offlineCacheSizeUnknown": "Espace utilisé : inconnu"
 }

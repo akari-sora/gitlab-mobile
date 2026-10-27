@@ -2779,7 +2779,7 @@ const _messagesEs = <String>[
   'Termina o cierra la edición actual antes de abrir la notificación.',
   'Almacenamiento y caché',
   'Caché sin conexión',
-  'El contenido que has visto se guarda cifrado en este dispositivo. Si la red falla, se muestra primero la última copia y se actualiza en segundo plano. Se borra al cerrar sesión, cambiar de cuenta o eliminarla.',
+  'Algunas partes aptas del contenido que has visto se guardan cifradas en este dispositivo. Si la red falla, puede mostrarse primero la última copia mientras se actualiza en segundo plano. Al abrir la app sigue siendo necesario verificar el inicio de sesión. Se borra al cerrar sesión, cambiar de cuenta o eliminarla.',
   'Activada',
   'Desactivada',
   'Empezará a guardar la próxima vez que abras la app o cambies de cuenta',
@@ -2808,4 +2808,8 @@ const _messagesEs = <String>[
   'Cerraste sesión, pero la caché sin conexión de este dispositivo no se ha borrado por completo. Puedes volver a intentar el borrado.',
   'La caché sin conexión está en pausa y solo se reanudará cuando se complete el borrado.',
   'El registro es demasiado largo. Se recortó el principio; solo se muestra la parte final.',
+  'La caché sin conexión no puede volver a activarse hasta que termine el borrado anterior.',
+  'No se pudo guardar el ajuste. La caché sin conexión se borró y seguirá desactivada en esta sesión.',
+  'Aprox. {size} en uso',
+  'Espacio usado: desconocido',
 ];

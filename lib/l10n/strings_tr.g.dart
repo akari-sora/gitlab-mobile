@@ -2779,7 +2779,7 @@ const _messagesTr = <String>[
   'Bildirimi açmadan önce geçerli düzenlemeyi bitirin veya kapatın.',
   'Depolama ve önbellek',
   'Çevrimdışı önbellek',
-  'Görüntülediğiniz içerik bu cihazda şifrelenmiş olarak saklanır. Ağ kararsız olduğunda önce son kopya gösterilir ve arka planda yenilenir. Oturumu kapattığınızda, hesap değiştirdiğinizde veya bir hesabı kaldırdığınızda temizlenir.',
+  'Görüntülediğiniz içeriğin uygun kısımları bu cihazda şifrelenmiş olarak saklanır. Ağ kararsız olduğunda önce son kopya gösterilebilir ve arka planda yenilenir. Uygulamayı açarken yine de başarılı bir oturum doğrulaması gerekir. Oturumu kapattığınızda, hesap değiştirdiğinizde veya bir hesabı kaldırdığınızda temizlenir.',
   'Açık',
   'Kapalı',
   'Uygulamayı bir sonraki açışınızda veya hesap değiştirdiğinizde kaydetmeye başlar',
@@ -2808,4 +2808,8 @@ const _messagesTr = <String>[
   'Oturumunuz kapatıldı ancak bu cihazdaki çevrimdışı önbellek henüz tamamen temizlenmedi. Temizlemeyi yeniden deneyebilirsiniz.',
   'Çevrimdışı önbellek duraklatıldı; ancak temizleme başarılı olduktan sonra devam eder.',
   'Log çok uzun. Baş kısmı kesildi; yalnızca son kısım gösteriliyor.',
+  'Çevrimdışı önbellek, önceki temizleme bitmeden yeniden açılamaz.',
+  'Ayar kaydedilemedi. Çevrimdışı önbellek temizlendi ve bu oturumda kapalı kalır.',
+  'Yaklaşık {size} kullanılıyor',
+  'Kullanılan alan: bilinmiyor',
 ];

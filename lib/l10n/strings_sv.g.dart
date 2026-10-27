@@ -2779,7 +2779,7 @@ const _messagesSv = <String>[
   'Slutför eller stäng den pågående redigeringen innan du öppnar aviseringen.',
   'Lagring och cache',
   'Offlinecache',
-  'Innehåll du har visat sparas krypterat på den här enheten. När nätverket är ostabilt visas den senaste kopian först och uppdateras i bakgrunden. Cachen rensas när du loggar ut, byter eller tar bort ett konto.',
+  'Lämpliga delar av innehåll du har visat sparas krypterat på den här enheten. När nätverket är ostabilt kan den senaste kopian visas först medan den uppdateras i bakgrunden. När du öppnar appen krävs fortfarande en lyckad inloggningskontroll. Cachen rensas när du loggar ut, byter eller tar bort ett konto.',
   'På',
   'Av',
   'Börjar spara nästa gång du öppnar appen eller byter konto',
@@ -2808,4 +2808,8 @@ const _messagesSv = <String>[
   'Du är utloggad, men offlinecachen på den här enheten har inte rensats helt. Du kan försöka rensa igen.',
   'Offlinecachen är pausad och återupptas först när rensningen har lyckats.',
   'Loggen är för lång. Början har klippts bort; bara den sista delen visas.',
+  'Offlinecachen kan inte slås på igen förrän den föregående rensningen är klar.',
+  'Det gick inte att spara inställningen. Offlinecachen har rensats och förblir avstängd under sessionen.',
+  'Ungefär {size} används',
+  'Använt utrymme: okänt',
 ];

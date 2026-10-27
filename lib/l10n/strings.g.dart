@@ -8425,7 +8425,7 @@ final class AppStrings {
   /// 離線快取
   String get offlineCacheLabel => language._messages[2776];
 
-  /// 看過的內容會加密存在這台裝置，網路不穩時先顯示上次的內容，再於背景更新。登出、切換或移除帳號時會清除。
+  /// 你看過的部分內容（符合條件者）會加密保存在這台裝置。網路不穩時可先顯示上次的版本，並在背景更新。開啟 App 時仍需先成功驗證登入。登出、切換或移除帳號時會清除。
   String get offlineCacheDescription => language._messages[2777];
 
   /// 使用中
@@ -8511,4 +8511,16 @@ final class AppStrings {
 
   /// Log 太長，前段已截掉，只顯示最後一部分。
   String get readCacheLogTruncated => language._messages[2805];
+
+  /// 上次的清除完成後，才能重新開啟離線快取。
+  String get offlineCacheOnNeedsCleanup => language._messages[2806];
+
+  /// 無法儲存設定。離線快取已清除，這次使用期間保持關閉。
+  String get offlineCacheOffNotSaved => language._messages[2807];
+
+  /// 已使用約 {size}
+  String offlineCacheSizeApprox(Object? size) => _format(language, language._messages[2808], {'size': size});
+
+  /// 已使用：無法確認
+  String get offlineCacheSizeUnknown => language._messages[2809];
 }

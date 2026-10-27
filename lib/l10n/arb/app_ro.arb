@@ -2777,7 +2777,7 @@
   "aiRunNoticeFinishEditFirst": "Termină sau închide editarea curentă înainte de a deschide notificarea.",
   "storageAndCacheLabel": "Stocare și cache",
   "offlineCacheLabel": "Cache offline",
-  "offlineCacheDescription": "Conținutul vizualizat este salvat criptat pe acest dispozitiv. Când rețeaua este instabilă, se afișează mai întâi ultima copie, care se actualizează în fundal. Cache-ul se golește când te deconectezi, schimbi sau elimini un cont.",
+  "offlineCacheDescription": "Părțile eligibile din conținutul vizualizat sunt salvate criptat pe acest dispozitiv. Când rețeaua este instabilă, se poate afișa mai întâi ultima copie, care se actualizează în fundal. La deschiderea aplicației este în continuare necesară o verificare reușită a autentificării. Cache-ul se golește când te deconectezi, schimbi sau elimini un cont.",
   "offlineCacheStatusOn": "Activat",
   "offlineCacheStatusOff": "Dezactivat",
   "offlineCacheStatusWaiting": "Salvarea începe data viitoare când deschizi aplicația sau schimbi contul",
@@ -2805,5 +2805,9 @@
   "readCacheSignedOutTitle": "Cache-ul offline nu a fost încă golit",
   "readCacheSignedOutDetail": "Te-ai deconectat, dar cache-ul offline de pe acest dispozitiv nu a fost golit complet. Poți reîncerca golirea.",
   "readCacheClosedDetail": "Cache-ul offline este în pauză și se reia doar după ce golirea reușește.",
-  "readCacheLogTruncated": "Jurnalul este prea lung. Începutul a fost tăiat; se afișează doar ultima parte."
+  "readCacheLogTruncated": "Jurnalul este prea lung. Începutul a fost tăiat; se afișează doar ultima parte.",
+  "offlineCacheOnNeedsCleanup": "Cache-ul offline poate fi reactivat doar după ce golirea anterioară se încheie.",
+  "offlineCacheOffNotSaved": "Setarea nu a putut fi salvată. Cache-ul offline a fost golit și rămâne dezactivat în această sesiune.",
+  "offlineCacheSizeApprox": "Aproximativ {size} folosiți",
+  "offlineCacheSizeUnknown": "Spațiu folosit: necunoscut"
 }
