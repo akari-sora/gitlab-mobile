@@ -200,6 +200,11 @@ final class Mr6b3ApiServer {
   final String snoozeUntil;
   bool applyMutations = true;
 
+  /// The GraphQL identity-variable check assumes project 9. A test that
+  /// answers another project through [onRequest] turns it off for that server;
+  /// the port still verifies the identity in the returned payload.
+  bool checkGraphqlIdentity = true;
+
   /// Runs at the real adapter boundary, after accounting and optional mutation
   /// application. A null return serves the normal payload. Tests can inspect
   /// journal state, edit a payload, return an HTTP failure, or throw transport
@@ -275,7 +280,7 @@ final class Mr6b3ApiServer {
       final head = query == null ? '' : ' ${query.split('\n').first}';
       _unexpected(request, head);
     }
-    if (query != null) {
+    if (query != null && checkGraphqlIdentity) {
       _checkGraphqlIdentity(classified.name, classified.mutation, request);
     }
     if (oauth &&
