@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart';
+import 'package:gitlab_mobile/core/group_work_item_identity.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/shared/attachment_ref.dart';
 
@@ -9,6 +10,422 @@ const _otherSecret = 'fedcba9876543210fedcba9876543210';
 const _token = 'glpat-abcdefghijklmnopqrst';
 
 void main() {
+  group('G0a group field provenance', () {
+    test(
+      'description uses the numeric identity and current installation URL',
+      () {
+        final identity = _groupIdentity();
+        final field = _groupField(identity);
+        expect(field.resourceKey.canonical, identity.canonicalKey);
+        expect(field.fieldName, AiWritableField.workItemDescription);
+        expect(field.accountKey, identity.accountKey);
+        expect(field.groupId, 7);
+        expect(field.groupFullPath, 'team/sub');
+        expect(field.projectId, isNull);
+        expect(field.projectFullPath, isNull);
+        expect(
+          field.resourceWeb.toString(),
+          'https://gitlab.example.com/gitlab/groups/team/sub/-/work_items/4',
+        );
+        final root = _groupIdentity(root: 'https://gitlab.example.com:8443');
+        expect(
+          _groupField(root).resourceWeb.toString(),
+          'https://gitlab.example.com:8443/groups/team/sub/-/work_items/4',
+        );
+      },
+    );
+
+    test(
+      'whole description and note bodies round trip; excerpts never mint',
+      () {
+        final identity = _groupIdentity();
+        for (final note in <int?>[null, 12]) {
+          final table = _groupTable(identity);
+          final field = _groupField(identity, noteId: note);
+          const original = '![a](/uploads/$_secret/a.png)';
+          final outgoing = table.redactOutgoing(original, field: field);
+          expect(outgoing, matches(r'^!\[a\]\(\[\[upload:u-[0-9]+\]\]\)$'));
+          expect(outgoing, isNot(contains(_secret)));
+          expect(
+            _prepare(
+              modelText: outgoing,
+              field: field,
+              placeholders: table,
+            ).finalText,
+            original,
+          );
+
+          final excerpt = _groupField(identity, noteId: note, complete: false);
+          expect(
+            table.redactOutgoing(original, field: excerpt),
+            isNot(contains('[[upload:')),
+          );
+          expect(
+            _prepare(
+              modelText: outgoing,
+              field: excerpt,
+              placeholders: table,
+            ).blockedReasonCode,
+            AiTextBlockCode.fieldTooLong,
+          );
+        }
+      },
+    );
+
+    test('cannot restore across group, IID, note or field', () {
+      final identity = _groupIdentity();
+      final table = _groupTable(identity);
+      final source = _groupField(identity);
+      final note = _groupField(identity, noteId: 12);
+      const original = '![a](/uploads/$_secret/a.png)';
+      final descriptionText = table.redactOutgoing(original, field: source);
+      final noteText = table.redactOutgoing(original, field: note);
+      expect(noteText, isNot(descriptionText));
+      final otherField = AiFieldProvenance(
+        resourceKey: source.resourceKey,
+        fieldName: AiWritableField.workItemNote,
+        completeValue: true,
+        accountKey: identity.accountKey,
+        groupId: identity.groupId,
+        groupFullPath: identity.fullPath,
+        resourceWeb: source.resourceWeb,
+      );
+      for (final target in <AiFieldProvenance>[
+        _groupField(_groupIdentity(groupId: 8)),
+        _groupField(_groupIdentity(iid: 5)),
+        note,
+        otherField,
+        AiFieldProvenance(
+          resourceKey: AiConflictKey(
+            '(${identity.accountKey}, project:7, workItem, 4)',
+          ),
+          fieldName: source.fieldName,
+          completeValue: true,
+          projectId: 7,
+          projectFullPath: 'team/sub',
+        ),
+      ]) {
+        final result = _prepare(
+          modelText: descriptionText,
+          field: target,
+          placeholders: table,
+        );
+        expect(
+          result.policyBlocked,
+          isTrue,
+          reason: target.resourceKey.canonical,
+        );
+        expect(result.finalText, isNull);
+        expect(result.blockedReasonCode, AiTextBlockCode.rereadField);
+      }
+      for (final target in <AiFieldProvenance>[
+        _groupField(identity, noteId: 13),
+        _groupField(_groupIdentity(iid: 5), noteId: 12),
+        _groupField(_groupIdentity(groupId: 8), noteId: 12),
+        source,
+      ]) {
+        expect(
+          _prepare(
+            modelText: noteText,
+            field: target,
+            placeholders: table,
+          ).blockedReasonCode,
+          AiTextBlockCode.rereadField,
+        );
+      }
+    });
+
+    test('note numeric and GID aliases receive one number and source', () {
+      final identity = _groupIdentity();
+      final table = _groupTable(identity);
+      final numeric = _groupField(identity, noteId: 12);
+      const original = '![a](/uploads/$_secret/a.png)';
+      final outgoing = table.redactOutgoing(original, field: numeric);
+      for (final type in <String>['Note', 'DiscussionNote']) {
+        final alias = AiFieldProvenance.groupWorkItem(
+          identity: identity,
+          completeValue: true,
+          noteGid: 'gid://gitlab/$type/12',
+        );
+        expect(alias.sameField(numeric), isTrue);
+        expect(alias.fieldName, AiWritableField.workItemNote);
+        expect(table.redactOutgoing(original, field: alias), outgoing);
+        expect(
+          _prepare(
+            modelText: outgoing,
+            field: alias,
+            placeholders: table,
+          ).finalText,
+          original,
+        );
+      }
+      expect(table.length, 1);
+      expect(
+        () => AiFieldProvenance.groupWorkItem(
+          identity: identity,
+          completeValue: true,
+          noteId: 12,
+          noteGid: 'gid://gitlab/Note/13',
+        ),
+        throwsArgumentError,
+      );
+      for (final gid in <String>[
+        '12',
+        'gid://gitlab/WorkItem/12',
+        'gid://gitlab/Note/012',
+        'gid://gitlab/Note/9223372036854775808',
+      ]) {
+        expect(
+          () => AiFieldProvenance.groupWorkItem(
+            identity: identity,
+            completeValue: true,
+            noteGid: gid,
+          ),
+          throwsArgumentError,
+        );
+      }
+    });
+
+    test('rename preserves the key while resourceWeb uses the fresh path', () {
+      final identity = _groupIdentity();
+      final table = _groupTable(identity);
+      final source = _groupField(identity);
+      final renamed = _groupField(_groupIdentity(path: 'renamed/sub'));
+      expect(renamed.sameField(source), isTrue);
+      expect(
+        renamed.resourceWeb.toString(),
+        'https://gitlab.example.com/gitlab/groups/renamed/sub/-/work_items/4',
+      );
+      const original = '![a](/uploads/$_secret/a.png)';
+      final outgoing = table.redactOutgoing(original, field: source);
+      expect(table.redactOutgoing(original, field: renamed), outgoing);
+      expect(table.length, 1);
+      expect(
+        _prepare(
+          modelText: outgoing,
+          field: renamed,
+          placeholders: table,
+        ).finalText,
+        original,
+      );
+      const oldPath =
+          '![a](https://gitlab.example.com/gitlab/groups/'
+          'team/sub/-/uploads/$_secret/a.png)';
+      final oldPathText = table.redactOutgoing(oldPath, field: source);
+      expect(oldPathText, isNot(outgoing));
+      expect(table.length, 2);
+      expect(
+        table.restoreIntoSameField(oldPathText, renamed).blockedReasonCode,
+        AiTextBlockCode.rereadField,
+      );
+      const numericPath =
+          '![a](https://gitlab.example.com/gitlab/'
+          '-/group/7/uploads/$_secret/a.png)';
+      final numericText = table.redactOutgoing(numericPath, field: source);
+      expect(
+        table.restoreIntoSameField(numericText, renamed).finalText,
+        numericPath,
+      );
+    });
+
+    test('group placeholders require the bound account and conversation', () {
+      final identity = _groupIdentity();
+      final source = _groupField(identity);
+      final table = _groupTable(identity);
+      const original = '![a](/uploads/$_secret/a.png)';
+      final outgoing = table.redactOutgoing(original, field: source);
+      for (final foreign in <VerifiedGroupWorkItemIdentity>[
+        _groupIdentity(userId: 6),
+        _groupIdentity(root: 'https://other.example.com/gitlab'),
+        _groupIdentity(root: 'https://gitlab.example.com:8443/gitlab'),
+        _groupIdentity(root: 'https://gitlab.example.com/other'),
+      ]) {
+        final target = _groupField(foreign);
+        expect(target.resourceKey, isNot(source.resourceKey));
+        expect(
+          table.redactOutgoing(original, field: target),
+          isNot(contains('[[upload:')),
+        );
+        expect(
+          table.restoreIntoSameField(outgoing, target).blockedReasonCode,
+          AiTextBlockCode.rereadField,
+        );
+      }
+      for (final emptyOrUnbound in <UploadPlaceholderTable>[
+        UploadPlaceholderTable(instance: identity.instance),
+        UploadPlaceholderTable(
+          instance: identity.instance,
+          accountKey: identity.accountKey,
+        ),
+        UploadPlaceholderTable(
+          instance: identity.instance,
+          accountKey: identity.accountKey,
+          conversationId: '',
+        ),
+        UploadPlaceholderTable(
+          instance: identity.instance,
+          accountKey: '${identity.instance.key}#6',
+          conversationId: 'chat',
+        ),
+        UploadPlaceholderTable(
+          instance: GitLabInstance.parse('https://gitlab.example.com/other'),
+          accountKey: identity.accountKey,
+          conversationId: 'chat',
+        ),
+      ]) {
+        expect(
+          emptyOrUnbound.redactOutgoing(original, field: source),
+          isNot(contains('[[upload:')),
+        );
+        expect(
+          emptyOrUnbound.restoreIntoSameField(outgoing, source).policyBlocked,
+          isTrue,
+        );
+        expect(emptyOrUnbound.length, 0);
+      }
+      final nextConversation = _groupTable(identity, conversation: 'next-chat');
+      expect(
+        nextConversation
+            .restoreIntoSameField(outgoing, source)
+            .blockedReasonCode,
+        AiTextBlockCode.rereadField,
+      );
+      expect(nextConversation.length, 0);
+    });
+
+    test(
+      'populated conversations and rebuilt tables reject each other tokens',
+      () {
+        final identity = _groupIdentity();
+        final field = _groupField(identity);
+        final first = _groupTable(identity);
+        const original = '![a](/uploads/$_secret/a.png)';
+        const other = '![a](/uploads/$_otherSecret/b.png)';
+        final outgoing = first.redactOutgoing(original, field: field);
+        for (final second in <UploadPlaceholderTable>[
+          _groupTable(identity, conversation: 'next-chat'),
+          _groupTable(identity),
+        ]) {
+          final secondOutgoing = second.redactOutgoing(other, field: field);
+          expect(secondOutgoing, isNot(outgoing));
+          expect(
+            second.restoreIntoSameField(outgoing, field).blockedReasonCode,
+            AiTextBlockCode.rereadField,
+          );
+          expect(
+            first.restoreIntoSameField(secondOutgoing, field).blockedReasonCode,
+            AiTextBlockCode.rereadField,
+          );
+          expect(
+            second.restoreIntoSameField(secondOutgoing, field).finalText,
+            other,
+          );
+        }
+        expect(first.restoreIntoSameField(outgoing, field).finalText, original);
+        expect(
+          first
+              .restoreIntoSameField('![a]([[upload:u-${'9' * 200}]])', field)
+              .blockedReasonCode,
+          AiTextBlockCode.rereadField,
+        );
+      },
+    );
+
+    test('subpath group upload routes and relative links stay owner-bound', () {
+      final identity = _groupIdentity();
+      final field = _groupField(identity);
+      for (final target in <String>[
+        '/uploads/$_secret/a.png',
+        '</uploads/$_secret/a.png>',
+        '<../uploads/$_secret/a.png>',
+        '<https://gitlab.example.com/gitlab/-/group/7/uploads/$_secret/a.png>',
+        'https://gitlab.example.com/gitlab/-/group/7/uploads/$_secret/a.png',
+        'https://gitlab.example.com/gitlab/groups/team/sub/-/uploads/$_secret/a.png',
+        '../uploads/$_secret/a.png',
+      ]) {
+        final table = _groupTable(identity);
+        final original = '![a]($target)';
+        final outgoing = table.redactOutgoing(original, field: field);
+        expect(outgoing, contains('[[upload:u-'), reason: target);
+        expect(table.length, 1);
+        expect(
+          _prepare(
+            modelText: outgoing,
+            field: field,
+            placeholders: table,
+          ).finalText,
+          original,
+          reason: target,
+        );
+      }
+      final table = _groupTable(identity);
+      for (final target in <String>[
+        './uploads/$_secret/a.png',
+        'https://gitlab.example.com/-/group/7/uploads/$_secret/a.png',
+        'https://gitlab.example.com/other/-/group/7/uploads/$_secret/a.png',
+        'https://gitlab.example.com/gitlab/-/group/8/uploads/$_secret/a.png',
+        'https://gitlab.example.com/gitlab/-/project/7/uploads/$_secret/a.png',
+        'https://gitlab.example.com/gitlab/groups/other/-/uploads/$_secret/a.png',
+        'https://gitlab.example.com/gitlab/team/sub/uploads/$_secret/a.png',
+        'https://gitlab.example.com/gitlab/groups/team/sub/uploads/$_secret/a.png',
+        'https://other.example.com/gitlab/-/group/7/uploads/$_secret/a.png',
+        'https://gitlab.example.com:8443/gitlab/-/group/7/uploads/$_secret/a.png',
+        '../../../../../../../-/group/7/uploads/$_secret/a.png',
+      ]) {
+        final outgoing = table.redactOutgoing('![a]($target)', field: field);
+        expect(outgoing, isNot(contains('[[upload:')), reason: target);
+        expect(outgoing, isNot(contains(_secret)), reason: target);
+      }
+      expect(table.length, 0);
+    });
+
+    test(
+      'delivery cuts and project attachment refusal apply to group fields',
+      () {
+        final identity = _groupIdentity();
+        final field = _groupField(identity);
+        final table = _groupTable(identity);
+        table.recordFieldDelivery(field, whole: false);
+        expect(
+          _prepare(
+            modelText: 'replacement',
+            field: field,
+            placeholders: table,
+          ).blockedReasonCode,
+          AiTextBlockCode.fieldTooLong,
+        );
+        table.recordFieldDelivery(field, whole: true);
+        expect(table.seenOnlyCut(field), isFalse);
+        final attachment = _prepare(
+          modelText: '[[attachment:att-1]]',
+          field: field,
+          placeholders: table,
+          attachments: _attachments(),
+        );
+        expect(attachment.blockedReasonCode, AiTextBlockCode.attachmentScope);
+        expect(attachment.finalText, isNull);
+        for (final unbound in <UploadPlaceholderTable>[
+          UploadPlaceholderTable(instance: identity.instance),
+          UploadPlaceholderTable(
+            instance: identity.instance,
+            accountKey: '${identity.instance.key}#6',
+            conversationId: 'foreign',
+          ),
+        ]) {
+          unbound.recordFieldDelivery(field, whole: false);
+          expect(
+            _prepare(
+              modelText: 'replacement',
+              field: field,
+              placeholders: unbound,
+            ).blockedReasonCode,
+            AiTextBlockCode.fieldTooLong,
+          );
+        }
+      },
+    );
+  });
+
   group('§15 row 14 text safety', () {
     test('class A neutralizes column-zero quick actions', () {
       const samples = <String>['a\n/merge', 'a\r\n/approve', 'a\n\r/move x/y'];
@@ -862,6 +1279,56 @@ void main() {
 }
 
 const _noteName = 'shot';
+
+VerifiedGroupWorkItemIdentity _groupIdentity({
+  String root = 'https://gitlab.example.com/gitlab',
+  int userId = 5,
+  int groupId = 7,
+  int iid = 4,
+  String path = 'team/sub',
+}) => VerifiedGroupWorkItemIdentity.fromServerEvidence(
+  instance: GitLabInstance.parse(root),
+  expectedUserId: userId,
+  actorUserId: userId,
+  expectedGroupId: groupId,
+  expectedFullPath: path,
+  expectedIid: iid,
+  apiOwner: Object(),
+  generation: 1,
+  readEpoch: 0,
+  namespace: <String, Object?>{
+    'id': 'gid://gitlab/Group/$groupId',
+    'fullPath': path,
+    'workItem': <String, Object?>{
+      'id': 'gid://gitlab/WorkItem/91',
+      'iid': '$iid',
+      'project': null,
+      'namespace': <String, Object?>{
+        'id': 'gid://gitlab/Group/$groupId',
+        'fullPath': path,
+      },
+    },
+  },
+)!;
+
+AiFieldProvenance _groupField(
+  VerifiedGroupWorkItemIdentity identity, {
+  int? noteId,
+  bool complete = true,
+}) => AiFieldProvenance.groupWorkItem(
+  identity: identity,
+  completeValue: complete,
+  noteId: noteId,
+);
+
+UploadPlaceholderTable _groupTable(
+  VerifiedGroupWorkItemIdentity identity, {
+  String conversation = 'group-chat',
+}) => UploadPlaceholderTable(
+  instance: identity.instance,
+  accountKey: identity.accountKey,
+  conversationId: conversation,
+);
 
 AiTextOutcome _prepare({
   AiTextClass textClass = AiTextClass.quickActionMarkdown,
