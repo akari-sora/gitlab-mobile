@@ -1,9 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/work_item_attribute_models.dart';
+import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import '../support/fake_adapter.dart';
 import '../support/namespace_work_item_query.dart';
+import '../support/strict_group_owner.dart';
 
 const _path = 'team/sub';
 const _group = 'gid://gitlab/Group/7';
@@ -74,7 +77,226 @@ Matcher get _invisible => throwsA(
   ),
 );
 
+WorkItemGraphSummary _groupSummary() => WorkItemGraphSummary(
+  id: _item,
+  iid: 3,
+  title: 'Group work item',
+  state: 'OPEN',
+  createdAt: DateTime.utc(2026, 10, 1),
+  updatedAt: DateTime.utc(2026, 10, 2),
+  project: null,
+  namespace: const GraphResourceRef(id: _group, fullPath: _path),
+  type: const WorkItemGraphType(id: 'gid://gitlab/WorkItems::Type/1', name: 'Task'),
+);
+
+WorkItemGraphDetail _detailFor(WorkItemGraphSummary summary) => WorkItemGraphDetail(
+  summary: summary, description: null, widgetsAvailable: false,
+  widgetTypes: const {}, descriptionWidget: null, assignees: null,
+  labels: null, hierarchy: null, dates: null,
+);
+
+Map<String, Object?> _groupTodo({bool snoozed = false}) => {
+  'id': 'gid://gitlab/Todo/19',
+  'targetType': 'WORKITEM',
+  'snoozedUntil': snoozed ? '2030-01-01T00:00:00Z' : null,
+  'project': null,
+  'group': {'id': _group, 'fullPath': _path},
+  'targetEntity': <String, Object?>{
+    '__typename': 'WorkItem',
+    'workItemId': _item,
+    'iid': '3',
+    'workItemProject': null,
+    'namespace': {'id': _group, 'fullPath': _path},
+  },
+};
+
+void _corruptTodo(Map<String, Object?> todo, String problem) {
+  final target = todo['targetEntity']! as Map<String, Object?>;
+  switch (problem) {
+    case 'missingOuterProject':
+      todo.remove('project');
+    case 'missingProject':
+      target.remove('workItemProject');
+    case 'project':
+      target['workItemProject'] = {'id': 'gid://gitlab/Project/7', 'fullPath': _path};
+    case 'namespace':
+      target['namespace'] = {'id': 'gid://gitlab/Group/8', 'fullPath': _path};
+      todo['group'] = {'id': 'gid://gitlab/Group/8', 'fullPath': _path};
+    case 'path':
+      target['namespace'] = {'id': _group, 'fullPath': 'team/foreign'};
+      todo['group'] = {'id': _group, 'fullPath': 'team/foreign'};
+    case 'missingNamespace':
+      target.remove('namespace');
+    case 'issueAlias':
+      todo['targetType'] = 'ISSUE';
+      todo['targetEntity'] = <String, Object?>{
+        '__typename': 'Issue', 'issueId': 'gid://gitlab/Issue/91',
+        'iid': '3', 'projectId': null,
+      };
+    case 'exact':
+      break;
+  }
+}
+
 void main() {
+  final openers = <String, Future<Object?> Function(GitLabApi, WorkItemGraphSummary)>{
+    'state': (api, summary) => api.workItemState(summary),
+    'attribute': (api, summary) => api.workItemAttribute(summary, WorkItemAttributeKind.health),
+    'status': (api, summary) => api.workItemStatus(_detailFor(summary), expectedUserId: 7, generation: 1),
+    'dates': (api, summary) => api.workItemDates(_detailFor(summary), expectedUserId: 7, generation: 1),
+    'health': (api, summary) => api.workItemHealthEdit(_detailFor(summary), expectedUserId: 7, generation: 1, isCurrent: () => true),
+    'assignees': (api, summary) => api.workItemAssignees(_detailFor(summary), expectedUserId: 7),
+    'milestone': (api, summary) => api.workItemMilestone(_detailFor(summary), expectedUserId: 7),
+    'weight': (api, summary) => api.workItemWeight(_detailFor(summary), expectedUserId: 7),
+    'content': (api, summary) => api.workItemContent(_detailFor(summary), expectedUserId: 7),
+    'labels': (api, summary) => api.workItemLabels(_detailFor(summary), expectedUserId: 7, generation: 1),
+    'notifications': (api, summary) => api.workItemNotifications(summary, expectedUserId: 7),
+    'activity': (api, summary) => api.workItemActivity(summary),
+    'activityWriteAccess': (api, summary) => api.workItemActivityWriteAccess(summary),
+  };
+  for (final entry in openers.entries) {
+    test('strict ${entry.key} rejects evidence from a different API before reading', () async {
+      final adapter = FakeAdapter((_) => throw StateError('no requests'));
+      final other = testApi(FakeAdapter((_) => throw StateError('no requests')));
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      addTearDown(other.close);
+      final summary = _groupSummary();
+      final expected = summary.withStrictGroupOwner(strictGroupOwner(other, summary));
+      await expectLater(Future<Object?>.sync(() => entry.value(api, expected)), throwsA(
+        isA<ApiFailure>().having((f) => f.kind, 'kind', FailureKind.cancelled)));
+      expect(adapter.requests, isEmpty);
+    });
+  }
+
+  for (final kind in WorkItemAttributeKind.values) {
+    for (final problem in ['missing', 'project', 'namespace', 'exact']) {
+      test('strict shared attribute ${kind.name} owner $problem', () async {
+        final node = _node();
+        corruptGroupOwner(node, problem);
+        final adapter = FakeAdapter((_) => jsonResponse({'data': {'workItem': node}}));
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final summary = _groupSummary();
+        final expected = summary.withStrictGroupOwner(strictGroupOwner(api, summary));
+        final future = api.workItemAttribute(expected, kind);
+        if (problem == 'exact') {
+          final value = await future;
+          expect(value.namespace!.id, _group);
+        } else {
+          await expectLater(future, _invalid);
+        }
+        expect(adapter.requests, hasLength(1));
+        expect((adapter.requests.single.data as Map)['query'], startsWith('query '));
+      });
+    }
+    test('default shared attribute ${kind.name} accepts omitted project', () async {
+      final node = _node()..remove('project');
+      final adapter = FakeAdapter((_) => jsonResponse({'data': {'workItem': node}}));
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final value = await api.workItemAttribute(_groupSummary(), kind);
+      expect(value.project, isNull);
+      expect(adapter.requests, hasLength(1));
+    });
+  }
+
+  test('strict binding preserves fields and refuses mismatched summary', () {
+    final api = testApi(FakeAdapter((_) => throw StateError('no requests')));
+    addTearDown(api.close);
+    final summary = _groupSummary();
+    final owner = strictGroupOwner(api, summary);
+    final strict = summary.withStrictGroupOwner(owner);
+    expect(strict.strictGroupOwner, same(owner));
+    expect(strict.title, summary.title);
+    expect(strict.createdAt, summary.createdAt);
+    expect(strict.updatedAt, summary.updatedAt);
+    expect(strict.namespace, same(summary.namespace));
+    final detail = _detailFor(summary);
+    final strictDetail = detail.withStrictGroupOwner(owner);
+    expect(strictDetail.summary.strictGroupOwner, same(owner));
+    expect(strictDetail.widgetTypes, same(detail.widgetTypes));
+    expect(strictDetail.descriptionWidget, same(detail.descriptionWidget));
+    final foreign = WorkItemGraphSummary(
+      id: summary.id, iid: summary.iid, title: summary.title, state: summary.state,
+      createdAt: summary.createdAt, updatedAt: summary.updatedAt, project: null,
+      namespace: const GraphResourceRef(id: 'gid://gitlab/Group/8', fullPath: _path),
+      type: summary.type,
+    );
+    expect(() => foreign.withStrictGroupOwner(owner), throwsArgumentError);
+  });
+
+  test('strict owner cannot be replaced by a different displayed namespace', () async {
+    final node = _node()..['namespace'] = {'id': 'gid://gitlab/Group/8', 'fullPath': _path};
+    final adapter = FakeAdapter((_) => jsonResponse({'data': {'workItem': node}}));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final summary = _groupSummary();
+    final expected = WorkItemGraphSummary(
+      id: summary.id, iid: summary.iid, title: summary.title, state: summary.state,
+      createdAt: summary.createdAt, updatedAt: summary.updatedAt, project: null,
+      namespace: const GraphResourceRef(id: 'gid://gitlab/Group/8', fullPath: _path),
+      type: summary.type, strictGroupOwner: strictGroupOwner(api, summary),
+    );
+    await expectLater(api.workItemAttribute(expected, WorkItemAttributeKind.health), _invalid);
+    expect(adapter.requests, hasLength(1));
+  });
+
+  for (final snoozed in [false, true]) {
+    for (final problem in [
+      'missingOuterProject', 'missingProject', 'project', 'namespace',
+      'path', 'missingNamespace', 'issueAlias', 'exact',
+    ]) {
+      test('strict ${snoozed ? 'snoozed' : 'pending'} todo target $problem', () async {
+        final todo = _groupTodo(snoozed: snoozed);
+        _corruptTodo(todo, problem);
+        var reads = 0;
+        final adapter = FakeAdapter((_) {
+          reads++;
+          return jsonResponse({'data': {'currentUser': {
+            'id': 'gid://gitlab/User/7',
+            'todos': {
+              'nodes': reads == 1 ? <Object?>[] : [todo],
+              'pageInfo': {'hasNextPage': reads == 1, 'endCursor': reads == 1 ? 'next' : null},
+            },
+          }}});
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final owner = strictGroupOwner(api, _groupSummary());
+        final future = snoozed
+            ? api.snoozedTodosForUnsnooze(allowGroupTargets: true,
+                strictGroupOwner: owner, strictGroupTodoId: 19)
+            : api.pendingTodosForSnooze(allowGroupTargets: true,
+                strictGroupOwner: owner, strictGroupTodoId: 19);
+        if (problem == 'exact') {
+          final result = await future;
+          expect(result.items.single['namespace']['id'], _group);
+        } else {
+          await expectLater(future, _invalid);
+        }
+        expect(adapter.requests, hasLength(2));
+        expect(adapter.requests.every((r) => ((r.data as Map)['query'] as String).startsWith('query ')), isTrue);
+      });
+    }
+  }
+
+  test('strict todo expectations are paired and enabled before any read', () async {
+    final adapter = FakeAdapter((_) => throw StateError('no requests'));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final owner = strictGroupOwner(api, _groupSummary());
+    for (final call in [
+      () => api.pendingTodosForSnooze(strictGroupOwner: owner),
+      () => api.pendingTodosForSnooze(strictGroupTodoId: 19),
+      () => api.snoozedTodosForUnsnooze(strictGroupOwner: owner, strictGroupTodoId: 19),
+    ]) {
+      await expectLater(call(), throwsA(isA<ApiFailure>().having(
+        (f) => f.kind, 'kind', FailureKind.validation)));
+    }
+    expect(adapter.requests, isEmpty);
+  });
+
   test('strict namespace accepts explicit null project and exact Group', () async {
     final h = _reader(_envelope(_node()));
     final detail = await h.api.namespaceWorkItem(

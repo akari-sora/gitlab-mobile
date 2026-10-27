@@ -110,6 +110,12 @@ query MobileWorkItemDiscussionNotes(
 }
 ''';
 
+final _strictWorkItemDiscussionNotesQuery = _workItemDiscussionNotesQuery
+    .replaceFirst(
+      '    id\n    project { id fullPath }\n    discussion {',
+      '    id\n    noteableType\n    noteableId\n    project { id fullPath }\n    discussion {',
+    );
+
 const _workItemActivityControlsVariables =
     r'$filter: NotesFilterType! $sort: WorkItemDiscussionsSort!';
 const _workItemActivityControlsProbe = r'''
@@ -470,6 +476,7 @@ typedef _WorkItemActivityIdentity = ({
   int iid,
   GraphResourceRef? project,
   GraphResourceRef? namespace,
+  VerifiedGroupWorkItemIdentity? strictGroupOwner,
 });
 
 extension WorkItemActivityApi on GitLabApi {
@@ -479,6 +486,7 @@ extension WorkItemActivityApi on GitLabApi {
     WorkItemActivityNote expectedNote, {
     bool Function()? isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     _validateExpectedAttributeIdentity(expected);
     _workItemActivityModelId(expected.id);
     if (expectedNote.system ||
@@ -510,6 +518,9 @@ extension WorkItemActivityApi on GitLabApi {
     );
   }
 
+  /// The acknowledgement checks the note; the existing independent readback
+  /// also proves [WorkItemGraphSummary.strictGroupOwner] when supplied at open.
+  /// A failed readback after sending is uncertain and cannot be replayed.
   Future<WorkItemActivityNote> editWorkItemActivityNote(
     WorkItemActivityEditTarget target,
     String body, {
@@ -547,8 +558,11 @@ extension WorkItemActivityApi on GitLabApi {
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
     }
+    if (replacement == target.note.body) {
+      target._consumed = true;
+      return preflight.value.note;
+    }
     target._consumed = true;
-    if (replacement == target.note.body) return preflight.value.note;
 
     if (beforeMutation != null) await beforeMutation();
     if (mayStart != null && !mayStart()) {
@@ -612,7 +626,7 @@ extension WorkItemActivityApi on GitLabApi {
       _requireCurrentWorkItemRequest(isCurrent);
       final data = _workItemGraphData(response.bytes);
       _requireActivityIdentity(
-        _parseAttributeIdentity(objectJson(data['workItem'])),
+        _parseActivityIdentity(objectJson(data['workItem']), target._identity),
         target._identity,
       );
       final readback = _parseActivityEditNote(
@@ -640,6 +654,7 @@ extension WorkItemActivityApi on GitLabApi {
     required DateTime discussionCreatedAt,
     bool Function()? isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, identity.strictGroupOwner);
     _requireCurrentWorkItemRequest(isCurrent);
     final response = await _read(
       instance.graphQL,
@@ -657,7 +672,7 @@ extension WorkItemActivityApi on GitLabApi {
         throw const ApiFailure(FailureKind.invisible);
       }
       _requireActivityIdentity(
-        _parseAttributeIdentity(objectJson(data['workItem'])),
+        _parseActivityIdentity(objectJson(data['workItem']), identity),
         identity,
       );
       if (data['note'] == null) {
@@ -702,6 +717,7 @@ extension WorkItemActivityApi on GitLabApi {
     bool Function()? isCurrent,
     bool requireControlsSupported = false,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     _validateExpectedAttributeIdentity(expected);
     final identity = _activityIdentityFromExpected(expected);
     final modelId = _workItemActivityModelId(identity.id);
@@ -727,6 +743,8 @@ extension WorkItemActivityApi on GitLabApi {
     );
   }
 
+  /// Creates once, then proves the note and any strict owner using the existing
+  /// independent readback. The mutation acknowledgement alone is insufficient.
   Future<WorkItemActivityCreatedNote> createWorkItemActivityComment(
     WorkItemActivityCommentTarget target,
     String body, {
@@ -789,6 +807,8 @@ extension WorkItemActivityApi on GitLabApi {
     );
   }
 
+  /// Uses the same strict independent readback as comment creation, preserving
+  /// the opaque target's verified owner and discussion identity.
   Future<WorkItemActivityCreatedNote> createWorkItemActivityReply(
     WorkItemActivityReplyTarget target,
     String body, {
@@ -867,6 +887,7 @@ extension WorkItemActivityApi on GitLabApi {
     bool Function()? isCurrent,
     bool allowLegacyFallback = true,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     _validateExpectedAttributeIdentity(expected);
     return await _readWorkItemActivity(
       _activityIdentityFromExpected(expected),
@@ -900,13 +921,16 @@ extension WorkItemActivityApi on GitLabApi {
     bool Function()? isCurrent,
   }) async {
     _requireActivityOwner(continuation._owner);
+    _requireStrictGroupOwnerApi(this, continuation._identity.strictGroupOwner);
     _requireCurrentWorkItemRequest(isCurrent);
     final response = await _read(
       instance.graphQL,
       method: 'POST',
       graphQuery: true,
       data: {
-        'query': _workItemDiscussionNotesQuery,
+        'query': continuation._identity.strictGroupOwner == null
+            ? _workItemDiscussionNotesQuery
+            : _strictWorkItemDiscussionNotesQuery,
         'variables': {
           'workItemId': continuation._identity.id,
           'anchorNoteId': continuation._anchorNoteId,
@@ -922,11 +946,20 @@ extension WorkItemActivityApi on GitLabApi {
       if (root == null || anchor == null) {
         throw const ApiFailure(FailureKind.invisible);
       }
-      final identity = _parseAttributeIdentity(objectJson(root));
+      final identity = _parseActivityIdentity(
+        objectJson(root),
+        continuation._identity,
+      );
       _requireActivityIdentity(identity, continuation._identity);
       final anchorNode = objectJson(anchor);
       if (requiredString(anchorNode, 'id') != continuation._anchorNoteId) {
         throw const FormatException('Wrong activity anchor');
+      }
+      _requireStrictActivityNoteProject(anchorNode, continuation._identity);
+      if (continuation._identity.strictGroupOwner != null &&
+          _activityNoteableId(anchorNode) !=
+              _workItemActivityModelId(continuation._identity.id)) {
+        throw const FormatException('Wrong activity anchor noteable');
       }
       _requireCompatibleAnchorProject(
         _parseOptionalResourceRef(anchorNode['project']),
@@ -978,6 +1011,7 @@ extension WorkItemActivityApi on GitLabApi {
     bool Function()? isCurrent,
     bool requireControlsSupported = false,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     _requireCurrentWorkItemRequest(isCurrent);
     final unsupported = (
       canCreateNote: false,
@@ -1036,7 +1070,7 @@ extension WorkItemActivityApi on GitLabApi {
         throw const ApiFailure(FailureKind.invisible);
       }
       final workItem = objectJson(rawWorkItem);
-      final identity = _parseAttributeIdentity(workItem);
+      final identity = _parseActivityIdentity(workItem, expected);
       _requireActivityIdentity(identity, expected);
       final permissions = objectJson(workItem['userPermissions']);
       final serverCanCreateNote = permissions['createNote'];
@@ -1124,7 +1158,11 @@ extension WorkItemActivityApi on GitLabApi {
           },
         },
       );
-    } on ApiFailure catch (error) {
+    } on Object catch (error) {
+      if (error is! ApiFailure &&
+          (!didSend || identity.strictGroupOwner == null)) {
+        rethrow;
+      }
       if (_graphDefinitelyNotSent(error, didSend)) rethrow;
       throw const ApiFailure(FailureKind.writeUncertain);
     }
@@ -1156,9 +1194,15 @@ extension WorkItemActivityApi on GitLabApi {
         expectedDiscussionCreatedAt: expectedDiscussionCreatedAt,
       );
     } on ApiFailure catch (failure) {
-      if (failure.kind == FailureKind.unsupported) rethrow;
+      if (identity.strictGroupOwner == null &&
+          failure.kind == FailureKind.unsupported) {
+        rethrow;
+      }
       throw const ApiFailure(FailureKind.writeUncertain);
     } on FormatException {
+      throw const ApiFailure(FailureKind.writeUncertain);
+    } on Object {
+      if (identity.strictGroupOwner == null) rethrow;
       throw const ApiFailure(FailureKind.writeUncertain);
     }
 
@@ -1181,8 +1225,9 @@ extension WorkItemActivityApi on GitLabApi {
       if (data['workItem'] == null || data['note'] == null) {
         throw const FormatException('Missing note readback');
       }
-      final actualIdentity = _parseAttributeIdentity(
+      final actualIdentity = _parseActivityIdentity(
         objectJson(data['workItem']),
+        identity,
       );
       _requireActivityIdentity(actualIdentity, identity);
       final readback = _parseCreatedActivityNote(
@@ -1216,6 +1261,10 @@ extension WorkItemActivityApi on GitLabApi {
     bool Function()? isCurrent,
     bool allowLegacyFallback = true,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
+    // Strict AI reads are bounded to the original response; do not probe a
+    // second document when the controls query is unavailable.
+    if (expected.strictGroupOwner != null) allowLegacyFallback = false;
     final cursor = _validatedWorkItemCursor(after);
     final initialRequest = cursor == null;
     var useControls =
@@ -1265,7 +1314,7 @@ extension WorkItemActivityApi on GitLabApi {
         throw const ApiFailure(FailureKind.invisible);
       }
       final node = objectJson(data['workItem']);
-      final identity = _parseAttributeIdentity(node);
+      final identity = _parseActivityIdentity(node, expected);
       _requireActivityIdentity(identity, expected);
       final parsed = _parseActivityWidgets(node['widgets'], previous: cursor);
       final nextCursor = parsed.nextCursor;
@@ -1486,6 +1535,7 @@ _WorkItemActivityEditNote _parseActivityEditNote(
       _activityNoteableId(node) != _workItemActivityModelId(identity.id)) {
     throw const FormatException('Invalid editable note metadata');
   }
+  _requireStrictActivityNoteProject(node, identity);
   _requireCompatibleAnchorProject(
     _parseOptionalResourceRef(node['project']),
     identity.project,
@@ -1645,6 +1695,7 @@ _WorkItemActivityAnchor _parseActivityAnchor(
       !_isWritableActivityNoteId(expectedAnchorId)) {
     throw const FormatException('Wrong reply anchor');
   }
+  _requireStrictActivityNoteProject(node, expected);
   _requireCompatibleAnchorProject(
     _parseOptionalResourceRef(node['project']),
     expected.project,
@@ -1694,6 +1745,7 @@ _WorkItemActivityCreatedIdentity _parseCreatedActivityNote(
   if (_activityNoteableId(node) != expectedWorkItemModelId) {
     throw const FormatException('Wrong created noteable');
   }
+  _requireStrictActivityNoteProject(node, expectedIdentity);
   _requireCompatibleAnchorProject(
     _parseOptionalResourceRef(node['project']),
     expectedIdentity.project,
@@ -1775,7 +1827,35 @@ _WorkItemActivityIdentity _activityIdentityFromExpected(
   iid: expected.iid,
   project: expected.project,
   namespace: expected.namespace,
+  strictGroupOwner: expected.strictGroupOwner,
 );
+
+_WorkItemActivityIdentity _parseActivityIdentity(
+  Json node,
+  _WorkItemActivityIdentity expected,
+) {
+  final identity = _parseAttributeIdentity(
+    node,
+    strictGroupOwner: expected.strictGroupOwner,
+  );
+  return (
+    id: identity.id,
+    iid: identity.iid,
+    project: identity.project,
+    namespace: identity.namespace,
+    strictGroupOwner: expected.strictGroupOwner,
+  );
+}
+
+void _requireStrictActivityNoteProject(
+  Json node,
+  _WorkItemActivityIdentity expected,
+) {
+  if (expected.strictGroupOwner != null &&
+      (!node.containsKey('project') || node['project'] != null)) {
+    throw const FormatException('Unverified group note project');
+  }
+}
 
 void _requireActivityIdentity(
   _WorkItemActivityIdentity actual,

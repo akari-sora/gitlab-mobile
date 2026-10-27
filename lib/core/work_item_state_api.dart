@@ -39,6 +39,7 @@ extension WorkItemStateApi on GitLabApi {
     WorkItemGraphSummary expected, {
     bool Function()? isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     _validateExpectedWorkItemStateIdentity(expected);
     _requireCurrentWorkItemRequest(isCurrent);
     final response = await _read(
@@ -123,8 +124,9 @@ extension WorkItemStateApi on GitLabApi {
       );
     } on ApiFailure catch (failure) {
       if (_graphDefinitelyNotSent(failure, didSend)) rethrow;
-      if (failure.kind == FailureKind.redirectBlocked ||
-          failure.kind == FailureKind.cancelled) {
+      if ((expected.strictGroupOwner == null || !didSend) &&
+          (failure.kind == FailureKind.redirectBlocked ||
+              failure.kind == FailureKind.cancelled)) {
         rethrow;
       }
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -156,8 +158,9 @@ extension WorkItemStateApi on GitLabApi {
         throw const FormatException('Wrong work item acknowledgement');
       }
     } on ApiFailure catch (failure) {
-      if (failure.kind == FailureKind.validation ||
-          failure.kind == FailureKind.unsupported) {
+      if (expected.strictGroupOwner == null &&
+          (failure.kind == FailureKind.validation ||
+              failure.kind == FailureKind.unsupported)) {
         rethrow;
       }
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -165,15 +168,18 @@ extension WorkItemStateApi on GitLabApi {
       throw const ApiFailure(FailureKind.writeUncertain);
     }
 
-    _requireCurrentWorkItemRequest(isCurrent);
     try {
+      _requireCurrentWorkItemRequest(isCurrent);
       final readback = await workItemState(expected, isCurrent: isCurrent);
       if (readback.id != before.id || readback.state != event.result) {
         throw const ApiFailure(FailureKind.writeUncertain);
       }
       return readback;
     } on ApiFailure catch (failure) {
-      if (failure.kind == FailureKind.cancelled) rethrow;
+      if (expected.strictGroupOwner == null &&
+          failure.kind == FailureKind.cancelled) {
+        rethrow;
+      }
       throw const ApiFailure(FailureKind.writeUncertain);
     }
   }
@@ -241,6 +247,7 @@ WorkItemStateSnapshot _parseWorkItemStateSnapshot(
   required bool requirePermission,
 }) {
   final node = objectJson(raw);
+  _requireStrictGroupWorkItemOwner(node, expected.strictGroupOwner);
   final id = requiredString(node, 'id');
   final iid = _positiveWorkItemInt(node['iid']);
   final state = _parseWorkItemState(node['state']);

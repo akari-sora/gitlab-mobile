@@ -11,6 +11,7 @@ import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/work_item_state_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _workItemId = 'gid://gitlab/WorkItem/31';
 const _typeId = 'gid://gitlab/WorkItems::Type/9';
@@ -114,6 +115,106 @@ Matcher _failure(FailureKind kind) =>
     isA<ApiFailure>().having((failure) => failure.kind, 'kind', kind);
 
 void main() {
+  for (final problem in ['exact', 'missing', 'project', 'namespace', 'payloadErrors', 'cancelled', 'schemaErrors']) {
+    for (final phase in ['opening', 'preflight', 'ack', 'readback', 'noop']) {
+      if (['payloadErrors', 'cancelled', 'schemaErrors'].contains(problem) && phase != 'ack') continue;
+      test('strict state $phase $problem validates raw owner', () async {
+        final summary = _summary(group: true);
+        var reads = 0;
+        var writes = 0;
+        var current = true;
+        final adapter = FakeAdapter((request) {
+          if (_mutation(request)) {
+            writes++;
+            final item = _node(
+              summary,
+              state: 'CLOSED',
+              updatedAt: _changed,
+              includePermission: false,
+            );
+            var response = _write(summary, workItem: item);
+            if (phase == 'ack') {
+              if (problem == 'payloadErrors') {
+                final payload = (response['data'] as Map)['workItemUpdate'] as Map;
+                payload['errors'] = ['rejected'];
+                payload.remove('workItem');
+              } else if (problem == 'cancelled') {
+                current = false;
+              } else if (problem == 'schemaErrors') {
+                response = {'errors': [{'message': 'unknown field', 'extensions': {'code': 'undefinedField'}}]};
+              } else {
+                corruptGroupOwner(item, problem);
+              }
+            }
+            return jsonResponse(response);
+          }
+          reads++;
+          final item = _node(
+            summary,
+            state: reads == 1 ? 'OPEN' : 'CLOSED',
+            updatedAt: reads == 1 ? _updated : _changed,
+          );
+          if ((phase == 'opening' || phase == 'preflight' || phase == 'noop') &&
+                  reads == 1 ||
+              phase == 'readback' && reads == 2) {
+            corruptGroupOwner(item, problem);
+          }
+          return jsonResponse({
+            'data': {'workItem': item},
+          });
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final expected = summary.withStrictGroupOwner(
+          strictGroupOwner(api, summary),
+        );
+        final Future<Object> action = phase == 'opening'
+            ? api.workItemState(expected)
+            : api.updateWorkItemState(
+                expected,
+                phase == 'noop'
+                    ? WorkItemStateEvent.reopen
+                    : WorkItemStateEvent.close,
+                expectedUpdatedAt: _updated,
+                isCurrent: () => current,
+              );
+        if (problem == 'exact') {
+          await action;
+        } else {
+          final kind = phase == 'ack' || phase == 'readback'
+              ? FailureKind.writeUncertain
+              : FailureKind.invalidResponse;
+          await expectLater(action, throwsA(_failure(kind)));
+        }
+        expect(
+          writes,
+          phase == 'opening' ||
+                  phase == 'noop' ||
+                  (problem != 'exact' && phase == 'preflight')
+              ? 0
+              : 1,
+        );
+      });
+    }
+  }
+
+  test(
+    'default state accepts omitted project for group compatibility',
+    () async {
+      final summary = _summary(group: true);
+      final item = _node(summary)..remove('project');
+      final adapter = FakeAdapter(
+        (_) => jsonResponse({
+          'data': {'workItem': item},
+        }),
+      );
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      expect((await api.workItemState(summary)).project, isNull);
+      expect(adapter.requests.where(_mutation), isEmpty);
+    },
+  );
+
   for (final group in [false, true]) {
     test(
       '${group ? 'group' : 'project'} preflight uses opaque identity and exact owner',

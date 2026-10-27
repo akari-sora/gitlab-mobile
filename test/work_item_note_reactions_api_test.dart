@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _workItemId = 'gid://gitlab/WorkItem/31';
 const _projectId = 'gid://gitlab/Project/42';
@@ -186,6 +187,444 @@ Future<WorkItemActivityReactionTarget> _target(
 )).target!;
 
 void main() {
+  test(
+    'strict group reactions reject another API before any request',
+    () async {
+      final first = testApi(FakeAdapter((_) => fail('unexpected request')));
+      final adapter = FakeAdapter((_) => fail('unexpected request'));
+      final second = testApi(adapter);
+      addTearDown(first.close);
+      addTearDown(second.close);
+      final strict = _groupExpected.withStrictGroupOwner(
+        strictGroupOwner(first, _groupExpected),
+      );
+      await expectLater(
+        second.workItemActivityReactionAccess(
+          strict,
+          _discussion,
+          _displayedNote,
+        ),
+        throwsA(isA<ApiFailure>()),
+      );
+      expect(adapter.requests, isEmpty);
+    },
+  );
+  for (final awarded in [true, false]) {
+    test(
+      'strict group reaction ${awarded ? 'add' : 'remove'} verifies its readback',
+      () async {
+        var hooks = 0;
+        var reads = 0;
+        final adapter = FakeAdapter((request) {
+          if (_isMutation(request)) {
+            return jsonResponse(_mutationAck(awarded: awarded));
+          }
+          reads++;
+          final after = reads == 3;
+          return jsonResponse(
+            _access(
+              expected: _groupExpected,
+              note: _note(
+                expected: _groupExpected,
+                updatedAt: after
+                    ? '2026-10-01T01:04:04Z'
+                    : '2026-10-01T01:03:04Z',
+                awards: (after ? awarded : !awarded)
+                    ? [_reaction('thumbsup')]
+                    : const [],
+              ),
+            ),
+          );
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final strict = _groupExpected.withStrictGroupOwner(
+          strictGroupOwner(api, _groupExpected),
+        );
+        final target = (await api.workItemActivityReactionAccess(
+          strict,
+          _discussion,
+          _displayedNote,
+        )).target!;
+        final result = await api.setWorkItemActivityNoteReaction(
+          target,
+          'thumbsup',
+          awarded: awarded,
+          beforeMutation: () async {
+            hooks++;
+          },
+          mayStart: () {
+            hooks++;
+            return true;
+          },
+        );
+        expect(
+          result.reactions.any(
+            (r) => r.name == 'thumbsup' && r.actorId == _actorId,
+          ),
+          awarded,
+        );
+        expect(hooks, 2);
+        expect(adapter.requests.where(_isMutation), hasLength(1));
+        expect(adapter.requests, hasLength(4));
+        await expectLater(
+          api.setWorkItemActivityNoteReaction(
+            target,
+            'thumbsup',
+            awarded: awarded,
+          ),
+          throwsA(_failure(FailureKind.writeUncertain)),
+        );
+        expect(adapter.requests, hasLength(4));
+      },
+    );
+  }
+
+  for (final awarded in [true, false]) {
+    for (final problem in [
+      'missing',
+      'project',
+      'namespace',
+      'namespace path',
+      'workItemId',
+      'iid',
+      'note missing',
+      'note project',
+      'wrong state',
+      'throw',
+      'cancel',
+    ]) {
+      test(
+        'strict reaction ${awarded ? 'add' : 'remove'} readback $problem is uncertain',
+        () async {
+          var reads = 0;
+          var current = true;
+          final adapter = FakeAdapter((request) {
+            if (_isMutation(request)) {
+              return jsonResponse(_mutationAck(awarded: awarded));
+            }
+            reads++;
+            final after = reads == 3;
+            if (after && problem == 'throw') {
+              throw StateError('synthetic readback failure');
+            }
+            if (after && problem == 'cancel') current = false;
+            final note = _note(
+              expected: _groupExpected,
+              updatedAt: after
+                  ? '2026-10-01T01:04:04Z'
+                  : '2026-10-01T01:03:04Z',
+              awards: (after && problem != 'wrong state' ? awarded : !awarded)
+                  ? [_reaction('thumbsup')]
+                  : const [],
+            );
+            if (after && problem == 'note project') note.remove('project');
+            final response = _access(expected: _groupExpected, note: note);
+            if (after) {
+              final data = response['data']! as Map<String, Object?>;
+              final item = data['workItem']! as Map<String, Object?>;
+              if (['missing', 'project', 'namespace'].contains(problem)) {
+                corruptGroupOwner(item, problem);
+              }
+              if (problem == 'namespace path') {
+                item['namespace'] = {
+                  'id': 'gid://gitlab/Group/7',
+                  'fullPath': 'foreign',
+                };
+              }
+              if (problem == 'workItemId') {
+                item['id'] = 'gid://gitlab/WorkItem/42';
+              }
+              if (problem == 'iid') item['iid'] = '9';
+              if (problem == 'note missing') data['note'] = null;
+            }
+            return jsonResponse(response);
+          });
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final strict = _groupExpected.withStrictGroupOwner(
+            strictGroupOwner(api, _groupExpected),
+          );
+          final target = (await api.workItemActivityReactionAccess(
+            strict,
+            _discussion,
+            _displayedNote,
+          )).target!;
+          await expectLater(
+            api.setWorkItemActivityNoteReaction(
+              target,
+              'thumbsup',
+              awarded: awarded,
+              isCurrent: () => current,
+            ),
+            throwsA(_failure(FailureKind.writeUncertain)),
+          );
+          expect(adapter.requests.where(_isMutation), hasLength(1));
+          expect(adapter.requests, hasLength(4));
+          await expectLater(
+            api.setWorkItemActivityNoteReaction(
+              target,
+              'thumbsup',
+              awarded: awarded,
+            ),
+            throwsA(_failure(FailureKind.writeUncertain)),
+          );
+          expect(adapter.requests, hasLength(4));
+        },
+      );
+    }
+  }
+
+  test('strict group reaction exact noop remains available', () async {
+    final adapter = FakeAdapter(
+      (_) => jsonResponse(_access(expected: _groupExpected)),
+    );
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final strict = _groupExpected.withStrictGroupOwner(
+      strictGroupOwner(api, _groupExpected),
+    );
+    final target = (await api.workItemActivityReactionAccess(
+      strict,
+      _discussion,
+      _displayedNote,
+    )).target!;
+    expect(
+      (await api.setWorkItemActivityNoteReaction(
+        target,
+        'thumbsup',
+        awarded: false,
+      )).reactions,
+      isEmpty,
+    );
+    expect(adapter.requests.where(_isMutation), isEmpty);
+  });
+  test('strict group reactions reject omitted project before noop', () async {
+    var reads = 0;
+    final adapter = FakeAdapter((_) {
+      reads++;
+      final response = _access(expected: _groupExpected);
+      if (reads == 2) {
+        ((response['data']! as Map)['workItem'] as Map).remove('project');
+      }
+      return jsonResponse(response);
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final strict = _groupExpected.withStrictGroupOwner(
+      strictGroupOwner(api, _groupExpected),
+    );
+    final target = (await api.workItemActivityReactionAccess(
+      strict,
+      _discussion,
+      _displayedNote,
+    )).target!;
+    await expectLater(
+      api.setWorkItemActivityNoteReaction(target, 'thumbsup', awarded: false),
+      throwsA(_failure(FailureKind.invalidResponse)),
+    );
+    expect(adapter.requests.where(_isMutation), isEmpty);
+  });
+  for (final problem in ['exact', 'missing', 'project', 'namespace']) {
+    for (final phase in ['opening', 'preflight']) {
+      test('strict group reactions $problem at $phase', () async {
+        var reads = 0;
+        var sent = 0;
+        final adapter = FakeAdapter((request) {
+          if (_isMutation(request)) {
+            sent++;
+            return jsonResponse(_mutationAck(awarded: true));
+          }
+          reads++;
+          final response = _access(
+            expected: _groupExpected,
+            note: _note(
+              expected: _groupExpected,
+              updatedAt: reads < 3
+                  ? '2026-10-01T01:03:04Z'
+                  : '2026-10-01T01:04:04Z',
+              awards: reads < 3 ? const [] : [_reaction('thumbsup')],
+            ),
+          );
+          final item =
+              (response['data']! as Map)['workItem'] as Map<String, Object?>;
+          if ((phase == 'opening' && reads == 1) ||
+              (phase == 'preflight' && reads == 2) ||
+              (phase == 'readback' && reads == 3)) {
+            corruptGroupOwner(item, problem);
+          }
+          return jsonResponse(response);
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final strict = _groupExpected.withStrictGroupOwner(
+          strictGroupOwner(api, _groupExpected),
+        );
+        final opening = api.workItemActivityReactionAccess(
+          strict,
+          _discussion,
+          _displayedNote,
+        );
+        if (problem != 'exact' && phase == 'opening') {
+          await expectLater(
+            opening,
+            throwsA(_failure(FailureKind.invalidResponse)),
+          );
+        } else {
+          final target = (await opening).target!;
+          final result = api.setWorkItemActivityNoteReaction(
+            target,
+            'thumbsup',
+            awarded: true,
+          );
+          if (problem == 'exact') {
+            await result;
+          } else {
+            await expectLater(
+              result,
+              throwsA(_failure(FailureKind.invalidResponse)),
+            );
+          }
+        }
+        expect(sent, problem == 'exact' ? 1 : 0);
+      });
+    }
+  }
+
+  for (final problem in ['exact', 'missing', 'project', 'namespace']) {
+    test('strict group reactions $problem on continuation page', () async {
+      var page = 0;
+      final adapter = FakeAdapter((_) {
+        page++;
+        final response = _access(
+          expected: _groupExpected,
+          note: _note(
+            expected: _groupExpected,
+            next: page == 1,
+            cursor: page == 1 ? 'next' : null,
+          ),
+        );
+        final item =
+            (response['data']! as Map)['workItem'] as Map<String, Object?>;
+        if (page == 2) corruptGroupOwner(item, problem);
+        return jsonResponse(response);
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final strict = _groupExpected.withStrictGroupOwner(
+        strictGroupOwner(api, _groupExpected),
+      );
+      final opening = api.workItemActivityReactionAccess(
+        strict,
+        _discussion,
+        _displayedNote,
+      );
+      if (problem == 'exact') {
+        expect((await opening).target, isNotNull);
+      } else {
+        await expectLater(
+          opening,
+          throwsA(_failure(FailureKind.invalidResponse)),
+        );
+      }
+      expect(page, 2);
+      expect(adapter.requests.where(_isMutation), isEmpty);
+    });
+  }
+
+  test('strict group reactions require explicit null note project', () async {
+    final note = _note(expected: _groupExpected)..remove('project');
+    final adapter = FakeAdapter(
+      (_) => jsonResponse(_access(expected: _groupExpected, note: note)),
+    );
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final strict = _groupExpected.withStrictGroupOwner(
+      strictGroupOwner(api, _groupExpected),
+    );
+    await expectLater(
+      api.workItemActivityReactionAccess(strict, _discussion, _displayedNote),
+      throwsA(_failure(FailureKind.invalidResponse)),
+    );
+    expect(adapter.requests.where(_isMutation), isEmpty);
+  });
+
+  for (final phase in ['preflight', 'readback']) {
+    test(
+      'strict group reactions reject missing note project at $phase',
+      () async {
+        var reads = 0;
+        var sent = 0;
+        final adapter = FakeAdapter((request) {
+          if (_isMutation(request)) {
+            sent++;
+            return jsonResponse(_mutationAck(awarded: true));
+          }
+          reads++;
+          final note = _note(
+            expected: _groupExpected,
+            updatedAt: reads < 3
+                ? '2026-10-01T01:03:04Z'
+                : '2026-10-01T01:04:04Z',
+            awards: reads < 3 ? const [] : [_reaction('thumbsup')],
+          );
+          if ((phase == 'preflight' && reads == 2) ||
+              (phase == 'readback' && reads == 3)) {
+            note.remove('project');
+          }
+          return jsonResponse(_access(expected: _groupExpected, note: note));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final strict = _groupExpected.withStrictGroupOwner(
+          strictGroupOwner(api, _groupExpected),
+        );
+        final target = (await api.workItemActivityReactionAccess(
+          strict,
+          _discussion,
+          _displayedNote,
+        )).target!;
+        await expectLater(
+          api.setWorkItemActivityNoteReaction(
+            target,
+            'thumbsup',
+            awarded: true,
+          ),
+          throwsA(
+            _failure(
+              phase == 'preflight'
+                  ? FailureKind.invalidResponse
+                  : FailureKind.writeUncertain,
+            ),
+          ),
+        );
+        expect(sent, phase == 'preflight' ? 0 : 1);
+      },
+    );
+  }
+
+  test(
+    'default group reactions accept omitted parent and note project',
+    () async {
+      final note = _note(expected: _groupExpected)..remove('project');
+      final response = _access(expected: _groupExpected, note: note);
+      final item =
+          (response['data']! as Map)['workItem'] as Map<String, Object?>;
+      item.remove('project');
+      final adapter = FakeAdapter((_) => jsonResponse(response));
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      expect(
+        (await api.workItemActivityReactionAccess(
+          _groupExpected,
+          _discussion,
+          _displayedNote,
+        )).target,
+        isNotNull,
+      );
+      expect(adapter.requests.where(_isMutation), isEmpty);
+    },
+  );
   test('pages complete project reactions before minting a target', () async {
     var page = 0;
     final adapter = FakeAdapter((request) {
@@ -339,7 +778,10 @@ void main() {
       expect(access.reactions.single.name, 'thumbsup');
       expect(access.target, isNotNull);
       expect(access.target!.note.updatedAt, DateTime.parse(updatedAt));
-      expect(access.target!.note.updatedAt.isAfter(target.note.updatedAt), isTrue);
+      expect(
+        access.target!.note.updatedAt.isAfter(target.note.updatedAt),
+        isTrue,
+      );
       expect(adapter.requests.where(_isMutation), hasLength(1));
     },
   );
@@ -390,7 +832,10 @@ void main() {
 
       expect(access.reactions, isEmpty);
       expect(access.target!.note.updatedAt, DateTime.parse(updatedAt));
-      expect(access.target!.note.updatedAt.isAfter(target.note.updatedAt), isTrue);
+      expect(
+        access.target!.note.updatedAt.isAfter(target.note.updatedAt),
+        isTrue,
+      );
       expect(adapter.requests.where(_isMutation), hasLength(1));
     },
   );
@@ -672,34 +1117,31 @@ void main() {
     },
   );
 
-  test(
-    'updatedAt changes across reaction pages are refused',
-    () async {
-      final adapter = FakeAdapter((request) {
-        final after = ((request.data as Map)['variables'] as Map)['after'];
-        return jsonResponse(
-          _access(
-            note: _note(
-              updatedAt: after == null
-                  ? '2026-10-01T01:03:04Z'
-                  : '2026-10-01T01:04:04Z',
-              next: after == null,
-              cursor: after == null ? 'next' : null,
-            ),
+  test('updatedAt changes across reaction pages are refused', () async {
+    final adapter = FakeAdapter((request) {
+      final after = ((request.data as Map)['variables'] as Map)['after'];
+      return jsonResponse(
+        _access(
+          note: _note(
+            updatedAt: after == null
+                ? '2026-10-01T01:03:04Z'
+                : '2026-10-01T01:04:04Z',
+            next: after == null,
+            cursor: after == null ? 'next' : null,
           ),
-        );
-      });
-      final api = testApi(adapter);
-      addTearDown(api.close);
-
-      await expectLater(
-        _target(api),
-        throwsA(_failure(FailureKind.invalidResponse)),
+        ),
       );
-      expect(adapter.requests, hasLength(2));
-      expect(adapter.requests.where(_isMutation), isEmpty);
-    },
-  );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await expectLater(
+      _target(api),
+      throwsA(_failure(FailureKind.invalidResponse)),
+    );
+    expect(adapter.requests, hasLength(2));
+    expect(adapter.requests.where(_isMutation), isEmpty);
+  });
 
   test(
     'target is owner-bound and concurrent dispatch sends at most once',

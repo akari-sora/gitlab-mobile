@@ -1,3 +1,5 @@
+import 'group_work_item_identity.dart';
+
 /// Opaque GraphQL identity bound to one namespace path.
 final class GraphResourceRef {
   const GraphResourceRef({required this.id, required this.fullPath});
@@ -41,6 +43,7 @@ final class WorkItemGraphSummary {
     required this.type,
     this.author,
     this.widgets,
+    this.strictGroupOwner,
   });
 
   /// Server-owned WorkItem global ID. It is never reconstructed by clients.
@@ -57,6 +60,40 @@ final class WorkItemGraphSummary {
 
   /// List summary widgets. Null when widgets were not requested or unavailable.
   final WorkItemSummaryWidgets? widgets;
+
+  /// Opt-in, trusted ownership evidence for AI writes. Every subsequent core
+  /// response must explicitly return `project: null` and this exact namespace.
+  /// Ordinary UI and project callers leave this null.
+  final VerifiedGroupWorkItemIdentity? strictGroupOwner;
+
+  /// Binds an existing summary to the identity verified by the strict group
+  /// resolver. Reuse this copy for opening reads; opaque targets retain it for
+  /// preflight, acknowledgement and independent readback without extra reads.
+  WorkItemGraphSummary withStrictGroupOwner(
+    VerifiedGroupWorkItemIdentity owner,
+  ) {
+    if (id != owner.workItemGid ||
+        iid != owner.iid ||
+        project != null ||
+        namespace?.id != owner.groupGid ||
+        namespace?.fullPath != owner.fullPath) {
+      throw ArgumentError('Group owner does not match the work item');
+    }
+    return WorkItemGraphSummary(
+      id: id,
+      iid: iid,
+      title: title,
+      state: state,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      project: project,
+      namespace: namespace,
+      type: type,
+      author: author,
+      widgets: widgets,
+      strictGroupOwner: owner,
+    );
+  }
 
   /// Alias for [widgets] to support either naming.
   WorkItemSummaryWidgets? get summary => widgets;
@@ -198,6 +235,20 @@ final class WorkItemGraphDetail {
   final WorkItemLabelsWidget? labels;
   final WorkItemHierarchyWidget? hierarchy;
   final WorkItemDatesWidget? dates;
+
+  /// Enables strict ownership on the shared readers that take a detail.
+  WorkItemGraphDetail withStrictGroupOwner(VerifiedGroupWorkItemIdentity owner) =>
+      WorkItemGraphDetail(
+        summary: summary.withStrictGroupOwner(owner),
+        description: description,
+        widgetsAvailable: widgetsAvailable,
+        widgetTypes: widgetTypes,
+        descriptionWidget: descriptionWidget,
+        assignees: assignees,
+        labels: labels,
+        hierarchy: hierarchy,
+        dates: dates,
+      );
 }
 
 final class WorkItemMilestoneSummary {

@@ -179,8 +179,9 @@ extension WorkItemNotificationsApi on GitLabApi {
         throw const FormatException('Wrong subscription acknowledgement');
       }
     } on ApiFailure catch (failure) {
-      if (failure.kind == FailureKind.unsupported ||
-          failure.kind == FailureKind.validation) {
+      if (target._expected.strictGroupOwner == null &&
+          (failure.kind == FailureKind.unsupported ||
+              failure.kind == FailureKind.validation)) {
         rethrow;
       }
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -211,6 +212,7 @@ extension WorkItemNotificationsApi on GitLabApi {
     required int? expectedUserId,
     bool Function()? isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     _requireCurrentWorkItemRequest(isCurrent);
     final response = await _read(
       instance.graphQL,
@@ -279,7 +281,10 @@ _NotificationWorkItem _parseNotificationWorkItem(
   WorkItemGraphSummary expected,
 ) {
   final node = objectJson(raw);
-  _requireExpectedAttributeIdentity(_parseAttributeIdentity(node), expected);
+  _requireExpectedAttributeIdentity(
+    _parseAttributeIdentity(node, expected: expected),
+    expected,
+  );
   final type = objectJson(node['workItemType']);
   if (requiredString(type, 'id') != expected.type.id ||
       !_validOpaqueGraphId(expected.type.id)) {
