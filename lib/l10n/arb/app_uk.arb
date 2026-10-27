@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "Фонова робота ШІ",
   "aiRunServiceTitle": "ШІ-асистент працює",
   "aiRunServiceText": "Можна вийти із застосунку — робота триватиме.",
+  "aiRunServiceStopAll": "Зупинити все",
   "aiNotConfigured": "Не налаштовано",
   "aiProvidersHeading": "Постачальники",
   "aiAddProvider": "Додати постачальника",

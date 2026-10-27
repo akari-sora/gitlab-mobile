@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "Pekerjaan AI di latar belakang",
   "aiRunServiceTitle": "Asisten AI sedang bekerja",
   "aiRunServiceText": "Anda dapat meninggalkan aplikasi; pekerjaan tetap berjalan.",
+  "aiRunServiceStopAll": "Hentikan semua",
   "aiNotConfigured": "Belum dikonfigurasi",
   "aiProvidersHeading": "Penyedia",
   "aiAddProvider": "Tambah penyedia",

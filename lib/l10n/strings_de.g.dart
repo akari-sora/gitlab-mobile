@@ -2122,6 +2122,7 @@ const _messagesDe = <String>[
   'KI-Arbeit im Hintergrund',
   'KI-Assistent arbeitet',
   'Sie können die App verlassen, die Arbeit läuft weiter.',
+  'Alle stoppen',
   'Nicht konfiguriert',
   'Anbieter',
   'Anbieter hinzufügen',

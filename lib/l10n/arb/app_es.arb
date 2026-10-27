@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "Trabajo de IA en segundo plano",
   "aiRunServiceTitle": "El asistente de IA está trabajando",
   "aiRunServiceText": "Puedes salir de la app; el trabajo sigue en curso.",
+  "aiRunServiceStopAll": "Detener todo",
   "aiNotConfigured": "Sin configurar",
   "aiProvidersHeading": "Proveedores",
   "aiAddProvider": "Añadir proveedor",

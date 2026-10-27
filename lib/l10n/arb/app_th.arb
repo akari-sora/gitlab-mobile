@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "งาน AI เบื้องหลัง",
   "aiRunServiceTitle": "ผู้ช่วย AI กำลังทำงาน",
   "aiRunServiceText": "ออกจากแอปได้ งานจะยังทำต่อไป",
+  "aiRunServiceStopAll": "หยุดทั้งหมด",
   "aiNotConfigured": "ยังไม่ได้ตั้งค่า",
   "aiProvidersHeading": "ผู้ให้บริการ",
   "aiAddProvider": "เพิ่มผู้ให้บริการ",

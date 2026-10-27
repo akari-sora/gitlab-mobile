@@ -2122,6 +2122,7 @@ const _messagesId = <String>[
   'Pekerjaan AI di latar belakang',
   'Asisten AI sedang bekerja',
   'Anda dapat meninggalkan aplikasi; pekerjaan tetap berjalan.',
+  'Hentikan semua',
   'Belum dikonfigurasi',
   'Penyedia',
   'Tambah penyedia',

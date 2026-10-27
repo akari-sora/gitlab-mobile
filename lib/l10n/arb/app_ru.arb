@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "Фоновая работа ИИ",
   "aiRunServiceTitle": "ИИ-ассистент работает",
   "aiRunServiceText": "Можно выйти из приложения — работа продолжится.",
+  "aiRunServiceStopAll": "Остановить все",
   "aiNotConfigured": "Не настроено",
   "aiProvidersHeading": "Поставщики",
   "aiAddProvider": "Добавить поставщика",

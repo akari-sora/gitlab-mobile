@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "Tác vụ AI chạy nền",
   "aiRunServiceTitle": "Trợ lý AI đang làm việc",
   "aiRunServiceText": "Bạn có thể rời ứng dụng; công việc vẫn tiếp tục.",
+  "aiRunServiceStopAll": "Dừng tất cả",
   "aiNotConfigured": "Chưa cấu hình",
   "aiProvidersHeading": "Nhà cung cấp",
   "aiAddProvider": "Thêm nhà cung cấp",

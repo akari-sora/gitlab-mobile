@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "عمل الذكاء الاصطناعي في الخلفية",
   "aiRunServiceTitle": "مساعد الذكاء الاصطناعي يعمل",
   "aiRunServiceText": "يمكنك مغادرة التطبيق، وسيستمر العمل.",
+  "aiRunServiceStopAll": "إيقاف الكل",
   "aiNotConfigured": "غير مضبوط",
   "aiProvidersHeading": "المزوّدون",
   "aiAddProvider": "إضافة مزوّد",

@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "AI-werk op de achtergrond",
   "aiRunServiceTitle": "AI-assistent is bezig",
   "aiRunServiceText": "Je kunt de app verlaten; het werk gaat door.",
+  "aiRunServiceStopAll": "Alles stoppen",
   "aiNotConfigured": "Niet geconfigureerd",
   "aiProvidersHeading": "Aanbieders",
   "aiAddProvider": "Provider toevoegen",

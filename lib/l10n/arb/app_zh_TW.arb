@@ -10625,6 +10625,11 @@
   "aiRunChannelName": "AI 背景工作",
   "aiRunServiceTitle": "AI 助理正在工作",
   "aiRunServiceText": "可以離開應用程式，工作會繼續進行。",
+  "aiRunServiceStopAll": "全部停止",
+  "@aiRunServiceStopAll": {
+    "description": "Action button on the ongoing background-work notification; stops every AI run and pending approval.",
+    "placeholders": {}
+  },
   "aiNotConfigured": "尚未設定",
   "aiProvidersHeading": "供應商",
   "aiAddProvider": "新增供應商",
