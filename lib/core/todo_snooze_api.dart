@@ -109,14 +109,12 @@ final _projectGid = RegExp(r'^gid://gitlab/Project/([1-9][0-9]*)$');
 ///
 /// Group-write callers must bind the verified owner and Todo ID on the strict
 /// ownership reader before sending: [pendingTodosForSnooze] for snooze and
-/// [snoozedTodosForUnsnooze] for unsnooze. The mutation acknowledgement proves
-/// only the returned Todo ID and time; it does not establish group ownership.
-/// After the send, the caller must use its budgeted independent strict reader
-/// for the opposite list, check the same actor and exact Todo and verify the
-/// expected time (null for unsnooze). A missing, mismatched, cancelled or
-/// failed post-send read is uncertain, never success or a mutation retry.
-/// These methods do not schedule that read: the group family owns the sequence
-/// and must refuse before sending if it cannot perform the strict readback.
+/// [snoozedTodosForUnsnooze] for unsnooze. The preflight must prove that the
+/// exact Todo belongs to the expected actor and group work item. The
+/// mutation acknowledgement must return the same Todo ID and expected time
+/// (null for unsnooze); a missing or mismatched acknowledgement is uncertain.
+/// The group family owns this sequence and uses no post-send readback (Mrb=0).
+/// Note and reaction writes have a separate strict readback requirement.
 extension TodoSnoozeApi on GitLabApi {
   /// Snoozes todo [id] until [until] and returns the time GitLab acknowledged.
   Future<DateTime> snoozeTodo(int id, DateTime until, {

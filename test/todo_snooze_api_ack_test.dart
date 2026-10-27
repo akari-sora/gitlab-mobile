@@ -75,6 +75,8 @@ Map<String, Object?> _todo({required bool snoozed, String problem = 'exact'}) {
       target['workItemId'] = 'gid://gitlab/WorkItem/92';
     case 'foreignIid':
       target['iid'] = '8';
+    case 'wrongTodoId':
+      todo['id'] = 'gid://gitlab/Todo/20';
     case 'wrongState':
       todo['snoozedUntil'] = snoozed ? '2031-01-01T00:00:00Z' : _untilText;
   }
@@ -101,13 +103,8 @@ enum _Outcome { refused, uncertain, success }
 
 // This is a contract harness for future G-P13, not the production family.
 // The mutation API must remain a single request: this caller explicitly owns
-// the preflight and the budgeted independent readback.
-Future<_Outcome> _groupWrite(
-  GitLabApi api, {
-  required bool snooze,
-  required bool hasReadback,
-}) async {
-  if (!hasReadback) return _Outcome.refused;
+// the strict ownership preflight and checks the acknowledgement (Mrb=0).
+Future<_Outcome> _groupWrite(GitLabApi api, {required bool snooze}) async {
   final owner = strictGroupOwner(api, _summary());
   final expected = DateTime.parse(_untilText);
   Future<bool> read(bool isSnoozed) async {
@@ -144,7 +141,7 @@ Future<_Outcome> _groupWrite(
     } else {
       await api.unsnoozeTodo(19);
     }
-    return await read(snooze) ? _Outcome.success : _Outcome.uncertain;
+    return _Outcome.success;
   } catch (_) {
     return _Outcome.uncertain;
   }
@@ -153,8 +150,40 @@ Future<_Outcome> _groupWrite(
 void main() {
   for (final snooze in [true, false]) {
     final operation = snooze ? 'snooze' : 'unsnooze';
+    test('group $operation D30 succeeds without a readback', () async {
+      var reads = 0;
+      var mutations = 0;
+      final adapter = FakeAdapter((request) {
+        final query = (request.data as Map)['query'] as String;
+        if (query.trimLeft().startsWith('mutation ')) {
+          mutations++;
+          final field = snooze ? 'todoSnooze' : 'todoUnSnooze';
+          return jsonResponse({
+            'data': {
+              field: {
+                'todo': {
+                  'id': 'gid://gitlab/Todo/19',
+                  'snoozedUntil': snooze ? _untilText : null,
+                },
+                'errors': <Object>[],
+              },
+            },
+          });
+        }
+        reads++;
+        expect(reads, 1, reason: 'D30 permits no post-send readback');
+        expect(query, contains('isSnoozed: ${!snooze}'));
+        return jsonResponse(_page(_todo(snoozed: !snooze)));
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      expect(await _groupWrite(api, snooze: snooze), _Outcome.success);
+      expect(reads, 1, reason: 'one strict preflight, Mrb=0');
+      expect(mutations, 1, reason: 'one mutation, no retry');
+      expect(adapter.requests, hasLength(2));
+    });
+
     for (final problem in [
-      'exact',
       'missingTodoProject',
       'missingTargetProject',
       'todoProject',
@@ -163,39 +192,24 @@ void main() {
       'foreignPath',
       'foreignItem',
       'foreignIid',
+      'wrongTodoId',
       'wrongState',
       'missingTodo',
       'foreignActor',
       'throws',
       'cancelled',
     ]) {
-      test('group $operation D29 caller readback $problem', () async {
-        var reads = 0;
+      test('group $operation refuses strict preflight $problem', () async {
         var mutations = 0;
         final adapter = FakeAdapter((request) {
           final query = (request.data as Map)['query'] as String;
           if (query.trimLeft().startsWith('mutation ')) {
             mutations++;
-            final field = snooze ? 'todoSnooze' : 'todoUnSnooze';
-            return jsonResponse({
-              'data': {
-                field: {
-                  'todo': {
-                    'id': 'gid://gitlab/Todo/19',
-                    'snoozedUntil': snooze ? _untilText : null,
-                  },
-                  'errors': <Object>[],
-                },
-              },
-            });
+            throw StateError('unexpected mutation');
           }
-          reads++;
-          final postSend = reads == 2;
-          expect(query, contains('isSnoozed: ${postSend ? snooze : !snooze}'));
-          if (postSend && problem == 'throws') {
-            throw StateError('readback failed');
-          }
-          if (postSend && problem == 'cancelled') {
+          expect(query, contains('isSnoozed: ${!snooze}'));
+          if (problem == 'throws') throw StateError('preflight failed');
+          if (problem == 'cancelled') {
             throw DioException(
               requestOptions: request,
               type: DioExceptionType.cancel,
@@ -203,12 +217,9 @@ void main() {
           }
           return jsonResponse(
             _page(
-              _todo(
-                snoozed: postSend ? snooze : !snooze,
-                problem: postSend ? problem : 'exact',
-              ),
-              missing: postSend && problem == 'missingTodo',
-              actor: postSend && problem == 'foreignActor'
+              _todo(snoozed: !snooze, problem: problem),
+              missing: problem == 'missingTodo',
+              actor: problem == 'foreignActor'
                   ? 'gid://gitlab/User/8'
                   : _actor,
             ),
@@ -216,18 +227,9 @@ void main() {
         });
         final api = testApi(adapter);
         addTearDown(api.close);
-        final result = await _groupWrite(
-          api,
-          snooze: snooze,
-          hasReadback: true,
-        );
-        expect(
-          result,
-          problem == 'exact' ? _Outcome.success : _Outcome.uncertain,
-        );
-        expect(mutations, 1, reason: 'never replay a post-send failure');
-        expect(reads, 2, reason: 'one preflight and one explicit readback');
-        expect(adapter.requests, hasLength(3));
+        expect(await _groupWrite(api, snooze: snooze), _Outcome.refused);
+        expect(mutations, 0);
+        expect(adapter.requests, hasLength(1));
       });
     }
 
@@ -267,7 +269,7 @@ void main() {
           final api = testApi(adapter);
           addTearDown(api.close);
           expect(
-            await _groupWrite(api, snooze: snooze, hasReadback: true),
+            await _groupWrite(api, snooze: snooze),
             _Outcome.uncertain,
           );
           expect(reads, 1);
@@ -276,39 +278,6 @@ void main() {
         },
       );
     }
-
-    test('group $operation refuses before send without readback', () async {
-      final adapter = FakeAdapter((_) => throw StateError('no requests'));
-      final api = testApi(adapter);
-      addTearDown(api.close);
-      expect(
-        await _groupWrite(api, snooze: snooze, hasReadback: false),
-        _Outcome.refused,
-      );
-      expect(adapter.requests, isEmpty);
-    });
-
-    test(
-      'group $operation refuses malformed strict preflight before send',
-      () async {
-        final adapter = FakeAdapter(
-          (_) => jsonResponse(
-            _page(_todo(snoozed: !snooze, problem: 'missingTargetProject')),
-          ),
-        );
-        final api = testApi(adapter);
-        addTearDown(api.close);
-        expect(
-          await _groupWrite(api, snooze: snooze, hasReadback: true),
-          _Outcome.refused,
-        );
-        expect(adapter.requests, hasLength(1));
-        expect(
-          ((adapter.requests.single.data as Map)['query'] as String),
-          startsWith('query '),
-        );
-      },
-    );
   }
 
   for (final (name, fields, succeeds) in <(String, Json, bool)>[

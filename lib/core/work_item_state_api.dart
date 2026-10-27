@@ -130,6 +130,9 @@ extension WorkItemStateApi on GitLabApi {
         rethrow;
       }
       throw const ApiFailure(FailureKind.writeUncertain);
+    } on Object {
+      if (expected.strictGroupOwner == null || !didSend) rethrow;
+      throw const ApiFailure(FailureKind.writeUncertain);
     }
 
     try {
@@ -166,6 +169,9 @@ extension WorkItemStateApi on GitLabApi {
       throw const ApiFailure(FailureKind.writeUncertain);
     } on FormatException {
       throw const ApiFailure(FailureKind.writeUncertain);
+    } on Object {
+      if (expected.strictGroupOwner == null) rethrow;
+      throw const ApiFailure(FailureKind.writeUncertain);
     }
 
     try {
@@ -180,6 +186,9 @@ extension WorkItemStateApi on GitLabApi {
           failure.kind == FailureKind.cancelled) {
         rethrow;
       }
+      throw const ApiFailure(FailureKind.writeUncertain);
+    } on Object {
+      if (expected.strictGroupOwner == null) rethrow;
       throw const ApiFailure(FailureKind.writeUncertain);
     }
   }

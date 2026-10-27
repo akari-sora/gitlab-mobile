@@ -333,6 +333,9 @@ extension WorkItemHealthEditApi on GitLabApi {
       }
       throw const FormatException('Health update outcome drift');
     } on WorkItemHealthEditFailure {
+      if (didSend && target._opening.summary.strictGroupOwner != null) {
+        throw WorkItemHealthEditFailure(_healthUncertain, true);
+      }
       rethrow;
     } on _HealthPayloadValidation {
       if (target._opening.summary.strictGroupOwner != null) {

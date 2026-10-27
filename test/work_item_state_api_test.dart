@@ -7,6 +7,7 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
+import 'package:gitlab_mobile/core/rate_budget.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/work_item_state_models.dart';
 
@@ -115,6 +116,99 @@ Matcher _failure(FailureKind kind) =>
     isA<ApiFailure>().having((failure) => failure.kind, 'kind', kind);
 
 void main() {
+  for (final strict in [false, true]) {
+    for (final stage in ['cache clock', 'current check']) {
+      for (final phase in ['before send', 'after ack', 'during readback']) {
+        if (stage == 'cache clock' && phase == 'during readback') continue;
+        test(
+          '${strict ? 'strict' : 'default'} state $stage exception $phase',
+          () async {
+            final summary = _summary(group: true);
+            final now = DateTime.utc(2026, 10, 28);
+            var reads = 0;
+            var writes = 0;
+            var preparingSend = false;
+            var injections = 0;
+            final adapter = FakeAdapter((request) {
+              if (_mutation(request)) {
+                writes++;
+                return jsonResponse(_write(summary));
+              }
+              reads++;
+              return jsonResponse(
+                _read(
+                  summary,
+                  state: reads == 1 ? 'OPEN' : 'CLOSED',
+                  updatedAt: reads == 1 ? _updated : _changed,
+                ),
+              );
+            });
+            bool shouldFail() => switch (phase) {
+              'before send' => stage == 'cache clock'
+                  ? preparingSend
+                  : reads == 1,
+              'after ack' => writes == 1,
+              'during readback' => reads == 2,
+              _ => false,
+            };
+            final api = GitLabApi(
+              instance: GitLabInstance.parse('https://example.com/gitlab'),
+              token: 'synthetic-test-token',
+              dio: Dio()..httpClientAdapter = adapter,
+              cdnAdapter: adapter,
+              rateBudget: GitLabRateBudget(now: () => now),
+              readCacheClock: () {
+                if (stage == 'cache clock' &&
+                    shouldFail() &&
+                    injections == 0) {
+                  injections++;
+                  throw StateError('$phase cache clock');
+                }
+                return now;
+              },
+            );
+            addTearDown(api.close);
+            final expected = strict
+                ? summary.withStrictGroupOwner(strictGroupOwner(api, summary))
+                : summary;
+            await expectLater(
+              api.updateWorkItemState(
+                expected,
+                WorkItemStateEvent.close,
+                expectedUpdatedAt: _updated,
+                isCurrent: () {
+                  if (stage == 'current check' && shouldFail()) {
+                    injections++;
+                    throw StateError('$phase current check');
+                  }
+                  return true;
+                },
+                beforeMutation: () async => preparingSend = true,
+                mayStart: () => true,
+              ),
+              throwsA(
+                strict && phase != 'before send'
+                    ? _failure(FailureKind.writeUncertain)
+                    : isA<StateError>(),
+              ),
+            );
+            expect(injections, 1);
+            expect(writes, phase == 'before send' ? 0 : 1);
+            expect(
+              adapter.requests.map(_mutation),
+              phase == 'before send'
+                  ? [false]
+                  : phase == 'after ack'
+                  ? [false, true]
+                  : [false, true, false],
+              reason: 'one mutation at most and no resend or extra reads',
+            );
+          },
+        );
+      }
+    }
+  }
+
   for (final problem in ['exact', 'missing', 'project', 'namespace', 'payloadErrors', 'cancelled', 'schemaErrors']) {
     for (final phase in ['opening', 'preflight', 'ack', 'readback', 'noop']) {
       if (['payloadErrors', 'cancelled', 'schemaErrors'].contains(problem) && phase != 'ack') continue;

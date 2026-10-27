@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/work_item_health_edit_models.dart';
 
@@ -385,6 +386,67 @@ Future<void> _expectConsumed(
 }
 
 void main() {
+  for (final strict in [false, true]) {
+    for (final afterSend in [false, true]) {
+      test('health typed cache failure strict=$strict afterSend=$afterSend', () async {
+        var writes = 0;
+        var armed = false;
+        var injected = false;
+        final adapter = FakeAdapter((request) {
+          if (_isMutation(request)) {
+            writes++;
+            return jsonResponse(_ack(group: true, value: 'atRisk'));
+          }
+          return jsonResponse(_read(group: true, value: 'needsAttention'));
+        });
+        final api = GitLabApi(
+          instance: GitLabInstance.parse('https://example.com/gitlab'),
+          token: 'synthetic-test-token',
+          dio: Dio()..httpClientAdapter = adapter,
+          cdnAdapter: adapter,
+          readCacheClock: () {
+            if (armed && !injected && (afterSend ? writes > 0 : writes == 0)) {
+              injected = true;
+              throw const WorkItemHealthEditFailure(
+                ApiFailure(FailureKind.forbidden),
+                false,
+              );
+            }
+            return DateTime.now();
+          },
+        );
+        addTearDown(api.close);
+        final detail = strict
+            ? strictGroupDetail(api, _detail(group: true))
+            : _detail(group: true);
+        final access = await api.workItemHealthEdit(
+          detail,
+          expectedUserId: 7,
+          generation: _generation,
+          isCurrent: () => true,
+        );
+        armed = true;
+        final expected = afterSend
+            ? (strict ? FailureKind.writeUncertain : FailureKind.forbidden)
+            : FailureKind.invalidResponse;
+        await expectLater(
+          api.updateWorkItemHealthStatus(
+            access.target!,
+            desired: WorkItemHealthEditValue.atRisk,
+            generation: _generation,
+            isCurrent: () => true,
+          ),
+          throwsA(_editFailure(expected, afterSend && strict)),
+        );
+        expect(injected, isTrue);
+        expect(writes, afterSend ? 1 : 0);
+        if (afterSend) {
+          expect(adapter.requests, hasLength(3));
+        }
+      });
+    }
+  }
+
   for (final problem in ['exact', 'missing', 'project', 'namespace', 'payloadErrors', 'cancelled', 'schemaErrors']) {
     for (final phase in ['opening', 'preflight', 'noop', 'ack', 'readback']) {
       if (['payloadErrors', 'cancelled', 'schemaErrors'].contains(problem) && phase != 'ack') continue;
