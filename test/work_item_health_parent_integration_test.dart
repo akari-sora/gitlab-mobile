@@ -202,14 +202,20 @@ void main() {
 
       apply.complete();
       for (var i = 0; i < 200 && _details(h) < details + 1; i++) {
-        await tester.binding.delayed(const Duration(milliseconds: 1));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 1)),
+        );
+        await tester.idle();
       }
       expect(
         _details(h),
         details + 1,
         reason: 'SETTLE reached: writer reload dispatched before any frame',
       );
-      await tester.binding.delayed(const Duration(milliseconds: 10));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.idle();
       // Single pump observable: hold line gone, final confirmed state rendered
       await tester.pump();
       expect(find.byKey(_hold, skipOffstage: false), findsNothing);
@@ -499,7 +505,7 @@ void main() {
       final statusApply = Completer<void>();
       f.status.holdBeforeApply = statusApply;
       await tester.tap(find.byKey(_statusSave));
-      await tester.idle();
+      await _until(tester, () => f.status.awaitingApply);
       expect(f.status.awaitingApply, isTrue, reason: 'Status held before apply');
 
       f.releaseFenceNonce(f.parkedFenceNonces.single);
@@ -801,14 +807,20 @@ void main() {
 
       apply.complete();
       for (var i = 0; i < 200 && _details(h) < xPrimary + 2; i++) {
-        await tester.binding.delayed(const Duration(milliseconds: 1));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 1)),
+        );
+        await tester.idle();
       }
       expect(
         _details(h),
         xPrimary + 2,
         reason: 'SETTLE reached: writer A + observer B reload dispatched before any frame (M1n)',
       );
-      await tester.binding.delayed(const Duration(milliseconds: 10));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.idle();
       // Single pump assertion
       await tester.pump();
       expect(_has('b', _hold), findsNothing, reason: 'B hold line gone on single pump');

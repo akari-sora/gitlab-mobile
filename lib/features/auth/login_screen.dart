@@ -87,6 +87,8 @@ class _LoginScreenState extends State<LoginScreen> {
       account: account,
       job: job,
       session: widget.session,
+      clearReadCacheDisk: (saved) =>
+          widget.session.readCache.clearReadCacheDisk(saved.key),
       confirm: (prompt) => _dialogs.confirmRemoval(account, prompt),
       waitForInFlightWrites: () async {},
       requestCancelOnDispose: () => _cancelOnDispose = job.requestCancel,

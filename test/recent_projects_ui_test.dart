@@ -29,7 +29,7 @@ void main() {
 
   testWidgets('ProjectsPage renders recent projects chips when query is empty and opens on click', (tester) async {
     final accountStore = MemoryAccountStore();
-    final session = SessionController(accountStore);
+    final session = SessionController(accountStore, readCache: accountStore.readCache);
     session.active = account;
 
     // Seed recent projects
@@ -92,7 +92,7 @@ void main() {
 
   testWidgets('ProjectsPage clears recent projects and resets selection upon account switch', (tester) async {
     final accountStore = MemoryAccountStore();
-    final session = SessionController(accountStore);
+    final session = SessionController(accountStore, readCache: accountStore.readCache);
     session.active = account;
 
     final account2 = Account(
@@ -145,7 +145,7 @@ void main() {
     'opening a project writes one full recent record and updates chips and launcher',
     (tester) async {
       final accountStore = MemoryAccountStore();
-      final session = SessionController(accountStore)..active = account;
+      final session = SessionController(accountStore, readCache: accountStore.readCache)..active = account;
       final store = _CountingRecentProjectStore();
       final host = FakeAppShortcutHost();
       final shortcuts = LauncherShortcuts(host, store)..bind(account.key);
@@ -195,7 +195,8 @@ void main() {
   testWidgets(
     'distinct injected recent stores keep their roles without duplicate writes',
     (tester) async {
-      final session = SessionController(MemoryAccountStore())..active = account;
+      final sessionStore = MemoryAccountStore();
+      final session = SessionController(sessionStore, readCache: sessionStore.readCache)..active = account;
       final chipStore = _CountingRecentProjectStore();
       final launcherStore = _CountingRecentProjectStore();
       final host = FakeAppShortcutHost();
@@ -234,7 +235,8 @@ void main() {
   testWidgets(
     'delayed recent write cannot publish or paint into a replacement owner',
     (tester) async {
-      final session = SessionController(MemoryAccountStore())..active = account;
+      final sessionStore = MemoryAccountStore();
+      final session = SessionController(sessionStore, readCache: sessionStore.readCache)..active = account;
       final oldStore = _CountingRecentProjectStore();
       final oldHost = FakeAppShortcutHost();
       final oldShortcuts = LauncherShortcuts(oldHost, oldStore)

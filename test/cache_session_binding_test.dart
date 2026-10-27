@@ -31,6 +31,7 @@ SessionController _controller({
   OAuthTokenClient Function(GitLabInstance, String)? createOAuth,
 }) => SessionController(
   store,
+  readCache: store.readCache,
   browser: browser,
   applicationIdFor: applicationIdFor,
   createOAuth: createOAuth,

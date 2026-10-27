@@ -260,7 +260,8 @@ void main() {
             store: store,
             files: AiHistoryFileStore(root: () async => root),
           );
-          final session = SessionController(MemoryAccountStore());
+          final sessionStore = MemoryAccountStore();
+          final session = SessionController(sessionStore, readCache: sessionStore.readCache);
           await session.initialize();
           await coordinator.startRecovery(session);
           expect(session.accounts, isEmpty);
@@ -304,7 +305,7 @@ void main() {
     final dir = await coordinator.files.directory(account)
       ..createSync(recursive: true);
     final accounts = _DelayedAccountStore();
-    final session = SessionController(accounts);
+    final session = SessionController(accounts, readCache: accounts.readCache);
     final initialize = session.initialize();
     final recovery = coordinator.startRecovery(session);
     await Future<void>.delayed(Duration.zero);
@@ -325,7 +326,7 @@ void main() {
         ..createSync(recursive: true);
       final accounts = _DelayedAccountStore()..failure = true;
       accounts.release.complete();
-      final session = SessionController(accounts);
+      final session = SessionController(accounts, readCache: accounts.readCache);
       await session.initialize();
       final recovery = coordinator.startRecovery(session);
       await Future<void>.delayed(Duration.zero);
@@ -434,7 +435,8 @@ void main() {
       final dir = await coordinator.files.directory(account)
         ..createSync(recursive: true);
       store.failAt = 'listTombstones';
-      final session = SessionController(MemoryAccountStore());
+      final sessionStore = MemoryAccountStore();
+      final session = SessionController(sessionStore, readCache: sessionStore.readCache);
       await session.initialize();
       await coordinator.startRecovery(session);
       expect(session.accountsLoaded, isTrue);
@@ -460,7 +462,7 @@ void main() {
       await store.memory.writeHistoryKey(saved.key, key);
       final dir = await coordinator.files.directory(saved.key)
         ..createSync(recursive: true);
-      final session = SessionController(accounts);
+      final session = SessionController(accounts, readCache: accounts.readCache);
       await session.initialize();
       await coordinator.startRecovery(session);
       expect(accounts.accounts, [saved]);
