@@ -135,6 +135,9 @@ extension _GraphqlActivityCreatePrepare on GitLabAiWritePort {
         updatedAt: summary.updatedAt.toUtc().toIso8601String(),
       ),
       preview: AiFieldsPreview({'body': body, 'anchorNoteId': ?anchorId}),
+      validatePreparedText: (processed) {
+        _text(processed.arguments, 'body');
+      },
       textMutation: (hooks, preparedRequest) async {
         final body = _text(preparedRequest.arguments, 'body').trim();
         try {

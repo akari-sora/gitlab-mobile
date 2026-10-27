@@ -289,7 +289,8 @@ final class AiWritePrepared {
 
   /// Text-sensitive digests reuse the opening read's target facts while
   /// binding the latest processed payload. Computing this never reads HTTP.
-  String get bindingDigest => _textBindingDigest?.call(request) ?? _bindingDigest;
+  String get bindingDigest =>
+      _textBindingDigest?.call(request) ?? _bindingDigest;
   final AiJournalBindings journal;
   final AiWritePreview _preview;
   AiWritePreview get preview {

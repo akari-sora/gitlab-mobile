@@ -713,7 +713,7 @@ void main() {
       addTearDown(f.dispose);
       final proposal = (await f.coordinator.propose(f.call(operation)))!;
       final requests = f.adapter.requests.length;
-      for (final editedText in [' /foo/bar', null]) {
+      for (final editedText in [' /foo/bar', ' /foo/bar', null]) {
         final outcome = await f.coordinator.approve(
           proposal,
           editedText: editedText,
@@ -751,7 +751,7 @@ void main() {
     );
 
     test(
-      '$operation edits require new approval and send the shown text once',
+      '$operation identical edits require approval and send shown text once',
       () async {
         final f = await _Fixture.create();
         addTearDown(f.dispose);
@@ -788,6 +788,20 @@ void main() {
         expect(shown, isNot(edited));
         expect(shown, contains('@all'));
 
+        final editedDigest = proposal.payloadDigest;
+        final repeated = await f.coordinator.approve(
+          proposal,
+          editedText: edited,
+        );
+        expect(repeated.state, AiJournalState.notExecuted);
+        expect(repeated.reasonCode, 'approvalRequired');
+        expect(proposal.valid, isTrue);
+        expect(proposal.editedText, edited);
+        expect(proposal.payloadDigest, editedDigest);
+        expect(f.adapter.requests, hasLength(requestsAfterProposal));
+        expect(f.server.writes, 0);
+        expect(f.journal.entries(_account), isEmpty);
+
         final outcome = await f.coordinator.approve(proposal);
         expect(outcome.state, AiJournalState.succeeded);
         expect(outcome.readbackConfirmed, isTrue);
@@ -818,14 +832,46 @@ void main() {
         final proposal = (await f.coordinator.propose(f.call(operation)))!;
         final requestsAfterProposal = f.adapter.requests.length;
         const blocked = 'glpat-ABCDEFGHIJKLMNOPQRST';
-        final edit = await f.coordinator.approve(proposal, editedText: blocked);
-        expect(edit.reasonCode, 'secret');
-        expect(proposal.editedText, blocked);
-        expect((await f.coordinator.approve(proposal)).reasonCode, 'secret');
-        expect(f.adapter.requests.length, requestsAfterProposal);
-        expect(f.server.writes, 0);
+        for (final editedText in [blocked, blocked, null]) {
+          final edit = await f.coordinator.approve(
+            proposal,
+            editedText: editedText,
+          );
+          expect(edit.state, AiJournalState.notExecuted);
+          expect(edit.reasonCode, 'secret');
+          expect(proposal.valid, isTrue);
+          expect(proposal.editedText, blocked);
+          expect(f.adapter.requests, hasLength(requestsAfterProposal));
+          expect(f.server.writes, 0);
+          expect(f.journal.entries(_account), isEmpty);
+        }
       },
     );
+
+    test('$operation blocks whitespace-only edits before journaling', () async {
+      final f = await _Fixture.create();
+      addTearDown(f.dispose);
+      final proposal = (await f.coordinator.propose(f.call(operation)))!;
+      final originalPreview = proposal.preview;
+      final originalDigest = proposal.payloadDigest;
+      final requests = f.adapter.requests.length;
+      const blocked = '   \n ';
+      for (final editedText in [blocked, blocked, null]) {
+        final outcome = await f.coordinator.approve(
+          proposal,
+          editedText: editedText,
+        );
+        expect(outcome.state, AiJournalState.notExecuted);
+        expect(outcome.reasonCode, 'validation');
+        expect(proposal.valid, isTrue);
+        expect(proposal.editedText, blocked);
+        expect(proposal.preview, same(originalPreview));
+        expect(proposal.payloadDigest, originalDigest);
+        expect(f.adapter.requests, hasLength(requests));
+        expect(f.server.writes, 0);
+        expect(f.journal.entries(_account), isEmpty);
+      }
+    });
 
     test(
       '$operation keeps edited text when independent readback is uncertain',
@@ -906,6 +952,7 @@ void main() {
         ),
       );
       expect(outcome.mutationCount, 1);
+      expect(f.server.sentBody, _body);
       expect(f.server.writes, 1);
       expect(
         f.adapter.requests.where((request) {

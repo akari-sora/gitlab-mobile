@@ -931,7 +931,13 @@ final class PolicyAiWriteCoordinator
     }
     if (pending.done.isCompleted) return pending.done.future;
     if (pending.flight != null) return pending.flight!;
-    if (editedText != null && editedText != proposal.editedText) {
+    if (editedText != null) {
+      if (editedText == proposal.editedText) {
+        return _notExecuted(
+          pending.call,
+          pending.editBlocked ?? 'approvalRequired',
+        );
+      }
       proposal.editedText = editedText;
       try {
         _requirePending(pending);
