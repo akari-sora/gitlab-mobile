@@ -331,6 +331,7 @@ final class AiWriteFreshness {
     this.facts = const AiTierFacts(),
     this.noChange = false,
     this.visibilityUnreadable = true,
+    this.sourceVisibilityUnreadable = true,
     this.targetVisibility,
     this.polluted = false,
     this.currentFields = const {},
@@ -343,7 +344,15 @@ final class AiWriteFreshness {
   final String? mergeCheckSummary;
   final AiTierFacts facts;
   final bool noChange;
+
+  /// Source or target visibility/confidentiality is unknown. A same-round
+  /// opening may resolve the target portion only.
   final bool visibilityUnreadable;
+
+  /// Source visibility or confidentiality could not be proved, including any
+  /// previously read group with unknown confidentiality. Target openings must
+  /// retain this restriction. Older readers default to conservative unknown.
+  final bool sourceVisibilityUnreadable;
 
   /// Fresh owner visibility, when proved by the same round's metadata read.
   /// Absence cannot be filled from a model argument or a prior conversation.
@@ -378,8 +387,10 @@ AiWriteFreshness _withPreparedFields(
   mergeCheckSummary: fresh.mergeCheckSummary,
   facts: fresh.facts,
   noChange: fresh.noChange,
+  sourceVisibilityUnreadable: fresh.sourceVisibilityUnreadable,
   visibilityUnreadable: prepared.request.arguments.containsKey('groupId')
-      ? !_preparedGroupIdentityMatches(prepared, policy) ||
+      ? fresh.sourceVisibilityUnreadable ||
+            !_preparedGroupIdentityMatches(prepared, policy) ||
             prepared.targetConfidential == null ||
             !const {
               'private',

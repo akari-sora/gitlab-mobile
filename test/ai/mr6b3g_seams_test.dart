@@ -4,7 +4,10 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/graphql_write_classify.dart';
 import 'package:gitlab_mobile/core/ai/tools/graphql_write_hooks.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart'
+    show AiWriteFreshness;
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
@@ -57,6 +60,13 @@ Map<String, Object?> _namespace({
 };
 
 void main() {
+  test(
+    'freshness defaults retain unknown source evidence for older readers',
+    () {
+      expect(const AiWriteFreshness().sourceVisibilityUnreadable, isTrue);
+    },
+  );
+
   test(
     'production group gate and rows remain closed; UI channel starts empty',
     () {
@@ -236,6 +246,114 @@ void main() {
     expect(adapter.requests, hasLength(3));
     expect(adapter.requests.every((r) => r.method == 'GET'), isTrue);
   });
+
+  for (final path in [
+    'team/../sub',
+    'team/./sub',
+    'team/-/sub',
+    '',
+    '.',
+    '..',
+    '-',
+    'team//sub',
+    '/team',
+    'team/',
+    'team space/sub',
+    'team/sub%2fextra',
+    'team/sub?query',
+    'team/sub#fragment',
+    r'team\sub',
+    'team/é',
+    'team/sub\n',
+    'a' * 1025,
+  ]) {
+    test(
+      'group binding rejects invalid path ${path.length > 40 ? path.length : path}',
+      () {
+        _gate(true);
+        final scope = AiWriteScope(
+          accountKey: g0eAccount,
+          grants: [
+            AiScopeGrant(
+              kind: AiScopeKind.groupWorkItem,
+              groupId: 7,
+              groupFullPath: path,
+              iid: 5,
+            ),
+          ],
+        );
+        final target = AiTargetRef(
+          kind: AiTargetKind.groupWorkItem,
+          groupId: 7,
+          groupFullPath: path,
+          iid: 5,
+          origin: AiTargetOrigin.currentResource,
+        );
+        expect(
+          scopeAdmits(
+            scope,
+            const G0eLedger().find('updateGroupWorkItemContent')!,
+            target,
+          ),
+          isFalse,
+        );
+        expect(
+          bindTargets(
+            userMessage: 'Update this work item.',
+            restoredFromHistory: false,
+            scope: scope,
+            targets: [target],
+            interfaceLanguage: 'en',
+            deviceLanguages: const ['en'],
+          ).allBound,
+          isFalse,
+        );
+      },
+    );
+  }
+
+  for (final path in ['team/sub', 'team-1/sub_group.v2', '.hidden/a..b']) {
+    test('group binding accepts canonical path $path', () {
+      _gate(true);
+      final scope = AiWriteScope(
+        accountKey: g0eAccount,
+        grants: [
+          AiScopeGrant(
+            kind: AiScopeKind.groupWorkItem,
+            groupId: 7,
+            groupFullPath: path,
+            iid: 5,
+          ),
+        ],
+      );
+      final target = AiTargetRef(
+        kind: AiTargetKind.groupWorkItem,
+        groupId: 7,
+        groupFullPath: path,
+        iid: 5,
+        origin: AiTargetOrigin.currentResource,
+      );
+      expect(
+        scopeAdmits(
+          scope,
+          const G0eLedger().find('updateGroupWorkItemContent')!,
+          target,
+        ),
+        isTrue,
+      );
+      expect(
+        bindTargets(
+          userMessage: 'Update this work item.',
+          restoredFromHistory: false,
+          scope: scope,
+          targets: [target],
+          interfaceLanguage: 'en',
+          deviceLanguages: const ['en'],
+        ).allBound,
+        isTrue,
+      );
+    });
+  }
 
   test(
     'actor mismatch and stale generation stop before namespace read',
@@ -650,28 +768,121 @@ void main() {
     );
   }
 
-  for (final confidential in <bool?>[null, false]) {
+  for (final evidence in [
+    (sourceUnknown: false, confidential: null, polluted: false),
+    (sourceUnknown: false, confidential: false, polluted: false),
+    (sourceUnknown: true, confidential: false, polluted: false),
+    (sourceUnknown: false, confidential: false, polluted: true),
+    (sourceUnknown: false, confidential: true, polluted: false),
+  ]) {
     test(
-      'target confidentiality $confidential requires evidence before resolving unknown',
+      'source unknown ${evidence.sourceUnknown}, target confidentiality ${evidence.confidential}, pollution ${evidence.polluted} survives both rounds',
       () async {
         _gate(true);
         final h = await G0eHarness.create();
         addTearDown(h.dispose);
-        h.graph.targetConfidential = confidential;
+        h.level = AiAutonomyLevel.conversationGrant;
+        h.sourceVisibilityUnreadable = evidence.sourceUnknown;
+        h.graph.targetConfidential = evidence.confidential;
+        h.polluted = evidence.polluted;
+        h.visibility = 'public';
         final proposal = await h.coordinator.propose(
           h.call('updateGroupWorkItemContent', {'description': 'Safe'}),
         );
         expect(proposal, isNotNull);
+        final mustConfirm =
+            evidence.sourceUnknown ||
+            evidence.confidential != false ||
+            evidence.polluted;
         expect(
           proposal!.tier.reasons.contains(
             AiFixedConfirmReason.confidentialOrVisibilityMix,
           ),
-          confidential == null,
+          mustConfirm,
         );
+        expect(
+          proposal.tier.decision,
+          mustConfirm ? AiGateDecision.requireApproval : AiGateDecision.execute,
+        );
+        expect(h.graph.mutations, 0);
+        final result = await h.coordinator.approve(proposal);
+        expect(
+          result.state,
+          AiJournalState.succeeded,
+          reason: result.reasonCode,
+        );
+        expect(h.freshnessReads, 2);
+        expect(h.graph.events, ['open:1', 'open:2', 'start', 'send']);
+        expect(h.graph.mutations, 1);
+      },
+    );
+  }
+
+  for (final restriction in ['source unknown', 'pollution']) {
+    test(
+      'new $restriction before dispatch still requires confirmation',
+      () async {
+        _gate(true);
+        final h = await G0eHarness.create();
+        addTearDown(h.dispose);
+        h.level = AiAutonomyLevel.conversationGrant;
+        h.graph.targetConfidential = false;
+        h.visibility = 'public';
+        final proposal = await h.coordinator.propose(
+          h.call('updateGroupWorkItemContent', {'description': 'Safe'}),
+        );
+        expect(proposal!.tier.decision, AiGateDecision.execute);
+        if (restriction == 'source unknown') {
+          h.sourceVisibilityUnreadable = true;
+        } else {
+          h.polluted = true;
+        }
+        final result = await h.coordinator.approve(proposal);
+        expect(result.state, AiJournalState.notExecuted);
+        expect(result.reasonCode, 'approvalRequired');
+        expect(h.freshnessReads, 2);
+        expect(h.graph.events, ['open:1', 'open:2']);
         expect(h.graph.mutations, 0);
       },
     );
   }
+
+  test(
+    'source confidentiality once unknown survives a later target opening',
+    () async {
+      _gate(true);
+      final h = await G0eHarness.create();
+      addTearDown(h.dispose);
+      h.level = AiAutonomyLevel.conversationGrant;
+      h.sourceVisibilityUnreadable = true;
+      h.graph.targetConfidential = null;
+      h.visibility = 'public';
+      final first = await h.coordinator.propose(
+        h.call('updateGroupWorkItemContent', {'description': 'Safe'}),
+      );
+      expect(
+        first!.tier.reasons,
+        contains(AiFixedConfirmReason.confidentialOrVisibilityMix),
+      );
+      h.graph.targetConfidential = false;
+      final result = await h.coordinator.approve(first);
+      expect(result.state, AiJournalState.succeeded, reason: result.reasonCode);
+      expect(h.graph.events, ['open:1', 'open:2', 'start', 'send']);
+      // A new proposal retains the conversation's source restriction too.
+      h.beginRun();
+      final later = await h.coordinator.propose(
+        h.call('updateGroupWorkItemContent', {
+          'description': 'Another safe edit',
+        }),
+      );
+      expect(
+        later!.tier.reasons,
+        contains(AiFixedConfirmReason.confidentialOrVisibilityMix),
+      );
+      expect(later.tier.decision, AiGateDecision.requireApproval);
+      expect(h.graph.mutations, 1);
+    },
+  );
 
   for (final drift in ['groupId', 'groupFullPath']) {
     test('origin $drift drift invalidates proposal, mutation 0', () async {

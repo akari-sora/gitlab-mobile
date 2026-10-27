@@ -279,14 +279,6 @@ bool _validAiProjectPath(String value) =>
     value.length <= 1024 &&
     RegExp(r'^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(value);
 
-bool _validAiGroupPath(String value) =>
-    _validAiProjectPath(value) &&
-    value
-        .split('/')
-        .every(
-          (segment) => segment != '.' && segment != '..' && segment != '-',
-        );
-
 bool _validAiWorkItemId(String value) =>
     RegExp(r'^gid://gitlab/WorkItem/[1-9][0-9]*$').hasMatch(value);
 

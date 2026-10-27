@@ -435,7 +435,7 @@ final class AiWritePrepared {
       (group != null &&
           (group.groupId <= 0 ||
               group.iid <= 0 ||
-              !_validAiGroupPath(group.groupFullPath) ||
+              !isValidAiGroupPath(group.groupFullPath) ||
               !_validAiWorkItemId(group.workItemGid)))) {
     throw const AiWriteRefused('todoUnverifiable');
   }
@@ -586,7 +586,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     for (final grant in matches) {
       final candidate = grant.groupFullPath;
       if (candidate == null ||
-          !_validAiGroupPath(candidate) ||
+          !isValidAiGroupPath(candidate) ||
           (path != null && path != candidate)) {
         throw const AiWriteRefused('workItemUnverifiable');
       }

@@ -416,6 +416,42 @@ const _groupAliases = <String, String>{
 
 void main() {
   group('§15 row 13 fixed read boundary', () {
+    test('namespace guard recognizes member trivia in parts and main', () {
+      const resolver =
+          'Future<void> _resolveGroupWorkItem() async { '
+          '_api.instance; await _api.namespaceWorkItem(); }';
+      for (final trivia in [' ', '\n', '/* gap */']) {
+        final valid = resolver.replaceFirst(
+          '_api.namespaceWorkItem',
+          '_api.${trivia}namespaceWorkItem',
+        );
+        expect(_namespaceResolverViolations(valid, isMain: true), isEmpty);
+      }
+      for (final operator in ['.', '..', '?.', '?..']) {
+        for (final trivia in [' ', '\n', '/* gap */']) {
+          for (final suffix in ['()', '']) {
+            final access = '_api$operator${trivia}namespaceWorkItem$suffix';
+            expect(_apiMembers(_codeOnly(access)), {
+              'namespaceWorkItem',
+            }, reason: access);
+            expect(
+              _namespaceResolverViolations(access, isMain: false),
+              isNotEmpty,
+              reason: access,
+            );
+            expect(
+              _namespaceResolverViolations(
+                '$resolver void other() => $access;',
+                isMain: true,
+              ),
+              isNotEmpty,
+              reason: access,
+            );
+          }
+        }
+      }
+    });
+
     test('read-port member whitelist and graph delta remain exact', () {
       final boundary = File(
         'tool/tests/test_ai_boundaries.py',
@@ -1374,8 +1410,11 @@ Set<String> _pythonSet(String source, String name) {
 }
 
 Set<String> _apiMembers(String source) {
+  source = _codeOnly(source);
   final receivers = <String>{'_api'};
-  final aliases = RegExp(r'\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b(?!\s*[.(])');
+  final aliases = RegExp(
+    r'\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b(?!\s*(?:[.(]|\?\.))',
+  );
   var changed = true;
   while (changed) {
     changed = false;
@@ -1389,7 +1428,7 @@ Set<String> _apiMembers(String source) {
   return {
     for (final receiver in receivers)
       for (final match in RegExp(
-        '\\b${RegExp.escape(receiver)}(?:\\.\\.|\\.)(\\w+)\\b',
+        '\\b${RegExp.escape(receiver)}\\s*(?:\\?\\.\\.|\\.\\.|\\?\\.|\\.)\\s*(\\w+)\\b',
       ).allMatches(source))
         match.group(1)!,
   };
@@ -1944,7 +1983,7 @@ List<String> _namespaceResolverViolations(
   required bool isMain,
 }) {
   final code = _codeOnly(source);
-  final refs = RegExp(r'\.namespaceWorkItem\b').allMatches(code).toList();
+  final refs = RegExp(r'\.\s*namespaceWorkItem\b').allMatches(code).toList();
   if (!isMain) {
     return refs.isEmpty ? [] : ['namespaceWorkItem outside main resolver'];
   }
@@ -1973,7 +2012,7 @@ List<String> _namespaceResolverViolations(
       refs.single.start <= opening ||
       refs.single.start >= end ||
       !RegExp(
-        r'_api\s*\.namespaceWorkItem\s*\(',
+        r'_api\s*\.\s*namespaceWorkItem\s*\(',
       ).hasMatch(code.substring(opening, end))) {
     return ['namespaceWorkItem outside group resolver'];
   }

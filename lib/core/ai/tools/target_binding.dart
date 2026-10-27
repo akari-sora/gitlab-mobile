@@ -320,6 +320,17 @@ bool _grantAdmits(
   }
 }
 
+/// Group path syntax shared by AI binding and the strict write resolver.
+bool isValidAiGroupPath(String value) =>
+    value == value.trim() &&
+    value.length <= 1024 &&
+    RegExp(r'^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(value) &&
+    value
+        .split('/')
+        .every(
+          (segment) => segment != '.' && segment != '..' && segment != '-',
+        );
+
 bool _validGroupTarget(AiTargetRef target) {
   final int? groupId = target.groupId;
   final int? iid = _itemIid(target);
@@ -328,7 +339,7 @@ bool _validGroupTarget(AiTargetRef target) {
       iid != null &&
       iid > 0 &&
       target.groupFullPath != null &&
-      target.groupFullPath!.isNotEmpty &&
+      isValidAiGroupPath(target.groupFullPath!) &&
       target.projectId == null &&
       target.projectPath == null &&
       target.side == AiResourceSide.group;

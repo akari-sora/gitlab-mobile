@@ -757,6 +757,22 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertEqual(self._namespace_write_violations("Future<void> _resolveGroupWorkItem() async { _api.instance; await _api.namespaceWorkItem(); }", is_main=True), [])
         self.assertTrue(self._namespace_write_violations("Future<void> _resolveGroupWorkItem() async { _api.instance; _api.record(); await _api.namespaceWorkItem(); }", is_main=True))
 
+    def test_g0e_namespace_guard_recognizes_member_trivia(self):
+        resolver = "Future<void> _resolveGroupWorkItem() async { _api.instance; await _api.namespaceWorkItem(); }"
+        for trivia in (" ", "\n", "/* gap */"):
+            valid = resolver.replace("_api.namespaceWorkItem", f"_api.{trivia}namespaceWorkItem")
+            self.assertEqual(self._namespace_write_violations(valid, is_main=True), [])
+        for operator in (".", "..", "?.", "?.."):
+            for trivia in (" ", "\n", "/* gap */"):
+                for suffix in ("()", ""):
+                    access = f"_api{operator}{trivia}namespaceWorkItem{suffix}"
+                    with self.subTest(access=access):
+                        code = self._code_only(access)
+                        self.assertEqual(self._api_members(code), {"namespaceWorkItem"})
+                        self.assertTrue(self._namespace_read_violations(access))
+                        self.assertTrue(self._namespace_write_violations(access, is_main=False))
+                        self.assertTrue(self._namespace_write_violations(resolver + " void other() => " + access + ";", is_main=True))
+
     def test_g0e_group_target_gate_is_pinned_and_never_assigned_in_lib(self):
         ledger = (AI_ROOT / "tools" / "write_ledger.dart").read_text()
         self.assertRegex(ledger, r"\bconst\s+bool\s+aiGroupWorkItemWritesEnabled\s*=\s*false\s*;")
@@ -777,7 +793,7 @@ class AiBoundaryTest(unittest.TestCase):
     @classmethod
     def _namespace_write_violations(cls, source, *, is_main):
         code = cls._code_only(source)
-        refs = list(re.finditer(r"\.namespaceWorkItem\b", code))
+        refs = list(re.finditer(r"\.\s*namespaceWorkItem\b", code))
         if not is_main:
             return [] if not refs else ["namespaceWorkItem outside main resolver"]
         if len(refs) != 1:
@@ -793,7 +809,7 @@ class AiBoundaryTest(unittest.TestCase):
         while end < len(code) and depth:
             depth += (code[end] == "{") - (code[end] == "}")
             end += 1
-        if depth or not opening < refs[0].start() < end or not re.search(r"_api\s*\.namespaceWorkItem\s*\(", code[opening:end]):
+        if depth or not opening < refs[0].start() < end or not re.search(r"_api\s*\.\s*namespaceWorkItem\s*\(", code[opening:end]):
             return ["namespaceWorkItem outside group resolver"]
         if cls._api_members(code[opening:end]) != {"instance", "namespaceWorkItem"}:
             return ["group resolver API members differ from the fixed delta"]
@@ -1043,10 +1059,11 @@ class AiBoundaryTest(unittest.TestCase):
                     findings.append(f"{path.relative_to(ROOT)}:{number}:{line}")
         self.assertEqual(findings, [])
 
-    @staticmethod
-    def _api_members(source):
+    @classmethod
+    def _api_members(cls, source):
+        source = cls._code_only(source)
         receivers = {"_api"}
-        aliases = re.compile(r"\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b(?!\s*[.(])")
+        aliases = re.compile(r"\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b(?!\s*(?:[.(]|\?\.))")
         changed = True
         while changed:
             changed = False
@@ -1057,7 +1074,7 @@ class AiBoundaryTest(unittest.TestCase):
         members = set()
         for receiver in receivers:
             members.update(
-                re.findall(rf"\b{re.escape(receiver)}(?:\.\.|\.)(\w+)\b", source)
+                re.findall(rf"\b{re.escape(receiver)}\s*(?:\?\.\.|\.\.|\?\.|\.)\s*(\w+)\b", source)
             )
         return members
 
@@ -1406,7 +1423,7 @@ class AiBoundaryTest(unittest.TestCase):
             for method in re.finditer(r"\bFuture\s*<[^>]+>\s+_resolveGroupWorkItem\s*\([\s\S]*?\)\s*async\s*\{", code):
                 block = cls._brace_block(code, method.end() - 1)
                 if block and not cls._namespace_write_violations(source, is_main=True):
-                    strict_calls = list(re.finditer(r"\.namespaceWorkItem\s*\(", code[block[0]:block[1]]))
+                    strict_calls = list(re.finditer(r"\.\s*namespaceWorkItem\s*\(", code[block[0]:block[1]]))
                     if len(strict_calls) == 1 and not cls._namespace_read_violations(code[block[0]:block[1]]):
                         allowed.append((block[0] + strict_calls[0].start(), block[1]))
         elif relative == "lib/core/work_item_graphql_api.dart":
@@ -1461,7 +1478,7 @@ class AiBoundaryTest(unittest.TestCase):
     def _namespace_read_violations(cls, source):
         code = cls._code_only(source)
         violations = []
-        for match in re.finditer(r"\.namespaceWorkItem\b", code):
+        for match in re.finditer(r"\.\s*namespaceWorkItem\b", code):
             tail = match.end()
             while tail < len(code) and code[tail].isspace():
                 tail += 1
@@ -1561,7 +1578,7 @@ class AiBoundaryTest(unittest.TestCase):
             violations.append("part declares GitLabApi")
         if re.search(r"\bgitlab_api\.dart\b", source):
             violations.append("part contains gitlab_api.dart")
-        if re.search(r"\b_api\b(?!\s*\.)", source):
+        if re.search(r"\b_api\b(?!\s*(?:\.|\?\.))", source):
             violations.append("part uses _api without member access")
         return violations
 

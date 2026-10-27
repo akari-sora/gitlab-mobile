@@ -236,7 +236,11 @@ final class G0eHarness {
         harness.freshnessReads++;
         return AiWriteFreshness(
           targetVisibility: harness.visibility,
+          // Target confidentiality remains unknown until the opening.
+          // Source evidence and accumulated pollution are independent.
           visibilityUnreadable: true,
+          sourceVisibilityUnreadable: harness.sourceVisibilityUnreadable,
+          polluted: harness.polluted,
           provenance: harness.priorProvenance,
         );
       },
@@ -253,7 +257,7 @@ final class G0eHarness {
   final Object api;
   final G0eGraphPort graph;
   final text.UploadPlaceholderTable placeholders;
-  final budget = AiToolBudget(maxGitLabRequests: 40);
+  var budget = AiToolBudget(maxGitLabRequests: 40);
   late PolicyAiWriteCoordinator coordinator;
   AiWriteScope scope = g0eScope;
   AiAutonomyLevel level = AiAutonomyLevel.confirmEach;
@@ -264,12 +268,15 @@ final class G0eHarness {
     iid: 5,
   );
   String? visibility = 'private';
+  bool sourceVisibilityUnreadable = false;
+  bool polluted = false;
   int freshnessReads = 0;
   Set<String> secrets = {};
   Map<String, text.AiFieldProvenance> priorProvenance = {};
   int calls = 0;
 
   void beginRun([String utterance = 'Update this group work item.']) {
+    budget = AiToolBudget(maxGitLabRequests: 40);
     coordinator.beginRun(utterance);
     coordinator.beginTurn();
   }
