@@ -64,6 +64,8 @@ extension _GraphqlContentPrepare on GitLabAiWritePort {
           iid: iid,
         ),
       ],
+      // This digest binds the original content and target, excluding the final
+      // payload; the coordinator binds that payload separately via previewChanged.
       bindingDigest: sha256
           .convert(
             utf8.encode(

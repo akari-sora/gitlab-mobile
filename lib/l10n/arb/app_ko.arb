@@ -2750,5 +2750,6 @@
   "aiGitLabBudgetDetail": "이 메시지는 전송되지 않았습니다. “전송” 버튼을 다시 사용할 수 있게 되면 다시 전송하세요.",
   "activityVerbTargetRef": "{target} {ref}: {verb}",
   "aiOpSetWorkItemLabels": "라벨 설정",
-  "aiRefusedLabelUnknown": "설정할 라벨이 이 프로젝트의 라벨 목록에 없거나 같은 이름의 라벨이 여러 개 있어 아무것도 실행하지 않았습니다."
+  "aiRefusedLabelUnknown": "설정할 라벨이 이 프로젝트의 라벨 목록에 없거나 같은 이름의 라벨이 여러 개 있어 아무것도 실행하지 않았습니다.",
+  "aiRefusedQuickAction": "/로 시작하는 줄이 있어 GitLab이 빠른 작업으로 실행할 수 있으므로, 안전을 위해 이 쓰기를 보내지 않았습니다. 그 줄을 삭제하거나 코드 블록에 넣으세요."
 }

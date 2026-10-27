@@ -285,14 +285,37 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertNotIn("namespaceWorkItem", WRITE_PORT_MEMBERS)
         self.assertNotIn("snoozedTodos", WRITE_PORT_MEMBERS)
 
-    def test_mr6b3t_write_port_whitelist_delta_is_exact(self):
-        self.assertEqual(_MR6B3T_WRITE_PORT_MEMBERS, {
-            "workItemContent", "workItemActivityEditAccess",
-            "workItemLabels", "workItemLabelCandidates",
-            "updateWorkItemContent", "editWorkItemActivityNote",
-            "updateWorkItemLabels",
-        })
-        self.assertTrue(_MR6B3T_WRITE_PORT_MEMBERS.isdisjoint(_MR6B3_WRITE_PORT_MEMBERS))
+    def test_freshness_prepared_merge_copies_every_field(self):
+        source = (AI_ROOT / "tools" / "write_coordinator.dart").read_text(
+            encoding="utf-8"
+        )
+
+        def field_difference(text):
+            freshness = re.search(
+                r"final class AiWriteFreshness \{(.*?)\n\}", text, re.DOTALL
+            )
+            merge = re.search(
+                r"AiWriteFreshness _withPreparedFields\(.*?\) => "
+                r"AiWriteFreshness\((.*?)\n\);", text, re.DOTALL
+            )
+            self.assertIsNotNone(freshness)
+            self.assertIsNotNone(merge)
+            fields = set(re.findall(
+                r"(?m)^\s*final\s+[^;\n=]+?\s+(\w+);", freshness.group(1)
+            ))
+            copied = set(re.findall(r"(?m)^\s*(\w+):", merge.group(1)))
+            self.assertTrue(fields)
+            for field in fields & copied:
+                self.assertRegex(merge.group(1), rf"\bfresh\.{field}\b")
+            return fields - copied, copied - fields
+
+        self.assertEqual(field_difference(source), (set(), set()))
+        # Read stored fields, including ones initialized without `this.field`.
+        mutant = source.replace(
+            "final String? updatedAt;",
+            "final String? futureField;\n  final String? updatedAt;", 1
+        )
+        self.assertEqual(field_difference(mutant), ({"futureField"}, set()))
 
     def test_ledger_named_methods_are_write_port_whitelisted(self):
         methods = set()

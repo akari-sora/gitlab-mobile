@@ -726,6 +726,30 @@ void main() {
       }
     });
 
+    for (final body in ['a\n/merge', 'a\r\n/approve', 'a\n\r/move x/y']) {
+      test(
+        '$operation refuses edited later-line quickAction before approval: ${body.replaceAll('\n', r'\n').replaceAll('\r', r'\r')}',
+        () async {
+          final f = await _Fixture.create();
+          addTearDown(f.dispose);
+          final proposal = (await f.coordinator.propose(f.call(operation)))!;
+          final requests = f.adapter.requests.length;
+          final digest = proposal.payloadDigest;
+          for (final editedText in [body, body, null]) {
+            final outcome = await f.coordinator.approve(
+              proposal,
+              editedText: editedText,
+            );
+            expect(outcome.state, AiJournalState.notExecuted);
+            expect(outcome.reasonCode, 'quickAction');
+            expect(f.adapter.requests, hasLength(requests));
+            expect(f.server.writes, 0);
+            expect(proposal.payloadDigest, digest);
+          }
+        },
+      );
+    }
+
     test(
       '$operation sends exactly the edited preview including whitespace',
       () async {

@@ -2750,5 +2750,6 @@
   "aiGitLabBudgetDetail": "此消息未发送。“发送”按钮恢复可用后再发送一次。",
   "activityVerbTargetRef": "{verb}{target} {ref}",
   "aiOpSetWorkItemLabels": "设置标签",
-  "aiRefusedLabelUnknown": "要设置的标签不在这个项目的标签列表中，或有多个同名标签，所以没有执行。"
+  "aiRefusedLabelUnknown": "要设置的标签不在这个项目的标签列表中，或有多个同名标签，所以没有执行。",
+  "aiRefusedQuickAction": "内容有以 / 开头的一行，GitLab 可能把它当成快捷指令执行，为了安全这次写入没有发送。请删除那一行，或改放进代码块。"
 }
