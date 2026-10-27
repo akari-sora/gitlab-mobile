@@ -42,3 +42,12 @@ packets inherit them.
 - Fixtures use the URI the app really produces. The transport's `/raw`
   variant carries `lfs=false`, which is not a semantic key, so `_validRequest`
   keeps rejecting it; d1 may revisit that only through a new decision.
+
+## C2-D6. Entry and index writes commit on the caller's isolate (P-C2c blocked, 2026-10-27)
+P-C2c stopped because `writeEntry`/`writeIndex` ran the whole transaction, rename included, in a background isolate: the commit lease there is an isolate copy, so a revocation on the main isolate could not stop a late rename, which §4.1, §4.2 and §5.1 forbid ("已撤銷不得rename"). A probe paused the worker before rename, revoked the lease and released it; both writes still committed.
+- Writes are two-phase. **Stage** runs in the background isolate: encode, encrypt, capacity check, exclusive temporary file, write, flush. Nothing is visible to readers. The caller's gate is checked before dispatch and when staging returns; a closed gate deletes the temporary.
+- **Commit** runs synchronously on the caller's isolate with no await inside: re-check the trusted directory chain, the temporary and destination types and (for the index) the referenced entry files, call the gate, then `renameSync`. Revocation runs on the same isolate, so it cannot fall between the check and the rename.
+- A staged handle commits at most once and is not sendable to another isolate; discarding it deletes the temporary. The convenience writers are stage plus commit with an always-true gate, so no path bypasses the gate.
+- Staging may create the account directory chain and cannot be aborted once dispatched (`Isolate.run`); the returned future is the quiescence acknowledgement, so the coordinator awaits it before clearing.
+- This amends C2b's own files (`lib/core/read_cache_files.dart` and its test) under lead authority, before P-C2c starts.
+- Main-isolate cost: an entry commit is the directory-chain check (three lstat calls), the temporary and destination checks and one rename. An index commit adds one non-following type check and one length check per referenced entry, up to 2048: about 9 ms on an M4 Max in a synthetic run (33 ms before the chain check was hoisted), more on mid-range Android (not measured). C2c keeps index commits to the §5.1 cadence (every 2 seconds or 32 entries) and may re-check only the references changed since the last commit if that proves too slow.

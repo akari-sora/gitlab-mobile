@@ -63,6 +63,33 @@ void main() {
     expect(harness.server.mutations, isEmpty);
   });
 
+  test('3t freshness supplies exact field provenance with one project read', () async {
+    final harness = await StackHarness.create();
+    addTearDown(harness.dispose);
+    for (final operation in [
+      'updateWorkItemContent', 'editWorkItemActivityNote', 'updateWorkItemLabels',
+    ]) {
+      final before = harness.server.adapter.requests.length;
+      final freshness = await harness.controller.readWriteFreshnessForTesting(
+        _request(operation, {'projectId': 42, 'iid': 5, 'noteId': 77}),
+      );
+      expect(harness.server.adapter.requests.skip(before), hasLength(1));
+      // Values come from the port's opening, never from project metadata.
+      expect(freshness.currentFields, isEmpty);
+      final field = operation == 'editWorkItemActivityNote' ? 'body'
+          : operation == 'updateWorkItemContent' ? 'description' : 'labels';
+      final provenance = freshness.provenance[field]!;
+      expect(provenance.projectId, 42);
+      expect(provenance.completeValue, isTrue);
+      expect(provenance.resourceKey.canonical,
+          operation == 'editWorkItemActivityNote' ? 'note:77' : 'project:42/issue:5');
+      if (operation == 'updateWorkItemContent') {
+        expect(freshness.provenance['title']!.fieldName, 'title');
+      }
+    }
+    expect(harness.server.mutations, isEmpty);
+  });
+
   test('invalid project coordinates fail before freshness I/O', () async {
     final harness = await StackHarness.create(origin: const AiGeneralOrigin());
     addTearDown(harness.dispose);

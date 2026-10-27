@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Se reia când se resetează cota de cereri",
   "aiGitLabBudgetTitle": "Cota de cereri GitLab este aproape epuizată",
   "aiGitLabBudgetDetail": "Acest mesaj nu a fost trimis. Trimiteți-l din nou când butonul „Trimite” este din nou disponibil.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Setează etichetele",
+  "aiRefusedLabelUnknown": "Eticheta de setat nu se află în lista de etichete a acestui proiect sau mai multe etichete au acest nume, deci nu s-a făcut nimic."
 }

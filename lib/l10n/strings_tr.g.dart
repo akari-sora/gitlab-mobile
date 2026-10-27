@@ -2751,4 +2751,6 @@ const _messagesTr = <String>[
   'GitLab istek kotası tükenmek üzere',
   'Bu ileti gönderilmedi. “Gönder” düğmesi yeniden kullanılabilir olduğunda tekrar gönderin.',
   '{verb} ({target} {ref})',
+  'Etiketleri ayarla',
+  'Ayarlanacak etiket bu projenin etiket listesinde yok veya bu adda birden fazla etiket var, bu yüzden hiçbir şey yapılmadı.',
 ];

@@ -307,10 +307,14 @@ final class WorkItemActivityCreatedNote {
 final class WorkItemActivityEditAccess {
   const WorkItemActivityEditAccess._({
     required this.canEditNote,
+    required this.actorId,
+    required this.authorId,
     required this.target,
   });
 
   final bool canEditNote;
+  final String? actorId;
+  final String? authorId;
   final WorkItemActivityEditTarget? target;
 }
 
@@ -493,6 +497,8 @@ extension WorkItemActivityApi on GitLabApi {
     _requireDisplayedActivityNote(preflight.value.note, expectedNote);
     return WorkItemActivityEditAccess._(
       canEditNote: preflight.canEditNote,
+      actorId: preflight.actorId,
+      authorId: preflight.value.note.author?.id,
       target: preflight.canEditNote
           ? WorkItemActivityEditTarget._(
               owner: this,
@@ -508,7 +514,12 @@ extension WorkItemActivityApi on GitLabApi {
     WorkItemActivityEditTarget target,
     String body, {
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _requireActivityOwner(target._owner);
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -538,6 +549,11 @@ extension WorkItemActivityApi on GitLabApi {
     }
     target._consumed = true;
     if (replacement == target.note.body) return preflight.value.note;
+
+    if (beforeMutation != null) await beforeMutation();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
 
     late final _WorkItemActivityEditNote acknowledged;
     try {
@@ -1557,14 +1573,20 @@ bool _isWritableActivityNoteId(String id) {
   return RegExp(r'^[1-9][0-9]*$').hasMatch(uri.pathSegments.last);
 }
 
+/// Whether an ordinary note edit can be sent unchanged by the activity API.
+/// This performs the same validation as dispatch without accessing the network.
+bool isValidWorkItemActivityEditBody(String body) =>
+    _activityWriteBodyWithinBounds(body) && !_containsActivityQuickAction(body);
+
+bool _activityWriteBodyWithinBounds(String body) =>
+    !body.contains('\u0000') &&
+    body.trim().isNotEmpty &&
+    utf8.encode(body).length <= _workItemActivityWriteBodyBytes &&
+    '\n'.allMatches(body).length + 1 <= GitLabApi.maxTextLines;
+
 String _validatedActivityWriteBody(String raw, {bool trim = true}) {
-  if (raw.contains('\u0000')) {
-    throw const ApiFailure(FailureKind.validation);
-  }
   final body = trim ? raw.trim() : raw;
-  if (body.trim().isEmpty ||
-      utf8.encode(body).length > _workItemActivityWriteBodyBytes ||
-      '\n'.allMatches(body).length + 1 > GitLabApi.maxTextLines) {
+  if (!_activityWriteBodyWithinBounds(body)) {
     throw const ApiFailure(FailureKind.validation);
   }
   if (_containsActivityQuickAction(body)) {

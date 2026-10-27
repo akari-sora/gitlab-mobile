@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "अनुरोधों का कोटा बहाल होने पर फिर से शुरू होगा",
   "aiGitLabBudgetTitle": "GitLab के अनुरोधों का कोटा लगभग खत्म हो गया है",
   "aiGitLabBudgetDetail": "यह संदेश नहीं भेजा गया। जब “भेजें” बटन फिर से उपलब्ध हो, तब इसे दोबारा भेजें।",
-  "activityVerbTargetRef": "{verb} ({target} {ref})"
+  "activityVerbTargetRef": "{verb} ({target} {ref})",
+  "aiOpSetWorkItemLabels": "लेबल सेट करें",
+  "aiRefusedLabelUnknown": "सेट किया जाने वाला लेबल इस प्रोजेक्ट की लेबल सूची में नहीं है, या इस नाम के कई लेबल हैं, इसलिए कुछ भी निष्पादित नहीं हुआ।"
 }

@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Hervatting zodra het verzoekenquotum opnieuw is ingesteld",
   "aiGitLabBudgetTitle": "Het verzoekenquotum van GitLab is bijna opgebruikt",
   "aiGitLabBudgetDetail": "Dit bericht is niet verzonden. Verzend het opnieuw zodra de knop ‘Verzenden’ weer beschikbaar is.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Labels instellen",
+  "aiRefusedLabelUnknown": "Het in te stellen label staat niet in de labellijst van dit project of meerdere labels hebben deze naam, dus er is niets gedaan."
 }

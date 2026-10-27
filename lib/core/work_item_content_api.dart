@@ -122,14 +122,21 @@ extension WorkItemContentApi on GitLabApi {
 
   /// Reserves [target] before asynchronous work, performs a fresh exact
   /// preflight, sends at most one mutation, then requires an actor-bound read.
-  /// GitLab exposes no compare-and-set field, so a server-side race remains
-  /// possible between the final preflight and the mutation.
+  /// AI callers also provide the displayed revision as `expectedUpdatedAt`.
+  /// This is a client-side preflight check; GitLab has no atomic revision input.
   Future<WorkItemContentAccess> updateWorkItemContent(
     WorkItemContentTarget target, {
-    required String title,
+    String? title,
     String? description,
+    DateTime? expectedUpdatedAt,
     bool Function()? isCurrent,
+    void Function()? onMutationSent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _validateContentInput(title, description);
     _requireActivityOwner(target._owner);
     if (target._consumed) {
@@ -147,7 +154,9 @@ extension WorkItemContentApi on GitLabApi {
     if (before.actorId != target._actorId) {
       throw const ApiFailure(FailureKind.cancelled);
     }
-    if (!_sameContentSnapshot(before.snapshot, target._snapshot)) {
+    if (!_sameContentSnapshot(before.snapshot, target._snapshot) ||
+        (expectedUpdatedAt != null &&
+            before.snapshot.summary.updatedAt != expectedUpdatedAt)) {
       throw const ApiFailure(FailureKind.conflict);
     }
     if (!before.canUpdate || before.target == null) {
@@ -166,7 +175,9 @@ extension WorkItemContentApi on GitLabApi {
         detail: l10n.noSafeDescriptionWidget,
       );
     }
-    final titleChanged = title != before.snapshot.summary.title;
+    final desiredTitle = title ?? before.snapshot.summary.title;
+    final titleChanged =
+        title != null && title != before.snapshot.summary.title;
     final descriptionChanged =
         description != null && description != before.snapshot.rawDescription;
     if (!titleChanged && !descriptionChanged) return before;
@@ -178,6 +189,12 @@ extension WorkItemContentApi on GitLabApi {
     }
 
     _requireCurrentWorkItemRequest(isCurrent);
+    if (beforeMutation != null) await beforeMutation();
+    _requireCurrentWorkItemRequest(isCurrent);
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    onMutationSent?.call();
     ({Uint8List bytes, Headers headers, int statusCode}) response;
     try {
       response = await _send(
@@ -213,7 +230,7 @@ extension WorkItemContentApi on GitLabApi {
         target._snapshot.summary,
         requirePermission: false,
       );
-      if (acknowledged.snapshot.summary.title != title ||
+      if (acknowledged.snapshot.summary.title != desiredTitle ||
           (description != null &&
               (acknowledged.snapshot.descriptionAvailability !=
                       WorkItemDescriptionAvailability.present ||
@@ -240,7 +257,7 @@ extension WorkItemContentApi on GitLabApi {
       final expectedDescription =
           description ?? target._snapshot.rawDescription;
       if (readback.actorId != target._actorId ||
-          readback.snapshot.summary.title != title ||
+          readback.snapshot.summary.title != desiredTitle ||
           readback.snapshot.descriptionAvailability !=
               target._snapshot.descriptionAvailability ||
           readback.snapshot.rawDescription != expectedDescription) {
@@ -460,8 +477,25 @@ void _requireContentScope(WorkItemGraphSummary summary) {
   }
 }
 
-void _validateContentInput(String title, String? description) {
-  if (title.trim().isEmpty || title.length > 4096 || title.contains('\u0000')) {
+/// Whether a whole-field content update satisfies dispatch validation without
+/// accessing the network. Titles use Unicode code points, as GitLab does.
+bool isValidWorkItemContentInput({String? title, String? description}) {
+  try {
+    _validateContentInput(title, description);
+    return true;
+  } on ApiFailure {
+    return false;
+  }
+}
+
+void _validateContentInput(String? title, String? description) {
+  if (title == null && description == null) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  if (title != null &&
+      (title.trim().isEmpty ||
+          title.runes.length > 255 ||
+          title.contains('\u0000'))) {
     throw const ApiFailure(FailureKind.validation);
   }
   if (description != null) {

@@ -9,7 +9,7 @@ const List<AiCapability> aiGraphqlDatesRows = <AiCapability>[
     modelVisible: true,
     arguments: {
       'projectId': _projectId,
-      'iid': _projectId,
+      'iid': _iid,
       'mode': AiArgSpec(
         AiArgType.string,
         required: true,
