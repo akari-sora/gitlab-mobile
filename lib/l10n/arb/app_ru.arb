@@ -2116,7 +2116,7 @@
   "aiEndTokenBudget": "Разговор достиг лимита использования. Начните новый разговор",
   "aiAssistantLabel": "Помощник AI",
   "aiRunChannelName": "Фоновая работа ИИ",
-  "aiRunServiceTitle": "ИИ-ассистент работает",
+  "aiRunServiceTitle": "Помощник AI работает",
   "aiRunServiceText": "Можно выйти из приложения — работа продолжится.",
   "aiRunServiceStopAll": "Остановить все",
   "aiNotConfigured": "Не настроено",

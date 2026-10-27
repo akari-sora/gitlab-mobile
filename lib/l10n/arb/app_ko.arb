@@ -2116,7 +2116,7 @@
   "aiEndTokenBudget": "이 대화의 사용량 한도에 도달했습니다. 새 대화를 시작하세요",
   "aiAssistantLabel": "AI 도우미",
   "aiRunChannelName": "AI 백그라운드 작업",
-  "aiRunServiceTitle": "AI 어시스턴트가 작업 중입니다",
+  "aiRunServiceTitle": "AI 도우미가 작업 중입니다",
   "aiRunServiceText": "앱을 떠나도 작업은 계속됩니다.",
   "aiRunServiceStopAll": "모두 중지",
   "aiNotConfigured": "설정되지 않음",
