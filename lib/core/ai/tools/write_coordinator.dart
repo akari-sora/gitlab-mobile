@@ -935,13 +935,14 @@ final class PolicyAiWriteCoordinator
     if (pending.done.isCompleted) return pending.done.future;
     if (pending.flight != null) return pending.flight!;
     if (editedText != null) {
-      // Only a hold changes this failure when pauses are ignored. Refuse it
-      // without replacing earlier text or latching an edit failure.
-      final failure = _pendingFailure(pending);
-      if (failure != null &&
-          failure != _pendingFailure(pending, pauses: false)) {
+      // Terminal failures take precedence over holds. Refuse a hold without
+      // replacing earlier text or latching an edit failure.
+      final failure = _pendingFailure(pending, pauses: false);
+      if (failure != null) return _notExecuted(pending.call, failure);
+      final held = _pauseFailure(snapshot());
+      if (held != null) {
         if (_updatePause(pending)) _changed();
-        return _notExecuted(pending.call, failure);
+        return _notExecuted(pending.call, held);
       }
       if (editedText == proposal.editedText) {
         return _notExecuted(

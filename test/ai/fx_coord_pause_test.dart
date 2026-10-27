@@ -148,13 +148,13 @@ void main() {
       const attempted = 'Edit attempted during the hold';
       late String? heldText;
       try {
-        // No periodic check: the hold masks expiry at the edit preflight.
+        // No periodic check: expiry takes precedence at the edit preflight.
         expect(
           (await h.coordinator.approve(
             proposal,
             editedText: attempted,
           )).reasonCode,
-          pause == AiWritePause.accountRemovalHeld ? 'accountBlocked' : pause,
+          'approvalExpired',
         );
         heldText = proposal.editedText;
       } finally {
