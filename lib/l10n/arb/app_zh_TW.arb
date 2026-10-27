@@ -11525,5 +11525,7 @@
       "target": {},
       "ref": {}
     }
-  }
+  },
+  "aiOpSetWorkItemLabels": "設定標籤",
+  "aiRefusedLabelUnknown": "選取的標籤不在可用清單中。請重新選擇。"
 }

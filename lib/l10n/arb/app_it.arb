@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Riprende quando la quota di richieste viene ripristinata",
   "aiGitLabBudgetTitle": "La quota di richieste GitLab è quasi esaurita",
   "aiGitLabBudgetDetail": "Questo messaggio non è stato inviato. Invialo di nuovo quando il pulsante «Invia» sarà nuovamente disponibile.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Imposta etichette",
+  "aiRefusedLabelUnknown": "Un’etichetta selezionata non è nell’elenco disponibile. Scegli di nuovo."
 }

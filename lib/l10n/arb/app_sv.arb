@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Återupptas när kvoten för begäranden återställs",
   "aiGitLabBudgetTitle": "Kvoten för begäranden hos GitLab är nästan förbrukad",
   "aiGitLabBudgetDetail": "Meddelandet skickades inte. Skicka det igen när knappen ”Skicka” är tillgänglig igen.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Ange etiketter",
+  "aiRefusedLabelUnknown": "En vald etikett finns inte i listan över tillgängliga etiketter. Välj igen."
 }

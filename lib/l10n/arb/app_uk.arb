@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Відновиться після скидання квоти запитів",
   "aiGitLabBudgetTitle": "Квоту запитів GitLab майже вичерпано",
   "aiGitLabBudgetDetail": "Це повідомлення не надіслано. Надішліть його ще раз, коли кнопка «Надіслати» знову стане доступною.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Задати мітки",
+  "aiRefusedLabelUnknown": "Вибраної мітки немає в списку доступних. Виберіть іншу."
 }

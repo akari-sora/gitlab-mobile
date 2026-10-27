@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Retoma quando a cota de solicitações for redefinida",
   "aiGitLabBudgetTitle": "A cota de solicitações do GitLab está quase esgotada",
   "aiGitLabBudgetDetail": "Esta mensagem não foi enviada. Envie-a novamente quando o botão “Enviar” estiver disponível de novo.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Definir etiquetas",
+  "aiRefusedLabelUnknown": "Uma etiqueta selecionada não está na lista disponível. Escolha novamente."
 }

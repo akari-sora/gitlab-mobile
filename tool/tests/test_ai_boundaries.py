@@ -60,6 +60,18 @@ _MR6B3_WRITE_PORT_MEMBERS = {
     "unsnoozeTodo",
 }
 
+# 3t owns exactly these four opening/candidate reads and three ledger writes.
+# Keep the original 35-member MR6b-3 contract intact.
+_MR6B3T_WRITE_PORT_MEMBERS = {
+    "workItemContent",
+    "workItemActivityEditAccess",
+    "workItemLabels",
+    "workItemLabelCandidates",
+    "updateWorkItemContent",
+    "editWorkItemActivityNote",
+    "updateWorkItemLabels",
+}
+
 WRITE_PORT_MEMBERS = {
     "instance",
     "currentUser",
@@ -148,7 +160,7 @@ WRITE_PORT_MEMBERS = {
     "editProject",
     "deleteProject",
     "forkProject",
-} | _MR6B3_WRITE_PORT_MEMBERS
+} | _MR6B3_WRITE_PORT_MEMBERS | _MR6B3T_WRITE_PORT_MEMBERS
 
 GENERIC_CHANNELS = {
     "writeRecord",
@@ -272,10 +284,15 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertEqual(len(_MR6B3_WRITE_PORT_MEMBERS), 35)
         self.assertNotIn("namespaceWorkItem", WRITE_PORT_MEMBERS)
         self.assertNotIn("snoozedTodos", WRITE_PORT_MEMBERS)
-        self.assertTrue(
-            {"updateWorkItemContent", "editWorkItemActivityNote", "updateWorkItemLabels"}
-            .isdisjoint(WRITE_PORT_MEMBERS)
-        )
+
+    def test_mr6b3t_write_port_whitelist_delta_is_exact(self):
+        self.assertEqual(_MR6B3T_WRITE_PORT_MEMBERS, {
+            "workItemContent", "workItemActivityEditAccess",
+            "workItemLabels", "workItemLabelCandidates",
+            "updateWorkItemContent", "editWorkItemActivityNote",
+            "updateWorkItemLabels",
+        })
+        self.assertTrue(_MR6B3T_WRITE_PORT_MEMBERS.isdisjoint(_MR6B3_WRITE_PORT_MEMBERS))
 
     def test_ledger_named_methods_are_write_port_whitelisted(self):
         methods = set()

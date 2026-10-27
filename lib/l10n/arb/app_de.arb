@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Fortsetzung nach Zurücksetzen des Anfragekontingents",
   "aiGitLabBudgetTitle": "Das GitLab-Anfragekontingent ist fast aufgebraucht",
   "aiGitLabBudgetDetail": "Diese Nachricht wurde nicht gesendet. Sende sie erneut, sobald die Schaltfläche „Senden“ wieder verfügbar ist.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Labels festlegen",
+  "aiRefusedLabelUnknown": "Ein ausgewähltes Label steht nicht in der verfügbaren Liste. Bitte erneut auswählen."
 }

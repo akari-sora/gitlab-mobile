@@ -122,15 +122,23 @@ extension WorkItemContentApi on GitLabApi {
 
   /// Reserves [target] before asynchronous work, performs a fresh exact
   /// preflight, sends at most one mutation, then requires an actor-bound read.
-  /// GitLab exposes no compare-and-set field, so a server-side race remains
-  /// possible between the final preflight and the mutation.
+  /// AI callers also provide the displayed revision as `expectedUpdatedAt`.
+  /// Its server support is not inferred: independent readback is still required.
   Future<WorkItemContentAccess> updateWorkItemContent(
     WorkItemContentTarget target, {
-    required String title,
+    String? title,
     String? description,
+    DateTime? expectedUpdatedAt,
+    bool allowEmptyTitle = false,
     bool Function()? isCurrent,
+    void Function()? onMutationSent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
-    _validateContentInput(title, description);
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
+    _validateContentInput(title, description, allowEmptyTitle: allowEmptyTitle);
     _requireActivityOwner(target._owner);
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -147,7 +155,9 @@ extension WorkItemContentApi on GitLabApi {
     if (before.actorId != target._actorId) {
       throw const ApiFailure(FailureKind.cancelled);
     }
-    if (!_sameContentSnapshot(before.snapshot, target._snapshot)) {
+    if (!_sameContentSnapshot(before.snapshot, target._snapshot) ||
+        (expectedUpdatedAt != null &&
+            before.snapshot.summary.updatedAt != expectedUpdatedAt)) {
       throw const ApiFailure(FailureKind.conflict);
     }
     if (!before.canUpdate || before.target == null) {
@@ -166,18 +176,30 @@ extension WorkItemContentApi on GitLabApi {
         detail: l10n.noSafeDescriptionWidget,
       );
     }
-    final titleChanged = title != before.snapshot.summary.title;
+    final desiredTitle = title ?? before.snapshot.summary.title;
+    final titleChanged =
+        title != null && title != before.snapshot.summary.title;
     final descriptionChanged =
         description != null && description != before.snapshot.rawDescription;
     if (!titleChanged && !descriptionChanged) return before;
 
-    final input = <String, Object?>{'id': before.snapshot.summary.id};
+    final input = <String, Object?>{
+      'id': before.snapshot.summary.id,
+      if (expectedUpdatedAt != null)
+        'expectedUpdatedAt': expectedUpdatedAt.toIso8601String(),
+    };
     if (titleChanged) input['title'] = title;
     if (descriptionChanged) {
       input['descriptionWidget'] = {'description': description};
     }
 
     _requireCurrentWorkItemRequest(isCurrent);
+    if (beforeMutation != null) await beforeMutation();
+    _requireCurrentWorkItemRequest(isCurrent);
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    onMutationSent?.call();
     ({Uint8List bytes, Headers headers, int statusCode}) response;
     try {
       response = await _send(
@@ -213,7 +235,7 @@ extension WorkItemContentApi on GitLabApi {
         target._snapshot.summary,
         requirePermission: false,
       );
-      if (acknowledged.snapshot.summary.title != title ||
+      if (acknowledged.snapshot.summary.title != desiredTitle ||
           (description != null &&
               (acknowledged.snapshot.descriptionAvailability !=
                       WorkItemDescriptionAvailability.present ||
@@ -240,7 +262,7 @@ extension WorkItemContentApi on GitLabApi {
       final expectedDescription =
           description ?? target._snapshot.rawDescription;
       if (readback.actorId != target._actorId ||
-          readback.snapshot.summary.title != title ||
+          readback.snapshot.summary.title != desiredTitle ||
           readback.snapshot.descriptionAvailability !=
               target._snapshot.descriptionAvailability ||
           readback.snapshot.rawDescription != expectedDescription) {
@@ -460,8 +482,19 @@ void _requireContentScope(WorkItemGraphSummary summary) {
   }
 }
 
-void _validateContentInput(String title, String? description) {
-  if (title.trim().isEmpty || title.length > 4096 || title.contains('\u0000')) {
+void _validateContentInput(
+  String? title,
+  String? description, {
+  bool allowEmptyTitle = false,
+}) {
+  if (title == null && description == null) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  if (title != null &&
+      ((!allowEmptyTitle && title.trim().isEmpty) ||
+          (title.isNotEmpty && title.trim().isEmpty) ||
+          title.length > 4096 ||
+          title.contains('\u0000'))) {
     throw const ApiFailure(FailureKind.validation);
   }
   if (description != null) {

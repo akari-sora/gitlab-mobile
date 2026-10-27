@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Se reanuda cuando se restablezca la cuota de solicitudes",
   "aiGitLabBudgetTitle": "La cuota de solicitudes de GitLab está casi agotada",
   "aiGitLabBudgetDetail": "Este mensaje no se envió. Envíalo de nuevo cuando el botón «Enviar» vuelva a estar disponible.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Establecer etiquetas",
+  "aiRefusedLabelUnknown": "Una etiqueta seleccionada no está en la lista disponible. Elige de nuevo."
 }

@@ -307,10 +307,14 @@ final class WorkItemActivityCreatedNote {
 final class WorkItemActivityEditAccess {
   const WorkItemActivityEditAccess._({
     required this.canEditNote,
+    required this.actorId,
+    required this.authorId,
     required this.target,
   });
 
   final bool canEditNote;
+  final String? actorId;
+  final String? authorId;
   final WorkItemActivityEditTarget? target;
 }
 
@@ -493,6 +497,8 @@ extension WorkItemActivityApi on GitLabApi {
     _requireDisplayedActivityNote(preflight.value.note, expectedNote);
     return WorkItemActivityEditAccess._(
       canEditNote: preflight.canEditNote,
+      actorId: preflight.actorId,
+      authorId: preflight.value.note.author?.id,
       target: preflight.canEditNote
           ? WorkItemActivityEditTarget._(
               owner: this,
@@ -508,7 +514,12 @@ extension WorkItemActivityApi on GitLabApi {
     WorkItemActivityEditTarget target,
     String body, {
     bool Function()? isCurrent,
+    Future<void> Function()? beforeMutation,
+    bool Function()? mayStart,
   }) async {
+    if ((beforeMutation == null) != (mayStart == null)) {
+      throw ArgumentError('beforeMutation and mayStart must be paired');
+    }
     _requireActivityOwner(target._owner);
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -538,6 +549,11 @@ extension WorkItemActivityApi on GitLabApi {
     }
     target._consumed = true;
     if (replacement == target.note.body) return preflight.value.note;
+
+    if (beforeMutation != null) await beforeMutation();
+    if (mayStart != null && !mayStart()) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
 
     late final _WorkItemActivityEditNote acknowledged;
     try {

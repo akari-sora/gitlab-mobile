@@ -8340,4 +8340,10 @@ final class AppStrings {
 
   /// {verb}{target} {ref}
   String activityVerbTargetRef(Object? verb, Object? target, Object? ref) => _format(language, language._messages[2748], {'verb': verb, 'target': target, 'ref': ref});
+
+  /// 設定標籤
+  String get aiOpSetWorkItemLabels => language._messages[2749];
+
+  /// 選取的標籤不在可用清單中。請重新選擇。
+  String get aiRefusedLabelUnknown => language._messages[2750];
 }

@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "กลับมาส่งได้เมื่อโควตาคำขอถูกรีเซ็ต",
   "aiGitLabBudgetTitle": "โควตาคำขอของ GitLab ใกล้หมดแล้ว",
   "aiGitLabBudgetDetail": "ข้อความนี้ไม่ได้ถูกส่ง. ส่งอีกครั้งเมื่อปุ่ม “ส่ง” กลับมาใช้งานได้",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "ตั้งค่าป้ายกำกับ",
+  "aiRefusedLabelUnknown": "ป้ายกำกับที่เลือกไม่อยู่ในรายการที่ใช้ได้ โปรดเลือกใหม่"
 }

@@ -36,6 +36,9 @@ const _baselineOperations = <String>{
 };
 
 const _mr6b3Operations = <String>{
+  'updateWorkItemContent',
+  'editWorkItemActivityNote',
+  'updateWorkItemLabels',
   'createWorkItemActivityComment',
   'createWorkItemActivityReply',
   'deleteWorkItemActivityNote',

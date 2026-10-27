@@ -2751,4 +2751,6 @@ const _messagesPtBr = <String>[
   'A cota de solicitações do GitLab está quase esgotada',
   'Esta mensagem não foi enviada. Envie-a novamente quando o botão “Enviar” estiver disponível de novo.',
   '{verb} {target} {ref}',
+  'Definir etiquetas',
+  'Uma etiqueta selecionada não está na lista disponível. Escolha novamente.',
 ];

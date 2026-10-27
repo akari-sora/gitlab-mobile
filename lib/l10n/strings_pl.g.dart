@@ -2751,4 +2751,6 @@ const _messagesPl = <String>[
   'Limit żądań w GitLab jest prawie wyczerpany',
   'Ta wiadomość nie została wysłana. Wyślij ją ponownie, gdy przycisk „Wyślij” będzie znów dostępny.',
   '{verb} {target} {ref}',
+  'Ustaw etykiety',
+  'Wybranej etykiety nie ma na liście dostępnych. Wybierz ponownie.',
 ];

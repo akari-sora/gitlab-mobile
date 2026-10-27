@@ -2751,4 +2751,6 @@ const _messagesRo = <String>[
   'Cota de cereri GitLab este aproape epuizată',
   'Acest mesaj nu a fost trimis. Trimiteți-l din nou când butonul „Trimite” este din nou disponibil.',
   '{verb} {target} {ref}',
+  'Setează etichetele',
+  'O etichetă selectată nu se află în lista disponibilă. Alege din nou.',
 ];

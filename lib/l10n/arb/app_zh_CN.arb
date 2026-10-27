@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "请求额度重置后恢复",
   "aiGitLabBudgetTitle": "GitLab 请求额度暂时不足",
   "aiGitLabBudgetDetail": "此消息未发送。“发送”按钮恢复可用后再发送一次。",
-  "activityVerbTargetRef": "{verb}{target} {ref}"
+  "activityVerbTargetRef": "{verb}{target} {ref}",
+  "aiOpSetWorkItemLabels": "设置标签",
+  "aiRefusedLabelUnknown": "所选标签不在可用列表中。请重新选择。"
 }

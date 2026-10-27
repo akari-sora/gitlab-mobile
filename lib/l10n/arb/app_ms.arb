@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Sambung semula apabila kuota permintaan ditetapkan semula",
   "aiGitLabBudgetTitle": "Kuota permintaan GitLab hampir habis",
   "aiGitLabBudgetDetail": "Mesej ini tidak dihantar. Hantar semula apabila butang “Hantar” tersedia semula.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Tetapkan label",
+  "aiRefusedLabelUnknown": "Label yang dipilih tiada dalam senarai yang tersedia. Pilih semula."
 }

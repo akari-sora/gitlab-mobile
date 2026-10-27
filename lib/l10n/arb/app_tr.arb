@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "İstek kotası sıfırlandığında devam eder",
   "aiGitLabBudgetTitle": "GitLab istek kotası tükenmek üzere",
   "aiGitLabBudgetDetail": "Bu ileti gönderilmedi. “Gönder” düğmesi yeniden kullanılabilir olduğunda tekrar gönderin.",
-  "activityVerbTargetRef": "{verb} ({target} {ref})"
+  "activityVerbTargetRef": "{verb} ({target} {ref})",
+  "aiOpSetWorkItemLabels": "Etiketleri ayarla",
+  "aiRefusedLabelUnknown": "Seçilen etiket kullanılabilir listede yok. Yeniden seçin."
 }

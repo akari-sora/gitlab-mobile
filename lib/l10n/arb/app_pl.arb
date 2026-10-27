@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Wznowienie po odnowieniu limitu żądań",
   "aiGitLabBudgetTitle": "Limit żądań w GitLab jest prawie wyczerpany",
   "aiGitLabBudgetDetail": "Ta wiadomość nie została wysłana. Wyślij ją ponownie, gdy przycisk „Wyślij” będzie znów dostępny.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Ustaw etykiety",
+  "aiRefusedLabelUnknown": "Wybranej etykiety nie ma na liście dostępnych. Wybierz ponownie."
 }

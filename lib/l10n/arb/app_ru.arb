@@ -2748,5 +2748,7 @@
   "aiSendResumesAfterReset": "Возобновится после сброса квоты запросов",
   "aiGitLabBudgetTitle": "Квота запросов GitLab почти исчерпана",
   "aiGitLabBudgetDetail": "Это сообщение не отправлено. Отправьте его снова, когда кнопка «Отправить» снова станет доступна.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Задать метки",
+  "aiRefusedLabelUnknown": "Выбранной метки нет в списке доступных. Выберите другую."
 }
