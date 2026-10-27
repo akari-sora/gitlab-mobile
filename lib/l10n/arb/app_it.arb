@@ -2755,5 +2755,11 @@
   "aiOpSetWorkItemLabels": "Imposta etichette",
   "aiRefusedLabelUnknown": "L’etichetta da impostare non è nell’elenco delle etichette di questo progetto oppure più etichette hanno questo nome, quindi non è stato fatto nulla.",
   "aiRefusedQuickAction": "Il testo contiene una riga che inizia con /, che GitLab potrebbe eseguire come quick action, quindi per sicurezza questa azione non è stata inviata. Rimuovi quella riga o mettila in un blocco di codice.",
-  "aiToolGetGroupWorkItem": "Leggi elemento di lavoro del gruppo"
+  "aiToolGetGroupWorkItem": "Leggi elemento di lavoro del gruppo",
+  "aiOpEditGroupWorkItem": "Modifica elemento di lavoro del gruppo",
+  "aiOpSetGroupWorkItemState": "Chiudi o riapri l’elemento di lavoro del gruppo",
+  "aiOpCloseGroupWorkItem": "Chiudi elemento di lavoro del gruppo",
+  "aiOpReopenGroupWorkItem": "Riapri l’elemento di lavoro del gruppo",
+  "aiOpSetGroupWorkItemAssignees": "Imposta gli assegnatari dell’elemento di lavoro del gruppo",
+  "aiOpSetGroupWorkItemDates": "Imposta le date dell’elemento di lavoro del gruppo"
 }

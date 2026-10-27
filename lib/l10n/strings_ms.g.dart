@@ -2757,5 +2757,11 @@ const _messagesMs = <String>[
   'Tetapkan label',
   'Label yang hendak ditetapkan tiada dalam senarai label projek ini, atau beberapa label mempunyai nama yang sama, jadi tiada apa-apa yang dilakukan.',
   'Teks mempunyai baris yang bermula dengan /, yang mungkin dijalankan oleh GitLab sebagai quick action, jadi demi keselamatan tindakan ini tidak dihantar. Buang baris itu atau letakkannya dalam blok kod.',
-  'Baca work item kumpulan',
+  'Baca item kerja kumpulan',
+  'Sunting item kerja kumpulan',
+  'Tutup atau buka semula item kerja kumpulan',
+  'Tutup item kerja kumpulan',
+  'Buka semula item kerja kumpulan',
+  'Tetapkan orang yang ditugaskan item kerja kumpulan',
+  'Tetapkan tarikh item kerja kumpulan',
 ];

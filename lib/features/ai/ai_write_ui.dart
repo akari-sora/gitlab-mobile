@@ -131,6 +131,25 @@ String aiOperationLabel(String operationId) => switch (operationId) {
   'setWorkItemActivityNoteReaction' => l10n.aiOpSetCommentReaction,
   'snoozeTodo' => l10n.aiOpSnoozeTodo,
   'unsnoozeTodo' => l10n.aiOpUnsnoozeTodo,
+  // MR6b-3g group work-item aliases: the same actions on a work item a
+  // group owns. A label that names the work item names the group's; one
+  // that names only the action keeps the project row's words. snoozeTodo
+  // and unsnoozeTodo keep their own ids; setIncidentStatus has no alias.
+  'updateGroupWorkItemContent' => l10n.aiOpEditGroupWorkItem,
+  'updateGroupWorkItemState' => l10n.aiOpSetGroupWorkItemState,
+  'updateGroupWorkItemAssignees' => l10n.aiOpSetGroupWorkItemAssignees,
+  'updateGroupWorkItemDates' => l10n.aiOpSetGroupWorkItemDates,
+  'createGroupWorkItemActivityComment' => l10n.aiOpCreateNote,
+  'createGroupWorkItemActivityReply' => l10n.aiOpCreateDiscussionNote,
+  'deleteGroupWorkItemActivityNote' => l10n.aiOpDeleteOwnComment,
+  'editGroupWorkItemActivityNote' => l10n.aiOpUpdateNote,
+  'updateGroupWorkItemLabels' => l10n.aiOpSetWorkItemLabels,
+  'updateGroupWorkItemHealthStatus' => l10n.aiOpSetHealthStatus,
+  'updateGroupWorkItemMilestone' => l10n.aiOpSetMilestone,
+  'updateGroupWorkItemWeight' => l10n.aiOpSetWeight,
+  'updateGroupWorkItemStatus' => l10n.aiOpSetStatus,
+  'setGroupWorkItemNotifications' => l10n.aiOpSetNotifications,
+  'setGroupWorkItemActivityNoteReaction' => l10n.aiOpSetCommentReaction,
   _ => l10n.aiOpUnknown,
 };
 
@@ -164,12 +183,14 @@ String aiProposalTitle(AiWriteProposal proposal) {
       false => l10n.aiOpShowBoardList,
       null => aiOperationLabel(proposal.operationId),
     },
-    'setWorkItemActivityNoteReaction' => switch (flag('add')) {
+    'setWorkItemActivityNoteReaction' ||
+    'setGroupWorkItemActivityNoteReaction' => switch (flag('add')) {
       true => l10n.aiOpAddAwardEmoji,
       false => l10n.aiOpRemoveAwardEmoji,
       null => aiOperationLabel(proposal.operationId),
     },
-    'setWorkItemNotifications' => switch (flag('enabled')) {
+    'setWorkItemNotifications' ||
+    'setGroupWorkItemNotifications' => switch (flag('enabled')) {
       true => l10n.aiOpSubscribeOn,
       false => l10n.aiOpSubscribeOff,
       null => aiOperationLabel(proposal.operationId),
@@ -177,6 +198,11 @@ String aiProposalTitle(AiWriteProposal proposal) {
     'updateWorkItemState' => switch (fields['stateEvent']) {
       'close' => l10n.closeWorkItem,
       'reopen' => l10n.aiOpReopenWorkItem,
+      _ => aiOperationLabel(proposal.operationId),
+    },
+    'updateGroupWorkItemState' => switch (fields['stateEvent']) {
+      'close' => l10n.aiOpCloseGroupWorkItem,
+      'reopen' => l10n.aiOpReopenGroupWorkItem,
       _ => aiOperationLabel(proposal.operationId),
     },
     'setMilestoneState' => switch (fields['stateEvent']) {
@@ -208,8 +234,11 @@ bool aiFieldInTitle(String operationId, String key) =>
       ('setBoardSystemListHidden', 'hidden') ||
       ('setMilestoneState', 'stateEvent') ||
       ('updateWorkItemState', 'stateEvent') ||
+      ('updateGroupWorkItemState', 'stateEvent') ||
       ('setWorkItemActivityNoteReaction', 'add') ||
+      ('setGroupWorkItemActivityNoteReaction', 'add') ||
       ('setWorkItemNotifications', 'enabled') ||
+      ('setGroupWorkItemNotifications', 'enabled') ||
       ('pipelineAction', 'action') ||
       ('jobAction', 'action') => true,
       _ => false,

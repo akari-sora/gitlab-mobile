@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
+import 'package:gitlab_mobile/core/ai/tools/graphql_write_classify.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_preview.dart';
@@ -174,6 +175,68 @@ Widget _host(Widget child, {String tag = 'zh-TW', double scale = 1}) =>
       ),
     );
 
+/// The fifteen MR6b-3g group work-item aliases and the project operation each
+/// one mirrors. Written out rather than read from the ledger: the group rows
+/// stay empty and hidden until each family lands, and the labels may not
+/// wait for them.
+const _groupAliases = <String, String>{
+  'updateGroupWorkItemState': 'updateWorkItemState',
+  'updateGroupWorkItemStatus': 'updateWorkItemStatus',
+  'updateGroupWorkItemDates': 'updateWorkItemDates',
+  'updateGroupWorkItemHealthStatus': 'updateWorkItemHealthStatus',
+  'updateGroupWorkItemAssignees': 'updateWorkItemAssignees',
+  'updateGroupWorkItemMilestone': 'updateWorkItemMilestone',
+  'updateGroupWorkItemWeight': 'updateWorkItemWeight',
+  'createGroupWorkItemActivityComment': 'createWorkItemActivityComment',
+  'createGroupWorkItemActivityReply': 'createWorkItemActivityReply',
+  'deleteGroupWorkItemActivityNote': 'deleteWorkItemActivityNote',
+  'setGroupWorkItemActivityNoteReaction': 'setWorkItemActivityNoteReaction',
+  'setGroupWorkItemNotifications': 'setWorkItemNotifications',
+  'updateGroupWorkItemContent': 'updateWorkItemContent',
+  'editGroupWorkItemActivityNote': 'editWorkItemActivityNote',
+  'updateGroupWorkItemLabels': 'updateWorkItemLabels',
+};
+
+/// The aliases whose project label names the work item: their own label
+/// names the group's work item instead. Every other alias names only the
+/// action, which reads the same on a group's work item.
+Map<String, String> _groupWorkItemLabels() => {
+  'updateGroupWorkItemContent': l10n.aiOpEditGroupWorkItem,
+  'updateGroupWorkItemState': l10n.aiOpSetGroupWorkItemState,
+  'updateGroupWorkItemAssignees': l10n.aiOpSetGroupWorkItemAssignees,
+  'updateGroupWorkItemDates': l10n.aiOpSetGroupWorkItemDates,
+};
+
+/// Each two-way group alias, a direction, and the title it must show.
+List<(String, Map<String, String>, String)> _groupDirectionTitles() => [
+  (
+    'setGroupWorkItemActivityNoteReaction',
+    {'add': 'true'},
+    l10n.aiOpAddAwardEmoji,
+  ),
+  (
+    'setGroupWorkItemActivityNoteReaction',
+    {'add': 'false'},
+    l10n.aiOpRemoveAwardEmoji,
+  ),
+  ('setGroupWorkItemNotifications', {'enabled': 'true'}, l10n.aiOpSubscribeOn),
+  (
+    'setGroupWorkItemNotifications',
+    {'enabled': 'false'},
+    l10n.aiOpSubscribeOff,
+  ),
+  (
+    'updateGroupWorkItemState',
+    {'stateEvent': 'close'},
+    l10n.aiOpCloseGroupWorkItem,
+  ),
+  (
+    'updateGroupWorkItemState',
+    {'stateEvent': 'reopen'},
+    l10n.aiOpReopenGroupWorkItem,
+  ),
+];
+
 void main() {
   setUp(() => useLanguage(languageForTag('zh-TW')!));
 
@@ -227,6 +290,7 @@ void main() {
         l10n.aiOpResolveThread,
       ),
       ('setMilestoneState', const {'stateEvent': 'close'}, l10n.closeMilestone),
+      ..._groupDirectionTitles(),
     ]) {
       final proposal = _proposal(
         operationId: operation,
@@ -1080,6 +1144,17 @@ void main() {
       title('updateWorkItemState', {'stateEvent': 'reopen'}),
       l10n.aiOpReopenWorkItem,
     );
+    // The group aliases name the same directions; closing or reopening names
+    // the group's work item, as its operation label does.
+    for (final (operationId, fields, expected) in _groupDirectionTitles()) {
+      expect(title(operationId, fields), expected, reason: operationId);
+      expect(aiFieldInTitle(operationId, fields.keys.single), isTrue);
+      // No direction: the title is the alias's own label, never the fallback.
+      expect(title(operationId, const {}), aiOperationLabel(operationId));
+      expect(title(operationId, const {}), isNot(l10n.aiOpUnknown));
+    }
+    expect(l10n.aiOpCloseGroupWorkItem, isNot(l10n.closeWorkItem));
+    expect(l10n.aiOpReopenGroupWorkItem, isNot(l10n.aiOpReopenWorkItem));
     expect(aiFieldValue('healthStatus', 'onTrack'), l10n.healthOnTrack);
     expect(aiFieldValue('healthStatus', 'none'), l10n.clearHealthStatus);
     expect(aiFieldValue('mode', 'manual'), l10n.manualDates);
@@ -1324,6 +1399,19 @@ void main() {
           reason: row.operationId,
         );
       }
+      // And every graph operation, including the fifteen group aliases whose
+      // rows are still empty and hidden, so the loop above cannot reach them.
+      expect(_groupAliases, hasLength(15));
+      for (final operationId in {
+        ...graphWriteRules.keys,
+        ..._groupAliases.keys,
+      }) {
+        expect(
+          aiOperationLabel(operationId),
+          isNot(l10n.aiOpUnknown),
+          reason: operationId,
+        );
+      }
       for (final key in [
         'title',
         'description',
@@ -1346,6 +1434,118 @@ void main() {
         'until',
       ]) {
         expect(aiFieldLabel(key), isNot(key), reason: key);
+      }
+    });
+  });
+
+  group('group work-item aliases', () {
+    test('the alias list is the one the write port classifies', () {
+      expect(
+        graphWriteRules.keys.where((id) => id.contains('GroupWorkItem')),
+        unorderedEquals(_groupAliases.keys),
+      );
+      for (final project in _groupAliases.values) {
+        expect(graphWriteRules, contains(project), reason: project);
+      }
+      // Snooze keeps its own ids and the incident status has no group form.
+      expect(_groupAliases.values, isNot(contains('setIncidentStatus')));
+      expect(_groupAliases.values, isNot(contains('snoozeTodo')));
+      expect(_groupAliases.values, isNot(contains('unsnoozeTodo')));
+    });
+
+    test('every language names each alias, and the group work item where '
+        'the project label names the work item', () {
+      addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+      expect(appLanguages, hasLength(24));
+      for (final language in appLanguages) {
+        useLanguage(language);
+        final named = _groupWorkItemLabels();
+        for (final MapEntry(key: alias, value: project)
+            in _groupAliases.entries) {
+          final label = aiOperationLabel(alias);
+          final reason = '${language.tag} $alias';
+          expect(label.trim(), isNotEmpty, reason: reason);
+          expect(label, isNot(l10n.aiOpUnknown), reason: reason);
+          if (named[alias] case final expected?) {
+            expect(label, expected, reason: reason);
+            expect(label, isNot(aiOperationLabel(project)), reason: reason);
+          } else {
+            expect(label, aiOperationLabel(project), reason: reason);
+          }
+        }
+        for (final (alias, fields, expected) in _groupDirectionTitles()) {
+          final title = aiProposalTitle(
+            _proposal(operationId: alias, fields: fields),
+          );
+          expect(title, expected, reason: '${language.tag} $alias $fields');
+          expect(title, isNot(l10n.aiOpUnknown));
+        }
+        expect(
+          {l10n.aiOpCloseGroupWorkItem, l10n.aiOpReopenGroupWorkItem},
+          hasLength(2),
+          reason: language.tag,
+        );
+        expect(l10n.aiOpCloseGroupWorkItem, isNot(l10n.closeWorkItem));
+        expect(l10n.aiOpReopenGroupWorkItem, isNot(l10n.aiOpReopenWorkItem));
+      }
+    });
+
+    test('Arabic labels read right to left and take no isolated values', () {
+      addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+      final arabic = languageForTag('ar')!;
+      expect(arabic.rtl, isTrue);
+      useLanguage(arabic);
+      // No alias label has a placeholder, so no value is wrapped in
+      // U+2066…U+2069; a label that gains one must isolate it and change
+      // this test. Each one starts with an Arabic letter, so the line takes
+      // its direction from the label itself.
+      final firstLetter = RegExp(r'\p{L}', unicode: true);
+      final arabicLetter = RegExp(r'\p{Script=Arabic}', unicode: true);
+      final isolates = RegExp(r'[\u2066-\u2069]');
+      final shown = [
+        for (final alias in _groupAliases.keys) aiOperationLabel(alias),
+        for (final (_, _, title) in _groupDirectionTitles()) title,
+      ];
+      for (final text in shown) {
+        expect(text, isNot(matches(isolates)), reason: text);
+        final first = firstLetter.firstMatch(text)!.group(0)!;
+        expect(first, matches(arabicLetter), reason: text);
+      }
+    });
+
+    testWidgets('an Arabic group card names its direction right to left', (
+      tester,
+    ) async {
+      useLanguage(languageForTag('ar')!);
+      addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+      for (final (alias, fields, title) in _groupDirectionTitles()) {
+        final proposal = _proposal(
+          operationId: alias,
+          tier: AiWriteTier.t1,
+          fields: fields,
+        );
+        await tester.pumpWidget(
+          _host(
+            AiWriteProposalCard(
+              proposal: proposal,
+              session: _Writes([proposal]),
+            ),
+            tag: 'ar',
+          ),
+        );
+        final shown = find.text(title);
+        expect(shown, findsOneWidget, reason: '$alias $fields');
+        expect(
+          Directionality.of(tester.element(shown)),
+          TextDirection.rtl,
+          reason: alias,
+        );
+        expect(
+          find.byKey(ValueKey('ai-proposal-field-${fields.keys.single}')),
+          findsNothing,
+          reason: alias,
+        );
+        expect(tester.takeException(), isNull);
       }
     });
   });

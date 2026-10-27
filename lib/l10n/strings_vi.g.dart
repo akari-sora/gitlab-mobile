@@ -2758,4 +2758,10 @@ const _messagesVi = <String>[
   'Nhãn cần đặt không có trong danh sách nhãn của project này, hoặc có nhiều nhãn trùng tên, nên chưa có gì được thực hiện.',
   'Văn bản có một dòng bắt đầu bằng /, GitLab có thể chạy nó như một quick action, nên để an toàn thao tác này chưa được gửi. Hãy xóa dòng đó hoặc đặt nó vào khối mã.',
   'Đọc mục công việc của nhóm',
+  'Chỉnh sửa mục công việc của nhóm',
+  'Đóng hoặc mở lại mục công việc của nhóm',
+  'Đóng mục công việc của nhóm',
+  'Mở lại mục công việc của nhóm',
+  'Đặt người được gán cho mục công việc của nhóm',
+  'Đặt ngày cho mục công việc của nhóm',
 ];

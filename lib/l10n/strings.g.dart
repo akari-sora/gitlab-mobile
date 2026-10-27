@@ -8361,4 +8361,22 @@ final class AppStrings {
 
   /// 讀取群組工作項目
   String get aiToolGetGroupWorkItem => language._messages[2755];
+
+  /// 編輯群組工作項目
+  String get aiOpEditGroupWorkItem => language._messages[2756];
+
+  /// 關閉或重新開啟群組工作項目
+  String get aiOpSetGroupWorkItemState => language._messages[2757];
+
+  /// 關閉群組工作項目
+  String get aiOpCloseGroupWorkItem => language._messages[2758];
+
+  /// 重新開啟群組工作項目
+  String get aiOpReopenGroupWorkItem => language._messages[2759];
+
+  /// 設定群組工作項目負責人
+  String get aiOpSetGroupWorkItemAssignees => language._messages[2760];
+
+  /// 設定群組工作項目日期
+  String get aiOpSetGroupWorkItemDates => language._messages[2761];
 }
