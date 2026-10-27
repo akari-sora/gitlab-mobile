@@ -58,8 +58,9 @@ enum ReadCacheDirectoryState { absent, emptyDirectory, hasFiles }
 /// Atomic, bounded primitives only. The coordinator owns admission, account
 /// serialization, leases, markers, key creation, recovery and LRU decisions.
 /// Constructing this store performs no I/O and never selects a platform root.
-/// An untrustedPath from usage() is device-wide fail-closed: the caller must
-/// escalate to clearRoot(), since clearing one account may not repair it.
+/// An untrustedPath from usage() is device-wide fail-closed. Foreign names and
+/// wrong directory types can be cleared with clearRoot(); special files cannot
+/// be removed in the app, so the cache stays closed.
 final class ReadCacheFileStore {
   ReadCacheFileStore({
     required Future<Directory> Function() root,
@@ -302,9 +303,33 @@ final class _Files {
     }
   }
 
+  void confirmAbsent(String path) {
+    final directory = Directory(path);
+    final parent = directory.parent;
+    if (parent.path == directory.path) {
+      throw const ReadCacheFileException(ReadCacheFileFailure.io);
+    }
+    // The trusted root may itself have missing ancestors. Confirm their absence
+    // too: typeSync reports notFound for permission and other stat failures.
+    if (type(parent.path) == FileSystemEntityType.notFound) {
+      confirmAbsent(parent.path);
+      return;
+    }
+    final name = directory.uri.pathSegments
+        .where((part) => part.isNotEmpty)
+        .last;
+    for (final entity in parent.listSync(followLinks: false)) {
+      if (entity.uri.pathSegments.where((part) => part.isNotEmpty).last ==
+          name) {
+        throw const ReadCacheFileException(ReadCacheFileFailure.io);
+      }
+    }
+  }
+
   bool directories({bool create = false, bool includeAccount = true}) {
     for (final path in [root, base, if (includeAccount) account]) {
       if (type(path) == FileSystemEntityType.notFound) {
+        confirmAbsent(path);
         if (!create) return false;
         // Only the injected trusted root may have missing ancestors.
         Directory(path).createSync(recursive: path == root);

@@ -113,6 +113,51 @@ void main() {
     },
   );
 
+  test('missing root ancestors remain absent until a write', () async {
+    final nestedRoot = Directory('${root.path}/missing/nested');
+    final files = ReadCacheFileStore(root: () async => nestedRoot);
+    expect(
+      await files.accountDirectoryState(_account),
+      ReadCacheDirectoryState.absent,
+    );
+    expect(root.listSync(), isEmpty);
+    await files.writeEntry(_entry(), _key);
+    expect(
+      await files.accountDirectoryState(_account),
+      ReadCacheDirectoryState.hasFiles,
+    );
+  });
+
+  test(
+    'accountDirectoryState rejects an unreadable read_cache directory',
+    () async {
+      accountDirectory().createSync(recursive: true);
+      final base = accountDirectory().parent;
+      File('${accountDirectory().path}/sentinel').writeAsBytesSync([1]);
+      addTearDown(() {
+        expect(Process.runSync('chmod', ['700', base.path]).exitCode, 0);
+      });
+      expect(Process.runSync('chmod', ['000', base.path]).exitCode, 0);
+      try {
+        base.listSync(followLinks: false);
+        markTestSkipped(
+          'Mode 000 does not prevent directory listing on this platform or '
+          'for this user.',
+        );
+        return;
+      } on FileSystemException {
+        // Permission denial must not be mistaken for an absent account.
+      }
+      await expectLater(
+        store().accountDirectoryState(_account),
+        fileFailure(ReadCacheFileFailure.io),
+      );
+    },
+    skip: Platform.isWindows
+        ? 'chmod permissions do not apply on Windows.'
+        : false,
+  );
+
   test('entry then encrypted index survive a completely new store', () async {
     final value = _entry();
     final name = await store().writeEntry(value, _key);
