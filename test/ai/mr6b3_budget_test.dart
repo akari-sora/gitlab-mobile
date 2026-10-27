@@ -4,6 +4,7 @@ import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import 'mr6b3_matrix_support.dart';
+import 'mr6b3_support.dart';
 
 /// docs/plans/ai-writes-plan-v6.md §4.4: 40 GitLab HTTP requests are the shared
 /// per-send budget. The allowance through readback is reserved when the
@@ -151,6 +152,137 @@ void main() {
       );
     }
   }
+
+  // Unlike the success drives above, these challenge every logical read,
+  // including candidate lookup and the in-method target-epoch fence.
+  for (final scenario in <({String operation, String reason, int reads})>[
+    (
+      operation: 'updateWorkItemAssignees',
+      reason: 'assigneeConflict',
+      reads: 5,
+    ),
+    (operation: 'updateWorkItemStatus', reason: 'statusNotStarted', reads: 9),
+    (operation: 'updateWorkItemWeight', reason: 'weightConflict', reads: 9),
+  ]) {
+    test(
+      '${scenario.operation} every-read OAuth replay fails closed',
+      () async {
+        final harness = await Mr6b3ApiHarness.create(challengeEveryRead: true);
+        addTearDown(harness.dispose);
+        final callId = 'all-replays-${scenario.operation}';
+        final proposal = await harness.propose(scenario.operation, id: callId);
+        if (scenario.operation == 'updateWorkItemAssignees') {
+          // The first new-name lookup refreshes the bound opening target out of
+          // its epoch, so this operation is refused before a proposal exists.
+          expect(proposal, isNull);
+          expect(harness.journal.entries(mr6b3Account), isEmpty);
+        } else {
+          expect(proposal, isNotNull);
+          final outcome = await harness.approve(proposal!);
+          expect(outcome.state, AiJournalState.notExecuted);
+          expect(outcome.reasonCode, scenario.reason);
+          expect(outcome.mutationCount, 0);
+          expect(harness.coordinator.outcomeFor(callId), same(outcome));
+          expect(
+            harness.journal.entries(mr6b3Account).single.state,
+            AiJournalState.notExecuted,
+          );
+        }
+        final recorded = harness.coordinator.outcomeFor(callId)!;
+        expect(recorded.state, AiJournalState.notExecuted);
+        expect(recorded.reasonCode, scenario.reason);
+        expect(recorded.mutationCount, 0);
+        _expectEveryReadReplayed(harness, scenario.operation, scenario.reads);
+      },
+    );
+  }
+
+  test('assignee every-read replay also refuses the final preflight', () async {
+    final harness = await Mr6b3ApiHarness.create(challengeEveryRead: true);
+    addTearDown(harness.dispose);
+    const callId = 'all-replays-assignee-clear';
+    final proposal = await harness.propose(
+      'updateWorkItemAssignees',
+      id: callId,
+      arguments: {'assigneeUsernames': <String>[]},
+    );
+    expect(proposal, isNotNull);
+    final outcome = await harness.approve(proposal!);
+    expect(outcome.state, AiJournalState.notExecuted);
+    expect(outcome.reasonCode, 'assigneeConflict');
+    expect(outcome.mutationCount, 0);
+    expect(harness.coordinator.outcomeFor(callId), same(outcome));
+    expect(
+      harness.journal.entries(mr6b3Account).single.state,
+      AiJournalState.notExecuted,
+    );
+    _expectEveryReadReplayed(harness, 'updateWorkItemAssignees', 9);
+  });
+
+  for (final operation in [
+    'updateWorkItemAssignees',
+    'updateWorkItemStatus',
+    'updateWorkItemWeight',
+  ]) {
+    test('$operation permits OAuth replay of the post-mutation read', () async {
+      final harness = await Mr6b3ApiHarness.create();
+      addTearDown(harness.dispose);
+      int? refreshesAtMutation;
+      harness.server.onRequest = (name, mutation, request, payload) {
+        if (mutation) refreshesAtMutation = harness.server.refreshes;
+        return null;
+      };
+      final callId = 'post-mutation-replay-$operation';
+      final proposal = (await harness.propose(operation, id: callId))!;
+      final outcome = await harness.approve(proposal);
+      expect(outcome.state, AiJournalState.succeeded);
+      expect(outcome.reasonCode, 'succeeded');
+      expect(outcome.mutationCount, 1);
+      expect(outcome.readbackConfirmed, isTrue);
+      expect(harness.coordinator.outcomeFor(callId), same(outcome));
+      expect(
+        harness.journal.entries(mr6b3Account).single.state,
+        AiJournalState.succeeded,
+      );
+      expect(refreshesAtMutation, isNotNull);
+      expect(harness.server.refreshes, refreshesAtMutation! + 1);
+      expect(harness.server.mutations, 1);
+      expect(
+        harness.server.refreshAdapter.requests,
+        hasLength(harness.server.refreshes),
+      );
+      expect(
+        harness.server.adapter.requests,
+        hasLength(harness.server.logicalReads + 1 + harness.server.refreshes),
+      );
+      expect(
+        harness.server.adapter.requests.length,
+        lessThanOrEqualTo(productionAiLedger.find(operation)!.httpCap),
+      );
+    });
+  }
+}
+
+void _expectEveryReadReplayed(
+  Mr6b3ApiHarness harness,
+  String operation,
+  int logicalReads,
+) {
+  expect(harness.server.mutations, 0);
+  expect(harness.server.logicalReads, logicalReads);
+  expect(harness.server.refreshes, logicalReads);
+  expect(harness.server.refreshAdapter.requests, hasLength(logicalReads));
+  expect(harness.server.adapter.requests, hasLength(2 * logicalReads));
+  expect(
+    harness.server.adapter.requests.where(
+      (request) => request.uri.path.endsWith('/oauth/token'),
+    ),
+    isEmpty,
+  );
+  expect(
+    harness.server.adapter.requests.length,
+    lessThanOrEqualTo(productionAiLedger.find(operation)!.httpCap),
+  );
 }
 
 /// Family success paths withhold these OAuth challenges. The counted cap in

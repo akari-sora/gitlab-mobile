@@ -13,6 +13,7 @@ import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
+import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import '../support/fake_adapter.dart';
@@ -134,8 +135,11 @@ final class _Registry implements AiWorkItemWriteRegistry {
 /// paths: refreshing them advances the read epoch after the target is bound.
 /// The static cap still includes a replay of every logical read.
 final class Mr6b3ApiServer {
-  Mr6b3ApiServer({this.oauth = false, bool? replayReads})
-    : replayReads = replayReads ?? oauth {
+  Mr6b3ApiServer({
+    this.oauth = false,
+    bool? replayReads,
+    this.challengeEveryRead = false,
+  }) : replayReads = replayReads ?? oauth {
     adapter = FakeAdapter(_respond);
     refreshAdapter = FakeAdapter((_) {
       refreshes++;
@@ -172,6 +176,20 @@ final class Mr6b3ApiServer {
 
   final bool oauth;
   final bool replayReads;
+  final bool challengeEveryRead;
+  bool applyMutations = true;
+
+  /// Runs at the real adapter boundary, after accounting and optional mutation
+  /// application. A null return serves the normal payload. Tests can inspect
+  /// journal state, edit a payload, return an HTTP failure, or throw transport
+  /// cancellation without replacing the production port.
+  ResponseBody? Function(
+    String name,
+    bool mutation,
+    RequestOptions request,
+    Map<String, Object?> payload,
+  )?
+  onRequest;
   late final FakeAdapter adapter;
   late final FakeAdapter refreshAdapter;
   late final GitLabApi api;
@@ -222,14 +240,22 @@ final class Mr6b3ApiServer {
     reads.update(classified.name, (count) => count + 1, ifAbsent: () => 1);
     if (classified.mutation) {
       mutations++;
-      _applyMutation(classified.name, request);
+      if (applyMutations) _applyMutation(classified.name, request);
     } else {
       logicalReads++;
     }
-    return jsonResponse(_payload(classified.name, request));
+    final payload = _payload(classified.name, request);
+    return onRequest?.call(
+          classified.name,
+          classified.mutation,
+          request,
+          payload,
+        ) ??
+        jsonResponse(payload);
   }
 
   bool _replay(String name) {
+    if (challengeEveryRead) return true;
     final next = (reads[name] ?? 0) + 1;
     return switch (name) {
       'MobileProjectAssigneeCandidates' => false,
@@ -287,6 +313,9 @@ final class Mr6b3ApiServer {
         if (selected is bool) notificationsOn = selected;
       case 'MobileAddWorkItemActivityNoteReaction':
         reactionAwarded = true;
+        noteUpdatedAt = '2026-10-01T01:03:05Z';
+      case 'MobileRemoveWorkItemActivityNoteReaction':
+        reactionAwarded = false;
         noteUpdatedAt = '2026-10-01T01:03:05Z';
       case 'MobileCreateWorkItemActivityNote':
         final body = _input(variables)['body'];
@@ -433,6 +462,11 @@ final class Mr6b3ApiServer {
           },
         },
       },
+      'MobileRemoveWorkItemActivityNoteReaction' => {
+        'data': {
+          'awardEmojiRemove': {'errors': <Object?>[]},
+        },
+      },
       'MobileWorkItemActivityWriteAccess' => _noteAccess(anchor: false),
       'MobileWorkItemActivityReplyPreflight' => _noteAccess(anchor: true),
       'MobileCreateWorkItemActivityNote' => {
@@ -469,6 +503,16 @@ final class Mr6b3ApiServer {
         snoozed: true,
         after: variables['after'],
       ),
+      'MobileSnoozedTodos' => {
+        'data': {
+          'currentUser': {
+            'todos': {
+              'nodes': <Object?>[],
+              'pageInfo': {'hasNextPage': false},
+            },
+          },
+        },
+      },
       'MobileTodoSnooze' => {
         'data': {
           'todoSnooze': {
@@ -1044,6 +1088,8 @@ final class Mr6b3ApiHarness {
     required this.root,
     required this.server,
     required this.files,
+    required this.keys,
+    required this.policy,
     required this.journal,
     required this.coordinator,
     required this.budget,
@@ -1052,20 +1098,27 @@ final class Mr6b3ApiHarness {
   static Future<Mr6b3ApiHarness> create({
     bool oauth = true,
     int maxGitLabRequests = 40,
+    bool challengeEveryRead = false,
+    port.AiGitLabWritePort Function(port.GitLabAiWritePort)? portFactory,
   }) async {
     final root = Directory.systemTemp.createTempSync('mr6b3-p15-');
     final files = Mr6b3JournalFiles(root);
+    final keys = Mr6b3JournalKeyStore();
     final journal = AiWriteJournal(
-      keys: Mr6b3JournalKeyStore(),
+      keys: keys,
       applicationSupport: root,
       files: files,
       processId: 'mr6b3-p15',
     );
     await journal.recoverAfterAccountsLoaded([mr6b3Account]);
     await journal.ensureInitialized(mr6b3Account);
-    final server = Mr6b3ApiServer(oauth: oauth);
+    final server = Mr6b3ApiServer(
+      oauth: oauth,
+      challengeEveryRead: challengeEveryRead,
+    );
     final policy = Mr6b3Policy();
     final budget = AiToolBudget(maxGitLabRequests: maxGitLabRequests);
+    late final Mr6b3ApiHarness harness;
     final coordinator = PolicyAiWriteCoordinator(
       snapshot: () => AiWritePolicySnapshot(
         scope: mr6b3Scope,
@@ -1074,12 +1127,13 @@ final class Mr6b3ApiHarness {
         consentHash: 'mr6b3-consent',
         writePolicyRevision: policy.revision,
         scopeRevision: 1,
-        sessionGeneration: 7,
+        sessionGeneration: harness.sessionGeneration,
+        appInForeground: harness.appInForeground,
         alive: policy.alive,
         consentValid: policy.consentValid,
         clientMayStart: policy.clientMayStart && server.api.mayStartRequest,
       ),
-      createPort: () => server.writePort,
+      createPort: () => portFactory?.call(server.writePort) ?? server.writePort,
       journal: journal,
       conversationId: 'mr6b3-p15-budget',
       budget: () => budget,
@@ -1124,43 +1178,96 @@ final class Mr6b3ApiHarness {
           ? null
           : (String op) => aiWriteRequestAllowance(op, oauthReplay: false),
     );
-    coordinator.beginRun('Update work item 3 in team/example-9.');
-    coordinator.beginTurn();
-    return Mr6b3ApiHarness._(
+    harness = Mr6b3ApiHarness._(
       root: root,
       server: server,
       files: files,
+      keys: keys,
+      policy: policy,
       journal: journal,
       coordinator: coordinator,
       budget: budget,
     );
+    coordinator.beginRun('Update work item 3 in team/example-9.');
+    coordinator.beginTurn();
+    return harness;
   }
 
   final Directory root;
   final Mr6b3ApiServer server;
   final Mr6b3JournalFiles files;
+  final Mr6b3JournalKeyStore keys;
+  final Mr6b3Policy policy;
   final AiWriteJournal journal;
   final PolicyAiWriteCoordinator coordinator;
   final AiToolBudget budget;
+  int sessionGeneration = 7;
+  bool appInForeground = true;
   int _callId = 0;
 
-  Future<AiWriteProposal?> propose(String operation, {String? id}) =>
-      coordinator
-          .propose(
-            AiToolCall(
-              id: id ?? 'p15-${_callId++}',
-              name: operation,
-              arguments: {
-                ...mr6b3ApiArguments(operation),
-                'reason': 'synthetic packet 15 request',
-              },
-            ),
-          )
-          .timeout(mr6b3Timeout);
+  Future<AiWriteProposal?> propose(
+    String operation, {
+    String? id,
+    Map<String, Object?> arguments = const {},
+  }) => coordinator
+      .propose(
+        AiToolCall(
+          id: id ?? 'p15-${_callId++}',
+          name: operation,
+          arguments: {
+            ...mr6b3ApiArguments(operation),
+            ...arguments,
+            'reason': 'synthetic packet 15 request',
+          },
+        ),
+      )
+      .timeout(mr6b3Timeout);
 
   Future<AiWriteOutcome> approve(AiWriteProposal proposal) => coordinator
       .approve(proposal, typedName: proposal.tier.typedName)
       .timeout(mr6b3Timeout);
+
+  Future<void> seedConfirmMark() async {
+    const execution = 'mr6b3-p15-seed';
+    await journal.prepare(
+      draft: AiJournalDraft(
+        executionId: execution,
+        accountKey: mr6b3Account,
+        conversationId: 'mr6b3-p15-seed',
+        runId: 'mr6b3-p15-seed',
+        operationId: 'updateWorkItemState',
+        writeKeys: {mr6b3WriteKey},
+        payloadSha256:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        releaseName: '#3',
+      ),
+    );
+    await journal.markDispatching(executionId: execution);
+    await journal.finish(
+      executionId: execution,
+      terminal: AiJournalState.writeUncertain,
+    );
+    await journal.releaseByUser(executionId: execution, typedName: '#3');
+  }
+
+  Future<Map<String, Object?>> readDurableJournal() =>
+      AiHistoryCipher.decryptJson(
+        File(files.pathFor(mr6b3Account)).readAsBytesSync(),
+        keys.keys[mr6b3Account]!,
+        mr6b3Account,
+        AiJournalFiles.fileName,
+      );
+
+  Future<AiWriteJournal> recoverInNewProcess() async {
+    final recovered = AiWriteJournal(
+      keys: keys,
+      applicationSupport: root,
+      files: files,
+      processId: 'mr6b3-p15-restarted',
+    );
+    await recovered.recoverAfterAccountsLoaded([mr6b3Account]);
+    return recovered;
+  }
 
   Future<void> dispose() async {
     files.releaseBarrier();
