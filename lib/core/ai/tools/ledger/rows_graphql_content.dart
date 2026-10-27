@@ -9,7 +9,7 @@ const List<AiCapability> aiGraphqlContentRows = <AiCapability>[
     modelVisible: true,
     arguments: {
       'projectId': _projectId,
-      'iid': _projectId,
+      'iid': _iid,
       'title': AiArgSpec(AiArgType.string, text: AiTextRole.plainContent),
       'description': AiArgSpec(
         AiArgType.string,
@@ -21,5 +21,6 @@ const List<AiCapability> aiGraphqlContentRows = <AiCapability>[
     // L=2(F+P)+Mpre+Mrb=2*(1+3)+1+1=10; httpCap=2L+1=21.
     httpCap: 21,
     readback: true,
+    editableField: 'description',
   ),
 ];

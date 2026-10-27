@@ -3,6 +3,7 @@ part of 'gitlab_api.dart';
 const _labelPageSize = 100;
 const _labelPageLimit = 20;
 const _labelCandidatePageSize = 20;
+const _aiLabelCandidatePageSize = 100;
 const _labelCandidatePageLimit = 5;
 const _labelTitleLimit = 255;
 
@@ -284,7 +285,11 @@ extension WorkItemLabelApi on GitLabApi {
           requiredString(project, 'fullPath') != scope.fullPath) {
         throw _labelsUnsupported;
       }
-      final page = _parseCandidateConnection(project['labels'], 0);
+      final page = _parseCandidateConnection(
+        project['labels'],
+        0,
+        pageSize: _aiLabelCandidatePageSize,
+      );
       if (page.hasNextPage) throw _labelsUnsupported;
       target._knownCandidateIds.addAll(page.labels.map((label) => label.id));
       return List<WorkItemLabel>.unmodifiable(page.labels);
@@ -354,7 +359,11 @@ extension WorkItemLabelApi on GitLabApi {
           requiredString(container, 'fullPath') != scope.fullPath) {
         throw _labelsUnsupported;
       }
-      page = _parseCandidateConnection(container['labels'], pageIndex);
+      page = _parseCandidateConnection(
+        container['labels'],
+        pageIndex,
+        pageSize: _labelCandidatePageSize,
+      );
     } on ApiFailure {
       rethrow;
     } on FormatException {
@@ -471,8 +480,8 @@ extension WorkItemLabelApi on GitLabApi {
       throw WorkItemLabelWriteFailure(failure: failure, mutationSent: false);
     }
     if (beforeMutation != null) await beforeMutation();
-    onMutationSent?.call();
     if (mayStart != null && !mayStart()) throw _labelsCancelled;
+    onMutationSent?.call();
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
     try {
       response = await _send(
@@ -852,12 +861,13 @@ WorkItemLabelAllowsScoped _parseScopedDefinition(Object? rawType) {
 
 WorkItemLabelCandidatePage _parseCandidateConnection(
   Object? raw,
-  int pageIndex,
-) {
+  int pageIndex, {
+  required int pageSize,
+}) {
   if (raw is! Map) throw _labelsUnsupported;
   final connection = objectJson(raw);
   final nodes = connection['nodes'];
-  if (nodes is! List || nodes.length > _labelCandidatePageSize) {
+  if (nodes is! List || nodes.length > pageSize) {
     throw _labelsUnsupported;
   }
   final pageInfo = objectJson(connection['pageInfo']);

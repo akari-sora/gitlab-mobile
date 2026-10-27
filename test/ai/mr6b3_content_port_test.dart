@@ -45,6 +45,7 @@ void main() {
     expect(row.arguments['title']!.text, AiTextRole.plainContent);
     expect(row.arguments['description']!.text, AiTextRole.quickActionMarkdown);
     expect(row.arguments['description']!.writableField, 'issueDescription');
+    expect(row.editableField, 'description');
     const logicalReads = 2 * (1 + 3) + 1 + 1;
     expect(logicalReads, 10);
     expect(row.httpCap, 2 * logicalReads + 1);
@@ -52,7 +53,7 @@ void main() {
   });
 
   test(
-    'description-only clear preserves title and carries expectedUpdatedAt',
+    'description-only clear preserves title and omits unsupported revision input',
     () async {
       final f = _Fixture();
       addTearDown(f.close);
@@ -69,9 +70,9 @@ void main() {
       expect(result.readbackVerified, isTrue);
       expect(f.server.input, {
         'id': 'gid://gitlab/WorkItem/31',
-        'expectedUpdatedAt': _Server.opened.toIso8601String(),
         'descriptionWidget': {'description': ''},
       });
+      expect(f.server.input, isNot(contains('expectedUpdatedAt')));
       expect(f.server.title, 'Original title');
       expect(f.server.description, '');
       expect(f.hooks, 1);
@@ -95,18 +96,175 @@ void main() {
     },
   );
 
+  for (final title in [
+    '',
+    ' \t\n ',
+    'bad\u0000title',
+    'a' * 256,
+    '😀' * 256,
+    'e\u0301' * 128,
+  ]) {
+    test(
+      'invalid title (${title.runes.length} code points) refuses without HTTP',
+      () async {
+        final f = _Fixture();
+        addTearDown(f.close);
+        await expectLater(
+          f.prepare({'title': title}),
+          throwsA(
+            isA<port.AiWriteRefused>().having(
+              (e) => e.reason,
+              'reason',
+              'validation',
+            ),
+          ),
+        );
+        expect(f.server.adapter.requests, isEmpty);
+        expect(f.server.mutations, 0);
+      },
+    );
+  }
+
+  for (final title in ['a' * 255, '😀' * 255, '${'e\u0301' * 127}x']) {
+    test(
+      '255 code point title succeeds (${title.length} UTF-16 units)',
+      () async {
+        final f = _Fixture();
+        addTearDown(f.close);
+        expect(
+          (await f.commit(await f.prepare({'title': title}))
+                  as port.AiWriteSettled)
+              .state,
+          AiJournalState.succeeded,
+        );
+        expect(f.server.input!['title'], title);
+      },
+    );
+  }
+
   test(
-    'explicit empty title reaches server rather than being treated as omitted',
+    'content fake rejects unknown WorkItemUpdateInput keys with top-level errors',
     () async {
-      final f = _Fixture();
-      addTearDown(f.close);
-      f.server.rejectMutation = true;
-      final prepared = await f.prepare({'title': ''});
-      expect(
-        (await f.commit(prepared) as port.AiWriteSettled).state,
-        AiJournalState.writeUncertain,
+      for (final key in ['expectedUpdatedAt', 'unexpectedWidget']) {
+        final f = _Fixture();
+        addTearDown(f.close);
+        final client = Dio()..httpClientAdapter = f.server.adapter;
+        addTearDown(() => client.close(force: true));
+        final response = await client.post<Object?>(
+          f.server.api.instance.graphQL.toString(),
+          options: Options(followRedirects: false),
+          data: {
+            'query':
+                r'mutation MobileUpdateWorkItemContent($input: WorkItemUpdateInput!) { workItemUpdate(input: $input) { errors } }',
+            'variables': {
+              'input': {
+                'id': 'gid://gitlab/WorkItem/31',
+                'title': 'Must not be applied',
+                key: 'unsupported',
+              },
+            },
+          },
+        );
+        final envelope = response.data! as Map;
+        expect(envelope['errors'], isNotEmpty);
+        expect(envelope, isNot(contains('data')));
+        expect(f.server.title, 'Original title');
+        expect(f.server.description, 'Original description');
+        expect(f.server.updatedAt, _Server.opened);
+      }
+    },
+  );
+
+  test('description bounds refuse at prepare without HTTP', () async {
+    final f = _Fixture();
+    addTearDown(f.close);
+    for (final description in [
+      'x' * (GitLabApi.maxTextBytes + 1),
+      '😀' * (GitLabApi.maxTextBytes ~/ 4 + 1),
+      '\n' * GitLabApi.maxTextLines,
+      'bad\u0000description',
+    ]) {
+      await expectLater(
+        f.prepare({'description': description}),
+        throwsA(
+          isA<port.AiWriteRefused>().having(
+            (e) => e.reason,
+            'reason',
+            'validation',
+          ),
+        ),
       );
-      expect(f.server.input!['title'], '');
+    }
+    expect(f.server.adapter.requests, isEmpty);
+  });
+
+  test('long description refuses before any proposal or mutation', () async {
+    final h = await _Harness.create();
+    addTearDown(h.close);
+    expect(
+      await h.propose({'description': 'x' * (GitLabApi.maxTextBytes + 1)}),
+      isNull,
+    );
+    expect(h.outcomes.single.reasonCode, 'validation');
+    expect(h.fixture.server.mutations, 0);
+    expect(h.storage.journal.entries(mr6b3Account), isEmpty);
+  });
+
+  test(
+    'description exceeding bounds after attribution refuses before a card',
+    () async {
+      final h = await _Harness.create(aiAttribution: true);
+      addTearDown(h.close);
+      final description = List.filled(
+        GitLabApi.maxTextLines,
+        'line',
+      ).join('\n');
+      expect(isValidWorkItemContentInput(description: description), isTrue);
+      expect(await h.propose({'description': description}), isNull);
+      expect(h.outcomes.single.reasonCode, 'validation');
+      expect(h.fixture.server.mutations, 0);
+      expect(h.storage.journal.entries(mr6b3Account), isEmpty);
+    },
+  );
+
+  test(
+    'oversized edited description is refused before updating the card',
+    () async {
+      final h = await _Harness.create();
+      addTearDown(h.close);
+      final proposal = (await h.propose({'description': 'Valid proposal'}))!;
+      final preview = (proposal.preview as port.AiFieldsPreview).fields;
+      final edited = await h.coordinator.approve(
+        proposal,
+        editedText: 'x' * (GitLabApi.maxTextBytes + 1),
+      );
+      expect(edited.reasonCode, 'validation');
+      expect((proposal.preview as port.AiFieldsPreview).fields, preview);
+      expect((await h.approve(proposal)).reasonCode, 'validation');
+      expect(h.fixture.server.mutations, 0);
+      expect(h.storage.journal.entries(mr6b3Account), isEmpty);
+    },
+  );
+
+  test(
+    'edited description is rechecked after attribution before updating the card',
+    () async {
+      final h = await _Harness.create(aiAttribution: true);
+      addTearDown(h.close);
+      final proposal = (await h.propose({'description': 'Valid proposal'}))!;
+      final preview = (proposal.preview as port.AiFieldsPreview).fields;
+      final description = List.filled(
+        GitLabApi.maxTextLines,
+        'line',
+      ).join('\n');
+      final edited = await h.coordinator.approve(
+        proposal,
+        editedText: description,
+      );
+      expect(edited.reasonCode, 'validation');
+      expect((proposal.preview as port.AiFieldsPreview).fields, preview);
+      expect(h.fixture.server.mutations, 0);
+      expect(h.storage.journal.entries(mr6b3Account), isEmpty);
     },
   );
 
@@ -328,6 +486,35 @@ void main() {
     );
   }
 
+  test('editing description on approval rechecks hidden-span removal', () async {
+    final h = await _Harness.create();
+    addTearDown(h.close);
+    const original =
+        'Keep ![private](/uploads/0123456789abcdef0123456789abcdef/a.png) tail';
+    h.fixture.server.description = original;
+    final proposal = (await h.propose({'description': original}))!;
+    expect(proposal.editableField, 'description');
+    expect(
+      proposal.tier.reasons,
+      isNot(contains(AiFixedConfirmReason.wholeFieldDropsHiddenSpans)),
+    );
+    final edited = await h.coordinator.approve(
+      proposal,
+      editedText: 'Keep tail',
+    );
+    expect(edited.reasonCode, 'approvalRequired');
+    expect(
+      proposal.tier.reasons,
+      contains(AiFixedConfirmReason.wholeFieldDropsHiddenSpans),
+    );
+    expect(proposal.tier.decision, AiGateDecision.requireApproval);
+    expect(h.fixture.server.mutations, 0);
+    expect(h.storage.journal.entries(mr6b3Account), isEmpty);
+    expect((await h.approve(proposal)).state, AiJournalState.succeeded);
+    expect(h.fixture.server.description, contains('Keep tail'));
+    expect(h.fixture.server.description, isNot(contains('/uploads/')));
+  });
+
   for (final level in AiAutonomyLevel.values.where(
     (value) => value != AiAutonomyLevel.readOnly,
   )) {
@@ -511,6 +698,38 @@ final class _Server {
   int refreshes = 0;
   int readAttempts = 0;
   Map<String, Object?>? input;
+  // WorkItemUpdateInput fields from the schema reviewed in r1/opus.md (C1).
+  static const _workItemUpdateFields = {
+    'agentPlanWidget',
+    'assigneesWidget',
+    'awardEmojiWidget',
+    'clientMutationId',
+    'colorWidget',
+    'confidential',
+    'crmContactsWidget',
+    'currentUserTodosWidget',
+    'customFieldsWidget',
+    'descriptionWidget',
+    'healthStatusWidget',
+    'hierarchyWidget',
+    'id',
+    'iterationWidget',
+    'labelsWidget',
+    'milestoneWidget',
+    'moveAfterId',
+    'moveBeforeId',
+    'notesWidget',
+    'notificationsWidget',
+    'progressWidget',
+    'severityWidget',
+    'startAndDueDateWidget',
+    'stateEvent',
+    'statusWidget',
+    'timeTrackingWidget',
+    'title',
+    'verificationStatusWidget',
+    'weightWidget',
+  };
   void Function()? onMutation;
   Map<String, Object?> node({bool permissions = true}) => {
     'id': 'gid://gitlab/WorkItem/31',
@@ -583,6 +802,20 @@ final class _Server {
     input = Map<String, Object?>.from(
       (data as Map)['variables']['input'] as Map,
     );
+    final unknown = input!.keys.where(
+      (key) => !_workItemUpdateFields.contains(key),
+    );
+    if (unknown.isNotEmpty) {
+      return jsonResponse({
+        'errors': [
+          for (final key in unknown)
+            {
+              'message': 'Field $key is not defined by WorkItemUpdateInput',
+              'extensions': {'code': 'undefinedInputField'},
+            },
+        ],
+      });
+    }
     if (rejectMutation) {
       return jsonResponse({
         'data': {
@@ -615,11 +848,13 @@ final class _Harness {
     this.storage,
     this.fixture, {
     this.level = AiAutonomyLevel.confirmEach,
+    this.aiAttribution = false,
   }) {
     coordinator = PolicyAiWriteCoordinator(
       snapshot: () => AiWritePolicySnapshot(
         scope: _scope,
         level: level,
+        aiAttribution: aiAttribution,
         ceiling: AiAutonomyLevel.bypass,
         consentHash: 'synthetic-content-consent',
         writePolicyRevision: 1,
@@ -652,14 +887,17 @@ final class _Harness {
   static Future<_Harness> create({
     bool oauth = false,
     AiAutonomyLevel level = AiAutonomyLevel.confirmEach,
+    bool aiAttribution = false,
   }) async => _Harness(
     await Mr6b3Harness.create(),
     _Fixture(oauth: oauth),
     level: level,
+    aiAttribution: aiAttribution,
   );
   final Mr6b3Harness storage;
   final _Fixture fixture;
   final AiAutonomyLevel level;
+  final bool aiAttribution;
   final outcomes = <AiWriteOutcome>[];
   late final PolicyAiWriteCoordinator coordinator;
   final budget = AiToolBudget(maxGitLabRequests: 100);

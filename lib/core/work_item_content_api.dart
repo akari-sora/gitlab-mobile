@@ -123,13 +123,12 @@ extension WorkItemContentApi on GitLabApi {
   /// Reserves [target] before asynchronous work, performs a fresh exact
   /// preflight, sends at most one mutation, then requires an actor-bound read.
   /// AI callers also provide the displayed revision as `expectedUpdatedAt`.
-  /// Its server support is not inferred: independent readback is still required.
+  /// This is a client-side preflight check; GitLab has no atomic revision input.
   Future<WorkItemContentAccess> updateWorkItemContent(
     WorkItemContentTarget target, {
     String? title,
     String? description,
     DateTime? expectedUpdatedAt,
-    bool allowEmptyTitle = false,
     bool Function()? isCurrent,
     void Function()? onMutationSent,
     Future<void> Function()? beforeMutation,
@@ -138,7 +137,7 @@ extension WorkItemContentApi on GitLabApi {
     if ((beforeMutation == null) != (mayStart == null)) {
       throw ArgumentError('beforeMutation and mayStart must be paired');
     }
-    _validateContentInput(title, description, allowEmptyTitle: allowEmptyTitle);
+    _validateContentInput(title, description);
     _requireActivityOwner(target._owner);
     if (target._consumed) {
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -183,11 +182,7 @@ extension WorkItemContentApi on GitLabApi {
         description != null && description != before.snapshot.rawDescription;
     if (!titleChanged && !descriptionChanged) return before;
 
-    final input = <String, Object?>{
-      'id': before.snapshot.summary.id,
-      if (expectedUpdatedAt != null)
-        'expectedUpdatedAt': expectedUpdatedAt.toIso8601String(),
-    };
+    final input = <String, Object?>{'id': before.snapshot.summary.id};
     if (titleChanged) input['title'] = title;
     if (descriptionChanged) {
       input['descriptionWidget'] = {'description': description};
@@ -482,18 +477,24 @@ void _requireContentScope(WorkItemGraphSummary summary) {
   }
 }
 
-void _validateContentInput(
-  String? title,
-  String? description, {
-  bool allowEmptyTitle = false,
-}) {
+/// Whether a whole-field content update satisfies dispatch validation without
+/// accessing the network. Titles use Unicode code points, as GitLab does.
+bool isValidWorkItemContentInput({String? title, String? description}) {
+  try {
+    _validateContentInput(title, description);
+    return true;
+  } on ApiFailure {
+    return false;
+  }
+}
+
+void _validateContentInput(String? title, String? description) {
   if (title == null && description == null) {
     throw const ApiFailure(FailureKind.validation);
   }
   if (title != null &&
-      ((!allowEmptyTitle && title.trim().isEmpty) ||
-          (title.isNotEmpty && title.trim().isEmpty) ||
-          title.length > 4096 ||
+      (title.trim().isEmpty ||
+          title.runes.length > 255 ||
           title.contains('\u0000'))) {
     throw const ApiFailure(FailureKind.validation);
   }

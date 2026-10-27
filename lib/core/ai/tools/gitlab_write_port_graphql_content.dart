@@ -16,6 +16,9 @@ extension _GraphqlContentPrepare on GitLabAiWritePort {
         throw const AiWriteRefused('validation');
       }
     }
+    _precheckGraphqlContentText(request);
+    final title = args['title'] as String?;
+    final description = args['description'] as String?;
     if (!_granted(request.scope, projectId, 'issues', iid)) {
       throw const AiWriteRefused('forbidden');
     }
@@ -43,16 +46,6 @@ extension _GraphqlContentPrepare on GitLabAiWritePort {
         snapshot.descriptionAvailability !=
             WorkItemDescriptionAvailability.present) {
       throw const AiWriteRefused('unsupported');
-    }
-    final title = args['title'] as String?;
-    final description = args['description'] as String?;
-    // Reject invalid input before creating a reviewable capability. Empty is an
-    // explicit replacement; absence preserves that field in the core seam.
-    if (title != null &&
-        (title.length > 4096 ||
-            title.contains('\u0000') ||
-            (title.isNotEmpty && title.trim().isEmpty))) {
-      throw const AiWriteRefused('validation');
     }
     return AiWritePrepared.graph(
       request: request,
@@ -107,6 +100,7 @@ extension _GraphqlContentPrepare on GitLabAiWritePort {
         if (args.containsKey('title')) 'title': title,
         if (args.containsKey('description')) 'description': description,
       }),
+      validatePreparedText: _precheckGraphqlContentText,
       textMutation: (hooks, preparedRequest) async {
         final preparedTitle = preparedRequest.arguments['title'] as String?;
         final preparedDescription =
@@ -118,7 +112,6 @@ extension _GraphqlContentPrepare on GitLabAiWritePort {
             title: preparedTitle,
             description: preparedDescription,
             expectedUpdatedAt: summary.updatedAt,
-            allowEmptyTitle: true,
             beforeMutation: hooks.beforeMutation,
             mayStart: hooks.mayStart,
             onMutationSent: () => sent = true,
@@ -138,5 +131,14 @@ extension _GraphqlContentPrepare on GitLabAiWritePort {
         }
       },
     );
+  }
+}
+
+void _precheckGraphqlContentText(AiWriteRequest request) {
+  if (!isValidWorkItemContentInput(
+    title: request.arguments['title'] as String?,
+    description: request.arguments['description'] as String?,
+  )) {
+    throw const AiWriteRefused('validation');
   }
 }

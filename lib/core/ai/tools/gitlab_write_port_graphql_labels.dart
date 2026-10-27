@@ -49,14 +49,17 @@ extension _GraphqlLabelsPrepare on GitLabAiWritePort {
         throw const AiWriteRefused('targetChanged');
       }
       // Always require the complete candidate catalog, including for clearing.
-      // Current assignments alone are not proof that a label is selectable.
+      // Current assignments may be retained even when omitted from the catalog.
       final candidates = await _api.workItemLabelCandidates(target);
       final desired = <String>[];
       final scopes = <String>{};
       for (final name in names) {
-        final matches = candidates
-            .where((label) => label.title == name)
-            .toList();
+        final matches = <String>{
+          for (final label in candidates)
+            if (label.title == name) label.id,
+          for (final label in before.labels)
+            if (label.title == name) label.id,
+        };
         if (matches.length != 1) throw const AiWriteRefused('labelUnknown');
         final scope = workItemLabelScopeKey(name);
         if (scope != null &&
@@ -64,7 +67,7 @@ extension _GraphqlLabelsPrepare on GitLabAiWritePort {
             !scopes.add(scope)) {
           throw const AiWriteRefused('validation');
         }
-        desired.add(matches.single.id);
+        desired.add(matches.single);
       }
       final currentIds = before.labelIds.toList()..sort();
       final desiredIds = desired.toList()..sort();
@@ -116,7 +119,9 @@ extension _GraphqlLabelsPrepare on GitLabAiWritePort {
             .toString(),
         journal: AiJournalBindings(updatedAt: revision),
         currentFields: {
-          'labels': jsonEncode([for (final label in before.labels) label.title]),
+          'labels': jsonEncode([
+            for (final label in before.labels) label.title,
+          ]),
         },
         preview: AiFieldsPreview({'labels': names}),
         mutation: (hooks) async {

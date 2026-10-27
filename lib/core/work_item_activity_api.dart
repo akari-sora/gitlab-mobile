@@ -1573,14 +1573,20 @@ bool _isWritableActivityNoteId(String id) {
   return RegExp(r'^[1-9][0-9]*$').hasMatch(uri.pathSegments.last);
 }
 
+/// Whether an ordinary note edit can be sent unchanged by the activity API.
+/// This performs the same validation as dispatch without accessing the network.
+bool isValidWorkItemActivityEditBody(String body) =>
+    _activityWriteBodyWithinBounds(body) && !_containsActivityQuickAction(body);
+
+bool _activityWriteBodyWithinBounds(String body) =>
+    !body.contains('\u0000') &&
+    body.trim().isNotEmpty &&
+    utf8.encode(body).length <= _workItemActivityWriteBodyBytes &&
+    '\n'.allMatches(body).length + 1 <= GitLabApi.maxTextLines;
+
 String _validatedActivityWriteBody(String raw, {bool trim = true}) {
-  if (raw.contains('\u0000')) {
-    throw const ApiFailure(FailureKind.validation);
-  }
   final body = trim ? raw.trim() : raw;
-  if (body.trim().isEmpty ||
-      utf8.encode(body).length > _workItemActivityWriteBodyBytes ||
-      '\n'.allMatches(body).length + 1 > GitLabApi.maxTextLines) {
+  if (!_activityWriteBodyWithinBounds(body)) {
     throw const ApiFailure(FailureKind.validation);
   }
   if (_containsActivityQuickAction(body)) {

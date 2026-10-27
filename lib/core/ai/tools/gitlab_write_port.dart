@@ -214,6 +214,7 @@ final class AiWritePrepared {
        _owner = owner,
        _mutation = mutation,
        _graphCall = null,
+       _validatePreparedText = null,
        _readback = readback;
 
   AiWritePrepared.graph({
@@ -223,7 +224,9 @@ final class AiWritePrepared {
     Set<AiConflictKey> dependencyKeys = const {},
     Object? owner,
     Future<Object?> Function(GraphHooks hooks)? mutation,
-    Future<Object?> Function(GraphHooks hooks, AiWriteRequest request)? textMutation,
+    Future<Object?> Function(GraphHooks hooks, AiWriteRequest request)?
+    textMutation,
+    void Function(AiWriteRequest request)? validatePreparedText,
     this.todoTarget,
     this.projectPath,
     this.projectVisibility,
@@ -244,6 +247,7 @@ final class AiWritePrepared {
        _preview = preview ?? AiFieldsPreview(request.arguments),
        _owner = owner ?? Object(),
        _graphCall = textMutation ?? ((hooks, _) => mutation!(hooks)),
+       _validatePreparedText = validatePreparedText,
        _mutation = null,
        _readback = null,
        _createdOnSuccess = null,
@@ -290,6 +294,7 @@ final class AiWritePrepared {
     }
     return original;
   }
+
   final AiTextScan? textScan;
   final AiCreatedRef? _createdOnSuccess;
   final AiCreatedRef? Function()? _resolveCreatedOnSuccess;
@@ -300,7 +305,9 @@ final class AiWritePrepared {
   final AiResultClassifier? classify;
   final Object _owner;
   final Future<Object?> Function()? _mutation;
-  final Future<Object?> Function(GraphHooks hooks, AiWriteRequest request)? _graphCall;
+  final Future<Object?> Function(GraphHooks hooks, AiWriteRequest request)?
+  _graphCall;
+  final void Function(AiWriteRequest request)? _validatePreparedText;
   final Future<Object?> Function(Object? result)? _readback;
   GraphBeforeMutation? _beforeGraph;
   bool _used = false;
@@ -308,16 +315,29 @@ final class AiWritePrepared {
   AiWriteBoundary get boundary =>
       _graphCall == null ? AiWriteBoundary.rest : AiWriteBoundary.graph;
 
+  /// Checks a card edit without binding or consuming the opened target.
+  void validatePreparedText(AiWriteRequest processed) =>
+      _validatePreparedText?.call(processed);
+
   /// Binds the shared text pipeline's result without re-reading or replacing
   /// the single-use target. Text mutations consume this request at dispatch.
   void bindPreparedText(AiWriteRequest processed) {
-    if (boundary != AiWriteBoundary.graph || _used || _beforeGraph != null ||
+    if (boundary != AiWriteBoundary.graph ||
+        _used ||
+        _beforeGraph != null ||
         _textRequest != null ||
         processed.operationId != request.operationId ||
         processed.executionId != request.executionId ||
-        processed.scope.accountKey != request.scope.accountKey) {
+        processed.scope.accountKey != request.scope.accountKey ||
+        const ['projectId', 'iid', 'noteId'].any(
+          (key) =>
+              processed.arguments.containsKey(key) !=
+                  request.arguments.containsKey(key) ||
+              processed.arguments[key] != request.arguments[key],
+        )) {
       throw const GraphHookContractException();
     }
+    validatePreparedText(processed);
     _textRequest = processed;
   }
 

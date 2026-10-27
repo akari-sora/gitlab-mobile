@@ -268,6 +268,45 @@ void main() {
     },
   );
 
+  test(
+    'closed final gate does not announce or send a label mutation',
+    () async {
+      final events = <String>[];
+      final adapter = FakeAdapter((request) {
+        expect(_isMutation(request), isFalse);
+        return jsonResponse(_envelope(_itemNode()));
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final target = (await api.workItemLabels(
+        _detail(),
+        expectedUserId: 7,
+        generation: 1,
+      )).target!;
+      await expectLater(
+        api.updateWorkItemLabels(
+          target,
+          desiredLabelIds: const [],
+          beforeMutation: () async => events.add('before'),
+          mayStart: () {
+            events.add('gate');
+            return false;
+          },
+          onMutationSent: () => events.add('sent'),
+        ),
+        throwsA(
+          isA<ApiFailure>().having(
+            (error) => error.kind,
+            'kind',
+            FailureKind.cancelled,
+          ),
+        ),
+      );
+      expect(events, ['before', 'gate']);
+      expect(adapter.requests.where(_isMutation), isEmpty);
+    },
+  );
+
   test('fresh unchanged read consumes the target and sends nothing', () async {
     var hooks = 0;
     final adapter = FakeAdapter((request) {
@@ -719,6 +758,49 @@ void main() {
       );
     },
   );
+
+  test('screen candidate search keeps its 20 label page bound', () async {
+    for (final count in [20, 21]) {
+      final adapter = FakeAdapter((request) {
+        if (_query(request).contains('MobileProjectLabelCandidates')) {
+          expect(_query(request), contains('first: 20'));
+          return jsonResponse(
+            _candidateEnvelope([
+              for (var i = 1; i <= count; i++)
+                _label('gid://gitlab/ProjectLabel/$i', title: 'label$i'),
+            ]),
+          );
+        }
+        return jsonResponse(_envelope(_itemNode()));
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final target = (await api.workItemLabels(
+        _detail(),
+        expectedUserId: 7,
+        generation: 1,
+      )).target!;
+      final search = api.searchWorkItemLabelCandidates(
+        target,
+        search: 'label',
+        pageIndex: 0,
+      );
+      if (count == 20) {
+        expect((await search).labels, hasLength(20));
+      } else {
+        await expectLater(
+          search,
+          throwsA(
+            isA<ApiFailure>().having(
+              (error) => error.kind,
+              'kind',
+              FailureKind.unsupported,
+            ),
+          ),
+        );
+      }
+    }
+  });
 
   test(
     'candidate search supports CJK terms and preserves CJK label titles',

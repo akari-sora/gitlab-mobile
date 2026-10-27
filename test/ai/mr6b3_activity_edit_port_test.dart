@@ -340,6 +340,7 @@ final class _Harness {
     bool oauth = false,
     int allowance = 40,
     Set<String> knownSecrets = const {},
+    bool aiAttribution = false,
   }) async {
     final server = _Server(oauth: oauth)..replayReads = oauth;
     final root = Directory.systemTemp.createTempSync('p10-edit-');
@@ -372,6 +373,7 @@ final class _Harness {
         alive: harness.policy.alive,
         consentValid: harness.policy.consentValid,
         clientMayStart: harness.policy.clientMayStart,
+        aiAttribution: aiAttribution,
       ),
       createPort: () => server.writePort,
       journal: journal,
@@ -867,29 +869,88 @@ void main() {
       expect(h.server.sentBody, h.server.expectedBody);
     },
   );
-  test(
-    'col0 slash is neutralized in card but conservative core refuses before dispatch',
-    () async {
+  for (final (name, body) in [
+    ('empty', ''),
+    ('indented quick action', ' /close\nKeep this note'),
+  ]) {
+    test(
+      '$name edit is refused without changing the preview or writing',
+      () async {
+        final h = await _Harness.create();
+        addTearDown(h.dispose);
+        final proposal = (await h.propose())!;
+        final originalPreview =
+            (proposal.preview as port.AiFieldsPreview).fields;
+        final originalDigest = proposal.payloadDigest;
+
+        final edited = await h.coordinator.approve(proposal, editedText: body);
+        expect(edited.state, AiJournalState.notExecuted);
+        expect(edited.reasonCode, 'validation');
+        expect(
+          (proposal.preview as port.AiFieldsPreview).fields,
+          originalPreview,
+        );
+        expect(proposal.payloadDigest, originalDigest);
+        expect(h.server.mutations, 0);
+        expect(h.journal.entries(mr6b3Account), isEmpty);
+
+        final repeated = await h.approve(proposal);
+        expect(repeated.state, AiJournalState.notExecuted);
+        expect(repeated.reasonCode, 'validation');
+        expect(h.server.mutations, 0);
+        expect(h.journal.entries(mr6b3Account), isEmpty);
+      },
+    );
+  }
+
+  for (final (name, body) in [
+    ('empty', ''),
+    ('indented quick action', ' /close\nKeep this note'),
+    ('column-zero quick action', '/close\nKeep this note'),
+  ]) {
+    test('$name is refused before a proposal or mutation', () async {
       final h = await _Harness.create();
       addTearDown(h.dispose);
-      const raw = '/close\nKeep this note';
-      final proposal = (await h.propose(arguments: {..._args, 'body': raw}))!;
-      expect(
-        (proposal.preview as port.AiFieldsPreview).fields['body'],
-        ' /close\nKeep this note',
-      );
-      expect(h.server.mutations, 0);
-      h.server.onMutation = () => fail('core must refuse before transport');
-      final outcome = await h.approve(proposal);
+      expect(await h.propose(arguments: {..._args, 'body': body}), isNull);
+      final outcome = h.coordinator.outcomeFor('p10-edit-call')!;
       expect(outcome.state, AiJournalState.notExecuted);
       expect(outcome.reasonCode, 'validation');
       expect(outcome.mutationCount, 0);
       expect(h.server.mutations, 0);
-      expect(
-        h.journal.entries(mr6b3Account).last.state,
-        AiJournalState.notExecuted,
-      );
       expect(h.journal.conversationWriteCount(mr6b3Account, 'p10-edit'), 0);
+    });
+  }
+
+  for (final (name, body) in [
+    ('empty', ''),
+    ('indented quick action', ' /close'),
+    ('byte limit', 'é' * (1024 * 1024 + 1)),
+    ('line limit', 'x\n' * GitLabApi.maxTextLines),
+  ]) {
+    test('$name is refused by the port before HTTP', () async {
+      final server = _Server();
+      addTearDown(server.api.close);
+      await expectLater(
+        server.writePort.prepare(_request(arguments: {..._args, 'body': body})),
+        throwsA(_failure(FailureKind.validation)),
+      );
+      expect(server.adapter.requests, isEmpty);
+      expect(server.mutations, 0);
+    });
+  }
+
+  test(
+    'attribution that exceeds the line limit is refused before a card',
+    () async {
+      final h = await _Harness.create(aiAttribution: true);
+      addTearDown(h.dispose);
+      final body = '${'x\n' * (GitLabApi.maxTextLines - 1)}x';
+      expect(isValidWorkItemActivityEditBody(body), isTrue);
+      expect(await h.propose(arguments: {..._args, 'body': body}), isNull);
+      final outcome = h.coordinator.outcomeFor('p10-edit-call')!;
+      expect(outcome.reasonCode, 'validation');
+      expect(outcome.state, AiJournalState.notExecuted);
+      expect(h.server.mutations, 0);
     },
   );
 }

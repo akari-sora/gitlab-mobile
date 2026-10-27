@@ -938,7 +938,9 @@ final class PolicyAiWriteCoordinator
         final request = _edit(
           pending.request, ledger.find(proposal.operationId)!, editedText,
         );
+        pending.prepared.validatePreparedText(request);
         final processed = _prepareText(request, snapshot(), pending.fresh);
+        pending.prepared.validatePreparedText(processed.request);
         final tier = _tier(
           ledger.find(proposal.operationId)!,
           processed.request.arguments,

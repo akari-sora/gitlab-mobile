@@ -10,7 +10,7 @@ const List<AiCapability> aiGraphqlStateRows = <AiCapability>[
     modelVisible: true,
     arguments: {
       'projectId': _projectId,
-      'iid': _projectId,
+      'iid': _iid,
       'stateEvent': AiArgSpec(
         AiArgType.string,
         required: true,

@@ -10,6 +10,9 @@ extension _GraphqlActivityEditPrepare on GitLabAiWritePort {
     final noteId = _positive(request.arguments, 'noteId');
     final body = request.arguments['body'];
     if (body is! String) throw const ApiFailure(FailureKind.validation);
+    if (!isValidWorkItemActivityEditBody(body)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
     if (!_granted(request.scope, projectId, 'issues', iid)) {
       throw const ApiFailure(FailureKind.forbidden);
     }
@@ -112,6 +115,13 @@ extension _GraphqlActivityEditPrepare on GitLabAiWritePort {
         updatedAt: current.updatedAt.toIso8601String(),
       ),
       preview: AiFieldsPreview({'body': body}),
+      validatePreparedText: (processed) {
+        if (!isValidWorkItemActivityEditBody(
+          processed.arguments['body']! as String,
+        )) {
+          throw const ApiFailure(FailureKind.validation);
+        }
+      },
       textMutation: (hooks, preparedRequest) async {
         final replacement = preparedRequest.arguments['body']! as String;
         final WorkItemActivityNote saved;

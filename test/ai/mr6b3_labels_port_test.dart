@@ -76,6 +76,7 @@ final class _Server {
   late final GitLabApi api;
   late final port.GitLabAiWritePort writer;
   final catalog = [_label(1, 'old'), _label(2, 'next')];
+  final currentOnly = <Map<String, Object?>>[];
   List<String> selected = ['gid://gitlab/ProjectLabel/1'];
   final inputs = <Map<String, Object?>>[];
   final reads = <String, int>{};
@@ -119,7 +120,10 @@ final class _Server {
           'labels': {
             'nodes': [
               for (final id in selected)
-                catalog.firstWhere((node) => node['id'] == id),
+                [
+                  ...catalog,
+                  ...currentOnly,
+                ].firstWhere((node) => node['id'] == id),
             ],
             'pageInfo': {
               'hasNextPage': partialCurrent,
@@ -215,6 +219,7 @@ final class _Server {
         });
       case 'MobileProjectWorkItemLabelCandidates':
         expect(query, isNot(contains('search')));
+        expect(query, contains('first: 100'));
         expect((data as Map)['variables'], {'fullPath': 'team/example-9'});
         return jsonResponse({
           'data': {
@@ -384,18 +389,21 @@ void main() {
     });
   });
 
-  for (final fault in ['unknown', 'partial', 'ambiguous', 'currentAbsent']) {
+  for (final fault in ['unknown', 'partial', 'ambiguous', 'currentAmbiguous']) {
     test('$fault candidates refuse before mutation', () async {
       final s = _Server();
       addTearDown(s.api.close);
       var labels = ['next'];
       if (fault == 'unknown') labels = ['unseen'];
-      if (fault == 'partial') s.partialCandidates = true;
+      if (fault == 'partial') {
+        s.catalog.addAll([for (var i = 3; i <= 21; i++) _label(i, 'label$i')]);
+        s.partialCandidates = true;
+      }
       if (fault == 'ambiguous') s.catalog.add(_label(3, 'next'));
-      if (fault == 'currentAbsent') {
-        s.catalog.removeAt(1);
+      if (fault == 'currentAmbiguous') {
+        s.currentOnly.add(s.catalog.removeAt(0));
+        s.catalog.add(_label(3, 'old'));
         labels = ['old'];
-        s.catalog[0] = _label(1, 'renamed');
       }
       await expectLater(
         s.writer.prepare(_request(labels)),
@@ -405,6 +413,70 @@ void main() {
       expect(s.reads['MobileProjectWorkItemLabelCandidates'], 1);
     });
   }
+
+  test(
+    'current label absent from candidates can be kept while adding',
+    () async {
+      final s = _Server();
+      addTearDown(s.api.close);
+      s.currentOnly.add(s.catalog.removeAt(0));
+      final prepared = await s.writer.prepare(_request(['old', 'next']));
+      expect(
+        (await s.commit(prepared) as port.AiWriteSettled).state,
+        AiJournalState.succeeded,
+      );
+      expect(s.inputs.single['labelsWidget'], {
+        'addLabelIds': ['gid://gitlab/ProjectLabel/2'],
+      });
+      expect(s.selected, contains('gid://gitlab/ProjectLabel/1'));
+      expect(s.reads['MobileProjectWorkItemLabelCandidates'], 1);
+    },
+  );
+
+  for (final count in [21, 100]) {
+    test(
+      'complete catalog of $count candidates succeeds in one read',
+      () async {
+        final s = _Server();
+        addTearDown(s.api.close);
+        s.catalog.addAll([
+          for (var i = 3; i <= count; i++) _label(i, 'label$i'),
+        ]);
+        final prepared = await s.writer.prepare(_request(['label$count']));
+        expect(
+          (await s.commit(prepared) as port.AiWriteSettled).state,
+          AiJournalState.succeeded,
+        );
+        expect(s.selected, ['gid://gitlab/ProjectLabel/$count']);
+        expect(s.reads['MobileProjectWorkItemLabelCandidates'], 1);
+      },
+    );
+  }
+
+  test('catalog over 100 candidates is refused before mutation', () async {
+    final s = _Server();
+    addTearDown(s.api.close);
+    s.catalog.addAll([for (var i = 3; i <= 101; i++) _label(i, 'label$i')]);
+    await expectLater(
+      s.writer.prepare(_request()),
+      throwsA(_refused('unsupported')),
+    );
+    expect(s.reads['MobileProjectWorkItemLabelCandidates'], 1);
+    expect(s.mutations, 0);
+  });
+
+  test('clearing succeeds with 21 complete candidates in one read', () async {
+    final s = _Server();
+    addTearDown(s.api.close);
+    s.catalog.addAll([for (var i = 3; i <= 21; i++) _label(i, 'label$i')]);
+    final prepared = await s.writer.prepare(_request([]));
+    expect(
+      (await s.commit(prepared) as port.AiWriteSettled).state,
+      AiJournalState.succeeded,
+    );
+    expect(s.selected, isEmpty);
+    expect(s.reads['MobileProjectWorkItemLabelCandidates'], 1);
+  });
 
   for (final labels in [
     List.generate(11, (i) => 'label$i'),
