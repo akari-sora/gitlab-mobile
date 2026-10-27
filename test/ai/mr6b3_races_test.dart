@@ -24,8 +24,8 @@ import 'runner_test.dart' as runner_helpers;
 // NOT_RUN: row 7 notification click after expiry and typed-name mismatch
 // (the latter is covered in mr6b3_matrix_test.dart); graph Work Items have no
 // head SHA, so the former synthetic head-change case has been removed.
-// NOT_RUN: rows 6–7 substantive edited-body delivery/readback (issue #23),
-// and failedCertain after graph acceptance (not a graph outcome). The 403 case
+// NOT_RUN: row 7 failedCertain after graph acceptance (not a graph outcome).
+// Substantive edited-body delivery is covered below (issue #23). The 403 case
 // below proves server refusal during the fresh read, before any mutation.
 
 void main() {
@@ -412,6 +412,7 @@ void main() {
           expect(h.server.mutations, 0);
           final shown =
               (proposal.preview as port.AiFieldsPreview).fields['body'];
+          expect(shown, edited, reason: operation);
           final outcome = await h.approve(proposal);
           expect(outcome.state, AiJournalState.succeeded, reason: operation);
           expect(outcome.readbackConfirmed, isTrue);
