@@ -27,6 +27,10 @@ final class _ExecutionChannelListeners {
   bool orphan = false;
   int stopRevision = 0;
   int stopsInFlight = 0;
+  // Correlation outlives permit authorization, but only until the next native
+  // lifecycle on this messenger/channel, regardless of which owner starts it.
+  ({AiBackgroundExecution owner, String startRequestId, String? permitId})?
+  stopLifecycle;
 
   void retireIfIdle() {
     if (owners.isNotEmpty ||
@@ -45,8 +49,68 @@ final class _ExecutionChannelListeners {
   }
 
   Future<void> dispatch(MethodCall call) async {
+    if (call.method != 'permitInvalidated') return;
+    final args = call.arguments;
+    if (args is! Map<Object?, Object?> ||
+        (args.length != 3 && args.length != 4) ||
+        args['version'] is! int ||
+        args['version'] != 1 ||
+        !AiBackgroundExecution._validId(args['permitId']) ||
+        (args.length == 4 &&
+            !AiBackgroundExecution._validId(args['startRequestId'])) ||
+        !const {
+          'user_stop',
+          'timeout',
+          'synthetic_timeout',
+          'service_destroyed',
+          'activity_destroyed',
+          'start_failed',
+          'security_exception',
+          'start_denied',
+          'notification_failed',
+        }.contains(args['reason'])) {
+      return;
+    }
+    final permit = args['permitId']! as String;
+    final startRequest = args['startRequestId'] as String?;
+    // Consume once at the channel boundary before any owner/registry is
+    // notified. Retained gate bindings cannot promote a superseded callback.
+    final stoppedOwner = consumeStop(
+      permitId: permit,
+      startRequestId: startRequest,
+    );
     for (final owner in owners.toList(growable: false)) {
-      await owner._handleCall(call);
+      owner._handleInvalidation(permit, startRequest);
+    }
+    if (args['reason'] == 'user_stop' && stoppedOwner != null) {
+      emitStop(stoppedOwner);
+    }
+  }
+
+  AiBackgroundExecution? consumeStop({
+    String? permitId,
+    String? startRequestId,
+  }) {
+    final lifecycle = stopLifecycle;
+    if (lifecycle == null) return null;
+    final matchingPermit = permitId != null && lifecycle.permitId == permitId;
+    final matchingStart =
+        lifecycle.permitId == null &&
+        startRequestId != null &&
+        lifecycle.startRequestId == startRequestId;
+    if (!matchingPermit && !matchingStart) return null;
+    stopLifecycle = null;
+    return lifecycle.owner;
+  }
+
+  void emitStop(AiBackgroundExecution lifecycleOwner) {
+    for (final owner in owners.toList(growable: false)) {
+      if (owner._current &&
+          owner.accountKey == lifecycleOwner.accountKey &&
+          owner.generation == lifecycleOwner.generation &&
+          identical(owner.ownerApi, lifecycleOwner.ownerApi)) {
+        owner._stopEvents.add(null);
+      }
     }
   }
 }
@@ -115,10 +179,6 @@ final class AiBackgroundExecution extends ChangeNotifier
   int _localStopRevision = 0;
   int _localStopsInFlight = 0;
   String? _permit;
-  // Keep the latest native lifecycle separate from execution authorization:
-  // permit_inactive can precede its first, delayed user-stop callback.
-  String? _stopRequestId;
-  String? _stopPermitId;
   Timer? _progressTimer;
   Timer? _languageTimer;
   Duration? _lastProgressAt;
@@ -354,8 +414,11 @@ final class AiBackgroundExecution extends ChangeNotifier
         final request = _newId();
         final stopRevision = _stopRevision;
         gate._requestId = request;
-        _stopRequestId = request;
-        _stopPermitId = null;
+        shared.stopLifecycle = (
+          owner: this,
+          startRequestId: request,
+          permitId: null,
+        );
         _setStatus(AiBackgroundExecutionStatus.starting);
         final sequence = _nextSequence();
         final progress = _progress();
@@ -371,7 +434,7 @@ final class AiBackgroundExecution extends ChangeNotifier
         if (_current &&
             reply?['status'] == 'rejected' &&
             reply?['reason'] == 'user_stop' &&
-            _consumeStop(startRequestId: request)) {
+            shared.consumeStop(startRequestId: request) != null) {
           // Native finishPending precedes its best-effort callback. Consume
           // this request now so a lost or replayed callback cannot lose/repeat it.
           _stopRevision++;
@@ -379,7 +442,7 @@ final class AiBackgroundExecution extends ChangeNotifier
           gate._invalidated = true;
           gate._released = false;
           _setStatus(AiBackgroundExecutionStatus.invalidated);
-          if (!_disposed) _stopEvents.add(null);
+          shared.emitStop(this);
         }
         if (!gate._stillStarting(revision) || !_current) {
           if (stopRevision == _stopRevision) {
@@ -401,7 +464,11 @@ final class AiBackgroundExecution extends ChangeNotifier
             _validId(permit) &&
             !_invalidatedPermits.contains(permit)) {
           _permit = permit! as String;
-          _stopPermitId = _permit;
+          shared.stopLifecycle = (
+            owner: this,
+            startRequestId: request,
+            permitId: _permit,
+          );
           shared.leasePermit = _permit;
           _lastProgressAt = _clock();
           _lastProgress = progress;
@@ -413,7 +480,7 @@ final class AiBackgroundExecution extends ChangeNotifier
           return;
         }
         if (reply['status'] == 'rejected') {
-          _consumeStop(startRequestId: request);
+          shared.consumeStop(startRequestId: request);
           final reason = reply['reason'];
           if (reason == 'cleanup_failed') {
             _orphan = true;
@@ -467,7 +534,7 @@ final class AiBackgroundExecution extends ChangeNotifier
         _orphan = true;
         _setStatus(AiBackgroundExecutionStatus.unavailable);
       } else {
-        _consumeStop(startRequestId: request);
+        shared?.consumeStop(startRequestId: request);
         if (shared != null &&
             identical(shared.leaseOwner, this) &&
             shared.leasePermit == null) {
@@ -633,7 +700,7 @@ final class AiBackgroundExecution extends ChangeNotifier
           _orphan = true;
           _setStatus(AiBackgroundExecutionStatus.unavailable);
         } else {
-          _consumeStop(permitId: permit);
+          shared?.consumeStop(permitId: permit);
           if (shared != null &&
               identical(shared.leaseOwner, this) &&
               shared.leasePermit == permit) {
@@ -673,9 +740,8 @@ final class AiBackgroundExecution extends ChangeNotifier
     _stopRevision++;
     _stopsInFlight++;
     final shared = _shared;
+    shared?.stopLifecycle = null;
     for (final owner in shared?.owners.toList(growable: false) ?? [this]) {
-      owner._stopRequestId = null;
-      owner._stopPermitId = null;
       owner._permit = null;
       owner._cancelProgress();
       for (final gate in owner._gates) {
@@ -716,42 +782,8 @@ final class AiBackgroundExecution extends ChangeNotifier
     if (state == AppLifecycleState.resumed) unawaited(onForeground());
   }
 
-  bool _consumeStop({String? permitId, String? startRequestId}) {
-    final matchingPermit = permitId != null && _stopPermitId == permitId;
-    final matchingStart =
-        _stopPermitId == null &&
-        startRequestId != null &&
-        _stopRequestId == startRequestId;
-    if (!matchingPermit && !matchingStart) return false;
-    _stopRequestId = null;
-    _stopPermitId = null;
-    return true;
-  }
-
-  Future<void> _handleCall(MethodCall call) async {
-    if (call.method != 'permitInvalidated' || !_current) return;
-    final args = call.arguments;
-    if (args is! Map<Object?, Object?> ||
-        (args.length != 3 && args.length != 4) ||
-        args['version'] is! int ||
-        args['version'] != 1 ||
-        !_validId(args['permitId']) ||
-        (args.length == 4 && !_validId(args['startRequestId'])) ||
-        !const {
-          'user_stop',
-          'timeout',
-          'synthetic_timeout',
-          'service_destroyed',
-          'activity_destroyed',
-          'start_failed',
-          'security_exception',
-          'start_denied',
-          'notification_failed',
-        }.contains(args['reason'])) {
-      return;
-    }
-    final permit = args['permitId']! as String;
-    final startRequest = args['startRequestId'] as String?;
+  void _handleInvalidation(String permit, String? startRequest) {
+    if (!_current) return;
     final shared = _shared;
     final pendingStart =
         shared != null &&
@@ -765,13 +797,6 @@ final class AiBackgroundExecution extends ChangeNotifier
               !gate._invalidated &&
               gate._requestId == startRequest,
         );
-    // Consume only the latest lifecycle, before notifying any registry. Old
-    // gate bindings cannot promote a replay into another global stop.
-    final currentLifecycle = _consumeStop(
-      permitId: permit,
-      startRequestId: startRequest,
-    );
-    final userStop = args['reason'] == 'user_stop' && currentLifecycle;
     if (pendingStart) {
       _stopRevision++;
       for (final gate in _gates) {
@@ -788,7 +813,6 @@ final class AiBackgroundExecution extends ChangeNotifier
     }
     _invalidatedPermits.add(permit);
     _invalidatePermit(permit, inactiveConfirmed: true);
-    if (userStop && !_disposed) _stopEvents.add(null);
   }
 
   void _invalidatePermit(String permit, {bool inactiveConfirmed = false}) {

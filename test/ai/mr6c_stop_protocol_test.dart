@@ -133,6 +133,7 @@ final class _Service {
     String reason,
     String callbackPermit, {
     String? startRequestId,
+    bool includeStartRequestId = true,
   }) async {
     final done = Completer<void>();
     final args = <String, Object>{
@@ -141,7 +142,9 @@ final class _Service {
       'reason': reason,
     };
     final request = startRequestId ?? requestByPermit[callbackPermit];
-    if (request != null) args['startRequestId'] = request;
+    if (includeStartRequestId && request != null) {
+      args['startRequestId'] = request;
+    }
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .handlePlatformMessage(
           _channel.name,
@@ -568,6 +571,185 @@ void main() {
     await releasing;
     expect(gate.status, AiBackgroundExecutionStatus.invalidated);
   });
+
+  for (final disposeOldGate in [true, false]) {
+    test(
+      'cross-owner supersession with old gate ${disposeOldGate ? 'disposed' : 'reused'} preserves a newer foreground approval',
+      () async {
+        final h = await fx.StackHarness.create();
+        addTearDown(h.dispose);
+        final first = _owner(h);
+        final registry = _registry(h, first);
+        addTearDown(registry.dispose);
+        registry.open(h.controller.origin);
+        final second = _owner(h);
+        addTearDown(second.dispose);
+        var firstStops = 0;
+        var secondStops = 0;
+        final firstSubscription = first.stopEvents.listen((_) => firstStops++);
+        final secondSubscription = second.stopEvents.listen(
+          (_) => secondStops++,
+        );
+        addTearDown(firstSubscription.cancel);
+        addTearDown(secondSubscription.cancel);
+
+        final old = first.createGate(
+          conversationId: () => 'old',
+          isCurrent: () => true,
+        );
+        await old.beginRun(runId: 'old-run');
+        final oldPermit = native.permit;
+        await native.stop(reason: 'user_stop', deliver: false);
+        await expectLater(
+          old.acquire(AiContinuationKind.model),
+          throwsA(isA<AiExecutionPaused>()),
+        );
+        expect(old.status, AiBackgroundExecutionStatus.invalidated);
+        if (disposeOldGate) old.dispose();
+
+        final current = second.createGate(
+          conversationId: () => 'current',
+          isCurrent: () => true,
+        );
+        await current.beginRun(runId: 'current-run');
+        final currentPermit = native.permit;
+        expect(currentPermit, isNot(oldPermit));
+        expect(current.binding.permitId, currentPermit);
+        if (!disposeOldGate) {
+          await old.beginRun(runId: 'new-foreground-run');
+          expect(old.binding.permitId, isNull);
+          expect(old.executionEligible, isTrue);
+        }
+
+        h.provider.script.add(
+          (_) => fx.toolTurn('createIssue', {
+            'projectId': 42,
+            'fields': {'title': 'Newer approval', 'confidential': false},
+            'reason': 'The user asked for an issue.',
+          }),
+        );
+        final sending = h.controller.send('Create an issue for the bug');
+        await fx.waitFor(
+          () => h.controller.phase == AiChatPhase.awaitingApproval,
+        );
+        final proposal = h.controller.proposals.single;
+        expect(proposal.valid, isTrue);
+        expect(firstStops, 0);
+        expect(secondStops, 0);
+        expect(native.starts, 2);
+
+        await native.callback('user_stop', oldPermit);
+        await native.callback(
+          'user_stop',
+          oldPermit,
+          includeStartRequestId: false,
+        );
+        expect(
+          proposal.valid,
+          isTrue,
+          reason:
+              'a superseded permit must not cancel a newer foreground approval',
+        );
+        expect(h.controller.phase, AiChatPhase.awaitingApproval);
+        expect(firstStops, 0);
+        expect(secondStops, 0);
+        expect(current.status, AiBackgroundExecutionStatus.active);
+        expect(current.executionEligible, isTrue);
+        expect(native.active, isTrue);
+        expect(native.permit, currentPermit);
+        expect(native.starts, 2);
+        expect(h.server.mutations, isEmpty);
+        expect(h.session.api!.isClosed, isFalse);
+
+        // The current lifecycle still delivers one global stop to both owners.
+        await native.stop(reason: 'user_stop', deliver: false);
+        await native.callback(
+          'user_stop',
+          currentPermit,
+          includeStartRequestId: false,
+        );
+        expect(proposal.valid, isFalse);
+        expect(firstStops, 1);
+        expect(secondStops, 1);
+        expect(current.status, AiBackgroundExecutionStatus.invalidated);
+        await native.callback('user_stop', currentPermit);
+        expect(firstStops, 1);
+        expect(secondStops, 1);
+        expect(h.server.mutations, isEmpty);
+        expect(h.session.api!.isClosed, isFalse);
+        await sending;
+      },
+    );
+  }
+
+  for (final changedIdentity in ['account', 'generation', 'api']) {
+    test(
+      'stale $changedIdentity lifecycle cannot stop another session foreground approval',
+      () async {
+        final h = await fx.StackHarness.create();
+        addTearDown(h.dispose);
+        var oldCurrent = true;
+        final oldOwner = AiBackgroundExecution(
+          accountKey: changedIdentity == 'account' ? 'old-account' : h.account,
+          generation: changedIdentity == 'generation'
+              ? h.session.generation - 1
+              : h.session.generation,
+          ownerApi: changedIdentity == 'api' ? Object() : h.session.api!,
+          isCurrent: () => oldCurrent,
+          appInForeground: () => h.foreground,
+          channel: _channel,
+        );
+        addTearDown(() async {
+          await oldOwner.stopAll();
+          oldOwner.dispose();
+        });
+        final old = oldOwner.createGate(
+          conversationId: () => 'old',
+          isCurrent: () => true,
+        );
+        await old.beginRun(runId: 'old-run');
+        final oldPermit = native.permit;
+        oldCurrent = false;
+        await native.stop(reason: 'user_stop', deliver: false);
+
+        final currentOwner = _owner(h);
+        final registry = _registry(h, currentOwner);
+        addTearDown(registry.dispose);
+        registry.open(h.controller.origin);
+        var stops = 0;
+        final subscription = currentOwner.stopEvents.listen((_) => stops++);
+        addTearDown(subscription.cancel);
+        h.provider.script.add(
+          (_) => fx.toolTurn('createIssue', {
+            'projectId': 42,
+            'fields': {'title': 'New session approval', 'confidential': false},
+            'reason': 'The user asked for an issue.',
+          }),
+        );
+        final sending = h.controller.send('Create an issue for the bug');
+        await fx.waitFor(
+          () => h.controller.phase == AiChatPhase.awaitingApproval,
+        );
+        final proposal = h.controller.proposals.single;
+        expect(proposal.valid, isTrue);
+        expect(native.starts, 1);
+        expect(stops, 0);
+        await native.callback('user_stop', oldPermit);
+        expect(
+          proposal.valid,
+          isTrue,
+          reason: 'a stale session stop cannot cancel another session approval',
+        );
+        expect(stops, 0);
+        expect(h.controller.phase, AiChatPhase.awaitingApproval);
+        expect(native.starts, 1);
+        expect(h.server.mutations, isEmpty);
+        expect(h.session.api!.isClosed, isFalse);
+        await h.controller.rejectWrite(proposal);
+        await sending;
+      },
+    );
+  }
 
   for (final released in [false, true]) {
     test(
