@@ -198,7 +198,7 @@ String aiWriteScopeKey(String accountKey, AiScopeGrant grant) {
     case AiScopeKind.mergeRequest:
       return '($accountKey, project:${grant.projectId}, mergeRequest, ${grant.iid})';
     case AiScopeKind.groupWorkItem:
-      return '($accountKey, groupId:${grant.groupId}, workItem, ${grant.iid})';
+      return '($accountKey, group:${grant.groupId}, workItem, ${grant.iid})';
     case AiScopeKind.accountGlobal:
       return '($accountKey, accountGlobal, todos)';
   }

@@ -607,6 +607,9 @@ void main() {
 
     expect(find.byType(WorkItemPage), findsNothing,
         reason: 'WorkItemPage must not mount after session cancellation');
+    // Drain the attached read-cache disk coordinator so its bounded
+    // invalidation wait cancels its FakeAsync timer before teardown.
+    await pumpUntilComplete(tester, sessionData.session.readCache.quiesced);
   });
 
   testWidgets('T14: closed client blocks web launch from open sheet',
@@ -644,6 +647,7 @@ void main() {
 
     expect(launcher.launched, isEmpty,
         reason: 'Closed client must block external web launch');
+    await pumpUntilComplete(tester, sessionData.session.readCache.quiesced);
   });
 
   testWidgets(
@@ -703,6 +707,7 @@ void main() {
     expect(find.byType(ProjectPage), findsNothing,
         reason: 'Generation fence must block project push even when account and API match');
     expect(server.projectGets - projectGetsBefore, 0);
+    await pumpUntilComplete(tester, sessionData.session.readCache.quiesced);
   });
 
   // ---------------------------------------------------------------------------
@@ -1059,6 +1064,7 @@ void main() {
     expect(inSheet(find.text('「里程碑」類型的動態目前沒有 App 內頁面。')), findsOneWidget);
     expect(inSheet(find.byKey(const ValueKey('activity-target-view-project'))),
         findsOneWidget);
+    await pumpUntilComplete(tester, sessionData.session.readCache.quiesced);
   });
 
   // ---------------------------------------------------------------------------
@@ -1101,6 +1107,7 @@ void main() {
     expect(server.projectDetailGets - projectGetsBefore, 2,
         reason: 'Licensed project lookup and uncached overview decoration');
     expect(find.byType(BottomSheet), findsNothing);
+    await pumpUntilComplete(tester, sessionData.session.readCache.quiesced);
   });
 
   testWidgets(
@@ -1137,6 +1144,7 @@ void main() {
     expect(launcher.launched, [targetUri],
         reason: 'Exact URI query and fragment must be preserved byte-for-byte');
     expect(find.byType(BottomSheet), findsNothing);
+    await pumpUntilComplete(tester, sessionData.session.readCache.quiesced);
   });
 
   testWidgets('a WorkItem event opens the work item page named by its link', (

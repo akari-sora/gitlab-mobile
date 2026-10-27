@@ -98,6 +98,7 @@ void main() {
         reason: 'Resident list feed on the left must synchronize and display the newly created issue',
       );
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Edit issue in two-pane mode synchronizes updated title to resident list feed', (tester) async {
@@ -161,6 +162,7 @@ void main() {
         reason: 'Both list pane and detail pane must show the updated title without manual refresh',
       );
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Close issue in two-pane mode removes closed issue from opened list feed', (tester) async {
@@ -225,6 +227,7 @@ void main() {
       // Verify: Now it appears in the closed list!
       expect(find.text('Issue To Be Closed'), findsNWidgets(2));
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Readonly viewing and resizing triggers zero extra feed requests', (tester) async {
@@ -315,6 +318,7 @@ void main() {
       expect(find.text('Readonly Test Issue 42'), findsOneWidget);
       expect(issuesListRequestCount, equals(1), reason: 'Readonly back navigation must NOT trigger list re-fetch');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Close then reopen issue in two-pane mode synchronizes to resident list feed across state filters', (tester) async {
@@ -382,6 +386,7 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.text('Issue To Reopen'), findsNWidgets(2), reason: 'Reopened issue must appear in opened list feed');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Compact mode (412 dp): Edit issue synchronizes updated title to list when returning via system back', (tester) async {
@@ -448,6 +453,7 @@ void main() {
       expect(find.text('Compact Original Title'), findsNothing, reason: 'Old title must not remain on list');
       expect(find.text('Compact Updated Title'), findsOneWidget, reason: 'Updated title must be displayed on list');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Multi-page issues: Edit reconciles two loaded pages with server ordering and refreshed page 3 cursor', (tester) async {
@@ -595,6 +601,7 @@ void main() {
       expect(find.text('Issue 7'), findsOneWidget);
       expect(find.text('載入更多'), findsNothing, reason: 'Page 3 was terminal page');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Multi-page MRs: Edit and close MR on page 2 preserves other page 2 items and page 3 cursor', (tester) async {
@@ -748,6 +755,7 @@ void main() {
       expect(mrListPages, ['1', '2', '1', '2', '3']);
       expect(find.text('MR 8'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Write failure protection: 422 error during issue edit leaves multi-page list feed and cursor intact', (tester) async {
@@ -864,6 +872,7 @@ void main() {
       expect(find.text('Stable Issue 6'), findsOneWidget);
       expect(find.text('載入更多'), findsOneWidget, reason: 'Page 3 cursor intact after failed mutation');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Account switch isolation: switching account cleanly disposes previous feed and does not leak stale mutations', (tester) async {
@@ -945,6 +954,7 @@ void main() {
       expect(find.text('Account A Issue 42'), findsNothing, reason: 'Stale account A issue feed must be unmounted');
       expect(find.text('Account B Project'), findsOneWidget, reason: 'New account shell loaded with Account B Project');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 }

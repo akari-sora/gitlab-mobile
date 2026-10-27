@@ -134,7 +134,7 @@ void main() {
   testWidgets(
     'a same-instance issue link in Markdown pushes the in-app issue page',
     (tester) async {
-      final (_, pathLookups) = await pumpApp(tester);
+      final (session, pathLookups) = await pumpApp(tester);
       await pushMarkdown(tester);
 
       await tester.tap(find.text('Issue one'));
@@ -150,13 +150,16 @@ void main() {
         reason: 'the project is resolved by its path once',
       );
       expect(launcher.launched, isEmpty, reason: 'the link stays in the app');
+      // Drain the attached read-cache disk coordinator so its bounded
+      // invalidation wait cancels its FakeAsync timer before teardown.
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     },
   );
 
   testWidgets(
     'a branch blob link and an other-host link still open the browser',
     (tester) async {
-      final (_, pathLookups) = await pumpApp(tester);
+      final (session, pathLookups) = await pumpApp(tester);
       await pushMarkdown(tester);
 
       await tester.tap(find.text('Branch file'));
@@ -172,6 +175,9 @@ void main() {
         isEmpty,
         reason: 'neither link is resolved through the API',
       );
+      // Same attached-coordinator drain as above; the shell reads go through
+      // the session client even when no work item page opens.
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     },
   );
 
@@ -200,6 +206,10 @@ void main() {
       expect(launcher.launched, [_issueUrl]);
       expect(find.byType(WorkItemPage), findsNothing);
       expect(pathLookups, isEmpty, reason: 'nothing is read for the new owner');
+      // Drain the attached read-cache disk coordinator before teardown; the
+      // reconnect attaches a second client whose invalidations arm the same
+      // bounded wait.
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     },
   );
 }

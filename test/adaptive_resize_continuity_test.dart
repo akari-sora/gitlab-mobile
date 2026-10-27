@@ -104,6 +104,7 @@ void main() {
       expect(find.widgetWithText(TextField, '搜尋議題'), findsOneWidget,
           reason: 'R1.3 Violation: Tab index in ProjectPage must be preserved across resize');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Case B (840 -> 412 dp): Select in Two-Pane, shrinks to Compact, back to list', (tester) async {
@@ -151,6 +152,7 @@ void main() {
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(find.text('檔案'), findsNothing);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Nested selection continuity: Selected issue in WorkItemsTab persists across Two-Pane to Compact resize', (tester) async {
@@ -198,6 +200,7 @@ void main() {
       expect(find.text('Overview'), findsOneWidget,
           reason: 'R1.3 Violation: Selected Issue was lost when resizing from Two-Pane to Compact!');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Case C (840 -> 1200 dp): Issue selected in Two-Pane, expands to Large with 960dp constraints', (tester) async {
@@ -291,6 +294,7 @@ void main() {
       expect(find.text('檔案'), findsOneWidget);
       expect(find.byKey(const ValueKey('adaptive-detail-pane')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 
@@ -328,6 +332,7 @@ void main() {
       expect(find.byKey(const ValueKey('adaptive-two-pane-row')), findsOneWidget);
       expect(find.byKey(const ValueKey('adaptive-empty-pane')), findsOneWidget);
       expect(find.text('請選擇專案'), findsOneWidget);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Touch target meets >= 48dp on Project card and Chips', (tester) async {
@@ -356,6 +361,7 @@ void main() {
       final cardSize = tester.getSize(find.widgetWithText(SemanticButton, 'Mobile Workspace'));
       expect(cardSize.height, greaterThanOrEqualTo(48.0));
       expect(cardSize.width, greaterThanOrEqualTo(48.0));
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Shell integration: AuthenticatedApp at 840 dp shows NavigationRail and Two-Pane Projects (GAP-2)', (tester) async {
@@ -413,6 +419,7 @@ void main() {
       expect(find.byType(NavigationRail), findsOneWidget);
       expect(find.byKey(const ValueKey('adaptive-two-pane-row')), findsNothing);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 
@@ -483,6 +490,7 @@ void main() {
       expect(find.text('請選擇專案'), findsOneWidget);
       expect(find.text('檔案'), findsNothing);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 }

@@ -2405,6 +2405,8 @@ class AiChatController extends ChangeNotifier
           () => writes.GitLabAiWritePort(
             _api,
             accountKey: _accountKey,
+            sessionGeneration: _generation,
+            isCurrent: current,
             // MR6b-3 registry binding. The captured client and generation
             // remain the owner even when the session or conversation changes.
             workItemWriteRegistry: createAiWorkspaceWorkItemWriteRegistry(
