@@ -109,6 +109,8 @@ _MR6B3T_WRITE_PORT_MEMBERS = {
 }
 
 WRITE_PORT_MEMBERS = {
+    "captureGroupReadEpoch",
+    "isClosed",
     "instance",
     "currentUser",
     "record",
@@ -199,6 +201,8 @@ WRITE_PORT_MEMBERS = {
 } | _MR6B3_WRITE_PORT_MEMBERS | _MR6B3T_WRITE_PORT_MEMBERS | {"namespaceWorkItem"}
 
 MAIN_WRITE_PORT_MEMBERS = {
+    'captureGroupReadEpoch',
+    'isClosed',
     'addAwardEmoji',
     'createBoard',
     'createBoardList',

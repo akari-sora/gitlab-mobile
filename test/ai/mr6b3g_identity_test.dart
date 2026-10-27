@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/core/group_work_item_identity.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 
@@ -69,6 +71,26 @@ void main() {
   });
 
   group('G0a server identity', () {
+    test('identity key parts equal the ledger scope key and journal lock', () {
+      final identity = _identity()!;
+      final scopeKey = aiWriteScopeKey(
+        identity.accountKey,
+        AiScopeGrant(
+          kind: AiScopeKind.groupWorkItem,
+          groupId: identity.groupId,
+          groupFullPath: identity.fullPath,
+          iid: identity.iid,
+        ),
+      );
+      final scopeParts = scopeKey.substring(1, scopeKey.length - 1).split(', ');
+      expect(identity.keyParts, scopeParts);
+      expect(identity.canonicalKey, scopeKey);
+      expect(
+        AiConflictKey(identity.keyParts).intersects(AiConflictKey(scopeParts)),
+        isTrue,
+      );
+    });
+
     test('captures the direct owner, account and read binding', () {
       final identity = _identity()!;
       expect(identity.accountKey, 'https://gitlab.example:8443/gitlab#5');

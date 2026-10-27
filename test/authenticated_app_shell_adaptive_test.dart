@@ -129,6 +129,7 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.text('Overview'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Scenario 2: Staged system back via handlePopRoute() pops Issue 42, then the 議題 section, then Project A', (tester) async {
@@ -199,6 +200,7 @@ void main() {
       expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(find.text('檔案'), findsNothing, reason: 'Project A must be dismissed');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Scenario 3: IndexedStack back isolation ensures non-active tabs do not intercept or clear details', (tester) async {
@@ -256,6 +258,7 @@ void main() {
       await openExplore(tester);
       expect(find.text('Overview'), findsOneWidget, reason: 'Issue 42 detail must NOT have been cleared while tab was inactive');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Scenario 4: Pagination persistence across 1000 -> 800 -> 1000 dp resize and detail back navigation', (tester) async {
@@ -443,6 +446,7 @@ void main() {
       expect(find.text('Gamma Project 9'), findsOneWidget);
       expect(find.text('載入更多'), findsNothing, reason: 'Page 3 was the terminal page');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Scenario 5: P2-UX formal entry point at 840 dp and 1200 dp serves Issues list and Issue detail simultaneously with size assertions and project switching back button', (tester) async {
@@ -550,6 +554,7 @@ void main() {
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 }
