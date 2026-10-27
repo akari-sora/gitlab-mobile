@@ -136,6 +136,38 @@ const _readPortMembers = {
   'snippetText',
 };
 
+// Frozen from 574e406: two tokens before and three after every code-only _api.
+// Preserve order and duplicates; changing API use requires reviewing this list.
+const _readPortApiOccurrences = <String, List<String>>{
+  'GitLabAiReadPort': [
+    'this . _api , this .',
+    'final GitLabApi _api ; final int',
+    ') => _api . record (',
+    ') => _api . record (',
+    ') => _api . record (',
+    ') => _api . snippetText (',
+    ') => _api . record (',
+    ') => _api . snippetText (',
+    ') => _api . textFile (',
+    ') => _api . tree (',
+    ') => _api . cachedRecord (',
+    ') => _api . cachedRecord (',
+    ') => _api . cachedRecords (',
+    ') => _api . cachedRecords (',
+    ') => _api . records (',
+    ') => _api . jobTraceChunk (',
+    ') => _api . commit (',
+    ') => _api . commitDiff (',
+    ') => _api . search (',
+  ],
+  'GitLabAiGroupReadPort': [
+    'this . _api , { required',
+    'final GitLabApi _api ; final GitLabInstance',
+    '= await _api . namespaceWorkItem (',
+    'apiOwner : _api , generation :',
+  ],
+};
+
 const _mainWriteMembers = <String>{
   'addAwardEmoji',
   'createBoard',
@@ -320,39 +352,36 @@ void main() {
     });
 
     test('read port guard rejects class moves and extra API access', () {
-      final project = _readPortMembers.map((name) => '_api.$name();').join();
-      const group = '_api.namespaceWorkItem();';
-      String fixture(
-        String projectBody,
-        String groupBody, [
-        String extra = '',
-      ]) =>
-          'final class GitLabAiReadPort { $projectBody }\n'
-          'final class GitLabAiGroupReadPort { $groupBody }\n$extra';
-      expect(_readPortViolations(fixture(project, group)), isEmpty);
-      expect(_readPortViolations(fixture('$project $group', '')), isNotEmpty);
+      expect(_readPortViolations(_readPortFixture()), isEmpty);
       expect(
-        _readPortViolations(fixture(project, '$group _api.record();')),
+        _readPortViolations(
+          _readPortFixture(project: '_api.namespaceWorkItem();').replaceFirst(
+            'await _api.namespaceWorkItem(',
+            'await other.namespaceWorkItem(',
+          ),
+        ),
+        isNotEmpty,
+      );
+      expect(
+        _readPortViolations(_readPortFixture(group: '_api.record();')),
         isNotEmpty,
       );
       expect(
         _readPortViolations(
-          fixture(project, group, 'void f() => _api.record();'),
+          _readPortFixture(extra: 'void f() => _api.record();'),
         ),
         isNotEmpty,
       );
       expect(
         _readPortViolations(
-          fixture(project, group, 'void f() => helper(_api);'),
+          _readPortFixture(extra: 'void f() => helper(_api);'),
         ),
         isNotEmpty,
       );
       expect(
         _readPortViolations(
-          fixture(
-            project,
-            group,
-            'final class Foreign { void f() => _api.record(); }',
+          _readPortFixture(
+            extra: 'final class Foreign { void f() => _api.record(); }',
           ),
         ),
         isNotEmpty,
@@ -360,8 +389,6 @@ void main() {
     });
 
     test('read port guard rejects API escapes in either known class', () {
-      final project = _readPortMembers.map((name) => '_api.$name();').join();
-      const group = '_api.namespaceWorkItem();';
       const shapes = <String, String>{
         'typed alias':
             'void f() { final GitLabApi other = _api; other.record(); }',
@@ -383,10 +410,11 @@ void main() {
       };
       for (final shape in shapes.entries) {
         for (final target in ['project', 'group']) {
-          final source =
-              'final class GitLabAiReadPort { $project ${target == 'project' ? shape.value : ''} }\n'
-              'final class GitLabAiGroupReadPort { $group ${target == 'group' ? shape.value : ''} }\n'
-              'void helper(dynamic a) { a.record(); }';
+          final source = _readPortFixture(
+            project: target == 'project' ? shape.value : '',
+            group: target == 'group' ? shape.value : '',
+            extra: 'void helper(a) { a.record(); }',
+          );
           expect(
             _readPortViolations(source),
             isNotEmpty,
@@ -401,25 +429,45 @@ void main() {
           '$target(Object other, this._api);',
           '$target({required this._api});',
         ]) {
-          final source =
-              'final class GitLabAiReadPort { $project ${target == 'GitLabAiReadPort' ? 'final GitLabApi _api; $constructor' : ''} }\n'
-              'final class GitLabAiGroupReadPort { $group ${target == 'GitLabAiGroupReadPort' ? 'final GitLabApi _api; $constructor' : ''} }';
-          expect(_readPortViolations(source), isEmpty, reason: constructor);
+          // Keep the formal-parameter rule's positive coverage; adding any API
+          // occurrence now also requires editing the frozen snapshot.
+          expect(
+            _knownReadClassViolations(
+              target,
+              'class $target { final GitLabApi _api; $constructor }',
+              target == 'GitLabAiReadPort'
+                  ? _readPortMembers
+                  : {'namespaceWorkItem'},
+            ),
+            isEmpty,
+            reason: constructor,
+          );
+          expect(
+            _readPortViolations(
+              _readPortFixture(
+                project: target == 'GitLabAiReadPort'
+                    ? 'final GitLabApi _api; $constructor'
+                    : '',
+                group: target == 'GitLabAiGroupReadPort'
+                    ? 'final GitLabApi _api; $constructor'
+                    : '',
+              ),
+            ),
+            isNotEmpty,
+            reason: constructor,
+          );
         }
       }
     });
 
     test('API owner exception belongs only to the group evidence factory', () {
-      final project = _readPortMembers.map((name) => '_api.$name();').join();
-      String fixture(String body) =>
-          'final class GitLabAiReadPort { $project }\n'
-          'final class GitLabAiGroupReadPort { _api.namespaceWorkItem(); $body }';
       const factory = 'VerifiedGroupWorkItemIdentity.fromServerEvidence';
+      expect(_readPortViolations(_readPortFixture()), isEmpty);
       expect(
-        _readPortViolations(
-          fixture(
-            'void workItem() async { $factory(apiOwner: _api, generation: 1); }',
-          ),
+        _knownReadClassViolations(
+          'GitLabAiGroupReadPort',
+          'class GitLabAiGroupReadPort { void workItem() async { $factory(apiOwner: _api, generation: 1); } }',
+          {'namespaceWorkItem'},
         ),
         isEmpty,
       );
@@ -431,7 +479,7 @@ void main() {
         'void workItem() async { $factory(apiOwner: _api); helper(apiOwner: _api); }',
       ]) {
         expect(
-          _readPortViolations(fixture(invalid)),
+          _readPortViolations(_readPortFixture(group: invalid)),
           isNotEmpty,
           reason: invalid,
         );
@@ -439,24 +487,247 @@ void main() {
     });
 
     test('read port guard examines string interpolation code', () {
-      final project = _readPortMembers.map((name) => '_api.$name();').join();
-      String fixture(String body) =>
-          'final class GitLabAiReadPort { $project }\n'
-          'final class GitLabAiGroupReadPort { _api.namespaceWorkItem(); $body }';
       expect(
         _readPortViolations(
-          fixture(r'''void f() { print('${helper(_api)}'); }'''),
+          _readPortFixture(
+            group: r'''void f() { print('${helper(_api)}'); }''',
+          ),
         ),
         isNotEmpty,
       );
       expect(
-        _readPortViolations(fixture(r'''void f() { print('$_api'); }''')),
+        _readPortViolations(
+          _readPortFixture(group: r'''void f() { print('$_api'); }'''),
+        ),
         isNotEmpty,
       );
       expect(
-        _readPortViolations(fixture(r'''void f() { print(r'$_api'); }''')),
+        _readPortViolations(
+          _readPortFixture(group: r'''void f() { print(r'$_api'); }'''),
+        ),
         isEmpty,
       );
+    });
+
+    test('read port rejects Opus smuggling with normal member sets', () {
+      const ns =
+          "namespaceWorkItem('a/b', 1, expectedNamespaceId: 'gid://gitlab/Group/1', strictIdentity: true)";
+      const shapes = <String, ({String target, String attack})>{
+        'G1': (target: 'group', attack: 'void f() { _api..$ns..group(7); }'),
+        'G2': (
+          target: 'group',
+          attack: 'Future<Object?> f() => (_api..$ns).group(7);',
+        ),
+        'G3': (
+          target: 'group',
+          attack:
+              'Future<Object?> f() async { final (api, _) = (_api..$ns, 0); return api.group(7); }',
+        ),
+        'G4': (
+          target: 'group',
+          attack:
+              'late final _leaked = (_api..$ns); Future<Object?> f() => _leaked.group(7);',
+        ),
+        'G5': (
+          target: 'group',
+          attack:
+              'late final _getter = () => _api..$ns; Future<Object?> f() => _getter().group(7);',
+        ),
+        'G6': (
+          target: 'group',
+          attack:
+              'Future<Object?> f() async { final dynamic owner = _verifiedIdentity?.apiOwner; return owner?.currentUser(); }',
+        ),
+        'P1': (
+          target: 'project',
+          attack:
+              "void f() { _api..record(const ['x'])..writeRecord('POST', const ['projects'], const {}); }",
+        ),
+        'P2': (
+          target: 'project',
+          attack:
+              "Future<Object?> f() => (_api..record).writeRecord('POST', const ['projects'], const {});",
+        ),
+        'P3': (
+          target: 'project',
+          attack: 'void f() => _leakHelper(_api..record);',
+        ),
+      };
+      for (final entry in shapes.entries) {
+        final shape = entry.value;
+        final source = _readPortFixture(
+          project: shape.target == 'project' ? shape.attack : '',
+          group: shape.target == 'group' ? shape.attack : '',
+          extra: entry.key == 'P3'
+              ? "void _leakHelper(dynamic api) => api.writeRecord('POST', const ['projects'], const {});"
+              : '',
+        );
+        final violations = _readPortViolations(source);
+        expect(_apiMembers(_codeOnly(source)), {
+          ..._readPortMembers,
+          'namespaceWorkItem',
+        }, reason: entry.key);
+        expect(
+          violations.where(
+            (value) =>
+                value.contains('API members') || value.contains('API union'),
+          ),
+          isEmpty,
+          reason: entry.key,
+        );
+        if (entry.key == 'G6') {
+          expect(violations, contains('dynamic keyword in read port'));
+          expect(
+            violations,
+            contains('unexpected apiOwner occurrence in read port'),
+          );
+          expect(
+            violations.where((value) => value.contains('snapshot')),
+            isEmpty,
+          );
+        } else {
+          final name = shape.target == 'project'
+              ? 'GitLabAiReadPort'
+              : 'GitLabAiGroupReadPort';
+          expect(
+            violations,
+            contains('unexpected $name API occurrence snapshot'),
+            reason: entry.key,
+          );
+          expect(violations, contains('API cascade in read port'));
+        }
+      }
+    });
+
+    test(
+      'read port snapshots reject extra missing reordered or changed use',
+      () {
+        final source = _readPortFixture();
+        for (final mutant in [
+          _readPortFixture(project: "void f() => _api.record(const ['x']);"),
+          source.replaceFirst(
+            'await _api.namespaceWorkItem(',
+            'await other.namespaceWorkItem(',
+          ),
+          source.replaceFirst(
+            '_api.commit(projectId, sha)',
+            '_api.commit.call(projectId, sha)',
+          ),
+          source
+              .replaceFirst(
+                '_api.commit(projectId, sha)',
+                '_api.search(projectId, sha)',
+              )
+              .replaceFirst(
+                '_api.search(scope, query,',
+                '_api.commit(scope, query,',
+              ),
+        ]) {
+          expect(
+            _readPortViolations(
+              mutant,
+            ).where((value) => value.contains('snapshot')),
+            isNotEmpty,
+          );
+        }
+      },
+    );
+
+    test('read port bans cascades dynamic and API owner reads file wide', () {
+      const shapes = <String, String>{
+        'void f() => _api?..record();': 'API cascade in read port',
+        'typedef X = dynamic;': 'dynamic keyword in read port',
+        'List<dynamic> values = [];': 'dynamic keyword in read port',
+        'void f(dynamic value) {}': 'dynamic keyword in read port',
+        'Object? f(Object value) => value.apiOwner;':
+            'unexpected apiOwner occurrence in read port',
+        'Object? f(Object? value) => value?.apiOwner;':
+            'unexpected apiOwner occurrence in read port',
+        'void f({Object? apiOwner}) {}':
+            'unexpected apiOwner occurrence in read port',
+      };
+      for (final entry in shapes.entries) {
+        expect(
+          _readPortViolations(_readPortFixture(extra: entry.key)),
+          contains(entry.value),
+          reason: entry.key,
+        );
+      }
+      expect(
+        _readPortViolations(
+          _readPortFixture(
+            group:
+                "// _api..record(); dynamic apiOwner\n"
+                "/* typedef X = dynamic; */ r'_api?..record(); dynamic .apiOwner';",
+          ),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('group scope construction and producer aliases are restricted', () {
+      final violations = <String>[];
+      for (final file in Directory(
+        'lib',
+      ).listSync(recursive: true).whereType<File>()) {
+        if (!file.path.endsWith('.dart')) continue;
+        violations.addAll(
+          _groupScopeConstructionViolations(
+            file.path,
+            file.readAsStringSync(),
+          ).map((message) => '${file.path}: $message'),
+        );
+      }
+      expect(violations, isEmpty);
+      const construct = 'AiGroupResourceScope(accountKey: key)';
+      const other = 'lib/features/ai/ai_chat_controller.dart';
+      for (final allowed in [
+        'lib/core/ai/tools/tool_scope.dart',
+        'lib/features/ai/ai_chat_context.dart',
+        'test/ai/group_scope_test.dart',
+      ]) {
+        expect(_groupScopeConstructionViolations(allowed, construct), isEmpty);
+      }
+      for (final mutant in [
+        construct,
+        'const AiGroupResourceScope(accountKey: key)',
+        'final create = AiGroupResourceScope.new;',
+        'factory Alias() = AiGroupResourceScope;',
+        'final create = scopes.AiGroupResourceScope.new;',
+        r"'${AiGroupResourceScope(accountKey: key)}'",
+      ]) {
+        expect(_groupScopeConstructionViolations(other, mutant), isNotEmpty);
+      }
+      expect(
+        _groupScopeConstructionViolations(
+          'lib/core/ai/tools/gitlab_read_port.dart',
+          construct,
+        ),
+        isNotEmpty,
+      );
+      for (final producer in [
+        'lib/core/ai/tools/tool_scope.dart',
+        'lib/features/ai/ai_chat_context.dart',
+        other,
+      ]) {
+        for (final alias in [
+          'typedef S = AiGroupResourceScope;',
+          'typedef S = scopes.AiGroupResourceScope;',
+        ]) {
+          expect(
+            _groupScopeConstructionViolations(producer, alias),
+            isNotEmpty,
+          );
+        }
+        expect(
+          _groupScopeConstructionViolations(
+            producer,
+            "AiGroupResourceScope? scope; // typedef S = AiGroupResourceScope;\n"
+            "'no typedef S = AiGroupResourceScope; AiGroupResourceScope()';",
+          ),
+          isEmpty,
+        );
+      }
     });
 
     test('write part discovery follows URIs outside tools and validates part of', () {
@@ -1175,6 +1446,13 @@ List<String> _readPortViolations(String source) {
     'GitLabAiGroupReadPort': {'namespaceWorkItem'},
   };
   final violations = <String>[];
+  if (RegExp(r'\b_api\s*\??\s*\.\.').hasMatch(code)) {
+    violations.add('API cascade in read port');
+  }
+  if (RegExp(r'\bdynamic\b').hasMatch(code)) {
+    violations.add('dynamic keyword in read port');
+  }
+  final ownerOffsets = <int>{};
   for (final entry in expected.entries) {
     final matches = classes.where((item) => item.name == entry.key).toList();
     if (matches.length != 1) {
@@ -1188,9 +1466,29 @@ List<String> _readPortViolations(String source) {
         !actual.containsAll(entry.value)) {
       violations.add('unexpected ${entry.key} API members');
     }
+    if (_apiOccurrences(classCode).join('\n') !=
+        _readPortApiOccurrences[entry.key]!.join('\n')) {
+      violations.add('unexpected ${entry.key} API occurrence snapshot');
+    }
     violations.addAll(
       _knownReadClassViolations(entry.key, classCode, entry.value),
     );
+    if (entry.key == 'GitLabAiGroupReadPort') {
+      ownerOffsets.addAll(
+        _groupOwnerApiOffsets(classCode).map((offset) => item.start + offset),
+      );
+    }
+  }
+  for (final token in RegExp(r'\bapiOwner\b').allMatches(code)) {
+    final argument = RegExp(
+      r'^apiOwner\s*:\s*(_api)\b',
+    ).firstMatch(code.substring(token.start));
+    if (argument == null ||
+        !ownerOffsets.contains(
+          token.start + argument.group(0)!.indexOf('_api'),
+        )) {
+      violations.add('unexpected apiOwner occurrence in read port');
+    }
   }
   for (final item in classes.where(
     (item) => !expected.containsKey(item.name),
@@ -1219,6 +1517,59 @@ List<String> _readPortViolations(String source) {
     violations.add('unexpected read-port API union');
   }
   return violations;
+}
+
+List<String> _apiOccurrences(String code) {
+  final tokens = RegExp(
+    r'[A-Za-z_$][A-Za-z0-9_$]*|\?\.\.|\.\.|\?\.|=>|[^\s]',
+  ).allMatches(code).map((match) => match.group(0)!).toList();
+  return [
+    for (var index = 0; index < tokens.length; index++)
+      if (tokens[index] == '_api')
+        tokens
+            .skip(index < 2 ? 0 : index - 2)
+            .take(index < 2 ? index + 4 : 6)
+            .join(' '),
+  ];
+}
+
+String _readPortFixture({
+  String project = '',
+  String group = '',
+  String extra = '',
+}) {
+  var source = File(
+    'lib/core/ai/tools/gitlab_read_port.dart',
+  ).readAsStringSync();
+  for (final entry in {
+    '  final int projectId;\n': project,
+    '  VerifiedGroupWorkItemIdentity? _verifiedIdentity;\n': group,
+  }.entries) {
+    if (entry.key.allMatches(source).length != 1) {
+      throw StateError('read-port fixture marker changed: ${entry.key}');
+    }
+    source = source.replaceFirst(entry.key, '${entry.key}${entry.value}\n');
+  }
+  return '$source\n$extra';
+}
+
+List<String> _groupScopeConstructionViolations(String relative, String source) {
+  if (!relative.startsWith('lib/')) return [];
+  final code = _codeOnly(source);
+  if (RegExp(r'\btypedef\b[^;]*\bAiGroupResourceScope\b').hasMatch(code)) {
+    return ['group scope typedef alias is forbidden even in its producers'];
+  }
+  if ({
+    'lib/core/ai/tools/tool_scope.dart',
+    'lib/features/ai/ai_chat_context.dart',
+  }.contains(relative)) {
+    return [];
+  }
+  if (RegExp(r'\bAiGroupResourceScope\s*(?:\(|\.)').hasMatch(code) ||
+      RegExp(r'=\s*(?:\w+\s*\.\s*)?AiGroupResourceScope\b').hasMatch(code)) {
+    return ['group scope constructed or aliased outside its producers'];
+  }
+  return [];
 }
 
 void _expectFixedDocuments(Mr6b3ApiHarness h, String operation) {

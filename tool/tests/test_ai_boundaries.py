@@ -25,6 +25,38 @@ READ_PORT_MEMBERS = {
 }
 GROUP_READ_PORT_MEMBERS = {"namespaceWorkItem"}
 
+# Frozen from 574e406: two tokens before and three after every code-only _api.
+# Preserve order and duplicates; changing API use requires reviewing this list.
+READ_PORT_API_OCCURRENCES = {
+    "GitLabAiReadPort": [
+        "this . _api , this .",
+        "final GitLabApi _api ; final int",
+        ") => _api . record (",
+        ") => _api . record (",
+        ") => _api . record (",
+        ") => _api . snippetText (",
+        ") => _api . record (",
+        ") => _api . snippetText (",
+        ") => _api . textFile (",
+        ") => _api . tree (",
+        ") => _api . cachedRecord (",
+        ") => _api . cachedRecord (",
+        ") => _api . cachedRecords (",
+        ") => _api . cachedRecords (",
+        ") => _api . records (",
+        ") => _api . jobTraceChunk (",
+        ") => _api . commit (",
+        ") => _api . commitDiff (",
+        ") => _api . search (",
+    ],
+    "GitLabAiGroupReadPort": [
+        "this . _api , { required",
+        "final GitLabApi _api ; final GitLabInstance",
+        "= await _api . namespaceWorkItem (",
+        "apiOwner : _api , generation :",
+    ],
+}
+
 _MR6B3_WRITE_PORT_MEMBERS = {
     "projectWorkItem",
     "workItemState",
@@ -207,16 +239,12 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertEqual(self._read_port_violations(source), [])
 
     def test_read_port_class_and_escaping_fixtures(self):
-        project = " ".join(f"_api.{name}();" for name in READ_PORT_MEMBERS)
-        group = "_api.namespaceWorkItem();"
-        def fixture(project_body=project, group_body=group, extra=""):
-            return (f"final class GitLabAiReadPort {{ {project_body} }}\n"
-                    f"final class GitLabAiGroupReadPort {{ {group_body} }}\n{extra}")
-
+        fixture = self._read_port_fixture
         self.assertEqual(self._read_port_violations(fixture()), [])
         for mutant in (
-            fixture(project + " " + group, ""),
-            fixture(group_body=group + " _api.record();"),
+            fixture(project="_api.namespaceWorkItem();").replace(
+                "await _api.namespaceWorkItem(", "await other.namespaceWorkItem(", 1),
+            fixture(group="_api.record();"),
             fixture(extra="final class Foreign { void f() => _api.record(); }"),
             fixture(extra="void f() => _api.record();"),
             fixture(extra="void f() => helper(_api);"),
@@ -238,9 +266,9 @@ class AiBoundaryTest(unittest.TestCase):
         for attack in attacks:
             for target in ("project", "group"):
                 mutant = fixture(
-                    project_body=project + (" " + attack if target == "project" else ""),
-                    group_body=group + (" " + attack if target == "group" else ""),
-                    extra="void helper(dynamic api) { api.record(); }",
+                    project=attack if target == "project" else "",
+                    group=attack if target == "group" else "",
+                    extra="void helper(api) { api.record(); }",
                 )
                 with self.subTest(attack=attack, target=target):
                     self.assertTrue(self._read_port_violations(mutant))
@@ -249,18 +277,17 @@ class AiBoundaryTest(unittest.TestCase):
                              ("group", "GitLabAiGroupReadPort")):
             for suffix in ("", ".named"):
                 declaration = f"{name}{suffix}(this._api); final GitLabApi _api;"
-                if target == "project":
-                    positive = fixture(project_body=declaration + project)
-                else:
-                    positive = fixture(group_body=declaration + group)
+                # Retain the formal-parameter rule's positive coverage. Extra
+                # constructors/fields now also require a frozen-snapshot edit.
+                body = f"class {name} {{ {declaration} }}"
+                wanted = READ_PORT_MEMBERS if target == "project" else GROUP_READ_PORT_MEMBERS
                 with self.subTest(name=name, suffix=suffix):
-                    self.assertEqual(self._read_port_violations(positive), [])
+                    self.assertEqual(self._read_port_token_violations(name, body, wanted), [])
+                    self.assertTrue(self._read_port_violations(
+                        fixture(**{target: declaration})))
                 for attack in (f"final escaped = {name}{suffix}(this._api);",
                                f"void f() {{ {name}{suffix}(this._api); }}"):
-                    if target == "project":
-                        mutant = fixture(project_body=project + attack)
-                    else:
-                        mutant = fixture(group_body=group + attack)
+                    mutant = fixture(**{target: attack})
                     with self.subTest(name=name, suffix=suffix, attack=attack):
                         self.assertTrue(self._read_port_violations(mutant))
 
@@ -274,23 +301,94 @@ class AiBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(attack=attack):
                 self.assertTrue(self._read_port_violations(
-                    fixture(group_body=group + " " + attack)
+                    fixture(group=attack)
                 ))
 
         factory = ("Future<void> workItem() async { "
                    "VerifiedGroupWorkItemIdentity.fromServerEvidence(apiOwner: _api); }")
-        self.assertEqual(self._read_port_violations(fixture(group_body=group + factory)), [])
+        self.assertEqual(self._read_port_token_violations(
+            "GitLabAiGroupReadPort", f"class GitLabAiGroupReadPort {{ {factory} }}",
+            GROUP_READ_PORT_MEMBERS,
+        ), [])
         for mutant in (
-            factory.replace("apiOwner: _api", "apiOwner: helper(_api)"),
-            factory + " void f() { helper(apiOwner: _api); }",
-            factory.replace("workItem", "otherMethod"),
-            factory + factory.replace("workItem", "workItem2"),
+            fixture().replace("apiOwner: _api", "apiOwner: helper(_api)"),
+            fixture(group="void f() { helper(apiOwner: _api); }"),
+            fixture().replace("workItem(\n    AiGroupResourceScope scope,",
+                              "otherMethod(\n    AiGroupResourceScope scope,"),
+            fixture(group=factory.replace("workItem", "workItem2")),
         ):
             with self.subTest(mutant=mutant):
-                self.assertTrue(self._read_port_violations(fixture(group_body=group + mutant)))
+                self.assertTrue(self._read_port_violations(mutant))
 
-        self.assertTrue(self._read_port_violations(fixture(group_body=group + " '$_api';")))
-        self.assertEqual(self._read_port_violations(fixture(group_body=group + " r'$_api';")), [])
+        self.assertTrue(self._read_port_violations(fixture(group=" '$_api';")))
+        self.assertEqual(self._read_port_violations(fixture(group=" r'$_api';")), [])
+
+    def test_read_port_snapshot_rejects_opus_smuggling_with_normal_members(self):
+        ns = ("namespaceWorkItem('a/b', 1, expectedNamespaceId: 'gid://gitlab/Group/1', "
+              "strictIdentity: true)")
+        shapes = {
+            "G1": ("group", f"void f() {{ _api..{ns}..group(7); }}"),
+            "G2": ("group", f"Future<Object?> f() => (_api..{ns}).group(7);"),
+            "G3": ("group", f"Future<Object?> f() async {{ final (api, _) = (_api..{ns}, 0); "
+                              "return api.group(7); }"),
+            "G4": ("group", f"late final _leaked = (_api..{ns}); "
+                              "Future<Object?> f() => _leaked.group(7);"),
+            "G5": ("group", f"late final _getter = () => _api..{ns}; "
+                              "Future<Object?> f() => _getter().group(7);"),
+            "G6": ("group", "Future<Object?> f() async { "
+                              "final dynamic owner = _verifiedIdentity?.apiOwner; "
+                              "return owner?.currentUser(); }"),
+            "P1": ("project", "void f() { _api..record(const ['x'])"
+                                "..writeRecord('POST', const ['projects'], const {}); }"),
+            "P2": ("project", "Future<Object?> f() => (_api..record)"
+                                ".writeRecord('POST', const ['projects'], const {});"),
+            "P3": ("project", "void f() => _leakHelper(_api..record);"),
+        }
+        for name, (target, attack) in shapes.items():
+            extra = ("void _leakHelper(dynamic api) => "
+                     "api.writeRecord('POST', const ['projects'], const {});"
+                     if name == "P3" else "")
+            mutant = self._read_port_fixture(**{target: attack}, extra=extra)
+            with self.subTest(shape=name):
+                violations = self._read_port_violations(mutant)
+                self.assertEqual(self._api_members(self._code_only(mutant)),
+                                 READ_PORT_MEMBERS | GROUP_READ_PORT_MEMBERS)
+                self.assertFalse(any("API members" in v or "API union" in v for v in violations))
+                if name == "G6":
+                    self.assertIn("dynamic keyword in read port", violations)
+                    self.assertIn("unexpected apiOwner occurrence in read port", violations)
+                    self.assertFalse(any("snapshot" in v for v in violations))
+                else:
+                    class_name = "GitLabAiGroupReadPort" if target == "group" else "GitLabAiReadPort"
+                    self.assertIn(f"unexpected {class_name} API occurrence snapshot", violations)
+                    self.assertIn("API cascade in read port", violations)
+
+    def test_read_port_snapshot_and_file_wide_rules(self):
+        source = self._read_port_fixture()
+        for mutant in (
+            self._read_port_fixture(project="void f() => _api.record(const ['x']);"),
+            source.replace("await _api.namespaceWorkItem(", "await other.namespaceWorkItem(", 1),
+            source.replace("_api.commit(projectId, sha)", "_api.commit.call(projectId, sha)", 1),
+            source.replace("_api.commit(projectId, sha)", "_api.search(projectId, sha)", 1)
+                  .replace("_api.search(scope, query,", "_api.commit(scope, query,", 1),
+        ):
+            with self.subTest(mutant=mutant):
+                self.assertTrue(any("snapshot" in v for v in self._read_port_violations(mutant)))
+        for extra, expected in (
+            ("void f() => _api?..record();", "API cascade in read port"),
+            ("typedef X = dynamic;", "dynamic keyword in read port"),
+            ("List<dynamic> values = [];", "dynamic keyword in read port"),
+            ("void f(dynamic value) {}", "dynamic keyword in read port"),
+            ("Object? f(Object value) => value.apiOwner;", "unexpected apiOwner occurrence in read port"),
+            ("Object? f(Object? value) => value?.apiOwner;", "unexpected apiOwner occurrence in read port"),
+            ("void f({Object? apiOwner}) {}", "unexpected apiOwner occurrence in read port"),
+        ):
+            with self.subTest(extra=extra):
+                self.assertIn(expected, self._read_port_violations(source + extra))
+        self.assertEqual(self._read_port_violations(self._read_port_fixture(
+            group="// _api..record(); dynamic apiOwner\n"
+                  "/* typedef X = dynamic; */ r'_api?..record(); dynamic .apiOwner';",
+        )), [])
 
     def test_ai_namespace_reads_are_strict_and_not_torn_off(self):
         violations = []
@@ -389,7 +487,6 @@ class AiBoundaryTest(unittest.TestCase):
         for allowed in (
             "lib/core/ai/tools/tool_scope.dart",
             "lib/features/ai/ai_chat_context.dart",
-            "lib/core/ai/tools/gitlab_read_port.dart",
             "test/ai/group_scope_test.dart",  # Test construction is exempt.
         ):
             self.assertEqual(self._group_scope_construction_violations(allowed, construct), [])
@@ -406,6 +503,16 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertEqual(self._group_scope_construction_violations(
             other, "AiGroupResourceScope? scope; // AiGroupResourceScope()\n'no AiGroupResourceScope()';"
         ), [])
+        self.assertTrue(self._group_scope_construction_violations(
+            "lib/core/ai/tools/gitlab_read_port.dart", construct))
+        for producer in ("lib/core/ai/tools/tool_scope.dart",
+                         "lib/features/ai/ai_chat_context.dart", other):
+            for alias in ("typedef S = AiGroupResourceScope;",
+                          "typedef S = scopes.AiGroupResourceScope;"):
+                with self.subTest(producer=producer, alias=alias):
+                    self.assertTrue(self._group_scope_construction_violations(producer, alias))
+            self.assertEqual(self._group_scope_construction_violations(
+                producer, "// typedef S = AiGroupResourceScope;\n'no typedef S = AiGroupResourceScope;';"), [])
 
     def test_read_port_whitelist_adds_exactly_snippet_text(self):
         previous_members = READ_PORT_MEMBERS - {"snippetText"}
@@ -804,6 +911,11 @@ class AiBoundaryTest(unittest.TestCase):
             "GitLabAiGroupReadPort": GROUP_READ_PORT_MEMBERS,
         }
         violations = []
+        if re.search(r"\b_api\s*\??\s*\.\.", code):
+            violations.append("API cascade in read port")
+        if re.search(r"\bdynamic\b", code):
+            violations.append("dynamic keyword in read port")
+        owner_offsets = set()
         for name, wanted in expected.items():
             matching = [(start, end) for found, start, end in classes if found == name]
             if len(matching) != 1:
@@ -812,7 +924,16 @@ class AiBoundaryTest(unittest.TestCase):
                 body = code[matching[0][0]:matching[0][1]]
                 if cls._api_members(body) != wanted:
                     violations.append(f"unexpected {name} API members")
+                if cls._api_occurrences(body) != READ_PORT_API_OCCURRENCES[name]:
+                    violations.append(f"unexpected {name} API occurrence snapshot")
                 violations.extend(cls._read_port_token_violations(name, body, wanted))
+                if name == "GitLabAiGroupReadPort":
+                    owner_offsets.update(matching[0][0] + offset
+                                         for offset in cls._group_owner_api_offsets(body))
+        for token in re.finditer(r"\bapiOwner\b", code):
+            argument = re.match(r"apiOwner\s*:\s*(_api)\b", code[token.start():])
+            if not argument or token.start() + argument.start(1) not in owner_offsets:
+                violations.append("unexpected apiOwner occurrence in read port")
         for name, start, end in classes:
             if name not in expected and (cls._api_members(source[start:end]) or
                                          re.search(r"\b(?:GitLabApi|_api)\b", code[start:end])):
@@ -826,6 +947,24 @@ class AiBoundaryTest(unittest.TestCase):
         if cls._api_members(code) != READ_PORT_MEMBERS | GROUP_READ_PORT_MEMBERS:
             violations.append("unexpected read-port API union")
         return violations
+
+    @staticmethod
+    def _api_occurrences(code):
+        tokens = re.findall(r"[A-Za-z_$][A-Za-z0-9_$]*|\?\.\.|\.\.|\?\.|=>|[^\s]", code)
+        return [" ".join(tokens[max(0, index - 2):index + 4])
+                for index, token in enumerate(tokens) if token == "_api"]
+
+    @staticmethod
+    def _read_port_fixture(*, project="", group="", extra=""):
+        source = PORT.read_text(encoding="utf-8")
+        for marker, addition in (
+            ("  final int projectId;\n", project),
+            ("  VerifiedGroupWorkItemIdentity? _verifiedIdentity;\n", group),
+        ):
+            if source.count(marker) != 1:
+                raise ValueError(f"read-port fixture marker changed: {marker}")
+            source = source.replace(marker, marker + addition + "\n", 1)
+        return source + "\n" + extra
 
     @staticmethod
     def _argument_spans(code, opening):
@@ -907,30 +1046,7 @@ class AiBoundaryTest(unittest.TestCase):
             for constant in re.finditer(r"\b(GitLabApi)\s*\.\s*maxTextBytes\b", code):
                 type_allowed.add(constant.start(1))
         else:
-            # The verified identity must retain the actual API owner.  Permit
-            # this single top-level argument only in workItem's identity factory.
-            owners = []
-            for method in re.finditer(r"\bworkItem\s*\([^)]*\)\s*async\s*\{", code):
-                before = code[:method.start()]
-                if before.count("{") - before.count("}") != 1:
-                    continue
-                block = cls._brace_block(code, method.end() - 1)
-                if not block:
-                    continue
-                for factory in re.finditer(
-                    r"\bVerifiedGroupWorkItemIdentity\s*\.\s*fromServerEvidence\s*\(",
-                    code[block[0]:block[1]],
-                ):
-                    opening = block[0] + factory.end() - 1
-                    spans = cls._argument_spans(code, opening)
-                    if not spans or spans[-1][1] >= block[1]:
-                        continue
-                    for start, end in spans:
-                        arg = re.fullmatch(r"\s*apiOwner\s*:\s*(_api)\s*", code[start:end])
-                        if arg:
-                            owners.append(start + arg.start(1))
-            if len(owners) == 1:
-                api_allowed.add(owners[0])
+            api_allowed.update(cls._group_owner_api_offsets(code))
 
         if re.search(r"\bas\s+dynamic\b", code):
             violations.append(f"dynamic cast in {name}")
@@ -944,6 +1060,31 @@ class AiBoundaryTest(unittest.TestCase):
             if not member or member.group(1) not in wanted:
                 violations.append(f"unexpected _api reference in {name}")
         return violations
+
+    @classmethod
+    def _group_owner_api_offsets(cls, code):
+        # Only workItem's single top-level identity-factory argument may own API.
+        owners = []
+        for method in re.finditer(r"\bworkItem\s*\([^)]*\)\s*async\s*\{", code):
+            before = code[:method.start()]
+            if before.count("{") - before.count("}") != 1:
+                continue
+            block = cls._brace_block(code, method.end() - 1)
+            if not block:
+                continue
+            for factory in re.finditer(
+                r"\bVerifiedGroupWorkItemIdentity\s*\.\s*fromServerEvidence\s*\(",
+                code[block[0]:block[1]],
+            ):
+                opening = block[0] + factory.end() - 1
+                spans = cls._argument_spans(code, opening)
+                if not spans or spans[-1][1] >= block[1]:
+                    continue
+                for start, end in spans:
+                    arg = re.fullmatch(r"\s*apiOwner\s*:\s*(_api)\s*", code[start:end])
+                    if arg:
+                        owners.append(start + arg.start(1))
+        return set(owners) if len(owners) == 1 else set()
 
     @staticmethod
     def _brace_block(code, opening):
@@ -983,13 +1124,14 @@ class AiBoundaryTest(unittest.TestCase):
     def _group_scope_construction_violations(cls, relative, source):
         if not relative.startswith("lib/"):
             return []
+        code = cls._code_only(source)
+        if re.search(r"\btypedef\b[^;]*\bAiGroupResourceScope\b", code):
+            return ["group scope typedef alias is forbidden even in its producers"]
         if relative in {
             "lib/core/ai/tools/tool_scope.dart",  # Defines the scope.
             "lib/features/ai/ai_chat_context.dart",
-            "lib/core/ai/tools/gitlab_read_port.dart",
         }:
             return []
-        code = cls._code_only(source)
         if (re.search(r"\bAiGroupResourceScope\s*(?:\(|\.)", code) or
                 re.search(r"=\s*(?:\w+\s*\.\s*)?AiGroupResourceScope\b", code)):
             return ["group scope constructed or aliased outside its producers"]
