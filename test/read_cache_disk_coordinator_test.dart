@@ -3404,7 +3404,7 @@ void _fix2Tests() {
 void _followupFix1Tests() {
   for (final ordinal in [1, 2, 3]) {
     test(
-      'C2FU FIX1 incident during removal rejects old proof: file=$ordinal',
+      'C2FU FIX2 P5 incident during removal preserves key proof: file=$ordinal',
       () async {
         final h = _Harness();
         addTearDown(h.dispose);
@@ -3418,13 +3418,11 @@ void _followupFix1Tests() {
         );
         await expectLater(
           h.coordinator.clearReadCacheDisk(_account),
-          throwsA(
-            isA<ApiFailure>().having(
-              (failure) => failure.cleanup?.code,
-              'cleanup code',
-              ReadCacheCleanupCode.cleanupFailed,
-            ),
-          ),
+          completes,
+        );
+        expect(
+          (await h.keys.readKey(_account)).status,
+          ReadCacheStoreReadStatus.absent,
         );
         expect(fault.clearAttempts, 1);
         expect((await h.keys.readMarker(_account)).isFound, isTrue);
@@ -3434,6 +3432,40 @@ void _followupFix1Tests() {
       },
     );
   }
+
+  test(
+    'C2FU FIX2 P5 incident during removal preserves key proof: persistentFifo',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _readyHarness(h);
+      await _save(h, _entry(h, 1));
+      final fifo = '${h.root.path}/read_cache/unremovable-pipe';
+      expect(Process.runSync('mkfifo', [fifo]).exitCode, 0);
+
+      // Both the directory proof and the fence's root clear keep failing.
+      // The independently confirmed key deletion still permits each removal.
+      for (var attempt = 1; attempt <= 3; attempt++) {
+        await expectLater(
+          h.coordinator.clearReadCacheDisk(_account),
+          completes,
+          reason: 'removal attempt $attempt',
+        );
+        expect(
+          (await h.keys.readKey(_account)).status,
+          ReadCacheStoreReadStatus.absent,
+        );
+        expect((await h.keys.readMarker(_account)).isFound, isTrue);
+        expect((await h.keys.readMarker(_other)).isFound, isTrue);
+        expect(
+          FileSystemEntity.typeSync(fifo, followLinks: false),
+          isNot(FileSystemEntityType.notFound),
+        );
+        expect(h.coordinator.state(_account), ReadCacheDiskState.cleaning);
+        expect(h.coordinator.startupRecovered, isFalse);
+      }
+    },
+  );
 
   test(
     'C2FU FIX1 m1 unexplained scoped refusal escalates without retry',

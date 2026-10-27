@@ -1127,9 +1127,16 @@ final class ReadCacheDiskCoordinator {
     } on Object {
       // Neither an acknowledgement nor an I/O error is evidence of absence.
     }
-    // A path incident during either delete/proof installed a replacement owner.
-    // Even a previously observed key deletion cannot complete that old caller.
-    if (pathRevision != _domain.pathRevision) return _none;
+    // A path incident installed a replacement owner. Preserve deletion proofs
+    // for removal without completing or modifying that replacement intent.
+    if (pathRevision != _domain.pathRevision) {
+      return DiskClearResult(
+        keyGoneConfirmed: keyGone,
+        directoryGoneConfirmed: directoryGone,
+        markerDurable: false,
+        complete: false,
+      );
+    }
     account.entries.clear();
     account.unindexed.clear();
     account.indexTrusted = false;
