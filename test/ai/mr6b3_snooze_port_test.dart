@@ -62,7 +62,7 @@ Map<String, Object?> _node(
     '__typename': type,
     'id': 'gid://gitlab/$type/91',
     'iid': '3',
-    'project': _project(),
+    if (type == 'Issue') 'projectId': 9 else 'project': _project(),
     if (type == 'WorkItem')
       'namespace': {'id': 'gid://gitlab/Group/5', 'fullPath': 'team'},
   },

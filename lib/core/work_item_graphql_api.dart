@@ -838,15 +838,20 @@ extension WorkItemGraphQlApi on GitLabApi {
 
   /// Reads a work item through a verified namespace identity. This supports
   /// group work-item URLs without pretending that a group is a REST Project.
+  /// AI callers set [strictIdentity] and supply [expectedNamespaceId] to require
+  /// explicit raw owner fields and exact resource GID types in this same read.
   Future<WorkItemGraphDetail> namespaceWorkItem(
     String fullPath,
     int iid, {
     String? expectedNamespaceId,
+    bool strictIdentity = false,
     bool Function()? isCurrent,
   }) async {
     final path = _validatedNamespacePath(fullPath);
     final expectedId = _validatedOptionalOpaqueId(expectedNamespaceId);
-    if (iid <= 0) throw const ApiFailure(FailureKind.validation);
+    if (iid <= 0 || (strictIdentity && expectedId == null)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
     _requireCurrentWorkItemRequest(isCurrent);
     final response = await _read(
       instance.graphQL,
@@ -868,7 +873,11 @@ extension WorkItemGraphQlApi on GitLabApi {
       if (namespace.container['workItem'] == null) {
         throw const ApiFailure(FailureKind.invisible);
       }
-      final detail = _parseWorkItemDetail(namespace.container['workItem']);
+      final rawItem = namespace.container['workItem'];
+      if (strictIdentity) {
+        _requireStrictNamespaceWorkItem(objectJson(rawItem), namespace.ref);
+      }
+      final detail = _parseWorkItemDetail(rawItem);
       if (detail.summary.iid != iid) {
         throw const FormatException('Wrong namespace work item');
       }
@@ -1447,6 +1456,41 @@ void _requireNamespaceWorkItem(
       }) ||
       project.fullPath != namespace.fullPath) {
     throw const FormatException('Wrong work item project namespace');
+  }
+}
+
+// AI callers must retain omitted-vs-null evidence before the UI parser turns
+// both into nullable resource references. This uses the same fixed read.
+void _requireStrictNamespaceWorkItem(Json node, GraphResourceRef namespace) {
+  if (!node.containsKey('project') || !node.containsKey('namespace')) {
+    throw const FormatException('Missing work item ownership');
+  }
+  final owner = _parseResourceRef(node['namespace']);
+  final id = requiredString(node, 'id');
+  final workItemId = _workItemActivityModelIdOrNull(id);
+  if (workItemId == null ||
+      id != 'gid://gitlab/WorkItem/$workItemId' ||
+      owner.id != namespace.id ||
+      owner.fullPath != namespace.fullPath) {
+    throw const FormatException('Invalid strict work item identity');
+  }
+  if (node['project'] == null) {
+    if (groupKeyNumericId(owner.id) == null) {
+      throw const FormatException('Invalid strict Group namespace');
+    }
+    return;
+  }
+  final project = _parseResourceRef(node['project']);
+  final projectId = _projectGid.firstMatch(project.id);
+  final namespaceId = RegExp(
+    r'^gid://gitlab/Namespaces::ProjectNamespace/([1-9][0-9]*)$',
+  ).firstMatch(owner.id);
+  if (projectId == null ||
+      int.tryParse(projectId.group(1)!) == null ||
+      namespaceId == null ||
+      int.tryParse(namespaceId.group(1)!) == null ||
+      project.fullPath != owner.fullPath) {
+    throw const FormatException('Invalid strict project namespace');
   }
 }
 

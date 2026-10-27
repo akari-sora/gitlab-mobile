@@ -149,6 +149,29 @@ query MobileProjectWorkItemLabelCandidates($fullPath: ID!) {
 }
 ''';
 
+// Direct owners only: LabelsFinder restricts the catalog to this group with
+// these fixed filters. GitLab's Label type exposes no per-label owner fields.
+// Never retry schema failures with the less precise UI search document.
+const _aiGroupWorkItemLabelCandidatesQuery = r'''
+query MobileGroupWorkItemLabelCandidates($fullPath: ID!) {
+  currentUser { id }
+  group(fullPath: $fullPath) {
+    id
+    fullPath
+    labels(
+      onlyGroupLabels: true
+      includeAncestorGroups: false
+      includeDescendantGroups: false
+      archived: false
+      first: 100
+    ) {
+      nodes { id title color textColor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
 const _workItemLabelMutation = r'''
 mutation MobileUpdateWorkItemLabels($input: WorkItemUpdateInput!) {
   workItemUpdate(input: $input) {
@@ -254,22 +277,28 @@ extension WorkItemLabelApi on GitLabApi {
     );
   }
 
-  /// Reads one complete project catalog without search, then registers every
+  /// Reads one complete owner catalog without search, then registers every
   /// returned identifier on this target. Partial catalogs fail closed.
   Future<List<WorkItemLabel>> workItemLabelCandidates(
     WorkItemLabelTarget target, {
+    int maxPages = 1,
     bool Function()? isCurrent,
   }) async {
     _requireLabelCaller(this, target, isCurrent);
     if (target._consumed) throw _labelsSpent;
+    if (maxPages != 1) throw _labelsUnsupported;
     final scope = _labelCandidateScope(target.opening.summary);
-    if (scope.group) throw _labelsUnsupported;
+    if (scope.group && groupKeyNumericId(scope.containerId) == null) {
+      throw _labelsUnsupported;
+    }
     final response = await _read(
       instance.graphQL,
       method: 'POST',
       graphQuery: true,
       data: {
-        'query': _aiWorkItemLabelCandidatesQuery,
+        'query': scope.group
+            ? _aiGroupWorkItemLabelCandidatesQuery
+            : _aiWorkItemLabelCandidatesQuery,
         'variables': {'fullPath': scope.fullPath},
       },
     );
@@ -280,13 +309,16 @@ extension WorkItemLabelApi on GitLabApi {
           target.opening.actorId) {
         throw _labelsCancelled;
       }
-      final project = objectJson(data['project']);
-      if (requiredString(project, 'id') != scope.containerId ||
-          requiredString(project, 'fullPath') != scope.fullPath) {
+      final container = objectJson(data[scope.group ? 'group' : 'project']);
+      if (requiredString(container, 'id') != scope.containerId ||
+          requiredString(container, 'fullPath') != scope.fullPath) {
         throw _labelsUnsupported;
       }
+      if (scope.group) {
+        _requireGroupLabelIds(container['labels']);
+      }
       final page = _parseCandidateConnection(
-        project['labels'],
+        container['labels'],
         0,
         pageSize: _aiLabelCandidatePageSize,
       );
@@ -693,6 +725,26 @@ void _requireLabelCaller(
     throw _labelsUnsupported;
   }
   return (group: true, fullPath: namespace.fullPath, containerId: namespace.id);
+}
+
+void _requireGroupLabelIds(Object? raw) {
+  final connection = objectJson(raw);
+  final nodes = connection['nodes'];
+  if (nodes is! List || nodes.length > _aiLabelCandidatePageSize) {
+    throw _labelsUnsupported;
+  }
+  for (final rawNode in nodes) {
+    final node = objectJson(rawNode);
+    // v18.5.0 app/graphql/types/global_id_type.rb:73-85 preserves the
+    // GroupLabel subclass GID; Label and ProjectLabel are not group evidence.
+    final id = requiredString(node, 'id');
+    final match = RegExp(r'^gid://gitlab/GroupLabel/([1-9][0-9]*)$').firstMatch(id);
+    if (match == null ||
+        int.tryParse(match.group(1)!) == null ||
+        id != 'gid://gitlab/GroupLabel/${match.group(1)}') {
+      throw _labelsUnsupported;
+    }
+  }
 }
 
 void _rejectStaleLabelFence(

@@ -16,7 +16,7 @@ Map<String, Object?> _todo(int id, {String type = 'WorkItem'}) => {
   'project': _project(),
   'targetEntity': <String, Object?>{
     '__typename': type, 'id': 'gid://gitlab/$type/91', 'iid': '7',
-    'project': _project(),
+    if (type == 'Issue') 'projectId': 10 else 'project': _project(),
     if (type == 'WorkItem') 'namespace': {
       'id': 'gid://gitlab/Group/2', 'fullPath': 'team',
     },
@@ -37,7 +37,7 @@ List<Map<String, Object?>> _mixedTodos() => [
     ..['targetEntity'] = {'__typename': 'Epic'},
   _todo(5, type: 'Issue')..['project'] = null
     ..['targetEntity'] = {
-      '__typename': 'Issue', 'id': 'gid://gitlab/Issue/93', 'iid': '9', 'project': null,
+      '__typename': 'Issue', 'id': 'gid://gitlab/Issue/93', 'iid': '9', 'projectId': null,
     },
   _todo(6)..['project'] = {'id': 'gid://gitlab/Project/11', 'fullPath': 'other/repo'},
   _todo(7)..['targetEntity'] = {
