@@ -1666,11 +1666,12 @@ final class _ReadCache {
           jobPath[2] != 'jobs') {
         permission = permissions(uri);
       }
+      final resourceUri = publicationUri(uri, value);
       if (api._closed ||
           permission['account'] != epoch ||
           (value is Json &&
               (!permitted(permission, uri) ||
-                  !permitted(permission, publicationUri(uri, value))))) {
+                  !permitted(permission, resourceUri)))) {
         throw const ApiFailure(FailureKind.cancelled);
       }
       final beforePrivacy = privacyEpoch;
@@ -1683,7 +1684,7 @@ final class _ReadCache {
           permission['account'] != epoch ||
           (value is Json &&
               (!permitted(permission, uri) ||
-                  !permitted(permission, publicationUri(uri, value))))) {
+                  !permitted(permission, resourceUri)))) {
         throw const ApiFailure(FailureKind.cancelled);
       }
       validate?.call(value);
@@ -2020,16 +2021,17 @@ final class _ReadCache {
           final versionsAtSend = versionSequence;
           if (mayStart?.call() == false) return CachedRead<T>.dropped();
           final loaded = await load();
+          final resourceUri = publicationUri(uri, loaded.value);
           if (api._closed ||
               !permitted(permission, uri) ||
-              !permitted(permission, publicationUri(uri, loaded.value))) {
+              !permitted(permission, resourceUri)) {
             throw const ApiFailure(FailureKind.cancelled);
           }
           final fetchedAt = api._readCacheClock();
           // A full-path project detail reveals its numeric scope only after
           // the network response. Retain both scopes and reject any write that
           // changed the resolved project while that request was in flight.
-          final resolvedScope = scope(publicationUri(uri, loaded.value));
+          final resolvedScope = scope(resourceUri);
           if (!pinned && resolvedScope != readScope) {
             final resolvedVersion = versions[resolvedScope] ?? 0;
             start = {
@@ -2061,10 +2063,7 @@ final class _ReadCache {
               deliveryPermission['account'] != epoch ||
               (loaded.value is Json &&
                   (!permitted(deliveryPermission, uri) ||
-                      !permitted(
-                        deliveryPermission,
-                        publicationUri(uri, loaded.value),
-                      )))) {
+                      !permitted(deliveryPermission, resourceUri)))) {
             throw const ApiFailure(FailureKind.cancelled);
           }
           final consistent = stable(start) && (pinned || !active(readScope));

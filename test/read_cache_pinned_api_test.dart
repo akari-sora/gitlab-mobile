@@ -1560,6 +1560,146 @@ void main() {
     }
   }
 
+  for (final delivery in [
+    'cached record',
+    'uncached network',
+    'direct record',
+  ]) {
+    for (final status in [403, 404]) {
+      test('FIX3 alias $delivery erase cancels after project $status', () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await h.recover();
+        late _TraceBackend backend;
+        final api = await h.client(
+          wrapBackend: (delegate) => backend = _TraceBackend(delegate),
+        );
+        addTearDown(() {
+          if (!backend.deletionRelease.isCompleted) {
+            backend.deletionRelease.complete();
+          }
+        });
+        await api.cachedTerminalJobTrace(1, 7);
+        await h.flush();
+        h.extraResponse = (_) =>
+            jsonResponse({'id': 1, 'path_with_namespace': 'group/project'});
+        expect((await api.record(['projects', 'group/project']))['id'], 1);
+        expect(api.readCacheMetadataCounts['aliases'], greaterThan(0));
+        const aliasJobPath = ['projects', 'group/project', 'jobs', '7'];
+        h.metadata['erased_at'] = _initialNow.toIso8601String();
+        backend.holdDeletion = true;
+        final reading =
+            (delivery == 'direct record'
+                    ? api.record(aliasJobPath)
+                    : api.cachedRecord(
+                        aliasJobPath,
+                        query: delivery == 'uncached network'
+                            ? {'page': '1'}
+                            : const {},
+                        fresh: true,
+                        allowDisk: false,
+                      ))
+                .then<Object>(
+                  (value) => value,
+                  onError: (Object error) => error,
+                );
+        await backend.deletionEntered.future.timeout(_deadline);
+        // Suspend metadata delivery before the numeric denial removes aliases.
+        await Future<void>.delayed(Duration.zero);
+        expect(backend.projectRevoked.isCompleted, isFalse);
+        h.extraResponse = (_) => jsonResponse({}, status: status);
+        final denied = api
+            .record(['projects', '1'])
+            .then<Object>((value) => value, onError: (Object error) => error);
+        await backend.projectRevoked.future.timeout(_deadline);
+        await Future<void>.delayed(Duration.zero);
+        expect(api.readCacheMetadataCounts['aliases'], 0);
+        backend.deletionRelease.complete();
+        expect(
+          await denied,
+          _failure(
+            status == 403 ? FailureKind.forbidden : FailureKind.invisible,
+            status: status,
+          ),
+        );
+        expect(
+          await reading,
+          _failure(FailureKind.cancelled),
+          reason:
+              'numeric project denial must cancel delivery after alias removal',
+        );
+      });
+    }
+  }
+
+  for (final status in [403, 404]) {
+    test('FIX3 alias generic network cancels after project $status', () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.recover();
+      late _TraceBackend backend;
+      final api = await h.client(
+        wrapBackend: (delegate) => backend = _TraceBackend(delegate),
+      );
+      addTearDown(() {
+        if (!backend.deletionRelease.isCompleted) {
+          backend.deletionRelease.complete();
+        }
+      });
+      await api.cachedTerminalJobTrace(1, 7);
+      await h.flush();
+      h.extraResponse = (_) =>
+          jsonResponse({'id': 1, 'path_with_namespace': 'group/project'});
+      await api.record(['projects', 'group/project']);
+      expect(api.readCacheMetadataCounts['aliases'], greaterThan(0));
+      h.metadata['erased_at'] = _initialNow.toIso8601String();
+      backend.holdDeletion = true;
+      final erasing = api
+          .record(_jobPath)
+          .then<Object>((value) => value, onError: (Object error) => error);
+      await backend.deletionEntered.future.timeout(_deadline);
+      final responded = Completer<void>();
+      h.extraResponse = (_) {
+        responded.complete();
+        // Project detail is cacheable; full-path job requests are not. The
+        // generic JSON need not repeat the numeric ID from the learned alias.
+        return jsonResponse({'path_with_namespace': 'group/project'});
+      };
+      final reading = api
+          .cachedRecord(
+            ['projects', 'group/project'],
+            fresh: true,
+            allowDisk: false,
+          )
+          .then<Object>((value) => value, onError: (Object error) => error);
+      await responded.future.timeout(_deadline);
+      await Future<void>.delayed(Duration.zero);
+      expect(backend.projectRevoked.isCompleted, isFalse);
+      h.extraResponse = (_) => jsonResponse({}, status: status);
+      final denied = api
+          .record(['projects', '1'])
+          .then<Object>((value) => value, onError: (Object error) => error);
+      await backend.projectRevoked.future.timeout(_deadline);
+      await Future<void>.delayed(Duration.zero);
+      expect(api.readCacheMetadataCounts['aliases'], 0);
+      backend.deletionRelease.complete();
+      expect(
+        await denied,
+        _failure(
+          status == 403 ? FailureKind.forbidden : FailureKind.invisible,
+          status: status,
+        ),
+      );
+      expect(await erasing, _failure(FailureKind.cancelled));
+      expect(
+        await reading,
+        _failure(FailureKind.cancelled),
+        reason:
+            'numeric project denial must cancel delivery after alias removal',
+      );
+    });
+  }
+
   test(
     'FIX2 uncached erase keeps generation across load observation',
     () async {

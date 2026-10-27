@@ -548,9 +548,10 @@ final class GitLabApi {
     try {
       final value = objectJson(jsonDecode(utf8.decode(result.bytes)));
       if (method == 'GET') {
+        final resourceUri = _cache.publicationUri(uri, value);
         if (_closed ||
             !_cache.permitted(permission!, uri) ||
-            !_cache.permitted(permission, _cache.publicationUri(uri, value))) {
+            !_cache.permitted(permission, resourceUri)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
         final beforePrivacy = _cache.privacyEpoch;
@@ -563,7 +564,7 @@ final class GitLabApi {
         await _cache.settleDiskSafety();
         if (_closed ||
             !_cache.permitted(permission, uri) ||
-            !_cache.permitted(permission, _cache.publicationUri(uri, value))) {
+            !_cache.permitted(permission, resourceUri)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
       }
