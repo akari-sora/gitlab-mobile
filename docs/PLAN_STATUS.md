@@ -29,7 +29,7 @@ There are two tracks.
 - Self-test on the project's Android emulator, using public projects only and rejecting every AI write.
 - Review: the first round is a full panel; later rounds have Opus check only the Critical and Important fixes. Minor findings go to a follow-up issue and never block.
 - Merge, then fast-forward the GitHub mirror.
-- Claude does all UI/UX. Non-UI implementation is handed to Codex in written packets (to Claude subagents or OpenCode while Codex is out of quota, as from 2026-10-23 to 10-30), and Claude re-runs the acceptance itself before committing.
+- Claude does all UI/UX. Non-UI implementation is handed to Codex in written packets (to Claude subagents or OpenCode when Codex is out of quota), and Claude re-runs the acceptance itself before committing. Inside Claude Code, the Opus reviewer and any Claude worker run as built-in subagents, not as headless `claude -p`.
 - Keep MRs small. When a fix area produces a new Important finding twice, take the conservative option.
 
 ## Status
@@ -40,8 +40,9 @@ There are two tracks.
 | MR6a | Chat page and entry points, draft append and preview, report | Merged 2026-10-21/22 | !96, !97, !98, !99, !100 |
 | MR6b-1 | AI writes, first batch: T1 and T2 REST writes, consent v2, autonomy levels, coordinator, journal, approval cards | Merged 2026-10-22 | !102; follow-ups #12 (in !139) |
 | MR6b-2 | AI writes, second batch: files and suggestions, branches/tags/releases, merge requests, CI, snippets, content deletes, mark-all to-dos, registry and project hard lines, read tools for releases/milestones/snippets. Also structured previews, card titles, refusal reasons and the Inbox AI entry | Merged 2026-10-23 after four review rounds and three emulator rounds (every write proposed and rejected; GitLab unchanged) | !104; follow-ups #13 |
-| **MR6b-3** | GraphQL writes for project Work Items (state, status, dates, health, assignees, milestone, weight, activity notes create/delete), reactions and notifications, incidents and to-do snooze, split into small MRs (shared seams S0a–S0c, then one family per MR) | **Building.** Seams merged 2026-10-23 (!116). All eleven families merged 2026-10-24/25: S0d (!130), P3/P4/P6/P8/P13 (!132–!135, !137), P11 after the reaction readback fix (!123, !141), P9 and P10 (!143, !144), plus the #12 and #13 follow-ups (!139, !131). The approval-card wording for the graph writes (!146) and P14, which opens the fifteen graph writes to the model (!147), merged 2026-10-25. **P15** (the cross-family acceptance matrix, tests only) is in review: P15-A, the universal fake server, budget and boundary files (!148), and P15-B, the six scenario files (!151). **MR6b-3t** (whole-field title/description, note body edit, labels) is in review (!150). Group Work Items move to MR6b-3g (D1) | plan v6 §14; [breakdown](plans/mr6b3-breakdown.md), [decisions](plans/mr6b3-decisions.md) |
-| MR6c | Background runs: Android foreground service, notifications, app lock, stop protocol | Not started | plan v6 §12, §14 |
+| MR6b-3 | GraphQL writes for project Work Items (state, status, dates, health, assignees, milestone, weight, activity notes create/delete), reactions and notifications, incidents and to-do snooze, split into small MRs (shared seams S0a–S0c, then one family per MR) | Merged 2026-10-27. Seams (!116); the eleven families (!130, !132–!135, !137, !123, !141, !143, !144) with the #12 and #13 follow-ups (!139, !131); approval-card wording (!146); P14, which opens the fifteen graph writes to the model (!147); the P15 cross-family acceptance matrix (!148, !151, follow-ups !154); MR6b-3t, whole-field title/description, note body edit and labels (!150) with the edited-card fix (!152); follow-ups #24/#25/#27 (!158), #30 (!163) and #33 (!165). The emulator self-test of the graph writes is NOT_RUN (it needs a gate-on build and a provider key). Group Work Items moved to MR6b-3g (D1) | plan v6 §14; [breakdown](plans/mr6b3-breakdown.md), [decisions](plans/mr6b3-decisions.md) |
+| **MR6b-3g** | Group Work Items: shared identity seams G0a–G0f, then thirteen family MRs, the UI, visibility and consent (G14) and cross-family acceptance (G15) | **Building.** Plan v5 merged 2026-10-27 (!157). G0a, group identity and field provenance (!160), and G0b, the strict namespace reader, group label candidates and to-do ownership (!164), merged 2026-10-27; G0b also removed two GraphQL fields GitLab does not have (`Issue.project`, `Label.project`/`group`). G0c, group origins and context (!167), merged 2026-10-27. G0d, the group read tool and freshness (!168), is in review. Follow-ups #32, #35, #37 | [breakdown](plans/mr6b3g-breakdown.md) |
+| **MR6c** | Background runs: Android foreground service, notifications, app lock, stop protocol | **Building.** Plan v3 merged 2026-10-27 (!155). C1, the bootstrap-generated `AgentRunService` with the `agent_runs` v1 channel (!161), merged 2026-10-27; the channel table is in the decisions file. C2a (the ticket seam and the three send boundaries) is being implemented | plan v6 §12, §14; [breakdown](plans/mr6c-breakdown.md), [decisions](plans/mr6c-decisions.md) |
 | MR7 | Open the AI gate: full CI on the release commit, sandbox writes, Play declarations, listing | Not started | plan v6 §13, §14 |
 | Play listing | Store listing, screenshots, data safety | After MR7 | [Store listing](STORE_LISTING.md) |
 | Cache C1a | Opt-in read cache (`CachedRead<T>`), scope versions and write barrier, pinned entries, per-class rate limits, request meter, AI run leases, binding after validation | Merged 2026-10-23 after four review rounds (full-path sub-resources are not cached, plan v3 V21) | !103; follow-ups #14 |
@@ -52,13 +53,15 @@ There are two tracks.
 | Cache C1b-2b | Remaining screens (project more, work item, discussions, repository; snippets and registries once their list paths are in the read-class table) | Merged 2026-10-23 after four review rounds (!122). The detail pages' freshness strip (pipeline and overview, then work item and repository) is in !136 | cache plan v3 V9 |
 | Cache C1b-2c | AI side: cached reads within 60 s, read-port and tool-catalogue metering, AI budget leases, and the send-paused card | Merged 2026-10-23 (!112, follow-ups !118). Emulator self-test passed. The #17 N-2/N-4 follow-up (per-read budget admission, fresh delivery) is re-reviewed and awaiting CI in !138 | follow-ups #17 |
 | Cache C2 prerequisites | The six "before C2" items from #14 and GraphQL 403/404 scope | Merged 2026-10-23 | !109 |
-| **Cache C2** | Encrypted disk cache, clear markers, startup order | **Building.** C2a merged 2026-10-25 (!140) with C2-D4/D5 implemented and mutation-proofed guards (round-2 approve). P-C2b (cipher, files, key store) is in review (!149). Then C2c–e | cache plan v3 §4, V13, V14, V17; [breakdown](plans/cache-c2-breakdown.md), [decisions](plans/cache-c2-decisions.md) |
+| **Cache C2** | Encrypted disk cache, clear markers, startup order | **Building.** Merged by 2026-10-27: C2a, contracts and projections (!140); C2b, cipher, files and key store (!149, follow-ups !159); C2-D6, commits on the caller's isolate (!153); C2c, the coordinator, clearing and the removal step (!156); the C2c follow-ups #29/#31 (!162). C2d1, the disk backend with publication, hydration and failures (!166), is in its second review round; under C2-D7 it also carries the pre-send barrier result through the GraphQL writes. Then d2, d3, e | cache plan v3 §4, V13, V14, V17; [breakdown](plans/cache-c2-breakdown.md), [decisions](plans/cache-c2-decisions.md) |
 | Cache C3 | Offline repository saving (archive fetch, verified blobs) and an offline read-only mode | Plan approved in two review rounds (v2.1); not started; C3a needs C1a, C1b-2 and C2. Split: C3a core, C3b save and browse UI, C3c offline mode, C3d optional | [C3 plan](plans/cache-c3-offline-plan-v2.md) |
 
 ## Next steps
-1. Merge when reviewed and CI is green: !148 (P15-A), then !151 (P15-B), !150 (MR6b-3t), !149 (C2b).
-2. C2: after P-C2b, c, d1–d3, e in order; then C3 (C3a core, C3b UI, C3c offline mode, C3d optional).
-3. MR6b-3g (group Work Items), MR6c, MR7, Play listing.
+1. Finish review and merge: !166 (C2d1, decisions C2-D7 and C2-D8), !168 (G0d).
+2. MR6b-3g: G0e (grants, coordinator, port resolver, hidden rows), G0f (registry and page wiring, lead), U0 labels, the thirteen family MRs, the UI, G14, G15.
+3. MR6c: C2a, then C2b and the rest of the breakdown.
+4. Cache: C2d2, C2d3, C2e; then C3 (C3a core, C3b UI, C3c offline mode, C3d optional).
+5. MR7, then the Play listing.
 
 ## Plan documents
 | Document | Covers |
@@ -67,5 +70,9 @@ There are two tracks.
 | [MR6b-1 breakdown](plans/mr6b1-breakdown.md) | Packet split for the first write batch |
 | [MR6b-2 breakdown](plans/mr6b2-breakdown.md) | Packet split (waves A–C), shared-file ownership, per-family operation tables |
 | [MR6b-2 decisions](plans/mr6b2-decisions.md) | Lead decisions on the breakdown's open questions |
+| [MR6b-3 breakdown](plans/mr6b3-breakdown.md), [decisions](plans/mr6b3-decisions.md) | Project Work Item graph writes: seams, families, P14/P15, MR6b-3t |
+| [MR6b-3g breakdown](plans/mr6b3g-breakdown.md) | Group Work Items: seams G0a–G0f, families, D20 caps, UI, G14/G15 |
+| [MR6c breakdown](plans/mr6c-breakdown.md), [decisions](plans/mr6c-decisions.md) | Background runs: foreground service, permits and tickets, notifications, stop protocol; the `agent_runs` v1 channel table |
 | [Cache plan v3](plans/cache-plan-v3.md) | Memory cache, rate limits, disk cache. The "v3 修訂" (V1–V16), "v3.1 補充" (V17–V20) and V21 sections override the older text |
+| [Cache C2 breakdown](plans/cache-c2-breakdown.md), [decisions](plans/cache-c2-decisions.md) | Disk cache packets C2a–C2e and the lead decisions C2-D1…C2-D7 |
 | [C3 offline plan v2.1](plans/cache-c3-offline-plan-v2.md) | Offline repository saving and the offline read-only mode, including the proposed AGENTS.md wording |
