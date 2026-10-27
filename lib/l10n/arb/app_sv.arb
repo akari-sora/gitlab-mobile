@@ -2750,5 +2750,6 @@
   "aiGitLabBudgetDetail": "Meddelandet skickades inte. Skicka det igen när knappen ”Skicka” är tillgänglig igen.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Ange etiketter",
-  "aiRefusedLabelUnknown": "Etiketten som ska sättas finns inte i projektets etikettlista, eller så har flera etiketter det namnet, så ingenting gjordes."
+  "aiRefusedLabelUnknown": "Etiketten som ska sättas finns inte i projektets etikettlista, eller så har flera etiketter det namnet, så ingenting gjordes.",
+  "aiRefusedQuickAction": "Texten har en rad som börjar med /, som GitLab kan köra som en quick action, så för säkerhets skull skickades åtgärden inte. Ta bort raden eller lägg den i ett kodblock."
 }

@@ -2753,4 +2753,5 @@ const _messagesNl = <String>[
   '{verb} {target} {ref}',
   'Labels instellen',
   'Het in te stellen label staat niet in de labellijst van dit project of meerdere labels hebben deze naam, dus er is niets gedaan.',
+  'De tekst bevat een regel die met / begint en die GitLab als quick action zou kunnen uitvoeren, dus voor de zekerheid is deze actie niet verzonden. Verwijder die regel of zet hem in een codeblok.',
 ];

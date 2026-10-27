@@ -76,8 +76,12 @@ void main() {
       expect(harness.server.adapter.requests.skip(before), hasLength(1));
       // Values come from the port's opening, never from project metadata.
       expect(freshness.currentFields, isEmpty);
+      if (operation == 'updateWorkItemLabels') {
+        expect(freshness.provenance, isEmpty);
+        continue;
+      }
       final field = operation == 'editWorkItemActivityNote' ? 'body'
-          : operation == 'updateWorkItemContent' ? 'description' : 'labels';
+          : 'description';
       final provenance = freshness.provenance[field]!;
       expect(provenance.projectId, 42);
       expect(provenance.completeValue, isTrue);

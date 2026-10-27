@@ -271,7 +271,11 @@ void main() {
     // editable text, so a name-only edit would always be refused; a title-only
     // issue does not carry the description it would edit.
     for (final (operation, fields, offered) in [
-      ('createRelease', const {'tagName': 'v1.0', 'description': 'Notes'}, true),
+      (
+        'createRelease',
+        const {'tagName': 'v1.0', 'description': 'Notes'},
+        true,
+      ),
       ('editProject', const {'name': 'Renamed'}, false),
       ('renameBoard', const {'name': 'Sprint'}, true),
       ('createIssue', const {'title': 'Only a title'}, false),
@@ -1058,6 +1062,58 @@ void main() {
     expect(find.text(l10n.aiProposalEditRefused), findsOneWidget);
     expect(find.text(l10n.aiProposalNotRun), findsNothing);
   });
+
+  for (final code in [
+    'quickAction',
+    'approvalExpired',
+    'proposalInvalidated',
+  ]) {
+    for (final editing in [false, true]) {
+      testWidgets(
+        '$code shows its true reason on ${editing ? 'edit' : 'approval'} before the card refresh',
+        (tester) async {
+          final proposal = _proposal()..editedText = 'Edited words';
+          final writes = _Writes([proposal])
+            ..answer = (_) => AiWriteOutcome(
+              state: AiJournalState.notExecuted,
+              reasonCode: code,
+            );
+          await tester.pumpWidget(
+            _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+          );
+          if (editing) {
+            await tester.tap(find.byKey(const ValueKey('ai-proposal-edit')));
+            await tester.pumpAndSettle();
+            await tester.enterText(
+              find.byKey(const ValueKey('ai-proposal-edit-text')),
+              'New edited words',
+            );
+            await tester.tap(
+              find.byKey(const ValueKey('ai-proposal-edit-done')),
+            );
+          } else {
+            await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+          }
+          await tester.pumpAndSettle();
+          final expected = switch (code) {
+            'quickAction' => l10n.aiRefusedQuickAction,
+            'approvalExpired' => l10n.aiProposalNotRun,
+            _ => l10n.aiProposalInvalid,
+          };
+          expect(aiRefusalText(code), expected);
+          expect(find.text(expected), findsOneWidget);
+          expect(find.text(l10n.aiProposalEditRefused), findsNothing);
+          expect(find.text(l10n.aiProposalEditBlocked), findsNothing);
+          if (code == 'quickAction') {
+            expect(
+              find.text(l10n.aiRefusedQuickAction),
+              findsOneWidget,
+            );
+          }
+        },
+      );
+    }
+  }
 
   for (final (tag, size) in [
     ('zh-TW', const Size(320, 640)),

@@ -1576,7 +1576,8 @@ bool _isWritableActivityNoteId(String id) {
 /// Whether an ordinary note edit can be sent unchanged by the activity API.
 /// This performs the same validation as dispatch without accessing the network.
 bool isValidWorkItemActivityEditBody(String body) =>
-    _activityWriteBodyWithinBounds(body) && !_containsActivityQuickAction(body);
+    _activityWriteBodyWithinBounds(body) &&
+    !containsWorkItemActivityQuickAction(body);
 
 bool _activityWriteBodyWithinBounds(String body) =>
     !body.contains('\u0000') &&
@@ -1589,7 +1590,7 @@ String _validatedActivityWriteBody(String raw, {bool trim = true}) {
   if (!_activityWriteBodyWithinBounds(body)) {
     throw const ApiFailure(FailureKind.validation);
   }
-  if (_containsActivityQuickAction(body)) {
+  if (containsWorkItemActivityQuickAction(body)) {
     throw ApiFailure(
       FailureKind.validation,
       title: l10n.commentsNoQuickActions,
@@ -1599,7 +1600,9 @@ String _validatedActivityWriteBody(String raw, {bool trim = true}) {
   return body;
 }
 
-bool _containsActivityQuickAction(String body) {
+/// The activity editor's conservative slash-command guard, also used by the AI
+/// port to refuse before approval. Keep the screen's existing indentation rule.
+bool containsWorkItemActivityQuickAction(String body) {
   var fence = '';
   for (final line in body.split('\n')) {
     final trimmed = line.trimLeft();
