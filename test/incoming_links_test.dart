@@ -244,6 +244,7 @@ void main() {
       await tester.tap(find.text('用 App 開啟 GitLab.com 連結'));
       await settleNetworkWidgets(tester);
       expect(settingsOpened, 1);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     },
   );
 }

@@ -59,6 +59,13 @@ Map<String, Object?> _namespace({
   },
 };
 
+bool _groupRowsAreHidden(Iterable<AiCapability> rows) => rows.every(
+  (row) =>
+      !row.modelVisible &&
+      row.boundary == AiWriteBoundary.graph &&
+      row.scopeClass == AiScopeClass.groupWorkItem,
+);
+
 void main() {
   test(
     'freshness defaults retain unknown source evidence for older readers',
@@ -68,13 +75,19 @@ void main() {
   );
 
   test(
-    'production group gate and rows remain closed; UI channel starts empty',
+    'production group gate and visible rows remain closed; UI channel starts empty',
     () {
       expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
       expect(aiGroupWorkItemWritesAreEnabled, isFalse);
       expect(g0eScope.uiAddedGroupWorkItems, isEmpty);
+      final groupRows = ProductionAiLedger.rows.where(
+        (row) =>
+            row.operationId.contains('GroupWorkItem') ||
+            row.scopeClass == AiScopeClass.groupWorkItem,
+      );
+      expect(_groupRowsAreHidden(groupRows), isTrue);
       expect(
-        ProductionAiLedger.rows.where(
+        productionAiLedger.modelVisible.where(
           (row) => row.scopeClass == AiScopeClass.groupWorkItem,
         ),
         isEmpty,
@@ -82,6 +95,24 @@ void main() {
       expect(toolsForScope(g0eScope), isEmpty);
     },
   );
+
+  test('stage assertion rejects visible or malformed group rows', () {
+    AiCapability row({
+      bool visible = false,
+      AiWriteBoundary boundary = AiWriteBoundary.graph,
+      AiScopeClass scope = AiScopeClass.groupWorkItem,
+    }) => AiCapability(
+      operationId: 'updateGroupWorkItemState',
+      baseTier: AiWriteTier.t2,
+      modelVisible: visible,
+      boundary: boundary,
+      scopeClass: scope,
+    );
+    expect(_groupRowsAreHidden([row()]), isTrue);
+    expect(_groupRowsAreHidden([row(visible: true)]), isFalse);
+    expect(_groupRowsAreHidden([row(boundary: AiWriteBoundary.rest)]), isFalse);
+    expect(_groupRowsAreHidden([row(scope: AiScopeClass.workItem)]), isFalse);
+  });
 
   test(
     'strict main resolver uses one actor plus one fixed namespace read',
@@ -658,6 +689,43 @@ void main() {
         }
       },
     );
+  }
+
+  for (final phase in ['second opening', 'journal flush']) {
+    test('synthetic group Todo revocation at $phase prevents START', () async {
+      _gate(true);
+      final h = await G0eHarness.create();
+      addTearDown(h.dispose);
+      h.graph.groupTodoTarget = (
+        groupId: 7,
+        groupFullPath: g0ePath,
+        iid: 5,
+        workItemGid: 'gid://gitlab/WorkItem/91',
+      );
+      if (phase == 'second opening') {
+        h.graph.identityForEpoch = (epoch) {
+          if (epoch == 2) h.graph.live = false;
+          return g0eIdentity(h.api, readEpoch: epoch);
+        };
+      } else {
+        h.graph.afterBeforeMutation = () => h.graph.live = false;
+      }
+      final proposal = await h.coordinator.propose(
+        AiToolCall(
+          id: 'g0g-group-todo-$phase',
+          name: 'snoozeTodo',
+          arguments: const {
+            'todoId': 15,
+            'until': '2030-01-01T00:00:00Z',
+            'reason': 'Asked.',
+          },
+        ),
+      );
+      expect(proposal, isNotNull);
+      final outcome = await h.coordinator.approve(proposal!);
+      expect(outcome.state, AiJournalState.notExecuted);
+      expect(h.graph.mutations, 0);
+    });
   }
 
   test('fresh opening cannot replace saved UI-added WorkItem GID', () async {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
@@ -37,7 +38,7 @@ void _viewport(WidgetTester tester, double width) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-Future<void> _openProject(
+Future<SessionController?> _openProject(
   WidgetTester tester,
   _Host host,
   WorkspaceFixture fixture, {
@@ -61,7 +62,7 @@ Future<void> _openProject(
           ),
     );
     await settleNetworkWidgets(tester);
-    return;
+    return null;
   }
   assert(initialTab == null, '探索 always lands on the overview');
   FlutterSecureStorage.setMockInitialValues({});
@@ -90,6 +91,18 @@ Future<void> _openProject(
   await openExplore(tester);
   await tester.tap(find.text('Mobile Workspace'));
   await settleNetworkWidgets(tester);
+  return session;
+}
+
+/// Settles the session-attached read-cache disk coordinator so its bounded
+/// invalidation wait cancels its FakeAsync timer before teardown. The pushed
+/// host never attaches a disk backend, so a null session is a no-op.
+Future<void> _drainDiskCoordinator(
+  WidgetTester tester,
+  SessionController? session,
+) async {
+  if (session == null) return;
+  await pumpUntilComplete(tester, session.readCache.quiesced);
 }
 
 /// The project's own tab bar, not the one inside an open issue.
@@ -146,7 +159,7 @@ void main() {
         (tester) async {
           _viewport(tester, width);
           final fixture = WorkspaceFixture();
-          await _openProject(tester, host, fixture);
+          final session = await _openProject(tester, host, fixture);
           _expectOverview();
 
           await openProjectTab(tester, '議題');
@@ -163,6 +176,7 @@ void main() {
           _expectLeft(tester, host, width);
           expect(tester.takeException(), isNull);
           expect(fixture.unhandled, isEmpty);
+          await _drainDiskCoordinator(tester, session);
         },
       );
 
@@ -171,7 +185,7 @@ void main() {
       ) async {
         _viewport(tester, width);
         final fixture = WorkspaceFixture();
-        await _openProject(tester, host, fixture);
+        final session = await _openProject(tester, host, fixture);
 
         await openProjectTab(tester, '議題');
         _expectSection(tester, 1);
@@ -187,6 +201,7 @@ void main() {
         await _systemBack(tester);
         _expectLeft(tester, host, width);
         expect(tester.takeException(), isNull);
+        await _drainDiskCoordinator(tester, session);
       });
 
       testWidgets(
@@ -194,7 +209,7 @@ void main() {
         (tester) async {
           _viewport(tester, width);
           final fixture = WorkspaceFixture();
-          await _openProject(tester, host, fixture);
+          final session = await _openProject(tester, host, fixture);
 
           await openProjectTab(tester, '檔案');
           _expectSection(tester, 0);
@@ -229,6 +244,7 @@ void main() {
           _expectOverview();
           expect(tester.takeException(), isNull);
           expect(fixture.unhandled, isEmpty);
+          await _drainDiskCoordinator(tester, session);
         },
       );
 
@@ -238,7 +254,7 @@ void main() {
           _viewport(tester, width);
           final fixture = WorkspaceFixture();
           fixture.issues[7] = fixture.issue(7, 'Back chain issue');
-          await _openProject(tester, host, fixture);
+          final session = await _openProject(tester, host, fixture);
 
           await openProjectTab(tester, '議題');
           await tester.tap(find.text('Back chain issue'));
@@ -270,6 +286,7 @@ void main() {
           _expectOverview();
           expect(tester.takeException(), isNull);
           expect(fixture.unhandled, isEmpty);
+          await _drainDiskCoordinator(tester, session);
         },
       );
     }

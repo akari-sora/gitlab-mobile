@@ -213,6 +213,7 @@ void main() {
     // Verify issue was resumed and rendered on screen
     expect(find.text('Secret Resume Issue'), findsOneWidget);
     expect(find.text('group/private-repo'), findsOneWidget);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
   });
 
   testWidgets('Scenario 2: switch account still 404 shows Account B identity without crashing', (tester) async {
@@ -296,6 +297,7 @@ void main() {
     expect(session.active, isNull);
     expect(session.pendingResumeTarget, target);
     expect(find.text('帳號選擇'), findsOneWidget);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
   });
 
   testWidgets('Scenario 3: switch account logout midway clears pending target', (tester) async {
@@ -373,5 +375,6 @@ void main() {
     // Stays on main shell without pushing any sub-page or showing failure notice
     expect(find.text('專案'), findsWidgets);
     expect(find.byType(FailureNotice), findsNothing);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
   });
 }

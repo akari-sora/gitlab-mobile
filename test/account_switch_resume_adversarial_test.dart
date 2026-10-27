@@ -177,6 +177,7 @@ void main() {
       expect(session.pendingResumeTarget, isNull);
       expect(find.byType(FailureNotice), findsNothing);
       expect(find.text('專案'), findsWidgets);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Unknown resource string falls back to ProjectPage safely', (tester) async {
@@ -248,6 +249,7 @@ void main() {
       // Should safely navigate to ProjectPage fallback without unhandled exceptions
       expect(find.byType(ProjectPage), findsOneWidget);
       expect(find.text('group/repo'), findsWidgets);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Rapid consecutive account switching consumes target exactly once without cross-account pollution', (tester) async {
@@ -354,6 +356,7 @@ void main() {
       // Account C must not attempt to resume Account B's issue
       expect(find.text('Issue 5 Resumed'), findsNothing);
       expect(find.byType(FailureNotice), findsNothing);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Cross-instance switch to Account C queries instance C and isolates failure notice', (tester) async {
@@ -424,6 +427,7 @@ void main() {
       expect(find.text('目標：group/private-project'), findsOneWidget);
       expect(find.text('重新整理'), findsOneWidget);
       expect(find.text('切換帳號'), findsOneWidget);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Malformed target path handled safely by FailureNotice without crashing', (tester) async {
@@ -483,6 +487,7 @@ void main() {
       expect(find.byType(FailureNotice), findsOneWidget);
       expect(find.text('App 帳號：@user_b'), findsOneWidget);
       expect(find.text('目標：group/../../etc/passwd%20#invalid'), findsOneWidget);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     test('SessionController unit stress: rapid set/take and disposal safety', () async {

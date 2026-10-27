@@ -538,7 +538,7 @@ void main() {
       );
       expect(
         aiWriteScopeKey(_account, scope.grants.single),
-        '($_account, groupId:4, workItem, 3)',
+        '($_account, group:4, workItem, 3)',
       );
       expect(
         aiWriteScopeKey(_account, scope.grants.single),

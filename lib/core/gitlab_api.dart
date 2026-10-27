@@ -195,6 +195,17 @@ final class GitLabApi {
   final Future<void> Function(OAuthCredential rotated)? _onOAuthRotated;
   Future<void>? _refreshing;
   int _readEpoch = 0;
+
+  /// A read-only snapshot for group write openings. The predicate is bound to
+  /// this client and is revoked by cache/credential invalidation or close.
+  ({int readEpoch, bool Function() isCurrent}) captureGroupReadEpoch() {
+    final epoch = _readEpoch;
+    return (
+      readEpoch: epoch,
+      isCurrent: () => !_closed && _readEpoch == epoch,
+    );
+  }
+
   static const maxCachedReads = 256;
   static const maxCachedReadBytes = 16 * 1024 * 1024;
   final Set<CancelToken> _requests = {};
