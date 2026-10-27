@@ -253,6 +253,9 @@ class AiChatController extends ChangeNotifier
   @visibleForTesting
   RunBudgetLease? get runBudgetLease => _runBudget?.lease;
 
+  @visibleForTesting
+  AiChatContext? get contextForTesting => _context;
+
   @override
   AiChatSendBlockReason? get sendBlockReason {
     if (_api.rateBudget.snapshot().level == RateLevel.critical) {
@@ -1177,6 +1180,16 @@ class AiChatController extends ChangeNotifier
       aiConversationConsentContract(settings, _accountKey, provider);
 
   ledger.AiWriteScope _writeScope() {
+    // G0d supplies the verified single-item grants. Until then neither group
+    // entry kind may reach the project-wide fallback below.
+    if (origin is AiGroupWorkItemOrigin ||
+        origin is AiProjectWorkItemFromGroupPageOrigin) {
+      return ledger.AiWriteScope(
+        accountKey: _accountKey,
+        instance: _api.instance,
+        grants: const [],
+      );
+    }
     final supplied = _writeScopeOverride;
     if (supplied != null) return supplied();
     final project = projectForAiChatOrigin(origin);
@@ -1227,6 +1240,8 @@ class AiChatController extends ChangeNotifier
       scopeRevision: _writeScopeRevision,
       sessionGeneration: _generation,
       currentResource: switch (origin) {
+        AiGroupWorkItemOrigin() ||
+        AiProjectWorkItemFromGroupPageOrigin() => null,
         AiFileOrigin(:final project, :final path, :final sha) => AiTargetRef(
           kind: AiTargetKind.file, projectId: project.id, path: path, refName: sha),
         AiWorkItemOrigin(:final project, :final kind, :final iid) => AiTargetRef(
@@ -1235,6 +1250,8 @@ class AiChatController extends ChangeNotifier
         _ => null,
       },
       currentJobId: switch (origin) {
+        AiGroupWorkItemOrigin() ||
+        AiProjectWorkItemFromGroupPageOrigin() => null,
         AiJobOrigin(:final jobId) => jobId,
         _ => null,
       },
@@ -2138,6 +2155,9 @@ class AiChatController extends ChangeNotifier
       _context = AiChatContext(
         built: previous.built,
         scope: previous.scope,
+        // The group read is fresh evidence even when its text is unchanged.
+        groupScope: refreshed.groupScope,
+        groupMetadata: refreshed.groupMetadata,
         field: previous.field,
         readConfidential: previous.readConfidential || refreshed.readConfidential,
         fetchedAt: refreshed.fetchedAt,
@@ -2179,7 +2199,9 @@ class AiChatController extends ChangeNotifier
   /// What the page was about, for the chip label. The block source stays
   /// the provenance tag the model sees.
   String? get _originResource => switch (origin) {
-    AiGeneralOrigin() => null,
+    AiGeneralOrigin() ||
+    AiGroupWorkItemOrigin() ||
+    AiProjectWorkItemFromGroupPageOrigin() => null,
     AiJobOrigin(:final jobName) => jobName,
     AiWorkItemOrigin(:final kind, :final iid) =>
       kind == AiWorkItemKind.mergeRequest ? '!$iid' : '#$iid',

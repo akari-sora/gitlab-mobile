@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../../core/ai/ai_transcript.dart' show AiContextBlock;
+import '../../core/ai/app_text.dart';
 import '../../core/ai/context_builders.dart';
 import '../../core/ai/redaction.dart';
 import '../../core/ai/tools/sensitive_paths.dart';
@@ -9,7 +10,9 @@ import '../../core/ai/write_text.dart'
     show AiFieldProvenance, UploadPlaceholderTable;
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
+import '../../core/group_work_item_identity.dart';
 import '../../core/models.dart';
+import '../../core/request_meter.dart';
 import 'ai_chat_session.dart';
 
 /// The redacted starting context plus immutable revisions used to bind tools.
@@ -17,15 +20,22 @@ final class AiChatContext {
   const AiChatContext({
     required this.built,
     required this.scope,
+    this.groupScope,
+    this.groupMetadata,
     this.field,
     this.fetchedAt,
     this.readConfidential = false,
-  });
+  }) : assert(scope == null || groupScope == null);
 
   final AiBuiltContext built;
   final AiResourceScope? scope;
 
-  /// Trusted metadata from the issue read, independent of its display text.
+  /// Group reads never acquire a project tool scope or a synthetic Project.
+  final AiGroupResourceScope? groupScope;
+  final AiGroupContextMetadata? groupMetadata;
+
+  /// Trusted metadata from the REST issue read. For group Work Items consult
+  /// [groupMetadata]: this legacy false default is not confidentiality proof.
   final bool readConfidential;
 
   /// The oldest network timestamp, or null for empty / SHA-pinned context.
@@ -63,6 +73,16 @@ final class AiChatContext {
   }
 }
 
+/// Source evidence from this context's fresh, account/API/generation-guarded
+/// reads. Unknown values stay null, independent of the redacted display text.
+final class AiGroupContextMetadata {
+  const AiGroupContextMetadata({this.visibility, this.confidential});
+
+  /// One of private/internal/public, or null when not established.
+  final String? visibility;
+  final bool? confidential;
+}
+
 /// A writable field in the page context, with the value as the context
 /// builder redacted it for the provider.
 final class AiContextField {
@@ -97,9 +117,10 @@ final _ansi = RegExp(
 );
 
 Project? projectForAiChatOrigin(AiChatOrigin origin) => switch (origin) {
-  AiGeneralOrigin() => null,
+  AiGeneralOrigin() || AiGroupWorkItemOrigin() => null,
   AiJobOrigin(:final project) ||
   AiWorkItemOrigin(:final project) ||
+  AiProjectWorkItemFromGroupPageOrigin(:final project) ||
   AiFileOrigin(:final project) => project,
 };
 
@@ -160,6 +181,31 @@ Future<AiChatContext> loadAiChatContext({
         refreshSecrets,
         isCurrent,
       ),
+    AiGroupWorkItemOrigin() => await _loadGroupWorkItem(
+      origin,
+      api,
+      reads,
+      builder,
+      nonce,
+      accountKey,
+      refreshSecrets,
+      isCurrent,
+    ),
+    AiProjectWorkItemFromGroupPageOrigin() => await _loadIssue(
+      AiWorkItemOrigin(
+        project: origin.project,
+        kind: AiWorkItemKind.issue,
+        iid: origin.iid,
+        title: origin.title,
+      ),
+      api,
+      reads,
+      builder,
+      nonce,
+      accountKey,
+      refreshSecrets,
+      isCurrent,
+    ),
     AiFileOrigin() => await _loadFile(
       origin,
       api,
@@ -174,6 +220,8 @@ Future<AiChatContext> loadAiChatContext({
   return AiChatContext(
     built: context.built,
     scope: context.scope,
+    groupScope: context.groupScope,
+    groupMetadata: context.groupMetadata,
     field: context.field,
     readConfidential: context.readConfidential,
     fetchedAt: origin is AiGeneralOrigin || origin is AiFileOrigin
@@ -183,6 +231,144 @@ Future<AiChatContext> loadAiChatContext({
 }
 
 const _aiContextMaxAge = Duration(seconds: 60);
+
+Future<AiChatContext> _loadGroupWorkItem(
+  AiGroupWorkItemOrigin origin,
+  GitLabApi api,
+  _AiContextReads reads,
+  AiContextBuilders builder,
+  String nonce,
+  String accountKey,
+  Future<void> Function() refreshSecrets,
+  bool Function() isCurrent,
+) {
+  final meter = RequestMeter.current ?? RequestMeter();
+  final startingRequests = meter.count;
+  return meter.runAsync(() async {
+    void beforeRead() {
+      // Initial preparation has no run lease yet. Bound that path here too;
+      // an outer context meter/admission remains authoritative when present.
+      if (meter.count - startingRequests + 2 > 4) {
+        throw const ApiFailure(FailureKind.rateLimited);
+      }
+      reads.beforeRead?.call(2);
+    }
+
+    final groupId = origin.groupId;
+    final path = origin.group.fullPath;
+    final accountPrefix = '${api.instance.key}#';
+    final userId = accountKey.startsWith(accountPrefix)
+        ? int.tryParse(accountKey.substring(accountPrefix.length))
+        : null;
+    if (origin.iid <= 0 ||
+        userId == null ||
+        userId <= 0 ||
+        accountKey != '$accountPrefix$userId' ||
+        !RegExp(r'^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(path) ||
+        path.split('/').any((segment) => segment == '.' || segment == '..')) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    void requireCurrent() {
+      _requireCurrent(() => !api.isClosed && isCurrent());
+    }
+
+    requireCurrent();
+    // Each fixed, uncached logical read allows one OAuth replay. These reads
+    // use the context's admission callback, never a write operation's cap.
+    beforeRead();
+    final detail = await api.namespaceWorkItem(
+      path,
+      origin.iid,
+      expectedNamespaceId: groupKeyGid(
+        groupId,
+        serverGroupGid: origin.group.id,
+      ),
+      strictIdentity: true,
+      isCurrent: () => !api.isClosed && isCurrent(),
+    );
+    requireCurrent();
+    final item = detail.summary;
+    if (item.project != null ||
+        item.namespace?.id != origin.group.id ||
+        item.namespace?.fullPath != path ||
+        groupKeyNumericId(item.namespace!.id) != groupId ||
+        item.iid != origin.iid) {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+    beforeRead();
+    final group = await api.group(groupId);
+    requireCurrent();
+    if (group['id'] != groupId || group['full_path'] != path) {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+    final visibility = switch (group['visibility']) {
+      'private' => 'private',
+      'internal' => 'internal',
+      'public' => 'public',
+      _ => null,
+    };
+    await refreshSecrets();
+    requireCurrent();
+    final built = builder.discussion(
+      AiDiscussionContextInput(
+        kind: 'work_item',
+        iid: item.iid,
+        title: item.title,
+        description: detail.description ?? '',
+        state: item.state,
+        pinnedSha: null,
+        labels:
+            detail.labels?.labels?.items
+                .map((label) => label.title)
+                .toList(growable: false) ??
+            const <String>[],
+        notes: const [],
+      ),
+      nonce: nonce,
+    );
+    return AiChatContext(
+      built: AiBuiltContext(
+        blocks: [
+          for (final block in built.blocks)
+            AiContextBlock.fromData(
+              source: block.source,
+              data: AiAppText.join([
+                block.plainData,
+                // Empty projections must not claim unavailable widgets or
+                // unread activity are complete. App-owned status strings also
+                // participate in the controller's plain-text refresh check.
+                AiAppText.json({
+                  'description_status': detail.description == null
+                      ? 'unavailable'
+                      : 'loaded',
+                  'labels_status': detail.labels?.labels?.isPartial == false
+                      ? 'complete'
+                      : 'incomplete',
+                  'notes_status': 'not_loaded',
+                }),
+              ]),
+            ),
+        ],
+        pinnedSha: built.pinnedSha,
+        blockedSensitivePaths: built.blockedSensitivePaths,
+        redactions: built.redactions,
+        withheldPrivateKeyContext: built.withheldPrivateKeyContext,
+      ),
+      scope: null,
+      groupScope: AiGroupResourceScope(
+        accountKey: accountKey,
+        instanceKey: api.instance.key,
+        groupId: groupId,
+        groupFullPath: path,
+        iid: item.iid,
+        workItemGid: item.id,
+      ),
+      // The fixed namespace document/model does not expose confidential. Do not
+      // derive false from its absence or widen the core query in this packet.
+      groupMetadata: AiGroupContextMetadata(visibility: visibility),
+    );
+  });
+}
 
 /// Keeps the original timestamps while composing several cache-backed reads.
 final class _AiContextReads {

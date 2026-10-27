@@ -1128,12 +1128,33 @@ void main() {
       testWidgets(
         '$code shows its true reason on ${editing ? 'edit' : 'approval'} before the card refresh',
         (tester) async {
-          final proposal = _proposal()..editedText = 'Edited words';
+          final realPause = editing && code == AiWritePause.clientUnavailable;
+          late final CoordHarness h;
+          late final AiWriteProposal proposal;
+          if (realPause) {
+            await tester.runAsync(() async {
+              h = await CoordHarness.create();
+              h.newRun('Comment on #3 in team/example-9');
+              proposal = (await h.coordinator.propose(
+                coordNoteCall('table-pause'),
+              ))!;
+            });
+            addTearDown(() => tester.runAsync(h.dispose));
+            expect(proposal.pausedReason, isNull);
+          } else {
+            proposal = _proposal()..editedText = 'Edited words';
+          }
           final writes = _Writes([proposal])
             ..answer = (_) => AiWriteOutcome(
               state: AiJournalState.notExecuted,
               reasonCode: code,
             );
+          if (realPause) {
+            writes.onApprove = (edited) {
+              h.clientMayStart = false;
+              return h.coordinator.approve(proposal, editedText: edited);
+            };
+          }
           await tester.pumpWidget(
             _host(AiWriteProposalCard(proposal: proposal, session: writes)),
           );
@@ -1168,7 +1189,20 @@ void main() {
             expect(find.text(l10n.aiProposalEditBlocked), findsNothing);
           }
           if (editing && paused) {
-            expect(find.text(l10n.aiProposalPausedRateLimited), findsNothing);
+            if (realPause) {
+              expect(proposal.pausedReason, AiWritePause.clientUnavailable);
+              expect(proposal.editedText, isNull);
+              expect(find.text(l10n.aiProposalPausedRateLimited), findsOneWidget);
+              expect(
+                find.descendant(
+                  of: find.byKey(const ValueKey('ai-proposal-message')),
+                  matching: find.text(l10n.aiProposalPausedRateLimited),
+                ),
+                findsNothing,
+              );
+            } else {
+              expect(find.text(l10n.aiProposalPausedRateLimited), findsNothing);
+            }
             expect(find.text(l10n.aiProposalPausedRemoval), findsNothing);
           }
           expect(find.text(l10n.aiRefusedChanged), findsNothing);
