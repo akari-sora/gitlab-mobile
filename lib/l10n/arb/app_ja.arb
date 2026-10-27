@@ -2750,5 +2750,5 @@
   "aiGitLabBudgetDetail": "このメッセージは送信されませんでした。「送信」ボタンが再び使えるようになったら、もう一度送信してください。",
   "activityVerbTargetRef": "{verb}（{target} {ref}）",
   "aiOpSetWorkItemLabels": "ラベルを設定",
-  "aiRefusedLabelUnknown": "選択したラベルは利用可能な一覧にありません。選び直してください。"
+  "aiRefusedLabelUnknown": "設定するラベルがこのプロジェクトのラベル一覧にないか、同じ名前のラベルが複数あるため、何も実行されませんでした。"
 }

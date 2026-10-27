@@ -2750,5 +2750,5 @@
   "aiGitLabBudgetDetail": "Ta wiadomość nie została wysłana. Wyślij ją ponownie, gdy przycisk „Wyślij” będzie znów dostępny.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Ustaw etykiety",
-  "aiRefusedLabelUnknown": "Wybranej etykiety nie ma na liście dostępnych. Wybierz ponownie."
+  "aiRefusedLabelUnknown": "Etykiety do ustawienia nie ma na liście etykiet tego projektu albo kilka etykiet ma tę nazwę, więc nic nie zostało zrobione."
 }

@@ -2750,5 +2750,5 @@
   "aiGitLabBudgetDetail": "Acest mesaj nu a fost trimis. Trimiteți-l din nou când butonul „Trimite” este din nou disponibil.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Setează etichetele",
-  "aiRefusedLabelUnknown": "O etichetă selectată nu se află în lista disponibilă. Alege din nou."
+  "aiRefusedLabelUnknown": "Eticheta de setat nu se află în lista de etichete a acestui proiect sau mai multe etichete au acest nume, deci nu s-a făcut nimic."
 }

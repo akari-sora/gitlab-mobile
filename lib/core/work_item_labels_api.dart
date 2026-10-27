@@ -140,7 +140,7 @@ query MobileProjectWorkItemLabelCandidates($fullPath: ID!) {
   project(fullPath: $fullPath) {
     id
     fullPath
-    labels(includeAncestorGroups: true, archived: false, first: 20) {
+    labels(includeAncestorGroups: true, archived: false, first: 100) {
       nodes { id title color textColor }
       pageInfo { hasNextPage endCursor }
     }

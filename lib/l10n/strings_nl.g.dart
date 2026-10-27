@@ -2752,5 +2752,5 @@ const _messagesNl = <String>[
   'Dit bericht is niet verzonden. Verzend het opnieuw zodra de knop ‘Verzenden’ weer beschikbaar is.',
   '{verb} {target} {ref}',
   'Labels instellen',
-  'Een geselecteerd label staat niet in de beschikbare lijst. Kies opnieuw.',
+  'Het in te stellen label staat niet in de labellijst van dit project of meerdere labels hebben deze naam, dus er is niets gedaan.',
 ];

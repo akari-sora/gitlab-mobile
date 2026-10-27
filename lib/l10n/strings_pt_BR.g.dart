@@ -2752,5 +2752,5 @@ const _messagesPtBr = <String>[
   'Esta mensagem não foi enviada. Envie-a novamente quando o botão “Enviar” estiver disponível de novo.',
   '{verb} {target} {ref}',
   'Definir etiquetas',
-  'Uma etiqueta selecionada não está na lista disponível. Escolha novamente.',
+  'A etiqueta a definir não está na lista de etiquetas deste projeto ou várias etiquetas têm esse nome, então nada foi feito.',
 ];

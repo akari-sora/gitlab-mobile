@@ -2752,5 +2752,5 @@ const _messagesIt = <String>[
   'Questo messaggio non è stato inviato. Invialo di nuovo quando il pulsante «Invia» sarà nuovamente disponibile.',
   '{verb} {target} {ref}',
   'Imposta etichette',
-  'Un’etichetta selezionata non è nell’elenco disponibile. Scegli di nuovo.',
+  'L’etichetta da impostare non è nell’elenco delle etichette di questo progetto oppure più etichette hanno questo nome, quindi non è stato fatto nulla.',
 ];

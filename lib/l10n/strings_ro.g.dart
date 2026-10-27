@@ -2752,5 +2752,5 @@ const _messagesRo = <String>[
   'Acest mesaj nu a fost trimis. Trimiteți-l din nou când butonul „Trimite” este din nou disponibil.',
   '{verb} {target} {ref}',
   'Setează etichetele',
-  'O etichetă selectată nu se află în lista disponibilă. Alege din nou.',
+  'Eticheta de setat nu se află în lista de etichete a acestui proiect sau mai multe etichete au acest nume, deci nu s-a făcut nimic.',
 ];

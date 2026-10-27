@@ -2752,5 +2752,5 @@ const _messagesId = <String>[
   'Pesan ini tidak terkirim. Kirim ulang saat tombol “Kirim” tersedia kembali.',
   '{verb} {target} {ref}',
   'Atur label',
-  'Label yang dipilih tidak ada dalam daftar yang tersedia. Pilih lagi.',
+  'Label yang akan diatur tidak ada dalam daftar label proyek ini, atau beberapa label memiliki nama yang sama, jadi tidak ada yang dilakukan.',
 ];

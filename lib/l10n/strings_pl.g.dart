@@ -2752,5 +2752,5 @@ const _messagesPl = <String>[
   'Ta wiadomość nie została wysłana. Wyślij ją ponownie, gdy przycisk „Wyślij” będzie znów dostępny.',
   '{verb} {target} {ref}',
   'Ustaw etykiety',
-  'Wybranej etykiety nie ma na liście dostępnych. Wybierz ponownie.',
+  'Etykiety do ustawienia nie ma na liście etykiet tego projektu albo kilka etykiet ma tę nazwę, więc nic nie zostało zrobione.',
 ];

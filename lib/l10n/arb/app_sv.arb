@@ -2750,5 +2750,5 @@
   "aiGitLabBudgetDetail": "Meddelandet skickades inte. Skicka det igen när knappen ”Skicka” är tillgänglig igen.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Ange etiketter",
-  "aiRefusedLabelUnknown": "En vald etikett finns inte i listan över tillgängliga etiketter. Välj igen."
+  "aiRefusedLabelUnknown": "Etiketten som ska sättas finns inte i projektets etikettlista, eller så har flera etiketter det namnet, så ingenting gjordes."
 }

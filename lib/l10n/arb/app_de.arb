@@ -2750,5 +2750,5 @@
   "aiGitLabBudgetDetail": "Diese Nachricht wurde nicht gesendet. Sende sie erneut, sobald die Schaltfläche „Senden“ wieder verfügbar ist.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Labels festlegen",
-  "aiRefusedLabelUnknown": "Ein ausgewähltes Label steht nicht in der verfügbaren Liste. Bitte erneut auswählen."
+  "aiRefusedLabelUnknown": "Das zu setzende Label steht nicht in der Label-Liste dieses Projekts oder mehrere Labels haben denselben Namen, daher wurde nichts ausgeführt."
 }

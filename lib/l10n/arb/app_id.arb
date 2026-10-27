@@ -2750,5 +2750,5 @@
   "aiGitLabBudgetDetail": "Pesan ini tidak terkirim. Kirim ulang saat tombol “Kirim” tersedia kembali.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Atur label",
-  "aiRefusedLabelUnknown": "Label yang dipilih tidak ada dalam daftar yang tersedia. Pilih lagi."
+  "aiRefusedLabelUnknown": "Label yang akan diatur tidak ada dalam daftar label proyek ini, atau beberapa label memiliki nama yang sama, jadi tidak ada yang dilakukan."
 }

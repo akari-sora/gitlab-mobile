@@ -2752,5 +2752,5 @@ const _messagesDe = <String>[
   'Diese Nachricht wurde nicht gesendet. Sende sie erneut, sobald die Schaltfläche „Senden“ wieder verfügbar ist.',
   '{verb} {target} {ref}',
   'Labels festlegen',
-  'Ein ausgewähltes Label steht nicht in der verfügbaren Liste. Bitte erneut auswählen.',
+  'Das zu setzende Label steht nicht in der Label-Liste dieses Projekts oder mehrere Labels haben denselben Namen, daher wurde nichts ausgeführt.',
 ];

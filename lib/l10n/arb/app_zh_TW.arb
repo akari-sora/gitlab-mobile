@@ -11527,5 +11527,5 @@
     }
   },
   "aiOpSetWorkItemLabels": "設定標籤",
-  "aiRefusedLabelUnknown": "選取的標籤不在可用清單中。請重新選擇。"
+  "aiRefusedLabelUnknown": "要設定的標籤不在這個專案的標籤清單裡，或有多個同名標籤，所以沒有執行。"
 }

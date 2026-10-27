@@ -2752,5 +2752,5 @@ const _messagesTr = <String>[
   'Bu ileti gönderilmedi. “Gönder” düğmesi yeniden kullanılabilir olduğunda tekrar gönderin.',
   '{verb} ({target} {ref})',
   'Etiketleri ayarla',
-  'Seçilen etiket kullanılabilir listede yok. Yeniden seçin.',
+  'Ayarlanacak etiket bu projenin etiket listesinde yok veya bu adda birden fazla etiket var, bu yüzden hiçbir şey yapılmadı.',
 ];

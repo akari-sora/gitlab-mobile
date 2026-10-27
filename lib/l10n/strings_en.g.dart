@@ -2752,5 +2752,5 @@ const _messagesEn = <String>[
   'This message was not sent. Send it again when the send button is back.',
   '{verb} {target} {ref}',
   'Set labels',
-  'A selected label is not in the available list. Choose again.',
+  'The label to set is not in this project’s label list, or several labels share that name, so nothing was done.',
 ];

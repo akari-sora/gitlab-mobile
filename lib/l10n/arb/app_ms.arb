@@ -2750,5 +2750,5 @@
   "aiGitLabBudgetDetail": "Mesej ini tidak dihantar. Hantar semula apabila butang “Hantar” tersedia semula.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Tetapkan label",
-  "aiRefusedLabelUnknown": "Label yang dipilih tiada dalam senarai yang tersedia. Pilih semula."
+  "aiRefusedLabelUnknown": "Label yang hendak ditetapkan tiada dalam senarai label projek ini, atau beberapa label mempunyai nama yang sama, jadi tiada apa-apa yang dilakukan."
 }

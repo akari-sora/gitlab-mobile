@@ -2752,5 +2752,5 @@ const _messagesSv = <String>[
   'Meddelandet skickades inte. Skicka det igen när knappen ”Skicka” är tillgänglig igen.',
   '{verb} {target} {ref}',
   'Ange etiketter',
-  'En vald etikett finns inte i listan över tillgängliga etiketter. Välj igen.',
+  'Etiketten som ska sättas finns inte i projektets etikettlista, eller så har flera etiketter det namnet, så ingenting gjordes.',
 ];

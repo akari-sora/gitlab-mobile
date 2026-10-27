@@ -2752,5 +2752,5 @@ const _messagesMs = <String>[
   'Mesej ini tidak dihantar. Hantar semula apabila butang “Hantar” tersedia semula.',
   '{verb} {target} {ref}',
   'Tetapkan label',
-  'Label yang dipilih tiada dalam senarai yang tersedia. Pilih semula.',
+  'Label yang hendak ditetapkan tiada dalam senarai label projek ini, atau beberapa label mempunyai nama yang sama, jadi tiada apa-apa yang dilakukan.',
 ];

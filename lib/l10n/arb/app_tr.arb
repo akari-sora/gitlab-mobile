@@ -2750,5 +2750,5 @@
   "aiGitLabBudgetDetail": "Bu ileti gönderilmedi. “Gönder” düğmesi yeniden kullanılabilir olduğunda tekrar gönderin.",
   "activityVerbTargetRef": "{verb} ({target} {ref})",
   "aiOpSetWorkItemLabels": "Etiketleri ayarla",
-  "aiRefusedLabelUnknown": "Seçilen etiket kullanılabilir listede yok. Yeniden seçin."
+  "aiRefusedLabelUnknown": "Ayarlanacak etiket bu projenin etiket listesinde yok veya bu adda birden fazla etiket var, bu yüzden hiçbir şey yapılmadı."
 }

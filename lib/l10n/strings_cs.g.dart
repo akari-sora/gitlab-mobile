@@ -2752,5 +2752,5 @@ const _messagesCs = <String>[
   'Tato zpráva nebyla odeslána. Odešlete ji znovu, až bude tlačítko „Odeslat“ opět dostupné.',
   '{verb} {target} {ref}',
   'Nastavit štítky',
-  'Vybraný štítek není v seznamu dostupných. Vyberte znovu.',
+  'Štítek k nastavení není v seznamu štítků tohoto projektu nebo má stejný název více štítků, takže nebylo nic provedeno.',
 ];

@@ -12,7 +12,7 @@ const List<AiCapability> aiGraphqlLabelsRows = <AiCapability>[
       'iid': _iid,
       'labels': AiArgSpec(AiArgType.stringList, required: true),
     },
-    // At most 10 exact label titles; one complete candidate page (20) and
+    // At most 10 exact label titles; one complete candidate page (100, GitLab's GraphQL page maximum) and
     // one complete current-label page (100), or refuse without paging.
     // F=1 freshness; P=actor 1 + item 1 + labels 1 + candidates 1=4.
     // L=2(F+P)+Mpre+Mrb=2(1+4)+1+1=12; httpCap=2L+1=25.

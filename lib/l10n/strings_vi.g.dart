@@ -2752,5 +2752,5 @@ const _messagesVi = <String>[
   'Tin nhắn này chưa được gửi. Gửi lại khi nút “Gửi” khả dụng trở lại.',
   '{verb} {target} {ref}',
   'Đặt nhãn',
-  'Một nhãn đã chọn không có trong danh sách khả dụng. Vui lòng chọn lại.',
+  'Nhãn cần đặt không có trong danh sách nhãn của project này, hoặc có nhiều nhãn trùng tên, nên chưa có gì được thực hiện.',
 ];
