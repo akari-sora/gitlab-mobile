@@ -25,16 +25,19 @@ AiRunNotificationText aiRunNotificationText() => AiRunNotificationText(
 /// sign-in still counts.
 ///
 /// The shell asks [take] for a navigation decision and gets one only once the
-/// app lock has loaded and is open, and the app is back from being away (a
-/// warm tap can arrive before the lock has decided to lock again). An unlock
+/// app is resumed and the app lock has loaded and is open (a warm tap can
+/// arrive before the lock has decided to lock again). An unlock
 /// attempt that ends with the app still locked (cancelled or failed) drops a
 /// waiting tap: it never navigates, not even after a later unlock. Nothing
 /// here approves a write.
-final class AiRunNotificationGate extends ChangeNotifier {
+final class AiRunNotificationGate extends ChangeNotifier
+    with WidgetsBindingObserver {
   AiRunNotificationGate(this.notifications, {this.lock})
     : _refusals = lock?.refusedUnlocks ?? 0 {
     notifications.addListener(_changed);
     lock?.addListener(_lockChanged);
+    _lifecycle = WidgetsBinding.instance.lifecycleState;
+    WidgetsBinding.instance.addObserver(this);
   }
 
   final AiRunNotifications notifications;
@@ -42,6 +45,7 @@ final class AiRunNotificationGate extends ChangeNotifier {
   int _refusals;
   AiRunRegistry? _bound;
   bool _disposed = false;
+  AppLifecycleState? _lifecycle;
 
   /// Whether this process already explained the notifications and asked for
   /// the permission. Kept in memory only: the persisted keys are a closed
@@ -50,6 +54,21 @@ final class AiRunNotificationGate extends ChangeNotifier {
 
   /// A tap waits for the shell (and the lock) to take it.
   bool get waiting => !_disposed && notifications.pendingOpen != null;
+
+  bool get _mayNavigate =>
+      !_disposed &&
+      _lifecycle == AppLifecycleState.resumed &&
+      (lock == null || (lock!.loaded && !lock!.locked && !lock!.away));
+
+  /// Recheck after an asynchronous editor exit, immediately before navigation.
+  bool canNavigate(AiRunNotificationOpen open) =>
+      _mayNavigate && notifications.isCurrentOpen(open);
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycle = state;
+    _changed();
+  }
 
   /// Hands [registry]'s conversations to the notifications. The shell that
   /// created the registry binds it; a later shell may already have bound its
@@ -70,7 +89,7 @@ final class AiRunNotificationGate extends ChangeNotifier {
   /// lock has not loaded or is closed; the tap then keeps waiting. Call it
   /// synchronously just before navigating.
   AiRunNotificationOpen? take() {
-    if (_disposed) return null;
+    if (!_mayNavigate) return null;
     final lock = this.lock;
     return notifications.takePendingOpen(
       appLockLoaded: lock?.loaded ?? true,
@@ -97,6 +116,7 @@ final class AiRunNotificationGate extends ChangeNotifier {
     _disposed = true;
     notifications.removeListener(_changed);
     lock?.removeListener(_lockChanged);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 }
@@ -124,7 +144,8 @@ class AiRunNotificationScope extends InheritedWidget {
 /// in the background: explains the run notifications once and asks for the
 /// permission. The run starts whatever the answer. Without notifications,
 /// [disclose] gets the text saying that no reminder will come and that
-/// proposals expire after 30 minutes; it is called at most once per process.
+/// proposals expire after 30 minutes only when disabled is confirmed; it is
+/// called at most once per process. Unknown state never claims reminders off.
 /// Does nothing where notifications are not supported (iOS) or not wired.
 Future<void> askForAiRunNotifications(
   BuildContext context, {
@@ -138,6 +159,13 @@ Future<void> askForAiRunNotifications(
     return;
   }
   gate.permissionAsked = true;
+  final enabled = await gate.notifications.areNotificationsEnabled();
+  if (!context.mounted || gate._disposed) return;
+  if (enabled == true) return;
+  if (enabled == false) {
+    disclose(l10n.aiRunNoticeDenied);
+    return;
+  }
   final proceed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -159,9 +187,11 @@ Future<void> askForAiRunNotifications(
       ],
     ),
   );
-  // Null: unavailable or failed, so no reminder will come either.
-  final allowed = proceed == true
-      ? await gate.notifications.requestPermission()
-      : false;
-  if (allowed != true) disclose(l10n.aiRunNoticeDenied);
+  if (!context.mounted || gate._disposed) return;
+  if (proceed == true) await gate.notifications.requestPermission();
+  // Settings can change while the explanation/system prompt is open. Even
+  // "not now" must read the actual state before claiming reminders are off.
+  final allowed = await gate.notifications.areNotificationsEnabled();
+  if (!context.mounted || gate._disposed) return;
+  if (allowed == false) disclose(l10n.aiRunNoticeDenied);
 }

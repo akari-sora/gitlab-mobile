@@ -8,12 +8,34 @@ import 'package:gitlab_mobile/features/ai/ai_run_notification_ui.dart';
 import 'package:gitlab_mobile/features/ai/ai_run_notifications.dart';
 import 'package:gitlab_mobile/features/security/app_lock.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import '../support/ai_run_notification_shell.dart';
 import '../support/shell_nav.dart';
 import '../support/widget_settle.dart';
 
 final _android = TargetPlatformVariant.only(TargetPlatform.android);
+
+void _background(WidgetTester tester) {
+  for (final state in [
+    AppLifecycleState.inactive,
+    AppLifecycleState.hidden,
+    AppLifecycleState.paused,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+}
+
+void _resume(WidgetTester tester) {
+  if (tester.binding.lifecycleState == AppLifecycleState.resumed) return;
+  for (final state in [
+    AppLifecycleState.hidden,
+    AppLifecycleState.inactive,
+    AppLifecycleState.resumed,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+}
 
 final class _Store implements AppLockStore {
   _Store(this.value);
@@ -57,6 +79,167 @@ void main() {
 
   setUp(() => (platform = FakeNotificationPlatform()).install());
   tearDown(() => platform.uninstall());
+
+  for (final withLock in [false, true]) {
+    testWidgets('background tap waits without popping or pushing: '
+        '${withLock ? "loaded disabled lock" : "no lock"}', (tester) async {
+      final lock = withLock
+          ? AppLockController(store: _Store(false), authenticator: _Auth())
+          : null;
+      if (lock != null) {
+        addTearDown(lock.dispose);
+        await tester.runAsync(lock.start);
+        expect(lock.loaded, isTrue);
+        expect(lock.enabled, isFalse);
+      }
+      final shell = await NotificationShell.start(
+        tester,
+        platform: platform,
+        lock: lock,
+      );
+      final chat = shell.openChat(tester);
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('covered-page')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      _background(tester);
+      addTearDown(() => _resume(tester));
+
+      await platform.tap(notificationPayload(chat.id, shell.generation));
+      await tester.pump();
+      expect(shell.gate.waiting, isTrue);
+      expect(shell.gate.take(), isNull);
+      expect(find.text('covered-page'), findsOneWidget);
+      expect(find.byType(AiChatPage), findsNothing);
+
+      _resume(tester);
+      await settleNetworkWidgets(tester);
+      expect(shell.gate.waiting, isFalse);
+      expect(find.text('covered-page'), findsNothing);
+      expect(
+        tester.widget<AiChatPage>(find.byType(AiChatPage)).session,
+        same(chat),
+      );
+    }, variant: _android);
+  }
+
+  for (final change in [
+    'background',
+    'owner',
+    'background with covered page',
+  ]) {
+    testWidgets('notification rechecks $change after awaited editor exit', (
+      tester,
+    ) async {
+      final shell = await NotificationShell.start(tester, platform: platform);
+      final chat = shell.openChat(tester);
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      MaterialPageRoute<void>? covered;
+      if (change == 'background with covered page') {
+        covered = MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('covered-page')),
+        );
+        unawaited(navigator.push(covered));
+        await tester.pumpAndSettle();
+      }
+      final exit = Completer<void>();
+      var leaveAttempts = 0;
+      final editor = MaterialPageRoute<void>(
+        builder: (context) => PopScope<void>(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            leaveAttempts++;
+            RouteExit.track(ModalRoute.of(context)!, exit.future);
+          },
+          child: const Scaffold(body: Text('async-editor')),
+        ),
+      );
+      unawaited(navigator.push(editor));
+      await tester.pumpAndSettle();
+
+      await platform.tap(notificationPayload(chat.id, shell.generation));
+      await tester.pump();
+      expect(leaveAttempts, 1);
+      expect(
+        shell.gate.waiting,
+        isFalse,
+        reason: 'an editor exit attempt consumes this tap',
+      );
+      if (change.startsWith('background')) {
+        _background(tester);
+        addTearDown(() => _resume(tester));
+      } else {
+        final replacement = _OtherRegistry();
+        addTearDown(replacement.dispose);
+        shell.gate.bind(replacement);
+      }
+      // The editor finishes its own guarded exit; the notification must
+      // neither pop another page nor push a chat after this await.
+      navigator.removeRoute(editor);
+      exit.complete();
+      await tester.pump();
+      expect(find.byType(AiChatPage), findsNothing);
+      if (change == 'background with covered page') {
+        expect(covered!.isActive, isTrue);
+      }
+      _resume(tester);
+      await settleNetworkWidgets(tester);
+      expect(
+        find.byType(AiChatPage),
+        findsNothing,
+        reason:
+            'a consumed tap is dropped when foreground or ownership changes',
+      );
+    }, variant: _android);
+  }
+
+  testWidgets(
+    'cancelled unlock invalidates delayed cold tap, new warm tap works',
+    (tester) async {
+      final auth = _Auth();
+      final lock = AppLockController(store: _Store(true), authenticator: auth);
+      addTearDown(lock.dispose);
+      await tester.runAsync(lock.start);
+      final shell = await NotificationShell.start(
+        tester,
+        platform: platform,
+        lock: lock,
+        initializeBeforeShell: false,
+      );
+      final chat = shell.openChat(tester);
+      platform.launchPayload = notificationPayload(chat.id, shell.generation);
+      platform.launchRequested = Completer<void>();
+      platform.launchBarrier = Completer<void>();
+      final initializing = shell.notifications.initialize();
+      await tester.pump();
+      expect(platform.launchRequested!.isCompleted, isTrue);
+      auth.pending!.complete(false);
+      await tester.pump();
+      expect(lock.refusedUnlocks, 1);
+      platform.launchBarrier!.complete();
+      await initializing;
+      expect(shell.gate.waiting, isFalse);
+
+      final unlocking = lock.unlock();
+      auth.pending!.complete(true);
+      await unlocking;
+      await settleNetworkWidgets(tester);
+      expect(find.byType(AiChatPage), findsNothing);
+      await platform.tap(notificationPayload(chat.id, shell.generation));
+      await settleNetworkWidgets(tester);
+      expect(
+        tester.widget<AiChatPage>(find.byType(AiChatPage)).session,
+        same(chat),
+      );
+    },
+    variant: _android,
+  );
 
   testWidgets(
     'warm tap without a lock opens the conversation at its waiting card',
@@ -309,6 +492,91 @@ void main() {
     Finder disclosure() => find.text(l10n.aiRunNoticeDenied);
 
     testWidgets(
+      'enabled notifications skip explanation and permission request',
+      (tester) async {
+        platform.notificationsEnabled = true;
+        await pumpChat(tester);
+        await send(tester, 'hello');
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('ai-run-notice-ask')), findsNothing);
+        expect(platform.permissionRequests, 0);
+        expect(chat.sent, ['hello']);
+        expect(disclosure(), findsNothing);
+      },
+      variant: _android,
+    );
+
+    testWidgets('known disabled notifications disclose without asking again', (
+      tester,
+    ) async {
+      platform.notificationsEnabled = false;
+      await pumpChat(tester);
+      await send(tester, 'hello');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-run-notice-ask')), findsNothing);
+      expect(platform.permissionRequests, 0);
+      expect(chat.sent, ['hello']);
+      expect(disclosure(), findsOneWidget);
+    }, variant: _android);
+
+    testWidgets(
+      'blocked approval channel discloses without a permission request',
+      (tester) async {
+        platform.notificationsEnabled = true;
+        platform.channels = [
+          notificationChannel('ai_run_approvals_v1', importance: 0),
+        ];
+        await pumpChat(tester);
+        await send(tester, 'hello');
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('ai-run-notice-ask')), findsNothing);
+        expect(platform.permissionRequests, 0);
+        expect(chat.sent, ['hello']);
+        expect(disclosure(), findsOneWidget);
+      },
+      variant: _android,
+    );
+
+    testWidgets('not now rechecks permission before disclosing off', (
+      tester,
+    ) async {
+      await pumpChat(tester);
+      await send(tester, 'hello');
+      expect(find.byKey(const ValueKey('ai-run-notice-ask')), findsOneWidget);
+      platform.notificationsEnabled = true;
+      await tester.tap(find.byKey(const ValueKey('ai-run-notice-skip')));
+      await tester.pumpAndSettle();
+      expect(platform.permissionRequests, 0);
+      expect(chat.sent, ['hello']);
+      expect(disclosure(), findsNothing);
+    }, variant: _android);
+
+    for (final appEnabled in [false, true]) {
+      testWidgets(
+        'unknown notification state never discloses off: '
+        '${appEnabled ? "enabled app with unreadable channels" : "unreadable app permission"}',
+        (tester) async {
+          if (appEnabled) {
+            platform.notificationsEnabled = true;
+            platform.channels = null;
+          }
+          await pumpChat(tester);
+          await send(tester, 'hello');
+          expect(
+            find.byKey(const ValueKey('ai-run-notice-ask')),
+            findsOneWidget,
+          );
+          await tester.tap(find.byKey(const ValueKey('ai-run-notice-skip')));
+          await tester.pumpAndSettle();
+          expect(platform.permissionRequests, 0);
+          expect(chat.sent, ['hello']);
+          expect(disclosure(), findsNothing);
+        },
+        variant: _android,
+      );
+    }
+
+    testWidgets(
       'a refusal still sends, and says once that no reminder will come and '
       'proposals expire after 30 minutes',
       (tester) async {
@@ -356,6 +624,7 @@ void main() {
       (tester) async {
         await pumpChat(tester);
         await send(tester, 'hello');
+        platform.notificationsEnabled = false;
         await tester.tap(find.byKey(const ValueKey('ai-run-notice-skip')));
         await tester.pumpAndSettle();
         expect(platform.permissionRequests, 0);
@@ -365,7 +634,7 @@ void main() {
       variant: _android,
     );
 
-    testWidgets('an unavailable request counts as no reminders', (
+    testWidgets('an unavailable request leaves state unknown and still sends', (
       tester,
     ) async {
       platform.permission = null;
@@ -374,7 +643,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('ai-run-notice-continue')));
       await tester.pumpAndSettle();
       expect(chat.sent, ['hello']);
-      expect(disclosure(), findsOneWidget);
+      expect(disclosure(), findsNothing);
     }, variant: _android);
 
     testWidgets('where notifications are not supported nothing is asked', (

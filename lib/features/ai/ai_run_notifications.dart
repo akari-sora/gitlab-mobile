@@ -88,8 +88,9 @@ final class AiRunPendingOpen {
 /// session means the shell's safe home; a null proposal means open the current
 /// conversation without trying to locate an approval card.
 final class AiRunNotificationOpen {
-  const AiRunNotificationOpen._({this.session, this.proposal});
+  const AiRunNotificationOpen._(this._pending, {this.session, this.proposal});
 
+  final AiRunPendingOpen _pending;
   final AiChatSession? session;
   final AiWriteProposal? proposal;
 }
@@ -118,11 +119,13 @@ final class AiRunNotifications extends ChangeNotifier {
   final _plugin = FlutterLocalNotificationsPlugin();
   final _approvalIds = _NotificationIds(approvalFirstId, approvalLastId);
   final _resultIds = _NotificationIds(resultFirstId, resultLastId);
+  final _approvalWatches = <int, ({VoidCallback check, VoidCallback stop})>{};
   AiRunRegistry? _registry;
   StreamSubscription<AiRunNotificationEvent>? _events;
   Future<bool>? _initialization;
   Future<void> _delivery = Future<void>.value();
   AiRunPendingOpen? _pending;
+  int _openSequence = 0;
   bool _disposed = false;
   bool _ready = false;
   AiRunNotificationFailure? _failure;
@@ -144,6 +147,7 @@ final class AiRunNotifications extends ChangeNotifier {
 
   Future<bool> _initialize() async {
     if (_disposed || !supported) return false;
+    final launchSequence = _openSequence;
     try {
       final initialized = await _plugin.initialize(
         settings: const InitializationSettings(
@@ -160,7 +164,8 @@ final class AiRunNotifications extends ChangeNotifier {
       final launch = await _plugin.getNotificationAppLaunchDetails();
       if (_disposed) return false;
       // A newer warm tap during initialization takes precedence.
-      if (_pending == null && launch?.didNotificationLaunchApp == true) {
+      if (launchSequence == _openSequence &&
+          launch?.didNotificationLaunchApp == true) {
         final response = launch?.notificationResponse;
         if (response != null) _receiveResponse(response);
       }
@@ -200,6 +205,31 @@ final class AiRunNotifications extends ChangeNotifier {
     }
   }
 
+  /// Android's current app permission and the two notification channels.
+  /// Missing channels have not been created yet; a blocked channel has none
+  /// importance. Unsupported platforms or unreadable state remain unknown.
+  Future<bool?> areNotificationsEnabled() async {
+    if (!await initialize() || _disposed) return null;
+    try {
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      final enabled = await android?.areNotificationsEnabled();
+      if (_disposed || enabled != true) return _disposed ? null : enabled;
+      final channels = await android?.getNotificationChannels();
+      if (_disposed || channels == null) return null;
+      return !channels.any(
+        (channel) =>
+            (channel.id == 'ai_run_approvals_v1' ||
+                channel.id == 'ai_run_results_v1') &&
+            channel.importance == Importance.none,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _setFailure(AiRunNotificationFailure? failure) {
     if (_disposed || _failure == failure) return;
     _failure = failure;
@@ -226,6 +256,9 @@ final class AiRunNotifications extends ChangeNotifier {
     if (_disposed || identical(_registry, registry)) return;
     unawaited(_events?.cancel());
     _registry = registry;
+    for (final watch in _approvalWatches.values.toList()) {
+      watch.check();
+    }
     _events = registry?.notificationEvents.listen(
       (event) => _enqueue(registry, event),
       onError: (Object _) {},
@@ -252,6 +285,55 @@ final class AiRunNotifications extends ChangeNotifier {
         session,
       );
 
+  bool _awaitingApproval(AiChatSession session) =>
+      session.phase == AiChatPhase.awaitingApproval &&
+      session.proposals.any(
+        (proposal) =>
+            proposal.valid && DateTime.now().isBefore(proposal.expiresAt),
+      );
+
+  /// The registry's public lookup returns a Listenable session. Its changes
+  /// include proposal settlement/expiry even when registry counts stay equal.
+  void _watchApproval(
+    AiRunRegistry owner,
+    AiChatSession session,
+    AiRunNotificationRoute route,
+    String payload,
+    int id,
+  ) {
+    _approvalWatches.remove(id)?.stop();
+    var cancelling = false;
+    late final VoidCallback check;
+    void stop() => session.removeListener(check);
+    check = () {
+      if (_disposed ||
+          cancelling ||
+          (_current(owner, session, route) && _awaitingApproval(session))) {
+        return;
+      }
+      cancelling = true;
+      // Serialize cancellation after any in-flight show. A reused ID's new
+      // watch cannot be cancelled by this old conversation's callback.
+      _delivery = _delivery
+          .then((_) async {
+            if (_disposed || !identical(_approvalWatches[id]?.stop, stop)) {
+              return;
+            }
+            await _plugin.cancel(id: id);
+            if (identical(_approvalWatches[id]?.stop, stop)) {
+              _approvalWatches.remove(id)?.stop();
+              _approvalIds.remove(payload);
+            }
+          })
+          .catchError((Object _) {
+            cancelling = false;
+            _setFailure(AiRunNotificationFailure.delivery);
+          });
+    };
+    _approvalWatches[id] = (check: check, stop: stop);
+    session.addListener(check);
+  }
+
   void _enqueue(AiRunRegistry owner, AiRunNotificationEvent event) {
     if (_disposed || !identical(owner, _registry)) return;
     final route = AiRunNotificationRoute(
@@ -270,6 +352,7 @@ final class AiRunNotifications extends ChangeNotifier {
         .then((_) async {
           if (!await initialize() || !_current(owner, session, route)) return;
           final approval = event.kind == AiRunNotificationKind.needsApproval;
+          if (approval && !_awaitingApproval(session)) return;
           final payload = route.encode();
           final ids = approval ? _approvalIds : _resultIds;
           var id = ids.allocate(payload);
@@ -286,6 +369,7 @@ final class AiRunNotifications extends ChangeNotifier {
           }
           if (!approval) _setResultRangeFull(false);
           final text = _text();
+          if (approval) _watchApproval(owner, session, route, payload, id);
           await _plugin.show(
             id: id,
             title: text.title,
@@ -321,6 +405,7 @@ final class AiRunNotifications extends ChangeNotifier {
     }
     final route = AiRunNotificationRoute.decode(response.payload);
     if (route == null) return;
+    _openSequence++;
     _pending = _capture(route);
     notifyListeners();
   }
@@ -349,20 +434,32 @@ final class AiRunNotifications extends ChangeNotifier {
     if (owner == null ||
         session == null ||
         !_current(owner, session, pending.route)) {
-      return const AiRunNotificationOpen._();
+      return AiRunNotificationOpen._(pending);
     }
     final now = DateTime.now();
     final proposals = session.proposals.where(
       (proposal) => proposal.valid && now.isBefore(proposal.expiresAt),
     );
     return AiRunNotificationOpen._(
+      pending,
       session: session,
       proposal: proposals.firstOrNull,
     );
   }
 
   void discardPendingOpen() {
+    _openSequence++;
     _pending = null;
+  }
+
+  /// The shell may have awaited an editor exit since consuming this decision.
+  bool isCurrentOpen(AiRunNotificationOpen open) {
+    final pending = open._pending;
+    final owner = pending._owner;
+    return !_disposed &&
+        owner != null &&
+        identical(owner, _registry) &&
+        (open.session == null || _current(owner, open.session!, pending.route));
   }
 
   @override
@@ -371,6 +468,10 @@ final class AiRunNotifications extends ChangeNotifier {
     _pending = null;
     _registry = null;
     unawaited(_events?.cancel());
+    for (final watch in _approvalWatches.values) {
+      watch.stop();
+    }
+    _approvalWatches.clear();
     super.dispose();
   }
 }
@@ -384,6 +485,11 @@ final class _NotificationIds {
   final _byPayload = <String, int>{};
   final _byId = <int, String>{};
   final _reserved = <int>{};
+
+  void remove(String payload) {
+    final id = _byPayload.remove(payload);
+    if (id != null) _byId.remove(id);
+  }
 
   void reserveActive(Iterable<int> ids) {
     _reserved

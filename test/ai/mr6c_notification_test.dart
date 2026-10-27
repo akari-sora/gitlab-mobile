@@ -11,6 +11,8 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_run_notifications.dart';
 
+import '../support/ai_run_notification_shell.dart' show notificationChannel;
+
 const _channel = MethodChannel('dexterous.com/flutter/local_notifications');
 const _sentinels = [
   'PROJECT_SENTINEL',
@@ -43,6 +45,16 @@ final class _Chat extends ChangeNotifier
   );
   @override
   List<AiWriteProposal> proposals = [];
+  @override
+  AiChatPhase phase = AiChatPhase.awaitingApproval;
+
+  void resolve(String action) {
+    if (action != 'expire') proposals.single.invalidate();
+    phase = AiChatPhase.idle;
+    notifyListeners();
+  }
+
+  void changed() => notifyListeners();
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -53,6 +65,7 @@ final class _Registry extends ChangeNotifier
     implements AiRunRegistry, AiExecutionRunRegistry {
   _Registry(this.chat);
   _Chat? chat;
+  final otherChats = <String, _Chat>{};
   int generation = 8;
   bool current = true;
   final events = StreamController<AiRunNotificationEvent>.broadcast(sync: true);
@@ -61,8 +74,8 @@ final class _Registry extends ChangeNotifier
   AiChatSession? sessionForConversation(
     String conversationId,
     int generation,
-  ) => current && this.generation == generation && chat?.id == conversationId
-      ? chat
+  ) => current && this.generation == generation
+      ? (chat?.id == conversationId ? chat : otherChats[conversationId])
       : null;
 
   @override
@@ -94,8 +107,15 @@ final class _Native {
   final calls = <MethodCall>[];
   final liveIds = <int>{6100, 6199, 6200, 6250, 6299, 6300, 6399, 6400};
   String? launchPayload;
+  Completer<void>? launchBarrier;
+  Completer<void>? launchRequested;
+  Completer<void>? showBarrier;
+  Completer<void>? showRequested;
   int? failCancel;
   bool permission = true;
+  bool? notificationsEnabled = true;
+  List<Map<String, Object?>>? channels = [];
+  bool failState = false;
   bool failShow = false;
   bool failActive = false;
 
@@ -110,11 +130,14 @@ final class _Native {
       case 'initialize':
         return true;
       case 'getNotificationAppLaunchDetails':
-        return {
+        final details = {
           'notificationLaunchedApp': launchPayload != null,
           if (launchPayload != null)
             'notificationResponse': response(launchPayload!),
         };
+        launchRequested?.complete();
+        await launchBarrier?.future;
+        return details;
       case 'cancel':
         final id = (call.arguments as Map)['id'] as int;
         if (id == failCancel) throw PlatformException(code: 'synthetic');
@@ -122,6 +145,8 @@ final class _Native {
         return null;
       case 'show':
         if (failShow) throw PlatformException(code: 'TOKEN_SENTINEL');
+        if (!(showRequested?.isCompleted ?? true)) showRequested!.complete();
+        await showBarrier?.future;
         liveIds.add((call.arguments as Map)['id'] as int);
         return null;
       case 'getActiveNotifications':
@@ -129,6 +154,11 @@ final class _Native {
         return liveIds.map((id) => <String, Object?>{'id': id}).toList();
       case 'requestNotificationsPermission':
         return permission;
+      case 'areNotificationsEnabled':
+        if (failState) throw PlatformException(code: 'synthetic');
+        return notificationsEnabled;
+      case 'getNotificationChannels':
+        return channels;
       default:
         throw StateError('Unexpected platform call: ${call.method}');
     }
@@ -224,6 +254,173 @@ void main() {
         appLockLoaded: loaded,
         appLockUnlocked: unlocked,
       );
+
+  test(
+    'late cold payload is invalid after cancelled unlock; new tap works',
+    () async {
+      notifications.bindRegistry(registry);
+      native.launchPayload = _payload();
+      native.launchRequested = Completer<void>();
+      native.launchBarrier = Completer<void>();
+      final initializing = notifications.initialize();
+      await native.launchRequested!.future;
+      notifications.discardPendingOpen();
+      native.launchBarrier!.complete();
+      expect(await initializing, isTrue);
+      expect(notifications.pendingOpen, isNull);
+      expect(
+        take(),
+        isNull,
+        reason: 'a later successful unlock has no old tap',
+      );
+      await native.tap(_payload());
+      expect(take()!.session, same(chat));
+    },
+  );
+
+  for (final consumeWarm in [false, true]) {
+    test(
+      'older cold tap cannot replace newer ${consumeWarm ? "consumed" : "waiting"} warm tap',
+      () async {
+        notifications.bindRegistry(registry);
+        native.launchPayload = _payload('old-cold');
+        native.launchRequested = Completer<void>();
+        native.launchBarrier = Completer<void>();
+        final initializing = notifications.initialize();
+        await native.launchRequested!.future;
+        await native.tap(_payload());
+        if (consumeWarm) expect(take()!.session, same(chat));
+        native.launchBarrier!.complete();
+        expect(await initializing, isTrue);
+        if (consumeWarm) {
+          expect(notifications.pendingOpen, isNull);
+          expect(take(), isNull);
+        } else {
+          expect(notifications.pendingOpen!.route.conversationId, chat.id);
+          expect(take()!.session, same(chat));
+        }
+      },
+    );
+  }
+
+  for (final action in ['approve', 'reject', 'expire']) {
+    test('$action cancels only its own approval notification ID', () async {
+      notifications.bindRegistry(registry);
+      await notifications.initialize();
+      final other = _Chat('other-conversation')
+        ..proposals = [_proposal('other')];
+      addTearDown(other.dispose);
+      registry.otherChats[other.id] = other;
+      registry.emit(AiRunNotificationKind.needsApproval);
+      registry.emit(AiRunNotificationKind.needsApproval, id: other.id);
+      await _drain();
+      final ownId = native.shows.first['id'];
+      final otherId = native.shows.last['id'];
+      expect(ownId, isNot(otherId));
+      native.calls.clear();
+      chat.resolve(action);
+      await _drain();
+      expect(
+        native.calls
+            .where((c) => c.method == 'cancel')
+            .map((c) => (c.arguments as Map)['id']),
+        [ownId],
+      );
+      expect(native.liveIds, isNot(contains(ownId)));
+      expect(native.liveIds, contains(otherId));
+    });
+  }
+
+  test(
+    'proposal expiry cancels approval even before phase catches up',
+    () async {
+      notifications.bindRegistry(registry);
+      await notifications.initialize();
+      registry.emit(AiRunNotificationKind.needsApproval);
+      await _drain();
+      final id = native.shows.single['id'];
+      native.calls.clear();
+      chat.proposals = [
+        _proposal(
+          'expired',
+          expiry: DateTime.now().subtract(const Duration(seconds: 1)),
+        ),
+      ];
+      chat.changed();
+      await _drain();
+      expect(
+        native.calls
+            .where((c) => c.method == 'cancel')
+            .map((c) => (c.arguments as Map)['id']),
+        [id],
+      );
+    },
+  );
+
+  test('pending approval stays until the final proposal resolves', () async {
+    notifications.bindRegistry(registry);
+    await notifications.initialize();
+    registry.emit(AiRunNotificationKind.needsApproval);
+    await _drain();
+    final id = native.shows.single['id'];
+    chat.proposals.add(_proposal('second'));
+    chat.proposals.first.invalidate();
+    native.calls.clear();
+    chat.changed();
+    await _drain();
+    expect(native.calls.where((c) => c.method == 'cancel'), isEmpty);
+    expect(native.liveIds, contains(id));
+    chat.proposals.last.invalidate();
+    chat.changed();
+    await _drain();
+    expect(
+      native.calls
+          .where((c) => c.method == 'cancel')
+          .map((c) => (c.arguments as Map)['id']),
+      [id],
+    );
+  });
+
+  test(
+    'resolved proposal is rechecked before delayed approval delivery',
+    () async {
+      notifications.bindRegistry(registry);
+      native.launchRequested = Completer<void>();
+      native.launchBarrier = Completer<void>();
+      final initializing = notifications.initialize();
+      await native.launchRequested!.future;
+      registry.emit(AiRunNotificationKind.needsApproval);
+      chat.resolve('approve');
+      native.launchBarrier!.complete();
+      expect(await initializing, isTrue);
+      await _drain();
+      expect(native.shows, isEmpty);
+    },
+  );
+
+  test(
+    'approval resolved during show is cancelled after show finishes',
+    () async {
+      notifications.bindRegistry(registry);
+      await notifications.initialize();
+      native.calls.clear();
+      native.showRequested = Completer<void>();
+      native.showBarrier = Completer<void>();
+      registry.emit(AiRunNotificationKind.needsApproval);
+      await native.showRequested!.future;
+      final id = native.shows.single['id'];
+      chat.resolve('reject');
+      native.showBarrier!.complete();
+      await _drain();
+      expect(
+        native.calls
+            .where((c) => c.method == 'cancel')
+            .map((c) => (c.arguments as Map)['id']),
+        [id],
+      );
+      expect(native.liveIds, isNot(contains(id)));
+    },
+  );
 
   test(
     'startup cancels exactly the approval range once, preserving other IDs',
@@ -698,7 +895,46 @@ void main() {
       expect(notifications.supported, isFalse);
       expect(await notifications.initialize(), isFalse);
       expect(await notifications.requestPermission(), isNull);
+      expect(await notifications.areNotificationsEnabled(), isNull);
       expect(native.calls, isEmpty);
+    },
+  );
+
+  test(
+    'notification state reads app permission without requesting it',
+    () async {
+      expect(await notifications.areNotificationsEnabled(), isTrue);
+      native.notificationsEnabled = false;
+      expect(await notifications.areNotificationsEnabled(), isFalse);
+      native.notificationsEnabled = null;
+      expect(await notifications.areNotificationsEnabled(), isNull);
+      native.failState = true;
+      expect(await notifications.areNotificationsEnabled(), isNull);
+      expect(
+        native.calls.where((c) => c.method == 'requestNotificationsPermission'),
+        isEmpty,
+      );
+    },
+  );
+
+  for (final id in ['ai_run_approvals_v1', 'ai_run_results_v1']) {
+    test('blocked $id channel counts as notifications disabled', () async {
+      native.channels = [notificationChannel(id, importance: 0)];
+      expect(await notifications.areNotificationsEnabled(), isFalse);
+      native.channels = [notificationChannel(id)];
+      expect(await notifications.areNotificationsEnabled(), isTrue);
+    });
+  }
+
+  test(
+    'absent or unrelated channels are allowed; unreadable is unknown',
+    () async {
+      native.channels = [];
+      expect(await notifications.areNotificationsEnabled(), isTrue);
+      native.channels = [notificationChannel('unrelated', importance: 0)];
+      expect(await notifications.areNotificationsEnabled(), isTrue);
+      native.channels = null;
+      expect(await notifications.areNotificationsEnabled(), isNull);
     },
   );
 

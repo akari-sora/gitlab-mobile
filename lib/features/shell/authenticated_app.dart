@@ -652,18 +652,21 @@ class _MobileShellState extends State<_MobileShell> {
   /// history.
   Future<void> _consumeRunNotification() async {
     if (!mounted) return;
-    final open = widget.runNotifications?.take();
-    if (open == null) return;
-    if (!await _bringShellForward() || !mounted) {
-      if (mounted) {
+    final gate = widget.runNotifications;
+    final open = gate?.take();
+    if (gate == null || open == null) return;
+    bool mayNavigate() => mounted &&
+        identical(gate, widget.runNotifications) && gate.canNavigate(open);
+    if (!await _bringShellForward(mayNavigate: mayNavigate) || !mounted) {
+      if (mayNavigate()) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.aiRunNoticeFinishEditFirst)),
         );
       }
       return;
     }
-    // The lock came back while pages closed: nothing opens behind it.
-    if (widget.lock?.locked ?? false) return;
+    // No await between this foreground/lock/owner check and the route push.
+    if (!mayNavigate()) return;
     final session = open.session;
     if (session == null) {
       _goTo(_home);
@@ -680,11 +683,12 @@ class _MobileShellState extends State<_MobileShell> {
   /// to pop handles that attempt itself. An editor may still be flushing a
   /// draft or confirming the exit; that work is awaited. If the route is still
   /// up afterwards, the shortcut stops instead of discarding the guard.
-  Future<bool> _bringShellForward() async {
+  Future<bool> _bringShellForward({bool Function()? mayNavigate}) async {
     final navigator = Navigator.of(context);
     while (mounted) {
       final top = _topRoute(navigator);
       if (top == null || top.isFirst) return true;
+      if (mayNavigate != null && !mayNavigate()) return false;
       if (top is ModalRoute<Object?> && top.popDisposition == RoutePopDisposition.doNotPop) {
         top.onPopInvokedWithResult(false, null);
         final pending = RouteExit.pending(top);

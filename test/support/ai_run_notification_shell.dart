@@ -45,11 +45,27 @@ const notificationSentinels = [
 
 const _channel = MethodChannel('dexterous.com/flutter/local_notifications');
 
+Map<String, Object?> notificationChannel(String id, {int importance = 3}) => {
+  'id': id,
+  'name': 'Generic channel',
+  'importance': importance,
+  'showBadge': true,
+  'bypassDnd': false,
+  'playSound': true,
+  'enableLights': false,
+  'enableVibration': true,
+  'ledColor': 0,
+};
+
 /// The pinned plugin's Android channel. The plugin's own serialization and
 /// tap handler run; only the platform side is replaced.
 final class FakeNotificationPlatform {
   final calls = <MethodCall>[];
   String? launchPayload;
+  Completer<void>? launchBarrier;
+  Completer<void>? launchRequested;
+  bool? notificationsEnabled;
+  List<Map<String, Object?>>? channels = [];
 
   /// The system's answer to the permission request; null is an error.
   bool? permission = true;
@@ -81,16 +97,25 @@ final class FakeNotificationPlatform {
     calls.add(call);
     return switch (call.method) {
       'initialize' => true,
-      'getNotificationAppLaunchDetails' => {
-        'notificationLaunchedApp': launchPayload != null,
-        if (launchPayload != null)
-          'notificationResponse': _response(launchPayload!),
-      },
+      'getNotificationAppLaunchDetails' => await _launchDetails(),
       'cancel' || 'show' => null,
       'getActiveNotifications' => const <Object?>[],
-      'requestNotificationsPermission' => permission,
+      'areNotificationsEnabled' => notificationsEnabled,
+      'getNotificationChannels' => channels,
+      'requestNotificationsPermission' => notificationsEnabled = permission,
       _ => throw StateError('Unexpected platform call: ${call.method}'),
     };
+  }
+
+  Future<Object?> _launchDetails() async {
+    final details = {
+      'notificationLaunchedApp': launchPayload != null,
+      if (launchPayload != null)
+        'notificationResponse': _response(launchPayload!),
+    };
+    launchRequested?.complete();
+    await launchBarrier?.future;
+    return details;
   }
 
   Map<String, Object?> _response(String payload) => {
@@ -319,6 +344,7 @@ final class NotificationShell {
     AppLockController? lock,
     bool initializeBeforeShell = true,
   }) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     final fixture = WorkspaceFixture();
     final session = controllerFor(MemoryAccountStore(), fixture.adapter);
     final settings = AiSettingsController(MemoryAiStore());
