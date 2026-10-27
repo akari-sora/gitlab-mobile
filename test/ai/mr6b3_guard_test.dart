@@ -136,6 +136,101 @@ const _readPortMembers = {
   'snippetText',
 };
 
+const _mainWriteMembers = <String>{
+  'addAwardEmoji',
+  'createBoard',
+  'createBoardList',
+  'createDiscussion',
+  'createDiscussionNote',
+  'createDraftNote',
+  'createIssue',
+  'createLabel',
+  'createMergeRequest',
+  'createMilestone',
+  'createNote',
+  'createTodo',
+  'currentUser',
+  'instance',
+  'markTodoDone',
+  'moveBoardCard',
+  'moveBoardList',
+  'record',
+  'records',
+  'removeAwardEmoji',
+  'renameBoard',
+  'setBoardSystemListHidden',
+  'setDiscussionResolved',
+  'setMilestoneState',
+  'setStar',
+  'setSubscribed',
+  'unapproveMergeRequest',
+  'updateDiscussionNote',
+  'updateDraftNote',
+  'updateIssue',
+  'updateLabel',
+  'updateMergeRequest',
+  'updateMilestone',
+  'updateNote',
+  'uploadProjectFile',
+};
+
+const _nonGraphWriteMembers = <String>{
+  'applySuggestion',
+  'approveMergeRequest',
+  'batchApplySuggestions',
+  'cancelAutoMerge',
+  'createBranch',
+  'createPipeline',
+  'createProject',
+  'createRelease',
+  'createRepositoryFile',
+  'createSnippet',
+  'createTag',
+  'currentUser',
+  'deleteBoard',
+  'deleteBoardList',
+  'deleteBranch',
+  'deleteContainerRepository',
+  'deleteContainerTag',
+  'deleteDiscussionNote',
+  'deleteDraftNote',
+  'deleteFile',
+  'deleteIssue',
+  'deleteLabel',
+  'deleteMergeRequest',
+  'deleteMilestone',
+  'deleteNote',
+  'deletePackage',
+  'deletePackageFile',
+  'deletePipeline',
+  'deleteProject',
+  'deleteRelease',
+  'deleteSnippet',
+  'deleteSnippetFile',
+  'deleteTag',
+  'editProject',
+  'effectiveProjectAccess',
+  'fileMetadata',
+  'forkProject',
+  'instance',
+  'jobAction',
+  'markAllTodosDone',
+  'mergeRequest',
+  'pipelineAction',
+  'playPipelineSchedule',
+  'publishDraftNotes',
+  'rebaseMergeRequest',
+  'record',
+  'records',
+  'snippetText',
+  'textFile',
+  'updateRelease',
+  'updateRepositoryFile',
+  'updateSnippet',
+  'updateSnippetFiles',
+  'updateSnippetMetadata',
+};
+
 // Delivered by MR6b-3t (§7t), with their own fixed reads.
 const _mr6b3tMethods = {
   'updateWorkItemContent',
@@ -157,28 +252,59 @@ void main() {
         'tool/tests/test_ai_boundaries.py',
       ).readAsStringSync();
       expect(_pythonSet(boundary, 'READ_PORT_MEMBERS'), _readPortMembers);
-      expect(
-        _apiMembers(
-          File('lib/core/ai/tools/gitlab_read_port.dart').readAsStringSync(),
-        ).difference(_readPortMembers),
-        isEmpty,
-      );
+      final readSource = File(
+        'lib/core/ai/tools/gitlab_read_port.dart',
+      ).readAsStringSync();
+      expect(_readPortViolations(readSource), isEmpty);
+      expect(_pythonSet(boundary, 'GROUP_READ_PORT_MEMBERS'), {
+        'namespaceWorkItem',
+      });
       expect(_graphReadMembers, hasLength(20));
       expect(_fixedReads.keys.toSet(), _fixedMutations.keys.toSet());
       expect(_fixedReads, hasLength(15));
       final graphDelta = {..._graphReadMembers, ..._fixedReads.keys};
       expect(_pythonSet(boundary, '_MR6B3_WRITE_PORT_MEMBERS'), graphDelta);
       final called = <String>{};
+      final nonGraphCalled = <String>{};
+      final groupCalled = <String>{};
+      final mainWrite = File('lib/core/ai/tools/gitlab_write_port.dart');
+      final mainCalled = _apiMembers(mainWrite.readAsStringSync());
       for (final file in Directory(
         'lib/core/ai/tools',
-      ).listSync().whereType<File>()) {
-        if (file.path
-            .split('/')
-            .last
-            .startsWith('gitlab_write_port_graphql_')) {
-          called.addAll(_apiMembers(file.readAsStringSync()));
+      ).listSync(recursive: true).whereType<File>()) {
+        if (file.path == mainWrite.path || !file.path.endsWith('.dart')) {
+          continue;
+        }
+        final source = file.readAsStringSync();
+        if (!RegExp(
+          r'''\bpart\s+of\s+['"](?:[^'"]*/)?gitlab_write_port\.dart['"]\s*;''',
+        ).hasMatch(source)) {
+          continue;
+        }
+        final name = file.path.split('/').last;
+        final members = _apiMembers(source);
+        if (name.startsWith('gitlab_write_port_group_')) {
+          groupCalled.addAll(members);
+        } else if (name.startsWith('gitlab_write_port_graphql_')) {
+          called.addAll(members);
+        } else {
+          nonGraphCalled.addAll(members);
         }
       }
+      expect(mainCalled, _mainWriteMembers);
+      expect(nonGraphCalled, _nonGraphWriteMembers);
+      expect(groupCalled, isEmpty);
+      final allCalled = {
+        ...mainCalled,
+        ...nonGraphCalled,
+        ...called,
+        ...groupCalled,
+      };
+      expect(allCalled, isNot(contains('namespaceWorkItem')));
+      expect(
+        allCalled.intersection({'graphQuery', 'graphMutation', '_send'}),
+        isEmpty,
+      );
       expect(_pythonSet(boundary, '_MR6B3T_WRITE_PORT_MEMBERS'), {
         ..._mr6b3tReads,
         ..._mr6b3tMethods,
@@ -195,6 +321,46 @@ void main() {
       expect(
         called.intersection({'graphQuery', 'graphMutation', '_send'}),
         isEmpty,
+      );
+    });
+
+    test('read port guard rejects class moves and extra API access', () {
+      final project = _readPortMembers.map((name) => '_api.$name();').join();
+      const group = '_api.namespaceWorkItem();';
+      String fixture(
+        String projectBody,
+        String groupBody, [
+        String extra = '',
+      ]) =>
+          'final class GitLabAiReadPort { $projectBody }\n'
+          'final class GitLabAiGroupReadPort { $groupBody }\n$extra';
+      expect(_readPortViolations(fixture(project, group)), isEmpty);
+      expect(_readPortViolations(fixture('$project $group', '')), isNotEmpty);
+      expect(
+        _readPortViolations(fixture(project, '$group _api.record();')),
+        isNotEmpty,
+      );
+      expect(
+        _readPortViolations(
+          fixture(project, group, 'void f() => _api.record();'),
+        ),
+        isNotEmpty,
+      );
+      expect(
+        _readPortViolations(
+          fixture(project, group, 'void f() => helper(_api);'),
+        ),
+        isNotEmpty,
+      );
+      expect(
+        _readPortViolations(
+          fixture(
+            project,
+            group,
+            'final class Foreign { void f() => _api.record(); }',
+          ),
+        ),
+        isNotEmpty,
       );
     });
 
@@ -458,8 +624,145 @@ Set<String> _pythonSet(String source, String name) {
   ).allMatches(match!.group(1)!).map((m) => m.group(1)!).toSet();
 }
 
-Set<String> _apiMembers(String source) =>
-    RegExp(r'\b_api\.(\w+)').allMatches(source).map((m) => m.group(1)!).toSet();
+Set<String> _apiMembers(String source) {
+  final receivers = <String>{'_api'};
+  final aliases = RegExp(r'\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b');
+  var changed = true;
+  while (changed) {
+    changed = false;
+    for (final match in aliases.allMatches(source)) {
+      if (receivers.contains(match.group(2)) &&
+          receivers.add(match.group(1)!)) {
+        changed = true;
+      }
+    }
+  }
+  return {
+    for (final receiver in receivers)
+      for (final match in RegExp(
+        '\\b${RegExp.escape(receiver)}(?:\\.\\.|\\.)(\\w+)\\b',
+      ).allMatches(source))
+        match.group(1)!,
+  };
+}
+
+// Preserve source offsets while hiding braces in comments and Dart strings.
+String _codeOnly(String source) {
+  final result = source.split('');
+  var i = 0;
+  void hide(int index) {
+    if (source[index] != '\n') result[index] = ' ';
+  }
+
+  while (i < source.length) {
+    if (source.startsWith('//', i)) {
+      while (i < source.length && source[i] != '\n') {
+        hide(i++);
+      }
+    } else if (source.startsWith('/*', i)) {
+      var depth = 0;
+      do {
+        if (source.startsWith('/*', i)) {
+          hide(i++);
+          hide(i++);
+          depth++;
+        } else if (source.startsWith('*/', i)) {
+          hide(i++);
+          hide(i++);
+          depth--;
+        } else {
+          hide(i++);
+        }
+      } while (i < source.length && depth > 0);
+    } else if (source[i] == "'" || source[i] == '"') {
+      final quote = source[i];
+      final triple = source.startsWith(quote * 3, i);
+      final delimiter = triple ? quote * 3 : quote;
+      final raw = i > 0 && source[i - 1] == 'r';
+      for (var j = 0; j < delimiter.length; j++) {
+        hide(i++);
+      }
+      while (i < source.length) {
+        if (source.startsWith(delimiter, i)) {
+          for (var j = 0; j < delimiter.length; j++) {
+            hide(i++);
+          }
+          break;
+        }
+        if (!raw && source[i] == r'\' && i + 1 < source.length) {
+          hide(i++);
+          hide(i++);
+        } else {
+          hide(i++);
+        }
+      }
+    } else {
+      i++;
+    }
+  }
+  return result.join();
+}
+
+List<String> _readPortViolations(String source) {
+  final code = _codeOnly(source);
+  final classes = <({String name, int start, int end})>[];
+  for (final match in RegExp(r'\bclass\s+(\w+)[^{]*\{').allMatches(code)) {
+    var depth = 1;
+    var end = match.end;
+    while (end < code.length && depth > 0) {
+      if (code[end] == '{') depth++;
+      if (code[end] == '}') depth--;
+      end++;
+    }
+    if (depth != 0) return ['unterminated class'];
+    classes.add((name: match.group(1)!, start: match.start, end: end));
+  }
+  final expected = <String, Set<String>>{
+    'GitLabAiReadPort': _readPortMembers,
+    'GitLabAiGroupReadPort': {'namespaceWorkItem'},
+  };
+  final violations = <String>[];
+  for (final entry in expected.entries) {
+    final matches = classes.where((item) => item.name == entry.key).toList();
+    if (matches.length != 1) {
+      violations.add('expected one ${entry.key}');
+      continue;
+    }
+    final item = matches.single;
+    final actual = _apiMembers(source.substring(item.start, item.end));
+    if (actual.length != entry.value.length ||
+        !actual.containsAll(entry.value)) {
+      violations.add('unexpected ${entry.key} API members');
+    }
+  }
+  for (final item in classes.where(
+    (item) => !expected.containsKey(item.name),
+  )) {
+    if (_apiMembers(source.substring(item.start, item.end)).isNotEmpty ||
+        RegExp(
+          r'\b(?:GitLabApi|_api)\b',
+        ).hasMatch(code.substring(item.start, item.end))) {
+      violations.add('API access in unknown class ${item.name}');
+    }
+  }
+  final outside = source.split('');
+  for (final item in classes) {
+    for (var i = item.start; i < item.end; i++) {
+      outside[i] = ' ';
+    }
+  }
+  final outsideSource = outside.join();
+  if (_apiMembers(outsideSource).isNotEmpty ||
+      RegExp(r'\b(?:GitLabApi|_api)\b').hasMatch(_codeOnly(outsideSource))) {
+    violations.add('API access outside concrete classes');
+  }
+  final all = _apiMembers(source);
+  final wanted = {..._readPortMembers, 'namespaceWorkItem'};
+  if (all.length != wanted.length || !all.containsAll(wanted)) {
+    violations.add('unexpected read-port API union');
+  }
+  return violations;
+}
 
 void _expectFixedDocuments(Mr6b3ApiHarness h, String operation) {
   final allowedReads = {
