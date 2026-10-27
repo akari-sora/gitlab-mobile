@@ -954,6 +954,10 @@ void main() {
   for (final (name, body) in [
     ('empty', ''),
     ('indented quick action', ' /close\nKeep this note'),
+    ('column-zero quick action', '/merge'),
+    ('later-line quick action', 'a\n/merge'),
+    ('CRLF quick action', 'a\r\n/approve'),
+    ('mixed-CR quick action', 'a\n\r/move x/y'),
   ]) {
     test(
       '$name edit is refused without changing the preview or writing',
@@ -972,7 +976,10 @@ void main() {
             editedText: body,
           );
           expect(edited.state, AiJournalState.notExecuted);
-          expect(edited.reasonCode, 'validation');
+          expect(
+            edited.reasonCode,
+            body.isEmpty ? 'validation' : 'quickAction',
+          );
           expect(proposal.valid, isTrue);
           expect(proposal.editedText, body);
           expect(
@@ -987,7 +994,10 @@ void main() {
 
         final repeated = await h.approve(proposal);
         expect(repeated.state, AiJournalState.notExecuted);
-        expect(repeated.reasonCode, 'validation');
+        expect(
+          repeated.reasonCode,
+          body.isEmpty ? 'validation' : 'quickAction',
+        );
         expect(h.server.adapter.requests, hasLength(requests));
         expect(h.server.mutations, 0);
         expect(h.journal.entries(mr6b3Account), isEmpty);
@@ -999,6 +1009,9 @@ void main() {
     ('empty', ''),
     ('indented quick action', ' /close\nKeep this note'),
     ('column-zero quick action', '/close\nKeep this note'),
+    ('later-line quick action', 'a\n/merge'),
+    ('CRLF quick action', 'a\r\n/approve'),
+    ('mixed-CR quick action', 'a\n\r/move x/y'),
   ]) {
     test('$name is refused before a proposal or mutation', () async {
       final h = await _Harness.create();
@@ -1006,7 +1019,7 @@ void main() {
       expect(await h.propose(arguments: {..._args, 'body': body}), isNull);
       final outcome = h.coordinator.outcomeFor('p10-edit-call')!;
       expect(outcome.state, AiJournalState.notExecuted);
-      expect(outcome.reasonCode, 'validation');
+      expect(outcome.reasonCode, body.isEmpty ? 'validation' : 'quickAction');
       expect(outcome.mutationCount, 0);
       expect(h.server.mutations, 0);
       expect(h.journal.conversationWriteCount(mr6b3Account, 'p10-edit'), 0);
@@ -1024,11 +1037,45 @@ void main() {
       addTearDown(server.api.close);
       await expectLater(
         server.writePort.prepare(_request(arguments: {..._args, 'body': body})),
-        throwsA(_failure(FailureKind.validation)),
+        throwsA(
+          name == 'indented quick action'
+              ? _refused('quickAction')
+              : _failure(FailureKind.validation),
+        ),
       );
       expect(server.adapter.requests, isEmpty);
       expect(server.mutations, 0);
     });
+  }
+
+  for (final (raw, normalized) in [
+    ('/merge', ' /merge'),
+    ('a\n/merge', 'a\n /merge'),
+    ('a\r\n/approve', 'a\n /approve'),
+    ('a\n\r/move x/y', 'a\n /move x/y'),
+  ]) {
+    test(
+      'fenced note edit sends the exact prepared preview: ${raw.replaceAll('\n', r'\n').replaceAll('\r', r'\r')}',
+      () async {
+        final h = await _Harness.create();
+        addTearDown(h.dispose);
+        final proposal = (await h.propose(
+          arguments: {..._args, 'body': '```text\n$raw\n```'},
+        ))!;
+        final shown = proposal.fields['body']!;
+        expect(shown, '```text\n$normalized\n```');
+        h.server.expectedBody = shown;
+        final outcome = await h.approve(proposal);
+        expect(
+          outcome.state,
+          AiJournalState.succeeded,
+          reason: outcome.reasonCode,
+        );
+        expect(RegExp(r'(^|[\r\n])/').hasMatch(shown), isFalse);
+        expect(h.server.sentBody, shown);
+        expect(h.server.mutations, 1);
+      },
+    );
   }
 
   test(

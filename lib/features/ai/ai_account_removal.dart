@@ -210,6 +210,7 @@ final class AiAccountRemoval {
     Future<void> Function(Account account)? clearDrafts,
     Future<void> Function(Account account)? clearArtifacts,
     Future<void> Function(Account account)? clearRecent,
+    Future<void> Function(Account account)? clearReadCacheDisk,
     Future<void> Function(Account account)? clearAi,
   }) async {
     final owner = journal ?? writeJournalForCleanup;
@@ -306,6 +307,7 @@ final class AiAccountRemoval {
         clearDrafts ?? clearSecureDrafts,
         clearArtifacts ?? clearAccountArtifacts,
         clearRecent ?? clearRecentProject,
+        clearReadCacheDisk ?? _readCacheDisabledByConstruction,
       ]) {
         _requireToken(job);
         await step(account);
@@ -400,6 +402,12 @@ final class AiAccountRemoval {
     }
   }
 }
+
+// This intermediate build has no production read-cache writer or reader.
+// Later integration must supply the real coordinator, including its proof of
+// an empty cache or its clear failure; an unconfigured coordinator is not
+// equivalent to this build's disabled-by-construction adapter.
+Future<void> _readCacheDisabledByConstruction(Account account) async {}
 
 enum AiSwitchChoice { proceedAndWait, switchNow, cancel }
 
