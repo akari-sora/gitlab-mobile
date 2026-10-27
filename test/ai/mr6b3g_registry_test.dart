@@ -20,6 +20,18 @@ import '../support/fake_adapter.dart';
 import '../support/widget_settle.dart';
 import '../support/work_item_health_parent_fixture.dart';
 import '../support/work_item_status_fixture.dart';
+import 'mr6b3g_state_test.dart' as stage_state;
+import 'mr6b3g_status_test.dart' as stage_status;
+import 'mr6b3g_dates_test.dart' as stage_dates;
+import 'mr6b3g_health_test.dart' as stage_health;
+import 'mr6b3g_assignees_test.dart' as stage_assignees;
+import 'mr6b3g_milestone_weight_test.dart' as stage_milestone_weight;
+import 'mr6b3g_activity_create_test.dart' as stage_activity_create;
+import 'mr6b3g_activity_delete_test.dart' as stage_activity_delete;
+import 'mr6b3g_t1_test.dart' as stage_t1;
+import 'mr6b3g_content_test.dart' as stage_content;
+import 'mr6b3g_activity_edit_test.dart' as stage_activity_edit;
+import 'mr6b3g_labels_test.dart' as stage_labels;
 
 const _gid = WorkItemStatusFixture.groupItemId;
 const _projectGid = WorkItemStatusFixture.projectItemId;
@@ -518,7 +530,7 @@ void main() {
   }
 
   test(
-    'group prepare families remain unavailable before lock checking',
+    'each group family refuses without context and HTTP at its delivered stage',
     () async {
       expect(aiGroupWorkItemWritesEnabled, isFalse);
       final adapter = FakeAdapter((_) => jsonResponse({}));
@@ -535,37 +547,113 @@ void main() {
         accountKey: account.key,
         workItemWriteRegistry: registry,
       );
-      for (final op in [
-        'updateGroupWorkItemStatus',
-        'updateGroupWorkItemDates',
-        'updateGroupWorkItemHealthStatus',
-      ]) {
-        final request = writes.AiWriteRequest(
-          operationId: op,
-          executionId: op,
-          scope: AiWriteScope(
-            accountKey: account.key,
-            grants: const [
-              AiScopeGrant(
-                kind: AiScopeKind.groupWorkItem,
-                groupId: 84,
-                groupFullPath: 'studio/group',
-                iid: 17,
-              ),
-            ],
-          ),
-          arguments: const {'groupId': 84, 'iid': 17},
-        );
-        await expectLater(
-          port.prepare(request),
-          throwsA(
-            isA<ApiFailure>().having(
-              (failure) => failure.kind,
-              'kind',
-              FailureKind.unsupported,
+      // Delivery is pinned by each independent family fixture, never inferred
+      // from production rows and never hard-coded to today's empty stage.
+      final cases = <String, (Set<String>, Map<String, Object?>)>{
+        'updateGroupWorkItemState': (
+          stage_state.groupStateStageOperations,
+          {'stateEvent': 'close'},
+        ),
+        'updateGroupWorkItemStatus': (
+          stage_status.groupStatusStageOperations,
+          {'candidateId': WorkItemStatusFixture.statusDoing},
+        ),
+        'updateGroupWorkItemDates': (
+          stage_dates.groupDatesStageOperations,
+          {'mode': 'manual', 'startDate': '2026-11-03'},
+        ),
+        'updateGroupWorkItemHealthStatus': (
+          stage_health.groupHealthStageOperations,
+          {'healthStatus': 'atRisk'},
+        ),
+        'updateGroupWorkItemAssignees': (
+          stage_assignees.groupAssigneesStageOperations,
+          {'assigneeUsernames': <String>[]},
+        ),
+        'updateGroupWorkItemMilestone': (
+          stage_milestone_weight.groupMilestoneWeightStageOperations,
+          {'clearMilestone': true},
+        ),
+        'updateGroupWorkItemWeight': (
+          stage_milestone_weight.groupMilestoneWeightStageOperations,
+          {'weight': 1},
+        ),
+        'createGroupWorkItemActivityComment': (
+          stage_activity_create.groupActivityCreateStageOperations,
+          {'body': 'Safe comment'},
+        ),
+        'createGroupWorkItemActivityReply': (
+          stage_activity_create.groupActivityCreateStageOperations,
+          {'anchorNoteId': 1, 'body': 'Safe reply'},
+        ),
+        'deleteGroupWorkItemActivityNote': (
+          stage_activity_delete.groupActivityDeleteStageOperations,
+          {'noteId': 1},
+        ),
+        'setGroupWorkItemActivityNoteReaction': (
+          stage_t1.groupT1StageOperations,
+          {'noteId': 1, 'name': 'thumbsup', 'add': true},
+        ),
+        'setGroupWorkItemNotifications': (
+          stage_t1.groupT1StageOperations,
+          {'enabled': true},
+        ),
+        'updateGroupWorkItemContent': (
+          stage_content.groupContentStageOperations,
+          {'title': 'Safe title'},
+        ),
+        'editGroupWorkItemActivityNote': (
+          stage_activity_edit.groupActivityEditStageOperations,
+          {'noteId': 1, 'body': 'Safe edit'},
+        ),
+        'updateGroupWorkItemLabels': (
+          stage_labels.groupLabelsStageOperations,
+          {'labels': <String>[]},
+        ),
+      };
+      for (final entry in cases.entries) {
+        final op = entry.key;
+        final delivered = entry.value.$1.contains(op);
+        for (final invalid in [false, true]) {
+          final request = writes.AiWriteRequest(
+            operationId: op,
+            executionId: op,
+            scope: AiWriteScope(
+              accountKey: account.key,
+              grants: const [
+                AiScopeGrant(
+                  kind: AiScopeKind.groupWorkItem,
+                  groupId: 84,
+                  groupFullPath: 'studio/group',
+                  iid: 17,
+                ),
+              ],
             ),
-          ),
-        );
+            arguments: {
+              'groupId': 84,
+              'iid': 17,
+              ...entry.value.$2,
+              if (invalid) 'untrustedContext': true,
+            },
+          );
+          final expected = !delivered || invalid
+              ? isA<ApiFailure>().having(
+                  (failure) => failure.kind,
+                  'kind',
+                  delivered ? FailureKind.validation : FailureKind.unsupported,
+                )
+              : isA<writes.AiWriteRefused>().having(
+                  (failure) => failure.reason,
+                  'reason',
+                  'workItemUnverifiable',
+                );
+          await expectLater(
+            port.prepare(request),
+            throwsA(expected),
+            reason: '$op delivered=$delivered invalid=$invalid',
+          );
+          expect(adapter.requests, isEmpty, reason: op);
+        }
       }
       expect(adapter.requests, isEmpty);
     },

@@ -175,7 +175,7 @@ final class G0eGraphPort implements port.AiGitLabWritePort {
           ? () => live && epoch == openedEpoch
           : null,
       writeKeys: {
-        const AiConflictKey([g0eAccount, 'groupId:7', 'workItem', '5']),
+        const AiConflictKey([g0eAccount, 'group:7', 'workItem', '5']),
       },
       currentFields: currentFields,
       textBindingDigest: (_) => 'g0e-opening',

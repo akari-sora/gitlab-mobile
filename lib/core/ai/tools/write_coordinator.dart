@@ -1279,6 +1279,13 @@ final class PolicyAiWriteCoordinator
       }
     }
 
+    void requireGroupOpeningCurrent() {
+      if (pending.prepared.groupIdentity != null &&
+          !pending.prepared.hasCurrentGroupIdentity) {
+        throw const _WriteBlocked('workItemUnverifiable');
+      }
+    }
+
     Future<void> acquireTicket() async {
       requireBoundaryPending();
       var finished = false;
@@ -1314,6 +1321,7 @@ final class PolicyAiWriteCoordinator
 
     try {
       _requirePending(pending);
+      requireGroupOpeningCurrent();
       // Approval becomes durable before the conflict lock/final reads. A
       // failure after this point always has a prepared -> notExecuted record.
       await journal.prepare(
@@ -1371,8 +1379,10 @@ final class PolicyAiWriteCoordinator
       });
       _requirePending(pending);
       var request = pending.request;
+      requireGroupOpeningCurrent();
       var fresh = await readFreshness(request);
       _requirePending(pending);
+      requireGroupOpeningCurrent();
       final port.AiWritePrepared? opened;
       try {
         opened = aiGraphWriteBackOperations.contains(request.operationId)
@@ -1412,8 +1422,9 @@ final class PolicyAiWriteCoordinator
       final prepared = opened ?? await _port!.prepare(request);
       if (opened != null) prepared.bindPreparedText(request);
       _requirePending(pending);
-      if (capability.scopeClass == AiScopeClass.groupWorkItem &&
-          !_preparedGroupIdentityMatches(prepared, snapshot())) {
+      if ((prepared.groupIdentity != null && !prepared.hasCurrentGroupIdentity) ||
+          (capability.scopeClass == AiScopeClass.groupWorkItem &&
+              !_preparedGroupIdentityMatches(prepared, snapshot()))) {
         throw const _WriteBlocked('workItemUnverifiable');
       }
       if (prepared.boundary != capability.boundary ||
@@ -1502,8 +1513,9 @@ final class PolicyAiWriteCoordinator
         prepared,
         mayStart: () {
           if (_pendingFailure(pending) != null) return false;
-          if (capability.scopeClass == AiScopeClass.groupWorkItem &&
-              !_preparedGroupIdentityMatches(prepared, snapshot())) {
+          if ((prepared.groupIdentity != null && !prepared.hasCurrentGroupIdentity) ||
+              (capability.scopeClass == AiScopeClass.groupWorkItem &&
+                  !_preparedGroupIdentityMatches(prepared, snapshot()))) {
             return false;
           }
           final currentTier = _tier(
