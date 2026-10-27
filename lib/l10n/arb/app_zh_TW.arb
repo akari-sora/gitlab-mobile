@@ -10622,6 +10622,9 @@
     "placeholders": {}
   },
   "aiAssistantLabel": "AI 助理",
+  "aiRunChannelName": "AI 背景工作",
+  "aiRunServiceTitle": "AI 助理正在工作",
+  "aiRunServiceText": "點一下開啟應用程式查看進度。",
   "aiNotConfigured": "尚未設定",
   "aiProvidersHeading": "供應商",
   "aiAddProvider": "新增供應商",
