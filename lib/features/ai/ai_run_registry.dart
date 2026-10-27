@@ -8,6 +8,7 @@ import '../../core/ai/tools/write_coordinator.dart';
 import '../auth/session_controller.dart';
 import 'ai_chat_controller.dart';
 import 'ai_chat_session.dart';
+import 'ai_background_execution.dart';
 import 'ai_stores.dart';
 
 /// A session plus the cleanup operation for its concrete implementation.
@@ -72,12 +73,13 @@ bool Function() aiClientMayStart(SessionController session) {
 /// new authenticated shell creates a new registry; no session can cross that
 /// boundary even when two accounts happen to have similar resource keys.
 final class AccountAiRunRegistry extends ChangeNotifier
-    implements AiRunRegistry, AiWriteSettlementSource {
+    implements AiRunRegistry, AiExecutionRunRegistry, AiWriteSettlementSource {
   AccountAiRunRegistry({
     required SessionController session,
     required this.settings,
     AiChatSessionFactory? sessionFactory,
     this.wireClientFactory,
+    AiBackgroundExecution? backgroundExecution,
   }) : _session = session,
        _sessionFactory = sessionFactory ?? _createAiChatSession,
        generation = session.generation,
@@ -87,6 +89,15 @@ final class AccountAiRunRegistry extends ChangeNotifier
        api =
            session.api ??
            (throw StateError('An AI run registry requires an active API')) {
+    this.backgroundExecution =
+        backgroundExecution ??
+        AiBackgroundExecution(
+          accountKey: accountKey,
+          generation: generation,
+          ownerApi: api,
+          isCurrent: () => ownsCurrentSession,
+          appInForeground: aiAppInForeground,
+        );
     _session.addListener(_handleOwnerChanged);
   }
 
@@ -101,6 +112,7 @@ final class AccountAiRunRegistry extends ChangeNotifier
   final int generation;
   final String accountKey;
   final GitLabApi api;
+  late final AiBackgroundExecution backgroundExecution;
   final Map<String, AiChatSessionHandle> _sessions =
       <String, AiChatSessionHandle>{};
   var _disposed = false;
@@ -108,6 +120,15 @@ final class AccountAiRunRegistry extends ChangeNotifier
   /// Open pages per session; release drops a session only after the last.
   final Map<AiChatSession, int> _visits = {};
   var _lastRunningCount = 0;
+  var _lastServiceWorkCount = 0;
+  var _lastBackProtectedCount = 0;
+  final _notificationEvents =
+      StreamController<AiRunNotificationEvent>.broadcast(sync: true);
+  final _eventSubscriptions =
+      <AiChatSession, StreamSubscription<AiRunNotificationEvent>>{};
+  final _deliveredEventKinds = <AiChatSession, Set<AiRunNotificationKind>>{};
+  final _notificationStates =
+      <AiChatSession, ({String id, AiChatPhase phase})>{};
   var _capacityRecheckScheduled = false;
 
   bool get isDisposed => _disposed;
@@ -154,10 +175,44 @@ final class AccountAiRunRegistry extends ChangeNotifier
       handle.dispose();
       throw StateError('The AI run registry changed while opening a session');
     }
+    if (handle.session case AiChatController controller) {
+      try {
+        controller.bindBackgroundExecution(backgroundExecution);
+      } catch (_) {
+        try {
+          handle.session.stop();
+        } finally {
+          handle.dispose();
+        }
+        rethrow;
+      }
+    }
     _sessions[key] = handle;
+    _syncNotificationState(handle.session);
     _visits[handle.session] = 1;
     handle.session.addListener(_handleSessionChanged);
+    if (handle.session case AiRunNotificationSource source) {
+      _eventSubscriptions[handle.session] = source.notificationEvents.listen((
+        event,
+      ) {
+        if (!ownsCurrentSession ||
+            !_sessions.values.any(
+              (h) => identical(h.session, handle.session),
+            ) ||
+            event.generation != generation ||
+            handle.session.id != event.conversationId ||
+            (handle.session is AiChatController &&
+                (handle.session as AiChatController).isDisposed)) {
+          return;
+        }
+        _syncNotificationState(handle.session);
+        if (!_deliveredEventKinds[handle.session]!.add(event.kind)) return;
+        _notificationEvents.add(event);
+      });
+    }
     _lastRunningCount = runningCount;
+    _lastServiceWorkCount = serviceWorkCount;
+    _lastBackProtectedCount = backProtectedCount;
     return handle.session;
   }
 
@@ -166,6 +221,48 @@ final class AccountAiRunRegistry extends ChangeNotifier
     final phase = handle.session.phase;
     return phase == AiChatPhase.running || phase == AiChatPhase.stopping;
   }).length;
+
+  @override
+  int get serviceWorkCount => _sessions.values.where((handle) {
+    final chat = handle.session;
+    if (chat case AiExecutionChatSession source) {
+      return source.serviceWorkCount > 0;
+    }
+    final settling = switch (chat) {
+      AiWriteSettlementSource source => source.inFlightWrites.isNotEmpty,
+      _ => false,
+    };
+    return chat.phase == AiChatPhase.running ||
+        chat.phase == AiChatPhase.stopping ||
+        settling;
+  }).length;
+
+  @override
+  int get backProtectedCount => _sessions.values.where((handle) {
+    final chat = handle.session;
+    if (chat case AiExecutionChatSession source) {
+      return source.backProtectedCount > 0;
+    }
+    return chat.phase == AiChatPhase.running ||
+        chat.phase == AiChatPhase.stopping ||
+        chat.phase == AiChatPhase.awaitingApproval;
+  }).length;
+
+  @override
+  Stream<AiRunNotificationEvent> get notificationEvents =>
+      _notificationEvents.stream;
+
+  /// Looks only in the current in-memory owner; never opens or restores a chat.
+  @override
+  AiChatSession? sessionForConversation(String conversationId, int generation) {
+    if (!ownsCurrentSession || generation != this.generation) return null;
+    for (final handle in _sessions.values) {
+      final chat = handle.session;
+      if (chat is AiChatController && chat.isDisposed) continue;
+      if (chat.id == conversationId) return chat;
+    }
+    return null;
+  }
 
   /// Packet 9 snapshots these before changing the account/API generation.
   @override
@@ -186,13 +283,42 @@ final class AccountAiRunRegistry extends ChangeNotifier
 
   void _handleSessionChanged() {
     if (_disposed) return;
+    for (final handle in _sessions.values) {
+      _syncNotificationState(handle.session);
+    }
     final next = runningCount;
-    if (next == _lastRunningCount) return;
+    final service = serviceWorkCount;
+    final back = backProtectedCount;
+    if (next == _lastRunningCount &&
+        service == _lastServiceWorkCount &&
+        back == _lastBackProtectedCount) {
+      return;
+    }
+    final capacityChanged = next != _lastRunningCount;
     _lastRunningCount = next;
+    _lastServiceWorkCount = service;
+    _lastBackProtectedCount = back;
     notifyListeners();
     // Idle pages rebuild both when capacity fills (they must show why they
     // cannot send) and when it opens again.
-    _scheduleCapacityRecheck();
+    if (capacityChanged) _scheduleCapacityRecheck();
+  }
+
+  void _syncNotificationState(AiChatSession chat) {
+    if (chat is! AiRunNotificationSource) return;
+    final previous = _notificationStates[chat];
+    final kinds = _deliveredEventKinds.putIfAbsent(chat, () => {});
+    if (previous == null ||
+        previous.id != chat.id ||
+        (chat.phase == AiChatPhase.running &&
+            (previous.phase == AiChatPhase.idle ||
+                previous.phase == AiChatPhase.preparing))) {
+      kinds.clear();
+    } else if (chat.phase == AiChatPhase.awaitingApproval &&
+        previous.phase != AiChatPhase.awaitingApproval) {
+      kinds.remove(AiRunNotificationKind.needsApproval);
+    }
+    _notificationStates[chat] = (id: chat.id, phase: chat.phase);
   }
 
   void _scheduleCapacityRecheck() {
@@ -236,7 +362,11 @@ final class AccountAiRunRegistry extends ChangeNotifier
     }
     final handle = _sessions.remove(key)!;
     session.removeListener(_handleSessionChanged);
+    unawaited(_eventSubscriptions.remove(session)?.cancel());
+    _deliveredEventKinds.remove(session);
+    _notificationStates.remove(session);
     handle.dispose();
+    _handleSessionChanged();
   }
 
   void _handleOwnerChanged() {
@@ -253,6 +383,13 @@ final class AccountAiRunRegistry extends ChangeNotifier
     _session.removeListener(_handleOwnerChanged);
     final handles = _sessions.values.toList(growable: false);
     _sessions.clear();
+    for (final subscription in _eventSubscriptions.values) {
+      unawaited(subscription.cancel());
+    }
+    _eventSubscriptions.clear();
+    _deliveredEventKinds.clear();
+    _notificationStates.clear();
+    unawaited(_notificationEvents.close());
     for (final handle in handles) {
       handle.session.removeListener(_handleSessionChanged);
     }
@@ -260,6 +397,7 @@ final class AccountAiRunRegistry extends ChangeNotifier
       handle.session.stop();
       handle.dispose();
     }
+    backgroundExecution.dispose();
     super.dispose();
   }
 }
