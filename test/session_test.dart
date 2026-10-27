@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -7,10 +8,40 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/features/auth/account_store.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
+import 'package:gitlab_mobile/core/read_cache_files.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_disk_coordinator.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_key_store.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_settings_store.dart';
 import 'package:gitlab_mobile/shared/resume_target.dart';
 import 'support/fake_adapter.dart';
 
 class MemoryAccountStore implements AccountStore {
+  MemoryAccountStore() {
+    // Legacy session suites have no disk writer. Inject real empty-state
+    // proofs into their default coordinator; never use the native keychain or
+    // treat an unconfigured production coordinator as an empty cache.
+    final root = Directory.systemTemp.createTempSync('empty-session-cache-');
+    final storage = EmptyReadCacheStorage();
+    final keys = ReadCacheKeyStore(storage);
+    final files = ReadCacheFileStore(root: () async => root);
+    final settings = ReadCacheSettingsStore(storage);
+    readCache = ReadCacheDiskCoordinator(
+      keys: keys,
+      files: files,
+      settings: settings,
+      coordinationScope: Object(),
+    );
+    final cache = ReadCacheDiskCoordinator.instance;
+    if (!cache.configured) {
+      cache.configure(keys: keys, files: files, settings: settings);
+    }
+    addTearDown(() {
+      // Controls stay closed, so this empty fixture can only inspect/delete
+      // files. Do not await a widget test's already-retired fake clock here.
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+  }
+  late final ReadCacheDiskCoordinator readCache;
   List<Account> accounts = [];
   String? lastActive;
   bool signOutPending = false;
@@ -59,6 +90,18 @@ class MemoryAccountStore implements AccountStore {
   }
 }
 
+class EmptyReadCacheStorage implements ReadCacheSecureStorage {
+  final values = <String, String>{};
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<Map<String, String>> readAll() async => Map.of(values);
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+}
+
 SessionController controllerFor(
   MemoryAccountStore store,
   FakeAdapter adapter, {
@@ -68,6 +111,7 @@ SessionController controllerFor(
   createOAuth,
 }) => SessionController(
   store,
+  readCache: store.readCache,
   applicationIdFor: applicationIdFor,
   browser: browser,
   createOAuth: createOAuth,

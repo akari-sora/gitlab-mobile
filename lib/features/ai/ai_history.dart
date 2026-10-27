@@ -846,9 +846,18 @@ final class AiHistoryCoordinator extends ChangeNotifier
 
     _accountLifecycleListeners[session] = listener;
     session.addListener(listener);
+    unawaited(session.whenDisposed.then((_) {
+      if (identical(_accountLifecycleListeners[session], listener)) {
+        _accountLifecycleListeners.remove(session);
+        session.removeListener(listener);
+      }
+    }));
   }
 
-  Future<void> startRecovery(SessionController session) async {
+  Future<void> startRecovery(
+    SessionController session, {
+    Future<void> Function(Future<void> Function())? runRecovery,
+  }) async {
     _watchLifecycle();
     if (_disposed) return;
     _trackAccountLifecycle(session);
@@ -865,17 +874,29 @@ final class AiHistoryCoordinator extends ChangeNotifier
       _waitingRecovery.add(loaded);
       session.addListener(listener);
       try {
-        await loaded.future;
+        await Future.any([loaded.future, session.whenDisposed]);
       } finally {
         session.removeListener(listener);
         _sessionListeners.remove(session);
         _waitingRecovery.remove(loaded);
       }
     }
-    if (_disposed || !session.accountsLoaded) return;
-    while (!_disposed && session.accountsLoaded) {
-      final accounts = session.accounts.map((account) => account.key).toSet();
-      await _recoverAccounts(session, accounts);
+    if (_disposed || session.isDisposed || !session.accountsLoaded) return;
+    while (!_disposed && !session.isDisposed && session.accountsLoaded) {
+      Set<String>? accounts;
+      Future<void> recover() async {
+        if (_disposed || session.isDisposed || !session.accountsLoaded) return;
+        final current = accounts =
+            session.accounts.map((account) => account.key).toSet();
+        await _recoverAccounts(session, current);
+      }
+
+      if (runRecovery == null) {
+        await recover();
+      } else {
+        await runRecovery(recover);
+      }
+      if (accounts == null) return;
       if (setEquals(
         accounts,
         session.accounts.map((account) => account.key).toSet(),

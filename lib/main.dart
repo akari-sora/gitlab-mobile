@@ -8,6 +8,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'core/providers.dart';
+import 'core/read_cache_disk_contract.dart';
+import 'core/read_cache_files.dart';
 import 'features/auth/login_screen.dart';
 import 'features/ai/ai_gate.dart';
 import 'features/ai/ai_account_cleanup.dart';
@@ -20,6 +22,9 @@ import 'features/ai/ai_stores.dart';
 import 'features/ai/ai_write_journal.dart';
 import 'features/shell/app_shortcuts.dart';
 import 'features/auth/session_controller.dart';
+import 'features/cache/read_cache_disk_coordinator.dart';
+import 'features/cache/read_cache_key_store.dart';
+import 'features/cache/read_cache_settings_store.dart';
 import 'features/shell/authenticated_app.dart';
 import 'features/shell/incoming_links.dart';
 import 'features/security/app_lock.dart';
@@ -50,27 +55,297 @@ Future<void> main() async {
 
 // initialize resets accountsLoaded synchronously. Recovery can then listen for
 // the secure account list without waiting for network identity revalidation.
-Future<void> initializeSessionWithAiRecovery(SessionController session) {
+Future<void> initializeSessionWithAiRecovery(
+  SessionController session, {
+  AiWriteJournal? journal,
+  Duration recoveryTimeout = ReadCacheDiskCoordinator.barrierLimit,
+}) {
   final initialization = session.initialize();
-  unawaited(AiHistoryCoordinator.instance.startRecovery(session));
+  final recovery = _sessionRecoveries[session] ??=
+      _SessionRecovery(session, recoveryTimeout);
+  recovery.start();
+  final historyRecovery = AiHistoryCoordinator.instance.startRecovery(
+    session,
+    runRecovery: recovery.runAi,
+  ).catchError((Object _) {});
+  unawaited(historyRecovery);
   // Not behind the AI gate (plan v6 §8): removing an account must clean a
   // journal a gated build once wrote. Any failure leaves the journal
   // unconfigured or unrecovered, and it then refuses writes.
-  unawaited(startAiWriteJournal(session));
+  final Future<void> journalRecovery;
+  if (journal == null) {
+    journalRecovery = startAiWriteJournal(session, runRecovery: recovery.runAi);
+  } else {
+    journalRecovery = recoverAiWriteJournalAfterAccountsLoaded(
+      session,
+      journal,
+      runRecovery: recovery.runAi,
+    );
+  }
+  unawaited(journalRecovery);
+  recovery.startupTask = Future.wait<void>([
+    initialization, historyRecovery, journalRecovery,
+  ]).then((_) {});
   return initialization;
+}
+
+/// Installs the C2 stores without opening the user-controls gate. The file
+/// root is resolved by each I/O operation, so a failed provider stays closed.
+void configureReadCacheDisk(
+  ReadCacheDiskCoordinator coordinator, {
+  ReadCacheKeyStore? keys,
+  ReadCacheFileStore? files,
+  ReadCacheSettingsStore? settings,
+}) {
+  if (coordinator.configured) return;
+  final storage = FlutterReadCacheSecureStorage();
+  coordinator.configure(
+    keys: keys ?? ReadCacheKeyStore(storage),
+    files: files ?? ReadCacheFileStore(root: getApplicationSupportDirectory),
+    settings: settings ?? ReadCacheSettingsStore(storage),
+  );
+}
+
+/// The tail represents the actual operation, including native-I/O completion,
+/// not the bounded time for which a caller waits for it.
+final class _RecoveryGate {
+  Future<void> _tail = Future<void>.value();
+  int _pending = 0;
+
+  Future<T> run<T>(Future<T> Function() operation) {
+    final result = Completer<T>();
+    // An idle gate has no predecessor. Start its next turn in the caller's
+    // zone instead of retaining a completed future from a retired widget clock.
+    final previous = _pending++ == 0 ? Future<void>.value() : _tail;
+    _tail = previous.then((_) async {
+      try {
+        result.complete(await operation());
+      } on Object catch (error, stack) {
+        result.completeError(error, stack);
+      } finally {
+        _pending--;
+      }
+    });
+    return result.future;
+  }
+}
+
+final _recoveryGate = _RecoveryGate();
+final _sessionRecoveries = Expando<_SessionRecovery>();
+
+@visibleForTesting
+Future<void> startupRecoveryQuiescedForTesting(SessionController session) async {
+  await _sessionRecoveries[session]?.startupTask;
+  await _recoveryGate._tail;
+}
+
+/// Installs observers immediately but reserves no gate while session identity
+/// is still being read. Every queued scan uses a current immutable decision.
+final class _SessionRecovery {
+  _SessionRecovery(this.session, this.timeout);
+
+  final SessionController session;
+  final Duration timeout;
+  Future<void> startupTask = Future<void>.value();
+  Completer<void> _decisionChanged = Completer<void>();
+  ReadCacheStartupDecision? _seen;
+  ReadCacheStartupDecision? _acknowledged;
+  Timer? _retry;
+  final Set<Timer> _scanTimeouts = {};
+  int _attempt = 0;
+  bool _disposed = false;
+  bool _started = false;
+
+  void start() {
+    if (_started) return;
+    _started = true;
+    configureReadCacheDisk(session.readCache);
+    session.addListener(_changed);
+    unawaited(session.whenDisposed.then((_) => dispose()));
+    _changed();
+  }
+
+  void _changed() {
+    if (_disposed || session.isDisposed) return;
+    final decision = session.readCacheStartupDecision;
+    if (identical(decision, _seen)) return;
+    _seen = decision;
+    _acknowledged = null;
+    _attempt = 0;
+    _retry?.cancel();
+    _signalDecisionChanged();
+    if (decision != null) _queueScan(decision);
+  }
+
+  void _queueScan(ReadCacheStartupDecision decision) {
+    if (_disposed || !session.isReadCacheDecisionCurrent(decision)) return;
+    var expired = false;
+    Timer? timeout;
+    void expire() {
+      _scanTimeouts.remove(timeout);
+      if (_disposed || !session.isReadCacheDecisionCurrent(decision)) return;
+      expired = true;
+      // recover() checks its own revision between I/O stages; an unreadable
+      // decision invalidates that revision without authorizing any new I/O.
+      unawaited(session.readCache.recover(
+        ReadCacheStartupDecision(
+          operationTicket: decision.operationTicket,
+          accountListRevision: decision.accountListRevision,
+          accountsReadable: false,
+          signOutMarkerReadable: false,
+          lastActiveReadable: false,
+          signOutPending: true,
+          resumeAccountKey: null,
+        ),
+        accountKeys: const {},
+      ));
+      _report(ReadCacheCleanupCode.barrierTimedOut, decision);
+    }
+    final scan = _recoveryGate.run(() async {
+      if (expired || _disposed ||
+          !session.isReadCacheDecisionCurrent(decision)) {
+        return false;
+      }
+      timeout = Timer(this.timeout, expire);
+      _scanTimeouts.add(timeout!);
+      final accounts = session.accounts.map((account) => account.key).toSet();
+      return session.readCache.recover(decision, accountKeys: accounts);
+    });
+    unawaited(scan.then((success) {
+      timeout?.cancel();
+      _scanTimeouts.remove(timeout);
+      if (_disposed || !session.isReadCacheDecisionCurrent(decision)) return;
+      if (!success && decision.readable && !expired) {
+        _report(ReadCacheCleanupCode.cleanupFailed, decision);
+      }
+      if ((!success || expired) && decision.readable) _scheduleRetry(decision);
+      _acknowledge(decision);
+    }, onError: (Object _, StackTrace _) {
+      timeout?.cancel();
+      _scanTimeouts.remove(timeout);
+      if (_disposed || !session.isReadCacheDecisionCurrent(decision)) return;
+      if (!expired) _report(ReadCacheCleanupCode.cleanupFailed, decision);
+      if (decision.readable) _scheduleRetry(decision);
+      _acknowledge(decision);
+    }));
+  }
+
+  void _report(ReadCacheCleanupCode code, ReadCacheStartupDecision decision) {
+    if (_disposed || !session.isReadCacheDecisionCurrent(decision)) return;
+    session.readCache.reportCleanup(
+      DiskBinding(
+        accountKey: decision.resumeAccountKey ?? session.active?.key ?? '',
+        generation: session.generation,
+      ),
+      ReadCacheCleanupState(
+        operation: ReadCacheCleanupOperation.startup,
+        disposition: ReadCacheCleanupDisposition.diskClosed,
+        code: code,
+        clearResult: const DiskClearResult(
+          keyGoneConfirmed: false,
+          directoryGoneConfirmed: false,
+          markerDurable: false,
+          complete: false,
+        ),
+      ),
+    );
+  }
+
+  void _scheduleRetry(ReadCacheStartupDecision decision) {
+    const delays = [1, 5, 30];
+    final delay = delays[_attempt < delays.length ? _attempt : delays.length - 1];
+    _attempt++;
+    _retry?.cancel();
+    _retry = Timer(Duration(seconds: delay), () {
+      if (!_disposed && session.isReadCacheDecisionCurrent(decision)) {
+        _queueScan(decision);
+      }
+    });
+  }
+
+  void _signalDecisionChanged() {
+    final previous = _decisionChanged;
+    _decisionChanged = Completer<void>();
+    if (!previous.isCompleted) previous.complete();
+  }
+
+  void _acknowledge(ReadCacheStartupDecision decision) {
+    if (_disposed || !session.isReadCacheDecisionCurrent(decision)) return;
+    _acknowledged = decision;
+    _signalDecisionChanged();
+  }
+
+  Future<void> runAi(Future<void> Function() action) async {
+    while (!_disposed && !session.isDisposed) {
+      final changed = _decisionChanged.future;
+      final decision = session.readCacheStartupDecision;
+      if (decision == null || !identical(decision, _acknowledged) ||
+          !session.isReadCacheDecisionCurrent(decision)) {
+        await changed;
+        continue;
+      }
+      final ran = await _recoveryGate.run(() async {
+        if (_disposed || session.isDisposed ||
+            !identical(decision, _acknowledged) ||
+            !session.isReadCacheDecisionCurrent(decision)) {
+          return false;
+        }
+        await action();
+        return true;
+      });
+      if (ran) return;
+    }
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _retry?.cancel();
+    final hadScan = _scanTimeouts.isNotEmpty;
+    for (final timer in _scanTimeouts) {
+      timer.cancel();
+    }
+    _scanTimeouts.clear();
+    if (hadScan) {
+      final decision = session.readCacheStartupDecision;
+      if (decision != null && session.isReadCacheDecisionCurrent(decision)) {
+        unawaited(session.readCache.recover(
+          ReadCacheStartupDecision(
+            operationTicket: decision.operationTicket,
+            accountListRevision: decision.accountListRevision,
+            accountsReadable: false,
+            signOutMarkerReadable: false,
+            lastActiveReadable: false,
+            signOutPending: true,
+            resumeAccountKey: null,
+          ),
+          accountKeys: const {},
+        ));
+      }
+    }
+    if (identical(_sessionRecoveries[session], this)) {
+      _sessionRecoveries[session] = null;
+    }
+    session.removeListener(_changed);
+    _signalDecisionChanged();
+  }
 }
 
 Future<bool>? _aiWriteJournalConfiguration;
 
 /// Configures [AiWriteJournal.instance] once per process, then recovers it for
 /// the session's stored accounts as soon as they load. Never throws.
-Future<void> startAiWriteJournal(SessionController session) async {
+Future<void> startAiWriteJournal(
+  SessionController session, {
+  Future<void> Function(Future<void> Function())? runRecovery,
+}) async {
   final configured = await (_aiWriteJournalConfiguration ??=
       configureAiWriteJournal());
   if (!configured) return;
   await recoverAiWriteJournalAfterAccountsLoaded(
     session,
     AiWriteJournal.instance,
+    runRecovery: runRecovery,
   );
 }
 
@@ -111,8 +386,9 @@ final Expando<Future<void>> _journalRecoveryTails = Expando<Future<void>>(
 /// writes refused.
 Future<void> recoverAiWriteJournalAfterAccountsLoaded(
   SessionController session,
-  AiWriteJournal journal,
-) async {
+  AiWriteJournal journal, {
+  Future<void> Function(Future<void> Function())? runRecovery,
+}) async {
   if (!session.accountsLoaded) {
     final loaded = Completer<void>();
     void listener() {
@@ -121,21 +397,28 @@ Future<void> recoverAiWriteJournalAfterAccountsLoaded(
 
     session.addListener(listener);
     try {
-      await loaded.future;
+      await Future.any([loaded.future, session.whenDisposed]);
     } finally {
       session.removeListener(listener);
     }
   }
   Set<String> current() =>
       session.accounts.map((account) => account.key).toSet();
-  while (session.accountsLoaded) {
+  while (!session.isDisposed && session.accountsLoaded) {
     Set<String>? accounts;
     final previous = _journalRecoveryTails[journal] ?? Future<void>.value();
-    final recovery = previous.then((_) {
-      if (!session.accountsLoaded) return Future<void>.value();
-      // Read when this run starts, not when it was queued.
-      final loaded = accounts = current();
-      return journal.recoverAfterAccountsLoaded(loaded);
+    final recovery = previous.then((_) async {
+      Future<void> recover() async {
+        if (session.isDisposed || !session.accountsLoaded) return;
+        // Read when the destructive operation starts, not when it was queued.
+        final loaded = accounts = current();
+        await journal.recoverAfterAccountsLoaded(loaded);
+      }
+      if (runRecovery == null) {
+        await recover();
+      } else {
+        await runRecovery(recover);
+      }
     });
     final tail = recovery.then<void>(
       (_) {},
@@ -153,7 +436,10 @@ Future<void> recoverAiWriteJournalAfterAccountsLoaded(
     }
     // A run skipped while the list reloaded repeats once it is loaded again
     // and otherwise stops, as history recovery does.
-    if (accounts != null && setEquals(accounts, current())) return;
+    if (session.isDisposed ||
+        (accounts != null && setEquals(accounts, current()))) {
+      return;
+    }
   }
 }
 
@@ -167,6 +453,8 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   late final IncomingLinks _links;
   late final LanguageController _language;
   late final AiControllers? _ai;
+  late final AppLifecycleListener _readCacheLifecycle;
+  _SessionRecovery? _sessionRecovery;
   bool _sessionWasActive = false;
   @override
   void initState() {
@@ -186,7 +474,22 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
       unawaited(ai.settings.initialize().catchError((Object _) {}));
     }
     final session = ref.read(sessionProvider);
+    _readCacheLifecycle = AppLifecycleListener(onStateChange: (state) {
+      if (state == AppLifecycleState.resumed) {
+        final active = session.active;
+        // A negative generation only restores the foreground flag; the
+        // coordinator rejects it as an activation when no session exists.
+        final binding = DiskBinding(
+          accountKey: active?.key ?? '',
+          generation: active == null ? -1 : session.generation,
+        );
+        unawaited(session.readCache.resume(binding));
+      } else {
+        session.readCache.background();
+      }
+    });
     unawaited(initializeSessionWithAiRecovery(session));
+    _sessionRecovery = _sessionRecoveries[session];
     // The stored appearance is read alongside the accounts and never gates the
     // first frame: the app renders with ThemeMode.system until it arrives.
     unawaited(ref.read(appearanceProvider).load());
@@ -198,6 +501,8 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   }
   @override
   void dispose() {
+    _readCacheLifecycle.dispose();
+    _sessionRecovery?.dispose();
     _language.removeListener(_languageChanged);
     super.dispose();
   }

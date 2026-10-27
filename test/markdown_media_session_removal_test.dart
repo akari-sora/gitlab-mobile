@@ -12,6 +12,15 @@ import 'package:gitlab_mobile/shared/artifact_storage.dart';
 import 'session_test.dart' show MemoryAccountStore;
 import 'support/fake_adapter.dart';
 
+class _SignalledAccountStore extends MemoryAccountStore {
+  final saving = Completer<void>();
+  @override
+  Future<void> save(List<Account> value) {
+    if (!saving.isCompleted) saving.complete();
+    return super.save(value);
+  }
+}
+
 void main() {
   test(
     'fix3 OAuth rotation cannot re-add an account during removal commit',
@@ -34,7 +43,7 @@ void main() {
           clientId: 'synthetic-app',
         ),
       );
-      final store = MemoryAccountStore()
+      final store = _SignalledAccountStore()
         ..accounts = [account]
         ..lastActive = account.key;
       late Future<void> Function(OAuthCredential) rotate;
@@ -61,9 +70,7 @@ void main() {
       final gate = Completer<void>();
       store.holdAccountSave = gate;
       final removal = controller.remove(account);
-      for (var i = 0; i < 50 && store.accountSaves == 0; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await store.saving.future.timeout(const Duration(seconds: 5));
       expect(store.accountSaves, 1);
       final rotation = rotate(
         const OAuthCredential(

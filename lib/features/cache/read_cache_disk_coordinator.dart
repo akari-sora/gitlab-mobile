@@ -1106,6 +1106,8 @@ final class ReadCacheDiskCoordinator {
       }
     } on Object {
       // Unknown is not empty. Still attempt both independent explicit deletes.
+      // A path incident during this proof retires this attempt below; a later
+      // removal retry can join the replacement intent after root cleanup.
     }
     // Caller timeout or a same-owner join must still allow late key/directory
     // deletion. Only a new path incident retires this work entirely; marker
@@ -1187,7 +1189,7 @@ final class ReadCacheDiskCoordinator {
         : null;
     final future = _serial(account, () async {
       if (pathRevision != _domain.pathRevision) return _none;
-      final result = await _clearNow(
+      var result = await _clearNow(
         account,
         intent,
         // A preceding preference sweep drains the historical work. Prove empty
@@ -1195,6 +1197,20 @@ final class ReadCacheDiskCoordinator {
         hadWork: hadWork && !preferencePending,
         markerReady: markerReady,
       );
+      // A preceding barrier may have completed this exact full-clear owner.
+      // Never join across a path incident, which installs a replacement owner.
+      if (pathRevision == _domain.pathRevision &&
+          !result.complete &&
+          account.intent == null &&
+          account.clearComplete &&
+          intent.valid) {
+        result = const DiskClearResult(
+          keyGoneConfirmed: true,
+          directoryGoneConfirmed: true,
+          markerDurable: false,
+          complete: true,
+        );
+      }
       if (result.complete && account.intent == null && intent.valid) {
         // Activation decides whether the verified binding may reopen its fence.
         account.state = account.cleanup
