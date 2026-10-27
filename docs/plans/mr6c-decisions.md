@@ -57,3 +57,16 @@ Codex I1 found a finishing-mode model failure (`AiRunEnd.toolBudget` with a non-
 - `interrupted`: `stopped`, `stoppedBySettings`, `newSecret`, and every end that cut the answer short without a failure: `maxTokens`, `contentFilter`, `refusal`, `toolBudget`, `toolBudgetNoAnswer`, `contextTooLong`, `tokenBudget`.
 - `needsApproval` is unchanged.
 - The fourth-run refusal (three running) is **not sent**. It publishes no notification event and is not a generic failure. The controller records it as an execution pause with a dedicated reason (`AiExecutionPauseReason.runLimit`) and no new strings. C5 owns the pause UI and its text.
+
+## C-D7. C3 notification UI choices (lead, 2026-10-28)
+- **Where permission is asked:** in the chat's send action, before `session.send`. That is the only path that reaches `beginRun` and the foreground service, so it is always a user action, never app start-up. An explanation comes first, then the system request. On denial, on "not now" or when no request is available, the send continues and a one-time disclosure names the absent reminders and the 30-minute expiry. iOS never asks.
+- **Remembered in memory only, once per process.** CLAUDE.md's Persistence list is closed and the plan grants no new storage key.
+- **Follow-up in C3 FIX1:**
+  - The core gains an `areNotificationsEnabled()` query.
+  - The UI skips the explanation when notifications are already on.
+  - When they are off, the UI shows the disclosure instead of asking again.
+- **Taps:**
+  - A warm-start tap that arrives before the app reports it is in the foreground waits for the lock decision (`away`), so a tap never navigates under the lock.
+  - `take()` runs before the shell is brought forward and is rechecked afterwards; a relock in between drops the tap.
+  - A tap is consumed even when an open editor refuses to close, which matches shared links.
+- **NOT_RUN:** scrolling to the card in a long list, and every device behaviour (drawer, lock screen, permission dialog, cold and warm taps), which are left to C8.
