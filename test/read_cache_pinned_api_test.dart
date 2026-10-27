@@ -116,6 +116,8 @@ final class _TraceBackend implements ReadCacheDiskBackend {
   final deletionEntered = Completer<void>();
   final deletionRelease = Completer<void>();
   final accountRevoked = Completer<void>();
+  final projectRevoked = Completer<void>();
+  void Function()? onTraceInvalidation;
   DiskCommitLease? writer;
   final notices = <ReadCacheCleanupState>[];
 
@@ -146,16 +148,24 @@ final class _TraceBackend implements ReadCacheDiskBackend {
       throw const ReadCacheFileException(ReadCacheFileFailure.io);
     }
     final fence = delegate.invalidate(invalidation);
+    if (invalidation.canonicalKey?.contains('/trace') == true) {
+      onTraceInvalidation?.call();
+    }
     if (invalidation.kind == DiskInvalidationKind.account &&
         !accountRevoked.isCompleted) {
       accountRevoked.complete();
+    }
+    if (invalidation.kind == DiskInvalidationKind.permission &&
+        invalidation.path?.path == _instance.api(['projects', '1']).path &&
+        !projectRevoked.isCompleted) {
+      projectRevoked.complete();
     }
     if (invalidation.canonicalKey?.contains('/trace') == true &&
         !invalidating.isCompleted) {
       invalidating.complete();
     }
     if (holdDeletion && invalidation.canonicalKey?.contains('/trace') == true) {
-      deletionEntered.complete();
+      if (!deletionEntered.isCompleted) deletionEntered.complete();
       return _HeldFence(fence, deletionRelease.future);
     }
     return fence;
@@ -216,6 +226,7 @@ final class _Harness {
   Json version = _version();
   List<int> trace = utf8.encode('synthetic raw log 文\n');
   Responder? traceResponse;
+  Responder? metadataResponse;
   Responder? extraResponse;
   bool noStore = false;
   bool metadataNoStore = false;
@@ -282,6 +293,9 @@ final class _Harness {
     final adapter = FakeAdapter((request) {
       if (request.uri.path.endsWith('/jobs/7/trace') && traceResponse != null) {
         return traceResponse!(request);
+      }
+      if (request.uri.path.endsWith('/jobs/7') && metadataResponse != null) {
+        return metadataResponse!(request);
       }
       if (extraResponse != null &&
           !request.uri.path.endsWith('/user') &&
@@ -1304,6 +1318,273 @@ void main() {
       backend.deletionRelease.complete();
       await rejected;
       await revoked;
+    },
+  );
+
+  test(
+    'FIX2 retirement survives a superseded initial metadata ticket',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.recover();
+      late _TraceBackend backend;
+      final api = await h.client(
+        wrapBackend: (delegate) => backend = _TraceBackend(delegate),
+      );
+      addTearDown(() {
+        if (!backend.deletionRelease.isCompleted) {
+          backend.deletionRelease.complete();
+        }
+      });
+      await api.cachedTerminalJobTrace(1, 7);
+      await _seedOtherTrace(h, api);
+      await h.flush();
+      h.trace = utf8.encode('queued trace must not outlive erase\n');
+      await api.cachedTerminalJobTrace(1, 7, fresh: true);
+      final writer = backend.writer!;
+      expect(writer.isCurrent, isTrue);
+
+      final otherResponse = h.extraResponse!;
+      h.extraResponse = (request) => request.uri.path.endsWith('/jobs/9')
+          ? jsonResponse({
+              ..._job(),
+              'id': 9,
+              'erased_at': _initialNow.toIso8601String(),
+            })
+          : otherResponse(request);
+      backend.holdDeletion = true;
+      final unrelated = api.record(['projects', '1', 'jobs', '9']);
+      await backend.deletionEntered.future.timeout(_deadline);
+
+      final initialResponse = Completer<void>();
+      h.metadataResponse = (_) {
+        initialResponse.complete();
+        return jsonResponse({
+          ..._job(),
+          'erased_at': _initialNow.toIso8601String(),
+        });
+      };
+      final typed = api
+          .cachedTerminalJobTrace(1, 7, fresh: true)
+          .then<Object>((read) => read, onError: (Object error) => error);
+      await initialResponse.future.timeout(_deadline);
+      // Drain the fake transport's microtasks up to the held cleanup await.
+      await Future<void>.delayed(Duration.zero);
+      final newerResponse = Completer<void>();
+      h.metadataResponse = (_) {
+        newerResponse.complete();
+        return jsonResponse(_job());
+      };
+      final newer = api.cachedRecord(_jobPath, fresh: true, allowDisk: false);
+      await newerResponse.future.timeout(_deadline);
+      await Future<void>.delayed(Duration.zero);
+      backend.deletionRelease.complete();
+      await unrelated;
+      await newer;
+      expect(await typed, _failure(FailureKind.unsupported));
+
+      await _expectStored(h, _tracePath, present: false);
+      expect(writer.isCurrent, isFalse, reason: 'late writer must be retired');
+      await _expectStored(h, [
+        'projects',
+        '1',
+        'jobs',
+        '8',
+        'trace',
+      ], present: true);
+      expect(
+        (await api.cachedTerminalJobTrace(1, 8)).lineage,
+        CacheLineage.memory,
+      );
+      h.metadataResponse = null;
+      h.metadata = _job();
+      h.trace = utf8.encode('network after superseded erase retirement\n');
+      final next = await api.cachedTerminalJobTrace(1, 7);
+      expect(next.lineage, CacheLineage.network);
+      expect(next.value.bytes, h.trace);
+    },
+  );
+
+  for (final global in [false, true]) {
+    test(
+      'FIX2 cached erase rechecks completed ${global ? 'global' : 'project'} write',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await h.recover();
+        late _TraceBackend backend;
+        final api = await h.client(
+          wrapBackend: (delegate) => backend = _TraceBackend(delegate),
+        );
+        addTearDown(() {
+          if (!backend.deletionRelease.isCompleted) {
+            backend.deletionRelease.complete();
+          }
+        });
+        const query = {'include_retried': 'true'};
+        h.metadata['erased_at'] = _initialNow.toIso8601String();
+        h.metadata['name'] = 'before';
+        await api.cachedRecord(_jobPath, query: query, allowDisk: false);
+        backend.holdDeletion = true;
+        final reading = api.cachedRecord(
+          _jobPath,
+          query: query,
+          allowDisk: false,
+        );
+        await backend.deletionEntered.future.timeout(_deadline);
+        h.extraResponse = (_) {
+          h.metadata['name'] = 'after';
+          return jsonResponse({});
+        };
+        await api.writeRecord(
+          'PUT',
+          global
+              ? ['application', 'settings']
+              : ['projects', '1', 'issues', '2'],
+          {'title': 'synthetic FIX2 mutation'},
+        );
+        backend.deletionRelease.complete();
+        final read = await reading;
+        expect(read.lineage, CacheLineage.memory);
+        expect(
+          read.superseded || read.value['name'] == 'after',
+          isTrue,
+          reason: 'mutable cached value must revalidate after completed write',
+        );
+      },
+    );
+  }
+
+  test('FIX2 cached erase rechecks a newer no-store publication', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await h.recover();
+    late _TraceBackend backend;
+    final api = await h.client(
+      wrapBackend: (delegate) => backend = _TraceBackend(delegate),
+    );
+    addTearDown(() {
+      if (!backend.deletionRelease.isCompleted) {
+        backend.deletionRelease.complete();
+      }
+    });
+    const query = {'include_retried': 'true'};
+    h.metadata['erased_at'] = _initialNow.toIso8601String();
+    h.metadata['name'] = 'before';
+    await api.cachedRecord(_jobPath, query: query, allowDisk: false);
+    backend.holdDeletion = true;
+    final reading = api.cachedRecord(_jobPath, query: query, allowDisk: false);
+    await backend.deletionEntered.future.timeout(_deadline);
+    final responded = Completer<void>();
+    h.metadataResponse = (_) {
+      responded.complete();
+      return jsonResponse(
+        {...h.metadata, 'name': 'after'},
+        headers: {
+          'cache-control': ['no-store'],
+        },
+      );
+    };
+    final newer = api.cachedRecord(
+      _jobPath,
+      query: query,
+      fresh: true,
+      allowDisk: false,
+    );
+    await responded.future.timeout(_deadline);
+    await Future<void>.delayed(Duration.zero);
+    backend.deletionRelease.complete();
+    expect((await newer).value['name'], 'after');
+    expect((await reading).superseded, isTrue);
+  });
+
+  for (final delivery in [
+    'generic network',
+    'uncached network',
+    'direct record',
+  ]) {
+    for (final status in [403, 404]) {
+      test('FIX2 $delivery erase cancels after project $status', () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await h.recover();
+        late _TraceBackend backend;
+        final api = await h.client(
+          wrapBackend: (delegate) => backend = _TraceBackend(delegate),
+        );
+        addTearDown(() {
+          if (!backend.deletionRelease.isCompleted) {
+            backend.deletionRelease.complete();
+          }
+        });
+        h.metadata['erased_at'] = _initialNow.toIso8601String();
+        backend.holdDeletion = true;
+        final Future<Object> reading =
+            (delivery == 'direct record'
+                    ? api.record(_jobPath)
+                    : api.cachedRecord(
+                        _jobPath,
+                        query: delivery == 'uncached network'
+                            ? {'page': '1'}
+                            : const {},
+                        fresh: true,
+                        allowDisk: false,
+                      ))
+                .then<Object>(
+                  (value) => value,
+                  onError: (Object error) => error,
+                );
+        await backend.deletionEntered.future.timeout(_deadline);
+        // Finish the fake response and suspend delivery on the cleanup barrier.
+        await Future<void>.delayed(Duration.zero);
+        expect(backend.projectRevoked.isCompleted, isFalse);
+        h.extraResponse = (_) => jsonResponse({}, status: status);
+        final denied = api
+            .record(['projects', '1'])
+            .then<Object>((value) => value, onError: (Object error) => error);
+        await backend.projectRevoked.future.timeout(_deadline);
+        backend.deletionRelease.complete();
+        expect(
+          await denied,
+          _failure(
+            status == 403 ? FailureKind.forbidden : FailureKind.invisible,
+            status: status,
+          ),
+        );
+        expect(
+          await reading,
+          _failure(FailureKind.cancelled),
+          reason: 'revoked project must not deliver metadata after cleanup',
+        );
+      });
+    }
+  }
+
+  test(
+    'FIX2 uncached erase keeps generation across load observation',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.recover();
+      late _TraceBackend backend;
+      final api = await h.client(
+        wrapBackend: (delegate) => backend = _TraceBackend(delegate),
+      );
+      var cleared = false;
+      backend.onTraceInvalidation = () {
+        cleared = true;
+        api.clearReadCache();
+      };
+      h.metadata['erased_at'] = _initialNow.toIso8601String();
+      await expectLater(
+        api.cachedRecord(
+          _jobPath,
+          query: const {'page': '1'},
+          allowDisk: false,
+        ),
+        throwsA(_failure(FailureKind.cancelled)),
+      );
+      expect(cleared, isTrue);
     },
   );
 

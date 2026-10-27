@@ -543,14 +543,29 @@ final class GitLabApi {
     String method = 'GET',
     Object? data,
   }) async {
+    var permission = method == 'GET' ? _cache.permissions(uri) : null;
     final result = await _read(uri, method: method, data: data);
     try {
       final value = objectJson(jsonDecode(utf8.decode(result.bytes)));
       if (method == 'GET') {
+        if (_closed ||
+            !_cache.permitted(permission!, uri) ||
+            !_cache.permitted(permission, _cache.publicationUri(uri, value))) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        final beforePrivacy = _cache.privacyEpoch;
         _cache.observe(uri, value);
         _cache.observeRawPrivacy(uri, value);
+        if (_cache.privacyEpoch != beforePrivacy &&
+            permission['account'] == _cache.epoch) {
+          permission = _cache.permissions(uri);
+        }
         await _cache.settleDiskSafety();
-        if (_closed) throw const ApiFailure(FailureKind.cancelled);
+        if (_closed ||
+            !_cache.permitted(permission, uri) ||
+            !_cache.permitted(permission, _cache.publicationUri(uri, value))) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
       }
       return value;
     } on FormatException {
@@ -1879,12 +1894,18 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           throw const ApiFailure(FailureKind.invalidResponse);
         }
         fetchedAt = _readCacheClock();
+        if (_closed || !_cache.permitted(permission, metadataUri)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        // A newer eligibility publication cannot cancel a trusted retirement.
+        final erased = _observeErasedJob(metadataUri, metadata);
         _cache.observeRawPrivacy(metadataUri, metadata);
         await _cache.settleDiskSafety();
         if (_closed || !_cache.permitted(permission, metadataUri)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
-        if (_cache.enabled && _cache.diskRevisions[metadataKey] != ticket) {
+        if (erased ||
+            (_cache.enabled && _cache.diskRevisions[metadataKey] != ticket)) {
           throw const ApiFailure(FailureKind.unsupported);
         }
         if (_cache.enabled &&
@@ -1911,6 +1932,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     }
     if (_observeErasedJob(metadataUri, metadata)) {
       await _cache.settleDiskSafety();
+      if (_closed || !_cache.permitted(permission, metadataUri)) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
       throw const ApiFailure(FailureKind.unsupported);
     }
     final finished = metadata['finished_at'];
@@ -1978,8 +2002,14 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         } on FormatException {
           throw const ApiFailure(FailureKind.invalidResponse);
         }
+        if (_closed || !_cache.permitted(permission, metadataUri)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
         if (_observeErasedJob(metadataUri, current)) {
           await _cache.settleDiskSafety();
+          if (_closed || !_cache.permitted(permission, metadataUri)) {
+            throw const ApiFailure(FailureKind.cancelled);
+          }
           throw const ApiFailure(FailureKind.unsupported);
         }
         final pipeline = current['pipeline'];
@@ -2237,6 +2267,14 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
             if (_closed) throw const ApiFailure(FailureKind.cancelled);
             if (terminalCurrent?.call() == false) {
               await _cache.settleDiskSafety();
+              // Erase revokes the trace itself; project/account denial wins.
+              if (_closed ||
+                  !_cache.permitted(
+                    permission,
+                    instance.api(_cache.path(uri).take(4).toList()),
+                  )) {
+                throw const ApiFailure(FailureKind.cancelled);
+              }
               throw const ApiFailure(FailureKind.unsupported);
             }
             if (disk != null && lease.isCurrent) {
