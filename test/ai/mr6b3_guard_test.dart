@@ -183,6 +183,8 @@ const _readPortApiOccurrences = <String, List<String>>{
 };
 
 const _mainWriteMembers = <String>{
+  'captureGroupReadEpoch',
+  'isClosed',
   'addAwardEmoji',
   'createBoard',
   'createBoardList',

@@ -532,6 +532,13 @@ abstract interface class AiGitLabWritePort {
   });
 }
 
+typedef _AiGroupWriteContext = ({
+  int generation,
+  int readEpoch,
+  bool Function() isCurrent,
+  bool Function() isSessionCurrent,
+});
+
 /// Journal flush, approval, policy and execution permits belong to
 /// the coordinator. This port never retries a mutation or writes to disk.
 final class GitLabAiWritePort implements AiGitLabWritePort {
@@ -540,14 +547,76 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     required this.accountKey,
     AiResultClassifier? resultClassifier,
     this.workItemWriteRegistry,
-  }) : _resultClassifier = resultClassifier;
+    int? sessionGeneration,
+    bool Function()? isCurrent,
+  }) : _resultClassifier = resultClassifier,
+       _sessionGeneration = sessionGeneration,
+       _isCurrent = isCurrent;
+
+  /// Exercises the real dispatcher/resolver/coordinator without delivering a
+  /// production family or making any hidden row visible.
+  @visibleForTesting
+  factory GitLabAiWritePort.groupResolverForTesting(
+    GitLabApi api, {
+    required String accountKey,
+    required AiCapability capability,
+    required Future<Object?> Function(GraphHooks, bool Function() isCurrent)
+    mutation,
+    int? sessionGeneration,
+    bool Function()? isCurrent,
+  }) {
+    assert(capability.scopeClass == AiScopeClass.groupWorkItem);
+    assert(capability.boundary == AiWriteBoundary.graph);
+    final port = GitLabAiWritePort(
+      api,
+      accountKey: accountKey,
+      sessionGeneration: sessionGeneration,
+      isCurrent: isCurrent,
+    );
+    port._groupFamilyForTesting = (capability: capability, mutation: mutation);
+    return port;
+  }
 
   final GitLabApi _api;
   final String accountKey;
   final AiWorkItemWriteRegistry? workItemWriteRegistry;
   final AiResultClassifier? _resultClassifier;
+  final int? _sessionGeneration;
+  final bool Function()? _isCurrent;
+  ({
+    AiCapability capability,
+    Future<Object?> Function(GraphHooks, bool Function() isCurrent) mutation,
+  })?
+  _groupFamilyForTesting;
   final Object _owner = Object();
   final Set<String> _claimedExecutions = <String>{};
+
+  /// Families capture this before their first read in EACH prepare round and
+  /// pass its predicate through every asynchronous opening and prepared target.
+  /// The app supplies the generation/liveness; neither comes from arguments.
+  _AiGroupWriteContext _captureGroupWriteContext(AiWriteRequest request) {
+    final generation = _sessionGeneration;
+    final live = _isCurrent;
+    if (generation == null ||
+        generation < 0 ||
+        live == null ||
+        !live() ||
+        _api.isClosed ||
+        request.scope.accountKey != accountKey ||
+        request.scope.resolvedInstance?.key != _api.instance.key) {
+      throw const AiWriteRefused('workItemUnverifiable');
+    }
+    final epoch = _api.captureGroupReadEpoch();
+    bool sessionCurrent() => live() && !_api.isClosed;
+    bool current() => sessionCurrent() && epoch.isCurrent();
+    if (!current()) throw const AiWriteRefused('workItemUnverifiable');
+    return (
+      generation: generation,
+      readEpoch: epoch.readEpoch,
+      isCurrent: current,
+      isSessionCurrent: sessionCurrent,
+    );
+  }
 
   /// A URL is only a locator. Numeric ownership is established by the strict
   /// server read, using coordinates exclusively from the one-item grant.
@@ -685,7 +754,10 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
   @override
   Future<AiWritePrepared> prepare(AiWriteRequest request) async {
     final op = request.operationId;
-    final capability = productionAiLedger.find(op);
+    final testFamily = _groupFamilyForTesting;
+    final capability = testFamily?.capability.operationId == op
+        ? testFamily!.capability
+        : productionAiLedger.find(op);
     if (capability == null ||
         request.executionId.isEmpty ||
         request.scope.accountKey != accountKey ||
@@ -693,12 +765,39 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       throw const ApiFailure(FailureKind.unsupported);
     }
     final a = request.arguments;
-    final allowed = _arguments(op);
-    if (allowed == null ||
-        a.keys.any((key) => !allowed.contains(key)) ||
+    final allowed = capability.arguments.entries
+        .where((entry) => entry.value.portVisible)
+        .map((entry) => entry.key)
+        .toSet();
+    if (a.keys.any((key) => !allowed.contains(key)) ||
         (op != 'upload_attachment' &&
             (request.uploadBytes != null || request.sendTimeout != null))) {
       throw const ApiFailure(FailureKind.validation);
+    }
+    if (testFamily != null && testFamily.capability.operationId == op) {
+      final context = _captureGroupWriteContext(request);
+      final actor = await _readGroupActor(isCurrent: context.isCurrent);
+      final location = await _resolveGroupWorkItem(
+        request,
+        actorUserId: actor.id,
+        generation: context.generation,
+        readEpoch: context.readEpoch,
+        isCurrent: context.isCurrent,
+      );
+      return AiWritePrepared.graph(
+        request: request,
+        owner: _owner,
+        releaseName: '${location.identity.fullPath}#${location.identity.iid}',
+        groupIdentity: location.identity,
+        groupIdentityIsCurrent: context.isCurrent,
+        writeKeys: {AiConflictKey(location.identity.keyParts)},
+        mutation: (hooks) => testFamily.mutation(
+          hooks,
+          () =>
+              hooks.accepted ? context.isSessionCurrent() : context.isCurrent(),
+        ),
+        bindingDigest: location.identity.canonicalKey,
+      );
     }
     for (final prepareFamily in [
       _prepareFiles,
@@ -1228,23 +1327,37 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     return user;
   }
 
-  /// Test entry for the strict read boundary. Callers supply a predicate
-  /// bound to their captured session generation, API owner and read epoch.
+  /// Omitting the legacy explicit test coordinates uses the production context
+  /// accessor. Explicit coordinates retain the original strict-reader fixtures.
   @visibleForTesting
   Future<AiGroupWorkItemLocation> resolveGroupWorkItemForTesting(
     AiWriteRequest request, {
-    required int generation,
-    required int readEpoch,
-    required bool Function() isCurrent,
+    int? generation,
+    int? readEpoch,
+    bool Function()? isCurrent,
     Uri? resolvedUrl,
   }) async {
-    final user = await _readGroupActor(isCurrent: isCurrent);
+    final _AiGroupWriteContext context;
+    if (generation == null && readEpoch == null && isCurrent == null) {
+      context = _captureGroupWriteContext(request);
+    } else {
+      if (generation == null || readEpoch == null || isCurrent == null) {
+        throw const AiWriteRefused('workItemUnverifiable');
+      }
+      context = (
+        generation: generation,
+        readEpoch: readEpoch,
+        isCurrent: isCurrent,
+        isSessionCurrent: isCurrent,
+      );
+    }
+    final user = await _readGroupActor(isCurrent: context.isCurrent);
     return _resolveGroupWorkItem(
       request,
       actorUserId: user.id,
-      generation: generation,
-      readEpoch: readEpoch,
-      isCurrent: isCurrent,
+      generation: context.generation,
+      readEpoch: context.readEpoch,
+      isCurrent: context.isCurrent,
       resolvedUrl: resolvedUrl,
     );
   }
@@ -1694,12 +1807,4 @@ Set<String>? _fieldKeys(String operation) => productionAiLedger
     ?.arguments['fields']
     ?.properties
     .keys
-    .toSet();
-
-Set<String>? _arguments(String operation) => productionAiLedger
-    .find(operation)
-    ?.arguments
-    .entries
-    .where((entry) => entry.value.portVisible)
-    .map((entry) => entry.key)
     .toSet();
