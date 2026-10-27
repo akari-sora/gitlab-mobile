@@ -14,6 +14,8 @@ import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
+import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
@@ -86,6 +88,204 @@ Future<void> _waitFor(bool Function() condition) async {
 
 void main() {
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  test('group entry keys retain and isolate their own sessions', () async {
+    final fixture = WorkspaceFixture();
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    final settings = AiSettingsController(MemoryAiStore());
+    addTearDown(session.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(fixture.api.close);
+    await session.initialize();
+    await session.connect('https://example.com/gitlab', 'synthetic-token');
+
+    final registry = AccountAiRunRegistry(
+      session: session,
+      settings: settings,
+      sessionFactory:
+          ({
+            required origin,
+            required session,
+            required settings,
+            required runningCount,
+            wireClientFactory,
+          }) {
+            final fake = _FakeChatSession(origin, runningCount);
+            return (
+              session: fake,
+              capacityChanged: fake.notifyCapacityChanged,
+              dispose: fake.dispose,
+            );
+          },
+    );
+    addTearDown(registry.dispose);
+
+    const group = AiGroupWorkItemOrigin(
+      group: GraphResourceRef(id: 'gid://gitlab/Group/7', fullPath: 'team/sub'),
+      iid: 3,
+      title: 'Group item',
+    );
+    const renamedGroup = AiGroupWorkItemOrigin(
+      group: GraphResourceRef(
+        id: 'gid://gitlab/Group/7',
+        fullPath: 'renamed/sub',
+      ),
+      iid: 3,
+      title: 'Renamed item',
+    );
+    const descendant = AiProjectWorkItemFromGroupPageOrigin(
+      viewGroupId: 7,
+      project: Project(id: 42, name: 'Project', path: 'team/project'),
+      iid: 3,
+      title: 'Project item',
+    );
+    const renamedDescendant = AiProjectWorkItemFromGroupPageOrigin(
+      viewGroupId: 7,
+      project: Project(id: 42, name: 'Renamed', path: 'renamed/project'),
+      iid: 3,
+      title: 'Renamed item',
+    );
+    const anotherView = AiProjectWorkItemFromGroupPageOrigin(
+      viewGroupId: 8,
+      project: Project(id: 42, name: 'Project', path: 'team/project'),
+      iid: 3,
+      title: 'Project item',
+    );
+    const regular = AiWorkItemOrigin(
+      project: Project(id: 42, name: 'Project', path: 'team/project'),
+      kind: AiWorkItemKind.issue,
+      iid: 3,
+      title: 'Project item',
+    );
+
+    expect(group.key, 'group-item:7:3');
+    expect(descendant.key, 'group-page:7:project:42:workItem:3');
+    final groupSession = registry.open(group) as _FakeChatSession;
+    final projectSession = registry.open(descendant) as _FakeChatSession;
+    final otherViewSession = registry.open(anotherView) as _FakeChatSession;
+    final regularSession = registry.open(regular) as _FakeChatSession;
+    expect({
+      groupSession,
+      projectSession,
+      otherViewSession,
+      regularSession,
+    }, hasLength(4));
+
+    // A retained run carries its own session state across page visits. These
+    // synthetic markers test registry isolation, not the production policy.
+    groupSession
+      ..consentMarker = 'group consent'
+      ..scopeMarker = 'group scope'
+      ..addNotice();
+    projectSession
+      ..consentMarker = 'project consent'
+      ..scopeMarker = 'project scope'
+      ..addNotice();
+    registry.release(groupSession);
+    registry.release(projectSession);
+    final reopenedGroup = registry.open(renamedGroup) as _FakeChatSession;
+    final reopenedProject =
+        registry.open(renamedDescendant) as _FakeChatSession;
+    expect(reopenedGroup, same(groupSession));
+    expect(reopenedProject, same(projectSession));
+    expect(reopenedGroup.consentMarker, 'group consent');
+    expect(reopenedGroup.scopeMarker, 'group scope');
+    expect(reopenedProject.consentMarker, 'project consent');
+    expect(reopenedProject.scopeMarker, 'project scope');
+    expect(otherViewSession.consentMarker, isNull);
+    expect(otherViewSession.scopeMarker, isNull);
+    expect(regularSession.consentMarker, isNull);
+    expect(regularSession.scopeMarker, isNull);
+  });
+
+  test(
+    'group sessions cannot survive account generation and API replacement',
+    () async {
+      final fixture = WorkspaceFixture();
+      final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+      final settings = AiSettingsController(MemoryAiStore());
+      addTearDown(session.dispose);
+      addTearDown(settings.dispose);
+      addTearDown(fixture.api.close);
+      await session.initialize();
+      await session.connect('https://example.com/gitlab', 'synthetic-token');
+
+      AccountAiRunRegistry makeRegistry() => AccountAiRunRegistry(
+        session: session,
+        settings: settings,
+        sessionFactory:
+            ({
+              required origin,
+              required session,
+              required settings,
+              required runningCount,
+              wireClientFactory,
+            }) {
+              final fake = _FakeChatSession(origin, runningCount);
+              return (
+                session: fake,
+                capacityChanged: fake.notifyCapacityChanged,
+                dispose: fake.dispose,
+              );
+            },
+      );
+      const origins = <AiChatOrigin>[
+        AiGroupWorkItemOrigin(
+          group: GraphResourceRef(
+            id: 'gid://gitlab/Group/7',
+            fullPath: 'team/sub',
+          ),
+          iid: 3,
+          title: 'Group item',
+        ),
+        AiProjectWorkItemFromGroupPageOrigin(
+          viewGroupId: 7,
+          project: Project(id: 42, name: 'Project', path: 'team/project'),
+          iid: 3,
+          title: 'Project item',
+        ),
+      ];
+      final oldRegistry = makeRegistry();
+      final oldGeneration = session.generation;
+      final oldApi = session.api;
+      final old = [
+        for (final origin in origins)
+          oldRegistry.open(origin) as _FakeChatSession,
+      ];
+
+      // Reauthentication of the same account still creates a new owner.
+      await session.connect('https://example.com/gitlab', 'synthetic-token');
+      expect(session.generation, greaterThan(oldGeneration));
+      expect(session.api, isNot(same(oldApi)));
+      expect(oldRegistry.isDisposed, isTrue);
+      expect(old.every((run) => run.disposed && run.stopCalls == 1), isTrue);
+      for (final origin in origins) {
+        expect(() => oldRegistry.open(origin), throwsStateError);
+      }
+      final newRegistry = makeRegistry();
+      addTearDown(newRegistry.dispose);
+      final sameAccountRuns = <_FakeChatSession>[];
+      for (var i = 0; i < origins.length; i++) {
+        final run = newRegistry.open(origins[i]) as _FakeChatSession;
+        sameAccountRuns.add(run);
+        expect(run, isNot(same(old[i])));
+      }
+      final previousAccountKey = session.active!.key;
+      await session.connect('https://example.com/other', 'synthetic-token');
+      expect(session.active!.key, isNot(previousAccountKey));
+      expect(newRegistry.isDisposed, isTrue);
+      expect(sameAccountRuns.every((run) => run.disposed), isTrue);
+      final otherAccountRegistry = makeRegistry();
+      addTearDown(otherAccountRegistry.dispose);
+      for (var i = 0; i < origins.length; i++) {
+        expect(otherAccountRegistry.open(origins[i]), isNot(same(sameAccountRuns[i])));
+      }
+      session.api!.close();
+      expect(otherAccountRegistry.ownsCurrentSession, isFalse);
+      expect(() => otherAccountRegistry.open(origins.first), throwsStateError);
+      expect(otherAccountRegistry.isDisposed, isTrue);
+    },
+  );
 
   test(
     'reuses sessions by origin key and enforces the shared run limit',
@@ -555,6 +755,8 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
   var stopCalls = 0;
   var capacityNotifications = 0;
   var disposed = false;
+  String? consentMarker;
+  String? scopeMarker;
   final _items = <AiChatItem>[];
 
   @override
