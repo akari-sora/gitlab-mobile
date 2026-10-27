@@ -144,6 +144,7 @@ final class _Secrets implements KnownSecretsSource {
 final class _AsyncRefreshHarness {
   _AsyncRefreshHarness() {
     runner = AiRunner(
+      appInForeground: () => true,
       config: _config,
       wire: wire,
       complete: (plan, {onEvent}) async {

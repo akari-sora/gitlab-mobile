@@ -912,6 +912,7 @@ final class _Harness {
     placeholders = text.UploadPlaceholderTable(instance: h.api.instance);
     coordinator = PolicyAiWriteCoordinator(
       snapshot: () => AiWritePolicySnapshot(
+        appInForeground: true,
         scope: coordScope,
         level: level,
         ceiling: AiAutonomyLevel.bypass,

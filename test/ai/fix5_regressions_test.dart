@@ -231,6 +231,7 @@ void main() {
 
 void _advertiseTools(base.Harness h, List<AiToolSpec> tools) {
   h.runner = AiRunner(
+    appInForeground: () => true,
     config: h.config(),
     wire: h.wire,
     complete: h.complete,

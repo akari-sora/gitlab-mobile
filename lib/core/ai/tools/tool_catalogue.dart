@@ -133,16 +133,39 @@ final class AiToolExecution {
 
 final class AiToolCatalogue {
   AiToolCatalogue({
-    required this.port,
-    required this.scope,
+    required AiGitLabReadPort port,
+    required AiResourceScope scope,
     required this.redactor,
     this.refreshSecrets,
     this.placeholders,
     DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+  }) : _port = port,
+       _scope = scope,
+       _groupPort = null,
+       _groupScope = null,
+       _now = now ?? DateTime.now;
 
-  final AiGitLabReadPort port;
-  final AiResourceScope scope;
+  AiToolCatalogue.group({
+    required AiGitLabGroupReadPort port,
+    required AiGroupResourceScope scope,
+    required this.redactor,
+    this.refreshSecrets,
+    this.placeholders,
+    DateTime Function()? now,
+  }) : _port = null,
+       _scope = null,
+       _groupPort = port,
+       _groupScope = scope,
+       _now = now ?? DateTime.now;
+
+  final AiGitLabReadPort? _port;
+  final AiResourceScope? _scope;
+  final AiGitLabGroupReadPort? _groupPort;
+  final AiGroupResourceScope? _groupScope;
+  AiGitLabReadPort get port =>
+      _port ?? (throw const _ToolValidation('project tools unavailable'));
+  AiResourceScope get scope =>
+      _scope ?? (throw const _ToolValidation('project tools unavailable'));
   final Redactor redactor;
   final Future<void> Function()? refreshSecrets;
 
@@ -251,7 +274,18 @@ final class AiToolCatalogue {
     ),
   ]);
 
-  List<AiToolSpec> get specs => port is AiGitLabFieldReadPort
+  static final List<AiToolSpec> _groupSpecs = List.unmodifiable([
+    _spec(
+      'get_group_work_item',
+      'Read the bound group work item.',
+      {'groupId': _positiveInteger, 'iid': _positiveInteger},
+      ['groupId', 'iid'],
+    ),
+  ]);
+
+  List<AiToolSpec> get specs => _groupPort != null
+      ? _groupSpecs
+      : port is AiGitLabFieldReadPort
       ? List.unmodifiable([..._specs, ..._fieldSpecs])
       : _specs;
 
@@ -350,9 +384,7 @@ final class AiToolCatalogue {
     try {
       final arguments = _arguments(call);
       final requestCost = _requestCost(call.name);
-      final nativePort = port is GitLabAiReadPort
-          ? port as GitLabAiReadPort
-          : null;
+      final nativePort = _port is GitLabAiReadPort ? _port : null;
       // Narrow custom ports retain their conservative allowance. The native
       // port reserves and settles each bounded read immediately around the API.
       final reservedCost = nativePort == null ? requestCost * 2 : 0;
@@ -421,37 +453,61 @@ final class AiToolCatalogue {
           requestCount: completedRequests,
         );
       }
-      final restorable = placeholders == null ? null : raw.restorable;
-      final structured = raw.json
+      var restorable = placeholders == null ? null : raw.restorable;
+      var structured = raw.json
           ? _redactStructured(
               cleanValue,
               raw.fragmentFields,
               restorable: restorable,
             )
           : null;
-      final redacted =
+      var redacted =
           structured?.redaction ?? redactor.redactSource(cleanText);
       final redactedProvenance = redactor.redactSource(provenance.label);
-      final redactedText = raw.tailLines == null
-          ? redacted.text
-          : _lastLines(redacted.text, raw.tailLines!);
-      final data = AiAppText.join([
-        AiAppText.plain(redactedProvenance.text).escaped(),
-        AiAppText.untrusted(
-          source: call.name,
-          nonce: _nextNonce(),
-          body: structured?.data ?? AiAppText.plain(redactedText),
-        ),
-      ]);
-      final completeContent = data.encode();
+      final nonce = _nextNonce();
+      AiAppText buildData() {
+        final redactedText = raw.tailLines == null
+            ? redacted.text
+            : _lastLines(redacted.text, raw.tailLines!);
+        return AiAppText.join([
+          AiAppText.plain(redactedProvenance.text).escaped(),
+          AiAppText.untrusted(
+            source: call.name,
+            nonce: nonce,
+            body: structured?.data ?? AiAppText.plain(redactedText),
+          ),
+        ]);
+      }
+      var data = buildData();
+      var completeContent = data.encode();
       // Delivery replaces already charged output; the runner clips it to the
       // original result's allowance before encoding the provider request.
-      final available = reread
+      var available = reread
           ? min(completeContent.length, budget.maxSingleOutputChars)
           : budget.availableOutput(completeContent.length);
+      var groupClipped = false;
+      if (_groupPort != null && restorable != null &&
+          data.clipped(available).encode().length != completeContent.length) {
+        // A clipped group description must not expose a restorable token.
+        // Invalidate any earlier whole delivery of this field in this table.
+        final owner = cleanValue;
+        if (owner is Map<String, Object?>) {
+          final field = restorable(const ['description'], owner);
+          if (field != null) placeholders!.recordFieldDelivery(field, whole: false);
+        }
+        structured = _redactStructured(cleanValue, raw.fragmentFields);
+        redacted = structured.redaction;
+        restorable = null;
+        data = buildData();
+        completeContent = data.encode();
+        available = reread
+            ? min(completeContent.length, budget.maxSingleOutputChars)
+            : budget.availableOutput(completeContent.length);
+        groupClipped = true;
+      }
       final clipped = data.clipped(available);
       final content = clipped.encode();
-      final truncated = content.length != completeContent.length;
+      final truncated = groupClipped || content.length != completeContent.length;
       if (!reread) budget.recordOutput(content.length);
       if (structured != null && restorable != null) {
         _recordDeliveries(
@@ -466,6 +522,9 @@ final class AiToolCatalogue {
       // A failed provider send restores the original pending result. Keep its
       // timestamp paired with that result; refreshed delivery data is local.
       if (!reread) _fetchedAt[call] = fetchedAt;
+      final deliveryStructured = structured;
+      final deliveryRestorable = restorable;
+      final deliveryData = data;
       return AiToolExecution(
         result: AiToolResult.fromData(
           callId: call.id,
@@ -485,12 +544,12 @@ final class AiToolCatalogue {
             redactedProvenance.withheldPrivateKeyContext,
         gitLabRequests: completedRequests,
         fetchedAt: fetchedAt,
-        recordDelivery: structured != null && restorable != null
+        recordDelivery: deliveryStructured != null && deliveryRestorable != null
             ? (delivered) => _recordDeliveries(
-                data,
+                deliveryData,
                 delivered,
-                structured.value,
-                restorable,
+                deliveryStructured.value,
+                deliveryRestorable,
               )
             : null,
       );
@@ -528,22 +587,55 @@ final class AiToolCatalogue {
   Future<_RawToolResult> _dispatch(
     String name,
     Map<String, Object?> arguments,
-  ) => switch (name) {
-    'read_file' => _readFile(arguments),
-    'list_directory' => _listDirectory(arguments),
-    'get_issue' => _issue(arguments),
-    'get_merge_request' => _mergeRequest(arguments),
-    'get_release' => _release(arguments),
-    'get_milestone' => _milestone(arguments),
-    'get_snippet' => _snippet(arguments),
-    'get_merge_request_diff' => _mergeRequestDiff(),
-    'get_pipeline_jobs' => _pipelineJobs(),
-    'get_job_log' => _jobLog(arguments),
-    'get_commit' => _commit(arguments),
-    'get_commit_diff' => _commitDiff(arguments),
-    'search_project' => _search(arguments),
-    _ => throw const _ToolValidation('unknown tool'),
-  };
+  ) {
+    if (_groupPort != null) {
+      if (name != 'get_group_work_item') {
+        throw const _ToolValidation('unknown tool');
+      }
+      return _groupWorkItem(arguments);
+    }
+    return switch (name) {
+      'read_file' => _readFile(arguments),
+      'list_directory' => _listDirectory(arguments),
+      'get_issue' => _issue(arguments),
+      'get_merge_request' => _mergeRequest(arguments),
+      'get_release' => _release(arguments),
+      'get_milestone' => _milestone(arguments),
+      'get_snippet' => _snippet(arguments),
+      'get_merge_request_diff' => _mergeRequestDiff(),
+      'get_pipeline_jobs' => _pipelineJobs(),
+      'get_job_log' => _jobLog(arguments),
+      'get_commit' => _commit(arguments),
+      'get_commit_diff' => _commitDiff(arguments),
+      'search_project' => _search(arguments),
+      _ => throw const _ToolValidation('unknown tool'),
+    };
+  }
+
+  Future<_RawToolResult> _groupWorkItem(Map<String, Object?> args) async {
+    _exactKeys(args, required: const {'groupId', 'iid'});
+    final groupId = _positiveInt(args['groupId'], 'groupId');
+    final iid = _positiveInt(args['iid'], 'iid');
+    final groupScope = _groupScope!;
+    if (groupId != groupScope.groupId || iid != groupScope.iid) {
+      throw const _ToolValidation('work item outside scope');
+    }
+    final read = await _groupPort!.workItem(groupScope);
+    return _RawToolResult.json(
+      read.value.value,
+      _live('group work item #$iid'),
+      requestCount: read.requestCount,
+      fetchedAt: read.fetchedAt,
+      restorable: read.value.value['description_status'] == 'complete'
+          ? _descriptionField(
+              () => AiFieldProvenance.groupWorkItem(
+                identity: read.value.identity,
+                completeValue: true,
+              ),
+            )
+          : null,
+    );
+  }
 
   bool _expired(DateTime? fetchedAt) {
     if (fetchedAt == null) return false;

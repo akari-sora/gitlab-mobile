@@ -458,6 +458,8 @@ Future<Map<String, Object?>> _unknownModelScenario(
 AiRunner _runner(_Session session) {
   final ownerApi = Object();
   return AiRunner(
+    // This smoke tool runs on a desktop VM without an app lifecycle.
+    appInForeground: () => true,
     config: session.config,
     wire: session.target.wire,
     complete: session.client.complete,

@@ -353,6 +353,7 @@ void main() {
         final payloads = <String>[];
         final owner = Object();
         final runner = AiRunner(
+          appInForeground: () => true,
           config: _config,
           wire: wire,
           complete: (plan, {void Function(AiEvent)? onEvent}) async {
@@ -464,6 +465,7 @@ void main() {
         final payloads = <String>[];
         final owner = Object();
         final runner = AiRunner(
+          appInForeground: () => true,
           config: _config,
           wire: wire,
           complete: (plan, {void Function(AiEvent)? onEvent}) async {
@@ -600,6 +602,7 @@ void main() {
       var deliveryChecks = 0;
       final owner = Object();
       final runner = AiRunner(
+        appInForeground: () => true,
         config: _config,
         wire: wire,
         complete: (plan, {void Function(AiEvent)? onEvent}) async {

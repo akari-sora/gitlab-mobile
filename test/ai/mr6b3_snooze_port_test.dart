@@ -358,6 +358,7 @@ final class _Harness {
     h.budget = AiToolBudget(maxGitLabRequests: limit);
     h.coordinator = PolicyAiWriteCoordinator(
       snapshot: () => AiWritePolicySnapshot(
+        appInForeground: true,
         scope: h.scope,
         level: h.level,
         ceiling: AiAutonomyLevel.bypass,

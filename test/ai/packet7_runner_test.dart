@@ -384,6 +384,7 @@ AiRunner _runner(
   Duration toolDeadline = const Duration(seconds: 20),
   Duration runDeadline = const Duration(minutes: 12),
 }) => AiRunner(
+  appInForeground: () => true,
   config: h.config(),
   wire: h.wire,
   complete: h.complete,

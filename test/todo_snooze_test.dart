@@ -270,11 +270,17 @@ void main() {
         });
         final api = testApi(adapter);
         addTearDown(api.close);
-        final result = await (snoozed
+        final read = snoozed
             ? api.snoozedTodosForUnsnooze(allowGroupTargets: true)
-            : api.pendingTodosForSnooze(allowGroupTargets: true));
-        expect(result.items, isEmpty, reason: 'missing=$missing');
-        expect(result.unsupportedIds, {1});
+            : api.pendingTodosForSnooze(allowGroupTargets: true);
+        if (missing) {
+          await expectLater(read, throwsA(isA<ApiFailure>().having(
+            (failure) => failure.kind, 'kind', FailureKind.invalidResponse)));
+        } else {
+          final result = await read;
+          expect(result.items, isEmpty);
+          expect(result.unsupportedIds, {1});
+        }
         expect(adapter.requests, hasLength(1));
       }
     });
@@ -392,13 +398,19 @@ void main() {
         });
         final api = testApi(adapter);
         addTearDown(api.close);
-        final result = await (snoozed
+        final read = snoozed
             ? api.snoozedTodosForUnsnooze(allowGroupTargets: true)
-            : api.pendingTodosForSnooze(allowGroupTargets: true));
-        expect(result.items.single['target'], {'id': 'gid://gitlab/WorkItem/91', 'iid': 7});
-        expect(result.items.single['namespace'],
-            {'id': 'gid://gitlab/Group/2', 'group_id': 2, 'full_path': 'team/sub'});
-        expect(result.unsupportedIds, isEmpty);
+            : api.pendingTodosForSnooze(allowGroupTargets: true);
+        if (missing) {
+          await expectLater(read, throwsA(isA<ApiFailure>().having(
+            (failure) => failure.kind, 'kind', FailureKind.invalidResponse)));
+        } else {
+          final result = await read;
+          expect(result.items.single['target'], {'id': 'gid://gitlab/WorkItem/91', 'iid': 7});
+          expect(result.items.single['namespace'],
+              {'id': 'gid://gitlab/Group/2', 'group_id': 2, 'full_path': 'team/sub'});
+          expect(result.unsupportedIds, isEmpty);
+        }
         expect(adapter.requests, hasLength(1));
       }
     });
@@ -498,6 +510,153 @@ void main() {
       expect(result.unsupportedIds, {1, 2, 3, 4});
       expect(adapter.requests, hasLength(1));
     });
+
+    for (final type in ['Issue', 'WorkItem']) {
+      for (final allowGroup in [false, true]) {
+        for (final problem in [
+          'missingGroup', 'notObject', 'missingId', 'missingPath', 'nonStringId',
+          'nonStringPath', 'foreignType', 'invalidPath', 'invalidDotPath',
+        ]) {
+          test('group schema $type $problem allowGroup=$allowGroup snoozed=$snoozed', () async {
+            final node = type == 'Issue' ? _groupIssueOwnershipTodo(1) : _groupOwnershipTodo(1);
+            final group = node['group']! as Map<String, Object?>;
+            switch (problem) {
+              case 'missingGroup': node.remove('group');
+              case 'notObject': node['group'] = 'team/sub';
+              case 'missingId': group.remove('id');
+              case 'missingPath': group.remove('fullPath');
+              case 'nonStringId': group['id'] = 2;
+              case 'nonStringPath': group['fullPath'] = 2;
+              case 'foreignType': group['id'] = 'gid://gitlab/Project/2';
+              case 'invalidPath': group['fullPath'] = 'team//sub';
+              case 'invalidDotPath': group['fullPath'] = 'team//../sub';
+            }
+            final adapter = FakeAdapter((request) {
+              _assertOwnershipRead(request, snoozed);
+              return jsonResponse(_ownershipPage([node, _issueOwnershipTodo(2)]));
+            });
+            final api = testApi(adapter);
+            addTearDown(api.close);
+            await expectLater(
+              snoozed ? api.snoozedTodosForUnsnooze(allowGroupTargets: allowGroup)
+                  : api.pendingTodosForSnooze(allowGroupTargets: allowGroup),
+              throwsA(isA<ApiFailure>().having(
+                (failure) => failure.kind, 'kind', FailureKind.invalidResponse)),
+            );
+            expect(adapter.requests, hasLength(1));
+          });
+        }
+
+        for (final evidence in type == 'Issue' ? ['group'] : ['group', 'namespace']) {
+          for (final problem in [
+            'leadingZero', 'zero', 'negative', 'overflow', 'trailingData', 'dot', 'dotDot',
+          ]) {
+            test('disabled group evidence $type $evidence $problem allowGroup=$allowGroup snoozed=$snoozed', () async {
+              final node = type == 'Issue' ? _groupIssueOwnershipTodo(1) : _groupOwnershipTodo(1);
+              final owner = (evidence == 'group' ? node['group']
+                  : (node['targetEntity']! as Map<String, Object?>)['namespace'])! as Map<String, Object?>;
+              switch (problem) {
+                case 'leadingZero': owner['id'] = 'gid://gitlab/Group/02';
+                case 'zero': owner['id'] = 'gid://gitlab/Group/0';
+                case 'negative': owner['id'] = 'gid://gitlab/Group/-2';
+                case 'overflow': owner['id'] = 'gid://gitlab/Group/999999999999999999999999999999999';
+                case 'trailingData': owner['id'] = 'gid://gitlab/Group/2\n';
+                case 'dot': owner['fullPath'] = 'team/./sub';
+                case 'dotDot': owner['fullPath'] = 'team/../sub';
+              }
+              final adapter = FakeAdapter((request) {
+                _assertOwnershipRead(request, snoozed);
+                return jsonResponse(_ownershipPage([node, _issueOwnershipTodo(2)]));
+              });
+              final api = testApi(adapter);
+              addTearDown(api.close);
+              final read = snoozed ? api.snoozedTodosForUnsnooze(allowGroupTargets: allowGroup)
+                  : api.pendingTodosForSnooze(allowGroupTargets: allowGroup);
+              if (allowGroup) {
+                await expectLater(read, throwsA(isA<ApiFailure>().having(
+                  (failure) => failure.kind, 'kind', FailureKind.invalidResponse)));
+              } else {
+                final result = await read;
+                expect(result.actorId, 'gid://gitlab/User/3');
+                expect(result.items.map((item) => item['id']), [2]);
+                expect(result.unsupportedIds, {1});
+              }
+              expect(adapter.requests, hasLength(1));
+            });
+          }
+        }
+      }
+    }
+
+    for (final projectOwner in ['outer', 'inner', 'both']) {
+      for (final problem in ['leadingZero', 'dot']) {
+        for (final allowGroup in [false, true]) {
+          test('disabled group namespace with $projectOwner project $problem allowGroup=$allowGroup snoozed=$snoozed', () async {
+            final node = _groupOwnershipTodo(1)..['group'] = null;
+            final target = node['targetEntity']! as Map<String, Object?>;
+            final project = {'id': 'gid://gitlab/Project/10', 'fullPath': 'team/core'};
+            if (projectOwner != 'inner') node['project'] = project;
+            if (projectOwner != 'outer') target['workItemProject'] = project;
+            final namespace = target['namespace']! as Map<String, Object?>;
+            if (problem == 'leadingZero') {
+              namespace['id'] = 'gid://gitlab/Group/02';
+            } else {
+              namespace['fullPath'] = 'team/../sub';
+            }
+            final adapter = FakeAdapter((request) {
+              _assertOwnershipRead(request, snoozed);
+              return jsonResponse(_ownershipPage([node, _issueOwnershipTodo(2)]));
+            });
+            final api = testApi(adapter);
+            addTearDown(api.close);
+            final read = snoozed ? api.snoozedTodosForUnsnooze(allowGroupTargets: allowGroup)
+                : api.pendingTodosForSnooze(allowGroupTargets: allowGroup);
+            if (allowGroup) {
+              await expectLater(read, throwsA(isA<ApiFailure>().having(
+                (failure) => failure.kind, 'kind', FailureKind.invalidResponse)));
+            } else {
+              final result = await read;
+              expect(result.items.map((item) => item['id']), [2]);
+              expect(result.unsupportedIds, {1});
+            }
+            expect(adapter.requests, hasLength(1));
+          });
+        }
+      }
+    }
+
+    for (final type in ['Issue', 'MergeRequest', 'WorkItem']) {
+      for (final allowGroup in [false, true]) {
+        test('project todo refuses non-null group $type allowGroup=$allowGroup snoozed=$snoozed', () async {
+          final node = _issueOwnershipTodo(1);
+          node['group'] = {'id': 'gid://gitlab/Group/2', 'fullPath': 'team'};
+          if (type != 'Issue') {
+            node['targetType'] = type == 'MergeRequest' ? 'MERGEREQUEST' : 'WORKITEM';
+            node['targetEntity'] = {
+              '__typename': type, 'iid': '7',
+              if (type == 'MergeRequest') 'mergeRequestId': 'gid://gitlab/MergeRequest/91'
+              else 'workItemId': 'gid://gitlab/WorkItem/91',
+              if (type == 'MergeRequest') 'mergeRequestProject': node['project']
+              else 'workItemProject': node['project'],
+              if (type == 'WorkItem') 'namespace': {
+                'id': 'gid://gitlab/Namespaces::ProjectNamespace/10', 'fullPath': 'team/core',
+              },
+            };
+          }
+          final adapter = FakeAdapter((request) {
+            _assertOwnershipRead(request, snoozed);
+            return jsonResponse(_ownershipPage([node, _issueOwnershipTodo(2)]));
+          });
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final result = await (snoozed ? api.snoozedTodosForUnsnooze(allowGroupTargets: allowGroup)
+              : api.pendingTodosForSnooze(allowGroupTargets: allowGroup));
+          expect(result.items.map((item) => item['id']), [2]);
+          expect(result.unsupportedIds, {1});
+          expect(adapter.requests, hasLength(1));
+        });
+      }
+    }
 
     test('group ownership requires a complete fourth page for snoozed=$snoozed', () async {
       for (final complete in [true, false]) {

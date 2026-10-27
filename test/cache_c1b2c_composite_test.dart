@@ -113,6 +113,7 @@ void main() {
           final owner = Object();
           final budget = AiToolBudget();
           final runner = AiRunner(
+            appInForeground: () => true,
             config: config,
             wire: wire,
             complete: (plan, {void Function(AiEvent)? onEvent}) async {

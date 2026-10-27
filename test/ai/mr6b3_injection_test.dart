@@ -334,6 +334,7 @@ void main() {
         final budget = AiToolBudget(maxGitLabRequests: 40);
         final coordinator = PolicyAiWriteCoordinator(
           snapshot: () => AiWritePolicySnapshot(
+            appInForeground: true,
             scope: mr6b3Scope,
             level: AiAutonomyLevel.confirmEach,
             ceiling: AiAutonomyLevel.bypass,
@@ -430,6 +431,7 @@ void main() {
       final budget = AiToolBudget(maxGitLabRequests: 40);
       final coordinator = PolicyAiWriteCoordinator(
         snapshot: () => const AiWritePolicySnapshot(
+          appInForeground: true,
           scope: mr6b3Scope,
           level: AiAutonomyLevel.bypass,
           ceiling: AiAutonomyLevel.bypass,
