@@ -94,6 +94,7 @@ void main() {
       final isTwoPaneAt921 = twoPaneFinder.evaluate().isNotEmpty;
       debugPrint('[Empirical Challenge 1] At 921 dp screen width with AuthenticatedApp: isTwoPane = $isTwoPaneAt921');
       expect(isTwoPaneAt921, isTrue);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 
@@ -166,6 +167,7 @@ void main() {
       final containerSize2400 = tester.getSize(containerFinder);
       debugPrint('[Empirical Challenge 2] Detail content container size at 2400 dp: $containerSize2400');
       expect(containerSize2400.width, lessThanOrEqualTo(960.0));
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 
@@ -213,6 +215,7 @@ void main() {
       final hasIssueSearch = find.widgetWithText(TextField, '搜尋議題').evaluate().isNotEmpty;
       debugPrint('[Empirical Challenge 3.1] After 412 -> 840 dp resize: Is 議題 tab still active? $hasIssueSearch');
       expect(hasIssueSearch, isTrue, reason: 'R1.3 Violation: ProjectPage detail tab index was reset to 0 upon resize!');
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Selected issue in WorkItemsTab is lost when resizing Two-Pane to Compact', (tester) async {
@@ -259,6 +262,7 @@ void main() {
       final hasOverview = find.text('Overview').evaluate().isNotEmpty;
       debugPrint('[Empirical Challenge 3.2] After 1000 -> 412 dp resize: Is selected issue Overview still active? $hasOverview');
       expect(hasOverview, isTrue, reason: 'R1.3 Violation: Selected Issue was lost when resizing from Two-Pane to Compact!');
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 
@@ -319,6 +323,7 @@ void main() {
 
       expect(find.text('開啟專案'), findsNothing);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Case D Extreme: 50 consecutive random-step resize cycles with selected project', (tester) async {
@@ -372,6 +377,7 @@ void main() {
       expect(find.text('檔案'), findsOneWidget);
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 
@@ -418,6 +424,7 @@ void main() {
       expect(find.text('檔案'), findsOneWidget);
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 }

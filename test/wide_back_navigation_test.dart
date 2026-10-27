@@ -112,6 +112,7 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.text('我的工作'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('1200 dp two-pane: system back pops Issue 42 first, then Project A on second back', (tester) async {
@@ -173,6 +174,7 @@ void main() {
 
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('840 dp two-pane: system back pops MR 12 first, then Project A on second back', (tester) async {
@@ -234,6 +236,7 @@ void main() {
 
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('840 dp two-pane: Project AppBar BackButton directly leaves project (tested separately from system back)', (tester) async {
@@ -283,6 +286,7 @@ void main() {
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('1200 dp two-pane: system back pops MR 12 first, then Project A on second back', (tester) async {
@@ -344,6 +348,7 @@ void main() {
 
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('1200 dp two-pane: Project AppBar BackButton directly leaves project (tested separately from system back)', (tester) async {
@@ -392,6 +397,7 @@ void main() {
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('839 <-> 840 dp boundary crossing preserves Issue selection and responds to two-pane system back', (tester) async {
@@ -459,6 +465,7 @@ void main() {
 
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('599 <-> 600 dp boundary crossing preserves wide two-pane selection and navigation continuity', (tester) async {
@@ -535,6 +542,7 @@ void main() {
 
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Cross-tab isolation: switching to CI tab suppresses PopScope consumption and preserves Project tab state on return', (tester) async {
@@ -600,6 +608,7 @@ void main() {
       expect(find.text('Overview'), findsNothing);
       expect(find.text('請選擇議題'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Account switch cleanup in wide mode clears active selection and resets navigation hierarchy', (tester) async {
@@ -684,6 +693,7 @@ void main() {
       expect(find.text('Overview'), findsNothing);
       expect(find.text('Second Account Project'), findsOneWidget, reason: 'Root projects screen of Account 2 shown');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 }
