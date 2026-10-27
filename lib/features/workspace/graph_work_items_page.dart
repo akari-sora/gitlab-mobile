@@ -18,6 +18,7 @@ import '../../shared/resource_share.dart';
 import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
+import '../ai/ai_chat_page.dart';
 import '../ai/ai_chat_session.dart';
 import 'work_item_activity.dart';
 import 'work_item_assignees.dart';
@@ -867,6 +868,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       );
       return;
     }
+    // The group as this page's own list read returned it (a Group GID with
+    // the requested path), taken now rather than when the route rebuilds.
+    final viewGroup = project == null ? _namespace : null;
     final route = MaterialPageRoute<void>(
       builder: (_) => project == null
           ? GraphWorkItemDetailPage.namespace(
@@ -878,6 +882,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
               isCurrent: widget.isCurrent,
               ownerChanges: widget.ownerChanges,
               sessionGeneration: _sessionGeneration,
+              viewGroup: viewGroup,
             )
           : GraphWorkItemDetailPage.project(
               account: widget.account,
@@ -2434,7 +2439,8 @@ class GraphWorkItemDetailPage extends StatefulWidget {
     this.sessionGeneration,
   }) : project = project,
        namespacePath = project.path,
-       expectedNamespaceId = null;
+       expectedNamespaceId = null,
+       viewGroup = null;
 
   const GraphWorkItemDetailPage.namespace({
     super.key,
@@ -2446,6 +2452,7 @@ class GraphWorkItemDetailPage extends StatefulWidget {
     this.isCurrent,
     this.ownerChanges,
     this.sessionGeneration,
+    this.viewGroup,
   }) : project = null;
 
   final Account account;
@@ -2461,6 +2468,11 @@ class GraphWorkItemDetailPage extends StatefulWidget {
   /// (and without a session owner to capture from) the STATUS writer stays
   /// closed.
   final int? sessionGeneration;
+
+  /// The group whose Work Items list opened this page, as that list's own
+  /// read returned it. The AI entry is offered only with it; a page reached
+  /// another way (a project list, a parent or child link) has none.
+  final GraphResourceRef? viewGroup;
 
   @override
   State<GraphWorkItemDetailPage> createState() =>
@@ -2527,6 +2539,9 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   bool _healthReloadAfterLoad = false;
   _HealthTerminal? _healthTerminalSeen;
   DateTime? _healthDetailRevision;
+
+  /// The AI entry is reading the item's current owner before the chat opens.
+  bool _aiOpening = false;
 
   /// Keys the Health control. Advanced when another page's STATUS write on
   /// this item settles, so an open Health editor closes even when the detail
@@ -4239,6 +4254,70 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     }
   }
 
+  /// AI is offered only on a page a group's Work Items list opened, with a
+  /// Group GID from that list's own read, and only where the app has AI.
+  bool _aiOffered(BuildContext context) {
+    final viewGroup = widget.viewGroup;
+    return viewGroup != null &&
+        groupKeyNumericId(viewGroup.id) != null &&
+        AiRunRegistry.maybeOf(context) != null;
+  }
+
+  /// Reads the item's current owner, then opens its conversation. Nothing on
+  /// this page is used as ownership evidence; a reply that arrives after the
+  /// account, client, session or page changed is dropped.
+  Future<void> _openAi() async {
+    final viewGroup = widget.viewGroup;
+    final namespace = _detail?.summary.namespace;
+    final sessionGeneration = _sessionGeneration;
+    if (_aiOpening ||
+        viewGroup == null ||
+        namespace == null ||
+        sessionGeneration == null) {
+      return;
+    }
+    final generation = _generation;
+    final account = widget.account;
+    final api = widget.api;
+    bool current() =>
+        mounted &&
+        _current(generation) &&
+        widget.account.key == account.key &&
+        identical(widget.api, api) &&
+        widget.viewGroup?.id == viewGroup.id &&
+        widget.viewGroup?.fullPath == viewGroup.fullPath &&
+        _sessionGeneration == sessionGeneration &&
+        routeSessionMatches(
+          sessionGeneration,
+          widget.ownerChanges,
+          account,
+          api,
+        ) &&
+        !api.isClosed;
+    if (!current()) return;
+    setState(() => _aiOpening = true);
+    try {
+      final origin = await freshGroupPageAiOrigin(
+        api: api,
+        account: account,
+        generation: sessionGeneration,
+        isCurrent: current,
+        viewGroup: viewGroup,
+        itemNamespace: namespace,
+        iid: widget.iid,
+      );
+      if (!mounted || !current()) return;
+      setState(() => _aiOpening = false);
+      await openAiChat(context, origin);
+    } catch (error) {
+      if (!mounted || !current()) return;
+      if (safeFailure(error).kind == FailureKind.cancelled) return;
+      showFailure(context, error);
+    } finally {
+      if (mounted && _aiOpening) setState(() => _aiOpening = false);
+    }
+  }
+
   void _pushHierarchy(Widget page) {
     if (!_current(_generation)) return;
     final route = MaterialPageRoute<void>(builder: (_) => page);
@@ -4863,6 +4942,12 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         body: SafeArea(child: Center(child: Text(l10n.accountSwitchedWorkItemClosed))),
       );
     }
+    final held =
+        _loading ||
+        _labelsWriteToken != null ||
+        _statusHeld ||
+        _datesHeld ||
+        _healthHeld;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: (MediaQuery.textScalerOf(context).scale(19) * 1.3 + 16)
@@ -4873,6 +4958,24 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          if (_aiOffered(context))
+            IconButton(
+              key: const ValueKey('graph-work-item-ai'),
+              tooltip: l10n.aiDiscuss,
+              onPressed:
+                  held ||
+                      _aiOpening ||
+                      _detail?.summary.namespace == null ||
+                      !_sessionCurrent
+                  ? null
+                  : _openAi,
+              icon: _aiOpening
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome),
+            ),
           if (_detail != null)
             ResourceShareButton(
               uri: _shareUri(_detail!.summary),
@@ -4880,14 +4983,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
               isCurrent: widget.isCurrent,
             ),
           IconButton(
-            onPressed:
-                _loading ||
-                    _labelsWriteToken != null ||
-                    _statusHeld ||
-                    _datesHeld ||
-                    _healthHeld
-                ? null
-                : _refresh,
+            onPressed: held ? null : _refresh,
             tooltip: l10n.refreshAction,
             icon: const Icon(Icons.refresh),
           ),

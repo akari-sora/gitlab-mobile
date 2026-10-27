@@ -2757,4 +2757,5 @@ const _messagesId = <String>[
   'Atur label',
   'Label yang akan diatur tidak ada dalam daftar label proyek ini, atau beberapa label memiliki nama yang sama, jadi tidak ada yang dilakukan.',
   'Teks berisi baris yang diawali /, yang bisa dijalankan GitLab sebagai quick action, jadi demi keamanan tindakan ini tidak dikirim. Hapus baris itu atau taruh di blok kode.',
+  'Baca item kerja grup',
 ];

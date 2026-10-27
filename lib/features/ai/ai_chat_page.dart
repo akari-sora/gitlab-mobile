@@ -1529,6 +1529,7 @@ String _toolLabel(String name) => switch (name) {
   'read_file' => l10n.aiToolReadFile,
   'list_directory' => l10n.aiToolListDirectory,
   'get_issue' => l10n.aiToolGetIssue,
+  'get_group_work_item' => l10n.aiToolGetGroupWorkItem,
   'get_merge_request' => l10n.aiToolGetMergeRequest,
   'get_merge_request_diff' => l10n.aiToolGetMergeRequestDiff,
   'get_pipeline_jobs' => l10n.aiToolGetPipelineJobs,

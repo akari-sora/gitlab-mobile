@@ -2757,4 +2757,5 @@ const _messagesRo = <String>[
   'Setează etichetele',
   'Eticheta de setat nu se află în lista de etichete a acestui proiect sau mai multe etichete au acest nume, deci nu s-a făcut nimic.',
   'Textul conține un rând care începe cu /, pe care GitLab l-ar putea executa ca acțiune rapidă, deci din precauție această acțiune nu a fost trimisă. Șterge rândul sau pune-l într-un bloc de cod.',
+  'Citește elementul de lucru al grupului',
 ];
