@@ -951,6 +951,9 @@ final class PolicyAiWriteCoordinator
           prepared: pending.prepared,
         );
         if (!tier.canPropose) throw const _WriteBlocked('policyDenied');
+        if (pending.prepared.boundary == AiWriteBoundary.graph) {
+          pending.prepared.bindPreparedText(processed.request);
+        }
         pending.request = request;
         pending.editBlocked = null;
         proposal.tier = tier;
@@ -1085,9 +1088,20 @@ final class PolicyAiWriteCoordinator
       var request = pending.request;
       var fresh = await readFreshness(request);
       _requirePending(pending);
-      final opened = _graphWriteBack(request.operationId)
-          ? await _port!.prepare(request)
-          : null;
+      final port.AiWritePrepared? opened;
+      try {
+        opened = _graphWriteBack(request.operationId)
+            ? await _port!.prepare(request)
+            : null;
+      } on port.AiWriteRefused catch (failure) {
+        // This proposal already proved ownership. A different author or
+        // actor at dispatch is target drift, not a new proposal refusal.
+        if (request.operationId == 'editWorkItemActivityNote' &&
+            failure.reason == 'notOwnNote') {
+          throw const _WriteBlocked('targetChanged');
+        }
+        rethrow;
+      }
       _requirePending(pending);
       if (opened != null) fresh = _withPreparedFields(fresh, opened);
       final processed = _prepareText(request, snapshot(), fresh);
@@ -1827,6 +1841,19 @@ final class PolicyAiWriteCoordinator
         reasons.add(AiFixedConfirmReason.confidentialOrVisibilityMix);
       }
       closingRefs.addAll(outcome.closingRefs);
+      // Activity creation trims at the core boundary. Bind and display the
+      // same normalized body so an edited preview agrees with the adapter.
+      if (field == 'body' &&
+          const {
+            'createWorkItemActivityComment',
+            'createWorkItemActivityReply',
+          }.contains(request.operationId)) {
+        final body = outcome.finalText!.trim();
+        if (body.startsWith('/')) {
+          throw const _WriteBlocked(text.AiTextBlockCode.quickAction);
+        }
+        return body;
+      }
       return outcome.finalText!;
     }
 

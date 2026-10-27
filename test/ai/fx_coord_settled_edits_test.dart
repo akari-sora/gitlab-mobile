@@ -50,6 +50,11 @@ void main() {
     final outcome = await h.coordinator.approve(proposal);
 
     expect(outcome.state, AiJournalState.failedCertain);
+    expect(h.mutations, 1);
+    final sent = h.adapter.requests.singleWhere(
+      (request) => request.method == 'POST',
+    );
+    expect((sent.data as Map)['body'], 'my own words for failed');
     expect(h.coordinator.settledEdits, [proposal]);
     expect(proposal.editedText, 'my own words for failed');
     expect(proposal.outcome?.state, AiJournalState.failedCertain);
@@ -61,6 +66,8 @@ void main() {
     final outcome = await h.coordinator.approve(proposal);
 
     expect(outcome.state, AiJournalState.writeUncertain);
+    expect(h.mutations, 1);
+    expect(proposal.editedText, 'my own words for unknown');
     expect(h.coordinator.settledEdits, [proposal]);
     expect(proposal.outcome?.state, AiJournalState.writeUncertain);
   });

@@ -498,11 +498,13 @@ void main() {
       proposal.tier.reasons,
       isNot(contains(AiFixedConfirmReason.wholeFieldDropsHiddenSpans)),
     );
+    final requests = h.fixture.server.adapter.requests.length;
     final edited = await h.coordinator.approve(
       proposal,
       editedText: 'Keep tail',
     );
     expect(edited.reasonCode, 'approvalRequired');
+    expect(h.fixture.server.adapter.requests, hasLength(requests));
     expect(
       proposal.tier.reasons,
       contains(AiFixedConfirmReason.wholeFieldDropsHiddenSpans),
@@ -514,6 +516,102 @@ void main() {
     expect(h.fixture.server.description, contains('Keep tail'));
     expect(h.fixture.server.description, isNot(contains('/uploads/')));
   });
+
+  for (final failReadback in [false, true]) {
+    test(
+      'edited description requires new approval and readback ($failReadback)',
+      () async {
+        final h = await _Harness.create(aiAttribution: true);
+        addTearDown(h.close);
+        final proposal = (await h.propose({'description': 'Proposed text'}))!;
+        final oldDigest = proposal.payloadDigest;
+        final requests = h.fixture.server.adapter.requests.length;
+        const edited = 'Steps\n/close\n@all';
+        final editing = await h.coordinator.approve(
+          proposal,
+          editedText: edited,
+        );
+        expect(editing.state, AiJournalState.notExecuted);
+        expect(editing.reasonCode, 'approvalRequired');
+        expect(h.fixture.server.adapter.requests, hasLength(requests));
+        expect(h.fixture.server.mutations, 0);
+        expect(proposal.payloadDigest, isNot(oldDigest));
+        expect(
+          proposal.tier.reasons,
+          contains(AiFixedConfirmReason.massMention),
+        );
+        final shown =
+            (proposal.preview as port.AiFieldsPreview).fields['description']!
+                as String;
+        expect(shown, isNot(edited));
+        expect(shown.split('\n').any((line) => line.startsWith('/')), isFalse);
+        h.fixture.server.failReadback = failReadback;
+        h.fixture.server.onMutation = () => expect(proposal.editedText, edited);
+        final outcome = await h.approve(proposal);
+        expect(
+          outcome.state,
+          failReadback
+              ? AiJournalState.writeUncertain
+              : AiJournalState.succeeded,
+        );
+        expect(outcome.readbackConfirmed, !failReadback);
+        expect(h.fixture.server.mutations, 1);
+        expect(h.fixture.server.input!['descriptionWidget'], {
+          'description': shown,
+        });
+        expect(proposal.editedText, failReadback ? edited : null);
+        expect(h.fixture.server.successfulReads, 10);
+        expect((await h.approve(proposal)).state, outcome.state);
+        expect(h.fixture.server.mutations, 1);
+      },
+    );
+  }
+
+  for (final drift in ['revision', 'description']) {
+    test('edited description rejects target $drift drift', () async {
+      final h = await _Harness.create();
+      addTearDown(h.close);
+      final proposal = (await h.propose({'description': 'Proposed text'}))!;
+      const edited = 'New description';
+      expect(
+        (await h.coordinator.approve(proposal, editedText: edited)).reasonCode,
+        'approvalRequired',
+      );
+      if (drift == 'revision') {
+        h.fixture.server.updatedAt = DateTime.utc(2026, 10, 28);
+      } else {
+        h.fixture.server.description = 'Concurrent server edit';
+      }
+      final outcome = await h.approve(proposal);
+      expect(outcome.state, AiJournalState.notExecuted);
+      expect(outcome.reasonCode, 'targetChanged');
+      expect(h.fixture.server.mutations, 0);
+      expect(proposal.editedText, edited);
+    });
+  }
+
+  test(
+    'pipeline-blocked description edits stay blocked on reapproval',
+    () async {
+      final h = await _Harness.create();
+      addTearDown(h.close);
+      final proposal = (await h.propose({'description': 'Proposed text'}))!;
+      final originalPreview = proposal.preview;
+      final originalDigest = proposal.payloadDigest;
+      final requests = h.fixture.server.adapter.requests.length;
+      const edited = '![remote](https://outside.example/a.png)';
+      for (final edit in [edited, null]) {
+        final outcome = await h.coordinator.approve(proposal, editedText: edit);
+        expect(outcome.reasonCode, text.AiTextBlockCode.externalMedia);
+        expect(outcome.state, AiJournalState.notExecuted);
+        expect(h.fixture.server.adapter.requests, hasLength(requests));
+        expect(h.fixture.server.mutations, 0);
+        expect(proposal.preview, same(originalPreview));
+        expect(proposal.payloadDigest, originalDigest);
+        expect(proposal.editedText, edited);
+      }
+    },
+  );
 
   for (final level in AiAutonomyLevel.values.where(
     (value) => value != AiAutonomyLevel.readOnly,

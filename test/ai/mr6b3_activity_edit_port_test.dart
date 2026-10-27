@@ -694,10 +694,7 @@ void main() {
       }
       final outcome = await h.approve(proposal);
       expect(outcome.state, AiJournalState.notExecuted);
-      expect(
-        outcome.reasonCode,
-        drift == 'author' ? 'notOwnNote' : 'targetChanged',
-      );
+      expect(outcome.reasonCode, 'targetChanged');
       expect(h.server.mutations, 0);
     });
   }
@@ -855,20 +852,98 @@ void main() {
       h.server.body = stored;
       h.server.expectedBody = '$stored user edit';
       final proposal = (await h.propose())!;
+      final requests = h.server.adapter.requests.length;
       final editing = await h.coordinator.approve(
         proposal,
         editedText: '$masked user edit',
       );
       expect(editing.reasonCode, 'approvalRequired');
+      expect(h.server.adapter.requests, hasLength(requests));
       expect(h.server.mutations, 0);
       expect(
         (proposal.preview as port.AiFieldsPreview).fields['body'],
         h.server.expectedBody,
       );
-      expect((await h.approve(proposal)).state, AiJournalState.succeeded);
+      final outcome = await h.approve(proposal);
+      expect(outcome.state, AiJournalState.succeeded);
+      expect(outcome.readbackConfirmed, isTrue);
       expect(h.server.sentBody, h.server.expectedBody);
+      expect(h.server.mutations, 1);
+      expect(proposal.editedText, isNull);
+      expect((await h.approve(proposal)).state, AiJournalState.succeeded);
+      expect(h.server.mutations, 1);
     },
   );
+
+  for (final failure in ['mutation 422', 'readback 500']) {
+    test('edited note stays after $failure without replay', () async {
+      final h = await _Harness.create();
+      addTearDown(h.dispose);
+      final proposal = (await h.propose())!;
+      const edited = 'Updated @all note';
+      final requests = h.server.adapter.requests.length;
+      expect(
+        (await h.coordinator.approve(proposal, editedText: edited)).reasonCode,
+        'approvalRequired',
+      );
+      expect(h.server.adapter.requests, hasLength(requests));
+      expect(h.server.mutations, 0);
+      final shown =
+          (proposal.preview as port.AiFieldsPreview).fields['body']! as String;
+      expect(shown, isNot(edited));
+      h.server.expectedBody = shown;
+      if (failure == 'mutation 422') {
+        h.server.mutationStatus = 422;
+      } else {
+        h.server.readbackStatus = 500;
+      }
+      // D2: errors after GraphQL acceptance remain uncertain, including 4xx.
+      final outcome = await h.approve(proposal);
+      expect(outcome.state, AiJournalState.writeUncertain);
+      expect(outcome.readbackConfirmed, isFalse);
+      expect(h.server.sentBody, shown);
+      expect(h.server.mutations, 1);
+      expect(proposal.editedText, edited);
+      expect(h.coordinator.settledEdits, [proposal]);
+      expect((await h.approve(proposal)).state, AiJournalState.writeUncertain);
+      expect(h.server.mutations, 1);
+    });
+  }
+
+  for (final drift in ['revision', 'body', 'author username', 'author ID']) {
+    test('edited note still rejects target $drift drift', () async {
+      final h = await _Harness.create();
+      addTearDown(h.dispose);
+      final proposal = (await h.propose())!;
+      const edited = 'New user words';
+      expect(
+        (await h.coordinator.approve(proposal, editedText: edited)).reasonCode,
+        'approvalRequired',
+      );
+      switch (drift) {
+        case 'revision':
+          h.server.revision = '2026-10-04T00:00:00Z';
+        case 'body':
+          h.server.body = 'Concurrent server edit';
+        case 'author username':
+          h.server.noteChanges = {
+            'author': {
+              'id': _actorId,
+              'name': 'Synthetic author',
+              'username': 'renamed',
+            },
+          };
+        case 'author ID':
+          h.server.authorId = 'gid://gitlab/User/8';
+      }
+      final outcome = await h.approve(proposal);
+      expect(outcome.state, AiJournalState.notExecuted);
+      expect(outcome.reasonCode, 'targetChanged');
+      expect(h.server.mutations, 0);
+      expect(proposal.editedText, edited);
+    });
+  }
+
   for (final (name, body) in [
     ('empty', ''),
     ('indented quick action', ' /close\nKeep this note'),

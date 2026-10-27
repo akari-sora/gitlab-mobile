@@ -262,6 +262,7 @@ final class _Server {
   int activityReads = 0;
   int accessReads = 0;
   int writes = 0;
+  String? sentBody;
   String? replyPreflightAnchor;
   Completer<void>? beforeSend;
 
@@ -436,9 +437,13 @@ final class _Server {
     if (query.startsWith('mutation ')) {
       sent = true;
       writes++;
+      sentBody = ((data['variables'] as Map)['input'] as Map)['body'] as String;
       return jsonResponse({
         'data': {
-          'createNote': {'errors': <Object?>[], 'note': _writeNote()},
+          'createNote': {
+            'errors': <Object?>[],
+            'note': _writeNote(body: sentBody!),
+          },
         },
       });
     }
@@ -447,7 +452,7 @@ final class _Server {
         'data': {
           'workItem': _identity(),
           'note': _writeNote(
-            body: wrongReadbackBody ? 'drifted' : _body,
+            body: wrongReadbackBody ? 'drifted' : sentBody!,
             author: wrongReadbackAuthor
                 ? 'gid://gitlab/User/8'
                 : 'gid://gitlab/User/7',
@@ -703,6 +708,188 @@ void main() {
     'createWorkItemActivityComment',
     'createWorkItemActivityReply',
   ]) {
+    test('$operation blocks a normalized leading slash without HTTP', () async {
+      final f = await _Fixture.create();
+      addTearDown(f.dispose);
+      final proposal = (await f.coordinator.propose(f.call(operation)))!;
+      final requests = f.adapter.requests.length;
+      for (final editedText in [' /foo/bar', null]) {
+        final outcome = await f.coordinator.approve(
+          proposal,
+          editedText: editedText,
+        );
+        expect(outcome.reasonCode, text.AiTextBlockCode.quickAction);
+        expect(outcome.state, AiJournalState.notExecuted);
+        expect(f.adapter.requests, hasLength(requests));
+        expect(f.server.writes, 0);
+        expect(proposal.editedText, ' /foo/bar');
+      }
+    });
+
+    test(
+      '$operation sends exactly the edited preview including whitespace',
+      () async {
+        final f = await _Fixture.create();
+        addTearDown(f.dispose);
+        final proposal = (await f.coordinator.propose(f.call(operation)))!;
+        const edited = '  Changed text  \n';
+        expect(
+          (await f.coordinator.approve(
+            proposal,
+            editedText: edited,
+          )).reasonCode,
+          'approvalRequired',
+        );
+        final shown = (proposal.preview as port.AiFieldsPreview).fields['body'];
+        final outcome = await f.coordinator.approve(proposal);
+        expect(outcome.state, AiJournalState.succeeded);
+        expect(outcome.readbackConfirmed, isTrue);
+        expect(f.server.sentBody, shown);
+        expect(f.server.writes, 1);
+        expect(proposal.editedText, isNull);
+      },
+    );
+
+    test(
+      '$operation edits require new approval and send the shown text once',
+      () async {
+        final f = await _Fixture.create();
+        addTearDown(f.dispose);
+        final proposal = (await f.coordinator.propose(f.call(operation)))!;
+        final originalDigest = proposal.payloadDigest;
+        final requestsAfterProposal = f.adapter.requests.length;
+
+        final first = await f.coordinator.approve(
+          proposal,
+          editedText: 'First edit',
+        );
+        expect(first.reasonCode, 'approvalRequired');
+        expect(f.adapter.requests.length, requestsAfterProposal);
+        expect(f.server.writes, 0);
+        expect(proposal.payloadDigest, isNot(originalDigest));
+
+        const edited = 'Updated for @all';
+        final firstDigest = proposal.payloadDigest;
+        final second = await f.coordinator.approve(
+          proposal,
+          editedText: edited,
+        );
+        expect(second.reasonCode, 'approvalRequired');
+        expect(f.adapter.requests.length, requestsAfterProposal);
+        expect(f.server.writes, 0);
+        expect(proposal.payloadDigest, isNot(firstDigest));
+        expect(proposal.tier.decision, AiGateDecision.requireApproval);
+        expect(
+          proposal.tier.reasons,
+          contains(AiFixedConfirmReason.massMention),
+        );
+        final shown =
+            (proposal.preview as port.AiFieldsPreview).fields['body'] as String;
+        expect(shown, isNot(edited));
+        expect(shown, contains('@all'));
+
+        final outcome = await f.coordinator.approve(proposal);
+        expect(outcome.state, AiJournalState.succeeded);
+        expect(outcome.readbackConfirmed, isTrue);
+        expect(outcome.mutationCount, 1);
+        expect(f.server.sentBody, shown);
+        expect(f.server.writes, 1);
+        expect(proposal.editedText, isNull);
+        expect(
+          f.adapter.requests.where((request) {
+            final data = request.data;
+            return data is Map &&
+                '${data['query']}'.startsWith(
+                  'query MobileWorkItemActivityNoteReadback',
+                );
+          }),
+          hasLength(1),
+        );
+        await f.coordinator.approve(proposal);
+        expect(f.server.writes, 1);
+      },
+    );
+
+    test(
+      '$operation blocks a pipeline-rejected edit without sending',
+      () async {
+        final f = await _Fixture.create();
+        addTearDown(f.dispose);
+        final proposal = (await f.coordinator.propose(f.call(operation)))!;
+        final requestsAfterProposal = f.adapter.requests.length;
+        const blocked = 'glpat-ABCDEFGHIJKLMNOPQRST';
+        final edit = await f.coordinator.approve(proposal, editedText: blocked);
+        expect(edit.reasonCode, 'secret');
+        expect(proposal.editedText, blocked);
+        expect((await f.coordinator.approve(proposal)).reasonCode, 'secret');
+        expect(f.adapter.requests.length, requestsAfterProposal);
+        expect(f.server.writes, 0);
+      },
+    );
+
+    test(
+      '$operation keeps edited text when independent readback is uncertain',
+      () async {
+        final f = await _Fixture.create();
+        addTearDown(f.dispose);
+        final proposal = (await f.coordinator.propose(f.call(operation)))!;
+        const edited = 'Retain this edit';
+        expect(
+          (await f.coordinator.approve(
+            proposal,
+            editedText: edited,
+          )).reasonCode,
+          'approvalRequired',
+        );
+        f.server.wrongReadbackBody = true;
+        final outcome = await f.coordinator.approve(proposal);
+        expect(outcome.state, AiJournalState.writeUncertain);
+        expect(outcome.readbackConfirmed, isFalse);
+        expect(f.server.sentBody, edited);
+        expect(f.server.writes, 1);
+        expect(proposal.editedText, edited);
+      },
+    );
+
+    final drifts = <(String, void Function(_Server))>[
+      (
+        'revision',
+        (server) => server.workItemUpdatedAt = '2026-10-24T00:00:00Z',
+      ),
+      if (operation == 'createWorkItemActivityReply') ...[
+        ('anchor body', (server) => server.locatedNoteBody = 'changed anchor'),
+        (
+          'anchor author',
+          (server) => server.locatedNoteAuthor = 'gid://gitlab/User/9',
+        ),
+        (
+          'reply ID',
+          (server) => server.locatedReplyId =
+              'gid://gitlab/IndividualNoteDiscussion/changed',
+        ),
+      ],
+    ];
+    for (final drift in drifts) {
+      test('$operation edited card rejects ${drift.$1} drift', () async {
+        final f = await _Fixture.create();
+        addTearDown(f.dispose);
+        final proposal = (await f.coordinator.propose(f.call(operation)))!;
+        expect(
+          (await f.coordinator.approve(
+            proposal,
+            editedText: 'Changed text',
+          )).reasonCode,
+          'approvalRequired',
+        );
+        drift.$2(f.server);
+        final outcome = await f.coordinator.approve(proposal);
+        expect(outcome.state, AiJournalState.notExecuted);
+        expect(outcome.reasonCode, 'targetChanged');
+        expect(f.server.writes, 0);
+        expect(proposal.editedText, 'Changed text');
+      });
+    }
+
     test('$operation succeeds only after independent readback', () async {
       final f = await _Fixture.create();
       addTearDown(f.dispose);

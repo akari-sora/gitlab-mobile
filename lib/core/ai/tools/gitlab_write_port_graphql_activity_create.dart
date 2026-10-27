@@ -102,7 +102,7 @@ extension _GraphqlActivityCreatePrepare on GitLabAiWritePort {
             noteId: anchorId,
           ),
       ],
-      bindingDigest: sha256
+      textBindingDigest: (processed) => sha256
           .convert(
             utf8.encode(
               jsonEncode([
@@ -116,7 +116,7 @@ extension _GraphqlActivityCreatePrepare on GitLabAiWritePort {
                 summary.namespace?.fullPath,
                 summary.type.id,
                 summary.updatedAt.toUtc().toIso8601String(),
-                body,
+                _text(processed.arguments, 'body').trim(),
                 if (anchor != null) ...[
                   anchor.discussion.id,
                   anchor.discussion.replyId,
@@ -135,7 +135,8 @@ extension _GraphqlActivityCreatePrepare on GitLabAiWritePort {
         updatedAt: summary.updatedAt.toUtc().toIso8601String(),
       ),
       preview: AiFieldsPreview({'body': body, 'anchorNoteId': ?anchorId}),
-      mutation: (hooks) async {
+      textMutation: (hooks, preparedRequest) async {
+        final body = _text(preparedRequest.arguments, 'body').trim();
         try {
           final created = reply
               ? await _api.createWorkItemActivityReply(

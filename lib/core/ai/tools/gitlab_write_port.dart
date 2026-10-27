@@ -192,7 +192,7 @@ final class AiWritePrepared {
     List<AiTargetRef> bindingTargets = const [],
     // Reserved for the family parts added after this foundation.
     // ignore: unused_element_parameter
-    this.bindingDigest = '',
+    String bindingDigest = '',
     // Reserved for the family parts added after this foundation.
     // ignore: unused_element_parameter
     this.journal = const AiJournalBindings(),
@@ -204,6 +204,8 @@ final class AiWritePrepared {
     AiCreatedRef? Function()? resolveCreatedOnSuccess,
     this.classify,
   }) : _originalRequest = request,
+       _bindingDigest = bindingDigest,
+       _textBindingDigest = null,
        currentFields = const {},
        _createdOnSuccess = createdOnSuccess,
        _resolveCreatedOnSuccess = resolveCreatedOnSuccess,
@@ -233,13 +235,17 @@ final class AiWritePrepared {
     this.confirmName,
     this.facts = const AiTierFacts(),
     List<AiTargetRef> bindingTargets = const [],
-    this.bindingDigest = '',
+    String bindingDigest = '',
+    String Function(AiWriteRequest request)? textBindingDigest,
     this.journal = const AiJournalBindings(),
     AiWritePreview? preview,
     this.textScan,
     Map<String, String> currentFields = const {},
   }) : assert((mutation == null) != (textMutation == null)),
+       assert(textBindingDigest == null || textMutation != null),
        _originalRequest = request,
+       _bindingDigest = bindingDigest,
+       _textBindingDigest = textBindingDigest,
        currentFields = Map.unmodifiable(currentFields),
        writeKeys = Set.unmodifiable(writeKeys),
        dependencyKeys = Set.unmodifiable(dependencyKeys),
@@ -278,7 +284,12 @@ final class AiWritePrepared {
   final String? confirmName;
   final AiTierFacts facts;
   final List<AiTargetRef> bindingTargets;
-  final String bindingDigest;
+  final String _bindingDigest;
+  final String Function(AiWriteRequest request)? _textBindingDigest;
+
+  /// Text-sensitive digests reuse the opening read's target facts while
+  /// binding the latest processed payload. Computing this never reads HTTP.
+  String get bindingDigest => _textBindingDigest?.call(request) ?? _bindingDigest;
   final AiJournalBindings journal;
   final AiWritePreview _preview;
   AiWritePreview get preview {
@@ -319,17 +330,17 @@ final class AiWritePrepared {
   void validatePreparedText(AiWriteRequest processed) =>
       _validatePreparedText?.call(processed);
 
-  /// Binds the shared text pipeline's result without re-reading or replacing
-  /// the single-use target. Text mutations consume this request at dispatch.
+  /// Binds the shared text pipeline's result, including a later card edit,
+  /// without re-reading or replacing the single-use target. Text mutations
+  /// and text-sensitive digests consume this request at dispatch.
   void bindPreparedText(AiWriteRequest processed) {
     if (boundary != AiWriteBoundary.graph ||
         _used ||
         _beforeGraph != null ||
-        _textRequest != null ||
         processed.operationId != request.operationId ||
         processed.executionId != request.executionId ||
         processed.scope.accountKey != request.scope.accountKey ||
-        const ['projectId', 'iid', 'noteId'].any(
+        const ['projectId', 'iid', 'noteId', 'anchorNoteId'].any(
           (key) =>
               processed.arguments.containsKey(key) !=
                   request.arguments.containsKey(key) ||
