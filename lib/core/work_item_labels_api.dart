@@ -279,6 +279,8 @@ extension WorkItemLabelApi on GitLabApi {
 
   /// Reads one complete owner catalog without search, then registers every
   /// returned identifier on this target. Partial catalogs fail closed.
+  /// [maxPages] must be 1: the AI budget and fixed document allow only one
+  /// page of 100 candidates; a continuation must not register a partial set.
   Future<List<WorkItemLabel>> workItemLabelCandidates(
     WorkItemLabelTarget target, {
     int maxPages = 1,
@@ -735,8 +737,11 @@ void _requireGroupLabelIds(Object? raw) {
   }
   for (final rawNode in nodes) {
     final node = objectJson(rawNode);
-    // v18.5.0 app/graphql/types/global_id_type.rb:73-85 preserves the
-    // GroupLabel subclass GID; Label and ProjectLabel are not group evidence.
+    // v19.5.0-ee app/graphql/types/base_object.rb:28-30 delegates GID creation
+    // to app/graphql/gitlab_schema.rb:95-103 (object.to_global_id).
+    // app/graphql/types/global_id_type.rb:84-99 preserves subclass GIDs;
+    // app/models/group_label.rb:3-6 defines GroupLabel < Label.
+    // Label and ProjectLabel are not direct group-label evidence.
     final id = requiredString(node, 'id');
     final match = RegExp(r'^gid://gitlab/GroupLabel/([1-9][0-9]*)$').firstMatch(id);
     if (match == null ||

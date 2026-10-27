@@ -9,8 +9,8 @@ import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show workspaceHost;
 
-// Independent whole documents: Issue exposes projectId, not project, in
-// GitLab v18.5.0. Keep both ownership filters and all fragments pinned.
+// Independent whole documents: GitLab v19.5.0-ee Issue exposes projectId;
+// aliases separate the fragments' different ID scalars/project nullability.
 const _pendingOwnershipQuery = r'''
 query MobilePendingTodosForSnooze($first: Int!, $after: String) {
   currentUser {
@@ -20,12 +20,13 @@ query MobilePendingTodosForSnooze($first: Int!, $after: String) {
       nodes {
         id targetType snoozedUntil
         project { id fullPath }
+        group { id fullPath }
         targetEntity {
           __typename
-          ... on Issue { id iid projectId }
-          ... on MergeRequest { id iid project { id fullPath } }
+          ... on Issue { issueId: id iid projectId }
+          ... on MergeRequest { mergeRequestId: id iid mergeRequestProject: project { id fullPath } }
           ... on WorkItem {
-            id iid project { id fullPath } namespace { id fullPath }
+            workItemId: id iid workItemProject: project { id fullPath } namespace { id fullPath }
           }
         }
       }
@@ -42,12 +43,13 @@ query MobileSnoozedTodosForUnsnooze($first: Int!, $after: String) {
       nodes {
         id targetType snoozedUntil
         project { id fullPath }
+        group { id fullPath }
         targetEntity {
           __typename
-          ... on Issue { id iid projectId }
-          ... on MergeRequest { id iid project { id fullPath } }
+          ... on Issue { issueId: id iid projectId }
+          ... on MergeRequest { mergeRequestId: id iid mergeRequestProject: project { id fullPath } }
           ... on WorkItem {
-            id iid project { id fullPath } namespace { id fullPath }
+            workItemId: id iid workItemProject: project { id fullPath } namespace { id fullPath }
           }
         }
       }
@@ -78,9 +80,10 @@ Map<String, Object?> _groupOwnershipTodo(int id) => {
   'targetType': 'WORKITEM',
   'snoozedUntil': null,
   'project': null,
+  'group': <String, Object?>{'id': 'gid://gitlab/Group/2', 'fullPath': 'team/sub'},
   'targetEntity': <String, Object?>{
-    '__typename': 'WorkItem', 'id': 'gid://gitlab/WorkItem/91', 'iid': '7',
-    'project': null,
+    '__typename': 'WorkItem', 'workItemId': 'gid://gitlab/WorkItem/91', 'iid': '7',
+    'workItemProject': null,
     'namespace': <String, Object?>{'id': 'gid://gitlab/Group/2', 'fullPath': 'team/sub'},
   },
 };
@@ -90,11 +93,22 @@ Map<String, Object?> _issueOwnershipTodo(int id) => {
   'targetType': 'ISSUE',
   'snoozedUntil': null,
   'project': {'id': 'gid://gitlab/Project/10', 'fullPath': 'team/core'},
+  'group': null,
   'targetEntity': <String, Object?>{
-    '__typename': 'Issue', 'id': 'gid://gitlab/Issue/91', 'iid': '7',
+    '__typename': 'Issue', 'issueId': 'gid://gitlab/Issue/91', 'iid': '7',
     'projectId': 10,
   },
 };
+
+// v19.5.0-ee TodoService#attributes_for_target stores a group WorkItem's
+// polymorphic name (Issue), project:nil and group:namespace; TodoType then
+// loads Issue. This is the ordinary creation/read path, with query aliases.
+Map<String, Object?> _groupIssueOwnershipTodo(int id) {
+  final node = _issueOwnershipTodo(id)..['project'] = null;
+  node['group'] = <String, Object?>{'id': 'gid://gitlab/Group/2', 'fullPath': 'team/sub'};
+  (node['targetEntity']! as Map<String, Object?>)['projectId'] = null;
+  return node;
+}
 
 Object _ownershipPage(List<Object?> nodes, {bool more = false, String? cursor}) => {
   'data': {'currentUser': {
@@ -196,7 +210,7 @@ void main() {
       }
     });
 
-    test('Issue todo ownership never becomes a group target for snoozed=$snoozed', () async {
+    test('Issue todo without group evidence stays unsupported for snoozed=$snoozed', () async {
       for (final allowGroup in [false, true]) {
         for (final projectId in [null, 10]) {
           final node = _issueOwnershipTodo(1)..['project'] = null;
@@ -214,6 +228,130 @@ void main() {
           expect(result.unsupportedIds, {1});
           expect(adapter.requests, hasLength(1));
         }
+      }
+    });
+
+    test('upstream Issue group todo ownership is opt-in for snoozed=$snoozed', () async {
+      final node = _groupIssueOwnershipTodo(1);
+      node['snoozedUntil'] = snoozed ? '2030-01-02T09:00:00Z' : null;
+      final adapter = FakeAdapter((request) {
+        _assertOwnershipRead(request, snoozed);
+        return jsonResponse(_ownershipPage([node]));
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final normal = await (snoozed ? api.snoozedTodosForUnsnooze() : api.pendingTodosForSnooze());
+      expect(normal.items, isEmpty);
+      expect(normal.unsupportedIds, {1});
+      final opted = await (snoozed
+          ? api.snoozedTodosForUnsnooze(allowGroupTargets: true)
+          : api.pendingTodosForSnooze(allowGroupTargets: true));
+      expect(opted.unsupportedIds, isEmpty);
+      expect(opted.items.single, {
+        'id': 1, 'target_type': 'WorkItem', 'snoozed_until': node['snoozedUntil'],
+        'project': null,
+        'namespace': {'id': 'gid://gitlab/Group/2', 'group_id': 2, 'full_path': 'team/sub'},
+        'target': {'id': 'gid://gitlab/WorkItem/91', 'iid': 7},
+      });
+      expect(adapter.requests, hasLength(2), reason: 'one fixed document per complete read');
+    });
+
+    test('Issue group todo requires the Todo group for snoozed=$snoozed', () async {
+      for (final missing in [false, true]) {
+        final node = _groupIssueOwnershipTodo(1);
+        if (missing) {
+          node.remove('group');
+        } else {
+          node['group'] = null;
+        }
+        final adapter = FakeAdapter((request) {
+          _assertOwnershipRead(request, snoozed);
+          return jsonResponse(_ownershipPage([node]));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final result = await (snoozed
+            ? api.snoozedTodosForUnsnooze(allowGroupTargets: true)
+            : api.pendingTodosForSnooze(allowGroupTargets: true));
+        expect(result.items, isEmpty, reason: 'missing=$missing');
+        expect(result.unsupportedIds, {1});
+        expect(adapter.requests, hasLength(1));
+      }
+    });
+
+    test('Issue group todo refuses forged ownership and coordinates for snoozed=$snoozed', () async {
+      for (final problem in [
+        'outerProjectMissing', 'foreignGroupType', 'groupLeadingZero', 'groupZero', 'groupOverflow',
+        'groupIdMissing', 'groupPathMissing', 'groupPathInvalid', 'groupDot', 'groupDotDot',
+        'issueWrongType', 'issueLeadingZero', 'issueZero', 'issueOverflow', 'issueTrailingData',
+        'iidLeadingZero', 'iidZero', 'iidOverflow', 'iidTrailingData', 'iidMissing',
+      ]) {
+        final node = _groupIssueOwnershipTodo(1);
+        final target = node['targetEntity']! as Map<String, Object?>;
+        final group = node['group']! as Map<String, Object?>;
+        switch (problem) {
+          case 'outerProjectMissing': node.remove('project');
+          case 'foreignGroupType': group['id'] = 'gid://gitlab/Project/2';
+          case 'groupLeadingZero': group['id'] = 'gid://gitlab/Group/02';
+          case 'groupZero': group['id'] = 'gid://gitlab/Group/0';
+          case 'groupOverflow': group['id'] = 'gid://gitlab/Group/999999999999999999999999999999999';
+          case 'groupIdMissing': group.remove('id');
+          case 'groupPathMissing': group.remove('fullPath');
+          case 'groupPathInvalid': group['fullPath'] = 'team//sub';
+          case 'groupDot': group['fullPath'] = 'team/./sub';
+          case 'groupDotDot': group['fullPath'] = 'team/../sub';
+          case 'issueWrongType': target['issueId'] = 'gid://gitlab/WorkItem/91';
+          case 'issueLeadingZero': target['issueId'] = 'gid://gitlab/Issue/091';
+          case 'issueZero': target['issueId'] = 'gid://gitlab/Issue/0';
+          case 'issueOverflow': target['issueId'] = 'gid://gitlab/Issue/999999999999999999999999999999999';
+          case 'issueTrailingData': target['issueId'] = 'gid://gitlab/Issue/91\n';
+          case 'iidLeadingZero': target['iid'] = '07';
+          case 'iidZero': target['iid'] = '0';
+          case 'iidOverflow': target['iid'] = '999999999999999999999999999999999';
+          case 'iidTrailingData': target['iid'] = '7\n';
+          case 'iidMissing': target.remove('iid');
+        }
+        final adapter = FakeAdapter((request) {
+          _assertOwnershipRead(request, snoozed);
+          return jsonResponse(_ownershipPage([node]));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        await expectLater(
+          snoozed ? api.snoozedTodosForUnsnooze(allowGroupTargets: true)
+              : api.pendingTodosForSnooze(allowGroupTargets: true),
+          throwsA(isA<ApiFailure>().having((failure) => failure.kind, 'kind', FailureKind.invalidResponse)),
+          reason: problem,
+        );
+        expect(adapter.requests, hasLength(1), reason: problem);
+      }
+    });
+
+    test('Issue group todo refuses project and type mismatches for snoozed=$snoozed', () async {
+      for (final problem in ['missingProjectId', 'projectBacked', 'outerProject', 'targetType', 'unknownType']) {
+        final node = _groupIssueOwnershipTodo(1);
+        final target = node['targetEntity']! as Map<String, Object?>;
+        switch (problem) {
+          case 'missingProjectId': target.remove('projectId');
+          case 'projectBacked': target['projectId'] = 10;
+          case 'outerProject': node['project'] = {'id': 'gid://gitlab/Project/10', 'fullPath': 'team/core'};
+          case 'targetType': node['targetType'] = 'WORKITEM';
+          case 'unknownType': node['targetType'] = 'OTHER';
+        }
+        final adapter = FakeAdapter((request) {
+          _assertOwnershipRead(request, snoozed);
+          return jsonResponse(_ownershipPage([node, _issueOwnershipTodo(2)]));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final result = await (snoozed
+            ? api.snoozedTodosForUnsnooze(allowGroupTargets: true)
+            : api.pendingTodosForSnooze(allowGroupTargets: true));
+        expect(result.items.map((item) => item['id']), [2], reason: problem);
+        expect(result.items.single['target_type'], 'Issue');
+        expect(result.items.single.containsKey('namespace'), isFalse);
+        expect(result.unsupportedIds, {1}, reason: problem);
+        expect(adapter.requests, hasLength(1));
       }
     });
 
@@ -240,11 +378,56 @@ void main() {
       expect(adapter.requests, hasLength(2));
     });
 
+    test('WorkItem group todo retains its namespace evidence for snoozed=$snoozed', () async {
+      for (final missing in [false, true]) {
+        final node = _groupOwnershipTodo(1);
+        if (missing) {
+          node.remove('group');
+        } else {
+          node['group'] = null;
+        }
+        final adapter = FakeAdapter((request) {
+          _assertOwnershipRead(request, snoozed);
+          return jsonResponse(_ownershipPage([node]));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final result = await (snoozed
+            ? api.snoozedTodosForUnsnooze(allowGroupTargets: true)
+            : api.pendingTodosForSnooze(allowGroupTargets: true));
+        expect(result.items.single['target'], {'id': 'gid://gitlab/WorkItem/91', 'iid': 7});
+        expect(result.items.single['namespace'],
+            {'id': 'gid://gitlab/Group/2', 'group_id': 2, 'full_path': 'team/sub'});
+        expect(result.unsupportedIds, isEmpty);
+        expect(adapter.requests, hasLength(1));
+      }
+    });
+
+    test('WorkItem group todo refuses a foreign Todo group for snoozed=$snoozed', () async {
+      for (final field in ['id', 'fullPath']) {
+        final node = _groupOwnershipTodo(1);
+        (node['group']! as Map<String, Object?>)[field] =
+            field == 'id' ? 'gid://gitlab/Group/9' : 'other/sub';
+        final adapter = FakeAdapter((request) {
+          _assertOwnershipRead(request, snoozed);
+          return jsonResponse(_ownershipPage([node]));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final result = await (snoozed
+            ? api.snoozedTodosForUnsnooze(allowGroupTargets: true)
+            : api.pendingTodosForSnooze(allowGroupTargets: true));
+        expect(result.items, isEmpty, reason: field);
+        expect(result.unsupportedIds, {1});
+        expect(adapter.requests, hasLength(1));
+      }
+    });
+
     test('group todo rejects missing and forged ownership evidence for snoozed=$snoozed', () async {
       for (final problem in [
         'outerProjectMissing', 'targetProjectMissing', 'namespaceMissing', 'namespaceNull',
         'groupGidForged', 'groupGidLeadingZero', 'groupGidOverflow', 'groupPathMissing',
-        'groupPathInvalid', 'workItemGidForged', 'workItemGidOverflow',
+        'groupPathInvalid', 'groupDot', 'groupDotDot', 'workItemGidForged', 'workItemGidOverflow',
         'workItemGidTrailingData', 'iidTrailingData', 'iidMissing',
       ]) {
         final node = _groupOwnershipTodo(1);
@@ -252,7 +435,7 @@ void main() {
         final namespace = target['namespace']! as Map<String, Object?>;
         switch (problem) {
           case 'outerProjectMissing': node.remove('project');
-          case 'targetProjectMissing': target.remove('project');
+          case 'targetProjectMissing': target.remove('workItemProject');
           case 'namespaceMissing': target.remove('namespace');
           case 'namespaceNull': target['namespace'] = null;
           case 'groupGidForged': namespace['id'] = 'gid://gitlab/WorkItem/2';
@@ -260,9 +443,15 @@ void main() {
           case 'groupGidOverflow': namespace['id'] = 'gid://gitlab/Group/999999999999999999999999999999999';
           case 'groupPathMissing': namespace.remove('fullPath');
           case 'groupPathInvalid': namespace['fullPath'] = 'team//sub';
-          case 'workItemGidForged': target['id'] = 'gid://gitlab/Group/91';
-          case 'workItemGidOverflow': target['id'] = 'gid://gitlab/WorkItem/999999999999999999999999999999999';
-          case 'workItemGidTrailingData': target['id'] = 'gid://gitlab/WorkItem/91\n';
+          case 'groupDot':
+            namespace['fullPath'] = 'team/./sub';
+            (node['group']! as Map<String, Object?>)['fullPath'] = 'team/./sub';
+          case 'groupDotDot':
+            namespace['fullPath'] = 'team/../sub';
+            (node['group']! as Map<String, Object?>)['fullPath'] = 'team/../sub';
+          case 'workItemGidForged': target['workItemId'] = 'gid://gitlab/Group/91';
+          case 'workItemGidOverflow': target['workItemId'] = 'gid://gitlab/WorkItem/999999999999999999999999999999999';
+          case 'workItemGidTrailingData': target['workItemId'] = 'gid://gitlab/WorkItem/91\n';
           case 'iidTrailingData': target['iid'] = '7\n';
           case 'iidMissing': target.remove('iid');
         }
@@ -282,25 +471,31 @@ void main() {
       }
     });
 
-    test('project descendant and inconsistent ownership stay distinct for snoozed=$snoozed', () async {
+    test('project-backed WorkItem requires ProjectNamespace for snoozed=$snoozed', () async {
       final project = {'id': 'gid://gitlab/Project/10', 'fullPath': 'team/sub/repo'};
       final descendant = _groupOwnershipTodo(1)..['project'] = project;
-      (descendant['targetEntity']! as Map<String, Object?>)['project'] = project;
+      (descendant['targetEntity']! as Map<String, Object?>)['workItemProject'] = project;
       final forgedOuter = _groupOwnershipTodo(2)..['project'] = project;
       final forgedInner = _groupOwnershipTodo(3);
-      (forgedInner['targetEntity']! as Map<String, Object?>)['project'] = project;
+      (forgedInner['targetEntity']! as Map<String, Object?>)['workItemProject'] = project;
       final unknown = _groupOwnershipTodo(4)..['targetType'] = 'OTHER';
+      final validProject = _groupOwnershipTodo(5)..['project'] = project;
+      final target = validProject['targetEntity']! as Map<String, Object?>;
+      target['workItemProject'] = project;
+      target['namespace'] = {'id': 'gid://gitlab/Namespaces::ProjectNamespace/10', 'fullPath': 'team/sub/repo'};
+      validProject['group'] = null;
       final adapter = FakeAdapter((request) {
         _assertOwnershipRead(request, snoozed);
-        return jsonResponse(_ownershipPage([descendant, forgedOuter, forgedInner, unknown]));
+        return jsonResponse(_ownershipPage([descendant, forgedOuter, forgedInner, unknown, validProject]));
       });
       final api = testApi(adapter);
       addTearDown(api.close);
       final result = await (snoozed ? api.snoozedTodosForUnsnooze(allowGroupTargets: true)
           : api.pendingTodosForSnooze(allowGroupTargets: true));
       expect(result.items.single['project'], {'id': 10, 'path_with_namespace': 'team/sub/repo'});
+      expect(result.items.single['id'], 5);
       expect(result.items.single.containsKey('namespace'), isFalse);
-      expect(result.unsupportedIds, {2, 3, 4});
+      expect(result.unsupportedIds, {1, 2, 3, 4});
       expect(adapter.requests, hasLength(1));
     });
 
@@ -313,7 +508,7 @@ void main() {
           expect(_variables(request)['after'], reads == 0 ? null : 'cursor-$reads');
           reads++;
           return jsonResponse(_ownershipPage(
-            List.generate(100, (index) => _groupOwnershipTodo((reads - 1) * 100 + index + 1)),
+            List.generate(100, (index) => _groupIssueOwnershipTodo((reads - 1) * 100 + index + 1)),
             more: reads < 4 || !complete,
             cursor: 'cursor-$reads',
           ));

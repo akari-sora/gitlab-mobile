@@ -1066,12 +1066,13 @@ final class Mr6b3ApiServer {
     'targetType': 'WORKITEM',
     'snoozedUntil': snoozed ? snoozeUntil : null,
     'project': _projectRef,
+    'group': null,
     'targetEntity': {
       '__typename': 'WorkItem',
-      'id': 'gid://gitlab/WorkItem/91',
+      'workItemId': 'gid://gitlab/WorkItem/91',
       'iid': '3',
-      'project': _projectRef,
-      'namespace': {'id': 'gid://gitlab/Group/5', 'fullPath': 'team'},
+      'workItemProject': _projectRef,
+      'namespace': _namespaceRef,
     },
   };
 

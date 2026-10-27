@@ -60,12 +60,13 @@ query MobilePendingTodosForSnooze($first: Int!, $after: String) {
       nodes {
         id targetType snoozedUntil
         project { id fullPath }
+        group { id fullPath }
         targetEntity {
           __typename
-          ... on Issue { id iid projectId }
-          ... on MergeRequest { id iid project { id fullPath } }
+          ... on Issue { issueId: id iid projectId }
+          ... on MergeRequest { mergeRequestId: id iid mergeRequestProject: project { id fullPath } }
           ... on WorkItem {
-            id iid project { id fullPath } namespace { id fullPath }
+            workItemId: id iid workItemProject: project { id fullPath } namespace { id fullPath }
           }
         }
       }
@@ -82,12 +83,13 @@ query MobileSnoozedTodosForUnsnooze($first: Int!, $after: String) {
       nodes {
         id targetType snoozedUntil
         project { id fullPath }
+        group { id fullPath }
         targetEntity {
           __typename
-          ... on Issue { id iid projectId }
-          ... on MergeRequest { id iid project { id fullPath } }
+          ... on Issue { issueId: id iid projectId }
+          ... on MergeRequest { mergeRequestId: id iid mergeRequestProject: project { id fullPath } }
           ... on WorkItem {
-            id iid project { id fullPath } namespace { id fullPath }
+            workItemId: id iid workItemProject: project { id fullPath } namespace { id fullPath }
           }
         }
       }
@@ -273,12 +275,18 @@ extension TodoSnoozeApi on GitLabApi {
   int? iid;
   ({int id, String path})? ownProject;
   ({int id, String gid, String path})? group;
+  String? groupWorkItemId;
   var namespaceMatches = true;
   // Only these fragments select an ID, iid and project ownership. Unknown target types
   // and Commit can legally return only __typename, so do not demand fragments
   // that the query did not select for them.
   if (entity != null && const {'Issue', 'MergeRequest', 'WorkItem'}.contains(entityType)) {
-    entityId = requiredString(entity, 'id');
+    final idKey = switch (entityType) {
+      'Issue' => 'issueId',
+      'MergeRequest' => 'mergeRequestId',
+      _ => 'workItemId',
+    };
+    entityId = requiredString(entity, idKey);
     final entityMatch = RegExp('^gid://gitlab/$entityType/([1-9][0-9]*)\$').firstMatch(entityId);
     if (entityMatch == null) {
       throw const FormatException('Invalid todo target identity');
@@ -293,11 +301,27 @@ extension TodoSnoozeApi on GitLabApi {
       // ownership stays unsupported, just like a different own project.
       final projectId = entity['projectId'];
       ownProject = projectId is int && projectId > 0 && projectId == project?.id ? project : null;
+      if (project == null && entity.containsKey('projectId') && projectId == null && node['group'] != null) {
+        final owner = objectJson(node['group']);
+        final groupGid = requiredString(owner, 'id');
+        final groupId = groupKeyNumericId(groupGid);
+        final groupPath = requiredString(owner, 'fullPath');
+        if (groupId == null || !_validStrictGroupPath(groupPath) ||
+            int.tryParse(entityMatch.group(1)!) == null) {
+          throw const FormatException('Invalid group issue todo identity');
+        }
+        group = (id: groupId, gid: groupGid, path: groupPath);
+        // GitLab v19.5.0-ee app/models/work_item.rb:3-17 uses the issues
+        // table; app/graphql/types/work_item_id_type.rb:19-25,37-50 converts
+        // Issue GIDs to WorkItem GIDs using that same row's numeric ID.
+        groupWorkItemId = 'gid://gitlab/WorkItem/${entityMatch.group(1)!}';
+      }
     } else {
-      if (!entity.containsKey('project')) {
+      final projectKey = entityType == 'MergeRequest' ? 'mergeRequestProject' : 'workItemProject';
+      if (!entity.containsKey(projectKey)) {
         throw const FormatException('Invalid todo target coordinates');
       }
-      ownProject = _snoozeOwnershipProject(entity['project']);
+      ownProject = _snoozeOwnershipProject(entity[projectKey]);
     }
     if (entityType == 'WorkItem') {
       final namespace = objectJson(entity['namespace']);
@@ -309,32 +333,41 @@ extension TodoSnoozeApi on GitLabApi {
           ? groupId != null
           : RegExp(r'^gid://gitlab/Group/[1-9][0-9]*$').hasMatch(namespaceId);
       if ((!projectNamespace && !groupNamespace) ||
-          _validatedNamespacePathOrNull(namespacePath) != namespacePath) {
+          _validatedNamespacePathOrNull(namespacePath) != namespacePath ||
+          (groupNamespace && !_validStrictGroupPath(namespacePath))) {
         throw const FormatException('Invalid todo work item namespace');
       }
-      namespaceMatches = project != null &&
-          ((projectNamespace && namespacePath == project.path) ||
-              (groupNamespace && project.path.startsWith('$namespacePath/')));
+      namespaceMatches = project != null && projectNamespace && namespacePath == project.path;
       if (project == null && ownProject == null && groupId != null) {
         if (int.tryParse(entityMatch.group(1)!) == null) {
           throw const FormatException('Invalid group work item identity');
         }
         group = (id: groupId, gid: namespaceId, path: namespacePath);
+        groupWorkItemId = entityId;
+        // WorkItem supplies its own namespace evidence; a supplied Todo group
+        // must agree with it rather than silently contradict that owner.
+        if (node['group'] != null) {
+          final owner = objectJson(node['group']);
+          if (owner['id'] != namespaceId || owner['fullPath'] != namespacePath) {
+            return (id: id, item: null);
+          }
+        }
       }
     }
   }
-  if (group != null && allowGroupTargets && expected == 'WorkItem' &&
-      entityType == expected && entityId != null && iid != null) {
+  if (group != null && allowGroupTargets &&
+      (expected == 'Issue' || expected == 'WorkItem') &&
+      entityType == expected && groupWorkItemId != null && iid != null) {
     return (id: id, item: Map<String, dynamic>.unmodifiable({
       'id': id,
-      'target_type': expected,
+      'target_type': 'WorkItem',
       'snoozed_until': until,
       'project': null,
       'namespace': Map<String, dynamic>.unmodifiable({
         'id': group.gid, 'group_id': group.id, 'full_path': group.path,
       }),
       'target': Map<String, dynamic>.unmodifiable({
-        'id': entityId, 'iid': iid,
+        'id': groupWorkItemId, 'iid': iid,
       }),
     }));
   }

@@ -28,14 +28,15 @@ Map<String, Object?> _envelope(
   String namespaceId = _group,
   String path = _path,
 }) => {
-  'data': {
-    'namespace': {'id': namespaceId, 'fullPath': path, 'workItem': node},
+  'data': <String, Object?>{
+    'namespace': <String, Object?>{'id': namespaceId, 'fullPath': path, 'workItem': node},
   },
 };
 
 ({GitLabApi api, FakeAdapter adapter}) _reader(
   Object envelope, {
   int expectedReads = 1,
+  String path = _path,
 }) {
   var mutations = 0;
   final adapter = FakeAdapter((request) {
@@ -45,7 +46,7 @@ Map<String, Object?> _envelope(
     expect(request.method, 'POST');
     expect(request.uri.toString(), 'https://example.com/gitlab/api/graphql');
     expect(query, namespaceWorkItemQuery);
-    expect(body['variables'], {'path': _path, 'iid': '3'});
+    expect(body['variables'], {'path': path, 'iid': '3'});
     return jsonResponse(envelope);
   });
   final api = testApi(adapter);
@@ -62,6 +63,14 @@ Matcher get _invalid => throwsA(
     (failure) => failure.kind,
     'kind',
     FailureKind.invalidResponse,
+  ),
+);
+
+Matcher get _invisible => throwsA(
+  isA<ApiFailure>().having(
+    (failure) => failure.kind,
+    'kind',
+    FailureKind.invisible,
   ),
 );
 
@@ -106,6 +115,74 @@ void main() {
     expect(detail.summary.project, isNull);
     expect(detail.summary.namespace!.id, _group);
   });
+
+  for (final field in ['namespace', 'workItem']) {
+    for (final missing in [true, false]) {
+      test('strict namespace distinguishes ${missing ? 'missing' : 'null'} $field', () async {
+        final envelope = _envelope(_node());
+        final data = envelope['data']! as Map<String, Object?>;
+        final parent = field == 'namespace'
+            ? data
+            : data['namespace']! as Map<String, Object?>;
+        if (missing) {
+          parent.remove(field);
+        } else {
+          parent[field] = null;
+        }
+        final h = _reader(envelope);
+        await expectLater(
+          h.api.namespaceWorkItem(
+            _path,
+            3,
+            expectedNamespaceId: _group,
+            strictIdentity: true,
+          ),
+          missing ? _invalid : _invisible,
+        );
+      });
+    }
+    test('namespace UI default keeps missing $field invisible', () async {
+      final envelope = _envelope(_node());
+      final data = envelope['data']! as Map<String, Object?>;
+      final parent = field == 'namespace'
+          ? data
+          : data['namespace']! as Map<String, Object?>;
+      parent.remove(field);
+      final h = _reader(envelope);
+      await expectLater(
+        h.api.namespaceWorkItem(_path, 3, expectedNamespaceId: _group),
+        _invisible,
+      );
+    });
+  }
+
+  for (final segment in ['.', '..']) {
+    test('strict namespace refuses Group path segment $segment', () async {
+      final path = 'team/$segment/sub';
+      final node = _node()..['namespace'] = {'id': _group, 'fullPath': path};
+      final h = _reader(_envelope(node, path: path), path: path);
+      await expectLater(
+        h.api.namespaceWorkItem(
+          path,
+          3,
+          expectedNamespaceId: _group,
+          strictIdentity: true,
+        ),
+        _invalid,
+      );
+    });
+    test('namespace UI default keeps Group path segment $segment', () async {
+      final path = 'team/$segment/sub';
+      final node = _node()..['namespace'] = {'id': _group, 'fullPath': path};
+      final h = _reader(_envelope(node, path: path), path: path);
+      final detail = await h.api.namespaceWorkItem(
+        path,
+        3,
+        expectedNamespaceId: _group,
+      );
+      expect(detail.summary.namespace!.fullPath, path);
+    });
+  }
 
   test('strict namespace requires expected namespace before any read', () async {
     final h = _reader(_envelope(_node()), expectedReads: 0);

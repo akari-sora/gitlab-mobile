@@ -865,11 +865,17 @@ extension WorkItemGraphQlApi on GitLabApi {
     _requireCurrentWorkItemRequest(isCurrent);
     try {
       final data = _workItemGraphData(response.bytes);
+      if (strictIdentity && !data.containsKey('namespace')) {
+        throw const FormatException('Missing namespace');
+      }
       final namespace = _namespaceGraphContainer(
         data,
         path,
         expectedId: expectedId,
       );
+      if (strictIdentity && !namespace.container.containsKey('workItem')) {
+        throw const FormatException('Missing work item');
+      }
       if (namespace.container['workItem'] == null) {
         throw const ApiFailure(FailureKind.invisible);
       }
@@ -1004,6 +1010,12 @@ String? _validatedNamespacePathOrNull(String value) {
   }
   return path;
 }
+
+// Strict group evidence follows the G0a identity path rules without changing
+// the paths accepted by the existing UI readers.
+bool _validStrictGroupPath(String path) =>
+    _validatedNamespacePathOrNull(path) == path &&
+    path.split('/').every((segment) => segment != '.' && segment != '..');
 
 String? _validatedOptionalOpaqueId(String? value) {
   if (value == null) return null;
@@ -1475,7 +1487,8 @@ void _requireStrictNamespaceWorkItem(Json node, GraphResourceRef namespace) {
     throw const FormatException('Invalid strict work item identity');
   }
   if (node['project'] == null) {
-    if (groupKeyNumericId(owner.id) == null) {
+    if (groupKeyNumericId(owner.id) == null ||
+        !_validStrictGroupPath(owner.fullPath)) {
       throw const FormatException('Invalid strict Group namespace');
     }
     return;
