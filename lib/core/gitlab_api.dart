@@ -1720,6 +1720,757 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     }
   }
 
+  /// An explicitly selected immutable diff version; discovery stays network-only.
+  Future<CachedRead<Json>> cachedMergeRequestVersion(
+    int projectId,
+    int iid,
+    int versionId, {
+    bool allowDisk = true,
+    bool fresh = false,
+  }) {
+    if (projectId <= 0 || iid <= 0 || versionId <= 0) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    final uri = instance.api([
+      'projects',
+      '$projectId',
+      'merge_requests',
+      '$iid',
+      'versions',
+      '$versionId',
+    ]);
+    return _typedPinnedRead<Json>(
+      uri,
+      ReadCacheBodyKind.json,
+      () async {
+        final response = await _read(uri);
+        try {
+          final value = objectJson(jsonDecode(utf8.decode(response.bytes)));
+          final sha = RegExp(r'^(?:[0-9a-f]{40}|[0-9a-f]{64})$');
+          if (value['id'] != versionId ||
+              !['base_commit_sha', 'start_commit_sha', 'head_commit_sha'].every(
+                (key) =>
+                    value[key] is String && sha.hasMatch(value[key] as String),
+              ) ||
+              value['diffs'] is! List) {
+            throw const FormatException();
+          }
+          return _LoadedRead(
+            _freezeJson(value),
+            response.bytes.length,
+            _cacheTtl(response.headers, const Duration(days: 7)) >
+                Duration.zero,
+          );
+        } on FormatException {
+          throw const ApiFailure(FailureKind.invalidResponse);
+        }
+      },
+      allowDisk: allowDisk,
+      fresh: fresh,
+    );
+  }
+
+  /// A verified terminal tail, with absolute byte offsets. Poll chunks never
+  /// enter this path. Eligibility itself is always fresh same-client network data.
+  Future<CachedRead<ReadCacheTerminalLog>> cachedTerminalJobTrace(
+    int projectId,
+    int jobId, {
+    bool allowDisk = true,
+    bool fresh = false,
+  }) async {
+    if (projectId <= 0 || jobId <= 0) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    if (_closed) throw const ApiFailure(FailureKind.cancelled);
+    final mayStart = Zone.current[#cachedReadMayStart] as bool Function()?;
+    if (mayStart?.call() == false) {
+      return const CachedRead<ReadCacheTerminalLog>.dropped();
+    }
+    final metadataUri = instance.api([
+      'projects',
+      '$projectId',
+      'jobs',
+      '$jobId',
+    ]);
+    final permission = _cache.permissions(metadataUri);
+    final metadataKey = _cache.key(metadataUri, 'application/json');
+    final cached = _cache.entries[metadataKey];
+    final age = cached == null
+        ? null
+        : _readCacheClock().difference(cached.fetchedAt);
+    Json metadata;
+    DateTime fetchedAt;
+    if (!fresh &&
+        cached?.lineage == CacheLineage.network &&
+        cached!.value is Json &&
+        age! >= Duration.zero &&
+        age < const Duration(seconds: 30)) {
+      metadata = cached.value as Json;
+      fetchedAt = cached.fetchedAt;
+    } else {
+      final stamp = _cache.snapshot(_cache.scope(metadataUri), false);
+      final ticket = _cache.enabled
+          ? _cache.claimPublication(
+              metadataKey,
+              metadataUri,
+              'application/json',
+            )
+          : 0;
+      try {
+        if (mayStart?.call() == false) {
+          return const CachedRead<ReadCacheTerminalLog>.dropped();
+        }
+        final response = await _read(metadataUri);
+        // A response retires older eligibility even when it cannot be cached.
+        // The d1 publication revision also fences a held Range across a newer
+        // generic job read, including a no-store response.
+        final previous = _cache.entries.remove(metadataKey);
+        if (previous != null) _cache.bytes -= previous.cost;
+        try {
+          metadata = _freezeJson(
+            objectJson(jsonDecode(utf8.decode(response.bytes))),
+          );
+        } on FormatException {
+          throw const ApiFailure(FailureKind.invalidResponse);
+        }
+        fetchedAt = _readCacheClock();
+        _cache.observeRawPrivacy(metadataUri, metadata);
+        await _cache.settleDiskSafety();
+        if (_closed || !_cache.permitted(permission, metadataUri)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        if (_cache.enabled && _cache.diskRevisions[metadataKey] != ticket) {
+          throw const ApiFailure(FailureKind.unsupported);
+        }
+        if (_cache.enabled &&
+            _cache.stable(stamp) &&
+            !_cache.active(_cache.scope(metadataUri)) &&
+            _cacheTtl(response.headers, const Duration(seconds: 30)) >
+                Duration.zero) {
+          _cache.store(
+            metadataKey,
+            _ReadEntry(
+              metadataUri,
+              metadata,
+              fetchedAt,
+              CacheLineage.network,
+              _ReadClass.detail,
+              _cache.scope(metadataUri),
+              response.bytes.length * 4,
+            ),
+          );
+        }
+      } finally {
+        _cache.finishPublication(ticket);
+      }
+    }
+    final finished = metadata['finished_at'];
+    final finishedAt = finished is String ? DateTime.tryParse(finished) : null;
+    final pipeline = metadata['pipeline'];
+    if (metadata['id'] != jobId ||
+        pipeline is! Map ||
+        pipeline['project_id'] != projectId ||
+        (metadata.containsKey('project_id') &&
+            metadata['project_id'] != projectId) ||
+        !const {
+          'success',
+          'failed',
+          'canceled',
+          'skipped',
+        }.contains(metadata['status']) ||
+        !metadata.containsKey('erased_at') ||
+        metadata['erased_at'] != null ||
+        finishedAt == null ||
+        finishedAt.isAfter(_readCacheClock())) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    final binding = _cache.diskBinding;
+    final metadataRevision = _cache.diskRevisions[metadataKey];
+    final proof = binding == null
+        ? null
+        : ReadCacheTerminalJobProof(
+            binding: binding,
+            projectId: projectId,
+            jobId: jobId,
+            status: metadata['status'] as String,
+            finishedAt: finishedAt,
+            fetchedAt: fetchedAt,
+            lineage: ReadCacheProofLineage.network,
+            erased: false,
+          );
+    final uri = instance.api([
+      'projects',
+      '$projectId',
+      'jobs',
+      '$jobId',
+      'trace',
+    ]);
+    return _typedPinnedRead<ReadCacheTerminalLog>(
+      uri,
+      ReadCacheBodyKind.terminalLog,
+      () => _terminalTraceRange(uri, projectId, jobId, finishedAt),
+      allowDisk: allowDisk,
+      fresh: fresh,
+      terminalJob: proof,
+      terminalCurrent: () {
+        final age = _readCacheClock().difference(fetchedAt);
+        return !age.isNegative &&
+            age < const Duration(seconds: 30) &&
+            (binding == null ||
+                _cache.diskRevisions[metadataKey] == metadataRevision) &&
+            (proof == null || _terminalProofCurrent(proof));
+      },
+      verifyTerminal: () async {
+        if (mayStart?.call() == false) return false;
+        final response = await _read(metadataUri);
+        final Json current;
+        try {
+          current = objectJson(jsonDecode(utf8.decode(response.bytes)));
+        } on FormatException {
+          throw const ApiFailure(FailureKind.invalidResponse);
+        }
+        final pipeline = current['pipeline'];
+        if (current['id'] != jobId ||
+            pipeline is! Map ||
+            pipeline['project_id'] != projectId ||
+            (current.containsKey('project_id') &&
+                current['project_id'] != projectId) ||
+            current['status'] != metadata['status'] ||
+            !current.containsKey('erased_at') ||
+            current['erased_at'] != null ||
+            current['finished_at'] is! String ||
+            DateTime.tryParse(current['finished_at'] as String) != finishedAt) {
+          if (_cache.enabled) {
+            final changed = _cache.claimPublication(
+              metadataKey,
+              metadataUri,
+              'application/json',
+            );
+            _cache.finishPublication(changed);
+          }
+          final previous = _cache.entries.remove(metadataKey);
+          if (previous != null) _cache.bytes -= previous.cost;
+          throw const ApiFailure(FailureKind.unsupported);
+        }
+        return true;
+      },
+    );
+  }
+
+  bool _terminalProofCurrent(ReadCacheTerminalJobProof proof) {
+    final age = _readCacheClock().difference(proof.fetchedAt);
+    if (proof.binding != _cache.diskBinding ||
+        age.isNegative ||
+        age >= const Duration(seconds: 30)) {
+      return false;
+    }
+    final metadata =
+        _cache.entries[_cache.key(
+          instance.api([
+            'projects',
+            '${proof.projectId}',
+            'jobs',
+            '${proof.jobId}',
+          ]),
+          'application/json',
+        )];
+    if (metadata == null || metadata.fetchedAt.isBefore(proof.fetchedAt)) {
+      return true;
+    }
+    final value = metadata.value;
+    return metadata.lineage == CacheLineage.network &&
+        value is Json &&
+        value['id'] == proof.jobId &&
+        value['status'] == proof.status &&
+        value['erased_at'] == null &&
+        value['finished_at'] is String &&
+        DateTime.tryParse(value['finished_at'] as String) == proof.finishedAt &&
+        value['pipeline'] is Map &&
+        (value['pipeline'] as Map)['project_id'] == proof.projectId;
+  }
+
+  ProjectedDiskEntry? _projectTypedPinned(
+    Uri uri,
+    ReadCacheBodyKind kind,
+    Object value,
+    DateTime at,
+    int bytes,
+    DiskCommitLease lease, {
+    bool store = true,
+    ReadCacheTerminalJobProof? terminalJob,
+  }) {
+    final binding = _cache.diskBinding;
+    if (binding == null) return null;
+    final context = _cache.projectionContext();
+    return projectReadCacheResponse(
+      DiskWriteCandidate(
+        binding: binding,
+        uri: uri,
+        logicalAccept: kind == ReadCacheBodyKind.terminalLog
+            ? 'text/plain'
+            : 'application/json',
+        bodyKind: kind,
+        fetchedAt: at,
+        responseBytes: bytes,
+        lease: lease,
+        cacheable: true,
+        noStore: !store,
+        firstPage: true,
+        typedPinned: true,
+        privacyEpoch: context.privacyEpoch,
+      ),
+      value,
+      ReadCacheProjectionContext(
+        instance: context.instance,
+        binding: binding,
+        now: context.now,
+        privacyEpoch: context.privacyEpoch,
+        scopeVersions: context.scopeVersions,
+        publicIssues: context.publicIssues,
+        confidentialIssues: context.confidentialIssues,
+        confirmedShas: context.confirmedShas,
+        verifiedProjectAliases: context.verifiedProjectAliases,
+        verifiedMergeRequestIds: context.verifiedMergeRequestIds,
+        terminalJob: terminalJob,
+      ),
+    );
+  }
+
+  /// d1 owns the shared fences and publication bookkeeping. The typed adapter
+  /// supplies only E18/E19 admission and terminal proof, absent from generic reads.
+  Future<CachedRead<T>> _typedPinnedRead<T extends Object>(
+    Uri uri,
+    ReadCacheBodyKind kind,
+    Future<_LoadedRead<T>> Function() load, {
+    required bool allowDisk,
+    required bool fresh,
+    ReadCacheTerminalJobProof? terminalJob,
+    bool Function()? terminalCurrent,
+    Future<bool> Function()? verifyTerminal,
+  }) async {
+    if (_closed) throw const ApiFailure(FailureKind.cancelled);
+    final accept = kind == ReadCacheBodyKind.terminalLog
+        ? 'text/plain'
+        : 'application/json';
+    final key = _cache.key(uri, accept);
+    final permission = _cache.permissions(uri);
+    final binding = _cache.diskBinding;
+    final canCache = binding != null;
+    final mayStart = Zone.current[#cachedReadMayStart] as bool Function()?;
+    bool eligible(Object value, DateTime at) {
+      if (kind == ReadCacheBodyKind.terminalLog) {
+        return terminalCurrent?.call() != false &&
+            value is ReadCacheTerminalLog &&
+            (terminalJob == null || value.finishedAt == terminalJob.finishedAt);
+      }
+      // Generic reads share the memory key, but never confer typed/schema or
+      // current privacy eligibility on their raw value.
+      final probe = _ReadDiskLease(() => true);
+      try {
+        final projected = _projectTypedPinned(uri, kind, value, at, 0, probe);
+        return projected != null &&
+            projected.issueIdentities.every(
+              (id) => _cache.sourceAllowed(
+                instance.api([
+                  'projects',
+                  '${id.projectId}',
+                  'issues',
+                  '${id.iid}',
+                ]),
+                at,
+                true,
+              ),
+            );
+      } finally {
+        probe.revoke();
+      }
+    }
+
+    CachedRead<T> result(_ReadEntry entry) => CachedRead(
+      value: entry.value as T,
+      fetchedAt: entry.fetchedAt,
+      lineage: entry.lineage == CacheLineage.disk
+          ? CacheLineage.disk
+          : CacheLineage.memory,
+    );
+    if (canCache && !fresh) {
+      final entry = _cache.entries.remove(key);
+      if (entry != null) {
+        _cache.bytes -= entry.cost;
+        final age = _readCacheClock().difference(entry.fetchedAt);
+        if (!age.isNegative &&
+            age < const Duration(days: 7) &&
+            eligible(entry.value, entry.fetchedAt)) {
+          _cache.store(key, entry);
+          if (allowDisk || entry.lineage != CacheLineage.disk) {
+            return result(entry);
+          }
+        }
+      }
+      final pending = _cache.pending[key];
+      if (pending != null) {
+        final shared = await pending.future as CachedRead<T>;
+        if ((allowDisk || shared.lineage != CacheLineage.disk) &&
+            (shared.dropped || eligible(shared.value, shared.fetchedAt))) {
+          return shared;
+        }
+      }
+    }
+    if (mayStart?.call() == false) return CachedRead<T>.dropped();
+    var ticket = canCache ? _cache.claimPublication(key, uri, accept) : 0;
+    final lease = _ReadDiskLease(
+      () =>
+          !_closed &&
+          binding == _cache.diskBinding &&
+          _cache.permitted(permission, uri) &&
+          _cache.diskRevisions[key] == ticket &&
+          terminalCurrent?.call() != false,
+    );
+    ProjectedDiskEntry? project(
+      Object value,
+      DateTime at,
+      int bytes,
+      bool store,
+    ) {
+      return _projectTypedPinned(
+        uri,
+        kind,
+        value,
+        at,
+        bytes,
+        lease,
+        store: store,
+        terminalJob: terminalJob,
+      );
+    }
+
+    final completion = Completer<CachedRead<T>>();
+    final operation = completion.future;
+    Future<CachedRead<T>> execute() async {
+      var admitted = false;
+      var accepted = false;
+      try {
+        final backend = _cache.diskBackend;
+        if (canCache && allowDisk && !fresh && backend != null) {
+          final durable = readCacheDurableKey(
+            binding: binding,
+            instance: instance,
+            uri: uri,
+            logicalAccept: accept,
+          );
+          if (durable != null) {
+            final cancelled = Completer<ProjectedDiskEntry?>();
+            final subscription = _cache.closing.stream.listen((_) {
+              cancelled.completeError(const ApiFailure(FailureKind.cancelled));
+            });
+            final ProjectedDiskEntry? disk;
+            try {
+              disk = await Future.any([
+                backend.lookup(
+                  DiskLookup(
+                    binding: binding,
+                    canonicalKey: durable,
+                    bodyKind: kind,
+                    lease: lease,
+                  ),
+                ),
+                cancelled.future,
+              ]);
+            } on Object catch (error) {
+              throw safeFailure(error);
+            } finally {
+              await subscription.cancel();
+            }
+            if (_closed) throw const ApiFailure(FailureKind.cancelled);
+            if (disk != null && lease.isCurrent) {
+              Object? raw;
+              try {
+                raw = kind == ReadCacheBodyKind.json
+                    ? _cache.diskProjectionInput(disk.body)
+                    : disk.body;
+              } on FormatException {
+                // Authenticated malformed projected data is discarded below.
+              }
+              final projected = raw == null
+                  ? null
+                  : project(raw, disk.fetchedAt, disk.serializedLength, true);
+              final age = _readCacheClock().difference(disk.fetchedAt);
+              final valid =
+                  disk.accountKey == binding.accountKey &&
+                  disk.canonicalKey == durable &&
+                  disk.bodyKind == kind &&
+                  disk.cacheClass == ReadCacheDiskClass.pinned &&
+                  projected != null &&
+                  projected.issueIdentities.length ==
+                      disk.issueIdentities.length &&
+                  projected.issueIdentities.containsAll(disk.issueIdentities) &&
+                  !age.isNegative &&
+                  age < const Duration(days: 7) &&
+                  _cache.sourceAllowed(uri, disk.fetchedAt, true) &&
+                  _cache.issuePermissionsAllowed(
+                    disk.issueIdentities,
+                    permission,
+                    fetchedAt: disk.fetchedAt,
+                  ) &&
+                  _cache.observeLoadedPrivacy(
+                    uri,
+                    projected.body,
+                    lineage: CacheLineage.disk,
+                    fetchedAt: disk.fetchedAt,
+                  );
+              await _cache.settleDiskSafety();
+              if (_closed) throw const ApiFailure(FailureKind.cancelled);
+              if (valid &&
+                  lease.isCurrent &&
+                  _cache.sourceAllowed(uri, disk.fetchedAt, true) &&
+                  _cache.ownsPublication(key, uri, accept, ticket)) {
+                final entry = _ReadEntry(
+                  uri,
+                  _freezeCached(projected.body),
+                  disk.fetchedAt,
+                  CacheLineage.disk,
+                  _ReadClass.pinned,
+                  _cache.scope(uri),
+                  disk.serializedLength * 4,
+                );
+                _cache.store(key, entry);
+                return result(entry);
+              }
+              if (lease.isCurrent &&
+                  _cache.ownsPublication(key, uri, accept, ticket)) {
+                _cache.discardDiskKey(uri, accept);
+                await _cache.settleDiskSafety();
+              }
+            }
+          }
+        }
+        // Disk work never occupies the shared pending slot: AI's generic
+        // network-only reads must be able to start while hydration is held.
+        if (canCache && !fresh) {
+          final pending = _cache.pending[key];
+          if (pending != null) {
+            final shared = await pending.future as CachedRead<T>;
+            if (shared.dropped || eligible(shared.value, shared.fetchedAt)) {
+              return shared;
+            }
+          }
+        }
+        if (canCache) {
+          _cache.finishPublication(ticket);
+          ticket = _cache.claimPublication(key, uri, accept);
+          if (!fresh) {
+            _cache.pending[key] = _PendingRead(
+              uri,
+              _cache.scope(uri),
+              true,
+              false,
+              operation,
+            );
+          }
+        }
+        admitted = await _cache.admit(false);
+        if (_closed || !_cache.permitted(permission, uri)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        if (terminalCurrent?.call() == false) {
+          throw const ApiFailure(FailureKind.unsupported);
+        }
+        if (!admitted || mayStart?.call() == false) {
+          return CachedRead<T>.dropped();
+        }
+        final loaded = await load();
+        final fetchedAt = _readCacheClock();
+        final issues = <ReadCacheIssueIdentity>{};
+        final privacy = _cache.observeLoadedPrivacy(
+          uri,
+          loaded.value,
+          fetchedAt: fetchedAt,
+          issueIdentities: issues,
+        );
+        await _cache.settleDiskSafety();
+        if (_closed || !_cache.permitted(permission, uri)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        if (terminalCurrent?.call() == false) {
+          throw const ApiFailure(FailureKind.unsupported);
+        }
+        // Recheck the attempt after receiving the tail, after all privacy I/O.
+        // Both metadata requests are physical requests in RequestMeter. This is
+        // fresh proof, not atomic protection against a later server-side erase.
+        if (verifyTerminal != null && !await verifyTerminal()) {
+          return CachedRead<T>.dropped();
+        }
+        if (_closed || !_cache.permitted(permission, uri)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        if (terminalCurrent?.call() == false) {
+          throw const ApiFailure(FailureKind.unsupported);
+        }
+        final bounded = project(loaded.value, fetchedAt, loaded.bytes, true);
+        final projected = loaded.store ? bounded : null;
+        final value =
+            _freezeCached(
+                  bounded?.body is ReadCacheTerminalLog
+                      ? bounded!.body
+                      : loaded.value,
+                )
+                as T;
+        if (canCache &&
+            lease.isCurrent &&
+            eligible(value, fetchedAt) &&
+            _cache.ownsPublication(key, uri, accept, ticket) &&
+            privacy &&
+            _cache.issuePermissionsAllowed(issues, permission)) {
+          if (projected != null && _cache.diskBackend != null) {
+            final event = DiskWriteCandidate(
+              binding: binding,
+              uri: uri,
+              logicalAccept: accept,
+              bodyKind: kind,
+              fetchedAt: fetchedAt,
+              responseBytes: projected.serializedLength,
+              lease: lease,
+              cacheable: true,
+              noStore: false,
+              firstPage: true,
+              typedPinned: true,
+              privacyEpoch: projected.privacyEpoch,
+            );
+            _cache.diskBackend!.accept(event, projected);
+            accepted = true;
+          } else {
+            _cache.discardDiskKey(uri, accept);
+          }
+          final limit = kind == ReadCacheBodyKind.terminalLog
+              ? readCacheTerminalLogLimit
+              : readCacheEntryLimit;
+          if (loaded.store && loaded.bytes <= limit) {
+            _cache.store(
+              key,
+              _ReadEntry(
+                uri,
+                value,
+                fetchedAt,
+                CacheLineage.network,
+                _ReadClass.pinned,
+                _cache.scope(uri),
+                loaded.bytes * 4,
+              ),
+            );
+          } else {
+            final previous = _cache.entries.remove(key);
+            if (previous != null) _cache.bytes -= previous.cost;
+          }
+        }
+        return CachedRead(
+          value: value,
+          fetchedAt: fetchedAt,
+          lineage: CacheLineage.network,
+        );
+      } finally {
+        if (!accepted) lease.revoke();
+        _cache.finishPublication(ticket);
+        if (admitted) _cache.release(false);
+        if (identical(_cache.pending[key]?.future, operation)) {
+          _cache.pending.remove(key);
+        }
+      }
+    }
+
+    completion.complete(execute());
+    return operation;
+  }
+
+  Future<_LoadedRead<ReadCacheTerminalLog>> _terminalTraceRange(
+    Uri uri,
+    int projectId,
+    int jobId,
+    DateTime finishedAt,
+  ) async {
+    final ({Uint8List bytes, Headers headers, int statusCode}) response;
+    try {
+      response = await _read(
+        uri,
+        maxBytes: readCacheTerminalLogLimit,
+        allowRangeNotSatisfiable: true,
+        headers: {
+          'Accept': 'text/plain',
+          'Range': 'bytes=-$readCacheTerminalLogLimit',
+        },
+      );
+    } on ApiFailure catch (failure) {
+      if (failure.kind != FailureKind.tooLarge) rethrow;
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    final length = int.tryParse(response.headers.value('content-length') ?? '');
+    var start = 0;
+    var total = response.bytes.length;
+    final eof = response.headers.value('x-gitlab-trace-eof');
+    if (eof == 'false' || eof == '0') {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    if (response.statusCode == 206) {
+      final match = RegExp(
+        r'^bytes (\d+)-(\d+)/(\d+)$',
+        caseSensitive: false,
+      ).firstMatch(response.headers.value('content-range') ?? '');
+      if (match == null) throw const ApiFailure(FailureKind.unsupported);
+      final from = int.tryParse(match[1]!);
+      final end = int.tryParse(match[2]!);
+      final size = int.tryParse(match[3]!);
+      if (from == null ||
+          end == null ||
+          size == null ||
+          size <= 0 ||
+          from !=
+              (size > readCacheTerminalLogLimit
+                  ? size - readCacheTerminalLogLimit
+                  : 0) ||
+          end != size - 1 ||
+          end - from + 1 != response.bytes.length ||
+          (length != null && length != response.bytes.length)) {
+        throw const ApiFailure(FailureKind.unsupported);
+      }
+      start = from;
+      total = size;
+    } else if (response.statusCode != 200 ||
+        length != response.bytes.length ||
+        response.headers.value('content-range') != null) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    // A suffix may start inside one UTF-8 scalar. Only its leading continuation
+    // bytes can be discarded; malformed content elsewhere remains unsupported.
+    var skip = 0;
+    if (start > 0) {
+      while (skip < response.bytes.length &&
+          response.bytes[skip] & 0xc0 == 0x80) {
+        skip++;
+      }
+      if (skip > 3) throw const ApiFailure(FailureKind.unsupported);
+    }
+    final bytes = response.bytes.sublist(skip);
+    try {
+      utf8.decode(bytes, allowMalformed: false);
+    } on FormatException {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    return _LoadedRead(
+      ReadCacheTerminalLog(
+        projectId: projectId,
+        jobId: jobId,
+        finishedAt: finishedAt,
+        startOffset: start + skip,
+        nextOffset: total,
+        totalBytes: total,
+        isEof: true,
+        truncated: start + skip > 0,
+        bytes: bytes,
+      ),
+      bytes.length,
+      _cacheTtl(response.headers, const Duration(days: 7)) > Duration.zero,
+    );
+  }
+
   Future<
     ({
       List<int> bytes,
