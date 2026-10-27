@@ -24,8 +24,9 @@ import 'mr6b3_support.dart';
 /// 「v2 不提供」中的一項，或「待 MR6b-x 交付」清單」；「每個新包裝的固定
 /// path 與欄位白名單有負向測試。」
 ///
-/// The real adapter is the assertion boundary. Direct graph-row and deferral
-/// checks are below; the exhaustive inventory remains in its own test file.
+/// The real adapter is the assertion boundary. Direct graph-row checks are
+/// below, including the three MR6b-3t rows that left the §7t deferral list;
+/// the exhaustive inventory remains in its own test file.
 /// NOT_RUN §15 row 13: exhaustive non-graph REST mutation and importer checks.
 /// Fixed graph documents are checked by operation/variables, without a separate
 /// reviewed full-document snapshot or arbitrary-document semantic audit.
@@ -135,10 +136,18 @@ const _readPortMembers = {
   'snippetText',
 };
 
-const _deferredMethods = {
+// Delivered by MR6b-3t (§7t), with their own fixed reads.
+const _mr6b3tMethods = {
   'updateWorkItemContent',
   'editWorkItemActivityNote',
   'updateWorkItemLabels',
+};
+
+const _mr6b3tReads = {
+  'workItemContent',
+  'workItemActivityEditAccess',
+  'workItemLabels',
+  'workItemLabelCandidates',
 };
 
 void main() {
@@ -170,8 +179,17 @@ void main() {
           called.addAll(_apiMembers(file.readAsStringSync()));
         }
       }
-      expect(called, {...graphDelta, 'instance', 'currentUser'});
-      expect(called.intersection(_deferredMethods), isEmpty);
+      expect(_pythonSet(boundary, '_MR6B3T_WRITE_PORT_MEMBERS'), {
+        ..._mr6b3tReads,
+        ..._mr6b3tMethods,
+      });
+      expect(called, {
+        ...graphDelta,
+        ..._mr6b3tReads,
+        ..._mr6b3tMethods,
+        'instance',
+        'currentUser',
+      });
       expect(called, isNot(contains('namespaceWorkItem')));
       expect(called, isNot(contains('snoozedTodos')));
       expect(
@@ -403,29 +421,21 @@ void main() {
     }
   });
 
-  group('§15 row 21 P14 inventory cross-check and §7t deferrals', () {
+  group('§15 row 21 P14 inventory cross-check and §7t delivery', () {
     test(
-      'all fifteen graph rows are delivered and exactly three remain invisible',
+      'all eighteen graph rows are delivered and visible; none is deferred',
       () {
         final graphRows = ProductionAiLedger.rows
             .where((r) => r.boundary == AiWriteBoundary.graph)
             .toList();
-        expect(
-          graphRows.map((r) => r.operationId).toSet(),
-          _fixedReads.keys.toSet(),
-        );
-        expect(graphRows, hasLength(15));
+        expect(graphRows.map((r) => r.operationId).toSet(), {
+          ..._fixedReads.keys,
+          ..._mr6b3tMethods,
+        });
+        expect(graphRows, hasLength(18));
         for (final row in graphRows) {
           expect(row.namedMethod, row.operationId);
           expect(row.modelVisible, isTrue);
-        }
-        for (final method in _deferredMethods) {
-          final row = productionAiLedger.find(method);
-          expect(row == null || !row.modelVisible, isTrue, reason: method);
-          expect(
-            productionAiLedger.modelVisible.map((r) => r.namedMethod),
-            isNot(contains(method)),
-          );
         }
       },
     );
