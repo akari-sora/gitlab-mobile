@@ -32,6 +32,7 @@ import '../../core/ai/wire/responses.dart';
 import '../../core/ai/write_text.dart' as write_text;
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
+import '../../core/group_work_item_identity.dart';
 import '../../core/models.dart' show OAuthCredential;
 import '../../core/rate_budget.dart';
 import '../../core/request_meter.dart';
@@ -296,6 +297,7 @@ class AiChatController extends ChangeNotifier
   bool _readConfidential = false;
   bool _readInternal = false;
   int? _readVisibilityRank;
+  bool _readGroupConfidentialUnknown = false;
   final int _generation;
   final GitLabApi _api;
   final String _accountKey;
@@ -1180,8 +1182,8 @@ class AiChatController extends ChangeNotifier
       aiConversationConsentContract(settings, _accountKey, provider);
 
   ledger.AiWriteScope _writeScope() {
-    // G0d supplies the verified single-item grants. Until then neither group
-    // entry kind may reach the project-wide fallback below.
+    // G0e owns write grants. Neither group entry kind may reach the
+    // project-wide fallback, including through a supplied scope override.
     if (origin is AiGroupWorkItemOrigin ||
         origin is AiProjectWorkItemFromGroupPageOrigin) {
       return ledger.AiWriteScope(
@@ -1240,8 +1242,15 @@ class AiChatController extends ChangeNotifier
       scopeRevision: _writeScopeRevision,
       sessionGeneration: _generation,
       currentResource: switch (origin) {
-        AiGroupWorkItemOrigin() ||
-        AiProjectWorkItemFromGroupPageOrigin() => null,
+        AiGroupWorkItemOrigin(:final group, :final groupId, :final iid) =>
+          AiTargetRef(
+            kind: AiTargetKind.groupWorkItem,
+            groupId: groupId,
+            groupFullPath: group.fullPath,
+            iid: iid,
+          ),
+        AiProjectWorkItemFromGroupPageOrigin(:final project, :final iid) =>
+          AiTargetRef(kind: AiTargetKind.issue, projectId: project.id, iid: iid),
         AiFileOrigin(:final project, :final path, :final sha) => AiTargetRef(
           kind: AiTargetKind.file, projectId: project.id, path: path, refName: sha),
         AiWorkItemOrigin(:final project, :final kind, :final iid) => AiTargetRef(
@@ -1287,22 +1296,45 @@ class AiChatController extends ChangeNotifier
     _writeScopeRevision++;
   }
 
-  // MR6b-3 freshness seam: exercise the production reader without making the
-  // still-empty graph ledger visible to the runner.
+  // Exercise production freshness with synthetic group rows and source facts
+  // without offering those rows or granting writes to the runner.
   @visibleForTesting
   Future<AiWriteFreshness> readWriteFreshnessForTesting(
-    writes.AiWriteRequest request,
-  ) => _freshWrite(
+    writes.AiWriteRequest request, {
+    ledger.AiCapabilityLedger capabilityLedger = ledger.productionAiLedger,
+    AiGroupContextMetadata? sourceGroupMetadata,
+    VerifiedGroupWorkItemIdentity? Function()? groupIdentity,
+  }) => _freshWrite(
     request,
-    write_text.UploadPlaceholderTable(instance: _api.instance),
+    write_text.UploadPlaceholderTable(
+      instance: _api.instance,
+      accountKey: _accountKey,
+      conversationId: _id,
+    ),
+    capabilityLedger: capabilityLedger,
+    sourceGroupMetadata: sourceGroupMetadata,
+    groupIdentity: groupIdentity,
   );
 
   Future<AiWriteFreshness> _freshWrite(
     writes.AiWriteRequest request,
-    write_text.UploadPlaceholderTable placeholders,
-  ) async {
+    write_text.UploadPlaceholderTable placeholders, {
+    ledger.AiCapabilityLedger capabilityLedger = ledger.productionAiLedger,
+    AiGroupContextMetadata? sourceGroupMetadata,
+    VerifiedGroupWorkItemIdentity? Function()? groupIdentity,
+  }) async {
     await _refreshSecrets();
     if (!_alive) throw const AiJournalException('accountChanged');
+    // Classify by the ledger before the no-project branch. Model coordinates
+    // never decide which owner family a capability belongs to.
+    final row = capabilityLedger.find(request.operationId);
+    if (row?.scopeClass == ledger.AiScopeClass.groupWorkItem) {
+      return _freshGroupWrite(
+        request,
+        sourceGroupMetadata: sourceGroupMetadata,
+        identity: groupIdentity,
+      );
+    }
     final args = request.arguments;
     if (request.operationId == 'markTodoDone' ||
         (args['projectId'] == null &&
@@ -1314,7 +1346,8 @@ class AiChatController extends ChangeNotifier
       throw const AiJournalException('invalidArguments');
     }
     final operation = request.operationId;
-    final graphWriteBack = aiGraphWriteBackOperations.contains(operation);
+    final graphWriteBack = aiGraphWriteBackOperations.contains(operation) ||
+        _groupGraphWriteBackOperations.contains(operation);
     if (graphWriteBack && (args['iid'] is! int || (args['iid']! as int) < 1)) {
       throw const AiJournalException('invalidArguments');
     }
@@ -1430,22 +1463,12 @@ class AiChatController extends ChangeNotifier
         ? fields['visibility']
         : snippetWrite ? target['visibility']
         : target['visibility'] ?? projectData['visibility'];
-    final originProject = projectForAiChatOrigin(origin);
-    final sourceVisibility = originProject?.visibility;
-    int rank(Object? value) => switch (value) {
-      'private' => 0,
-      'internal' => 1,
-      'public' => 2,
-      _ => -1,
-    };
-    final projectRank = rank(projectData['visibility']);
+    final sourceMetadata = sourceGroupMetadata ?? _context?.groupMetadata;
+    final projectRank = _visibilityRank(projectData['visibility']);
     final targetRank = projectRank < 0
-        ? rank(visibility)
-        : min(rank(visibility), projectRank);
-    final originRank = rank(sourceVisibility);
-    final sourceRank = originRank < 0
-        ? -1
-        : min(originRank, _readVisibilityRank ?? originRank);
+        ? _visibilityRank(visibility)
+        : min(_visibilityRank(visibility), projectRank);
+    final sourceRank = _sourceVisibilityRank(sourceMetadata);
     final targetConfidential = operation == 'createIssue'
         ? fields is Map && fields['confidential'] == true
         : target['confidential'] == true &&
@@ -1535,9 +1558,13 @@ class AiChatController extends ChangeNotifier
           : null,
       noChange: noChange,
       facts: tiers.AiTierFacts(confidentialLowered: confidentialLowered),
-      visibilityUnreadable: targetRank < 0 || sourceRank < 0,
+      visibilityUnreadable: targetRank < 0 || sourceRank < 0 ||
+          _readGroupConfidentialUnknown ||
+          (origin is AiGroupWorkItemOrigin &&
+              sourceMetadata?.confidential == null),
       polluted:
-          ((_readConfidential || (_context?.readConfidential ?? false)) &&
+          ((_readConfidential || (_context?.readConfidential ?? false) ||
+                  sourceMetadata?.confidential == true) &&
               !targetConfidential) ||
           _readInternal ||
           (_context?.built.readInternal ?? false) ||
@@ -1550,6 +1577,103 @@ class AiChatController extends ChangeNotifier
           for (final key in ['body', 'description', 'title', 'name'])
             if (target[key] is String) key: target[key] as String,
       },
+      provenance: provenance,
+    );
+  }
+
+  int _sourceVisibilityRank(AiGroupContextMetadata? metadata) {
+    final source = origin is AiGroupWorkItemOrigin
+        ? metadata?.visibility
+        : projectForAiChatOrigin(origin)?.visibility;
+    final rank = _visibilityRank(source);
+    return min(rank, _readVisibilityRank ?? rank);
+  }
+
+  Future<AiWriteFreshness> _freshGroupWrite(
+    writes.AiWriteRequest request, {
+    AiGroupContextMetadata? sourceGroupMetadata,
+    VerifiedGroupWorkItemIdentity? Function()? identity,
+  }) async {
+    final args = request.arguments;
+    final groupId = args['groupId'];
+    final iid = args['iid'];
+    if (groupId is! int || groupId < 1 || iid is! int || iid < 1 ||
+        args.containsKey('projectId')) {
+      throw const AiJournalException('invalidArguments');
+    }
+    final scope = request.scope;
+    final grants = scope.grants.where((grant) =>
+        grant.kind == ledger.AiScopeKind.groupWorkItem &&
+        grant.groupId == groupId && grant.iid == iid).toList();
+    final path = grants.length == 1 ? grants.single.groupFullPath : null;
+    if (scope.accountKey != _accountKey ||
+        scope.resolvedInstance?.key != _api.instance.key ||
+        path == null ||
+        !RegExp(r'^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(path) ||
+        path.split('/').any((part) => part == '.' || part == '..' || part == '-')) {
+      throw const AiJournalException('outOfScope');
+    }
+    // Exactly one uncached F read per round, including unknown visibility.
+    final group = await _api.group(groupId);
+    if (!_alive) throw const AiJournalException('accountChanged');
+    if (group['id'] != groupId || group['full_path'] != path) {
+      throw const AiJournalException('accountChanged');
+    }
+    final metadata = sourceGroupMetadata ?? _context?.groupMetadata;
+    final sourceRank = _sourceVisibilityRank(metadata);
+    final targetRank = _visibilityRank(group['visibility']);
+    final operation = request.operationId;
+    final noteId = args['noteId'];
+    final provenance = <String, write_text.AiFieldProvenance>{};
+    // Identity must originate at the strict reader, never from these grants.
+    // G0e will supply its same-round opening identity. Until then only a
+    // successful group read can have issued any restorable upload token.
+    // Consult the port after the awaited group read; its getter compares the
+    // read epoch with the independently current port epoch before returning it.
+    final verified = identity?.call();
+    if (verified != null &&
+        verified.accountKey == _accountKey &&
+        identical(verified.apiOwner, _api) &&
+        verified.generation == _generation &&
+        verified.groupId == groupId && verified.fullPath == path &&
+        verified.iid == iid) {
+      final description = write_text.AiFieldProvenance.groupWorkItem(
+        identity: verified,
+        completeValue: true,
+      );
+      write_text.AiFieldProvenance plainField(String name) =>
+          write_text.AiFieldProvenance(
+            resourceKey: description.resourceKey,
+            fieldName: name,
+            completeValue: false,
+            resourceWeb: description.resourceWeb,
+            accountKey: description.accountKey,
+            groupId: description.groupId,
+            groupFullPath: description.groupFullPath,
+          );
+      if (operation == 'updateGroupWorkItemContent') {
+        provenance['description'] = description;
+        provenance['title'] = plainField('title');
+      } else if (operation == 'editGroupWorkItemActivityNote' &&
+          noteId is int && noteId > 0) {
+        provenance['body'] = write_text.AiFieldProvenance.groupWorkItem(
+          identity: verified,
+          noteId: noteId,
+          completeValue: true,
+        );
+      } else if (operation == 'updateGroupWorkItemLabels') {
+        provenance['labels'] = plainField('labels');
+      }
+    }
+    return AiWriteFreshness(
+      // No fixed group query proves target confidential yet. Unknown always
+      // follows the existing confirmation path, even with known visibility.
+      visibilityUnreadable: true,
+      polluted: _readConfidential || (_context?.readConfidential ?? false) ||
+          metadata?.confidential == true || _readInternal ||
+          (_context?.built.readInternal ?? false) ||
+          (sourceRank >= 0 && targetRank > sourceRank),
+      // Opening supplies current fields. Never reread them through REST.
       provenance: provenance,
     );
   }
@@ -1580,6 +1704,14 @@ class AiChatController extends ChangeNotifier
       }
       runBudget?.modelStarted = true;
     }
+    final groupMetadata = context().groupMetadata;
+    if (origin is AiGroupWorkItemOrigin) {
+      // A later refresh cannot widen content already sent in this conversation.
+      final rank = _visibilityRank(groupMetadata?.visibility);
+      _readVisibilityRank = min(_readVisibilityRank ?? rank, rank);
+      _readConfidential |= groupMetadata?.confidential == true;
+      _readGroupConfidentialUnknown |= groupMetadata?.confidential == null;
+    }
     return client.complete(plan, onEvent: onEvent);
   };
 
@@ -1588,14 +1720,38 @@ class AiChatController extends ChangeNotifier
   }) {
     final config = _provider!;
     final context = _context!;
+    final conversationId = _id;
     final scope = context.scope;
+    final groupScope = origin is AiGroupWorkItemOrigin ? context.groupScope : null;
     final placeholders =
         retainedPlaceholders ??
-        write_text.UploadPlaceholderTable(instance: _api.instance);
+        write_text.UploadPlaceholderTable(
+          instance: _api.instance,
+          accountKey: _accountKey,
+          conversationId: _id,
+        );
     _placeholders = placeholders;
-    final catalogue = scope == null || !config.toolsEnabled
+    final groupPort = !config.toolsEnabled || groupScope == null
         ? null
-        : AiToolCatalogue(
+        : GitLabAiGroupReadPort(
+            _api,
+            instance: _api.instance,
+            actorUserId: session.active!.user.id,
+            generation: _generation,
+            isCurrent: () => _alive && _id == conversationId,
+          );
+    final catalogue = !config.toolsEnabled
+        ? null
+        : groupPort != null
+        ? AiToolCatalogue.group(
+            port: groupPort,
+            scope: groupScope!,
+            redactor: _redactor,
+            refreshSecrets: _refreshSecrets,
+            placeholders: placeholders,
+            now: _now,
+          )
+        : scope == null ? null : AiToolCatalogue(
             port: GitLabAiReadPort(_api, scope.projectId, now: _now),
             scope: scope,
             redactor: _redactor,
@@ -1607,7 +1763,6 @@ class AiChatController extends ChangeNotifier
     final noBudget = AiToolBudget(maxGitLabRequests: 0);
     AiToolBudget budget() => runBudget?.tools ?? noBudget;
     final client = _client(config);
-    final conversationId = _id;
     // This conversation's attachments and the uploads it finished; both go
     // with the conversation, the account and the process (§3.1).
     final attachments = _attachments;
@@ -1642,7 +1797,11 @@ class AiChatController extends ChangeNotifier
       budget: budget,
       readFreshness:
           _readWriteFreshness ??
-          (request) => _freshWrite(request, placeholders),
+          (request) => _freshWrite(
+            request,
+            placeholders,
+            groupIdentity: () => groupPort?.verifiedIdentity,
+          ),
       placeholders: placeholders,
       knownSecrets: () => _secrets.current.toSet(),
       safeDisplay: draftSafe,
@@ -2150,7 +2309,12 @@ class AiChatController extends ChangeNotifier
           ],
         ) &&
         previous.scope?.headSha == refreshed.scope?.headSha &&
-        previous.scope?.baseSha == refreshed.scope?.baseSha;
+        previous.scope?.baseSha == refreshed.scope?.baseSha &&
+        previous.groupScope?.groupId == refreshed.groupScope?.groupId &&
+        previous.groupScope?.groupFullPath ==
+            refreshed.groupScope?.groupFullPath &&
+        previous.groupScope?.iid == refreshed.groupScope?.iid &&
+        previous.groupScope?.workItemGid == refreshed.groupScope?.workItemGid;
     if (unchanged) {
       _context = AiChatContext(
         built: previous.built,
@@ -2627,6 +2791,7 @@ class AiChatController extends ChangeNotifier
     _readConfidential = false;
     _readInternal = false;
     _readVisibilityRank = null;
+    _readGroupConfidentialUnknown = false;
     _runner = null;
     _completeForRunner = null;
     _transportClosed = false;
@@ -2726,6 +2891,20 @@ const _writeBackOperations = {
   'updateRelease',
   'updateSnippetMetadata',
   'renameBoard',
+  ..._groupGraphWriteBackOperations,
+};
+
+const _groupGraphWriteBackOperations = {
+  'updateGroupWorkItemContent',
+  'editGroupWorkItemActivityNote',
+  'updateGroupWorkItemLabels',
+};
+
+int _visibilityRank(Object? value) => switch (value) {
+  'private' => 0,
+  'internal' => 1,
+  'public' => 2,
+  _ => -1,
 };
 
 /// Chip source of an attachment's "What was sent" row; the same tag as the
@@ -2764,6 +2943,7 @@ String _toolName(String name) => switch (name) {
   'read_file' ||
   'list_directory' ||
   'get_issue' ||
+  'get_group_work_item' ||
   'get_merge_request' ||
   'get_merge_request_diff' ||
   'get_pipeline_jobs' ||

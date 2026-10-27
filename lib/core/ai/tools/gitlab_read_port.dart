@@ -3,10 +3,13 @@ import 'dart:convert';
 
 import '../../failure.dart';
 import '../../gitlab_api.dart';
+import '../../group_work_item_identity.dart';
+import '../../instance.dart';
 import '../../models.dart' show ApiPage;
 import '../../request_meter.dart';
 import '../../snippet_models.dart' show validatedSnippetPath;
 import 'sensitive_paths.dart';
+import 'tool_scope.dart';
 
 typedef AiJson = Map<String, Object?>;
 
@@ -56,6 +59,126 @@ abstract interface class AiGitLabReadPort {
   Future<AiPortRead<AiJson>> commit(String sha);
   Future<AiPortRead<List<AiJson>>> commitDiff(String sha);
   Future<AiPortRead<List<AiJson>>> search(String scope, String query);
+}
+
+/// The only group read exposed to the catalogue is the bound Work Item.
+abstract interface class AiGitLabGroupReadPort {
+  Future<AiPortRead<AiGroupWorkItemRead>> workItem(AiGroupResourceScope scope);
+}
+
+final class AiGroupWorkItemRead {
+  const AiGroupWorkItemRead({required this.value, required this.identity});
+
+  final AiJson value;
+  final VerifiedGroupWorkItemIdentity identity;
+}
+
+final class GitLabAiGroupReadPort implements AiGitLabGroupReadPort {
+  GitLabAiGroupReadPort(
+    this._api, {
+    required this.instance,
+    required this.actorUserId,
+    required this.generation,
+    required this.isCurrent,
+  });
+
+  final GitLabApi _api;
+  final GitLabInstance instance;
+
+  /// Actor supplied by the session's successful /user validation.
+  final int actorUserId;
+  final int generation;
+  final bool Function() isCurrent;
+  int _readEpoch = 0;
+  VerifiedGroupWorkItemIdentity? _verifiedIdentity;
+
+  VerifiedGroupWorkItemIdentity? get verifiedIdentity {
+    final identity = _verifiedIdentity;
+    return identity != null && isCurrent() && identity.readEpoch == _readEpoch
+        ? identity
+        : null;
+  }
+
+  @override
+  Future<AiPortRead<AiGroupWorkItemRead>> workItem(
+    AiGroupResourceScope scope,
+  ) async {
+    final epoch = ++_readEpoch;
+    _verifiedIdentity = null;
+    if (!isCurrent() ||
+        scope.instanceKey != instance.key ||
+        scope.accountKey != '${instance.key}#$actorUserId' ||
+        actorUserId <= 0 ||
+        scope.groupId <= 0 ||
+        scope.iid <= 0) {
+      throw const FormatException('invalidGroupReadScope');
+    }
+    final detail = await _api.namespaceWorkItem(
+      scope.groupFullPath,
+      scope.iid,
+      expectedNamespaceId: 'gid://gitlab/Group/${scope.groupId}',
+      strictIdentity: true,
+      isCurrent: () => isCurrent() && epoch == _readEpoch,
+    );
+    final item = detail.summary;
+    final namespace = item.namespace;
+    if (!isCurrent() ||
+        epoch != _readEpoch ||
+        namespace == null ||
+        groupKeyNumericId(namespace.id) != scope.groupId ||
+        namespace.fullPath != scope.groupFullPath ||
+        item.project != null ||
+        item.iid != scope.iid ||
+        item.id != scope.workItemGid) {
+      throw const FormatException('groupReadIdentityMismatch');
+    }
+    // The strict reader has already required these keys and explicit null in
+    // the original response; this map retains that validated server evidence.
+    final identity = VerifiedGroupWorkItemIdentity.fromServerEvidence(
+      instance: instance,
+      expectedUserId: actorUserId,
+      actorUserId: actorUserId,
+      expectedGroupId: scope.groupId,
+      expectedFullPath: scope.groupFullPath,
+      expectedIid: scope.iid,
+      namespace: {
+        'id': namespace.id,
+        'fullPath': namespace.fullPath,
+        'workItem': {
+          'id': item.id,
+          'iid': item.iid,
+          'project': null,
+          'namespace': {'id': namespace.id, 'fullPath': namespace.fullPath},
+        },
+      },
+      apiOwner: _api,
+      generation: generation,
+      readEpoch: epoch,
+    );
+    if (identity == null) throw const FormatException('invalidGroupIdentity');
+    _verifiedIdentity = identity;
+    final description = detail.descriptionWidget?.description;
+    return AiPortRead(
+      AiGroupWorkItemRead(
+        identity: identity,
+        value: {
+          'id': item.id,
+          'iid': item.iid,
+          'title': item.title,
+          'type': {'id': item.type.id, 'name': item.type.name},
+          'state': item.state,
+          'updatedAt': item.updatedAt.toUtc().toIso8601String(),
+          'project': null,
+          'namespace': {'id': namespace.id, 'fullPath': namespace.fullPath},
+          'description': description,
+          'description_status': description == null
+              ? 'unavailable'
+              : 'complete',
+        },
+      ),
+      requestCount: 1,
+    );
+  }
 }
 
 /// Additional project reads, kept separate so existing narrow read ports do
