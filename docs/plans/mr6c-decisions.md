@@ -70,3 +70,14 @@ Codex I1 found a finishing-mode model failure (`AiRunEnd.toolBudget` with a non-
   - `take()` runs before the shell is brought forward and is rechecked afterwards; a relock in between drops the tap.
   - A tap is consumed even when an open editor refuses to close, which matches shared links.
 - **NOT_RUN:** scrolling to the card in a long list, and every device behaviour (drawer, lock screen, permission dialog, cold and warm taps), which are left to C8.
+
+## C-D8. One device-scoped "notification permission asked" marker (lead, 2026-10-28, C3 review round 2)
+On Android 13+ a fresh install has notifications off until the user answers, and the pinned plugin's `areNotificationsEnabled()` cannot tell "never asked" from "denied". C3 FIX1 therefore skipped the first request (R2-I1). Decision:
+- **The marker:** `flutter_secure_storage` key `gitlab_mobile_ai_run_notice_asked_v1`, value `1`. It is device-scoped like the appearance key, holds no content, and is written after the first system request returns, whatever the answer. It is not removed with an account.
+- **Behaviour at the user's send:**
+  - notifications enabled: no explanation and no request;
+  - disabled and not yet asked: explanation, then the system request;
+  - disabled and already asked: the existing one-time disclosure and no re-ask.
+- **An unreadable or unavailable marker** counts as "not asked". That costs at most one extra explanation; it never suppresses the first request. A failed write is retried at the next ask.
+- **Channels:** "reminders are off" may be claimed only when app notifications or the **approval** channel are off. A disabled results channel alone does not trigger the disclosure (R2-M1).
+- **Docs:** `CLAUDE.md` Persistence lists the key.
