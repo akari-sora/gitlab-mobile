@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -17,6 +18,35 @@ final _now = DateTime.utc(2026, 10, 23, 12);
 final class _Crash implements Exception {
   const _Crash();
 }
+
+final class _Lease implements DiskCommitLease {
+  bool _current = true;
+  @override
+  bool get isCurrent => _current;
+  @override
+  void revoke() => _current = false;
+}
+
+void Function(ReadCacheFileCheckpoint) _pauseBeforeCommit(
+  ReadCacheFileCheckpoint boundary,
+  _Lease lease,
+  SendPort events,
+  String releasePath,
+) => (step) {
+  if (step != boundary) return;
+  events.send('beforeCommit');
+  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  while (!File(releasePath).existsSync()) {
+    if (DateTime.now().isAfter(deadline)) {
+      throw TimeoutException('commit probe');
+    }
+    sleep(const Duration(milliseconds: 1));
+  }
+  events.send(lease.isCurrent);
+};
+
+Future<ReadCacheStagedWrite> _roundTrip(ReadCacheStagedWrite staged) =>
+    Isolate.run(() => staged);
 
 ProjectedDiskEntry _entry({
   int id = 1,
@@ -84,12 +114,463 @@ void main() {
     ),
   );
 
+  List<FileSystemEntity> temporaries() => accountDirectory().existsSync()
+      ? accountDirectory()
+            .listSync()
+            .where((file) => file.path.endsWith('.tmp'))
+            .toList()
+      : [];
+
+  Future<ReadCacheStagedWrite?> stageWrite(
+    ReadCacheFileStore files,
+    bool indexWrite,
+    bool Function() mayCommit, {
+    ReadCacheIndex? index,
+  }) => indexWrite
+      ? files.stageIndex(
+          _account,
+          _key,
+          index ?? ReadCacheIndex(entries: []),
+          mayCommit: mayCommit,
+        )
+      : files.stageEntry(_entry(), _key, mayCommit: mayCommit);
+
+  Future<Object?> readWrite(bool indexWrite) => indexWrite
+      ? store().readIndex(_account, _key)
+      : store().readEntry(_account, _key, _entry().canonicalKey);
+
   setUp(() {
     root = Directory.systemTemp.createTempSync('read_cache_files_');
   });
   tearDown(() {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
+
+  for (final indexWrite in [false, true]) {
+    final kind = indexWrite ? 'index' : 'entry';
+
+    test(
+      '$kind staging stays private until a synchronous current commit',
+      () async {
+        final lease = _Lease();
+        final index = indexWrite
+            ? ReadCacheIndex(
+                entries: [
+                  await indexEntry(await store().writeEntry(_entry(), _key)),
+                ],
+              )
+            : null;
+        final staged = (await stageWrite(
+          store(),
+          indexWrite,
+          () => lease.isCurrent,
+          index: index,
+        ))!;
+        expect(await readWrite(indexWrite), isNull);
+        expect(temporaries(), hasLength(1));
+        expect(
+          staged.ciphertextBytes,
+          staged.plaintextBytes + readCacheEnvelopeOverhead,
+        );
+        expect(
+          File(temporaries().single.path).lengthSync(),
+          staged.ciphertextBytes,
+        );
+        expect(staged.commit(), ReadCacheCommitResult.committed);
+        expect(temporaries(), isEmpty);
+        final fresh = await readWrite(indexWrite);
+        if (indexWrite) {
+          expect(
+            (fresh! as ReadCacheIndex).entries.single.fileName,
+            index!.entries.single.fileName,
+          );
+        } else {
+          expect((fresh! as ProjectedDiskEntry).body, _entry().body);
+        }
+        final destination = File(
+          '${accountDirectory().path}/${staged.fileName}',
+        );
+        final committed = destination.readAsBytesSync();
+        lease.revoke();
+        expect(staged.commit(), ReadCacheCommitResult.alreadyConsumed);
+        staged.discard();
+        expect(destination.readAsBytesSync(), committed);
+      },
+    );
+
+    test('$kind revocation after stage returns prevents commit', () async {
+      final lease = _Lease();
+      final staged = (await stageWrite(
+        store(),
+        indexWrite,
+        () => lease.isCurrent,
+      ))!;
+      expect(temporaries(), hasLength(1));
+      lease.revoke();
+      expect(staged.commit(), ReadCacheCommitResult.notPermitted);
+      expect(temporaries(), isEmpty);
+      expect(
+        File('${accountDirectory().path}/${staged.fileName}').existsSync(),
+        isFalse,
+      );
+      expect(await readWrite(indexWrite), isNull);
+      expect(staged.commit(), ReadCacheCommitResult.alreadyConsumed);
+    });
+
+    test(
+      '$kind refused replacement preserves the previous committed bytes',
+      () async {
+        final files = store();
+        final name = await files.writeEntry(_entry(body: 'previous'), _key);
+        if (indexWrite) {
+          await files.writeIndex(
+            _account,
+            _key,
+            ReadCacheIndex(entries: [await indexEntry(name)]),
+          );
+        }
+        final target = File(
+          '${accountDirectory().path}/${indexWrite ? 'index.v1.bin' : name}',
+        );
+        final previous = target.readAsBytesSync();
+        final lease = _Lease();
+        final staged = (await stageWrite(
+          files,
+          indexWrite,
+          () => lease.isCurrent,
+        ))!;
+        lease.revoke();
+        expect(staged.commit(), ReadCacheCommitResult.notPermitted);
+        expect(target.readAsBytesSync(), previous);
+        expect(temporaries(), isEmpty);
+        final fresh = await readWrite(indexWrite);
+        if (indexWrite) {
+          expect((fresh! as ReadCacheIndex).entries.single.fileName, name);
+        } else {
+          expect(
+            (fresh! as ProjectedDiskEntry).body,
+            _entry(body: 'previous').body,
+          );
+        }
+      },
+    );
+
+    test(
+      '$kind revocation and completed clear refuse an outstanding stage',
+      () async {
+        final lease = _Lease();
+        final files = store();
+        final staged = (await stageWrite(
+          files,
+          indexWrite,
+          () => lease.isCurrent,
+        ))!;
+        lease.revoke();
+        await files.clearAccount(_account);
+        expect(staged.commit(), ReadCacheCommitResult.notPermitted);
+        expect(accountDirectory().existsSync(), isFalse);
+        expect(await readWrite(indexWrite), isNull);
+      },
+    );
+
+    test('$kind permission is rechecked immediately before rename', () async {
+      var calls = 0;
+      final staged = (await stageWrite(
+        store(),
+        indexWrite,
+        () => ++calls < 5,
+      ))!;
+      expect(calls, 3);
+      expect(staged.commit(), ReadCacheCommitResult.notPermitted);
+      expect(calls, 5);
+      expect(temporaries(), isEmpty);
+      expect(await readWrite(indexWrite), isNull);
+    });
+
+    test('$kind paused worker cannot commit after caller revocation', () async {
+      final index = indexWrite
+          ? ReadCacheIndex(
+              entries: [
+                await indexEntry(await store().writeEntry(_entry(), _key)),
+              ],
+            )
+          : null;
+      final lease = _Lease();
+      final events = ReceivePort();
+      final stream = StreamIterator<Object?>(events);
+      final release = File('${root.path}/release');
+      addTearDown(events.close);
+      final files = store(
+        checkpoint: _pauseBeforeCommit(
+          indexWrite
+              ? ReadCacheFileCheckpoint.beforeIndexRename
+              : ReadCacheFileCheckpoint.beforeEntryRename,
+          lease,
+          events.sendPort,
+          release.path,
+        ),
+      );
+      final operation = stageWrite(
+        files,
+        indexWrite,
+        () => lease.isCurrent,
+        index: index,
+      );
+      try {
+        expect(
+          await stream.moveNext().timeout(const Duration(seconds: 10)),
+          isTrue,
+        );
+        expect(stream.current, 'beforeCommit');
+        expect(temporaries(), hasLength(1));
+        expect(await readWrite(indexWrite), isNull);
+        lease.revoke();
+      } finally {
+        release.createSync();
+      }
+      expect(
+        await stream.moveNext().timeout(const Duration(seconds: 10)),
+        isTrue,
+      );
+      expect(
+        stream.current,
+        isTrue,
+        reason: 'the worker still has an obsolete lease copy',
+      );
+      expect(await operation, isNull);
+      expect(lease.isCurrent, isFalse);
+      expect(temporaries(), isEmpty);
+      expect(
+        await readWrite(indexWrite),
+        isNull,
+        reason: 'a fresh store must not observe a late rename',
+      );
+      await stream.cancel();
+    });
+
+    test(
+      '$kind discard removes the temporary and consumes the handle',
+      () async {
+        final staged = (await stageWrite(store(), indexWrite, () => true))!;
+        expect(temporaries(), hasLength(1));
+        staged.discard();
+        staged.discard();
+        expect(temporaries(), isEmpty);
+        expect(staged.commit(), ReadCacheCommitResult.alreadyConsumed);
+        expect(await readWrite(indexWrite), isNull);
+      },
+    );
+
+    test(
+      '$kind closed stage gate performs no root call or temporary creation',
+      () async {
+        var rootCalls = 0;
+        final files = ReadCacheFileStore(
+          root: () async {
+            rootCalls++;
+            return root;
+          },
+        );
+        expect(await stageWrite(files, indexWrite, () => false), isNull);
+        expect(rootCalls, 0);
+        expect(root.listSync(), isEmpty);
+      },
+    );
+
+    test(
+      '$kind gate is rechecked after asynchronous root resolution',
+      () async {
+        final pendingRoot = Completer<Directory>();
+        final files = ReadCacheFileStore(root: () => pendingRoot.future);
+        final lease = _Lease();
+        final operation = stageWrite(files, indexWrite, () => lease.isCurrent);
+        lease.revoke();
+        pendingRoot.complete(root);
+        expect(await operation, isNull);
+        expect(root.listSync(), isEmpty);
+      },
+    );
+
+    test(
+      '$kind live gate stays on the owner and is checked when staging returns',
+      () async {
+        final owner = Isolate.current.controlPort;
+        final unsendable = ReceivePort();
+        addTearDown(unsendable.close);
+        var calls = 0;
+        bool gate() {
+          expect(Isolate.current.controlPort, owner);
+          expect(unsendable.sendPort, isA<SendPort>());
+          return ++calls < 3;
+        }
+
+        expect(await stageWrite(store(), indexWrite, gate), isNull);
+        expect(calls, 3);
+        expect(temporaries(), isEmpty);
+        expect(await readWrite(indexWrite), isNull);
+      },
+    );
+
+    test(
+      '$kind gate errors at stage return and commit clean the temporary',
+      () async {
+        for (final failAt in [3, 4, 5]) {
+          var calls = 0;
+          bool gate() {
+            if (++calls == failAt) {
+              throw StateError('synthetic private gate error');
+            }
+            return true;
+          }
+
+          if (failAt == 3) {
+            await expectLater(
+              stageWrite(store(), indexWrite, gate),
+              fileFailure(ReadCacheFileFailure.io),
+            );
+          } else {
+            final staged = (await stageWrite(store(), indexWrite, gate))!;
+            expect(staged.commit, fileFailure(ReadCacheFileFailure.io));
+            expect(staged.commit(), ReadCacheCommitResult.alreadyConsumed);
+          }
+          expect(calls, failAt);
+          expect(temporaries(), isEmpty);
+          expect(await readWrite(indexWrite), isNull);
+        }
+      },
+    );
+
+    test('$kind handle cannot be copied through another isolate', () async {
+      final staged = (await stageWrite(store(), indexWrite, () => true))!;
+      await expectLater(
+        _roundTrip(staged),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('ReadCacheStagedWrite'),
+          ),
+        ),
+      );
+      expect(temporaries(), hasLength(1));
+      expect(await readWrite(indexWrite), isNull);
+      expect(staged.commit(), ReadCacheCommitResult.committed);
+      expect(await readWrite(indexWrite), isNotNull);
+    });
+
+    for (final changed in [
+      'temporary link',
+      'destination link',
+      'destination directory',
+    ]) {
+      test(
+        '$kind commit refuses a replaced $changed and cleans its temporary',
+        () async {
+          final staged = (await stageWrite(store(), indexWrite, () => true))!;
+          final sentinel = File('${root.path}/outside')
+            ..writeAsStringSync('synthetic outside');
+          final path = changed == 'temporary link'
+              ? temporaries().single.path
+              : '${accountDirectory().path}/${staged.fileName}';
+          if (changed == 'temporary link') File(path).deleteSync();
+          if (changed == 'destination directory') {
+            Directory(path).createSync();
+          } else {
+            Link(path).createSync(sentinel.path);
+          }
+          expect(
+            staged.commit,
+            fileFailure(ReadCacheFileFailure.untrustedPath),
+          );
+          expect(staged.commit(), ReadCacheCommitResult.alreadyConsumed);
+          expect(sentinel.readAsStringSync(), 'synthetic outside');
+          expect(temporaries(), isEmpty);
+        },
+      );
+    }
+
+    for (final level in ['root', 'base', 'account']) {
+      test(
+        '$kind commit rechecks a replaced $level directory without following links',
+        () async {
+          final staged = (await stageWrite(store(), indexWrite, () => true))!;
+          final outside = Directory.systemTemp.createTempSync(
+            'read_cache_outside_',
+          );
+          addTearDown(() => outside.deleteSync(recursive: true));
+          final sentinel = File('${outside.path}/sentinel')
+            ..writeAsStringSync('synthetic outside');
+          final path = switch (level) {
+            'root' => root.path,
+            'base' => '${root.path}/read_cache',
+            _ => accountDirectory().path,
+          };
+          final saved = '$path.saved';
+          Directory(path).renameSync(saved);
+          try {
+            Link(path).createSync(outside.path);
+            expect(
+              staged.commit,
+              fileFailure(ReadCacheFileFailure.untrustedPath),
+            );
+            expect(
+              outside.listSync().map((file) => file.uri.pathSegments.last),
+              ['sentinel'],
+            );
+            expect(sentinel.readAsStringSync(), 'synthetic outside');
+          } finally {
+            if (FileSystemEntity.typeSync(path, followLinks: false) ==
+                FileSystemEntityType.link) {
+              Link(path).deleteSync();
+            }
+            Directory(saved).renameSync(path);
+          }
+          expect(staged.commit(), ReadCacheCommitResult.alreadyConsumed);
+          expect(await readWrite(indexWrite), isNull);
+          // Unsafe ancestors prevent cleanup too; leave the original ciphertext
+          // for the existing stale-temp recovery rather than traverse a link.
+          expect(temporaries(), hasLength(1));
+        },
+      );
+    }
+  }
+
+  for (final change in ['remove', 'resize']) {
+    test(
+      'staged index rechecks referenced files after stage returns: $change',
+      () async {
+        final first = await store().writeEntry(_entry(), _key);
+        final firstRecord = await indexEntry(first);
+        await store().writeIndex(
+          _account,
+          _key,
+          ReadCacheIndex(entries: [firstRecord]),
+        );
+        final indexFile = File('${accountDirectory().path}/index.v1.bin');
+        final oldBytes = indexFile.readAsBytesSync();
+        final second = await store().writeEntry(_entry(id: 2), _key);
+        final staged = (await store().stageIndex(
+          _account,
+          _key,
+          ReadCacheIndex(entries: [firstRecord, await indexEntry(second)]),
+          mayCommit: () => true,
+        ))!;
+        final file = File('${accountDirectory().path}/$second');
+        if (change == 'remove') {
+          file.deleteSync();
+        } else {
+          file.writeAsBytesSync([1]);
+        }
+        expect(staged.commit, fileFailure(ReadCacheFileFailure.io));
+        expect(temporaries(), isEmpty);
+        expect(indexFile.readAsBytesSync(), oldBytes);
+        expect(
+          (await store().readIndex(_account, _key))!.entries.single.fileName,
+          first,
+        );
+      },
+    );
+  }
 
   test(
     'construction, missing reads and scans do not create directories',
@@ -287,11 +768,16 @@ void main() {
     },
   );
 
-  test('transaction checkpoints execute outside the caller isolate', () async {
+  test('only rename checkpoints execute on the caller isolate', () async {
     final caller = Isolate.current.controlPort;
     final background = store(
       checkpoint: (step) {
-        if (Isolate.current.controlPort == caller) throw const _Crash();
+        final renamed =
+            step == ReadCacheFileCheckpoint.entryRenamed ||
+            step == ReadCacheFileCheckpoint.indexRenamed;
+        if ((Isolate.current.controlPort == caller) != renamed) {
+          throw const _Crash();
+        }
       },
     );
     final name = await background.writeEntry(_entry(), _key);

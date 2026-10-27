@@ -31,7 +31,8 @@ final class ReadCacheFileException implements Exception {
   String toString() => 'ReadCacheFileException(${code.name})';
 }
 
-/// Fault boundaries execute in the same background isolate as the transaction.
+/// Read, staging and before-rename faults execute in the background isolate.
+/// The renamed checkpoints execute synchronously on the committing isolate.
 /// Production leaves this unset; a throwing hook models process interruption.
 enum ReadCacheFileCheckpoint {
   beforeRead,
@@ -54,6 +55,81 @@ final class ReadCacheFileUsage {
 }
 
 enum ReadCacheDirectoryState { absent, emptyDirectory, hasFiles }
+
+enum ReadCacheCommitResult { committed, notPermitted, alreadyConsumed }
+
+/// Opaque, single-use ciphertext temporary. Only its staging isolate's caller
+/// may commit or discard it; paths, account identity and keys are not exposed.
+@pragma('vm:isolate-unsendable')
+final class ReadCacheStagedWrite {
+  ReadCacheStagedWrite._(this._staged, this._mayCommit, this._checkpoint)
+    : _owner = Isolate.current.controlPort;
+
+  final _StagedFile _staged;
+  final bool Function() _mayCommit;
+  final void Function(ReadCacheFileCheckpoint)? _checkpoint;
+  final SendPort _owner;
+  bool _consumed = false;
+
+  String get fileName => _staged.fileName;
+  int get plaintextBytes => _staged.plaintextBytes;
+  int get ciphertextBytes => _staged.ciphertextBytes;
+
+  void _requireOwner() {
+    if (Isolate.current.controlPort != _owner) {
+      throw const ReadCacheFileException(ReadCacheFileFailure.io);
+    }
+  }
+
+  /// No await or isolate hop may separate the live permission check and rename.
+  /// A refusal or ordinary failure consumes the handle and cleans its temporary.
+  ReadCacheCommitResult commit() {
+    _requireOwner();
+    if (_consumed) return ReadCacheCommitResult.alreadyConsumed;
+    _consumed = true;
+    return _guardSync(() {
+      final files = _staged.files;
+      var interrupted = false;
+      try {
+        // A revoked caller may already have cleared the account directory.
+        if (!_mayCommit()) return ReadCacheCommitResult.notPermitted;
+        if (!files.directories()) {
+          throw const ReadCacheFileException(
+            ReadCacheFileFailure.untrustedPath,
+          );
+        }
+        files.requireFile(_staged.temporaryPath);
+        final destination = '${files.account}/$fileName';
+        files.requireFile(destination, absentAllowed: true);
+        final index = _staged.index;
+        if (index != null) files.requireIndexFiles(index);
+        if (!_mayCommit()) return ReadCacheCommitResult.notPermitted;
+        File(_staged.temporaryPath).renameSync(destination);
+        try {
+          _checkpoint?.call(
+            fileName == 'index.v1.bin'
+                ? ReadCacheFileCheckpoint.indexRenamed
+                : ReadCacheFileCheckpoint.entryRenamed,
+          );
+        } on Object {
+          interrupted = true;
+          rethrow;
+        }
+        return ReadCacheCommitResult.committed;
+      } finally {
+        if (!interrupted) files.deleteTemporary(_staged.temporaryPath);
+      }
+    });
+  }
+
+  /// Idempotent and synchronous. Never follows replaced directories or links.
+  void discard() {
+    _requireOwner();
+    if (_consumed) return;
+    _consumed = true;
+    _guardSync(() => _staged.files.deleteTemporary(_staged.temporaryPath));
+  }
+}
 
 /// Atomic, bounded primitives only. The coordinator owns admission, account
 /// serialization, leases, markers, key creation, recovery and LRU decisions.
@@ -88,36 +164,65 @@ final class ReadCacheFileStore {
     List<int>? key,
     Future<T> Function(_Files files, List<int> key) action,
   ) async {
-    // In particular, do not call the root provider, stat or clean temporary
-    // files when the secure store cannot supply a key.
-    if (key == null) {
-      throw const ReadCacheFileException(ReadCacheFileFailure.keyUnavailable);
-    }
-    if (key.length != 32 || key.any((byte) => byte < 0 || byte > 255)) {
-      throw const ReadCacheFileException(ReadCacheFileFailure.invalidKey);
-    }
-    final keySnapshot = List<int>.of(key);
+    final keySnapshot = _snapshotKey(key);
     final path = await _resolveRoot();
     final now = _clock().toUtc();
     final hook = checkpoint;
     return _background(path, accountKey, now, hook, keySnapshot, action);
   }
 
-  Future<String> writeEntry(ProjectedDiskEntry entry, List<int>? key) =>
-      _run(entry.accountKey, key, (files, key) async {
-        const cipher = ReadCacheCipher();
-        final name = await cipher.entryFileName(key, entry.canonicalKey);
-        final plain = cipher.encodeEntry(entry);
-        final bytes = await cipher.encrypt(
-          key: key,
-          accountKey: entry.accountKey,
-          fileName: name,
-          plaintext: plain,
-          plaintextLimit: entry.plaintextLimit,
-        );
-        files.atomic(name, bytes);
-        return name;
-      });
+  /// The gate stays on the caller isolate, before dispatch and after staging.
+  /// Null means permission was withdrawn; no staged temporary remains.
+  Future<ReadCacheStagedWrite?> stageEntry(
+    ProjectedDiskEntry entry,
+    List<int>? key, {
+    required bool Function() mayCommit,
+  }) => _stage(entry.accountKey, key, mayCommit, _entryStage(entry));
+
+  Future<ReadCacheStagedWrite?> stageIndex(
+    String accountKey,
+    List<int>? key,
+    ReadCacheIndex index, {
+    required bool Function() mayCommit,
+  }) => _stage(accountKey, key, mayCommit, _indexStage(index));
+
+  Future<ReadCacheStagedWrite?> _stage(
+    String accountKey,
+    List<int>? key,
+    bool Function() mayCommit,
+    Future<_StagedFile> Function(_Files, List<int>) action,
+  ) async {
+    final keySnapshot = _snapshotKey(key);
+    if (!_guardSync(mayCommit)) return null;
+    final path = await _resolveRoot();
+    final now = _clock().toUtc();
+    final hook = checkpoint;
+    // Resolving a platform root can yield; check again immediately before spawn.
+    if (!_guardSync(mayCommit)) return null;
+    final staged = await _background(
+      path,
+      accountKey,
+      now,
+      hook,
+      keySnapshot,
+      action,
+    );
+    final handle = ReadCacheStagedWrite._(staged, mayCommit, hook);
+    var permitted = false;
+    try {
+      permitted = _guardSync(mayCommit);
+      return permitted ? handle : null;
+    } finally {
+      if (!permitted) handle.discard();
+    }
+  }
+
+  /// Ungated convenience; coordinators use stageEntry and a live commit gate.
+  Future<String> writeEntry(ProjectedDiskEntry entry, List<int>? key) async {
+    final staged = (await stageEntry(entry, key, mayCommit: _alwaysPermitted))!;
+    staged.commit();
+    return staged.fileName;
+  }
 
   /// Returns null when missing or expired. The caller evicts on null so expired
   /// files do not remain on disk indefinitely.
@@ -146,25 +251,15 @@ final class ReadCacheFileStore {
     String accountKey,
     List<int>? key,
     ReadCacheIndex index,
-  ) => _run(accountKey, key, (files, key) async {
-    const cipher = ReadCacheCipher();
-    final plain = cipher.encodeIndex(index);
-    // Never publish an index that claims a file not yet committed to disk.
-    files.requireIndexFiles(index);
-    final bytes = await cipher.encrypt(
-      key: key,
-      accountKey: accountKey,
-      fileName: 'index.v1.bin',
-      plaintext: plain,
-      plaintextLimit: readCacheIndexLimit,
-    );
-    files.requireIndexFiles(index);
-    files.atomic(
-      'index.v1.bin',
-      bytes,
-      beforeRename: () => files.requireIndexFiles(index),
-    );
-  });
+  ) async {
+    final staged = (await stageIndex(
+      accountKey,
+      key,
+      index,
+      mayCommit: _alwaysPermitted,
+    ))!;
+    staged.commit();
+  }
 
   /// Silently drops entries whose files are missing or have mismatched sizes.
   /// The caller reconciles entryFiles() with this result during recovery.
@@ -241,6 +336,59 @@ final class ReadCacheFileStore {
   }
 }
 
+bool _alwaysPermitted() => true;
+
+List<int> _snapshotKey(List<int>? key) {
+  // No root resolution, stat or cleanup without an available valid key.
+  if (key == null) {
+    throw const ReadCacheFileException(ReadCacheFileFailure.keyUnavailable);
+  }
+  if (key.length != 32 || key.any((byte) => byte < 0 || byte > 255)) {
+    throw const ReadCacheFileException(ReadCacheFileFailure.invalidKey);
+  }
+  return List<int>.of(key);
+}
+
+// Construct isolate actions outside methods that receive the live gate. Dart
+// closures may otherwise capture their shared context, including owner state.
+Future<_StagedFile> Function(_Files, List<int>) _entryStage(
+  ProjectedDiskEntry entry,
+) => (files, key) async {
+  const cipher = ReadCacheCipher();
+  final name = await cipher.entryFileName(key, entry.canonicalKey);
+  final plain = cipher.encodeEntry(entry);
+  final bytes = await cipher.encrypt(
+    key: key,
+    accountKey: entry.accountKey,
+    fileName: name,
+    plaintext: plain,
+    plaintextLimit: entry.plaintextLimit,
+  );
+  return files.stage(name, bytes, plaintextBytes: plain.length);
+};
+
+Future<_StagedFile> Function(_Files, List<int>) _indexStage(
+  ReadCacheIndex index,
+) => (files, key) async {
+  const cipher = ReadCacheCipher();
+  final plain = cipher.encodeIndex(index);
+  files.requireIndexFiles(index);
+  final bytes = await cipher.encrypt(
+    key: key,
+    accountKey: files.accountKey,
+    fileName: 'index.v1.bin',
+    plaintext: plain,
+    plaintextLimit: readCacheIndexLimit,
+  );
+  files.requireIndexFiles(index);
+  return files.stage(
+    'index.v1.bin',
+    bytes,
+    plaintextBytes: plain.length,
+    index: index,
+  );
+};
+
 // Keep isolate closures outside the store instance: root callbacks and any
 // future coordinator/lease captured by them must stay on the owning isolate.
 Future<T> _background<T>(
@@ -266,6 +414,41 @@ Future<T> _guard<T>(Future<T> Function() action) async {
   }
 }
 
+T _guardSync<T>(T Function() action) {
+  try {
+    return action();
+  } on ReadCacheFileException {
+    rethrow;
+  } on ReadCacheCodecException {
+    rethrow;
+  } on Object {
+    throw const ReadCacheFileException(ReadCacheFileFailure.io);
+  }
+}
+
+final class _StagedFile {
+  const _StagedFile({
+    required this.root,
+    required this.accountKey,
+    required this.accountName,
+    required this.now,
+    required this.fileName,
+    required this.temporaryPath,
+    required this.plaintextBytes,
+    required this.ciphertextBytes,
+    this.index,
+  });
+
+  final String root, accountKey, accountName, fileName, temporaryPath;
+  final DateTime now;
+  final int plaintextBytes, ciphertextBytes;
+  final ReadCacheIndex? index;
+
+  // The account hash is prepared in the background, never during commit.
+  _Files get files =>
+      _Files(root, accountKey, now, null, accountName: accountName);
+}
+
 bool readCacheEntryExpired(DateTime fetchedAt, DateTime now) {
   final age = now.toUtc().difference(fetchedAt.toUtc());
   return age.isNegative || age >= readCacheRetention;
@@ -278,13 +461,20 @@ final _tempPattern = RegExp(
 );
 
 final class _Files {
-  _Files(this.root, this.accountKey, this.now, this.checkpoint);
+  _Files(
+    this.root,
+    this.accountKey,
+    this.now,
+    this.checkpoint, {
+    String? accountName,
+  }) : accountName =
+           accountName ?? ReadCacheCipher.accountDirectoryName(accountKey);
   final String root, accountKey;
+  final String accountName;
   final DateTime now;
   final void Function(ReadCacheFileCheckpoint)? checkpoint;
   String get base => '$root/read_cache';
-  String get account =>
-      '$base/${ReadCacheCipher.accountDirectoryName(accountKey)}';
+  String get account => '$base/$accountName';
 
   FileSystemEntityType type(String path) =>
       FileSystemEntity.typeSync(path, followLinks: false);
@@ -452,7 +642,12 @@ final class _Files {
     }
   }
 
-  void atomic(String name, List<int> bytes, {void Function()? beforeRename}) {
+  _StagedFile stage(
+    String name,
+    List<int> bytes, {
+    required int plaintextBytes,
+    ReadCacheIndex? index,
+  }) {
     requireName(name);
     final total = usage();
     // Peak capacity includes the complete new temporary plus the old target.
@@ -484,6 +679,7 @@ final class _Files {
       throw const ReadCacheFileException(ReadCacheFileFailure.io);
     }
     var interrupted = false;
+    var staged = false;
     void check(ReadCacheFileCheckpoint step) {
       try {
         checkpoint?.call(step);
@@ -512,22 +708,35 @@ final class _Files {
             ? ReadCacheFileCheckpoint.beforeIndexRename
             : ReadCacheFileCheckpoint.beforeEntryRename,
       );
-      directories();
-      requireFile(temporary.path);
-      requireFile(path, absentAllowed: true);
-      // Revalidate references in the same synchronous commit section. An entry
-      // removed while the encrypted index was being prepared cannot be claimed.
-      beforeRename?.call();
-      temporary.renameSync(path);
-      requireFile(path);
-      check(
-        name == 'index.v1.bin'
-            ? ReadCacheFileCheckpoint.indexRenamed
-            : ReadCacheFileCheckpoint.entryRenamed,
+      staged = true;
+      return _StagedFile(
+        root: root,
+        accountKey: accountKey,
+        accountName: accountName,
+        now: now,
+        fileName: name,
+        temporaryPath: temporary.path,
+        plaintextBytes: plaintextBytes,
+        ciphertextBytes: bytes.length,
+        index: index,
       );
     } finally {
-      // Recheck ancestors before cleanup so replaced links cannot escape root.
-      if (!interrupted && directories()) deleteNode(temporary.path);
+      if (!staged && !interrupted) deleteTemporary(temporary.path);
+    }
+  }
+
+  void deleteTemporary(String path) {
+    // Recheck ancestors before cleanup so replaced links cannot escape root.
+    if (!directories()) return;
+    switch (type(path)) {
+      case FileSystemEntityType.notFound:
+        return;
+      case FileSystemEntityType.file:
+        File(path).deleteSync();
+      case FileSystemEntityType.link:
+        Link(path).deleteSync();
+      default:
+        throw const ReadCacheFileException(ReadCacheFileFailure.untrustedPath);
     }
   }
 
