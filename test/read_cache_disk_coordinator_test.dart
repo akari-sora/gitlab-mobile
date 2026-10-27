@@ -301,6 +301,453 @@ void Function(ReadCacheFileCheckpoint) _crashAt(
   }
 };
 
+void Function(ReadCacheFileCheckpoint) _untrustedAt(
+  ReadCacheFileCheckpoint boundary,
+  String signal,
+) => (step) {
+  if (step != boundary) return;
+  File(signal).writeAsBytesSync([1]);
+  throw const ReadCacheFileException(ReadCacheFileFailure.untrustedPath);
+};
+
+void Function(ReadCacheFileCheckpoint) _untrustedAfterPause(
+  SendPort events,
+  String release,
+) {
+  final pause = _pauseAt(ReadCacheFileCheckpoint.beforeRead, events, release);
+  return (step) {
+    if (step != ReadCacheFileCheckpoint.beforeRead) return;
+    pause(step);
+    throw const ReadCacheFileException(ReadCacheFileFailure.untrustedPath);
+  };
+}
+
+final class _PathFault {
+  _PathFault(this.h, {this.atRoot, this.checkpoint, this.failClear = false});
+  final _Harness h;
+  final int? atRoot;
+  final ReadCacheFileCheckpoint? checkpoint;
+  final bool failClear;
+  int calls = 0, clearAttempts = 0;
+  bool injected = false, fencedBeforeClear = false;
+  String get signal => '${h.root.path}/path-fault';
+
+  ReadCacheFileStore get files => ReadCacheFileStore(
+    root: () async {
+      calls++;
+      if (calls == atRoot) {
+        final base = Directory('${h.root.path}/read_cache');
+        if (base.existsSync()) base.deleteSync(recursive: true);
+        File(base.path).writeAsBytesSync([1]);
+        injected = true;
+      } else if (injected || File(signal).existsSync()) {
+        injected = true;
+        clearAttempts++;
+        fencedBeforeClear =
+            !h.coordinator.startupRecovered &&
+            h.coordinator.stats.queuedEntries == 0 &&
+            [_account, _other].every(
+              (key) => h.coordinator.state(key) == ReadCacheDiskState.cleaning,
+            );
+        if (failClear) throw StateError('synthetic root clear failure');
+      }
+      return h.root;
+    },
+    clock: () => h.clock.now,
+    checkpoint: checkpoint == null ? null : _untrustedAt(checkpoint!, signal),
+  );
+}
+
+void _pathFailureTests() {
+  // Root ordinals select distinct store calls without mocking the final store.
+  // A wrong base type makes the selected operation return untrustedPath. Its
+  // disappearance proves clearRoot ran; clearAccount cannot remove that node.
+  const cases = <(String, int)>[
+    ('prepare state', 1),
+    ('prepare names', 2),
+    ('load index', 1),
+    ('load names', 2),
+    ('load entry', 3),
+    ('load temporary cleanup', 4),
+    ('lookup read', 1),
+    ('lookup eviction', 2),
+    ('flush usage', 1),
+    ('flush stage entry', 2),
+    ('flush index usage', 3),
+    ('flush stage index', 4),
+    ('makeRoom eviction', 2),
+    ('invalidate eviction', 1),
+    ('clear account', 1),
+    ('clear state proof', 2),
+    ('clear names proof', 3),
+    ('recover sweep', 4),
+    ('recover names', 5),
+    ('disable sweep', 7),
+    ('disable names', 8),
+  ];
+  for (final (site, ordinal) in cases) {
+    test('C2FU H2 fences every account and clears root: $site', () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _readyHarness(h);
+      final victim = _entry(h, 1);
+      await _save(h, victim);
+      h.coordinator.state(_other);
+      await h.seedKey(_other);
+      h.seedFile(_other);
+      if (site.startsWith('prepare')) await h.keys.deleteKey(_account);
+      if (site == 'lookup eviction') {
+        h.clock.now = h.clock.now.add(readCacheRetention);
+      }
+      if (site == 'makeRoom eviction') {
+        final key = (await h.keys.readKey(_account)).value!;
+        final usage = await h.files.usage(_account, key);
+        final reserve =
+            _entry(h, 2).serializedLength +
+            readCacheEnvelopeOverhead +
+            readCacheIndexLimit +
+            readCacheEnvelopeOverhead;
+        _capacitySparseFile(
+          File('${h.dir().path}/padding.bin'),
+          readCacheAccountByteLimit - usage.accountBytes - reserve + 1,
+        );
+      }
+      final fault = _PathFault(h, atRoot: ordinal);
+      h.coordinator.configure(
+        keys: h.keys,
+        files: fault.files,
+        settings: h.settings,
+      );
+      final next = _entry(h, 2, scopes: {'project:2'});
+      h.coordinator.accept(_candidate(next), next);
+      if (site.startsWith('prepare') || site.startsWith('load')) {
+        expect(await h.coordinator.activate(_binding), isFalse);
+      } else if (site.startsWith('lookup')) {
+        expect(
+          await h.coordinator.lookup(
+            DiskLookup(
+              binding: _binding,
+              canonicalKey: victim.canonicalKey,
+              bodyKind: ReadCacheBodyKind.text,
+              lease: _Lease(),
+            ),
+          ),
+          isNull,
+        );
+      } else if (site.startsWith('flush') || site.startsWith('makeRoom')) {
+        await h.coordinator.flush(_binding);
+      } else if (site.startsWith('invalidate')) {
+        await expectLater(
+          h.coordinator
+              .invalidate(
+                DiskInvalidation(
+                  binding: _binding,
+                  kind: DiskInvalidationKind.mutation,
+                  scopeTags: {'project:1'},
+                ),
+              )
+              .barrier,
+          throwsA(isA<ApiFailure>()),
+        );
+      } else if (site.startsWith('clear')) {
+        expect(
+          (await h.coordinator.clear(
+            _binding,
+            ReadCacheCleanupOperation.settingsClear,
+          )).complete,
+          isFalse,
+        );
+      } else if (site.startsWith('recover')) {
+        expect(await h.recover(), isFalse);
+      } else {
+        expect(await h.coordinator.setEnabled(false), isFalse);
+      }
+      expect(fault.injected, isTrue, reason: site);
+      expect(fault.clearAttempts, 1, reason: site);
+      expect(fault.fencedBeforeClear, isTrue, reason: site);
+      expect(
+        FileSystemEntity.typeSync('${h.root.path}/read_cache'),
+        FileSystemEntityType.notFound,
+      );
+      for (final key in [_account, _other]) {
+        expect(h.coordinator.state(key), ReadCacheDiskState.cleaning);
+        final marker = await h.keys.readMarker(key);
+        expect(marker.isFound, isTrue, reason: key);
+        expect(
+          (marker.value! as ReadCacheClearMarker).reason,
+          ReadCacheClearReason.accountClear,
+        );
+      }
+      expect(h.coordinator.stats.queuedEntries, 0);
+      expect(await h.coordinator.activate(_binding), isFalse);
+      final calls = fault.calls;
+      h.clock.advance(const Duration(hours: 1));
+      await h.coordinator.quiesced;
+      expect(fault.calls, calls, reason: 'no automatic root-clear retry');
+    });
+  }
+  for (final checkpoint in [
+    ReadCacheFileCheckpoint.temporaryCreated,
+    ReadCacheFileCheckpoint.beforeEntryRename,
+    ReadCacheFileCheckpoint.entryRenamed,
+    ReadCacheFileCheckpoint.beforeIndexRename,
+    ReadCacheFileCheckpoint.indexRenamed,
+    ReadCacheFileCheckpoint.evictionFileDeleted,
+  ]) {
+    test(
+      'C2FU H2 fences staged or synchronous failures: $checkpoint',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await _readyHarness(h);
+        await _save(h, _entry(h, 1));
+        h.coordinator.state(_other);
+        await h.seedKey(_other);
+        h.seedFile(_other);
+        final fault = _PathFault(h, checkpoint: checkpoint);
+        h.coordinator.configure(
+          keys: h.keys,
+          files: fault.files,
+          settings: h.settings,
+        );
+        if (checkpoint == ReadCacheFileCheckpoint.evictionFileDeleted) {
+          await expectLater(
+            h.coordinator
+                .invalidate(
+                  DiskInvalidation(
+                    binding: _binding,
+                    kind: DiskInvalidationKind.mutation,
+                    scopeTags: {'project:1'},
+                  ),
+                )
+                .barrier,
+            throwsA(isA<ApiFailure>()),
+          );
+        } else {
+          await _save(h, _entry(h, 2));
+        }
+        expect(fault.clearAttempts, 1);
+        expect(fault.fencedBeforeClear, isTrue);
+        expect(Directory('${h.root.path}/read_cache').existsSync(), isFalse);
+        for (final key in [_account, _other]) {
+          expect(h.coordinator.state(key), ReadCacheDiskState.cleaning);
+          expect(
+            ((await h.keys.readMarker(key)).value! as ReadCacheClearMarker)
+                .reason,
+            ReadCacheClearReason.accountClear,
+          );
+        }
+        expect(await h.coordinator.activate(_binding), isFalse);
+      },
+    );
+  }
+  for (final phase in ['settings', 'inventory']) {
+    test(
+      'C2FU H2 stale recovery cannot consume a new path fence: $phase',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await _readyHarness(h);
+        final entry = _entry(h, 1);
+        await _save(h, entry);
+        h.coordinator.state(_other);
+        final events = ReceivePort();
+        final messages = StreamIterator<Object?>(events);
+        addTearDown(events.close);
+        final release = File('${h.root.path}/release');
+        h.coordinator.configure(
+          keys: h.keys,
+          settings: h.settings,
+          files: ReadCacheFileStore(
+            root: () async => h.root,
+            clock: () => h.clock.now,
+            checkpoint: _untrustedAfterPause(events.sendPort, release.path),
+          ),
+        );
+        final reading = h.coordinator.lookup(
+          DiskLookup(
+            binding: _binding,
+            canonicalKey: entry.canonicalKey,
+            bodyKind: ReadCacheBodyKind.text,
+            lease: _Lease(),
+          ),
+        );
+        expect(
+          await messages.moveNext().timeout(const Duration(seconds: 10)),
+          isTrue,
+        );
+        final reached = Completer<void>(), resume = Completer<void>();
+        h.storage.intercept = (operation, name) async {
+          if ((phase == 'settings' &&
+                  operation == 'read' &&
+                  name == ReadCacheSettingsStore.key) ||
+              (phase == 'inventory' && operation == 'inventory')) {
+            reached.complete();
+            await resume.future;
+          }
+        };
+        final recovering = h.recover();
+        await reached.future;
+        release.createSync();
+        expect(await reading, isNull);
+        final writes = h.storage.markerWrites;
+        resume.complete();
+        expect(await recovering, isFalse);
+        await messages.cancel();
+        expect(h.storage.markerWrites, writes);
+        for (final key in [_account, _other]) {
+          expect(h.coordinator.state(key), ReadCacheDiskState.cleaning);
+          expect((await h.keys.readMarker(key)).isFound, isTrue);
+        }
+        expect(await h.coordinator.activate(_binding), isFalse);
+      },
+    );
+  }
+  for (final disable in [false, true]) {
+    test(
+      'C2FU H2 direct root-clear failure is not retried: disable=$disable',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await _readyHarness(h);
+        await _save(h, _entry(h, 1));
+        h.coordinator.state(_other);
+        await h.seedKey(_other);
+        await h.seedKey(_outside); // Known only through secure inventory.
+        h.storage.values['${ReadCacheKeyStore.keyPrefix}not-canonical!'] =
+            'synthetic';
+        final fifo = '${h.root.path}/read_cache/unremovable-pipe';
+        expect(Process.runSync('mkfifo', [fifo]).exitCode, 0);
+        final fault = _PathFault(h);
+        h.coordinator.configure(
+          keys: h.keys,
+          files: fault.files,
+          settings: h.settings,
+        );
+        expect(
+          await (disable ? h.coordinator.setEnabled(false) : h.recover()),
+          isFalse,
+        );
+        expect(
+          fault.calls,
+          1,
+          reason: 'a failed clearRoot is already the last resort',
+        );
+        for (final binding in [
+          _binding,
+          const DiskBinding(accountKey: _other, generation: 0),
+          const DiskBinding(accountKey: _outside, generation: 0),
+        ]) {
+          expect(
+            h.coordinator.state(binding.accountKey),
+            ReadCacheDiskState.cleaning,
+          );
+          expect((await h.keys.readMarker(binding.accountKey)).isFound, isTrue);
+          expect(
+            h.coordinator.notice(binding)!.failure.cleanup!.code,
+            ReadCacheCleanupCode.cleanupFailed,
+          );
+        }
+        expect(await h.coordinator.activate(_binding), isFalse);
+      },
+    );
+  }
+  test('C2FU H2 stuck marker cannot prevent the root-clear attempt', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await _readyHarness(h);
+    final entry = _entry(h, 1);
+    await _save(h, entry);
+    h.coordinator.state(_other);
+    final reached = Completer<void>(), release = Completer<void>();
+    h.storage.intercept = (operation, name) async {
+      if (operation == 'write' &&
+          name == ReadCacheKeyStore.markerName(_account)) {
+        reached.complete();
+        await release.future;
+      }
+    };
+    final fault = _PathFault(h, atRoot: 1);
+    h.coordinator.configure(
+      keys: h.keys,
+      files: fault.files,
+      settings: h.settings,
+    );
+    final reading = h.coordinator.lookup(
+      DiskLookup(
+        binding: _binding,
+        canonicalKey: entry.canonicalKey,
+        bodyKind: ReadCacheBodyKind.text,
+        lease: _Lease(),
+      ),
+    );
+    await reached.future;
+    expect(h.coordinator.state(_account), ReadCacheDiskState.cleaning);
+    expect(h.coordinator.state(_other), ReadCacheDiskState.cleaning);
+    h.clock.advance(ReadCacheDiskCoordinator.barrierLimit);
+    expect(await reading, isNull);
+    expect(fault.clearAttempts, 1);
+    expect(fault.fencedBeforeClear, isTrue);
+    expect(Directory('${h.root.path}/read_cache').existsSync(), isFalse);
+    release.complete();
+    await h.coordinator.quiesced;
+    // Drain the deliberately delayed marker, which still belongs to the fence.
+    await Future<void>.delayed(Duration.zero);
+    expect((await h.keys.readMarker(_account)).isFound, isTrue);
+    expect(await h.coordinator.activate(_binding), isFalse);
+  });
+  test(
+    'C2FU H2 root-clear failure stays closed with notice and never spins',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _readyHarness(h);
+      final entry = _entry(h, 1);
+      await _save(h, entry);
+      h.coordinator.state(_other);
+      await h.seedKey(_other);
+      final fault = _PathFault(h, atRoot: 1, failClear: true);
+      h.coordinator.configure(
+        keys: h.keys,
+        files: fault.files,
+        settings: h.settings,
+      );
+      expect(
+        await h.coordinator.lookup(
+          DiskLookup(
+            binding: _binding,
+            canonicalKey: entry.canonicalKey,
+            bodyKind: ReadCacheBodyKind.text,
+            lease: _Lease(),
+          ),
+        ),
+        isNull,
+      );
+      expect(fault.clearAttempts, 1);
+      expect(fault.fencedBeforeClear, isTrue);
+      for (final binding in [
+        _binding,
+        const DiskBinding(accountKey: _other, generation: 0),
+      ]) {
+        expect(
+          h.coordinator.state(binding.accountKey),
+          ReadCacheDiskState.cleaning,
+        );
+        expect((await h.keys.readMarker(binding.accountKey)).isFound, isTrue);
+        final notice = h.coordinator.notice(binding)!.failure;
+        expect(notice.kind, FailureKind.readCacheCleanup);
+        expect(notice.cleanup!.code, ReadCacheCleanupCode.cleanupFailed);
+        expect(notice.cleanup!.clearResult.complete, isFalse);
+      }
+      expect(await h.coordinator.resume(_binding), isFalse);
+      final calls = fault.calls;
+      h.clock.advance(const Duration(hours: 1));
+      await h.coordinator.quiesced;
+      expect(fault.calls, calls);
+    },
+  );
+}
+
 void _transactionTests() {
   _markerOrderTests();
   test(
@@ -956,7 +1403,10 @@ void _transactionTests() {
             '${h.root.path}/read_cache/foreign',
           ).createSync(recursive: true);
         }
-        expect(await h.recover(), !special);
+        // A path incident closes this recovery pass even when root cleanup
+        // succeeds. Only a new inventory/decision may reconcile the full fence.
+        expect(await h.recover(), isFalse);
+        if (!special) expect(await h.recover(), isTrue);
         expect(h.rootCalls, lessThan(12));
         if (special) expect(await h.coordinator.activate(_binding), isFalse);
       },
@@ -1041,6 +1491,7 @@ void _markerOrderTests() {
       expect(
         await h.coordinator.lookup(
           DiskLookup(
+            bodyKind: ReadCacheBodyKind.text,
             binding: _binding,
             canonicalKey: kept.canonicalKey,
             lease: _Lease(),
@@ -1310,6 +1761,7 @@ void _markerOrderTests() {
       expect(
         await fresh.lookup(
           DiskLookup(
+            bodyKind: ReadCacheBodyKind.text,
             binding: _binding,
             canonicalKey: victim.canonicalKey,
             lease: _Lease(),
@@ -1755,6 +2207,7 @@ void _fix1Tests() {
       expect(
         await h.coordinator.lookup(
           DiskLookup(
+            bodyKind: ReadCacheBodyKind.text,
             binding: _binding,
             canonicalKey: entries[revoked].canonicalKey,
             lease: _Lease(),
@@ -2011,6 +2464,7 @@ void _fix1Tests() {
       expect(
         await h.coordinator.lookup(
           DiskLookup(
+            bodyKind: ReadCacheBodyKind.text,
             binding: _binding,
             canonicalKey: target.canonicalKey,
             lease: _Lease(),
@@ -2344,6 +2798,7 @@ void _fix2Tests() {
     };
     final reading = h.coordinator.lookup(
       DiskLookup(
+        bodyKind: ReadCacheBodyKind.text,
         binding: _binding,
         canonicalKey: _entry(h, 99).canonicalKey,
         lease: _Lease(),
@@ -2572,12 +3027,19 @@ void _fix2Tests() {
     expect(h.coordinator.stats.queuedEntries, 0);
   });
 
-  test(
-    'FIX2 N2 scoped commit refusal completes its full-clear fallback',
-    () async {
+  for (final variant in [
+    'secondBarrierMatchesUnindexed',
+    'background',
+    'newPublicationRevokes',
+    'controlStaleBeforeBarrierCommit',
+  ]) {
+    test('C2FU R3A scoped commit retries stale leases: $variant', () async {
       final h = _Harness();
       addTearDown(h.dispose);
       await _readyHarness(h);
+      final retained = _entry(h, 0, scopes: {'project:0'});
+      await _save(h, retained);
+      final keyBefore = (await h.keys.readKey(_account)).value!;
       final events = ReceivePort();
       final messages = StreamIterator<Object?>(events);
       addTearDown(events.close);
@@ -2595,9 +3057,14 @@ void _fix2Tests() {
           ),
         ),
       );
-      final lease = _Lease();
-      final entry = _entry(h, 1);
-      h.coordinator.accept(_candidate(entry, lease), entry);
+      final leases = [_Lease(), _Lease()];
+      final staged = [
+        _entry(h, 1, scopes: {'project:1'}),
+        _entry(h, 2, scopes: {'project:2'}),
+      ];
+      for (var i = 0; i < staged.length; i++) {
+        h.coordinator.accept(_candidate(staged[i], leases[i]), staged[i]);
+      }
       final writing = h.coordinator.flush(_binding);
       expect(
         await messages.moveNext().timeout(const Duration(seconds: 10)),
@@ -2614,9 +3081,7 @@ void _fix2Tests() {
           await keyRelease.future;
         }
       };
-      // Changing indexRevision refuses the flush's staged index without revoking
-      // this unrelated publication. The barrier then stages its own index.
-      final barrier = h.coordinator
+      final first = h.coordinator
           .invalidate(
             DiskInvalidation(
               binding: _binding,
@@ -2629,25 +3094,70 @@ void _fix2Tests() {
       await writing;
       await keyAt.future;
       release.deleteSync();
+      if (variant == 'controlStaleBeforeBarrierCommit') leases[1].revoke();
       keyRelease.complete();
       expect(
         await messages.moveNext().timeout(const Duration(seconds: 10)),
         isTrue,
       );
       expect(messages.current, ReadCacheFileCheckpoint.beforeIndexRename.name);
-      lease.revoke();
+      Future<DiskClearResult>? second;
+      switch (variant) {
+        case 'secondBarrierMatchesUnindexed':
+          second = h.coordinator
+              .invalidate(
+                DiskInvalidation(
+                  binding: _binding,
+                  kind: DiskInvalidationKind.mutation,
+                  scopeTags: {'project:1'},
+                ),
+              )
+              .barrier;
+        case 'background':
+          h.coordinator.background();
+        case 'newPublicationRevokes':
+          leases[1].revoke();
+      }
       release.createSync();
-      final result = await barrier;
+      final result = await first;
+      if (second != null) await second;
       await messages.cancel();
-      expect(result.complete, isTrue);
-      expect(result.keyGoneConfirmed, isTrue);
-      expect(result.directoryGoneConfirmed, isTrue);
-      expect((await h.keys.readKey(_account)).isFound, isFalse);
+      expect(result.complete, isFalse);
+      expect(result.keyGoneConfirmed, isFalse);
+      expect((await h.keys.readKey(_account)).value, orderedEquals(keyBefore));
       expect((await h.keys.readMarker(_account)).isFound, isFalse);
-      expect(h.dir().existsSync(), isFalse);
+      expect(
+        await h.files.readEntry(_account, keyBefore, retained.canonicalKey),
+        isNotNull,
+      );
+      for (var i = 0; i < staged.length; i++) {
+        final revoked =
+            variant == 'background' ||
+            (variant == 'secondBarrierMatchesUnindexed' ? i == 0 : i == 1);
+        expect(
+          await h.files.readEntry(_account, keyBefore, staged[i].canonicalKey),
+          revoked ? isNull : isNotNull,
+        );
+      }
+      final index = (await h.files.readIndex(_account, keyBefore))!;
+      expect(index.entries.length, variant == 'background' ? 1 : 2);
       expect(h.coordinator.notice(_binding), isNull);
-    },
-  );
+      h.coordinator.configure(
+        keys: h.keys,
+        files: h.files,
+        settings: h.settings,
+      );
+      if (variant == 'background') {
+        expect(await h.coordinator.resume(_binding), isTrue);
+      }
+      expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+      await _save(h, _entry(h, 7, scopes: {'project:7'}));
+      expect(
+        (await h.files.readIndex(_account, keyBefore))!.entries.length,
+        index.entries.length + 1,
+      );
+    });
+  }
 
   test(
     'FIX2 N2 expired scoped commit cannot dispatch a late full clear',
@@ -2846,6 +3356,7 @@ void _fix2Tests() {
       };
       final reading = h.coordinator.lookup(
         DiskLookup(
+          bodyKind: ReadCacheBodyKind.text,
           binding: _binding,
           canonicalKey: entry.canonicalKey,
           lease: _Lease(),
@@ -2883,6 +3394,7 @@ void _fix2Tests() {
 }
 
 void main() {
+  _pathFailureTests();
   TestWidgetsFlutterBinding.ensureInitialized();
   _fix1Tests();
   _fix2Tests();

@@ -253,11 +253,13 @@ final class DiskLookup {
   const DiskLookup({
     required this.binding,
     required this.canonicalKey,
+    required this.bodyKind,
     required this.lease,
   });
 
   final DiskBinding binding;
   final String canonicalKey;
+  final ReadCacheBodyKind bodyKind;
   final DiskCommitLease lease;
 }
 

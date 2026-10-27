@@ -141,6 +141,92 @@ final class ReadCacheDiskCoordinator {
     return result.future;
   }
 
+  /// Guard each primitive before caller-specific miss/cleanup catches can
+  /// consume its error. Commit closures run synchronously on this isolate.
+  Future<T> _file<T>(
+    FutureOr<T> Function() action, {
+    bool clearingRoot = false,
+    bool recoverySweep = false,
+  }) async {
+    try {
+      return await action();
+    } on Object catch (error) {
+      if (clearingRoot ||
+          (error is ReadCacheFileException &&
+              error.code == ReadCacheFileFailure.untrustedPath)) {
+        await _fenceUntrustedPath(
+          clearRoot: !clearingRoot && !recoverySweep,
+          rootFailed: clearingRoot,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _fenceUntrustedPath({
+    required bool clearRoot,
+    required bool rootFailed,
+  }) async {
+    _domain.recovered = false;
+    _domain.pathRevision++;
+    final intents = <_Account, _Intent>{
+      for (final account in _domain.accounts.values)
+        account: _fullIntent(account, ReadCacheClearReason.accountClear),
+    };
+    // Fences are installed for every account before any native await. Persist
+    // their replacement intents before the destructive root operation.
+    final markers = Future.wait([
+      for (final entry in intents.entries) _persist(entry.key, entry.value),
+    ]);
+    final expired = Completer<void>();
+    final cancel = _schedule(barrierLimit, expired.complete);
+    try {
+      // A stuck secure-store lane must not indefinitely prevent root cleanup.
+      // Its late acknowledgement still belongs to the pending full intent.
+      await Future.any<void>([markers.then((_) {}), expired.future]);
+    } finally {
+      cancel();
+    }
+    var failed = rootFailed;
+    if (clearRoot) {
+      try {
+        // Already inside the shared I/O lane. Enqueuing would deadlock; guarding
+        // this last-resort call again would recurse on an unremovable path.
+        await _files!.clearRoot();
+      } on Object {
+        failed = true;
+        // One attempt only. Recovery or explicit cleanup owns a future retry.
+      }
+    }
+    for (final entry in intents.entries) {
+      final account = entry.key;
+      account.entries.clear();
+      account.unindexed.clear();
+      account.indexTrusted = false;
+      account.indexDirty = false;
+      if (failed) {
+        final active = _domain.active;
+        final binding = active?.accountKey == account.key
+            ? active!
+            : account.sessionFence ??
+                  DiskBinding(accountKey: account.key, generation: 0);
+        reportCleanup(
+          binding,
+          _cleanup(
+            ReadCacheCleanupOperation.settingsClear,
+            DiskClearResult(
+              keyGoneConfirmed: false,
+              directoryGoneConfirmed: false,
+              markerDurable: entry.value.durable,
+              complete: false,
+            ),
+            ReadCacheCleanupCode.cleanupFailed,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> get quiesced => _domain.tail;
 
   bool _gates(DiskBinding binding) =>
@@ -222,8 +308,10 @@ final class ReadCacheDiskCoordinator {
       if (read.isFound) {
         account.keyBytes = read.value;
       } else {
-        final directory = await _files!.accountDirectoryState(account.key);
-        final names = await _files!.accountDirectoryNames();
+        final directory = await _file(
+          () => _files!.accountDirectoryState(account.key),
+        );
+        final names = await _file(() => _files!.accountDirectoryNames());
         if (!current()) return false;
         if (directory == ReadCacheDirectoryState.hasFiles ||
             (directory == ReadCacheDirectoryState.absent &&
@@ -304,7 +392,7 @@ final class ReadCacheDiskCoordinator {
     ReadCacheIndex? index;
     var readable = true;
     try {
-      index = await _files!.readIndex(account.key, key);
+      index = await _file(() => _files!.readIndex(account.key, key));
     } on ReadCacheCodecException {
       // A damaged index never proves a deletion set. Full clear is the fallback.
       readable = false;
@@ -314,19 +402,21 @@ final class ReadCacheDiskCoordinator {
     };
     if (!current()) return;
     account.entries.clear();
-    final names = await _files!.entryFiles(account.key, key);
+    final names = await _file(() => _files!.entryFiles(account.key, key));
     if (!current()) return;
     for (final name in names) {
       if (!current()) return;
       ProjectedDiskEntry? entry;
       try {
-        entry = await _files!.readEntryFile(account.key, key, name);
+        entry = await _file(
+          () => _files!.readEntryFile(account.key, key, name),
+        );
       } on ReadCacheCodecException {
         // Individually corrupt, unsupported or expired cache entries are misses.
       }
       if (!current()) return;
       if (entry == null) {
-        await _files!.evict(account.key, key, name);
+        await _file(() => _files!.evict(account.key, key, name));
         continue;
       }
       final expected = await const ReadCacheCipher().entryFileName(
@@ -335,12 +425,12 @@ final class ReadCacheDiskCoordinator {
       );
       if (!current()) return;
       if (expected != name) {
-        await _files!.evict(account.key, key, name);
+        await _file(() => _files!.evict(account.key, key, name));
         continue;
       }
       final publication = account.unindexed[entry.canonicalKey];
       if (publication != null && !publication.isCurrent) {
-        await _files!.evict(account.key, key, name);
+        await _file(() => _files!.evict(account.key, key, name));
         account.unindexed.remove(entry.canonicalKey);
         continue;
       }
@@ -358,7 +448,7 @@ final class ReadCacheDiskCoordinator {
       );
     }
     if (!current()) return;
-    await _files!.removeStaleTemporaryFiles(account.key, key);
+    await _file(() => _files!.removeStaleTemporaryFiles(account.key, key));
     if (!current()) return;
     account.unindexed.removeWhere(
       (name, _) => !account.entries.containsKey(name),
@@ -403,30 +493,42 @@ final class ReadCacheDiskCoordinator {
           await _clearNow(account, intent, hadWork: true);
           return null;
         }
-        final value = await _files!.readEntry(
-          account.key,
-          keyRead.value,
-          lookup.canonicalKey,
-        );
-        if (!lease.isCurrent) return null;
-        final record = account.entries[lookup.canonicalKey];
-        if (record != null) {
-          if (value == null) {
-            await _files!.evict(
+        ProjectedDiskEntry? value;
+        try {
+          value = await _file(
+            () => _files!.readEntry(
               account.key,
               keyRead.value,
-              record.index.fileName,
-            );
-            account.entries.remove(lookup.canonicalKey);
-            account.indexTrusted = false;
-            account.indexDirty = true;
-          } else {
-            account.entries[lookup.canonicalKey] = _Record(
-              value,
-              _used(record.index, _clock()),
-            );
-            account.indexDirty = true;
-          }
+              lookup.canonicalKey,
+              expectedBodyKind: lookup.bodyKind,
+            ),
+          );
+        } on ReadCacheCodecException catch (error) {
+          if (error.error != ReadCacheCodecError.bindingMismatch) rethrow;
+        } on ReadCacheFileException catch (error) {
+          if (error.code != ReadCacheFileFailure.tooLarge) rethrow;
+        }
+        if (!lease.isCurrent) return null;
+        final record = account.entries[lookup.canonicalKey];
+        if (value == null) {
+          final name =
+              record?.index.fileName ??
+              await const ReadCacheCipher().entryFileName(
+                keyRead.value!,
+                lookup.canonicalKey,
+              );
+          if (!lease.isCurrent) return null;
+          await _file(() => _files!.evict(account.key, keyRead.value, name));
+          account.entries.remove(lookup.canonicalKey);
+          account.unindexed.remove(lookup.canonicalKey);
+          account.indexTrusted = false;
+          account.indexDirty = true;
+        } else if (record != null) {
+          account.entries[lookup.canonicalKey] = _Record(
+            value,
+            _used(record.index, _clock()),
+          );
+          account.indexDirty = true;
         }
         return value != null && !_blocked(account, value) ? value : null;
       } on Object {
@@ -580,29 +682,33 @@ final class ReadCacheDiskCoordinator {
                     account.queuedBytes += work.bytes;
                     break;
                   }
-                  final staged = await _files!.stageEntry(
-                    work.entry,
-                    account.keyBytes,
-                    mayCommit: () => work.lease.isCurrent,
-                  );
-                  if (staged == null) continue;
-                  if (staged.commit() != ReadCacheCommitResult.committed) {
-                    continue;
-                  }
-                  account.entries[work.entry.canonicalKey] = _Record(
-                    work.entry,
-                    ReadCacheIndexEntry(
-                      fileName: staged.fileName,
-                      sizeBytes: staged.ciphertextBytes,
-                      fetchedAt: work.entry.fetchedAt,
-                      lastUsedAt: _clock().toUtc(),
-                      cacheClass: work.entry.cacheClass,
-                      scopeTags: work.entry.scopeTags,
-                      issueIdentities: work.entry.issueIdentities,
+                  final staged = await _file(
+                    () => _files!.stageEntry(
+                      work.entry,
+                      account.keyBytes,
+                      mayCommit: () => work.lease.isCurrent,
                     ),
                   );
-                  account.unindexed[work.entry.canonicalKey] = work.lease;
-                  account.indexDirty = true;
+                  if (staged == null) continue;
+                  await _file(() {
+                    if (staged.commit() != ReadCacheCommitResult.committed) {
+                      return;
+                    }
+                    account.entries[work.entry.canonicalKey] = _Record(
+                      work.entry,
+                      ReadCacheIndexEntry(
+                        fileName: staged.fileName,
+                        sizeBytes: staged.ciphertextBytes,
+                        fetchedAt: work.entry.fetchedAt,
+                        lastUsedAt: _clock().toUtc(),
+                        cacheClass: work.entry.cacheClass,
+                        scopeTags: work.entry.scopeTags,
+                        issueIdentities: work.entry.issueIdentities,
+                      ),
+                    );
+                    account.unindexed[work.entry.canonicalKey] = work.lease;
+                    account.indexDirty = true;
+                  });
                 } finally {
                   account.inFlight.remove(work);
                 }
@@ -651,10 +757,12 @@ final class ReadCacheDiskCoordinator {
       if (publication.value.isCurrent) continue;
       final record = account.entries[publication.key];
       if (record != null) {
-        await _files!.evict(
-          account.key,
-          account.keyBytes,
-          record.index.fileName,
+        await _file(
+          () => _files!.evict(
+            account.key,
+            account.keyBytes,
+            record.index.fileName,
+          ),
         );
         account.entries.remove(publication.key);
       }
@@ -670,7 +778,9 @@ final class ReadCacheDiskCoordinator {
   ) async {
     final unavailable = <_Account>{};
     while (current()) {
-      final usage = await _files!.usage(account.key, account.keyBytes);
+      final usage = await _file(
+        () => _files!.usage(account.key, account.keyBytes),
+      );
       if (!current()) return false;
       final accountFull =
           usage.accountBytes + incoming > readCacheAccountByteLimit;
@@ -693,7 +803,9 @@ final class ReadCacheDiskCoordinator {
         unavailable.add(owner);
         continue;
       }
-      await _files!.evict(owner.key, key.value, victim.index.fileName);
+      await _file(
+        () => _files!.evict(owner.key, key.value, victim.index.fileName),
+      );
       if (!current()) return false;
       owner.entries.remove(victim.entry.canonicalKey);
       owner.unindexed.remove(victim.entry.canonicalKey);
@@ -718,10 +830,12 @@ final class ReadCacheDiskCoordinator {
         final oldest = account.entries.values.reduce(
           (a, b) => a.index.lastUsedAt.isBefore(b.index.lastUsedAt) ? a : b,
         );
-        await _files!.evict(
-          account.key,
-          account.keyBytes,
-          oldest.index.fileName,
+        await _file(
+          () => _files!.evict(
+            account.key,
+            account.keyBytes,
+            oldest.index.fileName,
+          ),
         );
         account.entries.remove(oldest.entry.canonicalKey);
         account.unindexed.remove(oldest.entry.canonicalKey);
@@ -737,20 +851,24 @@ final class ReadCacheDiskCoordinator {
       }
       if (!permitted()) return false;
       if (index.entries.length != account.entries.length) continue;
-      final staged = await _files!.stageIndex(
-        account.key,
-        account.keyBytes,
-        index,
-        mayCommit: permitted,
+      final staged = await _file(
+        () => _files!.stageIndex(
+          account.key,
+          account.keyBytes,
+          index,
+          mayCommit: permitted,
+        ),
       );
       if (staged == null) return false;
-      if (staged.commit() == ReadCacheCommitResult.committed) {
-        account.indexTrusted = true;
-        account.indexDirty = false;
-        account.unindexed.clear();
-        return true;
-      }
-      return false;
+      return _file(() {
+        if (staged.commit() == ReadCacheCommitResult.committed) {
+          account.indexTrusted = true;
+          account.indexDirty = false;
+          account.unindexed.clear();
+          return true;
+        }
+        return false;
+      });
     }
     return false;
   }
@@ -916,8 +1034,8 @@ final class ReadCacheDiskCoordinator {
   }
 
   Future<bool> _directoryGone(String accountKey) async {
-    final state = await _files!.accountDirectoryState(accountKey);
-    final names = await _files!.accountDirectoryNames();
+    final state = await _file(() => _files!.accountDirectoryState(accountKey));
+    final names = await _file(() => _files!.accountDirectoryNames());
     return state == ReadCacheDirectoryState.absent &&
         !names.contains(ReadCacheCipher.accountDirectoryName(accountKey));
   }
@@ -963,6 +1081,7 @@ final class ReadCacheDiskCoordinator {
     } on Object {
       // Unknown is not empty. Still attempt both independent explicit deletes.
     }
+    if (account.intent != intent || !intent.valid) return _none;
     final durable = await (markerReady ?? _persist(account, intent));
     var keyGone = false, directoryGone = false;
     try {
@@ -974,7 +1093,7 @@ final class ReadCacheDiskCoordinator {
       // Directory deletion proceeds even if secure storage is unavailable.
     }
     try {
-      await _files!.clearAccount(account.key);
+      await _file(() => _files!.clearAccount(account.key));
       directoryGone = await _directoryGone(account.key);
     } on Object {
       // Neither an acknowledgement nor an I/O error is evidence of absence.
@@ -1263,7 +1382,9 @@ final class ReadCacheDiskCoordinator {
         account.keyBytes = key.value;
         for (final record in account.entries.values.toList()) {
           if (!matches(record.entry)) continue;
-          await _files!.evict(account.key, key.value, record.index.fileName);
+          await _file(
+            () => _files!.evict(account.key, key.value, record.index.fileName),
+          );
           account.entries.remove(record.entry.canonicalKey);
           account.unindexed.remove(record.entry.canonicalKey);
         }
@@ -1272,10 +1393,11 @@ final class ReadCacheDiskCoordinator {
         if (!current()) return _none;
         await _evictStalePublications(account, current);
         if (!current()) return _none;
-        if (!await _commitIndex(account, current)) {
+        while (!await _commitIndex(account, current)) {
           if (!current()) return _none;
-          final full = _fullIntent(account, ReadCacheClearReason.accountClear);
-          return await _clearNow(account, full, hadWork: true);
+          // A fresh staged handle can only be refused by permitted(): with
+          // current() still true, an unindexed publication lost its lease.
+          await _evictStalePublications(account, current);
         }
         if (!current()) return _none;
         intent.users--;
@@ -1295,6 +1417,7 @@ final class ReadCacheDiskCoordinator {
           complete: false,
         );
       } on Object {
+        if (account.intent != intent) return _none;
         final full = _fullIntent(account, ReadCacheClearReason.accountClear);
         return await _clearNow(account, full, hadWork: true);
       }
@@ -1326,21 +1449,30 @@ final class ReadCacheDiskCoordinator {
     required Set<String> accountKeys,
   }) async {
     final revision = ++_domain.startupRevision;
+    final pathRevision = _domain.pathRevision;
+    bool current() =>
+        revision == _domain.startupRevision &&
+        pathRevision == _domain.pathRevision;
     _domain.recovered = false;
     if (!configured || !decision.readable || _domain.preferenceChanges > 0) {
       return false;
     }
     final setting = await _settings!.read();
-    if (revision != _domain.startupRevision ||
-        setting == ReadCacheSettingsState.unavailable) {
+    if (!current() || setting == ReadCacheSettingsState.unavailable) {
       return false;
     }
     final inventory = await _keys!.readInventory();
-    if (revision != _domain.startupRevision ||
-        inventory.status != ReadCacheStoreReadStatus.found) {
+    if (!current() || inventory.status != ReadCacheStoreReadStatus.found) {
       return false;
     }
     _domain.setting = setting;
+    for (final key in {
+      ...accountKeys,
+      ...inventory.keys.keys,
+      ...inventory.markers.keys,
+    }) {
+      _account(key);
+    }
     for (final account in _domain.accounts.values) {
       account.epoch++;
       _dropQueue(account);
@@ -1353,14 +1485,16 @@ final class ReadCacheDiskCoordinator {
         ? <String>{decision.resumeAccountKey!}
         : <String>{};
     final success = await _serial<bool>(null, () async {
-      if (revision != _domain.startupRevision) return false;
+      if (!current()) return false;
       var ok = true;
       if (inventory.malformedNames.isNotEmpty) {
         try {
-          await _files!.clearRoot();
-          if ((await _files!.accountDirectoryNames()).isNotEmpty) return false;
+          await _file(() => _files!.clearRoot(), clearingRoot: true);
+          if ((await _file(() => _files!.accountDirectoryNames())).isNotEmpty) {
+            return false;
+          }
           for (final name in inventory.malformedNames) {
-            if (revision != _domain.startupRevision) return false;
+            if (!current()) return false;
             await _keys!.deleteInventoryName(name);
           }
         } on Object {
@@ -1374,10 +1508,11 @@ final class ReadCacheDiskCoordinator {
             .where((a) => a.intent?.full == true && a.intent!.valid)
             .map((a) => a.key),
       }) {
-        if (revision != _domain.startupRevision) return false;
+        if (!current()) return false;
         final account = _account(key);
         final intent = _fullIntent(account, ReadCacheClearReason.startup);
         final result = await _clearNow(account, intent, hadWork: true);
+        if (pathRevision != _domain.pathRevision) return false;
         if (result.complete) {
           account.cleanup = account.sessionFence != null;
           account.state = account.cleanup
@@ -1387,22 +1522,28 @@ final class ReadCacheDiskCoordinator {
           ok = false;
         }
       }
-      if (revision != _domain.startupRevision) return false;
+      if (!current()) return false;
       try {
-        await _files!.clearAccountDirectoriesExcept(retained);
+        // This path retains recovery's explicit root escalation below.
+        await _file(
+          () => _files!.clearAccountDirectoriesExcept(retained),
+          recoverySweep: true,
+        );
       } on ReadCacheFileException catch (error) {
         if (error.code != ReadCacheFileFailure.untrustedPath) return false;
-        if (revision != _domain.startupRevision) return false;
         try {
-          await _files!.clearRoot();
+          await _file(() => _files!.clearRoot(), clearingRoot: true);
         } on Object {
           return false;
         }
+        // The new full intents require a fresh inventory/decision even after
+        // root cleanup succeeds; this recovery pass cannot reopen the cache.
+        return false;
       } on Object {
         return false;
       }
       try {
-        final names = await _files!.accountDirectoryNames();
+        final names = await _file(() => _files!.accountDirectoryNames());
         final retainedNames = retained
             .map(ReadCacheCipher.accountDirectoryName)
             .toSet();
@@ -1417,9 +1558,11 @@ final class ReadCacheDiskCoordinator {
           confirmed.keys.keys.any((k) => !retained.contains(k))) {
         return false;
       }
-      return ok && revision == _domain.startupRevision;
+      return ok &&
+          revision == _domain.startupRevision &&
+          pathRevision == _domain.pathRevision;
     });
-    if (!success || revision != _domain.startupRevision) return false;
+    if (!success || !current()) return false;
     _domain.recovered = true;
     final active = _domain.active;
     if (active != null) {
@@ -1432,7 +1575,7 @@ final class ReadCacheDiskCoordinator {
         _domain.active = null;
       }
     }
-    return true;
+    return _domain.recovered && pathRevision == _domain.pathRevision;
   }
 
   Future<DiskClearResult> retryCleanup(
@@ -1479,10 +1622,15 @@ final class ReadCacheDiskCoordinator {
       final cleared = await _serial<bool>(null, () async {
         final inventory = await _keys!.readInventory();
         if (inventory.status != ReadCacheStoreReadStatus.found) return false;
+        for (final key in {...inventory.keys.keys, ...inventory.markers.keys}) {
+          _account(key);
+        }
         try {
           if (inventory.malformedNames.isNotEmpty) {
-            await _files!.clearRoot();
-            if ((await _files!.accountDirectoryNames()).isNotEmpty) {
+            await _file(() => _files!.clearRoot(), clearingRoot: true);
+            if ((await _file(
+              () => _files!.accountDirectoryNames(),
+            )).isNotEmpty) {
               return false;
             }
             for (final name in inventory.malformedNames) {
@@ -1512,13 +1660,13 @@ final class ReadCacheDiskCoordinator {
             // Recovery's activate compares the verified binding with this fence.
             account.cleanup = account.sessionFence != null;
           }
-          await _files!.clearAccountDirectoriesExcept({});
+          await _file(() => _files!.clearAccountDirectoriesExcept({}));
           final confirmed = await _keys!.readInventory();
           if (confirmed.status != ReadCacheStoreReadStatus.found ||
               confirmed.keys.isNotEmpty ||
               confirmed.markers.isNotEmpty ||
               confirmed.malformedNames.isNotEmpty ||
-              (await _files!.accountDirectoryNames()).isNotEmpty) {
+              (await _file(() => _files!.accountDirectoryNames())).isNotEmpty) {
             return false;
           }
           for (final account in _domain.accounts.values) {
@@ -1643,7 +1791,7 @@ final class _Domain {
   DiskBinding? active;
   DiskBinding? latestVerified;
   int highestGeneration = -1, revokedThrough = -1, preferenceChanges = 0;
-  int dropped = 0, startupRevision = 0, work = 0;
+  int dropped = 0, startupRevision = 0, pathRevision = 0, work = 0;
 }
 
 final class _Account {
