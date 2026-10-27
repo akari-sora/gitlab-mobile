@@ -133,6 +133,16 @@ final class ReadCacheDiskCoordinator {
     _signedOut.remove(binding);
   }
 
+  /// Retire background sign-out deadlines without claiming cleanup stopped.
+  /// The serialized I/O tail still owns cleanup and replacement activation.
+  void releaseSession(Object owner) {
+    for (final release in List.of(
+      _domain.waits[owner] ?? const <void Function()>{},
+    )) {
+      release();
+    }
+  }
+
   _Account _account(String key) =>
       _domain.accounts.putIfAbsent(key, () => _Account(key));
 
@@ -1165,8 +1175,9 @@ final class ReadCacheDiskCoordinator {
 
   Future<DiskClearResult> clear(
     DiskBinding binding,
-    ReadCacheCleanupOperation operation,
-  ) {
+    ReadCacheCleanupOperation operation, {
+    Object? sessionOwner,
+  }) {
     final account = _account(binding.accountKey);
     final pathRevision = _domain.pathRevision;
     _domain.startupRevision++;
@@ -1227,7 +1238,7 @@ final class ReadCacheDiskCoordinator {
         account.cleanup = true;
         account.state = ReadCacheDiskState.cleaning;
       }
-    }).then((result) {
+    }, sessionOwner: sessionOwner).then((result) {
       if (result.complete &&
           pathRevision == _domain.pathRevision &&
           intent.valid &&
@@ -1286,6 +1297,7 @@ final class ReadCacheDiskCoordinator {
     Future<DiskClearResult> underlying,
     void Function() timeout, {
     bool Function(DiskClearResult)? succeeded,
+    Object? sessionOwner,
   }) {
     final result = Completer<DiskClearResult>();
     final cancel = _schedule(barrierLimit, () {
@@ -1296,6 +1308,21 @@ final class ReadCacheDiskCoordinator {
       );
       result.complete(_none);
     });
+    void release() {
+      if (result.isCompleted) return;
+      cancel();
+      reportCleanup(
+        binding,
+        _cleanup(operation, _none, ReadCacheCleanupCode.cleanupFailed),
+      );
+      result.complete(_none);
+    }
+
+    // Confirmed removal jobs outlive their page/controller. Their deadlines,
+    // and transport-owned mutation/privacy barriers, keep their own lifetime.
+    if (sessionOwner != null) {
+      (_domain.waits[sessionOwner] ??= {}).add(release);
+    }
     unawaited(
       underlying.then(
         (value) {
@@ -1320,7 +1347,11 @@ final class ReadCacheDiskCoordinator {
         },
       ),
     );
-    return result.future;
+    return result.future.whenComplete(() {
+      final waits = _domain.waits[sessionOwner];
+      waits?.remove(release);
+      if (waits?.isEmpty ?? false) _domain.waits.remove(sessionOwner);
+    });
   }
 
   DiskInvalidationFence invalidate(DiskInvalidation invalidation) {
@@ -1862,6 +1893,7 @@ bool _matches(ProjectedDiskEntry entry, DiskInvalidation invalidation) {
 }
 
 final class _Domain {
+  final waits = Map<Object, Set<void Function()>>.identity();
   final notices = <DiskBinding, ReadCacheNotice>{};
   final signedOut = <DiskBinding, ReadCacheNotice>{};
   final subscribers = <ReadCacheNoticeSink>{};

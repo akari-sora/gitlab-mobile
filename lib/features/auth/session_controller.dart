@@ -127,7 +127,8 @@ final class SessionController extends ChangeNotifier {
   ) {
     // clear installs its full intent synchronously, before the caller can
     // close the old client or advance the visible session.
-    final result = readCache.clear(binding, operation);
+    final result = readCache.clear(binding, operation,
+        sessionOwner: operation == ReadCacheCleanupOperation.signOut ? this : null);
     late final Future<void> tail;
     tail = result.then((_) => readCache.quiesced).then<void>((_) {
       if (identical(_readCacheClears[binding.accountKey], tail)) {
@@ -878,6 +879,7 @@ final class SessionController extends ChangeNotifier {
     _disposal.complete();
     _pending?.close();
     api?.close();
+    readCache.releaseSession(this);
     _pendingResumeTarget = null;
     super.dispose();
   }

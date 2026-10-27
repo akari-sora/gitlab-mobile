@@ -13,6 +13,7 @@ import 'package:gitlab_mobile/core/read_cache_cipher.dart';
 import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/core/read_cache_files.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
+import 'package:gitlab_mobile/features/ai/ai_account_removal.dart';
 import 'package:gitlab_mobile/features/ai/ai_journal_key_store.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
@@ -928,6 +929,127 @@ void main() {
       },
     );
   }
+
+  for (final stage in ['unconfigured', 'unknown', 'first clear', 'commit clear']) {
+    test('AAR real read-cache failure retains account and typed error: $stage', () async {
+      final h = _Harness(configured: stage != 'unconfigured');
+      final saved = _account(1);
+      h.accounts.accounts = [saved];
+      await h.session.initialize();
+      if (stage != 'unconfigured') await h.seed(saved);
+      if (stage == 'unknown') h.storage.failInventory = true;
+      if (stage == 'first clear' || stage == 'unknown') {
+        h.storage.failDeletes = true;
+        h.failFiles = true;
+      }
+      final oldRoot = artifactStorageRoot;
+      artifactStorageRoot = () async => h.root;
+      addTearDown(() => artifactStorageRoot = oldRoot);
+      final journal = AiWriteJournal(
+        keys: MemoryAiJournalKeyStore(),
+        applicationSupport: h.root,
+        processId: 'synthetic-removal',
+      );
+      final job = AiAccountRemoval.begin(saved.key, journal: journal)!;
+      final calls = <String>[];
+      final result = await AiAccountRemoval.run(
+        account: saved,
+        job: job,
+        session: h.session,
+        journal: journal,
+        consultJournal: false,
+        confirm: (_) async => true,
+        waitForInFlightWrites: () async {},
+        requestCancelOnDispose: () {},
+        clearDrafts: (_) async {},
+        clearArtifacts: (_) async {},
+        clearRecent: (_) async {},
+        clearAi: (_) async {
+          calls.add('AI cleanup');
+          h.storage.failDeletes = true;
+          h.failFiles = true;
+        },
+      );
+      expect(result.status, AiRemovalStatus.notRemoved);
+      expect(result.reason, stage == 'commit clear'
+          ? 'accountRetained' : 'beforeAiCleanupFailed');
+      expect(result.dataState, stage == 'commit clear'
+          ? AiRemovalDataState.cleared : AiRemovalDataState.untouched);
+      expect(calls, stage == 'commit clear' ? ['AI cleanup'] : isEmpty);
+      expect(h.session.accounts, [saved]);
+      expect(h.accounts.accounts, [saved]);
+      final error = result.error! as ApiFailure;
+      expect(error.kind, FailureKind.readCacheCleanup);
+      expect(error.cleanup!.operation, ReadCacheCleanupOperation.accountRemoval);
+      expect(error.cleanup!.disposition, ReadCacheCleanupDisposition.accountRetained);
+      expect(error.cleanup!.clearResult.keyGoneConfirmed, isFalse);
+      expect(error.cleanup!.clearResult.directoryGoneConfirmed, isFalse);
+    });
+  }
+
+  test('disposing sign-out cancels its deadline but keeps native cleanup owned', () async {
+    final timers = <Object, void Function()>{};
+    void Function() schedule(Duration delay, void Function() callback) {
+      final key = Object();
+      timers[key] = callback;
+      return () => timers.remove(key);
+    }
+    final h = _Harness(controls: true, schedule: schedule);
+    final saved = _account(1);
+    h.accounts.accounts = [saved];
+    h.accounts.lastActive = saved.key;
+    await h.start();
+    await h.recovered();
+    await _until(() => h.cache.state(saved.key) == ReadCacheDiskState.ready);
+    await h.seed(saved);
+    final binding = DiskBinding(accountKey: saved.key,
+        generation: h.session.generation);
+    final roots = h.roots;
+    final gate = h.fileGate = Completer<void>();
+    await h.session.endSession();
+    await _until(() => h.roots > roots);
+    expect(h.session.active, isNull);
+    expect(timers, hasLength(1));
+    var quiesced = false;
+    unawaited(h.cache.quiesced.then((_) => quiesced = true));
+    // An accepted removal's deadline is process-owned, even for this binding.
+    final removal = h.cache.clear(binding, ReadCacheCleanupOperation.accountRemoval);
+    expect(timers, hasLength(2));
+    final transport = h.cache.invalidate(DiskInvalidation(
+      binding: binding,
+      kind: DiskInvalidationKind.account,
+    ));
+    expect(timers, hasLength(3));
+    // Even identical candidate bindings (including generation 0) can belong to
+    // different controllers. Releasing one must leave the other's timer live.
+    final otherOwner = Object();
+    final otherClear = h.cache.clear(binding, ReadCacheCleanupOperation.signOut,
+        sessionOwner: otherOwner);
+    expect(timers, hasLength(4));
+    h.session.dispose();
+    expect(timers, hasLength(3));
+    await pumpEventQueue();
+    expect(quiesced, isFalse);
+    final failure = h.cache.signedOutNotices.single.failure;
+    expect(failure.kind, FailureKind.readCacheCleanup);
+    expect(failure.cleanup!.operation, ReadCacheCleanupOperation.signOut);
+    expect(failure.cleanup!.disposition,
+        ReadCacheCleanupDisposition.signedOutCleanupPending);
+    expect(failure.cleanup!.code, ReadCacheCleanupCode.cleanupFailed);
+    expect(failure.cleanup!.clearResult.complete, isFalse);
+    expect(h.cache.state(saved.key), ReadCacheDiskState.cleaning);
+    gate.complete();
+    await h.cache.quiesced;
+    await removal;
+    await transport.barrier;
+    await otherClear;
+    await pumpEventQueue();
+    expect(timers, isEmpty);
+    expect(quiesced, isTrue);
+    expect(h.directory(saved).existsSync(), isFalse);
+    expect((await h.keys.readKey(saved.key)).isFound, isFalse);
+    expect(await h.cache.activate(binding), isFalse);
+  });
 
   test('provably empty removal does not create a marker', () async {
     final h = _Harness();

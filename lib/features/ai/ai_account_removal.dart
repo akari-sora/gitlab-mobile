@@ -6,6 +6,7 @@ import '../../core/ai/tools/gitlab_write_port.dart' as port;
 import '../../core/ai/tools/write_coordinator.dart';
 import '../../core/failure.dart';
 import '../../core/models.dart';
+import '../../core/read_cache_disk_contract.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/artifact_storage.dart';
 import '../../shared/workspace_ui.dart';
@@ -307,7 +308,8 @@ final class AiAccountRemoval {
         clearDrafts ?? clearSecureDrafts,
         clearArtifacts ?? clearAccountArtifacts,
         clearRecent ?? clearRecentProject,
-        clearReadCacheDisk ?? _readCacheDisabledByConstruction,
+        clearReadCacheDisk ??
+            (saved) => session.readCache.clearReadCacheDisk(saved.key),
       ]) {
         _requireToken(job);
         await step(account);
@@ -329,10 +331,24 @@ final class AiAccountRemoval {
       dataState = AiRemovalDataState.cleared;
       // SessionController.remove never throws: it returns while busy, and
       // restores the list when saving fails. Judge by the list it leaves.
+      final removalBinding = DiskBinding(
+        accountKey: account.key,
+        generation: session.generation,
+      );
+      final previousNotice = session.readCache.notice(removalBinding);
       await session.remove(account);
       _requireToken(job);
       if (session.accounts.any((saved) => saved.key == account.key)) {
-        return done(AiRemovalStatus.notRemoved, 'accountRetained');
+        final notice = session.readCache.notice(removalBinding);
+        return done(
+          AiRemovalStatus.notRemoved,
+          'accountRetained',
+          notice != null && !identical(notice, previousNotice) &&
+                  notice.failure.cleanup?.operation ==
+                      ReadCacheCleanupOperation.accountRemoval
+              ? notice.failure
+              : null,
+        );
       }
       return done(AiRemovalStatus.removed, 'removed');
     } on Object catch (error) {
@@ -402,12 +418,6 @@ final class AiAccountRemoval {
     }
   }
 }
-
-// This intermediate build has no production read-cache writer or reader.
-// Later integration must supply the real coordinator, including its proof of
-// an empty cache or its clear failure; an unconfigured coordinator is not
-// equivalent to this build's disabled-by-construction adapter.
-Future<void> _readCacheDisabledByConstruction(Account account) async {}
 
 enum AiSwitchChoice { proceedAndWait, switchNow, cancel }
 

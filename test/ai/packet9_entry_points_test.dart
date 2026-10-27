@@ -125,7 +125,7 @@ void main() {
       saved = _account(7, 'tester');
       other = _account(8, 'other');
       store = MemoryAccountStore()..accounts = [saved, other];
-      session = SessionController(store);
+      session = SessionController(store, readCache: store.readCache);
       addTearDown(session.dispose);
       await session.initialize();
       await pumpLogin(tester);
@@ -568,6 +568,10 @@ void main() {
       );
       await _frames(tester);
       expect(session.active, isNull);
+      // UI exit precedes the native clear. Drain its real acknowledgement,
+      // rather than expiring a valid cleanup deadline on the fake clock.
+      await pumpUntilComplete(tester, session.readCache.quiesced);
+      await tester.pump();
       expect(tester.takeException(), isNull);
     });
 
@@ -584,6 +588,10 @@ void main() {
       // which stops it again.
       expect(fake.stops, greaterThanOrEqualTo(1));
       expect(session.active, isNull);
+      // UI exit precedes the native clear. Drain its real acknowledgement,
+      // rather than expiring a valid cleanup deadline on the fake clock.
+      await pumpUntilComplete(tester, session.readCache.quiesced);
+      await tester.pump();
       expect(tester.takeException(), isNull);
     });
   });

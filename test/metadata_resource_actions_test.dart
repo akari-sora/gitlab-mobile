@@ -271,7 +271,8 @@ void main() {
         },
       ],
     );
-    final session = SessionController(MemoryAccountStore())
+    final store = MemoryAccountStore();
+    final session = SessionController(store, readCache: store.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
@@ -291,6 +292,7 @@ void main() {
     expect(find.text('Session private release title'), findsNothing);
     expect(find.text('Session private release body'), findsNothing);
     expect(find.byType(ResourceShareButton), findsNothing);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
   });
 
   testWidgets('an initially mismatched session cannot show metadata', (

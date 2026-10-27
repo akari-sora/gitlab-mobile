@@ -668,6 +668,7 @@ void main() {
       expect(find.text('檔案'), findsOneWidget);
 
       // Switch account to accountB, BUT pump ProjectsPage with the same element (no key change)
+      final previousGeneration = session.generation;
       await tester.runAsync(() async {
         await session.select(accountB);
       });
@@ -675,7 +676,7 @@ void main() {
       await settleNetworkWidgets(tester);
 
       // Verification: session.generation was incremented during select
-      expect(session.generation, 4);
+      expect(session.generation, previousGeneration + 2);
 
       // Audit discovery:
       // In main.dart, AuthenticatedApp is protected by `key: ValueKey(session.generation)`.

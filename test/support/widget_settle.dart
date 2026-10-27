@@ -26,6 +26,16 @@ Future<void> pumpUntil(
   );
 }
 
+/// Native I/O can finish on the real loop while its caller's continuation is
+/// queued on the widget clock. Keep both moving until this work acknowledges.
+Future<void> pumpUntilComplete(WidgetTester tester, Future<void> work) async {
+  var completed = false;
+  final tracked = work.whenComplete(() => completed = true);
+  await pumpUntil(tester, () => completed,
+      description: 'native work and its widget-clock continuations finish');
+  await tracked;
+}
+
 /// Dio response cancellation and chained requests can cross the test clock and
 /// real event loop. Animation settling alone does not imply HTTP readiness.
 /// Avoids pumpAndSettle hanging when indeterminate progress indicators are animating.

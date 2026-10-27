@@ -7,8 +7,10 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/auth/login_screen.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
+import 'package:gitlab_mobile/features/ai/ai_account_removal.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'session_test.dart' show MemoryAccountStore;
+import 'support/widget_settle.dart';
 
 void main() {
   for (final width in [320.0, 412.0, 840.0]) {
@@ -56,7 +58,7 @@ void main() {
       token: 'synthetic-test-token',
     );
     store.accounts = [saved];
-    final session = SessionController(store);
+    final session = SessionController(store, readCache: store.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     await tester.pumpWidget(
@@ -69,6 +71,8 @@ void main() {
     await tester.tap(find.byTooltip('從此裝置移除帳號'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('確認'));
+    await pumpUntil(tester, () => !AiAccountRemoval.anyRunning,
+        description: 'login removal finishes acknowledged storage cleanup');
     await tester.pumpAndSettle();
     expect(store.accounts, isEmpty);
     expect(find.text('@tester'), findsNothing);
@@ -83,7 +87,7 @@ void main() {
       token: 'synthetic-test-token',
     );
     store.accounts = [saved];
-    final session = SessionController(store);
+    final session = SessionController(store, readCache: store.readCache);
     addTearDown(session.dispose);
     Directory? root;
     final previous = artifactStorageRoot;

@@ -198,7 +198,7 @@ void main() {
         );
         await clearAccountArtifacts(account);
         store.rejectWrite = true;
-        await session.remove(account);
+        await pumpUntilComplete(tester, session.remove(account));
         expect(session.accounts.single.key, account.key);
         expect(session.active?.key, account.key);
         store.rejectWrite = false;
@@ -225,7 +225,7 @@ void main() {
     );
     final account = session.active!;
     await clearAccountArtifacts(account);
-    await session.remove(account);
+    await pumpUntilComplete(tester, session.remove(account));
     await tester.runAsync(
       () => session.connect('https://example.com', 'synthetic-test-token'),
     );

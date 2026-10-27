@@ -288,14 +288,11 @@ void main() {
       ],
       child: const GitLabMobileApp(),
     ));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => session.readCache.startupRecovered);
+    await pumpUntilComplete(tester, startupRecoveryQuiescedForTesting(session));
     host.emit(ShortcutTypes.inbox);
     await tester.runAsync(() => session.connect('https://example.com', 'synthetic-test-token'));
-    await tester.runAsync(() async {
-      await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    });
-    await tester.pumpAndSettle();
+    await settleNetworkWidgets(tester);
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
     expect(find.text('待辦'), findsOneWidget);
     expect(host.published, isNotEmpty);
@@ -471,6 +468,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(harness.session.active, isNull);
     expect(find.text('目標：9'), findsNothing);
+    await pumpUntilComplete(tester, harness.session.readCache.quiesced);
   }, timeout: const Timeout(Duration(minutes: 1)));
 }
 
