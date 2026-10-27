@@ -2751,5 +2751,5 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Définir les étiquettes",
   "aiRefusedLabelUnknown": "L’étiquette à appliquer ne figure pas dans la liste des étiquettes de ce projet ou plusieurs étiquettes portent ce nom, donc rien n’a été fait.",
-  "aiRefusedQuickAction": "Le texte contient une quick action avec / seule sur une ligne, que GitLab exécuterait comme commande ; cette action n’a donc pas été envoyée. Supprimez cette ligne ou placez-la dans un bloc de code."
+  "aiRefusedQuickAction": "Le texte contient une ligne commençant par /, que GitLab pourrait exécuter comme quick action ; par précaution, cette action n’a pas été envoyée. Supprimez cette ligne ou placez-la dans un bloc de code."
 }

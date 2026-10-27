@@ -2753,5 +2753,5 @@ const _messagesPl = <String>[
   '{verb} {target} {ref}',
   'Ustaw etykiety',
   'Etykiety do ustawienia nie ma na liście etykiet tego projektu albo kilka etykiet ma tę nazwę, więc nic nie zostało zrobione.',
-  'Tekst zawiera szybką akcję / w osobnej linii, którą GitLab wykonałby jako polecenie, więc ta operacja nie została wysłana. Usuń tę linię lub umieść ją w bloku kodu.',
+  'Tekst zawiera linię zaczynającą się od /, którą GitLab mógłby wykonać jako szybką akcję, więc dla bezpieczeństwa ta operacja nie została wysłana. Usuń tę linię lub umieść ją w bloku kodu.',
 ];

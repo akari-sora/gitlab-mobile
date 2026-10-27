@@ -2753,5 +2753,5 @@ const _messagesSv = <String>[
   '{verb} {target} {ref}',
   'Ange etiketter',
   'Etiketten som ska sättas finns inte i projektets etikettlista, eller så har flera etiketter det namnet, så ingenting gjordes.',
-  'Texten har en quick action med / på en egen rad, som GitLab skulle köra som ett kommando, så åtgärden skickades inte. Ta bort raden eller lägg den i ett kodblock.',
+  'Texten har en rad som börjar med /, som GitLab kan köra som en quick action, så för säkerhets skull skickades åtgärden inte. Ta bort raden eller lägg den i ett kodblock.',
 ];

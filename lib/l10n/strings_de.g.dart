@@ -2753,5 +2753,5 @@ const _messagesDe = <String>[
   '{verb} {target} {ref}',
   'Labels festlegen',
   'Das zu setzende Label steht nicht in der Label-Liste dieses Projekts oder mehrere Labels haben denselben Namen, daher wurde nichts ausgeführt.',
-  'Der Text enthält eine Quick Action mit / in einer eigenen Zeile, die GitLab als Befehl ausführen würde, daher wurde dieser Vorgang nicht gesendet. Entfernen Sie die Zeile oder setzen Sie sie in einen Codeblock.',
+  'Der Text enthält eine Zeile, die mit / beginnt und die GitLab als Quick Action ausführen könnte, daher wurde dieser Vorgang sicherheitshalber nicht gesendet. Entfernen Sie die Zeile oder setzen Sie sie in einen Codeblock.',
 ];
