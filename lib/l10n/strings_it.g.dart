@@ -2121,7 +2121,7 @@ const _messagesIt = <String>[
   'Assistente IA',
   'Attività IA in background',
   'L’assistente IA sta lavorando',
-  'Tocca per aprire l’app e vedere l’avanzamento.',
+  'Puoi uscire dall’app; il lavoro continua.',
   'Non configurato',
   'Provider',
   'Aggiungi provider',

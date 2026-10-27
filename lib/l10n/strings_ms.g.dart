@@ -2121,7 +2121,7 @@ const _messagesMs = <String>[
   'Pembantu AI',
   'Kerja AI di latar belakang',
   'Pembantu AI sedang bekerja',
-  'Ketik untuk membuka apl dan melihat kemajuan.',
+  'Anda boleh meninggalkan apl; kerja terus berjalan.',
   'Belum dikonfigurasi',
   'Penyedia',
   'Tambah penyedia',

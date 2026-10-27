@@ -2121,7 +2121,7 @@ const _messagesNl = <String>[
   'AI-assistent',
   'AI-werk op de achtergrond',
   'AI-assistent is bezig',
-  'Tik om de app te openen en de voortgang te zien.',
+  'Je kunt de app verlaten; het werk gaat door.',
   'Niet geconfigureerd',
   'Aanbieders',
   'Provider toevoegen',

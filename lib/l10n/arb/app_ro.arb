@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "Asistent AI",
   "aiRunChannelName": "Activitate AI în fundal",
   "aiRunServiceTitle": "Asistentul AI lucrează",
-  "aiRunServiceText": "Atinge pentru a deschide aplicația și a vedea progresul.",
+  "aiRunServiceText": "Poți ieși din aplicație; lucrul continuă.",
   "aiNotConfigured": "Neconfigurat",
   "aiProvidersHeading": "Furnizori",
   "aiAddProvider": "Adaugă furnizor",

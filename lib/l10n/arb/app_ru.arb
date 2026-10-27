@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "Помощник AI",
   "aiRunChannelName": "Фоновая работа ИИ",
   "aiRunServiceTitle": "ИИ-ассистент работает",
-  "aiRunServiceText": "Нажмите, чтобы открыть приложение и посмотреть ход работы.",
+  "aiRunServiceText": "Можно выйти из приложения — работа продолжится.",
   "aiNotConfigured": "Не настроено",
   "aiProvidersHeading": "Поставщики",
   "aiAddProvider": "Добавить поставщика",

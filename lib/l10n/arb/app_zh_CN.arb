@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "AI 助手",
   "aiRunChannelName": "AI 后台工作",
   "aiRunServiceTitle": "AI 助手正在工作",
-  "aiRunServiceText": "点一下打开应用查看进度。",
+  "aiRunServiceText": "可以离开应用，工作会继续进行。",
   "aiNotConfigured": "尚未设置",
   "aiProvidersHeading": "供应商",
   "aiAddProvider": "添加供应商",

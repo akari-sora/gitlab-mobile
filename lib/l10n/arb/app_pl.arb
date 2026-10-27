@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "Asystent AI",
   "aiRunChannelName": "Praca AI w tle",
   "aiRunServiceTitle": "Asystent AI pracuje",
-  "aiRunServiceText": "Dotknij, aby otworzyć aplikację i zobaczyć postęp.",
+  "aiRunServiceText": "Możesz opuścić aplikację; praca będzie kontynuowana.",
   "aiNotConfigured": "Nie skonfigurowano",
   "aiProvidersHeading": "Dostawcy",
   "aiAddProvider": "Dodaj dostawcę",

@@ -2121,7 +2121,7 @@ const _messagesTr = <String>[
   'AI asistanı',
   'Arka planda AI çalışması',
   'AI asistanı çalışıyor',
-  'Uygulamayı açıp ilerlemeyi görmek için dokunun.',
+  'Uygulamadan çıkabilirsiniz; çalışma devam eder.',
   'Yapılandırılmadı',
   'Sağlayıcılar',
   'Sağlayıcı ekle',

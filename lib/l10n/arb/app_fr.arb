@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "Assistant IA",
   "aiRunChannelName": "Travail IA en arrière-plan",
   "aiRunServiceTitle": "L’assistant IA travaille",
-  "aiRunServiceText": "Touchez pour ouvrir l’app et voir la progression.",
+  "aiRunServiceText": "Vous pouvez quitter l’app ; le travail continue.",
   "aiNotConfigured": "Non configuré",
   "aiProvidersHeading": "Fournisseurs",
   "aiAddProvider": "Ajouter un fournisseur",

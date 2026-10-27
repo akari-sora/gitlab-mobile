@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "Помічник AI",
   "aiRunChannelName": "Фонова робота ШІ",
   "aiRunServiceTitle": "ШІ-асистент працює",
-  "aiRunServiceText": "Торкніться, щоб відкрити застосунок і переглянути перебіг.",
+  "aiRunServiceText": "Можна вийти із застосунку — робота триватиме.",
   "aiNotConfigured": "Не налаштовано",
   "aiProvidersHeading": "Постачальники",
   "aiAddProvider": "Додати постачальника",

@@ -2121,7 +2121,7 @@ const _messagesSv = <String>[
   'AI-assistent',
   'AI-arbete i bakgrunden',
   'AI-assistenten arbetar',
-  'Tryck för att öppna appen och se förloppet.',
+  'Du kan lämna appen; arbetet fortsätter.',
   'Inte konfigurerad',
   'Leverantörer',
   'Lägg till leverantör',

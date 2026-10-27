@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "AI-assistent",
   "aiRunChannelName": "AI-werk op de achtergrond",
   "aiRunServiceTitle": "AI-assistent is bezig",
-  "aiRunServiceText": "Tik om de app te openen en de voortgang te zien.",
+  "aiRunServiceText": "Je kunt de app verlaten; het werk gaat door.",
   "aiNotConfigured": "Niet geconfigureerd",
   "aiProvidersHeading": "Aanbieders",
   "aiAddProvider": "Provider toevoegen",

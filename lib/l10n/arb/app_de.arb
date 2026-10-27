@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "KI-Assistent",
   "aiRunChannelName": "KI-Arbeit im Hintergrund",
   "aiRunServiceTitle": "KI-Assistent arbeitet",
-  "aiRunServiceText": "Tippen, um die App zu öffnen und den Fortschritt zu sehen.",
+  "aiRunServiceText": "Sie können die App verlassen, die Arbeit läuft weiter.",
   "aiNotConfigured": "Nicht konfiguriert",
   "aiProvidersHeading": "Anbieter",
   "aiAddProvider": "Anbieter hinzufügen",

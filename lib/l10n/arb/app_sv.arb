@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "AI-assistent",
   "aiRunChannelName": "AI-arbete i bakgrunden",
   "aiRunServiceTitle": "AI-assistenten arbetar",
-  "aiRunServiceText": "Tryck för att öppna appen och se förloppet.",
+  "aiRunServiceText": "Du kan lämna appen; arbetet fortsätter.",
   "aiNotConfigured": "Inte konfigurerad",
   "aiProvidersHeading": "Leverantörer",
   "aiAddProvider": "Lägg till leverantör",

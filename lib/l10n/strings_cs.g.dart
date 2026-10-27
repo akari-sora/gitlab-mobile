@@ -2121,7 +2121,7 @@ const _messagesCs = <String>[
   'Asistent AI',
   'Práce AI na pozadí',
   'Asistent AI pracuje',
-  'Klepnutím otevřete aplikaci a uvidíte průběh.',
+  'Aplikaci můžete opustit, práce bude pokračovat.',
   'Nenakonfigurováno',
   'Poskytovatelé',
   'Přidat poskytovatele',

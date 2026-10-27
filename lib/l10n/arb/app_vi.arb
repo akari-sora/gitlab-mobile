@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "Trợ lý AI",
   "aiRunChannelName": "Tác vụ AI chạy nền",
   "aiRunServiceTitle": "Trợ lý AI đang làm việc",
-  "aiRunServiceText": "Nhấn để mở ứng dụng và xem tiến độ.",
+  "aiRunServiceText": "Bạn có thể rời ứng dụng; công việc vẫn tiếp tục.",
   "aiNotConfigured": "Chưa cấu hình",
   "aiProvidersHeading": "Nhà cung cấp",
   "aiAddProvider": "Thêm nhà cung cấp",

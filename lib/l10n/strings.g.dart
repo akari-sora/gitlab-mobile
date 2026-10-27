@@ -6451,7 +6451,7 @@ final class AppStrings {
   /// AI 助理正在工作
   String get aiRunServiceTitle => language._messages[2118];
 
-  /// 點一下開啟應用程式查看進度。
+  /// 可以離開應用程式，工作會繼續進行。
   String get aiRunServiceText => language._messages[2119];
 
   /// 尚未設定

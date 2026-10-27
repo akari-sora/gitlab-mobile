@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "Asisten AI",
   "aiRunChannelName": "Pekerjaan AI di latar belakang",
   "aiRunServiceTitle": "Asisten AI sedang bekerja",
-  "aiRunServiceText": "Ketuk untuk membuka aplikasi dan melihat progres.",
+  "aiRunServiceText": "Anda dapat meninggalkan aplikasi; pekerjaan tetap berjalan.",
   "aiNotConfigured": "Belum dikonfigurasi",
   "aiProvidersHeading": "Penyedia",
   "aiAddProvider": "Tambah penyedia",

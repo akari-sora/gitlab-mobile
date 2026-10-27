@@ -2121,7 +2121,7 @@ const _messagesEn = <String>[
   'AI assistant',
   'AI background work',
   'AI assistant is working',
-  'Tap to open the app and see progress.',
+  'You can leave the app; the work keeps running.',
   'Not configured',
   'Providers',
   'Add provider',

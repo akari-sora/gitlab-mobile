@@ -2121,7 +2121,7 @@ const _messagesDe = <String>[
   'KI-Assistent',
   'KI-Arbeit im Hintergrund',
   'KI-Assistent arbeitet',
-  'Tippen, um die App zu öffnen und den Fortschritt zu sehen.',
+  'Sie können die App verlassen, die Arbeit läuft weiter.',
   'Nicht konfiguriert',
   'Anbieter',
   'Anbieter hinzufügen',

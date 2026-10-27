@@ -2117,7 +2117,7 @@
   "aiAssistantLabel": "Asistent AI",
   "aiRunChannelName": "Práce AI na pozadí",
   "aiRunServiceTitle": "Asistent AI pracuje",
-  "aiRunServiceText": "Klepnutím otevřete aplikaci a uvidíte průběh.",
+  "aiRunServiceText": "Aplikaci můžete opustit, práce bude pokračovat.",
   "aiNotConfigured": "Nenakonfigurováno",
   "aiProvidersHeading": "Poskytovatelé",
   "aiAddProvider": "Přidat poskytovatele",
