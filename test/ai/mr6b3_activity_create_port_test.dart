@@ -590,6 +590,7 @@ final class _Fixture {
 
   PolicyAiWriteCoordinator _coordinator() => PolicyAiWriteCoordinator(
     snapshot: () => const AiWritePolicySnapshot(
+      appInForeground: true,
       scope: _scope,
       level: AiAutonomyLevel.confirmEach,
       ceiling: AiAutonomyLevel.bypass,

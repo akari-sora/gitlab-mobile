@@ -163,6 +163,7 @@ final class _Harness {
     Future<void> Function()? refreshSecrets,
   }) async {
     final controller = AiChatController(
+      appInForeground: () => true,
       origin:
           origin ??
           (issue

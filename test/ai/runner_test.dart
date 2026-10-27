@@ -20,8 +20,11 @@ final class Secrets implements KnownSecretsSource {
   final Set<String> current = {};
 }
 
+bool _visibleForeground() => true;
+
 final class Harness {
   Harness({
+    bool Function()? appInForeground = _visibleForeground,
     this.format = AiFormat.chatCompletions,
     bool toolChoice = false,
     int maxChars = 400000,
@@ -37,6 +40,7 @@ final class Harness {
       maxRequestChars: maxChars,
     );
     runner = AiRunner(
+      appInForeground: appInForeground,
       config: config(),
       wire: wire,
       complete: complete,

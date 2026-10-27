@@ -141,6 +141,7 @@ void main() {
       addTearDown(h.dispose);
       final coordinator = PolicyAiWriteCoordinator(
         snapshot: () => const AiWritePolicySnapshot(
+          appInForeground: true,
           scope: mr6b2Scope, level: AiAutonomyLevel.bypass,
           ceiling: AiAutonomyLevel.bypass, consentHash: 'synthetic',
           writePolicyRevision: 1, scopeRevision: 1, sessionGeneration: 7,

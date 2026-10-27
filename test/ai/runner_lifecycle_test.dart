@@ -292,6 +292,7 @@ final class _Environment {
   AiRunner runner({required AiComplete complete, bool withTools = false}) {
     var budget = AiToolBudget();
     return AiRunner(
+      appInForeground: () => true,
       config: settings.providers.single,
       wire: wire,
       complete: complete,

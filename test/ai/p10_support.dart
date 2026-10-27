@@ -351,6 +351,7 @@ final class P10Coordinator {
     harness.budget = AiToolBudget(maxGitLabRequests: budget);
     harness.coordinator = PolicyAiWriteCoordinator(
       snapshot: () => AiWritePolicySnapshot(
+        appInForeground: true,
         scope: p10Scope,
         level: level,
         ceiling: AiAutonomyLevel.bypass,

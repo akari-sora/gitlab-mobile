@@ -13,6 +13,7 @@ import '../../core/ai/ai_transport.dart';
 import '../../core/ai/ai_transcript.dart';
 import '../../core/ai/ai_wire_client.dart';
 import '../../core/ai/context_builders.dart' show aiMaxRedactionInputChars;
+import '../../core/ai/execution_gate.dart';
 import '../../core/ai/prompts.dart';
 import '../../core/ai/redaction.dart';
 import '../../core/ai/runner.dart';
@@ -231,6 +232,9 @@ class AiChatController extends ChangeNotifier
   final int Function() runningCount;
   final AiChatWireClientFactory _wireClientFactory;
   final bool Function() _appInForeground;
+  late final AiExecutionGate _executionGate = ForegroundAiExecutionGate(
+    appInForeground: _appInForeground,
+  );
   final bool Function()? _clientMayStart;
   final AiWriteJournal _writeJournal;
   final ledger.AiWriteScope Function()? _writeScopeOverride;
@@ -1201,11 +1205,11 @@ class AiChatController extends ChangeNotifier
     );
   }
 
-  /// Whether the app-level write gates are open now: the app is on screen and
+  /// Whether the app-level write gates are open now: execution is eligible and
   /// the GitLab client may start a request. [_writeSnapshot] reads the same.
   @visibleForTesting
   bool get writeGatesOpen =>
-      _appInForeground() &&
+      _executionGate.executionEligible &&
       !_api.isClosed &&
       (_clientMayStart?.call() ?? false);
 
@@ -1238,9 +1242,11 @@ class AiChatController extends ChangeNotifier
       consentValid: settings.isValid(_accountKey, contract),
       alive: _alive,
       appInForeground: _appInForeground(),
+      executionEligible: _executionGate.executionEligible,
       // GitLabApi's Retry-After state is private. The integration owner must
       // provide the synchronous predicate; absence fails closed for writes.
-      clientMayStart: !_api.isClosed && (_clientMayStart?.call() ?? false),
+      clientMayStartPredicate: () =>
+          !_api.isClosed && (_clientMayStart?.call() ?? false),
       aiAttribution: account?.aiAttribution ?? false,
     );
   }
@@ -1597,6 +1603,7 @@ class AiChatController extends ChangeNotifier
     );
     _completeForRunner = complete;
     final coordinator = PolicyAiWriteCoordinator(
+      executionGate: _executionGate,
       snapshot: () => _writeSnapshot(config),
       createPort:
           _writePortFactory ??
@@ -1648,6 +1655,7 @@ class AiChatController extends ChangeNotifier
     );
     _writes = coordinator;
     final runner = AiRunner(
+      executionGate: _executionGate,
       config: config,
       wire: client.wire,
       complete: complete(client),

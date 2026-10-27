@@ -254,6 +254,7 @@ final class P6Coordinator {
     final harness = P6Coordinator._(server, root, journal);
     harness.coordinator = PolicyAiWriteCoordinator(
       snapshot: () => AiWritePolicySnapshot(
+        appInForeground: true,
         scope: p6Scope,
         level: level,
         ceiling: AiAutonomyLevel.bypass,

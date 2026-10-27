@@ -96,6 +96,7 @@ final class _Harness {
 
   Future<AiChatController> controller() async {
     final controller = AiChatController(
+      appInForeground: () => true,
       origin: const AiGeneralOrigin(),
       session: session,
       settings: settings,

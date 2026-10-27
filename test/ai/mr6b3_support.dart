@@ -309,6 +309,7 @@ final class Mr6b3Harness {
 
   PolicyAiWriteCoordinator _newCoordinator() => PolicyAiWriteCoordinator(
     snapshot: () => AiWritePolicySnapshot(
+      appInForeground: true,
       scope: mr6b3Scope,
       level: policy.level,
       ceiling: AiAutonomyLevel.bypass,

@@ -402,6 +402,7 @@ final class _P5CoordinatorHarness {
     harness.budget = AiToolBudget(maxGitLabRequests: maxHttp);
     harness.coordinator = coord.PolicyAiWriteCoordinator(
       snapshot: () => coord.AiWritePolicySnapshot(
+        appInForeground: true,
         scope: mr6b3Scope,
         level: harness.policy.level,
         ceiling: AiAutonomyLevel.bypass,
@@ -539,6 +540,7 @@ final class _RealP5CoordinatorHarness {
     );
     harness.coordinator = coord.PolicyAiWriteCoordinator(
       snapshot: () => const coord.AiWritePolicySnapshot(
+        appInForeground: true,
         scope: _scope,
         level: AiAutonomyLevel.confirmEach,
         ceiling: AiAutonomyLevel.bypass,

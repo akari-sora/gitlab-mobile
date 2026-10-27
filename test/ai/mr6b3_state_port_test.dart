@@ -266,6 +266,7 @@ final class _StateHarness {
   _StateHarness(this.base, this.server, {this.patAllowance = false}) {
     coordinator = PolicyAiWriteCoordinator(
       snapshot: () => AiWritePolicySnapshot(
+        appInForeground: true,
         scope: mr6b3Scope,
         level: base.policy.level,
         ceiling: AiAutonomyLevel.bypass,

@@ -2,8 +2,12 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_display.dart';
+import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
+import 'package:gitlab_mobile/core/ai/ai_transport.dart';
+import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/app_text.dart';
 import 'package:gitlab_mobile/core/ai/execution_gate.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
@@ -17,17 +21,21 @@ import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
 import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
+import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/features/ai/ai_secrets.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/features/auth/account_store.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
 
 import '../support/fake_adapter.dart';
+import 'fx_coord_support.dart' as fx;
 import 'mr6b2_support.dart';
 import 'mr6b3_support.dart';
 import 'mr6c_support.dart';
@@ -181,7 +189,7 @@ void main() {
     );
 
     test('no gate or visibility injection fails closed', () async {
-      final h = runner_base.Harness();
+      final h = runner_base.Harness(appInForeground: null);
       final result = await h.runner.run('visibility is unknown');
       expect(result.reason, AiRunEnd.stopped);
       expect(result.pause!.reason, AiExecutionPauseReason.foregroundRequired);
@@ -435,6 +443,31 @@ void main() {
       expect(h.base.payloads, hasLength(1));
     });
 
+    test('last refresh completion sends before a queued lifecycle event', () async {
+      final h = await _ModelHarness.create();
+      addTearDown(h.dispose);
+      var armed = false;
+      var invalidated = false;
+      h.onGuard = () {
+        if (h.finalSnapshot && !armed) {
+          armed = true;
+          // Queue the event before the final refresh returns. Its required
+          // Future continuations finish first; another event-loop await loses.
+          Timer.run(() {
+            invalidated = true;
+            h.gate.invalidated = true;
+          });
+        }
+      };
+      final result = await h.runner.run('send before lifecycle event');
+      expect(armed, isTrue);
+      expect(result.modelCalls, 1);
+      expect(result.reason, AiRunEnd.done);
+      expect(h.base.payloads, hasLength(1));
+      await Future<void>.delayed(Duration.zero);
+      expect(invalidated, isTrue);
+    });
+
     test(
       'real background permits one model; native revocation with lost callback blocks the next',
       () async {
@@ -575,8 +608,81 @@ void main() {
     );
   });
 
+  test('controller model uses real visibility without consulting the client', () async {
+    final h = await fx.StackHarness.create(origin: const AiGeneralOrigin());
+    addTearDown(h.dispose);
+    var visible = true;
+    var clientChecks = 0;
+    final controller = AiChatController(
+      origin: const AiGeneralOrigin(),
+      session: h.session,
+      settings: h.settings,
+      runningCount: () => 0,
+      appInForeground: () => visible,
+      clientMayStart: () {
+        clientChecks++;
+        throw StateError('model consulted the write-only client predicate');
+      },
+      writeJournal: h.journal,
+      wireClientFactory:
+          ({required config, required apiKey, required conversationId}) =>
+              AiWireClient(
+                transport: AiTransport(
+                  endpoint: AiEndpoint.parse(
+                    config.baseUrl,
+                    allowLanCleartext: false,
+                  ),
+                  apiKey: apiKey ?? '',
+                  authStyle: config.authStyle,
+                  adapter: h.provider.adapter,
+                ),
+                wire: const ResponsesFormat(),
+                config: config,
+                conversationId: conversationId,
+                appVersion: 'test',
+              ),
+    );
+    addTearDown(controller.dispose);
+    await controller.recheck();
+    await controller.send('answer without tools');
+    expect(clientChecks, 0);
+    expect(h.provider.bodies, hasLength(1));
+    expect(controller.phase, AiChatPhase.idle);
+    expect(controller.items.whereType<AiAssistantItem>().single.text, 'Done');
+    visible = false;
+    await controller.send('background without a permit');
+    expect(h.provider.bodies, hasLength(1));
+    expect(clientChecks, 0);
+    expect(controller.writeGatesOpen, isFalse);
+  });
+
   for (final permit in [false, true]) {
-    for (final reason in ['policy', 'removal', '429']) {
+    test('model never invokes the client predicate (permit=$permit)', () async {
+      final h = await _WriteHarness.create(graph: false, begin: false);
+      addTearDown(h.dispose);
+      if (!permit) {
+        h.gate.binding = _binding(h.server.api, permit: null);
+        h.gate.foreground = true;
+      }
+      h.clientMayStartPredicate = () =>
+          throw StateError('model consulted the write-only client predicate');
+      final b = runner_base.Harness();
+      final result = await _runnerWithWrites(h, b).run('answer without tools');
+      expect(result.reason, AiRunEnd.done);
+      expect(result.modelCalls, 1);
+      expect(h.clientChecks, 0);
+      expect(h.portCreations, 0);
+      expect(h.sends, 0);
+      h.clientMayStartPredicate = () => false;
+      final write = await h.coordinator.execute(h.call());
+      expect(write.state, AiJournalState.notExecuted);
+      expect(write.reasonCode, AiWritePause.clientUnavailable);
+      expect(h.clientChecks, greaterThan(0));
+      expect(h.portCreations, 0);
+      expect(h.sends, 0);
+    });
+
+    for (final reason in ['policy', 'removal', 'eligibility']) {
       test(
         '$reason during model acquire preserves the coordinator guards (permit=$permit)',
         () async {
@@ -596,19 +702,8 @@ void main() {
               h.revision++;
             case 'removal':
               h.storage.journal.beginRemoval(mr6b2Account).cancelFinal();
-            case '429':
-              h.server.overrides['GET projects/9'] = (_) => jsonResponse(
-                {'message': 'synthetic 429'},
-                status: 429,
-                headers: {
-                  'retry-after': ['60'],
-                },
-              );
-              try {
-                await h.server.api.project('9', refresh: true);
-              } on Object {
-                // The production client retains its synchronous Retry-After gate.
-              }
+            case 'eligibility':
+              h.executionEligible = false;
           }
           barrier.release();
           final result = await pending;
@@ -620,6 +715,59 @@ void main() {
         },
       );
     }
+
+    test(
+      '429 during model acquire blocks only the write and continues with its tool result (permit=$permit)',
+      () async {
+        final h = await _WriteHarness.create(graph: false, begin: false);
+        addTearDown(h.dispose);
+        if (!permit) {
+          h.gate.binding = _binding(h.server.api, permit: null);
+          h.gate.foreground = true;
+        }
+        final b = runner_base.Harness();
+        final call = h.call();
+        b.respond = (_, _) async => b.payloads.length == 1
+            ? b.turn(calls: [call])
+            : b.turn(text: 'write was not executed');
+        final barrier = Mr6cBarrier();
+        h.gate.onAcquire = (_) => barrier.wait();
+        final pending = _runnerWithWrites(h, b).run('Star project');
+        await barrier.entered;
+        h.server.overrides['GET projects/9'] = (_) => jsonResponse(
+          {'message': 'synthetic 429'},
+          status: 429,
+          headers: {
+            'retry-after': ['60'],
+          },
+        );
+        try {
+          await h.server.api.project('9', refresh: true);
+        } on Object {
+          // Retain the real production client's synchronous Retry-After gate.
+        }
+        expect(h.server.api.mayStartRequest, isFalse);
+        barrier.release();
+        final result = await pending;
+        expect(result.reason, AiRunEnd.done);
+        expect(result.pause, isNull);
+        expect(result.modelCalls, 2);
+        expect(result.toolCalls, 1);
+        expect(b.payloads, hasLength(2));
+        expect(b.payloads.last, contains('clientUnavailable'));
+        expect(h.coordinator.outcomeFor(call.id)!.state, AiJournalState.notExecuted);
+        expect(h.portCreations, 0);
+        expect(h.sends, 0);
+        expect(h.storage.journal.entries(mr6b2Account), isEmpty);
+        expect(h.gate.acquisitions, [
+          AiContinuationKind.model,
+          AiContinuationKind.model,
+        ]);
+        for (final ticket in h.gate.tickets) {
+          _spent(ticket);
+        }
+      },
+    );
   }
 
   for (final graph in [false, true]) {
@@ -676,6 +824,28 @@ void main() {
         );
         expect(outcome.state, AiJournalState.succeeded);
         expect(h.sends, 1);
+      });
+
+      test('no gate or snapshot visibility fails closed', () async {
+        final direct = h.makeCoordinator(
+          inject: false,
+          policySnapshot: () => const AiWritePolicySnapshot(
+            scope: mr6b2Scope,
+            level: AiAutonomyLevel.bypass,
+            ceiling: AiAutonomyLevel.bypass,
+            consentHash: 'mr6c-consent',
+            writePolicyRevision: 1,
+          ),
+        );
+        addTearDown(() => direct.stop('done'));
+        expect(direct.snapshot().appInForeground, isFalse);
+        expect(direct.snapshot().executionEligible, isFalse);
+        expect(direct.executionGate.executionEligible, isFalse);
+        final result = await direct.execute(h.call());
+        expect(result.state, AiJournalState.notExecuted);
+        expect(result.reasonCode, AiWritePause.backgrounded);
+        expect(h.portCreations, 0);
+        expect(h.sends, 0);
       });
 
       test(
@@ -1108,6 +1278,7 @@ final class _ModelHarness {
   int generation = 7;
   bool consent = true;
   bool finalSnapshot = false;
+  void Function()? onGuard;
   Duration lastRefreshDelay = Duration.zero;
   int deliveries = 0;
   final requestTexts = <List<String>>[];
@@ -1204,6 +1375,7 @@ final class _ModelHarness {
         ownerApi: h.api,
         generation: () {
           h.gate.events.add('guard');
+          h.onGuard?.call();
           return h.generation;
         },
         api: () => h.currentOwner,
@@ -1355,10 +1527,14 @@ final class _WriteHarness {
   final budget = AiToolBudget(maxGitLabRequests: 200);
   AiAutonomyLevel level = AiAutonomyLevel.bypass;
   bool foreground = true;
+  bool? executionEligible;
+  bool Function()? clientMayStartPredicate;
+  int clientChecks = 0;
   bool consent = true;
   int generation = 7;
   int revision = 1;
   int _sequence = 0;
+  int portCreations = 0;
   int get sends => graph ? graphPort.sends : server.mutationCount();
   Set<AiConflictKey> get keys => graph
       ? {mr6b3WriteKey}
@@ -1381,9 +1557,12 @@ final class _WriteHarness {
     return h;
   }
 
-  PolicyAiWriteCoordinator makeCoordinator({bool inject = true}) =>
+  PolicyAiWriteCoordinator makeCoordinator({
+    bool inject = true,
+    AiWritePolicySnapshot Function()? policySnapshot,
+  }) =>
       PolicyAiWriteCoordinator(
-        snapshot: () => AiWritePolicySnapshot(
+        snapshot: policySnapshot ?? () => AiWritePolicySnapshot(
           scope: mr6b2Scope,
           level: level,
           ceiling: AiAutonomyLevel.bypass,
@@ -1392,10 +1571,18 @@ final class _WriteHarness {
           sessionGeneration: generation,
           consentValid: consent,
           appInForeground: foreground,
+          executionEligible:
+              executionEligible ?? (inject ? gate.executionEligible : foreground),
           ownerApi: server.api,
-          clientMayStart: server.api.mayStartRequest,
+          clientMayStartPredicate: () {
+            clientChecks++;
+            return clientMayStartPredicate?.call() ?? server.api.mayStartRequest;
+          },
         ),
-        createPort: () => graph ? graphPort : server.writePort,
+        createPort: () {
+          portCreations++;
+          return graph ? graphPort : server.writePort;
+        },
         journal: storage.journal,
         conversationId: _conversation,
         budget: () => budget,

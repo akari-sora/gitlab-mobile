@@ -270,13 +270,17 @@ final class AiWritePolicySnapshot {
     this.toolsEnabled = true,
     this.consentValid = true,
     this.alive = true,
-    this.appInForeground = true,
-    this.clientMayStart = true,
+    this.appInForeground = false,
+    bool? executionEligible,
+    bool clientMayStart = true,
+    bool Function()? clientMayStartPredicate,
     this.ownerApi,
     this.aiAttribution = false,
     this.currentJobId,
     this.currentResource,
-  });
+  }) : executionEligible = executionEligible ?? appInForeground,
+       _clientMayStart = clientMayStart,
+       _clientMayStartPredicate = clientMayStartPredicate;
 
   final AiWriteScope scope;
   final AiAutonomyLevel level;
@@ -289,7 +293,13 @@ final class AiWritePolicySnapshot {
   final bool consentValid;
   final bool alive;
   final bool appInForeground;
-  final bool clientMayStart;
+  /// Execution eligibility is separate from real visibility for approval.
+  final bool executionEligible;
+  final bool _clientMayStart;
+  final bool Function()? _clientMayStartPredicate;
+  /// Evaluate the live client guard only at a write or approval boundary.
+  bool get clientMayStart =>
+      _clientMayStart && (_clientMayStartPredicate?.call() ?? true);
   /// Required for a permit-bound run; compared by identity, never persisted.
   final Object? ownerApi;
   final bool aiAttribution;
@@ -467,6 +477,7 @@ final class PolicyAiWriteCoordinator
   String get logicalRunId => _runId;
 
   /// A rejected or superseded run cannot acquire model tickets either.
+  /// Client cooldowns remain independent write-boundary guards.
   bool get executionRunCurrent {
     final current = snapshot();
     final expected = _runPolicy;
@@ -474,7 +485,7 @@ final class PolicyAiWriteCoordinator
         identical(executionGate.binding, _runBinding) &&
         current.alive && current.consentValid &&
         !journal.tombstoneFlag(current.scope.accountKey) &&
-        _executionPauseOf(current) == null &&
+        _executionPauseOf(current, includeClient: false) == null &&
         (expected == null ||
             (journal.proposalEpoch(expected.scope.accountKey) == _runProposalEpoch &&
                 current.sessionGeneration == expected.sessionGeneration &&
@@ -1649,16 +1660,21 @@ final class PolicyAiWriteCoordinator
 
   /// The hold for execution. A bound permit never bypasses an invalid latch,
   /// even after returning to the foreground.
-  String? _executionPauseOf(AiWritePolicySnapshot policy) {
+  String? _executionPauseOf(
+    AiWritePolicySnapshot policy, {
+    bool includeClient = true,
+  }) {
     if (journal.removalHeld(policy.scope.accountKey)) {
       return AiWritePause.accountRemovalHeld;
     }
     if (!_executionBindingMatches(policy)) return 'runChanged';
-    if (!executionGate.executionEligible ||
+    if (!policy.executionEligible || !executionGate.executionEligible ||
         (!policy.appInForeground && executionGate.binding.permitId == null)) {
       return AiWritePause.backgrounded;
     }
-    if (!policy.clientMayStart) return AiWritePause.clientUnavailable;
+    if (includeClient && !policy.clientMayStart) {
+      return AiWritePause.clientUnavailable;
+    }
     return null;
   }
 

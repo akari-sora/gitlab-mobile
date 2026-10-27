@@ -624,6 +624,7 @@ AiRunner _copyRunner(
   Future<void> Function()? refreshSecrets,
   Duration toolDeadline = const Duration(seconds: 30),
 }) => AiRunner(
+  appInForeground: () => true,
   config: h.config(),
   wire: h.wire,
   complete: complete,
@@ -696,6 +697,7 @@ final class _TransportHarness {
       appVersion: '0.6.0',
     );
     runner = AiRunner(
+      appInForeground: () => true,
       config: config,
       wire: baseHarness.wire,
       complete: client.complete,

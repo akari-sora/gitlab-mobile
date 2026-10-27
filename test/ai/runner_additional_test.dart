@@ -194,6 +194,7 @@ void main() {
       recipientRevision: original.recipientRevision,
     );
     h.runner = AiRunner(
+      appInForeground: () => true,
       config: config,
       wire: h.wire,
       complete: h.complete,

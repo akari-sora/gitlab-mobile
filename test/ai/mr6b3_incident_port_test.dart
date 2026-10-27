@@ -800,6 +800,7 @@ final class _Harness {
     );
     h.coordinator = coord.PolicyAiWriteCoordinator(
       snapshot: () => coord.AiWritePolicySnapshot(
+        appInForeground: true,
         scope: _scope,
         level: level,
         ceiling: AiAutonomyLevel.bypass,

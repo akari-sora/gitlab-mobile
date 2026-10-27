@@ -371,6 +371,7 @@ final class _FilePreviewHarness {
     );
     harness.coordinator = PolicyAiWriteCoordinator(
       snapshot: () => const AiWritePolicySnapshot(
+        appInForeground: true,
         scope: p6Scope,
         level: AiAutonomyLevel.confirmEach,
         ceiling: AiAutonomyLevel.bypass,
@@ -449,6 +450,7 @@ final class _DraftPreviewHarness {
     );
     harness.coordinator = PolicyAiWriteCoordinator(
       snapshot: () => const AiWritePolicySnapshot(
+        appInForeground: true,
         scope: merge.scope,
         level: AiAutonomyLevel.confirmEach,
         ceiling: AiAutonomyLevel.bypass,
@@ -511,6 +513,7 @@ final class _FieldsPreviewHarness {
     );
     base.coordinator = PolicyAiWriteCoordinator(
       snapshot: () => const AiWritePolicySnapshot(
+        appInForeground: true,
         scope: coordScope,
         level: AiAutonomyLevel.confirmEach,
         ceiling: AiAutonomyLevel.bypass,
