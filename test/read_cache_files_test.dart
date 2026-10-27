@@ -372,6 +372,20 @@ void main() {
           },
         );
         expect(await stageWrite(files, indexWrite, () => false), isNull);
+        for (final key in <List<int>?>[
+          null,
+          [1],
+        ]) {
+          final operation = indexWrite
+              ? files.stageIndex(
+                  _account,
+                  key,
+                  ReadCacheIndex(entries: []),
+                  mayCommit: () => false,
+                )
+              : files.stageEntry(_entry(), key, mayCommit: () => false);
+          expect(await operation, isNull);
+        }
         expect(rootCalls, 0);
         expect(root.listSync(), isEmpty);
       },
@@ -489,53 +503,92 @@ void main() {
       );
     }
 
-    for (final level in ['root', 'base', 'account']) {
-      test(
-        '$kind commit rechecks a replaced $level directory without following links',
-        () async {
-          final staged = (await stageWrite(store(), indexWrite, () => true))!;
-          final outside = Directory.systemTemp.createTempSync(
-            'read_cache_outside_',
+    for (final change in ['truncate', 'extend']) {
+      test('$kind commit rejects a $change of its staged temporary', () async {
+        final initial = (await stageWrite(store(), indexWrite, () => true))!;
+        expect(initial.commit(), ReadCacheCommitResult.committed);
+        final destination = File(
+          '${accountDirectory().path}/${initial.fileName}',
+        );
+        final oldBytes = destination.readAsBytesSync();
+        final staged = (await stageWrite(store(), indexWrite, () => true))!;
+        final temporary = File(
+          temporaries().single.path,
+        ).openSync(mode: FileMode.writeOnlyAppend);
+        try {
+          temporary.truncateSync(
+            staged.ciphertextBytes + (change == 'truncate' ? -1 : 1),
           );
-          addTearDown(() => outside.deleteSync(recursive: true));
-          final sentinel = File('${outside.path}/sentinel')
-            ..writeAsStringSync('synthetic outside');
-          final path = switch (level) {
-            'root' => root.path,
-            'base' => '${root.path}/read_cache',
-            _ => accountDirectory().path,
-          };
-          final saved = '$path.saved';
-          Directory(path).renameSync(saved);
-          try {
-            Link(path).createSync(outside.path);
-            expect(
-              staged.commit,
-              fileFailure(ReadCacheFileFailure.untrustedPath),
+        } finally {
+          temporary.closeSync();
+        }
+        expect(staged.commit, fileFailure(ReadCacheFileFailure.io));
+        expect(staged.commit(), ReadCacheCommitResult.alreadyConsumed);
+        expect(temporaries(), isEmpty);
+        expect(destination.readAsBytesSync(), oldBytes);
+        expect(await readWrite(indexWrite), isNotNull);
+      });
+    }
+
+    for (final level in ['root', 'base', 'account']) {
+      for (final operation in ['commit', 'discard']) {
+        test(
+          '$kind $operation rechecks a replaced $level directory without following links',
+          () async {
+            final staged = (await stageWrite(store(), indexWrite, () => true))!;
+            final accountPath = accountDirectory().path;
+            final temporary = temporaries().single;
+            final oldBytes = File(temporary.path).readAsBytesSync();
+            final path = switch (level) {
+              'root' => root.path,
+              'base' => '${root.path}/read_cache',
+              _ => accountPath,
+            };
+            final saved = '$path.saved';
+            final movedTemporary = File(
+              '$saved${temporary.path.substring(path.length)}',
             );
-            expect(
-              outside.listSync().map((file) => file.uri.pathSegments.last),
-              ['sentinel'],
-            );
-            expect(sentinel.readAsStringSync(), 'synthetic outside');
-          } finally {
-            if (FileSystemEntity.typeSync(path, followLinks: false) ==
-                FileSystemEntityType.link) {
-              Link(path).deleteSync();
+            final movedDestination =
+                '$saved${accountPath.substring(path.length)}/${staged.fileName}';
+            Directory(path).renameSync(saved);
+            try {
+              // Keep the real temporary visible through the replaced ancestor:
+              // only the ancestor check can prevent access to the moved tree.
+              Link(path).createSync(saved);
+              expect(File(temporary.path).existsSync(), isTrue);
+              expect(() {
+                if (operation == 'commit') {
+                  staged.commit();
+                } else {
+                  staged.discard();
+                }
+              }, fileFailure(ReadCacheFileFailure.untrustedPath));
+              expect(movedTemporary.existsSync(), isTrue);
+              expect(movedTemporary.readAsBytesSync(), oldBytes);
+              expect(
+                FileSystemEntity.typeSync(movedDestination, followLinks: false),
+                FileSystemEntityType.notFound,
+              );
+            } finally {
+              if (FileSystemEntity.typeSync(path, followLinks: false) ==
+                  FileSystemEntityType.link) {
+                Link(path).deleteSync();
+              }
+              Directory(saved).renameSync(path);
             }
-            Directory(saved).renameSync(path);
-          }
-          expect(staged.commit(), ReadCacheCommitResult.alreadyConsumed);
-          expect(await readWrite(indexWrite), isNull);
-          // Unsafe ancestors prevent cleanup too; leave the original ciphertext
-          // for the existing stale-temp recovery rather than traverse a link.
-          expect(temporaries(), hasLength(1));
-        },
-      );
+            expect(staged.commit(), ReadCacheCommitResult.alreadyConsumed);
+            staged.discard();
+            expect(await readWrite(indexWrite), isNull);
+            // Leave the ciphertext for stale-temp recovery; cleanup must not
+            // traverse the replaced ancestor either.
+            expect(temporaries(), hasLength(1));
+          },
+        );
+      }
     }
   }
 
-  for (final change in ['remove', 'resize']) {
+  for (final change in ['remove', 'resize', 'same-size link']) {
     test(
       'staged index rechecks referenced files after stage returns: $change',
       () async {
@@ -556,14 +609,35 @@ void main() {
           mayCommit: () => true,
         ))!;
         final file = File('${accountDirectory().path}/$second');
+        final referenceBytes = file.readAsBytesSync();
+        final outside = File('${root.path}/outside-reference');
         if (change == 'remove') {
           file.deleteSync();
-        } else {
+        } else if (change == 'resize') {
           file.writeAsBytesSync([1]);
+        } else {
+          outside.writeAsBytesSync(referenceBytes);
+          file.deleteSync();
+          Link(file.path).createSync(outside.path);
+          expect(file.lengthSync(), referenceBytes.length);
         }
-        expect(staged.commit, fileFailure(ReadCacheFileFailure.io));
+        expect(
+          staged.commit,
+          fileFailure(
+            change == 'same-size link'
+                ? ReadCacheFileFailure.untrustedPath
+                : ReadCacheFileFailure.io,
+          ),
+        );
         expect(temporaries(), isEmpty);
         expect(indexFile.readAsBytesSync(), oldBytes);
+        if (change == 'same-size link') {
+          expect(
+            FileSystemEntity.typeSync(file.path, followLinks: false),
+            FileSystemEntityType.link,
+          );
+          expect(outside.readAsBytesSync(), referenceBytes);
+        }
         expect(
           (await store().readIndex(_account, _key))!.entries.single.fileName,
           first,
