@@ -114,7 +114,8 @@ void main() {
     () async {
       await store.saveAccount('orphan-record', AiAccountRecord());
       await store.writeHistoryKey('orphan-key', Uint8List(32));
-      final session = SessionController(MemoryAccountStore());
+      final sessionStore = MemoryAccountStore();
+      final session = SessionController(sessionStore, readCache: sessionStore.readCache);
       addTearDown(session.dispose);
       await session.initialize();
       await coordinator.startRecovery(session);
@@ -135,7 +136,8 @@ void main() {
       store.debugPut(SecureAiStore.tombstoneKey('bad'), 'invalid');
       await store.setTombstone('good');
       await store.saveAccount('good', AiAccountRecord());
-      final session = SessionController(MemoryAccountStore());
+      final sessionStore = MemoryAccountStore();
+      final session = SessionController(sessionStore, readCache: sessionStore.readCache);
       addTearDown(session.dispose);
       await session.initialize();
       await coordinator.startRecovery(session);
@@ -177,7 +179,8 @@ void main() {
     final dir = await oldFiles.directory(saved.key);
     final file = File('${dir.path}/c_${old.id}.v1.bin');
     expect(file.existsSync(), isTrue);
-    final session = SessionController(MemoryAccountStore()..accounts = [saved]);
+    final accounts = MemoryAccountStore()..accounts = [saved];
+    final session = SessionController(accounts, readCache: accounts.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     await coordinator.startRecovery(session);

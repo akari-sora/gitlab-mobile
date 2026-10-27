@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gitlab_mobile/core/providers.dart';
+import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_disk_coordinator.dart';
 
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'package:flutter_test/flutter_test.dart';
@@ -197,8 +199,36 @@ void main() {
           ),
         );
         await clearAccountArtifacts(account);
+        final previousSaves = store.accountSaves;
+        final previousRejections = store.rejectedAccountSaves;
+        final previousInventoryReads =
+            store.readCacheStorage.inventoryReadCalls;
+        ReadCacheDiskState? cacheStateAtSave;
+        var clearQuiescedAtSave = false;
+        var clearNoticeAtSave = false;
+        var inventoryReadsAtSave = 0;
+        store.beforeAccountSave = () async {
+          await store.readCache.quiesced;
+          clearQuiescedAtSave = true;
+          inventoryReadsAtSave = store.readCacheStorage.inventoryReadCalls;
+          cacheStateAtSave = store.readCache.state(account.key);
+          clearNoticeAtSave =
+              store.readCache.notice(
+                DiskBinding(
+                  accountKey: account.key,
+                  generation: session.generation,
+                ),
+              ) !=
+              null;
+        };
         store.rejectWrite = true;
         await pumpUntilComplete(tester, session.remove(account));
+        expect(clearQuiescedAtSave, isTrue);
+        expect(inventoryReadsAtSave, greaterThan(previousInventoryReads));
+        expect(cacheStateAtSave, ReadCacheDiskState.cleaning);
+        expect(clearNoticeAtSave, isFalse);
+        expect(store.accountSaves, previousSaves + 1);
+        expect(store.rejectedAccountSaves, previousRejections + 1);
         expect(session.accounts.single.key, account.key);
         expect(session.active?.key, account.key);
         store.rejectWrite = false;

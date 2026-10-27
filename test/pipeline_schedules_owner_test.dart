@@ -229,7 +229,8 @@ void main() {
       rows: const [],
       host: 'https://active.example/gitlab',
     );
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = active.account
       ..api = active.api
       ..initializing = false;

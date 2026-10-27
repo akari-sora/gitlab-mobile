@@ -45,7 +45,8 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
     AiHistoryCoordinator.debugReset(store: MemoryAiStore());
     // Configure the process singleton outside a widget's disposable fake zone.
-    final session = SessionController(MemoryAccountStore());
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache);
     await session.initialize();
     await startAiWriteJournal(session);
     session.dispose();

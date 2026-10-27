@@ -145,7 +145,8 @@ void main() {
   test('startup tombstone cleanup reopens a retained account', () async {
     final saved = _account();
     await store.setTombstone(saved.key);
-    final session = SessionController(MemoryAccountStore()..accounts = [saved]);
+    final accounts = MemoryAccountStore()..accounts = [saved];
+    final session = SessionController(accounts, readCache: accounts.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     await history.startRecovery(session);
@@ -156,7 +157,7 @@ void main() {
   test('failed session removal reopens successful AI cleanup', () async {
     final saved = _account();
     final accounts = MemoryAccountStore()..accounts = [saved];
-    final session = SessionController(accounts);
+    final session = SessionController(accounts, readCache: accounts.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     await history.startRecovery(session);
@@ -351,9 +352,8 @@ void main() {
         },
       ),
     );
-    final session = SessionController(
-      MemoryAccountStore()..accounts = [first, second],
-    );
+    final accounts = MemoryAccountStore()..accounts = [first, second];
+    final session = SessionController(accounts, readCache: accounts.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     await history.startRecovery(session);

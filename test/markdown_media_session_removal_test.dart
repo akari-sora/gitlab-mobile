@@ -49,6 +49,7 @@ void main() {
       late Future<void> Function(OAuthCredential) rotate;
       final controller = SessionController(
         store,
+        readCache: store.readCache,
         createApi: (instance, credential, oauth, onRotated) {
           rotate = onRotated;
           return GitLabApi(
@@ -122,6 +123,7 @@ void main() {
       late Future<void> Function(OAuthCredential) rotate;
       final controller = SessionController(
         store,
+        readCache: store.readCache,
         createApi: (instance, credential, oauth, onRotated) {
           rotate = onRotated;
           return GitLabApi(

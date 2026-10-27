@@ -22,7 +22,8 @@ void main() {
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
-        final session = SessionController(MemoryAccountStore());
+        final sessionStore = MemoryAccountStore();
+        final session = SessionController(sessionStore, readCache: sessionStore.readCache);
         addTearDown(session.dispose);
         await session.initialize();
         await tester.pumpWidget(
@@ -127,7 +128,8 @@ void main() {
   testWidgets('login hides OAuth when the instance has no Application ID', (
     tester,
   ) async {
-    final session = SessionController(MemoryAccountStore());
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     await tester.pumpWidget(
@@ -143,8 +145,10 @@ void main() {
   testWidgets('login offers OAuth only when an Application ID exists', (
     tester,
   ) async {
+    final sessionStore = MemoryAccountStore();
     final session = SessionController(
-      MemoryAccountStore(),
+      sessionStore,
+      readCache: sessionStore.readCache,
       applicationIdFor: (instance) =>
           instance.base.host == 'example.com' ? 'synthetic-app-id' : null,
     );

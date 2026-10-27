@@ -151,7 +151,7 @@ final class _SessionRecovery {
   ReadCacheStartupDecision? _seen;
   ReadCacheStartupDecision? _acknowledged;
   Timer? _retry;
-  final Set<Timer> _scanTimeouts = {};
+  final Map<Object, Timer> _scanTimeouts = {};
   int _attempt = 0;
   bool _disposed = false;
   bool _started = false;
@@ -173,61 +173,73 @@ final class _SessionRecovery {
     _acknowledged = null;
     _attempt = 0;
     _retry?.cancel();
+    for (final timer in _scanTimeouts.values) {
+      timer.cancel();
+    }
+    _scanTimeouts.clear();
     _signalDecisionChanged();
     if (decision != null) _queueScan(decision);
   }
 
   void _queueScan(ReadCacheStartupDecision decision) {
     if (_disposed || !session.isReadCacheDecisionCurrent(decision)) return;
+    final round = session.readCache.beginStartupScan(session);
+    if (round == null) return;
     var expired = false;
-    Timer? timeout;
     void expire() {
-      _scanTimeouts.remove(timeout);
-      if (_disposed || !session.isReadCacheDecisionCurrent(decision)) return;
+      _scanTimeouts.remove(round);
+      if (_disposed ||
+          !session.isReadCacheDecisionCurrent(decision) ||
+          !session.readCache.revokeStartup(session, scan: round)) {
+        return;
+      }
       expired = true;
-      // recover() checks its own revision between I/O stages; an unreadable
-      // decision invalidates that revision without authorizing any new I/O.
-      unawaited(session.readCache.recover(
-        ReadCacheStartupDecision(
-          operationTicket: decision.operationTicket,
-          accountListRevision: decision.accountListRevision,
-          accountsReadable: false,
-          signOutMarkerReadable: false,
-          lastActiveReadable: false,
-          signOutPending: true,
-          resumeAccountKey: null,
-        ),
-        accountKeys: const {},
-      ));
       _report(ReadCacheCleanupCode.barrierTimedOut, decision);
     }
+
+    final timeout = Timer(this.timeout, expire);
+    _scanTimeouts[round] = timeout;
     final scan = _recoveryGate.run(() async {
       if (expired || _disposed ||
           !session.isReadCacheDecisionCurrent(decision)) {
         return false;
       }
-      timeout = Timer(this.timeout, expire);
-      _scanTimeouts.add(timeout!);
       final accounts = session.accounts.map((account) => account.key).toSet();
-      return session.readCache.recover(decision, accountKeys: accounts);
+      return session.readCache.recover(
+        decision,
+        accountKeys: accounts,
+        sessionOwner: session,
+        startupScan: round,
+      );
     });
-    unawaited(scan.then((success) {
-      timeout?.cancel();
-      _scanTimeouts.remove(timeout);
-      if (_disposed || !session.isReadCacheDecisionCurrent(decision)) return;
-      if (!success && decision.readable && !expired) {
-        _report(ReadCacheCleanupCode.cleanupFailed, decision);
-      }
-      if ((!success || expired) && decision.readable) _scheduleRetry(decision);
-      _acknowledge(decision);
-    }, onError: (Object _, StackTrace _) {
-      timeout?.cancel();
-      _scanTimeouts.remove(timeout);
-      if (_disposed || !session.isReadCacheDecisionCurrent(decision)) return;
-      if (!expired) _report(ReadCacheCleanupCode.cleanupFailed, decision);
-      if (decision.readable) _scheduleRetry(decision);
-      _acknowledge(decision);
-    }));
+    unawaited(
+      scan.then(
+        (success) {
+          timeout.cancel();
+          _scanTimeouts.remove(round);
+          if (_disposed || !session.isReadCacheDecisionCurrent(decision)) {
+            return;
+          }
+          if (!success && decision.readable && !expired) {
+            _report(ReadCacheCleanupCode.cleanupFailed, decision);
+          }
+          if ((!success || expired) && decision.readable) {
+            _scheduleRetry(decision);
+          }
+          _acknowledge(decision);
+        },
+        onError: (Object _, StackTrace _) {
+          timeout.cancel();
+          _scanTimeouts.remove(round);
+          if (_disposed || !session.isReadCacheDecisionCurrent(decision)) {
+            return;
+          }
+          if (!expired) _report(ReadCacheCleanupCode.cleanupFailed, decision);
+          if (decision.readable) _scheduleRetry(decision);
+          _acknowledge(decision);
+        },
+      ),
+    );
   }
 
   void _report(ReadCacheCleanupCode code, ReadCacheStartupDecision decision) {
@@ -301,28 +313,11 @@ final class _SessionRecovery {
     if (_disposed) return;
     _disposed = true;
     _retry?.cancel();
-    final hadScan = _scanTimeouts.isNotEmpty;
-    for (final timer in _scanTimeouts) {
-      timer.cancel();
+    for (final scan in _scanTimeouts.entries) {
+      scan.value.cancel();
+      session.readCache.revokeStartup(session, scan: scan.key);
     }
     _scanTimeouts.clear();
-    if (hadScan) {
-      final decision = session.readCacheStartupDecision;
-      if (decision != null && session.isReadCacheDecisionCurrent(decision)) {
-        unawaited(session.readCache.recover(
-          ReadCacheStartupDecision(
-            operationTicket: decision.operationTicket,
-            accountListRevision: decision.accountListRevision,
-            accountsReadable: false,
-            signOutMarkerReadable: false,
-            lastActiveReadable: false,
-            signOutPending: true,
-            resumeAccountKey: null,
-          ),
-          accountKeys: const {},
-        ));
-      }
-    }
     if (identical(_sessionRecoveries[session], this)) {
       _sessionRecoveries[session] = null;
     }

@@ -18,7 +18,8 @@ void main() {
     'the sort stays on screen on a narrow phone while the scopes scroll',
     (tester) async {
       final api = testApi(FakeAdapter((_) => jsonResponse([])));
-      final session = SessionController(MemoryAccountStore())
+      final sessionStore = MemoryAccountStore();
+      final session = SessionController(sessionStore, readCache: sessionStore.readCache)
         ..active = Account(
           instance: api.instance,
           user: const GitLabUser(id: 7, username: 'first', name: 'First'),

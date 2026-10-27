@@ -401,7 +401,8 @@ void main() {
       userId: 8,
       environments: const [],
     );
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = active.account
       ..api = active.api
       ..initializing = false;
@@ -434,7 +435,8 @@ void main() {
       userId: 8,
       environments: const [],
     );
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = active.account
       ..api = active.api
       ..initializing = false;

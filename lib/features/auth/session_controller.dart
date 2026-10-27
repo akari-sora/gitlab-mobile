@@ -38,7 +38,9 @@ final class SessionController extends ChangeNotifier {
        _createOAuth =
            createOAuth ??
            ((instance, clientId) =>
-               OAuthTokenClient(instance: instance, clientId: clientId));
+               OAuthTokenClient(instance: instance, clientId: clientId)) {
+    this.readCache.claimStartupSession(this);
+  }
   final AccountStore store;
   final ReadCacheDiskCoordinator readCache;
   final ApiFactory? _createApi;
@@ -76,26 +78,14 @@ final class SessionController extends ChangeNotifier {
 
   bool isReadCacheDecisionCurrent(ReadCacheStartupDecision decision) =>
       !_disposed &&
+      readCache.ownsStartupSession(this) &&
       identical(decision, _readCacheStartupDecision) &&
       decision.operationTicket == _operation &&
       decision.accountListRevision == _accountListRevision;
 
   void _invalidateReadCacheDecision() {
     _readCacheStartupDecision = null;
-    // recover rejects this proof before storage I/O and synchronously closes
-    // the startup gate, including a scan already waiting on native I/O.
-    unawaited(readCache.recover(
-      ReadCacheStartupDecision(
-        operationTicket: _operation,
-        accountListRevision: _accountListRevision,
-        accountsReadable: false,
-        signOutMarkerReadable: false,
-        lastActiveReadable: false,
-        signOutPending: true,
-        resumeAccountKey: null,
-      ),
-      accountKeys: const {},
-    ));
+    readCache.revokeStartup(this);
   }
 
   void _publishReadCacheDecision(String? resumeKey, {bool? signOutPending}) {
@@ -123,12 +113,19 @@ final class SessionController extends ChangeNotifier {
 
   Future<DiskClearResult> _clearReadCache(
     DiskBinding binding,
-    ReadCacheCleanupOperation operation,
-  ) {
+    ReadCacheCleanupOperation operation, {
+    void Function(ApiFailure)? onFailure,
+  }) {
     // clear installs its full intent synchronously, before the caller can
     // close the old client or advance the visible session.
-    final result = readCache.clear(binding, operation,
-        sessionOwner: operation == ReadCacheCleanupOperation.signOut ? this : null);
+    final result = readCache.clear(
+      binding,
+      operation,
+      sessionOwner: operation == ReadCacheCleanupOperation.signOut
+          ? this
+          : null,
+      onFailure: onFailure,
+    );
     late final Future<void> tail;
     tail = result.then((_) => readCache.quiesced).then<void>((_) {
       if (identical(_readCacheClears[binding.accountKey], tail)) {
@@ -151,7 +148,9 @@ final class SessionController extends ChangeNotifier {
     // The bounded clear result is not an I/O acknowledgement. A replacement
     // session waits for the old serialized work, and still checks ownership.
     await _readCacheClears[binding.accountKey];
-    if (_disposed || active?.key != binding.accountKey ||
+    if (_disposed ||
+        !readCache.ownsStartupSession(this) ||
+        active?.key != binding.accountKey ||
         generation != binding.generation || api == null) {
       return;
     }
@@ -817,8 +816,10 @@ final class SessionController extends ChangeNotifier {
     _emit();
   }
 
-  Future<void> remove(Account account) async {
-    if (busy || initializing || resuming || _disposed) return;
+  Future<({bool removed, ApiFailure? failure})> remove(Account account) async {
+    if (busy || initializing || resuming || _disposed) {
+      return (removed: false, failure: null);
+    }
     final ticket = ++_operation;
     _invalidateReadCacheDecision();
     busy = true;
@@ -828,27 +829,40 @@ final class SessionController extends ChangeNotifier {
     final staged = _accounts.where((item) => item.key != account.key).toList();
     _setAccounts(staged);
     final releaseMedia = suspendMarkdownMediaAccount(account);
+    var removalCommitted = false;
     try {
       // Cleanup again inside the commit fence: a retained card may have started
       // after the shell's earlier file cleanup while other stores were cleared.
       await clearAccountArtifacts(account);
       final binding = DiskBinding(accountKey: account.key, generation: generation);
+      ApiFailure? cacheFailure;
       final cacheClear = await _clearReadCache(
         binding,
         ReadCacheCleanupOperation.accountRemoval,
+        onFailure: (failure) => cacheFailure = failure,
       );
       if (!cacheClear.keyGoneConfirmed && !cacheClear.directoryGoneConfirmed) {
-        throw readCache.notice(binding)!.failure;
+        throw cacheFailure ??
+            ApiFailure.readCacheCleanup(
+              ReadCacheCleanupState(
+                operation: ReadCacheCleanupOperation.accountRemoval,
+                disposition: ReadCacheCleanupDisposition.accountRetained,
+                code: ReadCacheCleanupCode.cleanupFailed,
+                clearResult: cacheClear,
+              ),
+            );
       }
       await _enqueueAccountSave(
         onSaved: (saved) {
           // A superseding sign-out changes UI ownership, not a confirmed save.
           if (!saved.any((item) => item.key == account.key)) {
+            removalCommitted = true;
             markMarkdownMediaAccountRemoved(account);
+            readCache.finishAccountRemoval(account.key, removed: true);
           }
         },
       );
-      if (!_current(ticket)) return;
+      if (!_current(ticket)) return (removed: removalCommitted, failure: null);
       if (active?.key == account.key) {
         _pendingResumeTarget = null;
         final cleared = await _commitSignOut();
@@ -856,11 +870,15 @@ final class SessionController extends ChangeNotifier {
           message = l10n.cannotClearAutoSignIn;
         }
       }
-    } catch (_) {
+    } catch (error) {
       if (_current(ticket) && identical(_accounts, staged)) {
         _setAccounts(previous);
       }
       if (_current(ticket)) message = l10n.removeSecureStorageFailed;
+      readCache.finishAccountRemoval(account.key, removed: removalCommitted);
+      if (error is ApiFailure && error.kind == FailureKind.readCacheCleanup) {
+        return (removed: removalCommitted, failure: error);
+      }
     } finally {
       releaseMedia();
       if (_current(ticket)) busy = false;
@@ -869,6 +887,7 @@ final class SessionController extends ChangeNotifier {
       }
       _emit();
     }
+    return (removed: removalCommitted, failure: null);
   }
 
   @override

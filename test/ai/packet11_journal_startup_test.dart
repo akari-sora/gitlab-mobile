@@ -54,7 +54,7 @@ void main() {
       final second = syntheticAccount(8);
       const orphan = 'https://synthetic.example/gitlab#99';
       final accounts = _HeldAccounts()..accounts = [first, second];
-      final session = SessionController(accounts);
+      final session = SessionController(accounts, readCache: accounts.readCache);
       addTearDown(session.dispose);
       final keys = MemoryAiJournalKeyStore()..keys[orphan] = syntheticKey(1);
       final journal = AiWriteJournal(
@@ -87,7 +87,8 @@ void main() {
 
   test('accounts already loaded are recovered at once', () async {
     final only = syntheticAccount(7);
-    final session = SessionController(MemoryAccountStore()..accounts = [only]);
+    final accounts = MemoryAccountStore()..accounts = [only];
+    final session = SessionController(accounts, readCache: accounts.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     final journal = AiWriteJournal(
@@ -103,7 +104,7 @@ void main() {
     final first = syntheticAccount(7);
     final added = syntheticAccount(8);
     final store = MemoryAccountStore()..accounts = [first];
-    final session = SessionController(store);
+    final session = SessionController(store, readCache: store.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     final keys = _GatedInventory();
@@ -129,7 +130,8 @@ void main() {
 
   test('an unavailable keychain is swallowed and nothing recovers', () async {
     final only = syntheticAccount(7);
-    final session = SessionController(MemoryAccountStore()..accounts = [only]);
+    final accounts = MemoryAccountStore()..accounts = [only];
+    final session = SessionController(accounts, readCache: accounts.readCache);
     addTearDown(session.dispose);
     await session.initialize();
     final keys = MemoryAiJournalKeyStore()..unavailable = true;
@@ -174,9 +176,8 @@ void main() {
       );
 
       final only = syntheticAccount(7);
-      final session = SessionController(
-        MemoryAccountStore()..accounts = [only],
-      );
+      final accounts = MemoryAccountStore()..accounts = [only];
+      final session = SessionController(accounts, readCache: accounts.readCache);
       addTearDown(session.dispose);
       await session.initialize();
       await recoverAiWriteJournalAfterAccountsLoaded(

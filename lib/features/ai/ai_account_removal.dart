@@ -6,7 +6,6 @@ import '../../core/ai/tools/gitlab_write_port.dart' as port;
 import '../../core/ai/tools/write_coordinator.dart';
 import '../../core/failure.dart';
 import '../../core/models.dart';
-import '../../core/read_cache_disk_contract.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/artifact_storage.dart';
 import '../../shared/workspace_ui.dart';
@@ -219,6 +218,7 @@ final class AiAccountRemoval {
     var dataState = AiRemovalDataState.untouched;
     var finalShown = false;
     var accepted = false;
+    var accountRemovalCommitted = false;
     var timedOut = false;
 
     AiRemovalResult done(
@@ -226,6 +226,12 @@ final class AiAccountRemoval {
       String reason, [
       Object? error,
     ]) {
+      if (accepted && status != AiRemovalStatus.cancelled) {
+        session.readCache.finishAccountRemoval(
+          account.key,
+          removed: accountRemovalCommitted,
+        );
+      }
       final result = AiRemovalResult(status, reason, dataState, error);
       if (result.presentable) {
         _results[account.key] = result;
@@ -329,25 +335,17 @@ final class AiAccountRemoval {
       await (clearAi ?? clearAiAccountData)(account);
       _requireToken(job);
       dataState = AiRemovalDataState.cleared;
-      // SessionController.remove never throws: it returns while busy, and
-      // restores the list when saving fails. Judge by the list it leaves.
-      final removalBinding = DiskBinding(
-        accountKey: account.key,
-        generation: session.generation,
-      );
-      final previousNotice = session.readCache.notice(removalBinding);
-      await session.remove(account);
+      // A staged list is not proof of a persisted removal, especially when
+      // another session operation supersedes a save that subsequently fails.
+      final removal = await session.remove(account);
+      accountRemovalCommitted = removal.removed;
       _requireToken(job);
-      if (session.accounts.any((saved) => saved.key == account.key)) {
-        final notice = session.readCache.notice(removalBinding);
+      if (!removal.removed ||
+          session.accounts.any((saved) => saved.key == account.key)) {
         return done(
           AiRemovalStatus.notRemoved,
           'accountRetained',
-          notice != null && !identical(notice, previousNotice) &&
-                  notice.failure.cleanup?.operation ==
-                      ReadCacheCleanupOperation.accountRemoval
-              ? notice.failure
-              : null,
+          removal.failure,
         );
       }
       return done(AiRemovalStatus.removed, 'removed');

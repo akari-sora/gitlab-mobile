@@ -236,6 +236,152 @@ void main() {
     },
   );
 
+  for (final replacement in [false, true]) {
+    test(
+      'queued decision deadline includes old I/O wait replacement=$replacement',
+      () async {
+        final root = Directory.systemTemp.createTempSync(
+          'read-cache-queued-deadline-',
+        );
+        final events = <String>[];
+        final storage = _CacheStorage(events, hold: true, logEach: true);
+        final cache = ReadCacheDiskCoordinator(
+          keys: ReadCacheKeyStore(storage),
+          files: ReadCacheFileStore(root: () async => root),
+          settings: ReadCacheSettingsStore(storage),
+          coordinationScope: Object(),
+        );
+        final accounts = MemoryAccountStore();
+        final old = SessionController(accounts, readCache: cache);
+        var current = old;
+        final historyStore = _HistoryStore(events);
+        final history = AiHistoryCoordinator.debugReset(
+          store: historyStore,
+          files: AiHistoryFileStore(root: () async => root),
+        );
+        final journals = <_JournalStore>[];
+        AiWriteJournal journal(String id) {
+          final keys = _JournalStore(events);
+          journals.add(keys);
+          return AiWriteJournal(
+            keys: keys,
+            applicationSupport: root,
+            processId: id,
+          );
+        }
+
+        final timers = <Duration, List<_ManualTimer>>{};
+        addTearDown(() async {
+          if (!storage.release.isCompleted) storage.release.complete();
+          if (!old.isDisposed) old.dispose();
+          if (!current.isDisposed) current.dispose();
+          history.dispose();
+          await cache.quiesced;
+          await startupRecoveryQuiescedForTesting(current);
+          if (root.existsSync()) root.deleteSync(recursive: true);
+        });
+        await runZoned(
+          () async {
+            await initializeSessionWithAiRecovery(
+              old,
+              journal: journal('queued-old'),
+            );
+            await storage.entered.future;
+            if (replacement) {
+              current = SessionController(accounts, readCache: cache);
+              old.dispose();
+            }
+            await initializeSessionWithAiRecovery(
+              current,
+              journal: journal('queued-current'),
+            );
+            final decision = current.readCacheStartupDecision!;
+            await pumpEventQueue();
+            expect(storage.reads, 1);
+            expect(cache.startupRecovered, isFalse);
+            for (final timer in List.of(timers[const Duration(seconds: 5)]!)) {
+              if (timer.isActive) timer.fire();
+            }
+            await pumpEventQueue();
+            expect(current.isReadCacheDecisionCurrent(decision), isTrue);
+            final notice = cache.notice(
+              const DiskBinding(accountKey: '', generation: 0),
+            );
+            expect(
+              notice?.failure.cleanup?.operation,
+              ReadCacheCleanupOperation.startup,
+            );
+            expect(
+              notice?.failure.cleanup?.code,
+              ReadCacheCleanupCode.barrierTimedOut,
+            );
+            expect(
+              notice?.failure.cleanup?.disposition,
+              ReadCacheCleanupDisposition.diskClosed,
+            );
+            expect(notice?.failure.cleanup?.clearResult.complete, isFalse);
+            expect(cache.startupRecovered, isFalse);
+            expect(storage.reads, 1);
+            expect(historyStore.entered.isCompleted, isFalse);
+            expect(journals.any((j) => j.entered.isCompleted), isFalse);
+
+            storage.release.complete();
+            await startupRecoveryQuiescedForTesting(current);
+            expect(historyStore.entered.isCompleted, isTrue);
+            expect(journals.last.entered.isCompleted, isTrue);
+            expect(
+              cache.startupRecovered,
+              isFalse,
+              reason:
+                  'neither expired round may publish after the old acknowledgment',
+            );
+            expect(
+              storage.reads,
+              1,
+              reason: 'the expired queued scan must skip I/O',
+            );
+            expect(
+              events.indexOf('cache-end'),
+              lessThan(events.indexOf('history-start')),
+            );
+            expect(
+              events.indexOf('history-end'),
+              lessThan(events.indexOf('journal-start')),
+            );
+            final retries = timers[const Duration(seconds: 1)]!;
+            expect(retries.where((timer) => timer.isActive), hasLength(1));
+            retries.singleWhere((timer) => timer.isActive).fire();
+            await _eventually(() => cache.startupRecovered);
+            expect(storage.reads, 3);
+            expect(
+              events.indexOf('journal-start'),
+              lessThan(events.indexOf('cache-scan-2')),
+            );
+            current.dispose();
+            await pumpEventQueue();
+            expect(
+              timers.values
+                  .expand((list) => list)
+                  .any((timer) => timer.isActive),
+              isFalse,
+            );
+          },
+          zoneSpecification: ZoneSpecification(
+            createTimer: (self, parent, zone, duration, callback) {
+              if (duration == const Duration(seconds: 1) ||
+                  duration == const Duration(seconds: 5)) {
+                final timer = _ManualTimer(() => zone.runGuarded(callback));
+                timers.putIfAbsent(duration, () => []).add(timer);
+                return timer;
+              }
+              return parent.createTimer(zone, duration, callback);
+            },
+          ),
+        );
+      },
+    );
+  }
+
   test('successful recovery runs cache, history, then journal', () async {
     final root = Directory.systemTemp.createTempSync('read-cache-success-');
     final events = <String>[];
