@@ -258,7 +258,7 @@ extension TodoSnoozeApi on GitLabApi {
   if (todo == null) throw const FormatException('Invalid todo identity');
   final id = int.parse(todo.group(1)!);
   // Null is a valid unsupported target; an omitted field is a schema error.
-  if (!node.containsKey('project') || !node.containsKey('targetEntity') ||
+  if (!node.containsKey('project') || !node.containsKey('group') || !node.containsKey('targetEntity') ||
       !node.containsKey('snoozedUntil')) {
     throw const FormatException('Incomplete todo node');
   }
@@ -302,15 +302,10 @@ extension TodoSnoozeApi on GitLabApi {
       final projectId = entity['projectId'];
       ownProject = projectId is int && projectId > 0 && projectId == project?.id ? project : null;
       if (project == null && entity.containsKey('projectId') && projectId == null && node['group'] != null) {
-        final owner = objectJson(node['group']);
-        final groupGid = requiredString(owner, 'id');
-        final groupId = groupKeyNumericId(groupGid);
-        final groupPath = requiredString(owner, 'fullPath');
-        if (groupId == null || !_validStrictGroupPath(groupPath) ||
-            int.tryParse(entityMatch.group(1)!) == null) {
+        if (int.tryParse(entityMatch.group(1)!) == null) {
           throw const FormatException('Invalid group issue todo identity');
         }
-        group = (id: groupId, gid: groupGid, path: groupPath);
+        group = _snoozeOwnershipGroup(node['group']!, allowGroupTargets: allowGroupTargets);
         // GitLab v19.5.0-ee app/models/work_item.rb:3-17 uses the issues
         // table; app/graphql/types/work_item_id_type.rb:19-25,37-50 converts
         // Issue GIDs to WorkItem GIDs using that same row's numeric ID.
@@ -324,6 +319,9 @@ extension TodoSnoozeApi on GitLabApi {
       ownProject = _snoozeOwnershipProject(entity[projectKey]);
     }
     if (entityType == 'WorkItem') {
+      final todoGroup = project == null && ownProject == null && node['group'] != null
+          ? _snoozeOwnershipGroup(node['group']!, allowGroupTargets: allowGroupTargets)
+          : null;
       final namespace = objectJson(entity['namespace']);
       final namespaceId = requiredString(namespace, 'id');
       final namespacePath = requiredString(namespace, 'fullPath');
@@ -335,6 +333,10 @@ extension TodoSnoozeApi on GitLabApi {
       if ((!projectNamespace && !groupNamespace) ||
           _validatedNamespacePathOrNull(namespacePath) != namespacePath ||
           (groupNamespace && !_validStrictGroupPath(namespacePath))) {
+        if (!allowGroupTargets && int.tryParse(entityMatch.group(1)!) != null &&
+            _snoozeOwnershipGroup(namespace, allowGroupTargets: false) == null) {
+          return (id: id, item: null);
+        }
         throw const FormatException('Invalid todo work item namespace');
       }
       namespaceMatches = project != null && projectNamespace && namespacePath == project.path;
@@ -346,11 +348,8 @@ extension TodoSnoozeApi on GitLabApi {
         groupWorkItemId = entityId;
         // WorkItem supplies its own namespace evidence; a supplied Todo group
         // must agree with it rather than silently contradict that owner.
-        if (node['group'] != null) {
-          final owner = objectJson(node['group']);
-          if (owner['id'] != namespaceId || owner['fullPath'] != namespacePath) {
-            return (id: id, item: null);
-          }
+        if (node['group'] != null && (todoGroup?.gid != namespaceId || todoGroup?.path != namespacePath)) {
+          return (id: id, item: null);
         }
       }
     }
@@ -371,7 +370,9 @@ extension TodoSnoozeApi on GitLabApi {
       }),
     }));
   }
-  if (project == null || expected == null || entityType != expected ||
+  // GitLab v19.5.0-ee todo_service.rb:524-526 and todo.rb:87-90 keep a
+  // project's Todo group null, even when that project belongs to a group.
+  if (project == null || node['group'] != null || expected == null || entityType != expected ||
       entityId == null || iid == null || ownProject != project || !namespaceMatches) {
     return (id: id, item: null);
   }
@@ -386,6 +387,23 @@ extension TodoSnoozeApi on GitLabApi {
       'id': entityId, 'iid': iid,
     }),
   }));
+}
+
+({int id, String gid, String path})? _snoozeOwnershipGroup(Object? raw, {required bool allowGroupTargets}) {
+  final owner = objectJson(raw);
+  final gid = requiredString(owner, 'id');
+  final path = requiredString(owner, 'fullPath');
+  final id = groupKeyNumericId(gid);
+  if (id == null || !_validStrictGroupPath(path)) {
+    // Disabled group targets cannot authorize a write. Keep these two strict
+    // identity failures local to the item, preserving all other schema errors.
+    if (!allowGroupTargets && gid.startsWith('gid://gitlab/Group/') &&
+        _validatedNamespacePathOrNull(path) == path) {
+      return null;
+    }
+    throw const FormatException('Invalid todo group');
+  }
+  return (id: id, gid: gid, path: path);
 }
 
 ({int id, String path})? _snoozeOwnershipProject(Object? raw) {
