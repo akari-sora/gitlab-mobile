@@ -58,9 +58,10 @@ abstract interface class AiExecutionGate {
   Future<AiExecutionTicket> acquire(AiContinuationKind kind);
 }
 
-/// Total lifetime starts BEFORE acquire's asynchronous work, on one Dart
-/// monotonic clock. The bridge must pass that original request time, never the
-/// reply time. A failed attempt also burns the ticket permanently.
+/// Native permit tickets have a total lifetime starting BEFORE acquire's
+/// asynchronous work, on one Dart monotonic clock. The bridge must pass that
+/// original request time, never the reply time. Local foreground tickets have
+/// no total TTL. A failed attempt also burns the ticket permanently.
 final class AiExecutionTicket {
   AiExecutionTicket({
     required this.binding,
@@ -103,10 +104,18 @@ final class AiExecutionTicket {
         ticketId.isEmpty) {
       refuse(AiExecutionPauseReason.invalidTicket);
     }
-    if (!_isCurrent()) refuse(AiExecutionPauseReason.permitInactive);
-    final elapsed = _clock() - requestStartedAt;
-    if (elapsed < Duration.zero || elapsed >= ttl) {
-      refuse(AiExecutionPauseReason.ticketExpired);
+    if (!_isCurrent()) {
+      refuse(
+        this.binding.permitId == null
+            ? AiExecutionPauseReason.foregroundRequired
+            : AiExecutionPauseReason.permitInactive,
+      );
+    }
+    if (this.binding.permitId != null) {
+      final elapsed = _clock() - requestStartedAt;
+      if (elapsed < Duration.zero || elapsed >= ttl) {
+        refuse(AiExecutionPauseReason.ticketExpired);
+      }
     }
   }
 }

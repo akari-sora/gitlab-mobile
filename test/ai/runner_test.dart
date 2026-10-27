@@ -7,6 +7,7 @@ import 'package:gitlab_mobile/core/ai/ai_events.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
+import 'package:gitlab_mobile/core/ai/execution_gate.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/sse.dart';
@@ -241,6 +242,101 @@ void main() {
       expect(h.payloads.last, isNot(contains('opaque-original')));
     }
   });
+
+  for (final format in AiFormat.values) {
+    for (final interruption in ['timeout', 'stop', 'background', 'unexpected']) {
+      test(
+        'key replacement survives unsent $interruption $format',
+        () async {
+          var foreground = true;
+          final h = Harness(format: format, appInForeground: () => foreground);
+          h.respond = (_, _) async =>
+              h.turn(text: 'original answer', opaque: 'opaque-original');
+          expect((await h.runner.run('one')).reason, AiRunEnd.done);
+          final old = h.runner.segment!;
+          final oldTail = old.tail;
+          final oldWire = List<String>.of(old.frozenWireJson);
+          h.revision = 2;
+          h.runner.replaceKeyRecipient(
+            config: h.config(),
+            complete: h.complete,
+            close: () {},
+            cancelActive: () {},
+          );
+          var refreshes = 0;
+          h.refresh = () {
+            // The projection already exists when its summary is redacted.
+            if (++refreshes != 2) return;
+            expect(h.runner.segment, isNot(same(old)));
+            switch (interruption) {
+              case 'timeout':
+                throw const AiFailure(AiFailureKind.timeout, notSent: true);
+              case 'stop':
+                h.runner.stop();
+              case 'background':
+                foreground = false;
+              case 'unexpected':
+                throw StateError('synthetic refresh refusal');
+            }
+          };
+          final unsent = await h.runner.run('unsent-two');
+          expect(
+            unsent.reason,
+            interruption == 'timeout' || interruption == 'unexpected'
+                ? AiRunEnd.failed
+                : AiRunEnd.stopped,
+          );
+          expect(unsent.modelCalls, 0);
+          expect(h.payloads, hasLength(1));
+          expect(h.runner.segment, same(old));
+          expect(old.tail, same(oldTail));
+          expect(old.frozenWireJson, oldWire);
+          h.refresh = null;
+          foreground = true;
+          h.respond = (_, _) async => h.turn(text: 'new answer');
+          expect((await h.runner.run('three')).reason, AiRunEnd.done);
+          // Assert the real request body, including opaque provider fields.
+          final body = jsonDecode(h.payloads.last);
+          expect(jsonEncode(body), isNot(contains('opaque-original')));
+          expect(jsonEncode(body), isNot(contains('unsent-two')));
+          expect(jsonEncode(body), contains('conversation_summary'));
+          expect(jsonEncode(body), contains('original answer'));
+          expect(h.runner.segment, isNot(same(old)));
+          expect(h.runner.segment!.recipientRevision, 2);
+          expect(old.frozenWireJson, oldWire);
+        },
+      );
+    }
+  }
+
+  test(
+    'execution pause pairs remaining tool calls with the pause reason',
+    () async {
+      var foreground = true;
+      final h = Harness(appInForeground: () => foreground);
+      h.respond = (_, _) async => h.turn(calls: [call('a'), call('b'), call('c')]);
+      var reads = 0;
+      h.execute = (tc) async {
+        reads++;
+        foreground = false;
+        return AiToolResult(callId: tc.id, name: tc.name, content: 'first read');
+      };
+      final result = await h.runner.run('question');
+      expect(result.reason, AiRunEnd.stopped);
+      expect(result.pause?.reason, AiExecutionPauseReason.foregroundRequired);
+      expect(result.modelCalls, 1);
+      expect(result.toolCalls, 1);
+      expect(reads, 1);
+      final tail = h.runner.segment!.tail! as AppToolResultsEntry;
+      expect(tail.results.map((r) => r.callId), ['a', 'b', 'c']);
+      expect(tail.results.first.notExecuted, isFalse);
+      for (final pending in tail.results.skip(1)) {
+        expect(pending.notExecuted, isTrue);
+        expect(pending.isError, isTrue);
+        expect(pending.content, contains('Not executed: foregroundRequired'));
+      }
+    },
+  );
 
   test(
     'OAuth refresh after read redacts new and retained tokens before send',

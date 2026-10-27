@@ -162,6 +162,36 @@ void main() {
         _consume(await gate.acquire(AiContinuationKind.model));
       },
     );
+
+    test('local foreground ticket remains valid after 1000ms', () async {
+      final clock = Mr6cClock();
+      final gate = ForegroundAiExecutionGate(
+        appInForeground: () => true,
+        clock: clock.now,
+      );
+      final ticket = await gate.acquire(AiContinuationKind.mutation);
+      clock.advance(const Duration(milliseconds: 1001));
+      _consume(ticket);
+      _spent(ticket);
+    });
+
+    test('foreground consume reports foregroundRequired', () async {
+      var visible = true;
+      final gate = ForegroundAiExecutionGate(appInForeground: () => visible);
+      final ticket = await gate.acquire(AiContinuationKind.model);
+      visible = false;
+      expect(
+        () => _consume(ticket),
+        throwsA(
+          isA<AiExecutionPaused>().having(
+            (e) => e.pause.reason,
+            'reason',
+            AiExecutionPauseReason.foregroundRequired,
+          ),
+        ),
+      );
+      _spent(ticket);
+    });
   });
 
   group('model boundary', () {
@@ -553,6 +583,52 @@ void main() {
         expect(h.payloads, isEmpty);
       },
     );
+
+    test('background without a permit starts no new tool read', () async {
+      final h = await _ModelHarness.create();
+      addTearDown(h.dispose);
+      h.gate.binding = _binding(h.api, permit: null);
+      h.gate.foreground = true;
+      var reads = 0;
+      h.execute = (call) async {
+        reads++;
+        return AiToolResult(callId: call.id, name: call.name, content: 'read');
+      };
+      h.base.respond = (_, _) async {
+        h.gate.foreground = false;
+        return h.base.turn(calls: [runner_base.call()]);
+      };
+      final result = await h.runner.run('read once visible');
+      expect(result.reason, AiRunEnd.stopped);
+      expect(result.pause?.reason, AiExecutionPauseReason.foregroundRequired);
+      expect(result.modelCalls, 1);
+      expect(reads, 0);
+      expect(result.toolCalls, 0);
+    });
+  });
+
+  test('last refresh rechecks execution run drift before consume', () async {
+    final h = await _WriteHarness.create(graph: false, begin: false);
+    addTearDown(h.dispose);
+    final b = runner_base.Harness();
+    var drifted = false;
+    final runner = _runnerWithWrites(
+      h,
+      b,
+      refreshSecrets: () async {
+        if (h.gate.acquisitions.isNotEmpty && !drifted) {
+          drifted = true;
+          h.revision++;
+        }
+      },
+    );
+    final result = await runner.run('policy changes in final refresh');
+    expect(drifted, isTrue);
+    expect(result.reason, AiRunEnd.stopped);
+    expect(result.pause?.reason, AiExecutionPauseReason.runChanged);
+    expect(result.modelCalls, 0);
+    expect(b.payloads, isEmpty);
+    expect(h.gate.events, isNot(contains('consume:model')));
   });
 
   for (final invalidRun in ['', 'reused']) {
@@ -826,6 +902,26 @@ void main() {
         expect(h.sends, 1);
       });
 
+      test('local foreground slow dispatch flush still sends', () async {
+        final direct = h.makeCoordinator(inject: false);
+        addTearDown(() => direct.stop('done'));
+        h.level = AiAutonomyLevel.confirmEach;
+        final proposal = (await direct.propose(h.call()))!;
+        final entered = h.storage.files.armBarrier(
+          writesBeforeBarrier: 1,
+          afterPersist: true,
+        );
+        final pending = direct.approve(proposal);
+        await entered;
+        expect(h.sends, 0);
+        await Future<void>.delayed(const Duration(milliseconds: 1100));
+        h.storage.files.releaseBarrier();
+        final outcome = await pending;
+        expect(outcome.state, AiJournalState.succeeded);
+        expect(outcome.mutationCount, 1);
+        expect(h.sends, 1);
+      });
+
       test('no gate or snapshot visibility fails closed', () async {
         final direct = h.makeCoordinator(
           inject: false,
@@ -915,6 +1011,60 @@ void main() {
           expect(
             (await h.coordinator.approve(proposal)).state,
             AiJournalState.succeeded,
+          );
+        },
+      );
+
+      test(
+        'approval backgrounded during acquire never flushes dispatch',
+        () async {
+          h.level = AiAutonomyLevel.confirmEach;
+          final proposal = (await h.coordinator.propose(h.call()))!;
+          final acquire = Mr6cBarrier();
+          h.gate.onAcquire = (_) => acquire.wait();
+          var dispatchFlushed = false;
+          unawaited(
+            h.storage.files
+                .armBarrier(writesBeforeBarrier: 1, afterPersist: true)
+                .then((_) async {
+                  final durable = await h.storage.readDurableJournal();
+                  dispatchFlushed =
+                      ((durable['entries']! as List).last as Map)['state'] ==
+                      'dispatching';
+                  h.storage.files.releaseBarrier();
+                }),
+          );
+          final pending = h.coordinator.approve(proposal);
+          await acquire.entered;
+          h.foreground = false;
+          acquire.release();
+          final outcome = await pending;
+          h.expectNotExecuted(outcome);
+          expect(dispatchFlushed, isFalse);
+        },
+      );
+
+      test(
+        'approval backgrounded during flush rolls back without sending',
+        () async {
+          h.level = AiAutonomyLevel.confirmEach;
+          final proposal = (await h.coordinator.propose(h.call()))!;
+          final entered = h.storage.files.armBarrier(
+            writesBeforeBarrier: 1,
+            afterPersist: true,
+          );
+          final pending = h.coordinator.approve(proposal);
+          await entered;
+          expect(h.gate.acquisitions, [AiContinuationKind.mutation]);
+          expect(h.sends, 0);
+          h.foreground = false;
+          h.storage.files.releaseBarrier();
+          final outcome = await pending;
+          h.expectNotExecuted(outcome);
+          final durable = await h.storage.readDurableJournal();
+          expect(
+            ((durable['entries']! as List).last as Map)['state'],
+            'notExecuted',
           );
         },
       );
@@ -1231,12 +1381,16 @@ void main() {
   }
 }
 
-AiRunner _runnerWithWrites(_WriteHarness h, runner_base.Harness b) => AiRunner(
+AiRunner _runnerWithWrites(
+  _WriteHarness h,
+  runner_base.Harness b, {
+  Future<void> Function()? refreshSecrets,
+}) => AiRunner(
   config: b.config(),
   wire: b.wire,
   complete: b.complete,
   secrets: b.secrets,
-  refreshSecrets: () async {},
+  refreshSecrets: refreshSecrets ?? () async {},
   guard: AiRunGuard(
     expectedGeneration: 7,
     ownerApi: h.server.api,

@@ -298,6 +298,8 @@ final class AiWritePolicySnapshot {
   final bool _clientMayStart;
   final bool Function()? _clientMayStartPredicate;
   /// Evaluate the live client guard only at a write or approval boundary.
+  /// A stored snapshot also reads this live; never read the client field from
+  /// a stored snapshot. Take a fresh snapshot at the boundary instead.
   bool get clientMayStart =>
       _clientMayStart && (_clientMayStartPredicate?.call() ?? true);
   /// Required for a permit-bound run; compared by identity, never persisted.

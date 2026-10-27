@@ -352,6 +352,7 @@ final class AiRunner {
     final toolsBeforeSend = _segmentTools;
     final fingerprintBeforeSend = _segmentToolFingerprint;
     final toolPolicyBeforeSend = _segmentToolPolicyRevision;
+    final projectionBeforeSend = _needsProjection;
     AiEntry? previousTail = segmentBeforeSend?.tail;
     var froze = false;
     AiEntry? beforeFinishingNote;
@@ -373,6 +374,9 @@ final class AiRunner {
         _segmentTools = toolsBeforeSend;
         _segmentToolFingerprint = fingerprintBeforeSend;
         _segmentToolPolicyRevision = toolPolicyBeforeSend;
+        // _newSegment consumed this flag; the restored source still needs
+        // projection after a key replacement or another replay invalidation.
+        _needsProjection |= projectionBeforeSend;
         _verifiedSecrets = null;
         _verifiedLength = -1;
       }
@@ -630,7 +634,7 @@ final class AiRunner {
           );
         }
         final results = <AiToolResult>[];
-        var exitReason = AiRunEnd.toolBudget;
+        var exitReason = AiRunEnd.toolBudget.name;
         try {
           await _refresh(epoch);
           answer = clipAiText(
@@ -642,10 +646,11 @@ final class AiRunner {
           );
           partial = StringBuffer();
           if (finishing || turn.stop != AiStopReason.endTurn) {
-            exitReason = finishing
+            final reason = finishing
                 ? AiRunEnd.toolBudget
                 : _endForStop(turn.stop);
-            return result(exitReason);
+            exitReason = reason.name;
+            return result(reason);
           }
           beginToolTurn?.call();
           writeCoordinator?.beginTurn();
@@ -800,15 +805,18 @@ final class AiRunner {
             _notifyToolResult(safeResult);
             if (writePause != null) throw AiExecutionPaused(writePause!);
           }
+        } on AiExecutionPaused catch (stopped) {
+          exitReason = stopped.pause.reason.name;
+          rethrow;
         } on _RunStopped catch (stopped) {
-          exitReason = stopped.reason;
+          exitReason = stopped.reason.name;
           rethrow;
         } finally {
           // Pair by position, not ID: hostile duplicate IDs cannot hide a call.
           final paired = AppToolResultsEntry([
             ...results,
             for (final tc in calls.skip(results.length))
-              synthetic(tc, exitReason.name),
+              synthetic(tc, exitReason),
           ]);
           _pendingToolCalls = calls;
           seg.setTail(paired);
