@@ -303,6 +303,15 @@ class AiBoundaryTest(unittest.TestCase):
             fields = set(re.findall(
                 r"(?m)^\s*final\s+[^;\n=]+?\s+(\w+);", freshness.group(1)
             ))
+            constructor = re.search(
+                r"\bAiWriteFreshness\(\{(.*?)\}\);", freshness.group(1), re.DOTALL
+            )
+            self.assertIsNotNone(constructor)
+            self.assertEqual(
+                len(re.findall(r"\bthis\.\w+", constructor.group(1))),
+                len(fields),
+                "AiWriteFreshness constructor/field count mismatch; check wrapped field declarations",
+            )
             copied = set(re.findall(r"(?m)^\s*(\w+):", merge.group(1)))
             self.assertTrue(fields)
             for field in fields & copied:
@@ -310,14 +319,18 @@ class AiBoundaryTest(unittest.TestCase):
             return fields - copied, copied - fields
 
         self.assertEqual(field_difference(source), (set(), set()))
-        # Read stored fields, including ones initialized without `this.field`.
+        # A new constructor-backed field must also be copied by the merge.
         mutant = source.replace(
+            "this.updatedAt,", "this.futureField,\n    this.updatedAt,", 1
+        ).replace(
             "final String? updatedAt;",
             "final String? futureField;\n  final String? updatedAt;", 1
         )
         self.assertEqual(field_difference(mutant), ({"futureField"}, set()))
 
     def test_ledger_named_methods_are_write_port_whitelisted(self):
+        # Replacements for the removed exact-delta test: test_ledger_named_methods_are_write_port_whitelisted + test_row13_write_port_calls_only_whitelisted_members.
+        self.assertTrue(_MR6B3T_WRITE_PORT_MEMBERS.isdisjoint(_MR6B3_WRITE_PORT_MEMBERS))
         methods = set()
         paths = [AI_ROOT / "tools" / "write_ledger.dart"]
         paths.extend(sorted((AI_ROOT / "tools" / "ledger").glob("rows_*.dart")))
