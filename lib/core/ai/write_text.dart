@@ -1,8 +1,11 @@
+import 'dart:math';
+
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:markdown/markdown.dart' as md;
 
 import '../../l10n/l10n.dart';
+import '../group_work_item_identity.dart';
 import '../instance.dart';
 import '../upload_names.dart';
 import 'ai_failure.dart';
@@ -79,6 +82,7 @@ final class AiFieldProvenance {
     this.groupId,
     this.projectFullPath,
     this.groupFullPath,
+    this.accountKey,
   });
 
   final AiConflictKey resourceKey;
@@ -89,9 +93,12 @@ final class AiFieldProvenance {
   final int? groupId;
   final String? projectFullPath;
   final String? groupFullPath;
+  final String? accountKey;
 
   bool sameField(AiFieldProvenance other) =>
-      resourceKey == other.resourceKey && fieldName == other.fieldName;
+      resourceKey == other.resourceKey &&
+      fieldName == other.fieldName &&
+      accountKey == other.accountKey;
 
   /// The provenance of an issue or merge request description ([noteId]
   /// null) or of one note's body on it. The read port and the write side
@@ -131,6 +138,37 @@ final class AiFieldProvenance {
           : instance.projectWeb('$path/-/$resource/$iid'),
       projectId: projectId,
       projectFullPath: path,
+    );
+  }
+
+  /// One server-verified group description or existing note body. Excerpts
+  /// must pass completeValue:false. A note's numeric ID and server GID alias
+  /// share a source, always beneath the exact group and Work Item IID.
+  factory AiFieldProvenance.groupWorkItem({
+    required VerifiedGroupWorkItemIdentity identity,
+    required bool completeValue,
+    int? noteId,
+    String? noteGid,
+  }) {
+    final note = noteId != null || noteGid != null;
+    final noteKey = identity.canonicalNoteKey(noteId: noteId, noteGid: noteGid);
+    if (note && noteKey == null) {
+      throw ArgumentError('Invalid group Work Item note identity');
+    }
+    return AiFieldProvenance(
+      resourceKey: AiConflictKey(note ? noteKey! : identity.canonicalKey),
+      fieldName: note
+          ? AiWritableField.workItemNote
+          : AiWritableField.workItemDescription,
+      completeValue: completeValue,
+      // GitLab CE v18.5.0, a2f69d15ebab6fda20fef41f44707ee920510ae8:
+      // config/routes/group.rb:29-34,177-178 (checked 2026-10-27).
+      resourceWeb: identity.instance.projectWeb(
+        'groups/${identity.fullPath}/-/work_items/${identity.iid}',
+      ),
+      accountKey: identity.accountKey,
+      groupId: identity.groupId,
+      groupFullPath: identity.fullPath,
     );
   }
 }
@@ -289,11 +327,28 @@ String get aiAttributionLine => l10n.aiWrittenByAssistant;
 /// resource or field gets a new number. Existing numbers are never reused
 /// for a different target.
 final class UploadPlaceholderTable {
-  UploadPlaceholderTable({required this.instance});
+  UploadPlaceholderTable({
+    required this.instance,
+    this.accountKey,
+    this.conversationId,
+  });
 
   static const maxEntries = 1000;
 
   final GitLabInstance instance;
+
+  /// Group fields require both bindings. Older project callers retain their
+  /// existing per-conversation lifecycle. A new conversation needs a new table;
+  /// no table or restore map is serialized.
+  final String? accountKey;
+  final String? conversationId;
+  // Give each group table a fresh 128-bit random namespace while keeping the
+  // u-<digits> wire format. Store IDs as strings: the namespace plus entry
+  // number exceeds the native integer range.
+  late final String _groupTokenPrefix = () {
+    final random = Random.secure();
+    return '1${List<String>.generate(16, (_) => random.nextInt(256).toString().padLeft(3, '0')).join()}';
+  }();
   final List<_UploadEntry> _entries = <_UploadEntry>[];
   final Set<String> _userMessageTargets = <String>{};
   final Set<({AiConflictKey resourceKey, String fieldName})> _seenOnlyCut =
@@ -377,6 +432,9 @@ final class UploadPlaceholderTable {
   /// Restores placeholders that belong to [field]. Any other id, field or
   /// position blocks the whole string.
   AiTextOutcome restoreIntoSameField(String text, AiFieldProvenance field) {
+    if (!_acceptsField(field)) {
+      return AiTextOutcome.block(AiTextBlockCode.rereadField);
+    }
     if (!field.completeValue) {
       return AiTextOutcome.block(AiTextBlockCode.fieldTooLong);
     }
@@ -390,11 +448,14 @@ final class UploadPlaceholderTable {
           !_legalUploadPosition(text, match.start, match.end)) {
         return AiTextOutcome.block(AiTextBlockCode.badPlaceholderPosition);
       }
-      final id = int.parse(match.group(1)!);
+      final id = match.group(1)!;
       final entry = _entryForId(id);
       if (entry == null ||
           entry.resourceKey != field.resourceKey ||
-          entry.fieldName != field.fieldName) {
+          entry.fieldName != field.fieldName ||
+          entry.accountKey != field.accountKey ||
+          (field.groupId != null &&
+              !_ownsUpload(entry.classifyTarget, field))) {
         return AiTextOutcome.block(AiTextBlockCode.rereadField);
       }
       replacements.add(
@@ -414,7 +475,7 @@ final class UploadPlaceholderTable {
   @override
   String toString() => 'UploadPlaceholderTable(${_entries.length})';
 
-  _UploadEntry? _entryForId(int id) {
+  _UploadEntry? _entryForId(String id) {
     for (final entry in _entries) {
       if (entry.id == id) return entry;
     }
@@ -429,6 +490,7 @@ final class UploadPlaceholderTable {
     final eligible =
         !userMessage &&
         field != null &&
+        _acceptsField(field) &&
         field.completeValue &&
         AiWritableField.restorable.contains(field.fieldName);
     final replacements = <_SpanReplacement>[];
@@ -449,7 +511,8 @@ final class UploadPlaceholderTable {
           );
           continue;
         }
-        final id = existing?.id ?? _allocate(field, target.raw);
+        final id =
+            existing?.id ?? _allocate(field, target.raw, target.classifyText);
         replacements.add(
           _SpanReplacement(target.start, target.end, '[[upload:u-$id]]'),
         );
@@ -466,6 +529,7 @@ final class UploadPlaceholderTable {
     for (final entry in _entries) {
       if (entry.resourceKey == field.resourceKey &&
           entry.fieldName == field.fieldName &&
+          entry.accountKey == field.accountKey &&
           entry.rawTarget == raw) {
         return entry;
       }
@@ -473,17 +537,32 @@ final class UploadPlaceholderTable {
     return null;
   }
 
-  int _allocate(AiFieldProvenance field, String raw) {
-    final id = _entries.length + 1;
+  String _allocate(AiFieldProvenance field, String raw, String classifyTarget) {
+    final number = '${_entries.length + 1}';
+    final id = field.groupId == null
+        ? number
+        : '$_groupTokenPrefix${number.padLeft(4, '0')}';
     _entries.add(
       _UploadEntry(
         id: id,
         resourceKey: field.resourceKey,
         fieldName: field.fieldName,
+        accountKey: field.accountKey,
         rawTarget: raw,
+        classifyTarget: classifyTarget,
       ),
     );
     return id;
+  }
+
+  bool _acceptsField(AiFieldProvenance field) {
+    final sourceAccount = field.accountKey;
+    if (sourceAccount == null) return field.groupId == null;
+    return sourceAccount == accountKey &&
+        sourceAccount.startsWith('${instance.key}#') &&
+        conversationId != null &&
+        conversationId!.isNotEmpty &&
+        field.resourceWeb != null;
   }
 
   bool _ownsUpload(String destination, AiFieldProvenance field) {
@@ -527,14 +606,20 @@ final class UploadPlaceholderTable {
       if (head[i] != base[i]) return false;
     }
     final rest = head.sublist(base.length);
+    if (field.groupId != null) {
+      // UploadLinkFilter rewrites /uploads to /-/group/<id>/uploads.
+      // The path-based group route is /groups/<path>/-/uploads (v18.5.0).
+      return _sameSegments(rest, <String>['-', 'group', '${field.groupId}']) ||
+          (field.groupFullPath != null &&
+              _sameSegments(rest, <String>[
+                'groups',
+                ..._pathSegments(field.groupFullPath),
+                '-',
+              ]));
+    }
     if (_sameSegments(rest, _pathSegments(field.projectFullPath))) return true;
     if (field.projectId != null &&
         _sameSegments(rest, <String>['-', 'project', '${field.projectId}'])) {
-      return true;
-    }
-    if (_sameSegments(rest, _pathSegments(field.groupFullPath))) return true;
-    if (field.groupId != null &&
-        _sameSegments(rest, <String>['-', 'group', '${field.groupId}'])) {
       return true;
     }
     return false;
@@ -546,13 +631,17 @@ final class _UploadEntry {
     required this.id,
     required this.resourceKey,
     required this.fieldName,
+    required this.accountKey,
     required this.rawTarget,
+    required this.classifyTarget,
   });
 
-  final int id;
+  final String id;
   final AiConflictKey resourceKey;
   final String fieldName;
+  final String? accountKey;
   final String rawTarget;
+  final String classifyTarget;
 }
 
 /// Replaces `[[attachment:att-<n>]]` with the rebuilt image markdown.
@@ -627,7 +716,7 @@ AiTextOutcome prepareWriteText({
     text = analyzeDraftMentions(text, keepNotifications: keepNotifications).text;
   }
   if (_attachmentPlaceholder.hasMatch(text)) {
-    if (!classA || !sameProjectClassA) {
+    if (!classA || !sameProjectClassA || field?.groupId != null) {
       return AiTextOutcome.block(AiTextBlockCode.attachmentScope);
     }
     if (attachments == null) {
@@ -653,7 +742,7 @@ AiTextOutcome prepareWriteText({
       return restored;
     }
     for (final match in _uploadPlaceholder.allMatches(text)) {
-      final id = int.parse(match.group(1)!);
+      final id = match.group(1)!;
       for (final entry in placeholders._entries) {
         if (entry.id == id) restoredTargets.add(entry.rawTarget);
       }
