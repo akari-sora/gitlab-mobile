@@ -652,6 +652,7 @@ void main() {
           DiskLookup(
             binding: DiskBinding(accountKey: _account, generation: 2),
             canonicalKey: entry.canonicalKey,
+            bodyKind: entry.bodyKind,
             lease: _Lease(),
           ),
         );

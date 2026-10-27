@@ -676,7 +676,12 @@ final class _ReadCache {
 
     try {
       final entry = await backend.lookup(
-        DiskLookup(binding: binding, canonicalKey: key, lease: lease),
+        DiskLookup(
+          binding: binding,
+          canonicalKey: key,
+          bodyKind: kind,
+          lease: lease,
+        ),
       );
       if (entry == null || !lease.isCurrent) return null;
       if (entry.canonicalKey != key || entry.accountKey != binding.accountKey) {
