@@ -32,6 +32,20 @@ ProjectedDiskEntry _textEntry(
 }
 
 void main() {
+  test('lookup carries the caller-selected body kind', () {
+    final lease = _Lease();
+    for (final kind in ReadCacheBodyKind.values) {
+      final lookup = DiskLookup(
+        binding: _binding,
+        canonicalKey: 'projects/1',
+        bodyKind: kind,
+        lease: lease,
+      );
+      expect(lookup.bodyKind, kind);
+      expect(lookup.lease, same(lease));
+    }
+  });
+
   test(
     'closed enums contain every contract value and flag combinations remain exact',
     () {
