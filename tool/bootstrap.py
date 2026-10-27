@@ -362,7 +362,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -374,21 +373,35 @@ import java.util.UUID
 
 class AgentRunService : Service() {
     internal var permitId: String? = null
-
-    override fun onCreate() {
-        super.onCreate()
-        AgentRunsChannel.serviceCreated(this)
-    }
+        private set
+    private var foregroundStarted = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        AgentRunsChannel.serviceStarted(this, intent?.getStringExtra(EXTRA_PERMIT_ID))
+        // Every start must discharge startForegroundService's obligation FIRST, even
+        // after release/cancellation or for a stale/null intent. STARTING stops only
+        // revoke authority; they never call stopService/stopSelf. After promotion,
+        // stop only if no current permit exists: a stale intent must not stop a
+        // newer pending start sharing this service. Bind only a matching start,
+        // once per instance; onCreate/old onDestroy cannot adopt a newer permit.
+        val failure = try {
+            promote(RunProgress(1, 0, null, null))
+            null
+        } catch (_: SecurityException) {
+            "security_exception"
+        } catch (_: IllegalStateException) {
+            "start_denied"
+        } catch (_: RuntimeException) {
+            "start_failed"
+        }
+        if (failure != null) AgentRunsChannel.serviceStartFailed(this, intent?.getStringExtra(EXTRA_PERMIT_ID), failure)
+        else AgentRunsChannel.serviceStarted(this, intent?.getStringExtra(EXTRA_PERMIT_ID))
         return START_NOT_STICKY
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        AgentRunsChannel.serviceEnded(this, "timeout")
+        AgentRunsChannel.serviceTimedOut(this)
     }
 
     override fun onDestroy() {
@@ -403,6 +416,12 @@ class AgentRunService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        foregroundStarted = true
+    }
+
+    internal fun bindPermit(id: String): Boolean {
+        if (permitId == null) permitId = id
+        return permitId == id
     }
 
     internal fun update(progress: RunProgress) {
@@ -410,9 +429,11 @@ class AgentRunService : Service() {
     }
 
     internal fun stopNative() {
+        if (!foregroundStarted) return
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } finally {
+            foregroundStarted = false
             stopSelf()
         }
     }
@@ -474,7 +495,6 @@ internal object AgentRunsChannel {
     private var owner: Activity? = null
     private var visible: Activity? = null
     private var registration: Any? = null
-    private var context: Context? = null
     private var lastOpSeq = 0L
     private var cleanupFailed = false
 
@@ -515,12 +535,14 @@ internal object AgentRunsChannel {
 
     fun register(engine: FlutterEngine, activity: Activity) {
         mainThread()
-        if (owner != null && owner !== activity) stop("activity_destroyed")
+        if (owner !== activity) {
+            if (owner != null) stop("activity_destroyed")
+            visible = null
+        }
         channel?.setMethodCallHandler(null)
         val binding = Any()
         registration = binding
         owner = activity
-        context = activity.applicationContext
         channel = MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL).also { bridge ->
             bridge.setMethodCallHandler { call, result ->
                 mainThread()
@@ -580,12 +602,14 @@ internal object AgentRunsChannel {
             permit.progress = progress
             if (permit.state == State.ACTIVE) {
                 try {
-                    service!!.update(progress)
-                    active(result, permit, requestId, seq)
+                    val running = service ?: throw IllegalStateException()
+                    running.update(progress)
                 } catch (_: RuntimeException) {
                     stop("notification_failed")
                     reject(result, "notification_failed")
+                    return
                 }
+                active(result, permit, requestId, seq)
             } else {
                 permit.pending.add(PendingStart(requestId, seq, result))
             }
@@ -612,35 +636,36 @@ internal object AgentRunsChannel {
         result.success(reply("active", "permitId" to permit.id, "startRequestId" to requestId, "opSeq" to seq))
     }
 
-    fun serviceCreated(instance: AgentRunService) {
+    fun serviceStartFailed(instance: AgentRunService, expectedId: String?, reason: String) {
         mainThread()
-        val permit = current
-        if (permit == null) { instance.stopNative(); return }
-        // Bind before onStartCommand, so early destroy also terminates a pending start.
-        instance.permitId = permit.id
-        service = instance
+        val permit = current ?: return
+        if (permit.id == expectedId && (instance.permitId == null || instance.permitId == permit.id)) stop(reason)
     }
 
     fun serviceStarted(instance: AgentRunService, expectedId: String?) {
         mainThread()
         val permit = current
-        if (permit == null) { instance.stopNative(); return }
+        if (permit == null) {
+            try { instance.stopNative() } catch (_: RuntimeException) { cleanupFailed = true }
+            return
+        }
         // An obsolete intent must neither revive its permit nor stop a newer one.
         if (permit.id != expectedId) return
-        instance.permitId = permit.id
+        if (!instance.bindPermit(permit.id)) return
         service = instance
         try {
-            instance.promote(permit.progress)
-            permit.state = State.ACTIVE
-            val pending = permit.pending.toList()
-            permit.pending.clear()
-            pending.forEach { active(it.result, permit, it.requestId, it.opSeq) }
-        } catch (_: SecurityException) {
-            stop("security_exception")
-        } catch (_: IllegalStateException) {
-            stop("start_denied")
+            instance.update(permit.progress)
         } catch (_: RuntimeException) {
-            stop("start_failed")
+            stop("notification_failed")
+            return
+        }
+        permit.state = State.ACTIVE
+        // Engine replies are independent of promotion and of each other.
+        val pending = permit.pending.toList()
+        permit.pending.clear()
+        pending.forEach {
+            try { active(it.result, permit, it.requestId, it.opSeq) }
+            catch (_: RuntimeException) { /* Engine gone; still answer the remaining starts. */ }
         }
     }
 
@@ -655,13 +680,15 @@ internal object AgentRunsChannel {
             reject(result, "permit_inactive"); return
         }
         try {
-            service!!.update(progress)
+            val running = service ?: throw IllegalStateException()
+            running.update(progress)
             permit.progress = progress
-            result.success(reply("updated", "permitId" to permit.id))
         } catch (_: RuntimeException) {
             stop("notification_failed")
             reject(result, "notification_failed")
+            return
         }
+        result.success(reply("updated", "permitId" to permit.id))
     }
 
     private fun release(args: Map<*, *>, result: MethodChannel.Result) {
@@ -671,9 +698,12 @@ internal object AgentRunsChannel {
         val target = id(args, if (byPermit) "permitId" else "startRequestId")
         if (byPermit == byRequest || target == null) { reject(result, "invalid_arguments"); return }
         sequence(args, result) ?: return
-        if (cleanupFailed) { reject(result, "cleanup_failed"); return }
         val permit = current
-        if (permit == null) { result.success(reply("released", "didRelease" to false)); return }
+        if (permit == null) {
+            result.success(if (cleanupFailed) reply("rejected", "reason" to "cleanup_failed")
+                else reply("released", "didRelease" to false))
+            return
+        }
         val ownsRequest = permit.createdRequestId == target && permit.latestStartSeq == permit.createdOpSeq
         if ((byPermit && permit.id != target) || (byRequest && !ownsRequest)) {
             result.success(reply("released", "didRelease" to false)); return
@@ -707,7 +737,7 @@ internal object AgentRunsChannel {
             "nonce" to nonce, "ticketId" to UUID.randomUUID().toString()))
     }
 
-    private fun invalidate(reason: String): Permit? {
+    private fun invalidate(): Permit? {
         val permit = current ?: return null
         permit.state = State.INVALIDATED
         permit.nonces.clear()
@@ -718,8 +748,10 @@ internal object AgentRunsChannel {
         val running = service
         service = null
         return try {
-            if (running != null) running.stopNative() else context?.stopService(Intent(context, AgentRunService::class.java))
-            true
+            // No instance is registered until its onStartCommand has promoted.
+            // A missing instance is STARTING: its callback performs any deferred stop.
+            running?.stopNative()
+            !cleanupFailed
         } catch (_: RuntimeException) {
             cleanupFailed = true
             false
@@ -738,7 +770,7 @@ internal object AgentRunsChannel {
         } catch (_: RuntimeException) { /* Best effort only; native authority is already gone. */ }
     }
     private fun stop(reason: String): Boolean {
-        val permit = invalidate(reason)
+        val permit = invalidate()
         val stopped = stopNative()
         notifyInvalidated(permit, reason)
         return stopped
@@ -746,10 +778,17 @@ internal object AgentRunsChannel {
     fun serviceEnded(instance: AgentRunService, reason: String) {
         mainThread()
         // A delayed destroy from an old service cannot invalidate a newer permit.
-        val permit = if (current?.id == instance.permitId) invalidate(reason) else null
+        val permit = if (current?.id == instance.permitId) invalidate() else null
+        if (service === instance) service = null
+        notifyInvalidated(permit, reason)
+    }
+
+    fun serviceTimedOut(instance: AgentRunService) {
+        mainThread()
+        val permit = if (current?.id == instance.permitId) invalidate() else null
         if (service === instance) service = null
         try { instance.stopNative() } catch (_: RuntimeException) { cleanupFailed = true }
-        notifyInvalidated(permit, reason)
+        notifyInvalidated(permit, "timeout")
     }
 }
 '''
@@ -782,6 +821,11 @@ def agent_run_files() -> dict[str, str]:
         ET.indent(resources, space='    ')
         files[f'src/main/res/{directory}/strings.xml'] = (
             '<?xml version="1.0" encoding="utf-8"?>\n' + ET.tostring(resources, encoding='unicode') + '\n')
+        # Keep both modern and legacy Android resource codes, with identical bytes.
+        legacy = {'id': 'in', 'he': 'iw', 'yi': 'ji'}.get(language)
+        if legacy:
+            legacy_qualifier = legacy + (f'-r{country}' if country else '')
+            files[f'src/main/res/values-{legacy_qualifier}/strings.xml'] = files[f'src/main/res/{directory}/strings.xml']
     return files
 
 
@@ -1075,6 +1119,10 @@ dependencies {{
 def configure_update_channels(app: Path) -> None:
     """Upgrade only exact managed activities, channels and dependency blocks."""
     files = _check_update_template(app)
+    agents = agent_run_files()
+    _check_agent_template(app, ET.parse(app / 'src/main/AndroidManifest.xml').getroot(), agents)
+    if not all((app / name).is_file() for name in agents):
+        raise RuntimeError('Configure the complete agent service template before the update channels.')
     gradle = app / 'build.gradle.kts'
     text = gradle.read_text(encoding='utf-8')
     if UPDATE_DEPENDENCIES_BEGIN not in text:
@@ -1097,7 +1145,7 @@ def _check_update_template(app: Path) -> dict[str, str]:
             raise RuntimeError('Stale managed update dependencies; review and refresh the owned block.')
     activity = app / 'src/main/kotlin' / KOTLIN_PACKAGE / 'MainActivity.kt'
     current = activity.read_text(encoding='utf-8')
-    if current not in (TEMPLATE_MAIN_ACTIVITY, UPDATE_ONLY_MAIN_ACTIVITY, LINKS_MAIN_ACTIVITY,
+    if current not in (TEMPLATE_MAIN_ACTIVITY, LINKS_MAIN_ACTIVITY,
                        FRAGMENT_MAIN_ACTIVITY, MAIN_ACTIVITY):
         raise RuntimeError('Unknown MainActivity template; review before registering the update channel.')
     files = {
@@ -1112,8 +1160,6 @@ def _check_update_template(app: Path) -> dict[str, str]:
     required = set(files)
     if current == TEMPLATE_MAIN_ACTIVITY:
         required = set()
-    elif current == UPDATE_ONLY_MAIN_ACTIVITY:
-        required.remove(f'src/main/kotlin/{KOTLIN_PACKAGE}/LinkActivity.kt')
     if present != required:
         raise RuntimeError('Incomplete managed update/link template; review before upgrading.')
     if current == TEMPLATE_MAIN_ACTIVITY and UPDATE_DEPENDENCIES_BEGIN in text:

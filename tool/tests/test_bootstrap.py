@@ -23,90 +23,96 @@ MERGED_COMMON_PERMISSIONS = {
 }
 
 
+def _require(condition, message='Generated Android verification failed'):
+    # A normal assertion is removed by Python -O, but this check is a gate.
+    if not condition:
+        raise AssertionError(message)
+
+
 def verify_merged_manifest(path, flavor):
     root = ET.parse(path).getroot()
     a = '{http://schemas.android.com/apk/res/android}'
     package = {'gitlab': 'io.gitlabmobile.gitlab_mobile', 'play': 'app.mergeline'}[flavor]
-    assert root.get('package') == package, f'{path}: wrong application ID'
+    _require(root.get('package') == package, f'{path}: wrong application ID')
     permissions = [node.get(a + 'name') for node in root.findall('uses-permission')]
     expected = MERGED_COMMON_PERMISSIONS | {package + '.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'}
     if flavor == 'gitlab':
         expected |= {'android.permission.REQUEST_INSTALL_PACKAGES'}
-    assert len(permissions) == len(set(permissions)), f'{path}: duplicate permissions'
-    assert set(permissions) == expected, f'{path}: permission difference {set(permissions) ^ expected}'
-    assert not root.findall('uses-permission-sdk-23'), f'{path}: unexpected conditional permissions'
+    _require(len(permissions) == len(set(permissions)), f'{path}: duplicate permissions')
+    _require(set(permissions) == expected, f'{path}: permission difference {set(permissions) ^ expected}')
+    _require(not root.findall('uses-permission-sdk-23'), f'{path}: unexpected conditional permissions')
     for node in root.findall('uses-permission'):
-        assert node.attrib == {a + 'name': node.get(a + 'name')}, f'{path}: conditional permission'
+        _require(node.attrib == {a + 'name': node.get(a + 'name')}, f'{path}: conditional permission')
     app = root.find('application')
-    assert app is not None, f'{path}: missing application'
+    _require(app is not None, f'{path}: missing application')
     for name, value in {
         'allowBackup': 'false', 'usesCleartextTraffic': 'false',
         'fullBackupContent': '@xml/backup_rules', 'dataExtractionRules': '@xml/data_extraction_rules',
         'enableOnBackInvokedCallback': 'true',
     }.items():
-        assert app.get(a + name) == value, f'{path}: {name}'
+        _require(app.get(a + name) == value, f'{path}: {name}')
     services = app.findall('service')
     namespace = 'io.gitlabmobile.gitlab_mobile'
     agents = [node for node in services if node.get(a + 'name', '').split('.')[-1] == 'AgentRunService']
-    assert len(agents) == 1, f'{path}: AgentRunService must be unique'
+    _require(len(agents) == 1, f'{path}: AgentRunService must be unique')
     service = agents[0]
-    assert service.attrib == {a + name: value for name, value in {
+    _require(service.attrib == {a + name: value for name, value in {
         'name': namespace + '.AgentRunService', 'exported': 'false',
         'stopWithTask': 'true', 'foregroundServiceType': 'dataSync',
-    }.items()}, f'{path}: service attributes'
-    assert not list(service), f'{path}: unexpected service children'
+    }.items()}, f'{path}: service attributes')
+    _require(not list(service), f'{path}: unexpected service children')
     # image_picker_android 0.8.13+23 contributes this disabled metadata service.
     plugin_services = [node for node in services if node not in agents]
-    assert len(plugin_services) == 1, f'{path}: unexpected plugin services'
+    _require(len(plugin_services) == 1, f'{path}: unexpected plugin services')
     plugin = plugin_services[0]
-    assert plugin.get(a + 'name') == 'com.google.android.gms.metadata.ModuleDependencies'
-    assert plugin.get(a + 'enabled') == 'false' and plugin.get(a + 'exported') == 'false'
-    assert [node.get(a + 'name') for node in plugin.findall('intent-filter/action')] == [
-        'com.google.android.gms.metadata.MODULE_DEPENDENCIES']
-    assert [(node.get(a + 'name'), node.get(a + 'value')) for node in plugin.findall('meta-data')] == [
-        ('photopicker_activity:0:required', '')]
+    _require(plugin.get(a + 'name') == 'com.google.android.gms.metadata.ModuleDependencies', f'{path}: plugin service name')
+    _require(plugin.get(a + 'enabled') == 'false' and plugin.get(a + 'exported') == 'false', f'{path}: plugin service flags')
+    _require([node.get(a + 'name') for node in plugin.findall('intent-filter/action')] == [
+        'com.google.android.gms.metadata.MODULE_DEPENDENCIES'], f'{path}: plugin service action')
+    _require([(node.get(a + 'name'), node.get(a + 'value')) for node in plugin.findall('meta-data')] == [
+        ('photopicker_activity:0:required', '')], f'{path}: plugin service metadata')
     for action in app.findall('.//receiver/intent-filter/action'):
-        assert action.get(a + 'name') not in {
+        _require(action.get(a + 'name') not in {
             'android.intent.action.BOOT_COMPLETED', 'android.intent.action.LOCKED_BOOT_COMPLETED',
-        }, f'{path}: boot receiver'
+        }, f'{path}: boot receiver')
     def activity(name):
         matches = [node for node in app.findall('activity') if node.get(a + 'name', '').split('.')[-1] == name]
-        assert len(matches) == 1, f'{path}: {name} must be unique'
-        assert matches[0].get(a + 'name') == namespace + '.' + name, f'{path}: {name} class'
+        _require(len(matches) == 1, f'{path}: {name} must be unique')
+        _require(matches[0].get(a + 'name') == namespace + '.' + name, f'{path}: {name} class')
         return matches[0]
     main = activity('MainActivity')
-    assert main.get(a + 'exported') == 'true', f'{path}: launcher export'
-    assert main.get(a + 'launchMode') == 'singleTop', f'{path}: launcher mode'
-    assert [node.get(a + 'value') for node in main.findall('meta-data')
-            if node.get(a + 'name') == 'flutter_deeplinking_enabled'] == ['false']
+    _require(main.get(a + 'exported') == 'true', f'{path}: launcher export')
+    _require(main.get(a + 'launchMode') == 'singleTop', f'{path}: launcher mode')
+    _require([node.get(a + 'value') for node in main.findall('meta-data')
+            if node.get(a + 'name') == 'flutter_deeplinking_enabled'] == ['false'], f'{path}: Flutter deep linking')
     launcher = [node for node in main.findall('intent-filter')
                 if any(action.get(a + 'name') == 'android.intent.action.MAIN' for action in node.findall('action'))]
-    assert len(launcher) == 1, f'{path}: launcher intent'
-    assert [node.get(a + 'name') for node in launcher[0].findall('category')] == ['android.intent.category.LAUNCHER']
+    _require(len(launcher) == 1, f'{path}: launcher intent')
+    _require([node.get(a + 'name') for node in launcher[0].findall('category')] == ['android.intent.category.LAUNCHER'], f'{path}: launcher category')
     link = activity('LinkActivity')
     for name, value in {'exported': 'true', 'noHistory': 'true', 'taskAffinity': '', 'excludeFromRecents': 'true'}.items():
-        assert link.get(a + name) == value, f'{path}: link {name}'
-    assert len(link.findall('intent-filter')) == 2, f'{path}: link intent filters'
+        _require(link.get(a + name) == value, f'{path}: link {name}')
+    _require(len(link.findall('intent-filter')) == 2, f'{path}: link intent filters')
     view, share = link.findall('intent-filter')
-    assert [node.get(a + 'name') for node in view.findall('action')] == ['android.intent.action.VIEW']
-    assert {node.get(a + 'name') for node in view.findall('category')} == {
-        'android.intent.category.DEFAULT', 'android.intent.category.BROWSABLE'}
-    assert [node.attrib for node in view.findall('data')] == [
-        {a + 'scheme': 'https'}, {a + 'host': 'gitlab.com'}]
-    assert [node.get(a + 'name') for node in share.findall('action')] == ['android.intent.action.SEND']
-    assert [node.get(a + 'name') for node in share.findall('category')] == ['android.intent.category.DEFAULT']
-    assert [node.attrib for node in share.findall('data')] == [{a + 'mimeType': 'text/plain'}]
-    assert len(main.findall('intent-filter')) == 2, f'{path}: launcher / OAuth filters'
+    _require([node.get(a + 'name') for node in view.findall('action')] == ['android.intent.action.VIEW'], f'{path}: link action')
+    _require({node.get(a + 'name') for node in view.findall('category')} == {
+        'android.intent.category.DEFAULT', 'android.intent.category.BROWSABLE'}, f'{path}: link categories')
+    _require([node.attrib for node in view.findall('data')] == [
+        {a + 'scheme': 'https'}, {a + 'host': 'gitlab.com'}], f'{path}: link data')
+    _require([node.get(a + 'name') for node in share.findall('action')] == ['android.intent.action.SEND'], f'{path}: share action')
+    _require([node.get(a + 'name') for node in share.findall('category')] == ['android.intent.category.DEFAULT'], f'{path}: share category')
+    _require([node.attrib for node in share.findall('data')] == [{a + 'mimeType': 'text/plain'}], f'{path}: share data')
+    _require(len(main.findall('intent-filter')) == 2, f'{path}: launcher / OAuth filters')
     oauth = [node for node in main.findall('intent-filter')
              if any(action.get(a + 'name') == 'android.intent.action.VIEW' for action in node.findall('action'))]
-    assert len(oauth) == 1
-    assert [node.attrib for node in oauth[0].findall('data')] == [{
-        a + 'scheme': 'io.gitlabmobile.app', a + 'host': 'oauth', a + 'pathPrefix': '/callback'}]
-    assert {node.get(a + 'name') for node in oauth[0].findall('category')} == {
-        'android.intent.category.DEFAULT', 'android.intent.category.BROWSABLE'}
+    _require(len(oauth) == 1, f'{path}: OAuth filter')
+    _require([node.attrib for node in oauth[0].findall('data')] == [{
+        a + 'scheme': 'io.gitlabmobile.app', a + 'host': 'oauth', a + 'pathPrefix': '/callback'}], f'{path}: OAuth data')
+    _require({node.get(a + 'name') for node in oauth[0].findall('category')} == {
+        'android.intent.category.DEFAULT', 'android.intent.category.BROWSABLE'}, f'{path}: OAuth categories')
     sdk = root.find('uses-sdk')
-    assert sdk is not None and sdk.get(a + 'minSdkVersion') == '24', f'{path}: min SDK'
-    assert sdk.get(a + 'targetSdkVersion') == '36', f'{path}: target SDK'
+    _require(sdk is not None and sdk.get(a + 'minSdkVersion') == '24', f'{path}: min SDK')
+    _require(sdk.get(a + 'targetSdkVersion') == '36', f'{path}: target SDK')
 
 
 def verify_generated_root(root):
@@ -117,30 +123,100 @@ def verify_generated_root(root):
         candidates = [path for directory in intermediates.glob('merged_manifest*')
                       for path in directory.rglob('AndroidManifest.xml')
                       if flavor + 'debug' in str(path.relative_to(directory)).lower()]
-        assert candidates, f'No actual {flavor}Debug merged manifest under {intermediates}'
+        _require(candidates, f'No actual {flavor}Debug merged manifest under {intermediates}')
         for path in candidates:
             verify_merged_manifest(path, flavor)
         manifests[flavor] = candidates
     return manifests
 
 
+def _property_value(path, name):
+    """Read a Java properties value, including escaped separators and continuations."""
+    if not path.is_file():
+        return None
+    logical = []
+    pending = ''
+    for physical in path.read_text(encoding='iso-8859-1').splitlines():
+        line = pending + (physical.lstrip(' \t\f') if pending else physical)
+        slash_count = len(line) - len(line.rstrip('\\'))
+        if slash_count % 2:
+            pending = line[:-1]
+            continue
+        pending = ''
+        logical.append(line)
+    if pending:
+        logical.append(pending)
+
+    def decode(value):
+        def unescape(match):
+            escape = match.group(1)
+            if escape.startswith('u'):
+                return chr(int(escape[1:], 16))
+            return {'t': '\t', 'r': '\r', 'n': '\n', 'f': '\f'}.get(escape, escape)
+        return re.sub(r'\\(u[0-9a-fA-F]{4}|.)', unescape, value)
+
+    result = None
+    for line in logical:
+        line = line.lstrip(' \t\f')
+        if not line or line[0] in '#!':
+            continue
+        match = re.match(r'((?:\\.|[^\\=:\s])*)(?:\s*[=:]\s*|\s+)?(.*)', line)
+        if match and decode(match.group(1)) == name:
+            result = decode(match.group(2))
+    return result
+
+
+def _android_sdk(root):
+    sdk = (os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT') or
+           _property_value(Path(root) / 'android/local.properties', 'sdk.dir'))
+    _require(sdk, 'ANDROID_HOME, ANDROID_SDK_ROOT or android/local.properties sdk.dir is required')
+    return Path(sdk)
+
+
+def verify_android_build_config(root):
+    """Check the generated Java compilation targets and pinned Android Gradle plugin."""
+    android = Path(root) / 'android'
+    settings = android / 'settings.gradle.kts'
+    app = android / 'app/build.gradle.kts'
+    _require(settings.is_file() and app.is_file(), 'Missing generated Android Gradle configuration')
+    settings_text = settings.read_text()
+    versions = re.findall(r'^\s*id\("com\.android\.application"\)\s+version\s+"([^"]+)"\s+apply\s+false\s*$',
+                          settings_text, re.MULTILINE)
+    _require(versions == ['9.1.0'], f'{settings}: Android Gradle plugin must be 9.1.0')
+    app_text = app.read_text()
+    blocks = re.findall(r'\bcompileOptions\s*\{([^{}]*)\}', app_text)
+    _require(len(blocks) == 1, f'{app}: expected one Java compileOptions block')
+    for key in ('sourceCompatibility', 'targetCompatibility'):
+        values = re.findall(r'^\s*' + key + r'\s*=\s*([^\s]+)\s*$', blocks[0], re.MULTILINE)
+        _require(values == ['JavaVersion.VERSION_17'], f'{app}: {key} must be Java 17')
+
+
 def verify_generated_apks(root):
     """compileSdk is written by AAPT into the APK, not Gradle's text manifests."""
-    sdk = os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT')
-    assert sdk, 'ANDROID_HOME or ANDROID_SDK_ROOT is required for the APK check'
+    sdk = _android_sdk(root)
     executable = 'aapt2.exe' if os.name == 'nt' else 'aapt2'
-    tools = sorted((Path(sdk) / 'build-tools').glob('*/' + executable))
-    assert tools, f'No installed {executable} under {sdk}'
+    tools = sorted((sdk / 'build-tools').glob('*/' + executable))
+    _require(tools, f'No installed {executable} under {sdk}')
+    analyzer_name = 'apkanalyzer.bat' if os.name == 'nt' else 'apkanalyzer'
+    analyzers = sorted((sdk / 'cmdline-tools').glob('*/bin/' + analyzer_name))
+    _require(analyzers, f'No installed {analyzer_name} under {sdk}')
     apks = {}
     for flavor, package in (('gitlab', 'io.gitlabmobile.gitlab_mobile'), ('play', 'app.mergeline')):
         apk = Path(root) / f'build/app/outputs/flutter-apk/app-{flavor}-debug.apk'
-        assert apk.is_file(), f'Missing actual {flavor}Debug APK: {apk}'
+        _require(apk.is_file(), f'Missing actual {flavor}Debug APK: {apk}')
         result = subprocess.run([str(tools[-1]), 'dump', 'badging', str(apk)],
                                 capture_output=True, text=True, check=True, timeout=120)
         header = next((line for line in result.stdout.splitlines() if line.startswith('package: ')), '')
         attributes = dict(re.findall(r"(\w+)='([^']*)'", header))
-        assert attributes.get('name') == package, f'{apk}: packaged application ID'
-        assert attributes.get('compileSdkVersion') == '36', f'{apk}: packaged compile SDK'
+        _require(attributes.get('name') == package, f'{apk}: packaged application ID')
+        _require(attributes.get('compileSdkVersion') == '36', f'{apk}: packaged compile SDK')
+        for method in ('onTimeout(II)V', 'onDestroy()V'):
+            command = [str(analyzers[-1]), 'dex', 'code', '--class',
+                       'io.gitlabmobile.gitlab_mobile.AgentRunService', '--method', method, str(apk)]
+            result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=120)
+            _require(re.search(r'^\.method\s+[^\n]*\b' + re.escape(method) + r'\s*$', result.stdout, re.MULTILINE)
+                     and '.registers ' in result.stdout and '.end method' in result.stdout,
+                     f'{apk}: missing compiled AgentRunService.{method}')
         apks[flavor] = apk
     return apks
 
@@ -529,7 +605,7 @@ class BootstrapTests(unittest.TestCase):
         return app
 
     def test_update_channels_split_by_flavor(self):
-        app = self._app()
+        app = self._managed_android()
         bootstrap.configure_update_channels(app)
         gitlab_manifest = (app / 'src/gitlab/AndroidManifest.xml').read_text()
         self.assertIn('android.permission.REQUEST_INSTALL_PACKAGES', gitlab_manifest)
@@ -569,27 +645,12 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual((app / 'build.gradle.kts').read_text(), gradle, 'idempotent')
 
     def test_update_channels_refuse_unknown_activity_or_stale_block(self):
-        app = self._app()
+        app = self._managed_android()
         activity = app / 'src/main/kotlin' / bootstrap.KOTLIN_PACKAGE / 'MainActivity.kt'
         activity.write_text(bootstrap.TEMPLATE_MAIN_ACTIVITY.replace('FlutterActivity()', 'FlutterFragmentActivity()'))
         with self.assertRaisesRegex(RuntimeError, 'Unknown MainActivity template'):
             bootstrap.configure_update_channels(app)
-        for earlier in (bootstrap.UPDATE_ONLY_MAIN_ACTIVITY, bootstrap.LINKS_MAIN_ACTIVITY):
-            gradle = app / 'build.gradle.kts'
-            if bootstrap.UPDATE_DEPENDENCIES_BEGIN not in gradle.read_text():
-                gradle.write_text(gradle.read_text() + '\n' + bootstrap.UPDATE_DEPENDENCIES)
-            files = {
-                f'src/gitlab/kotlin/{bootstrap.KOTLIN_PACKAGE}/AppUpdateChannel.kt': bootstrap.GITLAB_UPDATE_CHANNEL,
-                'src/gitlab/AndroidManifest.xml': bootstrap.GITLAB_MANIFEST,
-                'src/gitlab/res/xml/update_paths.xml': bootstrap.GITLAB_UPDATE_PATHS,
-                f'src/play/kotlin/{bootstrap.KOTLIN_PACKAGE}/AppUpdateChannel.kt': bootstrap.PLAY_UPDATE_CHANNEL,
-            }
-            if earlier == bootstrap.LINKS_MAIN_ACTIVITY:
-                files[f'src/main/kotlin/{bootstrap.KOTLIN_PACKAGE}/LinkActivity.kt'] = bootstrap.LINK_ACTIVITY
-            for name, content in files.items():
-                path = app / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content)
+        for earlier in (bootstrap.LINKS_MAIN_ACTIVITY, bootstrap.FRAGMENT_MAIN_ACTIVITY):
             activity.write_text(earlier)
             bootstrap.configure_update_channels(app)
             self.assertEqual(activity.read_text(), bootstrap.MAIN_ACTIVITY, 'an earlier managed activity is upgraded')
@@ -598,6 +659,52 @@ class BootstrapTests(unittest.TestCase):
         gradle.write_text(gradle.read_text().replace('app-update:2.1.0', 'app-update:1.0.0'))
         with self.assertRaisesRegex(RuntimeError, 'Stale managed update dependencies'):
             bootstrap.configure_update_channels(app)
+
+    def test_update_channels_require_complete_agent_before_any_write(self):
+        app = self._app()
+        (app / 'src/main/AndroidManifest.xml').write_text(self.FRESH_MANIFEST)
+        before = {p: p.read_bytes() for p in app.rglob('*') if p.is_file()}
+        with self.assertRaisesRegex(RuntimeError, 'complete agent service template'):
+            bootstrap.configure_update_channels(app)
+        self.assertEqual({p: p.read_bytes() for p in app.rglob('*') if p.is_file()}, before)
+        bootstrap.configure_android(self.root)
+        for name in bootstrap.agent_run_files():
+            path = app / name
+            content = path.read_bytes()
+            path.unlink()
+            before = {p: p.read_bytes() for p in app.rglob('*') if p.is_file()}
+            with self.subTest(missing=name), self.assertRaisesRegex(RuntimeError, 'Incomplete managed agent'):
+                bootstrap.configure_update_channels(app)
+            self.assertEqual({p: p.read_bytes() for p in app.rglob('*') if p.is_file()}, before)
+            path.write_bytes(content)
+
+    def test_update_only_activity_is_refused_consistently_before_writing(self):
+        app = self._managed_android()
+        activity = app / 'src/main/kotlin' / bootstrap.KOTLIN_PACKAGE / 'MainActivity.kt'
+        activity.write_text(bootstrap.UPDATE_ONLY_MAIN_ACTIVITY)
+        # Reproduce the full old update-only tree: no link component or service.
+        for name in bootstrap.agent_run_files():
+            (app / name).unlink()
+        (app / 'src/main/kotlin' / bootstrap.KOTLIN_PACKAGE / 'LinkActivity.kt').unlink()
+        manifest = app / 'src/main/AndroidManifest.xml'
+        tree = ET.parse(manifest)
+        root = tree.getroot()
+        a = '{' + bootstrap.ANDROID + '}'
+        for node in list(root.findall('uses-permission')):
+            if node.get(a + 'name') in bootstrap.AGENT_PERMISSIONS:
+                root.remove(node)
+        application = root.find('application')
+        for node in list(application):
+            if node.tag == 'service' or node.get(a + 'name') == bootstrap.LINK_ACTIVITY_NAME:
+                application.remove(node)
+        tree.write(manifest)
+        before = {p: p.read_bytes() for p in app.rglob('*') if p.is_file()}
+        for check in (lambda: bootstrap._check_update_template(app),
+                      lambda: bootstrap.configure_update_channels(app),
+                      lambda: bootstrap.configure_android(self.root)):
+            with self.assertRaisesRegex(RuntimeError, 'Unknown MainActivity template'):
+                check()
+            self.assertEqual({p: p.read_bytes() for p in app.rglob('*') if p.is_file()}, before)
 
     def _managed_android(self):
         app = self._app()
@@ -648,35 +755,102 @@ class BootstrapTests(unittest.TestCase):
         self.assertRegex(promote, r'if \(Build.VERSION.SDK_INT >= 29\)\s*\{\s*'
                          r'startForeground\(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC\)'
                          r'\s*\} else \{\s*startForeground\(NOTIFICATION_ID, notification\)')
+        command = self._body(source, 'override fun onStartCommand')
+        promotion = self._body(command, 'try')
+        self.assertEqual(promotion.strip(), 'promote(RunProgress(1, 0, null, null))\n            null')
+        self.assertLess(command.index('promote('), command.index('AgentRunsChannel.serviceStarted('))
+        failed = self._body(source, 'fun serviceStartFailed')
+        self.assertIn('if (permit.id == expectedId && (instance.permitId == null || instance.permitId == permit.id)) stop(reason)', failed)
+        self.assertLess(command.index('promote('), command.index('intent?.getStringExtra('))
+        self.assertNotIn('return', command[:command.index('promote(')])
+        self.assertNotIn('stopNative(', command)
+        self.assertNotIn('current', promotion)
         start = self._body(source, 'fun serviceStarted')
-        self.assertLess(start.index('instance.promote('), start.index('permit.state = State.ACTIVE'))
         self.assertLess(start.index('permit.state = State.ACTIVE'), start.index('active(it.result'))
         self.assertIn('if (permit.id != expectedId) return', start)
-        self.assertIn('if (permit == null) { instance.stopNative(); return }', start)
+        orphan = self._body(start, 'if (permit == null)')
+        self.assertIn('try { instance.stopNative() } catch (_: RuntimeException) { cleanupFailed = true }', orphan)
+        self.assertIn('return', orphan)
         self.assertIn('State.STARTING', source)
         for forbidden in ('FlutterEngine(', 'SharedPreferences', 'WorkManager', 'AlarmManager',
                           'START_STICKY', 'onTaskRemoved', 'File(', 'CoroutineScope', 'WakeLock'):
             self.assertNotIn(forbidden, source)
         self.assertNotRegex(source, r'\bThread\(')
         self.assertIn('Looper.myLooper() == Looper.getMainLooper()', source)
-        self.assertIn('AgentRunsChannel.serviceCreated(this)', self._body(source, 'override fun onCreate'))
-        created = self._body(source, 'fun serviceCreated')
-        self.assertIn('instance.permitId = permit.id', created, 'bind before first start callback / early destroy')
-        self.assertIn('service = instance', created)
+        self.assertNotIn('override fun onCreate', source, 'creation must not bind to the mutable current permit')
+        self.assertNotIn('fun serviceCreated', source)
+        self.assertIn('internal var permitId: String? = null\n        private set', source)
+        bind = self._body(source, 'internal fun bindPermit')
+        self.assertEqual(bind.strip(), 'if (permitId == null) permitId = id\n        return permitId == id')
+        self.assertLess(start.index('permit.id != expectedId'), start.index('instance.bindPermit(permit.id)'))
+        self.assertLess(start.index('if (!instance.bindPermit(permit.id)) return'), start.index('service = instance'))
+        self.assertEqual(source[:source.index('internal data class RunProgress')].count('permitId = id'), 1,
+                         'a service lifetime can only bind once')
+
+    def test_agent_starting_cancellation_only_revokes_until_promoted_callback(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        # Release/stopAll/register/destroy may arrive either before onCreate or
+        # between onCreate/onStartCommand. Neither ordering may stop a STARTING FGS.
+        self.assertNotRegex(source, r'\b(?:context|activity)\??\.stopService\(')
+        self.assertNotIn('serviceCreated', source)
+        native = self._body(source, 'private fun stopNative(): Boolean')
+        self.assertIn('val running = service', native)
+        self.assertIn('running?.stopNative()', native)
+        self.assertNotIn('stopSelf(', native)
+        start = self._body(source, 'fun serviceStarted')
+        self.assertEqual(source.count('service = instance'), 1)
+        self.assertNotIn('service =', self._body(source, 'private fun start('))
+        instance_stop = self._body(source, 'internal fun stopNative')
+        self.assertTrue(instance_stop.lstrip().startswith('if (!foregroundStarted) return'))
+        promote = self._body(source, 'internal fun promote')
+        self.assertGreater(promote.index('foregroundStarted = true'), promote.rindex('startForeground('))
+        self.assertEqual(source.count('foregroundStarted = true'), 1)
+        # Null/cancelled/released: stop only after the unconditional promotion.
+        # Stale A intent with current B: keep the shared service, await B's intent.
+        tail = start[start.index('if (permit.id != expectedId) return'):]
+        self.assertNotIn('instance.stopNative()', tail)
+        for signature in ('private fun release(', 'private fun stop(reason:', 'fun activityDestroyed', 'fun register('):
+            body = self._body(source, signature)
+            self.assertNotIn('stopSelf(', body)
+            self.assertNotIn('stopService(', body)
+
+    def test_agent_pending_replies_are_outside_promotion_and_individually_isolated(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        command = self._body(source, 'override fun onStartCommand')
+        self.assertNotIn('active(', self._body(command, 'try'))
+        started = self._body(source, 'fun serviceStarted')
+        self.assertNotIn('active(', self._body(started, 'try'))
+        self.assertLess(started.index('permit.state = State.ACTIVE'), started.index('val pending = permit.pending.toList()'))
+        self.assertLess(started.index('permit.pending.clear()'), started.index('pending.forEach'))
+        each = self._body(started, 'pending.forEach')
+        self.assertIn('try { active(it.result, permit, it.requestId, it.opSeq) }', each)
+        self.assertIn('catch (_: RuntimeException)', each)
+        self.assertNotIn('stop(', each)
+        rejected = self._body(source, 'private fun finishPending')
+        self.assertIn('permit.pending.toList()', rejected)
+        self.assertLess(rejected.index('permit.pending.clear()'), rejected.index('pending.forEach'))
+        self.assertIn('pending.forEach { try { reject(it.result, reason) } catch (_: RuntimeException)', rejected)
+        self.assertIn('finishPending(permit, "released")', self._body(source, 'private fun release('))
+        self.assertIn('finishPending(permit, reason)', self._body(source, 'private fun notifyInvalidated'))
 
     def test_agent_destroy_timeout_and_stop_invalidate_before_native_stop_and_callback(self):
         source = bootstrap.AGENT_RUN_SERVICE
-        for signature, reason in [('override fun onTimeout', 'timeout'), ('override fun onDestroy', 'service_destroyed')]:
+        for signature, call in [('override fun onTimeout', 'AgentRunsChannel.serviceTimedOut(this)'),
+                                ('override fun onDestroy', 'AgentRunsChannel.serviceEnded(this, "service_destroyed")')]:
             body = self._body(source, signature)
-            self.assertTrue(body.lstrip().startswith(f'AgentRunsChannel.serviceEnded(this, "{reason}")'))
+            self.assertTrue(body.lstrip().startswith(call))
             self.assertNotIn('promote(', body)
             self.assertNotIn('serviceStarted(', body)
         ended = self._body(source, 'fun serviceEnded')
-        self.assertLess(ended.index('invalidate(reason)'), ended.index('instance.stopNative()'))
-        self.assertLess(ended.index('instance.stopNative()'), ended.index('notifyInvalidated('))
+        self.assertNotIn('stopNative(', ended, 'onDestroy must not stop an already destroyed instance')
+        self.assertLess(ended.index('invalidate()'), ended.index('notifyInvalidated('))
         self.assertIn('current?.id == instance.permitId', ended, 'late destroy is scoped to its permit')
+        timeout = self._body(source, 'fun serviceTimedOut')
+        self.assertIn('current?.id == instance.permitId', timeout)
+        self.assertLess(timeout.index('invalidate()'), timeout.index('instance.stopNative()'))
+        self.assertLess(timeout.index('instance.stopNative()'), timeout.index('notifyInvalidated('))
         stop = self._body(source, 'private fun stop(reason:')
-        self.assertLess(stop.index('invalidate(reason)'), stop.index('stopNative()'))
+        self.assertLess(stop.index('invalidate()'), stop.index('stopNative()'))
         self.assertLess(stop.index('stopNative()'), stop.index('notifyInvalidated('))
         invalidation = self._body(source, 'private fun invalidate')
         self.assertLess(invalidation.index('State.INVALIDATED'), invalidation.index('current = null'))
@@ -709,10 +883,10 @@ class BootstrapTests(unittest.TestCase):
         release = self._body(source, 'private fun release(')
         self.assertIn('byPermit == byRequest', release, 'exactly one release scope')
         self.assertLess(release.index('sequence(args, result)'), release.index('val permit = current'))
-        cleanup_guard = 'if (cleanupFailed) { reject(result, "cleanup_failed"); return }'
-        self.assertIn(cleanup_guard, release, 'unconfirmed cleanup must not be acknowledged as a no-op release')
-        self.assertLess(release.index('sequence(args, result)'), release.index(cleanup_guard))
-        self.assertLess(release.index(cleanup_guard), release.index('if (permit == null)'))
+        self.assertNotIn('if (cleanupFailed) { reject(result, "cleanup_failed"); return }', release,
+                         'cleanup failure must not prevent revoking a matching permit')
+        self.assertIn('if (cleanupFailed) reply("rejected", "reason" to "cleanup_failed")',
+                      self._body(release, 'if (permit == null)'))
         self.assertIn('permit.createdRequestId == target && permit.latestStartSeq == permit.createdOpSeq', release)
         self.assertIn('(byPermit && permit.id != target) || (byRequest && !ownsRequest)', release)
         self.assertLess(release.index('!ownsRequest'), release.index('permit.state = State.RELEASED'))
@@ -722,6 +896,43 @@ class BootstrapTests(unittest.TestCase):
         self.assertNotIn('notifyInvalidated(', release)
         self.assertIn('cleanupFailed = true', source)
         self.assertIn('if (cleanupFailed) { reject(result, "cleanup_failed"); return }', start)
+
+    def test_agent_foreground_owner_progress_limits_and_all_sequence_guards(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        self.assertEqual(self._body(source, 'fun resumed').strip(),
+                         'mainThread(); if (owner === activity) visible = activity')
+        self.assertEqual(self._body(source, 'fun paused').strip(),
+                         'mainThread(); if (visible === activity) visible = null')
+        self.assertIn('AgentRunsChannel.paused(this)', self._body(bootstrap.MAIN_ACTIVITY, 'override fun onPause'))
+        self.assertLess(self._body(bootstrap.MAIN_ACTIVITY, 'override fun onPause').index('AgentRunsChannel.paused(this)'),
+                        self._body(bootstrap.MAIN_ACTIVITY, 'override fun onPause').index('super.onPause()'))
+        register = self._body(source, 'fun register(')
+        changed = self._body(register, 'if (owner !== activity)')
+        self.assertIn('if (owner != null) stop("activity_destroyed")', changed)
+        self.assertIn('visible = null', changed)
+        self.assertIn('val reason = if (stop("user_stop")) null else "cleanup_failed"', register)
+        destroyed = self._body(source, 'fun activityDestroyed')
+        for expression in ('if (owner !== activity) return', 'visible = null', 'owner = null', 'registration = null'):
+            self.assertIn(expression, destroyed)
+        start = self._body(source, 'private fun start(')
+        self.assertIn('if (visible !== activity || activity.isFinishing || activity.isDestroyed)', start)
+        self.assertIn('val running = service ?: throw IllegalStateException()\n                    running.update(progress)', start)
+        self.assertNotIn('service!!', source)
+        update = self._body(source, 'private fun update(')
+        self.assertIn('if (permit == null || permit.id != permitId || permit.state != State.ACTIVE)', update)
+        self.assertIn('val running = service ?: throw IllegalStateException()', update)
+        for signature in ('private fun start(', 'private fun update(', 'private fun release(', 'private fun acquire('):
+            body = self._body(source, signature)
+            self.assertEqual(body.count('sequence(args, result)'), 1, signature)
+            self.assertLess(body.index('sequence(args, result)'), body.index('val permit = current')
+                            if 'val permit = current' in body else body.index('var permit = current'))
+        progress = self._body(source, 'private fun progress(')
+        self.assertIn('number(args, "workCount", 1, 3)', progress)
+        self.assertIn('number(args, "step", 0, 1000000)', progress)
+        self.assertIn("value.any { it < ' ' || it == '\\u007f' }", progress)
+        self.assertIn('value !is String || value.isBlank() || value.length > limit', progress)
+        for limit in ('MAX_TITLE_LENGTH = 160', 'MAX_TEXT_LENGTH = 256', 'MAX_ID_LENGTH = 128'):
+            self.assertIn(limit, source)
 
     def test_agent_tickets_are_bound_unique_and_saturation_never_evicts(self):
         source = bootstrap.AGENT_RUN_SERVICE
@@ -763,6 +974,8 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('NOTIFICATION_ID = 6100', source)
         self.assertIn('NOTIFICATION_CHANNEL = "ai_runs_v1"', source)
         notification = self._body(source, 'private fun notification(')
+        self.assertIn('NotificationManager.IMPORTANCE_LOW', notification)
+        self.assertIn('lockscreenVisibility = Notification.VISIBILITY_PRIVATE', notification)
         self.assertIn('.setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(publicVersion)', notification)
         public = notification[notification.index('val publicVersion'):notification.index('return builder()')]
         self.assertNotIn('progress.', public)
@@ -780,7 +993,8 @@ class BootstrapTests(unittest.TestCase):
     @staticmethod
     def _resource_value(value):
         # Android quoted string syntax, independently decoded after XML parsing.
-        assert value.startswith('"') and value.endswith('"')
+        if not (value.startswith('"') and value.endswith('"')):
+            raise AssertionError('Android resource value must be quoted')
         return re.sub(r'\\([\\\'"@?nrt])', lambda match: {'n': '\n', 'r': '\r', 't': '\t'}.get(
             match[1], match[1]), value[1:-1])
 
@@ -788,7 +1002,15 @@ class BootstrapTests(unittest.TestCase):
         app = self._managed_android()
         _, catalogs = bootstrap.l10n.load()
         paths = list((app / 'src/main/res').glob('values*/strings.xml'))
-        self.assertEqual(len(paths), 24)
+        self.assertEqual(len(paths), 25, '24 languages plus the Indonesian legacy resource alias')
+        self.assertEqual((app / 'src/main/res/values-in/strings.xml').read_bytes(),
+                         (app / 'src/main/res/values-id/strings.xml').read_bytes())
+        languages = {language for _, _, _, language, _, _ in bootstrap.l10n.LANGUAGES}
+        self.assertEqual(languages & {'id', 'he', 'yi', 'in', 'iw', 'ji'}, {'id'})
+        locales = ET.parse(app / 'src/main/res/xml/locales_config.xml').getroot()
+        names = [node.get('{' + bootstrap.ANDROID + '}name') for node in locales]
+        self.assertIn('id', names)
+        self.assertNotIn('in', names)
         self.assertTrue((app / 'src/main/res/values-zh-rTW/strings.xml').is_file())
         self.assertTrue((app / 'src/main/res/values-pt-rBR/strings.xml').is_file())
         for tag, _, _, language, _, country in bootstrap.l10n.LANGUAGES:
@@ -970,6 +1192,22 @@ class BootstrapTests(unittest.TestCase):
                          ['/pinned/bin/flutter', 'pub', 'get', '--enforce-lockfile', '--offline'])
         self.assertEqual(run.call_args_list[1].args[0], ['/pinned/bin/dart', 'run', 'flutter_launcher_icons'])
 
+    def test_default_bootstrap_does_not_resolve_offline(self):
+        with patch.object(bootstrap.subprocess, 'run') as run:
+            bootstrap.apply_launcher_icons('/pinned/bin/flutter')
+        self.assertEqual(run.call_args_list[0].args[0],
+                         ['/pinned/bin/flutter', 'pub', 'get', '--enforce-lockfile'])
+        with patch.object(bootstrap, 'ROOT', self.root), patch.object(bootstrap, 'check_sdk'), \
+                patch.object(bootstrap.shutil, 'which', return_value='/pinned/flutter'), \
+                patch.object(bootstrap.tempfile, 'TemporaryDirectory'), \
+                patch.object(bootstrap.subprocess, 'run'), patch.object(bootstrap, 'configure_android'), \
+                patch.object(bootstrap, 'configure_ios'), patch.object(bootstrap.shutil, 'copytree'), \
+                patch.object(bootstrap.shutil, 'copy2'), patch.object(bootstrap, 'apply_launcher_icons') as icons, \
+                patch('builtins.print'), \
+                patch.object(sys, 'argv', ['bootstrap.py']):
+            self.assertEqual(bootstrap.main(), 0)
+        icons.assert_called_once_with('/pinned/flutter', offline=False)
+
     def _merged_fixture(self, flavor):
         app = self.root / 'app'
         path = self.root / f'build/app/intermediates/merged_manifests/{flavor}Debug/processManifest/AndroidManifest.xml'
@@ -1040,17 +1278,69 @@ class BootstrapTests(unittest.TestCase):
     def test_actual_generated_merged_manifests(self):
         root = os.environ['MR6C_GENERATED_ROOT']
         manifests = verify_generated_root(root)
+        verify_android_build_config(root)
         apks = verify_generated_apks(root)
+        print('MR6C Java 17 compilation targets and AGP 9.1.0 verified', flush=True)
         for flavor, paths in manifests.items():
             for path in paths:
                 print(f'MR6C merged manifest verified: {flavor}: {path}', flush=True)
-            print(f'MR6C packaged compileSdk 36 verified: {flavor}: {apks[flavor]}', flush=True)
+            print(f'MR6C packaged compileSdk 36 and service methods verified: {flavor}: {apks[flavor]}', flush=True)
+
+    def test_merged_helper_failure_is_enforced_under_python_optimized(self):
+        module = Path(__file__).resolve()
+        code = ('import importlib.util, sys; '
+                'spec = importlib.util.spec_from_file_location("bootstrap_test", sys.argv[1]); '
+                'module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); '
+                'module.verify_generated_root(sys.argv[2])')
+        result = subprocess.run([sys.executable, '-O', '-c', code, str(module), str(self.root)],
+                                capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('No actual gitlabDebug merged manifest', result.stderr)
+
+    def test_merged_helper_android_sdk_property_fallback_and_escaped_path(self):
+        local = self.root / 'android/local.properties'
+        local.parent.mkdir(parents=True)
+        local.write_text('sdk.dir=/path/with\\ space/android\\:sdk\n', encoding='iso-8859-1')
+        with patch.dict(os.environ, {'ANDROID_HOME': '', 'ANDROID_SDK_ROOT': ''}):
+            self.assertEqual(_android_sdk(self.root), Path('/path/with space/android:sdk'))
+            with patch.dict(os.environ, {'ANDROID_SDK_ROOT': '/explicit/sdk'}):
+                self.assertEqual(_android_sdk(self.root), Path('/explicit/sdk'))
+            local.unlink()
+            with self.assertRaisesRegex(AssertionError, 'sdk.dir is required'):
+                _android_sdk(self.root)
+
+    def test_merged_helper_requires_java_17_and_pinned_agp(self):
+        android = self.root / 'android'
+        app = android / 'app/build.gradle.kts'
+        app.parent.mkdir(parents=True)
+        settings = android / 'settings.gradle.kts'
+        good_settings = 'plugins {\n    id("com.android.application") version "9.1.0" apply false\n}\n'
+        good_app = ('android {\n    compileOptions {\n'
+                    '        sourceCompatibility = JavaVersion.VERSION_17\n'
+                    '        targetCompatibility = JavaVersion.VERSION_17\n    }\n}\n')
+        settings.write_text(good_settings)
+        app.write_text(good_app)
+        verify_android_build_config(self.root)
+        for path, text in ((settings, good_settings.replace('9.1.0', '8.1.0')),
+                           (app, good_app.replace('sourceCompatibility = JavaVersion.VERSION_17',
+                                                  'sourceCompatibility = JavaVersion.VERSION_11')),
+                           (app, good_app.replace('targetCompatibility = JavaVersion.VERSION_17',
+                                                  'targetCompatibility = JavaVersion.VERSION_11'))):
+            with self.subTest(path=path, text=text):
+                path.write_text(text)
+                with self.assertRaises(AssertionError):
+                    verify_android_build_config(self.root)
+                settings.write_text(good_settings)
+                app.write_text(good_app)
 
     def test_apk_helper_requires_both_real_outputs_and_checks_packaged_sdk_and_identity(self):
         sdk = self.root / 'sdk'
         tool = sdk / 'build-tools/36.0.0' / ('aapt2.exe' if os.name == 'nt' else 'aapt2')
         tool.parent.mkdir(parents=True)
         tool.touch()
+        analyzer = sdk / 'cmdline-tools/latest/bin' / ('apkanalyzer.bat' if os.name == 'nt' else 'apkanalyzer')
+        analyzer.parent.mkdir(parents=True)
+        analyzer.touch()
         with patch.dict(os.environ, {'ANDROID_HOME': str(sdk)}):
             with self.assertRaisesRegex(AssertionError, 'Missing actual gitlabDebug APK'):
                 verify_generated_apks(self.root)
@@ -1058,6 +1348,9 @@ class BootstrapTests(unittest.TestCase):
             apks.mkdir(parents=True)
             (apks / 'app-gitlab-debug.apk').touch()
             def badging(command, **kwargs):
+                if command[1:3] == ['dex', 'code']:
+                    method = command[command.index('--method') + 1]
+                    return subprocess.CompletedProcess(command, 0, stdout=f'.method public {method}\n.registers 3\n.end method\n')
                 package = 'app.mergeline' if 'app-play-debug.apk' in command[-1] else 'io.gitlabmobile.gitlab_mobile'
                 return subprocess.CompletedProcess(command, 0, stdout=f"package: name='{package}' compileSdkVersion='36'\n")
             with patch.object(subprocess, 'run', side_effect=badging):
@@ -1074,6 +1367,21 @@ class BootstrapTests(unittest.TestCase):
                         subprocess.CompletedProcess([], 0, stdout=header)):
                     with self.assertRaises(AssertionError):
                         verify_generated_apks(self.root)
+
+            def broken_dex(command, **kwargs):
+                if command[1:3] == ['dex', 'code']:
+                    return subprocess.CompletedProcess(command, 0, stdout='')
+                return badging(command, **kwargs)
+            with patch.object(subprocess, 'run', side_effect=broken_dex):
+                with self.assertRaisesRegex(AssertionError, 'missing compiled AgentRunService'):
+                    verify_generated_apks(self.root)
+            def missing_dex(command, **kwargs):
+                if command[1:3] == ['dex', 'code']:
+                    raise subprocess.CalledProcessError(1, command, stderr='missing or invalid DEX')
+                return badging(command, **kwargs)
+            with patch.object(subprocess, 'run', side_effect=missing_dex):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    verify_generated_apks(self.root)
 
 
 if __name__ == '__main__':
