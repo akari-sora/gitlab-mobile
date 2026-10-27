@@ -29,7 +29,7 @@ void main() {
     await _save(tester, fixture);
     expect(host.phases.map((entry) => entry.$1), [
       WorkItemDatesWritePhase.start,
-      WorkItemDatesWritePhase.settle,
+      WorkItemDatesWritePhase.notSent,
     ]);
     expect(fixture.mutations, 0);
     expect(
@@ -38,7 +38,6 @@ void main() {
     );
     expect(find.text(_unconfirmedCopy), findsNothing);
   });
-
 
   testWidgets('manual CE and EE set and explicit-null clear use public API', (
     tester,
@@ -473,9 +472,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('work-item-dates-save')));
     await settleNetworkWidgets(tester);
     expect(callback.mutations, 0);
+    // A START callback failure is certainly unsent (C2-D8), so the terminal
+    // tells the page registry to release without an unconfirmed result.
     expect(callbackHost.phases.map((entry) => entry.$1), [
       WorkItemDatesWritePhase.start,
-      WorkItemDatesWritePhase.settle,
+      WorkItemDatesWritePhase.notSent,
     ]);
     expect(find.text(_unconfirmedCopy), findsNothing);
   });
