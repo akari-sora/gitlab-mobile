@@ -20,7 +20,8 @@ import '../support/fake_adapter.dart';
 import 'mr6b3_support.dart';
 
 /// Plan v6 §4.4 reserves the GitLab HTTP allowance through readback when the
-/// proposal is created. §15 row 19: 預算：mutation 加 readback 在 39／40／41 次 HTTP 的邊界；核准後的新鮮讀取與合併前檢查在提議時已保留，保留不到就不產生提議；三段對話共用帳號 60 分鐘上限；對話計數跨換段與重啟；大量零寫入的對話不建立計數項；計數項 2,000 列與 ciphertext 1 MiB 的邊界，飽和時 mutation 為 0；`prepared` 因隔離或預算不足改 `notExecuted` 時不消耗計數；紀錄關閉時計數只在本程序內有效；批次上限。
+/// proposal is created. The budget and boundary test headers enumerate §15
+/// rows 19/25/29 coverage, coverage in other suites and explicit NOT_RUN gaps.
 ///
 /// The tree has eleven `mr6b3_*_port_test.dart` files (fifteen operations).
 /// Breakdown §5 lists those eleven files.
@@ -28,7 +29,24 @@ import 'mr6b3_support.dart';
 const mr6b3Revision = '2026-10-23T00:00:00Z';
 const mr6b3BumpedRevision = '2026-10-23T00:01:00Z';
 const mr6b3ActivityBody = 'Synthetic **activity** note';
-const mr6b3SnoozeUntil = '2027-06-01T00:00:00.000Z';
+// Compatibility default for callers outside the harness. Each harness captures
+// its own value and shares it across arguments, fixtures and expectations.
+final mr6b3SnoozeUntil = _futureSnoozeUntil(DateTime.now());
+
+String _futureSnoozeUntil(DateTime now) {
+  final future = now.toUtc().add(const Duration(days: 1));
+  // The write port normalizes snoozes to seconds; keep its input and fixture
+  // identical rather than letting fractional seconds drift at that boundary.
+  return DateTime.utc(
+    future.year,
+    future.month,
+    future.day,
+    future.hour,
+    future.minute,
+    future.second,
+  ).toIso8601String();
+}
+
 const mr6b3StatusDoing = 'gid://gitlab/WorkItems::Statuses::Custom::Status/37';
 
 const _workItemId = 'gid://gitlab/WorkItem/31';
@@ -139,7 +157,9 @@ final class Mr6b3ApiServer {
     this.oauth = false,
     bool? replayReads,
     this.challengeEveryRead = false,
-  }) : replayReads = replayReads ?? oauth {
+    String? snoozeUntil,
+  }) : replayReads = replayReads ?? oauth,
+       snoozeUntil = snoozeUntil ?? mr6b3SnoozeUntil {
     adapter = FakeAdapter(_respond);
     refreshAdapter = FakeAdapter((_) {
       refreshes++;
@@ -177,7 +197,13 @@ final class Mr6b3ApiServer {
   final bool oauth;
   final bool replayReads;
   final bool challengeEveryRead;
+  final String snoozeUntil;
   bool applyMutations = true;
+
+  /// The GraphQL identity-variable check assumes project 9. A test that
+  /// answers another project through [onRequest] turns it off for that server;
+  /// the port still verifies the identity in the returned payload.
+  bool checkGraphqlIdentity = true;
 
   /// Runs at the real adapter boundary, after accounting and optional mutation
   /// application. A null return serves the normal payload. Tests can inspect
@@ -197,6 +223,10 @@ final class Mr6b3ApiServer {
 
   final reads = <String, int>{};
   final reactionStages = <int>[];
+  // Dio converts adapter assertions into transport failures. Retain them so
+  // teardown checks the original contract even when production handles it.
+  final unexpectedRequests = <String>[];
+  final requestCheckFailures = <String>[];
   int logicalReads = 0;
   int mutations = 0;
   int refreshes = 0;
@@ -220,12 +250,38 @@ final class Mr6b3ApiServer {
 
   void close() => api.close();
 
+  void verifyRequests() {
+    expect(unexpectedRequests, isEmpty, reason: 'Unexpected synthetic routes');
+    expect(requestCheckFailures, isEmpty, reason: 'Synthetic adapter checks');
+  }
+
   ResponseBody _respond(RequestOptions request) {
+    try {
+      return _respondChecked(request);
+    } on TestFailure catch (error, stack) {
+      requestCheckFailures.add(
+        '${request.method} ${request.uri}: $error\n$stack',
+      );
+      rethrow;
+    }
+  }
+
+  Never _unexpected(RequestOptions request, String detail) {
+    final message =
+        'Unexpected synthetic route: ${request.method} ${request.uri} $detail';
+    unexpectedRequests.add(message);
+    fail(message);
+  }
+
+  ResponseBody _respondChecked(RequestOptions request) {
     final query = _query(request);
-    final classified = _classify(request, query);
+    final classified = _classify(request, query, api.instance.graphQL);
     if (classified == null) {
       final head = query == null ? '' : ' ${query.split('\n').first}';
-      fail('Unexpected synthetic route: ${request.method} ${request.uri}$head');
+      _unexpected(request, head);
+    }
+    if (query != null && checkGraphqlIdentity) {
+      _checkGraphqlIdentity(classified.name, classified.mutation, request);
     }
     if (oauth &&
         replayReads &&
@@ -252,6 +308,84 @@ final class Mr6b3ApiServer {
           payload,
         ) ??
         jsonResponse(payload);
+  }
+
+  void _checkGraphqlIdentity(
+    String name,
+    bool mutation,
+    RequestOptions request,
+  ) {
+    final variables = _variables(request);
+    final actual = mutation && !name.startsWith('MobileTodo')
+        ? _input(variables)
+        : variables;
+    final Map<String, Object?> expected = mutation
+        ? switch (name) {
+            'MobileUpdateWorkItemState' ||
+            'MobileUpdateWorkItemStatus' ||
+            'MobileSetWorkItemHealthStatus' ||
+            'MobileSetWorkItemDatesEe' ||
+            'MobileSetWorkItemDatesCe' ||
+            'MobileSetWorkItemMilestone' ||
+            'MobileSetWorkItemWeight' ||
+            'MobileSetWorkItemAssignees' ||
+            'MobileSetWorkItemNotifications' => {'id': _workItemId},
+            'MobileSetIncidentStatus' => {
+              'projectPath': 'team/example-9',
+              'iid': '3',
+            },
+            'MobileAddWorkItemActivityNoteReaction' ||
+            'MobileRemoveWorkItemActivityNoteReaction' => {
+              'awardableId': _noteId,
+            },
+            'MobileCreateWorkItemActivityNote' => {'noteableId': _workItemId},
+            'MobileDestroyWorkItemActivityNote' => {'id': _noteId},
+            'MobileTodoSnooze' => {'id': 'gid://gitlab/Todo/400'},
+            'MobileTodoUnsnooze' => {'id': 'gid://gitlab/Todo/400'},
+            _ => _unexpected(request, 'mutation $name'),
+          }
+        : switch (name) {
+            'MobileProjectWorkItem' ||
+            'MobileIncidentStatus' => {'path': 'team/example-9', 'iid': '3'},
+            'MobileWorkItemState' ||
+            'MobileWorkItemStatus' ||
+            'MobileWorkItemHealthEdit' ||
+            'MobileWorkItemDatesBase' ||
+            'MobileWorkItemDatesProbe' ||
+            'MobileWorkItemMilestone' ||
+            'MobileWorkItemWeight' ||
+            'MobileWorkItemAssignees' ||
+            'MobileWorkItemNotifications' ||
+            'MobileWorkItemActivity' ||
+            'MobileWorkItemActivityWriteAccess' => {'id': _workItemId},
+            'MobileProjectWorkItemMilestones' ||
+            'MobileProjectAssigneeCandidates' => {'fullPath': 'team/example-9'},
+            'MobileWorkItemActivityReplyPreflight' => {
+              'workItemId': _workItemId,
+              'anchorNoteId': _noteId,
+            },
+            'MobileWorkItemActivityReactionAccess' ||
+            'MobileWorkItemActivityEditAccess' ||
+            'MobileWorkItemActivityDeleteReadback' => {
+              'workItemId': _workItemId,
+              'noteId': _noteId,
+            },
+            'MobileWorkItemActivityNoteReadback' => {
+              'workItemId': _workItemId,
+              'noteId': _createdNoteId,
+            },
+            'MobilePendingTodosForSnooze' ||
+            'MobileSnoozedTodosForUnsnooze' ||
+            'MobileSnoozedTodos' => {'first': 100},
+            _ => _unexpected(request, 'query $name'),
+          };
+    for (final entry in expected.entries) {
+      expect(actual, containsPair(entry.key, entry.value), reason: name);
+    }
+    if (name == 'MobileCreateWorkItemActivityNote' &&
+        actual.containsKey('discussionId')) {
+      expect(actual['discussionId'], _replyId, reason: name);
+    }
   }
 
   bool _replay(String name) {
@@ -325,7 +459,7 @@ final class Mr6b3ApiServer {
       case 'MobileDestroyWorkItemActivityNote':
         break;
       default:
-        fail('Unexpected synthetic mutation: $name');
+        _unexpected(request, 'mutation $name');
     }
   }
 
@@ -529,7 +663,7 @@ final class Mr6b3ApiServer {
           },
         },
       },
-      _ => fail('Unexpected synthetic operation: $name'),
+      _ => _unexpected(request, 'operation $name'),
     };
   }
 
@@ -930,7 +1064,7 @@ final class Mr6b3ApiServer {
   Map<String, Object?> _todo(int id, {required bool snoozed}) => {
     'id': 'gid://gitlab/Todo/$id',
     'targetType': 'WORKITEM',
-    'snoozedUntil': snoozed ? '2027-06-01T00:00:00Z' : null,
+    'snoozedUntil': snoozed ? snoozeUntil : null,
     'project': _projectRef,
     'targetEntity': {
       '__typename': 'WorkItem',
@@ -977,6 +1111,7 @@ const _milestoneCatalog = <Map<String, Object?>>[
 ({String name, bool mutation})? _classify(
   RequestOptions request,
   String? query,
+  Uri graphQL,
 ) {
   final path = request.uri.path;
   if (request.method == 'GET' && path.endsWith('/api/v4/user')) {
@@ -985,12 +1120,12 @@ const _milestoneCatalog = <Map<String, Object?>>[
   if (request.method == 'GET' && path.endsWith('/api/v4/projects/9')) {
     return (name: 'freshness', mutation: false);
   }
-  if (request.method != 'POST' || query == null) return null;
-  final name = RegExp(
-    r'^(?:query|mutation)\s+(\w+)',
-  ).firstMatch(query)?.group(1);
-  if (name == null) return null;
-  return (name: name, mutation: query.startsWith('mutation '));
+  if (request.method != 'POST' || request.uri != graphQL || query == null) {
+    return null;
+  }
+  final document = RegExp(r'^(query|mutation)\s+(\w+)').firstMatch(query);
+  if (document == null) return null;
+  return (name: document.group(2)!, mutation: document.group(1) == 'mutation');
 }
 
 String? _query(RequestOptions request) {
@@ -1028,7 +1163,10 @@ List<int> _assigneeIds(Map<String, Object?> widget) {
 }
 
 /// Worst-case arguments taken from the family port drives.
-Map<String, Object?> mr6b3ApiArguments(String operation) => switch (operation) {
+Map<String, Object?> mr6b3ApiArguments(
+  String operation, {
+  String? snoozeUntil,
+}) => switch (operation) {
   'createWorkItemActivityComment' => {
     'projectId': 9,
     'iid': 3,
@@ -1076,7 +1214,7 @@ Map<String, Object?> mr6b3ApiArguments(String operation) => switch (operation) {
     'iid': 3,
     'candidateId': mr6b3StatusDoing,
   },
-  'snoozeTodo' => {'todoId': 400, 'until': mr6b3SnoozeUntil},
+  'snoozeTodo' => {'todoId': 400, 'until': snoozeUntil ?? mr6b3SnoozeUntil},
   'unsnoozeTodo' => {'todoId': 400},
   'updateWorkItemState' => {'projectId': 9, 'iid': 3, 'stateEvent': 'close'},
   'updateWorkItemWeight' => {'projectId': 9, 'iid': 3, 'weight': 4},
@@ -1099,8 +1237,11 @@ final class Mr6b3ApiHarness {
     bool oauth = true,
     int maxGitLabRequests = 40,
     bool challengeEveryRead = false,
+    DateTime? now,
     port.AiGitLabWritePort Function(port.GitLabAiWritePort)? portFactory,
   }) async {
+    final harnessNow = now ?? DateTime.now();
+    final snoozeUntil = _futureSnoozeUntil(harnessNow);
     final root = Directory.systemTemp.createTempSync('mr6b3-p15-');
     final files = Mr6b3JournalFiles(root);
     final keys = Mr6b3JournalKeyStore();
@@ -1115,6 +1256,7 @@ final class Mr6b3ApiHarness {
     final server = Mr6b3ApiServer(
       oauth: oauth,
       challengeEveryRead: challengeEveryRead,
+      snoozeUntil: snoozeUntil,
     );
     final policy = Mr6b3Policy();
     final budget = AiToolBudget(maxGitLabRequests: maxGitLabRequests);
@@ -1173,7 +1315,7 @@ final class Mr6b3ApiHarness {
               confirmReasons: result.confirmReasons,
             );
           },
-      now: () => DateTime.utc(2026, 10, 23, 12),
+      now: () => harnessNow,
       httpCost: oauth
           ? null
           : (String op) => aiWriteRequestAllowance(op, oauthReplay: false),
@@ -1201,6 +1343,7 @@ final class Mr6b3ApiHarness {
   final AiWriteJournal journal;
   final PolicyAiWriteCoordinator coordinator;
   final AiToolBudget budget;
+  String get snoozeUntil => server.snoozeUntil;
   int sessionGeneration = 7;
   bool appInForeground = true;
   int _callId = 0;
@@ -1215,7 +1358,7 @@ final class Mr6b3ApiHarness {
           id: id ?? 'p15-${_callId++}',
           name: operation,
           arguments: {
-            ...mr6b3ApiArguments(operation),
+            ...mr6b3ApiArguments(operation, snoozeUntil: snoozeUntil),
             ...arguments,
             'reason': 'synthetic packet 15 request',
           },
@@ -1270,9 +1413,13 @@ final class Mr6b3ApiHarness {
   }
 
   Future<void> dispose() async {
-    files.releaseBarrier();
-    coordinator.stop('disposed');
-    server.close();
-    if (root.existsSync()) root.deleteSync(recursive: true);
+    try {
+      server.verifyRequests();
+    } finally {
+      files.releaseBarrier();
+      coordinator.stop('disposed');
+      server.close();
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    }
   }
 }
