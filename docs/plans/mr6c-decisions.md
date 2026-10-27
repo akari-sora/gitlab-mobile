@@ -29,3 +29,9 @@ Round-1 review fixes that refine the table (C1 `1cadf5b`): every start promotes 
 - A permit whose creating start and adopting start both timed out cannot be released by a request-scoped release (`didRelease: false`). C2b defines how such an orphan ends (stopAll on the next foreground, or Activity destroy) and tests it.
 - Native only bounds `title`/`text` (length, control characters). C2b must pass translated, generic work-status strings (D10/D12) and lock that with tests.
 - Indonesian Android resources are emitted as both `values-in` and `values-id` (Android ≤14 maps `id` to `in`).
+
+## C-D3. C2a acceptance: legacy fixtures and the model boundary (lead, 2026-10-27)
+C2a's first run kept the plan's fail-closed default (no injected gate and no visibility predicate → no execution) and turned 260 legacy `test/ai` cases red, because standalone runners, coordinators and `tool/ai_live_smoke.dart` never supplied visibility.
+- The default stays fail-closed. Legacy fixtures and helpers pass an explicit visible-foreground predicate (or the C2a fake gate); assertions are not weakened. `tool/ai_live_smoke.dart` passes an explicit always-visible predicate with a comment, since it runs on the desktop VM without an app lifecycle.
+- `AiChatController` wires its real `appInForeground` predicate into the default gate for the runner and the coordinator (C2b later replaces the default with the native bridge). Without this the app would stop every AI send.
+- The model ticket boundary checks execution eligibility, the run binding and the existing runner guards only. The GitLab client / 429 predicate (`clientMayStart`) stays a write-boundary guard ("client gate 仍獨立", breakdown C2b row; parent plan §15 row 29): a missing client predicate fails the write before port construction and the run continues with that tool result.
