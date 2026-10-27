@@ -355,7 +355,8 @@ void main() {
         {'id': 9, 'name': 'Session private environment', 'state': 'available'},
       ],
     );
-    final session = SessionController(MemoryAccountStore())
+    final store = MemoryAccountStore();
+    final session = SessionController(store, readCache: store.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
@@ -384,6 +385,7 @@ void main() {
     expect(find.text('部署 · Session private environment'), findsNothing);
     expect(find.text('Session private environment'), findsNothing);
     expect(find.byType(ResourceShareButton), findsNothing);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
   });
 
   testWidgets('present mismatched session fails closed without a request', (
@@ -399,7 +401,8 @@ void main() {
       userId: 8,
       environments: const [],
     );
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = active.account
       ..api = active.api
       ..initializing = false;
@@ -432,7 +435,8 @@ void main() {
       userId: 8,
       environments: const [],
     );
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = active.account
       ..api = active.api
       ..initializing = false;
@@ -513,7 +517,8 @@ void main() {
         },
       ],
     );
-    final session = SessionController(MemoryAccountStore())
+    final store = MemoryAccountStore();
+    final session = SessionController(store, readCache: store.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
@@ -542,5 +547,6 @@ void main() {
 
     expect(find.text('Job #77'), findsNothing);
     expect(find.text('部署 · production'), findsNothing);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
   });
 }

@@ -495,7 +495,9 @@ void main() {
         api,
         instance: api.instance,
         actorUserId: other.session.active!.user.id,
-        generation: other.session.generation,
+        // Generations are process-wide (C2d2), so pin h's generation to keep
+        // the case "same account and generation, different API owner".
+        generation: h.session.generation,
         isCurrent: () => true,
       );
       await readPort.workItem(other.controller.contextForTesting!.groupScope!);

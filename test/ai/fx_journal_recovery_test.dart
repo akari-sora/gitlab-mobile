@@ -95,7 +95,8 @@ void main() {
   group('J1 accounts that join after start-up', () {
     test('first sign-in after an empty start can reserve and write', () async {
       // The start-up wiring with an empty stored account list (new install).
-      final session = SessionController(MemoryAccountStore());
+      final sessionStore = MemoryAccountStore();
+      final session = SessionController(sessionStore, readCache: sessionStore.readCache);
       addTearDown(session.dispose);
       await session.initialize();
       final journal = owner('fx-first');

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -67,13 +68,12 @@ void main() {
   testWidgets('C2-D8 status blocked after START releases the UI registry', (
     tester,
   ) async {
-    final h = await _mount(tester);
+    final held = Completer<DiskClearResult>();
+    final backend = C2d7Barrier()..onInvalidate = () => held.future;
+    final h = await _mount(tester, backend: backend);
     await _expand(tester);
     await _openStatus(tester);
     await _chooseStatus(tester, _canceled);
-    final held = Completer<DiskClearResult>();
-    final backend = C2d7Barrier()..onInvalidate = () => held.future;
-    h.api.attachReadCacheDiskBackend(backend);
     final registry = createAiWorkspaceWorkItemWriteRegistry(
       api: h.api,
       accountKey: h.account.key,
@@ -106,13 +106,12 @@ void main() {
   testWidgets('C2-D8 dates UI holds the AI lease through the disk barrier', (
     tester,
   ) async {
-    final h = await _mount(tester);
+    final held = Completer<DiskClearResult>();
+    final backend = C2d7Barrier()..onInvalidate = () => held.future;
+    final h = await _mount(tester, backend: backend);
     await _expand(tester);
     await _openDates(tester);
     await _enterDates(tester, '2026-11-02', '2026-11-09');
-    final held = Completer<DiskClearResult>();
-    final backend = C2d7Barrier()..onInvalidate = () => held.future;
-    h.api.attachReadCacheDiskBackend(backend);
     final registry = createAiWorkspaceWorkItemWriteRegistry(
       api: h.api,
       accountKey: h.account.key,
@@ -136,13 +135,12 @@ void main() {
   testWidgets('C2-D8 dates blocked after START releases the UI registry', (
     tester,
   ) async {
-    final h = await _mount(tester);
+    final held = Completer<DiskClearResult>();
+    final backend = C2d7Barrier()..onInvalidate = () => held.future;
+    final h = await _mount(tester, backend: backend);
     await _expand(tester);
     await _openDates(tester);
     await _enterDates(tester, '2026-11-02', '2026-11-09');
-    final held = Completer<DiskClearResult>();
-    final backend = C2d7Barrier()..onInvalidate = () => held.future;
-    h.api.attachReadCacheDiskBackend(backend);
     final registry = createAiWorkspaceWorkItemWriteRegistry(
       api: h.api,
       accountKey: h.account.key,
@@ -576,7 +574,7 @@ void main() {
     final statusApply = Completer<void>();
     f.status.holdBeforeApply = statusApply;
     await tester.tap(find.byKey(_statusSave));
-    await tester.idle();
+    await _until(tester, () => f.status.awaitingApply);
     expect(f.status.awaitingApply, isTrue, reason: 'Status held before apply');
 
     f.releaseFenceNonce(f.parkedFenceNonces.single);
@@ -1147,7 +1145,7 @@ void main() {
       var saves = h.store.accountSaves;
       final generation = session.generation;
       notifications = 0;
-      await tester.runAsync(() => session.remove(other1));
+      await pumpUntilComplete(tester, session.remove(other1));
       await _frames(tester);
       expect(notifications, 2);
       expect(h.store.accountSaves, saves + 1);
@@ -1180,7 +1178,7 @@ void main() {
       final removed = h.observer.removed.length;
       saves = h.store.accountSaves;
       notifications = 0;
-      await tester.runAsync(() => session.remove(other2));
+      await pumpUntilComplete(tester, session.remove(other2));
       await _frames(tester);
       await tester.pump(const Duration(seconds: 1));
       expect(notifications, 2);
@@ -1484,6 +1482,7 @@ typedef _Mounted = ({
 Future<_Mounted> _mount(
   WidgetTester tester, {
   WorkItemDatesParentFixture? fixture,
+  ReadCacheDiskBackend? backend,
   int pages = 1,
   bool launcher = false,
   bool injected = false,
@@ -1510,6 +1509,20 @@ Future<_Mounted> _mount(
     () => session.connect('https://example.com/gitlab', 'synthetic-test-token'),
   );
   final account = session.active!;
+  if (backend != null) {
+    // d2 already attached the session client. Inject this fixture's barrier
+    // once into a verified replacement before the page captures its API.
+    final api = GitLabApi(
+      instance: account.instance,
+      credential: account.credential,
+      dio: Dio()..httpClientAdapter = server.adapter,
+    );
+    await tester.runAsync(api.currentUser);
+    api.bindReadCache(account.key, session.generation);
+    api.attachReadCacheDiskBackend(backend);
+    session.api!.close();
+    session.api = api;
+  }
   final api = session.api!;
   expect(account.key, server.account.key);
   bool isCurrent() =>

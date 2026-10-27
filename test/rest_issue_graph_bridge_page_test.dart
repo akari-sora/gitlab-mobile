@@ -351,7 +351,8 @@ void main() {
       statusSequence: ['In progress'],
       delayGraphDetail: holdGraph,
     );
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
@@ -374,7 +375,8 @@ void main() {
 
   testWidgets('TC-PI-20: Native editor opens with captured account api and session generation with grounded capabilities', (tester) async {
     final fixture = _PageTestFixture(statusSequence: ['In progress']);
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
@@ -398,7 +400,8 @@ void main() {
 
   testWidgets('TC-PI-21: Returning from native editor refreshes bridge and REST exactly once through coordinated page reload path', (tester) async {
     final fixture = _PageTestFixture(statusSequence: ['In progress']);
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
@@ -427,7 +430,8 @@ void main() {
 
   testWidgets('TC-PI-22: Stale pop after owner change does not dispatch duplicate new-owner requests or paint old owner', (tester) async {
     final fixture = _PageTestFixture(statusSequence: ['In progress']);
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
@@ -512,7 +516,8 @@ void main() {
 
   testWidgets('TC-PI-24: Benign session notify keeps bridge data and issues zero requests', (tester) async {
     final fixture = _PageTestFixture(statusSequence: ['In progress']);
-    final session = SessionController(MemoryAccountStore())
+    final sessionStore = MemoryAccountStore();
+    final session = SessionController(sessionStore, readCache: sessionStore.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;

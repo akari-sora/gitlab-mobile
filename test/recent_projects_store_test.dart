@@ -145,7 +145,7 @@ void main() {
   group('RecentProjectsController', () {
     test('loads and tracks items bound to session generation', () async {
       final accountStore = MemoryAccountStore();
-      final session = SessionController(accountStore);
+      final session = SessionController(accountStore, readCache: accountStore.readCache);
       final projectStore = SecureRecentProjectStore();
       final controller = RecentProjectsController(store: projectStore, session: session);
 

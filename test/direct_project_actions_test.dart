@@ -274,7 +274,8 @@ void main() {
     tester,
   ) async {
     final fixture = _StarFixture()..readGate = Completer<void>();
-    final session = SessionController(MemoryAccountStore())
+    final store = MemoryAccountStore();
+    final session = SessionController(store, readCache: store.readCache)
       ..active = fixture.account
       ..api = fixture.api
       ..generation = 1;
@@ -300,6 +301,7 @@ void main() {
     expect(button.onPressed, isNull);
     expect(find.byTooltip('加入星標'), findsNothing);
     expect(find.byTooltip('移除星標'), findsNothing);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
   });
 
   testWidgets('project header actions fit a 320dp phone at double text', (
@@ -485,7 +487,8 @@ void main() {
       // Case 3: Session switch before copy invocation produces zero clipboard writes
       final activeFixture = _StarFixture();
       addTearDown(activeFixture.api.close);
-      final session = SessionController(MemoryAccountStore())
+      final store = MemoryAccountStore();
+      final session = SessionController(store, readCache: store.readCache)
         ..active = activeFixture.account
         ..api = activeFixture.api
         ..generation = 1;
@@ -514,6 +517,7 @@ void main() {
       expect(clipboardWrites, 0);
       expect(find.text('已複製專案 ID：42'), findsNothing);
       expect(find.byType(SnackBar), findsNothing);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     },
   );
 
@@ -574,7 +578,8 @@ void main() {
       // Round 2: Session generation invalidation and endSession while held
       final sessionFixture = _StarFixture();
       addTearDown(sessionFixture.api.close);
-      final session = SessionController(MemoryAccountStore())
+      final store = MemoryAccountStore();
+      final session = SessionController(store, readCache: store.readCache)
         ..active = sessionFixture.account
         ..api = sessionFixture.api
         ..generation = 1;
@@ -653,6 +658,7 @@ void main() {
 
       expect(find.byType(SnackBar), findsNothing);
       expect(find.text('已複製專案 ID：42'), findsNothing);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     },
   );
 
@@ -732,7 +738,8 @@ void main() {
       // Part 3: Late error after session end stays completely silent
       final sessionFixture = _StarFixture();
       addTearDown(sessionFixture.api.close);
-      final session = SessionController(MemoryAccountStore())
+      final store = MemoryAccountStore();
+      final session = SessionController(store, readCache: store.readCache)
         ..active = sessionFixture.account
         ..api = sessionFixture.api
         ..generation = 1;
@@ -764,6 +771,7 @@ void main() {
       expect(find.byType(SnackBar), findsNothing);
       expect(find.text('無法複製專案 ID，請重試。'), findsNothing);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     },
   );
 

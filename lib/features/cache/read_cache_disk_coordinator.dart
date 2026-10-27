@@ -112,7 +112,7 @@ final class ReadCacheDiskCoordinator {
     return () => _subscribers.remove(sink);
   }
 
-  void reportCleanup(DiskBinding binding, ReadCacheCleanupState state) {
+  ApiFailure reportCleanup(DiskBinding binding, ReadCacheCleanupState state) {
     final value = ReadCacheNotice(ApiFailure.readCacheCleanup(state));
     _notices[binding] = value;
     if (state.disposition ==
@@ -126,11 +126,78 @@ final class ReadCacheDiskCoordinator {
         // Observers cannot replace a transport outcome or lose the snapshot.
       }
     }
+    return value.failure;
   }
 
   void supersedeNotice(DiskBinding binding) {
     _notices.remove(binding);
     _signedOut.remove(binding);
+  }
+
+  /// A partial clear closes disk immediately. A later AI/store failure can
+  /// still retain the account; update only its existing removal notices.
+  void finishAccountRemoval(String accountKey, {required bool removed}) {
+    final disposition = removed
+        ? ReadCacheCleanupDisposition.diskClosed
+        : ReadCacheCleanupDisposition.accountRetained;
+    for (final entry in List.of(_notices.entries)) {
+      final state = entry.value.failure.cleanup!;
+      if (entry.key.accountKey != accountKey ||
+          state.operation != ReadCacheCleanupOperation.accountRemoval ||
+          state.disposition == disposition) {
+        continue;
+      }
+      reportCleanup(
+        entry.key,
+        ReadCacheCleanupState(
+          operation: state.operation,
+          disposition: disposition,
+          code: state.code,
+          clearResult: state.clearResult,
+        ),
+      );
+    }
+  }
+
+  /// A replacement controller takes startup ownership once. Retired callers
+  /// cannot reclaim it by publishing another decision or disposing later.
+  void claimStartupSession(Object owner) {
+    _domain.startupOwner = owner;
+    revokeStartup(owner);
+  }
+
+  bool ownsStartupSession(Object owner) =>
+      identical(_domain.startupOwner, owner);
+
+  /// Reserve a scan epoch at enqueue, including its time waiting for old I/O.
+  Object? beginStartupScan(Object owner) {
+    if (!revokeStartup(owner)) return null;
+    _domain.startupScanRevision = _domain.startupRevision;
+    return _domain.startupScan = Object();
+  }
+
+  /// A deadline can revoke only its own round; a current owner's decision
+  /// change can revoke any older round without releasing its native I/O tail.
+  bool revokeStartup(Object owner, {Object? scan}) {
+    if (!ownsStartupSession(owner) ||
+        (scan != null && !identical(scan, _domain.startupScan))) {
+      return false;
+    }
+    _domain.startupRevision++;
+    _domain.startupScan = null;
+    _domain.recovered = false;
+    return true;
+  }
+
+  /// Retire background sign-out deadlines without claiming cleanup stopped.
+  /// The serialized I/O tail still owns cleanup and replacement activation.
+  void releaseSession(Object owner) {
+    revokeStartup(owner);
+    for (final release in List.of(
+      _domain.waits[owner] ?? const <void Function()>{},
+    )) {
+      release();
+    }
   }
 
   _Account _account(String key) =>
@@ -1106,6 +1173,8 @@ final class ReadCacheDiskCoordinator {
       }
     } on Object {
       // Unknown is not empty. Still attempt both independent explicit deletes.
+      // A path incident during this proof retires this attempt below; a later
+      // removal retry can join the replacement intent after root cleanup.
     }
     // Caller timeout or a same-owner join must still allow late key/directory
     // deletion. Only a new path incident retires this work entirely; marker
@@ -1163,8 +1232,10 @@ final class ReadCacheDiskCoordinator {
 
   Future<DiskClearResult> clear(
     DiskBinding binding,
-    ReadCacheCleanupOperation operation,
-  ) {
+    ReadCacheCleanupOperation operation, {
+    Object? sessionOwner,
+    void Function(ApiFailure)? onFailure,
+  }) {
     final account = _account(binding.accountKey);
     final pathRevision = _domain.pathRevision;
     _domain.startupRevision++;
@@ -1187,7 +1258,7 @@ final class ReadCacheDiskCoordinator {
         : null;
     final future = _serial(account, () async {
       if (pathRevision != _domain.pathRevision) return _none;
-      final result = await _clearNow(
+      var result = await _clearNow(
         account,
         intent,
         // A preceding preference sweep drains the historical work. Prove empty
@@ -1195,6 +1266,20 @@ final class ReadCacheDiskCoordinator {
         hadWork: hadWork && !preferencePending,
         markerReady: markerReady,
       );
+      // A preceding barrier may have completed this exact full-clear owner.
+      // Never join across a path incident, which installs a replacement owner.
+      if (pathRevision == _domain.pathRevision &&
+          !result.complete &&
+          account.intent == null &&
+          account.clearComplete &&
+          intent.valid) {
+        result = const DiskClearResult(
+          keyGoneConfirmed: true,
+          directoryGoneConfirmed: true,
+          markerDurable: false,
+          complete: true,
+        );
+      }
       if (result.complete && account.intent == null && intent.valid) {
         // Activation decides whether the verified binding may reopen its fence.
         account.state = account.cleanup
@@ -1204,14 +1289,21 @@ final class ReadCacheDiskCoordinator {
       }
       return result;
     });
-    return _wait(binding, operation, future, () {
-      if (pathRevision == _domain.pathRevision && account.intent == intent) {
-        intent.valid = false;
-        account.epoch++;
-        account.cleanup = true;
-        account.state = ReadCacheDiskState.cleaning;
-      }
-    }).then((result) {
+    return _wait(
+      binding,
+      operation,
+      future,
+      () {
+        if (pathRevision == _domain.pathRevision && account.intent == intent) {
+          intent.valid = false;
+          account.epoch++;
+          account.cleanup = true;
+          account.state = ReadCacheDiskState.cleaning;
+        }
+      },
+      sessionOwner: sessionOwner,
+      onFailure: onFailure,
+    ).then((result) {
       if (result.complete &&
           pathRevision == _domain.pathRevision &&
           intent.valid &&
@@ -1227,12 +1319,14 @@ final class ReadCacheDiskCoordinator {
     final binding = _domain.active?.accountKey == accountKey
         ? _domain.active!
         : DiskBinding(accountKey: accountKey, generation: 0);
+    ApiFailure? failure;
     final result = await clear(
       binding,
       ReadCacheCleanupOperation.accountRemoval,
+      onFailure: (value) => failure = value,
     );
     if (!result.keyGoneConfirmed && !result.directoryGoneConfirmed) {
-      throw _notices[binding]?.failure ??
+      throw failure ??
           ApiFailure.readCacheCleanup(
             _cleanup(
               ReadCacheCleanupOperation.accountRemoval,
@@ -1255,7 +1349,9 @@ final class ReadCacheDiskCoordinator {
       ReadCacheCleanupOperation.privacyRead =>
         ReadCacheCleanupDisposition.legalNetworkValueReturned,
       ReadCacheCleanupOperation.accountRemoval =>
-        ReadCacheCleanupDisposition.accountRetained,
+        result.keyGoneConfirmed || result.directoryGoneConfirmed
+            ? ReadCacheCleanupDisposition.diskClosed
+            : ReadCacheCleanupDisposition.accountRetained,
       ReadCacheCleanupOperation.signOut =>
         ReadCacheCleanupDisposition.signedOutCleanupPending,
       _ => ReadCacheCleanupDisposition.diskClosed,
@@ -1270,41 +1366,57 @@ final class ReadCacheDiskCoordinator {
     Future<DiskClearResult> underlying,
     void Function() timeout, {
     bool Function(DiskClearResult)? succeeded,
+    Object? sessionOwner,
+    void Function(ApiFailure)? onFailure,
   }) {
     final result = Completer<DiskClearResult>();
+    // Keep the actual wait outcome with this invocation. Notices may move or
+    // be superseded synchronously by observers before the caller resumes.
+    void report(DiskClearResult value, ReadCacheCleanupCode code) {
+      final state = _cleanup(operation, value, code);
+      final failure = reportCleanup(binding, state);
+      onFailure?.call(failure);
+    }
     final cancel = _schedule(barrierLimit, () {
       timeout();
-      reportCleanup(
-        binding,
-        _cleanup(operation, _none, ReadCacheCleanupCode.barrierTimedOut),
-      );
+      report(_none, ReadCacheCleanupCode.barrierTimedOut);
       result.complete(_none);
     });
+    void release() {
+      if (result.isCompleted) return;
+      cancel();
+      report(_none, ReadCacheCleanupCode.cleanupFailed);
+      result.complete(_none);
+    }
+
+    // Confirmed removal jobs outlive their page/controller. Their deadlines,
+    // and transport-owned mutation/privacy barriers, keep their own lifetime.
+    if (sessionOwner != null) {
+      (_domain.waits[sessionOwner] ??= {}).add(release);
+    }
     unawaited(
       underlying.then(
         (value) {
           if (result.isCompleted) return;
           cancel();
           if (!(succeeded?.call(value) ?? value.complete)) {
-            reportCleanup(
-              binding,
-              _cleanup(operation, value, ReadCacheCleanupCode.cleanupFailed),
-            );
+            report(value, ReadCacheCleanupCode.cleanupFailed);
           }
           result.complete(value);
         },
         onError: (Object _, StackTrace _) {
           if (result.isCompleted) return;
           cancel();
-          reportCleanup(
-            binding,
-            _cleanup(operation, _none, ReadCacheCleanupCode.cleanupFailed),
-          );
+          report(_none, ReadCacheCleanupCode.cleanupFailed);
           result.complete(_none);
         },
       ),
     );
-    return result.future;
+    return result.future.whenComplete(() {
+      final waits = _domain.waits[sessionOwner];
+      waits?.remove(release);
+      if (waits?.isEmpty ?? false) _domain.waits.remove(sessionOwner);
+    });
   }
 
   DiskInvalidationFence invalidate(DiskInvalidation invalidation) {
@@ -1512,10 +1624,25 @@ final class ReadCacheDiskCoordinator {
   Future<bool> recover(
     ReadCacheStartupDecision decision, {
     required Set<String> accountKeys,
+    Object? sessionOwner,
+    Object? startupScan,
   }) async {
-    final revision = ++_domain.startupRevision;
+    bool ownerCurrent() => sessionOwner == null
+        ? _domain.startupOwner == null
+        : ownsStartupSession(sessionOwner);
+    if (!ownerCurrent() ||
+        (startupScan != null &&
+            (!identical(startupScan, _domain.startupScan) ||
+                _domain.startupScanRevision != _domain.startupRevision))) {
+      return false;
+    }
+    final revision = startupScan == null
+        ? ++_domain.startupRevision
+        : _domain.startupRevision;
     final pathRevision = _domain.pathRevision;
     bool current() =>
+        ownerCurrent() &&
+        (startupScan == null || identical(startupScan, _domain.startupScan)) &&
         revision == _domain.startupRevision &&
         pathRevision == _domain.pathRevision;
     _domain.recovered = false;
@@ -1846,6 +1973,8 @@ bool _matches(ProjectedDiskEntry entry, DiskInvalidation invalidation) {
 }
 
 final class _Domain {
+  Object? startupOwner, startupScan;
+  final waits = Map<Object, Set<void Function()>>.identity();
   final notices = <DiskBinding, ReadCacheNotice>{};
   final signedOut = <DiskBinding, ReadCacheNotice>{};
   final subscribers = <ReadCacheNoticeSink>{};
@@ -1856,7 +1985,8 @@ final class _Domain {
   DiskBinding? active;
   DiskBinding? latestVerified;
   int highestGeneration = -1, revokedThrough = -1, preferenceChanges = 0;
-  int dropped = 0, startupRevision = 0, pathRevision = 0, work = 0;
+  int dropped = 0, startupRevision = 0, startupScanRevision = 0;
+  int pathRevision = 0, work = 0;
 }
 
 final class _Account {

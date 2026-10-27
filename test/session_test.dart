@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -7,10 +8,35 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/features/auth/account_store.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
+import 'package:gitlab_mobile/core/read_cache_files.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_disk_coordinator.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_key_store.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_settings_store.dart';
 import 'package:gitlab_mobile/shared/resume_target.dart';
 import 'support/fake_adapter.dart';
 
 class MemoryAccountStore implements AccountStore {
+  MemoryAccountStore() {
+    // Each fixture owns its empty-state proof and never uses the native keychain.
+    final root = Directory.systemTemp.createTempSync('empty-session-cache-');
+    final storage = readCacheStorage;
+    final keys = ReadCacheKeyStore(storage);
+    final files = ReadCacheFileStore(root: () async => root);
+    final settings = ReadCacheSettingsStore(storage);
+    readCache = ReadCacheDiskCoordinator(
+      keys: keys,
+      files: files,
+      settings: settings,
+      coordinationScope: Object(),
+    );
+    addTearDown(() {
+      // Controls stay closed, so this empty fixture can only inspect/delete
+      // files. Do not await a widget test's already-retired fake clock here.
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+  }
+  late final ReadCacheDiskCoordinator readCache;
+  final readCacheStorage = EmptyReadCacheStorage();
   List<Account> accounts = [];
   String? lastActive;
   bool signOutPending = false;
@@ -21,6 +47,8 @@ class MemoryAccountStore implements AccountStore {
   Completer<void>? holdAccountSave;
   int lastActiveWrites = 0;
   int accountSaves = 0;
+  int rejectedAccountSaves = 0;
+  Future<void> Function()? beforeAccountSave;
   @override
   Future<List<Account>> load() async => accounts;
   @override
@@ -29,7 +57,12 @@ class MemoryAccountStore implements AccountStore {
     final hold = holdAccountSave;
     holdAccountSave = null;
     if (hold != null) await hold.future;
-    if (rejectWrite) throw StateError('synthetic key-store failure');
+    final beforeSave = beforeAccountSave;
+    if (beforeSave != null) await beforeSave();
+    if (rejectWrite) {
+      rejectedAccountSaves++;
+      throw StateError('synthetic key-store failure');
+    }
     accounts = List.of(value);
   }
 
@@ -59,6 +92,22 @@ class MemoryAccountStore implements AccountStore {
   }
 }
 
+class EmptyReadCacheStorage implements ReadCacheSecureStorage {
+  final values = <String, String>{};
+  int inventoryReadCalls = 0;
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<Map<String, String>> readAll() async {
+    inventoryReadCalls++;
+    return Map.of(values);
+  }
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+}
+
 SessionController controllerFor(
   MemoryAccountStore store,
   FakeAdapter adapter, {
@@ -68,6 +117,7 @@ SessionController controllerFor(
   createOAuth,
 }) => SessionController(
   store,
+  readCache: store.readCache,
   applicationIdFor: applicationIdFor,
   browser: browser,
   createOAuth: createOAuth,
@@ -81,6 +131,15 @@ SessionController controllerFor(
 );
 
 void main() {
+  test('account fixtures do not configure or share the singleton', () {
+    expect(ReadCacheDiskCoordinator.instance.configured, isFalse);
+    final first = MemoryAccountStore();
+    final second = MemoryAccountStore();
+    expect(ReadCacheDiskCoordinator.instance.configured, isFalse);
+    expect(identical(first.readCache, second.readCache), isFalse);
+    expect(first.readCache.configured, isTrue);
+    expect(second.readCache.configured, isTrue);
+  });
   _resumeTargetTests();
   test('activates only after /user and secure-store success', () async {
     final store = MemoryAccountStore();

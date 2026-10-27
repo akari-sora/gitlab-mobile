@@ -21,6 +21,7 @@ import 'package:gitlab_mobile/shared/artifact_storage.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 
 import 'session_test.dart' show MemoryAccountStore;
+import 'support/widget_settle.dart';
 
 class _RecordingJournalFiles extends AiJournalFiles {
   _RecordingJournalFiles(super.root, this.calls);
@@ -69,7 +70,7 @@ void main() {
           token: 'synthetic-test-token',
         );
         final store = _RecordingAccountStore(calls)..accounts = [account];
-        final session = SessionController(store);
+        final session = SessionController(store, readCache: store.readCache);
         final files = _RecordingJournalFiles(root, calls);
         final journal = AiWriteJournal(
           keys: MemoryAiJournalKeyStore(),
@@ -163,7 +164,7 @@ void main() {
       token: 'synthetic-test-token',
     );
     final accountStore = MemoryAccountStore()..accounts = [saved];
-    final session = SessionController(accountStore);
+    final session = SessionController(accountStore, readCache: accountStore.readCache);
     addTearDown(session.dispose);
 
     late final Directory root;
@@ -203,7 +204,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('確認'));
     await tester.pump();
-    await tester.runAsync(() => removalAttempted.future);
+    await pumpUntilComplete(tester, removalAttempted.future);
+    await pumpUntil(tester, () => !AiAccountRemoval.anyRunning,
+        description: 'AI cleanup failure releases the removal job');
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
 

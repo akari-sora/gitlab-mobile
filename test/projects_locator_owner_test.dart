@@ -22,7 +22,8 @@ void main() {
   for (final request in ['locator', 'create']) {
     testWidgets('the first rebuild with a bumped $request token opens it', (tester) async {
       final api = testApi(FakeAdapter((_) => jsonResponse([])));
-      final session = SessionController(MemoryAccountStore())
+      final sessionStore = MemoryAccountStore();
+      final session = SessionController(sessionStore, readCache: sessionStore.readCache)
         ..active = Account(
           instance: api.instance,
           user: const GitLabUser(id: 7, username: 'first', name: 'First'),
@@ -72,7 +73,8 @@ void main() {
             user: const GitLabUser(id: 7, username: 'first', name: 'First'),
             token: 'synthetic-first',
           );
-          final session = SessionController(MemoryAccountStore())
+          final sessionStore = MemoryAccountStore();
+          final session = SessionController(sessionStore, readCache: sessionStore.readCache)
             ..active = originalAccount
             ..api = originalApi;
           final recentStore = SecureRecentProjectStore();

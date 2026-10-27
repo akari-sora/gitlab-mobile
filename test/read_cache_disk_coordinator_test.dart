@@ -3599,6 +3599,10 @@ void _followupFix1Tests() {
         h.storage.intercept = null;
         if (operation == ReadCacheCleanupOperation.accountRemoval) {
           expect(result, isA<ApiFailure>());
+          expect(
+            (result! as ApiFailure).cleanup!.code,
+            ReadCacheCleanupCode.barrierTimedOut,
+          );
         } else {
           expect((result! as DiskClearResult).complete, isFalse);
         }
@@ -3983,7 +3987,10 @@ void main() {
         );
         expect(account.key, _account);
         final accountStore = MemoryAccountStore()..accounts = [account];
-        final session = SessionController(accountStore);
+        final session = SessionController(
+          accountStore,
+          readCache: accountStore.readCache,
+        );
         final journal = AiWriteJournal(
           keys: MemoryAiJournalKeyStore(),
           applicationSupport: h.root,
