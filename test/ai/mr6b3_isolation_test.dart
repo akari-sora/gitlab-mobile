@@ -11,6 +11,7 @@ import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
+import 'package:gitlab_mobile/features/ai/ai_write_reread.dart';
 
 import '../support/fake_adapter.dart';
 import 'mr6b3_matrix_support.dart';
@@ -22,6 +23,14 @@ import 'mr6b3_support.dart';
 // 「重新讀取」只產生觀察，隔離維持；「原請求在途時不提供讀取」；
 // 「手動解除需要輸入依 key 種類決定的確認名稱」。
 // These are graph-family scenarios, including the real REST alias prepares.
+// NOT_RUN §15 row 5: the same resource through two different scope entries;
+// delimiter/isolated() direction-isolate key/name cases; changed-payload create
+// retries, DELETE present/404 and same-name create/recreate observations;
+// edit_file/deleteFile, merge, pipeline/job cross-operation isolation;
+// empty/unparseable 2xx, 400/403/404/409/429 and mutation/readback 401 variants;
+// MR/group release names, multi-key release, unavailable release-name pre-read,
+// and notification/link/model release denial. These are graph-key scenarios,
+// not the complete REST result-classification or release-entrypoint matrix.
 
 const _families = [
   'updateWorkItemState',
@@ -55,8 +64,6 @@ void main() {
           isA<AiJournalException>().having((e) => e.reason, 'code', 'inFlight'),
         ),
       );
-      // A read through the real port is an observation, never an unlock.
-      await transport.port.prepare(_request(operation, 'read-while-in-flight'));
       expect(h.journal.isolated(mr6b3Account, entry.writeKeys), isTrue);
       await _expectSharedJournalBlocks(
         h,
@@ -72,10 +79,6 @@ void main() {
       expect(
         h.journal.rereadableEntry(mr6b3Account, entry.executionId).state,
         AiJournalState.writeUncertain,
-      );
-      await h.journal.recordObservation(
-        executionId: entry.executionId,
-        summary: 'Fresh fixed reads still show the old synthetic state.',
       );
       expect(h.journal.isolated(mr6b3Account, entry.writeKeys), isTrue);
       await _expectSharedJournalBlocks(
@@ -105,10 +108,6 @@ void main() {
       );
       expect(restored.outcomeFor('history-reproposal')?.reasonCode, 'isolated');
       expect(recovered.isolated(mr6b3Account, entry.writeKeys), isTrue);
-      expect(
-        recovered.entries(mr6b3Account).single.observation,
-        contains('old synthetic state'),
-      );
       expect(transport.mutations, 1);
     });
 
@@ -180,6 +179,193 @@ void main() {
     });
   }
 
+  for (final operation in [
+    'updateWorkItemState',
+    'setWorkItemActivityNoteReaction',
+    'snoozeTodo',
+  ]) {
+    test('§15 row 5 $operation real re-read and late landing', () async {
+      final h = await _harness();
+      final transport = _Transport(h);
+      addTearDown(transport.close);
+      final first = _peer(h, transport, 'reread-$operation');
+      final proposal = (await first.propose(_call(operation, 'reread-first')))!;
+      transport.hold = true;
+      final pending = first.approve(
+        proposal,
+        typedName: proposal.tier.typedName,
+      );
+      await transport.entered.future.timeout(mr6b3Timeout);
+      final entry = h.journal.entries(mr6b3Account).single;
+      final intersection = operation == 'updateWorkItemState'
+          ? 'createWorkItemActivityComment'
+          : 'updateWorkItemState';
+      final initialCount = transport.adapter.requests.length;
+      await expectLater(
+        rereadInterruptedWrite(
+          journal: h.journal,
+          accountKey: mr6b3Account,
+          executionId: entry.executionId,
+          api: transport.api,
+        ),
+        throwsA(
+          isA<AiJournalException>().having((e) => e.reason, 'code', 'inFlight'),
+        ),
+      );
+      expect(transport.adapter.requests.length, initialCount);
+      await _expectSharedJournalBlocks(
+        h,
+        transport,
+        intersection,
+        suffix: 'reread-in-flight',
+      );
+      expect(transport.mutations, 1);
+      first.stop('stopped-in-flight');
+      transport.release();
+      expect(
+        (await pending.timeout(mr6b3Timeout)).state,
+        AiJournalState.writeUncertain,
+      );
+
+      Future<AiRereadResult> check(
+        AiWriteJournal journal,
+        String suffix,
+      ) async {
+        final before = transport.adapter.requests.length;
+        final result = await rereadInterruptedWrite(
+          journal: journal,
+          accountKey: mr6b3Account,
+          executionId: entry.executionId,
+          api: transport.api,
+        );
+        final requests = transport.adapter.requests.sublist(before);
+        expect(requests, isNotEmpty);
+        expect(requests.every((request) => request.method == 'GET'), isTrue);
+        expect(result.requests, requests.length);
+        expect(result.requests, lessThanOrEqualTo(AiWriteLimits.rereadHttp));
+        final saved = journal.entries(mr6b3Account).single;
+        final decoded = AiRereadObservation.decode(saved.observation);
+        expect(decoded, isNotNull);
+        expect(decoded!.encode(), result.observation.encode());
+        expect(saved.state, AiJournalState.writeUncertain);
+        expect(journal.isolated(mr6b3Account, entry.writeKeys), isTrue);
+        await _expectSharedJournalBlocks(
+          h,
+          transport,
+          intersection,
+          suffix: suffix,
+          journal: journal,
+        );
+        expect(transport.mutations, 1);
+        return result;
+      }
+
+      final before = await check(h.journal, 'before-recovery');
+      final subject = switch (operation) {
+        'updateWorkItemState' => AiRereadSubject.issue,
+        'setWorkItemActivityNoteReaction' => AiRereadSubject.note,
+        _ => AiRereadSubject.todo,
+      };
+      expect(before.observation.subject, subject);
+      expect(before.observation.presence, AiRereadPresence.present);
+      if (operation == 'updateWorkItemState') {
+        expect(before.observation.detail, AiRereadDetail.opened);
+      }
+      if (operation == 'snoozeTodo') {
+        expect(before.observation.detail, AiRereadDetail.pending);
+      }
+
+      final recovered = await h.recoverInNewProcess();
+      final recoveredEntry = recovered.entries(mr6b3Account).single;
+      expect(recoveredEntry.state, AiJournalState.writeUncertain);
+      expect(recoveredEntry.observation, before.observation.encode());
+      final afterRecovery = await check(recovered, 'after-recovery');
+      expect(afterRecovery.observation.subject, subject);
+      expect(afterRecovery.observation.presence, AiRereadPresence.present);
+      await transport.landLate(operation);
+      expect(h.server.mutations, 1);
+      final afterLate = await check(recovered, 'after-late-landing');
+      expect(afterLate.observation.subject, subject);
+      if (operation == 'updateWorkItemState') {
+        expect(h.server.workItemState, 'CLOSED');
+        expect(afterLate.observation.detail, AiRereadDetail.closed);
+      } else if (operation == 'snoozeTodo') {
+        expect(afterLate.observation.presence, AiRereadPresence.absent);
+        expect(afterLate.observation.detail, AiRereadDetail.notPending);
+      } else {
+        expect(h.server.reactionAwarded, isTrue);
+        expect(h.server.noteUpdatedAt, '2026-10-01T01:03:05Z');
+        expect(afterLate.observation.presence, AiRereadPresence.present);
+      }
+      await expectLater(
+        recovered.releaseByUser(
+          executionId: entry.executionId,
+          typedName: '#wrong',
+        ),
+        throwsA(
+          isA<AiJournalException>().having(
+            (e) => e.reason,
+            'code',
+            'confirmationRequired',
+          ),
+        ),
+      );
+      expect(recovered.isolated(mr6b3Account, entry.writeKeys), isTrue);
+      await _expectSharedJournalBlocks(
+        h,
+        transport,
+        intersection,
+        suffix: 'wrong-release',
+        journal: recovered,
+      );
+      await recovered.releaseByUser(
+        executionId: entry.executionId,
+        typedName: entry.releaseName,
+      );
+      expect(recovered.isolated(mr6b3Account, entry.writeKeys), isFalse);
+      final afterRelease = _peer(
+        h,
+        transport,
+        'after-correct-release-$operation',
+        journal: recovered,
+      );
+      final next = await afterRelease.propose(_call(intersection, 'released'));
+      expect(next, isNotNull);
+      expect(next!.tier.decision, AiGateDecision.requireApproval);
+      expect(transport.mutations, 1);
+    });
+  }
+
+  const crossFamilies = [
+    'updateWorkItemState',
+    'createWorkItemActivityComment',
+    'updateWorkItemDates',
+    'setWorkItemActivityNoteReaction',
+  ];
+  for (final first in crossFamilies.take(3)) {
+    for (final second in crossFamilies.where(
+      (operation) => operation != first,
+    )) {
+      test('§15 row 5 uncertain $first isolates $second on #3', () async {
+        final h = await _harness();
+        final transport = _Transport(h);
+        addTearDown(transport.close);
+        await _makeUncertain(h, transport, first);
+        await _expectSharedJournalBlocks(
+          h,
+          transport,
+          second,
+          suffix: 'cross-family',
+        );
+        expect(
+          h.journal.entries(mr6b3Account).single.state,
+          AiJournalState.writeUncertain,
+        );
+        expect(transport.mutations, 1);
+      });
+    }
+  }
+
   for (final pair in [
     ('markTodoDone', 'snoozeTodo'),
     ('snoozeTodo', 'markTodoDone'),
@@ -245,8 +431,14 @@ Future<void> _expectSharedJournalBlocks(
   _Transport transport,
   String operation, {
   required String suffix,
+  AiWriteJournal? journal,
 }) async {
-  final coordinator = _peer(h, transport, 'peer-$suffix-$operation');
+  final coordinator = _peer(
+    h,
+    transport,
+    'peer-$suffix-$operation',
+    journal: journal,
+  );
   final call = _call(operation, 'fresh-tool-id-$suffix');
   expect(
     await coordinator.propose(call).timeout(mr6b3Timeout),
@@ -322,7 +514,7 @@ PolicyAiWriteCoordinator _peer(
 }
 
 // An async adapter wrapper reuses all graph payloads from the existing server.
-// Only the two REST alias routes are supplied here; every write returns 5xx.
+// REST aliases and re-read views are supplied here; every write returns 5xx.
 final class _Transport {
   _Transport(this.h) {
     adapter = FakeAdapter(_respond);
@@ -341,6 +533,18 @@ final class _Transport {
   final _release = Completer<void>();
   bool hold = false;
   int mutations = 0;
+  RequestOptions? delayedMutation;
+  bool todoPending = true;
+
+  Future<void> landLate(String operation) async {
+    final request = delayedMutation!;
+    // Apply the captured original request at the fake server, without a new
+    // client fetch. This models late landing after the uncertain Future ended.
+    h.server.applyMutations = true;
+    await h.server.adapter.respond(request);
+    h.server.applyMutations = false;
+    if (operation == 'snoozeTodo') todoPending = false;
+  }
 
   void release() {
     if (!_release.isCompleted) _release.complete();
@@ -359,7 +563,8 @@ final class _Transport {
         : request.method != 'GET';
     if (mutation) {
       mutations++;
-      if (graph is String) await h.server.adapter.respond(request);
+      delayedMutation = request;
+      if (graph is String && !hold) await h.server.adapter.respond(request);
       if (!entered.isCompleted) entered.complete();
       if (hold) await _release.future.timeout(mr6b3Timeout);
       return jsonResponse({
@@ -368,20 +573,24 @@ final class _Transport {
     }
     final path = request.uri.path;
     if (path.endsWith('/api/v4/todos')) {
-      return jsonResponse([
-        {
-          'id': 400,
-          'target_type': 'Issue',
-          'project': {'id': 9},
-          'target': {'iid': 3},
-        },
-      ]);
+      return jsonResponse(
+        todoPending
+            ? [
+                {
+                  'id': 400,
+                  'target_type': 'Issue',
+                  'project': {'id': 9},
+                  'target': {'iid': 3},
+                },
+              ]
+            : <Object?>[],
+      );
     }
     if (path.endsWith('/projects/9/issues/3/notes/401')) {
       return jsonResponse({
         'id': 401,
         'body': 'Synthetic note',
-        'updated_at': mr6b3Revision,
+        'updated_at': h.server.noteUpdatedAt,
         'author': {'username': 'synthetic'},
       });
     }
@@ -390,6 +599,7 @@ final class _Transport {
         'id': 31,
         'iid': 3,
         'project_id': 9,
+        'state': h.server.workItemState == 'CLOSED' ? 'closed' : 'opened',
         'updated_at': mr6b3Revision,
       });
     }

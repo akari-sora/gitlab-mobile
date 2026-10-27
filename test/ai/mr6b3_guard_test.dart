@@ -10,7 +10,6 @@ import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import 'mr6b3_matrix_support.dart';
 import 'mr6b3_support.dart';
-import 'write_call_site_ledger_test.dart' as call_site_ledger;
 
 /// §15 row 13: 「唯讀 port 的既有 GET/HEAD 測試與成員白名單不變，
 /// 不為寫入流程放寬。」 「前置讀取與 readback 需要的 GraphQL query
@@ -25,8 +24,13 @@ import 'write_call_site_ledger_test.dart' as call_site_ledger;
 /// 「v2 不提供」中的一項，或「待 MR6b-x 交付」清單」；「每個新包裝的固定
 /// path 與欄位白名單有負向測試。」
 ///
-/// The real adapter is the assertion boundary. The existing exhaustive call
-/// site inventory is registered below as a cross-check, rather than copied.
+/// The real adapter is the assertion boundary. Direct graph-row and deferral
+/// checks are below; the exhaustive inventory remains in its own test file.
+/// NOT_RUN §15 row 13: exhaustive non-graph REST mutation and importer checks.
+/// Fixed graph documents are checked by operation/variables, without a separate
+/// reviewed full-document snapshot or arbitrary-document semantic audit.
+/// NOT_RUN §15 row 21: exhaustive lib call-site enumeration, screen migration,
+/// and every wrapper's fixed-path/field negative test in this file.
 
 const _fixedReads = <String, Set<String>>{
   'updateWorkItemState': {'MobileWorkItemState'},
@@ -425,7 +429,6 @@ void main() {
         }
       },
     );
-    call_site_ledger.main();
   });
 }
 

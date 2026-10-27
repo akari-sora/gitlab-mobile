@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
+import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
@@ -9,6 +12,7 @@ import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import '../support/fake_adapter.dart';
 import 'mr6b3_matrix_support.dart';
 import 'mr6b3_support.dart';
+import 'runner_test.dart' as runner_helpers;
 
 // Plan v6 §15 row 6: 「卡片雙擊、兩個對話同時對同一資源、soft-timeout
 // 讀取後立刻要求寫入、修改內容後按舊核准、兩段對話同時核准而改寫同一份
@@ -16,9 +20,117 @@ import 'mr6b3_support.dart';
 // §15 row 7: 「29／31 分鐘、等待期間 head／revision／權限／等級／範圍
 // 變更、輸入名稱不符、重啟後過期卡片、逾時後的通知點擊；零未授權寫入；
 // 等級被調低時執行前重判；拒絕、失敗、狀態未知後卡片保留使用者改過的內容。」
+// NOT_RUN: row 7 notification click after expiry and typed-name mismatch
+// (the latter is covered in mr6b3_matrix_test.dart); graph Work Items have no
+// head SHA, so the former synthetic head-change case has been removed.
+// NOT_RUN: rows 6–7 substantive edited-body delivery/readback (issue #23),
+// and failedCertain after graph acceptance (not a graph outcome). The 403 case
+// below proves server refusal during the fresh read, before any mutation.
 
 void main() {
   group('§15 rows 6–7 graph approval races', () {
+    test(
+      'soft-timeout read refuses the next graph write without reviving it',
+      () async {
+        final h = await _harness();
+        // If the pending-read guard regresses, this bound write can execute
+        // immediately through the real coordinator and GraphQL port.
+        h.policy.level = AiAutonomyLevel.bypass;
+        final provider = runner_helpers.Harness();
+        final readStarted = Completer<void>();
+        final pendingRead = Completer<AiToolResult>();
+        final results = <AiToolResult>[];
+        final write = _call('updateWorkItemState', 'after-soft-timeout');
+        var reads = 0;
+        var turns = 0;
+        provider.respond = (_, _) async {
+          switch (++turns) {
+            case 1:
+              return provider.turn(calls: [runner_helpers.call('slow-read')]);
+            case 2:
+              expect(pendingRead.isCompleted, isFalse);
+              expect(results.single.callId, 'slow-read');
+              expect(results.single.content, contains('timeout'));
+              return provider.turn(calls: [write]);
+            default:
+              return provider.turn(text: 'done');
+          }
+        };
+        final runner = AiRunner(
+          config: provider.config(),
+          wire: provider.wire,
+          complete: provider.complete,
+          secrets: provider.secrets,
+          refreshSecrets: () async {},
+          guard: AiRunGuard(
+            expectedGeneration: 1,
+            ownerApi: provider.owner,
+            generation: () => provider.generation,
+            api: () => provider.api,
+            recipientRevision: () => provider.revision,
+            consentValid: () => provider.consent,
+          ),
+          system: 'Synthetic runner race',
+          tools: [runner_helpers.spec, ...h.coordinator.specs],
+          writeCoordinator: h.coordinator,
+          close: () {},
+          cancelActive: () {},
+          executeTool: (call) {
+            expect(call.name, 'read_file');
+            reads++;
+            readStarted.complete();
+            return pendingRead.future;
+          },
+          onToolResult: results.add,
+          toolDeadline: const Duration(milliseconds: 5),
+        );
+        addTearDown(runner.stop);
+
+        final running = runner.run('Close #3 in team/example-9.');
+        await readStarted.future;
+        expect(pendingRead.isCompleted, isFalse);
+        expect((await running).reason, AiRunEnd.done);
+        expect(reads, 1);
+        expect(turns, 3);
+        final refused = results.singleWhere((r) => r.callId == write.id);
+        expect(refused.name, 'updateWorkItemState');
+        expect(refused.notExecuted, isTrue);
+        expect(refused.content, contains('read_pending'));
+        expect(h.coordinator.proposals, isEmpty);
+        expect(h.coordinator.recordedOutcomeFor(write.id), isNull);
+        expect(h.journal.entries(mr6b3Account), isEmpty);
+        expect(h.server.adapter.requests, isEmpty);
+        expect(h.server.mutations, 0);
+
+        final frozen = List<String>.of(runner.segment!.frozenWireJson);
+        final pairedResults = List<AiToolResult>.of(results);
+        pendingRead.complete(
+          AiToolResult(
+            callId: 'slow-read',
+            name: 'read_file',
+            content: 'late read result',
+          ),
+        );
+        await pendingRead.future;
+        // Drain the underlying Future's settlement, without a timing guess.
+        await Future<void>.delayed(Duration.zero);
+        expect(runner.segment!.frozenWireJson, frozen);
+        expect(results, pairedResults);
+        expect(h.coordinator.proposals, isEmpty);
+        expect(h.coordinator.recordedOutcomeFor(write.id), isNull);
+        expect(h.journal.entries(mr6b3Account), isEmpty);
+        expect(h.server.mutations, 0);
+        expect(
+          (await runner.run('Continue with an answer.')).reason,
+          AiRunEnd.done,
+        );
+        expect(h.coordinator.proposals, isEmpty);
+        expect(h.journal.entries(mr6b3Account), isEmpty);
+        expect(h.server.adapter.requests, isEmpty);
+        expect(h.server.mutations, 0);
+      },
+    );
+
     for (final operation in [
       'updateWorkItemState',
       'createWorkItemActivityReply',
@@ -158,7 +270,7 @@ void main() {
       );
     }
 
-    for (final change in ['revision', 'head', 'level', 'scope', 'permission']) {
+    for (final change in ['revision', 'level', 'scope', 'permission']) {
       test(
         '$change changed while waiting is re-judged before dispatch',
         () async {
@@ -171,8 +283,6 @@ void main() {
           switch (change) {
             case 'revision':
               policy.revision = mr6b3BumpedRevision;
-            case 'head':
-              policy.head = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
             case 'level':
               policy.level = AiAutonomyLevel.readOnly;
             case 'scope':
@@ -251,70 +361,116 @@ void main() {
   });
 
   group('§15 row 7 edited graph cards retain user text', () {
-    test(
-      'substantive graph edit is refused by the old target digest and kept',
-      () async {
+    for (final operation in [
+      'createWorkItemActivityComment',
+      'createWorkItemActivityReply',
+    ]) {
+      test('$operation edit invalidates the pre-edit approval', () async {
         final h = await _harness();
-        final proposal = (await h.propose('createWorkItemActivityComment'))!;
+        final proposal = (await h.propose(operation))!;
         const edited = 'A substantive user correction to the comment.';
-        expect(
-          (await h.coordinator.approve(
-            proposal,
-            editedText: edited,
-          )).reasonCode,
-          'approvalRequired',
-        );
-        final outcome = await h.approve(proposal);
-        expect(outcome.state, AiJournalState.notExecuted);
-        expect(outcome.reasonCode, 'targetChanged');
-        expect(h.server.mutations, 0);
-        expect(proposal.editedText, edited);
-        expect(h.coordinator.settledEdits, contains(same(proposal)));
-      },
-    );
-
-    for (final terminal in ['refused', 'failed', 'uncertain']) {
-      test('$terminal keeps the edited comment card', () async {
-        final h = await _harness();
-        final proposal = (await h.propose(
-          'createWorkItemActivityComment',
-          id: 'edited',
-        ))!;
-        // Substantive body edits change the graph target digest (tested below).
-        // A whitespace edit preserves the port's trimmed-body digest and lets
-        // the real uncertain path prove exact user-text retention.
-        final edited = terminal == 'uncertain'
-            ? ' \n$mr6b3ActivityBody\n '
-            : 'User corrected the Markdown.\nKeep **this exact** text.';
-        final editedResult = await h.coordinator.approve(
+        // Approving while replacing the card text cannot use the old approval
+        // to send: it only rebuilds the preview and asks for a fresh approval.
+        final result = await h.coordinator.approve(
           proposal,
           editedText: edited,
         );
-        expect(editedResult.reasonCode, 'approvalRequired');
-        expect(proposal.editedText, edited);
+        expect(result.state, AiJournalState.notExecuted);
+        expect(result.reasonCode, 'approvalRequired');
         expect(h.server.mutations, 0);
-        if (terminal == 'refused') {
-          await h.coordinator.reject(proposal);
-          expect(proposal.outcome?.reasonCode, 'userRejected');
-        } else if (terminal == 'failed') {
-          h.policy.level = AiAutonomyLevel.readOnly;
-          final failed = await h.approve(proposal);
-          expect(failed.state, AiJournalState.notExecuted);
-          expect(failed.reasonCode, 'policyDenied');
-        } else {
-          h.server.onRequest = (name, mutation, request, payload) => mutation
-              ? jsonResponse({
-                  'message': 'synthetic lost acknowledgement',
-                }, status: 503)
-              : null;
-          final unknown = await h.approve(proposal);
-          expect(unknown.state, AiJournalState.writeUncertain);
-          expect(unknown.mutationCount, 1);
-        }
+        expect(h.journal.entries(mr6b3Account), isEmpty);
         expect(proposal.editedText, edited);
-        expect(h.coordinator.settledEdits, contains(same(proposal)));
-        expect(proposal.valid, isFalse);
+        expect(proposal.previewText, contains(edited));
+        expect(proposal.valid, isTrue);
       });
+    }
+
+    test(
+      'known defect #23: substantive graph edit re-approval gets targetChanged',
+      () async {
+        // KNOWN DEFECT PIN, issue #23, not plan behaviour: the coordinator
+        // retains the original body binding digest after a substantive edit.
+        // The separate production fix should flip exactly this test to prove
+        // newly approved edited text is delivered and independently read back.
+        for (final operation in [
+          'createWorkItemActivityComment',
+          'createWorkItemActivityReply',
+        ]) {
+          final h = await _harness();
+          final proposal = (await h.propose(operation))!;
+          const edited = 'A substantive user correction to the comment.';
+          await h.coordinator.approve(proposal, editedText: edited);
+          final outcome = await h.approve(proposal);
+          expect(outcome.reasonCode, 'targetChanged', reason: operation);
+          expect(outcome.state, AiJournalState.notExecuted);
+          expect(h.server.mutations, 0);
+          expect(proposal.editedText, edited);
+          expect(h.coordinator.settledEdits, contains(same(proposal)));
+        }
+      },
+    );
+
+    for (final terminal in [
+      'user refusal',
+      'fresh-read 403 refusal',
+      'uncertain',
+    ]) {
+      test(
+        '$terminal keeps the ${terminal == 'uncertain' ? 'whitespace-only ' : ''}edited comment card',
+        () async {
+          final h = await _harness();
+          final proposal = (await h.propose(
+            'createWorkItemActivityComment',
+            id: 'edited',
+          ))!;
+          // Issue #23 prevents substantive edited-text delivery. The uncertain
+          // case uses only whitespace (trimmed by the port) to test retention;
+          // it provides no evidence that a substantive edited body can be sent.
+          final edited = terminal == 'uncertain'
+              ? ' \n$mr6b3ActivityBody\n '
+              : 'User corrected the Markdown.\nKeep **this exact** text.';
+          final editedResult = await h.coordinator.approve(
+            proposal,
+            editedText: edited,
+          );
+          expect(editedResult.reasonCode, 'approvalRequired');
+          expect(proposal.editedText, edited);
+          expect(h.server.mutations, 0);
+          if (terminal == 'user refusal') {
+            await h.coordinator.reject(proposal);
+            expect(proposal.outcome?.reasonCode, 'userRejected');
+          } else if (terminal == 'fresh-read 403 refusal') {
+            var refusals = 0;
+            h.server.onRequest = (name, mutation, request, payload) {
+              if (name == 'MobileWorkItemActivityWriteAccess') {
+                expect(mutation, isFalse);
+                refusals++;
+                return jsonResponse({
+                  'message': 'synthetic forbidden',
+                }, status: 403);
+              }
+              return null;
+            };
+            final refused = await h.approve(proposal);
+            expect(refusals, 1);
+            expect(refused.state, AiJournalState.notExecuted);
+            expect(refused.reasonCode, 'activityForbidden');
+            expect(h.server.mutations, 0);
+          } else {
+            h.server.onRequest = (name, mutation, request, payload) => mutation
+                ? jsonResponse({
+                    'message': 'synthetic lost acknowledgement',
+                  }, status: 503)
+                : null;
+            final unknown = await h.approve(proposal);
+            expect(unknown.state, AiJournalState.writeUncertain);
+            expect(unknown.mutationCount, 1);
+          }
+          expect(proposal.editedText, edited);
+          expect(h.coordinator.settledEdits, contains(same(proposal)));
+          expect(proposal.valid, isFalse);
+        },
+      );
     }
   });
 }
@@ -339,7 +495,6 @@ final class _Policy {
   AiAutonomyLevel level = AiAutonomyLevel.confirmEach;
   AiWriteScope scope = mr6b3Scope;
   String revision = mr6b3Revision;
-  String head = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 }
 
 PolicyAiWriteCoordinator _coordinator(
@@ -365,7 +520,6 @@ PolicyAiWriteCoordinator _coordinator(
     budget: () => budget,
     readFreshness: (_) async => AiWriteFreshness(
       updatedAt: policy.revision,
-      headSha: policy.head,
       visibilityUnreadable: false,
     ),
     placeholders: text.UploadPlaceholderTable(instance: h.server.api.instance),

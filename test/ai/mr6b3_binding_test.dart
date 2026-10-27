@@ -28,8 +28,16 @@ import 'mr6b3_support.dart';
 // §15 row 24: 「foreign Group GID 被拒……project 為 null 的群組 Work Item
 // 待辦可延後……foreign account 或 foreign Group 的 target 與不支援的 target
 // 型別被拒」。This packet covers the MR6b-3 project/group-denial subset.
-// Current production deliberately refuses projectless group todos (breakdown
-// D16 / §6.1); the explicit core-only test below is not AI authorization.
+// Current production deliberately refuses projectless group todos (D16 in
+// docs/plans/mr6b3-decisions.md; breakdown §7 item 8 and appendix B).
+// NOT_RUN row 10: suggestion/batch and unrelated REST whitelist cases, and a
+// project issue opened through a group Work Item page.
+// NOT_RUN row 16: intent words only in a code block or pasted long text,
+// same path with different refs, and group Work Item URL/UI authorization.
+// NOT_RUN row 24: group Work Item todo snooze through AI authorization (MR6b-3g),
+// successful projectless group proposals, groupWorkItem scope restrictions,
+// group release names, rename/board/group-page aliases, truncated target paging,
+// foreign-account and unsupported target types beyond the cases below.
 
 typedef _Direction = ({
   String operation,
@@ -199,12 +207,22 @@ void main() {
         () {
           final zh = languageForTag('zh-TW')!;
           final phrase = AiIntentLexicon.phrases(zh, direction.intent).first;
+          final withoutJapanese = assessIntent(
+            message: 'しないで $phrase',
+            restoredFromHistory: false,
+            operationId: direction.operation,
+            arguments: direction.arguments,
+            interfaceLanguage: 'zh-TW',
+            deviceLanguages: const ['en'],
+          );
+          expect(withoutJapanese.negated, isFalse);
+          expect(withoutJapanese.authorizes, isTrue);
           for (final languages in [
-            (interface: 'en', device: const ['zh-TW']),
-            (interface: 'zh-TW', device: const ['en-US']),
+            (interface: 'ja', device: const ['zh-TW']),
+            (interface: 'zh-TW', device: const ['ja']),
           ]) {
             final assessment = assessIntent(
-              message: 'do not $phrase',
+              message: 'しないで $phrase',
               restoredFromHistory: false,
               operationId: direction.operation,
               arguments: direction.arguments,
@@ -228,27 +246,24 @@ void main() {
     }
 
     for (final event in ['close', 'reopen']) {
-      test(
-        '$event remains T2 confirmation at lowRiskAuto with negated text',
-        () async {
-          final h = await _harness();
-          h.policy.level = AiAutonomyLevel.lowRiskAuto;
-          h.coordinator.beginRun('Do not $event team/example-9#3.');
-          h.coordinator.beginTurn();
-          final proposal = await h.propose(
-            'updateWorkItemState',
-            arguments: {'stateEvent': event},
-          );
-          expect(proposal, isNotNull);
-          expect(proposal!.tier.tier, AiWriteTier.t2);
-          expect(proposal.tier.decision, AiGateDecision.requireApproval);
-          // Lifecycle is T2 and has no T1 lexicon. This asserts the real tier
-          // boundary rather than pretending close/reopen is a T1 direction.
-          expect(directionsFor('updateWorkItemState'), isEmpty);
-          expect(h.server.mutations, 0);
-          expect(h.journal.entries(mr6b3Account), isEmpty);
-        },
-      );
+      test('$event remains T2 confirmation at lowRiskAuto', () async {
+        final h = await _harness();
+        h.policy.level = AiAutonomyLevel.lowRiskAuto;
+        h.coordinator.beginRun('Do not $event team/example-9#3.');
+        h.coordinator.beginTurn();
+        final proposal = await h.propose(
+          'updateWorkItemState',
+          arguments: {'stateEvent': event},
+        );
+        expect(proposal, isNotNull);
+        expect(proposal!.tier.tier, AiWriteTier.t2);
+        expect(proposal.tier.decision, AiGateDecision.requireApproval);
+        // Lifecycle is T2 and has no T1 lexicon. This asserts the real tier
+        // boundary rather than pretending close/reopen is a T1 direction.
+        expect(directionsFor('updateWorkItemState'), isEmpty);
+        expect(h.server.mutations, 0);
+        expect(h.journal.entries(mr6b3Account), isEmpty);
+      });
     }
   });
 
@@ -414,6 +429,7 @@ void main() {
 
     // The real project reader rejects this response before returning a detail
     // to the locator. Families preserve or deliberately map that failure.
+    // Issue #21 tracks the differing family refusal reason codes pinned here.
     const groupRefusals = <String, String>{
       'updateWorkItemState': 'invalidResponse',
       'updateWorkItemStatus': 'invalidResponse',
@@ -530,7 +546,7 @@ void main() {
     }
 
     test(
-      'core-only group todo snooze uses todo coordinates without AI approval',
+      'core only, not row 24 evidence: group todo snooze uses todo coordinates',
       () async {
         final h = await _harness();
         _makeGroupTodo(h.server);

@@ -16,6 +16,11 @@ import 'mr6b3_support.dart';
 /// parameter. Their exact argument sets below make a future addition require a
 /// new escalation test. Plan v6 §4.1: bypass executes a bound T4 deletion
 /// without the typed name; every level below bypass requires it.
+/// NOT_RUN row 8: non-graph operation matrices, protected/default branch,
+/// pipeline/job/schedule, file/tag and composite-effect-specific behavior.
+/// NOT_RUN row 8: actual confidentiality/visibility argument escalation (only
+/// synthetic tier facts are exercised; graph has no such argument), and an
+/// independent archived/protected policy fence.
 
 const _t2 = <String>[
   'updateWorkItemState',
@@ -162,6 +167,8 @@ void main() {
           if (level == AiAutonomyLevel.bypass) {
             // Plan v6 §4.1: bypass executes T4 automatically once the §2
             // target binding holds; the typed name applies below bypass.
+            // Actual automatic deletion and journal/dispatch correspondence
+            // are exercised in mr6b3_guard_test.dart.
             expect(proposal.tier.decision, AiGateDecision.execute);
             expect(proposal.tier.requiresTypedName, isFalse);
             expect(proposal.tier.reasons, isEmpty);
@@ -182,6 +189,51 @@ void main() {
       );
     }
   });
+
+  test('§15 row 8 bypass unbound T4 deletion requires a card', () async {
+    final h = await _harness(AiAutonomyLevel.bypass);
+    h.coordinator.beginRun('Delete a note.');
+    h.coordinator.beginTurn();
+    final proposal = await h.coordinator.propose(
+      _call('deleteWorkItemActivityNote', const {}),
+    );
+    expect(proposal, isNotNull);
+    expect(proposal!.tier.tier, AiWriteTier.t4);
+    expect(proposal.tier.decision, AiGateDecision.requireApproval);
+    expect(proposal.tier.reasons, contains(AiFixedConfirmReason.targetUnbound));
+    expect(h.server.mutations, 0);
+    expect(h.journal.entries(mr6b3Account), isEmpty);
+  });
+
+  test(
+    '§15 row 8 bypass same-run repeated graph comment needs confirmation',
+    () async {
+      final h = await _harness(AiAutonomyLevel.bypass);
+      h.coordinator.beginRun('Comment on work item #3.');
+      h.coordinator.beginTurn();
+      final first = _call('createWorkItemActivityComment', const {});
+      final proposed = await h.coordinator.propose(first);
+      expect(proposed, isNotNull);
+      expect(proposed!.tier.decision, AiGateDecision.execute);
+      final result = await h.coordinator.execute(first);
+      expect(result.state, AiJournalState.succeeded, reason: result.reasonCode);
+      expect(h.server.mutations, 1);
+      final repeated = await h.coordinator.propose(
+        AiToolCall(
+          id: 'matrix-repeated-comment',
+          name: first.name,
+          arguments: first.arguments,
+        ),
+      );
+      expect(repeated, isNotNull);
+      expect(repeated!.tier.decision, AiGateDecision.requireApproval);
+      expect(
+        repeated.tier.reasons,
+        contains(AiFixedConfirmReason.duplicateOfSettledWrite),
+      );
+      expect(h.server.mutations, 1);
+    },
+  );
 
   test(
     '§15 row 8 graph argument sets have no parameter-driven tier upgrades',
@@ -320,7 +372,7 @@ void main() {
   );
 
   test(
-    '§15 row 8 archived project server permission denial refuses graph state',
+    '§15 row 8 server work-item permission denial refuses graph state',
     () async {
       final h = await _harness(AiAutonomyLevel.bypass);
       var projectReads = 0;
