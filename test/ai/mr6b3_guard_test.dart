@@ -269,19 +269,14 @@ void main() {
       final groupCalled = <String>{};
       final mainWrite = File('lib/core/ai/tools/gitlab_write_port.dart');
       final mainCalled = _apiMembers(mainWrite.readAsStringSync());
-      for (final file in Directory(
-        'lib/core/ai/tools',
-      ).listSync(recursive: true).whereType<File>()) {
-        if (file.path == mainWrite.path || !file.path.endsWith('.dart')) {
-          continue;
-        }
-        final source = file.readAsStringSync();
-        if (!RegExp(
-          r'''\bpart\s+of\s+['"](?:[^'"]*/)?gitlab_write_port\.dart['"]\s*;''',
-        ).hasMatch(source)) {
-          continue;
-        }
-        final name = file.path.split('/').last;
+      final parts = _writePartSources(
+        mainWrite.absolute.uri,
+        mainWrite.readAsStringSync(),
+        (uri) => File.fromUri(uri).readAsStringSync(),
+      );
+      for (final entry in parts.entries) {
+        final name = entry.key.pathSegments.last;
+        final source = entry.value;
         final members = _apiMembers(source);
         if (name.startsWith('gitlab_write_port_group_')) {
           groupCalled.addAll(members);
@@ -361,6 +356,170 @@ void main() {
           ),
         ),
         isNotEmpty,
+      );
+    });
+
+    test('read port guard rejects API escapes in either known class', () {
+      final project = _readPortMembers.map((name) => '_api.$name();').join();
+      const group = '_api.namespaceWorkItem();';
+      const shapes = <String, String>{
+        'typed alias':
+            'void f() { final GitLabApi other = _api; other.record(); }',
+        'parenthesized receiver': 'void f() { (_api).record(); }',
+        'getter': 'GitLabApi get _g => _api; void f() { _g.record(); }',
+        'typed helper':
+            'static void peek(GitLabApi a) { a.record(); } void f() { peek(_api); }',
+        'dynamic cast': 'void f() { (_api as dynamic).record(); }',
+        'free dynamic helper': 'void f() { helper(_api); }',
+        'typed parameter only': 'void f(GitLabApi other) {}',
+        'typed getter only': 'GitLabApi get other => someValue;',
+        'typed local only': 'void f() { GitLabApi other = someValue; }',
+        'local shadows field': 'void f() { final GitLabApi _api; }',
+        'constructor call in method':
+            'void f() { GitLabAiGroupReadPort(this._api, 1); }',
+        'constructor call in initializer':
+            'final other = GitLabAiGroupReadPort(this._api, 1);',
+        'dynamic cast only': 'void f(Object value) { value as dynamic; }',
+      };
+      for (final shape in shapes.entries) {
+        for (final target in ['project', 'group']) {
+          final source =
+              'final class GitLabAiReadPort { $project ${target == 'project' ? shape.value : ''} }\n'
+              'final class GitLabAiGroupReadPort { $group ${target == 'group' ? shape.value : ''} }\n'
+              'void helper(dynamic a) { a.record(); }';
+          expect(
+            _readPortViolations(source),
+            isNotEmpty,
+            reason: '${shape.key} in $target class',
+          );
+        }
+      }
+      for (final target in ['GitLabAiReadPort', 'GitLabAiGroupReadPort']) {
+        for (final constructor in [
+          '$target(this._api);',
+          '$target.named(this._api);',
+          '$target(Object other, this._api);',
+          '$target({required this._api});',
+        ]) {
+          final source =
+              'final class GitLabAiReadPort { $project ${target == 'GitLabAiReadPort' ? 'final GitLabApi _api; $constructor' : ''} }\n'
+              'final class GitLabAiGroupReadPort { $group ${target == 'GitLabAiGroupReadPort' ? 'final GitLabApi _api; $constructor' : ''} }';
+          expect(_readPortViolations(source), isEmpty, reason: constructor);
+        }
+      }
+    });
+
+    test('API owner exception belongs only to the group evidence factory', () {
+      final project = _readPortMembers.map((name) => '_api.$name();').join();
+      String fixture(String body) =>
+          'final class GitLabAiReadPort { $project }\n'
+          'final class GitLabAiGroupReadPort { _api.namespaceWorkItem(); $body }';
+      const factory = 'VerifiedGroupWorkItemIdentity.fromServerEvidence';
+      expect(
+        _readPortViolations(
+          fixture(
+            'void workItem() async { $factory(apiOwner: _api, generation: 1); }',
+          ),
+        ),
+        isEmpty,
+      );
+      for (final invalid in [
+        'void f() { helper(apiOwner: _api); }',
+        'void f() { $factory(apiOwner: _api); }',
+        'void workItem() async { $factory(other: helper(apiOwner: _api)); }',
+        'void workItem() async { $factory(apiOwner: _api, apiOwner: _api); }',
+        'void workItem() async { $factory(apiOwner: _api); helper(apiOwner: _api); }',
+      ]) {
+        expect(
+          _readPortViolations(fixture(invalid)),
+          isNotEmpty,
+          reason: invalid,
+        );
+      }
+    });
+
+    test('read port guard examines string interpolation code', () {
+      final project = _readPortMembers.map((name) => '_api.$name();').join();
+      String fixture(String body) =>
+          'final class GitLabAiReadPort { $project }\n'
+          'final class GitLabAiGroupReadPort { _api.namespaceWorkItem(); $body }';
+      expect(
+        _readPortViolations(
+          fixture(r'''void f() { print('${helper(_api)}'); }'''),
+        ),
+        isNotEmpty,
+      );
+      expect(
+        _readPortViolations(fixture(r'''void f() { print('$_api'); }''')),
+        isNotEmpty,
+      );
+      expect(
+        _readPortViolations(fixture(r'''void f() { print(r'$_api'); }''')),
+        isEmpty,
+      );
+    });
+
+    test('write part discovery follows URIs outside tools and validates part of', () {
+      final main = Uri.file('/fixture/ai/tools/gitlab_write_port.dart');
+      final external = main.resolve('../outside.dart');
+      final unreferenced = main.resolve('../unreferenced.dart');
+      final files = <Uri, String>{
+        external:
+            "part of 'tools/gitlab_write_port.dart'; void f() => _api.graphMutation();",
+        unreferenced:
+            "part of 'tools/gitlab_write_port.dart'; void f() => _api.record();",
+      };
+      final parts = _writePartSources(
+        main,
+        "// part '../unreferenced.dart';\npart /* nested /* comment */ */ '../outside.dart';",
+        (uri) => files[uri]!,
+      );
+      expect(parts.keys, [external]);
+      expect(_apiMembers(parts[external]!), contains('graphMutation'));
+      expect(
+        () => _writePartSources(
+          main,
+          "part '../outside.dart';",
+          (_) => "part of 'wrong.dart';",
+        ),
+        throwsStateError,
+      );
+      expect(
+        () => _writePartSources(
+          main,
+          "part '../outside.dart';",
+          (_) => 'void f() {}',
+        ),
+        throwsStateError,
+      );
+      for (final source in [
+        "part of 'wrong.dart';",
+        'part notAUri;',
+        "void f() { part '../outside.dart'; }",
+        "part 'gitlab_write_port.dart';",
+        "part '../outside.dart'; part '../outside.dart';",
+      ]) {
+        expect(
+          () => _writePartSources(main, source, (uri) => files[uri]!),
+          throwsStateError,
+          reason: source,
+        );
+      }
+      expect(
+        () => _writePartSources(
+          main,
+          "part '../outside.dart';",
+          (_) => "part of 'tools/gitlab_write_port.dart'; part 'nested.dart';",
+        ),
+        throwsStateError,
+      );
+      expect(
+        _writePartSources(
+          main,
+          "part '../outside.dart';",
+          (_) => "part /* a */ of /* b */ 'tools/gitlab_write_port.dart';",
+        ).keys,
+        [external],
       );
     });
 
@@ -646,61 +805,355 @@ Set<String> _apiMembers(String source) {
   };
 }
 
-// Preserve source offsets while hiding braces in comments and Dart strings.
+// Resolve only parts actually declared by the main library, including paths
+// outside tools/, and reject a part that belongs to a different library.
+Map<Uri, String> _writePartSources(
+  Uri main,
+  String mainSource,
+  String Function(Uri) readPart,
+) {
+  List<({bool isPartOf, String uri})> directives(String source) {
+    final code = _codeOnly(source);
+    final result = <({bool isPartOf, String uri})>[];
+    int trivia(int offset) {
+      while (offset < source.length) {
+        if (RegExp(r'\s').hasMatch(source[offset])) {
+          offset++;
+        } else if (source.startsWith('//', offset)) {
+          final newline = source.indexOf('\n', offset + 2);
+          offset = newline < 0 ? source.length : newline + 1;
+        } else if (source.startsWith('/*', offset)) {
+          var depth = 1;
+          offset += 2;
+          while (offset < source.length && depth > 0) {
+            if (source.startsWith('/*', offset)) {
+              depth++;
+              offset += 2;
+            } else if (source.startsWith('*/', offset)) {
+              depth--;
+              offset += 2;
+            } else {
+              offset++;
+            }
+          }
+          if (depth != 0) throw StateError('unterminated comment');
+        } else {
+          break;
+        }
+      }
+      return offset;
+    }
+
+    for (final token in RegExp(r'\bpart\b').allMatches(code)) {
+      var offset = trivia(token.end);
+      final looksLikeDirective =
+          RegExp(r'^of\b').hasMatch(code.substring(offset)) ||
+          (offset < source.length &&
+              (source[offset] == "'" || source[offset] == '"'));
+      if (_nestingDepthAt(code, token.start) != 0) {
+        if (looksLikeDirective) throw StateError('nested part directive');
+        continue;
+      }
+      var isPartOf = false;
+      if (RegExp(r'^of\b').hasMatch(code.substring(offset))) {
+        isPartOf = true;
+        offset = trivia(offset + 2);
+      }
+      if (offset >= source.length ||
+          (source[offset] != "'" && source[offset] != '"')) {
+        throw StateError('unrecognized part directive');
+      }
+      final quote = source[offset++];
+      final end = source.indexOf(quote, offset);
+      if (end < 0) throw StateError('unterminated part URI');
+      final uri = source.substring(offset, end);
+      if (uri.isEmpty || uri.contains(r'\') || uri.contains(r'$')) {
+        throw StateError('unsupported part URI');
+      }
+      offset = trivia(end + 1);
+      if (offset >= code.length || code[offset] != ';') {
+        throw StateError('unrecognized part directive');
+      }
+      result.add((isPartOf: isPartOf, uri: uri));
+    }
+    return result;
+  }
+
+  Uri resolve(Uri base, String value) {
+    final relative = Uri.parse(value);
+    if (relative.isAbsolute ||
+        relative.hasAuthority ||
+        relative.path.startsWith('/') ||
+        relative.hasQuery ||
+        relative.hasFragment) {
+      throw StateError('part URI must be relative: $value');
+    }
+    return base.resolveUri(relative).normalizePath();
+  }
+
+  final result = <Uri, String>{};
+  for (final directive in directives(mainSource)) {
+    if (directive.isPartOf) throw StateError('main library declares part of');
+    final uri = resolve(main, directive.uri);
+    if (result.containsKey(uri) || uri == main) {
+      throw StateError('duplicate or self-referencing part: $uri');
+    }
+    final source = readPart(uri);
+    final owners = directives(source);
+    if (owners.length != 1 ||
+        !owners.single.isPartOf ||
+        resolve(uri, owners.single.uri) != main) {
+      throw StateError('part does not belong to $main: $uri');
+    }
+    result[uri] = source;
+  }
+  return result;
+}
+
+// Preserve source offsets while hiding comments and literal text; Dart
+// interpolation is executable code and must remain visible to the guard.
 String _codeOnly(String source) {
   final result = source.split('');
-  var i = 0;
   void hide(int index) {
     if (source[index] != '\n') result[index] = ' ';
   }
 
-  while (i < source.length) {
-    if (source.startsWith('//', i)) {
-      while (i < source.length && source[i] != '\n') {
-        hide(i++);
-      }
-    } else if (source.startsWith('/*', i)) {
-      var depth = 0;
-      do {
-        if (source.startsWith('/*', i)) {
-          hide(i++);
-          hide(i++);
-          depth++;
-        } else if (source.startsWith('*/', i)) {
-          hide(i++);
-          hide(i++);
-          depth--;
-        } else {
+  late int Function(int, {bool interpolation}) codeAt;
+  int stringAt(int i) {
+    final quote = source[i];
+    final triple = source.startsWith(quote * 3, i);
+    final delimiter = triple ? quote * 3 : quote;
+    final raw = i > 0 && source[i - 1] == 'r';
+    for (var j = 0; j < delimiter.length; j++) {
+      hide(i++);
+    }
+    while (i < source.length) {
+      if (source.startsWith(delimiter, i)) {
+        for (var j = 0; j < delimiter.length; j++) {
           hide(i++);
         }
-      } while (i < source.length && depth > 0);
-    } else if (source[i] == "'" || source[i] == '"') {
-      final quote = source[i];
-      final triple = source.startsWith(quote * 3, i);
-      final delimiter = triple ? quote * 3 : quote;
-      final raw = i > 0 && source[i - 1] == 'r';
-      for (var j = 0; j < delimiter.length; j++) {
+        return i;
+      }
+      if (!raw && source.startsWith(r'${', i)) {
+        hide(i++);
+        hide(i++);
+        i = codeAt(i, interpolation: true);
+        continue;
+      }
+      if (!raw &&
+          source[i] == r'$' &&
+          i + 1 < source.length &&
+          RegExp(r'[A-Za-z_]').hasMatch(source[i + 1])) {
+        hide(i++);
+        while (i < source.length &&
+            RegExp(r'[A-Za-z0-9_]').hasMatch(source[i])) {
+          i++;
+        }
+        continue;
+      }
+      if (!raw && source[i] == r'\' && i + 1 < source.length) {
+        hide(i++);
+        hide(i++);
+      } else {
         hide(i++);
       }
-      while (i < source.length) {
-        if (source.startsWith(delimiter, i)) {
-          for (var j = 0; j < delimiter.length; j++) {
+    }
+    return i;
+  }
+
+  codeAt = (int i, {bool interpolation = false}) {
+    var braces = 0;
+    while (i < source.length) {
+      if (source.startsWith('//', i)) {
+        while (i < source.length && source[i] != '\n') {
+          hide(i++);
+        }
+      } else if (source.startsWith('/*', i)) {
+        var depth = 0;
+        do {
+          if (source.startsWith('/*', i)) {
+            hide(i++);
+            hide(i++);
+            depth++;
+          } else if (source.startsWith('*/', i)) {
+            hide(i++);
+            hide(i++);
+            depth--;
+          } else {
             hide(i++);
           }
-          break;
-        }
-        if (!raw && source[i] == r'\' && i + 1 < source.length) {
-          hide(i++);
-          hide(i++);
-        } else {
-          hide(i++);
-        }
+        } while (i < source.length && depth > 0);
+      } else if (source[i] == "'" || source[i] == '"') {
+        i = stringAt(i);
+      } else if (interpolation && source[i] == '}' && braces == 0) {
+        hide(i++);
+        return i;
+      } else {
+        if (interpolation && source[i] == '{') braces++;
+        if (interpolation && source[i] == '}') braces--;
+        i++;
       }
-    } else {
-      i++;
+    }
+    return i;
+  };
+  codeAt(0);
+  return result.join();
+}
+
+int _braceDepthAt(String code, int end) {
+  var depth = 0;
+  for (var i = 0; i < end; i++) {
+    if (code[i] == '{') depth++;
+    if (code[i] == '}') depth--;
+  }
+  return depth;
+}
+
+int _nestingDepthAt(String code, int end) {
+  var depth = 0;
+  for (var i = 0; i < end; i++) {
+    if ('({['.contains(code[i])) depth++;
+    if (')}]'.contains(code[i])) depth--;
+  }
+  return depth;
+}
+
+// Find the contents of a balanced delimiter, splitting only top-level commas.
+({int end, List<({int start, int end})> arguments})? _delimited(
+  String code,
+  int open,
+) {
+  const pairs = {'(': ')', '[': ']', '{': '}'};
+  final first = pairs[code[open]];
+  if (first == null) return null;
+  final stack = <String>[first];
+  final arguments = <({int start, int end})>[];
+  var start = open + 1;
+  for (var i = start; i < code.length; i++) {
+    final char = code[i];
+    final close = pairs[char];
+    if (close != null) {
+      stack.add(close);
+    } else if (char == ')' || char == ']' || char == '}') {
+      if (stack.isEmpty || stack.removeLast() != char) return null;
+      if (stack.isEmpty) {
+        arguments.add((start: start, end: i));
+        return (end: i + 1, arguments: arguments);
+      }
+    } else if (char == ',' && stack.length == 1) {
+      arguments.add((start: start, end: i));
+      start = i + 1;
     }
   }
-  return result.join();
+  return null;
+}
+
+Set<int> _groupOwnerApiOffsets(String code) {
+  final methods = RegExp(r'\bworkItem\s*\(').allMatches(code).toList();
+  if (methods.length != 1) return {};
+  final parameters = _delimited(code, methods.single.end - 1);
+  if (parameters == null) return {};
+  final bodyStart = RegExp(
+    r'^\s*async\s*\{',
+  ).firstMatch(code.substring(parameters.end));
+  if (bodyStart == null) return {};
+  final open = parameters.end + bodyStart.end - 1;
+  final body = _delimited(code, open);
+  if (body == null) return {};
+  final methodBody = code.substring(open + 1, body.end - 1);
+  final factories = RegExp(
+    r'\bVerifiedGroupWorkItemIdentity\s*\.\s*fromServerEvidence\s*\(',
+  ).allMatches(methodBody).toList();
+  if (factories.length != 1) return {};
+  final factoryOpen = open + 1 + factories.single.end - 1;
+  final factory = _delimited(code, factoryOpen);
+  if (factory == null || factory.end > body.end) return {};
+  final owners = <int>[];
+  for (final argument in factory.arguments) {
+    final text = code.substring(argument.start, argument.end);
+    final match = RegExp(r'^\s*apiOwner\s*:\s*(_api)\s*$').firstMatch(text);
+    if (match != null) {
+      owners.add(
+        argument.start + match.start + match.group(0)!.indexOf('_api'),
+      );
+    }
+  }
+  return owners.length == 1 ? owners.toSet() : {};
+}
+
+List<String> _knownReadClassViolations(
+  String name,
+  String code,
+  Set<String> allowed,
+) {
+  final violations = <String>[];
+  final fieldApi = <int>{};
+  final fieldType = <int>{};
+  for (final match in RegExp(
+    r'\bfinal\s+GitLabApi\s+_api\s*;',
+  ).allMatches(code)) {
+    if (_braceDepthAt(code, match.start) != 1) continue;
+    fieldApi.add(match.start + match.group(0)!.indexOf('_api'));
+    fieldType.add(match.start + match.group(0)!.indexOf('GitLabApi'));
+  }
+  final constructorApi = <int>{};
+  for (final match in RegExp(
+    '\\b${RegExp.escape(name)}(?:\\s*\\.\\s*\\w+)?\\s*\\(',
+  ).allMatches(code)) {
+    if (_braceDepthAt(code, match.start) != 1) continue;
+    final before = code.substring(0, match.start);
+    final boundary = [
+      before.lastIndexOf('{'),
+      before.lastIndexOf('}'),
+      before.lastIndexOf(';'),
+    ].reduce((left, right) => left > right ? left : right);
+    final prefix = before.substring(boundary + 1);
+    if (!RegExp(r'^\s*(?:(?:const|external|factory)\s+)*$').hasMatch(prefix)) {
+      continue;
+    }
+    final open = match.end - 1;
+    final parameters = _delimited(code, open);
+    if (parameters == null) continue;
+    final text = code.substring(open, parameters.end);
+    for (final parameter in RegExp(
+      r'(?:^|[({,\[])\s*(?:required\s+)?this\s*\.\s*(_api)\s*(?=[,}\])])',
+    ).allMatches(text)) {
+      final offset = parameter.start + parameter.group(0)!.indexOf('_api');
+      final beforeParameter = text.substring(1, offset);
+      int count(String char) => char.allMatches(beforeParameter).length;
+      if (count('(') != count(')') ||
+          count('{') - count('}') + count('[') - count(']') > 1) {
+        continue;
+      }
+      constructorApi.add(open + offset);
+    }
+  }
+  final ownerApi = name == 'GitLabAiGroupReadPort'
+      ? _groupOwnerApiOffsets(code)
+      : <int>{};
+  for (final token in RegExp(r'\b_api\b').allMatches(code)) {
+    final suffix = RegExp(
+      r'^(?:\.\.|\.)(\w+)\b',
+    ).firstMatch(code.substring(token.end));
+    if (!fieldApi.contains(token.start) &&
+        !constructorApi.contains(token.start) &&
+        !ownerApi.contains(token.start) &&
+        (suffix == null || !allowed.contains(suffix.group(1)))) {
+      violations.add('invalid _api use in $name');
+    }
+  }
+  for (final token in RegExp(r'\bGitLabApi\b').allMatches(code)) {
+    final staticLimit =
+        name == 'GitLabAiReadPort' &&
+        RegExp(r'^\.maxTextBytes\b').hasMatch(code.substring(token.end));
+    if (!fieldType.contains(token.start) && !staticLimit) {
+      violations.add('invalid GitLabApi use in $name');
+    }
+  }
+  if (RegExp(r'\bas\s+dynamic\b').hasMatch(code)) {
+    violations.add('dynamic cast in $name');
+  }
+  return violations;
 }
 
 List<String> _readPortViolations(String source) {
@@ -729,16 +1182,20 @@ List<String> _readPortViolations(String source) {
       continue;
     }
     final item = matches.single;
-    final actual = _apiMembers(source.substring(item.start, item.end));
+    final classCode = code.substring(item.start, item.end);
+    final actual = _apiMembers(classCode);
     if (actual.length != entry.value.length ||
         !actual.containsAll(entry.value)) {
       violations.add('unexpected ${entry.key} API members');
     }
+    violations.addAll(
+      _knownReadClassViolations(entry.key, classCode, entry.value),
+    );
   }
   for (final item in classes.where(
     (item) => !expected.containsKey(item.name),
   )) {
-    if (_apiMembers(source.substring(item.start, item.end)).isNotEmpty ||
+    if (_apiMembers(code.substring(item.start, item.end)).isNotEmpty ||
         RegExp(
           r'\b(?:GitLabApi|_api)\b',
         ).hasMatch(code.substring(item.start, item.end))) {
@@ -756,7 +1213,7 @@ List<String> _readPortViolations(String source) {
       RegExp(r'\b(?:GitLabApi|_api)\b').hasMatch(_codeOnly(outsideSource))) {
     violations.add('API access outside concrete classes');
   }
-  final all = _apiMembers(source);
+  final all = _apiMembers(code);
   final wanted = {..._readPortMembers, 'namespaceWorkItem'};
   if (all.length != wanted.length || !all.containsAll(wanted)) {
     violations.add('unexpected read-port API union');

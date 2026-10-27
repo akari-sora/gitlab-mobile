@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+from urllib.parse import unquote, urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -222,6 +223,74 @@ class AiBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(mutant=mutant):
                 self.assertTrue(self._read_port_violations(mutant))
+
+        # Each attack is placed in each known concrete class.  Keep its normal
+        # calls intact so rejection cannot come merely from a changed member set.
+        attacks = (
+            "void f() { final GitLabApi other = _api; other.record(); }",
+            "void f() { (_api).record(); }",
+            "GitLabApi get _g => _api; void f() { _g.record(); }",
+            "static void _peek(GitLabApi api) { api.record(); } "
+            "void f() { _peek(_api); }",
+            "void f() { (_api as dynamic).record(); }",
+            "void f() { helper(_api); }",
+        )
+        for attack in attacks:
+            for target in ("project", "group"):
+                mutant = fixture(
+                    project_body=project + (" " + attack if target == "project" else ""),
+                    group_body=group + (" " + attack if target == "group" else ""),
+                    extra="void helper(dynamic api) { api.record(); }",
+                )
+                with self.subTest(attack=attack, target=target):
+                    self.assertTrue(self._read_port_violations(mutant))
+
+        for target, name in (("project", "GitLabAiReadPort"),
+                             ("group", "GitLabAiGroupReadPort")):
+            for suffix in ("", ".named"):
+                declaration = f"{name}{suffix}(this._api); final GitLabApi _api;"
+                if target == "project":
+                    positive = fixture(project_body=declaration + project)
+                else:
+                    positive = fixture(group_body=declaration + group)
+                with self.subTest(name=name, suffix=suffix):
+                    self.assertEqual(self._read_port_violations(positive), [])
+                for attack in (f"final escaped = {name}{suffix}(this._api);",
+                               f"void f() {{ {name}{suffix}(this._api); }}"):
+                    if target == "project":
+                        mutant = fixture(project_body=project + attack)
+                    else:
+                        mutant = fixture(group_body=group + attack)
+                    with self.subTest(name=name, suffix=suffix, attack=attack):
+                        self.assertTrue(self._read_port_violations(mutant))
+
+        for attack in (
+            "void f() { helper(apiOwner: _api); }",
+            "void f() { helper(this._api); }",
+            "void f() { (_api as dynamic); }",
+            "GitLabApi get _g => throw 0;",
+            "void f() { GitLabApi.other; }",
+            "void f() { final GitLabApi _api; }",
+        ):
+            with self.subTest(attack=attack):
+                self.assertTrue(self._read_port_violations(
+                    fixture(group_body=group + " " + attack)
+                ))
+
+        factory = ("Future<void> workItem() async { "
+                   "VerifiedGroupWorkItemIdentity.fromServerEvidence(apiOwner: _api); }")
+        self.assertEqual(self._read_port_violations(fixture(group_body=group + factory)), [])
+        for mutant in (
+            factory.replace("apiOwner: _api", "apiOwner: helper(_api)"),
+            factory + " void f() { helper(apiOwner: _api); }",
+            factory.replace("workItem", "otherMethod"),
+            factory + factory.replace("workItem", "workItem2"),
+        ):
+            with self.subTest(mutant=mutant):
+                self.assertTrue(self._read_port_violations(fixture(group_body=group + mutant)))
+
+        self.assertTrue(self._read_port_violations(fixture(group_body=group + " '$_api';")))
+        self.assertEqual(self._read_port_violations(fixture(group_body=group + " r'$_api';")), [])
 
     def test_ai_namespace_reads_are_strict_and_not_torn_off(self):
         violations = []
@@ -515,25 +584,64 @@ class AiBoundaryTest(unittest.TestCase):
             ["part contains gitlab_api.dart"],
         )
 
-    def test_write_port_discovery_finds_arbitrary_nested_part_files(self):
+    def test_write_port_discovery_uses_declared_uris_across_directories(self):
         with tempfile.TemporaryDirectory() as directory:
-            tools = Path(directory)
-            (tools / "gitlab_write_port.dart").write_text("", encoding="utf-8")
+            tools = Path(directory).resolve() / "tools"
+            tools.mkdir()
+            (tools / "gitlab_write_port.dart").write_text(
+                "part /* comment */ 'nested/arbitrary_name.dart';\npart '../other.dart';\n",
+                encoding="utf-8",
+            )
             nested = tools / "nested"
             nested.mkdir()
             part = nested / "arbitrary_name.dart"
             part.write_text(
-                "part of 'gitlab_write_port.dart';\n",
+                "part /* comment */ of '../gitlab_write_port.dart';\n",
+                encoding="utf-8",
+            )
+            (tools.parent / "other.dart").write_text(
+                "part of 'tools/gitlab_write_port.dart';\n_api.writeRecord();\n",
+                encoding="utf-8",
+            )
+            (tools / "unreferenced.dart").write_text(
+                "part of 'gitlab_write_port.dart';\n_api.graphMutation();\n",
                 encoding="utf-8",
             )
             sources = self._write_port_sources(tools)
-        self.assertEqual(
-            [(path.relative_to(tools).as_posix(), is_part) for path, _, is_part in sources],
-            [
-                ("gitlab_write_port.dart", False),
-                ("nested/arbitrary_name.dart", True),
-            ],
-        )
+            self.assertEqual(
+                [(path.relative_to(tools.parent).as_posix(), is_part)
+                 for path, _, is_part in sources],
+                [("tools/gitlab_write_port.dart", False),
+                 ("tools/nested/arbitrary_name.dart", True), ("other.dart", True)],
+            )
+            self.assertIn("writeRecord", self._api_members(sources[-1][1]))
+            self.assertIn(
+                "uses generic channel writeRecord",
+                self._write_port_violations(sources[-1][1], is_part=True),
+            )
+            self.assertNotIn("graphMutation", {
+                member for _, source, _ in sources for member in self._api_members(source)
+            })
+
+    def test_write_port_discovery_rejects_missing_or_foreign_part_of(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tools = Path(directory)
+            main = tools / "gitlab_write_port.dart"
+            main.write_text("part 'child.dart';\n", encoding="utf-8")
+            with self.assertRaises(FileNotFoundError):
+                self._write_port_sources(tools)
+            child = tools / "child.dart"
+            for content in (
+                "", "part of 'other.dart';", "// part of 'gitlab_write_port.dart';",
+                "void f() { part of 'gitlab_write_port.dart'; }",
+                "part of gitlab_write_port;",
+            ):
+                child.write_text(content, encoding="utf-8")
+                with self.subTest(content=content), self.assertRaises(ValueError):
+                    self._write_port_sources(tools)
+            main.write_text("void f() { part 'child.dart'; }", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                self._write_port_sources(tools)
 
     def test_read_port_guard_catches_method_tear_offs(self):
         source = "final write = _api.writeRecord; await write();"
@@ -621,6 +729,13 @@ class AiBoundaryTest(unittest.TestCase):
                     hide(index + 1)
                     index = code_at(index + 2, interpolation=True)
                     continue
+                if (not raw and source[index] == "$" and index + 1 < length and
+                        re.match(r"[a-zA-Z_]", source[index + 1])):
+                    hide(index)
+                    index += 1
+                    while index < length and re.match(r"[a-zA-Z_0-9]", source[index]):
+                        index += 1
+                    continue
                 if not raw and source[index] == "\\" and index + 1 < length:
                     hide(index)
                     hide(index + 1)
@@ -693,8 +808,11 @@ class AiBoundaryTest(unittest.TestCase):
             matching = [(start, end) for found, start, end in classes if found == name]
             if len(matching) != 1:
                 violations.append(f"expected one {name}")
-            elif cls._api_members(source[matching[0][0]:matching[0][1]]) != wanted:
-                violations.append(f"unexpected {name} API members")
+            else:
+                body = code[matching[0][0]:matching[0][1]]
+                if cls._api_members(body) != wanted:
+                    violations.append(f"unexpected {name} API members")
+                violations.extend(cls._read_port_token_violations(name, body, wanted))
         for name, start, end in classes:
             if name not in expected and (cls._api_members(source[start:end]) or
                                          re.search(r"\b(?:GitLabApi|_api)\b", code[start:end])):
@@ -705,8 +823,126 @@ class AiBoundaryTest(unittest.TestCase):
         outside = "".join(outside)
         if cls._api_members(outside) or re.search(r"\b(?:GitLabApi|_api)\b", cls._code_only(outside)):
             violations.append("API access outside concrete classes")
-        if cls._api_members(source) != READ_PORT_MEMBERS | GROUP_READ_PORT_MEMBERS:
+        if cls._api_members(code) != READ_PORT_MEMBERS | GROUP_READ_PORT_MEMBERS:
             violations.append("unexpected read-port API union")
+        return violations
+
+    @staticmethod
+    def _argument_spans(code, opening):
+        """Return top-level argument spans of a balanced parenthesized call."""
+        if opening >= len(code) or code[opening] != "(":
+            return None
+        stack = []
+        spans = []
+        start = opening + 1
+        for index in range(start, len(code)):
+            char = code[index]
+            if char in "([{":
+                stack.append(char)
+            elif char in ")]}":
+                if not stack:
+                    if char != ")":
+                        return None
+                    spans.append((start, index))
+                    return spans
+                if {"(": ")", "[": "]", "{": "}"}[stack.pop()] != char:
+                    return None
+            elif char == "," and not stack:
+                spans.append((start, index))
+                start = index + 1
+        return None
+
+    @classmethod
+    def _read_port_token_violations(cls, name, code, wanted):
+        """Allow API tokens only at their declared, capability-limited uses."""
+        violations = []
+        api_allowed = set()
+        type_allowed = set()
+        for field in re.finditer(r"\bfinal\s+(GitLabApi)\s+(_api)\s*;", code):
+            before = code[:field.start()]
+            if before.count("{") - before.count("}") != 1:
+                continue
+            type_allowed.add(field.start(1))
+            api_allowed.add(field.start(2))
+
+        # Only formal field parameters in actual top-level constructors count.
+        for constructor in re.finditer(rf"\b{re.escape(name)}(?:\s*\.\s*\w+)?\s*\(", code):
+            before = code[:constructor.start()]
+            if before.count("{") - before.count("}") != 1:
+                continue
+            depth = 0
+            boundary = 0
+            for index, char in enumerate(before):
+                if char == "{":
+                    depth += 1
+                    if depth == 1:
+                        boundary = index + 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 1:
+                        boundary = index + 1
+                elif char == ";" and depth == 1:
+                    boundary = index + 1
+            if not re.fullmatch(r"\s*(?:external\s+)?(?:const\s+)?", before[boundary:]):
+                continue
+            opening = constructor.end() - 1
+            spans = cls._argument_spans(code, opening)
+            if spans is None:
+                continue
+            end = spans[-1][1] + 1
+            params = code[opening:end]
+            for param in re.finditer(
+                r"(?:^|[({,])\s*(?:required\s+)?this\s*\.\s*(_api)\s*(?=[,})])",
+                params,
+            ):
+                prefix = params[1:param.start(1)]
+                if (prefix.count("(") != prefix.count(")") or
+                        prefix.count("{") - prefix.count("}") +
+                        prefix.count("[") - prefix.count("]") > 1):
+                    continue
+                api_allowed.add(opening + param.start(1))
+
+        if name == "GitLabAiReadPort":
+            # The port uses only this read-only limit; no other static API is allowed.
+            for constant in re.finditer(r"\b(GitLabApi)\s*\.\s*maxTextBytes\b", code):
+                type_allowed.add(constant.start(1))
+        else:
+            # The verified identity must retain the actual API owner.  Permit
+            # this single top-level argument only in workItem's identity factory.
+            owners = []
+            for method in re.finditer(r"\bworkItem\s*\([^)]*\)\s*async\s*\{", code):
+                before = code[:method.start()]
+                if before.count("{") - before.count("}") != 1:
+                    continue
+                block = cls._brace_block(code, method.end() - 1)
+                if not block:
+                    continue
+                for factory in re.finditer(
+                    r"\bVerifiedGroupWorkItemIdentity\s*\.\s*fromServerEvidence\s*\(",
+                    code[block[0]:block[1]],
+                ):
+                    opening = block[0] + factory.end() - 1
+                    spans = cls._argument_spans(code, opening)
+                    if not spans or spans[-1][1] >= block[1]:
+                        continue
+                    for start, end in spans:
+                        arg = re.fullmatch(r"\s*apiOwner\s*:\s*(_api)\s*", code[start:end])
+                        if arg:
+                            owners.append(start + arg.start(1))
+            if len(owners) == 1:
+                api_allowed.add(owners[0])
+
+        if re.search(r"\bas\s+dynamic\b", code):
+            violations.append(f"dynamic cast in {name}")
+        for token in re.finditer(r"\bGitLabApi\b", code):
+            if token.start() not in type_allowed:
+                violations.append(f"unexpected GitLabApi reference in {name}")
+        for token in re.finditer(r"\b_api\b", code):
+            if token.start() in api_allowed:
+                continue
+            member = re.match(r"\s*(?:\.\.|\.)\s*(\w+)\b", code[token.end():])
+            if not member or member.group(1) not in wanted:
+                violations.append(f"unexpected _api reference in {name}")
         return violations
 
     @staticmethod
@@ -856,20 +1092,60 @@ class AiBoundaryTest(unittest.TestCase):
                 violations.append("namespaceWorkItem requires expectedNamespaceId")
         return violations
 
-    @staticmethod
-    def _write_port_sources(tools=None):
-        tools = tools or AI_ROOT / "tools"
-        main = tools / "gitlab_write_port.dart"
-        sources = [(main, main.read_text(encoding="utf-8"), False)]
-        part_pattern = re.compile(
-            r"\bpart\s+of\s+['\"](?:[^'\"]*/)?gitlab_write_port\.dart['\"]\s*;"
+    @classmethod
+    def _part_uris(cls, source):
+        """Read live part directives, rejecting unsupported directive syntax."""
+        code = cls._code_only(source)
+        gap = r"(?:\s|//[^\n]*(?:\n|$)|/\*[\s\S]*?\*/)*"
+        directive = re.compile(
+            rf"\bpart{gap}(?:(of)\b{gap})?(['\"])([^'\"]+)\2{gap};"
         )
-        for path in sorted(tools.rglob("*.dart")):
-            if path == main:
+        found = []
+        starts = set()
+        for match in directive.finditer(source):
+            if code[match.start():match.start() + 4] != "part":
                 continue
+            before = code[:match.start()]
+            if before.count("{") != before.count("}"):
+                raise ValueError("part directive is not top level")
+            starts.add(match.start())
+            found.append((match.group(1) == "of", match.group(3)))
+        for token in re.finditer(r"\bpart\b", code):
+            before = code[:token.start()]
+            is_directive = re.match(r"part\s+of\b", code[token.start():])
+            if (token.start() not in starts and
+                    (before.count("{") == before.count("}") or is_directive)):
+                raise ValueError("unrecognized part directive")
+        return found
+
+    @staticmethod
+    def _resolve_part_uri(base, uri):
+        parsed = urlsplit(uri)
+        if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment or uri.startswith("/"):
+            raise ValueError(f"part URI is not relative: {uri}")
+        return (base / unquote(parsed.path)).resolve()
+
+    @classmethod
+    def _write_port_sources(cls, tools=None):
+        tools = tools or AI_ROOT / "tools"
+        main = (tools / "gitlab_write_port.dart").resolve()
+        main_source = main.read_text(encoding="utf-8")
+        sources = [(main, main_source, False)]
+        directives = cls._part_uris(main_source)
+        if any(is_part_of for is_part_of, _ in directives):
+            raise ValueError("write library declares part of")
+        paths = set()
+        for _, uri in directives:
+            path = cls._resolve_part_uri(main.parent, uri)
+            if path == main or path in paths:
+                raise ValueError(f"duplicate or self-referential part: {uri}")
+            paths.add(path)
             source = path.read_text(encoding="utf-8")
-            if part_pattern.search(source):
-                sources.append((path, source, True))
+            part_directives = cls._part_uris(source)
+            if (len(part_directives) != 1 or not part_directives[0][0] or
+                    cls._resolve_part_uri(path.parent, part_directives[0][1]) != main):
+                raise ValueError(f"part does not belong to write library: {path}")
+            sources.append((path, source, True))
         return sources
 
     @staticmethod

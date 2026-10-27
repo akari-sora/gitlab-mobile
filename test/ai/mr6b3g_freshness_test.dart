@@ -6,9 +6,11 @@ import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
+import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
+import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_context.dart';
@@ -59,26 +61,28 @@ final class _Rows implements AiCapabilityLedger {
 void _configureGroup(
   StackServer server, {
   String workItemGid = 'gid://gitlab/WorkItem/91',
+  GraphResourceRef group = _group,
+  int iid = 5,
 }) {
   server.overrides['POST '] = (request) {
     expect(request.uri.path, '/gitlab/api/graphql');
     final body = request.data! as Map<String, Object?>;
     expect(body['query'], namespaceWorkItemQuery);
-    expect(body['variables'], {'path': _group.fullPath, 'iid': '5'});
+    expect(body['variables'], {'path': group.fullPath, 'iid': '$iid'});
     return jsonResponse({
       'data': {
         'namespace': {
-          'id': _group.id,
-          'fullPath': _group.fullPath,
+          'id': group.id,
+          'fullPath': group.fullPath,
           'workItem': {
             'id': workItemGid,
-            'iid': '5',
+            'iid': '$iid',
             'title': 'Group item',
             'state': 'OPEN',
             'createdAt': '2026-10-01T00:00:00Z',
             'updatedAt': '2026-10-02T00:00:00Z',
             'project': null,
-            'namespace': {'id': _group.id, 'fullPath': _group.fullPath},
+            'namespace': {'id': group.id, 'fullPath': group.fullPath},
             'workItemType': {
               'id': 'gid://gitlab/WorkItems::Type/1',
               'name': 'Task',
@@ -200,6 +204,14 @@ void main() {
           h,
           scope: AiWriteScope(
             accountKey: '${h.account}0',
+            grants: normal.scope.grants,
+          ),
+        ),
+        _request(
+          h,
+          scope: AiWriteScope(
+            accountKey: h.account,
+            instance: GitLabInstance.parse('https://foreign.example/gitlab'),
             grants: normal.scope.grants,
           ),
         ),
@@ -401,6 +413,102 @@ void main() {
         capabilityLedger: const _Rows(),
         groupIdentity: () => readPort.verifiedIdentity,
       );
+      expect(fresh.provenance, isEmpty);
+      expect(fresh.visibilityUnreadable, isTrue);
+    },
+  );
+
+  for (final (name, group, groupId, iid) in [
+    (
+      'groupId',
+      const GraphResourceRef(id: 'gid://gitlab/Group/8', fullPath: 'team/sub'),
+      8,
+      5,
+    ),
+    (
+      'path',
+      const GraphResourceRef(id: 'gid://gitlab/Group/7', fullPath: 'other/sub'),
+      7,
+      5,
+    ),
+    ('iid', _group, 7, 6),
+  ]) {
+    test(
+      'group provenance refuses verified identity with a foreign $name',
+      () async {
+        final h = await StackHarness.create(
+          origin: _origin,
+          configure: _configureGroup,
+        );
+        addTearDown(h.dispose);
+        final api = h.session.api!;
+        final readPort = GitLabAiGroupReadPort(
+          api,
+          instance: api.instance,
+          actorUserId: h.session.active!.user.id,
+          generation: h.session.generation,
+          isCurrent: () => true,
+        );
+        // Obtain real strict-reader evidence for a different item, rather than
+        // manufacturing a VerifiedGroupWorkItemIdentity in the test.
+        _configureGroup(h.server, group: group, iid: iid);
+        await readPort.workItem(
+          AiGroupResourceScope(
+            accountKey: h.account,
+            instanceKey: api.instance.key,
+            groupId: groupId,
+            groupFullPath: group.fullPath,
+            iid: iid,
+            workItemGid: 'gid://gitlab/WorkItem/91',
+          ),
+        );
+        expect(readPort.verifiedIdentity, isNotNull);
+        _configureGroup(h.server);
+        final before = h.server.adapter.requests.length;
+        final fresh = await h.controller.readWriteFreshnessForTesting(
+          _request(h),
+          capabilityLedger: const _Rows(),
+          groupIdentity: () => readPort.verifiedIdentity,
+        );
+        _assertGroupFreshRead(_since(h, before));
+        expect(fresh.provenance, isEmpty);
+        expect(fresh.visibilityUnreadable, isTrue);
+      },
+    );
+  }
+
+  test(
+    'group provenance refuses verified identity from another API owner',
+    () async {
+      final h = await StackHarness.create(
+        origin: _origin,
+        configure: _configureGroup,
+      );
+      addTearDown(h.dispose);
+      final other = await StackHarness.create(
+        origin: _origin,
+        configure: _configureGroup,
+      );
+      addTearDown(other.dispose);
+      final api = other.session.api!;
+      final readPort = GitLabAiGroupReadPort(
+        api,
+        instance: api.instance,
+        actorUserId: other.session.active!.user.id,
+        generation: other.session.generation,
+        isCurrent: () => true,
+      );
+      await readPort.workItem(other.controller.contextForTesting!.groupScope!);
+      expect(readPort.verifiedIdentity, isNotNull);
+      expect(readPort.verifiedIdentity!.accountKey, h.account);
+      expect(readPort.verifiedIdentity!.generation, h.session.generation);
+      final before = h.server.adapter.requests.length;
+      final fresh = await h.controller.readWriteFreshnessForTesting(
+        _request(h),
+        capabilityLedger: const _Rows(),
+        groupIdentity: () => readPort.verifiedIdentity,
+      );
+      _assertGroupFreshRead(_since(h, before));
       expect(fresh.provenance, isEmpty);
       expect(fresh.visibilityUnreadable, isTrue);
     },

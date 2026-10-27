@@ -1626,12 +1626,9 @@ class AiChatController extends ChangeNotifier
     // read epoch with the independently current port epoch before returning it.
     final verified = identity?.call();
     if (verified != null &&
-        verified.isCurrent(
-          accountKey: _accountKey,
-          apiOwner: _api,
-          generation: _generation,
-          readEpoch: verified.readEpoch,
-        ) &&
+        verified.accountKey == _accountKey &&
+        identical(verified.apiOwner, _api) &&
+        verified.generation == _generation &&
         verified.groupId == groupId && verified.fullPath == path &&
         verified.iid == iid) {
       final description = write_text.AiFieldProvenance.groupWorkItem(

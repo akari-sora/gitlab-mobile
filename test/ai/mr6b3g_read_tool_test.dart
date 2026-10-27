@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
@@ -237,6 +239,76 @@ void main() {
     expect(h.port.verifiedIdentity, isNull);
     expect(adapter.requests, hasLength(1));
   });
+
+  test('group read refuses an account that does not match the actor', () async {
+    final adapter = FakeAdapter((_) => fail('request must not be sent'));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final h = _catalogue(api);
+    const foreignAccount = AiGroupResourceScope(
+      accountKey: 'https://example.com/gitlab#6',
+      instanceKey: 'https://example.com/gitlab',
+      groupId: 7,
+      groupFullPath: _path,
+      iid: 3,
+      workItemGid: _item,
+    );
+    await expectLater(
+      h.port.workItem(foreignAccount),
+      throwsA(isA<FormatException>()),
+    );
+    expect(h.port.verifiedIdentity, isNull);
+    expect(adapter.requests, isEmpty);
+  });
+
+  for (final expireAtDelivery in [false, true]) {
+    test(
+      expireAtDelivery
+          ? 'group read rechecks current state after the API current-state snapshot'
+          : 'group read refuses content when the session expires during HTTP',
+      () async {
+        final entered = Completer<void>();
+        final response = Completer<ResponseBody>();
+        var responseReturned = false;
+        var current = true;
+        final adapter = FakeAdapter((request) async {
+          _assertGraphRequest(request);
+          entered.complete();
+          final body = await response.future;
+          responseReturned = true;
+          return body;
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final h = _catalogue(
+          api,
+          current: () {
+            if (expireAtDelivery && responseReturned && current) {
+              // Expire immediately after the API snapshots current state.
+              // Its final gate sees true; the awaiting port must see false.
+              final snapshot = current;
+              current = false;
+              return snapshot;
+            }
+            return current;
+          },
+        );
+        final pending = h.catalogue.executeResult(
+          _call('get_group_work_item', {'groupId': 7, 'iid': 3}),
+          budget: AiToolBudget(),
+        );
+        await entered.future;
+        if (!expireAtDelivery) current = false;
+        response.complete(jsonResponse(_envelope(_node())));
+        final result = await pending;
+        expect(current, isFalse);
+        expect(result.isError, isTrue);
+        expect(result.content, isNot(contains('Synthetic description')));
+        expect(h.port.verifiedIdentity, isNull);
+        expect(adapter.requests, hasLength(1));
+      },
+    );
+  }
 
   test(
     'unknown description is explicit and has no restorable provenance',
