@@ -751,8 +751,9 @@ final class PolicyAiWriteCoordinator
       }
       final scanReasons = _checkTextScan(prepared, policy, fresh);
       if (ownerFromPreRead) target = _todoTarget(prepared, policy.scope);
-      // Only non-text reasons survive edits. Text and scan reasons are
-      // recomputed from the edited payload at approval and dispatch.
+      // Only non-text reasons survive edits.
+      // Text reasons are recomputed from the edited payload; scan reasons
+      // from the opened target. Dispatch recomputes both.
       final fixedReasons = <AiFixedConfirmReason>[];
       final keys = {...prepared.writeKeys, ...prepared.dependencyKeys};
       if (journal.proposalEpoch(policy.scope.accountKey) != proposalEpoch) {

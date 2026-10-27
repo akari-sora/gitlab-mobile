@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_preview.dart' show AiTextScan;
 import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
@@ -424,6 +425,35 @@ void main() {
     },
   );
 
+  test('scan reasons from the opened target survive a card edit', () async {
+    f.configure(row: productionAiLedger.find('updateWorkItemContent'));
+    // This scan belongs to the opened target, separately from editable text.
+    f.textScan = AiTextScan(serverClassA: ['Notify @all']);
+    final proposed = await f.propose('updateWorkItemContent', {
+      'projectId': 9,
+      'iid': 3,
+      'description': 'Initial ordinary text',
+    });
+    expect(
+      proposed,
+      isNotNull,
+      reason: f.coordinator.outcomeFor('call')?.reasonCode,
+    );
+    final proposal = proposed!;
+    expect(proposal.tier.reasons, contains(AiFixedConfirmReason.massMention));
+    final outcome = await f.coordinator.approve(
+      proposal,
+      editedText: 'Only ordinary text',
+    );
+    expect(outcome.reasonCode, 'approvalRequired');
+    expect(proposal.fields['description'], 'Only ordinary text');
+    expect(proposal.tier.reasons, contains(AiFixedConfirmReason.massMention));
+    expect(f.prepared.single.textScan, same(f.textScan));
+    expect(f.captured, hasLength(1));
+    expect(f.h.adapter.requests, isEmpty);
+    expect(f.h.journal.entries(coordAccount), isEmpty);
+  });
+
   test('editing a commit message refreshes closing references', () async {
     f.configure(
       row: _issueRow(AiTextRole.commitMessage, editable: 'description'),
@@ -769,6 +799,7 @@ final class _Fixture implements port.AiGitLabWritePort {
   Set<String> secrets = {};
   void Function()? beforeCommit;
   AiWriteFreshness fresh = const AiWriteFreshness(visibilityUnreadable: false);
+  AiTextScan? textScan;
 
   void configure({
     AiCapability? row,
@@ -847,7 +878,16 @@ final class _Fixture implements port.AiGitLabWritePort {
         'Capture boundary; no family implementation in packet 1',
       );
     }
-    final value = await delegate.prepare(request);
+    final scan = textScan;
+    final value = scan == null
+        ? await delegate.prepare(request)
+        : port.AiWritePrepared.graph(
+            request: request,
+            releaseName: '#3',
+            writeKeys: const {},
+            textScan: scan,
+            textMutation: (_, _) async => null,
+          );
     prepared.add(value);
     return value;
   }
