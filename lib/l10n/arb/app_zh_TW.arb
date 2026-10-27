@@ -11532,6 +11532,13 @@
   "aiOpSetWorkItemLabels": "設定標籤",
   "aiRefusedLabelUnknown": "要設定的標籤不在這個專案的標籤清單裡，或有多個同名標籤，所以沒有執行。",
   "aiRefusedQuickAction": "內容有以 / 開頭的一行，GitLab 可能把它當成快捷指令執行，為了安全這筆寫入沒有送出。請刪除那一行，或改放進程式碼區塊。",
+  "aiToolGetGroupWorkItem": "讀取群組工作項目",
+  "aiOpEditGroupWorkItem": "編輯群組工作項目",
+  "aiOpSetGroupWorkItemState": "關閉或重新開啟群組工作項目",
+  "aiOpCloseGroupWorkItem": "關閉群組工作項目",
+  "aiOpReopenGroupWorkItem": "重新開啟群組工作項目",
+  "aiOpSetGroupWorkItemAssignees": "設定群組工作項目負責人",
+  "aiOpSetGroupWorkItemDates": "設定群組工作項目日期",
   "aiRunNoticeApprovalChannel": "AI 工作待核准",
   "@aiRunNoticeApprovalChannel": {
     "description": "Android channel name for AI run notifications that wait for approval. Generic: no account, project or content.",

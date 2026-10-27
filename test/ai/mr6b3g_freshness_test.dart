@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
@@ -8,6 +10,7 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
 import 'package:gitlab_mobile/core/instance.dart';
@@ -21,6 +24,7 @@ import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import '../support/fake_adapter.dart';
 import '../support/namespace_work_item_query.dart';
 import 'fx_coord_support.dart';
+import 'mr6b3g_support.dart';
 import 'p17_controller_support.dart' show p17ToolNames;
 
 const _group = GraphResourceRef(
@@ -137,7 +141,269 @@ void _assertGroupFreshRead(List<RequestOptions> requests) {
   expect(request.followRedirects, isFalse);
 }
 
+AiChatController _controller(
+  StackHarness h, {
+  AiChatOrigin origin = _origin,
+  AiCapabilityLedger capabilityLedger = productionAiLedger,
+  port.AiGitLabWritePort Function()? writePortFactory,
+}) => AiChatController(
+  origin: origin,
+  session: h.session,
+  settings: h.settings,
+  runningCount: () => 0,
+  writeJournal: h.journal,
+  appInForeground: () => true,
+  clientMayStart: () => true,
+  capabilityLedger: capabilityLedger,
+  writePortFactory: writePortFactory,
+  wireClientFactory:
+      ({required config, required apiKey, required conversationId}) =>
+          AiWireClient(
+            transport: AiTransport(
+              endpoint: AiEndpoint.parse(
+                config.baseUrl,
+                allowLanCleartext: false,
+              ),
+              apiKey: apiKey ?? '',
+              authStyle: config.authStyle,
+              adapter: h.provider.adapter,
+            ),
+            wire: const ResponsesFormat(),
+            config: config,
+            conversationId: conversationId,
+            appVersion: 'test',
+          ),
+);
+
 void main() {
+  test(
+    'injected ledger drives coordinator offers and default freshness',
+    () async {
+      final h = await StackHarness.create(configure: _configureGroup);
+      addTearDown(h.dispose);
+      final controller = _controller(
+        h,
+        origin: AiFileOrigin(
+          project: h.server.workspace.project,
+          path: 'README.md',
+          sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        ),
+        capabilityLedger: const _Rows(),
+      );
+      addTearDown(controller.dispose);
+      await controller.recheck();
+      await controller.send('Review this file');
+      expect(
+        p17ToolNames(h.provider.bodies.last).intersection(
+          ProductionAiLedger.rows.map((row) => row.operationId).toSet(),
+        ),
+        isEmpty,
+      );
+      final before = h.server.adapter.requests.length;
+      final fresh = await controller.readWriteFreshnessForTesting(
+        _request(h, operation: 'syntheticGroupState'),
+      );
+      _assertGroupFreshRead(_since(h, before));
+      expect(fresh.sourceVisibilityUnreadable, isFalse);
+      expect(fresh.targetVisibility, 'private');
+    },
+  );
+
+  test(
+    'controller source unknown survives proposal, opening and dispatch',
+    () async {
+      aiGroupWorkItemWritesEnabledForTesting = true;
+      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+      final h = await StackHarness.create(
+        origin: _origin,
+        level: AiAutonomyLevel.bypass,
+        configure: _configureGroup,
+      );
+      addTearDown(h.dispose);
+      final api = h.session.api!;
+      final graph = G0eGraphPort(api)
+        ..identityForEpoch = (epoch) => g0eIdentity(
+          api,
+          generation: h.session.generation,
+          readEpoch: epoch,
+        );
+      final controller = _controller(
+        h,
+        capabilityLedger: const G0eLedger(),
+        writePortFactory: () => graph,
+      );
+      addTearDown(controller.dispose);
+      await controller.recheck();
+      await controller.setAutonomyLevel(AiAutonomyLevel.conversationGrant);
+      final before = h.server.adapter.requests.length;
+      for (var send = 0; send < 2; send++) {
+        h.provider.script.add(
+          (_) => toolTurn('updateGroupWorkItemContent', {
+            'groupId': 7,
+            'iid': 5,
+            'description': 'Safe edit $send',
+            'reason': 'Requested.',
+          }),
+        );
+        final sending = controller.send('Update this group item');
+        await waitFor(
+          () =>
+              controller.phase == AiChatPhase.awaitingApproval ||
+              controller.phase == AiChatPhase.idle,
+        );
+        expect(controller.phase, AiChatPhase.awaitingApproval);
+        final proposal = controller.proposals.single;
+        expect(proposal.tier.decision, AiGateDecision.requireApproval);
+        expect(
+          proposal.tier.reasons,
+          contains(AiFixedConfirmReason.confidentialOrVisibilityMix),
+        );
+        // A later, complete target opening may resolve only the target.
+        graph.targetConfidential = false;
+        final outcome = await controller.approveWrite(proposal);
+        await sending;
+        expect(
+          outcome.state,
+          AiJournalState.succeeded,
+          reason: outcome.reasonCode,
+        );
+      }
+      expect(graph.prepares, 4);
+      expect(graph.mutations, 2);
+      expect(
+        _since(
+          h,
+          before,
+        ).where((request) => request.uri.path.endsWith('/groups/7')),
+        hasLength(4),
+      );
+      h.server.overrides['GET projects/43'] = (_) => jsonResponse({
+        'id': 43,
+        'path_with_namespace': 'studio/target',
+        'visibility': 'public',
+      });
+      h.server.overrides['GET projects/43/issues/6'] = (_) => jsonResponse({
+        'id': 106,
+        'iid': 6,
+        'project_id': 43,
+        'confidential': false,
+      });
+      for (var round = 0; round < 2; round++) {
+        for (final groupTarget in [true, false]) {
+          final fresh = await controller.readWriteFreshnessForTesting(
+            groupTarget
+                ? _request(h)
+                : _request(
+                    h,
+                    operation: 'updateIssue',
+                    arguments: const {
+                      'projectId': 43,
+                      'iid': 6,
+                      'fields': {'title': 'Safe'},
+                    },
+                  ),
+            sourceGroupMetadata: const AiGroupContextMetadata(
+              visibility: 'public',
+              confidential: false,
+            ),
+          );
+          expect(fresh.sourceVisibilityUnreadable, isTrue);
+          expect(fresh.visibilityUnreadable, isTrue);
+          expect(fresh.targetVisibility, groupTarget ? 'private' : 'public');
+          if (!groupTarget) expect(fresh.polluted, isTrue);
+        }
+      }
+    },
+  );
+
+  for (final groupTarget in [true, false]) {
+    test(
+      'freshness refuses a replaced account API generation, group=$groupTarget',
+      () async {
+        final h = await StackHarness.create(
+          origin: _origin,
+          configure: _configureGroup,
+        );
+        addTearDown(h.dispose);
+        final api = h.session.api!;
+        final generation = h.session.generation;
+        await h.session.select(h.session.active!);
+        expect(h.session.api, isNot(same(api)));
+        expect(h.session.generation, isNot(generation));
+        expect(api.isClosed, isTrue);
+        final before = h.server.adapter.requests.length;
+        await expectLater(
+          h.controller.readWriteFreshnessForTesting(
+            groupTarget
+                ? _request(h)
+                : _request(
+                    h,
+                    operation: 'updateIssue',
+                    arguments: const {
+                      'projectId': 43,
+                      'iid': 6,
+                      'fields': {'title': 'Safe'},
+                    },
+                  ),
+            capabilityLedger: const _Rows(),
+          ),
+          throwsA(isA<AiJournalException>()),
+        );
+        expect(_since(h, before), isEmpty);
+      },
+    );
+
+    test(
+      'freshness refuses a superseded controller epoch, group=$groupTarget',
+      () async {
+        final h = await StackHarness.create(
+          origin: _origin,
+          configure: _configureGroup,
+        );
+        addTearDown(h.dispose);
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        h.server.overrides[groupTarget
+            ? 'GET groups/7'
+            : 'GET projects/43'] = (_) async {
+          entered.complete();
+          await release.future;
+          return jsonResponse(
+            groupTarget
+                ? {'id': 7, 'full_path': 'team/sub', 'visibility': 'public'}
+                : {
+                    'id': 43,
+                    'path_with_namespace': 'team/target',
+                    'visibility': 'public',
+                  },
+          );
+        };
+        final pending = h.controller.readWriteFreshnessForTesting(
+          groupTarget
+              ? _request(h)
+              : _request(
+                  h,
+                  operation: 'updateIssue',
+                  arguments: const {
+                    'projectId': 43,
+                    'iid': 6,
+                    'fields': {'title': 'Safe'},
+                  },
+                ),
+          capabilityLedger: const _Rows(),
+        );
+        final rejected = expectLater(
+          pending,
+          throwsA(isA<AiJournalException>()),
+        );
+        await entered.future;
+        await h.controller.recheck();
+        release.complete();
+        await rejected;
+      },
+    );
+  }
+
   test(
     'ledger group row is routed before the no-project return every round',
     () async {
@@ -290,6 +556,8 @@ void main() {
         );
         _assertGroupFreshRead(_since(h, before));
         expect(fresh.visibilityUnreadable, isTrue);
+        expect(fresh.targetVisibility, isNull);
+        expect(fresh.sourceVisibilityUnreadable, isTrue);
         expect(fresh.provenance.keys, {'title', 'description'});
         final outcome = text.prepareWriteText(
           textClass: text.AiTextClass.quickActionMarkdown,
@@ -566,6 +834,8 @@ void main() {
             source == null,
             reason: '$source -> $target',
           );
+          expect(fresh.sourceVisibilityUnreadable, source == null);
+          expect(fresh.targetVisibility, target);
           expect(
             fresh.polluted,
             sourceRank >= 0 && rank > sourceRank,
@@ -632,7 +902,7 @@ void main() {
     ),
   ]) {
     test(
-      '${origin.key} injects only its read catalogue and still has no write grant',
+      '${origin.key} injects its read catalogue and only its item write scope',
       () async {
         final h = await StackHarness.create(
           origin: origin,
@@ -657,7 +927,14 @@ void main() {
         final writes = ProductionAiLedger.rows
             .map((row) => row.operationId)
             .toSet();
-        expect(names.intersection(writes), isEmpty);
+        if (origin is AiGroupWorkItemOrigin) {
+          expect(names.intersection(writes), isEmpty);
+        } else {
+          expect(names, contains('createNote'));
+          expect(names, isNot(contains('setStar')));
+          expect(names, isNot(contains('createIssue')));
+          expect(names, isNot(contains('markAllTodosDone')));
+        }
         expect(
           names.contains('get_group_work_item'),
           origin is AiGroupWorkItemOrigin,
@@ -687,7 +964,7 @@ void main() {
           (_) => toolTurn('createNote', {
             'projectId': 42,
             'resource': 'issues',
-            'iid': 5,
+            'iid': 6,
             'body': 'Forbidden',
             'reason': 'Requested',
           }),
