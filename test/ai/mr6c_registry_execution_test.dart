@@ -3,9 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_display.dart';
+import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/execution_gate.dart';
+import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_run_registry.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
@@ -24,7 +28,8 @@ final class _Native {
   bool active = false;
   bool releaseMatches = true;
   bool denyMutation = false;
-  bool malformedTicket = false;
+  final ticketReplyOverrides = <String, Object?>{};
+  final startReplyOverrides = <String, Object?>{};
   bool rejectStart = false;
   Completer<Object?>? delayedStart;
   Completer<Object?>? delayedRelease;
@@ -110,6 +115,7 @@ final class _Native {
           'permitId': permit,
           'startRequestId': a['startRequestId'],
           'opSeq': seq,
+          ...startReplyOverrides,
         };
       case 'releaseRuns':
         final didRelease = active && releaseMatches;
@@ -129,11 +135,12 @@ final class _Native {
         return {
           'version': 1,
           'status': 'ticket',
-          'permitId': malformedTicket ? 'different-permit' : a['permitId'],
+          'permitId': a['permitId'],
           'kind': a['kind'],
           'nonce': a['nonce'],
           'ticketId':
               '00000000-0000-4000-8000-${(++_tickets).toString().padLeft(12, '0')}',
+          ...ticketReplyOverrides,
         };
     }
     throw StateError('Unexpected native method ${call.method}');
@@ -266,13 +273,163 @@ void main() {
           ),
         ),
       );
-      native.malformedTicket = true;
+      native.ticketReplyOverrides['permitId'] = 'different-permit';
       await expectLater(
         gate.acquire(AiContinuationKind.mutation),
         throwsA(isA<AiExecutionPaused>()),
       );
     },
   );
+
+  for (final (field, value) in <(String, Object?)>[
+    ('version', 2),
+    ('version', 1.0),
+    ('status', 'updated'),
+    ('permitId', 'different-permit'),
+    ('kind', 'different-kind'),
+    ('nonce', 'different-nonce'),
+    ('ticketId', 'not-a-uuid'),
+  ]) {
+    for (final kind in AiContinuationKind.values) {
+      test(
+        'ticket reply rejects $field=$value for ${kind.name} with zero sends',
+        () async {
+          final owner = _owner(native);
+          addTearDown(owner.dispose);
+          final gate = _gate(owner, 'conversation');
+          await gate.beginRun(runId: 'run-1');
+          native.ticketReplyOverrides[field] = value;
+          var sends = 0;
+          await expectLater(() async {
+            final ticket = await gate.acquire(kind);
+            ticket.consumeOnce(binding: gate.binding, kind: kind);
+            sends++;
+          }(), throwsA(isA<AiExecutionPaused>()));
+          expect(sends, 0);
+          expect(native.named('acquireContinuation'), hasLength(1));
+        },
+      );
+    }
+  }
+
+  for (final (field, value) in <(String, Object?)>[
+    ('startRequestId', 'different-request'),
+    ('opSeq', -1),
+    ('opSeq', 1.0),
+  ]) {
+    test('start reply rejects $field=$value with zero sends', () async {
+      native.startReplyOverrides[field] = value;
+      if (field == 'opSeq' && value is double) {
+        native.onCall = (call) {
+          if (call.method == 'startRuns') {
+            native.startReplyOverrides[field] =
+                (native.args(call)['opSeq']! as int).toDouble();
+          }
+        };
+      }
+      final owner = _owner(native);
+      addTearDown(owner.dispose);
+      final gate = _gate(owner, 'conversation');
+      await gate.beginRun(runId: 'run-1');
+      expect(gate.binding.permitId, isNull);
+      for (final kind in AiContinuationKind.values) {
+        var sends = 0;
+        await expectLater(() async {
+          final ticket = await gate.acquire(kind);
+          ticket.consumeOnce(binding: gate.binding, kind: kind);
+          sends++;
+        }(), throwsA(isA<AiExecutionPaused>()));
+        expect(sends, 0);
+      }
+      expect(native.named('acquireContinuation'), isEmpty);
+    });
+  }
+
+  testWidgets('invalidation before timely active reply latches the start', (
+    tester,
+  ) async {
+    native.delayedStart = Completer<Object?>();
+    final owner = _owner(native);
+    addTearDown(owner.dispose);
+    addTearDown(() async {
+      final stopped = owner.stopAll();
+      await tester.pump();
+      await stopped;
+    });
+    final gate = _gate(owner, 'conversation');
+    final starting = gate.beginRun(runId: 'run-1');
+    await tester.pump();
+    final args = native.args(native.named('startRuns').single);
+    await _invalidate(native, 'user_stop');
+    native.delayedStart!.complete({
+      'version': 1,
+      'status': 'active',
+      'permitId': native.permit,
+      'startRequestId': args['startRequestId'],
+      'opSeq': args['opSeq'],
+    });
+    await tester.pump();
+    await starting;
+    expect(gate.binding.permitId, isNull);
+    for (final kind in AiContinuationKind.values) {
+      var sends = 0;
+      await expectLater(() async {
+        final ticket = await gate.acquire(kind);
+        ticket.consumeOnce(binding: gate.binding, kind: kind);
+        sends++;
+      }(), throwsA(isA<AiExecutionPaused>()));
+      expect(sends, 0);
+    }
+    expect(gate.executionEligible, isFalse);
+    expect(native.named('acquireContinuation'), isEmpty);
+  });
+
+  testWidgets('release only cancels starts bound to its own permit', (
+    tester,
+  ) async {
+    final owner = _owner(native);
+    addTearDown(owner.dispose);
+    final first = _gate(owner, 'first');
+    final firstStart = first.beginRun(runId: 'first-run');
+    await tester.pump();
+    await firstStart;
+    expect(native.named('startRuns'), hasLength(1));
+    native.delayedRelease = Completer<Object?>();
+    final release = owner.releaseRuns();
+    await tester.pump();
+    native.delayedStart = Completer<Object?>();
+    native.permit = 'permit-2';
+    final other = _gate(owner, 'other');
+    final otherStart = other.beginRun(runId: 'other-run');
+    final repeatedRelease = owner.releaseRuns();
+    native.delayedRelease!.complete({
+      'version': 1,
+      'status': 'released',
+      'didRelease': true,
+    });
+    await tester.pump();
+    await release;
+    await repeatedRelease;
+    expect(native.named('startRuns'), hasLength(2));
+    final args = native.args(native.named('startRuns').last);
+    native.active = true;
+    native.delayedStart!.complete({
+      'version': 1,
+      'status': 'active',
+      'permitId': native.permit,
+      'startRequestId': args['startRequestId'],
+      'opSeq': args['opSeq'],
+    });
+    await tester.pump();
+    await otherStart;
+    expect(other.binding.permitId, 'permit-2');
+    final ticket = await other.acquire(AiContinuationKind.model);
+    ticket.consumeOnce(binding: other.binding, kind: AiContinuationKind.model);
+    expect(other.executionEligible, isTrue);
+    expect(native.named('releaseRuns'), hasLength(1));
+    owner.dispose();
+    await tester.pump();
+  });
 
   test(
     'lost invalidation callback cannot keep a rejected permit usable',
@@ -1180,6 +1337,135 @@ void main() {
     await h.session.connect('https://example.com/gitlab', 'synthetic-token');
     expect(registry.sessionForConversation(fake.id, oldGeneration), isNull);
   });
+
+  test('notification kind covers every run end and final failure', () {
+    const expected = <AiRunEnd, AiRunNotificationKind>{
+      AiRunEnd.done: AiRunNotificationKind.completed,
+      AiRunEnd.maxTokens: AiRunNotificationKind.interrupted,
+      AiRunEnd.contentFilter: AiRunNotificationKind.interrupted,
+      AiRunEnd.refusal: AiRunNotificationKind.interrupted,
+      AiRunEnd.toolBudget: AiRunNotificationKind.interrupted,
+      AiRunEnd.toolBudgetNoAnswer: AiRunNotificationKind.interrupted,
+      AiRunEnd.stopped: AiRunNotificationKind.interrupted,
+      AiRunEnd.stoppedBySettings: AiRunNotificationKind.interrupted,
+      AiRunEnd.newSecret: AiRunNotificationKind.interrupted,
+      AiRunEnd.contextTooLong: AiRunNotificationKind.interrupted,
+      AiRunEnd.tokenBudget: AiRunNotificationKind.interrupted,
+      AiRunEnd.failed: AiRunNotificationKind.failed,
+    };
+    expect(expected.keys, unorderedEquals(AiRunEnd.values));
+    for (final end in AiRunEnd.values) {
+      expect(
+        AiChatController.notificationKindForEnd(end),
+        expected[end],
+        reason: '${end.name} without a failure',
+      );
+      expect(
+        AiChatController.notificationKindForEnd(
+          end,
+          failure: const AiFailure(AiFailureKind.invalidResponse),
+        ),
+        AiRunNotificationKind.failed,
+        reason: '${end.name} with a final failure',
+      );
+    }
+  });
+
+  test(
+    'finishing model failure emits failed exactly once and never completed',
+    () async {
+      final h = await fx.StackHarness.create();
+      addTearDown(h.dispose);
+      final seen = <AiRunNotificationEvent>[];
+      final subscription = h.controller.notificationEvents.listen(seen.add);
+      addTearDown(subscription.cancel);
+      for (var i = 0; i < 5; i++) {
+        h.provider.script.add(
+          (_) => fx.toolTurn('read_file', {
+            'path': 'README.md',
+            'revision': 'head',
+          }),
+        );
+      }
+      // The real Responses decoder throws AiFailure on the sixth, finishing call.
+      h.provider.script.add((_) => 'data: malformed-json\n\n');
+      await h.controller.send('Read the file and produce an answer');
+      await Future<void>.delayed(Duration.zero);
+      expect(h.provider.bodies, hasLength(6));
+      expect(h.provider.bodies.last, contains('"tool_choice":"none"'));
+      expect(
+        h.controller.items.whereType<AiToolRunItem>().where(
+          (row) =>
+              row.name == 'read_file' &&
+              row.status == AiToolRunStatus.completed,
+        ),
+        hasLength(5),
+      );
+      expect(h.controller.lastEnd, AiRunEnd.toolBudget);
+      expect(
+        h.controller.failure,
+        isA<AiFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          AiFailureKind.invalidResponse,
+        ),
+      );
+      expect(seen.map((event) => event.kind), [AiRunNotificationKind.failed]);
+      expect(
+        seen.where((event) => event.kind == AiRunNotificationKind.completed),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'fourth controller run is a runLimit pause with no event or send',
+    () async {
+      final h = await fx.StackHarness.create();
+      addTearDown(h.dispose);
+      final owner = AiBackgroundExecution(
+        accountKey: h.account,
+        generation: h.session.generation,
+        ownerApi: h.session.api!,
+        isCurrent: () => h.session.api != null,
+        appInForeground: () => h.foreground,
+        channel: _channel,
+      );
+      addTearDown(owner.dispose);
+      h.controller.bindBackgroundExecution(owner);
+      for (var i = 0; i < 3; i++) {
+        await _gate(owner, 'running-$i').beginRun(runId: 'run-$i');
+      }
+      final starts = native.named('startRuns').length;
+      final seen = <AiRunNotificationEvent>[];
+      final subscription = h.controller.notificationEvents.listen(seen.add);
+      addTearDown(subscription.cancel);
+      expect(h.controller.canSend, isTrue);
+      await h.controller.send('Produce an answer');
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, isEmpty);
+      expect(h.controller.failure, isNull);
+      expect(h.controller.lastEnd, isNull);
+      expect(
+        h.controller.executionPause?.reason,
+        AiExecutionPauseReason.runLimit,
+      );
+      expect(h.controller.executionStatus, AiChatExecutionStatus.paused);
+      expect(h.controller.phase, AiChatPhase.idle);
+      expect(
+        h.controller.items.whereType<AiUserItem>().map((item) => item.text),
+        ['Produce an answer'],
+      );
+      expect(
+        h.controller.items.whereType<AiNoticeItem>().map((item) => item.kind),
+        contains(AiNoticeKind.notSent),
+      );
+      expect(native.named('startRuns'), hasLength(starts));
+      expect(native.named('acquireContinuation'), isEmpty);
+      expect(h.provider.bodies, isEmpty);
+      expect(h.server.mutations, isEmpty);
+    },
+  );
 
   for (final kind in AiRunNotificationKind.values) {
     test(

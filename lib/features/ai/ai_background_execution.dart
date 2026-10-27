@@ -407,7 +407,10 @@ final class AiBackgroundExecution extends ChangeNotifier
           }
           return;
         }
-        // An unexpected success could have created a service but cannot bind it.
+        // An unexpected or already-invalidated success cannot authorize a
+        // permitless foreground fallback while its request is cleaned up.
+        gate._invalidated = true;
+        gate._released = false;
         await gate._cleanupRequest(request);
       } finally {
         if (identical(shared.leaseOwner, this) &&
@@ -534,10 +537,12 @@ final class AiBackgroundExecution extends ChangeNotifier
 
   /// Normal release is scoped to the current permit and serial with starts.
   Future<void> releaseRuns() {
-    for (final gate in _gates) {
-      gate.cancelStart();
-    }
     final permit = _permit;
+    if (permit != null) {
+      for (final gate in _gates) {
+        if (gate.binding.permitId == permit) gate.cancelStart();
+      }
+    }
     if (permit == null) {
       return Future.wait<void>([
         for (final gate in _gates)
@@ -845,10 +850,14 @@ final class AiBackgroundRunGate implements AiExecutionGate {
 
   Future<void> beginRun({required String runId}) async {
     if (!_owner._current || _disposed || !_isCurrent()) return;
-    if (_owner._stopsInFlight != 0 ||
-        _owner.serviceWorkCount - (_active ? 1 : 0) >= 3) {
+    if (_owner._stopsInFlight != 0) {
       throw const AiExecutionPaused(
         AiExecutionPause(AiExecutionPauseReason.unavailable),
+      );
+    }
+    if (_owner.serviceWorkCount - (_active ? 1 : 0) >= 3) {
+      throw const AiExecutionPaused(
+        AiExecutionPause(AiExecutionPauseReason.runLimit),
       );
     }
     final revision = ++_revision;

@@ -361,6 +361,28 @@ class AiChatController extends ChangeNotifier
     );
   }
 
+  @visibleForTesting
+  static AiRunNotificationKind notificationKindForEnd(
+    AiRunEnd end, {
+    UserFacingFailure? failure,
+  }) {
+    if (failure != null) return AiRunNotificationKind.failed;
+    return switch (end) {
+      AiRunEnd.failed => AiRunNotificationKind.failed,
+      AiRunEnd.done => AiRunNotificationKind.completed,
+      AiRunEnd.stopped ||
+      AiRunEnd.stoppedBySettings ||
+      AiRunEnd.newSecret ||
+      AiRunEnd.maxTokens ||
+      AiRunEnd.contentFilter ||
+      AiRunEnd.refusal ||
+      AiRunEnd.toolBudget ||
+      AiRunEnd.toolBudgetNoAnswer ||
+      AiRunEnd.contextTooLong ||
+      AiRunEnd.tokenBudget => AiRunNotificationKind.interrupted,
+    };
+  }
+
   final bool Function()? _clientMayStart;
   final AiWriteJournal _writeJournal;
   final ledger.AiWriteScope Function()? _writeScopeOverride;
@@ -2386,12 +2408,16 @@ class AiChatController extends ChangeNotifier
       // Only steps before the run throw (refreshing, redacting the message,
       // creating the runner): nothing left the device.
       _settleChips(userIndex, sent: false);
-      _failure = _assistantIndex != null
-          ? _mapFailure(error)
-          : error is AiFailure
-          ? error
-          : safeFailure(error);
-      _lastEnd = AiRunEnd.failed;
+      if (error is AiExecutionPaused) {
+        _executionPause = error.pause;
+      } else {
+        _failure = _assistantIndex != null
+            ? _mapFailure(error)
+            : error is AiFailure
+            ? error
+            : safeFailure(error);
+        _lastEnd = AiRunEnd.failed;
+      }
       if (_assistantIndex == null) {
         if (!userAdded) {
           // Redacting may be what failed (text over the scan limit); then the
@@ -2432,13 +2458,7 @@ class AiChatController extends ChangeNotifier
         }
         _notify();
         if (_lastEnd case final end?) {
-          _emitNotification(switch (end) {
-            AiRunEnd.failed => AiRunNotificationKind.failed,
-            AiRunEnd.stopped ||
-            AiRunEnd.stoppedBySettings ||
-            AiRunEnd.newSecret => AiRunNotificationKind.interrupted,
-            _ => AiRunNotificationKind.completed,
-          });
+          _emitNotification(notificationKindForEnd(end, failure: _failure));
         }
         _saveReportedHistory();
         if (_transportClosed || _settingsChangedDuringRun) {

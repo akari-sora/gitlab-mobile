@@ -37,6 +37,7 @@ enum AiExecutionPauseReason {
   foregroundRequired,
   permitInactive,
   unavailable,
+  runLimit,
   timeout,
   ticketExpired,
   invalidTicket,

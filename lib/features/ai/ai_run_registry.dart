@@ -167,7 +167,16 @@ final class AccountAiRunRegistry extends ChangeNotifier
       throw StateError('The AI run registry changed while opening a session');
     }
     if (handle.session case AiChatController controller) {
-      controller.bindBackgroundExecution(backgroundExecution);
+      try {
+        controller.bindBackgroundExecution(backgroundExecution);
+      } catch (_) {
+        try {
+          handle.session.stop();
+        } finally {
+          handle.dispose();
+        }
+        rethrow;
+      }
     }
     _sessions[key] = handle;
     _syncNotificationState(handle.session);
