@@ -2751,4 +2751,6 @@ const _messagesEs = <String>[
   'La cuota de solicitudes de GitLab está casi agotada',
   'Este mensaje no se envió. Envíalo de nuevo cuando el botón «Enviar» vuelva a estar disponible.',
   '{verb} {target} {ref}',
+  'Establecer etiquetas',
+  'La etiqueta que se iba a asignar no está en la lista de etiquetas de este proyecto o varias etiquetas tienen ese nombre, así que no se hizo nada.',
 ];

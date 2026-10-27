@@ -331,6 +331,28 @@ final class AiWriteFreshness {
 typedef AiWriteFreshnessReader =
     Future<AiWriteFreshness> Function(port.AiWriteRequest request);
 
+bool _graphWriteBack(String operation) => const {
+  'updateWorkItemContent',
+  'editWorkItemActivityNote',
+  'updateWorkItemLabels',
+}.contains(operation);
+
+AiWriteFreshness _withPreparedFields(
+  AiWriteFreshness fresh,
+  port.AiWritePrepared prepared,
+) => AiWriteFreshness(
+  updatedAt: fresh.updatedAt,
+  headSha: fresh.headSha,
+  lastCommitId: fresh.lastCommitId,
+  mergeCheckSummary: fresh.mergeCheckSummary,
+  facts: fresh.facts,
+  noChange: fresh.noChange,
+  visibilityUnreadable: fresh.visibilityUnreadable,
+  polluted: fresh.polluted,
+  currentFields: {...fresh.currentFields, ...prepared.currentFields},
+  provenance: fresh.provenance,
+);
+
 /// Packet 4 supplies the exact-edit checker. An absent checker refuses fragment
 /// writes; it must never fall back to scanning or rewriting the whole source.
 typedef AiWriteFragmentChecker =
@@ -707,11 +729,20 @@ final class PolicyAiWriteCoordinator
       final rawRequest = request;
       // The allowance remains charged once the first pre-read can start.
       reserved = false;
-      final fresh = await readFreshness(request);
+      var fresh = await readFreshness(request);
       _requirePolicy(policy, runId: runId);
+      // Whole-field GraphQL writes open their target before the shared text
+      // policy, so even bypass sees the current field's hidden spans. Reuse
+      // that capability after sanitizing; do not add a second opening read.
+      final opened = _graphWriteBack(request.operationId)
+          ? await (_port ??= createPort()).prepare(request)
+          : null;
+      _requirePolicy(policy, runId: runId);
+      if (opened != null) fresh = _withPreparedFields(fresh, opened);
       final preparedText = _prepareText(request, policy, fresh);
       request = preparedText.request;
-      final prepared = await (_port ??= createPort()).prepare(request);
+      final prepared = opened ?? await (_port ??= createPort()).prepare(request);
+      if (opened != null) prepared.bindPreparedText(request);
       _requirePolicy(policy, runId: runId);
       if (prepared.boundary != capability.boundary) {
         throw const _WriteBlocked('graphBoundaryMismatch');
@@ -900,14 +931,22 @@ final class PolicyAiWriteCoordinator
     }
     if (pending.done.isCompleted) return pending.done.future;
     if (pending.flight != null) return pending.flight!;
-    if (editedText != null && editedText != proposal.editedText) {
+    if (editedText != null) {
+      if (editedText == proposal.editedText) {
+        return _notExecuted(
+          pending.call,
+          pending.editBlocked ?? 'approvalRequired',
+        );
+      }
       proposal.editedText = editedText;
       try {
         _requirePending(pending);
         final request = _edit(
           pending.request, ledger.find(proposal.operationId)!, editedText,
         );
+        pending.prepared.validatePreparedText(request);
         final processed = _prepareText(request, snapshot(), pending.fresh);
+        pending.prepared.validatePreparedText(processed.request);
         final tier = _tier(
           ledger.find(proposal.operationId)!,
           processed.request.arguments,
@@ -918,6 +957,9 @@ final class PolicyAiWriteCoordinator
           prepared: pending.prepared,
         );
         if (!tier.canPropose) throw const _WriteBlocked('policyDenied');
+        if (pending.prepared.boundary == AiWriteBoundary.graph) {
+          pending.prepared.bindPreparedText(processed.request);
+        }
         pending.request = request;
         pending.editBlocked = null;
         proposal.tier = tier;
@@ -1050,8 +1092,24 @@ final class PolicyAiWriteCoordinator
       });
       _requirePending(pending);
       var request = pending.request;
-      final fresh = await readFreshness(request);
+      var fresh = await readFreshness(request);
       _requirePending(pending);
+      final port.AiWritePrepared? opened;
+      try {
+        opened = _graphWriteBack(request.operationId)
+            ? await _port!.prepare(request)
+            : null;
+      } on port.AiWriteRefused catch (failure) {
+        // This proposal already proved ownership. A different author or
+        // actor at dispatch is target drift, not a new proposal refusal.
+        if (request.operationId == 'editWorkItemActivityNote' &&
+            failure.reason == 'notOwnNote') {
+          throw const _WriteBlocked('targetChanged');
+        }
+        rethrow;
+      }
+      _requirePending(pending);
+      if (opened != null) fresh = _withPreparedFields(fresh, opened);
       final processed = _prepareText(request, snapshot(), fresh);
       request = processed.request;
       if (_digest(request) != proposal.payloadDigest) {
@@ -1063,7 +1121,8 @@ final class PolicyAiWriteCoordinator
         throw const _WriteBlocked('targetChanged');
       }
       final capability = ledger.find(request.operationId)!;
-      final prepared = await _port!.prepare(request);
+      final prepared = opened ?? await _port!.prepare(request);
+      if (opened != null) prepared.bindPreparedText(request);
       _requirePending(pending);
       if (prepared.boundary != capability.boundary ||
           prepared.boundary != pending.prepared.boundary) {
@@ -1788,6 +1847,19 @@ final class PolicyAiWriteCoordinator
         reasons.add(AiFixedConfirmReason.confidentialOrVisibilityMix);
       }
       closingRefs.addAll(outcome.closingRefs);
+      // Activity creation trims at the core boundary. Bind and display the
+      // same normalized body so an edited preview agrees with the adapter.
+      if (field == 'body' &&
+          const {
+            'createWorkItemActivityComment',
+            'createWorkItemActivityReply',
+          }.contains(request.operationId)) {
+        final body = outcome.finalText!.trim();
+        if (body.startsWith('/')) {
+          throw const _WriteBlocked(text.AiTextBlockCode.quickAction);
+        }
+        return body;
+      }
       return outcome.finalText!;
     }
 

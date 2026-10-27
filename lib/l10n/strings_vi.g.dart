@@ -2751,4 +2751,6 @@ const _messagesVi = <String>[
   'Hạn mức yêu cầu GitLab gần cạn',
   'Tin nhắn này chưa được gửi. Gửi lại khi nút “Gửi” khả dụng trở lại.',
   '{verb} {target} {ref}',
+  'Đặt nhãn',
+  'Nhãn cần đặt không có trong danh sách nhãn của project này, hoặc có nhiều nhãn trùng tên, nên chưa có gì được thực hiện.',
 ];

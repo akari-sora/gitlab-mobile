@@ -2751,4 +2751,6 @@ const _messagesMs = <String>[
   'Kuota permintaan GitLab hampir habis',
   'Mesej ini tidak dihantar. Hantar semula apabila butang “Hantar” tersedia semula.',
   '{verb} {target} {ref}',
+  'Tetapkan label',
+  'Label yang hendak ditetapkan tiada dalam senarai label projek ini, atau beberapa label mempunyai nama yang sama, jadi tiada apa-apa yang dilakukan.',
 ];

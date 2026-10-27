@@ -2754,5 +2754,7 @@
   "aiSendResumesAfterReset": "Resumes when the budget resets",
   "aiGitLabBudgetTitle": "GitLab request budget is low",
   "aiGitLabBudgetDetail": "This message was not sent. Send it again when the send button is back.",
-  "activityVerbTargetRef": "{verb} {target} {ref}"
+  "activityVerbTargetRef": "{verb} {target} {ref}",
+  "aiOpSetWorkItemLabels": "Set labels",
+  "aiRefusedLabelUnknown": "The label to set is not in this project’s label list, or several labels share that name, so nothing was done."
 }

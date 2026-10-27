@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,6 +75,7 @@ final class _Writes implements AiWriteChatSession {
   final rejected = <AiWriteProposal>[];
   AiWriteOutcome Function(String? editedText) answer = (_) =>
       const AiWriteOutcome(state: AiJournalState.succeeded, reasonCode: 'ok');
+  Future<AiWriteOutcome> Function(String? editedText)? onApprove;
 
   @override
   Future<void> setAutonomyLevel(AiAutonomyLevel level) async =>
@@ -85,6 +88,7 @@ final class _Writes implements AiWriteChatSession {
     String? editedText,
   }) async {
     approvals.add((typedName: typedName, editedText: editedText));
+    if (onApprove case final approve?) return approve(editedText);
     return answer(editedText);
   }
 
@@ -689,6 +693,124 @@ void main() {
     expect(find.text(l10n.aiProposalEdited), findsOneWidget);
   });
 
+  testWidgets('reapplying the same card edit still requires approval', (
+    tester,
+  ) async {
+    late CoordHarness h;
+    late AiWriteProposal proposal;
+    await tester.runAsync(() async {
+      h = await CoordHarness.create();
+      h.newRun('Comment on #3 in team/example-9');
+      proposal = (await h.coordinator.propose(coordNoteCall('same-edit')))!;
+    });
+    addTearDown(() => tester.runAsync(h.dispose));
+    late Future<AiWriteOutcome> Function() approval;
+    final writes = _Writes([proposal])
+      ..onApprove = (edited) {
+        final done = Completer<AiWriteOutcome>();
+        approval = () async {
+          final result = await h.coordinator.approve(
+            proposal,
+            editedText: edited,
+          );
+          done.complete(result);
+          return result;
+        };
+        return done.future;
+      };
+    await tester.pumpWidget(
+      _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+    );
+    final requestsAfterProposal = h.adapter.requests.length;
+    const edited = 'My revised comment';
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-edit')));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('ai-proposal-edit-text'));
+      if (attempt == 0) {
+        await tester.enterText(field, edited);
+      } else {
+        expect(tester.widget<TextField>(field).controller!.text, edited);
+      }
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-edit-done')));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(writes.approvals, hasLength(attempt + 1));
+      final result = await tester.runAsync(approval);
+      await tester.pumpAndSettle();
+      expect(result!.reasonCode, 'approvalRequired');
+      expect(proposal.valid, isTrue);
+      expect(h.coordinator.proposals, contains(proposal));
+      expect(h.adapter.requests, hasLength(requestsAfterProposal));
+      expect(h.mutations, 0);
+    }
+    await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+    await tester.pump();
+    final result = await tester.runAsync(approval);
+    await tester.pump();
+    expect(result!.state, AiJournalState.succeeded);
+    expect(result.readbackConfirmed, isTrue);
+    expect(result.mutationCount, 1);
+    expect(h.mutations, 1);
+    await tester.runAsync(() => h.coordinator.approve(proposal));
+    expect(h.mutations, 1);
+    expect(writes.approvals.map((call) => call.editedText), [
+      edited,
+      edited,
+      null,
+    ]);
+  });
+
+  testWidgets('reapplying a blocked card edit remains blocked', (tester) async {
+    late CoordHarness h;
+    late AiWriteProposal proposal;
+    await tester.runAsync(() async {
+      h = await CoordHarness.create();
+      h.newRun('Comment on #3 in team/example-9');
+      proposal = (await h.coordinator.propose(coordNoteCall('blocked-edit')))!;
+    });
+    addTearDown(() => tester.runAsync(h.dispose));
+    late Future<AiWriteOutcome> Function() approval;
+    final writes = _Writes([proposal])
+      ..onApprove = (edited) {
+        final done = Completer<AiWriteOutcome>();
+        approval = () async {
+          final result = await h.coordinator.approve(
+            proposal,
+            editedText: edited,
+          );
+          done.complete(result);
+          return result;
+        };
+        return done.future;
+      };
+    await tester.pumpWidget(
+      _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+    );
+    final requestsAfterProposal = h.adapter.requests.length;
+    const blocked = 'glpat-ABCDEFGHIJKLMNOPQRST';
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-edit')));
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('ai-proposal-edit-text'));
+      if (attempt == 0) {
+        await tester.enterText(field, blocked);
+      } else {
+        expect(tester.widget<TextField>(field).controller!.text, blocked);
+      }
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-edit-done')));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(writes.approvals, hasLength(attempt + 1));
+      final result = await tester.runAsync(approval);
+      await tester.pumpAndSettle();
+      expect(result!.reasonCode, 'secret');
+      expect(proposal.valid, isTrue);
+      expect(h.adapter.requests, hasLength(requestsAfterProposal));
+      expect(h.mutations, 0);
+    }
+  });
+
   testWidgets('closing the edit sheet does not refocus the composer', (
     tester,
   ) async {
@@ -855,6 +977,7 @@ void main() {
       'milestoneForbidden',
       'milestoneRejected',
       'notOwnNote',
+      'labelUnknown',
       'noteChanged',
       'noteMissing',
       'notificationConflict',
@@ -1041,8 +1164,7 @@ void main() {
       for (final status in AiWriteResultStatus.values) {
         expect(aiWriteStatusLabel(status), isNotEmpty);
       }
-      // Every ledger row, hidden or not: the MR6b-3 graph rows stay
-      // modelVisible false until P14, but their wording must exist first.
+      // Every ledger row, including the three delivered §7t families.
       for (final row in ProductionAiLedger.rows) {
         expect(
           aiOperationLabel(row.operationId),
@@ -1051,6 +1173,10 @@ void main() {
         );
       }
       for (final key in [
+        'title',
+        'description',
+        'body',
+        'labels',
         'assigneeUsernames',
         'startDate',
         'dueDate',

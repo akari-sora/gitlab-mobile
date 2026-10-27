@@ -109,6 +109,11 @@ const _mr6b2CountedCaps = <String, int>{
 // caps are the ledger's own numbers (OAuth 2L+1, PAT L+1); each graph write
 // reserves exactly one mutation.
 const _mr6b3CountedCaps = <String, int>{
+  // 3t: content P=user+WI+content=3; edit P=user+WI+locator(2)+access=5;
+  // labels P=user+WI+opening+complete candidates=4. F=1, Mpre=Mrb=1.
+  'updateWorkItemContent': 21,
+  'editWorkItemActivityNote': 29,
+  'updateWorkItemLabels': 25,
   'createWorkItemActivityComment': 21,
   'createWorkItemActivityReply': 29,
   'deleteWorkItemActivityNote': 29,

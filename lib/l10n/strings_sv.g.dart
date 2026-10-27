@@ -2751,4 +2751,6 @@ const _messagesSv = <String>[
   'Kvoten för begäranden hos GitLab är nästan förbrukad',
   'Meddelandet skickades inte. Skicka det igen när knappen ”Skicka” är tillgänglig igen.',
   '{verb} {target} {ref}',
+  'Ange etiketter',
+  'Etiketten som ska sättas finns inte i projektets etikettlista, eller så har flera etiketter det namnet, så ingenting gjordes.',
 ];

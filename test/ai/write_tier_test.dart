@@ -1421,6 +1421,9 @@ const Set<String> _productionOperations = <String>{
 
 // MR6b-3 graph writes, visible since catalogue 4 (P14).
 const Set<String> _mr6b3Operations = <String>{
+  'updateWorkItemContent',
+  'editWorkItemActivityNote',
+  'updateWorkItemLabels',
   'createWorkItemActivityComment',
   'createWorkItemActivityReply',
   'deleteWorkItemActivityNote',

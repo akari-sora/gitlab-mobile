@@ -2751,4 +2751,6 @@ const _messagesFr = <String>[
   'Le quota de requêtes GitLab est presque épuisé',
   'Ce message n’a pas été envoyé. Renvoyez-le lorsque le bouton « Envoyer » sera à nouveau disponible.',
   '{verb} {target} {ref}',
+  'Définir les étiquettes',
+  'L’étiquette à appliquer ne figure pas dans la liste des étiquettes de ce projet ou plusieurs étiquettes portent ce nom, donc rien n’a été fait.',
 ];
