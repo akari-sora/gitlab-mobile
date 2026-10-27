@@ -422,6 +422,67 @@ void main() {
       },
     );
 
+    test(
+      'JSON container depth accepts 32 and rejects 33 from an empty map',
+      () {
+        for (final containers in [32, 33]) {
+          Object body = <String, Object?>{};
+          for (var depth = 1; depth < containers; depth++) {
+            body = [body];
+          }
+          final entry = _entry(body: body);
+          final plain = _frame(entry.metadata, utf8.encode(jsonEncode(body)));
+          ProjectedDiskEntry decode() => _cipher.decodeEntry(
+            plain,
+            accountKey: entry.accountKey,
+            canonicalKey: entry.canonicalKey,
+          );
+          if (containers == 32) {
+            expect(decode().body, body);
+            expect(_cipher.encodeEntry(entry), plain);
+          } else {
+            expect(decode, _codecError(ReadCacheCodecError.malformed));
+            expect(
+              () => _cipher.encodeEntry(entry),
+              _codecError(ReadCacheCodecError.malformed),
+            );
+          }
+        }
+      },
+    );
+
+    test('JSON value nodes accept 32768 and reject 32769 independently', () {
+      for (final nodes in [32768, 32769]) {
+        // One outer array, eight inner arrays, and the remaining scalar nodes.
+        final body = List<List<int>>.generate(
+          8,
+          (i) => List<int>.filled(i < 7 ? 4096 : nodes - 9 - 7 * 4096, 0),
+        );
+        expect(
+          1 + body.length + body.fold<int>(0, (n, row) => n + row.length),
+          nodes,
+        );
+        expect(body.length, lessThanOrEqualTo(4096));
+        expect(
+          body.map((row) => row.length),
+          everyElement(lessThanOrEqualTo(4096)),
+        );
+        final entry = _entry();
+        final plain = _frame(entry.metadata, utf8.encode(jsonEncode(body)));
+        expect(plain.length, lessThan(1024 * 1024));
+        ProjectedDiskEntry decode() => _cipher.decodeEntry(
+          plain,
+          accountKey: entry.accountKey,
+          canonicalKey: entry.canonicalKey,
+        );
+        if (nodes == 32768) {
+          expect(decode().body, body);
+        } else {
+          expect(decode, _codecError(ReadCacheCodecError.malformed));
+        }
+      }
+    });
+
     test('enforces total size and bounded JSON structure', () {
       final text = _entry(bodyKind: ReadCacheBodyKind.text, body: '');
       final metadataBytes = utf8.encode(jsonEncode(text.metadata)).length;

@@ -91,8 +91,9 @@ final class ReadCacheCipher {
   }) async {
     _checkKey(key);
     _checkLimit(plaintext.length, plaintextLimit);
+    final random = Random.secure();
     final nonce = Uint8List.fromList(
-      List<int>.generate(12, (_) => Random.secure().nextInt(256)),
+      List<int>.generate(12, (_) => random.nextInt(256)),
     );
     try {
       final box = await DartAesGcm(secretKeyLength: 32).encrypt(
@@ -432,7 +433,7 @@ final class ReadCacheCipher {
       }
     }
 
-    visit(value, 0);
+    visit(value, 1);
     return value as Object;
   }
 

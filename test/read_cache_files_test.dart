@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/read_cache_cipher.dart';
 import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
@@ -42,6 +43,7 @@ ProjectedDiskEntry _entry({
 );
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Directory root;
 
   ReadCacheFileStore store({
@@ -101,6 +103,12 @@ void main() {
       expect(await files.readIndex(_account, _key), isNull);
       expect(await files.entryFiles(_account, _key), isEmpty);
       expect(await files.removeStaleTemporaryFiles(_account, _key), 0);
+      expect(await files.accountDirectoryNames(), isEmpty);
+      expect(
+        await files.accountDirectoryState(_account),
+        ReadCacheDirectoryState.absent,
+      );
+      await files.clearAccountDirectoriesExcept({});
       expect(root.listSync(), isEmpty);
     },
   );
@@ -192,6 +200,13 @@ void main() {
       );
       expect(indexFile.readAsBytesSync(), oldIndex);
       expect(
+        accountDirectory().listSync().where(
+          (file) => file.path.endsWith('.tmp'),
+        ),
+        isEmpty,
+        reason: 'beforeRename rejection must remove its temporary file',
+      );
+      expect(
         (await store().readIndex(_account, _key))!.entries.single.fileName,
         first,
       );
@@ -244,6 +259,31 @@ void main() {
     await background.evict(_account, _key, name);
     expect((await background.readIndex(_account, _key))!.entries, isEmpty);
   });
+
+  test(
+    'background errors outside the typed exceptions are sanitized',
+    () async {
+      final name = await store().writeEntry(_entry(), _key);
+      for (final error in <Object>[
+        StateError('synthetic private background detail'),
+        Exception('synthetic plugin detail'),
+        const FileSystemException(
+          'synthetic private detail',
+          '/synthetic/private',
+        ),
+      ]) {
+        final files = store(
+          checkpoint: (step) {
+            if (step == ReadCacheFileCheckpoint.beforeRead) throw error;
+          },
+        );
+        await expectLater(
+          files.readEntryFile(_account, _key, name),
+          fileFailure(ReadCacheFileFailure.io),
+        );
+      }
+    },
+  );
 
   test(
     'wrong account/key/file and altered ciphertext cannot be read',
@@ -611,7 +651,7 @@ void main() {
         );
         await expectLater(
           crashing.writeEntry(_entry(body: 'new'), _key),
-          throwsA(isA<_Crash>()),
+          fileFailure(ReadCacheFileFailure.io),
         );
         final fresh = store();
         expect(
@@ -622,6 +662,12 @@ void main() {
         );
         expect(await fresh.entryFiles(_account, _key), [name]);
         expect(await fresh.readIndex(_account, _key), isNull);
+        expect(
+          accountDirectory().listSync().where(
+            (file) => file.path.endsWith('.tmp'),
+          ),
+          hasLength(step == ReadCacheFileCheckpoint.entryRenamed ? 0 : 1),
+        );
         for (final file in accountDirectory().listSync().cast<File>()) {
           expect(
             file.readAsBytesSync(),
@@ -662,9 +708,15 @@ void main() {
             _key,
             ReadCacheIndex(entries: [firstRecord, secondRecord]),
           ),
-          throwsA(isA<_Crash>()),
+          fileFailure(ReadCacheFileFailure.io),
         );
         final fresh = store();
+        expect(
+          accountDirectory().listSync().where(
+            (file) => file.path.endsWith('.tmp'),
+          ),
+          hasLength(step == ReadCacheFileCheckpoint.indexRenamed ? 0 : 1),
+        );
         final index = (await fresh.readIndex(_account, _key))!;
         expect(
           index.entries.length,
@@ -698,7 +750,7 @@ void main() {
       );
       await expectLater(
         crashing.evict(_account, _key, name),
-        throwsA(isA<_Crash>()),
+        fileFailure(ReadCacheFileFailure.io),
       );
       expect((await store().readIndex(_account, _key))!.entries, isEmpty);
       expect(
@@ -749,6 +801,28 @@ void main() {
       );
     },
   );
+
+  test('capacity refusal leaves no empty account directory', () async {
+    for (var id = 0; id < 3; id++) {
+      final dir = accountDirectory('synthetic-full-$id')
+        ..createSync(recursive: true);
+      final file = File('${dir.path}/reserve.tmp')..createSync();
+      final handle = file.openSync(mode: FileMode.writeOnly);
+      handle.truncateSync(readCacheAccountByteLimit);
+      handle.closeSync();
+    }
+    final before = await store().accountDirectoryNames();
+    await expectLater(
+      store().writeEntry(_entry(), _key),
+      fileFailure(ReadCacheFileFailure.capacity),
+    );
+    expect(accountDirectory().existsSync(), isFalse);
+    expect(
+      await store().accountDirectoryState(_account),
+      ReadCacheDirectoryState.absent,
+    );
+    expect(await store().accountDirectoryNames(), before);
+  });
 
   test(
     'account and device peak byte caps accept equality and refuse one more byte',
@@ -832,6 +906,19 @@ void main() {
           files.removeStaleTemporaryFiles(_account, _key),
           fileFailure(ReadCacheFileFailure.untrustedPath),
         );
+        await expectLater(
+          files.accountDirectoryNames(),
+          fileFailure(ReadCacheFileFailure.untrustedPath),
+        );
+        await expectLater(
+          files.accountDirectoryState(_account),
+          fileFailure(ReadCacheFileFailure.untrustedPath),
+        );
+        await expectLater(
+          files.clearAccountDirectoriesExcept({}),
+          fileFailure(ReadCacheFileFailure.untrustedPath),
+        );
+        expect(Link(path).existsSync(), isTrue);
         if (level == 'root') {
           await expectLater(
             files.clearAccount(_account),
@@ -884,6 +971,10 @@ void main() {
       ).createSync(outside.path);
       await expectLater(
         store().removeStaleTemporaryFiles(_account, _key),
+        fileFailure(ReadCacheFileFailure.untrustedPath),
+      );
+      await expectLater(
+        store().accountDirectoryState(_account),
         fileFailure(ReadCacheFileFailure.untrustedPath),
       );
       await store().clearAccount(_account);
@@ -948,6 +1039,18 @@ void main() {
         files.entryFiles(_account, _key),
         fileFailure(ReadCacheFileFailure.untrustedPath),
       );
+      await expectLater(
+        files.accountDirectoryNames(),
+        fileFailure(ReadCacheFileFailure.untrustedPath),
+      );
+      await expectLater(
+        files.accountDirectoryState(_account),
+        fileFailure(ReadCacheFileFailure.untrustedPath),
+      );
+      await expectLater(
+        files.clearAccountDirectoriesExcept({}),
+        fileFailure(ReadCacheFileFailure.untrustedPath),
+      );
       expect(file.readAsStringSync(), 'synthetic');
       if (level == 'root') {
         await expectLater(
@@ -959,6 +1062,147 @@ void main() {
         expect(file.existsSync(), isFalse);
       }
     });
+  }
+
+  test(
+    'keyless directory primitives never involve secure storage and preserve AI data',
+    () async {
+      var secureCalls = 0;
+      const channel = MethodChannel(
+        'plugins.it_nomads.com/flutter_secure_storage',
+      );
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        secureCalls++;
+        throw StateError('synthetic secure store unavailable');
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final files = store();
+      await root.delete();
+      expect(await files.accountDirectoryNames(), isEmpty);
+      expect(
+        await files.accountDirectoryState(_account),
+        ReadCacheDirectoryState.absent,
+      );
+      await files.clearAccountDirectoriesExcept({});
+      expect(root.existsSync(), isFalse);
+
+      accountDirectory().createSync(recursive: true);
+      expect(
+        await files.accountDirectoryState(_account),
+        ReadCacheDirectoryState.emptyDirectory,
+      );
+      final temp = File(
+        '${accountDirectory().path}/index.v1.bin.${'1' * 32}.tmp',
+      )..writeAsBytesSync([1]);
+      expect(
+        await files.accountDirectoryState(_account),
+        ReadCacheDirectoryState.hasFiles,
+      );
+      final other = File(
+        '${accountDirectory(_otherAccount).path}/index.v1.bin',
+      );
+      other.parent.createSync(recursive: true);
+      other.writeAsBytesSync([2, 3]);
+      final aiFiles = [
+        File('${root.path}/ai_history/synthetic/index.v1.bin'),
+        File('${root.path}/ai_write_journal/synthetic/journal.v1.enc'),
+      ];
+      for (final file in aiFiles) {
+        file.parent.createSync(recursive: true);
+        file.writeAsBytesSync([4, 5]);
+      }
+      expect(
+        await files.accountDirectoryNames(),
+        unorderedEquals([
+          ReadCacheCipher.accountDirectoryName(_account),
+          ReadCacheCipher.accountDirectoryName(_otherAccount),
+        ]),
+      );
+      await files.clearAccountDirectoriesExcept({_account});
+      expect(temp.readAsBytesSync(), [1]);
+      expect(other.existsSync(), isFalse);
+      expect(await files.accountDirectoryNames(), [
+        ReadCacheCipher.accountDirectoryName(_account),
+      ]);
+      await files.clearAccountDirectoriesExcept({});
+      expect(await files.accountDirectoryNames(), isEmpty);
+      expect(
+        await files.accountDirectoryState(_account),
+        ReadCacheDirectoryState.absent,
+      );
+      expect(Directory('${root.path}/read_cache').existsSync(), isTrue);
+      for (final file in aiFiles) {
+        expect(file.readAsBytesSync(), [4, 5]);
+      }
+      expect(secureCalls, 0);
+    },
+  );
+
+  for (final name in [
+    'foreign',
+    'a' * 31,
+    'a' * 33,
+    'A' * 32,
+    'g' * 32,
+    '${'a' * 32}\n',
+  ]) {
+    test(
+      'foreign account directory name ${jsonEncode(name)} fails closed before deletion',
+      () async {
+        final foreign = Directory('${root.path}/read_cache/$name')
+          ..createSync(recursive: true);
+        final retained = File('${accountDirectory().path}/sentinel');
+        retained.parent.createSync(recursive: true);
+        retained.writeAsBytesSync([1]);
+        await expectLater(
+          store().accountDirectoryNames(),
+          fileFailure(ReadCacheFileFailure.untrustedPath),
+        );
+        await expectLater(
+          store().clearAccountDirectoriesExcept({}),
+          fileFailure(ReadCacheFileFailure.untrustedPath),
+        );
+        await expectLater(
+          store().usage(_account, _key),
+          fileFailure(ReadCacheFileFailure.untrustedPath),
+        );
+        await expectLater(
+          store().writeEntry(_entry(), _key),
+          fileFailure(ReadCacheFileFailure.untrustedPath),
+        );
+        expect(foreign.existsSync(), isTrue);
+        expect(retained.readAsBytesSync(), [1]);
+      },
+    );
+  }
+
+  for (final node in ['directory', 'link']) {
+    test(
+      'keyless state refuses a $node child and selective clear stays link-safe',
+      () async {
+        final outside = Directory('${root.path}/outside')..createSync();
+        final sentinel = File('${outside.path}/sentinel')
+          ..writeAsBytesSync([1]);
+        accountDirectory().createSync(recursive: true);
+        File('${accountDirectory().path}/regular.tmp').writeAsBytesSync([2]);
+        final path = '${accountDirectory().path}/nested';
+        if (node == 'directory') {
+          Directory(path).createSync();
+          Link('$path/link').createSync(outside.path);
+        } else {
+          Link(path).createSync(outside.path);
+        }
+        await expectLater(
+          store().accountDirectoryState(_account),
+          fileFailure(ReadCacheFileFailure.untrustedPath),
+        );
+        await store().clearAccountDirectoriesExcept({});
+        expect(accountDirectory().existsSync(), isFalse);
+        expect(sentinel.readAsBytesSync(), [1]);
+      },
+    );
   }
 
   test(

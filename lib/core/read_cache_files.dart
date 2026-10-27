@@ -53,9 +53,13 @@ final class ReadCacheFileUsage {
   final int accountBytes, deviceBytes;
 }
 
+enum ReadCacheDirectoryState { absent, emptyDirectory, hasFiles }
+
 /// Atomic, bounded primitives only. The coordinator owns admission, account
 /// serialization, leases, markers, key creation, recovery and LRU decisions.
 /// Constructing this store performs no I/O and never selects a platform root.
+/// An untrustedPath from usage() is device-wide fail-closed: the caller must
+/// escalate to clearRoot(), since clearing one account may not repair it.
 final class ReadCacheFileStore {
   ReadCacheFileStore({
     required Future<Directory> Function() root,
@@ -114,6 +118,8 @@ final class ReadCacheFileStore {
         return name;
       });
 
+  /// Returns null when missing or expired. The caller evicts on null so expired
+  /// files do not remain on disk indefinitely.
   Future<ProjectedDiskEntry?> readEntry(
     String accountKey,
     List<int>? key,
@@ -125,6 +131,7 @@ final class ReadCacheFileStore {
 
   /// Recovery can authenticate an entry discovered by its opaque file name.
   /// This does not scan, delete, rebuild an index or choose an eviction policy.
+  /// Returns null when missing or expired; the caller evicts on null.
   Future<ProjectedDiskEntry?> readEntryFile(
     String accountKey,
     List<int>? key,
@@ -158,6 +165,8 @@ final class ReadCacheFileStore {
     );
   });
 
+  /// Silently drops entries whose files are missing or have mismatched sizes.
+  /// The caller reconciles entryFiles() with this result during recovery.
   Future<ReadCacheIndex?> readIndex(String accountKey, List<int>? key) =>
       _run(accountKey, key, (files, key) async {
         final bytes = files.read('index.v1.bin', readCacheIndexLimit);
@@ -191,20 +200,42 @@ final class ReadCacheFileStore {
   Future<ReadCacheFileUsage> usage(String accountKey, List<int>? key) =>
       _run(accountKey, key, (files, _) async => files.usage());
 
-  /// The only keyless operations: callers must already own an explicit-clear
-  /// fence/marker. These never create a directory or key. Links are unlinked,
-  /// and their targets are never traversed, even during recursive deletion.
-  Future<void> clearAccount(String accountKey) => _clear(accountKey, false);
-  Future<void> clearRoot() => _clear('', true);
+  /// Keyless inspection for startup/clear decisions; never creates directories.
+  /// Only lowercase 32-hex directory names are accepted. Links, foreign names
+  /// and wrong node types fail closed with untrustedPath.
+  Future<List<String>> accountDirectoryNames() =>
+      _runKeyless('', (files) => files.accountDirectoryNames());
 
-  Future<void> _clear(String accountKey, bool all) async {
+  /// Keyless, non-creating inspection. Temporary files count as files; links or
+  /// non-file children fail closed rather than being treated as empty.
+  Future<ReadCacheDirectoryState> accountDirectoryState(String accountKey) =>
+      _runKeyless(accountKey, (files) => files.accountDirectoryState());
+
+  /// Explicit startup/clear primitive. The caller owns the fence/marker and
+  /// retention policy. Validates the full inventory before deleting anything;
+  /// nested links are unlinked without traversing their targets.
+  Future<void> clearAccountDirectoriesExcept(Set<String> retainedAccountKeys) {
+    final retainedNames = retainedAccountKeys
+        .map(ReadCacheCipher.accountDirectoryName)
+        .toSet();
+    return _runKeyless(
+      '',
+      (files) => files.clearAccountDirectoriesExcept(retainedNames),
+    );
+  }
+
+  /// Keyless explicit clears: the caller owns the fence/marker. Links are
+  /// unlinked, never followed. These never create a directory or key.
+  Future<void> clearAccount(String accountKey) =>
+      _runKeyless(accountKey, (files) => files.clear(all: false));
+  Future<void> clearRoot() =>
+      _runKeyless('', (files) => files.clear(all: true));
+
+  Future<T> _runKeyless<T>(String accountKey, T Function(_Files) action) async {
     final path = await _resolveRoot();
     final now = _clock().toUtc();
-    await Isolate.run(
-      () => _guard(() async {
-        final files = _Files(path, accountKey, now, null);
-        files.clear(all: all);
-      }),
+    return Isolate.run(
+      () => _guard(() async => action(_Files(path, accountKey, now, null))),
     );
   }
 }
@@ -225,7 +256,11 @@ Future<T> _background<T>(
 Future<T> _guard<T>(Future<T> Function() action) async {
   try {
     return await action();
-  } on FileSystemException {
+  } on ReadCacheFileException {
+    rethrow;
+  } on ReadCacheCodecException {
+    rethrow;
+  } on Object {
     throw const ReadCacheFileException(ReadCacheFileFailure.io);
   }
 }
@@ -267,8 +302,8 @@ final class _Files {
     }
   }
 
-  bool directories({bool create = false}) {
-    for (final path in [root, base, account]) {
+  bool directories({bool create = false, bool includeAccount = true}) {
+    for (final path in [root, base, if (includeAccount) account]) {
       if (type(path) == FileSystemEntityType.notFound) {
         if (!create) return false;
         // Only the injected trusted root may have missing ancestors.
@@ -394,15 +429,15 @@ final class _Files {
 
   void atomic(String name, List<int> bytes, {void Function()? beforeRename}) {
     requireName(name);
-    directories(create: true);
-    final path = '$account/$name';
-    requireFile(path, absentAllowed: true);
     final total = usage();
     // Peak capacity includes the complete new temporary plus the old target.
     if (total.accountBytes + bytes.length > readCacheAccountByteLimit ||
         total.deviceBytes + bytes.length > readCacheDeviceByteLimit) {
       throw const ReadCacheFileException(ReadCacheFileFailure.capacity);
     }
+    directories(create: true);
+    final path = '$account/$name';
+    requireFile(path, absentAllowed: true);
     final random = Random.secure();
     File? temporary;
     for (var attempt = 0; attempt < 8; attempt++) {
@@ -423,38 +458,52 @@ final class _Files {
     if (temporary == null) {
       throw const ReadCacheFileException(ReadCacheFileFailure.io);
     }
-    // Interrupted transactions deliberately leave ciphertext-only temporary
-    // files. The caller chooses when authenticated recovery may remove them.
-    checkpoint?.call(ReadCacheFileCheckpoint.temporaryCreated);
-    directories();
-    requireFile(temporary.path);
-    final handle = temporary.openSync(mode: FileMode.writeOnly);
-    try {
-      handle.writeFromSync(bytes);
-      checkpoint?.call(ReadCacheFileCheckpoint.temporaryWritten);
-      handle.flushSync();
-      checkpoint?.call(ReadCacheFileCheckpoint.temporaryFlushed);
-    } finally {
-      handle.closeSync();
+    var interrupted = false;
+    void check(ReadCacheFileCheckpoint step) {
+      try {
+        checkpoint?.call(step);
+      } on Object {
+        interrupted = true;
+        rethrow;
+      }
     }
-    checkpoint?.call(
-      name == 'index.v1.bin'
-          ? ReadCacheFileCheckpoint.beforeIndexRename
-          : ReadCacheFileCheckpoint.beforeEntryRename,
-    );
-    directories();
-    requireFile(temporary.path);
-    requireFile(path, absentAllowed: true);
-    // Revalidate references in the same synchronous commit section. An entry
-    // removed while the encrypted index was being prepared cannot be claimed.
-    beforeRename?.call();
-    temporary.renameSync(path);
-    requireFile(path);
-    checkpoint?.call(
-      name == 'index.v1.bin'
-          ? ReadCacheFileCheckpoint.indexRenamed
-          : ReadCacheFileCheckpoint.entryRenamed,
-    );
+
+    try {
+      // Only checkpoint-simulated crashes leave ciphertext-only temporaries.
+      check(ReadCacheFileCheckpoint.temporaryCreated);
+      directories();
+      requireFile(temporary.path);
+      final handle = temporary.openSync(mode: FileMode.writeOnly);
+      try {
+        handle.writeFromSync(bytes);
+        check(ReadCacheFileCheckpoint.temporaryWritten);
+        handle.flushSync();
+        check(ReadCacheFileCheckpoint.temporaryFlushed);
+      } finally {
+        handle.closeSync();
+      }
+      check(
+        name == 'index.v1.bin'
+            ? ReadCacheFileCheckpoint.beforeIndexRename
+            : ReadCacheFileCheckpoint.beforeEntryRename,
+      );
+      directories();
+      requireFile(temporary.path);
+      requireFile(path, absentAllowed: true);
+      // Revalidate references in the same synchronous commit section. An entry
+      // removed while the encrypted index was being prepared cannot be claimed.
+      beforeRename?.call();
+      temporary.renameSync(path);
+      requireFile(path);
+      check(
+        name == 'index.v1.bin'
+            ? ReadCacheFileCheckpoint.indexRenamed
+            : ReadCacheFileCheckpoint.entryRenamed,
+      );
+    } finally {
+      // Recheck ancestors before cleanup so replaced links cannot escape root.
+      if (!interrupted && directories()) deleteNode(temporary.path);
+    }
   }
 
   void deleteEntry(String name) {
@@ -486,17 +535,9 @@ final class _Files {
     return removed;
   }
 
-  ReadCacheFileUsage usage() {
-    if (type(root) == FileSystemEntityType.notFound) {
-      return const ReadCacheFileUsage(accountBytes: 0, deviceBytes: 0);
-    }
-    requireDirectory(root);
-    if (type(base) == FileSystemEntityType.notFound) {
-      return const ReadCacheFileUsage(accountBytes: 0, deviceBytes: 0);
-    }
-    requireDirectory(base);
-    var accountBytes = 0;
-    var deviceBytes = 0;
+  List<String> accountDirectoryNames() {
+    if (!directories(includeAccount: false)) return const [];
+    final names = <String>[];
     for (final directory in Directory(base).listSync(followLinks: false)) {
       requireDirectory(directory.path);
       final segment = directory.uri.pathSegments
@@ -505,13 +546,45 @@ final class _Files {
       if (!_accountPattern.hasMatch(segment)) {
         throw const ReadCacheFileException(ReadCacheFileFailure.untrustedPath);
       }
-      for (final entity in Directory(
-        directory.path,
-      ).listSync(followLinks: false)) {
+      names.add(segment);
+    }
+    names.sort();
+    return names;
+  }
+
+  ReadCacheDirectoryState accountDirectoryState() {
+    if (!directories()) return ReadCacheDirectoryState.absent;
+    var hasFiles = false;
+    for (final entity in Directory(account).listSync(followLinks: false)) {
+      requireFile(entity.path);
+      hasFiles = true;
+    }
+    return hasFiles
+        ? ReadCacheDirectoryState.hasFiles
+        : ReadCacheDirectoryState.emptyDirectory;
+  }
+
+  void clearAccountDirectoriesExcept(Set<String> retainedNames) {
+    final names = accountDirectoryNames();
+    for (final name in names) {
+      if (retainedNames.contains(name)) continue;
+      requireDirectory(root);
+      requireDirectory(base);
+      deleteNode('$base/$name');
+    }
+  }
+
+  ReadCacheFileUsage usage() {
+    var accountBytes = 0;
+    var deviceBytes = 0;
+    for (final name in accountDirectoryNames()) {
+      final path = '$base/$name';
+      requireDirectory(path);
+      for (final entity in Directory(path).listSync(followLinks: false)) {
         requireFile(entity.path);
         final size = File(entity.path).lengthSync();
         deviceBytes += size;
-        if (directory.path == account) accountBytes += size;
+        if (path == account) accountBytes += size;
       }
     }
     return ReadCacheFileUsage(

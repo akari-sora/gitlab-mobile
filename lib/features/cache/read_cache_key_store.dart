@@ -74,7 +74,7 @@ final class ReadCacheClearMarker extends ReadCachePendingClear {
     required this.reason,
     required DateTime requestedAt,
   }) : requestedAt = requestedAt.toUtc() {
-    if (intentId.isEmpty) {
+    if (!_intentIdPattern.hasMatch(intentId)) {
       throw const ReadCacheStoreException(
         ReadCacheStoreFailure(
           ReadCacheStoreFailureKind.invalidValue,
@@ -84,6 +84,9 @@ final class ReadCacheClearMarker extends ReadCachePendingClear {
     }
   }
 
+  static final _intentIdPattern = RegExp(r'^[0-9a-f]{32}$');
+
+  /// An opaque 16-byte operation identifier encoded as lowercase hex.
   final String intentId;
   final ReadCacheClearReason reason;
   final DateTime requestedAt;
@@ -224,9 +227,15 @@ final class ReadCacheKeyStore {
       _deleteExact(markerName(accountKey), 'deleteMarker');
 
   /// Deletes one exact malformed inventory name. Only read-cache prefixes are
-  /// accepted; no account name is decoded and no path is constructed.
+  /// accepted, and names that canonically decode to an account are refused.
+  /// No path is constructed.
   Future<void> deleteInventoryName(String exactName) {
-    if (!_hasOwnedPrefix(exactName)) {
+    final prefix = exactName.startsWith(keyPrefix)
+        ? keyPrefix
+        : exactName.startsWith(markerPrefix)
+        ? markerPrefix
+        : null;
+    if (prefix == null || _decodeCanonicalAccount(exactName, prefix) != null) {
       throw const ReadCacheStoreException(
         ReadCacheStoreFailure(
           ReadCacheStoreFailureKind.invalidValue,
@@ -348,7 +357,6 @@ final class ReadCacheKeyStore {
           decoded['version'] is int &&
           decoded['version'] == 1 &&
           decoded['intentId'] is String &&
-          (decoded['intentId']! as String).isNotEmpty &&
           decoded['reason'] is String &&
           decoded['requestedAt'] is String) {
         final reason = ReadCacheClearReason.values
@@ -416,9 +424,6 @@ final class ReadCacheKeyStore {
       );
     }
   }
-
-  static bool _hasOwnedPrefix(String name) =>
-      name.startsWith(keyPrefix) || name.startsWith(markerPrefix);
 
   static String? _decodeCanonicalAccount(String name, String prefix) {
     final encoded = name.substring(prefix.length);

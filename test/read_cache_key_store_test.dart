@@ -170,8 +170,9 @@ void main() {
         for (final reason in ReadCacheClearReason.values) {
           final storage = _MemorySecureStorage();
           final store = ReadCacheKeyStore(storage);
+          final intentId = reason.index.toRadixString(16).padLeft(32, '0');
           final marker = ReadCacheClearMarker(
-            intentId: 'opaque-${reason.name}',
+            intentId: intentId,
             reason: reason,
             requestedAt: requestedAt,
           );
@@ -180,7 +181,7 @@ void main() {
 
           expect(
             storage.values[ReadCacheKeyStore.markerName('a')],
-            '{"version":1,"intentId":"opaque-${reason.name}",'
+            '{"version":1,"intentId":"$intentId",'
             '"reason":"${reason.name}",'
             '"requestedAt":"2026-10-23T01:02:03.004Z"}',
           );
@@ -192,24 +193,37 @@ void main() {
       },
     );
 
-    test('normalizes constructor time to UTC and rejects empty intent', () {
-      final instant = DateTime.parse('2026-10-23T09:02:03.004+08:00');
-      final marker = ReadCacheClearMarker(
-        intentId: 'operation',
-        reason: ReadCacheClearReason.startup,
-        requestedAt: instant,
-      );
-      expect(marker.requestedAt.isUtc, isTrue);
-      expect(marker.toJson()['requestedAt'], '2026-10-23T01:02:03.004Z');
-      expect(
-        () => ReadCacheClearMarker(
-          intentId: '',
+    test(
+      'normalizes constructor time to UTC and restricts opaque intent IDs',
+      () {
+        final instant = DateTime.parse('2026-10-23T09:02:03.004+08:00');
+        final marker = ReadCacheClearMarker(
+          intentId: '0123456789abcdef0123456789abcdef',
           reason: ReadCacheClearReason.startup,
           requestedAt: instant,
-        ),
-        throwsA(_failure(ReadCacheStoreFailureKind.invalidValue)),
-      );
-    });
+        );
+        expect(marker.requestedAt.isUtc, isTrue);
+        expect(marker.toJson()['requestedAt'], '2026-10-23T01:02:03.004Z');
+        for (final intentId in [
+          '',
+          'a' * 31,
+          'a' * 33,
+          'A' * 32,
+          'g' * 32,
+          'private-account-operation',
+          '${'a' * 32}\n',
+        ]) {
+          expect(
+            () => ReadCacheClearMarker(
+              intentId: intentId,
+              reason: ReadCacheClearReason.startup,
+              requestedAt: instant,
+            ),
+            throwsA(_failure(ReadCacheStoreFailureKind.invalidValue)),
+          );
+        }
+      },
+    );
 
     test('absence and unavailable markers never write or delete', () async {
       final storage = _MemorySecureStorage();
@@ -232,7 +246,7 @@ void main() {
       () async {
         final valid = <String, Object?>{
           'version': 1,
-          'intentId': 'operation',
+          'intentId': '0123456789abcdef0123456789abcdef',
           'reason': 'startup',
           'requestedAt': '2026-10-23T01:02:03.004Z',
         };
@@ -245,6 +259,15 @@ void main() {
           {...valid, 'version': '1'},
           {...valid, 'intentId': ''},
           {...valid, 'intentId': 1},
+          for (final intentId in [
+            'a' * 31,
+            'a' * 33,
+            'A' * 32,
+            'g' * 32,
+            'private-account-operation',
+            '${'a' * 32}\n',
+          ])
+            {...valid, 'intentId': intentId},
           {...valid, 'reason': null},
           {...valid, 'requestedAt': 0},
           {...valid, 'requestedAt': '2026-02-30T01:02:03.004Z'},
@@ -273,9 +296,9 @@ void main() {
       () async {
         for (final raw in <String>[
           'not-json-private-content',
-          '{"version":2,"intentId":"x","reason":"startup","requestedAt":"2026-10-23T01:02:03.004Z"}',
-          '{"version":1,"intentId":"x","reason":"unknown","requestedAt":"2026-10-23T01:02:03.004Z"}',
-          '{"version":1,"intentId":"x","reason":"startup","requestedAt":"2026-10-23 01:02:03"}',
+          '{"version":2,"intentId":"0123456789abcdef0123456789abcdef","reason":"startup","requestedAt":"2026-10-23T01:02:03.004Z"}',
+          '{"version":1,"intentId":"0123456789abcdef0123456789abcdef","reason":"unknown","requestedAt":"2026-10-23T01:02:03.004Z"}',
+          '{"version":1,"intentId":"0123456789abcdef0123456789abcdef","reason":"startup","requestedAt":"2026-10-23 01:02:03"}',
         ]) {
           final storage = _MemorySecureStorage()
             ..values[ReadCacheKeyStore.markerName('a')] = raw;
@@ -293,7 +316,7 @@ void main() {
       'marker write and delete use the same exact readback contract',
       () async {
         final marker = ReadCacheClearMarker(
-          intentId: 'operation-1',
+          intentId: '0123456789abcdef0123456789abcdef',
           reason: ReadCacheClearReason.accountClear,
           requestedAt: DateTime.utc(2026, 10, 23),
         );
@@ -319,7 +342,7 @@ void main() {
       'semantic-equivalent marker readback still must match exact bytes',
       () async {
         final marker = ReadCacheClearMarker(
-          intentId: 'operation',
+          intentId: '0123456789abcdef0123456789abcdef',
           reason: ReadCacheClearReason.startup,
           requestedAt: DateTime.utc(2026, 10, 23),
         );
@@ -340,7 +363,7 @@ void main() {
       await store.writeMarker(
         'a',
         ReadCacheClearMarker(
-          intentId: 'operation',
+          intentId: '0123456789abcdef0123456789abcdef',
           reason: ReadCacheClearReason.startup,
           requestedAt: DateTime.utc(2026, 10, 23),
         ),
@@ -358,7 +381,7 @@ void main() {
 
   group('all mutations fail closed on storage and readback faults', () {
     final marker = ReadCacheClearMarker(
-      intentId: 'operation',
+      intentId: '0123456789abcdef0123456789abcdef',
       reason: ReadCacheClearReason.accountClear,
       requestedAt: DateTime.utc(2026, 10, 23),
     );
@@ -409,7 +432,7 @@ void main() {
       () async {
         final key = Uint8List.fromList(List<int>.generate(32, (i) => i));
         final validMarker = ReadCacheClearMarker(
-          intentId: 'inventory-operation',
+          intentId: '0123456789abcdef0123456789abcdef',
           reason: ReadCacheClearReason.startup,
           requestedAt: DateTime.utc(2026, 10, 23),
         );
@@ -512,6 +535,32 @@ void main() {
         expect(inventory.failure?.kind, ReadCacheStoreFailureKind.unavailable);
         expect(inventory.keys, isEmpty);
         expect(inventory.markers, isEmpty);
+      },
+    );
+
+    test(
+      'canonical inventory names require account deletion even with malformed values',
+      () {
+        final names = [
+          ReadCacheKeyStore.keyName('synthetic-account'),
+          ReadCacheKeyStore.markerName('synthetic-account'),
+        ];
+        for (final value in ['malformed', '']) {
+          final storage = _MemorySecureStorage()
+            ..values.addEntries(names.map((name) => MapEntry(name, value)));
+          final store = ReadCacheKeyStore(storage);
+          for (final name in names) {
+            expect(
+              () => store.deleteInventoryName(name),
+              throwsA(_failure(ReadCacheStoreFailureKind.invalidValue)),
+            );
+            expect(storage.values[name], value);
+          }
+          expect(storage.deleteCount, 0);
+          expect(storage.readCount, 0);
+          expect(storage.readAllCount, 0);
+          expect(storage.writeCount, 0);
+        }
       },
     );
 
