@@ -379,13 +379,38 @@ String aiConfirmReasonText(AiFixedConfirmReason reason) => switch (reason) {
   AiFixedConfirmReason.intentNotUnique => l10n.aiConfirmIntentNotUnique,
 };
 
+/// Codes the approve and the edit path both report with their own reason
+/// instead of the generic edit messages: the proposal lapsed, its run ended,
+/// or (quickAction) the text holds a slash command the card can explain.
+const _proposalStateCodes = {
+  'quickAction',
+  'approvalExpired',
+  'proposalInvalidated',
+  'attachmentExpired',
+  'invalidProposal',
+  'accountChanged',
+  'settingsChanged',
+  'superseded',
+  'stopped',
+  'timeout',
+};
+
 /// Why GitLab or a recheck stopped an approved write, for the card. Codes
 /// come from the write port and the coordinator; an unknown code is null so
 /// the card falls back to "not made". A missing target is ambiguous (it may
 /// be hidden from you), never "deleted".
 String? aiRefusalText(String code) => switch (code) {
   'quickAction' => l10n.aiRefusedQuickAction,
-  'approvalExpired' => l10n.aiProposalNotRun,
+  // The proposal lapsed, its run ended or was replaced, or the settings or
+  // account changed under it; no write was sent.
+  'approvalExpired' ||
+  'attachmentExpired' ||
+  'invalidProposal' ||
+  'accountChanged' ||
+  'settingsChanged' ||
+  'superseded' ||
+  'stopped' ||
+  'timeout' => l10n.aiProposalNotRun,
   'proposalInvalidated' => l10n.aiProposalInvalid,
   'alreadyMerged' => l10n.aiRefusedAlreadyMerged,
   'projectArchived' => l10n.aiRefusedArchived,
@@ -396,8 +421,6 @@ String? aiRefusalText(String code) => switch (code) {
   'previewChanged' ||
   'headMoved' ||
   'draftsChanged' ||
-  'settingsChanged' ||
-  'superseded' ||
   'fileExists' ||
   'fragmentNotFound' ||
   'fragmentNotUnique' ||
@@ -647,11 +670,20 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
       _message = switch (outcome.reasonCode) {
         'typedNameMismatch' => l10n.aiProposalNameMismatch,
         'tooManyRunning' => l10n.aiProposalTooManyRunning,
+        // A pause is shown once, by the card's status line, when the
+        // coordinator has marked the proposal paused; a background pause is
+        // never shown.
+        AiWritePause.backgrounded => null,
+        AiWritePause.accountRemovalHeld ||
+        'accountBlocked' ||
+        AiWritePause.clientUnavailable
+            when _proposal.pausedReason != null =>
+          null,
         AiWritePause.accountRemovalHeld ||
         'accountBlocked' => l10n.aiProposalPausedRemoval,
         AiWritePause.clientUnavailable => l10n.aiProposalPausedRateLimited,
-        'quickAction' || 'approvalExpired' || 'proposalInvalidated' =>
-          aiRefusalText(outcome.reasonCode),
+        final code when _proposalStateCodes.contains(code) =>
+          aiRefusalText(code),
         // Still waiting: the proposal is fine, only the edited text was
         // refused, so the user can change it again.
         _
@@ -718,9 +750,11 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
         _message = l10n.aiProposalEdited;
         _messageIsError = false;
       } else {
+        // A pause keeps the earlier text: the edit was not applied, and the
+        // card's status line already says why approval waits.
         _message = switch (outcome?.reasonCode) {
-          'quickAction' || 'approvalExpired' || 'proposalInvalidated' =>
-            aiRefusalText(outcome!.reasonCode),
+          final code? when _proposalStateCodes.contains(code) =>
+            aiRefusalText(code),
           _ => l10n.aiProposalEditBlocked,
         };
         _messageIsError = true;

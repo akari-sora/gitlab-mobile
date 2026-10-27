@@ -1522,6 +1522,7 @@ class AiChatController extends ChangeNotifier
       // §3.1, whole-field write back: only a write back to the same field
       // has a current value whose hidden spans the new text could drop.
       currentFields: {
+        // Defence in depth: GraphQL write-backs stay outside the REST fields.
         if (_writeBackOperations.contains(operation) && !graphWriteBack)
           for (final key in ['body', 'description', 'title', 'name'])
             if (target[key] is String) key: target[key] as String,

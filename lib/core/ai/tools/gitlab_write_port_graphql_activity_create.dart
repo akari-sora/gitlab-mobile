@@ -191,6 +191,8 @@ void _precheckGraphqlActivityText(AiWriteRequest request, {bool trim = false}) {
   // GitLab only executes column-zero commands. This port deliberately keeps
   // the screen's more conservative core guard, refusing even neutralized
   // commands here with their real reason instead of after approval.
+  // Fenced examples keep their fence and §5.1 one-space neutralization:
+  // "unchanged" means sendable, not byte-identical.
   if (containsWorkItemActivityQuickAction(body)) {
     throw const AiWriteRefused('quickAction');
   }
