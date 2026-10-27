@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/brand.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/security/app_lock.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
 
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
+import 'support/ai_run_notification_shell.dart';
 import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
@@ -271,6 +273,146 @@ void main() {
       findsNothing,
       reason: 'turning it on keeps the app open',
     );
+  });
+
+  group('a tapped AI run notification behind the lock', () {
+    late FakeNotificationPlatform platform;
+    late _Auth auth;
+    late AppLockController controller;
+    late NotificationShell shell;
+    late NotificationChat chat;
+
+    /// The app is locked and asking; the tap arrives during the check.
+    Future<void> tapWhileLocked(WidgetTester tester) async {
+      platform = FakeNotificationPlatform()..install();
+      addTearDown(platform.uninstall);
+      auth = _Auth()..pending = Completer<bool>();
+      controller = lock(_Store(true), auth);
+      await tester.runAsync(controller.start);
+      shell = await NotificationShell.start(
+        tester,
+        platform: platform,
+        lock: controller,
+      );
+      expect(controller.authenticating, isTrue);
+      chat = shell.openChat(tester);
+      await platform.tap(notificationPayload(chat.id, shell.generation));
+      await settleNetworkWidgets(tester);
+      expect(shell.gate.waiting, isTrue);
+      expect(find.byType(AiChatPage), findsNothing);
+      expect(find.text('$appName 已鎖定'), findsOneWidget);
+    }
+
+    testWidgets(
+      'a cancelled unlock never navigates, not even after a later unlock',
+      (tester) async {
+        await tapWhileLocked(tester);
+        auth.pending!.complete(false);
+        await settleNetworkWidgets(tester);
+        expect(controller.locked, isTrue);
+        expect(shell.gate.waiting, isFalse, reason: 'the tap is dropped');
+        expect(find.byType(AiChatPage), findsNothing);
+
+        auth
+          ..pending = null
+          ..answer = true;
+        await tester.tap(find.byKey(const ValueKey('app-lock-unlock')));
+        await settleNetworkWidgets(tester);
+        expect(controller.locked, isFalse);
+        expect(find.byType(AiChatPage), findsNothing);
+        expect(selectedDestination(tester), 0);
+        expect(chat.approved, isEmpty);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
+
+    testWidgets('a passing unlock opens the conversation at its waiting card', (
+      tester,
+    ) async {
+      await tapWhileLocked(tester);
+      auth.pending!.complete(true);
+      await settleNetworkWidgets(tester);
+      expect(controller.locked, isFalse);
+      final page = tester.widget<AiChatPage>(find.byType(AiChatPage));
+      expect(page.session, same(chat));
+      expect(
+        find.byKey(const ValueKey('ai-proposal-card-exec-1')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(chat.approved, isEmpty, reason: 'shown, never approved');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+  });
+
+  group('a warm tap that arrives while the app is away', () {
+    late FakeNotificationPlatform platform;
+    late _Auth auth;
+    late AppLockController controller;
+    late NotificationShell shell;
+    late NotificationChat chat;
+    late DateTime now;
+
+    Future<void> tapWhileAway(WidgetTester tester, Duration away) async {
+      platform = FakeNotificationPlatform()..install();
+      addTearDown(platform.uninstall);
+      now = DateTime.utc(2026, 10, 28, 12);
+      auth = _Auth();
+      controller = lock(_Store(true), auth, clock: () => now);
+      await tester.runAsync(controller.start);
+      shell = await NotificationShell.start(
+        tester,
+        platform: platform,
+        lock: controller,
+      );
+      expect(controller.locked, isFalse, reason: 'unlocked at start');
+      chat = shell.openChat(tester);
+      controller.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      controller.didChangeAppLifecycleState(AppLifecycleState.paused);
+      now = now.add(away);
+      // Android delivers the tap before the app reports it is back.
+      await platform.tap(notificationPayload(chat.id, shell.generation));
+      await settleNetworkWidgets(tester);
+      expect(shell.gate.waiting, isTrue);
+      expect(find.byType(AiChatPage), findsNothing);
+    }
+
+    testWidgets(
+      'long enough away: the lock comes back first and the card opens only '
+      'after unlock',
+      (tester) async {
+        await tapWhileAway(tester, const Duration(minutes: 2));
+        auth.pending = Completer<bool>();
+        controller.didChangeAppLifecycleState(AppLifecycleState.resumed);
+        await settleNetworkWidgets(tester);
+        expect(controller.locked, isTrue);
+        expect(find.byType(AiChatPage), findsNothing);
+
+        auth.pending!.complete(true);
+        await settleNetworkWidgets(tester);
+        expect(
+          tester.widget<AiChatPage>(find.byType(AiChatPage)).session,
+          same(chat),
+        );
+        expect(
+          find.byKey(const ValueKey('ai-proposal-card-exec-1')).hitTestable(),
+          findsOneWidget,
+        );
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
+
+    testWidgets('a short look away: the card opens once the app is back', (
+      tester,
+    ) async {
+      await tapWhileAway(tester, const Duration(seconds: 10));
+      controller.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await settleNetworkWidgets(tester);
+      expect(controller.locked, isFalse);
+      expect(
+        tester.widget<AiChatPage>(find.byType(AiChatPage)).session,
+        same(chat),
+      );
+      expect(chat.approved, isEmpty);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
   });
 
   testWidgets('without a controller the gate is transparent', (tester) async {

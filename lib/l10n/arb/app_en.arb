@@ -2760,5 +2760,18 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Set labels",
   "aiRefusedLabelUnknown": "The label to set is not in this project’s label list, or several labels share that name, so nothing was done.",
-  "aiRefusedQuickAction": "The text has a line starting with /, which GitLab could run as a quick action, so to be safe this write was not sent. Remove that line or put it in a code block."
+  "aiRefusedQuickAction": "The text has a line starting with /, which GitLab could run as a quick action, so to be safe this write was not sent. Remove that line or put it in a code block.",
+  "aiRunNoticeApprovalChannel": "AI work awaiting approval",
+  "aiRunNoticeResultChannel": "AI work results",
+  "aiRunNoticeTitle": "AI assistant",
+  "aiRunNoticeNeedsApproval": "A task is waiting for your approval",
+  "aiRunNoticeCompleted": "A task finished",
+  "aiRunNoticeFailed": "A task failed",
+  "aiRunNoticeInterrupted": "A task was interrupted",
+  "aiRunNoticeAskTitle": "Turn on AI work notifications?",
+  "aiRunNoticeAskDetail": "After you leave the app, a notification tells you when AI work needs your approval or ends. It shows only the work status, never accounts, projects or content.",
+  "aiRunNoticeAskSkip": "Not now",
+  "aiRunNoticeAskContinue": "Continue",
+  "aiRunNoticeDenied": "Notifications are off: you won’t be reminded when work in the background needs approval, and proposals expire after 30 minutes.",
+  "aiRunNoticeFinishEditFirst": "Finish or close the current edit before opening the notification."
 }

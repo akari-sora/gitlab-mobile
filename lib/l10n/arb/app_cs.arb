@@ -2754,5 +2754,18 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Nastavit štítky",
   "aiRefusedLabelUnknown": "Štítek k nastavení není v seznamu štítků tohoto projektu nebo má stejný název více štítků, takže nebylo nic provedeno.",
-  "aiRefusedQuickAction": "Text obsahuje řádek začínající znakem /, který by GitLab mohl spustit jako rychlou akci, proto tato operace pro jistotu nebyla odeslána. Odstraňte tento řádek nebo ho vložte do bloku kódu."
+  "aiRefusedQuickAction": "Text obsahuje řádek začínající znakem /, který by GitLab mohl spustit jako rychlou akci, proto tato operace pro jistotu nebyla odeslána. Odstraňte tento řádek nebo ho vložte do bloku kódu.",
+  "aiRunNoticeApprovalChannel": "Práce AI čeká na schválení",
+  "aiRunNoticeResultChannel": "Výsledky práce AI",
+  "aiRunNoticeTitle": "Asistent AI",
+  "aiRunNoticeNeedsApproval": "Úkol čeká na vaše schválení",
+  "aiRunNoticeCompleted": "Úkol je dokončen",
+  "aiRunNoticeFailed": "Úkol selhal",
+  "aiRunNoticeInterrupted": "Úkol byl přerušen",
+  "aiRunNoticeAskTitle": "Zapnout oznámení o práci AI?",
+  "aiRunNoticeAskDetail": "Po opuštění aplikace vás oznámení upozorní, když práce AI potřebuje vaše schválení nebo skončí. Zobrazuje jen stav práce, nikdy účty, projekty ani obsah.",
+  "aiRunNoticeAskSkip": "Teď ne",
+  "aiRunNoticeAskContinue": "Pokračovat",
+  "aiRunNoticeDenied": "Oznámení jsou vypnutá: když práce na pozadí bude potřebovat schválení, nepřijde připomenutí a návrhy po 30 minutách vyprší.",
+  "aiRunNoticeFinishEditFirst": "Před otevřením oznámení dokončete nebo zavřete aktuální úpravy."
 }

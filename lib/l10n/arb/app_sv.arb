@@ -2754,5 +2754,18 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Ange etiketter",
   "aiRefusedLabelUnknown": "Etiketten som ska sättas finns inte i projektets etikettlista, eller så har flera etiketter det namnet, så ingenting gjordes.",
-  "aiRefusedQuickAction": "Texten har en rad som börjar med /, som GitLab kan köra som en quick action, så för säkerhets skull skickades åtgärden inte. Ta bort raden eller lägg den i ett kodblock."
+  "aiRefusedQuickAction": "Texten har en rad som börjar med /, som GitLab kan köra som en quick action, så för säkerhets skull skickades åtgärden inte. Ta bort raden eller lägg den i ett kodblock.",
+  "aiRunNoticeApprovalChannel": "AI-arbete väntar på godkännande",
+  "aiRunNoticeResultChannel": "Resultat av AI-arbete",
+  "aiRunNoticeTitle": "AI-assistent",
+  "aiRunNoticeNeedsApproval": "En uppgift väntar på ditt godkännande",
+  "aiRunNoticeCompleted": "En uppgift är klar",
+  "aiRunNoticeFailed": "En uppgift misslyckades",
+  "aiRunNoticeInterrupted": "En uppgift avbröts",
+  "aiRunNoticeAskTitle": "Slå på aviseringar för AI-arbete?",
+  "aiRunNoticeAskDetail": "När du har lämnat appen får du en avisering när AI-arbete behöver ditt godkännande eller är klart. Den visar bara arbetets status, aldrig konton, projekt eller innehåll.",
+  "aiRunNoticeAskSkip": "Inte nu",
+  "aiRunNoticeAskContinue": "Fortsätt",
+  "aiRunNoticeDenied": "Aviseringar är avstängda: du påminns inte när arbete i bakgrunden behöver godkännande, och förslag upphör efter 30 minuter.",
+  "aiRunNoticeFinishEditFirst": "Slutför eller stäng den pågående redigeringen innan du öppnar aviseringen."
 }

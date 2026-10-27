@@ -15,7 +15,9 @@ import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
 import '../ai/ai_account_removal.dart';
+import '../ai/ai_chat_page.dart' show openAiChatSession;
 import '../ai/ai_chat_session.dart';
+import '../ai/ai_run_notification_ui.dart';
 import '../ai/ai_run_registry.dart';
 import '../ai/ai_scope.dart';
 import '../ai/ai_settings_page.dart';
@@ -56,6 +58,7 @@ class AuthenticatedApp extends StatefulWidget {
     this.language,
     this.ai,
     this.aiSessionFactory,
+    this.runNotifications,
   });
   final SessionController session;
   final AppearanceController appearance;
@@ -78,6 +81,10 @@ class AuthenticatedApp extends StatefulWidget {
 
   /// Overrides conversation construction in synthetic shell tests.
   final AiChatSessionFactory? aiSessionFactory;
+
+  /// Tapped AI run notifications, held for the whole process; null where AI
+  /// or its notifications are absent. Used only together with [ai].
+  final AiRunNotificationGate? runNotifications;
   final LauncherShortcuts shortcuts;
   final ColorScheme? dynamicLight;
   final ColorScheme? dynamicDark;
@@ -147,13 +154,18 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) {
       oldWidget.session.removeListener(_sessionOwnerChanged);
-      _disposeAiRegistry();
+      _disposeAiRegistry(oldWidget.runNotifications);
       _links = _bindLinks(widget.session);
       widget.session.addListener(_sessionOwnerChanged);
     }
     if (oldWidget.ai?.settings != widget.ai?.settings ||
         oldWidget.aiSessionFactory != widget.aiSessionFactory) {
-      _disposeAiRegistry();
+      _disposeAiRegistry(oldWidget.runNotifications);
+    } else if (oldWidget.runNotifications != widget.runNotifications) {
+      if (_aiRegistry case final registry?) {
+        oldWidget.runNotifications?.unbind(registry);
+        widget.runNotifications?.bind(registry);
+      }
     }
     if (oldWidget.language != widget.language) {
       oldWidget.language?.removeListener(_languageChanged);
@@ -199,7 +211,10 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
     if (mounted) setState(() {});
   }
 
-  void _disposeAiRegistry() {
+  void _disposeAiRegistry([AiRunNotificationGate? notifications]) {
+    if (_aiRegistry case final registry?) {
+      (notifications ?? widget.runNotifications)?.unbind(registry);
+    }
     _aiRegistry?.dispose();
     _aiRegistry = null;
     _aiActivity = null;
@@ -217,6 +232,9 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
     );
     activity.attach(registry);
     _aiActivity = activity;
+    // A tap that is waiting re-reads its conversation in this registry; the
+    // shell takes it after this build.
+    widget.runNotifications?.bind(registry);
     return _aiRegistry = registry;
   }
 
@@ -277,6 +295,9 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             lock: widget.lock,
             language: widget.language,
             aiActivity: () => _aiActivity,
+            runNotifications: widget.ai == null
+                ? null
+                : widget.runNotifications,
           ),
         );
         final ai = widget.ai;
@@ -287,9 +308,17 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
           return app;
         }
         final registry = _currentAiRegistry(ai);
+        final scoped = AiScope(
+          controllers: ai,
+          accountKey: accountKey,
+          child: app,
+        );
         return AiRunRegistryScope(
           registry: registry,
-          child: AiScope(controllers: ai, accountKey: accountKey, child: app),
+          child: switch (widget.runNotifications) {
+            final gate? => AiRunNotificationScope(gate: gate, child: scoped),
+            null => scoped,
+          },
         );
       },
     ),
@@ -312,6 +341,7 @@ class _MobileShell extends StatefulWidget {
     this.lock,
     this.language,
     this.aiActivity,
+    this.runNotifications,
   });
   final SessionController session;
   final LauncherShortcuts shortcuts;
@@ -319,6 +349,9 @@ class _MobileShell extends StatefulWidget {
   /// The current account's AI conversations; null (or returning null) when
   /// AI is absent.
   final AiAccountActivity? Function()? aiActivity;
+
+  /// Tapped AI run notifications; null when AI is absent.
+  final AiRunNotificationGate? runNotifications;
   final AppUpdateController? updates;
   final IncomingLinks? incoming;
   final AppLockController? lock;
@@ -384,6 +417,7 @@ class _MobileShellState extends State<_MobileShell> {
     widget.pops.addListener(_chrome.show);
     widget.updates?.addListener(_onUpdates);
     widget.incoming?.addListener(_onIncoming);
+    widget.runNotifications?.addListener(_onRunNotification);
     AiAccountRemoval.changes.addListener(_onRemovalChanged);
     final account = widget.session.active;
     if (account != null) {
@@ -396,6 +430,9 @@ class _MobileShellState extends State<_MobileShell> {
         unawaited(_consumeShortcut());
         // A link may have arrived before sign-in or while the tree was rebuilt.
         unawaited(_consumeIncoming());
+        // So may a tapped run notification, including the one that started
+        // the app.
+        unawaited(_consumeRunNotification());
         // The start-up check may have finished before this shell existed.
         if (widget.updates?.unannounced ?? false) _onUpdates();
       }
@@ -420,6 +457,10 @@ class _MobileShellState extends State<_MobileShell> {
     if (oldWidget.incoming != widget.incoming) {
       oldWidget.incoming?.removeListener(_onIncoming);
       widget.incoming?.addListener(_onIncoming);
+    }
+    if (oldWidget.runNotifications != widget.runNotifications) {
+      oldWidget.runNotifications?.removeListener(_onRunNotification);
+      widget.runNotifications?.addListener(_onRunNotification);
     }
   }
 
@@ -470,6 +511,7 @@ class _MobileShellState extends State<_MobileShell> {
     widget.shortcuts.removeListener(_onShortcut);
     widget.updates?.removeListener(_onUpdates);
     widget.incoming?.removeListener(_onIncoming);
+    widget.runNotifications?.removeListener(_onRunNotification);
     super.dispose();
   }
 
@@ -585,6 +627,53 @@ class _MobileShellState extends State<_MobileShell> {
       _visited.add(_explore);
       _incomingLink = ((_incomingLink?.$1 ?? 0) + 1, link.toString());
     });
+  }
+
+  var _runNotificationQueued = false;
+
+  /// The gate also changes while a build binds a new registry, and while the
+  /// lock opens; navigation waits until the current frame is done.
+  void _onRunNotification() {
+    if (_runNotificationQueued ||
+        !(widget.runNotifications?.waiting ?? false)) {
+      return;
+    }
+    _runNotificationQueued = true;
+    scheduleMicrotask(() {
+      _runNotificationQueued = false;
+      if (mounted) unawaited(_consumeRunNotification());
+    });
+  }
+
+  /// Opens what a tapped run notification points to, only once the app lock
+  /// has opened: the conversation at its waiting approval card, the
+  /// conversation alone when the card is gone, or 首頁 when the conversation
+  /// is no longer this account's. Never approves, switches accounts or reads
+  /// history.
+  Future<void> _consumeRunNotification() async {
+    if (!mounted) return;
+    final open = widget.runNotifications?.take();
+    if (open == null) return;
+    if (!await _bringShellForward() || !mounted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.aiRunNoticeFinishEditFirst)),
+        );
+      }
+      return;
+    }
+    // The lock came back while pages closed: nothing opens behind it.
+    if (widget.lock?.locked ?? false) return;
+    final session = open.session;
+    if (session == null) {
+      _goTo(_home);
+      return;
+    }
+    _chrome.show();
+    if (!await openAiChatSession(context, session, proposal: open.proposal) &&
+        mounted) {
+      _goTo(_home);
+    }
   }
 
   /// Pops pushed routes so the shell is the visible page. A route that refuses

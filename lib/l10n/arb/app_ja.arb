@@ -2754,5 +2754,18 @@
   "activityVerbTargetRef": "{verb}（{target} {ref}）",
   "aiOpSetWorkItemLabels": "ラベルを設定",
   "aiRefusedLabelUnknown": "設定するラベルがこのプロジェクトのラベル一覧にないか、同じ名前のラベルが複数あるため、何も実行されませんでした。",
-  "aiRefusedQuickAction": "/ で始まる行があり、GitLab がクイックアクションとして実行するおそれがあるため、念のためこの書き込みは送信しませんでした。その行を削除するか、コードブロックに入れてください。"
+  "aiRefusedQuickAction": "/ で始まる行があり、GitLab がクイックアクションとして実行するおそれがあるため、念のためこの書き込みは送信しませんでした。その行を削除するか、コードブロックに入れてください。",
+  "aiRunNoticeApprovalChannel": "承認待ちの AI 処理",
+  "aiRunNoticeResultChannel": "AI 処理の結果",
+  "aiRunNoticeTitle": "AI アシスタント",
+  "aiRunNoticeNeedsApproval": "承認を待っている処理があります",
+  "aiRunNoticeCompleted": "処理が完了しました",
+  "aiRunNoticeFailed": "処理に失敗しました",
+  "aiRunNoticeInterrupted": "処理が中断されました",
+  "aiRunNoticeAskTitle": "AI 処理の通知をオンにしますか？",
+  "aiRunNoticeAskDetail": "アプリを離れた後、AI の処理に承認が必要になったときや終わったときに通知でお知らせします。通知には処理の状態だけを表示し、アカウント、プロジェクト、内容は含みません。",
+  "aiRunNoticeAskSkip": "今はしない",
+  "aiRunNoticeAskContinue": "続ける",
+  "aiRunNoticeDenied": "通知はオフです。バックグラウンドの処理に承認が必要になってもお知らせせず、提案は 30 分で無効になります。",
+  "aiRunNoticeFinishEditFirst": "通知を開く前に、今の編集を終えるか閉じてください。"
 }

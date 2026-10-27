@@ -2754,5 +2754,18 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "تعيين التسميات",
   "aiRefusedLabelUnknown": "التسمية المطلوب تعيينها غير موجودة في قائمة تسميات هذا المشروع، أو توجد عدة تسميات بالاسم نفسه، لذا لم يُنفَّذ شيء.",
-  "aiRefusedQuickAction": "يحتوي النص على سطر يبدأ بـ / قد ينفّذه GitLab كإجراء سريع، لذا لم تُرسَل هذه العملية احتياطًا. احذف ذلك السطر أو ضعه في كتلة تعليمات برمجية."
+  "aiRefusedQuickAction": "يحتوي النص على سطر يبدأ بـ / قد ينفّذه GitLab كإجراء سريع، لذا لم تُرسَل هذه العملية احتياطًا. احذف ذلك السطر أو ضعه في كتلة تعليمات برمجية.",
+  "aiRunNoticeApprovalChannel": "عمل AI بانتظار الموافقة",
+  "aiRunNoticeResultChannel": "نتائج عمل AI",
+  "aiRunNoticeTitle": "مساعد AI",
+  "aiRunNoticeNeedsApproval": "توجد مهمة بانتظار موافقتك",
+  "aiRunNoticeCompleted": "انتهت مهمة",
+  "aiRunNoticeFailed": "فشلت مهمة",
+  "aiRunNoticeInterrupted": "توقفت مهمة قبل اكتمالها",
+  "aiRunNoticeAskTitle": "هل تريد تشغيل إشعارات عمل AI؟",
+  "aiRunNoticeAskDetail": "بعد مغادرة التطبيق، يُعلمك إشعار عندما يحتاج عمل AI إلى موافقتك أو عندما ينتهي. لا يعرض الإشعار سوى حالة العمل، ولا يعرض أبدًا الحسابات أو المشاريع أو المحتوى.",
+  "aiRunNoticeAskSkip": "ليس الآن",
+  "aiRunNoticeAskContinue": "متابعة",
+  "aiRunNoticeDenied": "الإشعارات متوقفة: لن تتلقى تذكيرًا عندما يحتاج العمل في الخلفية إلى موافقة، وتنتهي صلاحية الاقتراحات بعد 30 دقيقة.",
+  "aiRunNoticeFinishEditFirst": "أنهِ التعديل الحالي أو أغلقه قبل فتح الإشعار."
 }

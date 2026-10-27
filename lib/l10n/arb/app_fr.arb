@@ -2754,5 +2754,18 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Définir les étiquettes",
   "aiRefusedLabelUnknown": "L’étiquette à appliquer ne figure pas dans la liste des étiquettes de ce projet ou plusieurs étiquettes portent ce nom, donc rien n’a été fait.",
-  "aiRefusedQuickAction": "Le texte contient une ligne commençant par /, que GitLab pourrait exécuter comme quick action ; par précaution, cette action n’a pas été envoyée. Supprimez cette ligne ou placez-la dans un bloc de code."
+  "aiRefusedQuickAction": "Le texte contient une ligne commençant par /, que GitLab pourrait exécuter comme quick action ; par précaution, cette action n’a pas été envoyée. Supprimez cette ligne ou placez-la dans un bloc de code.",
+  "aiRunNoticeApprovalChannel": "Travail IA en attente d’approbation",
+  "aiRunNoticeResultChannel": "Résultats du travail IA",
+  "aiRunNoticeTitle": "Assistant IA",
+  "aiRunNoticeNeedsApproval": "Une tâche attend votre approbation",
+  "aiRunNoticeCompleted": "Une tâche est terminée",
+  "aiRunNoticeFailed": "Une tâche a échoué",
+  "aiRunNoticeInterrupted": "Une tâche a été interrompue",
+  "aiRunNoticeAskTitle": "Activer les notifications du travail IA ?",
+  "aiRunNoticeAskDetail": "Après avoir quitté l’app, une notification vous prévient quand le travail IA a besoin de votre approbation ou se termine. Elle n’affiche que l’état du travail, jamais de comptes, de projets ni de contenu.",
+  "aiRunNoticeAskSkip": "Plus tard",
+  "aiRunNoticeAskContinue": "Continuer",
+  "aiRunNoticeDenied": "Les notifications sont désactivées : aucun rappel quand le travail en arrière-plan a besoin d’approbation, et les propositions expirent après 30 minutes.",
+  "aiRunNoticeFinishEditFirst": "Terminez ou fermez la modification en cours avant d’ouvrir la notification."
 }

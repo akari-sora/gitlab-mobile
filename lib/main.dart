@@ -16,6 +16,8 @@ import 'features/ai/ai_account_cleanup.dart';
 import 'features/ai/ai_history.dart';
 import 'features/ai/ai_journal_fence.dart';
 import 'features/ai/ai_journal_key_store.dart';
+import 'features/ai/ai_run_notification_ui.dart';
+import 'features/ai/ai_run_notifications.dart';
 import 'features/ai/ai_scope.dart';
 import 'features/ai/ai_settings_provider.dart';
 import 'features/ai/ai_stores.dart';
@@ -448,6 +450,8 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   late final IncomingLinks _links;
   late final LanguageController _language;
   late final AiControllers? _ai;
+  late final AiRunNotifications? _runNotifications;
+  late final AiRunNotificationGate? _runNotificationGate;
   late final AppLifecycleListener _readCacheLifecycle;
   _SessionRecovery? _sessionRecovery;
   bool _sessionWasActive = false;
@@ -467,6 +471,18 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
       // The controller retains its typed initialization failure for the Me
       // row and settings retry surface; setup must not crash application start.
       unawaited(ai.settings.initialize().catchError((Object _) {}));
+    }
+    // One per process, above the account-keyed tree like the links: a tap
+    // that starts the app is read here and waits for the lock and the shell.
+    // Android only; initializing never asks for the permission.
+    final notifications = _runNotifications = _ai == null
+        ? null
+        : AiRunNotifications(text: aiRunNotificationText);
+    _runNotificationGate = notifications == null
+        ? null
+        : AiRunNotificationGate(notifications, lock: ref.read(appLockProvider));
+    if (notifications != null && notifications.supported) {
+      unawaited(notifications.initialize());
     }
     final session = ref.read(sessionProvider);
     _readCacheLifecycle = AppLifecycleListener(onStateChange: (state) {
@@ -498,6 +514,8 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   void dispose() {
     _readCacheLifecycle.dispose();
     _sessionRecovery?.dispose();
+    _runNotificationGate?.dispose();
+    _runNotifications?.dispose();
     _language.removeListener(_languageChanged);
     super.dispose();
   }
@@ -530,7 +548,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
         return AuthenticatedApp(
           key: ValueKey(session.generation), session: session, appearance: appearance, shortcuts: _shortcuts,
           updates: ref.read(appUpdateProvider), incoming: _links, lock: ref.read(appLockProvider),
-          language: _language, ai: _ai,
+          language: _language, ai: _ai, runNotifications: _runNotificationGate,
         );
       }
       return DynamicColorBuilder(builder: (light, dark) {

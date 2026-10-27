@@ -2754,5 +2754,18 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Tetapkan label",
   "aiRefusedLabelUnknown": "Label yang hendak ditetapkan tiada dalam senarai label projek ini, atau beberapa label mempunyai nama yang sama, jadi tiada apa-apa yang dilakukan.",
-  "aiRefusedQuickAction": "Teks mempunyai baris yang bermula dengan /, yang mungkin dijalankan oleh GitLab sebagai quick action, jadi demi keselamatan tindakan ini tidak dihantar. Buang baris itu atau letakkannya dalam blok kod."
+  "aiRefusedQuickAction": "Teks mempunyai baris yang bermula dengan /, yang mungkin dijalankan oleh GitLab sebagai quick action, jadi demi keselamatan tindakan ini tidak dihantar. Buang baris itu atau letakkannya dalam blok kod.",
+  "aiRunNoticeApprovalChannel": "Kerja AI menunggu kelulusan",
+  "aiRunNoticeResultChannel": "Hasil kerja AI",
+  "aiRunNoticeTitle": "Pembantu AI",
+  "aiRunNoticeNeedsApproval": "Ada tugas yang menunggu kelulusan anda",
+  "aiRunNoticeCompleted": "Satu tugas selesai",
+  "aiRunNoticeFailed": "Satu tugas gagal",
+  "aiRunNoticeInterrupted": "Satu tugas terganggu",
+  "aiRunNoticeAskTitle": "Hidupkan pemberitahuan kerja AI?",
+  "aiRunNoticeAskDetail": "Selepas anda meninggalkan apl, pemberitahuan akan memaklumkan apabila kerja AI memerlukan kelulusan anda atau selesai. Ia hanya menunjukkan status kerja, tidak sekali-kali akaun, projek atau kandungan.",
+  "aiRunNoticeAskSkip": "Bukan sekarang",
+  "aiRunNoticeAskContinue": "Teruskan",
+  "aiRunNoticeDenied": "Pemberitahuan dimatikan: anda tidak akan diingatkan apabila kerja di latar belakang memerlukan kelulusan, dan cadangan luput selepas 30 minit.",
+  "aiRunNoticeFinishEditFirst": "Selesaikan atau tutup suntingan semasa sebelum membuka pemberitahuan."
 }

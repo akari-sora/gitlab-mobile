@@ -2754,5 +2754,18 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Imposta etichette",
   "aiRefusedLabelUnknown": "L’etichetta da impostare non è nell’elenco delle etichette di questo progetto oppure più etichette hanno questo nome, quindi non è stato fatto nulla.",
-  "aiRefusedQuickAction": "Il testo contiene una riga che inizia con /, che GitLab potrebbe eseguire come quick action, quindi per sicurezza questa azione non è stata inviata. Rimuovi quella riga o mettila in un blocco di codice."
+  "aiRefusedQuickAction": "Il testo contiene una riga che inizia con /, che GitLab potrebbe eseguire come quick action, quindi per sicurezza questa azione non è stata inviata. Rimuovi quella riga o mettila in un blocco di codice.",
+  "aiRunNoticeApprovalChannel": "Attività IA in attesa di approvazione",
+  "aiRunNoticeResultChannel": "Risultati delle attività IA",
+  "aiRunNoticeTitle": "Assistente IA",
+  "aiRunNoticeNeedsApproval": "Un’attività attende la tua approvazione",
+  "aiRunNoticeCompleted": "Un’attività è terminata",
+  "aiRunNoticeFailed": "Un’attività non è riuscita",
+  "aiRunNoticeInterrupted": "Un’attività è stata interrotta",
+  "aiRunNoticeAskTitle": "Attivare le notifiche delle attività IA?",
+  "aiRunNoticeAskDetail": "Dopo che esci dall’app, una notifica ti avvisa quando un’attività IA richiede la tua approvazione o termina. Mostra solo lo stato dell’attività, mai account, progetti o contenuti.",
+  "aiRunNoticeAskSkip": "Non ora",
+  "aiRunNoticeAskContinue": "Continua",
+  "aiRunNoticeDenied": "Le notifiche sono disattivate: non riceverai avvisi quando un’attività in background richiede approvazione, e le proposte scadono dopo 30 minuti.",
+  "aiRunNoticeFinishEditFirst": "Completa o chiudi la modifica in corso prima di aprire la notifica."
 }

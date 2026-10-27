@@ -2754,5 +2754,18 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Đặt nhãn",
   "aiRefusedLabelUnknown": "Nhãn cần đặt không có trong danh sách nhãn của project này, hoặc có nhiều nhãn trùng tên, nên chưa có gì được thực hiện.",
-  "aiRefusedQuickAction": "Văn bản có một dòng bắt đầu bằng /, GitLab có thể chạy nó như một quick action, nên để an toàn thao tác này chưa được gửi. Hãy xóa dòng đó hoặc đặt nó vào khối mã."
+  "aiRefusedQuickAction": "Văn bản có một dòng bắt đầu bằng /, GitLab có thể chạy nó như một quick action, nên để an toàn thao tác này chưa được gửi. Hãy xóa dòng đó hoặc đặt nó vào khối mã.",
+  "aiRunNoticeApprovalChannel": "Tác vụ AI chờ phê duyệt",
+  "aiRunNoticeResultChannel": "Kết quả tác vụ AI",
+  "aiRunNoticeTitle": "Trợ lý AI",
+  "aiRunNoticeNeedsApproval": "Có một tác vụ đang chờ bạn phê duyệt",
+  "aiRunNoticeCompleted": "Một tác vụ đã xong",
+  "aiRunNoticeFailed": "Một tác vụ đã thất bại",
+  "aiRunNoticeInterrupted": "Một tác vụ đã bị gián đoạn",
+  "aiRunNoticeAskTitle": "Bật thông báo tác vụ AI?",
+  "aiRunNoticeAskDetail": "Sau khi bạn rời ứng dụng, một thông báo sẽ cho bạn biết khi tác vụ AI cần bạn phê duyệt hoặc đã kết thúc. Thông báo chỉ hiện trạng thái tác vụ, không bao giờ hiện tài khoản, dự án hay nội dung.",
+  "aiRunNoticeAskSkip": "Để sau",
+  "aiRunNoticeAskContinue": "Tiếp tục",
+  "aiRunNoticeDenied": "Thông báo đang tắt: bạn sẽ không được nhắc khi tác vụ chạy nền cần phê duyệt, và đề xuất hết hiệu lực sau 30 phút.",
+  "aiRunNoticeFinishEditFirst": "Hãy hoàn tất hoặc đóng phần chỉnh sửa hiện tại trước khi mở thông báo."
 }

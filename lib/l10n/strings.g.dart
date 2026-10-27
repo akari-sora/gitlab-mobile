@@ -8358,4 +8358,43 @@ final class AppStrings {
 
   /// 內容有以 / 開頭的一行，GitLab 可能把它當成快捷指令執行，為了安全這筆寫入沒有送出。請刪除那一行，或改放進程式碼區塊。
   String get aiRefusedQuickAction => language._messages[2754];
+
+  /// AI 工作待核准
+  String get aiRunNoticeApprovalChannel => language._messages[2755];
+
+  /// AI 工作結果
+  String get aiRunNoticeResultChannel => language._messages[2756];
+
+  /// AI 助理
+  String get aiRunNoticeTitle => language._messages[2757];
+
+  /// 有一項工作等你核准
+  String get aiRunNoticeNeedsApproval => language._messages[2758];
+
+  /// 工作已完成
+  String get aiRunNoticeCompleted => language._messages[2759];
+
+  /// 工作失敗
+  String get aiRunNoticeFailed => language._messages[2760];
+
+  /// 工作已中斷
+  String get aiRunNoticeInterrupted => language._messages[2761];
+
+  /// 開啟 AI 工作通知？
+  String get aiRunNoticeAskTitle => language._messages[2762];
+
+  /// 離開應用程式後，AI 工作需要你核准或結束時，會用通知提醒你。通知只顯示工作狀態，不含帳號、專案或內容。
+  String get aiRunNoticeAskDetail => language._messages[2763];
+
+  /// 暫時不要
+  String get aiRunNoticeAskSkip => language._messages[2764];
+
+  /// 繼續
+  String get aiRunNoticeAskContinue => language._messages[2765];
+
+  /// 通知已關閉：工作在背景中需要核准時不會提醒你，提議會在 30 分鐘後作廢。
+  String get aiRunNoticeDenied => language._messages[2766];
+
+  /// 請先完成或關閉目前的編輯，再開啟通知
+  String get aiRunNoticeFinishEditFirst => language._messages[2767];
 }

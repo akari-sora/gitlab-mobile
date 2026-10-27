@@ -2754,5 +2754,18 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Atur label",
   "aiRefusedLabelUnknown": "Label yang akan diatur tidak ada dalam daftar label proyek ini, atau beberapa label memiliki nama yang sama, jadi tidak ada yang dilakukan.",
-  "aiRefusedQuickAction": "Teks berisi baris yang diawali /, yang bisa dijalankan GitLab sebagai quick action, jadi demi keamanan tindakan ini tidak dikirim. Hapus baris itu atau taruh di blok kode."
+  "aiRefusedQuickAction": "Teks berisi baris yang diawali /, yang bisa dijalankan GitLab sebagai quick action, jadi demi keamanan tindakan ini tidak dikirim. Hapus baris itu atau taruh di blok kode.",
+  "aiRunNoticeApprovalChannel": "Pekerjaan AI menunggu persetujuan",
+  "aiRunNoticeResultChannel": "Hasil pekerjaan AI",
+  "aiRunNoticeTitle": "Asisten AI",
+  "aiRunNoticeNeedsApproval": "Ada tugas yang menunggu persetujuan Anda",
+  "aiRunNoticeCompleted": "Sebuah tugas selesai",
+  "aiRunNoticeFailed": "Sebuah tugas gagal",
+  "aiRunNoticeInterrupted": "Sebuah tugas terhenti",
+  "aiRunNoticeAskTitle": "Aktifkan notifikasi pekerjaan AI?",
+  "aiRunNoticeAskDetail": "Setelah Anda meninggalkan aplikasi, notifikasi memberi tahu saat pekerjaan AI memerlukan persetujuan Anda atau selesai. Notifikasi hanya menampilkan status pekerjaan, tidak pernah akun, proyek, atau konten.",
+  "aiRunNoticeAskSkip": "Nanti saja",
+  "aiRunNoticeAskContinue": "Lanjutkan",
+  "aiRunNoticeDenied": "Notifikasi nonaktif: Anda tidak akan diingatkan saat pekerjaan di latar belakang memerlukan persetujuan, dan proposal kedaluwarsa setelah 30 menit.",
+  "aiRunNoticeFinishEditFirst": "Selesaikan atau tutup pengeditan saat ini sebelum membuka notifikasi."
 }
