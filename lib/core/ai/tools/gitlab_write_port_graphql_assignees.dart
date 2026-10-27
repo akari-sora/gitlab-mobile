@@ -152,6 +152,7 @@ extension _GraphqlAssigneesPrepare on GitLabAiWritePort {
               projection: {'assigneeUsernames': usernames},
             );
           } on ApiFailure catch (failure) {
+            if (identical(failure, hooks.blockedBeforeSend)) rethrow;
             throw AiWriteRefused(_graphqlAssigneeFailureCode(failure));
           }
         },

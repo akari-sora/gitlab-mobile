@@ -4,9 +4,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/c2d7_barrier.dart';
 
 const _actorId = 'gid://gitlab/User/7';
 final _openedAt = DateTime.utc(2026, 10, 3, 8);
@@ -182,6 +184,54 @@ Future<WorkItemContentTarget> _target(
 )).target!;
 
 void main() {
+  test('C2-D7 content barrier failure preserves failure and does not report sent', () async {
+    final adapter = FakeAdapter((_) => jsonResponse(_read()));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = await _target(api);
+    final backend = C2d7Barrier();
+    api.bindReadCache('https://example.com/gitlab#7', 1);
+    api.attachReadCacheDiskBackend(backend);
+    var sent = false;
+    await expectLater(api.updateWorkItemContent(target, title: 'changed',
+        onMutationSent: () => sent = true), throwsA(
+      isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.readCacheCleanup)
+        .having((e) => e.cleanup?.disposition, 'disposition', ReadCacheCleanupDisposition.requestBlockedBeforeSend),
+    ));
+    expect(sent, isFalse);
+    expect(adapter.requests.where(_mutation), isEmpty);
+  });
+
+  test('C2-D7 accepted call remains in flight across disk barrier', () async {
+    final adapter = FakeAdapter((request) => _mutation(request)
+        ? jsonResponse({}, status: 500) : jsonResponse(_read()));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = await _target(api);
+    final held = Completer<DiskClearResult>();
+    final backend = C2d7Barrier()..onInvalidate = () => held.future;
+    api.bindReadCache('https://example.com/gitlab#7', 1);
+    api.attachReadCacheDiskBackend(backend);
+    var allow = true;
+    var checks = 0;
+    var sent = false;
+    final pending = api.updateWorkItemContent(target, title: 'changed',
+      beforeMutation: () async {}, mayStart: () { checks++; return allow; },
+      onMutationSent: () => sent = true);
+    final check = expectLater(pending, throwsA(_failure(FailureKind.writeUncertain)));
+    await backend.entered.future;
+    expect(checks, 1);
+    expect(sent, isFalse);
+    expect(adapter.requests.where(_mutation), isEmpty);
+    // The v6 §12 acceptance point is the synchronous mayStart recheck.
+    allow = false;
+    held.complete(c2d7Clear);
+    await check;
+    expect(checks, 1);
+    expect(sent, isTrue);
+    expect(adapter.requests.where(_mutation), hasLength(1));
+  });
+
   for (final group in [false, true]) {
     test(
       '${group ? 'group' : 'project'} read returns fresh raw content and exact actor-bound target',

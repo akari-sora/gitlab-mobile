@@ -325,14 +325,16 @@ extension WorkItemDatesApi on GitLabApi {
       'id': target.summary.id,
       'startAndDueDateWidget': widget,
     };
-    onMutationSent();
     if (mayStart != null && !mayStart()) throw _datesCancelled;
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
+    var didSend = false;
     try {
       response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        beforeSend: () => onMutationSent(),
+        onSendStarted: () => didSend = true,
         data: {
           'query': target.edition == WorkItemDatesEdition.ee
               ? _datesEeMutation
@@ -340,7 +342,8 @@ extension WorkItemDatesApi on GitLabApi {
           'variables': {'input': input},
         },
       );
-    } on Object {
+    } on Object catch (error) {
+      if (_graphDefinitelyNotSent(error, didSend)) rethrow;
       return _datesUncertainResult;
     }
 

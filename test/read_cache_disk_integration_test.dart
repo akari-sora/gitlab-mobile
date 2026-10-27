@@ -1661,4 +1661,115 @@ void main() {
     expect(read.value, stored.body);
     expect(freshAdapter.requests, isEmpty);
   });
+
+  for (final (status, confidentialSibling, missingConfidential) in [
+    (403, false, false),
+    (404, false, false),
+    (403, true, false),
+    (404, true, false),
+    (403, false, true),
+    (404, false, true),
+  ]) {
+    test(
+      'issue $status fences an in-flight list from republishing deleted encrypted data${confidentialSibling ? ' with a confidential sibling' : ''}${missingConfidential ? ' without a confidential field' : ''}',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await h.recover();
+        final held = Completer<ResponseBody>();
+        var holdList = false;
+        final adapter = FakeAdapter((request) {
+          if (request.uri.path.endsWith('/issues/2')) {
+            return jsonResponse({}, status: status);
+          }
+          return holdList ? held.future : jsonResponse([_issue()]);
+        });
+        final api = await h.client(1, adapter);
+        final binding = DiskBinding(accountKey: _account, generation: 1);
+        final listUri = _instance.api(
+          ['projects', '1', 'issues'],
+          {'per_page': '30'},
+        );
+        await api.cachedRecords(['projects', '1', 'issues']);
+        await h.coordinator.flush(binding);
+        expect(await h.entry(listUri, 'application/json'), isNotNull);
+        holdList = true;
+        final pending = api.cachedRecords([
+          'projects',
+          '1',
+          'issues',
+        ], fresh: true);
+        for (var i = 0; i < 20 && adapter.requests.length < 2; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        expect(adapter.requests, hasLength(2));
+        await expectLater(
+          api.record(['projects', '1', 'issues', '2']),
+          throwsA(isA<ApiFailure>()),
+        );
+        await h.coordinator.quiesced;
+        expect(await h.entry(listUri, 'application/json'), isNull);
+        final inFlightIssue = {..._issue()};
+        if (missingConfidential) inFlightIssue.remove('confidential');
+        held.complete(
+          jsonResponse([
+            inFlightIssue,
+            if (confidentialSibling) {..._issue(iid: 3), 'confidential': true},
+          ]),
+        );
+        await pending;
+        await h.coordinator.flush(binding);
+        await h.coordinator.quiesced;
+        expect(await h.entry(listUri, 'application/json'), isNull);
+        holdList = false;
+        final priorRequests = adapter.requests.length;
+        final retry = await api.cachedRecords(['projects', '1', 'issues']);
+        expect(retry.lineage, CacheLineage.network);
+        expect(adapter.requests, hasLength(priorRequests + 1));
+      },
+    );
+  }
+
+  test(
+    'adapter rejects foreign bindings without changing stored account',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.recover();
+      final api = await h.client(
+        1,
+        FakeAdapter((_) => jsonResponse([_issue()])),
+      );
+      final binding = DiskBinding(accountKey: _account, generation: 1);
+      final foreign = DiskBinding(accountKey: _account, generation: 2);
+      final adapter = CoordinatedReadCacheDiskBackend(
+        coordinator: h.coordinator,
+        binding: binding,
+      );
+      final uri = _instance.api(
+        ['projects', '1', 'issues'],
+        {'per_page': '30'},
+      );
+      await api.cachedRecords(['projects', '1', 'issues']);
+      await h.coordinator.flush(binding);
+      expect(await h.entry(uri, 'application/json'), isNotNull);
+      expect(
+        () => adapter.invalidate(
+          DiskInvalidation(
+            binding: foreign,
+            kind: DiskInvalidationKind.account,
+          ),
+        ),
+        throwsArgumentError,
+      );
+      adapter.revoke(foreign);
+      await expectLater(
+        adapter.clear(foreign, ReadCacheCleanupOperation.accountRemoval),
+        throwsArgumentError,
+      );
+      expect(await h.entry(uri, 'application/json'), isNotNull);
+      final reread = await api.cachedRecords(['projects', '1', 'issues']);
+      expect(reread.lineage, CacheLineage.memory);
+    },
+  );
 }

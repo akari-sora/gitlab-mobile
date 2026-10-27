@@ -63,10 +63,12 @@ final class CacheDiskEntry {
     required this.value,
     required this.fetchedAt,
     required this.responseBytes,
+    this.issueIdentities = const {},
   });
   final Object value;
   final DateTime fetchedAt;
   final int responseBytes;
+  final Set<ReadCacheIssueIdentity> issueIdentities;
 }
 
 /// Receives the caller-form REST URI, including unresolved project aliases,
@@ -463,6 +465,26 @@ final class _ReadCache {
     }
   }
 
+  void discardDiskKey(Uri uri, String accept) {
+    final binding = diskBinding;
+    if (binding == null || diskBackend == null || api._closed) return;
+    final key = readCacheDurableKey(
+      binding: binding,
+      instance: api.instance,
+      uri: uri,
+      logicalAccept: accept,
+      verifiedProjectAliases: projectionContext().verifiedProjectAliases,
+    );
+    if (key == null) return;
+    invalidateDisk(
+      DiskInvalidation(
+        binding: binding,
+        kind: DiskInvalidationKind.permission,
+        canonicalKey: key,
+      ),
+    );
+  }
+
   ReadCacheProjectionContext projectionContext() {
     final binding = diskBinding!;
     final current = <String, int>{'global': 0, ...versions};
@@ -611,6 +633,7 @@ final class _ReadCache {
     Map<String, int> permission,
     Map<String, int> stamp, {
     required void Function() rejectedPrivacy,
+    required bool Function() canDiscard,
   }) async {
     final backend = diskBackend;
     if (backend == null) return api._readCacheSource?.call(uri, accept);
@@ -633,30 +656,58 @@ final class _ReadCache {
           permitted(permission, uri) &&
           stable(stamp),
     );
+    Future<void> discardInvalidEntry() async {
+      if (!lease.isCurrent ||
+          !canDiscard() ||
+          diskBinding != binding ||
+          api._closed) {
+        return;
+      }
+      invalidateDisk(
+        DiskInvalidation(
+          binding: binding,
+          kind: DiskInvalidationKind.permission,
+          canonicalKey: key,
+        ),
+      );
+      await settleDiskSafety();
+      if (api._closed) throw const ApiFailure(FailureKind.cancelled);
+    }
+
     try {
       final entry = await backend.lookup(
         DiskLookup(binding: binding, canonicalKey: key, lease: lease),
       );
-      if (entry == null ||
-          !lease.isCurrent ||
-          entry.bodyKind != kind ||
-          entry.canonicalKey != key ||
-          entry.accountKey != binding.accountKey) {
+      if (entry == null || !lease.isCurrent) return null;
+      if (entry.canonicalKey != key || entry.accountKey != binding.accountKey) {
+        await discardInvalidEntry();
+        return null;
+      }
+      if (entry.bodyKind != kind) {
+        await discardInvalidEntry();
         return null;
       }
       Object raw = entry.body;
       Uri? next;
       if (kind == ReadCacheBodyKind.page) {
         if (raw is! Map<String, Object?> || raw['items'] is! List<Object?>) {
+          await discardInvalidEntry();
           return null;
         }
         final rawNext = raw['next'];
-        if (rawNext != null && rawNext is! String) return null;
+        if (rawNext != null && rawNext is! String) {
+          await discardInvalidEntry();
+          return null;
+        }
         next = rawNext == null ? null : Uri.tryParse(rawNext as String);
-        if (rawNext != null && next == null) return null;
+        if (rawNext != null && next == null) {
+          await discardInvalidEntry();
+          return null;
+        }
         try {
           api._validateContinuation(uri, next);
         } on ApiFailure {
+          await discardInvalidEntry();
           return null;
         }
         raw = raw['items']!;
@@ -675,6 +726,7 @@ final class _ReadCache {
       try {
         projectionInput = diskProjectionInput(raw);
       } on FormatException {
+        await discardInvalidEntry();
         return null;
       }
       final current = projectionContext();
@@ -710,6 +762,7 @@ final class _ReadCache {
           projected.cacheClass != entry.cacheClass ||
           projected.issueIdentities.length != entry.issueIdentities.length ||
           !projected.issueIdentities.containsAll(entry.issueIdentities)) {
+        await discardInvalidEntry();
         return null;
       }
       final Object value = kind == ReadCacheBodyKind.page
@@ -726,6 +779,7 @@ final class _ReadCache {
         value: value,
         fetchedAt: entry.fetchedAt,
         responseBytes: entry.serializedLength,
+        issueIdentities: entry.issueIdentities,
       );
     } finally {
       lease.revoke();
@@ -777,6 +831,8 @@ final class _ReadCache {
           diskRevisions[finalKey] == ticket &&
           permitted(permission, uri) &&
           stable(stamp) &&
+          (projected == null ||
+              issuePermissionsAllowed(projected.issueIdentities, permission)) &&
           (!stamp.containsKey('global') || !active(scope(uri))) &&
           (projected?.issueIdentities.every(
                 (id) =>
@@ -831,7 +887,11 @@ final class _ReadCache {
       }
       return;
     }
-    backend.accept(event, entry);
+    if (!issuePermissionsAllowed(entry.issueIdentities, permission)) {
+      lease.revoke();
+      return;
+    }
+    if (lease.isCurrent) backend.accept(event, entry);
   }
 
   void bind(String key, int value) {
@@ -1135,17 +1195,19 @@ final class _ReadCache {
     );
   }
 
-  void observeLoadedPrivacy(
+  bool observeLoadedPrivacy(
     Uri uri,
     Object value, {
     CacheLineage lineage = CacheLineage.network,
     DateTime? fetchedAt,
+    Set<ReadCacheIssueIdentity>? issueIdentities,
   }) {
-    observeRawPrivacy(
+    return observeRawPrivacy(
       uri,
       value is ApiPage<Json> ? value.items : value,
       lineage: lineage,
       fetchedAt: fetchedAt,
+      issueIdentities: issueIdentities,
     );
   }
 
@@ -1157,6 +1219,7 @@ final class _ReadCache {
     Object root, {
     CacheLineage lineage = CacheLineage.network,
     DateTime? fetchedAt,
+    Set<ReadCacheIssueIdentity>? issueIdentities,
   }) {
     var valid = true;
     var nodes = 0;
@@ -1196,6 +1259,9 @@ final class _ReadCache {
             value['iid'] ??
             (directIssue && depth == 1 ? int.tryParse(p[3]) : null);
         final confidential = value['confidential'];
+        if (project is int && project > 0 && iid is int && iid > 0) {
+          issueIdentities?.add(ReadCacheIssueIdentity(project, iid));
+        }
         if (project is int &&
             project > 0 &&
             iid is int &&
@@ -1368,6 +1434,36 @@ final class _ReadCache {
     return current.entries
         .where((e) => e.key != 'account' && e.key != 'sequence')
         .every((e) => e.value <= (stamp['sequence'] ?? 0));
+  }
+
+  bool issuePermissionsAllowed(
+    Set<ReadCacheIssueIdentity> identities,
+    Map<String, int> stamp, {
+    DateTime? fetchedAt,
+  }) {
+    if (stamp['account'] != epoch ||
+        (stamp['sequence'] ?? 0) < revocationFloor) {
+      return false;
+    }
+    for (final id in identities) {
+      final identity = jsonEncode([
+        'projects',
+        '${id.projectId}',
+        'issues',
+        '${id.iid}',
+      ]);
+      final revokedAt = sourceRevocations[identity];
+      if (revokedAt != null &&
+          (revocations[identity] ?? 0) > (stamp['sequence'] ?? 0)) {
+        return false;
+      }
+      if (fetchedAt != null &&
+          revokedAt != null &&
+          !fetchedAt.isAfter(revokedAt)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   bool sourceAllowed(Uri uri, DateTime fetchedAt, bool pinned) {
@@ -1556,6 +1652,7 @@ final class _ReadCache {
       final value = _freezeCached(loaded.value) as T;
       observeLoadedPrivacy(uri, value);
       await settleDiskSafety();
+      if (api._closed) throw const ApiFailure(FailureKind.cancelled);
       validate?.call(value);
       return CachedRead<T>(
         value: value,
@@ -1603,7 +1700,10 @@ final class _ReadCache {
       final age = api._readCacheClock().difference(entry.fetchedAt);
       return (allowDisk || entry.lineage != CacheLineage.disk) &&
           age >= Duration.zero &&
-          age < retention(entry.policy) &&
+          age <
+              (entry.lineage == CacheLineage.disk
+                  ? const Duration(days: 7)
+                  : retention(entry.policy)) &&
           (maxAge == null || age < maxAge);
     }
 
@@ -1629,7 +1729,11 @@ final class _ReadCache {
       if (cached != null) {
         bytes -= cached.cost;
         final age = api._readCacheClock().difference(cached.fetchedAt);
-        if (age >= Duration.zero && age < retention(cached.policy)) {
+        if (age >= Duration.zero &&
+            age <
+                (cached.lineage == CacheLineage.disk
+                    ? const Duration(days: 7)
+                    : retention(cached.policy))) {
           entries[cacheKey] = cached;
           bytes += cached.cost;
           if (usable(cached) && servesProjectRequest(cached.value)) {
@@ -1669,6 +1773,8 @@ final class _ReadCache {
                 rejectedPrivacy: () {
                   rejectedPrivacy = true;
                 },
+                canDiscard: () =>
+                    ownsPublication(cacheKey, uri, accept, hydrationTicket),
               ),
               cancelled.future,
             ]);
@@ -1708,22 +1814,52 @@ final class _ReadCache {
               servesProjectRequest(newer.value)) {
             return result(newer);
           }
+          final servesHydrated =
+              hydrated == null || servesProjectRequest(hydrated.value);
+          if (!servesHydrated && ownsHydration && permitted(permission, uri)) {
+            discardDiskKey(uri, accept);
+            await settleDiskSafety();
+            if (api._closed) throw const ApiFailure(FailureKind.cancelled);
+          }
           if (!identityMismatch &&
               ownsHydration &&
               hydrated != null &&
               hydrated.value is T &&
               hydrated.responseBytes >= 0 &&
               hydrated.responseBytes <= entryLimit &&
-              servesProjectRequest(hydrated.value)) {
+              servesHydrated) {
             final value = _freezeCached(hydrated.value) as T;
-            final privacyAllowed = observeRawPrivacy(
+            var privacyAllowed = observeRawPrivacy(
               uri,
               value is ApiPage<Json> ? value.items : value,
               lineage: CacheLineage.disk,
               fetchedAt: hydrated.fetchedAt,
             );
             await settleDiskSafety();
-            if (!privacyAllowed &&
+            if (api._closed) throw const ApiFailure(FailureKind.cancelled);
+            privacyAllowed =
+                observeRawPrivacy(
+                  uri,
+                  value is ApiPage<Json> ? value.items : value,
+                  lineage: CacheLineage.disk,
+                  fetchedAt: hydrated.fetchedAt,
+                ) &&
+                privacyAllowed;
+            final issuePermissionAllowed = issuePermissionsAllowed(
+              hydrated.issueIdentities,
+              permission,
+              fetchedAt: hydrated.fetchedAt,
+            );
+            if (!privacyAllowed || !issuePermissionAllowed) {
+              if (!issuePermissionAllowed &&
+                  ownsPublication(cacheKey, uri, accept, hydrationTicket) &&
+                  permitted(permission, uri)) {
+                discardDiskKey(uri, accept);
+              }
+              await settleDiskSafety();
+              if (api._closed) throw const ApiFailure(FailureKind.cancelled);
+            }
+            if ((!privacyAllowed || !issuePermissionAllowed) &&
                 permission['account'] == epoch &&
                 !api._closed) {
               permission = permissions(uri);
@@ -1743,6 +1879,9 @@ final class _ReadCache {
               hydrated.responseBytes * 4,
             );
             if (privacyAllowed &&
+                issuePermissionAllowed &&
+                permitted(permission, uri) &&
+                permitted(permission, canonicalUri) &&
                 ownsPublication(
                   cacheKey,
                   uri,
@@ -1853,11 +1992,18 @@ final class _ReadCache {
           }
           final wasCurrent = stable(start) && (pinned || !active(readScope));
           final beforePrivacy = privacyEpoch;
-          observeLoadedPrivacy(uri, loaded.value, fetchedAt: fetchedAt);
+          final observedIssues = <ReadCacheIssueIdentity>{};
+          final privacyAllowed = observeLoadedPrivacy(
+            uri,
+            loaded.value,
+            fetchedAt: fetchedAt,
+            issueIdentities: observedIssues,
+          );
           if (wasCurrent && privacyEpoch != beforePrivacy) {
             start = snapshot(readScope, !canCache || pinned);
           }
           await settleDiskSafety();
+          if (api._closed) throw const ApiFailure(FailureKind.cancelled);
           final consistent = stable(start) && (pinned || !active(readScope));
           if (canCache && !pinned && !consistent && waited && attempt == 0) {
             release(background);
@@ -1887,18 +2033,26 @@ final class _ReadCache {
               pathPublicationKey(uri, accept, value: value),
               ticket,
             );
-            publishDisk<T>(
-              canonicalUri,
-              accept,
-              value,
-              fetchedAt,
-              loaded.bytes,
-              loaded.store && loaded.bytes <= entryLimit,
-              ticket,
-              permission,
-              start,
-            );
-            if (!loaded.store || loaded.bytes > entryLimit) {
+            // Memory admission cannot depend on disk projection succeeding.
+            final issuePermissionAllowed =
+                privacyAllowed &&
+                issuePermissionsAllowed(observedIssues, permission);
+            if (issuePermissionAllowed) {
+              publishDisk<T>(
+                canonicalUri,
+                accept,
+                value,
+                fetchedAt,
+                loaded.bytes,
+                loaded.store && loaded.bytes <= entryLimit,
+                ticket,
+                permission,
+                start,
+              );
+            }
+            if (!issuePermissionAllowed ||
+                !loaded.store ||
+                loaded.bytes > entryLimit) {
               final removed = entries.remove(finalKey);
               if (removed != null) bytes -= removed.cost;
             } else {
@@ -2109,8 +2263,8 @@ final class _ReadCache {
         ),
       );
     }
-    // A collection failure revokes that query, not every resource below
-    // /projects or /groups. Only a project detail revokes its whole project.
+    // V2: collection failures intentionally revoke only that query in memory.
+    // Only a project detail revokes its whole project.
     if (collection) {
       final request = requestRevocationKey(uri);
       if (!privacy) api._readEpoch++;

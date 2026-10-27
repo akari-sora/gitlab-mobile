@@ -204,11 +204,15 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
     if (mayStart != null && !mayStart()) {
       throw const ApiFailure(FailureKind.cancelled);
     }
+    var didSend = false;
     try {
       final response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        onSendStarted: () {
+          didSend = true;
+        },
         data: {
           'query': awarded
               ? _workItemActivityReactionAddMutation
@@ -233,7 +237,8 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
           throw const FormatException('Wrong reaction acknowledgement');
         }
       }
-    } on Object {
+    } on Object catch (error) {
+      if (_graphDefinitelyNotSent(error, didSend)) rethrow;
       throw const ApiFailure(FailureKind.writeUncertain);
     }
 

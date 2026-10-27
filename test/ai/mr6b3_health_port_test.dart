@@ -21,6 +21,7 @@ import 'package:gitlab_mobile/core/work_item_health_edit_models.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 
+import '../support/c2d7_barrier.dart';
 import '../support/fake_adapter.dart';
 import '../support/work_item_health_fixture.dart';
 import 'mr6b3_support.dart';
@@ -620,6 +621,27 @@ final class _RealP5CoordinatorHarness {
 }
 
 void main() {
+
+  test('C2-D7 health barrier failure releases registry for a fresh retry', () async {
+    final server = _HealthServer();
+    addTearDown(server.close);
+    server.api.bindReadCache(_account, 1);
+    final barrier = C2d7Barrier();
+    server.api.attachReadCacheDiskBackend(barrier);
+    final registry = _Registry();
+    final port = _port(server, registry);
+    final first = await port.prepare(_request('onTrack'));
+    expect(await _commit(port, first), _notSent('readCacheCleanup'));
+    expect(registry.settledResult, AiWorkItemWriteResult.notSent);
+    expect(server.mutations, 0);
+    barrier.blocked = false;
+    final retry = await port.prepare(_request('onTrack', executionId: 'health-retry'));
+    final retryOutcome = await _commit(port, retry);
+    expect(retryOutcome, isA<AiWriteSettled>());
+    expect(registry.settledResult, AiWorkItemWriteResult.confirmed);
+    expect(server.mutations, 1);
+  });
+
   test('P5 ledger row is a visible T2 graph with the fixed cap and enum', () {
     final row = productionAiLedger.find(_operation)!;
     expect(row.baseTier, AiWriteTier.t2);
@@ -796,7 +818,7 @@ void main() {
 
     final outcome = await prepared.commitGraph(mayStart: () => true);
 
-    expect(outcome, _notSent('graphContractViolation'));
+    expect(outcome, _notSent('invalidResponse'));
     expect(boundaryCalls, 1);
     expect(server.mutations, 0);
   });
@@ -1348,15 +1370,15 @@ void main() {
       final before = method.indexOf(
         'if (beforeMutation != null) await beforeMutation();',
       );
-      final callback = method.indexOf('onMutationSent?.call();');
+      final callback = method.indexOf('beforeSend: () {');
       final mayStart = method.indexOf('if (mayStart != null && !mayStart())');
       final send = method.indexOf("final response = await _send(");
       final sendTry = method.lastIndexOf('try {', send);
       expect(before, greaterThan(0));
-      expect(callback, greaterThan(before));
-      expect(mayStart, greaterThan(callback));
+      expect(mayStart, greaterThan(before));
       expect(send, greaterThan(mayStart));
       expect(sendTry, greaterThan(mayStart));
+      expect(callback, greaterThan(send));
       expect(method, contains("'healthStatusWidget': <String, Object?>{"));
       expect(method, contains("'healthStatus': desired?.graphValue"));
       expect(method, isNot(contains("'rolledUpHealthStatus':")));

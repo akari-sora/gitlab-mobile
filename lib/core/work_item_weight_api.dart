@@ -190,15 +190,25 @@ extension WorkItemWeightApi on GitLabApi {
 
     ({Uint8List bytes, Headers headers, int statusCode}) response;
     if (beforeMutation != null) await beforeMutation();
-    onMutationSent?.call();
     if (mayStart != null && !mayStart()) {
       throw const ApiFailure(FailureKind.cancelled);
     }
+    var didSend = false;
+    var callbackFailed = false;
     try {
       response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        beforeSend: () {
+          try {
+            onMutationSent?.call();
+          } on Object {
+            callbackFailed = true;
+            rethrow;
+          }
+        },
+        onSendStarted: () => didSend = true,
         data: {
           'query': _workItemWeightMutation,
           'variables': {
@@ -209,7 +219,8 @@ extension WorkItemWeightApi on GitLabApi {
           },
         },
       );
-    } on Object {
+    } on Object catch (error) {
+      if (callbackFailed || _graphDefinitelyNotSent(error, didSend)) rethrow;
       throw _weightUncertain;
     }
 

@@ -128,6 +128,9 @@ extension _GraphqlStatusPrepare on GitLabAiWritePort {
             projection: confirmed ? {'candidateId': candidateId} : const {},
           );
         } on WorkItemStatusWriteFailure catch (error) {
+          if (!error.mutationSent && identical(error.failure, hooks.blockedBeforeSend)) {
+            throw error.failure;
+          }
           if (!hooks.accepted) {
             throw AiWriteRefused(switch (error.failure.kind) {
               FailureKind.conflict => 'statusStaleFence',
@@ -139,7 +142,8 @@ extension _GraphqlStatusPrepare on GitLabAiWritePort {
         } finally {
           registry.settle(
             lease,
-            hooks.accepted && settlement != AiWorkItemWriteResult.confirmed
+            hooks.accepted && !hooks.definitelyBlockedBeforeSend &&
+                    settlement != AiWorkItemWriteResult.confirmed
                 ? AiWorkItemWriteResult.uncertain
                 : settlement,
             revision,

@@ -22,17 +22,25 @@ final class CoordinatedReadCacheDiskBackend implements ReadCacheDiskBackend {
   }
 
   @override
-  DiskInvalidationFence invalidate(DiskInvalidation invalidation) =>
-      coordinator.invalidate(invalidation);
+  DiskInvalidationFence invalidate(DiskInvalidation invalidation) {
+    if (invalidation.binding != binding) {
+      throw ArgumentError('Disk binding does not match adapter');
+    }
+    return coordinator.invalidate(invalidation);
+  }
 
   @override
-  void revoke(DiskBinding binding) => coordinator.revoke(binding);
+  void revoke(DiskBinding binding) {
+    if (binding == this.binding) coordinator.revoke(binding);
+  }
 
   @override
   Future<DiskClearResult> clear(
     DiskBinding binding,
     ReadCacheCleanupOperation operation,
-  ) => coordinator.clear(binding, operation);
+  ) => binding == this.binding
+      ? coordinator.clear(binding, operation)
+      : Future.error(ArgumentError('Disk binding does not match adapter'));
 
   @override
   void reportCleanup(ReadCacheCleanupState state) =>

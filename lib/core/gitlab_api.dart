@@ -311,8 +311,17 @@ final class GitLabApi {
     bool graphQuery = false,
     bool graphMutation = false,
     Duration? sendTimeout,
+    void Function()? beforeSend,
+    void Function()? onSendStarted,
   }) async {
-    if (_closed) throw const ApiFailure(FailureKind.cancelled);
+    if (_closed) {
+      const failure = ApiFailure(FailureKind.cancelled);
+      if (graphMutation) {
+        (Zone.current[#graphMutationBlockedBeforeSend]
+            as void Function(Object)?)?.call(failure);
+      }
+      throw failure;
+    }
     if ((graphQuery && graphMutation) || (graphQuery || graphMutation
         ? method != 'POST' || !instance.allowsGraphQL(uri)
         : !instance.allowsApi(uri))) {
@@ -342,6 +351,21 @@ final class GitLabApi {
         }
       }
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      // The UI handoff may still refuse or close the client without a send.
+      try {
+        beforeSend?.call();
+      } on Object catch (failure) {
+        if (graphMutation) {
+          (Zone.current[#graphMutationBlockedBeforeSend]
+              as void Function(Object)?)?.call(failure);
+        }
+        rethrow;
+      }
+      if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      onSendStarted?.call();
+      if (graphMutation) {
+        (Zone.current[#graphMutationSendStarted] as void Function()?)?.call();
+      }
       sendStarted = true;
       final sequence = rateBudget.nextSequence();
       RequestMeter.current?.increment();
@@ -387,6 +411,7 @@ final class GitLabApi {
         _cache.revoke(uri, status,
             terminal401: _credential is! OAuthCredential || retried);
         await _cache.settleDiskSafety();
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
         if (body != null) await body.stream.listen((_) {}).cancel();
         var refreshed = false;
         if (status == 401 && !retried) {
@@ -397,6 +422,7 @@ final class GitLabApi {
             // fails with an unrelated transport or storage exception.
             _cache.revoke(uri, 401);
             await _cache.settleDiskSafety();
+            if (_closed) throw const ApiFailure(FailureKind.cancelled);
             if (writing) {
               throw _knownMutation401(refreshSucceeded: false);
             }
@@ -421,6 +447,7 @@ final class GitLabApi {
         if (status == 401 && _credential is OAuthCredential && !retried) {
           _cache.revoke(uri, 401);
           await _cache.settleDiskSafety();
+          if (_closed) throw const ApiFailure(FailureKind.cancelled);
         }
         throw ApiFailure.fromStatus(status, retryAt: rateBudget.retryAtFor(_rateClass(uri, method)));
       }
@@ -480,6 +507,17 @@ final class GitLabApi {
             ? FailureKind.network
             : FailureKind.writeUncertain,
       );
+    } on ApiFailure catch (failure) {
+      if (graphMutation && !sendStarted &&
+          (failure.kind == FailureKind.cancelled ||
+              failure.kind == FailureKind.readCacheCleanup &&
+                  failure.cleanup?.disposition ==
+                      ReadCacheCleanupDisposition.requestBlockedBeforeSend)) {
+        // Only the transport can prove that acceptance never reached a send.
+        (Zone.current[#graphMutationBlockedBeforeSend]
+            as void Function(Object)?)?.call(failure);
+      }
+      rethrow;
     } finally {
       _requests.remove(cancel);
       if (writeStarted) {
@@ -523,6 +561,7 @@ final class GitLabApi {
         _cache.observe(uri, value);
         _cache.observeRawPrivacy(uri, value);
         await _cache.settleDiskSafety();
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
       }
       return value;
     } on FormatException {
@@ -646,6 +685,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       if (data is! List<dynamic>) throw const FormatException('Expected array');
       _cache.observeRawPrivacy(uri, data);
       await _cache.settleDiskSafety();
+      if (_closed) throw const ApiFailure(FailureKind.cancelled);
       return ApiPage(
         List.unmodifiable(
           data.map((j) {
@@ -901,6 +941,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       _cache.revoke(uri, status,
           terminal401: _credential is! OAuthCredential || !allowRefresh);
       await _cache.settleDiskSafety();
+      if (_closed) throw const ApiFailure(FailureKind.cancelled);
       await _releaseBody(response.data);
       if (_closed || token.isCancelled) {
         throw const ApiFailure(FailureKind.cancelled);
@@ -912,6 +953,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         } catch (_) {
           _cache.revoke(uri, 401);
           await _cache.settleDiskSafety();
+          if (_closed) throw const ApiFailure(FailureKind.cancelled);
           rethrow;
         }
       }
@@ -929,6 +971,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       if (status == 401 && _credential is OAuthCredential && allowRefresh) {
         _cache.revoke(uri, 401);
         await _cache.settleDiskSafety();
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
       }
       throw ApiFailure.fromStatus(status, retryAt: rateBudget.retryAtFor(_rateClass(uri)));
     }
@@ -1115,6 +1158,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       return await _consumeArtifact(
         response: first,
         requestUri: uri,
+        authenticated: true,
         allowRedirect: true,
         allowRefresh: true,
         token: token,
@@ -1263,6 +1307,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     _cache.revoke(uri, status,
         terminal401: _credential is! OAuthCredential || !allowRefresh);
     await _cache.settleDiskSafety();
+    if (_closed) throw const ApiFailure(FailureKind.cancelled);
     if (status == 200) {
       return _writeUploadStream(
         response: response,
@@ -1282,6 +1327,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       } catch (_) {
         _cache.revoke(uri, 401);
         await _cache.settleDiskSafety();
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
         rethrow;
       }
     }
@@ -1300,6 +1346,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     if (status == 401 && _credential is OAuthCredential && allowRefresh) {
       _cache.revoke(uri, 401);
       await _cache.settleDiskSafety();
+      if (_closed) throw const ApiFailure(FailureKind.cancelled);
     }
     if (status >= 300 && status < 400) {
       throw ApiFailure(FailureKind.redirectBlocked, status: status);
@@ -1454,6 +1501,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       _cache.revoke(uri, response.statusCode ?? 0,
           terminal401: _credential is! OAuthCredential);
       await _cache.settleDiskSafety();
+      if (_closed) throw const ApiFailure(FailureKind.cancelled);
     }
     return response;
   }
@@ -1461,6 +1509,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
   Future<ArtifactDownload> _consumeArtifact({
     required Response<ResponseBody> response,
     required Uri requestUri,
+    required bool authenticated,
     required bool allowRedirect,
     required bool allowRefresh,
     required CancelToken token,
@@ -1488,12 +1537,13 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       throw const ApiFailure(FailureKind.cancelled);
     }
     var refreshed = false;
-    if (status == 401 && allowRefresh) {
+    if (status == 401 && authenticated && allowRefresh) {
       try {
         refreshed = await _refreshOAuth();
       } catch (_) {
         _cache.revoke(requestUri, 401);
         await _cache.settleDiskSafety();
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
         rethrow;
       }
     }
@@ -1506,6 +1556,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       return _consumeArtifact(
         response: retried,
         requestUri: requestUri,
+        authenticated: true,
         allowRedirect: true,
         allowRefresh: false,
         token: token,
@@ -1533,6 +1584,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         return await _consumeArtifact(
           response: followed,
           requestUri: location,
+          authenticated: false,
           allowRedirect: false,
           allowRefresh: false,
           token: token,
@@ -1546,10 +1598,12 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       }
     }
     if (status == 401 &&
+        authenticated &&
         instance.allowsApi(requestUri) &&
         _credential is OAuthCredential) {
       _cache.revoke(requestUri, 401);
       await _cache.settleDiskSafety();
+      if (_closed) throw const ApiFailure(FailureKind.cancelled);
     }
     // CDN failures keep their status without changing the API rate budget.
     // The hop is never replayed with the account credential.

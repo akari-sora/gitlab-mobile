@@ -1088,7 +1088,7 @@ void main() {
     expect(source.contains('_readEpoch'), isFalse);
     expect(source.contains('.readEpoch'), isFalse);
     expect(source.contains('clearReadCache'), isFalse);
-    expect(source.contains('onMutationSent();'), isTrue);
+    expect(source.contains('beforeSend: () => onMutationSent()'), isTrue);
     expect(source.contains('isAfter(opening.updatedAt)'), isFalse);
   });
 }

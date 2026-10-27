@@ -17,12 +17,54 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
+import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
+import 'package:gitlab_mobile/core/request_meter.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 
 import '../support/fake_adapter.dart';
 import 'mr6b3_support.dart';
+
+const _emptyClear = DiskClearResult(keyGoneConfirmed: false,
+    directoryGoneConfirmed: false, markerDurable: false, complete: false);
+
+final class _HeldFence implements DiskInvalidationFence {
+  _HeldFence(this.barrier);
+  @override
+  final Future<DiskClearResult> barrier;
+  @override
+  Future<void> get quiesced => barrier.then((_) {}, onError: (Object _) {});
+  @override
+  bool get isCurrent => true;
+  @override
+  void revoke() {}
+}
+
+final class _MutationBarrier implements ReadCacheDiskBackend {
+  _MutationBarrier(this.begin);
+  final Future<DiskClearResult> Function() begin;
+  final entered = Completer<void>();
+  int meterAtEntry = -1;
+  RequestMeter? meter;
+  @override
+  DiskInvalidationFence invalidate(DiskInvalidation invalidation) {
+    meter = RequestMeter.current;
+    meterAtEntry = meter?.count ?? -1;
+    if (!entered.isCompleted) entered.complete();
+    return _HeldFence(begin());
+  }
+  @override
+  Future<ProjectedDiskEntry?> lookup(DiskLookup lookup) async => null;
+  @override
+  void accept(DiskWriteCandidate candidate, ProjectedDiskEntry entry) {}
+  @override
+  void revoke(DiskBinding binding) {}
+  @override
+  Future<DiskClearResult> clear(DiskBinding binding, ReadCacheCleanupOperation operation) async => _emptyClear;
+  @override
+  void reportCleanup(ReadCacheCleanupState state) {}
+}
 
 const _operations = ['snoozeTodo', 'unsnoozeTodo'];
 const _global = AiWriteScope(
@@ -407,6 +449,23 @@ bool _aOutsideTry(String source, String method) {
       !body.substring(0, send).contains(RegExp(r'\btry\s*\{'));
 }
 
+Future<void> _expectRefundedJournalBudget(_Harness h) async {
+  expect((await h.durable())['counts'], isEmpty);
+  final entry = h.journal.entries(mr6b3Account).single;
+  final request = AiBudgetRequest(accountKey: mr6b3Account,
+      conversationId: entry.conversationId, runId: entry.runId);
+  final holds = <AiBudgetHold>[];
+  for (var i = 0; i < 8; i++) {
+    final hold = await h.journal.tryReserve(request);
+    expect(hold, isNotNull, reason: 'all eight run slots must be refunded');
+    holds.add(hold!);
+  }
+  expect(await h.journal.tryReserve(request), isNull);
+  for (final hold in holds) {
+    await h.journal.refund(hold);
+  }
+}
+
 void main() {
   late _Server s;
   _Harness? harness;
@@ -416,6 +475,95 @@ void main() {
     harness = null;
     s.api.close();
   });
+
+  test('C2-D7 blocked public GraphQL and coordinator journal are not sent', () async {
+    var blocked = true;
+    final backend = _MutationBarrier(() => blocked
+        ? Future.error(StateError('synthetic barrier failure'))
+        : Future.value(_emptyClear));
+    s.api.bindReadCache(mr6b3Account, 1);
+    s.api.attachReadCacheDiskBackend(backend);
+    final directMeter = RequestMeter();
+    await expectLater(directMeter.runAsync(() => s.api.unsnoozeTodo(2)), throwsA(
+      isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.readCacheCleanup)
+        .having((e) => e.cleanup?.disposition, 'disposition', ReadCacheCleanupDisposition.requestBlockedBeforeSend),
+    ));
+    expect(directMeter.count, 0);
+    expect(s.mutations, 0);
+    harness = await _Harness.create(s, limit: 100);
+    final h = harness!;
+    final proposal = (await h.propose('unsnoozeTodo', message: 'Unsnooze this todo.'))!;
+    final outcome = await h.approve(proposal);
+    expect(outcome.state, AiJournalState.notExecuted);
+    expect(outcome.reasonCode, 'readCacheCleanup');
+    expect(outcome.mutationCount, 0);
+    expect(s.mutations, 0);
+    expect(h.budget.gitLabRequests, 21);
+    await _expectRefundedJournalBudget(h);
+    blocked = false;
+    final retry = (await h.propose('unsnoozeTodo', message: 'Unsnooze this todo.'))!;
+    final retried = await h.approve(retry);
+    expect(retried.state, AiJournalState.succeeded);
+    expect(s.mutations, 1);
+    final reopened = AiWriteJournal(keys: h.keys, applicationSupport: h.root,
+        files: h.files, processId: 'c2d7-reopen');
+    await reopened.recoverAfterAccountsLoaded([mr6b3Account]);
+    expect(reopened.entries(mr6b3Account).map((e) => e.state),
+        containsAll([AiJournalState.notExecuted, AiJournalState.succeeded]));
+  });
+
+  for (final mode in ['timeout', 'close']) {
+    test('C2-D7 $mode before send stays certain through public API and journal', () async {
+      final directServer = _Server();
+      final directHeld = Completer<DiskClearResult>();
+      final directBackend = _MutationBarrier(() => directHeld.future);
+      directServer.api.bindReadCache(mr6b3Account, 1);
+      directServer.api.attachReadCacheDiskBackend(directBackend);
+      final directMeter = RequestMeter();
+      final direct = directMeter.runAsync(() => directServer.api.unsnoozeTodo(2));
+      final directCheck = expectLater(direct, throwsA(isA<ApiFailure>().having(
+        (e) => e.kind, 'kind', mode == 'close' ? FailureKind.cancelled : FailureKind.readCacheCleanup,
+      ).having((e) => e.cleanup?.disposition, 'disposition', mode == 'close' ? null : ReadCacheCleanupDisposition.requestBlockedBeforeSend).having((e) => e.cleanup?.code, 'code', mode == 'close' ? null : ReadCacheCleanupCode.barrierTimedOut)));
+      await directBackend.entered.future;
+      if (mode == 'close') directServer.api.close();
+      await directCheck;
+      expect(directMeter.count, 0);
+      expect(directServer.mutations, 0);
+      directHeld.complete(_emptyClear);
+      directServer.api.close();
+
+      final held = Completer<DiskClearResult>();
+      final backend = _MutationBarrier(() => held.future);
+      s.api.bindReadCache(mr6b3Account, 1);
+      s.api.attachReadCacheDiskBackend(backend);
+      harness = await _Harness.create(s);
+      final h = harness!;
+      final proposal = (await h.propose('unsnoozeTodo', message: 'Unsnooze this todo.'))!;
+      final approvalMeter = RequestMeter();
+      final pending = approvalMeter.runAsync(() => h.approve(proposal));
+      await backend.entered.future;
+      final elapsed = Stopwatch()..start();
+      if (mode == 'close') s.api.close();
+      final outcome = await pending;
+      if (mode == 'timeout') {
+        expect(elapsed.elapsed, greaterThanOrEqualTo(const Duration(milliseconds: 4900)));
+        expect(elapsed.elapsed, lessThan(const Duration(seconds: 9)));
+      }
+      expect(outcome.state, AiJournalState.notExecuted);
+      expect(outcome.reasonCode, mode == 'close' ? 'cancelled' : 'readCacheCleanup');
+      expect(outcome.mutationCount, 0);
+      expect(s.mutations, 0);
+      expect(h.budget.gitLabRequests, 21);
+      await _expectRefundedJournalBudget(h);
+      expect(backend.meter, isNotNull);
+      expect(backend.meter!.count, backend.meterAtEntry);
+      final reopened = AiWriteJournal(keys: h.keys, applicationSupport: h.root,
+          files: h.files, processId: 'c2d7-$mode-reopen');
+      await reopened.recoverAfterAccountsLoaded([mr6b3Account]);
+      expect(reopened.entries(mr6b3Account).single.state, AiJournalState.notExecuted);
+      held.complete(_emptyClear);
+    }, timeout: const Timeout(Duration(seconds: 25)));
+  }
 
   test(
     'P13 graph rows are visible, exact accountTodo schemas, independently capped',

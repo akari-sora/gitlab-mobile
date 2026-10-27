@@ -253,19 +253,6 @@ extension WorkItemStatusApi on GitLabApi {
       handoff = WorkItemStatusHandoff.started;
     }
 
-    try {
-      onMutationSent(started);
-      if (!reportedStart) {
-        throw StateError('STATUS mutation START was not reported');
-      }
-    } on Object {
-      throw WorkItemStatusWriteFailure(
-        failure: _statusCancelled,
-        mutationSent: false,
-        handoff: handoff,
-      );
-    }
-
     if (mayStart != null && !mayStart()) {
       throw WorkItemStatusWriteFailure(
         failure: _statusCancelled,
@@ -275,11 +262,19 @@ extension WorkItemStatusApi on GitLabApi {
     }
 
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
+    var didSend = false;
     try {
       response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        beforeSend: () {
+          onMutationSent(started);
+          if (!reportedStart) {
+            throw StateError('STATUS mutation START was not reported');
+          }
+        },
+        onSendStarted: () => didSend = true,
         data: {
           'query': _workItemStatusMutation,
           'variables': {
@@ -290,10 +285,17 @@ extension WorkItemStatusApi on GitLabApi {
           },
         },
       );
-    } on Object {
+    } on Object catch (error) {
+      if (_graphDefinitelyNotSent(error, didSend)) {
+        throw WorkItemStatusWriteFailure(
+          failure: error as ApiFailure,
+          mutationSent: false,
+          handoff: handoff,
+        );
+      }
       throw WorkItemStatusWriteFailure(
-        failure: _statusUncertain,
-        mutationSent: true,
+        failure: didSend ? _statusUncertain : _statusCancelled,
+        mutationSent: didSend,
         handoff: handoff,
       );
     }

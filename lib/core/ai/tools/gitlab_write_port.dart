@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -379,7 +380,13 @@ Future<AiWriteOutcome> _settleGraph(AiWritePrepared prepared, GraphHooks span) a
   Object? result;
   Object? error;
   try {
-    result = await prepared._graphCall!(span, prepared.request);
+    result = await runZoned(
+      () => prepared._graphCall!(span, prepared.request),
+      zoneValues: {
+        #graphMutationSendStarted: span.markSent,
+        #graphMutationBlockedBeforeSend: span.markBlockedBeforeSend,
+      },
+    );
   } on Object catch (failure) {
     error = failure;
   }
@@ -390,6 +397,15 @@ Future<AiWriteOutcome> _settleGraph(AiWritePrepared prepared, GraphHooks span) a
   }
   if (span.state == GraphWriteSpanState.hookFailed && error != null) {
     throw error;
+  }
+  if (span.accepted && !span.sent && !span.contractViolated &&
+      error != null && span.blockedBeforeSend != null) {
+    final proof = span.blockedBeforeSend;
+    return AiWriteNotSent(switch (proof) {
+      ApiFailure(:final kind) => kind.name,
+      AiWriteRefused(:final reason) => reason,
+      _ => 'graphContractViolation',
+    });
   }
   final disposition = classifyGraphWrite(
     prepared.request.operationId,

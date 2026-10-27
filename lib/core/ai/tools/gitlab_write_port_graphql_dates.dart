@@ -219,7 +219,8 @@ extension _GraphqlDatesPrepare on GitLabAiWritePort {
         } finally {
           registry.settle(
             lease,
-            hooks.accepted && settlement != AiWorkItemWriteResult.confirmed
+            hooks.accepted && !hooks.definitelyBlockedBeforeSend &&
+                    settlement != AiWorkItemWriteResult.confirmed
                 ? AiWorkItemWriteResult.uncertain
                 : settlement,
             revision,

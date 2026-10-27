@@ -149,11 +149,15 @@ extension WorkItemActivityDeleteApi on GitLabApi {
       throw const ApiFailure(FailureKind.cancelled);
     }
 
+    var didSend = false;
     try {
       final response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        onSendStarted: () {
+          didSend = true;
+        },
         data: {
           'query': _workItemActivityDestroyNoteMutation,
           'variables': {
@@ -171,7 +175,8 @@ extension WorkItemActivityDeleteApi on GitLabApi {
           errors.isNotEmpty) {
         throw const FormatException('Unconfirmed note deletion');
       }
-    } on Object {
+    } on Object catch (error) {
+      if (_graphDefinitelyNotSent(error, didSend)) rethrow;
       throw const ApiFailure(FailureKind.writeUncertain);
     }
 

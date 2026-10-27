@@ -1,5 +1,12 @@
 part of 'gitlab_api.dart';
 
+bool _graphDefinitelyNotSent(Object error, bool sent) =>
+    !sent && error is ApiFailure &&
+    (error.kind == FailureKind.cancelled ||
+        (error.kind == FailureKind.readCacheCleanup &&
+            error.cleanup?.disposition ==
+                ReadCacheCleanupDisposition.requestBlockedBeforeSend));
+
 const _workItemContentQuery = r'''
 query MobileWorkItemContent($id: WorkItemID!) {
   currentUser { id }
@@ -194,19 +201,22 @@ extension WorkItemContentApi on GitLabApi {
     if (mayStart != null && !mayStart()) {
       throw const ApiFailure(FailureKind.cancelled);
     }
-    onMutationSent?.call();
     ({Uint8List bytes, Headers headers, int statusCode}) response;
+    var didSend = false;
     try {
       response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        beforeSend: () => onMutationSent?.call(),
+        onSendStarted: () => didSend = true,
         data: {
           'query': _workItemContentMutation,
           'variables': {'input': input},
         },
       );
-    } on Object {
+    } on Object catch (error) {
+      if (_graphDefinitelyNotSent(error, didSend)) rethrow;
       throw const ApiFailure(FailureKind.writeUncertain);
     }
 

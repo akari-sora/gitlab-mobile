@@ -1105,7 +1105,7 @@ void main() {
         },
       );
       expect(outcome, isA<port.AiWriteNotSent>());
-      expect(starts, 0);
+      expect(starts, 1);
       expect(server.inputs, isEmpty);
     },
   );

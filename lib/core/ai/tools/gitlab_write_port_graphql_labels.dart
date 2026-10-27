@@ -140,6 +140,9 @@ extension _GraphqlLabelsPrepare on GitLabAiWritePort {
               revision: result.snapshot.updatedAt,
             );
           } on WorkItemLabelWriteFailure catch (failure) {
+            if (!failure.mutationSent && identical(failure.failure, hooks.blockedBeforeSend)) {
+              throw failure.failure;
+            }
             throw _graphqlLabelsRefusal(failure.failure);
           }
         },

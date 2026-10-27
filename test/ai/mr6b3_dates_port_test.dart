@@ -19,6 +19,7 @@ import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/core/work_item_dates_models.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
+import '../support/c2d7_barrier.dart';
 import '../support/fake_adapter.dart';
 import '../support/work_item_dates_fixture.dart';
 import 'mr6b3_support.dart';
@@ -50,6 +51,24 @@ Matcher _refused(String reason) => isA<port.AiWriteRefused>().having(
 );
 
 void main() {
+
+  test('C2-D7 dates barrier failure releases registry for a fresh retry', () async {
+    final f = _PortFixture();
+    addTearDown(f.close);
+    f.server.api.bindReadCache(mr6b3Account, 1);
+    final barrier = C2d7Barrier();
+    f.server.api.attachReadCacheDiskBackend(barrier);
+    final first = await f.prepare({'startDate': '2026-10-06'});
+    expect(await f.commit(first), isA<port.AiWriteNotSent>());
+    expect(f.registry.results, [AiWorkItemWriteResult.notSent]);
+    expect(f.server.dates.mutations, 0);
+    barrier.blocked = false;
+    final retry = await f.prepare({'startDate': '2026-10-06'});
+    expect(await f.commit(retry), isA<port.AiWriteSettled>());
+    expect(f.registry.results, [AiWorkItemWriteResult.notSent, AiWorkItemWriteResult.confirmed]);
+    expect(f.server.dates.mutations, 1);
+  });
+
   // Appendix C / parent §15: 8, 10, 11, 13, 19, 21, 24-project.
   test(
     'visible graph row has a closed dates schema and independent fixed cap',
@@ -833,23 +852,23 @@ void main() {
         source.indexOf('Future<WorkItemDatesWriteResult> updateWorkItemDates'),
       );
       final hook = method.indexOf('await beforeMutation()');
-      final callback = method.indexOf('onMutationSent();', hook);
       final gate = method.indexOf(
         'if (mayStart != null && !mayStart())',
-        callback,
+        hook,
       );
-      final sendTry = method.indexOf('    try {', callback);
-      final send = method.indexOf('response = await _send(', callback);
+      final sendTry = method.indexOf('    try {', gate);
+      final send = method.indexOf('response = await _send(', gate);
+      final callback = method.indexOf('beforeSend: () => onMutationSent()', send);
       expect(hook, isNonNegative);
-      expect(callback, greaterThan(hook));
-      expect(gate, greaterThan(callback));
+      expect(gate, greaterThan(hook));
       expect(
         sendTry,
         greaterThan(gate),
         reason: 'mayStart must stay outside the mutation try',
       );
       expect(send, greaterThan(sendTry));
-      expect(method.substring(callback, send), isNot(contains('await ')));
+      expect(callback, greaterThan(send));
+      expect(method.substring(gate, send), isNot(contains('await ')));
     },
   );
 }

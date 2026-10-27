@@ -105,11 +105,15 @@ extension WorkItemStateApi on GitLabApi {
       throw const ApiFailure(FailureKind.cancelled);
     }
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
+    var didSend = false;
     try {
       response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        onSendStarted: () {
+          didSend = true;
+        },
         data: {
           'query': _workItemStateMutation,
           'variables': {
@@ -118,6 +122,7 @@ extension WorkItemStateApi on GitLabApi {
         },
       );
     } on ApiFailure catch (failure) {
+      if (_graphDefinitelyNotSent(failure, didSend)) rethrow;
       if (failure.kind == FailureKind.redirectBlocked ||
           failure.kind == FailureKind.cancelled) {
         rethrow;

@@ -142,6 +142,7 @@ extension _GraphqlMilestoneWeightPrepare on GitLabAiWritePort {
               projection: {'milestone_id': desired?.id},
             );
           } on ApiFailure catch (failure) {
+            if (identical(failure, hooks.blockedBeforeSend)) rethrow;
             throw AiWriteRefused(_p8FailureCode(prefix, failure));
           }
         };
@@ -183,6 +184,7 @@ extension _GraphqlMilestoneWeightPrepare on GitLabAiWritePort {
               projection: {'weight': weight},
             );
           } on ApiFailure catch (failure) {
+            if (identical(failure, hooks.blockedBeforeSend)) rethrow;
             throw AiWriteRefused(_p8FailureCode(prefix, failure));
           }
         };

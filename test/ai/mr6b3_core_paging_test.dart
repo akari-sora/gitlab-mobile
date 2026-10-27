@@ -393,7 +393,7 @@ void main() {
       },
     );
 
-    test('awaits hook before callback, gate, and send', () async {
+    test('awaits hook before gate, callback, and send', () async {
       final release = Completer<void>();
       final events = <String>[];
       var calls = 0;
@@ -434,7 +434,7 @@ void main() {
       expect(adapter.requests.where(_isMutation), isEmpty);
       release.complete();
       await operation;
-      expect(events, ['hook', 'hook-done', 'reported', 'gate', 'send']);
+      expect(events, ['hook', 'hook-done', 'gate', 'reported', 'send']);
       expect(adapter.requests.where(_isMutation), hasLength(1));
     });
 
@@ -473,7 +473,7 @@ void main() {
             throwFromHook ? isA<StateError>() : _failure(FailureKind.cancelled),
           ),
         );
-        expect(events, throwFromHook ? ['hook'] : ['hook', 'reported', 'gate']);
+        expect(events, throwFromHook ? ['hook'] : ['hook', 'gate']);
         expect(calls, 2);
         expect(adapter.requests.where(_isMutation), isEmpty);
         api.close();

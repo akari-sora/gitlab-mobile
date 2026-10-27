@@ -1035,7 +1035,7 @@ void main() {
   });
 
   test(
-    'C2-D1 blocked AI write persists failedCertain and permits a fresh retry execution',
+    'C2-D1 two blocked AI executions persist failedCertain',
     () async {
       final backend = _Backend()
         ..invalidating = (_) =>

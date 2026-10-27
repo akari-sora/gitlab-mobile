@@ -1153,7 +1153,7 @@ void main() {
   }
 
   test(
-    'a returned callback hands off immediately even when the API closes',
+    'a callback that closes the API stays cancelled before send',
     () async {
       var callbacks = 0;
       final transport = _OrderedTransport([
@@ -1173,7 +1173,7 @@ void main() {
             api.close();
           },
         ),
-        throwsA(_editFailure(FailureKind.writeUncertain, true)),
+        throwsA(_editFailure(FailureKind.cancelled, false)),
       );
       expect(callbacks, 1);
       expect(transport.sends, 0);

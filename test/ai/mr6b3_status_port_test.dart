@@ -20,6 +20,7 @@ import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_status.dart';
 
+import '../support/c2d7_barrier.dart';
 import '../support/fake_adapter.dart';
 import '../support/work_item_status_fixture.dart';
 import 'mr6b3_support.dart'
@@ -445,6 +446,25 @@ Matcher _refused(String reason) => isA<writes.AiWriteRefused>().having(
 );
 
 void main() {
+
+  test('C2-D7 status barrier failure releases registry for a fresh retry', () async {
+    final h = await _StatusHarness.create(maxRequests: 100);
+    addTearDown(h.dispose);
+    h.server.api.bindReadCache(_account, 12);
+    final barrier = C2d7Barrier();
+    h.server.api.attachReadCacheDiskBackend(barrier);
+    final first = (await h.propose())!;
+    expect((await h.approve(first)).state, AiJournalState.notExecuted);
+    expect(h.registry.settlements, [AiWorkItemWriteResult.notSent]);
+    expect(h.server.mutations, 0);
+    barrier.blocked = false;
+    h.beginRun();
+    final retry = (await h.propose())!;
+    expect((await h.approve(retry)).state, AiJournalState.succeeded);
+    expect(h.registry.settlements, [AiWorkItemWriteResult.notSent, AiWorkItemWriteResult.confirmed]);
+    expect(h.server.mutations, 1);
+  });
+
   test('P3 row is visible with exact graph args, T2 and fixed cap 21', () {
     final row = productionAiLedger.find(_operation)!;
     expect(row.boundary, AiWriteBoundary.graph);
@@ -1151,7 +1171,7 @@ void main() {
       );
       expect(h.journal.requiresConfirmation(_account, {_key}), isTrue);
       expect(h.journal.conversationWriteCount(_account, _conversation), 0);
-      expect(h.startEvents, ['B', 'START']);
+      expect(h.startEvents, ['B', 'A', 'START']);
       expect(h.registry.settlements, [AiWorkItemWriteResult.notSent]);
     },
   );
@@ -1187,11 +1207,11 @@ void main() {
             .having(
               (error) => error.handoff,
               'handoff',
-              WorkItemStatusHandoff.started,
+              WorkItemStatusHandoff.none,
             ),
       ),
     );
-    expect(events, ['B', 'START', 'A']);
+    expect(events, ['B', 'A']);
     expect(fixture.mutations, 0);
   });
 
