@@ -1059,14 +1059,20 @@ void main() {
     expect(find.text(l10n.aiProposalNotRun), findsNothing);
   });
 
-  for (final code in [
-    'quickAction',
-    'approvalExpired',
-    'proposalInvalidated',
-    'attachmentExpired',
-    'invalidProposal',
-    'accountChanged',
-    'settingsChanged',
+  for (final (code, expected) in [
+    ('quickAction', l10n.aiRefusedQuickAction),
+    ('approvalExpired', l10n.aiProposalNotRun),
+    ('proposalInvalidated', l10n.aiProposalInvalid),
+    ('attachmentExpired', l10n.aiProposalNotRun),
+    ('invalidProposal', l10n.aiProposalNotRun),
+    ('accountChanged', l10n.aiProposalNotRun),
+    ('settingsChanged', l10n.aiProposalNotRun),
+    ('superseded', l10n.aiProposalNotRun),
+    ('stopped', l10n.aiProposalNotRun),
+    ('timeout', l10n.aiProposalNotRun),
+    (AiWritePause.clientUnavailable, l10n.aiProposalPausedRateLimited),
+    ('accountBlocked', l10n.aiProposalPausedRemoval),
+    (AiWritePause.accountRemovalHeld, l10n.aiProposalPausedRemoval),
   ]) {
     for (final editing in [false, true]) {
       testWidgets(
@@ -1095,12 +1101,14 @@ void main() {
             await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
           }
           await tester.pumpAndSettle();
-          final expected = switch (code) {
-            'quickAction' => l10n.aiRefusedQuickAction,
-            'proposalInvalidated' => l10n.aiProposalInvalid,
-            _ => l10n.aiProposalNotRun,
-          };
-          expect(aiRefusalText(code), expected);
+          // Pauses are card states, not refusal texts.
+          if (!const {
+            AiWritePause.clientUnavailable,
+            AiWritePause.accountRemovalHeld,
+            'accountBlocked',
+          }.contains(code)) {
+            expect(aiRefusalText(code), expected);
+          }
           expect(find.text(expected), findsOneWidget);
           expect(find.text(l10n.aiProposalEditRefused), findsNothing);
           expect(find.text(l10n.aiProposalEditBlocked), findsNothing);
