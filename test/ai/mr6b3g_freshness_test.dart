@@ -56,7 +56,10 @@ final class _Rows implements AiCapabilityLedger {
   List<AiCapability> get modelVisible => const [];
 }
 
-void _configureGroup(StackServer server) {
+void _configureGroup(
+  StackServer server, {
+  String workItemGid = 'gid://gitlab/WorkItem/91',
+}) {
   server.overrides['POST '] = (request) {
     expect(request.uri.path, '/gitlab/api/graphql');
     final body = request.data! as Map<String, Object?>;
@@ -68,7 +71,7 @@ void _configureGroup(StackServer server) {
           'id': _group.id,
           'fullPath': _group.fullPath,
           'workItem': {
-            'id': 'gid://gitlab/WorkItem/91',
+            'id': workItemGid,
             'iid': '5',
             'title': 'Group item',
             'state': 'OPEN',
@@ -586,96 +589,122 @@ void main() {
     );
   }
 
-  test(
-    'unchanged context refresh retains fresh group metadata and scope',
-    () async {
-      final h = await StackHarness.create(
-        origin: _origin,
-        configure: _configureGroup,
-      );
-      addTearDown(h.dispose);
-      var clock = DateTime.now();
-      final controller = AiChatController(
-        origin: _origin,
-        session: h.session,
-        settings: h.settings,
-        runningCount: () => 0,
-        writeJournal: h.journal,
-        appInForeground: () => true,
-        clientMayStart: () => true,
-        now: () => clock,
-        wireClientFactory:
-            ({required config, required apiKey, required conversationId}) =>
-                AiWireClient(
-                  transport: AiTransport(
-                    endpoint: AiEndpoint.parse(
-                      config.baseUrl,
-                      allowLanCleartext: false,
+  for (final changedIdentity in [false, true]) {
+    test(
+      'same-text group refresh ${changedIdentity ? 'restarts for changed identity' : 'retains context for unchanged identity'}',
+      () async {
+        final h = await StackHarness.create(
+          origin: _origin,
+          configure: _configureGroup,
+        );
+        addTearDown(h.dispose);
+        var clock = DateTime.now();
+        final controller = AiChatController(
+          origin: _origin,
+          session: h.session,
+          settings: h.settings,
+          runningCount: () => 0,
+          writeJournal: h.journal,
+          appInForeground: () => true,
+          clientMayStart: () => true,
+          now: () => clock,
+          wireClientFactory:
+              ({required config, required apiKey, required conversationId}) =>
+                  AiWireClient(
+                    transport: AiTransport(
+                      endpoint: AiEndpoint.parse(
+                        config.baseUrl,
+                        allowLanCleartext: false,
+                      ),
+                      apiKey: apiKey ?? '',
+                      authStyle: config.authStyle,
+                      adapter: h.provider.adapter,
                     ),
-                    apiKey: apiKey ?? '',
-                    authStyle: config.authStyle,
-                    adapter: h.provider.adapter,
+                    wire: const ResponsesFormat(),
+                    config: config,
+                    conversationId: conversationId,
+                    appVersion: 'test',
                   ),
-                  wire: const ResponsesFormat(),
-                  config: config,
-                  conversationId: conversationId,
-                  appVersion: 'test',
-                ),
-      );
-      addTearDown(controller.dispose);
-      await controller.recheck();
-      await controller.send('Review group');
-      final previous = controller.contextForTesting!;
-      h.server.overrides['GET groups/7'] = (_) => jsonResponse({
-        'id': 7,
-        'full_path': _group.fullPath,
-        'visibility': 'public',
-      });
-      clock = clock.add(const Duration(minutes: 6));
-      await controller.send('Review unchanged group');
-      final refreshed = controller.contextForTesting!;
-      expect(refreshed.built, same(previous.built));
-      expect(refreshed.groupMetadata!.visibility, 'public');
-      expect(refreshed.groupMetadata!.confidential, isNull);
-      expect(refreshed.groupScope!.groupId, 7);
-      expect(refreshed.groupScope!.iid, 5);
-      expect(refreshed.fetchedAt, clock);
-      h.server.overrides['GET projects/43'] = (_) => jsonResponse({
-        'id': 43,
-        'path_with_namespace': 'studio/target',
-        'visibility': 'public',
-      });
-      h.server.overrides['GET projects/43/issues/6'] = (_) => jsonResponse({
-        'id': 106,
-        'iid': 6,
-        'project_id': 43,
-        'confidential': false,
-      });
-      final fresh = await controller.readWriteFreshnessForTesting(
-        _request(
-          h,
-          operation: 'updateIssue',
-          arguments: const {
-            'projectId': 43,
-            'iid': 6,
-            'fields': {'title': 'Updated'},
-          },
-        ),
-        sourceGroupMetadata: const AiGroupContextMetadata(
-          visibility: 'public',
-          confidential: false,
-        ),
-      );
-      expect(
-        fresh.polluted,
-        isTrue,
-        reason: 'Private context was already sent before refresh',
-      );
-      expect(
-        fresh.visibilityUnreadable,
-        isTrue,
-        reason: 'Previously sent unknown confidentiality stays unknown',
-      );
-    },
-  );
+        );
+        addTearDown(controller.dispose);
+        await controller.recheck();
+        await controller.send('Review group');
+        final previous = controller.contextForTesting!;
+        final workItemGid = changedIdentity
+            ? 'gid://gitlab/WorkItem/92'
+            : previous.groupScope!.workItemGid;
+        _configureGroup(h.server, workItemGid: workItemGid);
+        h.server.overrides['GET groups/7'] = (_) => jsonResponse({
+          'id': 7,
+          'full_path': _group.fullPath,
+          'visibility': 'public',
+        });
+        clock = clock.add(const Duration(minutes: 6));
+        await controller.send('Review refreshed group');
+        final refreshed = controller.contextForTesting!;
+        expect(
+          refreshed.built.blocks.map(
+            (block) => (block.source, block.plainData.plainText),
+          ),
+          previous.built.blocks.map(
+            (block) => (block.source, block.plainData.plainText),
+          ),
+        );
+        expect(
+          refreshed.built,
+          changedIdentity ? isNot(same(previous.built)) : same(previous.built),
+        );
+        expect(
+          controller.items.whereType<AiNoticeItem>().where(
+            (item) => item.kind == AiNoticeKind.segmentSummary,
+          ),
+          hasLength(changedIdentity ? 1 : 0),
+        );
+        expect(refreshed.groupMetadata!.visibility, 'public');
+        expect(refreshed.groupMetadata!.confidential, isNull);
+        expect(refreshed.groupScope, isNot(same(previous.groupScope)));
+        expect(refreshed.groupScope!.groupId, 7);
+        expect(refreshed.groupScope!.groupFullPath, _group.fullPath);
+        expect(refreshed.groupScope!.iid, 5);
+        expect(refreshed.groupScope!.workItemGid, workItemGid);
+        expect(refreshed.fetchedAt, clock);
+        h.server.overrides['GET projects/43'] = (_) => jsonResponse({
+          'id': 43,
+          'path_with_namespace': 'studio/target',
+          'visibility': 'public',
+        });
+        h.server.overrides['GET projects/43/issues/6'] = (_) => jsonResponse({
+          'id': 106,
+          'iid': 6,
+          'project_id': 43,
+          'confidential': false,
+        });
+        final fresh = await controller.readWriteFreshnessForTesting(
+          _request(
+            h,
+            operation: 'updateIssue',
+            arguments: const {
+              'projectId': 43,
+              'iid': 6,
+              'fields': {'title': 'Updated'},
+            },
+          ),
+          sourceGroupMetadata: const AiGroupContextMetadata(
+            visibility: 'public',
+            confidential: false,
+          ),
+        );
+        expect(
+          fresh.polluted,
+          isTrue,
+          reason: 'Private context was already sent before refresh',
+        );
+        expect(
+          fresh.visibilityUnreadable,
+          isTrue,
+          reason: 'Previously sent unknown confidentiality stays unknown',
+        );
+      },
+    );
+  }
 }

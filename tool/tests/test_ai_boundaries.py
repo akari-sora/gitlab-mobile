@@ -302,6 +302,42 @@ class AiBoundaryTest(unittest.TestCase):
             with self.subTest(mutant=mutant):
                 self.assertTrue(self._group_port_actor_violations(controller, mutant))
 
+    def test_group_scope_construction_has_restricted_producers(self):
+        violations = []
+        for path in (ROOT / "lib").rglob("*.dart"):
+            relative = path.relative_to(ROOT).as_posix()
+            violations.extend(
+                f"{relative}: {message}"
+                for message in self._group_scope_construction_violations(
+                    relative, path.read_text(encoding="utf-8")
+                )
+            )
+        self.assertEqual(violations, [])
+
+    def test_group_scope_construction_negative_fixtures(self):
+        other = "lib/features/ai/ai_chat_controller.dart"
+        construct = "AiGroupResourceScope(accountKey: key)"
+        for allowed in (
+            "lib/core/ai/tools/tool_scope.dart",
+            "lib/features/ai/ai_chat_context.dart",
+            "lib/core/ai/tools/gitlab_read_port.dart",
+            "test/ai/group_scope_test.dart",  # Test construction is exempt.
+        ):
+            self.assertEqual(self._group_scope_construction_violations(allowed, construct), [])
+        for mutant in (
+            construct,
+            "const AiGroupResourceScope(accountKey: key)",
+            "final create = AiGroupResourceScope.new;",
+            "factory Alias() = AiGroupResourceScope;",
+            "final create = scopes.AiGroupResourceScope.new;",
+            "'${AiGroupResourceScope(accountKey: key)}'",
+        ):
+            with self.subTest(mutant=mutant):
+                self.assertTrue(self._group_scope_construction_violations(other, mutant))
+        self.assertEqual(self._group_scope_construction_violations(
+            other, "AiGroupResourceScope? scope; // AiGroupResourceScope()\n'no AiGroupResourceScope()';"
+        ), [])
+
     def test_read_port_whitelist_adds_exactly_snippet_text(self):
         previous_members = READ_PORT_MEMBERS - {"snippetText"}
         self.assertEqual(self._api_members("_api.snippetText(1, 2);"), {"snippetText"})
@@ -706,6 +742,22 @@ class AiBoundaryTest(unittest.TestCase):
                 start = index + 1
         result.append(args[start:].strip())
         return result
+
+    @classmethod
+    def _group_scope_construction_violations(cls, relative, source):
+        if not relative.startswith("lib/"):
+            return []
+        if relative in {
+            "lib/core/ai/tools/tool_scope.dart",  # Defines the scope.
+            "lib/features/ai/ai_chat_context.dart",
+            "lib/core/ai/tools/gitlab_read_port.dart",
+        }:
+            return []
+        code = cls._code_only(source)
+        if (re.search(r"\bAiGroupResourceScope\s*(?:\(|\.)", code) or
+                re.search(r"=\s*(?:\w+\s*\.\s*)?AiGroupResourceScope\b", code)):
+            return ["group scope constructed or aliased outside its producers"]
+        return []
 
     @classmethod
     def _group_identity_factory_violations(cls, relative, source):

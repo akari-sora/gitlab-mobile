@@ -2304,7 +2304,12 @@ class AiChatController extends ChangeNotifier
           ],
         ) &&
         previous.scope?.headSha == refreshed.scope?.headSha &&
-        previous.scope?.baseSha == refreshed.scope?.baseSha;
+        previous.scope?.baseSha == refreshed.scope?.baseSha &&
+        previous.groupScope?.groupId == refreshed.groupScope?.groupId &&
+        previous.groupScope?.groupFullPath ==
+            refreshed.groupScope?.groupFullPath &&
+        previous.groupScope?.iid == refreshed.groupScope?.iid &&
+        previous.groupScope?.workItemGid == refreshed.groupScope?.workItemGid;
     if (unchanged) {
       _context = AiChatContext(
         built: previous.built,
