@@ -2753,5 +2753,6 @@
   "aiGitLabBudgetDetail": "Tin nhắn này chưa được gửi. Gửi lại khi nút “Gửi” khả dụng trở lại.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Đặt nhãn",
-  "aiRefusedLabelUnknown": "Nhãn cần đặt không có trong danh sách nhãn của project này, hoặc có nhiều nhãn trùng tên, nên chưa có gì được thực hiện."
+  "aiRefusedLabelUnknown": "Nhãn cần đặt không có trong danh sách nhãn của project này, hoặc có nhiều nhãn trùng tên, nên chưa có gì được thực hiện.",
+  "aiRefusedQuickAction": "Văn bản có một dòng bắt đầu bằng /, GitLab có thể chạy nó như một quick action, nên để an toàn thao tác này chưa được gửi. Hãy xóa dòng đó hoặc đặt nó vào khối mã."
 }

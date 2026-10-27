@@ -2756,4 +2756,5 @@ const _messagesEn = <String>[
   '{verb} {target} {ref}',
   'Set labels',
   'The label to set is not in this project’s label list, or several labels share that name, so nothing was done.',
+  'The text has a line starting with /, which GitLab could run as a quick action, so to be safe this write was not sent. Remove that line or put it in a code block.',
 ];

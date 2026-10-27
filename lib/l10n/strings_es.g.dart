@@ -2756,4 +2756,5 @@ const _messagesEs = <String>[
   '{verb} {target} {ref}',
   'Establecer etiquetas',
   'La etiqueta que se iba a asignar no está en la lista de etiquetas de este proyecto o varias etiquetas tienen ese nombre, así que no se hizo nada.',
+  'El texto tiene una línea que empieza por /, que GitLab podría ejecutar como acción rápida, así que por seguridad esta acción no se envió. Quita esa línea o ponla en un bloque de código.',
 ];

@@ -273,6 +273,9 @@ void main() {
       () async {
         final first = await _harness();
         final second = await _harness();
+        // Project 10 is answered by onRequest; skip the project-9 variables
+        // check on this server only.
+        second.server.checkGraphqlIdentity = false;
         second.server.onRequest = (name, mutation, request, payload) =>
             jsonResponse(_projectTen(payload) as Map<String, Object?>);
         final inNine = await first.server.writePort.prepare(

@@ -8,6 +8,7 @@ extension _GraphqlActivityCreatePrepare on GitLabAiWritePort {
     if (!reply && request.operationId != 'createWorkItemActivityComment') {
       return null;
     }
+    _precheckGraphqlActivityText(request, trim: true);
     final arguments = request.arguments;
     final projectId = _positive(arguments, 'projectId');
     final iid = _positive(arguments, 'iid');
@@ -135,9 +136,8 @@ extension _GraphqlActivityCreatePrepare on GitLabAiWritePort {
         updatedAt: summary.updatedAt.toUtc().toIso8601String(),
       ),
       preview: AiFieldsPreview({'body': body, 'anchorNoteId': ?anchorId}),
-      validatePreparedText: (processed) {
-        _text(processed.arguments, 'body');
-      },
+      validatePreparedText: (processed) =>
+          _precheckGraphqlActivityText(processed, trim: true),
       textMutation: (hooks, preparedRequest) async {
         final body = _text(preparedRequest.arguments, 'body').trim();
         try {
@@ -182,5 +182,19 @@ extension _GraphqlActivityCreatePrepare on GitLabAiWritePort {
         }
       },
     );
+  }
+}
+
+void _precheckGraphqlActivityText(AiWriteRequest request, {bool trim = false}) {
+  final raw = _text(request.arguments, 'body');
+  final body = trim ? raw.trim() : raw;
+  // GitLab only executes column-zero commands. This port deliberately keeps
+  // the screen's more conservative core guard, refusing even neutralized
+  // commands here with their real reason instead of after approval.
+  if (containsWorkItemActivityQuickAction(body)) {
+    throw const AiWriteRefused('quickAction');
+  }
+  if (!isValidWorkItemActivityEditBody(body)) {
+    throw const ApiFailure(FailureKind.validation);
   }
 }

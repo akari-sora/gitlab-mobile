@@ -29,8 +29,9 @@ import 'mr6b3_support.dart';
 /// The current unbound-T1 behavior is a confirmation card, not a denied proposal.
 /// Class-A external-image bodies are refused before a card exists.
 /// NOT_RUN §15 row 1: README, Job log, MR diff and projection sources.
-/// NOT_RUN §15 row 14: raw slash bodies reaching the adapter (issue #24),
-/// class-B source preservation, Markdown diff mentions and visibility taint.
+/// §15 row 14: raw slash bodies are refused as quickAction before approval;
+/// fenced examples reach the adapter with the exact neutralized preview.
+/// NOT_RUN §15 row 14: class-B source preservation, Markdown diff mentions and visibility taint.
 /// NOT_RUN §15 row 2: renderer external-image/network loading.
 
 const _injection =
@@ -170,29 +171,28 @@ void main() {
       'createWorkItemActivityComment',
       'createWorkItemActivityReply',
     ]) {
-      for (final body in ['a\n/merge', 'a\r\n/approve', 'a\n\r/move x/y']) {
+      for (final body in [
+        '/merge',
+        'a\n/merge',
+        'a\r\n/approve',
+        'a\n\r/move x/y',
+      ]) {
         test(
-          '$operation neutralized, then refused by the core (issue #24): ${body.replaceAll('\n', r'\n').replaceAll('\r', r'\r')}',
+          '$operation refuses quickAction before approval: ${body.replaceAll('\n', r'\n').replaceAll('\r', r'\r')}',
           () async {
             final h = await _harness(level: AiAutonomyLevel.bypass);
             h.coordinator.beginRun(
               'Post a comment on #3, replying to note #401.',
             );
             h.coordinator.beginTurn();
-            final proposal = await h.coordinator.propose(
-              _call(operation, arguments: {'body': body}),
-            );
-            expect(proposal, isNotNull);
-            expect(h.server.mutations, 0);
-            final preview = proposal!.fields['body'];
-            expect(preview, isA<String>());
-            expect(RegExp(r'(^|[\r\n])/').hasMatch(preview!), isFalse);
-            final outcome = await h.approve(proposal);
-            // GitLab's extractor matches only column zero (^/); the core is
-            // over-conservative and also refuses one-to-three-space commands
-            // after neutralization (issue #24), before the mutation adapter.
+            final call = _call(operation, arguments: {'body': body});
+            final proposal = await h.coordinator.propose(call);
+            expect(proposal, isNull);
+            expect(h.coordinator.proposals, isEmpty);
+            final outcome = h.coordinator.outcomeFor(call.id)!;
             expect(outcome.state, AiJournalState.notExecuted);
-            expect(outcome.reasonCode, 'activityUnverifiable');
+            expect(outcome.reasonCode, 'quickAction');
+            expect(outcome.mutationCount, 0);
             expect(h.server.mutations, 0);
             expect(
               h.server.adapter.requests.where(
@@ -208,7 +208,12 @@ void main() {
         );
       }
 
-      for (final body in ['a\n/merge', 'a\r\n/approve', 'a\n\r/move x/y']) {
+      for (final (body, normalized) in [
+        ('/merge', ' /merge'),
+        ('a\n/merge', 'a\n /merge'),
+        ('a\r\n/approve', 'a\n /approve'),
+        ('a\n\r/move x/y', 'a\n /move x/y'),
+      ]) {
         test(
           '$operation fenced quick-action example reaches adapter without column-zero slash: ${body.replaceAll('\n', r'\n').replaceAll('\r', r'\r')}',
           () async {
@@ -233,6 +238,7 @@ void main() {
             );
             final variables = (mutation.data as Map)['variables'] as Map;
             final sent = (variables['input'] as Map)['body'] as String;
+            expect(sent, '```text\n$normalized\n```');
             expect(RegExp(r'(^|[\r\n])/').hasMatch(sent), isFalse);
             expect(sent, proposal.fields['body']);
             expect(sent, contains(body.split('/').last));
