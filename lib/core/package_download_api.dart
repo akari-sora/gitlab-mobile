@@ -285,6 +285,7 @@ extension PackageDownloadApi on GitLabApi {
       final downloaded = await _consumeArtifact(
         response: first,
         requestUri: uri,
+        authenticated: true,
         allowRedirect: true,
         allowRefresh: true,
         token: token,

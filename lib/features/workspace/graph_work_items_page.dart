@@ -2859,12 +2859,21 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     }
     final own = _datesWrite;
     final mine = own != null && identical(own.token, token);
-    registry.settle(
-      owner.api,
-      owner.summary.id,
-      token,
-      confirmedRevision: mine ? own.confirmedRevision : null,
-    );
+    if (phase == WorkItemDatesWritePhase.notSent) {
+      registry.settleAi(
+        owner.api,
+        owner.summary.id,
+        token,
+        mutationSent: false,
+      );
+    } else {
+      registry.settle(
+        owner.api,
+        owner.summary.id,
+        token,
+        confirmedRevision: mine ? own.confirmedRevision : null,
+      );
+    }
     if (!mounted || !mine) return;
     final reload = _datesOwnerMatches(owner);
     setState(() => _datesWrite = null);

@@ -1089,7 +1089,7 @@ void main() {
   });
 
   test(
-    'registry change during beforeMutation uses fifth-state rollback',
+    'registry change during beforeMutation refuses START before the gate',
     () async {
       final server = _Server();
       addTearDown(server.close);

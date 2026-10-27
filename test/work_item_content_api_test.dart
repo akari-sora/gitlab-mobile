@@ -4,9 +4,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/c2d7_barrier.dart';
 
 const _actorId = 'gid://gitlab/User/7';
 final _openedAt = DateTime.utc(2026, 10, 3, 8);
@@ -182,6 +184,80 @@ Future<WorkItemContentTarget> _target(
 )).target!;
 
 void main() {
+  test('C2-D8 content callback failure is cancelled before gate and send', () async {
+    final adapter = FakeAdapter((_) => jsonResponse(_read()));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = await _target(api);
+    final events = <String>[];
+    await expectLater(
+      api.updateWorkItemContent(
+        target,
+        title: 'changed',
+        beforeMutation: () async => events.add('hook'),
+        onMutationSent: () {
+          events.add('start');
+          throw StateError('synthetic callback failure');
+        },
+        mayStart: () {
+          events.add('gate');
+          return true;
+        },
+      ),
+      throwsA(_failure(FailureKind.cancelled)),
+    );
+    expect(events, ['hook', 'start']);
+    expect(adapter.requests.where(_mutation), isEmpty);
+  });
+
+  test('C2-D8 content START precedes barrier failure without sending', () async {
+    final adapter = FakeAdapter((_) => jsonResponse(_read()));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = await _target(api);
+    final backend = C2d7Barrier();
+    api.bindReadCache('https://example.com/gitlab#7', 1);
+    api.attachReadCacheDiskBackend(backend);
+    var started = false;
+    await expectLater(api.updateWorkItemContent(target, title: 'changed',
+        onMutationSent: () => started = true), throwsA(
+      isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.readCacheCleanup)
+        .having((e) => e.cleanup?.disposition, 'disposition', ReadCacheCleanupDisposition.requestBlockedBeforeSend),
+    ));
+    expect(started, isTrue);
+    expect(adapter.requests.where(_mutation), isEmpty);
+  });
+
+  test('C2-D7 accepted call remains in flight across disk barrier', () async {
+    final adapter = FakeAdapter((request) => _mutation(request)
+        ? jsonResponse({}, status: 500) : jsonResponse(_read()));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = await _target(api);
+    final held = Completer<DiskClearResult>();
+    final backend = C2d7Barrier()..onInvalidate = () => held.future;
+    api.bindReadCache('https://example.com/gitlab#7', 1);
+    api.attachReadCacheDiskBackend(backend);
+    var allow = true;
+    var checks = 0;
+    var started = false;
+    final pending = api.updateWorkItemContent(target, title: 'changed',
+      beforeMutation: () async {}, mayStart: () { checks++; return allow; },
+      onMutationSent: () => started = true);
+    final check = expectLater(pending, throwsA(_failure(FailureKind.writeUncertain)));
+    await backend.entered.future;
+    expect(checks, 1);
+    expect(started, isTrue);
+    expect(adapter.requests.where(_mutation), isEmpty);
+    // The v6 §12 acceptance point is the synchronous mayStart recheck.
+    allow = false;
+    held.complete(c2d7Clear);
+    await check;
+    expect(checks, 1);
+    expect(started, isTrue);
+    expect(adapter.requests.where(_mutation), hasLength(1));
+  });
+
   for (final group in [false, true]) {
     test(
       '${group ? 'group' : 'project'} read returns fresh raw content and exact actor-bound target',

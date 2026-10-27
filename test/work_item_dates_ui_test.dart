@@ -8,12 +8,36 @@ import 'package:gitlab_mobile/core/work_item_dates_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_dates.dart';
 
+import 'support/c2d7_barrier.dart';
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
 import 'support/work_item_dates_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('C2-D8 blocked dates START is reported as not sent', (
+    tester,
+  ) async {
+    final fixture = WorkItemDatesFixture();
+    addTearDown(fixture.api.close);
+    final host = await _pump(tester, fixture);
+    await _open(tester);
+    await _enterDates(tester, '2026-10-04', '');
+    fixture.api.bindReadCache(fixture.account.key, 4);
+    fixture.api.attachReadCacheDiskBackend(C2d7Barrier());
+    await _save(tester, fixture);
+    expect(host.phases.map((entry) => entry.$1), [
+      WorkItemDatesWritePhase.start,
+      WorkItemDatesWritePhase.notSent,
+    ]);
+    expect(fixture.mutations, 0);
+    expect(
+      find.byKey(const ValueKey('work-item-dates-save-feedback')),
+      findsOneWidget,
+    );
+    expect(find.text(_unconfirmedCopy), findsNothing);
+  });
 
   testWidgets('manual CE and EE set and explicit-null clear use public API', (
     tester,
@@ -448,12 +472,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('work-item-dates-save')));
     await settleNetworkWidgets(tester);
     expect(callback.mutations, 0);
+    // A START callback failure is certainly unsent (C2-D8), so the terminal
+    // tells the page registry to release without an unconfirmed result.
     expect(callbackHost.phases.map((entry) => entry.$1), [
       WorkItemDatesWritePhase.start,
-      WorkItemDatesWritePhase.settle,
+      WorkItemDatesWritePhase.notSent,
     ]);
-    expect(find.text(_unconfirmedCopy), findsOneWidget);
-    expect(find.text(_notSentCopy), findsNothing);
+    expect(find.text(_unconfirmedCopy), findsNothing);
   });
 
   testWidgets('route close during preflight emits zero phases and sends zero', (

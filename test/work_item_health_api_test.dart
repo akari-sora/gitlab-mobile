@@ -923,7 +923,7 @@ void main() {
   );
 
   test(
-    'callback failure is invalidResponse false with one callback and zero sends',
+    'callback failure is cancelled false with one callback and zero sends',
     () async {
       var callbacks = 0;
       final transport = _OrderedTransport([
@@ -944,7 +944,7 @@ void main() {
             throw StateError('synthetic callback failure');
           },
         ),
-        throwsA(_editFailure(FailureKind.invalidResponse, false)),
+        throwsA(_editFailure(FailureKind.cancelled, false)),
       );
       expect(callbacks, 1);
       expect(transport.sends, 0);
@@ -954,7 +954,7 @@ void main() {
   );
 
   test(
-    'every throwing callback is invalidResponse false without leaking or sending',
+    'every throwing callback is cancelled false without leaking or sending',
     () async {
       const leakTitle = 'synthetic callback title leak';
       const leakDetail = 'synthetic callback detail leak';
@@ -1015,7 +1015,7 @@ void main() {
         final reason = 'callback threw $thrown';
         expect(
           caught,
-          _editFailure(FailureKind.invalidResponse, false),
+          _editFailure(FailureKind.cancelled, false),
           reason: reason,
         );
         final failure = (caught! as WorkItemHealthEditFailure).failure;
@@ -1153,7 +1153,7 @@ void main() {
   }
 
   test(
-    'a returned callback hands off immediately even when the API closes',
+    'a callback that closes the API stays cancelled before send',
     () async {
       var callbacks = 0;
       final transport = _OrderedTransport([
@@ -1173,7 +1173,7 @@ void main() {
             api.close();
           },
         ),
-        throwsA(_editFailure(FailureKind.writeUncertain, true)),
+        throwsA(_editFailure(FailureKind.cancelled, false)),
       );
       expect(callbacks, 1);
       expect(transport.sends, 0);

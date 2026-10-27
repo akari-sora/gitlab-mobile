@@ -318,7 +318,7 @@ void main() {
     _expectClean(fixture);
   });
 
-  testWidgets('START observer throw is invalidResponse false with zero sends '
+  testWidgets('START observer throw is cancelled and not sent with zero sends '
       'and one settle', (tester) async {
     final fixture = WorkItemHealthFixture();
     final log = await _pumpHost(tester, fixture);
@@ -334,8 +334,9 @@ void main() {
     expect(fixture.value, WorkItemHealthEditValue.needsAttention);
     expect(log.raw, ['reserve', 'start', 'settle', 'outcome-notSent']);
     expect(log.accepted, ['reserve', 'start', 'settle']);
+    // A START callback failure is certainly unsent (C2-D8), not a bad response.
     expect(
-      find.textContaining(const ApiFailure(FailureKind.invalidResponse).detail),
+      find.textContaining(const ApiFailure(FailureKind.cancelled).detail),
       findsOneWidget,
     );
     expect(
@@ -343,6 +344,29 @@ void main() {
       findsNothing,
     );
     _expectClean(fixture);
+  });
+
+  testWidgets('START observer closing the API before the first byte is not '
+      'sent and settles once', (tester) async {
+    final fixture = WorkItemHealthFixture();
+    final log = await _pumpHost(tester, fixture);
+    await _open(tester, fixture);
+    _hostKey.currentState!.closeApiOnStart = true;
+
+    await tester.tap(_choice('atRisk'));
+    await tester.pump();
+    await tester.tap(_save);
+    await pumpUntil(tester, () => _feedback.evaluate().isNotEmpty);
+
+    // C2-D8: START is not a send; a close before the first byte is not sent.
+    expect(fixture.mutationsReceived, 0);
+    expect(log.raw, ['reserve', 'start', 'settle', 'outcome-notSent']);
+    expect(find.textContaining('沒有送出健康狀態變更。'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('work-item-health-confirmed')),
+      findsNothing,
+    );
+    expect(fixture.appliedChanges, 0);
   });
 
   for (final (name, arrange, outcome, text)
@@ -363,12 +387,6 @@ void main() {
         (
           'transport failure is unknown with mutationSent true',
           (fixture, host) => fixture.nextMutationTransportFailure = true,
-          'unknown',
-          '尚未確認健康狀態是否已更新',
-        ),
-        (
-          'START observer closing the API is unknown with mutationSent true',
-          (fixture, host) => host.closeApiOnStart = true,
           'unknown',
           '尚未確認健康狀態是否已更新',
         ),

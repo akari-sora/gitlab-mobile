@@ -153,10 +153,17 @@ extension _GraphqlHealthPrepare on GitLabAiWritePort {
             revision: revision,
           );
         } on WorkItemHealthEditFailure catch (failure) {
-          if (hooks.accepted) settled = AiWorkItemWriteResult.uncertain;
+          if (!failure.mutationSent && identical(failure.failure, hooks.blockedBeforeSend)) {
+            throw failure.failure;
+          }
+          if (hooks.accepted && !hooks.definitelyBlockedBeforeSend) {
+            settled = AiWorkItemWriteResult.uncertain;
+          }
           throw _aiHealthRefusal(failure.failure);
         } on Object {
-          if (hooks.accepted) settled = AiWorkItemWriteResult.uncertain;
+          if (hooks.accepted && !hooks.definitelyBlockedBeforeSend) {
+            settled = AiWorkItemWriteResult.uncertain;
+          }
           rethrow;
         } finally {
           registry.settle(lease, settled, revision);

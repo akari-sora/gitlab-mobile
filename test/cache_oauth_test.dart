@@ -80,6 +80,16 @@ void main() {
       expect(meter.count, 2);
       expect(issueRequests, 2);
       expect(tokenAdapter.requests, hasLength(1));
+      final cached = await api.cachedRecord(<String>[
+        'projects',
+        '1',
+        'issues',
+        '2',
+      ]);
+      expect(cached.value['title'], 'after refresh');
+      expect(cached.fetchedAt, result.fetchedAt);
+      expect(issueRequests, 2);
+      expect(tokenAdapter.requests, hasLength(1));
     },
     timeout: _timeout,
   );

@@ -27,10 +27,18 @@ final class GraphHooks {
   bool _beforeCalled = false;
   bool _startCalled = false;
   bool _invalid = false;
+  bool _sent = false;
+  Object? _blockedBeforeSend;
   Future<void>? _beforeFlight;
 
   GraphWriteSpanState get state => _state;
   bool get accepted => _state == GraphWriteSpanState.pastAcceptance;
+  // START acquires a registry lease; only the transport records a send.
+  bool get sent => _sent;
+  void markSent() => _sent = true;
+  Object? get blockedBeforeSend => _blockedBeforeSend;
+  bool get definitelyBlockedBeforeSend => !_sent && _blockedBeforeSend != null;
+  void markBlockedBeforeSend(Object failure) => _blockedBeforeSend = failure;
   bool get contractViolated => _invalid;
   Future<void>? get beforeCompletion => _beforeFlight;
 

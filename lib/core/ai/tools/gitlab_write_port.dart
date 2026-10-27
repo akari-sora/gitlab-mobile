@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -9,6 +10,7 @@ import '../../gitlab_api.dart';
 // Shared model namespace for the snippet family, delivered separately.
 // ignore: unused_import
 import '../../models.dart';
+import '../../read_cache_disk_contract.dart';
 // ignore: unused_import
 import '../../snippet_models.dart';
 import '../../suggestion.dart';
@@ -378,7 +380,13 @@ Future<AiWriteOutcome> _settleGraph(AiWritePrepared prepared, GraphHooks span) a
   Object? result;
   Object? error;
   try {
-    result = await prepared._graphCall!(span, prepared.request);
+    result = await runZoned(
+      () => prepared._graphCall!(span, prepared.request),
+      zoneValues: {
+        #graphMutationSendStarted: span.markSent,
+        #graphMutationBlockedBeforeSend: span.markBlockedBeforeSend,
+      },
+    );
   } on Object catch (failure) {
     error = failure;
   }
@@ -389,6 +397,17 @@ Future<AiWriteOutcome> _settleGraph(AiWritePrepared prepared, GraphHooks span) a
   }
   if (span.state == GraphWriteSpanState.hookFailed && error != null) {
     throw error;
+  }
+  // START and acceptance can precede a blocked barrier. Transport proof wins
+  // until a send actually starts; later close/failure remains uncertain.
+  if (span.accepted && !span.sent && !span.contractViolated &&
+      error != null && span.blockedBeforeSend != null) {
+    final proof = span.blockedBeforeSend;
+    return AiWriteNotSent(switch (proof) {
+      ApiFailure(:final kind) => kind.name,
+      AiWriteRefused(:final reason) => reason,
+      _ => 'graphContractViolation',
+    });
   }
   final disposition = classifyGraphWrite(
     prepared.request.operationId,
@@ -1038,6 +1057,11 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     try {
       result = await mutation();
     } on ApiFailure catch (failure) {
+      if (failure.kind == FailureKind.readCacheCleanup &&
+          failure.cleanup?.disposition ==
+              ReadCacheCleanupDisposition.requestBlockedBeforeSend) {
+        return _outcome(p, AiJournalState.failedCertain, 'readCacheCleanup');
+      }
       final override = classified(mutationError: failure);
       if (override != null) return override;
       final certain =

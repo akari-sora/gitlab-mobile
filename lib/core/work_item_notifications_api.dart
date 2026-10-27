@@ -133,11 +133,15 @@ extension WorkItemNotificationsApi on GitLabApi {
       throw const ApiFailure(FailureKind.cancelled);
     }
     ({Uint8List bytes, Headers headers, int statusCode}) response;
+    var didSend = false;
     try {
       response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        onSendStarted: () {
+          didSend = true;
+        },
         data: {
           'query': _workItemNotificationsMutation,
           'variables': {
@@ -145,7 +149,8 @@ extension WorkItemNotificationsApi on GitLabApi {
           },
         },
       );
-    } on Object {
+    } on Object catch (error) {
+      if (_graphDefinitelyNotSent(error, didSend)) rethrow;
       throw const ApiFailure(FailureKind.writeUncertain);
     }
 

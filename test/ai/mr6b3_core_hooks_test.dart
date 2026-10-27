@@ -96,8 +96,10 @@ void _expectSendOrder(String body, {bool reportsMutation = false}) {
   );
   if (reportsMutation) {
     final report = body.indexOf('onMutationSent', hook);
+    final started = body.indexOf('onSendStarted: () => didSend = true', send);
     expect(report, greaterThan(hook));
     expect(report, lessThan(gate));
+    expect(started, greaterThan(send));
   }
   final hookEnd = body.indexOf(';', hook) + 1;
   expect(body.substring(hookEnd, gate), isNot(contains('await ')));
@@ -414,6 +416,26 @@ void main() {
     }
   });
 
+  test('transport records the actual send only after the disk barrier', () {
+    final transport = _source('gitlab_api.dart');
+    final begin = transport.indexOf('_cache.mutationDiskBarrier(affected, beforeSend: true)');
+    final barrier = transport.indexOf('await _cache.awaitDiskBarrier(', begin);
+    final closed = transport.indexOf('if (_closed) throw', barrier);
+    final started = transport.indexOf('onSendStarted?.call()', closed);
+    final zone = transport.indexOf('#graphMutationSendStarted', started);
+    final meter = transport.indexOf('RequestMeter.current?.increment()', zone);
+    final send = transport.indexOf('_dio.requestUri<ResponseBody>', meter);
+    expect(begin, isNonNegative);
+    expect(barrier, greaterThan(begin));
+    expect(transport, isNot(contains("beforeSend?.call()")));
+    expect(closed, greaterThan(barrier));
+    expect(started, greaterThan(closed));
+    expect(zone, greaterThan(started));
+    expect(meter, greaterThan(zone));
+    expect(send, greaterThan(meter));
+    expect(transport.substring(closed, send).replaceFirst(RegExp(r'await\s*$'), ''), isNot(contains('await ')));
+  });
+
   test('assignee, reaction, and snooze gates precede their sends', () {
     for (final (file, method) in <(String, String)>[
       ('work_item_assignee_api.dart', 'updateWorkItemAssignees'),
@@ -421,7 +443,8 @@ void main() {
       ('todo_snooze_api.dart', 'snoozeTodo'),
       ('todo_snooze_api.dart', 'unsnoozeTodo'),
     ]) {
-      _expectSendOrder(_method(_source(file), method));
+      _expectSendOrder(_method(_source(file), method),
+          reportsMutation: method == 'updateWorkItemAssignees');
     }
   });
 
@@ -496,7 +519,7 @@ void main() {
   });
 
   test(
-    'status awaits hook, reports START, then checks the sync gate',
+    'status false sync gate follows the hook and START without sending',
     () async {
       final fixture = WorkItemStatusFixture();
       addTearDown(fixture.closeAll);
@@ -584,7 +607,7 @@ void main() {
     },
   );
 
-  test('dates and health report START between awaited hook and gate', () async {
+  test('dates and health report START before false gates', () async {
     final dates = WorkItemDatesFixture();
     addTearDown(dates.api.close);
     final datesTarget = (await dates.api.workItemDates(
@@ -650,7 +673,7 @@ void main() {
     expect(health.mutationsReceived, 0);
   });
 
-  test('assignee reports START between awaited hook and gate', () async {
+  test('assignee reports START before false gate', () async {
     final fixture = WorkItemAssigneeFixture();
     addTearDown(fixture.api.close);
     final target = (await fixture.api.workItemAssignees(
@@ -676,7 +699,7 @@ void main() {
     expect(fixture.mutations, 0);
   });
 
-  test('weight and milestone report START between hook and gate', () async {
+  test('weight and milestone report START before false gates', () async {
     final weightFixture = WorkItemStatusFixture()..serveParent = true;
     weightFixture.item(group: false)
       ..weightWidget = true

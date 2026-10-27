@@ -58,7 +58,15 @@ Map<String, Map<String, Object?>> _freshBoardIssues() => {
       'title': 'Original $state issue',
       'description': 'Synthetic board issue.',
       'state': state,
-      'labels': <Object?>[],
+      'labels': <Object?>[
+        {
+          'id': 1,
+          'name': 'bug',
+          'color': '#f00',
+          'description': null,
+          'text_color': null,
+        },
+      ],
       'author': {'id': 7, 'username': 'developer'},
       'assignees': <Object?>[],
       'created_at': '2026-10-01T00:00:00Z',
@@ -175,7 +183,9 @@ void main() {
 
       void expectIssueGets(int perColumn) {
         final requests = adapter.requests
-            .where((request) => request.uri.path.endsWith('/projects/42/issues'))
+            .where(
+              (request) => request.uri.path.endsWith('/projects/42/issues'),
+            )
             .toList();
         expect(requests, hasLength(2 * perColumn));
         for (final state in ['opened', 'closed']) {
@@ -468,9 +478,8 @@ void main() {
 
       final first = adapter.requests
           .where(
-            (request) => request.uri.path.endsWith(
-              '/projects/42/milestones/101/issues',
-            ),
+            (request) =>
+                request.uri.path.endsWith('/projects/42/milestones/101/issues'),
           )
           .toList();
       expect(first, hasLength(1));
@@ -504,7 +513,12 @@ void main() {
     'label issues fixture with one row, warm fresh cache, 800x600 viewport, clock +30s: cold work-items URI carries the label query and reopen adds zero GET projects/42/issues requests',
     (tester) async {
       var now = DateTime.utc(2026, 10, 23, 8);
-      final label = {'id': 1, 'name': 'bug', 'color': '#d9534f', 'description': ''};
+      final label = {
+        'id': 1,
+        'name': 'bug',
+        'color': '#d9534f',
+        'description': '',
+      };
       final issue = {
         'id': 1001,
         'iid': 1,
@@ -577,7 +591,8 @@ void main() {
       expect(
         _endpointCount(adapter, '/projects/42/issues'),
         firstCount,
-        reason: 'the reopen itself must add zero GET projects/42/issues requests',
+        reason:
+            'the reopen itself must add zero GET projects/42/issues requests',
       );
     },
   );

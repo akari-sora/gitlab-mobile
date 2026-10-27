@@ -813,7 +813,7 @@ void main() {
   );
 
   test(
-    'mutation callback runs only at actual milestone transport handoff',
+    'milestone START callback runs once before transport',
     () async {
       Future<void> changed({required bool callbackThrows}) async {
         var callbacks = 0;
@@ -845,7 +845,7 @@ void main() {
           },
         );
         if (callbackThrows) {
-          await expectLater(future, throwsA(isA<StateError>()));
+          await expectLater(future, throwsA(_failure(FailureKind.cancelled)));
         } else {
           expect((await future).snapshot.milestone, isNull);
         }

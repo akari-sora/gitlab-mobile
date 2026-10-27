@@ -253,17 +253,19 @@ extension WorkItemHealthEditApi on GitLabApi {
     try {
       onMutationSent?.call();
     } on Object {
-      throw const WorkItemHealthEditFailure(_healthInvalid, false);
+      throw WorkItemHealthEditFailure(ApiFailure(FailureKind.cancelled), false);
     }
     if (mayStart != null && !mayStart()) {
       throw const WorkItemHealthEditFailure(_healthCancelled, false);
     }
 
+    var didSend = false;
     try {
       final response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        onSendStarted: () => didSend = true,
         data: requestData,
       );
 
@@ -331,7 +333,13 @@ extension WorkItemHealthEditApi on GitLabApi {
         ),
         true,
       );
-    } on Object {
+    } on Object catch (error) {
+      if (_graphDefinitelyNotSent(error, didSend)) {
+        throw WorkItemHealthEditFailure(error as ApiFailure, false);
+      }
+      if (!didSend) {
+        throw const WorkItemHealthEditFailure(_healthInvalid, false);
+      }
       throw WorkItemHealthEditFailure(_healthUncertain, true);
     }
   }

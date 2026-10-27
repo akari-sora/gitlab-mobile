@@ -556,11 +556,15 @@ extension WorkItemActivityApi on GitLabApi {
     }
 
     late final _WorkItemActivityEditNote acknowledged;
+    var didSend = false;
     try {
       final response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        onSendStarted: () {
+          didSend = true;
+        },
         data: {
           'query': _workItemActivityUpdateNoteMutation,
           'variables': {
@@ -586,7 +590,8 @@ extension WorkItemActivityApi on GitLabApi {
         discussionCreatedAt: target._original.discussionCreatedAt,
       );
       _requireEditedActivityNote(acknowledged, target.note, replacement);
-    } on Object {
+    } on Object catch (error) {
+      if (_graphDefinitelyNotSent(error, didSend)) rethrow;
       throw const ApiFailure(FailureKind.writeUncertain);
     }
 
@@ -1098,11 +1103,15 @@ extension WorkItemActivityApi on GitLabApi {
     }
 
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
+    var didSend = false;
     try {
       response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        onSendStarted: () {
+          didSend = true;
+        },
         data: {
           'query': _workItemActivityCreateNoteMutation,
           'variables': {
@@ -1115,7 +1124,8 @@ extension WorkItemActivityApi on GitLabApi {
           },
         },
       );
-    } on ApiFailure {
+    } on ApiFailure catch (error) {
+      if (_graphDefinitelyNotSent(error, didSend)) rethrow;
       throw const ApiFailure(FailureKind.writeUncertain);
     }
 

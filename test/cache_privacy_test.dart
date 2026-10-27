@@ -248,6 +248,11 @@ void main() {
           noteCalls++;
           return heldNotes.future;
         }
+        if (request.uri.path.endsWith('/groups/3/issues')) {
+          return jsonResponse([
+            _issue(confidential: true, title: 'private network'),
+          ]);
+        }
         throw StateError(
           'Unexpected request: ${request.method} ${request.uri}',
         );
@@ -290,7 +295,7 @@ void main() {
       final confidential = await api
           .cachedRecords(['groups', '3', 'issues'])
           .timeout(_deadline);
-      expect(confidential.lineage, CacheLineage.disk);
+      expect(confidential.lineage, CacheLineage.network);
       expect(confidential.value.items.single['confidential'], isTrue);
       heldNotes.complete(
         jsonResponse([

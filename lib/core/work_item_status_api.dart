@@ -275,11 +275,13 @@ extension WorkItemStatusApi on GitLabApi {
     }
 
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
+    var didSend = false;
     try {
       response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
+        onSendStarted: () => didSend = true,
         data: {
           'query': _workItemStatusMutation,
           'variables': {
@@ -290,10 +292,17 @@ extension WorkItemStatusApi on GitLabApi {
           },
         },
       );
-    } on Object {
+    } on Object catch (error) {
+      if (_graphDefinitelyNotSent(error, didSend)) {
+        throw WorkItemStatusWriteFailure(
+          failure: error as ApiFailure,
+          mutationSent: false,
+          handoff: handoff,
+        );
+      }
       throw WorkItemStatusWriteFailure(
-        failure: _statusUncertain,
-        mutationSent: true,
+        failure: didSend ? _statusUncertain : _statusCancelled,
+        mutationSent: didSend,
         handoff: handoff,
       );
     }
