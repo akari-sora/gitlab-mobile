@@ -34,6 +34,26 @@ final class AiResourceScope {
   final String? defaultBranch;
 }
 
+/// A single directly Group-owned Work Item, separate from project tools.
+/// Only the strict context/read boundary supplies the fresh coordinates.
+final class AiGroupResourceScope {
+  const AiGroupResourceScope({
+    required this.accountKey,
+    required this.instanceKey,
+    required this.groupId,
+    required this.groupFullPath,
+    required this.iid,
+    required this.workItemGid,
+  });
+
+  final String accountKey;
+  final String instanceKey;
+  final int groupId;
+  final String groupFullPath;
+  final int iid;
+  final String workItemGid;
+}
+
 enum AiProvenanceFreshness { pinnedHead, pinnedBase, live }
 
 final class AiToolProvenance {

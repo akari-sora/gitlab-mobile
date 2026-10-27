@@ -8,6 +8,7 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'failure.dart';
 import 'analytics_models.dart';
+import 'group_work_item_identity.dart';
 import 'instance.dart';
 import 'models.dart';
 import 'oauth.dart';

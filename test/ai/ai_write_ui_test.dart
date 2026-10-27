@@ -271,11 +271,7 @@ void main() {
     // editable text, so a name-only edit would always be refused; a title-only
     // issue does not carry the description it would edit.
     for (final (operation, fields, offered) in [
-      (
-        'createRelease',
-        const {'tagName': 'v1.0', 'description': 'Notes'},
-        true,
-      ),
+      ('createRelease', const {'tagName': 'v1.0', 'description': 'Notes'}, true),
       ('editProject', const {'name': 'Renamed'}, false),
       ('renameBoard', const {'name': 'Sprint'}, true),
       ('createIssue', const {'title': 'Only a title'}, false),
@@ -511,6 +507,56 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(l10n.aiProposalStoredVariables), findsNothing);
+  });
+
+  testWidgets('a rate-limit pause is shown once, by the status line', (
+    tester,
+  ) async {
+    late CoordHarness h;
+    late AiWriteProposal proposal;
+    await tester.runAsync(() async {
+      h = await CoordHarness.create();
+      h.newRun('Comment on #3 in team/example-9');
+      proposal = (await h.coordinator.propose(coordNoteCall('limited')))!;
+    });
+    addTearDown(() => tester.runAsync(h.dispose));
+    // GitLab starts limiting between the render and the tap: the approval
+    // itself finds the pause and marks the proposal paused.
+    final writes = _Writes([proposal])
+      ..answer = (_) {
+        h.clientMayStart = false;
+        h.coordinator.checkNow();
+        return const AiWriteOutcome(
+          state: AiJournalState.notExecuted,
+          reasonCode: AiWritePause.clientUnavailable,
+        );
+      };
+    await tester.pumpWidget(
+      _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+    );
+    expect(find.text(l10n.aiProposalPausedRateLimited), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+    await tester.pumpAndSettle();
+    expect(proposal.pausedReason, AiWritePause.clientUnavailable);
+    expect(find.text(l10n.aiProposalPausedRateLimited), findsOneWidget);
+  });
+
+  testWidgets('a background pause on approve never claims the edit failed', (
+    tester,
+  ) async {
+    final proposal = _proposal()..editedText = 'Edited words';
+    final writes = _Writes([proposal])
+      ..answer = (_) => const AiWriteOutcome(
+        state: AiJournalState.notExecuted,
+        reasonCode: AiWritePause.backgrounded,
+      );
+    await tester.pumpWidget(
+      _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+    );
+    await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiProposalEditRefused), findsNothing);
+    expect(find.text(l10n.aiProposalNotRun), findsNothing);
   });
 
   testWidgets('a card held by an account removal cannot be approved', (
@@ -1063,10 +1109,20 @@ void main() {
     expect(find.text(l10n.aiProposalNotRun), findsNothing);
   });
 
-  for (final code in [
-    'quickAction',
-    'approvalExpired',
-    'proposalInvalidated',
+  for (final (code, expected) in [
+    ('quickAction', l10n.aiRefusedQuickAction),
+    ('approvalExpired', l10n.aiProposalNotRun),
+    ('proposalInvalidated', l10n.aiProposalInvalid),
+    ('attachmentExpired', l10n.aiProposalNotRun),
+    ('invalidProposal', l10n.aiProposalNotRun),
+    ('accountChanged', l10n.aiProposalNotRun),
+    ('settingsChanged', l10n.aiProposalNotRun),
+    ('superseded', l10n.aiProposalNotRun),
+    ('stopped', l10n.aiProposalNotRun),
+    ('timeout', l10n.aiProposalNotRun),
+    (AiWritePause.clientUnavailable, l10n.aiProposalPausedRateLimited),
+    ('accountBlocked', l10n.aiProposalPausedRemoval),
+    (AiWritePause.accountRemovalHeld, l10n.aiProposalPausedRemoval),
   ]) {
     for (final editing in [false, true]) {
       testWidgets(
@@ -1095,21 +1151,27 @@ void main() {
             await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
           }
           await tester.pumpAndSettle();
-          final expected = switch (code) {
-            'quickAction' => l10n.aiRefusedQuickAction,
-            'approvalExpired' => l10n.aiProposalNotRun,
-            _ => l10n.aiProposalInvalid,
+          // Pauses are card states, not refusal texts. An edit made during a
+          // pause is not applied, so the edit path says so instead of
+          // promising a later approval of text that was not kept.
+          const pauses = {
+            AiWritePause.clientUnavailable,
+            AiWritePause.accountRemovalHeld,
+            'accountBlocked',
           };
-          expect(aiRefusalText(code), expected);
-          expect(find.text(expected), findsOneWidget);
+          final paused = pauses.contains(code);
+          if (!paused) expect(aiRefusalText(code), expected);
+          final shown = editing && paused ? l10n.aiProposalEditBlocked : expected;
+          expect(find.text(shown), findsOneWidget);
           expect(find.text(l10n.aiProposalEditRefused), findsNothing);
-          expect(find.text(l10n.aiProposalEditBlocked), findsNothing);
-          if (code == 'quickAction') {
-            expect(
-              find.text(l10n.aiRefusedQuickAction),
-              findsOneWidget,
-            );
+          if (shown != l10n.aiProposalEditBlocked) {
+            expect(find.text(l10n.aiProposalEditBlocked), findsNothing);
           }
+          if (editing && paused) {
+            expect(find.text(l10n.aiProposalPausedRateLimited), findsNothing);
+            expect(find.text(l10n.aiProposalPausedRemoval), findsNothing);
+          }
+          expect(find.text(l10n.aiRefusedChanged), findsNothing);
         },
       );
     }

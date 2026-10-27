@@ -751,8 +751,9 @@ final class PolicyAiWriteCoordinator
       }
       final scanReasons = _checkTextScan(prepared, policy, fresh);
       if (ownerFromPreRead) target = _todoTarget(prepared, policy.scope);
-      // Only non-text reasons survive edits. Text and scan reasons are
-      // recomputed from the edited payload at approval and dispatch.
+      // Only non-text reasons survive edits.
+      // Text reasons are recomputed from the edited payload; scan reasons
+      // from the opened target. Dispatch recomputes both.
       final fixedReasons = <AiFixedConfirmReason>[];
       final keys = {...prepared.writeKeys, ...prepared.dependencyKeys};
       if (journal.proposalEpoch(policy.scope.accountKey) != proposalEpoch) {
@@ -934,6 +935,15 @@ final class PolicyAiWriteCoordinator
     if (pending.done.isCompleted) return pending.done.future;
     if (pending.flight != null) return pending.flight!;
     if (editedText != null) {
+      // Terminal failures take precedence over holds. Refuse a hold without
+      // replacing earlier text or latching an edit failure.
+      final failure = _pendingFailure(pending, pauses: false);
+      if (failure != null) return _notExecuted(pending.call, failure);
+      final held = _pauseFailure(snapshot());
+      if (held != null) {
+        if (_updatePause(pending)) _changed();
+        return _notExecuted(pending.call, held);
+      }
       if (editedText == proposal.editedText) {
         return _notExecuted(
           pending.call,

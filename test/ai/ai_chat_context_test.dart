@@ -6,10 +6,13 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/request_meter.dart';
+import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_context.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 
 import '../support/fake_adapter.dart';
+import '../support/namespace_work_item_query.dart';
 
 const _head = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _base = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -28,7 +31,479 @@ const _project = Project(
   defaultBranch: 'main',
 );
 
+const _groupOrigin = AiGroupWorkItemOrigin(
+  group: GraphResourceRef(id: 'gid://gitlab/Group/7', fullPath: 'team/sub'),
+  iid: 3,
+  title: 'Untrusted entry title',
+);
+
+Map<String, Object?> _groupNode() => {
+  'id': 'gid://gitlab/WorkItem/91',
+  'iid': '3',
+  'title': 'Fresh group title',
+  'state': 'OPEN',
+  'createdAt': '2026-10-01T00:00:00Z',
+  'updatedAt': '2026-10-02T00:00:00Z',
+  'project': null,
+  'namespace': {'id': 'gid://gitlab/Group/7', 'fullPath': 'team/sub'},
+  'workItemType': {'id': 'gid://gitlab/WorkItems::Type/1', 'name': 'Task'},
+  'description': 'Fresh group description',
+  'widgets': <Object?>[],
+};
+
+Map<String, Object?> _groupEnvelope(Map<String, Object?> node) => {
+  'data': {
+    'namespace': {
+      'id': 'gid://gitlab/Group/7',
+      'fullPath': 'team/sub',
+      'workItem': node,
+    },
+  },
+};
+
+FakeAdapter _groupAdapter({
+  Map<String, Object?>? node,
+  Map<String, Object?>? envelope,
+  Map<String, Object?>? metadata,
+  void Function(int)? afterRead,
+}) => FakeAdapter((request) {
+  final isNamespace = request.uri.path == '/gitlab/api/graphql';
+  if (isNamespace) {
+    expect(request.method, 'POST');
+    final body = request.data! as Map<String, Object?>;
+    expect(body['query'], namespaceWorkItemQuery);
+    expect(body['variables'], {'path': 'team/sub', 'iid': '3'});
+    afterRead?.call(1);
+    return jsonResponse(envelope ?? _groupEnvelope(node ?? _groupNode()));
+  }
+  expect(request.method, 'GET');
+  expect(request.uri.path, '/gitlab/api/v4/groups/7');
+  expect(request.uri.queryParameters, {'with_projects': 'false'});
+  afterRead?.call(2);
+  return jsonResponse(
+    metadata ?? {'id': 7, 'full_path': 'team/sub', 'visibility': 'private'},
+  );
+});
+
 void main() {
+  test(
+    'group unavailable description is explicitly marked as unread',
+    () async {
+      final node = _groupNode()..remove('description');
+      final result = await _load(_groupOrigin, _groupAdapter(node: node));
+      expect(
+        result.built.blocks.single.text,
+        contains('"description_status":"unavailable"'),
+      );
+      expect(result.groupMetadata!.confidential, isNull);
+    },
+  );
+
+  test(
+    'initial group load has its own bounded meter without an admission callback',
+    () async {
+      final adapter = _groupAdapter();
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      expect(RequestMeter.current, isNull);
+      await loadAiChatContext(
+        origin: _groupOrigin,
+        api: api,
+        redactor: Redactor(secrets: const _Secrets()),
+        accountKey: 'https://example.com/gitlab#7',
+        refreshSecrets: () async {
+          expect(RequestMeter.current, isNotNull);
+          expect(RequestMeter.current!.count, 2);
+        },
+        isCurrent: () => true,
+      );
+      expect(RequestMeter.current, isNull);
+      expect(adapter.requests, hasLength(2));
+    },
+  );
+
+  test(
+    'initial group context refuses a read exceeding its own allowance',
+    () async {
+      final adapter = _groupAdapter(
+        afterRead: (read) {
+          if (read == 1) {
+            // Account for nested work in the same context operation. A caller
+            // without beforeRead must still be unable to exceed the allowance.
+            RequestMeter.current!
+              ..increment()
+              ..increment();
+          }
+        },
+      );
+      await expectLater(
+        _load(_groupOrigin, adapter),
+        throwsA(
+          isA<ApiFailure>().having(
+            (failure) => failure.kind,
+            'kind',
+            FailureKind.rateLimited,
+          ),
+        ),
+      );
+      expect(adapter.requests, hasLength(1));
+    },
+  );
+
+  test(
+    'group context has a distinct scope and fresh source metadata',
+    () async {
+      final adapter = _groupAdapter();
+      final result = await _load(_groupOrigin, adapter);
+      expect(projectForAiChatOrigin(_groupOrigin), isNull);
+      expect(result.scope, isNull);
+      expect(result.field, isNull);
+      final scope = result.groupScope!;
+      expect(scope.accountKey, 'https://example.com/gitlab#7');
+      expect(scope.instanceKey, 'https://example.com/gitlab');
+      expect(scope.groupId, 7);
+      expect(scope.groupFullPath, 'team/sub');
+      expect(scope.iid, 3);
+      expect(scope.workItemGid, 'gid://gitlab/WorkItem/91');
+      expect(result.groupMetadata!.visibility, 'private');
+      expect(result.groupMetadata!.confidential, isNull);
+      expect(result.fetchedAt, isNotNull);
+      expect(result.built.pinnedSha, isNull);
+      expect(result.built.blocks.single.text, contains('Fresh group title'));
+      expect(
+        result.built.blocks.single.text,
+        contains('"description_status":"loaded"'),
+      );
+      expect(
+        result.built.blocks.single.text,
+        contains('"labels_status":"incomplete"'),
+      );
+      expect(
+        result.built.blocks.single.text,
+        contains('"notes_status":"not_loaded"'),
+      );
+      expect(
+        result.built.blocks.single.text,
+        contains('Fresh group description'),
+      );
+      expect(
+        result.built.blocks.single.text,
+        isNot(contains('Untrusted entry')),
+      );
+      expect(adapter.requests, hasLength(2));
+      expect(
+        adapter.requests
+            .where((r) => r.method == 'POST')
+            .every(
+              (r) =>
+                  ((r.data! as Map)['query']! as String).startsWith('query '),
+            ),
+        isTrue,
+      );
+    },
+  );
+
+  for (final visibility in <Object?>[
+    'private',
+    'internal',
+    'public',
+    null,
+    '',
+    'unknown',
+    false,
+    0,
+  ]) {
+    test('group source visibility preserves $visibility evidence', () async {
+      final adapter = _groupAdapter(
+        metadata: {'id': 7, 'full_path': 'team/sub', 'visibility': ?visibility},
+      );
+      final result = await _load(_groupOrigin, adapter);
+      expect(
+        result.groupMetadata!.visibility,
+        const ['private', 'internal', 'public'].contains(visibility)
+            ? visibility
+            : isNull,
+      );
+      expect(result.groupMetadata!.confidential, isNull);
+      expect(adapter.requests, hasLength(2));
+    });
+  }
+
+  final refusals = <String, void Function(Map<String, Object?>)>{
+    'missing project key': (node) => node.remove('project'),
+    'missing namespace key': (node) => node.remove('namespace'),
+    'explicit project': (node) => node['project'] = {
+      'id': 'gid://gitlab/Project/7',
+      'fullPath': 'team/sub',
+    },
+    'invalid project object': (node) => node['project'] = <String, Object?>{},
+    'foreign Group with same path': (node) => node['namespace'] = {
+      'id': 'gid://gitlab/Group/8',
+      'fullPath': 'team/sub',
+    },
+    'ancestor instead of direct owner': (node) =>
+        node['namespace'] = {'id': 'gid://gitlab/Group/6', 'fullPath': 'team'},
+    'wrong iid': (node) => node['iid'] = '4',
+    'Group GID instead of WorkItem GID': (node) =>
+        node['id'] = 'gid://gitlab/Group/91',
+    'same numeric Project namespace': (node) => node['namespace'] = {
+      'id': 'gid://gitlab/Namespaces::ProjectNamespace/7',
+      'fullPath': 'team/sub',
+    },
+    'dot segment in direct owner': (node) => node['namespace'] = {
+      'id': 'gid://gitlab/Group/7',
+      'fullPath': 'team/./sub',
+    },
+  };
+  for (final refusal in refusals.entries) {
+    test('group strict context refuses ${refusal.key}', () async {
+      final node = _groupNode();
+      refusal.value(node);
+      final adapter = _groupAdapter(node: node);
+      await expectLater(
+        _load(_groupOrigin, adapter),
+        throwsA(isA<ApiFailure>()),
+      );
+      // No metadata fallback, extra evidence read, or mutation on refusal.
+      expect(adapter.requests, hasLength(1));
+    });
+  }
+
+  for (final missing in ['namespace', 'workItem']) {
+    test('group strict context refuses missing root $missing', () async {
+      final envelope = _groupEnvelope(_groupNode());
+      final data = envelope['data']! as Map<String, Object?>;
+      final parent = missing == 'namespace'
+          ? data
+          : data['namespace']! as Map<String, Object?>;
+      parent.remove(missing);
+      final adapter = _groupAdapter(envelope: envelope);
+      await expectLater(
+        _load(_groupOrigin, adapter),
+        throwsA(isA<ApiFailure>()),
+      );
+      expect(adapter.requests, hasLength(1));
+    });
+  }
+
+  test(
+    'group strict context refuses foreign root even with matching item',
+    () async {
+      final envelope = _groupEnvelope(_groupNode());
+      final data = envelope['data']! as Map<String, Object?>;
+      (data['namespace']! as Map<String, Object?>)['id'] =
+          'gid://gitlab/Group/8';
+      final adapter = _groupAdapter(envelope: envelope);
+      await expectLater(
+        _load(_groupOrigin, adapter),
+        throwsA(isA<ApiFailure>()),
+      );
+      expect(adapter.requests, hasLength(1));
+    },
+  );
+
+  for (final path in ['team/./sub', 'team/../sub', ' team/sub', 'team//sub']) {
+    test('group origin refuses noncanonical path $path before I/O', () async {
+      final adapter = _groupAdapter();
+      await expectLater(
+        _load(
+          AiGroupWorkItemOrigin(
+            group: GraphResourceRef(id: 'gid://gitlab/Group/7', fullPath: path),
+            iid: 3,
+            title: 'Synthetic',
+          ),
+          adapter,
+        ),
+        throwsA(isA<ApiFailure>()),
+      );
+      expect(adapter.requests, isEmpty);
+    });
+  }
+
+  for (final metadata in [
+    <String, Object?>{'id': 8, 'full_path': 'team/sub', 'visibility': 'public'},
+    <String, Object?>{
+      'id': 7,
+      'full_path': 'team/other',
+      'visibility': 'public',
+    },
+    <String, Object?>{'full_path': 'team/sub', 'visibility': 'public'},
+    <String, Object?>{
+      'id': '7',
+      'full_path': 'team/sub',
+      'visibility': 'public',
+    },
+    <String, Object?>{'id': 7, 'visibility': 'public'},
+  ]) {
+    test(
+      'group metadata requires matching numeric owner and path $metadata',
+      () async {
+        final adapter = _groupAdapter(metadata: metadata);
+        await expectLater(
+          _load(_groupOrigin, adapter),
+          throwsA(isA<ApiFailure>()),
+        );
+        expect(adapter.requests, hasLength(2));
+      },
+    );
+  }
+
+  for (final staleAfter in [1, 2, 3]) {
+    test(
+      'group context discards stale ownership after await $staleAfter',
+      () async {
+        var current = true;
+        final adapter = _groupAdapter(
+          afterRead: (read) {
+            if (read == staleAfter) current = false;
+          },
+        );
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        await expectLater(
+          loadAiChatContext(
+            origin: _groupOrigin,
+            api: api,
+            redactor: Redactor(secrets: const _Secrets()),
+            accountKey: 'https://example.com/gitlab#7',
+            refreshSecrets: () async {
+              if (staleAfter == 3) current = false;
+            },
+            isCurrent: () => current,
+          ),
+          throwsA(
+            isA<ApiFailure>().having(
+              (failure) => failure.kind,
+              'kind',
+              FailureKind.cancelled,
+            ),
+          ),
+        );
+        expect(adapter.requests, hasLength(staleAfter == 1 ? 1 : 2));
+      },
+    );
+  }
+
+  for (final account in [
+    'https://example.com/other#7',
+    'https://example.com/gitlab#07',
+    'https://example.com/gitlab#0',
+    'https://elsewhere.example/gitlab#7',
+  ]) {
+    test(
+      'group context rejects foreign or invalid account $account before I/O',
+      () async {
+        final adapter = _groupAdapter();
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        await expectLater(
+          loadAiChatContext(
+            origin: _groupOrigin,
+            api: api,
+            redactor: Redactor(secrets: const _Secrets()),
+            accountKey: account,
+            refreshSecrets: () async {},
+            isCurrent: () => true,
+          ),
+          throwsA(isA<ApiFailure>()),
+        );
+        expect(adapter.requests, isEmpty);
+      },
+    );
+  }
+
+  test(
+    'group reads reserve context allowance and measure both HTTP sends',
+    () async {
+      final adapter = _groupAdapter();
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final meter = RequestMeter();
+      final allowances = <int>[];
+      final result = await meter.runAsync(
+        () => loadAiChatContext(
+          origin: _groupOrigin,
+          api: api,
+          redactor: Redactor(secrets: const _Secrets()),
+          accountKey: 'https://example.com/gitlab#7',
+          refreshSecrets: () async {},
+          isCurrent: () => true,
+          beforeRead: (maximum) {
+            expect(adapter.requests, hasLength(allowances.length));
+            allowances.add(maximum);
+          },
+        ),
+      );
+      expect(allowances, [2, 2]);
+      expect(meter.count, 2);
+      expect(result.groupMetadata!.visibility, 'private');
+    },
+  );
+
+  for (final admittedReads in [0, 1]) {
+    test(
+      'group context budget stops before read ${admittedReads + 1}',
+      () async {
+        final adapter = _groupAdapter();
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        var reservations = 0;
+        await expectLater(
+          loadAiChatContext(
+            origin: _groupOrigin,
+            api: api,
+            redactor: Redactor(secrets: const _Secrets()),
+            accountKey: 'https://example.com/gitlab#7',
+            refreshSecrets: () async {},
+            isCurrent: () => true,
+            beforeRead: (_) {
+              if (reservations++ == admittedReads) {
+                throw StateError('context budget');
+              }
+            },
+          ),
+          throwsStateError,
+        );
+        expect(adapter.requests, hasLength(admittedReads));
+      },
+    );
+  }
+
+  test(
+    'group context rereads namespace and metadata on the same API',
+    () async {
+      final adapter = _groupAdapter();
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      for (var i = 0; i < 2; i++) {
+        await loadAiChatContext(
+          origin: _groupOrigin,
+          api: api,
+          redactor: Redactor(secrets: const _Secrets()),
+          accountKey: 'https://example.com/gitlab#7',
+          refreshSecrets: () async {},
+          isCurrent: () => true,
+        );
+      }
+      expect(adapter.requests, hasLength(4));
+    },
+  );
+
+  test('group context redacts secrets with the existing builder', () async {
+    final node = _groupNode()
+      ..['description'] = 'secret: synthetic-group-secret';
+    final result = await _load(
+      _groupOrigin,
+      _groupAdapter(node: node),
+      secrets: const ['synthetic-group-secret'],
+    );
+    expect(
+      result.built.blocks.single.text,
+      isNot(contains('synthetic-group-secret')),
+    );
+    expect(result.groupMetadata!.confidential, isNull);
+  });
+
   test('general context performs no GitLab reads', () async {
     final adapter = FakeAdapter((_) => throw StateError('unexpected request'));
     final result = await _load(const AiGeneralOrigin(), adapter);

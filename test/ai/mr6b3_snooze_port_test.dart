@@ -101,13 +101,18 @@ Map<String, Object?> _node(
   }[type],
   'snoozedUntil': snoozed ? _timeScalar(_future) : null,
   'project': _project(),
+  'group': null,
   'targetEntity': <String, Object?>{
     '__typename': type,
-    'id': 'gid://gitlab/$type/91',
+    if (type == 'Issue') 'issueId': 'gid://gitlab/Issue/91',
+    if (type == 'MergeRequest') 'mergeRequestId': 'gid://gitlab/MergeRequest/91',
+    if (type == 'WorkItem') 'workItemId': 'gid://gitlab/WorkItem/91',
     'iid': '3',
-    'project': _project(),
+    if (type == 'Issue') 'projectId': 9,
+    if (type == 'MergeRequest') 'mergeRequestProject': _project(),
+    if (type == 'WorkItem') 'workItemProject': _project(),
     if (type == 'WorkItem')
-      'namespace': {'id': 'gid://gitlab/Group/5', 'fullPath': 'team'},
+      'namespace': {'id': 'gid://gitlab/Namespaces::ProjectNamespace/9', 'fullPath': 'team/example-9'},
   },
 };
 
@@ -168,6 +173,7 @@ final class _Server {
         );
         expect(query, contains('state: pending, isSnoozed: $snoozed'));
         expect(query, contains('project { id fullPath }'));
+        expect(query, contains('group { id fullPath }'));
         expect(query, contains('namespace { id fullPath }'));
         expect(variables['first'], 100);
         ownershipReads++;
@@ -809,7 +815,7 @@ void main() {
     );
 
     for (final type in ['Issue', 'MergeRequest', 'WorkItem']) {
-      test('$op binds real project $type, including group namespace', () async {
+      test('$op binds real project $type', () async {
         final id = _args(op)['todoId']! as int;
         s.todos = [_node(id, type: type, snoozed: op == 'unsnoozeTodo')];
         final scope = AiWriteScope(
@@ -853,12 +859,13 @@ void main() {
         switch (bad) {
           case 'group':
             node['project'] = null;
-            entity['project'] = null;
+            entity['workItemProject'] = null;
+            entity['namespace'] = {'id': 'gid://gitlab/Group/5', 'fullPath': 'team'};
           case 'projectless':
             node['project'] = null;
             node['targetEntity'] = null;
           case 'fakeOuter':
-            entity['project'] = null;
+            entity['workItemProject'] = null;
           case 'commit':
             node['targetType'] = 'COMMIT';
             node['targetEntity'] = {'__typename': 'Commit'};
@@ -1140,10 +1147,10 @@ void main() {
             );
             switch (drift) {
               case 'target':
-                (node['targetEntity'] as Map)['id'] =
+                (node['targetEntity'] as Map)['workItemId'] =
                     'gid://gitlab/WorkItem/92';
               case 'project':
-                (node['targetEntity'] as Map)['project'] = null;
+                (node['targetEntity'] as Map)['workItemProject'] = null;
               case 'actor':
                 server.actor = 8;
               case 'membership':

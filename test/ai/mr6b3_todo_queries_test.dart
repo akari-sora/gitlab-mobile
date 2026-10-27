@@ -14,11 +14,17 @@ Map<String, Object?> _todo(int id, {String type = 'WorkItem'}) => {
   // An expired snooze belongs to the false filter, not just a null value.
   'snoozedUntil': '2020-01-01T00:00:00Z',
   'project': _project(),
+  'group': null,
   'targetEntity': <String, Object?>{
-    '__typename': type, 'id': 'gid://gitlab/$type/91', 'iid': '7',
-    'project': _project(),
+    '__typename': type, 'iid': '7',
+    if (type == 'Issue') 'issueId': 'gid://gitlab/Issue/91',
+    if (type == 'MergeRequest') 'mergeRequestId': 'gid://gitlab/MergeRequest/91',
+    if (type == 'WorkItem') 'workItemId': 'gid://gitlab/WorkItem/91',
+    if (type == 'Issue') 'projectId': 10,
+    if (type == 'MergeRequest') 'mergeRequestProject': _project(),
+    if (type == 'WorkItem') 'workItemProject': _project(),
     if (type == 'WorkItem') 'namespace': {
-      'id': 'gid://gitlab/Group/2', 'fullPath': 'team',
+      'id': 'gid://gitlab/Namespaces::ProjectNamespace/10', 'fullPath': 'team/core',
     },
   },
 };
@@ -27,8 +33,8 @@ List<Map<String, Object?>> _mixedTodos() => [
   _todo(1),
   _todo(2)..['project'] = null
     ..['targetEntity'] = {
-      '__typename': 'WorkItem', 'id': 'gid://gitlab/WorkItem/92', 'iid': '8',
-      'project': null,
+      '__typename': 'WorkItem', 'workItemId': 'gid://gitlab/WorkItem/92', 'iid': '8',
+      'workItemProject': null,
       'namespace': {'id': 'gid://gitlab/Group/2', 'fullPath': 'team'},
     },
   _todo(3)..['targetType'] = 'COMMIT'
@@ -37,12 +43,12 @@ List<Map<String, Object?>> _mixedTodos() => [
     ..['targetEntity'] = {'__typename': 'Epic'},
   _todo(5, type: 'Issue')..['project'] = null
     ..['targetEntity'] = {
-      '__typename': 'Issue', 'id': 'gid://gitlab/Issue/93', 'iid': '9', 'project': null,
+      '__typename': 'Issue', 'issueId': 'gid://gitlab/Issue/93', 'iid': '9', 'projectId': null,
     },
   _todo(6)..['project'] = {'id': 'gid://gitlab/Project/11', 'fullPath': 'other/repo'},
   _todo(7)..['targetEntity'] = {
-    '__typename': 'WorkItem', 'id': 'gid://gitlab/WorkItem/94', 'iid': '10',
-    'project': null,
+    '__typename': 'WorkItem', 'workItemId': 'gid://gitlab/WorkItem/94', 'iid': '10',
+    'workItemProject': null,
     'namespace': {'id': 'gid://gitlab/Group/2', 'fullPath': 'team'},
   },
   _todo(8)..['targetType'] = 'DESIGN'
@@ -75,6 +81,12 @@ void main() {
         expect(query, contains('state: pending, isSnoozed: $snoozed'));
         expect(query, contains('namespace { id fullPath }'));
         expect(query, contains('project { id fullPath }'));
+        expect(query, contains('group { id fullPath }'));
+        expect(query, contains('issueId: id'));
+        expect(query, contains('mergeRequestId: id'));
+        expect(query, contains('workItemId: id'));
+        expect(query, contains('mergeRequestProject: project'));
+        expect(query, contains('workItemProject: project'));
         expect(variables['first'], 100);
         expect(variables['after'], reads == 0 ? null : 'page-1');
         reads++;
@@ -167,9 +179,9 @@ void main() {
       final entity = node['targetEntity'] as Map<String, Object?>;
       switch (unsupported) {
         case 'outerProject': node['project'] = {'id': 'gid://gitlab/Project/11', 'fullPath': 'other/repo'};
-        case 'innerProject': entity['project'] = _project()..['id'] = 'gid://gitlab/Project/11';
-        case 'projectless': entity['project'] = null;
-        case 'outerProjectless': node['project'] = null; entity['project'] = null;
+        case 'innerProject': entity['workItemProject'] = _project()..['id'] = 'gid://gitlab/Project/11';
+        case 'projectless': entity['workItemProject'] = null;
+        case 'outerProjectless': node['project'] = null; entity['workItemProject'] = null;
         case 'namespace': entity['namespace'] = {'id': 'gid://gitlab/Group/5', 'fullPath': 'foreign'};
         case 'targetType': node['targetType'] = 'ISSUE';
         case 'commit': node['targetType'] = 'COMMIT'; node['targetEntity'] = {'__typename': 'Commit'};
@@ -192,13 +204,13 @@ void main() {
       switch (malformed) {
         case 'todoId': node['id'] = 'gid://gitlab/Issue/10';
         case 'iid': entity['iid'] = 0;
-        case 'entityId': entity['id'] = 'gid://gitlab/Issue/91';
+        case 'entityId': entity['workItemId'] = 'gid://gitlab/Issue/91';
         case 'projectShape': node['project'] = 'invalid';
         case 'projectId': (node['project'] as Map)['id'] = 'gid://gitlab/Group/10';
         case 'projectPath': (node['project'] as Map)['fullPath'] = 'team//invalid';
-        case 'innerProjectShape': entity['project'] = 10;
-        case 'innerProjectId': (entity['project'] as Map)['id'] = 'gid://gitlab/Group/10';
-        case 'innerProjectPath': (entity['project'] as Map)['fullPath'] = 'team//invalid';
+        case 'innerProjectShape': entity['workItemProject'] = 10;
+        case 'innerProjectId': (entity['workItemProject'] as Map)['id'] = 'gid://gitlab/Group/10';
+        case 'innerProjectPath': (entity['workItemProject'] as Map)['fullPath'] = 'team//invalid';
         case 'entityShape': node['targetEntity'] = 'invalid';
         case 'entityType': entity.remove('__typename');
         case 'targetType': node['targetType'] = null;

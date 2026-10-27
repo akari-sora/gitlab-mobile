@@ -21,6 +21,27 @@ const _groupPath = 'qa/synthetic-group';
 const _bug = 'gid://gitlab/ProjectLabel/3';
 const _priority = 'gid://gitlab/GroupLabel/8';
 const _docs = 'gid://gitlab/Label/11';
+// Independent literal: these filters establish direct ownership on GitLab
+// v18.5.0, whose Label type has no project/group owner fields.
+const _groupWorkItemLabelCandidatesQuery = r'''
+query MobileGroupWorkItemLabelCandidates($fullPath: ID!) {
+  currentUser { id }
+  group(fullPath: $fullPath) {
+    id
+    fullPath
+    labels(
+      onlyGroupLabels: true
+      includeAncestorGroups: false
+      includeDescendantGroups: false
+      archived: false
+      first: 100
+    ) {
+      nodes { id title color textColor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
 final _opened = DateTime.utc(2026, 10, 3, 9);
 final _touched = DateTime.utc(2026, 10, 3, 10);
 
@@ -53,6 +74,189 @@ void main() {
     );
     expect(events, ['hook', 'start']);
     expect(adapter.requests.where(_isMutation), isEmpty);
+  });
+
+  test('UI group search retains opaque identity while AI candidates refuse it', () async {
+    const opaqueGroup = 'gid://gitlab/Group/server-owned-group';
+    final adapter = FakeAdapter((request) {
+      expect(_query(request).trimLeft(), startsWith('query '));
+      if (_query(request).contains('MobileGroupLabelCandidates')) {
+        final envelope = _groupCandidateEnvelope([_label(_priority)]);
+        final data = envelope['data']! as Map<String, Object?>;
+        (data['group']! as Map<String, Object?>)['id'] = opaqueGroup;
+        return jsonResponse(envelope);
+      }
+      return jsonResponse(_envelope(_groupNode(
+        labels: <Object>[],
+        groupId: opaqueGroup,
+      )));
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = (await api.workItemLabels(
+      _groupDetail(groupId: opaqueGroup),
+      expectedUserId: 7,
+      generation: 1,
+    )).target!;
+    await expectLater(api.workItemLabelCandidates(target), throwsA(isA<ApiFailure>()));
+    expect(adapter.requests, hasLength(1));
+    final page = await api.searchWorkItemLabelCandidates(target, search: 'scope', pageIndex: 0);
+    expect(page.labels.single.id, _priority);
+    expect(adapter.requests, hasLength(2));
+    expect(adapter.requests.where(_isMutation), isEmpty);
+  });
+
+  test('fixed group candidates read one complete direct-owner page of 100', () async {
+    final adapter = FakeAdapter((request) {
+      expect(_query(request).trimLeft(), startsWith('query '));
+      if (_query(request).contains('MobileGroupWorkItemLabelCandidates')) {
+        return jsonResponse(_groupCandidateEnvelope([
+          for (var i = 1; i <= 100; i++) _ownedGroupLabel(i),
+        ]));
+      }
+      return jsonResponse(_envelope(_groupNode(labels: <Object>[])));
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final access = await api.workItemLabels(_groupDetail(), expectedUserId: 7, generation: 1);
+    expect(access.snapshot.allowsScopedLabels, WorkItemLabelAllowsScoped.disabled);
+    final target = access.target!;
+    for (final cap in [0, 2]) {
+      await expectLater(api.workItemLabelCandidates(target, maxPages: cap), throwsA(isA<ApiFailure>()));
+      expect(adapter.requests, hasLength(1), reason: 'invalid cap is refused before a candidate read');
+    }
+    late List<WorkItemLabel> candidates;
+    try {
+      candidates = await api.workItemLabelCandidates(target, maxPages: 1);
+    } finally {
+      // Assert outside the adapter so a document mismatch stays an assertion
+      // failure rather than being converted to an API transport failure.
+      expect(_query(adapter.requests.last), _groupWorkItemLabelCandidatesQuery);
+      expect(_variables(adapter.requests.last), {'fullPath': _groupPath});
+    }
+    expect(candidates, hasLength(100));
+    expect(candidates.first.id, 'gid://gitlab/GroupLabel/1');
+    expect(candidates.last.id, 'gid://gitlab/GroupLabel/100');
+    expect(() => candidates.clear(), throwsUnsupportedError);
+    expect(adapter.requests, hasLength(2));
+    expect(adapter.requests.where(_isMutation), isEmpty);
+  });
+
+  test('fixed group candidates refuse unproven scope, GID types and incomplete pages', () async {
+    for (final problem in [
+      'wrongContainerId', 'wrongContainerPath', 'missingContainerId', 'missingContainerPath',
+      'missingGroup', 'nullGroup', 'forgedGroupId', 'projectContainerId',
+      'descendantGroupId', 'descendantGroupPath', 'ancestorGroupId', 'ancestorGroupPath',
+      'projectLabel', 'baseLabel', 'unknownLabelType', 'missingLabelId', 'nullLabelId',
+      'numericLabelId', 'zeroLabelId', 'leadingZeroLabelId', 'negativeLabelId',
+      'overflowLabelId', 'suffixedLabelId', 'trailingNewlineLabelId', 'hasNext', 'oversized',
+      'duplicate', 'emptyCursor', 'wrongCursor', 'schemaError',
+    ]) {
+      final nodes = <Map<String, Object?>>[_ownedGroupLabel(1), _ownedGroupLabel(2)];
+      final response = _groupCandidateEnvelope(nodes);
+      final data = response['data']! as Map<String, Object?>;
+      final group = data['group']! as Map<String, Object?>;
+      final labels = group['labels']! as Map<String, Object?>;
+      final info = labels['pageInfo']! as Map<String, Object?>;
+      final label = nodes.last;
+      switch (problem) {
+        case 'wrongContainerId': group['id'] = 'gid://gitlab/Group/85';
+        case 'wrongContainerPath': group['fullPath'] = 'qa/other';
+        case 'missingContainerId': group.remove('id');
+        case 'missingContainerPath': group.remove('fullPath');
+        case 'missingGroup': data.remove('group');
+        case 'nullGroup': data['group'] = null;
+        case 'forgedGroupId': group['id'] = 'gid://gitlab/Group/084';
+        case 'projectContainerId': group['id'] = _project;
+        case 'descendantGroupId': group['id'] = 'gid://gitlab/Group/85'; group['fullPath'] = '$_groupPath/child';
+        case 'descendantGroupPath': group['fullPath'] = '$_groupPath/child';
+        case 'ancestorGroupId': group['id'] = 'gid://gitlab/Group/85'; group['fullPath'] = 'qa';
+        case 'ancestorGroupPath': group['fullPath'] = 'qa';
+        case 'projectLabel': label['id'] = 'gid://gitlab/ProjectLabel/2';
+        case 'baseLabel': label['id'] = 'gid://gitlab/Label/2';
+        case 'unknownLabelType': label['id'] = 'gid://gitlab/UnknownLabel/2';
+        case 'missingLabelId': label.remove('id');
+        case 'nullLabelId': label['id'] = null;
+        case 'numericLabelId': label['id'] = 2;
+        case 'zeroLabelId': label['id'] = 'gid://gitlab/GroupLabel/0';
+        case 'leadingZeroLabelId': label['id'] = 'gid://gitlab/GroupLabel/02';
+        case 'negativeLabelId': label['id'] = 'gid://gitlab/GroupLabel/-2';
+        case 'overflowLabelId': label['id'] = 'gid://gitlab/GroupLabel/999999999999999999999999999999999';
+        case 'suffixedLabelId': label['id'] = 'gid://gitlab/GroupLabel/2/child';
+        case 'trailingNewlineLabelId': label['id'] = 'gid://gitlab/GroupLabel/2\n';
+        case 'hasNext': info['hasNextPage'] = true; info['endCursor'] = 'next';
+        case 'oversized': labels['nodes'] = [for (var i = 1; i <= 101; i++) _ownedGroupLabel(i)];
+        case 'duplicate': nodes[1] = _ownedGroupLabel(1);
+        case 'emptyCursor': info['endCursor'] = '';
+        case 'wrongCursor': info['endCursor'] = 12;
+        case 'schemaError': response.clear(); response['errors'] = [{'message': 'unknown field'}];
+      }
+      final adapter = FakeAdapter((request) {
+        expect(_query(request).trimLeft(), startsWith('query '), reason: problem);
+        return jsonResponse(_query(request).contains('MobileGroupWorkItemLabelCandidates')
+            ? response : _envelope(_groupNode(labels: <Object>[])));
+      });
+      final api = testApi(adapter);
+      final target = (await api.workItemLabels(_groupDetail(), expectedUserId: 7, generation: 1)).target!;
+      await expectLater(api.workItemLabelCandidates(target), throwsA(isA<ApiFailure>()), reason: problem);
+      expect(adapter.requests, hasLength(2), reason: problem);
+      expect(adapter.requests.where(_isMutation), isEmpty, reason: problem);
+      api.close();
+    }
+  });
+
+  test('failed fixed group batch registers no candidate IDs', () async {
+    for (final truncated in [false, true]) {
+      final nodes = [_ownedGroupLabel(1), _ownedGroupLabel(2)];
+      if (!truncated) nodes.last['id'] = 'gid://gitlab/ProjectLabel/2';
+      final adapter = FakeAdapter((request) {
+        expect(_query(request).trimLeft(), startsWith('query '));
+        return jsonResponse(_query(request).contains('MobileGroupWorkItemLabelCandidates')
+            ? _groupCandidateEnvelope(nodes, hasNext: truncated, cursor: truncated ? 'next' : null)
+            : _envelope(_groupNode(labels: <Object>[])));
+      });
+      final api = testApi(adapter);
+      final target = (await api.workItemLabels(_groupDetail(), expectedUserId: 7, generation: 1)).target!;
+      await expectLater(api.workItemLabelCandidates(target), throwsA(isA<ApiFailure>()));
+      await expectLater(api.updateWorkItemLabels(target, desiredLabelIds: ['gid://gitlab/GroupLabel/1']),
+        throwsA(isA<WorkItemLabelWriteFailure>().having((error) => error.mutationSent, 'sent', false)));
+      expect(adapter.requests, hasLength(3));
+      expect(adapter.requests.where(_isMutation), isEmpty);
+      api.close();
+    }
+  });
+
+  test('fixed group candidates register IDs for the existing add/remove delta', () async {
+    var mutated = false;
+    final adapter = FakeAdapter((request) {
+      if (_isMutation(request)) {
+        mutated = true;
+        return jsonResponse(_ack(_touched));
+      }
+      expect(_query(request).trimLeft(), startsWith('query '));
+      if (_query(request).contains('MobileGroupWorkItemLabelCandidates')) {
+        return jsonResponse(_groupCandidateEnvelope([_ownedGroupLabel(1, title: 'scope::new')]));
+      }
+      return jsonResponse(_envelope(_groupNode(
+        labels: mutated ? [_label('gid://gitlab/GroupLabel/1', title: 'scope::new')]
+            : [_label(_priority, title: 'scope::old')],
+        updatedAt: mutated ? _touched.toIso8601String() : null,
+      )));
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = (await api.workItemLabels(_groupDetail(), expectedUserId: 7, generation: 1)).target!;
+    final candidates = await api.workItemLabelCandidates(target);
+    expect(candidates.single.title, 'scope::new');
+    expect(workItemLabelScopeKey(candidates.single.title), 'scope');
+    final result = await api.updateWorkItemLabels(target, desiredLabelIds: [candidates.single.id]);
+    expect(result.status, WorkItemLabelSaveStatus.success);
+    final input = _variables(adapter.requests.singleWhere(_isMutation))['input']! as Map;
+    expect(input['labelsWidget'], {
+      'addLabelIds': ['gid://gitlab/GroupLabel/1'], 'removeLabelIds': [_priority],
+    });
+    expect(adapter.requests.where(_isMutation), hasLength(1));
+    expect(adapter.requests, hasLength(5));
   });
 
   test('scope uses the last delimiter, including empty and nested keys', () {
@@ -1335,6 +1539,9 @@ Map<String, Object?> _label(
   String? color = 'not-a-color',
 }) => {'id': id, 'title': ?title, 'color': color, 'textColor': '#0b1d36'};
 
+Map<String, Object?> _ownedGroupLabel(int id, {String title = 'group label'}) =>
+    _label('gid://gitlab/GroupLabel/$id', title: title);
+
 List<Map<String, Object?>> _numbered(int start, int count) => [
   for (var id = start; id < start + count; id++)
     {
@@ -1413,6 +1620,7 @@ Map<String, Object?> _groupNode({
   required Object labels,
   String? updatedAt,
   String actor = _user,
+  String groupId = _group,
 }) => {
   '_actor': actor,
   'id': _item,
@@ -1422,7 +1630,7 @@ Map<String, Object?> _groupNode({
   'createdAt': _opened.toIso8601String(),
   'updatedAt': updatedAt ?? _opened.toIso8601String(),
   'project': null,
-  'namespace': {'id': _group, 'fullPath': _groupPath},
+  'namespace': {'id': groupId, 'fullPath': _groupPath},
   'workItemType': {
     'id': _type,
     'name': 'Issue',
@@ -1465,7 +1673,7 @@ Map<String, Object?> _groupCandidateEnvelope(
   bool hasNext = false,
   String? cursor,
 }) => {
-  'data': {
+  'data': <String, Object?>{
     'currentUser': {'id': _user},
     'group': {
       'id': _group,
@@ -1510,7 +1718,7 @@ WorkItemGraphDetail _detail() => WorkItemGraphDetail(
   dates: null,
 );
 
-WorkItemGraphDetail _groupDetail() => WorkItemGraphDetail(
+WorkItemGraphDetail _groupDetail({String groupId = _group}) => WorkItemGraphDetail(
   summary: WorkItemGraphSummary(
     id: _item,
     iid: 15,
@@ -1519,7 +1727,7 @@ WorkItemGraphDetail _groupDetail() => WorkItemGraphDetail(
     createdAt: _opened,
     updatedAt: _opened,
     project: null,
-    namespace: const GraphResourceRef(id: _group, fullPath: _groupPath),
+    namespace: GraphResourceRef(id: groupId, fullPath: _groupPath),
     type: const WorkItemGraphType(id: _type, name: 'Issue'),
   ),
   description: null,
