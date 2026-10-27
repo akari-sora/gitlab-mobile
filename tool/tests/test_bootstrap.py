@@ -756,6 +756,8 @@ class BootstrapTests(unittest.TestCase):
                          r'startForeground\(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC\)'
                          r'\s*\} else \{\s*startForeground\(NOTIFICATION_ID, notification\)')
         command = self._body(source, 'override fun onStartCommand')
+        self.assertIn('        if (failure != null) AgentRunsChannel.serviceStartFailed(this, intent?.getStringExtra(EXTRA_PERMIT_ID), failure)\n'
+                      '        else AgentRunsChannel.serviceStarted(this, intent?.getStringExtra(EXTRA_PERMIT_ID))\n', command)
         promotion = self._body(command, 'try')
         self.assertEqual(promotion.strip(), 'promote(RunProgress(1, 0, null, null))\n            null')
         self.assertLess(command.index('promote('), command.index('AgentRunsChannel.serviceStarted('))
@@ -791,6 +793,7 @@ class BootstrapTests(unittest.TestCase):
         source = bootstrap.AGENT_RUN_SERVICE
         # Release/stopAll/register/destroy may arrive either before onCreate or
         # between onCreate/onStartCommand. Neither ordering may stop a STARTING FGS.
+        self.assertNotIn('stopService(', source)
         self.assertNotRegex(source, r'\b(?:context|activity)\??\.stopService\(')
         self.assertNotIn('serviceCreated', source)
         native = self._body(source, 'private fun stopNative(): Boolean')
@@ -869,6 +872,7 @@ class BootstrapTests(unittest.TestCase):
         sequence = self._body(source, 'private fun sequence')
         self.assertIn('seq <= lastOpSeq', sequence)
         self.assertIn('"stale_operation"', sequence)
+        self.assertIn('"opSeqFloor" to lastOpSeq))\n            return null', sequence)
         self.assertLess(sequence.index('seq <= lastOpSeq'), sequence.index('lastOpSeq = seq'))
         self.assertIn('MAX_OP_SEQ = 9007199254740991L', source)
         self.assertIn('"opSeqFloor" to lastOpSeq', sequence, 'new engine can recover process sequence high-water')
@@ -892,6 +896,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertLess(release.index('!ownsRequest'), release.index('permit.state = State.RELEASED'))
         self.assertLess(release.index('State.RELEASED'), release.index('stopNative()'))
         self.assertIn('"didRelease" to false', release)
+        self.assertIn('result.success(reply("released", "didRelease" to false)); return', release)
         self.assertIn('permit.nonces.clear()', release)
         self.assertNotIn('notifyInvalidated(', release)
         self.assertIn('cleanupFailed = true', source)
@@ -916,6 +921,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertIn(expression, destroyed)
         start = self._body(source, 'private fun start(')
         self.assertIn('if (visible !== activity || activity.isFinishing || activity.isDestroyed)', start)
+        self.assertIn('reject(result, "foreground_required"); return', start)
         self.assertIn('val running = service ?: throw IllegalStateException()\n                    running.update(progress)', start)
         self.assertNotIn('service!!', source)
         update = self._body(source, 'private fun update(')
