@@ -92,7 +92,7 @@ final class ReadCacheStagedWrite {
     _consumed = true;
     return _guardSync(() {
       final files = _staged.files;
-      var interrupted = false;
+      var committed = false;
       try {
         // A revoked caller may already have cleared the account directory.
         if (!_mayCommit()) return ReadCacheCommitResult.notPermitted;
@@ -111,19 +111,17 @@ final class ReadCacheStagedWrite {
         if (index != null) files.requireIndexFiles(index, chainVerified: true);
         if (!_mayCommit()) return ReadCacheCommitResult.notPermitted;
         File(_staged.temporaryPath).renameSync(destination);
-        try {
-          _checkpoint?.call(
-            fileName == 'index.v1.bin'
-                ? ReadCacheFileCheckpoint.indexRenamed
-                : ReadCacheFileCheckpoint.entryRenamed,
-          );
-        } on Object {
-          interrupted = true;
-          rethrow;
-        }
+        committed = true;
+        _checkpoint?.call(
+          fileName == 'index.v1.bin'
+              ? ReadCacheFileCheckpoint.indexRenamed
+              : ReadCacheFileCheckpoint.entryRenamed,
+        );
         return ReadCacheCommitResult.committed;
       } finally {
-        if (!interrupted) files.deleteTemporary(_staged.temporaryPath);
+        // Rename consumed the temporary. Rechecking ancestors after this point
+        // could turn a committed write into a failure or mask a checkpoint error.
+        if (!committed) files.deleteTemporary(_staged.temporaryPath);
       }
     });
   }
@@ -143,9 +141,18 @@ final class ReadCacheStagedWrite {
 /// Atomic, bounded primitives only. The coordinator owns admission, account
 /// serialization, leases, markers, key creation, recovery and LRU decisions.
 /// Constructing this store performs no I/O and never selects a platform root.
-/// An untrustedPath from usage() is device-wide fail-closed. Foreign names and
-/// wrong directory types can be cleared with clearRoot(); special files cannot
-/// be removed in the app, so the cache stays closed.
+/// An untrustedPath from any path is device-wide fail-closed: reads, writes
+/// (including staging, commit and discard), usage(), scans, eviction, temporary
+/// cleanup, accountDirectoryNames(), accountDirectoryState(),
+/// clearAccountDirectoriesExcept() and explicit clears. The coordinator fences
+/// every account and escalates to clearRoot(); a failed clear keeps the cache
+/// closed. Foreign names and wrong directory types can be cleared; special
+/// files cannot be removed in the app, so the cache stays closed.
+///
+/// Capacity checks are best effort across accounts: separate staging isolates
+/// can each observe room before either temporary or rename becomes visible.
+/// C2c must serialize device-wide capacity checks through staging and commit or
+/// discard; per-account queues alone do not close this check-then-rename window.
 final class ReadCacheFileStore {
   ReadCacheFileStore({
     required Future<Directory> Function() root,
@@ -243,23 +250,40 @@ final class ReadCacheFileStore {
 
   /// Returns null when missing or expired. The caller evicts on null so expired
   /// files do not remain on disk indefinitely.
+  /// [expectedBodyKind] selects the pre-read and decrypt ceiling: JSON, page and
+  /// text use 1 MiB, terminal logs use 2 MiB (plus the 29-byte envelope on disk).
+  /// Omitting it retains the terminal-log ceiling for unknown recovery entries.
+  /// The authenticated body kind must also match a supplied expectation.
   Future<ProjectedDiskEntry?> readEntry(
     String accountKey,
     List<int>? key,
-    String canonicalKey,
-  ) => _run(accountKey, key, (files, key) async {
+    String canonicalKey, {
+    ReadCacheBodyKind? expectedBodyKind,
+  }) => _run(accountKey, key, (files, key) async {
     final name = await const ReadCacheCipher().entryFileName(key, canonicalKey);
-    return files.readEntry(key, name, expectedCanonicalKey: canonicalKey);
+    return files.readEntry(
+      key,
+      name,
+      expectedCanonicalKey: canonicalKey,
+      expectedBodyKind: expectedBodyKind,
+    );
   });
 
   /// Recovery can authenticate an entry discovered by its opaque file name.
   /// This does not scan, delete, rebuild an index or choose an eviction policy.
   /// Returns null when missing or expired; the caller evicts on null.
+  /// [expectedBodyKind] has the same ceiling and binding checks as [readEntry].
   Future<ProjectedDiskEntry?> readEntryFile(
     String accountKey,
     List<int>? key,
-    String fileName,
-  ) => _run(accountKey, key, (files, key) => files.readEntry(key, fileName));
+    String fileName, {
+    ReadCacheBodyKind? expectedBodyKind,
+  }) => _run(
+    accountKey,
+    key,
+    (files, key) =>
+        files.readEntry(key, fileName, expectedBodyKind: expectedBodyKind),
+  );
 
   Future<List<String>> entryFiles(String accountKey, List<int>? key) =>
       _run(accountKey, key, (files, _) async => files.entryFiles());
@@ -327,6 +351,9 @@ final class ReadCacheFileStore {
   /// Explicit startup/clear primitive. The caller owns the fence/marker and
   /// retention policy. Validates the full inventory before deleting anything;
   /// nested links are unlinked without traversing their targets.
+  /// [retainedAccountKeys] contains original account keys, NOT the hashed names
+  /// returned by [accountDirectoryNames]. Passing those names would retain no
+  /// matching account directories and could delete every account directory.
   Future<void> clearAccountDirectoriesExcept(Set<String> retainedAccountKeys) {
     final retainedNames = retainedAccountKeys
         .map(ReadCacheCipher.accountDirectoryName)
@@ -585,9 +612,14 @@ final class _Files {
     List<int> key,
     String name, {
     String? expectedCanonicalKey,
+    ReadCacheBodyKind? expectedBodyKind,
   }) async {
     requireName(name, index: false);
-    final bytes = read(name, readCacheTerminalLogLimit);
+    final plaintextLimit = switch (expectedBodyKind) {
+      null || ReadCacheBodyKind.terminalLog => readCacheTerminalLogLimit,
+      _ => readCacheEntryLimit,
+    };
+    final bytes = read(name, plaintextLimit);
     if (bytes == null) return null;
     const cipher = ReadCacheCipher();
     final plain = await cipher.decrypt(
@@ -595,7 +627,7 @@ final class _Files {
       accountKey: accountKey,
       fileName: name,
       envelope: bytes,
-      plaintextLimit: readCacheTerminalLogLimit,
+      plaintextLimit: plaintextLimit,
     );
     // Only authenticated metadata is inspected. The codec rechecks framing,
     // the entire schema and the smaller per-body limit before returning data.
@@ -624,6 +656,9 @@ final class _Files {
       accountKey: accountKey,
       canonicalKey: canonicalKey,
     );
+    if (expectedBodyKind != null && entry.bodyKind != expectedBodyKind) {
+      throw const ReadCacheCodecException(ReadCacheCodecError.bindingMismatch);
+    }
     if (await cipher.entryFileName(key, entry.canonicalKey) != name) {
       throw const ReadCacheFileException(ReadCacheFileFailure.invalidName);
     }
