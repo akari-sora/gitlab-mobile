@@ -42,3 +42,10 @@ C2a's first run kept the plan's fail-closed default (no injected gate and no vis
 - **REST rollback is not retried.** A failed dispatching→notExecuted rollback after flush is no longer retried. It stays `writeUncertain` and isolated with mutationCount 0, per D6; main previously retried once (m5).
 - **Coordinator segment state is not restored.** Restoring an unsent segment keeps the coordinator's `_segmentGeneration`/`_segmentCreated` as advanced by `beginSegment()`. This is stricter and accepted (m6).
 - **Snapshot defaults changed.** `AiWritePolicySnapshot.appInForeground` now defaults to false, and `clientMayStart` is a lazy getter, so a stored snapshot reads the live value. No code reads the client field from a stored snapshot; keep it that way (m7).
+
+## C-D5. A normal service release rebinds approval-waiting runs to the foreground (lead, 2026-10-27)
+C2b found that D7 (release the service when every run only awaits approval) conflicts with C2a's immutable permit-bound run binding: after a normal release, a later foreground approval is refused (`notExecuted`, `backgrounded`), and D4 forbids a foreground shortcut for a permit-bound run.
+- On a **normal release** (`releaseRuns` → `released`, not an invalidation: user stop, timeout, service/activity destroyed, or a lost callback), each run bound to that permit that is waiting only for approval gets an explicit binding transition to a permitless foreground binding. The transition is a single core API, called only by the bridge for the exact released permit.
+- After the transition, approval and execution use the local foreground gate: real visibility at acquire and consume, no TTL (C-D4). Approval already requires real visibility. Tickets issued under the old binding stay invalid, and a stale reply is still discarded.
+- If the app goes to the background again, the run needs a new permit (a new `startRuns`). Nothing executes in the background under the old permit.
+- An **invalidation** (`permitInvalidated`) never rebinds. It ends or pauses the run as before.

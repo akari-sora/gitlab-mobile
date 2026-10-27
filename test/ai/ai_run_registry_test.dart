@@ -528,6 +528,10 @@ void main() {
   test(
     'real controllers reserve three slots and generation disposal closes transports',
     () async {
+      // Production sends require actual visible foreground, including in this
+      // standalone fixture without an authenticated widget tree.
+      TestWidgetsFlutterBinding.ensureInitialized()
+          .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       final fixture = WorkspaceFixture();
       final accounts = MemoryAccountStore()
         ..accounts = [fixture.account]
