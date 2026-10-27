@@ -8,6 +8,19 @@ import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
+import 'mr6b3g_state_test.dart' as stage_state;
+import 'mr6b3g_status_test.dart' as stage_status;
+import 'mr6b3g_dates_test.dart' as stage_dates;
+import 'mr6b3g_health_test.dart' as stage_health;
+import 'mr6b3g_assignees_test.dart' as stage_assignees;
+import 'mr6b3g_milestone_weight_test.dart' as stage_milestone_weight;
+import 'mr6b3g_activity_create_test.dart' as stage_activity_create;
+import 'mr6b3g_activity_delete_test.dart' as stage_activity_delete;
+import 'mr6b3g_t1_test.dart' as stage_t1;
+import 'mr6b3g_content_test.dart' as stage_content;
+import 'mr6b3g_activity_edit_test.dart' as stage_activity_edit;
+import 'mr6b3g_labels_test.dart' as stage_labels;
+
 import 'mr6b3_matrix_support.dart';
 import 'mr6b3_support.dart';
 
@@ -278,6 +291,129 @@ const _mr6b3tReads = {
   'workItemLabelCandidates',
 };
 
+// Independently fixed family contracts; stage files are owner-controlled.
+const _groupFamilies = <String, (Set<String>, Set<String>)>{
+  'state': (
+    {'updateGroupWorkItemState'},
+    {'workItemState', 'updateWorkItemState'},
+  ),
+  'status': (
+    {'updateGroupWorkItemStatus'},
+    {'workItemStatus', 'updateWorkItemStatus'},
+  ),
+  'dates': (
+    {'updateGroupWorkItemDates'},
+    {'workItemDates', 'updateWorkItemDates'},
+  ),
+  'health': (
+    {'updateGroupWorkItemHealthStatus'},
+    {'workItemHealthEdit', 'updateWorkItemHealthStatus'},
+  ),
+  'assignees': (
+    {'updateGroupWorkItemAssignees'},
+    {
+      'workItemAssignees',
+      'searchWorkItemAssigneeCandidates',
+      'updateWorkItemAssignees',
+    },
+  ),
+  'milestone_weight': (
+    {'updateGroupWorkItemMilestone', 'updateGroupWorkItemWeight'},
+    {
+      'workItemMilestone',
+      'workItemMilestoneChoices',
+      'workItemWeight',
+      'updateWorkItemMilestone',
+      'updateWorkItemWeight',
+    },
+  ),
+  'activity_create': (
+    {'createGroupWorkItemActivityComment', 'createGroupWorkItemActivityReply'},
+    {
+      'createWorkItemActivityComment',
+      'createWorkItemActivityReply',
+      'workItemActivity',
+      'workItemActivityNext',
+      'workItemActivityWriteAccess',
+      'workItemDiscussionNotesNext',
+    },
+  ),
+  'activity_delete': (
+    {'deleteGroupWorkItemActivityNote'},
+    {
+      'deleteWorkItemActivityNote',
+      'workItemActivity',
+      'workItemActivityDeleteAccess',
+      'workItemActivityNext',
+      'workItemDiscussionNotesNext',
+    },
+  ),
+  'reactions_notifications': (
+    {'setGroupWorkItemActivityNoteReaction', 'setGroupWorkItemNotifications'},
+    {
+      'setWorkItemActivityNoteReaction',
+      'setWorkItemNotifications',
+      'workItemActivity',
+      'workItemActivityNext',
+      'workItemActivityReactionAccess',
+      'workItemDiscussionNotesNext',
+      'workItemNotifications',
+    },
+  ),
+  'content': (
+    {'updateGroupWorkItemContent'},
+    {'updateWorkItemContent', 'workItemContent'},
+  ),
+  'activity_edit': (
+    {'editGroupWorkItemActivityNote'},
+    {
+      'editWorkItemActivityNote',
+      'workItemActivity',
+      'workItemActivityEditAccess',
+      'workItemActivityNext',
+      'workItemDiscussionNotesNext',
+    },
+  ),
+  'labels': (
+    {'updateGroupWorkItemLabels'},
+    {'updateWorkItemLabels', 'workItemLabelCandidates', 'workItemLabels'},
+  ),
+};
+
+final _groupStages = <String, Set<String>>{
+  'state': stage_state.groupStateStageOperations,
+  'status': stage_status.groupStatusStageOperations,
+  'dates': stage_dates.groupDatesStageOperations,
+  'health': stage_health.groupHealthStageOperations,
+  'assignees': stage_assignees.groupAssigneesStageOperations,
+  'milestone_weight':
+      stage_milestone_weight.groupMilestoneWeightStageOperations,
+  'activity_create': stage_activity_create.groupActivityCreateStageOperations,
+  'activity_delete': stage_activity_delete.groupActivityDeleteStageOperations,
+  'reactions_notifications': stage_t1.groupT1StageOperations,
+  'content': stage_content.groupContentStageOperations,
+  'activity_edit': stage_activity_edit.groupActivityEditStageOperations,
+  'labels': stage_labels.groupLabelsStageOperations,
+};
+
+const _groupAliases = <String, String>{
+  'updateGroupWorkItemState': 'updateWorkItemState',
+  'updateGroupWorkItemStatus': 'updateWorkItemStatus',
+  'updateGroupWorkItemDates': 'updateWorkItemDates',
+  'updateGroupWorkItemHealthStatus': 'updateWorkItemHealthStatus',
+  'updateGroupWorkItemAssignees': 'updateWorkItemAssignees',
+  'updateGroupWorkItemMilestone': 'updateWorkItemMilestone',
+  'updateGroupWorkItemWeight': 'updateWorkItemWeight',
+  'createGroupWorkItemActivityComment': 'createWorkItemActivityComment',
+  'createGroupWorkItemActivityReply': 'createWorkItemActivityReply',
+  'deleteGroupWorkItemActivityNote': 'deleteWorkItemActivityNote',
+  'setGroupWorkItemActivityNoteReaction': 'setWorkItemActivityNoteReaction',
+  'setGroupWorkItemNotifications': 'setWorkItemNotifications',
+  'updateGroupWorkItemContent': 'updateWorkItemContent',
+  'editGroupWorkItemActivityNote': 'editWorkItemActivityNote',
+  'updateGroupWorkItemLabels': 'updateWorkItemLabels',
+};
+
 void main() {
   group('§15 row 13 fixed read boundary', () {
     test('read-port member whitelist and graph delta remain exact', () {
@@ -313,22 +449,57 @@ void main() {
         final members = _apiMembers(source);
         if (name.startsWith('gitlab_write_port_group_')) {
           groupCalled.addAll(members);
+          final family = name.substring(
+            'gitlab_write_port_group_'.length,
+            name.length - '.dart'.length,
+          );
+          expect(_groupFamilies.containsKey(family), isTrue, reason: name);
+          expect(
+            members,
+            _groupStages[family]!.isEmpty
+                ? isEmpty
+                : _groupFamilies[family]!.$2,
+            reason: name,
+          );
+          expect(
+            _namespaceResolverViolations(source, isMain: false),
+            isEmpty,
+            reason: name,
+          );
         } else if (name.startsWith('gitlab_write_port_graphql_')) {
           called.addAll(members);
         } else {
           nonGraphCalled.addAll(members);
         }
       }
-      expect(mainCalled, _mainWriteMembers);
+      expect(mainCalled, {..._mainWriteMembers, 'namespaceWorkItem'});
+      expect(
+        _namespaceResolverViolations(
+          mainWrite.readAsStringSync(),
+          isMain: true,
+        ),
+        isEmpty,
+      );
       expect(nonGraphCalled, _nonGraphWriteMembers);
-      expect(groupCalled, isEmpty);
+      final expectedGroupMembers = <String>{
+        for (final family in _groupFamilies.keys)
+          if (_groupStages[family]!.isNotEmpty) ..._groupFamilies[family]!.$2,
+      };
+      expect(groupCalled, expectedGroupMembers);
+      for (final entry in parts.entries) {
+        expect(
+          _namespaceResolverViolations(entry.value, isMain: false),
+          isEmpty,
+          reason: entry.key.toString(),
+        );
+      }
       final allCalled = {
         ...mainCalled,
         ...nonGraphCalled,
         ...called,
         ...groupCalled,
       };
-      expect(allCalled, isNot(contains('namespaceWorkItem')));
+      expect(allCalled, contains('namespaceWorkItem'));
       expect(
         allCalled.intersection({'graphQuery', 'graphMutation', '_send'}),
         isEmpty,
@@ -1143,23 +1314,46 @@ void main() {
   });
 
   group('§15 row 21 P14 inventory cross-check and §7t delivery', () {
-    test(
-      'all eighteen graph rows are delivered and visible; none is deferred',
-      () {
-        final graphRows = ProductionAiLedger.rows
-            .where((r) => r.boundary == AiWriteBoundary.graph)
-            .toList();
-        expect(graphRows.map((r) => r.operationId).toSet(), {
-          ..._fixedReads.keys,
-          ..._mr6b3tMethods,
-        });
-        expect(graphRows, hasLength(18));
-        for (final row in graphRows) {
+    test('fixed original rows and staged group alias inventory', () {
+      final graphRows = ProductionAiLedger.rows
+          .where((r) => r.boundary == AiWriteBoundary.graph)
+          .toList();
+      final stageOperations = <String>{};
+      for (final family in _groupFamilies.keys) {
+        final stage = _groupStages[family]!;
+        final complete = _groupFamilies[family]!.$1;
+        expect(
+          stage.isEmpty ||
+              (stage.length == complete.length && stage.containsAll(complete)),
+          isTrue,
+          reason: family,
+        );
+        expect(stageOperations.intersection(stage), isEmpty, reason: family);
+        stageOperations.addAll(stage);
+      }
+      expect(_groupAliases, hasLength(15));
+      expect(
+        _groupAliases.values.toSet().contains('setIncidentStatus'),
+        isFalse,
+      );
+      final originals = {..._fixedReads.keys, ..._mr6b3tMethods};
+      expect(originals, hasLength(18));
+      expect(graphRows.map((r) => r.operationId).toSet(), {
+        ...originals,
+        ...stageOperations,
+      });
+      expect(graphRows, hasLength(18 + stageOperations.length));
+      for (final row in graphRows) {
+        if (originals.contains(row.operationId)) {
           expect(row.namedMethod, row.operationId);
           expect(row.modelVisible, isTrue);
+        } else {
+          expect(row.namedMethod, _groupAliases[row.operationId]);
+          expect(row.scopeClass, AiScopeClass.groupWorkItem);
+          expect(row.modelVisible, isFalse);
         }
-      },
-    );
+      }
+    });
   });
 }
 
@@ -1181,7 +1375,7 @@ Set<String> _pythonSet(String source, String name) {
 
 Set<String> _apiMembers(String source) {
   final receivers = <String>{'_api'};
-  final aliases = RegExp(r'\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b');
+  final aliases = RegExp(r'\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b(?!\s*[.(])');
   var changed = true;
   while (changed) {
     changed = false;
@@ -1743,4 +1937,50 @@ void _expectFixedDocuments(Mr6b3ApiHarness h, String operation) {
     h.server.adapter.requests.length,
     lessThanOrEqualTo(h.budget.gitLabRequests),
   );
+}
+
+List<String> _namespaceResolverViolations(
+  String source, {
+  required bool isMain,
+}) {
+  final code = _codeOnly(source);
+  final refs = RegExp(r'\.namespaceWorkItem\b').allMatches(code).toList();
+  if (!isMain) {
+    return refs.isEmpty ? [] : ['namespaceWorkItem outside main resolver'];
+  }
+  if (refs.length != 1) return ['expected one namespaceWorkItem reference'];
+  final declaration = RegExp(
+    r'\bFuture\s*<[^>]+>\s+_resolveGroupWorkItem\s*\(',
+  ).firstMatch(code);
+  if (declaration == null) return ['missing group resolver'];
+  final body = RegExp(
+    r'\basync\s*\{',
+  ).firstMatch(code.substring(declaration.end));
+  if (body == null) return ['missing async resolver body'];
+  final opening = declaration.end + body.end - 1;
+  var depth = 1;
+  var end = opening + 1;
+  while (end < code.length && depth > 0) {
+    if (code[end] == '{') {
+      depth++;
+    }
+    if (code[end] == '}') {
+      depth--;
+    }
+    end++;
+  }
+  if (depth != 0 ||
+      refs.single.start <= opening ||
+      refs.single.start >= end ||
+      !RegExp(
+        r'_api\s*\.namespaceWorkItem\s*\(',
+      ).hasMatch(code.substring(opening, end))) {
+    return ['namespaceWorkItem outside group resolver'];
+  }
+  final members = _apiMembers(code.substring(opening, end));
+  if (members.length != 2 ||
+      !members.containsAll({'instance', 'namespaceWorkItem'})) {
+    return ['group resolver API members differ from the fixed delta'];
+  }
+  return [];
 }

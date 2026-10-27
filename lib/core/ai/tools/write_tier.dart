@@ -3,7 +3,6 @@ import 'write_ledger.dart';
 
 export 'write_levels.dart';
 
-
 enum AiGateDecision { deny, requireApproval, execute }
 
 final class AiTierFacts {
@@ -149,9 +148,7 @@ AiTierDecision decideTier(AiTierInput input) {
   if (input.level == AiAutonomyLevel.readOnly) {
     return AiTierDecision.denied(tier);
   }
-  if (capability.scopeClass == AiScopeClass.groupWorkItem ||
-      input.target.kind == AiTargetKind.groupWorkItem ||
-      !scopeAdmits(input.scope, capability, input.target)) {
+  if (!scopeAdmits(input.scope, capability, input.target)) {
     return AiTierDecision.denied(tier, scopeDenied: true);
   }
   var decision = _matrix(input.level, tier);

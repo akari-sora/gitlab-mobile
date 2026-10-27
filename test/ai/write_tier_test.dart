@@ -4,6 +4,7 @@ import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
 import 'package:gitlab_mobile/core/instance.dart';
+import 'package:gitlab_mobile/core/group_work_item_identity.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 
 void main() {
@@ -448,6 +449,8 @@ void main() {
     });
 
     test('an unknown operation and a group work item are denied', () {
+      aiGroupWorkItemWritesEnabledForTesting = false;
+      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
       expect(
         decideListed(
           ledger: productionAiLedger,
@@ -497,6 +500,165 @@ void main() {
       expect(decision.requiresTypedName, isTrue);
       expect(decision.canPropose, isFalse);
       expect(decision.decision, AiGateDecision.requireApproval);
+    });
+  });
+
+  group('group production gate and numeric scope', () {
+    test('production gate defaults to false without an override', () {
+      expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+      expect(aiGroupWorkItemWritesAreEnabled, isFalse);
+    });
+
+    test('gate and exact group identity constrain synthetic group rows', () {
+      aiGroupWorkItemWritesEnabledForTesting = true;
+      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+      const row = AiCapability(
+        operationId: 'updateGroupWorkItemState',
+        baseTier: AiWriteTier.t2,
+        scopeClass: AiScopeClass.groupWorkItem,
+      );
+      const scope = AiWriteScope(
+        accountKey: _account,
+        grants: [
+          AiScopeGrant(
+            kind: AiScopeKind.groupWorkItem,
+            groupId: 4,
+            groupFullPath: 'acme/sub',
+            iid: 3,
+          ),
+        ],
+      );
+      AiTargetRef target(int groupId, int iid, {int? projectId}) => AiTargetRef(
+        kind: AiTargetKind.groupWorkItem,
+        groupId: groupId,
+        groupFullPath: 'acme/sub',
+        iid: iid,
+        projectId: projectId,
+        origin: AiTargetOrigin.currentResource,
+      );
+      expect(
+        aiWriteScopeKey(_account, scope.grants.single),
+        '($_account, groupId:4, workItem, 3)',
+      );
+      expect(
+        aiWriteScopeKey(_account, scope.grants.single),
+        aiWriteScopeKey(
+          _account,
+          const AiScopeGrant(
+            kind: AiScopeKind.groupWorkItem,
+            groupId: 4,
+            groupFullPath: 'renamed',
+            iid: 3,
+          ),
+        ),
+      );
+      expect(
+        aiWriteScopeKey(_account, scope.grants.single),
+        isNot(
+          aiWriteScopeKey(
+            _account,
+            const AiScopeGrant(
+              kind: AiScopeKind.workItem,
+              projectId: 4,
+              iid: 3,
+            ),
+          ),
+        ),
+      );
+      expect(scopeAdmits(scope, row, target(4, 3)), isTrue);
+      expect(scopeAdmits(scope, row, target(5, 3)), isFalse);
+      expect(scopeAdmits(scope, row, target(4, 9)), isFalse);
+      expect(scopeAdmits(scope, row, target(4, 3, projectId: 4)), isFalse);
+      expect(
+        scopeAdmits(
+          const AiWriteScope(accountKey: _account, grants: []),
+          row,
+          target(4, 3),
+        ),
+        isFalse,
+      );
+      expect(
+        decideTier(
+          AiTierInput(
+            level: AiAutonomyLevel.conversationGrant,
+            capability: row,
+            scope: scope,
+            binding: _bound,
+            target: target(4, 3),
+          ),
+        ).decision,
+        AiGateDecision.execute,
+      );
+      expect(_bind('', [target(5, 3)], scope: scope).allBound, isFalse);
+      expect(_bind('', [target(4, 9)], scope: scope).allBound, isFalse);
+      final offered = toolsForScope(
+        scope,
+      ).map((row) => row.operationId).toSet();
+      expect(offered, containsAll(['snoozeTodo', 'unsnoozeTodo']));
+      expect(offered, isNot(contains('markTodoDone')));
+      final ownTodo = AiTargetRef(
+        kind: AiTargetKind.todo,
+        side: AiResourceSide.group,
+        groupId: 4,
+        groupFullPath: 'acme/sub',
+        parentIid: 3,
+        origin: AiTargetOrigin.currentResource,
+      );
+      expect(
+        scopeAdmits(scope, productionAiLedger.find('snoozeTodo')!, ownTodo),
+        isTrue,
+      );
+      expect(
+        scopeAdmits(scope, productionAiLedger.find('markTodoDone')!, ownTodo),
+        isFalse,
+      );
+      final foreignTodo = AiTargetRef(
+        kind: AiTargetKind.todo,
+        side: AiResourceSide.group,
+        groupId: 5,
+        groupFullPath: 'acme/sub',
+        parentIid: 3,
+        origin: AiTargetOrigin.uiAdded,
+      );
+      expect(
+        scopeAdmits(scope, productionAiLedger.find('snoozeTodo')!, foreignTodo),
+        isFalse,
+      );
+      expect(_bind('', [foreignTodo], scope: scope).allBound, isFalse);
+      const accountScope = AiWriteScope(
+        accountKey: _account,
+        grants: [AiScopeGrant(kind: AiScopeKind.accountGlobal)],
+      );
+      final malformed = AiTargetRef(
+        kind: AiTargetKind.todo,
+        groupId: 5,
+        groupFullPath: 'acme/sub',
+        parentIid: 3,
+        origin: AiTargetOrigin.uiAdded,
+      );
+      expect(
+        scopeAdmits(
+          accountScope,
+          productionAiLedger.find('snoozeTodo')!,
+          malformed,
+        ),
+        isFalse,
+      );
+      expect(_bind('', [malformed], scope: accountScope).allBound, isFalse);
+      expect(
+        scopeAdmits(
+          _projectScope,
+          productionAiLedger.find('createNote')!,
+          AiTargetRef(
+            kind: AiTargetKind.groupWorkItem,
+            groupId: 4,
+            groupFullPath: 'acme/sub',
+            projectId: 9,
+            iid: 3,
+          ),
+        ),
+        isFalse,
+      );
     });
   });
 
@@ -609,6 +771,8 @@ void main() {
     });
 
     test('project, merge request and todo scopes offer different tools', () {
+      aiGroupWorkItemWritesEnabledForTesting = false;
+      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
       expect(
         toolsForScope(_projectScope),
         hasLength(productionAiLedger.modelVisible.length - 1),
@@ -727,6 +891,8 @@ void main() {
         'removeAwardEmoji',
         'setWorkItemActivityNoteReaction',
         'setWorkItemNotifications',
+        'setGroupWorkItemActivityNoteReaction',
+        'setGroupWorkItemNotifications',
         'markTodoDone',
         'snoozeTodo',
         'unsnoozeTodo',
@@ -734,7 +900,38 @@ void main() {
       for (final String operation in withIntent) {
         expect(directionsFor(operation), isNotEmpty, reason: operation);
       }
+      expect(
+        requestedIntentDirection('setGroupWorkItemActivityNoteReaction', {
+          'add': true,
+        }, null),
+        AiIntentDirection.workItemReactionAdd,
+      );
+      expect(
+        requestedIntentDirection('setGroupWorkItemActivityNoteReaction', {
+          'add': false,
+        }, null),
+        AiIntentDirection.workItemReactionRemove,
+      );
+      expect(
+        requestedIntentDirection('setGroupWorkItemNotifications', {
+          'enabled': true,
+        }, null),
+        AiIntentDirection.workItemNotificationsOn,
+      );
+      expect(
+        requestedIntentDirection('setGroupWorkItemNotifications', {
+          'enabled': false,
+        }, null),
+        AiIntentDirection.workItemNotificationsOff,
+      );
       for (final AiCapability row in ProductionAiLedger.rows) {
+        if (row.baseTier == AiWriteTier.t1) {
+          expect(
+            directionsFor(row.operationId),
+            isNotEmpty,
+            reason: 'T1 row ${row.operationId}',
+          );
+        }
         if (withIntent.contains(row.operationId)) continue;
         expect(
           directionsFor(row.operationId),
@@ -880,9 +1077,34 @@ void main() {
         final GitLabInstance instance = GitLabInstance.parse(
           'https://gitlab.example',
         );
+        final identity = VerifiedGroupWorkItemIdentity.fromServerEvidence(
+          instance: instance,
+          expectedUserId: 7,
+          actorUserId: 7,
+          expectedGroupId: 4,
+          expectedFullPath: 'acme/sub',
+          expectedIid: 3,
+          apiOwner: Object(),
+          generation: 1,
+          readEpoch: 1,
+          namespace: {
+            'id': 'gid://gitlab/Group/4',
+            'fullPath': 'acme/sub',
+            'workItem': {
+              'id': 'gid://gitlab/WorkItem/99',
+              'iid': '3',
+              'project': null,
+              'namespace': {
+                'id': 'gid://gitlab/Group/4',
+                'fullPath': 'acme/sub',
+              },
+            },
+          },
+        )!;
         final AiWriteScope scope = AiWriteScope(
           accountKey: '${instance.key}#7',
           instance: instance,
+          uiAddedGroupWorkItems: [identity],
           grants: <AiScopeGrant>[
             AiScopeGrant(
               kind: AiScopeKind.groupWorkItem,
@@ -918,7 +1140,7 @@ void main() {
             <AiTargetRef>[other],
             scope: scope,
           ).allBound,
-          isTrue,
+          isFalse,
         );
         expect(
           _bind(
@@ -933,10 +1155,62 @@ void main() {
             AiTargetRef(
               kind: AiTargetKind.groupWorkItem,
               groupFullPath: 'acme/sub',
-              iid: 9,
+              groupId: 4,
+              iid: 3,
+              workItemGid: 'gid://gitlab/WorkItem/99',
               origin: AiTargetOrigin.uiAdded,
             ),
           ], scope: scope).allBound,
+          isTrue,
+        );
+        expect(
+          _bind('', <AiTargetRef>[
+            AiTargetRef(
+              kind: AiTargetKind.groupWorkItem,
+              groupFullPath: 'acme/sub',
+              groupId: 4,
+              iid: 3,
+              workItemGid: 'gid://gitlab/WorkItem/100',
+              origin: AiTargetOrigin.uiAdded,
+            ),
+          ], scope: scope).allBound,
+          isFalse,
+        );
+        const capability = AiCapability(
+          operationId: 'updateGroupWorkItemState',
+          baseTier: AiWriteTier.t2,
+          scopeClass: AiScopeClass.groupWorkItem,
+        );
+        aiGroupWorkItemWritesEnabledForTesting = true;
+        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        expect(
+          scopeAdmits(
+            scope,
+            capability,
+            AiTargetRef(
+              kind: AiTargetKind.groupWorkItem,
+              groupFullPath: 'acme/sub',
+              groupId: 4,
+              iid: 3,
+              workItemGid: 'gid://gitlab/WorkItem/100',
+              origin: AiTargetOrigin.uiAdded,
+            ),
+          ),
+          isFalse,
+        );
+        expect(
+          scopeAdmits(
+            scope,
+            capability,
+            AiTargetRef(
+              kind: AiTargetKind.groupWorkItem,
+              groupFullPath: 'acme/sub',
+              groupId: 4,
+              iid: 3,
+              workItemGid: 'gid://gitlab/WorkItem/99',
+              origin: AiTargetOrigin.uiAdded,
+            ),
+          ),
           isTrue,
         );
       },

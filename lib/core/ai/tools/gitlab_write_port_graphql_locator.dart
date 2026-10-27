@@ -16,6 +16,18 @@ typedef AiWorkItemDiscussionNotesNextReader =
       WorkItemDiscussionNotesContinuation continuation,
     );
 
+/// Strict namespace identity and the corresponding same-round detail.
+final class AiGroupWorkItemLocation {
+  const AiGroupWorkItemLocation({
+    required this.detail,
+    required this.identity,
+    required this.isCurrent,
+  });
+  final WorkItemGraphDetail detail;
+  final VerifiedGroupWorkItemIdentity identity;
+  final bool Function() isCurrent;
+}
+
 final class AiProjectWorkItemLocation {
   const AiProjectWorkItemLocation({
     required this.project,
@@ -266,6 +278,14 @@ bool _validAiProjectPath(String value) =>
     value == value.trim() &&
     value.length <= 1024 &&
     RegExp(r'^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(value);
+
+bool _validAiGroupPath(String value) =>
+    _validAiProjectPath(value) &&
+    value
+        .split('/')
+        .every(
+          (segment) => segment != '.' && segment != '..' && segment != '-',
+        );
 
 bool _validAiWorkItemId(String value) =>
     RegExp(r'^gid://gitlab/WorkItem/[1-9][0-9]*$').hasMatch(value);

@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+
+import '../../group_work_item_identity.dart';
 import '../../instance.dart';
 import 'write_levels.dart';
 
@@ -22,11 +25,34 @@ part 'ledger/rows_graphql_snooze.dart';
 part 'ledger/rows_graphql_state.dart';
 part 'ledger/rows_graphql_status.dart';
 part 'ledger/rows_graphql_weight.dart';
+part 'ledger/rows_group_state.dart';
+part 'ledger/rows_group_status.dart';
+part 'ledger/rows_group_dates.dart';
+part 'ledger/rows_group_health.dart';
+part 'ledger/rows_group_assignees.dart';
+part 'ledger/rows_group_milestone.dart';
+part 'ledger/rows_group_weight.dart';
+part 'ledger/rows_group_activity_create.dart';
+part 'ledger/rows_group_activity_delete.dart';
+part 'ledger/rows_group_reaction.dart';
+part 'ledger/rows_group_notifications.dart';
+part 'ledger/rows_group_content.dart';
+part 'ledger/rows_group_activity_edit.dart';
+part 'ledger/rows_group_labels.dart';
 part 'ledger/rows_merge.dart';
 part 'ledger/rows_project.dart';
 part 'ledger/rows_refs.dart';
 part 'ledger/rows_snippets.dart';
 part 'ledger/rows_t12.dart';
+
+/// G14 changes this only together with the consent/catalogue upgrade.
+const bool aiGroupWorkItemWritesEnabled = false;
+
+@visibleForTesting
+bool? aiGroupWorkItemWritesEnabledForTesting;
+
+bool get aiGroupWorkItemWritesAreEnabled =>
+    aiGroupWorkItemWritesEnabledForTesting ?? aiGroupWorkItemWritesEnabled;
 
 enum AiScopeKind {
   project,
@@ -141,9 +167,11 @@ final class AiWriteScope {
     required this.accountKey,
     required this.grants,
     this.instance,
+    this.uiAddedGroupWorkItems = const <VerifiedGroupWorkItemIdentity>[],
   });
 
   final String accountKey;
+  final List<VerifiedGroupWorkItemIdentity> uiAddedGroupWorkItems;
   final List<AiScopeGrant> grants;
 
   /// Instance parsed from [accountKey] when omitted. Resource URLs are checked
@@ -170,7 +198,7 @@ String aiWriteScopeKey(String accountKey, AiScopeGrant grant) {
     case AiScopeKind.mergeRequest:
       return '($accountKey, project:${grant.projectId}, mergeRequest, ${grant.iid})';
     case AiScopeKind.groupWorkItem:
-      return '($accountKey, group:${grant.groupFullPath}, workItem, ${grant.iid})';
+      return '($accountKey, groupId:${grant.groupId}, workItem, ${grant.iid})';
     case AiScopeKind.accountGlobal:
       return '($accountKey, accountGlobal, todos)';
   }
@@ -324,6 +352,20 @@ final class ProductionAiLedger implements AiCapabilityLedger {
     ...aiGraphqlStateRows,
     ...aiGraphqlStatusRows,
     ...aiGraphqlWeightRows,
+    ...aiGroupStateRows,
+    ...aiGroupStatusRows,
+    ...aiGroupDatesRows,
+    ...aiGroupHealthRows,
+    ...aiGroupAssigneesRows,
+    ...aiGroupMilestoneRows,
+    ...aiGroupWeightRows,
+    ...aiGroupActivityCreateRows,
+    ...aiGroupActivityDeleteRows,
+    ...aiGroupReactionRows,
+    ...aiGroupNotificationsRows,
+    ...aiGroupContentRows,
+    ...aiGroupActivityEditRows,
+    ...aiGroupLabelsRows,
     ...aiRefRows,
     ...aiMergeRows,
     ...aiCiRows,
@@ -366,6 +408,17 @@ bool offersWriteTools(AiWriteScope scope) => toolsForScope(scope).isNotEmpty;
 
 bool _offered(AiWriteScope scope, AiCapability row) {
   for (final AiScopeGrant grant in scope.grants) {
+    if (grant.kind == AiScopeKind.groupWorkItem &&
+        (grant.groupId == null ||
+            grant.groupId! <= 0 ||
+            grant.groupFullPath == null ||
+            grant.groupFullPath!.isEmpty ||
+            grant.iid == null ||
+            grant.iid! <= 0 ||
+            grant.projectId != null ||
+            grant.projectPath != null)) {
+      continue;
+    }
     if (_grantOffers(grant.kind, row)) return true;
   }
   return false;
@@ -387,9 +440,14 @@ bool _grantOffers(AiScopeKind kind, AiCapability capability) {
       return kind == AiScopeKind.accountGlobal ||
           kind == AiScopeKind.project ||
           kind == AiScopeKind.workItem ||
-          kind == AiScopeKind.mergeRequest;
+          kind == AiScopeKind.mergeRequest ||
+          (kind == AiScopeKind.groupWorkItem &&
+              aiGroupWorkItemWritesAreEnabled &&
+              (capability.operationId == 'snoozeTodo' ||
+                  capability.operationId == 'unsnoozeTodo'));
     case AiScopeClass.groupWorkItem:
-      return false;
+      return aiGroupWorkItemWritesAreEnabled &&
+          kind == AiScopeKind.groupWorkItem;
     case AiScopeClass.projectUpload:
       return kind == AiScopeKind.project ||
           kind == AiScopeKind.workItem ||
