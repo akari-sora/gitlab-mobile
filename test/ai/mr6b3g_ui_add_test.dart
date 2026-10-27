@@ -304,6 +304,10 @@ void main() {
         'https://example.com/gitlab/groups/team%2Fsub/-/work_items/5',
         'https://example.com/gitlab/groups/team/%2e%2e/-/work_items/5',
         'https://example.com/gitlab/groups/team/../-/work_items/5',
+        // Both normalise to a valid group link once Uri drops dot segments.
+        'https://example.com/gitlab/groups/ignored/../team/sub/-/work_items/5',
+        'https://example.com/other/../gitlab/groups/team/sub/-/work_items/5',
+        'https://example.com/gitlab/./groups/team/sub/-/work_items/5',
         'https://example.com/gitlab/groups/team//sub/-/work_items/5',
         r'https://example.com/gitlab/groups/team\sub/-/work_items/5',
         'https://example.com/gitlab/groups/te am/-/work_items/5',
@@ -432,6 +436,14 @@ void main() {
             AiGroupWorkItemRefusal.notWorkItem,
           ),
           ('not a link', AiGroupWorkItemRefusal.malformed),
+          (
+            'https://example.com/gitlab/groups/ignored/../team/sub/-/work_items/5',
+            AiGroupWorkItemRefusal.malformed,
+          ),
+          (
+            'https://example.com/other/../gitlab/groups/team/sub/-/work_items/5',
+            AiGroupWorkItemRefusal.malformed,
+          ),
         ]) {
           final check = await h.controller.checkGroupWorkItem(link);
           expect(
@@ -443,6 +455,8 @@ void main() {
         expect(h.server.adapter.requests, hasLength(before));
         expect(h.controller.budgetAllocator.activeLeases, 0);
         expect(_groupGrants(h.controller), isEmpty);
+        expect(_uiAdded(h.controller), isEmpty);
+        expect(h.controller.addedGroupWorkItems, isEmpty);
       },
     );
 

@@ -11589,7 +11589,7 @@
     "description": "Chat menu item and sheet title: add one group work item to this AI conversation (U-add).",
     "placeholders": {}
   },
-  "aiAddGroupWorkItemIntro": "貼上 {instance} 上直接屬於群組的工作項目連結。加入後，AI 只能對這一項及其留言提出修改，不包含群組的其他工作項目，也不包含群組裡的專案。",
+  "aiAddGroupWorkItemIntro": "貼上 {instance} 上直接屬於群組的工作項目連結。此次新增的授權只涵蓋這個工作項目及其留言，不包含群組的其他工作項目或其中的專案；對話原有的範圍不變。",
   "@aiAddGroupWorkItemIntro": {
     "description": "Sheet explanation before the link field. {instance} is the account's GitLab instance URL. The scope is that one item and its comments only.",
     "placeholders": {
@@ -11644,7 +11644,7 @@
       }
     }
   },
-  "aiAddedGroupWorkItemHint": "已加入這個對話，AI 只能對這一項提出修改",
+  "aiAddedGroupWorkItemHint": "已加入；新增的授權只涵蓋此項及其留言",
   "@aiAddedGroupWorkItemHint": {
     "description": "Tooltip of an added work item chip above the message box.",
     "placeholders": {}

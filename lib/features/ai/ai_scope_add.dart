@@ -80,7 +80,14 @@ AiGroupWorkItemLinkResult parseAiGroupWorkItemLink(
         caseSensitive: false,
       ).firstMatch(text)?.group(1) ??
       '';
-  if (rawPath.contains('\\') || rawPath.contains('%')) return malformed;
+  // Same rule as GitLabInstance.parse: Uri removes `.`/`..` segments, so a
+  // traversal that normalises to a valid group link is refused here.
+  if (rawPath.contains('\\') ||
+      rawPath.contains('%') ||
+      rawPath.contains('//') ||
+      rawPath.split('/').any((part) => part == '.' || part == '..')) {
+    return malformed;
+  }
   try {
     if (uri.queryParameters.keys.any(
       (key) => _tokenKeys.contains(key.toLowerCase()),

@@ -468,7 +468,8 @@ class _AiChatPageState extends State<AiChatPage> {
     if (!mounted) return;
     switch (outcome) {
       case final AiGroupWorkItemCandidate added:
-        _notice(l10n.aiAddedGroupWorkItem(added.fullPath, added.iid));
+        // `#{iid}` is isolated with its sigil by the generated message.
+        _notice(l10n.aiAddedGroupWorkItem(isolated(added.fullPath), added.iid));
       case _AddSheetFailure(:final error):
         // A context under this page's own messenger, so the snack bar shows.
         final below = _pageBody.currentContext;

@@ -1714,6 +1714,9 @@ class AiChatController extends ChangeNotifier
       throw const FormatException('groupScopeChanged');
     }
     reserve(2);
+    // reserve() has just checked, with no await since, that this account is
+    // still active; refuse cleanly rather than rely on that alone.
+    if (session.active == null) throw const ApiFailure(FailureKind.cancelled);
     final port = GitLabAiGroupReadPort(
       _api,
       instance: _api.instance,

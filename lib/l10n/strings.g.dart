@@ -8422,7 +8422,7 @@ final class AppStrings {
   /// 加入群組工作項目
   String get aiAddGroupWorkItem => language._messages[2775];
 
-  /// 貼上 {instance} 上直接屬於群組的工作項目連結。加入後，AI 只能對這一項及其留言提出修改，不包含群組的其他工作項目，也不包含群組裡的專案。
+  /// 貼上 {instance} 上直接屬於群組的工作項目連結。此次新增的授權只涵蓋這個工作項目及其留言，不包含群組的其他工作項目或其中的專案；對話原有的範圍不變。
   String aiAddGroupWorkItemIntro(Object? instance) => _format(language, language._messages[2776], {'instance': instance});
 
   /// 工作項目連結
@@ -8446,7 +8446,7 @@ final class AppStrings {
   /// 已加入 {path} #{iid}
   String aiAddedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[2783], {'path': path, 'iid': iid});
 
-  /// 已加入這個對話，AI 只能對這一項提出修改
+  /// 已加入；新增的授權只涵蓋此項及其留言
   String get aiAddedGroupWorkItemHint => language._messages[2784];
 
   /// 從對話中移除
