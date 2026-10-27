@@ -2758,4 +2758,10 @@ const _messagesFr = <String>[
   'L’étiquette à appliquer ne figure pas dans la liste des étiquettes de ce projet ou plusieurs étiquettes portent ce nom, donc rien n’a été fait.',
   'Le texte contient une ligne commençant par /, que GitLab pourrait exécuter comme quick action ; par précaution, cette action n’a pas été envoyée. Supprimez cette ligne ou placez-la dans un bloc de code.',
   'Lire l’élément de travail du groupe',
+  'Modifier l’élément de travail du groupe',
+  'Fermer ou rouvrir l’élément de travail du groupe',
+  'Fermer l’élément de travail du groupe',
+  'Rouvrir l’élément de travail du groupe',
+  'Définir les responsables de l’élément de travail du groupe',
+  'Définir les dates de l’élément de travail du groupe',
 ];

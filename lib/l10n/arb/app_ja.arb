@@ -2755,5 +2755,11 @@
   "aiOpSetWorkItemLabels": "ラベルを設定",
   "aiRefusedLabelUnknown": "設定するラベルがこのプロジェクトのラベル一覧にないか、同じ名前のラベルが複数あるため、何も実行されませんでした。",
   "aiRefusedQuickAction": "/ で始まる行があり、GitLab がクイックアクションとして実行するおそれがあるため、念のためこの書き込みは送信しませんでした。その行を削除するか、コードブロックに入れてください。",
-  "aiToolGetGroupWorkItem": "グループのワークアイテムを読み取り"
+  "aiToolGetGroupWorkItem": "グループのワークアイテムを読み取り",
+  "aiOpEditGroupWorkItem": "グループのワークアイテムを編集",
+  "aiOpSetGroupWorkItemState": "グループのワークアイテムをクローズまたは再オープン",
+  "aiOpCloseGroupWorkItem": "グループのワークアイテムをクローズ",
+  "aiOpReopenGroupWorkItem": "グループのワークアイテムを再オープン",
+  "aiOpSetGroupWorkItemAssignees": "グループのワークアイテムの担当者を設定",
+  "aiOpSetGroupWorkItemDates": "グループのワークアイテムの日付を設定"
 }

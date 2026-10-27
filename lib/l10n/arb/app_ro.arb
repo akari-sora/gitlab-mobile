@@ -2755,5 +2755,11 @@
   "aiOpSetWorkItemLabels": "Setează etichetele",
   "aiRefusedLabelUnknown": "Eticheta de setat nu se află în lista de etichete a acestui proiect sau mai multe etichete au acest nume, deci nu s-a făcut nimic.",
   "aiRefusedQuickAction": "Textul conține un rând care începe cu /, pe care GitLab l-ar putea executa ca acțiune rapidă, deci din precauție această acțiune nu a fost trimisă. Șterge rândul sau pune-l într-un bloc de cod.",
-  "aiToolGetGroupWorkItem": "Citește elementul de lucru al grupului"
+  "aiToolGetGroupWorkItem": "Citește elementul de lucru al grupului",
+  "aiOpEditGroupWorkItem": "Editează elementul de lucru al grupului",
+  "aiOpSetGroupWorkItemState": "Închide sau redeschide elementul de lucru al grupului",
+  "aiOpCloseGroupWorkItem": "Închide elementul de lucru al grupului",
+  "aiOpReopenGroupWorkItem": "Redeschide elementul de lucru al grupului",
+  "aiOpSetGroupWorkItemAssignees": "Setează responsabilii elementului de lucru al grupului",
+  "aiOpSetGroupWorkItemDates": "Setează datele elementului de lucru al grupului"
 }
