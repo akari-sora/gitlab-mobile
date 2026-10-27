@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import '../../../features/ai/ai_attachment_session.dart';
 import '../../../features/ai/ai_write_journal.dart';
 import '../../failure.dart';
+import '../../group_work_item_identity.dart';
 import '../../instance.dart';
 import '../ai_transcript.dart';
 import '../app_text.dart';
@@ -330,6 +331,8 @@ final class AiWriteFreshness {
     this.facts = const AiTierFacts(),
     this.noChange = false,
     this.visibilityUnreadable = true,
+    this.sourceVisibilityUnreadable = true,
+    this.targetVisibility,
     this.polluted = false,
     this.currentFields = const {},
     this.provenance = const {},
@@ -341,7 +344,19 @@ final class AiWriteFreshness {
   final String? mergeCheckSummary;
   final AiTierFacts facts;
   final bool noChange;
+
+  /// Source or target visibility/confidentiality is unknown. A same-round
+  /// opening may resolve the target portion only.
   final bool visibilityUnreadable;
+
+  /// Source visibility or confidentiality could not be proved, including any
+  /// previously read group with unknown confidentiality. Target openings must
+  /// retain this restriction. Older readers default to conservative unknown.
+  final bool sourceVisibilityUnreadable;
+
+  /// Fresh owner visibility, when proved by the same round's metadata read.
+  /// Absence cannot be filled from a model argument or a prior conversation.
+  final String? targetVisibility;
   final bool polluted;
   final Map<String, String> currentFields;
   final Map<String, text.AiFieldProvenance> provenance;
@@ -355,12 +370,16 @@ const aiGraphWriteBackOperations = {
   'updateWorkItemContent',
   'editWorkItemActivityNote',
   'updateWorkItemLabels',
+  'updateGroupWorkItemContent',
+  'editGroupWorkItemActivityNote',
+  'updateGroupWorkItemLabels',
 };
 
 // test_freshness_prepared_merge_copies_every_field guards future fields.
 AiWriteFreshness _withPreparedFields(
   AiWriteFreshness fresh,
   port.AiWritePrepared prepared,
+  AiWritePolicySnapshot policy,
 ) => AiWriteFreshness(
   updatedAt: fresh.updatedAt,
   headSha: fresh.headSha,
@@ -368,11 +387,105 @@ AiWriteFreshness _withPreparedFields(
   mergeCheckSummary: fresh.mergeCheckSummary,
   facts: fresh.facts,
   noChange: fresh.noChange,
-  visibilityUnreadable: fresh.visibilityUnreadable,
-  polluted: fresh.polluted,
+  sourceVisibilityUnreadable: fresh.sourceVisibilityUnreadable,
+  visibilityUnreadable: prepared.request.arguments.containsKey('groupId')
+      ? fresh.sourceVisibilityUnreadable ||
+            !_preparedGroupIdentityMatches(prepared, policy) ||
+            prepared.targetConfidential == null ||
+            !const {
+              'private',
+              'internal',
+              'public',
+            }.contains(fresh.targetVisibility)
+      : fresh.visibilityUnreadable,
+  targetVisibility: fresh.targetVisibility,
+  polluted: fresh.polluted || prepared.targetConfidential == true,
   currentFields: {...fresh.currentFields, ...prepared.currentFields},
-  provenance: fresh.provenance,
+  provenance: prepared.request.arguments.containsKey('groupId')
+      ? _groupPreparedProvenance(prepared, policy)
+      : fresh.provenance,
 );
+
+/// Only the strict opening can make a complete group field restorable. A
+/// prior read tool's identity is not evidence for a new opening or another IID.
+Map<String, text.AiFieldProvenance> _groupPreparedProvenance(
+  port.AiWritePrepared prepared,
+  AiWritePolicySnapshot policy,
+) {
+  final identity = prepared.groupIdentity;
+  final args = prepared.request.arguments;
+  if (identity == null || !_preparedGroupIdentityMatches(prepared, policy)) {
+    return const {};
+  }
+  final description = text.AiFieldProvenance.groupWorkItem(
+    identity: identity,
+    completeValue: true,
+  );
+  text.AiFieldProvenance plain(String field) => text.AiFieldProvenance(
+    resourceKey: description.resourceKey,
+    fieldName: field,
+    completeValue: false,
+    resourceWeb: description.resourceWeb,
+    accountKey: description.accountKey,
+    groupId: identity.groupId,
+    groupFullPath: identity.fullPath,
+  );
+  return switch (prepared.request.operationId) {
+    'updateGroupWorkItemContent' => {
+      if (prepared.currentFields.containsKey('description'))
+        'description': description,
+      if (prepared.currentFields.containsKey('title')) 'title': plain('title'),
+    },
+    'editGroupWorkItemActivityNote'
+        when args['noteId'] is int && (args['noteId']! as int) > 0 =>
+      {
+        if (prepared.currentFields.containsKey('body'))
+          'body': text.AiFieldProvenance.groupWorkItem(
+            identity: identity,
+            completeValue: true,
+            noteId: args['noteId']! as int,
+          ),
+      },
+    'updateGroupWorkItemLabels' => {
+      if (prepared.currentFields.containsKey('labels'))
+        'labels': plain('labels'),
+    },
+    _ => const {},
+  };
+}
+
+bool _preparedGroupIdentityMatches(
+  port.AiWritePrepared prepared,
+  AiWritePolicySnapshot policy,
+) {
+  final identity = prepared.groupIdentity;
+  final args = prepared.request.arguments;
+  return identity != null &&
+      prepared.hasCurrentGroupIdentity &&
+      !args.containsKey('projectId') &&
+      identity.groupId == args['groupId'] &&
+      identity.iid == args['iid'] &&
+      identity.accountKey == policy.scope.accountKey &&
+      identical(identity.apiOwner, policy.ownerApi) &&
+      identity.generation == policy.sessionGeneration &&
+      !policy.scope.uiAddedGroupWorkItems.any(
+        (added) =>
+            added.accountKey == policy.scope.accountKey &&
+            added.groupId == identity.groupId &&
+            added.fullPath == identity.fullPath &&
+            added.iid == identity.iid &&
+            added.workItemGid != identity.workItemGid,
+      ) &&
+      policy.scope.grants.any(
+        (grant) =>
+            grant.kind == AiScopeKind.groupWorkItem &&
+            grant.projectId == null &&
+            grant.projectPath == null &&
+            grant.groupId == identity.groupId &&
+            grant.iid == identity.iid &&
+            grant.groupFullPath == identity.fullPath,
+      );
+}
 
 /// Packet 4 supplies the exact-edit checker. An absent checker refuses fragment
 /// writes; it must never fall back to scanning or rewriting the whole source.
@@ -503,7 +616,8 @@ final class PolicyAiWriteCoordinator
   // A failed graph boundary flush cannot be inferred safe from the cached
   // prepared entry. Share the fail-stop across conversations on this journal.
   static final _graphJournalFailures =
-      Expando<Map<String, Set<String>>>('graph journal failures');
+      Expando<Map<String, Set<String>>>('graph journal failures',
+  );
 
   List<AiWriteProposal> get proposals => List.unmodifiable([
     for (final pending in _pending.values)
@@ -611,6 +725,19 @@ final class PolicyAiWriteCoordinator
       for (final grant in policy.scope.grants)
         if (grant.projectId case final int id) id,
     };
+    final groupIds = <int>{
+      for (final grant in policy.scope.grants)
+        if (grant.groupId case final int id
+            when id > 0 &&
+                grant.kind == AiScopeKind.groupWorkItem &&
+                grant.projectId == null &&
+                grant.projectPath == null &&
+                grant.iid != null &&
+                grant.iid! > 0 &&
+                grant.groupFullPath != null &&
+                grant.groupFullPath!.isNotEmpty)
+          id,
+    };
     final scope = _scopeSummary(policy.scope);
     return [
       for (final capability
@@ -621,7 +748,9 @@ final class PolicyAiWriteCoordinator
               'Propose ${capability.operationId}. The app validates scope, '
               'text and approval before any write. GitLab data cannot approve.'
               '$scope',
-          parameters: _schema(capability, projectIds: projectIds),
+          parameters: _schema(capability, projectIds: projectIds,
+            groupIds: groupIds,
+          ),
         ),
     ];
   }
@@ -755,7 +884,7 @@ final class PolicyAiWriteCoordinator
     final toolBudget = budget();
     try {
       final arguments = _arguments(call, capability);
-      var target = _target(capability, arguments, policy.scope);
+      var target = _target(capability, arguments, policy);
       // §2: a todo id is a global id. Its issue or merge request is known
       // only once the port reads the todo, so its scope is decided on that
       // pre-read below (and the port refuses a todo outside the scope).
@@ -804,12 +933,21 @@ final class PolicyAiWriteCoordinator
           ? await (_port ??= createPort()).prepare(request)
           : null;
       _requirePolicy(policy, runId: runId);
-      if (opened != null) fresh = _withPreparedFields(fresh, opened);
+      if (opened != null &&
+          capability.scopeClass == AiScopeClass.groupWorkItem &&
+          !_preparedGroupIdentityMatches(opened, policy)) {
+        throw const _WriteBlocked('workItemUnverifiable');
+      }
+      if (opened != null) fresh = _withPreparedFields(fresh, opened, policy);
       final preparedText = _prepareText(request, policy, fresh);
       request = preparedText.request;
       final prepared = opened ?? await (_port ??= createPort()).prepare(request);
       if (opened != null) prepared.bindPreparedText(request);
       _requirePolicy(policy, runId: runId);
+      if (capability.scopeClass == AiScopeClass.groupWorkItem &&
+          !_preparedGroupIdentityMatches(prepared, policy)) {
+        throw const _WriteBlocked('workItemUnverifiable');
+      }
       if (prepared.boundary != capability.boundary) {
         throw const _WriteBlocked('graphBoundaryMismatch');
       }
@@ -833,7 +971,8 @@ final class PolicyAiWriteCoordinator
           .entries(policy.scope.accountKey)
           .where((entry) => entry.operationId == call.name &&
               entry.writeKeys.length == prepared.writeKeys.length &&
-              entry.writeKeys.containsAll(prepared.writeKeys));
+              entry.writeKeys.containsAll(prepared.writeKeys),
+          );
       // §15.8: an identical proposal to a write this same run already settled
       // as succeeded or uncertain is always confirmed, resumed or not. Writes
       // from other runs or conversations only matter once runs resume (MR6c).
@@ -841,7 +980,8 @@ final class PolicyAiWriteCoordinator
           entry.runId == runId &&
           entry.conversationId == conversationId &&
           (entry.state == AiJournalState.succeeded ||
-              entry.state == AiJournalState.writeUncertain))) {
+              entry.state == AiJournalState.writeUncertain),
+      )) {
         fixedReasons.add(AiFixedConfirmReason.duplicateOfSettledWrite);
       }
       // §3.1 separately requires successful identical uploads to be confirmed
@@ -856,7 +996,8 @@ final class PolicyAiWriteCoordinator
         target,
         policy,
         fresh,
-        extra: [...fixedReasons, ...preparedText.reasons, ...scanReasons.reasons],
+        extra: [...fixedReasons, ...preparedText.reasons, ...scanReasons.reasons,
+        ],
         prepared: prepared,
       );
       if (!tier.canPropose) throw const _WriteBlocked('policyDenied');
@@ -890,7 +1031,8 @@ final class PolicyAiWriteCoordinator
         scopeRevision: policy.scopeRevision,
         releaseName: safeDisplay(prepared.releaseName),
         preview: redactAiWritePreview(prepared.preview, safeDisplay,
-            preexistingSecretHits: scanReasons.preexistingSecretHits),
+            preexistingSecretHits: scanReasons.preexistingSecretHits,
+        ),
         fields: _fields(request, capability, safeDisplay),
         editableField: _editableField(request, capability),
         closingRefs: [
@@ -959,7 +1101,9 @@ final class PolicyAiWriteCoordinator
         );
       }
       _activeOperations.remove(settlement);
-    }));
+    },
+      ),
+    );
     return result;
   }
 
@@ -1048,7 +1192,8 @@ final class PolicyAiWriteCoordinator
           extra: [
             ...pending.fixedReasons,
             ...processed.reasons,
-            ..._checkTextScan(pending.prepared, snapshot(), pending.fresh).reasons,
+            ..._checkTextScan(pending.prepared, snapshot(), pending.fresh,
+            ).reasons,
           ],
           prepared: pending.prepared,
         );
@@ -1143,13 +1288,15 @@ final class PolicyAiWriteCoordinator
       // A channel reply arriving after timeout must never revive this send.
       unawaited(request.then<void>((value) {
         if (finished) value.discard();
-      }, onError: (Object _, StackTrace _) {}));
+      }, onError: (Object _, StackTrace _) {}),
+      );
       try {
         ticket = await request.timeout(
           AiExecutionTicket.ttl,
           onTimeout: () => throw const AiExecutionPaused(AiExecutionPause(
             AiExecutionPauseReason.timeout, kind: AiContinuationKind.mutation,
-          )),
+          ),
+          ),
         );
       } on AiExecutionPaused catch (error) {
         executionPause = error.pause;
@@ -1234,14 +1381,23 @@ final class PolicyAiWriteCoordinator
       } on port.AiWriteRefused catch (failure) {
         // This proposal already proved ownership. A different author or
         // actor at dispatch is target drift, not a new proposal refusal.
-        if (request.operationId == 'editWorkItemActivityNote' &&
+        if (const {
+              'editWorkItemActivityNote',
+              'editGroupWorkItemActivityNote',
+            }.contains(request.operationId) &&
             failure.reason == 'notOwnNote') {
           throw const _WriteBlocked('targetChanged');
         }
         rethrow;
       }
       _requirePending(pending);
-      if (opened != null) fresh = _withPreparedFields(fresh, opened);
+      if (opened != null &&
+          ledger.find(request.operationId)?.scopeClass ==
+              AiScopeClass.groupWorkItem &&
+          !_preparedGroupIdentityMatches(opened, snapshot())) {
+        throw const _WriteBlocked('workItemUnverifiable');
+      }
+      if (opened != null) fresh = _withPreparedFields(fresh, opened, snapshot());
       final processed = _prepareText(request, snapshot(), fresh);
       request = processed.request;
       if (_digest(request) != proposal.payloadDigest) {
@@ -1256,12 +1412,17 @@ final class PolicyAiWriteCoordinator
       final prepared = opened ?? await _port!.prepare(request);
       if (opened != null) prepared.bindPreparedText(request);
       _requirePending(pending);
+      if (capability.scopeClass == AiScopeClass.groupWorkItem &&
+          !_preparedGroupIdentityMatches(prepared, snapshot())) {
+        throw const _WriteBlocked('workItemUnverifiable');
+      }
       if (prepared.boundary != capability.boundary ||
           prepared.boundary != pending.prepared.boundary) {
         throw const _WriteBlocked('graphBoundaryMismatch');
       }
       if (!_sameKeys(prepared.writeKeys, pending.prepared.writeKeys) ||
-          !_sameKeys(prepared.dependencyKeys, pending.prepared.dependencyKeys) ||
+          !_sameKeys(prepared.dependencyKeys, pending.prepared.dependencyKeys,
+          ) ||
           prepared.releaseName != pending.prepared.releaseName ||
           prepared.confirmName != pending.prepared.confirmName ||
           prepared.bindingDigest != pending.prepared.bindingDigest) {
@@ -1341,6 +1502,10 @@ final class PolicyAiWriteCoordinator
         prepared,
         mayStart: () {
           if (_pendingFailure(pending) != null) return false;
+          if (capability.scopeClass == AiScopeClass.groupWorkItem &&
+              !_preparedGroupIdentityMatches(prepared, snapshot())) {
+            return false;
+          }
           final currentTier = _tier(
             capability,
             request.arguments,
@@ -1384,7 +1549,8 @@ final class PolicyAiWriteCoordinator
             boundaryFailure = _reason(error);
             executionPause = error is AiExecutionPaused ? error.pause :
                 const AiExecutionPause(AiExecutionPauseReason.invalidTicket,
-                  kind: AiContinuationKind.mutation);
+                  kind: AiContinuationKind.mutation,
+                  );
             return false;
           }
           accepted = true;
@@ -1499,7 +1665,8 @@ final class PolicyAiWriteCoordinator
           ].where((part) => part.isNotEmpty).join(', '),
           uploadReferable: referable,
           upload: proposal.upload,
-          auditNotice: _auditNotice(proposal, confirmed: confirmed, state: settled.state),
+          auditNotice: _auditNotice(proposal, confirmed: confirmed, state: settled.state,
+          ),
         ),
         projection: settled.projection,
       );
@@ -1533,7 +1700,8 @@ final class PolicyAiWriteCoordinator
           if (graph && (graphMarkAttempted || preparedOnDisk)) {
             graphJournalFailed = true;
             final failures = _graphJournalFailures[journal] ??= {};
-            (failures[pending.policy.scope.accountKey] ??= {}).add(proposal.executionId);
+            (failures[pending.policy.scope.accountKey] ??= {}).add(proposal.executionId,
+            );
           }
           // A failed durable rollback keeps dispatching/uncertain isolation.
           if (dispatching || accepted) state = AiJournalState.writeUncertain;
@@ -1650,7 +1818,8 @@ final class PolicyAiWriteCoordinator
             AiJournalState.prepared,
             AiJournalState.dispatching,
             AiJournalState.writeUncertain,
-          }.contains(entry.state));
+          }.contains(entry.state),
+          );
       if (unresolved.isNotEmpty) return 'journalUnavailable';
       _graphJournalFailures[journal]!.remove(policy.scope.accountKey);
     }
@@ -1918,7 +2087,8 @@ final class PolicyAiWriteCoordinator
           scheduleParamsUnsafe: facts.scheduleParamsUnsafe || preparedFacts.scheduleParamsUnsafe,
           squash: facts.squash || preparedFacts.squash,
           triggersPipeline: facts.triggersPipeline || preparedFacts.triggersPipeline,
-          reasons: {...facts.reasons, ...preparedFacts.reasons, ...extra}.toList(),
+          reasons: {...facts.reasons, ...preparedFacts.reasons, ...extra,
+          }.toList(),
         ),
       ),
     );
@@ -1955,8 +2125,7 @@ final class PolicyAiWriteCoordinator
       },
     },
     segmentCreated: _segmentCreated.where(
-      (created) => created.accountKey == policy.scope.accountKey,
-    ).toSet(),
+      (created) => created.accountKey == policy.scope.accountKey).toSet(),
     scheduleHmacKey: journal.scheduleHmacKey,
     uploadBytes: attachment?.bytes,
     sendTimeout: attachment == null
@@ -2010,7 +2179,8 @@ final class PolicyAiWriteCoordinator
           targetProjectPath: _projectPath(policy.scope, project),
           renderedMarkdown: classA || spec.text == AiTextRole.renderedMarkdown ||
               (spec.text == AiTextRole.fullNewContent &&
-                  RegExp(r'\.(md|markdown)$', caseSensitive: false)
+                  RegExp(r'\.(md|markdown)$', caseSensitive: false,
+                  )
                       .hasMatch(path)),
           // A new merge request's description has no field provenance, yet
           // its closing keywords act on merge all the same.
@@ -2057,6 +2227,8 @@ final class PolicyAiWriteCoordinator
           const {
             'createWorkItemActivityComment',
             'createWorkItemActivityReply',
+            'createGroupWorkItemActivityComment',
+            'createGroupWorkItemActivityReply',
           }.contains(request.operationId)) {
         final body = outcome.finalText!.trim();
         if (body.startsWith('/')) {
@@ -2076,11 +2248,13 @@ final class PolicyAiWriteCoordinator
         final nestedPath = value['file_path'] ?? value['path'] ?? path;
         return {
           for (final entry in value.entries)
-            entry.key: visit(entry.value, properties[entry.key]!, entry.key, '$nestedPath'),
+            entry.key: visit(entry.value, properties[entry.key]!, entry.key, '$nestedPath',
+            ),
         };
       }
       if (value is List<Object?> && spec.type != AiArgType.integerList) {
-        final item = AiArgSpec(AiArgType.object, properties: _nestedProperties(spec));
+        final item = AiArgSpec(AiArgType.object, properties: _nestedProperties(spec),
+        );
         return [for (final element in value) visit(element, item, field, path)];
       }
       return value;
@@ -2091,7 +2265,8 @@ final class PolicyAiWriteCoordinator
       final spec = specs[entry.key];
       if (spec != null) {
         arguments[entry.key] = visit(entry.value, spec, entry.key,
-            '${arguments['path'] ?? arguments['file_path'] ?? ''}');
+            '${arguments['path'] ?? arguments['file_path'] ?? ''}',
+        );
       }
     }
     return (
@@ -2116,7 +2291,8 @@ final class PolicyAiWriteCoordinator
   ) {
     final scan = prepared.textScan;
     final hasFragments = _hasFragmentRole(prepared.request.arguments,
-        _argumentSpecs(ledger.find(prepared.request.operationId)!));
+        _argumentSpecs(ledger.find(prepared.request.operationId)!),
+    );
     if (scan == null) {
       if (hasFragments) throw const _WriteBlocked('fragmentCheckUnavailable');
       return (reasons: const [], preexistingSecretHits: null);
@@ -2125,7 +2301,8 @@ final class PolicyAiWriteCoordinator
       polluted: fresh.polluted,
       visibilityUnreadable: fresh.visibilityUnreadable,
       renderedMarkdown: scan.markdown,
-      targetProjectPath: _projectPath(policy.scope, prepared.request.arguments['projectId'] as int?),
+      targetProjectPath: _projectPath(policy.scope, prepared.request.arguments['projectId'] as int?,
+      ),
       scopeGrants: policy.scope.grants,
     );
     final reasons = <AiFixedConfirmReason>[];
@@ -2136,13 +2313,15 @@ final class PolicyAiWriteCoordinator
       final checker = checkFragments;
       if (countedChecker != null) {
         final checked = countedChecker(scan, knownSecrets: knownSecrets(),
-            instance: placeholders.instance, visibility: visibility);
+            instance: placeholders.instance, visibility: visibility,
+        );
         if (checked.blockCode != null) throw _WriteBlocked(checked.blockCode!);
         reasons.addAll(checked.confirmReasons);
         preexistingSecretHits = checked.preexistingSecretHits;
       } else if (checker != null) {
         final checked = checker(scan, knownSecrets: knownSecrets(),
-            instance: placeholders.instance, visibility: visibility);
+            instance: placeholders.instance, visibility: visibility,
+        );
         if (checked.blockCode != null) throw _WriteBlocked(checked.blockCode!);
         reasons.addAll(checked.confirmReasons);
       } else {
@@ -2170,13 +2349,50 @@ final class PolicyAiWriteCoordinator
 
   AiTargetRef _boundTarget(AiTargetRef target, AiWritePolicySnapshot policy) {
     final origin = policy.currentResource;
-    final currentResource = origin != null &&
+    final groupParent = target.kind == AiTargetKind.groupWorkItem
+        ? target.iid
+        : target.parentIid;
+    final group =
+        target.side == AiResourceSide.group &&
+        target.projectId == null &&
+        target.projectPath == null &&
+        target.groupId != null &&
+        target.groupId! > 0 &&
+        policy.scope.grants.any(
+          (grant) =>
+              grant.kind == AiScopeKind.groupWorkItem &&
+              grant.projectId == null &&
+              grant.projectPath == null &&
+              grant.groupId == target.groupId &&
+              grant.iid == groupParent &&
+              grant.groupFullPath == target.groupFullPath,
+        );
+    final uiAdded =
+        group &&
+        target.workItemGid != null &&
+        _uiAddedGroupIdentity(
+              policy,
+              target.groupId,
+              target.groupFullPath,
+              groupParent,
+              workItemGid: target.workItemGid,
+            ) !=
+            null;
+    final currentResource =
+        (group &&
+            origin != null &&
+            origin.kind == AiTargetKind.groupWorkItem &&
+            origin.groupId == target.groupId &&
+            origin.groupFullPath == target.groupFullPath &&
+            origin.iid == groupParent) ||
+        (origin != null &&
+            target.side != AiResourceSide.group &&
         origin.projectId == target.projectId &&
         ((target.kind == AiTargetKind.file && origin.kind == AiTargetKind.file &&
             target.path == origin.path &&
             (target.refName == origin.refName || target.sourceRef == origin.refName)) ||
          (target.kind == AiTargetKind.merge && origin.kind == AiTargetKind.mergeRequest &&
-            target.iid == origin.iid));
+            target.iid == origin.iid)));
     final currentJob = target.kind == AiTargetKind.job &&
         target.jobId == policy.currentJobId && target.jobId != null &&
         policy.scope.grants.any((grant) => grant.projectId == target.projectId);
@@ -2186,7 +2402,8 @@ final class PolicyAiWriteCoordinator
             created.accountKey == policy.scope.accountKey &&
             created.kind == AiTargetKind.pipeline &&
             created.projectId == target.projectId &&
-            created.id != null && created.id == target.pipelineId);
+            created.id != null && created.id == target.pipelineId,
+        );
     final created = _segmentCreated.any((created) =>
         created.accountKey == policy.scope.accountKey &&
         created.kind == target.kind && created.projectId == target.projectId &&
@@ -2195,11 +2412,17 @@ final class PolicyAiWriteCoordinator
          (target.kind == AiTargetKind.note &&
             target.side == AiResourceSide.mergeRequest && created.id != null &&
             created.id == (target.noteId ?? target.iid) && created.parentIid != null &&
-            created.parentIid == target.parentIid)));
-    if (!currentResource && !currentJob && !created && !createdPipeline) return target;
+            created.parentIid == target.parentIid)),
+    );
+    if (!uiAdded &&
+        !currentResource && !currentJob && !created && !createdPipeline) {
+      return target;
+    }
     return AiTargetRef(
       kind: target.kind, side: target.side,
-      origin: currentResource || currentJob ? AiTargetOrigin.currentResource :
+      origin: uiAdded
+          ? AiTargetOrigin.uiAdded
+          : currentResource || currentJob ? AiTargetOrigin.currentResource :
           created ? AiTargetOrigin.createdInSegment : target.origin,
       projectId: target.projectId, projectPath: target.projectPath,
       iid: target.iid, parentIid: target.parentIid, noteId: target.noteId,
@@ -2208,7 +2431,8 @@ final class PolicyAiWriteCoordinator
       pipelineId: target.pipelineId, jobId: target.jobId,
       jobBelongsToBoundPipeline: target.jobBelongsToBoundPipeline,
       pipelineCreatedInSegment: target.pipelineCreatedInSegment || createdPipeline,
-      groupFullPath: target.groupFullPath, groupId: target.groupId, name: target.name,
+      groupFullPath: target.groupFullPath, groupId: target.groupId,
+      workItemGid: target.workItemGid, name: target.name,
     );
   }
 
@@ -2313,6 +2537,8 @@ String _reason(Object error) => switch (error) {
 
 String _originIdentity(AiTargetRef? origin) => jsonEncode(origin == null ? null : [
   origin.kind.name, origin.projectId, origin.iid, origin.path, origin.refName,
+  origin.groupId, origin.groupFullPath, origin.workItemGid, origin.side.name,
+  origin.parentIid, origin.noteId,
 ]);
 
 String _nonce() {
@@ -2361,6 +2587,19 @@ String _scopeDigest(AiWriteScope scope) => jsonEncode([
       grant.groupFullPath,
       grant.groupId,
     ],
+  [
+    for (final identity in scope.uiAddedGroupWorkItems)
+      [
+        identity.accountKey,
+        identity.groupId,
+        identity.fullPath,
+        identity.iid,
+        identity.workItemGid,
+        identity.generation,
+        identity.readEpoch,
+        identityHashCode(identity.apiOwner),
+      ],
+  ],
 ]);
 
 bool _sameKeys(Set<AiConflictKey> first, Set<AiConflictKey> second) =>
@@ -2373,13 +2612,83 @@ String? _projectPath(AiWriteScope scope, int? id) {
   return null;
 }
 
+VerifiedGroupWorkItemIdentity? _uiAddedGroupIdentity(
+  AiWritePolicySnapshot policy,
+  int? groupId,
+  String? fullPath,
+  int? iid, {
+  String? workItemGid,
+}) {
+  final api = policy.ownerApi;
+  if (api == null || groupId == null || groupId < 1 || iid == null || iid < 1) {
+    return null;
+  }
+  final identities = policy.scope.uiAddedGroupWorkItems.where(
+    (identity) =>
+        identity.groupId == groupId &&
+        identity.fullPath == fullPath &&
+        identity.iid == iid &&
+        (workItemGid == null || identity.workItemGid == workItemGid) &&
+        identity.accountKey == policy.scope.accountKey &&
+        identical(identity.apiOwner, api) &&
+        identity.generation == policy.sessionGeneration,
+  );
+  return identities.length == 1 ? identities.single : null;
+}
+
 AiTargetRef _target(
   AiCapability capability,
   Map<String, Object?> args,
-  AiWriteScope scope,
+  AiWritePolicySnapshot policy,
 ) {
+  final scope = policy.scope;
   final project = args['projectId'] as int?;
   final iid = args['iid'] as int?;
+  if (capability.scopeClass == AiScopeClass.groupWorkItem) {
+    final groupId = args['groupId'] as int?;
+    final grants = scope.grants.where(
+      (grant) =>
+          grant.kind == AiScopeKind.groupWorkItem &&
+          grant.projectId == null &&
+          grant.projectPath == null &&
+          grant.groupId == groupId &&
+          grant.iid == iid,
+    );
+    final paths = grants.map((grant) => grant.groupFullPath).toSet();
+    final path = paths.length == 1 ? paths.single : null;
+    final identity = _uiAddedGroupIdentity(policy, groupId, path, iid);
+    final current = policy.currentResource;
+    final isCurrent =
+        current != null &&
+        current.kind == AiTargetKind.groupWorkItem &&
+        current.projectId == null &&
+        current.projectPath == null &&
+        current.groupId == groupId &&
+        current.groupFullPath == path &&
+        current.iid == iid;
+    final note = args['noteId'] as int?;
+    final kind = switch (capability.operationId) {
+      'setGroupWorkItemActivityNoteReaction' => AiTargetKind.emoji,
+      'deleteGroupWorkItemActivityNote' ||
+      'editGroupWorkItemActivityNote' => AiTargetKind.note,
+      _ => AiTargetKind.groupWorkItem,
+    };
+    return AiTargetRef(
+      kind: kind,
+      side: AiResourceSide.group,
+      groupId: groupId,
+      groupFullPath: path,
+      workItemGid: identity?.workItemGid,
+      iid: kind == AiTargetKind.groupWorkItem ? iid : null,
+      parentIid: kind == AiTargetKind.groupWorkItem ? null : iid,
+      noteId: note,
+      origin: identity != null
+          ? AiTargetOrigin.uiAdded
+          : isCurrent
+          ? AiTargetOrigin.currentResource
+          : AiTargetOrigin.proposed,
+    );
+  }
   final kind = switch (capability.scopeClass) {
     AiScopeClass.workItem => AiTargetKind.issue,
     AiScopeClass.mergeRequest => AiTargetKind.mergeRequest,
@@ -2428,6 +2737,15 @@ Uri? _webLink(_PendingWrite pending, Map<String, Object?> projection) {
   final args = pending.request.arguments;
   final operation = pending.call.name;
   int? positive(Object? value) => value is int && value > 0 ? value : null;
+  final groupTodo = pending.prepared.groupTodoTarget;
+  final groupIdentity = pending.prepared.groupIdentity;
+  if (groupTodo != null || groupIdentity != null) {
+    final path = groupTodo?.groupFullPath ?? groupIdentity!.fullPath;
+    final iid = groupTodo?.iid ?? groupIdentity!.iid;
+    final uri = instance.projectWeb('groups/$path/-/work_items/$iid');
+    final note = positive(args['noteId']);
+    return note == null ? uri : uri.replace(fragment: 'note_$note');
+  }
   final todo = pending.prepared.todoTarget;
   final project = todo?.projectId ?? positive(args['projectId']);
   final path = project == null ? null : _projectPath(scope, project);
@@ -2496,6 +2814,29 @@ Uri? _webLink(_PendingWrite pending, Map<String, Object?> projection) {
 /// request binds as the current resource; anything else is only proposed
 /// (and an issue or merge request outside the scope is not admitted).
 AiTargetRef _todoTarget(port.AiWritePrepared prepared, AiWriteScope scope) {
+  final group = prepared.groupTodoTarget;
+  if (group != null) {
+    final current = scope.grants.any(
+      (grant) =>
+          grant.kind == AiScopeKind.groupWorkItem &&
+          grant.projectId == null &&
+          grant.projectPath == null &&
+          grant.groupId == group.groupId &&
+          grant.iid == group.iid &&
+          grant.groupFullPath == group.groupFullPath,
+    );
+    return AiTargetRef(
+      kind: AiTargetKind.todo,
+      side: AiResourceSide.group,
+      groupId: group.groupId,
+      groupFullPath: group.groupFullPath,
+      workItemGid: group.workItemGid,
+      parentIid: group.iid,
+      origin: current
+          ? AiTargetOrigin.currentResource
+          : AiTargetOrigin.proposed,
+    );
+  }
   final todo = prepared.todoTarget;
   if (todo == null) return AiTargetRef(kind: AiTargetKind.todo);
   final mergeRequest = todo.resource == 'merge_requests';
@@ -2545,7 +2886,8 @@ port.AiWriteRequest _edit(
   if (target == null) throw const _WriteBlocked('noEditableText');
   final args = Map<String, Object?>.from(request.arguments);
   if (target.nested) {
-    args['fields'] = {...args['fields']! as Map<String, Object?>, target.field: edited};
+    args['fields'] = {...args['fields']! as Map<String, Object?>, target.field: edited,
+    };
   } else {
     args[target.field] = edited;
   }
@@ -2665,7 +3007,8 @@ const aiWriteRequestCounts = <String, AiWriteRequestCount>{
 /// operation reserves the largest visible ledger cap for compatibility.
 int aiWriteRequestAllowance(String operation, {bool oauthReplay = true}) {
   final cap = productionAiLedger.find(operation)?.httpCap ??
-      productionAiLedger.modelVisible.fold<int>(0, (most, row) => row.httpCap > most ? row.httpCap : most);
+      productionAiLedger.modelVisible.fold<int>(0, (most, row) => row.httpCap > most ? row.httpCap : most,
+      );
   final mutations = operation == 'cancelAutoMerge' ? 2 : 1;
   return oauthReplay ? cap : (cap - mutations) ~/ 2 + mutations;
 }
@@ -2686,6 +3029,13 @@ Map<String, Object?> _arguments(AiToolCall call, AiCapability capability) {
   };
   if (args is! Map<String, Object?> || !_validObject(args, specs) ||
       (args['projectId'] != null && (args['projectId']! as int) < 1) ||
+      (args['groupId'] != null && (args['groupId']! as int) < 1) ||
+      (capability.scopeClass == AiScopeClass.groupWorkItem &&
+          (args['groupId'] is! int ||
+              args['iid'] is! int ||
+              args.containsKey('projectId'))) ||
+      (capability.scopeClass != AiScopeClass.groupWorkItem &&
+          args.containsKey('groupId')) ||
       (args['iid'] != null && (args['iid']! as int) < 1)) {
     throw const _WriteBlocked('invalidArguments');
   }
@@ -2695,7 +3045,8 @@ Map<String, Object?> _arguments(AiToolCall call, AiCapability capability) {
 bool _validObject(Map<String, Object?> values, Map<String, AiArgSpec> specs) =>
     values.keys.every(specs.containsKey) &&
     specs.entries.every((entry) =>
-        !entry.value.required || values.containsKey(entry.key)) &&
+        !entry.value.required || values.containsKey(entry.key),
+    ) &&
     values.entries.every((entry) => _validArg(entry.value, specs[entry.key]!));
 
 bool _validArg(Object? value, AiArgSpec spec) => switch (spec.type) {
@@ -2711,10 +3062,12 @@ bool _validArg(Object? value, AiArgSpec spec) => switch (spec.type) {
   AiArgType.edits || AiArgType.variables || AiArgType.suggestionList ||
   AiArgType.snippetActions => value is List<Object?> && value.length <= 20 &&
       value.every((item) => item is Map<String, Object?> &&
-          _validObject(item, _nestedProperties(spec))),
+          _validObject(item, _nestedProperties(spec)),
+        ),
 };
 
-bool _hasFragmentRole(Map<String, Object?> values, Map<String, AiArgSpec> specs) {
+bool _hasFragmentRole(Map<String, Object?> values, Map<String, AiArgSpec> specs,
+) {
   for (final entry in values.entries) {
     final spec = specs[entry.key];
     if (spec == null) continue;
@@ -2723,7 +3076,8 @@ bool _hasFragmentRole(Map<String, Object?> values, Map<String, AiArgSpec> specs)
     final nested = _nestedProperties(spec);
     if (value is Map<String, Object?> && _hasFragmentRole(value, nested)) return true;
     if (value is List<Object?> && value.any((item) =>
-        item is Map<String, Object?> && _hasFragmentRole(item, nested))) {
+        item is Map<String, Object?> && _hasFragmentRole(item, nested),
+        )) {
       return true;
     }
   }
@@ -2757,7 +3111,8 @@ port.AiWritePreview redactAiWritePreview(
       lines: [
         for (final line in preview.lines)
           port.AiDiffLine(kind: line.kind, text: safeDisplay(line.text),
-              oldLine: line.oldLine, newLine: line.newLine),
+              oldLine: line.oldLine, newLine: line.newLine,
+          ),
       ],
       newFile: preview.newFile,
       preexistingSecretHits:
@@ -2778,7 +3133,8 @@ port.AiWritePreview redactAiWritePreview(
         for (final issue in preview.closingIssues)
           port.AiClosingIssue(projectId: issue.projectId, iid: issue.iid,
               outOfScope: issue.outOfScope,
-              fullReference: optional(issue.fullReference)),
+              fullReference: optional(issue.fullReference),
+          ),
       ],
       headMovedCommits: preview.headMovedCommits.map(safeDisplay).toList(),
     ),
@@ -2797,8 +3153,10 @@ port.AiWritePreview redactAiWritePreview(
     port.AiDraftPublishPreview() => port.AiDraftPublishPreview(drafts: [
       for (final draft in preview.drafts)
         port.AiDraftPreview(id: draft.id, body: safeDisplay(draft.body),
-            createdInSegment: draft.createdInSegment),
-    ]),
+            createdInSegment: draft.createdInSegment,
+          ),
+    ],
+    ),
     port.AiDeletePreview() => port.AiDeletePreview(
       targetName: safeDisplay(preview.targetName),
       path: optional(preview.path),
@@ -2845,8 +3203,10 @@ Map<String, AiArgSpec> _nestedProperties(AiArgSpec spec) {
     },
     AiArgType.snippetActions => {
       'action': requiredText, 'file_path': requiredText,
-      'previous_path': const AiArgSpec(AiArgType.string, text: AiTextRole.pathOrRef),
-      'content': const AiArgSpec(AiArgType.string, text: AiTextRole.fullNewContent),
+      'previous_path': const AiArgSpec(AiArgType.string, text: AiTextRole.pathOrRef,
+      ),
+      'content': const AiArgSpec(AiArgType.string, text: AiTextRole.fullNewContent,
+      ),
       'edits': const AiArgSpec(AiArgType.edits, text: AiTextRole.fragmentEdits),
     },
     _ => const {},
@@ -2858,6 +3218,21 @@ Map<String, AiArgSpec> _nestedProperties(AiArgSpec spec) {
 String _scopeSummary(AiWriteScope scope) {
   final parts = <String>[];
   for (final grant in scope.grants) {
+    if (grant.kind == AiScopeKind.groupWorkItem) {
+      if (grant.groupId != null &&
+          grant.groupId! > 0 &&
+          grant.iid != null &&
+          grant.iid! > 0 &&
+          grant.projectId == null &&
+          grant.projectPath == null &&
+          grant.groupFullPath != null) {
+        parts.add(
+          'group work item #${grant.iid} in group ${grant.groupId} '
+          '(${grant.groupFullPath})',
+        );
+      }
+      continue;
+    }
     final id = grant.projectId;
     if (id == null) continue;
     final what = switch (grant.kind) {
@@ -2872,15 +3247,21 @@ String _scopeSummary(AiWriteScope scope) {
 }
 
 Map<String, Object?> _schema(
-  AiCapability capability, {Set<int> projectIds = const <int>{}}
+  AiCapability capability, {Set<int> projectIds = const <int>{},
+  Set<int> groupIds = const <int>{},
+}
 ) => _objectSchema({
   for (final entry in _argumentSpecs(capability).entries)
     if (entry.value.modelVisible) entry.key: entry.value,
   'reason': const AiArgSpec(AiArgType.string, required: true),
-}, projectIds: projectIds);
+}, projectIds: projectIds,
+  groupIds: groupIds,
+);
 
 Map<String, Object?> _objectSchema(
-  Map<String, AiArgSpec> specs, {Set<int> projectIds = const <int>{}}
+  Map<String, AiArgSpec> specs, {Set<int> projectIds = const <int>{},
+  Set<int> groupIds = const <int>{},
+}
 ) => {
   'type': 'object',
   'properties': {
@@ -2889,9 +3270,11 @@ Map<String, Object?> _objectSchema(
         ..._argSchema(entry.value),
         if (entry.key == 'projectId' && projectIds.isNotEmpty)
           'enum': projectIds.toList()..sort(),
+        if (entry.key == 'groupId') 'enum': groupIds.toList()..sort(),
       },
   },
-  'required': [for (final entry in specs.entries) if (entry.value.required) entry.key],
+  'required': [for (final entry in specs.entries) if (entry.value.required) entry.key,
+  ],
   'additionalProperties': false,
 };
 
@@ -2900,13 +3283,14 @@ Map<String, Object?> _argSchema(AiArgSpec spec) => switch (spec.type) {
       ? {'type': 'string'}
       : {
           'type': 'string',
-          'enum': spec.enumValues,
-        },
+          'enum': spec.enumValues},
   AiArgType.integer => {'type': 'integer'},
   AiArgType.boolean => {'type': 'boolean'},
   AiArgType.object => _objectSchema(_nestedProperties(spec)),
-  AiArgType.integerList => {'type': 'array', 'items': {'type': 'integer'}},
-  AiArgType.stringList => {'type': 'array', 'items': {'type': 'string'}},
+  AiArgType.integerList => {'type': 'array', 'items': {'type': 'integer'},
+  },
+  AiArgType.stringList => {'type': 'array', 'items': {'type': 'string'},
+  },
   AiArgType.edits || AiArgType.variables || AiArgType.suggestionList ||
   AiArgType.snippetActions => {
     'type': 'array', 'maxItems': 20,

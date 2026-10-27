@@ -37,6 +37,14 @@ const Map<String, List<AiIntentDirection>> aiIntentDirectionsByOperation =
         AiIntentDirection.workItemReactionAdd,
         AiIntentDirection.workItemReactionRemove,
       ],
+      'setGroupWorkItemActivityNoteReaction': <AiIntentDirection>[
+        AiIntentDirection.workItemReactionAdd,
+        AiIntentDirection.workItemReactionRemove,
+      ],
+      'setGroupWorkItemNotifications': <AiIntentDirection>[
+        AiIntentDirection.workItemNotificationsOn,
+        AiIntentDirection.workItemNotificationsOff,
+      ],
       'setWorkItemNotifications': <AiIntentDirection>[
         AiIntentDirection.workItemNotificationsOn,
         AiIntentDirection.workItemNotificationsOff,
@@ -105,6 +113,7 @@ AiIntentDirection? requestedIntentDirection(
       return AiIntentDirection.addEmoji;
     case 'removeAwardEmoji':
       return AiIntentDirection.removeEmoji;
+    case 'setGroupWorkItemActivityNoteReaction':
     case 'setWorkItemActivityNoteReaction':
       final Object? add = arguments['add'];
       if (add is bool) {
@@ -113,6 +122,7 @@ AiIntentDirection? requestedIntentDirection(
             : AiIntentDirection.workItemReactionRemove;
       }
       return null;
+    case 'setGroupWorkItemNotifications':
     case 'setWorkItemNotifications':
       final Object? enabled = arguments['enabled'];
       if (enabled is bool) {

@@ -16,6 +16,18 @@ typedef AiWorkItemDiscussionNotesNextReader =
       WorkItemDiscussionNotesContinuation continuation,
     );
 
+/// Strict namespace identity and the corresponding same-round detail.
+final class AiGroupWorkItemLocation {
+  const AiGroupWorkItemLocation({
+    required this.detail,
+    required this.identity,
+    required this.isCurrent,
+  });
+  final WorkItemGraphDetail detail;
+  final VerifiedGroupWorkItemIdentity identity;
+  final bool Function() isCurrent;
+}
+
 final class AiProjectWorkItemLocation {
   const AiProjectWorkItemLocation({
     required this.project,

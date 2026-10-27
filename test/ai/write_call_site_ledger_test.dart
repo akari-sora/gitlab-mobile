@@ -16,7 +16,8 @@ void main() {
     final sites = _writeSites(_libRoot());
     final ledgerMethods = <String, String>{
       for (final AiCapability row in ProductionAiLedger.rows)
-        row.namedMethod: row.operationId,
+        if (!_groupAliasMethods.containsKey(row.operationId))
+          row.namedMethod: row.operationId,
     };
     final pending3Methods = _pendingMr6b3Methods;
 
@@ -127,6 +128,39 @@ void main() {
         isTrue,
         reason: '$file $method',
       );
+    }
+  });
+
+  test('group aliases reuse exactly one original method and graph site', () {
+    final rows = ProductionAiLedger.rows
+        .where((r) => r.boundary == AiWriteBoundary.graph)
+        .toList();
+    final operations = rows.map((r) => r.operationId).toList();
+    expect(operations.toSet(), hasLength(operations.length));
+    expect(_groupAliasMethods, hasLength(15));
+    for (final entry in _groupAliasMethods.entries) {
+      final original = rows.where((r) => r.operationId == entry.value).toList();
+      expect(original, hasLength(1), reason: entry.key);
+      expect(original.single.namedMethod, entry.value);
+      final sites = _currentMr6b3GraphSites.entries
+          .where((site) => site.value.contains(entry.value))
+          .toList();
+      expect(sites, hasLength(1), reason: entry.key);
+      final aliases = rows.where((r) => r.operationId == entry.key).toList();
+      expect(aliases.length, lessThanOrEqualTo(1), reason: entry.key);
+      if (aliases.isNotEmpty) {
+        expect(aliases.single.namedMethod, entry.value);
+        expect(aliases.single.scopeClass, AiScopeClass.groupWorkItem);
+      }
+    }
+    for (final row in rows) {
+      if (!_currentMr6b3Methods.contains(row.operationId)) {
+        expect(
+          _groupAliasMethods[row.operationId],
+          row.namedMethod,
+          reason: row.operationId,
+        );
+      }
     }
   });
 
@@ -295,6 +329,24 @@ const _workspaceWriteImplementations = <String>{
   'deletePackageFile',
   'deleteContainerRepository',
   'deleteContainerTag',
+};
+
+const _groupAliasMethods = <String, String>{
+  'updateGroupWorkItemState': 'updateWorkItemState',
+  'updateGroupWorkItemStatus': 'updateWorkItemStatus',
+  'updateGroupWorkItemDates': 'updateWorkItemDates',
+  'updateGroupWorkItemHealthStatus': 'updateWorkItemHealthStatus',
+  'updateGroupWorkItemAssignees': 'updateWorkItemAssignees',
+  'updateGroupWorkItemMilestone': 'updateWorkItemMilestone',
+  'updateGroupWorkItemWeight': 'updateWorkItemWeight',
+  'createGroupWorkItemActivityComment': 'createWorkItemActivityComment',
+  'createGroupWorkItemActivityReply': 'createWorkItemActivityReply',
+  'deleteGroupWorkItemActivityNote': 'deleteWorkItemActivityNote',
+  'setGroupWorkItemActivityNoteReaction': 'setWorkItemActivityNoteReaction',
+  'setGroupWorkItemNotifications': 'setWorkItemNotifications',
+  'updateGroupWorkItemContent': 'updateWorkItemContent',
+  'editGroupWorkItemActivityNote': 'editWorkItemActivityNote',
+  'updateGroupWorkItemLabels': 'updateWorkItemLabels',
 };
 
 const _currentMr6b3Methods = <String>{

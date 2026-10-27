@@ -196,7 +196,117 @@ WRITE_PORT_MEMBERS = {
     "editProject",
     "deleteProject",
     "forkProject",
-} | _MR6B3_WRITE_PORT_MEMBERS | _MR6B3T_WRITE_PORT_MEMBERS
+} | _MR6B3_WRITE_PORT_MEMBERS | _MR6B3T_WRITE_PORT_MEMBERS | {"namespaceWorkItem"}
+
+MAIN_WRITE_PORT_MEMBERS = {
+    'addAwardEmoji',
+    'createBoard',
+    'createBoardList',
+    'createDiscussion',
+    'createDiscussionNote',
+    'createDraftNote',
+    'createIssue',
+    'createLabel',
+    'createMergeRequest',
+    'createMilestone',
+    'createNote',
+    'createTodo',
+    'currentUser',
+    'instance',
+    'markTodoDone',
+    'moveBoardCard',
+    'moveBoardList',
+    'record',
+    'records',
+    'removeAwardEmoji',
+    'renameBoard',
+    'setBoardSystemListHidden',
+    'setDiscussionResolved',
+    'setMilestoneState',
+    'setStar',
+    'setSubscribed',
+    'unapproveMergeRequest',
+    'updateDiscussionNote',
+    'updateDraftNote',
+    'updateIssue',
+    'updateLabel',
+    'updateMergeRequest',
+    'updateMilestone',
+    'updateNote',
+    'uploadProjectFile',
+}
+
+NON_GRAPH_WRITE_PORT_MEMBERS = {
+    'applySuggestion',
+    'approveMergeRequest',
+    'batchApplySuggestions',
+    'cancelAutoMerge',
+    'createBranch',
+    'createPipeline',
+    'createProject',
+    'createRelease',
+    'createRepositoryFile',
+    'createSnippet',
+    'createTag',
+    'currentUser',
+    'deleteBoard',
+    'deleteBoardList',
+    'deleteBranch',
+    'deleteContainerRepository',
+    'deleteContainerTag',
+    'deleteDiscussionNote',
+    'deleteDraftNote',
+    'deleteFile',
+    'deleteIssue',
+    'deleteLabel',
+    'deleteMergeRequest',
+    'deleteMilestone',
+    'deleteNote',
+    'deletePackage',
+    'deletePackageFile',
+    'deletePipeline',
+    'deleteProject',
+    'deleteRelease',
+    'deleteSnippet',
+    'deleteSnippetFile',
+    'deleteTag',
+    'editProject',
+    'effectiveProjectAccess',
+    'fileMetadata',
+    'forkProject',
+    'instance',
+    'jobAction',
+    'markAllTodosDone',
+    'mergeRequest',
+    'pipelineAction',
+    'playPipelineSchedule',
+    'publishDraftNotes',
+    'rebaseMergeRequest',
+    'record',
+    'records',
+    'snippetText',
+    'textFile',
+    'updateRelease',
+    'updateRepositoryFile',
+    'updateSnippet',
+    'updateSnippetFiles',
+    'updateSnippetMetadata',
+}
+
+GROUP_FAMILY_STAGES = {
+    'state': ('state', 'groupStateStageOperations', {'updateGroupWorkItemState'}, {'workItemState', 'updateWorkItemState'}),
+    'status': ('status', 'groupStatusStageOperations', {'updateGroupWorkItemStatus'}, {'updateWorkItemStatus', 'workItemStatus'}),
+    'dates': ('dates', 'groupDatesStageOperations', {'updateGroupWorkItemDates'}, {'workItemDates', 'updateWorkItemDates'}),
+    'health': ('health', 'groupHealthStageOperations', {'updateGroupWorkItemHealthStatus'}, {'updateWorkItemHealthStatus', 'workItemHealthEdit'}),
+    'assignees': ('assignees', 'groupAssigneesStageOperations', {'updateGroupWorkItemAssignees'}, {'searchWorkItemAssigneeCandidates', 'updateWorkItemAssignees', 'workItemAssignees'}),
+    'milestone_weight': ('milestone_weight', 'groupMilestoneWeightStageOperations', {'updateGroupWorkItemWeight', 'updateGroupWorkItemMilestone'}, {'workItemWeight', 'workItemMilestone', 'updateWorkItemWeight', 'updateWorkItemMilestone', 'workItemMilestoneChoices'}),
+    'activity_create': ('activity_create', 'groupActivityCreateStageOperations', {'createGroupWorkItemActivityComment', 'createGroupWorkItemActivityReply'}, {'workItemDiscussionNotesNext', 'createWorkItemActivityReply', 'workItemActivityWriteAccess', 'workItemActivityNext', 'workItemActivity', 'createWorkItemActivityComment'}),
+    'activity_delete': ('activity_delete', 'groupActivityDeleteStageOperations', {'deleteGroupWorkItemActivityNote'}, {'workItemDiscussionNotesNext', 'workItemActivityDeleteAccess', 'deleteWorkItemActivityNote', 'workItemActivityNext', 'workItemActivity'}),
+    'reactions_notifications': ('t1', 'groupT1StageOperations', {'setGroupWorkItemNotifications', 'setGroupWorkItemActivityNoteReaction'}, {'workItemDiscussionNotesNext', 'setWorkItemNotifications', 'workItemNotifications', 'setWorkItemActivityNoteReaction', 'workItemActivityReactionAccess', 'workItemActivityNext', 'workItemActivity'}),
+    'content': ('content', 'groupContentStageOperations', {'updateGroupWorkItemContent'}, {'updateWorkItemContent', 'workItemContent'}),
+    'activity_edit': ('activity_edit', 'groupActivityEditStageOperations', {'editGroupWorkItemActivityNote'}, {'workItemDiscussionNotesNext', 'workItemActivityNext', 'editWorkItemActivityNote', 'workItemActivity', 'workItemActivityEditAccess'}),
+    'labels': ('labels', 'groupLabelsStageOperations', {'updateGroupWorkItemLabels'}, {'updateWorkItemLabels', 'workItemLabels', 'workItemLabelCandidates'}),
+}
 
 GENERIC_CHANNELS = {
     "writeRecord",
@@ -515,6 +625,15 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertEqual(self._group_identity_factory_violations(
             core, f"Future<void> namespaceWorkItem() async {{ if (strictIdentity) {{ {call}; }} }}"
         ), [])
+        write_port = "lib/core/ai/tools/gitlab_write_port.dart"
+        write_valid = ("Future<void> _resolveGroupWorkItem() async { _api.instance; "
+                       "await _api.namespaceWorkItem(path, iid, expectedNamespaceId: id, strictIdentity: true); " + call + "; }")
+        self.assertEqual(self._group_identity_factory_violations(write_port, write_valid), [])
+        for mutant in (write_valid + "void other() { " + call + "; }",
+                       write_valid.replace("_api.instance;", "_api.instance; " + call + ";"),
+                       write_valid.replace("strictIdentity: true", "strictIdentity: false"),
+                       write_valid.replace("actorUserId: actorUserId", "actorUserId: grant.groupId")):
+            self.assertTrue(self._group_identity_factory_violations(write_port, mutant))
         valid_wiring = "GitLabAiGroupReadPort(api, actorUserId: session.active!.user.id)"
         self.assertEqual(self._group_port_actor_violations(controller, valid_wiring), [])
         for mutant in (
@@ -604,6 +723,98 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertLessEqual(members, WRITE_PORT_MEMBERS)
         self.assertEqual(violations, [])
 
+    def test_g0e_write_port_exact_categories_and_resolver(self):
+        sources = self._write_port_sources()
+        main = sources[0][1]
+        self.assertEqual(self._api_members(self._code_only(main)), MAIN_WRITE_PORT_MEMBERS | {"namespaceWorkItem"})
+        self.assertEqual(self._namespace_write_violations(main, is_main=True), [])
+        graph, non_graph = set(), set()
+        for path, source, _ in sources[1:]:
+            name = path.name
+            members = self._api_members(self._code_only(source))
+            self.assertEqual(self._namespace_write_violations(source, is_main=False), [], name)
+            if name.startswith("gitlab_write_port_group_"):
+                family = name.removeprefix("gitlab_write_port_group_").removesuffix(".dart")
+                self.assertIn(family, GROUP_FAMILY_STAGES)
+                fixture, symbol, complete, expected = GROUP_FAMILY_STAGES[family]
+                stage_source = (ROOT / "test" / "ai" / f"mr6b3g_{fixture}_test.dart").read_text()
+                declaration = re.search(rf"\b{re.escape(symbol)}\s*=\s*<String>\s*\{{([^}}]*)\}}", stage_source)
+                self.assertIsNotNone(declaration, symbol)
+                stage = set(re.findall(r"['\"](\w+)['\"]", declaration.group(1)))
+                self.assertTrue(stage == set() or stage == complete, family)
+                self.assertEqual(members, expected if stage else set(), family)
+            elif name.startswith("gitlab_write_port_graphql_"):
+                graph.update(members)
+            else:
+                non_graph.update(members)
+        self.assertEqual(non_graph, NON_GRAPH_WRITE_PORT_MEMBERS)
+        self.assertEqual(graph, _MR6B3_WRITE_PORT_MEMBERS | _MR6B3T_WRITE_PORT_MEMBERS | {"instance", "currentUser"})
+
+    def test_g0e_namespace_location_guard_rejects_part_and_tearoff(self):
+        self.assertTrue(self._namespace_write_violations("void f() => _api.namespaceWorkItem;", is_main=False))
+        self.assertTrue(self._namespace_write_violations("void f() => _api.namespaceWorkItem();", is_main=False))
+        self.assertTrue(self._namespace_write_violations("Future<void> _resolveGroupWorkItem() async { } void other() => _api.namespaceWorkItem();", is_main=True))
+        self.assertEqual(self._namespace_write_violations("Future<void> _resolveGroupWorkItem() async { _api.instance; await _api.namespaceWorkItem(); }", is_main=True), [])
+        self.assertTrue(self._namespace_write_violations("Future<void> _resolveGroupWorkItem() async { _api.instance; _api.record(); await _api.namespaceWorkItem(); }", is_main=True))
+
+    def test_g0e_namespace_guard_recognizes_member_trivia(self):
+        resolver = "Future<void> _resolveGroupWorkItem() async { _api.instance; await _api.namespaceWorkItem(); }"
+        for trivia in (" ", "\n", "/* gap */"):
+            valid = resolver.replace("_api.namespaceWorkItem", f"_api.{trivia}namespaceWorkItem")
+            self.assertEqual(self._namespace_write_violations(valid, is_main=True), [])
+        for operator in (".", "..", "?.", "?.."):
+            for trivia in (" ", "\n", "/* gap */"):
+                for suffix in ("()", ""):
+                    access = f"_api{operator}{trivia}namespaceWorkItem{suffix}"
+                    with self.subTest(access=access):
+                        code = self._code_only(access)
+                        self.assertEqual(self._api_members(code), {"namespaceWorkItem"})
+                        self.assertTrue(self._namespace_read_violations(access))
+                        self.assertTrue(self._namespace_write_violations(access, is_main=False))
+                        self.assertTrue(self._namespace_write_violations(resolver + " void other() => " + access + ";", is_main=True))
+
+    def test_g0e_group_target_gate_is_pinned_and_never_assigned_in_lib(self):
+        ledger = (AI_ROOT / "tools" / "write_ledger.dart").read_text()
+        self.assertRegex(ledger, r"\bconst\s+bool\s+aiGroupWorkItemWritesEnabled\s*=\s*false\s*;")
+        violations = []
+        for path in (ROOT / "lib").rglob("*.dart"):
+            for finding in self._group_gate_assignment_violations(path.read_text()):
+                violations.append(f"{path.relative_to(ROOT)}: {finding}")
+        self.assertEqual(violations, [])
+        self.assertTrue(self._group_gate_assignment_violations("aiGroupWorkItemWritesEnabledForTesting = true;"))
+        self.assertTrue(self._group_gate_assignment_violations("aiGroupWorkItemWritesEnabledForTesting ??= true;"))
+
+    @classmethod
+    def _group_gate_assignment_violations(cls, source):
+        code = cls._code_only(source)
+        name = r"\baiGroupWorkItemWritesEnabledForTesting\b"
+        return ["test gate override assigned"] if re.search(name + r"\s*(?:=(?!=)|\?\?=|[+*/%-]=|\+\+|--)", code) else []
+
+    @classmethod
+    def _namespace_write_violations(cls, source, *, is_main):
+        code = cls._code_only(source)
+        refs = list(re.finditer(r"\.\s*namespaceWorkItem\b", code))
+        if not is_main:
+            return [] if not refs else ["namespaceWorkItem outside main resolver"]
+        if len(refs) != 1:
+            return ["expected one namespaceWorkItem reference"]
+        declaration = re.search(r"\bFuture\s*<[^>]+>\s+_resolveGroupWorkItem\s*\(", code)
+        if not declaration:
+            return ["missing group resolver"]
+        body = re.search(r"\basync\s*\{", code[declaration.end():])
+        if not body:
+            return ["missing async resolver body"]
+        opening = declaration.end() + body.end() - 1
+        depth, end = 1, opening + 1
+        while end < len(code) and depth:
+            depth += (code[end] == "{") - (code[end] == "}")
+            end += 1
+        if depth or not opening < refs[0].start() < end or not re.search(r"_api\s*\.\s*namespaceWorkItem\s*\(", code[opening:end]):
+            return ["namespaceWorkItem outside group resolver"]
+        if cls._api_members(code[opening:end]) != {"instance", "namespaceWorkItem"}:
+            return ["group resolver API members differ from the fixed delta"]
+        return []
+
     def test_mr6b3_write_port_whitelist_delta_is_exact(self):
         expected_reads = {
             "projectWorkItem",
@@ -648,7 +859,7 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertEqual(len(expected_reads), 20)
         self.assertEqual(len(expected_writes), 15)
         self.assertEqual(len(_MR6B3_WRITE_PORT_MEMBERS), 35)
-        self.assertNotIn("namespaceWorkItem", WRITE_PORT_MEMBERS)
+        self.assertIn("namespaceWorkItem", WRITE_PORT_MEMBERS)
         self.assertNotIn("snoozedTodos", WRITE_PORT_MEMBERS)
 
     def test_freshness_prepared_merge_copies_every_field(self):
@@ -848,10 +1059,11 @@ class AiBoundaryTest(unittest.TestCase):
                     findings.append(f"{path.relative_to(ROOT)}:{number}:{line}")
         self.assertEqual(findings, [])
 
-    @staticmethod
-    def _api_members(source):
+    @classmethod
+    def _api_members(cls, source):
+        source = cls._code_only(source)
         receivers = {"_api"}
-        aliases = re.compile(r"\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b")
+        aliases = re.compile(r"\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b(?!\s*(?:[.(]|\?\.))")
         changed = True
         while changed:
             changed = False
@@ -862,7 +1074,7 @@ class AiBoundaryTest(unittest.TestCase):
         members = set()
         for receiver in receivers:
             members.update(
-                re.findall(rf"\b{re.escape(receiver)}(?:\.\.|\.)(\w+)\b", source)
+                re.findall(rf"\b{re.escape(receiver)}\s*(?:\?\.\.|\.\.|\?\.|\.)\s*(\w+)\b", source)
             )
         return members
 
@@ -1207,6 +1419,13 @@ class AiBoundaryTest(unittest.TestCase):
                 block = cls._brace_block(code, match.end() - 1)
                 if block:
                     allowed.append(block)
+        elif relative == "lib/core/ai/tools/gitlab_write_port.dart":
+            for method in re.finditer(r"\bFuture\s*<[^>]+>\s+_resolveGroupWorkItem\s*\([\s\S]*?\)\s*async\s*\{", code):
+                block = cls._brace_block(code, method.end() - 1)
+                if block and not cls._namespace_write_violations(source, is_main=True):
+                    strict_calls = list(re.finditer(r"\.\s*namespaceWorkItem\s*\(", code[block[0]:block[1]]))
+                    if len(strict_calls) == 1 and not cls._namespace_read_violations(code[block[0]:block[1]]):
+                        allowed.append((block[0] + strict_calls[0].start(), block[1]))
         elif relative == "lib/core/work_item_graphql_api.dart":
             for method in re.finditer(r"\bnamespaceWorkItem\s*\([\s\S]*?\)\s*async\s*\{", code):
                 method_block = cls._brace_block(code, method.end() - 1)
@@ -1259,7 +1478,7 @@ class AiBoundaryTest(unittest.TestCase):
     def _namespace_read_violations(cls, source):
         code = cls._code_only(source)
         violations = []
-        for match in re.finditer(r"\.namespaceWorkItem\b", code):
+        for match in re.finditer(r"\.\s*namespaceWorkItem\b", code):
             tail = match.end()
             while tail < len(code) and code[tail].isspace():
                 tail += 1
@@ -1359,7 +1578,7 @@ class AiBoundaryTest(unittest.TestCase):
             violations.append("part declares GitLabApi")
         if re.search(r"\bgitlab_api\.dart\b", source):
             violations.append("part contains gitlab_api.dart")
-        if re.search(r"\b_api\b(?!\s*\.)", source):
+        if re.search(r"\b_api\b(?!\s*(?:\.|\?\.))", source):
             violations.append("part uses _api without member access")
         return violations
 
