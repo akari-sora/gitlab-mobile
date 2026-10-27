@@ -1064,6 +1064,7 @@ final class _ReadCache {
   }
 
   void observe(Uri uri, Json json, {bool learnAlias = true}) {
+    api._observeErasedJob(uri, json);
     final p = path(uri);
     if (p.length == 1 && p.first == 'user' && json['id'] is int) {
       verifiedUserId = json['id'] as int;
@@ -1653,11 +1654,39 @@ final class _ReadCache {
     final canCache = enabled && policy != null;
     if (!canCache) {
       if (mayStart?.call() == false) return CachedRead<T>.dropped();
+      var permission = permissions(uri);
       final loaded = await load();
       final value = _freezeCached(loaded.value) as T;
+      // Only job erase carries cache revocation across an uncached transport.
+      final jobPath = path(canonical(uri));
+      if (value is! Json ||
+          value['erased_at'] == null ||
+          jobPath.length != 4 ||
+          jobPath[0] != 'projects' ||
+          jobPath[2] != 'jobs') {
+        permission = permissions(uri);
+      }
+      final resourceUri = publicationUri(uri, value);
+      if (api._closed ||
+          permission['account'] != epoch ||
+          (value is Json &&
+              (!permitted(permission, uri) ||
+                  !permitted(permission, resourceUri)))) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      final beforePrivacy = privacyEpoch;
       observeLoadedPrivacy(uri, value);
+      if (privacyEpoch != beforePrivacy && permission['account'] == epoch) {
+        permission = permissions(uri);
+      }
       await settleDiskSafety();
-      if (api._closed) throw const ApiFailure(FailureKind.cancelled);
+      if (api._closed ||
+          permission['account'] != epoch ||
+          (value is Json &&
+              (!permitted(permission, uri) ||
+                  !permitted(permission, resourceUri)))) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
       validate?.call(value);
       return CachedRead<T>(
         value: value,
@@ -1712,9 +1741,25 @@ final class _ReadCache {
           (maxAge == null || age < maxAge);
     }
 
-    CachedRead<T> result(_ReadEntry entry) {
+    Future<CachedRead<T>> result(_ReadEntry entry) async {
       final value = entry.value as T;
       validate?.call(value);
+      var superseded = false;
+      if (value is Json && api._observeErasedJob(entry.uri, value)) {
+        // Retirement changes its own revision; only later publications compete.
+        final entryKey = key(entry.uri, accept);
+        final revision = diskRevisions[entryKey];
+        await settleDiskSafety();
+        if (api._closed ||
+            !permitted(permission, uri) ||
+            !permitted(permission, entry.uri)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        superseded =
+            !stable(lookupVersion) ||
+            (!pinned && active(readScope)) ||
+            diskRevisions[entryKey] != revision;
+      }
       return CachedRead(
         value: value,
         fetchedAt: entry.fetchedAt,
@@ -1726,6 +1771,7 @@ final class _ReadCache {
             (entry.lineage == CacheLineage.disk ||
                 api._readCacheClock().difference(entry.fetchedAt) >=
                     freshness(entry.policy)),
+        superseded: superseded,
       );
     }
 
@@ -1817,7 +1863,7 @@ final class _ReadCache {
               newer != null &&
               usable(newer) &&
               servesProjectRequest(newer.value)) {
-            return result(newer);
+            return await result(newer);
           }
           final servesHydrated =
               hydrated == null || servesProjectRequest(hydrated.value);
@@ -1914,7 +1960,7 @@ final class _ReadCache {
                 hydrationTicket,
               );
               store(key(canonicalUri, accept), entry);
-              return result(entry);
+              return await result(entry);
             }
           }
         } finally {
@@ -1975,16 +2021,17 @@ final class _ReadCache {
           final versionsAtSend = versionSequence;
           if (mayStart?.call() == false) return CachedRead<T>.dropped();
           final loaded = await load();
+          final resourceUri = publicationUri(uri, loaded.value);
           if (api._closed ||
               !permitted(permission, uri) ||
-              !permitted(permission, publicationUri(uri, loaded.value))) {
+              !permitted(permission, resourceUri)) {
             throw const ApiFailure(FailureKind.cancelled);
           }
           final fetchedAt = api._readCacheClock();
           // A full-path project detail reveals its numeric scope only after
           // the network response. Retain both scopes and reject any write that
           // changed the resolved project while that request was in flight.
-          final resolvedScope = scope(publicationUri(uri, loaded.value));
+          final resolvedScope = scope(resourceUri);
           if (!pinned && resolvedScope != readScope) {
             final resolvedVersion = versions[resolvedScope] ?? 0;
             start = {
@@ -2007,8 +2054,18 @@ final class _ReadCache {
           if (wasCurrent && privacyEpoch != beforePrivacy) {
             start = snapshot(readScope, !canCache || pinned);
           }
+          final deliveryPermission =
+              privacyEpoch != beforePrivacy && permission['account'] == epoch
+              ? permissions(uri)
+              : permission;
           await settleDiskSafety();
-          if (api._closed) throw const ApiFailure(FailureKind.cancelled);
+          if (api._closed ||
+              deliveryPermission['account'] != epoch ||
+              (loaded.value is Json &&
+                  (!permitted(deliveryPermission, uri) ||
+                      !permitted(deliveryPermission, resourceUri)))) {
+            throw const ApiFailure(FailureKind.cancelled);
+          }
           final consistent = stable(start) && (pinned || !active(readScope));
           if (canCache && !pinned && !consistent && waited && attempt == 0) {
             release(background);
