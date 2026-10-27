@@ -83,6 +83,9 @@ final class ReadCacheStagedWrite {
 
   /// No await or isolate hop may separate the live permission check and rename.
   /// A refusal or ordinary failure consumes the handle and cleans its temporary.
+  /// Throws [ReadCacheFileException] for untrusted paths, file validation or I/O
+  /// failures, or a throwing gate. Cleanup can also throw after a refusal;
+  /// untrusted ancestors leave the ciphertext temporary for stale-temp recovery.
   ReadCacheCommitResult commit() {
     _requireOwner();
     if (_consumed) return ReadCacheCommitResult.alreadyConsumed;
@@ -99,10 +102,13 @@ final class ReadCacheStagedWrite {
           );
         }
         files.requireFile(_staged.temporaryPath);
+        if (File(_staged.temporaryPath).lengthSync() != ciphertextBytes) {
+          throw const ReadCacheFileException(ReadCacheFileFailure.io);
+        }
         final destination = '${files.account}/$fileName';
         files.requireFile(destination, absentAllowed: true);
         final index = _staged.index;
-        if (index != null) files.requireIndexFiles(index);
+        if (index != null) files.requireIndexFiles(index, chainVerified: true);
         if (!_mayCommit()) return ReadCacheCommitResult.notPermitted;
         File(_staged.temporaryPath).renameSync(destination);
         try {
@@ -123,6 +129,9 @@ final class ReadCacheStagedWrite {
   }
 
   /// Idempotent and synchronous. Never follows replaced directories or links.
+  /// Throws [ReadCacheFileException] on untrusted paths or I/O failures. An
+  /// untrusted ancestor leaves the ciphertext temporary for stale-temp recovery;
+  /// the handle remains consumed even when cleanup throws.
   void discard() {
     _requireOwner();
     if (_consumed) return;
@@ -173,12 +182,20 @@ final class ReadCacheFileStore {
 
   /// The gate stays on the caller isolate, before dispatch and after staging.
   /// Null means permission was withdrawn; no staged temporary remains.
+  /// Staging may create the account directory chain. This future's completion is
+  /// the quiescence acknowledgement: [Isolate.run] cannot be aborted, so the
+  /// coordinator must await it before clearing, even after revoking permission.
   Future<ReadCacheStagedWrite?> stageEntry(
     ProjectedDiskEntry entry,
     List<int>? key, {
     required bool Function() mayCommit,
   }) => _stage(entry.accountKey, key, mayCommit, _entryStage(entry));
 
+  /// Stages an index with the gate on the caller isolate, as in [stageEntry].
+  /// Staging may create the account directory chain. This future's completion is
+  /// the quiescence acknowledgement: [Isolate.run] cannot be aborted, so the
+  /// coordinator must await it before clearing, even after revoking permission.
+  /// Null means permission was withdrawn; no staged temporary remains.
   Future<ReadCacheStagedWrite?> stageIndex(
     String accountKey,
     List<int>? key,
@@ -192,8 +209,8 @@ final class ReadCacheFileStore {
     bool Function() mayCommit,
     Future<_StagedFile> Function(_Files, List<int>) action,
   ) async {
-    final keySnapshot = _snapshotKey(key);
     if (!_guardSync(mayCommit)) return null;
+    final keySnapshot = _snapshotKey(key);
     final path = await _resolveRoot();
     final now = _clock().toUtc();
     final hook = checkpoint;
@@ -625,18 +642,30 @@ final class _Files {
     return names;
   }
 
-  bool indexFileExists(ReadCacheIndexEntry entry) {
+  bool indexFileExists(
+    ReadCacheIndexEntry entry, {
+    bool chainVerified = false,
+  }) {
     requireName(entry.fileName, index: false);
-    if (!directories()) return false;
+    if (!chainVerified && !directories()) return false;
     final path = '$account/${entry.fileName}';
-    if (type(path) == FileSystemEntityType.notFound) return false;
-    requireFile(path);
+    final found = type(path);
+    if (found == FileSystemEntityType.notFound) return false;
+    if (chainVerified) {
+      // Reuse only the same synchronous commit's ancestor check. Each reference
+      // still needs its own non-following type check and length check.
+      if (found != FileSystemEntityType.file) {
+        throw const ReadCacheFileException(ReadCacheFileFailure.untrustedPath);
+      }
+    } else {
+      requireFile(path);
+    }
     return File(path).lengthSync() == entry.sizeBytes;
   }
 
-  void requireIndexFiles(ReadCacheIndex index) {
+  void requireIndexFiles(ReadCacheIndex index, {bool chainVerified = false}) {
     for (final entry in index.entries) {
-      if (!indexFileExists(entry)) {
+      if (!indexFileExists(entry, chainVerified: chainVerified)) {
         throw const ReadCacheFileException(ReadCacheFileFailure.io);
       }
     }
