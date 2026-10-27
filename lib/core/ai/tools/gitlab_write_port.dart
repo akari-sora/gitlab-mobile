@@ -9,6 +9,7 @@ import '../../gitlab_api.dart';
 // Shared model namespace for the snippet family, delivered separately.
 // ignore: unused_import
 import '../../models.dart';
+import '../../read_cache_disk_contract.dart';
 // ignore: unused_import
 import '../../snippet_models.dart';
 import '../../suggestion.dart';
@@ -1038,6 +1039,11 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     try {
       result = await mutation();
     } on ApiFailure catch (failure) {
+      if (failure.kind == FailureKind.readCacheCleanup &&
+          failure.cleanup?.disposition ==
+              ReadCacheCleanupDisposition.requestBlockedBeforeSend) {
+        return _outcome(p, AiJournalState.failedCertain, 'readCacheCleanup');
+      }
       final override = classified(mutationError: failure);
       if (override != null) return override;
       final certain =

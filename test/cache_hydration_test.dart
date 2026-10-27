@@ -88,6 +88,8 @@ void main() {
 
           final disk = await api.cachedRecord(['projects', '8', 'issues', '1']);
           expect(disk.lineage, CacheLineage.disk);
+          expect(disk.stale, isTrue);
+          final originalFetchedAt = disk.fetchedAt;
           await expectLater(
             api.cachedRecord(
               ['projects', '8', 'issues', '1'],
@@ -105,6 +107,8 @@ void main() {
           ]);
           expect(later.value['title'], 'disk');
           expect(later.lineage, CacheLineage.disk);
+          expect(later.stale, isTrue);
+          expect(later.fetchedAt, originalFetchedAt);
           expect(networkCalls, 1);
         },
       );

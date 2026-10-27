@@ -12,6 +12,8 @@ import 'instance.dart';
 import 'models.dart';
 import 'oauth.dart';
 import 'pagination.dart';
+import 'read_cache_disk_contract.dart';
+import 'read_cache_projection.dart';
 import 'registry_models.dart';
 import 'release_assets.dart';
 import 'snippet_models.dart';
@@ -323,8 +325,24 @@ final class GitLabApi {
     // retain the write fences and are never retried automatically.
     final writing = method != 'GET' && method != 'HEAD' && !graphQuery;
     final affected = writing ? _cache.affected(uri, method, data, graphMutation: graphMutation) : <String>{};
-    if (writing) _cache.write(affected, starting: true);
+    var writeStarted = false;
+    var sendStarted = false;
     try {
+      if (writing) {
+        _cache.write(affected, starting: true);
+        writeStarted = true;
+        final begin = _cache.mutationDiskBarrier(affected, beforeSend: true);
+        if (begin != null) {
+          await _cache.awaitDiskBarrier(
+            begin,
+            operation: ReadCacheCleanupOperation.mutation,
+            disposition: ReadCacheCleanupDisposition.requestBlockedBeforeSend,
+            beforeSend: true,
+          );
+        }
+      }
+      if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      sendStarted = true;
       final sequence = rateBudget.nextSequence();
       RequestMeter.current?.increment();
       final response = await _dio.requestUri<ResponseBody>(
@@ -368,6 +386,7 @@ final class GitLabApi {
       if (status < 200 || status >= 300) {
         _cache.revoke(uri, status,
             terminal401: _credential is! OAuthCredential || retried);
+        await _cache.settleDiskSafety();
         if (body != null) await body.stream.listen((_) {}).cancel();
         var refreshed = false;
         if (status == 401 && !retried) {
@@ -377,6 +396,7 @@ final class GitLabApi {
             // Keep the mutation's known refusal even if refresh/persistence
             // fails with an unrelated transport or storage exception.
             _cache.revoke(uri, 401);
+            await _cache.settleDiskSafety();
             if (writing) {
               throw _knownMutation401(refreshSucceeded: false);
             }
@@ -398,7 +418,10 @@ final class GitLabApi {
           }
           throw _knownMutation401(refreshSucceeded: true);
         }
-        if (status == 401) _cache.revoke(uri, 401);
+        if (status == 401 && _credential is OAuthCredential && !retried) {
+          _cache.revoke(uri, 401);
+          await _cache.settleDiskSafety();
+        }
         throw ApiFailure.fromStatus(status, retryAt: rateBudget.retryAtFor(_rateClass(uri, method)));
       }
       if (method == 'HEAD' || status == 204) {
@@ -459,7 +482,32 @@ final class GitLabApi {
       );
     } finally {
       _requests.remove(cancel);
-      if (writing) _cache.write(affected, starting: false);
+      if (writeStarted) {
+        _cache.write(affected, starting: false);
+        // Cleanup after a send is non-fatal: preserve the original value,
+        // ApiFailure identity and stack, including writeUncertain.
+        try {
+          final end = sendStarted
+              ? _cache.mutationDiskBarrier(affected, beforeSend: false)
+              : null;
+          if (end != null) {
+            await _cache.awaitDiskBarrier(
+              end,
+              operation: ReadCacheCleanupOperation.mutation,
+              disposition: ReadCacheCleanupDisposition.originalOutcomePreserved,
+            );
+          }
+        } on Object {
+          _cache.reportCleanup(
+            const ReadCacheCleanupState(
+              operation: ReadCacheCleanupOperation.mutation,
+              disposition: ReadCacheCleanupDisposition.originalOutcomePreserved,
+              code: ReadCacheCleanupCode.cleanupFailed,
+              clearResult: _ReadCache.unknownClear,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -473,7 +521,8 @@ final class GitLabApi {
       final value = objectJson(jsonDecode(utf8.decode(result.bytes)));
       if (method == 'GET') {
         _cache.observe(uri, value);
-        _cache.observePrivacy(uri, value);
+        _cache.observeRawPrivacy(uri, value);
+        await _cache.settleDiskSafety();
       }
       return value;
     } on FormatException {
@@ -595,13 +644,16 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       final result = await _read(uri);
       final data = jsonDecode(utf8.decode(result.bytes));
       if (data is! List<dynamic>) throw const FormatException('Expected array');
+      _cache.observeRawPrivacy(uri, data);
+      await _cache.settleDiskSafety();
       return ApiPage(
-        List.unmodifiable(data.map((j) {
-          final value = objectJson(j);
-          _cache.observe(uri, value);
-          _cache.observePrivacy(uri, value);
-          return parse(value);
-        })),
+        List.unmodifiable(
+          data.map((j) {
+            final value = objectJson(j);
+            _cache.observe(uri, value);
+            return parse(value);
+          }),
+        ),
         next: nextPageUri(
           instance: instance,
           current: uri,
@@ -848,11 +900,22 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     if (status < 200 || status >= 300) {
       _cache.revoke(uri, status,
           terminal401: _credential is! OAuthCredential || !allowRefresh);
+      await _cache.settleDiskSafety();
       await _releaseBody(response.data);
       if (_closed || token.isCancelled) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      if (status == 401 && allowRefresh && await _refreshOAuth()) {
+      var refreshed = false;
+      if (status == 401 && allowRefresh) {
+        try {
+          refreshed = await _refreshOAuth();
+        } catch (_) {
+          _cache.revoke(uri, 401);
+          await _cache.settleDiskSafety();
+          rethrow;
+        }
+      }
+      if (refreshed) {
         return await _rawFileBytes(
           uri,
           token: token,
@@ -863,7 +926,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           allowRefresh: false,
         );
       }
-      if (status == 401) _cache.revoke(uri, 401);
+      if (status == 401 && _credential is OAuthCredential && allowRefresh) {
+        _cache.revoke(uri, 401);
+        await _cache.settleDiskSafety();
+      }
       throw ApiFailure.fromStatus(status, retryAt: rateBudget.retryAtFor(_rateClass(uri)));
     }
     final total = int.tryParse(
@@ -1196,6 +1262,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     final status = response.statusCode ?? 0;
     _cache.revoke(uri, status,
         terminal401: _credential is! OAuthCredential || !allowRefresh);
+    await _cache.settleDiskSafety();
     if (status == 200) {
       return _writeUploadStream(
         response: response,
@@ -1208,7 +1275,17 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     }
     await _discardBody(response.data);
     if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
-    if (status == 401 && allowRefresh && await _refreshOAuth()) {
+    var refreshed = false;
+    if (status == 401 && allowRefresh) {
+      try {
+        refreshed = await _refreshOAuth();
+      } catch (_) {
+        _cache.revoke(uri, 401);
+        await _cache.settleDiskSafety();
+        rethrow;
+      }
+    }
+    if (refreshed) {
       return _fetchAndStreamUpload(
         uri: uri,
         secret: secret,
@@ -1220,7 +1297,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         allowRefresh: false,
       );
     }
-    if (status == 401) _cache.revoke(uri, 401);
+    if (status == 401 && _credential is OAuthCredential && allowRefresh) {
+      _cache.revoke(uri, 401);
+      await _cache.settleDiskSafety();
+    }
     if (status >= 300 && status < 400) {
       throw ApiFailure(FailureKind.redirectBlocked, status: status);
     }
@@ -1373,6 +1453,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       _noteRateLimit(response, uri, sequence);
       _cache.revoke(uri, response.statusCode ?? 0,
           terminal401: _credential is! OAuthCredential);
+      await _cache.settleDiskSafety();
     }
     return response;
   }
@@ -1406,7 +1487,17 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     if (_closed || token.isCancelled) {
       throw const ApiFailure(FailureKind.cancelled);
     }
-    if (status == 401 && allowRefresh && await _refreshOAuth()) {
+    var refreshed = false;
+    if (status == 401 && allowRefresh) {
+      try {
+        refreshed = await _refreshOAuth();
+      } catch (_) {
+        _cache.revoke(requestUri, 401);
+        await _cache.settleDiskSafety();
+        rethrow;
+      }
+    }
+    if (refreshed) {
       final retried = await _artifactResponse(
         requestUri,
         token,
@@ -1454,8 +1545,11 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         _closeBare(bare);
       }
     }
-    if (status == 401 && instance.allowsApi(requestUri)) {
+    if (status == 401 &&
+        instance.allowsApi(requestUri) &&
+        _credential is OAuthCredential) {
       _cache.revoke(requestUri, 401);
+      await _cache.settleDiskSafety();
     }
     // CDN failures keep their status without changing the API rate budget.
     // The hop is never replayed with the account credential.

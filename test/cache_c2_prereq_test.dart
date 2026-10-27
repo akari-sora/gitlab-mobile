@@ -161,6 +161,9 @@ void main() {
             started.complete();
             return held.future;
           }
+          if (request.uri.path.endsWith('/api/v4/issues')) {
+            return jsonResponse([_issue(true)]);
+          }
           return jsonResponse(_issue(true));
         });
         final api = _api(
@@ -180,7 +183,7 @@ void main() {
         await api.record(_issuePath);
         expect(
           (await api.cachedRecords(['issues'])).lineage,
-          CacheLineage.disk,
+          CacheLineage.network,
         );
         final notes = api
             .cachedRecords(_notesPath)
@@ -550,7 +553,15 @@ void main() {
       if (scenario.endsWith('error')) {
         await expectLater(
           read,
-          throwsA(anyOf(isA<ApiFailure>(), isA<StateError>())),
+          throwsA(
+            isA<ApiFailure>().having(
+              (failure) => failure.kind,
+              'kind',
+              scenario == 'disk error'
+                  ? FailureKind.invalidResponse
+                  : FailureKind.server,
+            ),
+          ),
         );
       } else {
         await read;
