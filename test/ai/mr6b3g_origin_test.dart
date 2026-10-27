@@ -3,6 +3,7 @@ import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
+import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -43,15 +44,18 @@ void _configureGroup(
   bool Function()? descriptionLoaded,
   String description = 'Synthetic group body',
   String Function()? visibility,
+  String Function()? path,
 }) {
   server.overrides['POST '] = (request) {
     final body = request.data! as Map<String, Object?>;
+    final currentPath = path?.call() ?? _group.fullPath;
     expect(body['query'], namespaceWorkItemQuery);
+    expect(body['variables'], {'path': currentPath, 'iid': '5'});
     return jsonResponse({
       'data': {
         'namespace': {
           'id': _group.id,
-          'fullPath': _group.fullPath,
+          'fullPath': currentPath,
           'workItem': {
             'id': 'gid://gitlab/WorkItem/91',
             'iid': '5',
@@ -60,7 +64,7 @@ void _configureGroup(
             'createdAt': '2026-10-01T00:00:00Z',
             'updatedAt': '2026-10-02T00:00:00Z',
             'project': null,
-            'namespace': {'id': _group.id, 'fullPath': _group.fullPath},
+            'namespace': {'id': _group.id, 'fullPath': currentPath},
             'workItemType': {
               'id': 'gid://gitlab/WorkItems::Type/1',
               'name': 'Task',
@@ -74,7 +78,7 @@ void _configureGroup(
   };
   server.overrides['GET groups/7'] = (_) => jsonResponse({
     'id': 7,
-    'full_path': _group.fullPath,
+    'full_path': path?.call() ?? _group.fullPath,
     'visibility': visibility?.call() ?? 'private',
   });
 }
@@ -137,6 +141,8 @@ void main() {
     () async {
       var descriptionLoaded = true;
       var clock = DateTime.now();
+      var path = _group.fullPath;
+      var visibility = 'private';
       final h = await StackHarness.create(
         origin: _groupOrigin,
         level: AiAutonomyLevel.bypass,
@@ -144,6 +150,8 @@ void main() {
           server,
           descriptionLoaded: () => descriptionLoaded,
           description: '',
+          path: () => path,
+          visibility: () => visibility,
         ),
       );
       addTearDown(h.dispose);
@@ -249,6 +257,53 @@ void main() {
       expect(reopened.autonomyLevel, AiAutonomyLevel.conversationGrant);
       expect(project.autonomyLevel, AiAutonomyLevel.bypass);
       expect(project.items, isEmpty);
+
+      // The retained controller's original path is stale after the rename.
+      // Numeric owner lookup must precede the strict read on the next send.
+      path = 'renamed/sub';
+      visibility = 'public';
+      clock = clock.add(const Duration(minutes: 6));
+      final beforeRefresh = h.server.adapter.requests.length;
+      await reopened.send('Review the renamed group item');
+      final refreshed = (reopened as AiChatController).contextForTesting!;
+      expect(refreshed.groupScope!.groupId, 7);
+      expect(refreshed.groupScope!.iid, 5);
+      expect(refreshed.groupScope!.groupFullPath, path);
+      expect(refreshed.groupScope!.workItemGid, 'gid://gitlab/WorkItem/91');
+      expect(refreshed.groupMetadata!.visibility, 'public');
+      expect(refreshed.groupMetadata!.confidential, isNull);
+      final refreshRequests = h.server.adapter.requests.skip(beforeRefresh).toList();
+      expect(refreshRequests.map((r) => r.method), ['GET', 'POST']);
+      expect(refreshRequests.first.uri.path, '/gitlab/api/v4/groups/7');
+      expect(refreshRequests.last.uri.path, '/gitlab/api/graphql');
+      expect((refreshRequests.last.data! as Map)['query'], namespaceWorkItemQuery);
+      expect((refreshRequests.last.data! as Map)['variables'], {'path': path, 'iid': '5'});
+      expect(h.provider.bodies, hasLength(3));
+      h.server.overrides['GET projects/43'] = (_) => jsonResponse({
+        'id': 43,
+        'path_with_namespace': 'studio/target',
+        'visibility': 'public',
+      });
+      h.server.overrides['GET projects/43/issues/6'] = (_) => jsonResponse({
+        'id': 106,
+        'iid': 6,
+        'project_id': 43,
+        'confidential': false,
+      });
+      final freshness = await reopened.readWriteFreshnessForTesting(
+        port.AiWriteRequest(
+          operationId: 'updateIssue',
+          executionId: 'rename-refresh',
+          scope: AiWriteScope(accountKey: h.account, grants: const []),
+          arguments: const {
+            'projectId': 43,
+            'iid': 6,
+            'fields': {'title': 'Updated'},
+          },
+        ),
+      );
+      expect(freshness.sourceVisibilityUnreadable, isTrue);
+      expect(freshness.polluted, isTrue);
     },
   );
 
@@ -310,7 +365,7 @@ void main() {
   for (final origin in <AiChatOrigin>[_groupOrigin, _projectOrigin]) {
     for (final suppliedScope in [false, true]) {
       test(
-        '${origin.key} has no write grant before G0d with override=$suppliedScope',
+        '${origin.key} limits write grant with override=$suppliedScope',
         () async {
           final h = await StackHarness.create(
             origin: origin,
@@ -345,8 +400,8 @@ void main() {
                   {
                     'projectId': 42,
                     'resource': 'issues',
-                    'iid': 5,
-                    'body': 'Attempt a single-item write',
+                    'iid': 6,
+                    'body': 'Attempt a sibling-item write',
                     'reason': 'Synthetic request',
                   },
                 ),
@@ -365,9 +420,15 @@ void main() {
           final writeNames = ProductionAiLedger.rows
               .map((row) => row.operationId)
               .toSet();
-          expect(names.intersection(writeNames), isEmpty);
+          if (origin is AiGroupWorkItemOrigin) {
+            expect(names.intersection(writeNames), isEmpty);
+            expect(h.controller.canAttach, isFalse);
+          } else {
+            expect(names, contains('createNote'));
+            expect(names, isNot(contains('setStar')));
+            expect(names, isNot(contains('markAllTodosDone')));
+          }
           expect(h.controller.proposals, isEmpty);
-          expect(h.controller.canAttach, isFalse);
           expect(h.server.adapter.requests, hasLength(before));
           final results = h.controller.items.whereType<AiToolRunItem>();
           expect(results, hasLength(3));

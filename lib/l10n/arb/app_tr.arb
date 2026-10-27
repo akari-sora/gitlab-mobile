@@ -2754,5 +2754,6 @@
   "activityVerbTargetRef": "{verb} ({target} {ref})",
   "aiOpSetWorkItemLabels": "Etiketleri ayarla",
   "aiRefusedLabelUnknown": "Ayarlanacak etiket bu projenin etiket listesinde yok veya bu adda birden fazla etiket var, bu yüzden hiçbir şey yapılmadı.",
-  "aiRefusedQuickAction": "Metinde / ile başlayan bir satır var; GitLab bunu hızlı eylem olarak çalıştırabilir, bu yüzden güvenlik için bu işlem gönderilmedi. O satırı silin veya bir kod bloğuna koyun."
+  "aiRefusedQuickAction": "Metinde / ile başlayan bir satır var; GitLab bunu hızlı eylem olarak çalıştırabilir, bu yüzden güvenlik için bu işlem gönderilmedi. O satırı silin veya bir kod bloğuna koyun.",
+  "aiToolGetGroupWorkItem": "Grup iş öğesini oku"
 }

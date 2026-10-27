@@ -97,6 +97,16 @@ final class AiGroupWorkItemOrigin extends AiChatOrigin {
   final int iid;
   final String title;
 
+  /// Page adapters call this only with the namespace from a fresh detail.
+  /// Invalid Group GIDs never reach the registry's throwing identity getter.
+  static AiGroupWorkItemOrigin? tryCreate({
+    required GraphResourceRef group,
+    required int iid,
+    required String title,
+  }) => groupKeyNumericId(group.id) == null || iid <= 0
+      ? null
+      : AiGroupWorkItemOrigin(group: group, iid: iid, title: title);
+
   int get groupId =>
       groupKeyNumericId(group.id) ??
       (throw const ApiFailure(FailureKind.validation));

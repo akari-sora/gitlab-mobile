@@ -2757,4 +2757,5 @@ const _messagesTr = <String>[
   'Etiketleri ayarla',
   'Ayarlanacak etiket bu projenin etiket listesinde yok veya bu adda birden fazla etiket var, bu yüzden hiçbir şey yapılmadı.',
   'Metinde / ile başlayan bir satır var; GitLab bunu hızlı eylem olarak çalıştırabilir, bu yüzden güvenlik için bu işlem gönderilmedi. O satırı silin veya bir kod bloğuna koyun.',
+  'Grup iş öğesini oku',
 ];

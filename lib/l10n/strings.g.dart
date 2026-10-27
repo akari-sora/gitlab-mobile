@@ -8358,4 +8358,7 @@ final class AppStrings {
 
   /// 內容有以 / 開頭的一行，GitLab 可能把它當成快捷指令執行，為了安全這筆寫入沒有送出。請刪除那一行，或改放進程式碼區塊。
   String get aiRefusedQuickAction => language._messages[2754];
+
+  /// 讀取群組工作項目
+  String get aiToolGetGroupWorkItem => language._messages[2755];
 }

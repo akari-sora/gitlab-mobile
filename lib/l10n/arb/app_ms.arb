@@ -2754,5 +2754,6 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Tetapkan label",
   "aiRefusedLabelUnknown": "Label yang hendak ditetapkan tiada dalam senarai label projek ini, atau beberapa label mempunyai nama yang sama, jadi tiada apa-apa yang dilakukan.",
-  "aiRefusedQuickAction": "Teks mempunyai baris yang bermula dengan /, yang mungkin dijalankan oleh GitLab sebagai quick action, jadi demi keselamatan tindakan ini tidak dihantar. Buang baris itu atau letakkannya dalam blok kod."
+  "aiRefusedQuickAction": "Teks mempunyai baris yang bermula dengan /, yang mungkin dijalankan oleh GitLab sebagai quick action, jadi demi keselamatan tindakan ini tidak dihantar. Buang baris itu atau letakkannya dalam blok kod.",
+  "aiToolGetGroupWorkItem": "Baca work item kumpulan"
 }
