@@ -43,6 +43,7 @@ import '../workspace/graph_work_items_page.dart'
     show createAiWorkspaceWorkItemWriteRegistry;
 import 'ai_chat_context.dart';
 import 'ai_chat_session.dart';
+import 'ai_background_execution.dart';
 import 'ai_attachment_session.dart';
 import 'ai_history.dart';
 import 'ai_runner_binding.dart';
@@ -150,6 +151,8 @@ class AiChatController extends ChangeNotifier
         AiChatSendGate,
         AiWriteChatSession,
         AiWriteAuditSession,
+        AiExecutionChatSession,
+        AiRunNotificationSource,
         AiWriteSettlementSource {
   AiChatController({
     required this.origin,
@@ -162,6 +165,7 @@ class AiChatController extends ChangeNotifier
     List<Duration> historyRetryDelays = defaultHistoryRetryDelays,
     bool Function()? appInForeground,
     bool Function()? clientMayStart,
+    AiBackgroundExecution? backgroundExecution,
     AiWriteJournal? writeJournal,
     ledger.AiWriteScope Function()? writeScope,
     AiWriteFreshnessReader? readWriteFreshness,
@@ -176,6 +180,8 @@ class AiChatController extends ChangeNotifier
        _wireClientFactory = wireClientFactory ?? _createWireClient,
        _appInForeground = appInForeground ?? (() => false),
        _clientMayStart = clientMayStart,
+       _backgroundExecution = backgroundExecution,
+       _ownsBackgroundExecution = backgroundExecution == null,
        _writeJournal = writeJournal ?? AiWriteJournal.instance,
        _writeScopeOverride = writeScope,
        _readWriteFreshness = readWriteFreshness,
@@ -233,9 +239,150 @@ class AiChatController extends ChangeNotifier
   final int Function() runningCount;
   final AiChatWireClientFactory _wireClientFactory;
   final bool Function() _appInForeground;
-  late final AiExecutionGate _executionGate = ForegroundAiExecutionGate(
-    appInForeground: _appInForeground,
+  AiBackgroundExecution? _backgroundExecution;
+  bool _ownsBackgroundExecution;
+  bool _observingExecution = false;
+  AiBackgroundRunGate? _backgroundGate;
+  AiExecutionPause? _executionPause;
+  int _executionStep = 0;
+  final _notificationEvents =
+      StreamController<AiRunNotificationEvent>.broadcast(sync: true);
+  final Set<AiRunNotificationKind> _emittedEvents = {};
+
+  AiBackgroundExecution get _executionOwner {
+    final owner = _backgroundExecution ??= AiBackgroundExecution(
+      accountKey: _accountKey,
+      generation: _generation,
+      ownerApi: _api,
+      isCurrent: () => _alive,
+      appInForeground: _appInForeground,
+    );
+    if (!_observingExecution) {
+      _observingExecution = true;
+      owner.addListener(_executionChanged);
+    }
+    return owner;
+  }
+
+  AiBackgroundRunGate get _executionGate => _backgroundGate ??= _executionOwner
+      .createGate(
+        conversationId: () => _id,
+        isCurrent: () => _alive,
+        appInForeground: _appInForeground,
+      );
+
+  /// The registry also injects into sessions returned by a wrapped factory.
+  /// Injection is restricted to the point before a runner captures the gate.
+  void bindBackgroundExecution(AiBackgroundExecution owner) {
+    if (identical(_backgroundExecution, owner)) return;
+    if (_runner != null ||
+        !_alive ||
+        owner.accountKey != _accountKey ||
+        owner.generation != _generation ||
+        !identical(owner.ownerApi, _api)) {
+      throw StateError('The execution owner does not match this conversation');
+    }
+    final previous = _backgroundExecution;
+    if (_observingExecution) previous?.removeListener(_executionChanged);
+    _backgroundGate?.dispose();
+    _backgroundGate = null;
+    if (_ownsBackgroundExecution) previous?.dispose();
+    _backgroundExecution = owner;
+    _ownsBackgroundExecution = false;
+    _observingExecution = false;
+  }
+
+  void _executionChanged() {
+    if (_alive) _notify();
+  }
+
+  @override
+  Stream<AiRunNotificationEvent> get notificationEvents =>
+      _notificationEvents.stream;
+
+  @override
+  int get serviceWorkCount {
+    if (!_alive) return 0;
+    // The coordinator also reports operations that only wait for approval.
+    // Each waiting proposal contributes one operation; any remaining operation
+    // still owns preparation or settlement, including an older stopped run.
+    final settlement =
+        _retiredWrites.isNotEmpty ||
+        (_writes?.inFlightWrites.length ?? 0) > proposals.length;
+    return settlement ||
+            _phase == AiChatPhase.running ||
+            _phase == AiChatPhase.stopping
+        ? 1
+        : 0;
+  }
+
+  @override
+  int get backProtectedCount =>
+      _alive &&
+          (serviceWorkCount > 0 ||
+              _phase == AiChatPhase.awaitingApproval ||
+              _executionPause != null)
+      ? 1
+      : 0;
+
+  AiExecutionPause? get executionPause => _executionPause;
+
+  @override
+  AiChatExecutionStatus get executionStatus => _executionPause != null
+      ? AiChatExecutionStatus.paused
+      : switch (_backgroundGate?.status) {
+          AiBackgroundExecutionStatus.starting =>
+            AiChatExecutionStatus.starting,
+          AiBackgroundExecutionStatus.active => AiChatExecutionStatus.active,
+          AiBackgroundExecutionStatus.released =>
+            AiChatExecutionStatus.released,
+          AiBackgroundExecutionStatus.invalidated =>
+            AiChatExecutionStatus.invalidated,
+          AiBackgroundExecutionStatus.unavailable =>
+            AiChatExecutionStatus.unavailable,
+          _ => AiChatExecutionStatus.foregroundOnly,
+        };
+
+  void _syncExecutionWork() => _backgroundGate?.setWork(
+    active: serviceWorkCount > 0,
+    backProtected: backProtectedCount > 0,
+    awaitingApproval: _phase == AiChatPhase.awaitingApproval,
+    step: _executionStep,
   );
+
+  void _emitNotification(AiRunNotificationKind kind) {
+    if (!_alive || !_emittedEvents.add(kind)) return;
+    _notificationEvents.add(
+      AiRunNotificationEvent(
+        kind: kind,
+        conversationId: _id,
+        generation: _generation,
+      ),
+    );
+  }
+
+  @visibleForTesting
+  static AiRunNotificationKind notificationKindForEnd(
+    AiRunEnd end, {
+    UserFacingFailure? failure,
+  }) {
+    if (failure != null) return AiRunNotificationKind.failed;
+    return switch (end) {
+      AiRunEnd.failed => AiRunNotificationKind.failed,
+      AiRunEnd.done => AiRunNotificationKind.completed,
+      AiRunEnd.stopped ||
+      AiRunEnd.stoppedBySettings ||
+      AiRunEnd.newSecret ||
+      AiRunEnd.maxTokens ||
+      AiRunEnd.contentFilter ||
+      AiRunEnd.refusal ||
+      AiRunEnd.toolBudget ||
+      AiRunEnd.toolBudgetNoAnswer ||
+      AiRunEnd.contextTooLong ||
+      AiRunEnd.tokenBudget => AiRunNotificationKind.interrupted,
+    };
+  }
+
   final bool Function()? _clientMayStart;
   final AiWriteJournal _writeJournal;
   final ledger.AiWriteScope Function()? _writeScopeOverride;
@@ -379,6 +526,7 @@ class AiChatController extends ChangeNotifier
       identical(session.api, _api) &&
       !_api.isClosed &&
       session.active?.key == _accountKey;
+  bool get isDisposed => _disposed;
   bool _current(int epoch) => _alive && epoch == _epoch;
 
   @override
@@ -431,6 +579,23 @@ class AiChatController extends ChangeNotifier
         state: AiJournalState.notExecuted,
         reasonCode: 'invalidProposal',
       );
+    }
+    final release = _backgroundGate?.pendingNormalRelease;
+    if (release != null) {
+      if (!_appInForeground()) {
+        return coordinator.approve(
+          proposal,
+          typedName: typedName,
+          editedText: editedText,
+        );
+      }
+      await release;
+      if (!_alive || !identical(coordinator, _writes)) {
+        return const AiWriteOutcome(
+          state: AiJournalState.notExecuted,
+          reasonCode: 'invalidProposal',
+        );
+      }
     }
     if (_phase == AiChatPhase.awaitingApproval &&
         runningCount() >= AiRunRegistry.maxRunning) {
@@ -743,6 +908,7 @@ class AiChatController extends ChangeNotifier
   @override
   bool get canSend =>
       _alive &&
+      _appInForeground() &&
       _phase == AiChatPhase.idle &&
       blocker == AiChatBlocker.none &&
       _context != null &&
@@ -995,14 +1161,20 @@ class AiChatController extends ChangeNotifier
   void _notify() {
     _streamNotification?.cancel();
     _streamNotification = null;
-    if (_alive) notifyListeners();
+    if (_alive) {
+      _syncExecutionWork();
+      notifyListeners();
+    }
   }
 
   void _notifyStream() {
     if (!_alive || _streamNotification != null) return;
     _streamNotification = Timer(const Duration(milliseconds: 100), () {
       _streamNotification = null;
-      if (_alive) notifyListeners();
+      if (_alive) {
+        _syncExecutionWork();
+        notifyListeners();
+      }
     });
   }
 
@@ -1228,6 +1400,11 @@ class AiChatController extends ChangeNotifier
       !_api.isClosed &&
       (_clientMayStart?.call() ?? false);
 
+  /// Observes the same execution state as the coordinator, including actual
+  /// visibility. Reading this projection does not grant send/approval rights.
+  AiWritePolicySnapshot? get writePolicySnapshot =>
+      _provider == null ? null : _writeSnapshot(_provider!);
+
   AiWritePolicySnapshot _writeSnapshot(AiProviderConfig config) {
     final account = settings.accountRecord(_accountKey);
     final contract = _consentContract(config);
@@ -1241,6 +1418,7 @@ class AiChatController extends ChangeNotifier
       writePolicyRevision: account?.writePolicyRevision ?? 0,
       scopeRevision: _writeScopeRevision,
       sessionGeneration: _generation,
+      ownerApi: _api,
       currentResource: switch (origin) {
         AiGroupWorkItemOrigin(:final group, :final groupId, :final iid) =>
           AiTargetRef(
@@ -1876,6 +2054,11 @@ class AiChatController extends ChangeNotifier
         }
         _phase = waiting ? AiChatPhase.awaitingApproval : AiChatPhase.running;
         _notify();
+        if (waiting) {
+          _emitNotification(AiRunNotificationKind.needsApproval);
+        } else {
+          _emittedEvents.remove(AiRunNotificationKind.needsApproval);
+        }
       },
       executeTool: catalogue == null
           ? null
@@ -1928,6 +2111,8 @@ class AiChatController extends ChangeNotifier
       onRestorableResultCut: placeholders.markWholeFieldsCut,
       onToolStarted: (call) {
         if (!current()) return;
+        _executionStep++;
+        _syncExecutionWork();
         _readConfidential |= _context?.readConfidential ?? false;
         // §3.1: before any tool of this run can write, note whether the
         // page context this run sent carried the description whole. A
@@ -1956,6 +2141,8 @@ class AiChatController extends ChangeNotifier
       onToolResult: (result) {
         runBudget?.consumeTools();
         if (!current()) return;
+        _executionStep++;
+        _syncExecutionWork();
         if (!result.notExecuted && !result.isError) {
           if (result.name == 'get_snippet') {
             // Snippets use these flags for their visibility, rather than the
@@ -2074,12 +2261,17 @@ class AiChatController extends ChangeNotifier
     _failure = null;
     _offerNewConversation = false;
     _lastEnd = null;
+    _executionPause = null;
+    _executionStep = 0;
+    _emittedEvents.clear();
     _settingsChangedDuringRun = false;
     _usage = null;
     _notify();
     var userAdded = false;
     int? userIndex;
     try {
+      await _executionGate.beginRun(runId: _newId());
+      if (!_current(epoch)) return;
       await _refreshSecrets();
       if (!_current(epoch)) return;
       _redactDisplayIfNeeded();
@@ -2185,6 +2377,7 @@ class AiChatController extends ChangeNotifier
       _failure = result.failure;
       _offerNewConversation = result.offerRollover;
       _lastEnd = result.reason;
+      _executionPause = result.pause;
       if (_displayFailed) {
         // The reply cannot be checked against the live secrets either.
         _setAssistant('', AiAssistantState.hidden);
@@ -2215,12 +2408,16 @@ class AiChatController extends ChangeNotifier
       // Only steps before the run throw (refreshing, redacting the message,
       // creating the runner): nothing left the device.
       _settleChips(userIndex, sent: false);
-      _failure = _assistantIndex != null
-          ? _mapFailure(error)
-          : error is AiFailure
-          ? error
-          : safeFailure(error);
-      _lastEnd = AiRunEnd.failed;
+      if (error is AiExecutionPaused) {
+        _executionPause = error.pause;
+      } else {
+        _failure = _assistantIndex != null
+            ? _mapFailure(error)
+            : error is AiFailure
+            ? error
+            : safeFailure(error);
+        _lastEnd = AiRunEnd.failed;
+      }
       if (_assistantIndex == null) {
         if (!userAdded) {
           // Redacting may be what failed (text over the scan limit); then the
@@ -2260,6 +2457,9 @@ class AiChatController extends ChangeNotifier
           _blocker = AiChatBlocker.contextUnavailable;
         }
         _notify();
+        if (_lastEnd case final end?) {
+          _emitNotification(notificationKindForEnd(end, failure: _failure));
+        }
         _saveReportedHistory();
         if (_transportClosed || _settingsChangedDuringRun) {
           _settingsChangedDuringRun = false;
@@ -2343,7 +2543,12 @@ class AiChatController extends ChangeNotifier
     for (final pending
         in _writes?.inFlightWrites ?? const <Future<AiWriteOutcome>>[]) {
       _retiredWrites.add(pending);
-      unawaited(pending.then<void>((_) => _retiredWrites.remove(pending)));
+      unawaited(
+        pending.then<void>((_) {
+          _retiredWrites.remove(pending);
+          if (_alive) _notify();
+        }),
+      );
     }
     _writes = null;
     _runner = null;
@@ -2767,11 +2972,14 @@ class AiChatController extends ChangeNotifier
       return;
     }
     _phase = AiChatPhase.stopping;
+    _backgroundGate?.cancelStart();
     _runner?.stop();
     _notify();
   }
 
   void _clearConversation({bool keepDisplay = false}) {
+    _backgroundGate?.cancelStart();
+    _executionPause = null;
     _binding?.dispose();
     _binding = null;
     _runner?.stop(AiRunEnd.stoppedBySettings);
@@ -2779,9 +2987,20 @@ class AiChatController extends ChangeNotifier
     for (final pending
         in _writes?.inFlightWrites ?? const <Future<AiWriteOutcome>>[]) {
       _retiredWrites.add(pending);
-      unawaited(pending.then<void>((_) => _retiredWrites.remove(pending)));
+      unawaited(
+        pending.then<void>((_) {
+          _retiredWrites.remove(pending);
+          if (_alive) _notify();
+        }),
+      );
     }
     _writes = null;
+    if (_retiredWrites.isEmpty) {
+      _backgroundGate?.release();
+    } else {
+      // Conversation replacement does not end accepted write settlement.
+      _backgroundGate?.setWork(active: true, backProtected: true);
+    }
     _placeholders = null;
     _attachments?.discardAll();
     _attachments = null;
@@ -2860,6 +3079,12 @@ class AiChatController extends ChangeNotifier
     session.removeListener(_sessionChanged);
     _clearConversation();
     _phase = AiChatPhase.idle;
+    if (_observingExecution) {
+      _backgroundExecution?.removeListener(_executionChanged);
+    }
+    _backgroundGate?.dispose();
+    if (_ownsBackgroundExecution) _backgroundExecution?.dispose();
+    unawaited(_notificationEvents.close());
     super.dispose();
   }
 }

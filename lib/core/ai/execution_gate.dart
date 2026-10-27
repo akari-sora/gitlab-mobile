@@ -2,29 +2,42 @@
 enum AiContinuationKind { model, mutation }
 
 /// Process-local identity; never persist a binding or restore it from history.
-/// A released/invalidated permit must not be replaced on an existing binding.
+/// Identity is fixed. Only a confirmed normal release may clear its permit
+/// through [rebindForForegroundApproval]; invalidation never grants that path.
 final class AiExecutionRunBinding {
-  const AiExecutionRunBinding({
+  AiExecutionRunBinding({
     required this.accountKey,
     required this.generation,
     required this.ownerApi,
     required this.conversationId,
     required this.runId,
-    this.permitId,
-  });
+    String? permitId,
+  }) : _permitId = permitId;
 
   final String accountKey;
   final int generation;
   final Object ownerApi;
   final String conversationId;
   final String runId;
-  final String? permitId;
+  String? _permitId;
+  String? get permitId => _permitId;
+
+  /// C-D5: the bridge calls this only after a successful normal release and
+  /// only while this exact run waits solely for approval. It cannot attach a
+  /// new permit or change the logical run. Old tickets retain their binding
+  /// version through the permit value they captured when issued.
+  bool rebindForForegroundApproval({required String releasedPermitId}) {
+    if (_permitId == null || _permitId != releasedPermitId) return false;
+    _permitId = null;
+    return true;
+  }
 }
 
 enum AiExecutionPauseReason {
   foregroundRequired,
   permitInactive,
   unavailable,
+  runLimit,
   timeout,
   ticketExpired,
   invalidTicket,
@@ -71,7 +84,8 @@ final class AiExecutionTicket {
     required this.requestStartedAt,
     required AiExecutionClock clock,
     required bool Function() isCurrent,
-  }) : _clock = clock,
+  }) : _permitAtIssue = binding.permitId,
+       _clock = clock,
        _isCurrent = isCurrent;
 
   static const ttl = Duration(milliseconds: 1000);
@@ -80,6 +94,7 @@ final class AiExecutionTicket {
   final String nonce;
   final String ticketId;
   final Duration requestStartedAt;
+  final String? _permitAtIssue;
   final AiExecutionClock _clock;
   final bool Function() _isCurrent;
   var _spent = false;
@@ -99,6 +114,7 @@ final class AiExecutionTicket {
     _spent = true;
     if (spent ||
         !identical(this.binding, binding) ||
+        this.binding.permitId != _permitAtIssue ||
         this.kind != kind ||
         nonce.isEmpty ||
         ticketId.isEmpty) {
@@ -106,12 +122,12 @@ final class AiExecutionTicket {
     }
     if (!_isCurrent()) {
       refuse(
-        this.binding.permitId == null
+        _permitAtIssue == null
             ? AiExecutionPauseReason.foregroundRequired
             : AiExecutionPauseReason.permitInactive,
       );
     }
-    if (this.binding.permitId != null) {
+    if (_permitAtIssue != null) {
       final elapsed = _clock() - requestStartedAt;
       if (elapsed < Duration.zero || elapsed >= ttl) {
         refuse(AiExecutionPauseReason.ticketExpired);
