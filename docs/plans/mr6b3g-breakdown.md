@@ -1,4 +1,14 @@
-# MR6b-3g breakdown v3（群組 Work Items；僅規劃）
+# MR6b-3g breakdown v4（群組 Work Items；僅規劃）
+
+## v4 修訂（第 3 輪 Opus Minor；lead 直接修訂文字）
+
+| 審查項目 | 修訂與落點 |
+|---|---|
+| R3-1 U-add 未接線 | U-add 補單檔 owner、與完整 UI MR 的交接、§8 指令列、合併順序（U0 之後）、交付清單與附錄 B／C 列，見 §6.1、§8、附錄 B／C。 |
+| R3-2 相對敘述 | 基準與附錄 A 改為絕對的 commit 記錄。 |
+| R3-3 gate seam | const 由 Python 釘為 false（G14 改 true）；不設 override 的有效值測試；`addTearDown` 還原；`@visibleForTesting` 取自 `package:flutter/foundation.dart`，Python 守衛為主要防線，見 §2.5、§6.2。 |
+| R3-4 strict 守衛 | 守衛加 `lib/features/ai` 根、要求字面量 `true`、tear-off 視為違規，參數名用 G0b 交付的名稱，見 §2.4。 |
+| R3-5 行號 | switch 引用改為 `requestedIntentDirection`（`:83` 起，比照 `:108`／`:116`），見 §2.5。 |
 
 ## v3 修訂（第 2 輪 Opus Minor；lead 直接修訂文字）
 
@@ -26,7 +36,7 @@
 | Opus Minor 1–8、10–11；GLM Minor 1–4 | 校正候選證據、freshness/source visibility、origin grant、UI-added owner、文案交接、外部查證、基準及引用；明列主 owner／前置與 send-site 口徑。 |
 | Opus Minor 9 | 不立即拆 G0e：保留已定六個 seam MR 與一次檔案交接；若實作審查要求再拆，須先補獨立可建置依賴與驗收，不臨時平行改 shared 檔。 |
 
-基準日期：2026-10-27；分支 `docs/mr6b3g-breakdown`；產品基準／v1 父提交為 `b242a9dc0db1c5e791dc83b2e701f11b3f347227`；v1 docs commit／本次修訂前 HEAD 為 `ccd92d12cd696bdbdfc3ae6af062f00d0d026da5`。下列既有檔案與行號均對本 checkout 重新查核，不沿用 MR6b-3 舊行號。`docs/PLAN_STATUS.md` 仍把 P15／3t 寫成審查中；產品基準已含 3t，應以原始碼及 git 合併紀錄判定前置，不在這份文件順手更新狀態頁。
+基準日期：2026-10-27；分支 `docs/mr6b3g-breakdown`；產品基準／v1 父提交為 `b242a9dc0db1c5e791dc83b2e701f11b3f347227`；docs commits：v1 `ccd92d12cd696bdbdfc3ae6af062f00d0d026da5`、v2 `77ab331`、v3 `925f8ed`，v4 為其後一個 docs commit。下列既有檔案與行號均對本 checkout 重新查核，不沿用 MR6b-3 舊行號。`docs/PLAN_STATUS.md` 仍把 P15／3t 寫成審查中；產品基準已含 3t，應以原始碼及 git 合併紀錄判定前置，不在這份文件順手更新狀態頁。
 
 拘束來源：完整閱讀 `mr6b3-breakdown.md`（尤其 §3–§7、附錄 B/C）、`mr6b3-decisions.md`（D1、D16、D20、D25、D26）、`ai-writes-plan-v6.md` §2、§3、§7、§15，以及 `AGENTS.md`、`CLAUDE.md`、`docs/PLAN_STATUS.md`；亦讀取契約要求的 README、CI、ROADMAP。後決定優先；D16 的群組 deny 是本次要以完整綁定取代的基線，並非先刪 deny 即完成。
 
@@ -36,7 +46,7 @@ v1 以一個 docs commit 新增本文件，v2、v3 各以一個 docs commit 修�
 
 - 原 §7 九項的當前證據、最小契約與封包 owner；已存在的 helper／adapter 明確重用。
 - 18 個已交付 graph operation／具名方法逐列評估：15 個 WI 操作可條件式擴展、2 個 accountTodo 操作可增加群組 target、1 個 project incident 排除。18 是 operation 數，不冒稱 18 個不同領域家族。
-- 六個依序合併的 shared-seam 小 MR、家族前的 lead-owned U0 labels/l10n、十三個家族小 MR、完整 UI、可見度與同意升版、最後跨家族驗收。每階段每檔只有一名 owner。
+- 六個依序合併的 shared-seam 小 MR、家族前的 lead-owned U0 labels/l10n、lead-owned U-add（使用者加入群組 WI）、十三個家族小 MR、完整 UI、可見度與同意升版、最後跨家族驗收。每階段每檔只有一名 owner。
 - D20 每列重新列出 F、P、Mpre、Mrb、L、固定 httpCap；群組路徑的數字是待實作契約，不能拿既有 project 測試宣稱已證明。
 
 ## §0 與 MR6b-3 舊規劃的差異
@@ -106,7 +116,7 @@ v1 以一個 docs commit 新增本文件，v2、v3 各以一個 docs commit 修�
 唯一 owner：`lib/core/ai/tools/gitlab_read_port.dart`、`lib/core/ai/tools/tool_catalogue.dart`、`lib/features/ai/ai_chat_controller.dart` 的 group context／scope／freshness／read injection 段、`tool/tests/test_ai_boundaries.py` 的 read/importer/member guard 段、`test/ai/mr6b3_guard_test.dart` 的 read class guard／write 掃描基線段、`test/ai/mr6b3g_read_tool_test.dart`（新）、`test/ai/mr6b3g_freshness_test.dart`（新）。controller 在 G0c 後接線；G14 再接手版本段。
 
 - 在既有 read port 檔內加入窄 `AiGitLabGroupReadPort` 與 concrete `GitLabAiGroupReadPort`；G0d 在主 library 加 helper import 並實際用於 Group 身份驗證，只暴露固定 WI read。`AiToolCatalogue` 增 group constructor/branch，保留 project constructor 與既有工具行為；group-only catalogue 不需要 project port，direct call project tool 也先拒，不可用一個假的 project port 填 constructor。
-- `get_group_work_item(groupId:integer,iid:integer)` 只讀已授權那一筆；path 來自 grant，傳 `_api.namespaceWorkItem(path,iid,expectedNamespaceId:..., <G0b strict identity 選項>:true)`。未知引數、query／operationName／variables／URL／GID 參數全拒。G0d 同包測回應缺 `project` 欄（或缺 `namespace`）時 read tool 拒絕且不回內容，並在 `tool/tests/test_ai_boundaries.py` 加守衛：`lib/core/ai/**` 與 `lib/features/ai/**` 每個 `namespaceWorkItem(` 呼叫都必須帶 strict identity 選項與 `expectedNamespaceId`。單次固定 read 最多1 logical／2 OAuth 資源請求，沒有 schema fallback、GET/HEAD-only guard 全域豁免或任意 GraphQL channel。
+- `get_group_work_item(groupId:integer,iid:integer)` 只讀已授權那一筆；path 來自 grant，傳 `_api.namespaceWorkItem(path,iid,expectedNamespaceId:..., <G0b strict identity 選項>:true)`。未知引數、query／operationName／variables／URL／GID 參數全拒。G0d 同包測回應缺 `project` 欄（或缺 `namespace`）時 read tool 拒絕且不回內容，並在 `tool/tests/test_ai_boundaries.py` 加守衛：`lib/core/ai/**` 與 `lib/features/ai/**`（後者是新根目錄，現行 `AI_ROOT` 只有 `lib/core/ai`）每個 `namespaceWorkItem(` 呼叫都必須帶 strict identity 選項且值為字面量 `true`，並帶 `expectedNamespaceId`；`namespaceWorkItem` 後面不接 `(` 的 tear-off 一律視為違規。參數名用 G0b 交付的名稱。單次固定 read 最多1 logical／2 OAuth 資源請求，沒有 schema fallback、GET/HEAD-only guard 全域豁免或任意 GraphQL channel。
 - projection 最小含 id、iid、title、type、state、updatedAt、project、namespace、完整 description（有 widget 時），沒有活動列表／候選全集。缺描述與截斷都明示；只有完整未截斷 description 發同欄 group provenance，其餘一般遮蔽。活動編輯可使用 port opening 的 currentFields；本批讀工具不承諾提供活動歷史，沒有可證來源的 note upload token 一律拒。
 - 保留既有安全 importer 數量：core AI tools 只有既有 read/write port 可 import GitLab API。Python 與 Dart **按 concrete class 驗證**：`GitLabAiReadPort` 的既有11個 member 精確集合不變，`GitLabAiGroupReadPort` 只准 `{namespaceWorkItem}`，整檔 API 呼叫聯集也須精確等於兩者聯集。未知 class、檔案游離 helper 的 API 呼叫也拒；不能只擴整檔白名單。G0d 加負面 guard fixture，將 namespaceWorkItem 搬入 project class 或偷偷增 group member 都必失敗。
 - G0d 同包 HTTP 層測試保留 project port 原 GET/HEAD-only 測試，另測 group reader 的每個資源請求都是 POST 到本 instance GraphQL，`graphQuery:true`、無 `graphMutation`，query 字串與 core 的固定 `_namespaceWorkItemQuery` 完全一致（比對 G0b 交付的 `test/support/namespace_work_item_query.dart`，不從被測 request 複製 expected），variables **恰為** `{path,iid}`（iid String），path 只取 grant；OAuth replay 只能重播同一份讀取文件。拒模型 query/variables、外部 endpoint 與 mutation，不能對整個 port 豁免 HTTP guard。
@@ -128,12 +138,12 @@ helper import 盤點：`gitlab_api.dart` 已由 G0b 接；`gitlab_read_port.dart
 - `_target`／`_scopeSummary`／`_schema`／`_arguments` 全補 group：schema groupId enum 只取當前 grant；arguments 要正整數且禁 projectId 混入。group row 只 accept group scope；project row 仍只 accept project。subresource side 用已存在的 `AiResourceSide.group`（`lib/core/ai/tools/target_binding.dart:30`），`parentIid` 與數字 noteId 不丟失。
 - `_resourceBound`、`_groupBound`、`_grantAdmits`、accountTodo group branch 都先驗數字身份再考慮 currentResource/uiAdded；不能讓 `_appAsserts` 繞過 foreign Group。只有可信 UI、已驗 URL 或目前資源綁定；裸 #iid、group#iid 文字、tool result、歷史／模型 reason 不建立 group 綁定。
 - 把 unconditional group tier deny 換成上述完整 scopeAdmits；工具 hidden gate 仍拒 production 調用。accountGlobal 僅可作用其自己的 exact Todo，永不衍生 group WI 一般寫入 grant。
-- 新 group aliases 對 T1 intent 重用現有 reaction/notification 的方向鍵，映射是封閉 operation→intent operation 表，仍綁原始 entry、group target、實際 group operation 與引數；不把 project 意圖憑證直接搬到 group。機制選定寫法 (a)：G0e 把 `setGroupWorkItemActivityNoteReaction`、`setGroupWorkItemNotifications` 加進 `lib/core/ai/intent_lexicon.dart` 的 `aiIntentDirectionsByOperation`，並在依引數選方向的 switch（現 `:100`–`:130`）加同等分支；不採「alias 方向留空、他處換算」，因為 `assessIntent` 在方向為空時回 `authorizes: true`，漏換算一處就 fail-open。G0e 同包把兩個 alias 加進 `test/ai/write_tier_test.dart:722` 的 `withIntent`，並新增守衛：凡 `baseTier == T1` 的 row（含 hidden）`directionsFor` 都不可為空；本 HEAD 的 T1 rows 正好是 `withIntent` 的 9 個，不打壞既有 rows。UI／任何新翻譯詞不由本包寫。
+- 新 group aliases 對 T1 intent 重用現有 reaction/notification 的方向鍵，映射是封閉 operation→intent operation 表，仍綁原始 entry、group target、實際 group operation 與引數；不把 project 意圖憑證直接搬到 group。機制選定寫法 (a)：G0e 把 `setGroupWorkItemActivityNoteReaction`、`setGroupWorkItemNotifications` 加進 `lib/core/ai/intent_lexicon.dart` 的 `aiIntentDirectionsByOperation`，並在依引數選方向的 `requestedIntentDirection`（`:83` 起，switch 在 `:89`–`:132`）比照 `:108`（reaction）與 `:116`（notifications）加同等分支；不採「alias 方向留空、他處換算」，因為 `assessIntent` 在方向為空時回 `authorizes: true`，漏換算一處就 fail-open。G0e 同包把兩個 alias 加進 `test/ai/write_tier_test.dart:722` 的 `withIntent`，並新增守衛：凡 `baseTier == T1` 的 row（含 hidden）`directionsFor` 都不可為空；本 HEAD 的 T1 rows 正好是 `withIntent` 的 9 個，不打壞既有 rows。UI／任何新翻譯詞不由本包寫。
 - 主 port 在本包先建立所有新 group part 的具名 extension／最終 prepare 方法簽名、只回 null 的可編譯 stub，以及 rows 空清單，才加入 part/聚合與 dispatcher；不能讓 dispatcher 呼叫空檔中不存在的方法。家族未落地時無工具可見、stub 不送。todo owner 採增量：保留 `AiWritePrepared.todoTarget` 原 `({int projectId,String resource,int iid})?` record 與 project 建構式不變，另加純 typed `groupTodoTarget`（groupId/fullPath/iid/WI GID）；只有 snoozeTodo／unsnoozeTodo 的已驗證 target 要求恰一種 owner，非 todo 不帶 owner，兩種 owner 混填拒；`markTodoDone` 現有 accountGlobal 路徑可在無可辨識 project target 時保留 todoTarget:null（`lib/core/ai/tools/gitlab_write_port.dart:1145` 至 `:1184`），其授權／group offer 不隨本次擴張。coordinator `_todoTarget`／web link 顯式分支處理。`gitlab_write_port_graphql_snooze.dart:106` 的 project producer 與 `test/ai/mr6b3_snooze_port_test.dart:507` 的 record 比對因此繼續相容；G0e 跑該舊測試並測 group 欄位預設 null／雙 owner 拒，以及 ai_write_port_test 的 accountGlobal markTodoDone 未知target／null-owner舊行為，G-P13 才新增 group producer，不在 G0e 偷換原型別。
 - `lib/core/ai/tools/graphql_write_classify.dart:31` 的 rules 以 operationId 查找，未知 accepted alias 目前只會 uncertain（`:62`）。本包為15 aliases 明列與對應原 operation 相同的 allowsNoop/readback 規則；33 rules、25 allowsNoop，snooze兩列仍 readback:false。同步改 `test/ai/mr6b3_dispatch_test.dart:116` 的精確集合／數量與逐列 accepted/noop/unknown 測試，不以移除計數遮掩缺 rule。
-- `lib/core/ai/tools/write_ledger.dart:386` 的 accountTodo offer 目前不含 groupWorkItem。本檔定義唯一、預設 off 的 production group-target gate，ledger offer 與 G-P13 port 共用；production 只讀 const，測試 seam 是 ledger 的 `@visibleForTesting` override（G-P13、G14 的 gate-on 測試都只用它，不改 G0e 的主 port 或 ledger），`tool/tests/test_ai_boundaries.py` 守衛禁止 `lib/` 任何檔設定這個 override；G14 連同同意版本才翻 on。group-only scope 僅在 gate on 且 operationId 是 snoozeTodo／unsnoozeTodo 時 offer，不能讓 markTodoDone 或其他 accountTodo 工具一併進入。accountGlobal 及 project 既有 offer 不變；offer 不能繞過 port 的完整 ownership／exact group binding。
+- `lib/core/ai/tools/write_ledger.dart:386` 的 accountTodo offer 目前不含 groupWorkItem。本檔定義唯一、預設 off 的 production group-target gate，ledger offer 與 G-P13 port 共用；production 只讀 const，測試 seam 是 ledger 的 `@visibleForTesting` override（G-P13、G14 的 gate-on 測試都只用它，不改 G0e 的主 port 或 ledger），`tool/tests/test_ai_boundaries.py` 守衛禁止 `lib/` 任何檔設定這個 override；G14 連同同意版本才翻 on。G0e 另在 `test_ai_boundaries.py` 以 regex 釘住 `const <gate> = false;`（比照 `:186` 釘住 catalogue 版本；該段交 G14 改為 true），並加一個不設 override 時有效 gate 為 false 的 Dart 測試。每次設定 override 都以 `addTearDown` 還原為 null（或用有範圍的 helper），不讓 gate-on 外洩到後續測試。`@visibleForTesting` 取自 `package:flutter/foundation.dart`（`lib/core` 前例 `ai/ai_transcript.dart:6`），不新增 `package:meta` 直接依賴；analyzer 在宣告 library 與其 parts 內不攔，所以 Python 守衛是主要防線、analyzer 是第二層。group-only scope 僅在 gate on 且 operationId 是 snoozeTodo／unsnoozeTodo 時 offer，不能讓 markTodoDone 或其他 accountTodo 工具一併進入。accountGlobal 及 project 既有 offer 不變；offer 不能繞過 port 的完整 ownership／exact group binding。
 - **第一個 hidden row 前完成舊 graph inventory 遷移**：保留原18 operations 的精確集合、18個原 namedMethod=operationId、全部 visible；另用固定15筆 alias→原 method/site map 驗 group rows，拒未知／重複／漏配／incident alias。為十三家族先建立 §5 的 T 檔骨架，其中12個加 alias 的家族各保存獨立 test-stage expected operation set（初始空）；guard 內另存每家族完整允許 mapping，stage fixture 只能為空或該家族完整集合，**不從 production rows 反推 expected**。家族接手 T 後，同包填該固定集合並測完整 rows／API calls，故並行家族不需改 shared guard。每一階段 graphRows 精確等於原18＋各 test-stage expected 聯集，group hidden／visible 另驗；write member guard 亦用固定每族 API expected 聯集對應已交付 stage。G0e 無 group rows 時只驗原18；家族逐步增列仍嚴格；G14 強制12家族 stage 全交付、15 aliases 全 visible，總33 operations／18 unique methods。不能刪集合檢查或只改 hasLength。
-- `mr6b3_binding_test.dart:512`、`write_tier_test.dart:666` 的 group deny 改為**明確注入 gate off**，另以測試用 gate on＋明確注入的 synthetic ledger／typed resolved target 驗純 binding／tier 的同源正面與 foreign／無 grant 拒；這些不是 group prepare 端到端通過。G0e 的 snooze 整合只驗 gate-off 拒，真實 gate-on group producer 正面留 G-P13，再由 G14 驗 production gate-on。production gate 保持 off；測試注入只走既有／本包受限測試 seam，不由模型參數控制。`mr6b3_snooze_port_test.dart` 的舊 group 反例先固定 gate off，G-P13 再測 gate-on 新分支，G14 接 production gate 的遷移。
+- `mr6b3_binding_test.dart:512`、`write_tier_test.dart:666` 的 group deny 改為**明確注入 gate off**，另以測試用 gate on＋明確注入的 synthetic ledger／typed resolved target 驗純 binding／tier 的同源正面與 foreign／無 grant 拒；這些不是 group prepare 端到端通過。G0e 的 snooze 整合只驗 gate-off 拒，真實 gate-on group producer 正面留 G-P13，再由 G14 驗 production gate-on：至少一個**不設 override** 的測試斷言有效 gate 為 true，並保留顯式 gate-off override 的反例，不能只用 override 證明。production gate 保持 off；測試注入只走既有／本包受限測試 seam，不由模型參數控制。`mr6b3_snooze_port_test.dart` 的舊 group 反例先固定 gate off，G-P13 再測 gate-on 新分支，G14 接 production gate 的遷移。
 - 同包新增 group prepared 的可證 target confidential metadata（允許 unknown），coordinator 與 G0d 的 freshness/text 判定只在有證據時收斂 unknown；缺欄不推定 false，接受前仍按確認政策。原 fixed WI query 未含此欄時保持 unknown，若需 schema/core 調整先走 §2.2 follow-up，不能為去除確認加未計數 read。
 - graphWriteBack 操作集合增 group content/edit/labels ID，維持兩輪 opening-before-text；共同 locator仍總≤2次讀且禁止 legacy fallback。五態、唯一 mutation、journal／refund／accepted errors 一律 uncertain 沿用，不修改 journal 檔案。
 - `lib/core/ai/tools/gitlab_write_port.dart:324` 的 `AiWritePrepared.bindPreparedText` 在 `:332` 只逐欄鎖 projectId/iid/noteId；本包加入 groupId 的「是否存在＋值」比對，已 opening 的 group text request 不可被移除／替換 groupId。seams 測試逐一注入換 group、刪 group、混入 project 座標，全部拒絕且 mutation0，正常文字掃描只改文字不得重定向。
@@ -251,9 +261,9 @@ G-P13 跑原 snooze port 測試及新 group 測試，以 test gate on 驗 group 
 
 **U0 在 G0f 後、第一個家族 group row 前合併**。唯一 owner：`lib/features/ai/ai_write_ui.dart` 的15個 group operation label 分支、所需 `lib/l10n/arb/*` 與 generated strings、`test/ai/ai_write_ui_test.dart` 的 label coverage 段。`test/ai/ai_write_ui_test.dart:1045` 對 hidden rows 也驗 label，不能等到完整 UI 波次或改成只測 visible。U0 先明列全部15個固定 alias 的非 fallback label 與必要翻譯，在 rows 尚空時也測每個 ID 的 label；之後每個家族 MR 都跑原 all-rows label coverage，守衛不放寬。
 
-全家族後 Claude 再完成上述檔案剩餘 UI 段、`lib/features/ai/ai_chat_page.dart`、`lib/features/ai/ai_chat_controller.dart` 的 UI-added 入口／scope transition 段，以及 `test/ai/ai_chat_context_test.dart`、`test/ai/mr6b3g_origin_test.dart` 的 UI scope 測試（由 G0c/G0d 順序交接）；必要 workspace UI、全部 l10n 與 `test/ai/ai_consent_dialog_test.dart` 也由 Claude 擁有。包括 group owner／完整 path／#iid 提示、刪自己 note 確認、手動解除／todo @username、缺能力／未送／ack與readback區別、scope／停止／同意文案、布局與小螢幕／RTL／大字互動。既有 T1 詞可重用，operation aliases 仍需24語方向測試。
+全家族後 Claude 再完成上述檔案剩餘 UI 段、`lib/features/ai/ai_chat_page.dart`、`lib/features/ai/ai_chat_controller.dart` 在 U-add 交付後剩餘的 scope transition 段，以及 `test/ai/ai_chat_context_test.dart`、`test/ai/mr6b3g_origin_test.dart` 的 UI scope 測試（controller 與這兩個測試檔依 G0c → G0d → U-add → 完整 UI 順序交接；UI-added 加入流程本身的測試屬 U-add 的新檔）；必要 workspace UI、全部 l10n 與 `test/ai/ai_consent_dialog_test.dart` 也由 Claude 擁有。包括 group owner／完整 path／#iid 提示、刪自己 note 確認、手動解除／todo @username、缺能力／未送／ack與readback區別、scope／停止／同意文案、布局與小螢幕／RTL／大字互動。既有 T1 詞可重用，operation aliases 仍需24語方向測試。
 
-現碼只有 `AiTargetOrigin.uiAdded` 的 enum／binding 分支，沒有群組 WI 加入流程，不能聲稱已可重用。父 v6 §2 明列 UI 加入，所以不採「只准 origin、整個排除 UI-added」的建議。這是產品第一個 scope-add 流程（專案也沒有可重用的），所以拆成獨立的 Claude MR **U-add**（G0e 合併後、完整 UI MR 之前；有自己的 targeted 指令與 §15 列對應）：Claude 交付明確的使用者加入動作，先以受預算限制的 strict identity read 驗 Group/iid/WI GID（沿 G0b/G0d 通道），才建單一 grant／記 trusted uiAdded／開新 segment／要求對應 consent，失敗不加入；模型／工具結果不能觸發。刪除範圍、換 account/generation、同 iid foreign Group／project descendant 都測，grant 不擴成整個 group/project。這些 scope 加入讀取計入 UI/context budget，正式 write 仍重新 reserve §4 全額。
+現碼只有 `AiTargetOrigin.uiAdded` 的 enum／binding 分支，沒有群組 WI 加入流程，不能聲稱已可重用。父 v6 §2 明列 UI 加入，所以不採「只准 origin、整個排除 UI-added」的建議。這是產品第一個 scope-add 流程（專案也沒有可重用的），所以拆成獨立的 Claude MR **U-add**（U0 合併後、完整 UI MR 之前；不與 U0 並行以免 ARB 與生成檔衝突，家族不必等它；指令與父 §15 列見 §8，附錄 C 有對應子項）。唯一 owner：`lib/features/ai/ai_chat_page.dart` 的加入入口段、`lib/features/ai/ai_chat_controller.dart` 的 UI-added grant／segment 段、所需 `lib/l10n/arb/*` 與 generated strings、新 `test/ai/mr6b3g_ui_add_test.dart`，以及 `ai_chat_context_test.dart`／`mr6b3g_origin_test.dart` 中 UI-added 的回歸案例（交接順序同上）。內容：Claude 交付明確的使用者加入動作，先以受預算限制的 strict identity read 驗 Group/iid/WI GID（沿 G0b/G0d 通道），才建單一 grant／記 trusted uiAdded／開新 segment／要求對應 consent，失敗不加入；模型／工具結果不能觸發。刪除範圍、換 account/generation、同 iid foreign Group／project descendant 都測，grant 不擴成整個 group/project。這些 scope 加入讀取計入 UI/context budget，正式 write 仍重新 reserve §4 全額。
 
 ### §6.2 G14：可見度、版本與同意（家族與 UI 全合後）
 
@@ -308,6 +318,7 @@ git diff --check
 | G0e／G0d | `fvm flutter test --no-pub test/ai/mr6b3g_seams_test.dart test/ai/write_tier_test.dart test/ai/mr6b3_binding_test.dart test/ai/mr6b3_dispatch_test.dart test/ai/mr6b3_guard_test.dart test/ai/mr6b3_snooze_port_test.dart test/ai/ai_write_port_test.dart test/ai/fx_coord_todo_test.dart` | 8、10、13、16、21、24、25、29；NOT_RUN；舊group負面斷言由本包改驗未交付gate／foreign拒 |
 | G0f／G0e，Claude | `fvm flutter test --no-pub test/ai/mr6b3g_registry_test.dart test/ai/p15_registry_rewire_test.dart` | 6、10、24、25；NOT_RUN |
 | U0／G0f，Claude | `fvm flutter test --no-pub test/ai/ai_write_ui_test.dart`；`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tool/tests -p 'test_l10n*.py' -v` | 2、11、24；NOT_RUN；先覆蓋15個alias label，再放行家族 |
+| U-add／U0，Claude | `fvm flutter test --no-pub test/ai/mr6b3g_ui_add_test.dart test/ai/ai_chat_context_test.dart test/ai/mr6b3g_origin_test.dart test/ai/mr6b3_binding_test.dart`；`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tool/tests -p 'test_l10n*.py' -v` | 2、10、24；NOT_RUN；uiAdded 身份漂移、foreign Group、project descendant、segment 切換與 consent |
 | 十三家族／G0f＋U0 | 下段十三條，一包一條＋共有閘門 | 1、5–8、10、13、16、19、24、25、29；文字族另14/23/32，T1另15；NOT_RUN |
 | UI／全家族，Claude | `fvm flutter test --no-pub test/ai/ai_write_ui_test.dart test/ai/ai_consent_dialog_test.dart test/ai/ai_chat_context_test.dart test/ai/mr6b3g_origin_test.dart`；`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tool/tests -p 'test_l10n*.py' -v` | 2、7、11、15、24；NOT_RUN；24語與手機QA不得以host widget代替 |
 | G14／家族＋UI | `fvm flutter test --no-pub test/ai/mr6b3g_visibility_test.dart test/ai/ai_write_consent_test.dart test/ai/fx_coord_http_budget_test.dart test/ai/write_call_site_ledger_test.dart test/ai/p17_policy_visibility_test.dart test/ai/p1_port_seams_test.dart test/ai/p1_ledger_data_test.dart test/ai/mr6b3_guard_test.dart test/ai/mr6b3_snooze_port_test.dart test/ai/write_tier_test.dart test/ai/mr6b3_binding_test.dart` | 8、11–13、15、19、21、24；NOT_RUN |
@@ -333,7 +344,7 @@ fvm flutter test --no-pub test/ai/mr6b3g_snooze_test.dart test/ai/mr6b3_snooze_p
 
 G15正式整合再跑 `fvm flutter test --no-pub`、`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tool/tests -p 'test_*.py' -v` 與 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s ci/tests -p '*_test.py' -v`；分析／測試／CI紀錄都綁最終提交，不累加舊測試數。Claude依專案規則在owned Android emulator用public資源提議並拒絕每筆寫入，記錄GitLab mutation0；真實成功群組CRUD另需受控整合證據，不以reject-only QA宣稱成功。
 
-順序：`main → G0a → G0b → G0c → G0d → G0e → G0f → Claude U0 labels/l10n → 十三家族小MR → Claude 完整 UI/l10n → G14 → G15`。G15可預寫測試，但正式驗收必在可見度/consent後；每家族的cap、安全、精確inventory與all-rows labels測試不能等到G15；每個MR的完整flutter_checks也須綠才合，targeted PASS不代表pipeline成功。合併與mirror動作是未來lead流程，本次不執行。
+順序：`main → G0a → G0b → G0c → G0d → G0e → G0f → Claude U0 labels/l10n → 十三家族小MR → Claude 完整 UI/l10n → G14 → G15`；Claude U-add 在 U0 之後、完整 UI 之前合併，可與家族並行。G15可預寫測試，但正式驗收必在可見度/consent後；每家族的cap、安全、精確inventory與all-rows labels測試不能等到G15；每個MR的完整flutter_checks也須綠才合，targeted PASS不代表pipeline成功。合併與mirror動作是未來lead流程，本次不執行。
 
 ## §9 風險、未解問題與保守預設
 
@@ -357,7 +368,7 @@ G15正式整合再跑 `fvm flutter test --no-pub`、`PYTHONDONTWRITEBYTECODE=1 p
 
 ## 附錄 A：GitLab外部事實與可追溯來源
 
-下表保留 v1 的 **2026-10-27 查閱**記錄；本次 v2 以 checkout 查證規劃缺口，未重新連線覆核官方URL內容。G0b／各家族開工先核對其使用的官方頁面／anchor並記錄日期、版本與適用界線；是移動中的官方reference，不是本實例pinned schema，更不是已完成live相容性驗收。
+下表保留 v1 的 **2026-10-27 查閱**記錄；v2–v4 都只以 checkout 查證規劃缺口，未重新連線覆核官方URL內容。G0b／各家族開工先核對其使用的官方頁面／anchor並記錄日期、版本與適用界線；是移動中的官方reference，不是本實例pinned schema，更不是已完成live相容性驗收。
 
 | 使用的事實 | 官方來源／使用界線 |
 |---|---|
@@ -375,7 +386,7 @@ snooze filter語意、ack、whole-second時間沿已交付D25及core固定文件
 
 舊group deny不整批刪除：G0d只改按class分隔的read allowlist、read plumbing及write掃描基線，write namespace仍禁；G0e同包新增write namespace定點／exact delta，將deny換成numeric scope/grant驗證、建立獨立test-stage inventory，並保持rows hidden。U0先補全部label；家族只填自己的stage fixture與rows。G-P13只完成group todo分支；G14才同時開模型可見度與group-target gate。每階段舊project功能仍可用，未交付group路徑direct-call拒。
 
-必做負面fixture：同path+iid、foreign Group GID；Group GID被冒作WI GID；同numeric project/group；外層偽project、target.project:null；project WI的namespace是Group；ancestor root代替真正subgroup owner；accountGlobal＋未知無project；group grant＋另一group自己的todo；同instance不同installation prefix；UIAdded斷言但身份漂移。每個都驗API請求上限、mutation0、無一般grant擴張，不只看錯誤字串。
+必做負面fixture：同path+iid、foreign Group GID；Group GID被冒作WI GID；同numeric project/group；外層偽project、target.project:null；project WI的namespace是Group；ancestor root代替真正subgroup owner；accountGlobal＋未知無project；group grant＋另一group自己的todo；同instance不同installation prefix；UIAdded斷言但身份漂移（U-add 主責，G15 覆核）。每個都驗API請求上限、mutation0、無一般grant擴張，不只看錯誤字串。
 
 既有測試交接固定為 G0e→G-P13→G14（snooze owner/gate 段）與 G0e→G14（tier/binding gate 段；binding 如無需改動則G14只重跑）。`mr6b3_snooze_port_test.dart:609` 的 group fixture 不能永遠列在unsupported迴圈：保留顯式gate-off反例，另以gate-on走own真group正例；projectless／fakeOuter／commit／unknown及不一致Group仍拒，不能整段刪除。
 
@@ -391,8 +402,9 @@ snooze filter語意、ack、whole-second時間沿已交付D25及core固定文件
 | 24：foreign Group GID拒、URL-only不綁身份 | G0e；前置G0a helper、G0b strict read | G15 binding；NOT_RUN |
 | 24：REST/Graph/board同project key、group與project分離、rename鎖不變、WI GID alias | G0e；前置G0a key契約；家族交付write/dependency keys | G15 isolation；NOT_RUN |
 | 24：group WI手動解除名稱 `<groupPath>#iid` | Claude完整UI；前置各家族prepared releaseName | G15 isolation/matrix；NOT_RUN |
+| 24：UI-added 群組 WI 加入、身份漂移與 foreign Group 拒 | Claude U-add；前置G0b strict read、G0d read 通道、G0e grant | G15 binding/isolation；NOT_RUN |
 | 24：descendant project來源origin與project key | G0f；前置G0c origin、G0d單WI grant | G15 binding/races；NOT_RUN |
 | 24：group todo可延後、正確兩個查詢、截斷不當查無 | G-P13；前置G0b ownership、G0e typed seam；G14開gate | G15 budget/binding；NOT_RUN |
 | 24：foreign account/Group target與unsupported型別拒 | G-P13；前置G0b parser、G0e binding；G14遷移舊反例 | G15 binding/boundary；NOT_RUN |
 
-計畫停止條件：九項有今日證據；18 operations逐列有適用性；17條可擴展路徑有重新計算的cap；每stage有單檔owner、依賴、可執行acceptance與NOT_RUN；UI/l10n歸Claude；外部事實有URL/查閱日期或實作時查證；v1、v2、v3 各為一個 docs commit，只改本文件。產品analyze/tests、CI、Android/iOS、live group CRUD、私有帳號、G0與publication全部 **NOT_RUN**，不因規劃完成而關閉。
+計畫停止條件：九項有今日證據；18 operations逐列有適用性；17條可擴展路徑有重新計算的cap；每stage有單檔owner、依賴、可執行acceptance與NOT_RUN；UI/l10n歸Claude；外部事實有URL/查閱日期或實作時查證；v1–v4 各為一個 docs commit，只改本文件。產品analyze/tests、CI、Android/iOS、live group CRUD、私有帳號、G0與publication全部 **NOT_RUN**，不因規劃完成而關閉。
