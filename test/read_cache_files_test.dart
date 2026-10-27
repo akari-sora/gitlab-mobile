@@ -72,6 +72,64 @@ ProjectedDiskEntry _entry({
   scopeVersions: {'project:$id': 0},
 );
 
+ProjectedDiskEntry _bodyEntry(
+  ReadCacheBodyKind kind, {
+  List<int>? terminalBytes,
+}) {
+  final logBytes = terminalBytes ?? utf8.encode('synthetic log 世界\n');
+  return ProjectedDiskEntry(
+    accountKey: _account,
+    canonicalKey: jsonEncode([
+      _account,
+      'GET',
+      switch (kind) {
+        ReadCacheBodyKind.json => '/api/v4/projects/1',
+        ReadCacheBodyKind.page => '/api/v4/projects/1/issues',
+        ReadCacheBodyKind.text => '/api/v4/projects/1/repository/files/README',
+        ReadCacheBodyKind.terminalLog => '/api/v4/projects/1/jobs/7/trace',
+      },
+      <Object?>[],
+      kind == ReadCacheBodyKind.text || kind == ReadCacheBodyKind.terminalLog
+          ? 'text/plain'
+          : 'application/json',
+    ]),
+    cacheClass: switch (kind) {
+      ReadCacheBodyKind.json => ReadCacheDiskClass.projectMeta,
+      ReadCacheBodyKind.page => ReadCacheDiskClass.list,
+      _ => ReadCacheDiskClass.pinned,
+    },
+    bodyKind: kind,
+    fetchedAt: _now,
+    body: switch (kind) {
+      ReadCacheBodyKind.json => const {'id': 1, 'name': 'Synthetic project'},
+      ReadCacheBodyKind.page => const {
+        'items': [
+          {'id': 10, 'iid': 7, 'title': 'Synthetic issue 世界'},
+        ],
+        'next':
+            'https://synthetic.example.test/subpath/api/v4/projects/1/'
+            'issues?page=2',
+      },
+      ReadCacheBodyKind.text => ' \n# Synthetic 世界\n \n',
+      ReadCacheBodyKind.terminalLog => ReadCacheTerminalLog(
+        projectId: 1,
+        jobId: 7,
+        finishedAt: _now.subtract(const Duration(minutes: 1)),
+        startOffset: 128,
+        nextOffset: 128 + logBytes.length,
+        totalBytes: 128 + logBytes.length,
+        isEof: true,
+        truncated: true,
+        bytes: logBytes,
+      ),
+    },
+    privacyEpoch: 3,
+    issueIdentities: {const ReadCacheIssueIdentity(1, 7)},
+    scopeTags: const {'project:1'},
+    scopeVersions: const {'project:1': 4},
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory root;
@@ -254,6 +312,52 @@ void main() {
         }
       },
     );
+
+    for (final throwAfterRename in [false, true]) {
+      test('$kind committed rename skips cleanup after an ancestor replacement '
+          '(checkpoint throws: $throwAfterRename)', () async {
+        final path = accountDirectory().path;
+        final saved = '$path.saved';
+        const original = ReadCacheCodecException(
+          ReadCacheCodecError.bindingMismatch,
+        );
+        final files = store(
+          checkpoint: (step) {
+            final boundary = indexWrite
+                ? ReadCacheFileCheckpoint.indexRenamed
+                : ReadCacheFileCheckpoint.entryRenamed;
+            if (step != boundary) return;
+            Directory(path).renameSync(saved);
+            File(path).writeAsStringSync('synthetic replacement');
+            if (throwAfterRename) throw original;
+          },
+        );
+        final staged = (await stageWrite(files, indexWrite, () => true))!;
+        try {
+          if (throwAfterRename) {
+            expect(staged.commit, throwsA(same(original)));
+          } else {
+            expect(staged.commit(), ReadCacheCommitResult.committed);
+          }
+          expect(File(path).readAsStringSync(), 'synthetic replacement');
+          expect(File('$saved/${staged.fileName}').existsSync(), isTrue);
+          expect(
+            Directory(
+              saved,
+            ).listSync().where((file) => file.path.endsWith('.tmp')),
+            isEmpty,
+          );
+          expect(staged.commit(), ReadCacheCommitResult.alreadyConsumed);
+          staged.discard();
+        } finally {
+          if (File(path).existsSync()) File(path).deleteSync();
+          if (Directory(saved).existsSync()) {
+            Directory(saved).renameSync(path);
+          }
+        }
+        expect(await readWrite(indexWrite), isNotNull);
+      });
+    }
 
     test(
       '$kind revocation and completed clear refuse an outstanding stage',
@@ -749,6 +853,81 @@ void main() {
     expect(usage.deviceBytes, usage.accountBytes);
   });
 
+  for (final kind in ReadCacheBodyKind.values) {
+    test('${kind.name} DTO round-trips through background file I/O', () async {
+      final value = _bodyEntry(kind);
+      final caller = Isolate.current.controlPort;
+      final files = store(
+        checkpoint: (step) {
+          if (step == ReadCacheFileCheckpoint.temporaryCreated ||
+              step == ReadCacheFileCheckpoint.beforeRead) {
+            if (Isolate.current.controlPort == caller) throw const _Crash();
+          }
+        },
+      );
+      final name = await files.writeEntry(value, _key);
+      for (final actual in [
+        await files.readEntry(
+          _account,
+          _key,
+          value.canonicalKey,
+          expectedBodyKind: kind,
+        ),
+        await store().readEntryFile(
+          _account,
+          _key,
+          name,
+          expectedBodyKind: kind,
+        ),
+      ]) {
+        expect(actual, isNotNull);
+        expect(actual!.metadata, value.metadata);
+        expect(actual.bodyBytes, value.bodyBytes);
+        if (kind == ReadCacheBodyKind.terminalLog) {
+          final log = actual.body as ReadCacheTerminalLog;
+          expect(log.metadata, (value.body as ReadCacheTerminalLog).metadata);
+          expect(() => log.bytes[0] = 0, throwsUnsupportedError);
+        } else {
+          expect(actual.body, value.body);
+        }
+      }
+    });
+  }
+
+  test(
+    'terminal log above 1 MiB survives default and explicit reads',
+    () async {
+      final bytes = Uint8List(readCacheEntryLimit + 1)
+        ..fillRange(0, readCacheEntryLimit + 1, 0x61);
+      final value = _bodyEntry(
+        ReadCacheBodyKind.terminalLog,
+        terminalBytes: bytes,
+      );
+      expect(value.serializedLength, greaterThan(readCacheEntryLimit));
+      expect(value.serializedLength, lessThan(readCacheTerminalLogLimit));
+      final name = await store().writeEntry(value, _key);
+      for (final kind in [null, ReadCacheBodyKind.terminalLog]) {
+        for (final actual in [
+          await store().readEntry(
+            _account,
+            _key,
+            value.canonicalKey,
+            expectedBodyKind: kind,
+          ),
+          await store().readEntryFile(
+            _account,
+            _key,
+            name,
+            expectedBodyKind: kind,
+          ),
+        ]) {
+          expect(actual!.metadata, value.metadata);
+          expect((actual.body as ReadCacheTerminalLog).bytes, bytes);
+        }
+      }
+    },
+  );
+
   test('index never publishes a phantom file or an incorrect size', () async {
     final name = await store().writeEntry(_entry(), _key);
     final record = await indexEntry(name);
@@ -764,6 +943,37 @@ void main() {
       fileFailure(ReadCacheFileFailure.io),
     );
   });
+
+  for (final sizeChange in [-1, 1]) {
+    test(
+      'readIndex drops a size-mismatched entry ($sizeChange byte)',
+      () async {
+        final first = await store().writeEntry(_entry(), _key);
+        final second = await store().writeEntry(_entry(id: 2), _key);
+        await store().writeIndex(
+          _account,
+          _key,
+          ReadCacheIndex(
+            entries: [await indexEntry(first), await indexEntry(second)],
+          ),
+        );
+        final indexFile = File('${accountDirectory().path}/index.v1.bin');
+        final originalIndex = indexFile.readAsBytesSync();
+        final changed = File('${accountDirectory().path}/$second');
+        final newSize = changed.lengthSync() + sizeChange;
+        final handle = changed.openSync(mode: FileMode.append);
+        try {
+          handle.truncateSync(newSize);
+        } finally {
+          handle.closeSync();
+        }
+        final index = (await store().readIndex(_account, _key))!;
+        expect(index.entries.map((entry) => entry.fileName), [first]);
+        expect(indexFile.readAsBytesSync(), originalIndex);
+        expect(changed.lengthSync(), newSize);
+      },
+    );
+  }
 
   for (final change in ['remove', 'resize']) {
     test('index rechecks $change at the final rename boundary', () async {
@@ -1065,6 +1275,87 @@ void main() {
       fileFailure(ReadCacheFileFailure.tooLarge),
     );
   });
+
+  for (final byFileName in [false, true]) {
+    for (final kind in <ReadCacheBodyKind?>[
+      null,
+      ...ReadCacheBodyKind.values,
+    ]) {
+      test('per-body read ceiling: ${kind?.name ?? 'default'} '
+          'via ${byFileName ? 'file name' : 'canonical key'}', () async {
+        final value = _entry();
+        final name = await store().writeEntry(value, _key);
+        final file = File('${accountDirectory().path}/$name');
+        final files = store(
+          checkpoint: (step) {
+            if (step == ReadCacheFileCheckpoint.beforeRead) {
+              throw const ReadCacheFileException(
+                ReadCacheFileFailure.invalidName,
+              );
+            }
+          },
+        );
+        Future<ProjectedDiskEntry?> read() => byFileName
+            ? files.readEntryFile(_account, _key, name, expectedBodyKind: kind)
+            : files.readEntry(
+                _account,
+                _key,
+                value.canonicalKey,
+                expectedBodyKind: kind,
+              );
+        final limit = kind == null || kind == ReadCacheBodyKind.terminalLog
+            ? readCacheTerminalLogLimit
+            : readCacheEntryLimit;
+        for (final size in {
+          readCacheEntryLimit + readCacheEnvelopeOverhead,
+          readCacheEntryLimit + readCacheEnvelopeOverhead + 1,
+          limit + readCacheEnvelopeOverhead,
+          limit + readCacheEnvelopeOverhead + 1,
+        }) {
+          final handle = file.openSync(mode: FileMode.append);
+          try {
+            handle.truncateSync(size);
+          } finally {
+            handle.closeSync();
+          }
+          await expectLater(
+            read(),
+            fileFailure(
+              size > limit + readCacheEnvelopeOverhead
+                  ? ReadCacheFileFailure.tooLarge
+                  : ReadCacheFileFailure.invalidName,
+            ),
+            reason: 'only an in-budget file may reach beforeRead ($size bytes)',
+          );
+        }
+      });
+    }
+  }
+
+  test(
+    'expected body kind is checked against authenticated metadata',
+    () async {
+      final value = _entry();
+      final name = await store().writeEntry(value, _key);
+      for (final kind in ReadCacheBodyKind.values.where(
+        (kind) => kind != ReadCacheBodyKind.json,
+      )) {
+        await expectLater(
+          store().readEntry(
+            _account,
+            _key,
+            value.canonicalKey,
+            expectedBodyKind: kind,
+          ),
+          codecFailure(ReadCacheCodecError.bindingMismatch),
+        );
+        await expectLater(
+          store().readEntryFile(_account, _key, name, expectedBodyKind: kind),
+          codecFailure(ReadCacheCodecError.bindingMismatch),
+        );
+      }
+    },
+  );
 
   test('growth between stat and open remains bounded', () async {
     final value = _entry();
@@ -1782,6 +2073,35 @@ void main() {
       },
     );
   }
+
+  test('stray root file closes usage and entry/index staging', () async {
+    final files = store();
+    final name = await files.writeEntry(_entry(), _key);
+    final original = File('${accountDirectory().path}/$name').readAsBytesSync();
+    final stray = File('${root.path}/read_cache/stray')..writeAsBytesSync([1]);
+    await expectLater(
+      files.usage(_account, _key),
+      fileFailure(ReadCacheFileFailure.untrustedPath),
+    );
+    for (final indexWrite in [false, true]) {
+      await expectLater(
+        stageWrite(files, indexWrite, () => true),
+        fileFailure(ReadCacheFileFailure.untrustedPath),
+      );
+    }
+    expect(temporaries(), isEmpty);
+    expect(
+      File('${accountDirectory().path}/$name').readAsBytesSync(),
+      original,
+    );
+    expect(
+      File('${accountDirectory().path}/index.v1.bin').existsSync(),
+      isFalse,
+    );
+    expect(stray.readAsBytesSync(), [1]);
+    await files.clearRoot();
+    expect(Directory('${root.path}/read_cache').existsSync(), isFalse);
+  });
 
   for (final node in ['directory', 'link']) {
     test(
