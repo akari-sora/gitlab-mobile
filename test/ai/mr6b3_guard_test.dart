@@ -138,6 +138,7 @@ const _readPortMembers = {
 
 // Frozen from 574e406: two tokens before and three after every code-only _api.
 // Preserve order and duplicates; changing API use requires reviewing this list.
+// This list locks local token sequences, not call-site identity.
 const _readPortApiOccurrences = <String, List<String>>{
   'GitLabAiReadPort': [
     'this . _api , this .',
@@ -360,23 +361,23 @@ void main() {
             'await other.namespaceWorkItem(',
           ),
         ),
-        isNotEmpty,
+        contains('unexpected GitLabAiReadPort API members'),
       );
       expect(
         _readPortViolations(_readPortFixture(group: '_api.record();')),
-        isNotEmpty,
+        contains('unexpected GitLabAiGroupReadPort API members'),
       );
       expect(
         _readPortViolations(
           _readPortFixture(extra: 'void f() => _api.record();'),
         ),
-        isNotEmpty,
+        contains('API access outside concrete classes'),
       );
       expect(
         _readPortViolations(
           _readPortFixture(extra: 'void f() => helper(_api);'),
         ),
-        isNotEmpty,
+        contains('API access outside concrete classes'),
       );
       expect(
         _readPortViolations(
@@ -384,42 +385,84 @@ void main() {
             extra: 'final class Foreign { void f() => _api.record(); }',
           ),
         ),
-        isNotEmpty,
+        contains('API access in unknown class Foreign'),
       );
     });
 
     test('read port guard rejects API escapes in either known class', () {
-      const shapes = <String, String>{
-        'typed alias':
-            'void f() { final GitLabApi other = _api; other.record(); }',
-        'parenthesized receiver': 'void f() { (_api).record(); }',
-        'getter': 'GitLabApi get _g => _api; void f() { _g.record(); }',
-        'typed helper':
-            'static void peek(GitLabApi a) { a.record(); } void f() { peek(_api); }',
-        'dynamic cast': 'void f() { (_api as dynamic).record(); }',
-        'free dynamic helper': 'void f() { helper(_api); }',
-        'typed parameter only': 'void f(GitLabApi other) {}',
-        'typed getter only': 'GitLabApi get other => someValue;',
-        'typed local only': 'void f() { GitLabApi other = someValue; }',
-        'local shadows field': 'void f() { final GitLabApi _api; }',
-        'constructor call in method':
-            'void f() { GitLabAiGroupReadPort(this._api, 1); }',
-        'constructor call in initializer':
-            'final other = GitLabAiGroupReadPort(this._api, 1);',
-        'dynamic cast only': 'void f(Object value) { value as dynamic; }',
+      const shapes = <String, ({String attack, List<String> rules})>{
+        'typed alias': (
+          attack: 'void f() { final GitLabApi other = _api; other.record(); }',
+          rules: ['invalid _api use', 'invalid GitLabApi use'],
+        ),
+        'parenthesized receiver': (
+          attack: 'void f() { (_api).record(); }',
+          rules: ['invalid _api use'],
+        ),
+        'getter': (
+          attack: 'GitLabApi get _g => _api; void f() { _g.record(); }',
+          rules: ['invalid _api use', 'invalid GitLabApi use'],
+        ),
+        'typed helper': (
+          attack:
+              'static void peek(GitLabApi a) { a.record(); } void f() { peek(_api); }',
+          rules: ['invalid _api use', 'invalid GitLabApi use'],
+        ),
+        'dynamic cast': (
+          attack: 'void f() { (_api as dynamic).record(); }',
+          rules: ['invalid _api use', 'dynamic cast'],
+        ),
+        'free dynamic helper': (
+          attack: 'void f() { helper(_api); }',
+          rules: ['invalid _api use'],
+        ),
+        'typed parameter only': (
+          attack: 'void f(GitLabApi other) {}',
+          rules: ['invalid GitLabApi use'],
+        ),
+        'typed getter only': (
+          attack: 'GitLabApi get other => someValue;',
+          rules: ['invalid GitLabApi use'],
+        ),
+        'typed local only': (
+          attack: 'void f() { GitLabApi other = someValue; }',
+          rules: ['invalid GitLabApi use'],
+        ),
+        'local shadows field': (
+          attack: 'void f() { final GitLabApi _api; }',
+          rules: ['invalid _api use', 'invalid GitLabApi use'],
+        ),
+        'constructor call in method': (
+          attack: 'void f() { GitLabAiGroupReadPort(this._api, 1); }',
+          rules: ['invalid _api use'],
+        ),
+        'constructor call in initializer': (
+          attack: 'final other = GitLabAiGroupReadPort(this._api, 1);',
+          rules: ['invalid _api use'],
+        ),
+        'dynamic cast only': (
+          attack: 'void f(Object value) { value as dynamic; }',
+          rules: ['dynamic cast'],
+        ),
       };
       for (final shape in shapes.entries) {
         for (final target in ['project', 'group']) {
           final source = _readPortFixture(
-            project: target == 'project' ? shape.value : '',
-            group: target == 'group' ? shape.value : '',
+            project: target == 'project' ? shape.value.attack : '',
+            group: target == 'group' ? shape.value.attack : '',
             extra: 'void helper(a) { a.record(); }',
           );
-          expect(
-            _readPortViolations(source),
-            isNotEmpty,
-            reason: '${shape.key} in $target class',
-          );
+          final name = target == 'project'
+              ? 'GitLabAiReadPort'
+              : 'GitLabAiGroupReadPort';
+          final violations = _readPortViolations(source);
+          for (final rule in shape.value.rules) {
+            expect(
+              violations,
+              contains('$rule in $name'),
+              reason: '${shape.key} in $target class',
+            );
+          }
         }
       }
       for (final target in ['GitLabAiReadPort', 'GitLabAiGroupReadPort']) {
@@ -453,7 +496,7 @@ void main() {
                     : '',
               ),
             ),
-            isNotEmpty,
+            contains('unexpected $target API occurrence snapshot'),
             reason: constructor,
           );
         }
@@ -478,9 +521,20 @@ void main() {
         'void workItem() async { $factory(apiOwner: _api, apiOwner: _api); }',
         'void workItem() async { $factory(apiOwner: _api); helper(apiOwner: _api); }',
       ]) {
+        // Isolate malformed factories: appending workItem to the real source
+        // also rejects its original owner argument due to duplicate methods.
+        expect(
+          _knownReadClassViolations(
+            'GitLabAiGroupReadPort',
+            'class GitLabAiGroupReadPort { final GitLabApi _api; $invalid }',
+            {'namespaceWorkItem'},
+          ),
+          contains('invalid _api use in GitLabAiGroupReadPort'),
+          reason: invalid,
+        );
         expect(
           _readPortViolations(_readPortFixture(group: invalid)),
-          isNotEmpty,
+          contains('invalid _api use in GitLabAiGroupReadPort'),
           reason: invalid,
         );
       }
@@ -493,13 +547,13 @@ void main() {
             group: r'''void f() { print('${helper(_api)}'); }''',
           ),
         ),
-        isNotEmpty,
+        contains('invalid _api use in GitLabAiGroupReadPort'),
       );
       expect(
         _readPortViolations(
           _readPortFixture(group: r'''void f() { print('$_api'); }'''),
         ),
-        isNotEmpty,
+        contains('invalid _api use in GitLabAiGroupReadPort'),
       );
       expect(
         _readPortViolations(
@@ -507,6 +561,77 @@ void main() {
         ),
         isEmpty,
       );
+    });
+
+    test('read port line comments end at CR or LF in real source', () {
+      const attack =
+          "  Future<Object?> escaped() => _api.writeRecord('POST', const ['projects'], const {});";
+      for (final ending in ['\r', '\r\n', '\n']) {
+        for (final comment in ['//', '///']) {
+          for (final addition in [
+            '  $comment bait$ending$attack\n',
+            "  String escaped() => '\${$comment bait$ending"
+                "_api.writeRecord('POST', const ['projects'], const {})}';\n",
+          ]) {
+            final source = _readPortFixture(project: addition);
+            final code = _codeOnly(source);
+            expect(code.length, source.length);
+            expect(
+              '\r'.allMatches(code).length,
+              '\r'.allMatches(source).length,
+            );
+            final violations = _readPortViolations(source);
+            expect(
+              violations,
+              contains('invalid _api use in GitLabAiReadPort'),
+              reason: addition,
+            );
+            expect(
+              violations,
+              contains('unexpected GitLabAiReadPort API occurrence snapshot'),
+              reason: addition,
+            );
+          }
+        }
+      }
+    });
+
+    test('read port CR stays inside literals and nested block comments', () {
+      const bait = 'before\r_api.writeRecord dynamic apiOwner\r\nafter';
+      for (final quote in ["'''", '"""']) {
+        for (final prefix in ['', 'r']) {
+          final addition = 'String bait() => $prefix$quote$bait$quote;';
+          expect(
+            _readPortViolations(_readPortFixture(project: addition)),
+            isEmpty,
+            reason: addition,
+          );
+        }
+      }
+      for (final addition in [
+        '/* outer\r /* _api.writeRecord */\r\n dynamic apiOwner */',
+        "String bait() => r'''before\r\${_api.writeRecord()}\r\nafter''';",
+        "String bait() => '''before\\'''\r_api.writeRecord\r\nafter''';",
+      ]) {
+        expect(
+          _readPortViolations(_readPortFixture(project: addition)),
+          isEmpty,
+          reason: addition,
+        );
+      }
+    });
+
+    test('read port ignores top-level comment and raw string API bait', () {
+      for (final addition in [
+        '// _api.namespaceWorkItem',
+        "const bait = r'_api.namespaceWorkItem';",
+      ]) {
+        expect(
+          _readPortViolations(_readPortFixture(extra: addition)),
+          isEmpty,
+          reason: addition,
+        );
+      }
     });
 
     test('read port rejects Opus smuggling with normal member sets', () {
@@ -1186,7 +1311,7 @@ Map<Uri, String> _writePartSources(
 String _codeOnly(String source) {
   final result = source.split('');
   void hide(int index) {
-    if (source[index] != '\n') result[index] = ' ';
+    if (source[index] != '\r' && source[index] != '\n') result[index] = ' ';
   }
 
   late int Function(int, {bool interpolation}) codeAt;
@@ -1236,7 +1361,7 @@ String _codeOnly(String source) {
     var braces = 0;
     while (i < source.length) {
       if (source.startsWith('//', i)) {
-        while (i < source.length && source[i] != '\n') {
+        while (i < source.length && source[i] != '\r' && source[i] != '\n') {
           hide(i++);
         }
       } else if (source.startsWith('/*', i)) {
@@ -1500,7 +1625,7 @@ List<String> _readPortViolations(String source) {
       violations.add('API access in unknown class ${item.name}');
     }
   }
-  final outside = source.split('');
+  final outside = code.split('');
   for (final item in classes) {
     for (var i = item.start; i < item.end; i++) {
       outside[i] = ' ';
@@ -1508,7 +1633,7 @@ List<String> _readPortViolations(String source) {
   }
   final outsideSource = outside.join();
   if (_apiMembers(outsideSource).isNotEmpty ||
-      RegExp(r'\b(?:GitLabApi|_api)\b').hasMatch(_codeOnly(outsideSource))) {
+      RegExp(r'\b(?:GitLabApi|_api)\b').hasMatch(outsideSource)) {
     violations.add('API access outside concrete classes');
   }
   final all = _apiMembers(code);

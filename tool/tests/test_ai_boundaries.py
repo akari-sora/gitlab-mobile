@@ -27,6 +27,7 @@ GROUP_READ_PORT_MEMBERS = {"namespaceWorkItem"}
 
 # Frozen from 574e406: two tokens before and three after every code-only _api.
 # Preserve order and duplicates; changing API use requires reviewing this list.
+# This list locks local token sequences, not call-site identity.
 READ_PORT_API_OCCURRENCES = {
     "GitLabAiReadPort": [
         "this . _api , this .",
@@ -241,29 +242,34 @@ class AiBoundaryTest(unittest.TestCase):
     def test_read_port_class_and_escaping_fixtures(self):
         fixture = self._read_port_fixture
         self.assertEqual(self._read_port_violations(fixture()), [])
-        for mutant in (
-            fixture(project="_api.namespaceWorkItem();").replace(
+        for mutant, expected in (
+            (fixture(project="_api.namespaceWorkItem();").replace(
                 "await _api.namespaceWorkItem(", "await other.namespaceWorkItem(", 1),
-            fixture(group="_api.record();"),
-            fixture(extra="final class Foreign { void f() => _api.record(); }"),
-            fixture(extra="void f() => _api.record();"),
-            fixture(extra="void f() => helper(_api);"),
+             "unexpected GitLabAiReadPort API members"),
+            (fixture(group="_api.record();"), "unexpected GitLabAiGroupReadPort API members"),
+            (fixture(extra="final class Foreign { void f() => _api.record(); }"),
+             "API access in unknown class Foreign"),
+            (fixture(extra="void f() => _api.record();"), "API access outside concrete classes"),
+            (fixture(extra="void f() => helper(_api);"), "API access outside concrete classes"),
         ):
             with self.subTest(mutant=mutant):
-                self.assertTrue(self._read_port_violations(mutant))
+                self.assertIn(expected, self._read_port_violations(mutant))
 
         # Each attack is placed in each known concrete class.  Keep its normal
         # calls intact so rejection cannot come merely from a changed member set.
         attacks = (
-            "void f() { final GitLabApi other = _api; other.record(); }",
-            "void f() { (_api).record(); }",
-            "GitLabApi get _g => _api; void f() { _g.record(); }",
-            "static void _peek(GitLabApi api) { api.record(); } "
-            "void f() { _peek(_api); }",
-            "void f() { (_api as dynamic).record(); }",
-            "void f() { helper(_api); }",
+            ("void f() { final GitLabApi other = _api; other.record(); }",
+             ("unexpected _api reference", "unexpected GitLabApi reference")),
+            ("void f() { (_api).record(); }", ("unexpected _api reference",)),
+            ("GitLabApi get _g => _api; void f() { _g.record(); }",
+             ("unexpected _api reference", "unexpected GitLabApi reference")),
+            ("static void _peek(GitLabApi api) { api.record(); } void f() { _peek(_api); }",
+             ("unexpected _api reference", "unexpected GitLabApi reference")),
+            ("void f() { (_api as dynamic).record(); }",
+             ("unexpected _api reference", "dynamic cast")),
+            ("void f() { helper(_api); }", ("unexpected _api reference",)),
         )
-        for attack in attacks:
+        for attack, rules in attacks:
             for target in ("project", "group"):
                 mutant = fixture(
                     project=attack if target == "project" else "",
@@ -271,7 +277,9 @@ class AiBoundaryTest(unittest.TestCase):
                     extra="void helper(api) { api.record(); }",
                 )
                 with self.subTest(attack=attack, target=target):
-                    self.assertTrue(self._read_port_violations(mutant))
+                    name = "GitLabAiReadPort" if target == "project" else "GitLabAiGroupReadPort"
+                    for rule in rules:
+                        self.assertIn(f"{rule} in {name}", self._read_port_violations(mutant))
 
         for target, name in (("project", "GitLabAiReadPort"),
                              ("group", "GitLabAiGroupReadPort")):
@@ -283,26 +291,26 @@ class AiBoundaryTest(unittest.TestCase):
                 wanted = READ_PORT_MEMBERS if target == "project" else GROUP_READ_PORT_MEMBERS
                 with self.subTest(name=name, suffix=suffix):
                     self.assertEqual(self._read_port_token_violations(name, body, wanted), [])
-                    self.assertTrue(self._read_port_violations(
-                        fixture(**{target: declaration})))
+                    self.assertIn(f"unexpected {name} API occurrence snapshot",
+                                  self._read_port_violations(fixture(**{target: declaration})))
                 for attack in (f"final escaped = {name}{suffix}(this._api);",
                                f"void f() {{ {name}{suffix}(this._api); }}"):
                     mutant = fixture(**{target: attack})
                     with self.subTest(name=name, suffix=suffix, attack=attack):
-                        self.assertTrue(self._read_port_violations(mutant))
+                        self.assertIn(f"unexpected _api reference in {name}",
+                                      self._read_port_violations(mutant))
 
-        for attack in (
-            "void f() { helper(apiOwner: _api); }",
-            "void f() { helper(this._api); }",
-            "void f() { (_api as dynamic); }",
-            "GitLabApi get _g => throw 0;",
-            "void f() { GitLabApi.other; }",
-            "void f() { final GitLabApi _api; }",
+        for attack, rule in (
+            ("void f() { helper(apiOwner: _api); }", "unexpected _api reference"),
+            ("void f() { helper(this._api); }", "unexpected _api reference"),
+            ("void f() { (_api as dynamic); }", "dynamic cast"),
+            ("GitLabApi get _g => throw 0;", "unexpected GitLabApi reference"),
+            ("void f() { GitLabApi.other; }", "unexpected GitLabApi reference"),
+            ("void f() { final GitLabApi _api; }", "unexpected GitLabApi reference"),
         ):
             with self.subTest(attack=attack):
-                self.assertTrue(self._read_port_violations(
-                    fixture(group=attack)
-                ))
+                self.assertIn(f"{rule} in GitLabAiGroupReadPort",
+                              self._read_port_violations(fixture(group=attack)))
 
         factory = ("Future<void> workItem() async { "
                    "VerifiedGroupWorkItemIdentity.fromServerEvidence(apiOwner: _api); }")
@@ -318,10 +326,59 @@ class AiBoundaryTest(unittest.TestCase):
             fixture(group=factory.replace("workItem", "workItem2")),
         ):
             with self.subTest(mutant=mutant):
-                self.assertTrue(self._read_port_violations(mutant))
+                self.assertIn("unexpected _api reference in GitLabAiGroupReadPort",
+                              self._read_port_violations(mutant))
 
-        self.assertTrue(self._read_port_violations(fixture(group=" '$_api';")))
+        self.assertIn("unexpected _api reference in GitLabAiGroupReadPort",
+                      self._read_port_violations(fixture(group=" '$_api';")))
         self.assertEqual(self._read_port_violations(fixture(group=" r'$_api';")), [])
+
+    def test_read_port_line_comment_endings_in_unnormalized_source(self):
+        original = PORT.read_bytes()
+        marker = b"  final int projectId;\n"
+        self.assertEqual(original.count(marker), 1)
+        attack = "  Future<Object?> escaped() => _api.writeRecord('POST', const ['projects'], const {});"
+        for ending in ("\r", "\r\n", "\n"):
+            for comment in ("//", "///"):
+                additions = (
+                    f"  {comment} bait{ending}{attack}\n",
+                    "  String escaped() => '${" + comment + " bait" + ending +
+                    "_api.writeRecord('POST', const ['projects'], const {})}';\n",
+                )
+                for addition in additions:
+                    # Decode bytes directly: Path.read_text would normalize CR.
+                    source = original.replace(marker, marker + addition.encode("utf-8"), 1).decode("utf-8")
+                    with self.subTest(ending=repr(ending), addition=addition):
+                        self.assertIn(addition, source)
+                        code = self._code_only(source)
+                        self.assertEqual(len(code), len(source))
+                        self.assertEqual(code.count("\r"), source.count("\r"))
+                        violations = self._read_port_violations(source)
+                        self.assertIn("unexpected _api reference in GitLabAiReadPort", violations)
+                        self.assertIn("unexpected GitLabAiReadPort API occurrence snapshot", violations)
+
+    def test_read_port_cr_stays_inside_literals_and_block_comments(self):
+        bait = "before\r_api.writeRecord dynamic apiOwner\r\nafter"
+        for quote in ("'''", '"""'):
+            for prefix in ("", "r"):
+                addition = f"String bait() => {prefix}{quote}{bait}{quote};"
+                with self.subTest(addition=addition):
+                    self.assertEqual(self._read_port_violations(
+                        self._read_port_fixture(project=addition)), [])
+        for addition in (
+            "/* outer\r /* _api.writeRecord */\r\n dynamic apiOwner */",
+            "String bait() => r'''before\r${_api.writeRecord()}\r\nafter''';",
+            "String bait() => '''before\\'''\r_api.writeRecord\r\nafter''';",
+        ):
+            with self.subTest(addition=addition):
+                self.assertEqual(self._read_port_violations(
+                    self._read_port_fixture(project=addition)), [])
+
+    def test_read_port_ignores_top_level_comment_and_raw_string_api_bait(self):
+        for addition in ("// _api.namespaceWorkItem", "const bait = r'_api.namespaceWorkItem';"):
+            with self.subTest(addition=addition):
+                self.assertEqual(self._read_port_violations(
+                    self._read_port_fixture(extra=addition)), [])
 
     def test_read_port_snapshot_rejects_opus_smuggling_with_normal_members(self):
         ns = ("namespaceWorkItem('a/b', 1, expectedNamespaceId: 'gid://gitlab/Group/1', "
@@ -816,7 +873,7 @@ class AiBoundaryTest(unittest.TestCase):
         length = len(source)
 
         def hide(index):
-            if source[index] != "\n":
+            if source[index] not in "\r\n":
                 masked[index] = " "
 
         def string_at(index):
@@ -856,7 +913,7 @@ class AiBoundaryTest(unittest.TestCase):
             braces = 0
             while index < length:
                 if source.startswith("//", index):
-                    while index < length and source[index] != "\n":
+                    while index < length and source[index] not in "\r\n":
                         hide(index)
                         index += 1
                 elif source.startswith("/*", index):
@@ -938,11 +995,11 @@ class AiBoundaryTest(unittest.TestCase):
             if name not in expected and (cls._api_members(source[start:end]) or
                                          re.search(r"\b(?:GitLabApi|_api)\b", code[start:end])):
                 violations.append(f"API access in unknown class {name}")
-        outside = list(source)
+        outside = list(code)
         for _, start, end in classes:
             outside[start:end] = " " * (end - start)
         outside = "".join(outside)
-        if cls._api_members(outside) or re.search(r"\b(?:GitLabApi|_api)\b", cls._code_only(outside)):
+        if cls._api_members(outside) or re.search(r"\b(?:GitLabApi|_api)\b", outside):
             violations.append("API access outside concrete classes")
         if cls._api_members(code) != READ_PORT_MEMBERS | GROUP_READ_PORT_MEMBERS:
             violations.append("unexpected read-port API union")
