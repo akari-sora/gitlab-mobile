@@ -81,3 +81,10 @@ On Android 13+ a fresh install has notifications off until the user answers, and
 - **An unreadable or unavailable marker** counts as "not asked". That costs at most one extra explanation; it never suppresses the first request. A failed write is retried at the next ask.
 - **Channels:** "reminders are off" may be claimed only when app notifications or the **approval** channel are off. A disabled results channel alone does not trigger the disclosure (R2-M1).
 - **Docs:** `CLAUDE.md` Persistence lists the key.
+
+## C-D9. C4 extends the v1 channel surface for stop all (2026-10-28)
+C-D1 requires a decision for any change to the v1 channel surface. C4 (MR !182) adds:
+- **`stopAllLabel`** — an optional, bounded string on `startRuns` and `updateProgress`, Dart-supplied from `l10n.aiRunServiceStopAll` like `title` / `text`. Native shows the stop-all action only with a valid label; no Kotlin text.
+- **`startRequestId` on `permitInvalidated`** — the callback may carry 3 or 4 fields; the fourth names the start request that was pending when native invalidated. Older 3-field callbacks stay valid.
+- **Ordering.** Native `notifyInvalidated()` completes the pending start (`finishPending`, a `rejected/user_stop` reply) before it sends the callback, and the callback may be lost. Dart therefore treats a `user_stop` rejection of the **current** start request as the global stop itself, and correlates the later callback by `startRequestId` or by the current permit. Each stop is consumed once; a callback for an already-stopped, released or older permit never emits another stop (review round 1, F1/F2).
+- Generator and Dart change in the same MR, as C-D1 requires.
