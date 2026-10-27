@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../core/gitlab_api.dart';
+import '../../core/failure.dart';
 import '../../core/ai/tools/write_coordinator.dart';
 import '../auth/session_controller.dart';
 import 'ai_chat_controller.dart';
@@ -126,7 +127,15 @@ final class AccountAiRunRegistry extends ChangeNotifier
     }
     // Origins supply resource/entry coordinates only. This registry supplies
     // the exact account, generation and API boundary, including after renames.
-    final key = origin.key;
+    final String key;
+    try {
+      key = origin.key;
+    } on ApiFailure catch (error) {
+      if (error.kind != FailureKind.validation) rethrow;
+      // openAiChat already handles StateError for unavailable entries. Keep
+      // malformed origins on that path without creating a retained session.
+      throw StateError('The AI origin has no verified group identity');
+    }
     final existing = _sessions[key];
     if (existing != null) {
       _visits[existing.session] = (_visits[existing.session] ?? 0) + 1;

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/ai/ai_work_item_write_registry.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
+import '../../core/group_work_item_identity.dart';
 import '../../core/models.dart';
 import '../../core/work_item_assignee_models.dart';
 import '../../core/work_item_dates_models.dart';
@@ -17,6 +18,7 @@ import '../../shared/resource_share.dart';
 import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
+import '../ai/ai_chat_session.dart';
 import 'work_item_activity.dart';
 import 'work_item_assignees.dart';
 import 'work_item_attributes.dart';
@@ -2132,6 +2134,78 @@ class _HealthWriteRegistry extends ChangeNotifier {
     );
     notifyListeners();
   }
+}
+
+/// Reads an item's current owner before constructing a group-page chat origin.
+/// The caller must keep [isCurrent] bound to the account, API and captured
+/// generation; the displayed list item is never used as ownership evidence.
+Future<AiChatOrigin> freshGroupPageAiOrigin({
+  required GitLabApi api,
+  required Account account,
+  required int generation,
+  required bool Function() isCurrent,
+  required GraphResourceRef viewGroup,
+  required GraphResourceRef itemNamespace,
+  required int iid,
+}) async {
+  final viewGroupId = groupKeyNumericId(viewGroup.id);
+  if (viewGroupId == null ||
+      generation < 0 ||
+      account.instance.key != api.instance.key ||
+      api.isClosed ||
+      !isCurrent()) {
+    throw const ApiFailure(FailureKind.cancelled);
+  }
+  bool current() => !api.isClosed && isCurrent();
+  var itemPath = itemNamespace.fullPath;
+  final ownerGroupId = groupKeyNumericId(itemNamespace.id);
+  if (ownerGroupId != null) {
+    final owner = await api.group(ownerGroupId);
+    if (!current()) throw const ApiFailure(FailureKind.cancelled);
+    final path = owner['full_path'];
+    if (owner['id'] != ownerGroupId || path is! String || path.isEmpty) {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+    itemPath = path;
+  }
+  final detail = await api.namespaceWorkItem(
+    itemPath,
+    iid,
+    expectedNamespaceId: itemNamespace.id,
+    strictIdentity: true,
+    isCurrent: current,
+  );
+  if (!current()) throw const ApiFailure(FailureKind.cancelled);
+  final summary = detail.summary;
+  final projectRef = summary.project;
+  if (projectRef == null) {
+    final group = summary.namespace;
+    final origin = group == null
+        ? null
+        : AiGroupWorkItemOrigin.tryCreate(
+            group: group,
+            iid: iid,
+            title: summary.title,
+          );
+    if (origin == null) throw const ApiFailure(FailureKind.invalidResponse);
+    return origin;
+  }
+  final match = RegExp(
+    r'^gid://gitlab/Project/([1-9][0-9]*)$',
+  ).firstMatch(projectRef.id);
+  final projectId = match == null ? null : int.tryParse(match.group(1)!);
+  if (projectId == null) throw const ApiFailure(FailureKind.invalidResponse);
+  final project = await api.project(projectRef.fullPath, refresh: true);
+  if (!current()) throw const ApiFailure(FailureKind.cancelled);
+  if (project.id != projectId || project.path != projectRef.fullPath) {
+    throw const ApiFailure(FailureKind.invalidResponse);
+  }
+  return AiProjectWorkItemFromGroupPageOrigin(
+    viewGroupId: viewGroupId,
+    project: project,
+    iid: iid,
+    title: summary.title,
+  );
 }
 
 /// Creates the session-bound adapter used by AI Work Item writes. The

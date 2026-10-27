@@ -37,7 +37,7 @@ const _groupOrigin = AiGroupWorkItemOrigin(
   title: 'Untrusted entry title',
 );
 
-Map<String, Object?> _groupNode() => {
+Map<String, Object?> _groupNode([String path = 'team/sub']) => {
   'id': 'gid://gitlab/WorkItem/91',
   'iid': '3',
   'title': 'Fresh group title',
@@ -45,17 +45,17 @@ Map<String, Object?> _groupNode() => {
   'createdAt': '2026-10-01T00:00:00Z',
   'updatedAt': '2026-10-02T00:00:00Z',
   'project': null,
-  'namespace': {'id': 'gid://gitlab/Group/7', 'fullPath': 'team/sub'},
+  'namespace': {'id': 'gid://gitlab/Group/7', 'fullPath': path},
   'workItemType': {'id': 'gid://gitlab/WorkItems::Type/1', 'name': 'Task'},
   'description': 'Fresh group description',
   'widgets': <Object?>[],
 };
 
-Map<String, Object?> _groupEnvelope(Map<String, Object?> node) => {
+Map<String, Object?> _groupEnvelope(Map<String, Object?> node, [String path = 'team/sub']) => {
   'data': {
     'namespace': {
       'id': 'gid://gitlab/Group/7',
-      'fullPath': 'team/sub',
+      'fullPath': path,
       'workItem': node,
     },
   },
@@ -65,6 +65,7 @@ FakeAdapter _groupAdapter({
   Map<String, Object?>? node,
   Map<String, Object?>? envelope,
   Map<String, Object?>? metadata,
+  String path = 'team/sub',
   void Function(int)? afterRead,
 }) => FakeAdapter((request) {
   final isNamespace = request.uri.path == '/gitlab/api/graphql';
@@ -72,16 +73,16 @@ FakeAdapter _groupAdapter({
     expect(request.method, 'POST');
     final body = request.data! as Map<String, Object?>;
     expect(body['query'], namespaceWorkItemQuery);
-    expect(body['variables'], {'path': 'team/sub', 'iid': '3'});
-    afterRead?.call(1);
-    return jsonResponse(envelope ?? _groupEnvelope(node ?? _groupNode()));
+    expect(body['variables'], {'path': path, 'iid': '3'});
+    afterRead?.call(2);
+    return jsonResponse(envelope ?? _groupEnvelope(node ?? _groupNode(path), path));
   }
   expect(request.method, 'GET');
   expect(request.uri.path, '/gitlab/api/v4/groups/7');
   expect(request.uri.queryParameters, {'with_projects': 'false'});
-  afterRead?.call(2);
+  afterRead?.call(1);
   return jsonResponse(
-    metadata ?? {'id': 7, 'full_path': 'team/sub', 'visibility': 'private'},
+    metadata ?? {'id': 7, 'full_path': path, 'visibility': 'private'},
   );
 });
 
@@ -264,8 +265,8 @@ void main() {
         _load(_groupOrigin, adapter),
         throwsA(isA<ApiFailure>()),
       );
-      // No metadata fallback, extra evidence read, or mutation on refusal.
-      expect(adapter.requests, hasLength(1));
+      // Only the owner read and the strict query run; there is no mutation.
+      expect(adapter.requests.map((r) => r.method), ['GET', 'POST']);
     });
   }
 
@@ -282,7 +283,7 @@ void main() {
         _load(_groupOrigin, adapter),
         throwsA(isA<ApiFailure>()),
       );
-      expect(adapter.requests, hasLength(1));
+      expect(adapter.requests.map((r) => r.method), ['GET', 'POST']);
     });
   }
 
@@ -298,7 +299,7 @@ void main() {
         _load(_groupOrigin, adapter),
         throwsA(isA<ApiFailure>()),
       );
-      expect(adapter.requests, hasLength(1));
+      expect(adapter.requests.map((r) => r.method), ['GET', 'POST']);
     },
   );
 
@@ -322,11 +323,6 @@ void main() {
 
   for (final metadata in [
     <String, Object?>{'id': 8, 'full_path': 'team/sub', 'visibility': 'public'},
-    <String, Object?>{
-      'id': 7,
-      'full_path': 'team/other',
-      'visibility': 'public',
-    },
     <String, Object?>{'full_path': 'team/sub', 'visibility': 'public'},
     <String, Object?>{
       'id': '7',
@@ -343,16 +339,35 @@ void main() {
           _load(_groupOrigin, adapter),
           throwsA(isA<ApiFailure>()),
         );
-        expect(adapter.requests, hasLength(2));
+        expect(adapter.requests.map((r) => r.method), ['GET']);
       },
     );
   }
+
+  test('group metadata supplies a renamed path to the strict reader', () async {
+    final adapter = _groupAdapter(path: 'renamed/sub');
+    final result = await _load(_groupOrigin, adapter);
+    expect(result.groupScope!.groupId, 7);
+    expect(result.groupScope!.groupFullPath, 'renamed/sub');
+    expect(result.groupScope!.workItemGid, 'gid://gitlab/WorkItem/91');
+    expect(adapter.requests.map((r) => r.method), ['GET', 'POST']);
+  });
+
+  test('renamed owner rejects a strict response carrying the old path', () async {
+    final adapter = _groupAdapter(
+      path: 'renamed/sub',
+      envelope: _groupEnvelope(_groupNode()),
+    );
+    await expectLater(_load(_groupOrigin, adapter), throwsA(isA<ApiFailure>()));
+    expect(adapter.requests.map((r) => r.method), ['GET', 'POST']);
+  });
 
   for (final staleAfter in [1, 2, 3]) {
     test(
       'group context discards stale ownership after await $staleAfter',
       () async {
         var current = true;
+        var secretsRefreshed = false;
         final adapter = _groupAdapter(
           afterRead: (read) {
             if (read == staleAfter) current = false;
@@ -367,6 +382,7 @@ void main() {
             redactor: Redactor(secrets: const _Secrets()),
             accountKey: 'https://example.com/gitlab#7',
             refreshSecrets: () async {
+              secretsRefreshed = true;
               if (staleAfter == 3) current = false;
             },
             isCurrent: () => current,
@@ -380,6 +396,7 @@ void main() {
           ),
         );
         expect(adapter.requests, hasLength(staleAfter == 1 ? 1 : 2));
+        expect(secretsRefreshed, staleAfter == 3);
       },
     );
   }

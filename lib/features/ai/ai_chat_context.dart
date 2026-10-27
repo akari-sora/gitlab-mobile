@@ -6,6 +6,7 @@ import '../../core/ai/context_builders.dart';
 import '../../core/ai/redaction.dart';
 import '../../core/ai/tools/sensitive_paths.dart';
 import '../../core/ai/tools/tool_scope.dart';
+import '../../core/ai/tools/target_binding.dart' show isValidAiGroupPath;
 import '../../core/ai/write_text.dart'
     show AiFieldProvenance, UploadPlaceholderTable;
 import '../../core/failure.dart';
@@ -255,7 +256,6 @@ Future<AiChatContext> _loadGroupWorkItem(
     }
 
     final groupId = origin.groupId;
-    final path = origin.group.fullPath;
     final accountPrefix = '${api.instance.key}#';
     final userId = accountKey.startsWith(accountPrefix)
         ? int.tryParse(accountKey.substring(accountPrefix.length))
@@ -264,8 +264,7 @@ Future<AiChatContext> _loadGroupWorkItem(
         userId == null ||
         userId <= 0 ||
         accountKey != '$accountPrefix$userId' ||
-        !RegExp(r'^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(path) ||
-        path.split('/').any((segment) => segment == '.' || segment == '..')) {
+        !isValidAiGroupPath(origin.group.fullPath)) {
       throw const ApiFailure(FailureKind.validation);
     }
     void requireCurrent() {
@@ -275,6 +274,16 @@ Future<AiChatContext> _loadGroupWorkItem(
     requireCurrent();
     // Each fixed, uncached logical read allows one OAuth replay. These reads
     // use the context's admission callback, never a write operation's cap.
+    // Resolve the numeric owner first: a retained origin may predate a rename.
+    beforeRead();
+    final group = await api.group(groupId);
+    requireCurrent();
+    final path = group['full_path'];
+    if (group['id'] != groupId ||
+        path is! String ||
+        !isValidAiGroupPath(path)) {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
     beforeRead();
     final detail = await api.namespaceWorkItem(
       path,
@@ -293,12 +302,6 @@ Future<AiChatContext> _loadGroupWorkItem(
         item.namespace?.fullPath != path ||
         groupKeyNumericId(item.namespace!.id) != groupId ||
         item.iid != origin.iid) {
-      throw const ApiFailure(FailureKind.invalidResponse);
-    }
-    beforeRead();
-    final group = await api.group(groupId);
-    requireCurrent();
-    if (group['id'] != groupId || group['full_path'] != path) {
       throw const ApiFailure(FailureKind.invalidResponse);
     }
     final visibility = switch (group['visibility']) {
