@@ -56,9 +56,9 @@ import 'mr6b3_support.dart';
 ///   packet9_removal_test.dart row 29; ai_write_journal_test.dart removal tests.
 /// - Every §7.3 step 2-4.3 checkpoint at step 4.4: NOT_RUN beyond boundary
 ///   tests' prepared/dispatching barriers.
-/// P15-B injection/isolation/races/matrix/guard/binding scenario files are
-/// absent in this checkout: NOT_RUN. Citing another file is a coverage pointer,
-/// not a claim that this budget file executes it.
+/// P15-B scenario rows live in the injection/isolation/races/matrix/guard/
+/// binding files. Citing another file is a coverage pointer, not a claim that
+/// this budget file executes it.
 
 void main() {
   const independentlyCounted = <String, ({int logicalReads, int mutations})>{

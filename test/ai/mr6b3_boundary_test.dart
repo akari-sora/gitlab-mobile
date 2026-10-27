@@ -58,9 +58,9 @@ import 'mr6b3_support.dart';
 // - Prepared downgraded on isolation/budget refusal consumes no count:
 //   NOT_RUN. ai_write_journal_test.dart covers manual notExecuted/refund;
 //   this file covers flush/gate refunds, not those specific refusal causes.
-// P15-B mr6b3_{injection,isolation,races,matrix,guard,binding}_test.dart files
-// are absent in this checkout: NOT_RUN. These pointers do not claim this file
-// executes those other suites.
+// P15-B scenario rows live in mr6b3_{injection,isolation,races,matrix,guard,
+// binding}_test.dart. These pointers do not claim this file executes those
+// other suites.
 //
 // Cross-family rerun through PolicyAiWriteCoordinator -> GitLabAiWritePort ->
 // the real core methods -> Mr6b3ApiServer. All fifteen operations exercise the
