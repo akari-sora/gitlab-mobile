@@ -2754,5 +2754,12 @@
   "activityVerbTargetRef": "{verb} ({target} {ref})",
   "aiOpSetWorkItemLabels": "लेबल सेट करें",
   "aiRefusedLabelUnknown": "सेट किया जाने वाला लेबल इस प्रोजेक्ट की लेबल सूची में नहीं है, या इस नाम के कई लेबल हैं, इसलिए कुछ भी निष्पादित नहीं हुआ।",
-  "aiRefusedQuickAction": "टेक्स्ट में / से शुरू होने वाली एक पंक्ति है, जिसे GitLab क्विक एक्शन की तरह चला सकता है, इसलिए सावधानी के तौर पर यह क्रिया नहीं भेजी गई। वह पंक्ति हटाएँ या उसे कोड ब्लॉक में रखें।"
+  "aiRefusedQuickAction": "टेक्स्ट में / से शुरू होने वाली एक पंक्ति है, जिसे GitLab क्विक एक्शन की तरह चला सकता है, इसलिए सावधानी के तौर पर यह क्रिया नहीं भेजी गई। वह पंक्ति हटाएँ या उसे कोड ब्लॉक में रखें।",
+  "aiToolGetGroupWorkItem": "ग्रुप का वर्क आइटम पढ़ें",
+  "aiOpEditGroupWorkItem": "ग्रुप का वर्क आइटम संपादित करें",
+  "aiOpSetGroupWorkItemState": "ग्रुप का वर्क आइटम बंद करें या दोबारा खोलें",
+  "aiOpCloseGroupWorkItem": "ग्रुप का वर्क आइटम बंद करें",
+  "aiOpReopenGroupWorkItem": "ग्रुप का वर्क आइटम दोबारा खोलें",
+  "aiOpSetGroupWorkItemAssignees": "ग्रुप के वर्क आइटम के असाइनी सेट करें",
+  "aiOpSetGroupWorkItemDates": "ग्रुप के वर्क आइटम की तारीखें सेट करें"
 }

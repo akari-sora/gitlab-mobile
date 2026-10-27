@@ -2754,5 +2754,12 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Atur label",
   "aiRefusedLabelUnknown": "Label yang akan diatur tidak ada dalam daftar label proyek ini, atau beberapa label memiliki nama yang sama, jadi tidak ada yang dilakukan.",
-  "aiRefusedQuickAction": "Teks berisi baris yang diawali /, yang bisa dijalankan GitLab sebagai quick action, jadi demi keamanan tindakan ini tidak dikirim. Hapus baris itu atau taruh di blok kode."
+  "aiRefusedQuickAction": "Teks berisi baris yang diawali /, yang bisa dijalankan GitLab sebagai quick action, jadi demi keamanan tindakan ini tidak dikirim. Hapus baris itu atau taruh di blok kode.",
+  "aiToolGetGroupWorkItem": "Baca item kerja grup",
+  "aiOpEditGroupWorkItem": "Edit item kerja grup",
+  "aiOpSetGroupWorkItemState": "Tutup atau buka kembali item kerja grup",
+  "aiOpCloseGroupWorkItem": "Tutup item kerja grup",
+  "aiOpReopenGroupWorkItem": "Buka kembali item kerja grup",
+  "aiOpSetGroupWorkItemAssignees": "Atur penerima tugas item kerja grup",
+  "aiOpSetGroupWorkItemDates": "Atur tanggal item kerja grup"
 }

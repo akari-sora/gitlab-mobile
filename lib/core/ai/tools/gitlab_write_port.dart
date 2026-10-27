@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../../../features/ai/ai_write_journal.dart';
 import '../../failure.dart';
 import '../../gitlab_api.dart';
+import '../../group_work_item_identity.dart';
 // Shared model namespace for the snippet family, delivered separately.
 // ignore: unused_import
 import '../../models.dart';
@@ -58,6 +60,18 @@ part 'gitlab_write_port_snippets.dart';
 part 'gitlab_write_port_deletes.dart';
 part 'gitlab_write_port_project.dart';
 part 'gitlab_write_port_graphql_locator.dart';
+part 'gitlab_write_port_group_state.dart';
+part 'gitlab_write_port_group_status.dart';
+part 'gitlab_write_port_group_dates.dart';
+part 'gitlab_write_port_group_health.dart';
+part 'gitlab_write_port_group_assignees.dart';
+part 'gitlab_write_port_group_milestone_weight.dart';
+part 'gitlab_write_port_group_activity_create.dart';
+part 'gitlab_write_port_group_activity_delete.dart';
+part 'gitlab_write_port_group_reactions_notifications.dart';
+part 'gitlab_write_port_group_content.dart';
+part 'gitlab_write_port_group_activity_edit.dart';
+part 'gitlab_write_port_group_labels.dart';
 part 'gitlab_write_port_graphql_state.dart';
 part 'gitlab_write_port_graphql_status.dart';
 part 'gitlab_write_port_graphql_dates.dart';
@@ -94,6 +108,7 @@ final class AiWriteRequest {
          accountKey: scope.accountKey,
          instance: scope.instance,
          grants: List.unmodifiable(scope.grants),
+         uiAddedGroupWorkItems: List.unmodifiable(scope.uiAddedGroupWorkItems),
        ),
        arguments = _freezeMap(arguments),
        segmentCreated = Set.unmodifiable(segmentCreated),
@@ -164,13 +179,14 @@ final class AiWriteSettled extends AiWriteOutcome {
 
 /// Return null to use the ordinary REST classification. Failures distinguish
 /// the mutation from its independent readback, including readback-only 401s.
-typedef AiResultClassifier = AiWriteSettled? Function(
-  AiWritePrepared prepared, {
-  Object? result,
-  Object? readback,
-  Object? mutationError,
-  Object? readbackError,
-});
+typedef AiResultClassifier =
+    AiWriteSettled? Function(
+      AiWritePrepared prepared, {
+      Object? result,
+      Object? readback,
+      Object? mutationError,
+      Object? readbackError,
+    });
 
 /// Process-local, single-use capability. Cannot be forged or moved to a peer.
 final class AiWritePrepared {
@@ -182,7 +198,8 @@ final class AiWritePrepared {
     required Object owner,
     required Future<Object?> Function() mutation,
     Future<Object?> Function(Object? result)? readback,
-    this.todoTarget,
+    ({int projectId, String resource, int iid})? todoTarget,
+    this.groupTodoTarget,
     this.projectPath,
     this.projectVisibility,
     // Reserved for the family parts added after this foundation.
@@ -205,7 +222,11 @@ final class AiWritePrepared {
     AiCreatedRef? createdOnSuccess,
     AiCreatedRef? Function()? resolveCreatedOnSuccess,
     this.classify,
-  }) : _originalRequest = request,
+  }) : targetConfidential = null,
+       groupIdentity = null,
+       _groupIdentityIsCurrent = null,
+       todoTarget = _validateTodoOwners(request, todoTarget, groupTodoTarget),
+       _originalRequest = request,
        _bindingDigest = bindingDigest,
        _textBindingDigest = null,
        currentFields = const {},
@@ -231,7 +252,11 @@ final class AiWritePrepared {
     Future<Object?> Function(GraphHooks hooks, AiWriteRequest request)?
     textMutation,
     void Function(AiWriteRequest request)? validatePreparedText,
-    this.todoTarget,
+    ({int projectId, String resource, int iid})? todoTarget,
+    this.groupTodoTarget,
+    this.targetConfidential,
+    this.groupIdentity,
+    bool Function()? groupIdentityIsCurrent,
     this.projectPath,
     this.projectVisibility,
     this.confirmName,
@@ -245,6 +270,8 @@ final class AiWritePrepared {
     Map<String, String> currentFields = const {},
   }) : assert((mutation == null) != (textMutation == null)),
        assert(textBindingDigest == null || textMutation != null),
+       todoTarget = _validateTodoOwners(request, todoTarget, groupTodoTarget),
+       _groupIdentityIsCurrent = groupIdentityIsCurrent,
        _originalRequest = request,
        _bindingDigest = bindingDigest,
        _textBindingDigest = textBindingDigest,
@@ -277,6 +304,22 @@ final class AiWritePrepared {
   /// about, as GitLab returned it (null for other targets). The model gives
   /// only the global todo id (§2).
   final ({int projectId, String resource, int iid})? todoTarget;
+
+  /// Strictly verified Group-owned todo coordinates; mutually exclusive with
+  /// [todoTarget]. The group snooze producer is delivered separately.
+  final ({int groupId, String groupFullPath, int iid, String workItemGid})?
+  groupTodoTarget;
+
+  /// Confidentiality supported by fresh server evidence; null means unknown.
+  final bool? targetConfidential;
+
+  /// Strict same-round identity evidence, supplied only by a group producer.
+  final VerifiedGroupWorkItemIdentity? groupIdentity;
+  final bool Function()? _groupIdentityIsCurrent;
+
+  /// Whether the opening identity still belongs to its captured live session.
+  bool get hasCurrentGroupIdentity =>
+      groupIdentity != null && (_groupIdentityIsCurrent?.call() ?? false);
 
   /// The target project's `path_with_namespace` and `visibility` from this
   /// prepare's fresh project read (null for a todo, or when GitLab gave no
@@ -343,7 +386,7 @@ final class AiWritePrepared {
         processed.operationId != request.operationId ||
         processed.executionId != request.executionId ||
         processed.scope.accountKey != request.scope.accountKey ||
-        const ['projectId', 'iid', 'noteId', 'anchorNoteId'].any(
+        const ['projectId', 'groupId', 'iid', 'noteId', 'anchorNoteId'].any(
           (key) =>
               processed.arguments.containsKey(key) !=
                   request.arguments.containsKey(key) ||
@@ -376,7 +419,33 @@ final class AiWritePrepared {
   }
 }
 
-Future<AiWriteOutcome> _settleGraph(AiWritePrepared prepared, GraphHooks span) async {
+({int projectId, String resource, int iid})? _validateTodoOwners(
+  AiWriteRequest request,
+  ({int projectId, String resource, int iid})? project,
+  ({int groupId, String groupFullPath, int iid, String workItemGid})? group,
+) {
+  final operation = request.operationId;
+  final snooze = operation == 'snoozeTodo' || operation == 'unsnoozeTodo';
+  if ((project != null && group != null) ||
+      (snooze && project == null && group == null) ||
+      (!snooze &&
+          operation != 'markTodoDone' &&
+          (project != null || group != null)) ||
+      (operation == 'markTodoDone' && group != null) ||
+      (group != null &&
+          (group.groupId <= 0 ||
+              group.iid <= 0 ||
+              !isValidAiGroupPath(group.groupFullPath) ||
+              !_validAiWorkItemId(group.workItemGid)))) {
+    throw const AiWriteRefused('todoUnverifiable');
+  }
+  return project;
+}
+
+Future<AiWriteOutcome> _settleGraph(
+  AiWritePrepared prepared,
+  GraphHooks span,
+) async {
   Object? result;
   Object? error;
   try {
@@ -400,8 +469,11 @@ Future<AiWriteOutcome> _settleGraph(AiWritePrepared prepared, GraphHooks span) a
   }
   // START and acceptance can precede a blocked barrier. Transport proof wins
   // until a send actually starts; later close/failure remains uncertain.
-  if (span.accepted && !span.sent && !span.contractViolated &&
-      error != null && span.blockedBeforeSend != null) {
+  if (span.accepted &&
+      !span.sent &&
+      !span.contractViolated &&
+      error != null &&
+      span.blockedBeforeSend != null) {
     final proof = span.blockedBeforeSend;
     return AiWriteNotSent(switch (proof) {
       ApiFailure(:final kind) => kind.name,
@@ -428,24 +500,27 @@ Future<AiWriteOutcome> _settleGraph(AiWritePrepared prepared, GraphHooks span) a
               _ => 'notAccepted',
             },
     ),
-    GraphWriteDisposition.succeeded || GraphWriteDisposition.writeUncertain =>
-      AiWriteSettled(
-        state: disposition == GraphWriteDisposition.succeeded
-            ? AiJournalState.succeeded
-            : AiJournalState.writeUncertain,
-        resultCode: disposition == GraphWriteDisposition.succeeded
-            ? 'succeeded'
-            : 'writeUncertain',
-        releaseName: prepared.releaseName,
-        writeKeys: prepared.writeKeys,
-        dependencyKeys: prepared.dependencyKeys,
-        readbackVerified: disposition == GraphWriteDisposition.succeeded &&
-            result is GraphWriteResult && result.readbackVerified,
-        projection: disposition == GraphWriteDisposition.succeeded &&
-                result is GraphWriteResult
-            ? result.projection
-            : const {},
-      ),
+    GraphWriteDisposition.succeeded ||
+    GraphWriteDisposition.writeUncertain => AiWriteSettled(
+      state: disposition == GraphWriteDisposition.succeeded
+          ? AiJournalState.succeeded
+          : AiJournalState.writeUncertain,
+      resultCode: disposition == GraphWriteDisposition.succeeded
+          ? 'succeeded'
+          : 'writeUncertain',
+      releaseName: prepared.releaseName,
+      writeKeys: prepared.writeKeys,
+      dependencyKeys: prepared.dependencyKeys,
+      readbackVerified:
+          disposition == GraphWriteDisposition.succeeded &&
+          result is GraphWriteResult &&
+          result.readbackVerified,
+      projection:
+          disposition == GraphWriteDisposition.succeeded &&
+              result is GraphWriteResult
+          ? result.projection
+          : const {},
+    ),
   };
 }
 
@@ -473,6 +548,120 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
   final AiResultClassifier? _resultClassifier;
   final Object _owner = Object();
   final Set<String> _claimedExecutions = <String>{};
+
+  /// A URL is only a locator. Numeric ownership is established by the strict
+  /// server read, using coordinates exclusively from the one-item grant.
+  Future<AiGroupWorkItemLocation> _resolveGroupWorkItem(
+    AiWriteRequest request, {
+    required int actorUserId,
+    required int generation,
+    required int readEpoch,
+    required bool Function() isCurrent,
+    Uri? resolvedUrl,
+  }) async {
+    final groupId = request.arguments['groupId'];
+    final iid = request.arguments['iid'];
+    if (!isCurrent() ||
+        request.scope.accountKey != accountKey ||
+        request.scope.resolvedInstance?.key != _api.instance.key ||
+        '${_api.instance.key}#$actorUserId' != accountKey ||
+        groupId is! int ||
+        groupId <= 0 ||
+        iid is! int ||
+        iid <= 0 ||
+        request.arguments.containsKey('projectId') ||
+        generation < 0 ||
+        readEpoch < 0) {
+      throw const AiWriteRefused('workItemUnverifiable');
+    }
+    final matches = request.scope.grants.where(
+      (grant) =>
+          grant.kind == AiScopeKind.groupWorkItem &&
+          grant.groupId == groupId &&
+          grant.iid == iid &&
+          grant.projectId == null &&
+          grant.projectPath == null,
+    );
+    String? path;
+    for (final grant in matches) {
+      final candidate = grant.groupFullPath;
+      if (candidate == null ||
+          !isValidAiGroupPath(candidate) ||
+          (path != null && path != candidate)) {
+        throw const AiWriteRefused('workItemUnverifiable');
+      }
+      path = candidate;
+    }
+    if (path == null) throw const AiWriteRefused('workItemUnverifiable');
+    if (resolvedUrl != null) {
+      final base = _api.instance.base;
+      final expectedPath = [
+        ...base.pathSegments.where((segment) => segment.isNotEmpty),
+        'groups',
+        ...path.split('/'),
+        '-',
+        'work_items',
+        '$iid',
+      ];
+      final expected = Uri(
+        scheme: base.scheme,
+        host: base.host,
+        port: base.port == 443 ? null : base.port,
+        pathSegments: expectedPath,
+      );
+      if (resolvedUrl != expected) {
+        throw const AiWriteRefused('workItemUnverifiable');
+      }
+    }
+    final detail = await _api.namespaceWorkItem(
+      path,
+      iid,
+      expectedNamespaceId: 'gid://gitlab/Group/$groupId',
+      strictIdentity: true,
+      isCurrent: isCurrent,
+    );
+    final item = detail.summary;
+    final owner = item.namespace;
+    if (!isCurrent() ||
+        item.project != null ||
+        item.iid != iid ||
+        owner == null ||
+        groupKeyNumericId(owner.id) != groupId ||
+        owner.fullPath != path ||
+        !_validAiWorkItemId(item.id)) {
+      throw const AiWriteRefused('workItemUnverifiable');
+    }
+    // Reconstruct only fields that the strict reader verified in this response.
+    final identity = VerifiedGroupWorkItemIdentity.fromServerEvidence(
+      instance: _api.instance,
+      expectedUserId: actorUserId,
+      actorUserId: actorUserId,
+      expectedGroupId: groupId,
+      expectedFullPath: path,
+      expectedIid: iid,
+      namespace: {
+        'id': owner.id,
+        'fullPath': owner.fullPath,
+        'workItem': {
+          'id': item.id,
+          'iid': item.iid,
+          'project': null,
+          'namespace': {'id': owner.id, 'fullPath': owner.fullPath},
+        },
+      },
+      apiOwner: _api,
+      generation: generation,
+      readEpoch: readEpoch,
+    );
+    if (identity == null || !isCurrent()) {
+      throw const AiWriteRefused('workItemUnverifiable');
+    }
+    return AiGroupWorkItemLocation(
+      detail: detail,
+      identity: identity,
+      isCurrent: isCurrent,
+    );
+  }
 
   static const uploadMinimumSendTimeout = Duration(seconds: 15);
   static const uploadMaximumSendTimeout = Duration(minutes: 4);
@@ -533,6 +722,18 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       _prepareGraphqlReactionsNotifications,
       _prepareGraphqlIncident,
       _prepareGraphqlSnooze,
+      _prepareGroupState,
+      _prepareGroupStatus,
+      _prepareGroupDates,
+      _prepareGroupHealth,
+      _prepareGroupAssignees,
+      _prepareGroupMilestoneWeight,
+      _prepareGroupActivityCreate,
+      _prepareGroupActivityDelete,
+      _prepareGroupReactionsNotifications,
+      _prepareGroupContent,
+      _prepareGroupActivityEdit,
+      _prepareGroupLabels,
     ]) {
       final prepared = await prepareFamily(request);
       if (prepared != null) return prepared;
@@ -815,9 +1016,13 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
               commitId: commitId,
               position: position,
             );
-            created = AiCreatedRef(accountKey: accountKey,
-                kind: AiTargetKind.note, projectId: project,
-                id: _resultInt(result, 'id'), parentIid: iid);
+            created = AiCreatedRef(
+              accountKey: accountKey,
+              kind: AiTargetKind.note,
+              projectId: project,
+              id: _resultInt(result, 'id'),
+              parentIid: iid,
+            );
             return result;
           };
           keys = {
@@ -1007,6 +1212,40 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       resolveCreatedOnSuccess: () => created,
       projectPath: projectName,
       projectVisibility: visibility is String ? visibility : null,
+    );
+  }
+
+  /// The separately counted U1 read shared by group families. Callers bind
+  /// currentness to the captured API, session generation and read epoch.
+  Future<GitLabUser> _readGroupActor({
+    required bool Function() isCurrent,
+  }) async {
+    if (!isCurrent()) throw const AiWriteRefused('workItemUnverifiable');
+    final user = await _api.currentUser();
+    if (!isCurrent() || '${_api.instance.key}#${user.id}' != accountKey) {
+      throw const AiWriteRefused('workItemUnverifiable');
+    }
+    return user;
+  }
+
+  /// Test entry for the strict read boundary. Callers supply a predicate
+  /// bound to their captured session generation, API owner and read epoch.
+  @visibleForTesting
+  Future<AiGroupWorkItemLocation> resolveGroupWorkItemForTesting(
+    AiWriteRequest request, {
+    required int generation,
+    required int readEpoch,
+    required bool Function() isCurrent,
+    Uri? resolvedUrl,
+  }) async {
+    final user = await _readGroupActor(isCurrent: isCurrent);
+    return _resolveGroupWorkItem(
+      request,
+      actorUserId: user.id,
+      generation: generation,
+      readEpoch: readEpoch,
+      isCurrent: isCurrent,
+      resolvedUrl: resolvedUrl,
     );
   }
 
@@ -1453,10 +1692,14 @@ Map<String, dynamic> _fields(Map<String, Object?> a, String op) {
 Set<String>? _fieldKeys(String operation) => productionAiLedger
     .find(operation)
     ?.arguments['fields']
-    ?.properties.keys.toSet();
+    ?.properties
+    .keys
+    .toSet();
 
-Set<String>? _arguments(String operation) =>
-    productionAiLedger.find(operation)?.arguments.entries
-        .where((entry) => entry.value.portVisible)
-        .map((entry) => entry.key)
-        .toSet();
+Set<String>? _arguments(String operation) => productionAiLedger
+    .find(operation)
+    ?.arguments
+    .entries
+    .where((entry) => entry.value.portVisible)
+    .map((entry) => entry.key)
+    .toSet();

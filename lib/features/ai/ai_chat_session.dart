@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import '../../core/ai/ai_display.dart';
@@ -94,6 +96,16 @@ final class AiGroupWorkItemOrigin extends AiChatOrigin {
   final GraphResourceRef group;
   final int iid;
   final String title;
+
+  /// Page adapters call this only with the namespace from a fresh detail.
+  /// Invalid Group GIDs never reach the registry's throwing identity getter.
+  static AiGroupWorkItemOrigin? tryCreate({
+    required GraphResourceRef group,
+    required int iid,
+    required String title,
+  }) => groupKeyNumericId(group.id) == null || iid <= 0
+      ? null
+      : AiGroupWorkItemOrigin(group: group, iid: iid, title: title);
 
   int get groupId =>
       groupKeyNumericId(group.id) ??
@@ -402,6 +414,78 @@ extension AiWriteChatSessionAccess on AiChatSession {
       level,
     ),
     _ => Future<void>.value(),
+  };
+}
+
+enum AiRunNotificationKind { needsApproval, completed, failed, interrupted }
+
+/// Routing metadata only. Content and proposal authority stay in the session.
+final class AiRunNotificationEvent {
+  const AiRunNotificationEvent({
+    required this.kind,
+    required this.conversationId,
+    required this.generation,
+  });
+
+  final AiRunNotificationKind kind;
+  final String conversationId;
+  final int generation;
+}
+
+abstract interface class AiRunNotificationSource {
+  Stream<AiRunNotificationEvent> get notificationEvents;
+}
+
+/// Independent of the page phase so C5 can add explicit continuation UI.
+enum AiChatExecutionStatus {
+  foregroundOnly,
+  starting,
+  active,
+  released,
+  invalidated,
+  unavailable,
+  paused,
+}
+
+abstract interface class AiExecutionChatSession {
+  int get serviceWorkCount;
+  int get backProtectedCount;
+  AiChatExecutionStatus get executionStatus;
+}
+
+/// Optional capability keeps existing read-only registries source-compatible.
+abstract interface class AiExecutionRunRegistry
+    implements AiRunNotificationSource {
+  AiChatSession? sessionForConversation(String conversationId, int generation);
+  int get serviceWorkCount;
+  int get backProtectedCount;
+}
+
+extension AiRunRegistryExecutionAccess on AiRunRegistry {
+  AiChatSession? sessionForConversation(
+    String conversationId,
+    int generation,
+  ) => switch (this) {
+    AiExecutionRunRegistry registry => registry.sessionForConversation(
+      conversationId,
+      generation,
+    ),
+    _ => null,
+  };
+
+  Stream<AiRunNotificationEvent> get notificationEvents => switch (this) {
+    AiRunNotificationSource source => source.notificationEvents,
+    _ => const Stream<AiRunNotificationEvent>.empty(),
+  };
+
+  int get serviceWorkCount => switch (this) {
+    AiExecutionRunRegistry registry => registry.serviceWorkCount,
+    _ => runningCount,
+  };
+
+  int get backProtectedCount => switch (this) {
+    AiExecutionRunRegistry registry => registry.backProtectedCount,
+    _ => runningCount,
   };
 }
 

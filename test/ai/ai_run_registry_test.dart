@@ -16,6 +16,7 @@ import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
+import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
@@ -88,6 +89,61 @@ Future<void> _waitFor(bool Function() condition) async {
 
 void main() {
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  test('failed execution binding stops and disposes the new handle', () async {
+    final fixture = WorkspaceFixture();
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    final settings = AiSettingsController(MemoryAiStore());
+    addTearDown(session.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(fixture.api.close);
+    await session.initialize();
+    await session.connect('https://example.com/gitlab', 'synthetic-token');
+
+    final wrongOwner = AiBackgroundExecution(
+      accountKey: session.active!.key,
+      generation: session.generation + 1,
+      ownerApi: session.api!,
+      isCurrent: () => true,
+      appInForeground: () => true,
+    );
+    late _TrackedChatController created;
+    var disposeCalls = 0;
+    final registry = AccountAiRunRegistry(
+      session: session,
+      settings: settings,
+      backgroundExecution: wrongOwner,
+      sessionFactory:
+          ({
+            required origin,
+            required session,
+            required settings,
+            required runningCount,
+            wireClientFactory,
+          }) {
+            created = _TrackedChatController(
+              origin: origin,
+              session: session,
+              settings: settings,
+              runningCount: runningCount,
+            );
+            return (
+              session: created,
+              capacityChanged: created.notifyCapacityChanged,
+              dispose: () {
+                disposeCalls++;
+                created.dispose();
+              },
+            );
+          },
+    );
+    addTearDown(registry.dispose);
+    expect(() => registry.open(const AiGeneralOrigin()), throwsStateError);
+    expect(created.stopCalls, 1);
+    expect(disposeCalls, 1);
+    expect(created.isDisposed, isTrue);
+    expect(registry.runningCount, 0);
+  });
 
   test('group entry keys retain and isolate their own sessions', () async {
     final fixture = WorkspaceFixture();
@@ -528,6 +584,10 @@ void main() {
   test(
     'real controllers reserve three slots and generation disposal closes transports',
     () async {
+      // Production sends require actual visible foreground, including in this
+      // standalone fixture without an authenticated widget tree.
+      TestWidgetsFlutterBinding.ensureInitialized()
+          .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       final fixture = WorkspaceFixture();
       final accounts = MemoryAccountStore()
         ..accounts = [fixture.account]
@@ -742,6 +802,23 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
+}
+
+final class _TrackedChatController extends AiChatController {
+  _TrackedChatController({
+    required super.origin,
+    required super.session,
+    required super.settings,
+    required super.runningCount,
+  });
+
+  int stopCalls = 0;
+
+  @override
+  void stop() {
+    stopCalls++;
+    super.stop();
+  }
 }
 
 final class _FakeChatSession extends ChangeNotifier implements AiChatSession {

@@ -2757,4 +2757,11 @@ const _messagesIt = <String>[
   'Imposta etichette',
   'L’etichetta da impostare non è nell’elenco delle etichette di questo progetto oppure più etichette hanno questo nome, quindi non è stato fatto nulla.',
   'Il testo contiene una riga che inizia con /, che GitLab potrebbe eseguire come quick action, quindi per sicurezza questa azione non è stata inviata. Rimuovi quella riga o mettila in un blocco di codice.',
+  'Leggi elemento di lavoro del gruppo',
+  'Modifica elemento di lavoro del gruppo',
+  'Chiudi o riapri l’elemento di lavoro del gruppo',
+  'Chiudi elemento di lavoro del gruppo',
+  'Riapri l’elemento di lavoro del gruppo',
+  'Imposta gli assegnatari dell’elemento di lavoro del gruppo',
+  'Imposta le date dell’elemento di lavoro del gruppo',
 ];

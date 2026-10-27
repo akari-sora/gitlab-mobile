@@ -2754,5 +2754,12 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "تعيين التسميات",
   "aiRefusedLabelUnknown": "التسمية المطلوب تعيينها غير موجودة في قائمة تسميات هذا المشروع، أو توجد عدة تسميات بالاسم نفسه، لذا لم يُنفَّذ شيء.",
-  "aiRefusedQuickAction": "يحتوي النص على سطر يبدأ بـ / قد ينفّذه GitLab كإجراء سريع، لذا لم تُرسَل هذه العملية احتياطًا. احذف ذلك السطر أو ضعه في كتلة تعليمات برمجية."
+  "aiRefusedQuickAction": "يحتوي النص على سطر يبدأ بـ / قد ينفّذه GitLab كإجراء سريع، لذا لم تُرسَل هذه العملية احتياطًا. احذف ذلك السطر أو ضعه في كتلة تعليمات برمجية.",
+  "aiToolGetGroupWorkItem": "قراءة عنصر عمل المجموعة",
+  "aiOpEditGroupWorkItem": "تعديل عنصر عمل المجموعة",
+  "aiOpSetGroupWorkItemState": "إغلاق عنصر عمل المجموعة أو إعادة فتحه",
+  "aiOpCloseGroupWorkItem": "إغلاق عنصر عمل المجموعة",
+  "aiOpReopenGroupWorkItem": "إعادة فتح عنصر عمل المجموعة",
+  "aiOpSetGroupWorkItemAssignees": "تعيين المسؤولين عن عنصر عمل المجموعة",
+  "aiOpSetGroupWorkItemDates": "تعيين تواريخ عنصر عمل المجموعة"
 }

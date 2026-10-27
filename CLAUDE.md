@@ -240,8 +240,12 @@ same-subnet reachability. `MERGELINE_AI_ASSISTANT` remains false.
 The chat (MR6a) sits on `AiChatSession` (`lib/features/ai/ai_chat_session.dart`):
 `AiChatController` owns one runner per conversation and reports display items,
 phase and blocker. `AiRunRegistry` keeps the account's conversations above the
-navigator, keyed by origin (job, issue or merge request, file at a SHA), so a
-run continues after its page closes. At most three run at once; an idle session
+navigator, keyed by origin (job, issue or merge request, file at a SHA,
+`group-item:<groupId>:<iid>` or
+`group-page:<viewGroupId>:project:<projectId>:workItem:<iid>`), so a
+run continues after its page closes.
+
+At most three run at once; an idle session
 then reports `tooManyRunning`. A new account generation disposes them all.
 Every page calls `release` on its session when it closes; the registry counts
 open pages and, after the last, drops a session that holds nothing, so the

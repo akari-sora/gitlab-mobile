@@ -2757,4 +2757,11 @@ const _messagesDe = <String>[
   'Labels festlegen',
   'Das zu setzende Label steht nicht in der Label-Liste dieses Projekts oder mehrere Labels haben denselben Namen, daher wurde nichts ausgeführt.',
   'Der Text enthält eine Zeile, die mit / beginnt und die GitLab als Quick Action ausführen könnte, daher wurde dieser Vorgang sicherheitshalber nicht gesendet. Entfernen Sie die Zeile oder setzen Sie sie in einen Codeblock.',
+  'Arbeitselement der Gruppe lesen',
+  'Arbeitselement der Gruppe bearbeiten',
+  'Arbeitselement der Gruppe schließen oder erneut öffnen',
+  'Arbeitselement der Gruppe schließen',
+  'Arbeitselement der Gruppe erneut öffnen',
+  'Zuständige für das Arbeitselement der Gruppe festlegen',
+  'Daten für das Arbeitselement der Gruppe festlegen',
 ];

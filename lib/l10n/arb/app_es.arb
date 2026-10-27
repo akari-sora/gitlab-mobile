@@ -2754,5 +2754,12 @@
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Establecer etiquetas",
   "aiRefusedLabelUnknown": "La etiqueta que se iba a asignar no está en la lista de etiquetas de este proyecto o varias etiquetas tienen ese nombre, así que no se hizo nada.",
-  "aiRefusedQuickAction": "El texto tiene una línea que empieza por /, que GitLab podría ejecutar como acción rápida, así que por seguridad esta acción no se envió. Quita esa línea o ponla en un bloque de código."
+  "aiRefusedQuickAction": "El texto tiene una línea que empieza por /, que GitLab podría ejecutar como acción rápida, así que por seguridad esta acción no se envió. Quita esa línea o ponla en un bloque de código.",
+  "aiToolGetGroupWorkItem": "Leer elemento de trabajo del grupo",
+  "aiOpEditGroupWorkItem": "Editar elemento de trabajo del grupo",
+  "aiOpSetGroupWorkItemState": "Cerrar o reabrir el elemento de trabajo del grupo",
+  "aiOpCloseGroupWorkItem": "Cerrar elemento de trabajo del grupo",
+  "aiOpReopenGroupWorkItem": "Reabrir el elemento de trabajo del grupo",
+  "aiOpSetGroupWorkItemAssignees": "Asignar responsables del elemento de trabajo del grupo",
+  "aiOpSetGroupWorkItemDates": "Establecer fechas del elemento de trabajo del grupo"
 }

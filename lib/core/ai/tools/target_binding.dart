@@ -1,3 +1,4 @@
+import '../../group_work_item_identity.dart';
 import '../../instance.dart';
 import '../intent_lexicon.dart';
 import 'write_ledger.dart';
@@ -59,6 +60,7 @@ final class AiTargetRef {
     this.pipelineCreatedInSegment = false,
     this.groupFullPath,
     this.groupId,
+    this.workItemGid,
     this.name,
   }) : side = side ?? _defaultSide(kind);
 
@@ -80,6 +82,9 @@ final class AiTargetRef {
   final bool pipelineCreatedInSegment;
   final String? groupFullPath;
   final int? groupId;
+
+  /// App-resolved Work Item identity; never taken from model arguments.
+  final String? workItemGid;
   final String? name;
 }
 
@@ -150,8 +155,20 @@ bool scopeAdmits(
   AiCapability capability,
   AiTargetRef target,
 ) {
-  if (capability.scopeClass == AiScopeClass.groupWorkItem ||
-      target.kind == AiTargetKind.groupWorkItem) {
+  final bool groupTarget =
+      target.kind == AiTargetKind.groupWorkItem ||
+      target.side == AiResourceSide.group ||
+      target.groupId != null ||
+      target.groupFullPath != null ||
+      target.workItemGid != null;
+  if (groupTarget &&
+      capability.scopeClass != AiScopeClass.groupWorkItem &&
+      capability.scopeClass != AiScopeClass.accountTodo) {
+    return false;
+  }
+  if (groupTarget &&
+      target.origin == AiTargetOrigin.uiAdded &&
+      !_uiAddedGroupIdentityMatches(scope, target)) {
     return false;
   }
   for (final AiScopeGrant grant in scope.grants) {
@@ -190,9 +207,11 @@ AiBindingResult bindTargets({
     if (!check.bound) {
       allBound = false;
       missing.addAll(check.missing);
-      allMissingMentioned = allMissingMentioned && check.missing.every(
-        (component) => _componentMentioned(target, component, parsed),
-      );
+      allMissingMentioned =
+          allMissingMentioned &&
+          check.missing.every(
+            (component) => _componentMentioned(target, component, parsed),
+          );
     }
   }
   final AiIntentAssessment intent = assessIntent(
@@ -207,7 +226,8 @@ AiBindingResult bindTargets({
   final bool needsIntent = directionsFor(operationId ?? '').isNotEmpty;
   final List<AiFixedConfirmReason> reasons = <AiFixedConfirmReason>[
     if (!allBound)
-      allMissingMentioned ? AiFixedConfirmReason.targetNamedNotMarked
+      allMissingMentioned
+          ? AiFixedConfirmReason.targetNamedNotMarked
           : AiFixedConfirmReason.targetUnbound,
     if (needsIntent && !intent.authorizes) AiFixedConfirmReason.intentNotUnique,
   ];
@@ -248,6 +268,21 @@ bool _grantAdmits(
       }
       return false;
     case AiScopeClass.accountTodo:
+      if (target.side == AiResourceSide.group ||
+          target.kind == AiTargetKind.groupWorkItem ||
+          target.groupId != null ||
+          target.groupFullPath != null ||
+          target.workItemGid != null) {
+        if (!aiGroupWorkItemWritesAreEnabled ||
+            (capability.operationId != 'snoozeTodo' &&
+                capability.operationId != 'unsnoozeTodo') ||
+            target.kind != AiTargetKind.todo ||
+            !_validGroupTarget(target)) {
+          return false;
+        }
+        return grant.kind == AiScopeKind.accountGlobal ||
+            _coversGroup(grant, target);
+      }
       if (grant.kind == AiScopeKind.accountGlobal) return true;
       if (target.side == AiResourceSide.mergeRequest) {
         return _coversMergeRequest(grant, target);
@@ -261,7 +296,12 @@ bool _grantAdmits(
           grant.projectId != null &&
           grant.projectId == target.projectId;
     case AiScopeClass.groupWorkItem:
-      return false;
+      return aiGroupWorkItemWritesAreEnabled &&
+          (target.kind == AiTargetKind.groupWorkItem ||
+              target.kind == AiTargetKind.note ||
+              target.kind == AiTargetKind.emoji) &&
+          target.side == AiResourceSide.group &&
+          _coversGroup(grant, target);
     case AiScopeClass.projectUpload:
       return (grant.kind == AiScopeKind.project ||
               grant.kind == AiScopeKind.workItem ||
@@ -279,6 +319,53 @@ bool _grantAdmits(
       return false;
   }
 }
+
+/// Group path syntax shared by AI binding and the strict write resolver.
+bool isValidAiGroupPath(String value) =>
+    value == value.trim() &&
+    value.length <= 1024 &&
+    RegExp(r'^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(value) &&
+    value
+        .split('/')
+        .every(
+          (segment) => segment != '.' && segment != '..' && segment != '-',
+        );
+
+bool _validGroupTarget(AiTargetRef target) {
+  final int? groupId = target.groupId;
+  final int? iid = _itemIid(target);
+  return groupId != null &&
+      groupKeyNumericId('gid://gitlab/Group/$groupId') == groupId &&
+      iid != null &&
+      iid > 0 &&
+      target.groupFullPath != null &&
+      isValidAiGroupPath(target.groupFullPath!) &&
+      target.projectId == null &&
+      target.projectPath == null &&
+      target.side == AiResourceSide.group;
+}
+
+bool _uiAddedGroupIdentityMatches(AiWriteScope scope, AiTargetRef target) {
+  final gid = target.workItemGid;
+  return gid != null &&
+      scope.uiAddedGroupWorkItems.any(
+        (identity) =>
+            identity.accountKey == scope.accountKey &&
+            identity.groupId == target.groupId &&
+            identity.fullPath == target.groupFullPath &&
+            identity.iid == _itemIid(target) &&
+            identity.workItemGid == gid,
+      );
+}
+
+bool _coversGroup(AiScopeGrant grant, AiTargetRef target) =>
+    _validGroupTarget(target) &&
+    grant.kind == AiScopeKind.groupWorkItem &&
+    grant.projectId == null &&
+    grant.projectPath == null &&
+    grant.groupId == target.groupId &&
+    grant.groupFullPath == target.groupFullPath &&
+    grant.iid == _itemIid(target);
 
 bool _coversIssue(AiScopeGrant grant, AiTargetRef target) {
   if (grant.projectId == null ||
@@ -357,6 +444,13 @@ _ComponentCheck _bindOne({
   required _Parsed parsed,
   required bool allowText,
 }) {
+  if ((target.groupId != null ||
+          target.groupFullPath != null ||
+          target.workItemGid != null ||
+          target.kind == AiTargetKind.groupWorkItem) &&
+      target.side != AiResourceSide.group) {
+    return const _ComponentCheck(false, <String>['groupWorkItem']);
+  }
   switch (target.kind) {
     case AiTargetKind.file:
       if (_appAsserts(target)) return const _ComponentCheck(true, <String>[]);
@@ -404,15 +498,31 @@ _ComponentCheck _bindOne({
         bound ? const <String>[] : <String>[target.kind.name],
       );
     case AiTargetKind.note:
+      if (target.side == AiResourceSide.group) {
+        final bool parent = _groupBound(target, scope, parsed, allowText);
+        final bool note =
+            target.noteId == null ||
+            _appAsserts(target) ||
+            (allowText && parsed.noteIds.contains(target.noteId));
+        final bool bound = parent && note;
+        return _ComponentCheck(bound, bound ? const [] : const ['note']);
+      }
       if (target.noteId != null) {
-        final bool bound = allowText &&
+        final bool bound =
+            allowText &&
             _projectIdInScope(scope, target.projectId) &&
             parsed.noteIds.contains(target.noteId);
         return _ComponentCheck(bound, bound ? const [] : const ['note']);
       }
-      final bool bound = _resourceBound(target, scope, parsed, allowText,
-          target.side == AiResourceSide.mergeRequest
-              ? _IssueKind.mergeRequest : _IssueKind.issue);
+      final bool bound = _resourceBound(
+        target,
+        scope,
+        parsed,
+        allowText,
+        target.side == AiResourceSide.mergeRequest
+            ? _IssueKind.mergeRequest
+            : _IssueKind.issue,
+      );
       return _ComponentCheck(bound, bound ? const [] : const ['note']);
     case AiTargetKind.issue:
     case AiTargetKind.emoji:
@@ -448,7 +558,9 @@ _ComponentCheck _bindOne({
         bound ? const <String>[] : <String>['pipeline'],
       );
     case AiTargetKind.todo:
-      final bool bound = _appAsserts(target);
+      final bool bound = target.side == AiResourceSide.group
+          ? _groupBound(target, scope, parsed, allowText) && _appAsserts(target)
+          : _appAsserts(target);
       return _ComponentCheck(
         bound,
         bound ? const <String>[] : <String>['todo'],
@@ -487,6 +599,9 @@ bool _resourceBound(
   bool allowText,
   _IssueKind kind,
 ) {
+  if (target.side == AiResourceSide.group) {
+    return _groupBound(target, scope, parsed, allowText);
+  }
   if (_appAsserts(target)) return true;
   final int? iid = _itemIid(target);
   if (iid == null || target.projectId == null) return false;
@@ -541,27 +656,28 @@ bool _groupBound(
   _Parsed parsed,
   bool allowText,
 ) {
+  if (!_validGroupTarget(target)) return false;
+  final bool exactGrant = scope.grants.any(
+    (AiScopeGrant grant) => _coversGroup(grant, target),
+  );
+  // Account-global todo ownership is proved by its producer. It cannot grant
+  // general work item operations, and must still carry numeric coordinates.
+  final bool ownTodo =
+      target.kind == AiTargetKind.todo &&
+      scope.grants.any((grant) => grant.kind == AiScopeKind.accountGlobal);
+  if (!exactGrant && !ownTodo) return false;
+  if (target.origin == AiTargetOrigin.uiAdded &&
+      !_uiAddedGroupIdentityMatches(scope, target)) {
+    return false;
+  }
   if (_appAsserts(target)) return true;
-  if (target.iid == null) return false;
-  final bool current = scope.grants.any(
-    (AiScopeGrant grant) =>
-        grant.kind == AiScopeKind.groupWorkItem &&
-        grant.iid == target.iid &&
-        _pathsEqual(grant.groupFullPath, target.groupFullPath),
-  );
-  if (current) return true;
+  if (exactGrant) return true;
   if (!allowText) return false;
-  final bool pathInScope = scope.grants.any(
-    (AiScopeGrant grant) =>
-        grant.kind == AiScopeKind.groupWorkItem &&
-        _pathsEqual(grant.groupFullPath, target.groupFullPath),
-  );
-  if (!pathInScope) return false;
   return parsed.urls.any(
     (_UrlRef url) =>
         url.issueKind == _IssueKind.groupWorkItem &&
-        url.iid == target.iid &&
-        _pathsEqual(url.groupPath, target.groupFullPath),
+        url.iid == _itemIid(target) &&
+        url.groupPath == target.groupFullPath,
   );
 }
 
@@ -740,9 +856,10 @@ bool _componentMentioned(AiTargetRef target, String component, _Parsed parsed) {
 bool _verbatimHit(String? name, _Parsed parsed) {
   if (name == null || name.isEmpty) return false;
   // A repo name is one complete token; "main" never matches "mainly".
-  return RegExp('(?<![A-Za-z0-9_./~@%+\\-])${RegExp.escape(name)}'
-      '(?![A-Za-z0-9_/~@%+\\-]|\\.[A-Za-z0-9_.-])')
-      .hasMatch(parsed.prose);
+  return RegExp(
+    '(?<![A-Za-z0-9_./~@%+\\-])${RegExp.escape(name)}'
+    '(?![A-Za-z0-9_/~@%+\\-]|\\.[A-Za-z0-9_.-])',
+  ).hasMatch(parsed.prose);
 }
 
 final class _Parsed {
@@ -809,7 +926,9 @@ _Parsed _parse(String text, AiWriteScope scope) {
   }
   prose.write(text.substring(end));
   parsed.prose = prose.toString();
-  final noteReference = RegExp(r'(?<![A-Za-z0-9_])(?:note:|note #|#note_)([1-9][0-9]*)(?![A-Za-z0-9_])');
+  final noteReference = RegExp(
+    r'(?<![A-Za-z0-9_])(?:note:|note #|#note_)([1-9][0-9]*)(?![A-Za-z0-9_])',
+  );
   for (final match in noteReference.allMatches(parsed.prose)) {
     parsed.noteIds.add(int.parse(match.group(1)!));
   }
@@ -834,7 +953,9 @@ void _addTick(String raw, _Parsed parsed) {
     if (name.isNotEmpty && !name.contains('..')) parsed.tags.add(name);
     return;
   }
-  final note = RegExp(r'^(?:note:|note #|#note_)([1-9][0-9]*)$').firstMatch(text);
+  final note = RegExp(
+    r'^(?:note:|note #|#note_)([1-9][0-9]*)$',
+  ).firstMatch(text);
   if (note != null) parsed.noteIds.add(int.parse(note.group(1)!));
   parsed.tokens.add(text);
   parsed.refs.add(text);
@@ -869,7 +990,8 @@ void _addUrl(String raw, AiWriteScope scope, _Parsed parsed) {
   var owner = rest.sublist(0, dash).join('/');
   final String kind = rest[dash + 1];
   if (const {'issues', 'merge_requests'}.contains(kind) &&
-      rest.length == dash + 3 && int.tryParse(rest.last) != null) {
+      rest.length == dash + 3 &&
+      int.tryParse(rest.last) != null) {
     final note = RegExp(r'^note_([1-9][0-9]*)$').firstMatch(uri.fragment);
     if (note != null) parsed.noteIds.add(int.parse(note.group(1)!));
   }

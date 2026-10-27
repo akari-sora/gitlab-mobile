@@ -2757,4 +2757,11 @@ const _messagesSv = <String>[
   'Ange etiketter',
   'Etiketten som ska sättas finns inte i projektets etikettlista, eller så har flera etiketter det namnet, så ingenting gjordes.',
   'Texten har en rad som börjar med /, som GitLab kan köra som en quick action, så för säkerhets skull skickades åtgärden inte. Ta bort raden eller lägg den i ett kodblock.',
+  'Läs gruppens arbetsobjekt',
+  'Redigera gruppens arbetsobjekt',
+  'Stäng eller öppna gruppens arbetsobjekt igen',
+  'Stäng gruppens arbetsobjekt',
+  'Öppna gruppens arbetsobjekt igen',
+  'Ange tilldelade för gruppens arbetsobjekt',
+  'Ange datum för gruppens arbetsobjekt',
 ];

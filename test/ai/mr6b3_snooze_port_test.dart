@@ -752,6 +752,7 @@ void main() {
         final prepared = await s.writePort.prepare(s.request(op));
         expect(prepared.releaseName, '@tester');
         expect(prepared.todoTarget, (projectId: 9, resource: 'issues', iid: 3));
+        expect(prepared.groupTodoTarget, isNull);
         expect(
           prepared.writeKeys,
           contains(
@@ -854,6 +855,10 @@ void main() {
       'unknown',
     ]) {
       test('$op accountGlobal refuses $bad as todoUnsupportedTarget', () async {
+        if (bad == 'group') {
+          aiGroupWorkItemWritesEnabledForTesting = false;
+          addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        }
         final id = _args(op)['todoId']! as int;
         final node = _node(id, snoozed: op == 'unsnoozeTodo');
         final entity = node['targetEntity']! as Map<String, Object?>;

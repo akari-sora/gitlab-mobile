@@ -516,6 +516,8 @@ void main() {
       test(
         '$operation group target remains refused by AI even accountGlobal',
         () async {
+          aiGroupWorkItemWritesEnabledForTesting = false;
+          addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
           final h = await _harness();
           _makeGroupTodo(h.server);
           expect(await h.propose(operation, id: 'group-todo'), isNull);
