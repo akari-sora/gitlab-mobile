@@ -3,6 +3,7 @@ import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
+import '../support/fake_adapter.dart';
 import 'mr6b3_matrix_support.dart';
 import 'mr6b3_support.dart';
 
@@ -10,7 +11,54 @@ import 'mr6b3_support.dart';
 /// per-send budget. The allowance through readback is reserved when the
 /// proposal is created; a reservation that does not fit produces no proposal.
 ///
-/// §15 row 19: 預算：mutation 加 readback 在 39／40／41 次 HTTP 的邊界；核准後的新鮮讀取與合併前檢查在提議時已保留，保留不到就不產生提議；三段對話共用帳號 60 分鐘上限；對話計數跨換段與重啟；大量零寫入的對話不建立計數項；計數項 2,000 列與 ciphertext 1 MiB 的邊界，飽和時 mutation 為 0；`prepared` 因隔離或預算不足改 `notExecuted` 時不消耗計數；紀錄關閉時計數只在本程序內有效；批次上限。
+/// §15 coverage (test paths below are relative to test/ai):
+/// Row 19 here: fifteen independently counted document distributions, PAT and
+/// OAuth caps including mutation/readback, 39/40/41 HTTP boundaries, up-front
+/// reservation/refusal and no second charge at approval.
+/// Row 19 sub-items outside this file:
+/// - Three conversations share the account's rolling 60-minute cap:
+///   ai_write_journal_test.dart row 19; mr6b2_budget_test.dart REST/T4 drives.
+/// - Conversation counters survive segment changes and restart:
+///   ai_write_journal_test.dart row 19 conversation-cap test.
+/// - Zero-write conversations create no counter; manual notExecuted/refund:
+///   ai_write_journal_test.dart row 19 prepared/zero-write test. Cause-specific
+///   prepared downgrade on isolation/budget refusal without a count: NOT_RUN
+///   (mr6b3_boundary_test.dart instead covers flush/gate refunds).
+/// - 2,000 counter rows / 1 MiB ciphertext boundaries: ai_write_journal_test.dart
+///   row 19 tests prove reservation/prepare refusal. End-to-end zero mutations
+///   at either saturation boundary: NOT_RUN.
+/// - History disabled keeps counters process-local: ai_write_journal_test.dart
+///   row 19 disabled-history test.
+/// - Run and batch limits: ai_write_journal_test.dart row 19 8/3/20 test;
+///   p6_suggestions_test.dart batch limit test.
+/// Row 25 here also checks OAuth mutation-401 uncertainty without replay.
+/// Row 25 sub-items outside this file:
+/// - Final pre-read 5xx/transport, hook flush/gate refusal, noops and unchanged
+///   snapshots, no lock/count/mark use, same-round continuation, date
+///   notApplied without send/fail-stop, accepted typed failures/fail-stop,
+///   peer-429 fast refusal, dispatching at adapter, PAT readback 401/cancel,
+///   incident expectedUpdatedAt and snooze acknowledgement without inbox
+///   readback: mr6b3_boundary_test.dart row 25 groups.
+/// - Screen writes exclude AI on the same Work Item: mr6b3_status_port_test.dart,
+///   mr6b3_dates_port_test.dart and mr6b3_health_port_test.dart registry tests.
+/// - Status hook before onMutationSent(started): mr6b3_core_hooks_test.dart and
+///   mr6b3_status_port_test.dart; exact AI callback-only assertion: NOT_RUN.
+/// - Explicit assertion that all three typed failures bypass safeFailure:
+///   NOT_RUN (family tests cover their outcomes and mutationSent instead).
+/// - Labels/content/activity-edit noops: deferred MR6b-3t, NOT_RUN.
+/// Row 29 sub-items outside this file:
+/// - Policy/consent/stop/generation during flush; prepared vs dispatching vs
+///   sent-terminal-flush failure and restart; atomic refund/mark restoration;
+///   rollback flush failure; ticket reuse; no-await source order; peer 429,
+///   closed client, removal, background and released-reservation tombstone:
+///   mr6b3_boundary_test.dart row 29 groups (double proves hook propagation).
+/// - Removal wait limit/final confirmation/cancel epoch and resumed flush:
+///   packet9_removal_test.dart row 29; ai_write_journal_test.dart removal tests.
+/// - Every §7.3 step 2-4.3 checkpoint at step 4.4: NOT_RUN beyond boundary
+///   tests' prepared/dispatching barriers.
+/// P15-B injection/isolation/races/matrix/guard/binding scenario files are
+/// absent in this checkout: NOT_RUN. Citing another file is a coverage pointer,
+/// not a claim that this budget file executes it.
 
 void main() {
   const independentlyCounted = <String, ({int logicalReads, int mutations})>{
@@ -72,6 +120,46 @@ void main() {
       },
     );
   }
+
+  test('snooze drive shares a future timestamp after June 2027', () async {
+    final actualNow = DateTime.fromMillisecondsSinceEpoch(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000 * 1000,
+      isUtc: true,
+    );
+    final afterTimeBomb = DateTime.utc(2028, 6, 2);
+    final injectedNow = actualNow.isAfter(afterTimeBomb)
+        ? actualNow
+        : afterTimeBomb;
+    await _drive(
+      'snoozeTodo',
+      independentlyCounted['snoozeTodo']!,
+      oauth: false,
+      now: injectedNow,
+    );
+  });
+
+  test(
+    'snooze retains caller-supplied future argument compatibility',
+    () async {
+      final harness = await Mr6b3ApiHarness.create(oauth: false);
+      addTearDown(harness.dispose);
+      final until = DateTime.parse(
+        harness.snoozeUntil,
+      ).add(const Duration(days: 1)).toIso8601String();
+      final proposal = await harness.propose(
+        'snoozeTodo',
+        arguments: {'until': until},
+      );
+      expect(proposal, isNotNull);
+      final outcome = await harness.approve(proposal!);
+      expect(outcome.state, AiJournalState.succeeded);
+      expect(outcome.mutationCount, 1);
+      expect(outcome.readbackConfirmed, isFalse);
+      final mutation = harness.server.adapter.requests.last;
+      expect(((mutation.data as Map)['variables'] as Map)['until'], until);
+      expect(harness.server.mutations, 1);
+    },
+  );
 
   test('state OAuth replay keeps refresh off the API allowance', () async {
     final harness = await Mr6b3ApiHarness.create(oauth: true);
@@ -135,7 +223,7 @@ void main() {
             expect(harness.server.mutations, 1);
             expect(
               harness.server.adapter.requests.length,
-              lessThanOrEqualTo(before + cap),
+              before + (operation == 'updateWorkItemAssignees' ? 28 : 37),
             );
           } else {
             expect(proposal, isNull);
@@ -147,11 +235,61 @@ void main() {
             );
             expect(harness.server.adapter.requests, hasLength(before));
             expect(harness.server.mutations, 0);
+            expect(harness.budget.gitLabRequests, boundary - cap);
           }
         },
       );
     }
   }
+
+  test(
+    'OAuth mutation 401 refreshes credentials without replay within the cap',
+    () async {
+      final harness = await Mr6b3ApiHarness.create(oauth: true);
+      addTearDown(harness.dispose);
+      harness.server.applyMutations = false;
+      var faults = 0;
+      int? refreshesAtMutation;
+      harness.server.onRequest = (name, mutation, request, payload) {
+        if (mutation) {
+          faults++;
+          refreshesAtMutation = harness.server.refreshes;
+          return jsonResponse({
+            'message': 'synthetic mutation 401',
+          }, status: 401);
+        }
+        return null;
+      };
+      final proposal = (await harness.propose('updateWorkItemState'))!;
+      final outcome = await harness.approve(proposal);
+      expect(outcome.state, AiJournalState.writeUncertain);
+      expect(outcome.reasonCode, 'writeUncertain');
+      expect(outcome.mutationCount, 1);
+      expect(outcome.readbackConfirmed, isFalse);
+      expect(
+        harness.journal.entries(mr6b3Account).single.state,
+        AiJournalState.writeUncertain,
+      );
+      expect(faults, 1);
+      expect(harness.server.mutations, 1);
+      expect(harness.server.reads['MobileUpdateWorkItemState'], 1);
+      // Two prepare sets of four reads and one final preflight; no readback.
+      expect(harness.server.logicalReads, 9);
+      expect(refreshesAtMutation, 9);
+      // Core may refresh credentials after the refusal, but never replays a
+      // mutation. That token request uses the separate refresh adapter.
+      expect(harness.server.refreshes, refreshesAtMutation! + 1);
+      expect(harness.server.refreshAdapter.requests, hasLength(10));
+      expect(harness.server.adapter.requests, hasLength(2 * 9 + 1));
+      expect(harness.budget.gitLabRequests, 21);
+      expect(
+        harness.server.adapter.requests.length,
+        lessThanOrEqualTo(
+          productionAiLedger.find('updateWorkItemState')!.httpCap,
+        ),
+      );
+    },
+  );
 
   // Unlike the success drives above, these challenge every logical read,
   // including candidate lookup and the in-method target-epoch fence.
@@ -298,9 +436,16 @@ Future<void> _drive(
   String operation,
   ({int logicalReads, int mutations}) counted, {
   required bool oauth,
+  DateTime? now,
 }) async {
-  final harness = await Mr6b3ApiHarness.create(oauth: oauth);
+  final harness = await Mr6b3ApiHarness.create(oauth: oauth, now: now);
   addTearDown(harness.dispose);
+  if (now != null) {
+    expect(
+      harness.snoozeUntil,
+      now.toUtc().add(const Duration(days: 1)).toIso8601String(),
+    );
+  }
   final callId = 'drive-$operation-${oauth ? 'oauth' : 'pat'}';
   final proposal = await harness.propose(operation, id: callId);
   expect(
@@ -311,6 +456,17 @@ Future<void> _drive(
         '${harness.server.reads}',
   );
   final outcome = await harness.approve(proposal!);
+  if (operation == 'snoozeTodo') {
+    final request = harness.server.adapter.requests.singleWhere(
+      (request) =>
+          request.method == 'POST' &&
+          ((request.data as Map)['query'] as String).startsWith('mutation '),
+    );
+    expect(
+      ((request.data as Map)['variables'] as Map)['until'],
+      harness.snoozeUntil,
+    );
+  }
   final skips = oauth ? _oauthSkips(operation) : 0;
   expect(
     outcome.state,
@@ -319,6 +475,52 @@ Future<void> _drive(
   );
   expect(harness.server.logicalReads, counted.logicalReads, reason: operation);
   expect(harness.server.mutations, counted.mutations, reason: operation);
+  // Count the documents from the scenario's prepare/re-prepare, preflight and
+  // readback phases, independently of the measured trace and ledger cap.
+  expect(harness.server.reads, _countedDocuments(operation), reason: operation);
+  expect(
+    harness.server.reactionStages,
+    operation == 'setWorkItemActivityNoteReaction'
+        ? [2, 2, 2, 2] // Three core stages, plus coordinator re-prepare.
+        : isEmpty,
+    reason: operation,
+  );
+  if (operation == 'updateWorkItemAssignees') {
+    final searches = harness.server.adapter.requests
+        .where(
+          (request) =>
+              request.method == 'POST' &&
+              ((request.data as Map)['query'] as String).startsWith(
+                'query MobileProjectAssigneeCandidates(',
+              ),
+        )
+        .map(
+          (request) => ((request.data as Map)['variables'] as Map)['search'],
+        );
+    expect(
+      searches,
+      unorderedEquals([
+        for (var prepare = 0; prepare < 2; prepare++) ...[
+          'alice',
+          'bob',
+          'carol',
+          'dave',
+        ],
+      ]),
+    );
+    final mutation = harness.server.adapter.requests.singleWhere(
+      (request) =>
+          request.method == 'POST' &&
+          ((request.data as Map)['query'] as String).startsWith('mutation '),
+    );
+    final input = ((mutation.data as Map)['variables'] as Map)['input'] as Map;
+    expect(
+      (input['assigneesWidget'] as Map)['assigneeIds'],
+      unorderedEquals([
+        for (final id in [11, 21, 22, 23, 24]) 'gid://gitlab/User/$id',
+      ]),
+    );
+  }
   expect(
     harness.server.refreshes,
     oauth ? counted.logicalReads - skips : 0,
@@ -346,3 +548,85 @@ Future<void> _drive(
     reason: operation,
   );
 }
+
+Map<String, int> _countedDocuments(String operation) => {
+  // Both prepares resolve the actor and, except todos, freshness and item.
+  'user': 2,
+  if (operation != 'snoozeTodo' && operation != 'unsnoozeTodo') ...{
+    'freshness': 2,
+    'MobileProjectWorkItem': 2,
+  },
+  ...switch (operation) {
+    'createWorkItemActivityComment' => {
+      'MobileWorkItemActivityWriteAccess': 3,
+      'MobileWorkItemActivityNoteReadback': 1,
+      'MobileCreateWorkItemActivityNote': 1,
+    },
+    'createWorkItemActivityReply' => {
+      'MobileWorkItemActivity': 2 * 2, // Two locator pages per prepare.
+      'MobileWorkItemActivityWriteAccess': 2,
+      'MobileWorkItemActivityReplyPreflight': 1,
+      'MobileWorkItemActivityNoteReadback': 1,
+      'MobileCreateWorkItemActivityNote': 1,
+    },
+    'deleteWorkItemActivityNote' => {
+      'MobileWorkItemActivity': 2 * 2,
+      'MobileWorkItemActivityEditAccess': 3,
+      'MobileWorkItemActivityDeleteReadback': 1,
+      'MobileDestroyWorkItemActivityNote': 1,
+    },
+    'updateWorkItemDates' => {
+      'MobileWorkItemDatesBase': 4,
+      'MobileWorkItemDatesProbe': 4,
+      'MobileSetWorkItemDatesEe': 1,
+    },
+    'updateWorkItemAssignees' => {
+      'MobileWorkItemAssignees': 4,
+      'MobileProjectAssigneeCandidates': 2 * 4,
+      'MobileSetWorkItemAssignees': 1,
+    },
+    'updateWorkItemHealthStatus' => {
+      'MobileWorkItemHealthEdit': 4,
+      'MobileSetWorkItemHealthStatus': 1,
+    },
+    'setWorkItemNotifications' => {
+      'MobileWorkItemNotifications': 4,
+      'MobileSetWorkItemNotifications': 1,
+    },
+    'setIncidentStatus' => {
+      'MobileIncidentStatus': 4,
+      'MobileSetIncidentStatus': 1,
+    },
+    'updateWorkItemMilestone' => {
+      'MobileWorkItemMilestone': 4,
+      'MobileProjectWorkItemMilestones': 2,
+      'MobileSetWorkItemMilestone': 1,
+    },
+    'setWorkItemActivityNoteReaction' => {
+      'MobileWorkItemActivity': 2 * 2,
+      'MobileWorkItemActivityReactionAccess': 4 * 2,
+      'MobileAddWorkItemActivityNoteReaction': 1,
+    },
+    'updateWorkItemStatus' => {
+      'MobileWorkItemStatus': 4,
+      'MobileUpdateWorkItemStatus': 1,
+    },
+    'snoozeTodo' => {
+      'MobilePendingTodosForSnooze': 2 * 4,
+      'MobileTodoSnooze': 1,
+    },
+    'unsnoozeTodo' => {
+      'MobileSnoozedTodosForUnsnooze': 2 * 4,
+      'MobileTodoUnsnooze': 1,
+    },
+    'updateWorkItemState' => {
+      'MobileWorkItemState': 4,
+      'MobileUpdateWorkItemState': 1,
+    },
+    'updateWorkItemWeight' => {
+      'MobileWorkItemWeight': 4,
+      'MobileSetWorkItemWeight': 1,
+    },
+    _ => throw ArgumentError.value(operation, 'operation'),
+  },
+};

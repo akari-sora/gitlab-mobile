@@ -16,8 +16,51 @@ import '../support/fake_adapter.dart';
 import 'mr6b3_matrix_support.dart';
 import 'mr6b3_support.dart';
 
-// §15 row 25. **GraphQL 接縫：** 方法內前置讀取回 5xx 或傳輸錯誤時不上鎖、mutation 次數為 0、日誌為 `notExecuted`；`beforeMutation` flush 失敗或 `mayStart` 回 false 時不送 mutation；日期 `applied`＋`mutationSent: false`、健康度、狀態與標籤的 `noop`，以及指派、里程碑、權重、通知、內容、事件單、活動留言編輯在送出前返回的相同快照，逐一記「無變更」且同輪繼續；日期 `notApplied`＋`mutationSent: false`（驗證或權限失敗）記 `notExecuted` 並適用 fail-stop；以上都不上鎖、不消耗預算與待確認標記；過了接受點之後，日期返回 `writeUncertain` 或 `notApplied` 且 `mutationSent` 為 true、健康度 `notApplied`、狀態 `notApplied` 且 `mutationSent` 為 true 時，日誌不得是 `succeeded`，同輪後續寫入次數為 0；三個失敗型別依 `mutationSent` 分類，不經 `safeFailure`；狀態方法的 `onMutationSent(started)` 由 AI 傳入時只呼叫 `started`，新掛鉤在它之前；429 之後的本機快速失敗在預檢被攔下，不上鎖；以 FakeAdapter 斷言每個 `graphMutation` 請求抵達 adapter 時，日誌已是 `dispatching`；mutation 成功後 readback `cancelled` 或 401 記為狀態未知；畫面正在寫同一 Work Item 的狀態、日期或健康度時 AI 不 dispatch；`setIncidentStatus` 一律帶 `expectedUpdatedAt`；待辦延後以 mutation 回應的 `snoozedUntil` 記成功，`snoozedTodos` 查不到或 truncated 只是不升為「已 readback 確認」；方法內 HTTP 次數以 ledger 上限計入預算。
-// §15 row 29. **送出邊界（§7.3 第 4 步）：** 用 barrier 卡住 flush，期間分別撤銷 policy 或 consent、停止 run、切換 generation，恢復後 mutation 為 0；分開斷言「掛鉤未落盤」（`prepared` → `notExecuted`）、「已落盤但同步重驗不通過」（`dispatching` → `notExecuted`，退回預算、恢復待確認標記，這次落盤失敗則維持 `dispatching`）與「已送出但終態落盤失敗」（記憶體中為狀態未知、隔離維持、重啟後為 `writeUncertain`）；送出票不能重用；同步重驗與 mutation 呼叫之間沒有 await（以測試替身斷言呼叫順序）；flush 期間另一段對話的讀取收到 429、client 被關閉、帳號進入「移除中」、沒有許可的 run 被切到背景時，同步重驗不通過，記 `notExecuted` 而不是狀態未知。以 barrier 卡住 `dispatching` 的 flush，移除流程等待達上限後顯示最後確認、使用者取消，epoch 遞增並釋放保留；flush 恢復後舊綁定因 epoch 不符不能送出，mutation 為 0，`notExecuted` 與退回預算、恢復待確認標記在同一次原子更新完成；停在 §7.3 第 2–4.3 步的寫入同樣在第 4.4 步轉為 `notExecuted`；帳號有移除 tombstone 而保留已釋放時，同步重驗同樣不通過。
+// §15 coverage (other test paths below are relative to test/ai):
+// Row 25 here: final pre-read 5xx/transport (including status/health), no-send
+// hook flush/gate failures, all ten delivered noops/same-snapshot returns,
+// no lock/count/mark consumption and same-round continuation, date notApplied
+// without send/fail-stop, accepted typed failures/fail-stop, peer-429 fast
+// refusal, dispatching at adapter, PAT readback 401/cancel uncertainty,
+// incident expectedUpdatedAt and snooze acknowledgement without inbox readback.
+// Row 25 sub-items outside this file:
+// - Screen writes exclude AI on the same Work Item: mr6b3_status_port_test.dart,
+//   mr6b3_dates_port_test.dart and mr6b3_health_port_test.dart registry tests.
+// - Status hook before onMutationSent(started): mr6b3_core_hooks_test.dart and
+//   mr6b3_status_port_test.dart; exact AI callback-only assertion: NOT_RUN.
+// - Explicit assertion that the three typed failures bypass safeFailure:
+//   NOT_RUN (their outcomes and mutationSent are covered by family tests).
+// - Labels/content/activity-edit noops: deferred MR6b-3t, NOT_RUN.
+// - Method-internal HTTP allowances and OAuth mutation 401 without replay:
+//   mr6b3_budget_test.dart. OAuth readback refresh: its post-mutation replay
+//   cases; persistent post-refresh 401 across all families: NOT_RUN here.
+// Row 29 here: policy/consent/stop/generation flush barriers; prepared,
+// dispatching and sent-terminal-flush failure/restart distinctions; rollback
+// flush failure; atomic refund/mark restoration; ticket reuse; core no-await
+// source scan; hook-propagation double; peer 429, closed client, removal,
+// background, cancelled-removal epoch and released-reservation tombstone.
+// Row 29 sub-items outside this file:
+// - Removal wait limit/final confirmation/cancel and resumed dispatching flush:
+//   packet9_removal_test.dart row 29; ai_write_journal_test.dart removal tests.
+// - Every §7.3 step 2-4.3 checkpoint at step 4.4: NOT_RUN beyond this file's
+//   prepared/dispatching barriers.
+// Row 19 sub-items outside this file:
+// - Mutation/readback 39/40/41 HTTP boundaries, reservation of approval reads,
+//   refusal before proposal and cap accounting: mr6b3_budget_test.dart.
+// - Three conversations share the rolling 60-minute account cap:
+//   ai_write_journal_test.dart row 19; mr6b2_budget_test.dart REST/T4 drives.
+// - Counters across segment changes/restart, zero-write conversations without
+//   counters, process-local counters with history off, run/batch limits:
+//   ai_write_journal_test.dart row 19 tests; p6_suggestions_test.dart batch cap.
+// - 2,000 counter rows / 1 MiB ciphertext boundaries: ai_write_journal_test.dart
+//   proves reservation/prepare refusal. End-to-end zero mutations at saturation:
+//   NOT_RUN.
+// - Prepared downgraded on isolation/budget refusal consumes no count:
+//   NOT_RUN. ai_write_journal_test.dart covers manual notExecuted/refund;
+//   this file covers flush/gate refunds, not those specific refusal causes.
+// P15-B mr6b3_{injection,isolation,races,matrix,guard,binding}_test.dart files
+// are absent in this checkout: NOT_RUN. These pointers do not claim this file
+// executes those other suites.
 //
 // Cross-family rerun through PolicyAiWriteCoordinator -> GitLabAiWritePort ->
 // the real core methods -> Mr6b3ApiServer. All fifteen operations exercise the
@@ -82,6 +125,20 @@ const _preflights = <_Preflight>[
     transportReason: 'datesConflict',
   ),
   (
+    operation: 'updateWorkItemStatus',
+    query: 'MobileWorkItemStatus',
+    ordinal: 3,
+    serverReason: 'statusNotStarted',
+    transportReason: 'statusNotStarted',
+  ),
+  (
+    operation: 'updateWorkItemHealthStatus',
+    query: 'MobileWorkItemHealthEdit',
+    ordinal: 3,
+    serverReason: 'server',
+    transportReason: 'network',
+  ),
+  (
     operation: 'setIncidentStatus',
     query: 'MobileIncidentStatus',
     ordinal: 3,
@@ -121,6 +178,116 @@ const _preflights = <_Preflight>[
 ];
 
 void main() {
+  for (final uri in [
+    'https://example.com/api/graphql', // Missing the installation subpath.
+    'https://other.example/gitlab/api/graphql',
+    'https://example.com/gitlab/api/not-graphql',
+  ]) {
+    test('matrix adapter rejects GraphQL at wrong URI $uri', () async {
+      final h = await _harness();
+      final dio = Dio()..httpClientAdapter = h.server.adapter;
+      addTearDown(dio.close);
+      expect(h.server.api.instance.graphQL.path, '/gitlab/api/graphql');
+      await expectLater(
+        dio.postUri<Object?>(
+          Uri.parse(uri),
+          data: {
+            'query':
+                r'query MobileWorkItemState($id: WorkItemID!) { workItem(id: $id) { id } }',
+            'variables': {'id': 'gid://gitlab/WorkItem/31'},
+          },
+        ),
+        throwsA(isA<DioException>()),
+      );
+      expect(h.server.logicalReads, 0);
+      expect(h.server.mutations, 0);
+      expect(h.server.unexpectedRequests, hasLength(1));
+      expect(h.server.unexpectedRequests.single, contains(uri));
+      expect(h.server.requestCheckFailures, hasLength(1));
+      // This rejection is intentional; consume only after checking both logs.
+      h.server.unexpectedRequests.clear();
+      h.server.requestCheckFailures.clear();
+    });
+  }
+
+  for (final scenario in <({String query, Map<String, Object?> variables})>[
+    (
+      query: 'query MobileProjectWorkItem',
+      variables: {'path': 'other/project', 'iid': '3'},
+    ),
+    (
+      query: 'query MobileWorkItemState',
+      variables: {'id': 'gid://gitlab/WorkItem/99'},
+    ),
+    (
+      query: 'query MobileProjectAssigneeCandidates',
+      variables: {'fullPath': 'other/project', 'search': 'alice'},
+    ),
+    (
+      query: 'mutation MobileUpdateWorkItemState',
+      variables: {
+        'input': {'id': 'gid://gitlab/WorkItem/99', 'stateEvent': 'CLOSE'},
+      },
+    ),
+    (
+      query: 'mutation MobileWorkItemState', // Query name, wrong document kind.
+      variables: {
+        'input': {'id': 'gid://gitlab/WorkItem/31'},
+      },
+    ),
+  ]) {
+    test(
+      'matrix adapter rejects wrong identity or kind ${scenario.query}',
+      () async {
+        final h = await _harness();
+        final dio = Dio()..httpClientAdapter = h.server.adapter;
+        addTearDown(dio.close);
+        await expectLater(
+          dio.postUri<Object?>(
+            h.server.api.instance.graphQL,
+            data: {'query': scenario.query, 'variables': scenario.variables},
+          ),
+          throwsA(isA<DioException>()),
+        );
+        expect(h.server.logicalReads, 0);
+        expect(h.server.mutations, 0);
+        expect(h.server.requestCheckFailures, hasLength(1));
+        expect(
+          h.server.requestCheckFailures.single,
+          contains(scenario.query.split(' ').last),
+        );
+        expect(
+          h.server.unexpectedRequests,
+          scenario.query == 'mutation MobileWorkItemState'
+              ? hasLength(1)
+              : isEmpty,
+        );
+        h.server.requestCheckFailures.clear();
+        h.server.unexpectedRequests.clear();
+      },
+    );
+  }
+
+  test(
+    'matrix adapter retains onRequest assertions swallowed by Dio',
+    () async {
+      final h = await _harness();
+      h.server.onRequest = (name, mutation, request, payload) {
+        expect(name, 'deliberate callback mismatch');
+        return null;
+      };
+      await expectLater(h.server.api.currentUser(), throwsA(isA<ApiFailure>()));
+      expect(h.server.unexpectedRequests, isEmpty);
+      expect(h.server.requestCheckFailures, hasLength(1));
+      expect(
+        h.server.requestCheckFailures.single,
+        contains('deliberate callback mismatch'),
+      );
+      // This test deliberately caused and checked the recorded failure.
+      h.server.requestCheckFailures.clear();
+    },
+  );
+
   group('row 25 real adapter acceptance and row 29 one-shot ticket', () {
     for (final operation in _operations) {
       test(
@@ -623,7 +790,7 @@ void main() {
 
     for (final truncated in [false, true]) {
       test(
-        'snooze acknowledgement succeeds with ${truncated ? 'truncated' : 'missing'} lookup',
+        'snooze write skips inbox; later ${truncated ? 'truncated' : 'missing'} lookup stays unconfirmed',
         () async {
           final h = await _harness();
           var lookups = 0;
@@ -655,7 +822,7 @@ void main() {
           );
           expect(
             ((acknowledgement.data as Map)['variables'] as Map)['until'],
-            mr6b3SnoozeUntil,
+            h.snoozeUntil,
           );
           final lookup = await h.server.api.snoozedTodos();
           expect(lookup.items, isEmpty);
@@ -1006,6 +1173,8 @@ void main() {
   test(
     'row 29 call-order double sends before the sync gate microtask',
     () async {
+      // This double proves hook propagation only. The next source scan checks
+      // the actual core methods for an await gap before their mutation send.
       final double = _CallOrderPort();
       final h = await _harness(portFactory: (_) => double);
       final proposal = await _proposal(h, 'updateWorkItemState', 'order');
@@ -1068,6 +1237,11 @@ void main() {
         declaration.start,
         end < 0 ? source.length : end,
       );
+      expect(
+        RegExp(r'\b_send\s*\(').allMatches(body),
+        hasLength(1),
+        reason: '$method must have exactly one mutation send',
+      );
       final hook = body.indexOf('await beforeMutation');
       final gate = body.indexOf('mayStart', hook + 1);
       final send = body.indexOf('_send(', gate);
@@ -1075,13 +1249,17 @@ void main() {
       expect(gate, greaterThan(hook), reason: method);
       expect(send, greaterThan(gate), reason: method);
       expect(
-        body.substring(body.indexOf(';', hook) + 1, gate),
-        isNot(contains('await ')),
+        RegExp(
+          r'\bawait\b',
+        ).hasMatch(body.substring(body.indexOf(';', hook) + 1, gate)),
+        isFalse,
         reason: method,
       );
       expect(
-        body.substring(gate, send).replaceFirst(RegExp(r'await\s*$'), ''),
-        isNot(contains('await ')),
+        RegExp(r'\bawait\b').hasMatch(
+          body.substring(gate, send).replaceFirst(RegExp(r'\bawait\s*$'), ''),
+        ),
+        isFalse,
         reason: method,
       );
     }
