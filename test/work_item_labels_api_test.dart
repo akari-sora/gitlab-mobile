@@ -25,6 +25,36 @@ final _opened = DateTime.utc(2026, 10, 3, 9);
 final _touched = DateTime.utc(2026, 10, 3, 10);
 
 void main() {
+  test('C2-D8 labels callback failure is not sent before gate', () async {
+    final adapter = FakeAdapter((_) => jsonResponse(_envelope(_itemNode())));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = (await api.workItemLabels(
+      _detail(), expectedUserId: 7, generation: 4,
+    )).target!;
+    final events = <String>[];
+    await expectLater(
+      api.updateWorkItemLabels(
+        target,
+        desiredLabelIds: const [],
+        beforeMutation: () async => events.add('hook'),
+        onMutationSent: () {
+          events.add('start');
+          throw StateError('synthetic callback failure');
+        },
+        mayStart: () {
+          events.add('gate');
+          return true;
+        },
+      ),
+      throwsA(isA<WorkItemLabelWriteFailure>()
+          .having((failure) => failure.mutationSent, 'mutationSent', false)
+          .having((failure) => failure.failure.kind, 'kind', FailureKind.cancelled)),
+    );
+    expect(events, ['hook', 'start']);
+    expect(adapter.requests.where(_isMutation), isEmpty);
+  });
+
   test('scope uses the last delimiter, including empty and nested keys', () {
     // All rows of FINAL_PLAN.md lines 43-56 table
     expect(workItemLabelScopeKey('priority::high'), 'priority');
@@ -269,7 +299,7 @@ void main() {
   );
 
   test(
-    'closed final gate does not announce or send a label mutation',
+    'label START precedes a closed final gate without sending',
     () async {
       final events = <String>[];
       final adapter = FakeAdapter((request) {
@@ -292,7 +322,7 @@ void main() {
             events.add('gate');
             return false;
           },
-          onMutationSent: () => events.add('sent'),
+          onMutationSent: () => events.add('start'),
         ),
         throwsA(
           isA<ApiFailure>().having(
@@ -302,7 +332,7 @@ void main() {
           ),
         ),
       );
-      expect(events, ['before', 'gate']);
+      expect(events, ['before', 'start', 'gate']);
       expect(adapter.requests.where(_isMutation), isEmpty);
     },
   );

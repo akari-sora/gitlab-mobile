@@ -95,12 +95,11 @@ void _expectSendOrder(String body, {bool reportsMutation = false}) {
     reason: 'every noop return must precede the durable hook',
   );
   if (reportsMutation) {
-    final handoff = body.indexOf('beforeSend:', send);
-    final report = body.indexOf('onMutationSent', handoff);
-    final started = body.indexOf('onSendStarted: () => didSend = true', handoff);
-    expect(handoff, greaterThan(send));
-    expect(report, greaterThan(handoff));
-    expect(started, greaterThan(report));
+    final report = body.indexOf('onMutationSent', hook);
+    final started = body.indexOf('onSendStarted: () => didSend = true', send);
+    expect(report, greaterThan(hook));
+    expect(report, lessThan(gate));
+    expect(started, greaterThan(send));
   }
   final hookEnd = body.indexOf(';', hook) + 1;
   expect(body.substring(hookEnd, gate), isNot(contains('await ')));
@@ -417,25 +416,24 @@ void main() {
     }
   });
 
-  test('transport waits for the barrier before handoff and records the actual send', () {
+  test('transport records the actual send only after the disk barrier', () {
     final transport = _source('gitlab_api.dart');
     final begin = transport.indexOf('_cache.mutationDiskBarrier(affected, beforeSend: true)');
     final barrier = transport.indexOf('await _cache.awaitDiskBarrier(', begin);
-    final handoff = transport.indexOf('beforeSend?.call()', barrier);
-    final closed = transport.indexOf('if (_closed) throw', handoff);
+    final closed = transport.indexOf('if (_closed) throw', barrier);
     final started = transport.indexOf('onSendStarted?.call()', closed);
     final zone = transport.indexOf('#graphMutationSendStarted', started);
     final meter = transport.indexOf('RequestMeter.current?.increment()', zone);
     final send = transport.indexOf('_dio.requestUri<ResponseBody>', meter);
     expect(begin, isNonNegative);
     expect(barrier, greaterThan(begin));
-    expect(handoff, greaterThan(barrier));
-    expect(closed, greaterThan(handoff));
+    expect(transport, isNot(contains("beforeSend?.call()")));
+    expect(closed, greaterThan(barrier));
     expect(started, greaterThan(closed));
     expect(zone, greaterThan(started));
     expect(meter, greaterThan(zone));
     expect(send, greaterThan(meter));
-    expect(transport.substring(handoff, send).replaceFirst(RegExp(r'await\s*$'), ''), isNot(contains('await ')));
+    expect(transport.substring(closed, send).replaceFirst(RegExp(r'await\s*$'), ''), isNot(contains('await ')));
   });
 
   test('assignee, reaction, and snooze gates precede their sends', () {
@@ -521,7 +519,7 @@ void main() {
   });
 
   test(
-    'status false sync gate follows the hook without reporting START',
+    'status false sync gate follows the hook and START without sending',
     () async {
       final fixture = WorkItemStatusFixture();
       addTearDown(fixture.closeAll);
@@ -569,7 +567,7 @@ void main() {
               .having((failure) => failure.mutationSent, 'mutationSent', false),
         ),
       );
-      expect(events, ['hook', 'hook-complete', 'gate']);
+      expect(events, ['hook', 'hook-complete', 'start', 'gate']);
       expect(fixture.mutations, 0);
     },
   );
@@ -609,7 +607,7 @@ void main() {
     },
   );
 
-  test('dates and health false gates do not report START', () async {
+  test('dates and health report START before false gates', () async {
     final dates = WorkItemDatesFixture();
     addTearDown(dates.api.close);
     final datesTarget = (await dates.api.workItemDates(
@@ -635,7 +633,7 @@ void main() {
       ),
       throwsA(_failure(FailureKind.cancelled)),
     );
-    expect(datesEvents, ['hook', 'gate']);
+    expect(datesEvents, ['hook', 'start', 'gate']);
     expect(dates.mutations, 0);
 
     final health = WorkItemHealthFixture();
@@ -671,11 +669,11 @@ void main() {
             .having((failure) => failure.mutationSent, 'mutationSent', false),
       ),
     );
-    expect(healthEvents, ['hook', 'gate']);
+    expect(healthEvents, ['hook', 'start', 'gate']);
     expect(health.mutationsReceived, 0);
   });
 
-  test('assignee false gate does not report START', () async {
+  test('assignee reports START before false gate', () async {
     final fixture = WorkItemAssigneeFixture();
     addTearDown(fixture.api.close);
     final target = (await fixture.api.workItemAssignees(
@@ -697,11 +695,11 @@ void main() {
       ),
       throwsA(_failure(FailureKind.cancelled)),
     );
-    expect(events, ['hook', 'gate']);
+    expect(events, ['hook', 'start', 'gate']);
     expect(fixture.mutations, 0);
   });
 
-  test('weight and milestone false gates do not report START', () async {
+  test('weight and milestone report START before false gates', () async {
     final weightFixture = WorkItemStatusFixture()..serveParent = true;
     weightFixture.item(group: false)
       ..weightWidget = true
@@ -725,7 +723,7 @@ void main() {
       ),
       throwsA(_failure(FailureKind.cancelled)),
     );
-    expect(weightEvents, ['hook', 'gate']);
+    expect(weightEvents, ['hook', 'start', 'gate']);
     expect(weightFixture.count('MobileSetWorkItemWeight'), 0);
 
     final milestoneFixture = WorkItemStatusFixture()..serveParent = true;
@@ -759,7 +757,7 @@ void main() {
       ),
       throwsA(_failure(FailureKind.cancelled)),
     );
-    expect(milestoneEvents, ['hook', 'gate']);
+    expect(milestoneEvents, ['hook', 'start', 'gate']);
     expect(milestoneFixture.count('MobileSetWorkItemMilestone'), 0);
   });
 

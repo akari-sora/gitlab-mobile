@@ -2024,6 +2024,8 @@ final class _ReadCache {
           if (canCache &&
               !invalid &&
               !timedOut &&
+              permitted(permission, uri) &&
+              permitted(permission, publicationUri(uri, value)) &&
               ownsPublication(cacheKey, uri, accept, ticket, value: value)) {
             final canonicalUri = publicationUri(uri, value);
             if (value is Json) observeProjectAlias(uri, value);

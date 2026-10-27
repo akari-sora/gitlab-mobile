@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_work_item_write_registry.dart';
+import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -13,6 +15,7 @@ import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_dates.dart';
 
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
+import 'support/c2d7_barrier.dart';
 import 'support/widget_settle.dart';
 import 'support/work_item_dates_parent_fixture.dart';
 import 'support/work_item_status_fixture.dart';
@@ -61,6 +64,114 @@ const _newStart = '開始 2026/11/02';
 const _newDue = '到期 2026/11/09';
 
 void main() {
+  testWidgets('C2-D8 status blocked after START releases the UI registry', (
+    tester,
+  ) async {
+    final h = await _mount(tester);
+    await _expand(tester);
+    await _openStatus(tester);
+    await _chooseStatus(tester, _canceled);
+    final held = Completer<DiskClearResult>();
+    final backend = C2d7Barrier()..onInvalidate = () => held.future;
+    h.api.attachReadCacheDiskBackend(backend);
+    final registry = createAiWorkspaceWorkItemWriteRegistry(
+      api: h.api,
+      accountKey: h.account.key,
+      instanceKey: h.api.instance.key,
+      generation: h.session.generation,
+      isCurrent: () => true,
+    );
+    await tester.tap(find.byKey(_statusSave));
+    await _until(tester, () => backend.entered.isCompleted);
+    expect(registry.isActive(_itemX), isTrue);
+    expect(registry.tryStart(_itemX, AiWorkItemWriteKind.status), isNull);
+    held.completeError(StateError('synthetic failure'));
+    await settleNetworkWidgets(tester);
+    expect(h.fixture.status.count(_statusWriteOp), 0);
+    expect(registry.isActive(_itemX), isFalse);
+    expect(
+      aiWorkspaceWriteFreshnessForTesting(
+        h.api,
+        _itemX,
+        AiWorkItemWriteKind.status,
+      ),
+      isNull,
+    );
+    final lease = registry.tryStart(_itemX, AiWorkItemWriteKind.status);
+    expect(lease, isNotNull);
+    registry.settle(lease!, AiWorkItemWriteResult.notSent, null);
+    await settleNetworkWidgets(tester);
+  });
+
+  testWidgets('C2-D8 dates UI holds the AI lease through the disk barrier', (
+    tester,
+  ) async {
+    final h = await _mount(tester);
+    await _expand(tester);
+    await _openDates(tester);
+    await _enterDates(tester, '2026-11-02', '2026-11-09');
+    final held = Completer<DiskClearResult>();
+    final backend = C2d7Barrier()..onInvalidate = () => held.future;
+    h.api.attachReadCacheDiskBackend(backend);
+    final registry = createAiWorkspaceWorkItemWriteRegistry(
+      api: h.api,
+      accountKey: h.account.key,
+      instanceKey: h.api.instance.key,
+      generation: h.session.generation,
+      isCurrent: () => true,
+    );
+    await tester.tap(find.byKey(_datesSave));
+    await _until(tester, () => backend.entered.isCompleted);
+    final lease = registry.tryStart(_itemX, AiWorkItemWriteKind.dates);
+    if (lease != null) {
+      registry.settle(lease, AiWorkItemWriteResult.notSent, null);
+    }
+    held.complete(c2d7Clear);
+    await settleNetworkWidgets(tester);
+    expect(lease, isNull);
+    expect(h.fixture.datesMutationRequests, 1);
+    expect(registry.isActive(_itemX), isFalse);
+  });
+
+  testWidgets('C2-D8 dates blocked after START releases the UI registry', (
+    tester,
+  ) async {
+    final h = await _mount(tester);
+    await _expand(tester);
+    await _openDates(tester);
+    await _enterDates(tester, '2026-11-02', '2026-11-09');
+    final held = Completer<DiskClearResult>();
+    final backend = C2d7Barrier()..onInvalidate = () => held.future;
+    h.api.attachReadCacheDiskBackend(backend);
+    final registry = createAiWorkspaceWorkItemWriteRegistry(
+      api: h.api,
+      accountKey: h.account.key,
+      instanceKey: h.api.instance.key,
+      generation: h.session.generation,
+      isCurrent: () => true,
+    );
+    await tester.tap(find.byKey(_datesSave));
+    await _until(tester, () => backend.entered.isCompleted);
+    expect(registry.isActive(_itemX), isTrue);
+    held.completeError(StateError('synthetic failure'));
+    await settleNetworkWidgets(tester);
+    expect(h.fixture.datesMutationRequests, 0);
+    expect(registry.isActive(_itemX), isFalse);
+    expect(
+      aiWorkspaceWriteFreshnessForTesting(
+        h.api,
+        _itemX,
+        AiWorkItemWriteKind.dates,
+      ),
+      isNull,
+    );
+    final lease = registry.tryStart(_itemX, AiWorkItemWriteKind.dates);
+    expect(lease, isNotNull);
+    registry.settle(lease!, AiWorkItemWriteResult.notSent, null);
+    await settleNetworkWidgets(tester);
+    expect(find.byKey(_feedback), findsOneWidget);
+  });
+
   test(
     'D0 fixture shapes parse through production detail, access and write '
     'APIs (EE manual, EE inherited, CE fixed)',

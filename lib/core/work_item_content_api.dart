@@ -7,6 +7,15 @@ bool _graphDefinitelyNotSent(Object error, bool sent) =>
             error.cleanup?.disposition ==
                 ReadCacheCleanupDisposition.requestBlockedBeforeSend));
 
+// START is a synchronous lease handoff, not evidence of a transport send.
+void _reportGraphMutationStart(void Function()? callback) {
+  try {
+    callback?.call();
+  } on Object {
+    throw ApiFailure(FailureKind.cancelled);
+  }
+}
+
 const _workItemContentQuery = r'''
 query MobileWorkItemContent($id: WorkItemID!) {
   currentUser { id }
@@ -198,6 +207,7 @@ extension WorkItemContentApi on GitLabApi {
     _requireCurrentWorkItemRequest(isCurrent);
     if (beforeMutation != null) await beforeMutation();
     _requireCurrentWorkItemRequest(isCurrent);
+    _reportGraphMutationStart(onMutationSent);
     if (mayStart != null && !mayStart()) {
       throw const ApiFailure(FailureKind.cancelled);
     }
@@ -208,7 +218,6 @@ extension WorkItemContentApi on GitLabApi {
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
-        beforeSend: () => onMutationSent?.call(),
         onSendStarted: () => didSend = true,
         data: {
           'query': _workItemContentMutation,

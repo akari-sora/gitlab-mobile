@@ -184,7 +184,33 @@ Future<WorkItemContentTarget> _target(
 )).target!;
 
 void main() {
-  test('C2-D7 content barrier failure preserves failure and does not report sent', () async {
+  test('C2-D8 content callback failure is cancelled before gate and send', () async {
+    final adapter = FakeAdapter((_) => jsonResponse(_read()));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = await _target(api);
+    final events = <String>[];
+    await expectLater(
+      api.updateWorkItemContent(
+        target,
+        title: 'changed',
+        beforeMutation: () async => events.add('hook'),
+        onMutationSent: () {
+          events.add('start');
+          throw StateError('synthetic callback failure');
+        },
+        mayStart: () {
+          events.add('gate');
+          return true;
+        },
+      ),
+      throwsA(_failure(FailureKind.cancelled)),
+    );
+    expect(events, ['hook', 'start']);
+    expect(adapter.requests.where(_mutation), isEmpty);
+  });
+
+  test('C2-D8 content START precedes barrier failure without sending', () async {
     final adapter = FakeAdapter((_) => jsonResponse(_read()));
     final api = testApi(adapter);
     addTearDown(api.close);
@@ -192,13 +218,13 @@ void main() {
     final backend = C2d7Barrier();
     api.bindReadCache('https://example.com/gitlab#7', 1);
     api.attachReadCacheDiskBackend(backend);
-    var sent = false;
+    var started = false;
     await expectLater(api.updateWorkItemContent(target, title: 'changed',
-        onMutationSent: () => sent = true), throwsA(
+        onMutationSent: () => started = true), throwsA(
       isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.readCacheCleanup)
         .having((e) => e.cleanup?.disposition, 'disposition', ReadCacheCleanupDisposition.requestBlockedBeforeSend),
     ));
-    expect(sent, isFalse);
+    expect(started, isTrue);
     expect(adapter.requests.where(_mutation), isEmpty);
   });
 
@@ -214,21 +240,21 @@ void main() {
     api.attachReadCacheDiskBackend(backend);
     var allow = true;
     var checks = 0;
-    var sent = false;
+    var started = false;
     final pending = api.updateWorkItemContent(target, title: 'changed',
       beforeMutation: () async {}, mayStart: () { checks++; return allow; },
-      onMutationSent: () => sent = true);
+      onMutationSent: () => started = true);
     final check = expectLater(pending, throwsA(_failure(FailureKind.writeUncertain)));
     await backend.entered.future;
     expect(checks, 1);
-    expect(sent, isFalse);
+    expect(started, isTrue);
     expect(adapter.requests.where(_mutation), isEmpty);
     // The v6 §12 acceptance point is the synchronous mayStart recheck.
     allow = false;
     held.complete(c2d7Clear);
     await check;
     expect(checks, 1);
-    expect(sent, isTrue);
+    expect(started, isTrue);
     expect(adapter.requests.where(_mutation), hasLength(1));
   });
 

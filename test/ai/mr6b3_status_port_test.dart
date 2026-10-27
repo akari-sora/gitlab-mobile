@@ -447,6 +447,28 @@ Matcher _refused(String reason) => isA<writes.AiWriteRefused>().having(
 
 void main() {
 
+  test('C2-D8 status reports START before a failed disk barrier', () async {
+    final fixture = WorkItemStatusFixture();
+    addTearDown(fixture.closeAll);
+    fixture.api.bindReadCache(_account, 12);
+    final access = await fixture.api.workItemStatus(
+      fixture.detail(group: false), expectedUserId: 7, generation: 12);
+    fixture.api.attachReadCacheDiskBackend(C2d7Barrier());
+    final events = <String>[];
+    await expectLater(
+      fixture.api.updateWorkItemStatus(access.target!, candidateId: _candidate,
+        onMutationSent: (started) { events.add('START'); started(Object()); },
+        beforeMutation: () async { events.add('B'); },
+        mayStart: () { events.add('A'); return true; }),
+      throwsA(isA<WorkItemStatusWriteFailure>()
+        .having((e) => e.mutationSent, 'mutationSent', isFalse)
+        .having((e) => e.handoff, 'handoff', WorkItemStatusHandoff.started)
+        .having((e) => e.failure.kind, 'kind', FailureKind.readCacheCleanup)),
+    );
+    expect(events, ['B', 'START', 'A']);
+    expect(fixture.mutations, 0);
+  });
+
   test('C2-D7 status barrier failure releases registry for a fresh retry', () async {
     final h = await _StatusHarness.create(maxRequests: 100);
     addTearDown(h.dispose);
@@ -454,7 +476,27 @@ void main() {
     final barrier = C2d7Barrier();
     h.server.api.attachReadCacheDiskBackend(barrier);
     final first = (await h.propose())!;
-    expect((await h.approve(first)).state, AiJournalState.notExecuted);
+    final outcome = await h.approve(first);
+    expect(outcome.state, AiJournalState.notExecuted);
+    expect(outcome.reasonCode, 'readCacheCleanup');
+    expect(outcome.mutationCount, 0);
+    final entry = h.journal.entries(_account).single;
+    expect(entry.state, AiJournalState.notExecuted);
+    expect(h.journal.conversationWriteCount(_account, _conversation), 0);
+    final budgetRequest = AiBudgetRequest(accountKey: _account,
+        conversationId: entry.conversationId, runId: entry.runId);
+    final holds = <AiBudgetHold>[];
+    for (var i = 0; i < 8; i++) {
+      final hold = await h.journal.tryReserve(budgetRequest);
+      expect(hold, isNotNull, reason: 'all eight run slots must be refunded');
+      holds.add(hold!);
+    }
+    expect(await h.journal.tryReserve(budgetRequest), isNull);
+    for (final hold in holds) { await h.journal.refund(hold); }
+    final reopened = AiWriteJournal(keys: h.keys, applicationSupport: h.root,
+        files: h.files, processId: 'c2d8-status-reopen');
+    await reopened.recoverAfterAccountsLoaded([_account]);
+    expect(reopened.entries(_account).single.state, AiJournalState.notExecuted);
     expect(h.registry.settlements, [AiWorkItemWriteResult.notSent]);
     expect(h.server.mutations, 0);
     barrier.blocked = false;
@@ -1171,7 +1213,7 @@ void main() {
       );
       expect(h.journal.requiresConfirmation(_account, {_key}), isTrue);
       expect(h.journal.conversationWriteCount(_account, _conversation), 0);
-      expect(h.startEvents, ['B', 'A', 'START']);
+      expect(h.startEvents, ['B', 'START']);
       expect(h.registry.settlements, [AiWorkItemWriteResult.notSent]);
     },
   );
@@ -1207,11 +1249,11 @@ void main() {
             .having(
               (error) => error.handoff,
               'handoff',
-              WorkItemStatusHandoff.none,
+              WorkItemStatusHandoff.started,
             ),
       ),
     );
-    expect(events, ['B', 'A']);
+    expect(events, ['B', 'START', 'A']);
     expect(fixture.mutations, 0);
   });
 

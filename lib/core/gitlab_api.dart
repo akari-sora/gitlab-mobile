@@ -311,7 +311,6 @@ final class GitLabApi {
     bool graphQuery = false,
     bool graphMutation = false,
     Duration? sendTimeout,
-    void Function()? beforeSend,
     void Function()? onSendStarted,
   }) async {
     if (_closed) {
@@ -349,17 +348,6 @@ final class GitLabApi {
             beforeSend: true,
           );
         }
-      }
-      if (_closed) throw const ApiFailure(FailureKind.cancelled);
-      // The UI handoff may still refuse or close the client without a send.
-      try {
-        beforeSend?.call();
-      } on Object catch (failure) {
-        if (graphMutation) {
-          (Zone.current[#graphMutationBlockedBeforeSend]
-              as void Function(Object)?)?.call(failure);
-        }
-        rethrow;
       }
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
       onSendStarted?.call();

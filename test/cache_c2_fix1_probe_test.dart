@@ -89,6 +89,111 @@ GitLabApi _api(_Backend backend, FakeAdapter adapter, int generation) =>
       ..attachReadCacheDiskBackend(backend);
 
 void main() {
+  for (final revoked in ['project', 'list-request']) {
+    test('network settlement rechecks $revoked revocation', () async {
+      final backend = _Backend()..hold = Completer<DiskClearResult>();
+      var listCalls = 0;
+      final adapter = FakeAdapter((request) {
+        final path = request.uri.path;
+        if (path.endsWith('/issues/4')) {
+          return jsonResponse(_issue(4, confidential: true));
+        }
+        if (path.endsWith('/projects/9')) {
+          return jsonResponse({'message': '404 Not found'}, status: 404);
+        }
+        if (path.endsWith('/projects/9/issues')) {
+          listCalls++;
+          if (revoked == 'list-request' && listCalls >= 2) {
+            return jsonResponse({'message': '403 Forbidden'}, status: 403);
+          }
+          return jsonResponse([_issue(3)]);
+        }
+        return jsonResponse({'message': 'not found'}, status: 404);
+      });
+      final api = _api(backend, adapter, 1);
+      addTearDown(api.close);
+
+      // Hold an unrelated privacy invalidation so the network read must settle.
+      unawaited(
+        api
+            .record(['projects', '9', 'issues', '4'])
+            .then<void>((_) {}, onError: (Object _) {}),
+      );
+      for (var i = 0; i < 100 && backend.events.isEmpty; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(backend.events, isNotEmpty);
+      final listing = api.cachedRecords(['projects', '9', 'issues']);
+      for (var i = 0; i < 100 && listCalls == 0; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(listCalls, 1);
+      var done = false;
+      unawaited(
+        listing.then<void>(
+          (_) => done = true,
+          onError: (Object _) => done = true,
+        ),
+      );
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(done, isFalse, reason: 'the list is waiting for disk settlement');
+
+      final Future<Object> revoke = revoked == 'project'
+          ? api
+                .record(['projects', '9'])
+                .then<Object>((v) => v, onError: (Object e) => e)
+          : api
+                .records(['projects', '9', 'issues'])
+                .then<Object>((v) => v, onError: (Object e) => e);
+      for (var i = 0; i < 100 && backend.events.length < 2; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(backend.events.length, greaterThanOrEqualTo(2));
+      backend.hold!.complete(_clear);
+      final first = await listing;
+      final failure = await revoke;
+      expect(first.lineage, CacheLineage.network);
+      expect(
+        failure,
+        isA<ApiFailure>().having(
+          (e) => e.kind,
+          'kind',
+          revoked == 'project' ? FailureKind.invisible : FailureKind.forbidden,
+        ),
+      );
+      expect(backend.accepted, isEmpty);
+      final before = listCalls;
+      final again = await api
+          .cachedRecords(['projects', '9', 'issues'])
+          .then<Object>((v) => v, onError: (Object e) => e);
+      expect(
+        listCalls,
+        before + 1,
+        reason: 'revoked response must not be retained',
+      );
+      if (revoked == 'project') {
+        expect(
+          again,
+          isA<CachedRead<Object?>>().having(
+            (r) => r.lineage,
+            'lineage',
+            CacheLineage.network,
+          ),
+        );
+      } else {
+        expect(
+          again,
+          isA<ApiFailure>().having(
+            (e) => e.kind,
+            'kind',
+            FailureKind.forbidden,
+          ),
+        );
+      }
+    });
+  }
   for (final change in ['confidential', '404']) {
     test('PROBE: $change on a listed issue during hydration settle', () async {
       // 1. A first client publishes the public list; capture its exact entry.

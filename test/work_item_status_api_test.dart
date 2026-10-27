@@ -10,6 +10,7 @@ import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/work_item_state_models.dart';
 import 'package:gitlab_mobile/core/work_item_status_models.dart';
+import 'package:gitlab_mobile/features/workspace/work_item_status.dart';
 
 import 'support/fake_adapter.dart';
 import 'support/c2d7_barrier.dart';
@@ -281,6 +282,46 @@ WorkItemStatusMutationSent _handoff(List<Object> tokens) => (started) {
 };
 
 void main() {
+  test('C2-D8 STATUS registers before the disk barrier', () async {
+    final adapter = FakeAdapter((request) => jsonResponse(_read()));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    api.bindReadCache('https://example.com/gitlab#7', 12);
+    final target = await _open(api);
+    final held = Completer<DiskClearResult>();
+    final backend = C2d7Barrier()..onInvalidate = () => held.future;
+    api.attachReadCacheDiskBackend(backend);
+    const gid = 'gid://gitlab/WorkItem/301';
+    final registry = WorkItemStatusWriteRegistry.instance;
+    final uiToken = Object();
+    var started = false;
+    final pending = api
+        .updateWorkItemStatus(
+          target,
+          candidateId: _newStatusId,
+          isCurrent: () => started || !registry.isActive(api, gid),
+          onMutationSent: (handoff) {
+            started = true;
+            expect(registry.tryStartExternal(api, gid, uiToken), isTrue);
+            handoff(uiToken);
+          },
+        )
+        .then<Object?>((value) => value, onError: (Object error) => error);
+    await backend.entered.future;
+    final aiToken = Object();
+    final aiLease = registry.tryStartExternal(api, gid, aiToken);
+    // Release even on a failing assertion, to prevent a dangling future.
+    if (aiLease) {
+      registry.settleExternal(api, gid, token: aiToken, mutationSent: false);
+    }
+    held.complete(c2d7Clear);
+    await pending;
+    registry.settleExternal(api, gid, token: uiToken, mutationSent: true);
+    expect(started, isTrue);
+    expect(aiLease, isFalse);
+    expect(adapter.requests.where(_isMutation), hasLength(1));
+  });
+
   test('C2-D7 STATUS barrier failure preserves typed unsent failure', () async {
     final adapter = FakeAdapter((request) => jsonResponse(_read()));
     final api = testApi(adapter);
@@ -296,8 +337,8 @@ void main() {
         .having((e) => e.failure.kind, 'kind', FailureKind.readCacheCleanup)
         .having((e) => e.failure.cleanup?.disposition, 'disposition', ReadCacheCleanupDisposition.requestBlockedBeforeSend)
         .having((e) => e.mutationSent, 'mutationSent', isFalse)
-        .having((e) => e.handoff, 'handoff', WorkItemStatusHandoff.none)));
-    expect(handoffs, 0);
+        .having((e) => e.handoff, 'handoff', WorkItemStatusHandoff.started)));
+    expect(handoffs, 1);
     expect(adapter.requests.where(_isMutation), isEmpty);
   });
 

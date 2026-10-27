@@ -1343,7 +1343,7 @@ void main() {
     expect(adapter.requests.where(_mutation), hasLength(1));
   });
 
-  test('mutation callback runs only at actual weight transport handoff', () async {
+  test('weight START callback runs once before transport', () async {
     Future<void> changed({required bool callbackThrows}) async {
       var callbacks = 0;
       var writes = 0;
@@ -1373,7 +1373,7 @@ void main() {
         },
       );
       if (callbackThrows) {
-        await expectLater(future, throwsA(isA<StateError>()));
+        await expectLater(future, throwsA(_failure(FailureKind.cancelled)));
       } else {
         expect((await future).value!.weight, 8);
       }

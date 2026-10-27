@@ -480,6 +480,11 @@ extension WorkItemLabelApi on GitLabApi {
       throw WorkItemLabelWriteFailure(failure: failure, mutationSent: false);
     }
     if (beforeMutation != null) await beforeMutation();
+    try {
+      _reportGraphMutationStart(onMutationSent);
+    } on ApiFailure catch (failure) {
+      throw WorkItemLabelWriteFailure(failure: failure, mutationSent: false);
+    }
     if (mayStart != null && !mayStart()) throw _labelsCancelled;
     final ({Uint8List bytes, Headers headers, int statusCode}) response;
     var didSend = false;
@@ -488,7 +493,6 @@ extension WorkItemLabelApi on GitLabApi {
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
-        beforeSend: () => onMutationSent?.call(),
         onSendStarted: () => didSend = true,
         data: {
           'query': _workItemLabelMutation,

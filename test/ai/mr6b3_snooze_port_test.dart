@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -203,6 +204,8 @@ final class _Server {
       expect(query, startsWith('mutation MobileTodo'));
       mutations++;
       await onMutation?.call();
+      final response = mutationResponse;
+      if (response != null) return response();
       final status = mutationStatus;
       if (status != null) return jsonResponse({}, status: status);
       if (cancelMutation) {
@@ -270,6 +273,7 @@ final class _Server {
   FutureOr<void> Function(RequestOptions)? beforeRequest;
   ResponseBody? Function(RequestOptions)? readFailure;
   FutureOr<void> Function()? onMutation;
+  ResponseBody Function()? mutationResponse;
   void Function(Map<String, Object?>, int)? editPage;
   void Function(Map<String, Object?>)? editAck;
 
@@ -511,6 +515,94 @@ void main() {
     expect(reopened.entries(mr6b3Account).map((e) => e.state),
         containsAll([AiJournalState.notExecuted, AiJournalState.succeeded]));
   });
+
+  for (final closeAt in ['body', 'settle']) {
+  test(
+    'C2-D8 close during mutation $closeAt remains uncertain and charged',
+    () async {
+      final responseReady = Completer<void>();
+      final settle = Completer<DiskClearResult>();
+      StreamController<Uint8List>? body;
+      if (closeAt == 'body') {
+        body = StreamController<Uint8List>(
+          onListen: () => responseReady.complete(),
+        );
+        addTearDown(body.close);
+        s.mutationResponse = () => ResponseBody(
+          body!.stream, 200,
+          headers: {'content-type': ['application/json']},
+        );
+      } else {
+        // The server has already received a mutation and returned 401. Hold
+        // its account cleanup, after Dio completed, to close inside _send's
+        // explicit post-settlement cancellation check (not Dio's cancel path).
+        s.mutationStatus = 401;
+      }
+      s.api.bindReadCache(mr6b3Account, 1);
+      var barriers = 0;
+      s.api.attachReadCacheDiskBackend(_MutationBarrier(() {
+        barriers++;
+        if (closeAt == 'settle' && barriers == 2) {
+          responseReady.complete();
+          return settle.future;
+        }
+        return Future.value(_emptyClear);
+      }));
+      harness = await _Harness.create(s, limit: 100);
+      final h = harness!;
+      final proposal = (await h.propose(
+        'unsnoozeTodo',
+        message: 'Unsnooze this todo.',
+      ))!;
+      final pending = h.approve(proposal);
+      await responseReady.future;
+      expect(s.mutations, 1);
+      s.api.close();
+      if (body != null) {
+        body.add(Uint8List.fromList(utf8.encode('{}')));
+        await body.close();
+      } else {
+        settle.complete(_emptyClear);
+      }
+      final outcome = await pending;
+      expect(outcome.state, AiJournalState.writeUncertain);
+      expect(s.mutations, 1);
+      final entry = h.journal.entries(mr6b3Account).single;
+      expect(entry.state, AiJournalState.writeUncertain);
+      final request = AiBudgetRequest(
+        accountKey: mr6b3Account,
+        conversationId: entry.conversationId,
+        runId: entry.runId,
+      );
+      final holds = <AiBudgetHold>[];
+      for (var i = 0; i < 7; i++) {
+        final hold = await h.journal.tryReserve(request);
+        expect(
+          hold,
+          isNotNull,
+          reason: 'one of eight slots must remain charged',
+        );
+        holds.add(hold!);
+      }
+      expect(await h.journal.tryReserve(request), isNull);
+      for (final hold in holds) {
+        await h.journal.refund(hold);
+      }
+      final reopened = AiWriteJournal(
+        keys: h.keys,
+        applicationSupport: h.root,
+        files: h.files,
+        processId: 'c2d8-post-send-reopen',
+      );
+      await reopened.recoverAfterAccountsLoaded([mr6b3Account]);
+      expect(
+        reopened.entries(mr6b3Account).single.state,
+        AiJournalState.writeUncertain,
+      );
+    },
+  );
+
+  }
 
   for (final mode in ['timeout', 'close']) {
     test('C2-D7 $mode before send stays certain through public API and journal', () async {

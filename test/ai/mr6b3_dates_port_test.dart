@@ -858,7 +858,7 @@ void main() {
       );
       final sendTry = method.indexOf('    try {', gate);
       final send = method.indexOf('response = await _send(', gate);
-      final callback = method.indexOf('beforeSend: () => onMutationSent()', send);
+      final callback = method.indexOf('_reportGraphMutationStart(onMutationSent);', hook);
       expect(hook, isNonNegative);
       expect(gate, greaterThan(hook));
       expect(
@@ -867,7 +867,8 @@ void main() {
         reason: 'mayStart must stay outside the mutation try',
       );
       expect(send, greaterThan(sendTry));
-      expect(callback, greaterThan(send));
+      expect(callback, greaterThan(hook));
+      expect(callback, lessThan(gate));
       expect(method.substring(gate, send), isNot(contains('await ')));
     },
   );

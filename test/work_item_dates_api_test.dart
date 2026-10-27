@@ -6,9 +6,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/core/work_item_dates_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
+import 'support/c2d7_barrier.dart';
 import 'support/fake_adapter.dart';
 
 const _actor = 'gid://gitlab/User/7';
@@ -46,6 +48,68 @@ typedef _MutationResponder =
     );
 
 void main() {
+  test('C2-D8 dates callback failure is cancelled before gate and send', () async {
+    final server = _DatesServer(
+      initial: const _ServerState(),
+      expected: const [_RequestKind.base, _RequestKind.probe, _RequestKind.base, _RequestKind.probe],
+    );
+    final api = _api(server);
+    final target = (await _access(api)).target!;
+    final events = <String>[];
+    await expectLater(
+      api.updateWorkItemDates(
+        target,
+        mode: WorkItemDatesMode.manual,
+        startDate: '2026-10-04',
+        dueDate: null,
+        beforeMutation: () async => events.add('hook'),
+        onMutationSent: () {
+          events.add('start');
+          throw StateError('synthetic callback failure');
+        },
+        mayStart: () {
+          events.add('gate');
+          return true;
+        },
+      ),
+      throwsA(_failure(FailureKind.cancelled)),
+    );
+    expect(events, ['hook', 'start']);
+    expect(server.mutationCount, 0);
+  });
+
+  test('C2-D8 dates barrier failure after START is certainly unsent', () async {
+    final server = _DatesServer(
+      initial: const _ServerState(),
+      expected: [..._eeAccess, ..._eeFence],
+    );
+    final api = _api(server);
+    api.bindReadCache('https://example.com/gitlab#7', 4);
+    final target = (await _access(api)).target!;
+    api.attachReadCacheDiskBackend(C2d7Barrier());
+    var started = 0;
+    await expectLater(
+      api.updateWorkItemDates(
+        target,
+        mode: WorkItemDatesMode.manual,
+        startDate: '2026-10-04',
+        dueDate: null,
+        onMutationSent: () => started++,
+      ),
+      throwsA(
+        isA<ApiFailure>()
+            .having((e) => e.kind, 'kind', FailureKind.readCacheCleanup)
+            .having(
+              (e) => e.cleanup?.disposition,
+              'disposition',
+              ReadCacheCleanupDisposition.requestBlockedBeforeSend,
+            ),
+      ),
+    );
+    expect(started, 1);
+    expect(server.mutationCount, 0);
+  });
+
   test('same-second manual set and explicit-null clear both apply', () async {
     for (final clear in [false, true]) {
       final initial = _ServerState(
@@ -1088,7 +1152,10 @@ void main() {
     expect(source.contains('_readEpoch'), isFalse);
     expect(source.contains('.readEpoch'), isFalse);
     expect(source.contains('clearReadCache'), isFalse);
-    expect(source.contains('beforeSend: () => onMutationSent()'), isTrue);
+    final start = source.indexOf('_reportGraphMutationStart(onMutationSent);');
+    final gate = source.indexOf('if (mayStart != null && !mayStart())');
+    expect(start, greaterThanOrEqualTo(0));
+    expect(gate, greaterThan(start));
     expect(source.contains('isAfter(opening.updatedAt)'), isFalse);
   });
 }

@@ -332,25 +332,17 @@ extension WorkItemAssigneeApi on GitLabApi {
     }
 
     if (beforeMutation != null) await beforeMutation();
+    _reportGraphMutationStart(onMutationSent);
     ({Uint8List bytes, Headers headers, int statusCode}) response;
     if (mayStart != null && !mayStart()) {
       throw const ApiFailure(FailureKind.cancelled);
     }
     var didSend = false;
-    var callbackFailed = false;
     try {
       response = await _send(
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
-        beforeSend: () {
-          try {
-            onMutationSent?.call();
-          } on Object {
-            callbackFailed = true;
-            rethrow;
-          }
-        },
         onSendStarted: () => didSend = true,
         data: {
           'query': _workItemAssigneesMutation,
@@ -363,7 +355,7 @@ extension WorkItemAssigneeApi on GitLabApi {
         },
       );
     } on Object catch (error) {
-      if (callbackFailed || _graphDefinitelyNotSent(error, didSend)) rethrow;
+      if (_graphDefinitelyNotSent(error, didSend)) rethrow;
       throw _assigneesUncertain;
     }
 

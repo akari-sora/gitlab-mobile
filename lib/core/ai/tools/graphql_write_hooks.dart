@@ -33,6 +33,7 @@ final class GraphHooks {
 
   GraphWriteSpanState get state => _state;
   bool get accepted => _state == GraphWriteSpanState.pastAcceptance;
+  // START acquires a registry lease; only the transport records a send.
   bool get sent => _sent;
   void markSent() => _sent = true;
   Object? get blockedBeforeSend => _blockedBeforeSend;

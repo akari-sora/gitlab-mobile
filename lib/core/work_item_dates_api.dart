@@ -314,6 +314,7 @@ extension WorkItemDatesApi on GitLabApi {
     if (isClosed) throw _datesCancelled;
 
     if (beforeMutation != null) await beforeMutation();
+    _reportGraphMutationStart(onMutationSent);
 
     final widget = _datesMutationWidget(
       target.edition,
@@ -333,7 +334,6 @@ extension WorkItemDatesApi on GitLabApi {
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
-        beforeSend: () => onMutationSent(),
         onSendStarted: () => didSend = true,
         data: {
           'query': target.edition == WorkItemDatesEdition.ee

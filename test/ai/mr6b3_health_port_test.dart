@@ -818,7 +818,7 @@ void main() {
 
     final outcome = await prepared.commitGraph(mayStart: () => true);
 
-    expect(outcome, _notSent('invalidResponse'));
+    expect(outcome, _notSent('graphContractViolation'));
     expect(boundaryCalls, 1);
     expect(server.mutations, 0);
   });
@@ -1370,7 +1370,7 @@ void main() {
       final before = method.indexOf(
         'if (beforeMutation != null) await beforeMutation();',
       );
-      final callback = method.indexOf('beforeSend: () {');
+      final callback = method.indexOf('onMutationSent?.call();', before);
       final mayStart = method.indexOf('if (mayStart != null && !mayStart())');
       final send = method.indexOf("final response = await _send(");
       final sendTry = method.lastIndexOf('try {', send);
@@ -1378,7 +1378,8 @@ void main() {
       expect(mayStart, greaterThan(before));
       expect(send, greaterThan(mayStart));
       expect(sendTry, greaterThan(mayStart));
-      expect(callback, greaterThan(send));
+      expect(callback, greaterThan(before));
+      expect(callback, lessThan(mayStart));
       expect(method, contains("'healthStatusWidget': <String, Object?>{"));
       expect(method, contains("'healthStatus': desired?.graphValue"));
       expect(method, isNot(contains("'rolledUpHealthStatus':")));

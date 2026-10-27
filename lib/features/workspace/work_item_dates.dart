@@ -10,7 +10,7 @@ import '../../core/work_item_graph_models.dart';
 import '../../shared/workspace_ui.dart';
 
 import '../../l10n/l10n.dart';
-enum WorkItemDatesWritePhase { start, settle }
+enum WorkItemDatesWritePhase { start, settle, notSent }
 
 typedef WorkItemDatesWriteListener =
     void Function(WorkItemDatesWritePhase phase, Object token);
@@ -437,6 +437,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
       _validationError = null;
       _saveFeedback = null;
     });
+    var mutationSent = false;
     try {
       final result = await widget.api.updateWorkItemDates(
         target,
@@ -453,6 +454,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
           return operation.current();
         },
       );
+      mutationSent = result.mutationSent;
       if (!mounted || !_routeOpen || !widget.ownerCurrent()) return;
       if (result.outcome == WorkItemDatesWriteOutcome.applied &&
           result.snapshot != null) {
@@ -471,17 +473,18 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
     } catch (error) {
       if (!mounted || !_routeOpen || !widget.ownerCurrent()) return;
       final failure = safeFailure(error);
+      // Only pre-send failures are thrown today; a thrown uncertain write
+      // after START is still treated as possibly sent.
+      if (operation.started && failure.kind == FailureKind.writeUncertain) {
+        mutationSent = true;
+      }
       setState(() {
-        // onMutationSent runs immediately before the only send, so a failure
-        // before START proves nothing was sent.
-        _saveFeedback = operation.started
-            ? _unconfirmedFeedback
-            : failure.kind == FailureKind.writeUncertain
+        _saveFeedback = failure.kind == FailureKind.writeUncertain
             ? _notSentFeedback
             : failure.detail;
       });
     } finally {
-      operation.terminal();
+      operation.terminal(mutationSent: mutationSent);
       if (identical(_operation, operation)) _operation = null;
       if (mounted && _routeOpen) setState(() => _writing = false);
     }
@@ -718,11 +721,16 @@ final class _DatesWriteOperation {
     if (!started) routeCurrent = false;
   }
 
-  void terminal() {
+  void terminal({required bool mutationSent}) {
     if (!started || settled) return;
     settled = true;
     try {
-      onPhase(WorkItemDatesWritePhase.settle, token);
+      onPhase(
+        mutationSent
+            ? WorkItemDatesWritePhase.settle
+            : WorkItemDatesWritePhase.notSent,
+        token,
+      );
     } on Object {
       // A terminal observer cannot make the completed write nonterminal.
     }

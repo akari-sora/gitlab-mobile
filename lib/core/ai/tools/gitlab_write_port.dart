@@ -398,6 +398,8 @@ Future<AiWriteOutcome> _settleGraph(AiWritePrepared prepared, GraphHooks span) a
   if (span.state == GraphWriteSpanState.hookFailed && error != null) {
     throw error;
   }
+  // START and acceptance can precede a blocked barrier. Transport proof wins
+  // until a send actually starts; later close/failure remains uncertain.
   if (span.accepted && !span.sent && !span.contractViolated &&
       error != null && span.blockedBeforeSend != null) {
     final proof = span.blockedBeforeSend;

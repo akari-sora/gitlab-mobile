@@ -1088,7 +1088,7 @@ void main() {
   });
 
   test(
-    'registry change during beforeMutation uses fifth-state rollback',
+    'registry change during beforeMutation refuses START before the gate',
     () async {
       final server = _Server();
       addTearDown(server.close);
@@ -1105,7 +1105,7 @@ void main() {
         },
       );
       expect(outcome, isA<port.AiWriteNotSent>());
-      expect(starts, 1);
+      expect(starts, 0);
       expect(server.inputs, isEmpty);
     },
   );

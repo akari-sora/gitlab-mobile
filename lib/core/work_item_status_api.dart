@@ -253,6 +253,19 @@ extension WorkItemStatusApi on GitLabApi {
       handoff = WorkItemStatusHandoff.started;
     }
 
+    try {
+      onMutationSent(started);
+      if (!reportedStart) {
+        throw StateError('STATUS mutation START was not reported');
+      }
+    } on Object {
+      throw WorkItemStatusWriteFailure(
+        failure: _statusCancelled,
+        mutationSent: false,
+        handoff: handoff,
+      );
+    }
+
     if (mayStart != null && !mayStart()) {
       throw WorkItemStatusWriteFailure(
         failure: _statusCancelled,
@@ -268,12 +281,6 @@ extension WorkItemStatusApi on GitLabApi {
         instance.graphQL,
         method: 'POST',
         graphMutation: true,
-        beforeSend: () {
-          onMutationSent(started);
-          if (!reportedStart) {
-            throw StateError('STATUS mutation START was not reported');
-          }
-        },
         onSendStarted: () => didSend = true,
         data: {
           'query': _workItemStatusMutation,
