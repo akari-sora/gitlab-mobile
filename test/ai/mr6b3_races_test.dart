@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
+import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
@@ -23,8 +24,8 @@ import 'runner_test.dart' as runner_helpers;
 // NOT_RUN: row 7 notification click after expiry and typed-name mismatch
 // (the latter is covered in mr6b3_matrix_test.dart); graph Work Items have no
 // head SHA, so the former synthetic head-change case has been removed.
-// NOT_RUN: rows 6–7 substantive edited-body delivery/readback (issue #23),
-// and failedCertain after graph acceptance (not a graph outcome). The 403 case
+// NOT_RUN: row 7 failedCertain after graph acceptance (not a graph outcome).
+// Substantive edited-body delivery is covered below (issue #23). The 403 case
 // below proves server refusal during the fresh read, before any mutation.
 
 void main() {
@@ -386,12 +387,10 @@ void main() {
     }
 
     test(
-      'known defect #23: substantive graph edit re-approval gets targetChanged',
+      'substantive graph edit is sent once after a new approval (#23)',
       () async {
-        // KNOWN DEFECT PIN, issue #23, not plan behaviour: the coordinator
-        // retains the original body binding digest after a substantive edit.
-        // The separate production fix should flip exactly this test to prove
-        // newly approved edited text is delivered and independently read back.
+        // Plan v6 §7.1: an edit re-processes the text and invalidates the old
+        // approval; a new explicit approval sends exactly the shown text once.
         for (final operation in [
           'createWorkItemActivityComment',
           'createWorkItemActivityReply',
@@ -399,13 +398,27 @@ void main() {
           final h = await _harness();
           final proposal = (await h.propose(operation))!;
           const edited = 'A substantive user correction to the comment.';
-          await h.coordinator.approve(proposal, editedText: edited);
-          final outcome = await h.approve(proposal);
-          expect(outcome.reasonCode, 'targetChanged', reason: operation);
-          expect(outcome.state, AiJournalState.notExecuted);
+          final pending = await h.coordinator.approve(
+            proposal,
+            editedText: edited,
+          );
+          expect(pending.reasonCode, 'approvalRequired', reason: operation);
           expect(h.server.mutations, 0);
-          expect(proposal.editedText, edited);
-          expect(h.coordinator.settledEdits, contains(same(proposal)));
+          final again = await h.coordinator.approve(
+            proposal,
+            editedText: edited,
+          );
+          expect(again.reasonCode, 'approvalRequired', reason: operation);
+          expect(h.server.mutations, 0);
+          final shown =
+              (proposal.preview as port.AiFieldsPreview).fields['body'];
+          expect(shown, edited, reason: operation);
+          final outcome = await h.approve(proposal);
+          expect(outcome.state, AiJournalState.succeeded, reason: operation);
+          expect(outcome.readbackConfirmed, isTrue);
+          expect(h.server.mutations, 1);
+          expect(h.server.createdBody, shown);
+          expect(proposal.editedText, isNull);
         }
       },
     );
@@ -423,9 +436,8 @@ void main() {
             'createWorkItemActivityComment',
             id: 'edited',
           ))!;
-          // Issue #23 prevents substantive edited-text delivery. The uncertain
-          // case uses only whitespace (trimmed by the port) to test retention;
-          // it provides no evidence that a substantive edited body can be sent.
+          // The uncertain case uses only whitespace (trimmed by the port) to
+          // test retention; delivery of a substantive edit is covered above.
           final edited = terminal == 'uncertain'
               ? ' \n$mr6b3ActivityBody\n '
               : 'User corrected the Markdown.\nKeep **this exact** text.';

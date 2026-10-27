@@ -37,6 +37,32 @@ void main() {
     expect((prepared.preview as AiFieldsPreview).fields['body'], 'after');
   });
 
+  test('rebinds payload and digest while retaining the opening target', () {
+    final prepared = AiWritePrepared.graph(
+      request: _request(original),
+      releaseName: '#3',
+      writeKeys: {},
+      currentFields: {'body': 'original server body'},
+      textBindingDigest: (request) => 'revision-1:${request.arguments['body']}',
+      textMutation: (_, _) async => null,
+    );
+    expect(prepared.bindingDigest, 'revision-1:before');
+
+    for (final body in ['processed', 'edited', 'edited again']) {
+      prepared.bindPreparedText(_request({...original, 'body': body}));
+      expect(prepared.bindingDigest, 'revision-1:$body');
+      expect((prepared.preview as AiFieldsPreview).fields['body'], body);
+      expect(prepared.currentFields, {'body': 'original server body'});
+    }
+
+    prepared.bindGraphBeforeMutation(() async {});
+    expect(
+      () => prepared.bindPreparedText(_request({...original, 'body': 'late'})),
+      throwsA(isA<GraphHookContractException>()),
+    );
+    expect(prepared.request.arguments['body'], 'edited again');
+  });
+
   test('validates the processed request before binding it', () {
     final validated = <String>[];
     final prepared = AiWritePrepared.graph(
@@ -63,18 +89,20 @@ void main() {
     expect(prepared.request.arguments['body'], 'valid');
   });
 
-  for (final key in ['projectId', 'iid', 'noteId']) {
+  for (final key in ['projectId', 'iid', 'noteId', 'anchorNoteId']) {
     test('refuses changed or removed $key when binding text', () {
+      final identified = {...original, key: 12};
       for (final arguments in [
-        {...original, key: 99},
-        {...original}..remove(key),
+        {...identified, key: 99},
+        {...identified}..remove(key),
       ]) {
-        final prepared = _prepared(original);
+        final prepared = _prepared(identified);
+        prepared.bindPreparedText(_request({...identified, 'body': 'edited'}));
         expect(
           () => prepared.bindPreparedText(_request(arguments)),
           throwsA(isA<GraphHookContractException>()),
         );
-        expect(prepared.request.arguments, original);
+        expect(prepared.request.arguments, {...identified, 'body': 'edited'});
       }
     });
 
