@@ -2750,5 +2750,6 @@
   "aiGitLabBudgetDetail": "Bu ileti gönderilmedi. “Gönder” düğmesi yeniden kullanılabilir olduğunda tekrar gönderin.",
   "activityVerbTargetRef": "{verb} ({target} {ref})",
   "aiOpSetWorkItemLabels": "Etiketleri ayarla",
-  "aiRefusedLabelUnknown": "Ayarlanacak etiket bu projenin etiket listesinde yok veya bu adda birden fazla etiket var, bu yüzden hiçbir şey yapılmadı."
+  "aiRefusedLabelUnknown": "Ayarlanacak etiket bu projenin etiket listesinde yok veya bu adda birden fazla etiket var, bu yüzden hiçbir şey yapılmadı.",
+  "aiRefusedQuickAction": "Metinde kendi satırında / ile başlayan bir hızlı eylem var; GitLab bunu komut olarak çalıştırır, bu yüzden bu işlem gönderilmedi. O satırı silin veya bir kod bloğuna koyun."
 }

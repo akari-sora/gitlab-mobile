@@ -2753,4 +2753,5 @@ const _messagesVi = <String>[
   '{verb} {target} {ref}',
   'Đặt nhãn',
   'Nhãn cần đặt không có trong danh sách nhãn của project này, hoặc có nhiều nhãn trùng tên, nên chưa có gì được thực hiện.',
+  'Văn bản có quick action / nằm riêng một dòng, GitLab sẽ chạy nó như một lệnh, nên thao tác này chưa được gửi. Hãy xóa dòng đó hoặc đặt nó vào khối mã.',
 ];

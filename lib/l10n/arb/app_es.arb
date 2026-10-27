@@ -2750,5 +2750,6 @@
   "aiGitLabBudgetDetail": "Este mensaje no se envió. Envíalo de nuevo cuando el botón «Enviar» vuelva a estar disponible.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Establecer etiquetas",
-  "aiRefusedLabelUnknown": "La etiqueta que se iba a asignar no está en la lista de etiquetas de este proyecto o varias etiquetas tienen ese nombre, así que no se hizo nada."
+  "aiRefusedLabelUnknown": "La etiqueta que se iba a asignar no está en la lista de etiquetas de este proyecto o varias etiquetas tienen ese nombre, así que no se hizo nada.",
+  "aiRefusedQuickAction": "El texto tiene una acción rápida con / en una línea propia, que GitLab ejecutaría como comando, así que esta acción no se envió. Quita esa línea o ponla en un bloque de código."
 }

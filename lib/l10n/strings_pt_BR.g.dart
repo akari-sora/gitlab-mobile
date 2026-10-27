@@ -2753,4 +2753,5 @@ const _messagesPtBr = <String>[
   '{verb} {target} {ref}',
   'Definir etiquetas',
   'A etiqueta a definir não está na lista de etiquetas deste projeto ou várias etiquetas têm esse nome, então nada foi feito.',
+  'O texto tem uma quick action com / em uma linha própria, que o GitLab executaria como comando, então esta ação não foi enviada. Remova essa linha ou coloque-a em um bloco de código.',
 ];

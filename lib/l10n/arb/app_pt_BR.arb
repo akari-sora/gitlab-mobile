@@ -2750,5 +2750,6 @@
   "aiGitLabBudgetDetail": "Esta mensagem não foi enviada. Envie-a novamente quando o botão “Enviar” estiver disponível de novo.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Definir etiquetas",
-  "aiRefusedLabelUnknown": "A etiqueta a definir não está na lista de etiquetas deste projeto ou várias etiquetas têm esse nome, então nada foi feito."
+  "aiRefusedLabelUnknown": "A etiqueta a definir não está na lista de etiquetas deste projeto ou várias etiquetas têm esse nome, então nada foi feito.",
+  "aiRefusedQuickAction": "O texto tem uma quick action com / em uma linha própria, que o GitLab executaria como comando, então esta ação não foi enviada. Remova essa linha ou coloque-a em um bloco de código."
 }

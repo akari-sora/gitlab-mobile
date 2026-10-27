@@ -384,6 +384,9 @@ String aiConfirmReasonText(AiFixedConfirmReason reason) => switch (reason) {
 /// the card falls back to "not made". A missing target is ambiguous (it may
 /// be hidden from you), never "deleted".
 String? aiRefusalText(String code) => switch (code) {
+  'quickAction' => l10n.aiRefusedQuickAction,
+  'approvalExpired' => l10n.aiProposalNotRun,
+  'proposalInvalidated' => l10n.aiProposalInvalid,
   'alreadyMerged' => l10n.aiRefusedAlreadyMerged,
   'projectArchived' => l10n.aiRefusedArchived,
   'protectedBranch' => l10n.aiRefusedProtectedBranch,
@@ -395,7 +398,6 @@ String? aiRefusalText(String code) => switch (code) {
   'draftsChanged' ||
   'settingsChanged' ||
   'superseded' ||
-  'proposalInvalidated' ||
   'fileExists' ||
   'fragmentNotFound' ||
   'fragmentNotUnique' ||
@@ -648,6 +650,8 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
         AiWritePause.accountRemovalHeld ||
         'accountBlocked' => l10n.aiProposalPausedRemoval,
         AiWritePause.clientUnavailable => l10n.aiProposalPausedRateLimited,
+        'quickAction' || 'approvalExpired' || 'proposalInvalidated' =>
+          aiRefusalText(outcome.reasonCode),
         // Still waiting: the proposal is fine, only the edited text was
         // refused, so the user can change it again.
         _
@@ -714,7 +718,11 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
         _message = l10n.aiProposalEdited;
         _messageIsError = false;
       } else {
-        _message = l10n.aiProposalEditBlocked;
+        _message = switch (outcome?.reasonCode) {
+          'quickAction' || 'approvalExpired' || 'proposalInvalidated' =>
+            aiRefusalText(outcome!.reasonCode),
+          _ => l10n.aiProposalEditBlocked,
+        };
         _messageIsError = true;
       }
     });

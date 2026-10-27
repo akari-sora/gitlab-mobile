@@ -2750,5 +2750,6 @@
   "aiGitLabBudgetDetail": "Pesan ini tidak terkirim. Kirim ulang saat tombol “Kirim” tersedia kembali.",
   "activityVerbTargetRef": "{verb} {target} {ref}",
   "aiOpSetWorkItemLabels": "Atur label",
-  "aiRefusedLabelUnknown": "Label yang akan diatur tidak ada dalam daftar label proyek ini, atau beberapa label memiliki nama yang sama, jadi tidak ada yang dilakukan."
+  "aiRefusedLabelUnknown": "Label yang akan diatur tidak ada dalam daftar label proyek ini, atau beberapa label memiliki nama yang sama, jadi tidak ada yang dilakukan.",
+  "aiRefusedQuickAction": "Teks berisi quick action / pada barisnya sendiri yang akan dijalankan GitLab sebagai perintah, jadi tindakan ini tidak dikirim. Hapus baris itu atau taruh di blok kode."
 }

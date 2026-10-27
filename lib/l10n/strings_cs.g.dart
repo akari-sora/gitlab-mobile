@@ -2753,4 +2753,5 @@ const _messagesCs = <String>[
   '{verb} {target} {ref}',
   'Nastavit štítky',
   'Štítek k nastavení není v seznamu štítků tohoto projektu nebo má stejný název více štítků, takže nebylo nic provedeno.',
+  'Text obsahuje rychlou akci / na samostatném řádku, kterou by GitLab spustil jako příkaz, proto tato operace nebyla odeslána. Odstraňte tento řádek nebo ho vložte do bloku kódu.',
 ];

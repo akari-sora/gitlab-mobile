@@ -1291,9 +1291,7 @@ class AiChatController extends ChangeNotifier
       throw const AiJournalException('invalidArguments');
     }
     final operation = request.operationId;
-    final graphWriteBack = operation == 'updateWorkItemContent' ||
-        operation == 'editWorkItemActivityNote' ||
-        operation == 'updateWorkItemLabels';
+    final graphWriteBack = aiGraphWriteBackOperations.contains(operation);
     if (graphWriteBack && (args['iid'] is! int || (args['iid']! as int) < 1)) {
       throw const AiJournalException('invalidArguments');
     }
@@ -1448,18 +1446,16 @@ class AiChatController extends ChangeNotifier
           noteId: note,
         );
     final provenance = <String, write_text.AiFieldProvenance>{
-      // Titles and label names have no restorable upload field. Retain their
-      // exact resource identity while description/body share REST provenance.
-      if (operation == 'updateWorkItemContent' || operation == 'updateWorkItemLabels')
-        for (final field in [operation == 'updateWorkItemContent' ? 'title' : 'labels'])
-          field: write_text.AiFieldProvenance(
-            resourceKey: write_text.AiConflictKey('project:$project/issue:$iid'),
-            fieldName: field,
-            completeValue: true,
-            resourceWeb: restorable().resourceWeb,
-            projectId: project,
-            projectFullPath: projectPath is String ? projectPath : null,
-          ),
+      // The title has no restorable upload field, but retains its identity.
+      if (operation == 'updateWorkItemContent')
+        'title': write_text.AiFieldProvenance(
+          resourceKey: write_text.AiConflictKey('project:$project/issue:$iid'),
+          fieldName: 'title',
+          completeValue: true,
+          resourceWeb: restorable().resourceWeb,
+          projectId: project,
+          projectFullPath: projectPath is String ? projectPath : null,
+        ),
       if (operation == 'updateIssue' || operation == 'updateMergeRequest')
         'description': restorable(),
       if (operation == 'updateWorkItemContent')
@@ -2689,9 +2685,6 @@ const _projectCreates = {
 /// Writes that replace a field of the resource they read, so the field's
 /// current value is what the new text replaces (§3.1).
 const _writeBackOperations = {
-  'updateWorkItemContent',
-  'editWorkItemActivityNote',
-  'updateWorkItemLabels',
   'updateIssue',
   'updateMergeRequest',
   'updateNote',

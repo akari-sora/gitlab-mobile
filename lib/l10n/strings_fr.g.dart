@@ -2753,4 +2753,5 @@ const _messagesFr = <String>[
   '{verb} {target} {ref}',
   'Définir les étiquettes',
   'L’étiquette à appliquer ne figure pas dans la liste des étiquettes de ce projet ou plusieurs étiquettes portent ce nom, donc rien n’a été fait.',
+  'Le texte contient une quick action avec / seule sur une ligne, que GitLab exécuterait comme commande ; cette action n’a donc pas été envoyée. Supprimez cette ligne ou placez-la dans un bloc de code.',
 ];
