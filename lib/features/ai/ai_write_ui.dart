@@ -385,7 +385,13 @@ String aiConfirmReasonText(AiFixedConfirmReason reason) => switch (reason) {
 /// be hidden from you), never "deleted".
 String? aiRefusalText(String code) => switch (code) {
   'quickAction' => l10n.aiRefusedQuickAction,
-  'approvalExpired' => l10n.aiProposalNotRun,
+  // The proposal itself lapsed, or the app's settings or account changed
+  // under it; nothing on GitLab moved.
+  'approvalExpired' ||
+  'attachmentExpired' ||
+  'invalidProposal' ||
+  'accountChanged' ||
+  'settingsChanged' => l10n.aiProposalNotRun,
   'proposalInvalidated' => l10n.aiProposalInvalid,
   'alreadyMerged' => l10n.aiRefusedAlreadyMerged,
   'projectArchived' => l10n.aiRefusedArchived,
@@ -396,7 +402,6 @@ String? aiRefusalText(String code) => switch (code) {
   'previewChanged' ||
   'headMoved' ||
   'draftsChanged' ||
-  'settingsChanged' ||
   'superseded' ||
   'fileExists' ||
   'fragmentNotFound' ||
@@ -650,8 +655,13 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
         AiWritePause.accountRemovalHeld ||
         'accountBlocked' => l10n.aiProposalPausedRemoval,
         AiWritePause.clientUnavailable => l10n.aiProposalPausedRateLimited,
-        'quickAction' || 'approvalExpired' || 'proposalInvalidated' =>
-          aiRefusalText(outcome.reasonCode),
+        'quickAction' ||
+        'approvalExpired' ||
+        'proposalInvalidated' ||
+        'attachmentExpired' ||
+        'invalidProposal' ||
+        'accountChanged' ||
+        'settingsChanged' => aiRefusalText(outcome.reasonCode),
         // Still waiting: the proposal is fine, only the edited text was
         // refused, so the user can change it again.
         _
@@ -719,8 +729,16 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
         _messageIsError = false;
       } else {
         _message = switch (outcome?.reasonCode) {
-          'quickAction' || 'approvalExpired' || 'proposalInvalidated' =>
-            aiRefusalText(outcome!.reasonCode),
+          AiWritePause.accountRemovalHeld ||
+          'accountBlocked' => l10n.aiProposalPausedRemoval,
+          AiWritePause.clientUnavailable => l10n.aiProposalPausedRateLimited,
+          'quickAction' ||
+          'approvalExpired' ||
+          'proposalInvalidated' ||
+          'attachmentExpired' ||
+          'invalidProposal' ||
+          'accountChanged' ||
+          'settingsChanged' => aiRefusalText(outcome!.reasonCode),
           _ => l10n.aiProposalEditBlocked,
         };
         _messageIsError = true;
