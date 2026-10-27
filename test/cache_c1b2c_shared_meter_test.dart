@@ -197,6 +197,7 @@ final class _Harness {
 
   Future<AiChatController> controller(HttpClientAdapter provider) async {
     final controller = AiChatController(
+      appInForeground: () => true,
       origin: AiWorkItemOrigin(
         project: workspace.project,
         kind: AiWorkItemKind.issue,

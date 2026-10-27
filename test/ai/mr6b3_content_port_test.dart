@@ -997,6 +997,7 @@ final class _Harness {
   }) {
     coordinator = PolicyAiWriteCoordinator(
       snapshot: () => AiWritePolicySnapshot(
+        appInForeground: true,
         scope: _scope,
         level: level,
         aiAttribution: aiAttribution,

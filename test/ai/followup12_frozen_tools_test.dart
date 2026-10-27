@@ -135,6 +135,7 @@ AiRunner _runner(
   Future<AiToolResult> Function(AiToolCall)? onRead,
   void Function(AiToolResult)? onToolResult,
 }) => AiRunner(
+  appInForeground: () => true,
   config: h.config(),
   wire: h.wire,
   complete: h.complete,

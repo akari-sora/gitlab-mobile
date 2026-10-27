@@ -485,6 +485,7 @@ PolicyAiWriteCoordinator _peer(
   final budget = AiToolBudget(maxGitLabRequests: 40);
   final coordinator = PolicyAiWriteCoordinator(
     snapshot: () => AiWritePolicySnapshot(
+      appInForeground: true,
       scope: mr6b3Scope,
       level: AiAutonomyLevel.lowRiskAuto,
       ceiling: AiAutonomyLevel.bypass,

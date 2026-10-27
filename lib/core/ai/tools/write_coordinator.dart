@@ -11,6 +11,7 @@ import '../../instance.dart';
 import '../ai_transcript.dart';
 import '../app_text.dart';
 import '../exact_edit.dart' as exact;
+import '../execution_gate.dart';
 import '../wire/wire_format.dart';
 import '../write_text.dart' as text;
 import 'gitlab_write_port.dart' as port;
@@ -166,10 +167,13 @@ final class AiWriteOutcome {
     this.targetName,
     this.webLink,
     this.uploadReferable,
+    this.pause,
   });
 
   final AiJournalState state;
   final String reasonCode;
+  /// An unaccepted continuation pauses execution after its journal settles.
+  final AiExecutionPause? pause;
   final int mutationCount;
   final bool noChange;
   final bool readbackConfirmed;
@@ -266,12 +270,17 @@ final class AiWritePolicySnapshot {
     this.toolsEnabled = true,
     this.consentValid = true,
     this.alive = true,
-    this.appInForeground = true,
-    this.clientMayStart = true,
+    this.appInForeground = false,
+    bool? executionEligible,
+    bool clientMayStart = true,
+    bool Function()? clientMayStartPredicate,
+    this.ownerApi,
     this.aiAttribution = false,
     this.currentJobId,
     this.currentResource,
-  });
+  }) : executionEligible = executionEligible ?? appInForeground,
+       _clientMayStart = clientMayStart,
+       _clientMayStartPredicate = clientMayStartPredicate;
 
   final AiWriteScope scope;
   final AiAutonomyLevel level;
@@ -284,7 +293,17 @@ final class AiWritePolicySnapshot {
   final bool consentValid;
   final bool alive;
   final bool appInForeground;
-  final bool clientMayStart;
+  /// Execution eligibility is separate from real visibility for approval.
+  final bool executionEligible;
+  final bool _clientMayStart;
+  final bool Function()? _clientMayStartPredicate;
+  /// Evaluate the live client guard only at a write or approval boundary.
+  /// A stored snapshot also reads this live; never read the client field from
+  /// a stored snapshot. Take a fresh snapshot at the boundary instead.
+  bool get clientMayStart =>
+      _clientMayStart && (_clientMayStartPredicate?.call() ?? true);
+  /// Required for a permit-bound run; compared by identity, never persisted.
+  final Object? ownerApi;
   final bool aiAttribution;
   final int? currentJobId;
   final AiTargetRef? currentResource;
@@ -401,10 +420,17 @@ final class PolicyAiWriteCoordinator
     this.currentInterfaceLanguage,
     this.currentDeviceLanguages,
     this.persistConversation = true,
+    AiExecutionGate? executionGate,
     DateTime Function()? now,
     int Function(String)? httpCost,
-  }) : _now = now ?? DateTime.now,
-       _httpCost = httpCost;
+  }) : executionGate = executionGate ?? ForegroundAiExecutionGate(
+         appInForeground: () => snapshot().appInForeground,
+       ),
+       _now = now ?? DateTime.now,
+       _httpCost = httpCost {
+    final binding = this.executionGate.binding;
+    if (binding.permitId == null) _runBinding = binding;
+  }
 
   final AiWritePolicySnapshot Function() snapshot;
   final port.AiGitLabWritePort Function() createPort;
@@ -428,6 +454,7 @@ final class PolicyAiWriteCoordinator
   final String Function()? currentInterfaceLanguage;
   final List<String> Function()? currentDeviceLanguages;
   final bool persistConversation;
+  final AiExecutionGate executionGate;
   final DateTime Function() _now;
   final int Function(String)? _httpCost;
   final Set<port.AiCreatedRef> _segmentCreated = {};
@@ -443,6 +470,32 @@ final class PolicyAiWriteCoordinator
   port.AiGitLabWritePort? _port;
   String _userUtterance = '';
   String _runId = _nonce();
+  AiExecutionRunBinding? _runBinding;
+  AiWritePolicySnapshot? _runPolicy;
+  int? _runProposalEpoch;
+  final Set<String> _usedPermitRunIds = {};
+
+  /// The current process-local logical run, for binding a continuation gate.
+  String get logicalRunId => _runId;
+
+  /// A rejected or superseded run cannot acquire model tickets either.
+  /// Client cooldowns remain independent write-boundary guards.
+  bool get executionRunCurrent {
+    final current = snapshot();
+    final expected = _runPolicy;
+    return _stopped == null &&
+        identical(executionGate.binding, _runBinding) &&
+        current.alive && current.consentValid &&
+        !journal.tombstoneFlag(current.scope.accountKey) &&
+        _executionPauseOf(current, includeClient: false) == null &&
+        (expected == null ||
+            (journal.proposalEpoch(expected.scope.accountKey) == _runProposalEpoch &&
+                current.sessionGeneration == expected.sessionGeneration &&
+                current.writePolicyRevision == expected.writePolicyRevision &&
+                current.scopeRevision == expected.scopeRevision &&
+                current.consentHash == expected.consentHash &&
+                _scopeDigest(current.scope) == _scopeDigest(expected.scope)));
+  }
   String? _stopped;
   bool _previousIncomplete = false;
   Timer? _approvalTimer;
@@ -584,9 +637,20 @@ final class PolicyAiWriteCoordinator
     stop('superseded');
     _pending.removeWhere((_, pending) => pending.done.isCompleted);
     _results.clear();
-    _runId = _nonce();
+    // The bridge allocates a fresh binding before a new user send. Use that
+    // logical ID for the journal too; generating another one breaks the run's
+    // model/mutation binding. An invalidated or reused run cannot be rebound.
+    final binding = executionGate.binding;
+    _runBinding = binding;
+    _runPolicy = snapshot();
+    _runProposalEpoch = journal.proposalEpoch(_runPolicy!.scope.accountKey);
+    _runId = binding.permitId == null ? _nonce() : binding.runId;
     _userUtterance = userUtterance;
     _stopped = null;
+    if (binding.permitId != null &&
+        (binding.runId.isEmpty || !_usedPermitRunIds.add(binding.runId))) {
+      _stopped = 'runChanged';
+    }
     _previousIncomplete = false;
     _uploadedThisBatch.clear();
   }
@@ -934,6 +998,20 @@ final class PolicyAiWriteCoordinator
     }
     if (pending.done.isCompleted) return pending.done.future;
     if (pending.flight != null) return pending.flight!;
+    // Approval, including edits, is a visible user action. A permit can allow
+    // automatic execution in the background but cannot approve a proposal.
+    if (_pendingFailure(pending, pauses: false) == null) {
+      final held = _approvalPauseFailure(snapshot());
+      if (held != null) {
+        if (_updatePause(pending)) _changed();
+        return _notExecuted(
+          pending.call,
+          held,
+          executionId: proposal.executionId,
+          target: _targetSummary(pending.prepared),
+        );
+      }
+    }
     if (editedText != null) {
       // Terminal failures take precedence over holds. Refuse a hold without
       // replacing earlier text or latching an edit failure.
@@ -1011,21 +1089,6 @@ final class PolicyAiWriteCoordinator
         typedName != proposal.tier.typedName) {
       return _notExecuted(pending.call, 'typedNameMismatch');
     }
-    // A hold (§8 step 1: account removal; §12.2: app not on screen) refuses
-    // the approval without dispatching or ending the proposal, which carries
-    // on once the hold lifts (§8 step 2).
-    if (_pendingFailure(pending, pauses: false) == null) {
-      final held = _pauseFailure(snapshot());
-      if (held != null) {
-        if (_updatePause(pending)) _changed();
-        return _notExecuted(
-          pending.call,
-          held,
-          executionId: proposal.executionId,
-          target: _targetSummary(pending.prepared),
-        );
-      }
-    }
     return _perform(pending, confirmed: true);
   }
 
@@ -1051,6 +1114,57 @@ final class PolicyAiWriteCoordinator
     var graphTerminalAttempted = false;
     var graphTerminalCompleted = false;
     var graphJournalFailed = false;
+    var rollbackAttempted = false;
+    final executionBinding = executionGate.binding;
+    AiExecutionTicket? ticket;
+    AiExecutionPause? executionPause;
+    String? boundaryFailure;
+
+    bool bindingMatches() {
+      if (!identical(executionBinding, executionGate.binding)) return false;
+      return _executionBindingMatches(pending.policy);
+    }
+
+    void requireBoundaryPending() {
+      _requirePending(pending);
+      if (!bindingMatches()) throw const _WriteBlocked('runChanged');
+      if (confirmed) {
+        final held = _approvalPauseFailure(snapshot());
+        if (held != null) throw _WriteBlocked(held);
+      }
+    }
+
+    Future<void> acquireTicket() async {
+      requireBoundaryPending();
+      var finished = false;
+      final request = Future<AiExecutionTicket>.sync(
+        () => executionGate.acquire(AiContinuationKind.mutation),
+      );
+      // A channel reply arriving after timeout must never revive this send.
+      unawaited(request.then<void>((value) {
+        if (finished) value.discard();
+      }, onError: (Object _, StackTrace _) {}));
+      try {
+        ticket = await request.timeout(
+          AiExecutionTicket.ttl,
+          onTimeout: () => throw const AiExecutionPaused(AiExecutionPause(
+            AiExecutionPauseReason.timeout, kind: AiContinuationKind.mutation,
+          )),
+        );
+      } on AiExecutionPaused catch (error) {
+        executionPause = error.pause;
+        rethrow;
+      } on Object {
+        executionPause = const AiExecutionPause(
+          AiExecutionPauseReason.unavailable, kind: AiContinuationKind.mutation,
+        );
+        throw AiExecutionPaused(executionPause!);
+      } finally {
+        finished = true;
+      }
+      requireBoundaryPending();
+    }
+
     try {
       _requirePending(pending);
       // Approval becomes durable before the conflict lock/final reads. A
@@ -1198,7 +1312,7 @@ final class PolicyAiWriteCoordinator
       _requirePending(pending);
       if (graph) {
         Future<void> beforeMutation() async {
-          _requirePending(pending);
+          await acquireTicket();
           graphMarkAttempted = true;
           try {
             await journal.markDispatching(executionId: proposal.executionId);
@@ -1218,6 +1332,7 @@ final class PolicyAiWriteCoordinator
         }
         prepared.bindGraphBeforeMutation(beforeMutation);
       } else {
+        await acquireTicket();
         await journal.markDispatching(executionId: proposal.executionId);
         dispatching = true;
       }
@@ -1245,6 +1360,31 @@ final class PolicyAiWriteCoordinator
               currentTier.typedName != proposal.tier.typedName ||
               !proposal.tier.reasons.toSet().containsAll(currentTier.reasons)) {
             pending.invalidationReason = 'approvalRequired';
+            return false;
+          }
+          if (!bindingMatches()) {
+            boundaryFailure = 'runChanged';
+            return false;
+          }
+          if (confirmed && !snapshot().appInForeground) {
+            boundaryFailure = AiWritePause.backgrounded;
+            return false;
+          }
+          try {
+            final acquired = ticket;
+            if (acquired == null) {
+              boundaryFailure = 'invalidTicket';
+              return false;
+            }
+            acquired.consumeOnce(
+              binding: executionBinding,
+              kind: AiContinuationKind.mutation,
+            );
+          } on Object catch (error) {
+            boundaryFailure = _reason(error);
+            executionPause = error is AiExecutionPaused ? error.pause :
+                const AiExecutionPause(AiExecutionPauseReason.invalidTicket,
+                  kind: AiContinuationKind.mutation);
             return false;
           }
           accepted = true;
@@ -1278,9 +1418,11 @@ final class PolicyAiWriteCoordinator
       if (outcome is port.AiWriteNotSent) {
         graphTerminalAttempted = graph;
         if (dispatching) {
+          rollbackAttempted = true;
           await journal.revertDispatchingToNotExecuted(
             executionId: proposal.executionId,
           );
+          rollbackAttempted = false;
         } else {
           await journal.finish(
             executionId: proposal.executionId,
@@ -1293,7 +1435,8 @@ final class PolicyAiWriteCoordinator
           pending,
           _notExecuted(
             pending.call,
-            _pendingFailure(pending) ?? outcome.reasonCode,
+            _pendingFailure(pending) ?? boundaryFailure ?? outcome.reasonCode,
+            pause: executionPause,
             executionId: proposal.executionId,
             target: _targetSummary(pending.prepared),
           ),
@@ -1368,7 +1511,8 @@ final class PolicyAiWriteCoordinator
       // flush. Retrying finish/revert here would itself be an invalid transition.
       if (!graphTerminalCompleted) {
         try {
-          if (graph && (graphJournalFailed || graphTerminalAttempted)) {
+          if (rollbackAttempted ||
+              (graph && (graphJournalFailed || graphTerminalAttempted))) {
             // Do not retry a flush whose durable state is unknown, or claim a
             // refund. An explicit journal recovery/reset must resolve it first.
             throw const AiJournalException('journalUnavailable');
@@ -1403,6 +1547,7 @@ final class PolicyAiWriteCoordinator
               ? 'writeUncertain'
               : _pendingFailure(pending) ?? _reason(error),
           mutationCount: accepted ? 1 : 0,
+          pause: accepted ? null : executionPause,
           executionId: proposal.executionId,
           operationId: proposal.operationId,
           target: _targetSummary(pending.prepared),
@@ -1413,6 +1558,7 @@ final class PolicyAiWriteCoordinator
         ),
       );
     } finally {
+      ticket?.discard();
       if (pending.attachmentId != null) {
         attachments?.finishUpload(pending.attachmentId!);
       }
@@ -1442,11 +1588,9 @@ final class PolicyAiWriteCoordinator
     );
   }
 
-  /// Backgrounding pauses waiting proposals; it does not end them (§12.2:
-  /// without a foreground service no new write starts while the app is
-  /// away, and the user carries on in the foreground; §7.2: a waiting
-  /// proposal lapses after 30 minutes). Every dispatch check refuses while
-  /// the app is not on screen.
+  /// Backgrounding holds waiting proposals for a visible approval without
+  /// ending them; their 30-minute wall-clock expiry still applies. Automatic
+  /// work may proceed with a bound permit, checked by a fresh dispatch ticket.
   @override
   Future<void> onAppBackground() async => checkNow();
 
@@ -1491,7 +1635,7 @@ final class PolicyAiWriteCoordinator
 
   /// Refreshes [pending]'s hold; true when it changed.
   bool _updatePause(_PendingWrite pending) {
-    final reason = pending.flight == null ? _pauseOf(snapshot()) : null;
+    final reason = pending.flight == null ? _approvalPauseOf(snapshot()) : null;
     if (pending.proposal._pausedReason == reason) return false;
     pending.proposal._pausedReason = reason;
     return true;
@@ -1516,8 +1660,38 @@ final class PolicyAiWriteCoordinator
     return pauses ? _pauseFailure(policy) : null;
   }
 
-  /// The hold on [policy]'s account, as [AiWritePause] names it.
-  String? _pauseOf(AiWritePolicySnapshot policy) {
+  /// The hold for execution. A bound permit never bypasses an invalid latch,
+  /// even after returning to the foreground.
+  String? _executionPauseOf(
+    AiWritePolicySnapshot policy, {
+    bool includeClient = true,
+  }) {
+    if (journal.removalHeld(policy.scope.accountKey)) {
+      return AiWritePause.accountRemovalHeld;
+    }
+    if (!_executionBindingMatches(policy)) return 'runChanged';
+    if (!policy.executionEligible || !executionGate.executionEligible ||
+        (!policy.appInForeground && executionGate.binding.permitId == null)) {
+      return AiWritePause.backgrounded;
+    }
+    if (includeClient && !policy.clientMayStart) {
+      return AiWritePause.clientUnavailable;
+    }
+    return null;
+  }
+
+  bool _executionBindingMatches(AiWritePolicySnapshot policy) {
+    final binding = executionGate.binding;
+    if (binding.permitId == null) return identical(binding, _runBinding);
+    return identical(binding, _runBinding) &&
+        binding.accountKey == policy.scope.accountKey &&
+        binding.generation == policy.sessionGeneration &&
+        policy.ownerApi != null && identical(binding.ownerApi, policy.ownerApi) &&
+        binding.conversationId == conversationId && binding.runId == _runId;
+  }
+
+  /// Waiting cards and explicit approvals always use real visibility.
+  String? _approvalPauseOf(AiWritePolicySnapshot policy) {
     if (journal.removalHeld(policy.scope.accountKey)) {
       return AiWritePause.accountRemovalHeld;
     }
@@ -1528,7 +1702,14 @@ final class PolicyAiWriteCoordinator
 
   /// The refusal a hold gives a proposal or a dispatch.
   String? _pauseFailure(AiWritePolicySnapshot policy) =>
-      switch (_pauseOf(policy)) {
+      switch (_executionPauseOf(policy)) {
+        AiWritePause.accountRemovalHeld => 'accountBlocked',
+        final String reason => reason,
+        null => null,
+      };
+
+  String? _approvalPauseFailure(AiWritePolicySnapshot policy) =>
+      switch (_approvalPauseOf(policy)) {
         AiWritePause.accountRemovalHeld => 'accountBlocked',
         final String reason => reason,
         null => null,
@@ -1607,6 +1788,7 @@ final class PolicyAiWriteCoordinator
       targetName: result.targetName ?? pending.proposal.releaseName,
       webLink: result.webLink ?? _webLink(pending, projection),
       uploadReferable: result.uploadReferable,
+      pause: result.pause,
     );
     pending.outcome = outcome;
     pending.proposal._outcome = outcome;
@@ -2100,12 +2282,14 @@ AiWriteOutcome _notExecuted(
   String reason, {
   String? executionId,
   String? target,
+  AiExecutionPause? pause,
 }) => AiWriteOutcome(
   state: AiJournalState.notExecuted,
   reasonCode: reason,
   executionId: executionId,
   operationId: call.name,
   target: target,
+  pause: pause,
 );
 
 final _attachmentPlaceholder = RegExp(r'\[\[attachment:att-([0-9]+)\]\]');
@@ -2114,6 +2298,7 @@ String _singleLine(String value) =>
     value.replaceAll(RegExp(r'[\r\n\u2028\u2029]'), ' ');
 
 String _reason(Object error) => switch (error) {
+  AiExecutionPaused(:final pause) => pause.reason.name,
   GraphHookContractException() => 'graphContractViolation',
   _WriteBlocked(:final reason) => reason,
   port.AiWriteRefused(:final reason) => reason,

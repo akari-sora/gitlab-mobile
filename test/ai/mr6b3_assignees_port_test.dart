@@ -339,6 +339,7 @@ final class _Flow {
     : budget = AiToolBudget(maxGitLabRequests: maxRequests) {
     coordinator = PolicyAiWriteCoordinator(
       snapshot: () => AiWritePolicySnapshot(
+        appInForeground: true,
         scope: mr6b3Scope,
         level: shared.policy.level,
         ceiling: AiAutonomyLevel.bypass,

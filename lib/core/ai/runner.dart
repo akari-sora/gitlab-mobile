@@ -10,6 +10,7 @@ import 'ai_failure.dart';
 import 'ai_provider.dart';
 import 'ai_transcript.dart';
 import 'app_text.dart';
+import 'execution_gate.dart';
 import 'redaction.dart';
 import 'prompts.dart';
 import 'tools/write_coordinator.dart';
@@ -84,6 +85,7 @@ final class AiRunResult {
     this.failure,
     this.offerRollover = false,
     this.withheldPrivateKeyContext = false,
+    this.pause,
   });
   final AiRunEnd reason;
   final String text;
@@ -92,6 +94,7 @@ final class AiRunResult {
   final AiFailure? failure;
   final bool offerRollover;
   final bool withheldPrivateKeyContext;
+  final AiExecutionPause? pause;
 }
 
 /// A conversation owner. Frozen entries are only ever appended or discarded
@@ -109,6 +112,8 @@ final class AiRunner {
     required void Function() cancelActive,
     List<AiToolSpec> tools = const [],
     this.writeCoordinator,
+    AiExecutionGate? executionGate,
+    bool Function()? appInForeground,
     this.currentTools,
     this.toolPolicyRevision,
     this.onAwaitingApproval,
@@ -138,6 +143,12 @@ final class AiRunner {
        _close = close,
        _cancelActive = cancelActive,
        _now = now ?? DateTime.now,
+       executionGate = executionGate ??
+           (writeCoordinator is PolicyAiWriteCoordinator
+               ? writeCoordinator.executionGate
+               : ForegroundAiExecutionGate(
+                   appInForeground: appInForeground ?? (() => false),
+                 )),
        tools = List.unmodifiable(config.toolsEnabled ? tools : <AiToolSpec>[]),
        context = List.unmodifiable(context),
        _redactor = Redactor(secrets: secrets),
@@ -149,6 +160,11 @@ final class AiRunner {
         runDeadline <= Duration.zero ||
         modelDeadline <= Duration.zero) {
       throw ArgumentError('Invalid runner configuration.');
+    }
+    final coordinator = writeCoordinator;
+    if (coordinator is PolicyAiWriteCoordinator &&
+        !identical(this.executionGate, coordinator.executionGate)) {
+      throw ArgumentError('Runner and writes must share one execution gate.');
     }
   }
 
@@ -164,6 +180,9 @@ final class AiRunner {
   void Function() _cancelActive;
   final List<AiToolSpec> tools;
   final AiWriteCoordinator? writeCoordinator;
+  /// Shared with the coordinator in production. Standalone owners must supply
+  /// actual visibility; an unknown lifecycle cannot authorize a request.
+  final AiExecutionGate executionGate;
   final List<AiToolSpec> Function()? currentTools;
   final Object? Function()? toolPolicyRevision;
   final void Function(bool awaiting)? onAwaitingApproval;
@@ -327,9 +346,41 @@ final class AiRunner {
     var partial = StringBuffer();
     var nextProgressChars = 256;
     final segmentBeforeSend = _segment;
+    final tailBeforeSend = segmentBeforeSend?.tail;
+    final contextBeforeSend = _segmentContext;
+    final systemBeforeSend = _segmentSystem;
+    final toolsBeforeSend = _segmentTools;
+    final fingerprintBeforeSend = _segmentToolFingerprint;
+    final toolPolicyBeforeSend = _segmentToolPolicyRevision;
+    final projectionBeforeSend = _needsProjection;
     AiEntry? previousTail = segmentBeforeSend?.tail;
     var froze = false;
     AiEntry? beforeFinishingNote;
+    final executionBinding = executionGate.binding;
+    AiExecutionTicket? ticket;
+    AiExecutionPause? pause;
+
+    void restoreUnsentTail() {
+      _segment?.restoreTail(
+        froze ? beforeFinishingNote ?? _segment?.tail : previousTail,
+      );
+      if (!froze && segmentBeforeSend != null) {
+        // A refused first send from a projection must retain its original
+        // source, rather than projecting again from the new empty segment.
+        _segment = segmentBeforeSend;
+        segmentBeforeSend.restoreTail(tailBeforeSend);
+        _segmentContext = contextBeforeSend;
+        _segmentSystem = systemBeforeSend;
+        _segmentTools = toolsBeforeSend;
+        _segmentToolFingerprint = fingerprintBeforeSend;
+        _segmentToolPolicyRevision = toolPolicyBeforeSend;
+        // _newSegment consumed this flag; the restored source still needs
+        // projection after a key replacement or another replay invalidation.
+        _needsProjection |= projectionBeforeSend;
+        _verifiedSecrets = null;
+        _verifiedLength = -1;
+      }
+    }
 
     AiToolResult synthetic(AiToolCall call, String reason) {
       final coordinator = writeCoordinator;
@@ -376,6 +427,7 @@ final class AiRunner {
         failure: failure,
         offerRollover: offer,
         withheldPrivateKeyContext: _withheld,
+        pause: pause,
       );
     }
 
@@ -454,9 +506,17 @@ final class AiRunner {
         }
         beforeFinishingNote = seg.tail;
         if (finishing && !config.caps.toolChoice) seg.addFinalAnswerNote();
-        final delivered = await _redactTail(seg, epoch);
-        // _redactTail performs the last asynchronous secret refresh. Verify
-        // the frozen prefix against that same snapshot immediately before send.
+        // Slow delivery rereads and all preparation finish before the ticket's
+        // total TTL starts. The callback is retained until an accepted turn.
+        _checkExecution(epoch, executionBinding);
+        final delivery = await _prepareTail(seg, epoch, executionBinding);
+        ticket?.discard();
+        ticket = await _acquireExecution(epoch, executionBinding);
+        _checkExecution(epoch, executionBinding);
+        // The only asynchronous work after acquire: a final secret snapshot.
+        await _refresh(epoch);
+        final delivered = _redactTail(seg, delivery);
+        // Everything from the last refresh through _complete is synchronous.
         if (!_verify(seg)) {
           _needsProjection = true;
           throw const _RunStopped(AiRunEnd.newSecret);
@@ -473,7 +533,11 @@ final class AiRunner {
           }
           return result(AiRunEnd.contextTooLong, offer: call == 1);
         }
-        _check(epoch);
+        _checkExecution(epoch, executionBinding);
+        ticket.consumeOnce(
+          binding: executionBinding,
+          kind: AiContinuationKind.model,
+        );
         modelCalls++;
         partial = StringBuffer();
         nextProgressChars = 256;
@@ -570,7 +634,7 @@ final class AiRunner {
           );
         }
         final results = <AiToolResult>[];
-        var exitReason = AiRunEnd.toolBudget;
+        var exitReason = AiRunEnd.toolBudget.name;
         try {
           await _refresh(epoch);
           answer = clipAiText(
@@ -582,16 +646,17 @@ final class AiRunner {
           );
           partial = StringBuffer();
           if (finishing || turn.stop != AiStopReason.endTurn) {
-            exitReason = finishing
+            final reason = finishing
                 ? AiRunEnd.toolBudget
                 : _endForStop(turn.stop);
-            return result(exitReason);
+            exitReason = reason.name;
+            return result(reason);
           }
           beginToolTurn?.call();
           writeCoordinator?.beginTurn();
           var previousWriteIncomplete = false;
           for (var index = 0; index < calls.length; index++) {
-            _check(epoch);
+            _checkExecution(epoch, executionBinding);
             final tc = calls[index];
             onToolStarted?.call(
               AiToolCall(
@@ -643,21 +708,26 @@ final class AiRunner {
             toolCalls++;
             _pendingGitLab = true;
             _pendingGitLabWrite = handlesWrite;
+            AiExecutionPause? writePause;
             // Keep the underlying GitLab operation owned until it settles. A
             // read soft timeout or run stop never permits a second operation.
             final pending = handlesWrite
                 ? Future<AiToolResult>.sync(
-                    () async => (await writeCoordinator!.execute(
-                      tc,
-                      onAwaitingApproval: (awaiting) {
-                        deadline.setPaused(awaiting);
-                        try {
-                          onAwaitingApproval?.call(awaiting);
-                        } on Object {
-                          // UI observers cannot alter approval or deadlines.
-                        }
-                      },
-                    )).toToolResult(tc),
+                    () async {
+                      final outcome = await writeCoordinator!.execute(
+                        tc,
+                        onAwaitingApproval: (awaiting) {
+                          deadline.setPaused(awaiting);
+                          try {
+                            onAwaitingApproval?.call(awaiting);
+                          } on Object {
+                            // UI observers cannot alter approval or deadlines.
+                          }
+                        },
+                      );
+                      writePause = outcome.pause;
+                      return outcome.toToolResult(tc);
+                    },
                   )
                 : Future<AiToolResult>.sync(() => executeTool!(tc));
             unawaited(
@@ -733,16 +803,20 @@ final class AiRunner {
             );
             results.add(safeResult);
             _notifyToolResult(safeResult);
+            if (writePause != null) throw AiExecutionPaused(writePause!);
           }
+        } on AiExecutionPaused catch (stopped) {
+          exitReason = stopped.pause.reason.name;
+          rethrow;
         } on _RunStopped catch (stopped) {
-          exitReason = stopped.reason;
+          exitReason = stopped.reason.name;
           rethrow;
         } finally {
           // Pair by position, not ID: hostile duplicate IDs cannot hide a call.
           final paired = AppToolResultsEntry([
             ...results,
             for (final tc in calls.skip(results.length))
-              synthetic(tc, exitReason.name),
+              synthetic(tc, exitReason),
           ]);
           _pendingToolCalls = calls;
           seg.setTail(paired);
@@ -752,10 +826,14 @@ final class AiRunner {
         }
       }
       return result(AiRunEnd.toolBudget);
+    } on AiExecutionPaused catch (stopped) {
+      pause = stopped.pause;
+      restoreUnsentTail();
+      _needsProjection = true;
+      answer = await _partialAnswer(answer, partial.toString(), epoch);
+      return result(AiRunEnd.stopped);
     } on _RunStopped catch (stopped) {
-      _segment?.restoreTail(
-        froze ? beforeFinishingNote ?? _segment?.tail : previousTail,
-      );
+      restoreUnsentTail();
       answer = await _partialAnswer(answer, partial.toString(), epoch);
       return result(
         stopped.reason,
@@ -764,9 +842,7 @@ final class AiRunner {
             : null,
       );
     } on AiFailure catch (failure) {
-      _segment?.restoreTail(
-        froze ? beforeFinishingNote ?? _segment?.tail : previousTail,
-      );
+      restoreUnsentTail();
       answer = await _partialAnswer(answer, partial.toString(), epoch);
       if (failure.requiresNewSegment) _needsProjection = true;
       return result(
@@ -775,15 +851,14 @@ final class AiRunner {
         offer: failure.kind == AiFailureKind.contextTooLong && modelCalls == 1,
       );
     } on Object {
-      _segment?.restoreTail(
-        froze ? beforeFinishingNote ?? _segment?.tail : previousTail,
-      );
+      restoreUnsentTail();
       answer = await _partialAnswer(answer, partial.toString(), epoch);
       return result(
         AiRunEnd.failed,
         failure: const AiFailure(AiFailureKind.policyBlocked),
       );
     } finally {
+      ticket?.discard();
       deadline.dispose();
       if (identical(_activeDeadline, deadline)) _activeDeadline = null;
       _running = false;
@@ -919,6 +994,81 @@ final class AiRunner {
     if (epoch != _epoch) throw _RunStopped(_stopReason);
   }
 
+  void _checkExecution(int epoch, AiExecutionRunBinding binding) {
+    _check(epoch);
+    if (!identical(executionGate.binding, binding)) {
+      throw const AiExecutionPaused(AiExecutionPause(
+        AiExecutionPauseReason.runChanged, kind: AiContinuationKind.model,
+      ));
+    }
+    if (binding.permitId != null &&
+        (binding.generation != guard.expectedGeneration ||
+            !identical(binding.ownerApi, guard.ownerApi))) {
+      throw const AiExecutionPaused(AiExecutionPause(
+        AiExecutionPauseReason.runChanged, kind: AiContinuationKind.model,
+      ));
+    }
+    if (!executionGate.executionEligible) {
+      throw AiExecutionPaused(AiExecutionPause(
+        binding.permitId == null
+            ? AiExecutionPauseReason.foregroundRequired
+            : AiExecutionPauseReason.permitInactive,
+        kind: AiContinuationKind.model,
+      ));
+    }
+    final coordinator = writeCoordinator;
+    if (coordinator is PolicyAiWriteCoordinator &&
+        (!coordinator.executionRunCurrent ||
+            (binding.permitId != null &&
+                (binding.accountKey != coordinator.snapshot().scope.accountKey ||
+                    binding.conversationId != coordinator.conversationId ||
+                    binding.runId != coordinator.logicalRunId)))) {
+      throw const AiExecutionPaused(AiExecutionPause(
+        AiExecutionPauseReason.runChanged, kind: AiContinuationKind.model,
+      ));
+    }
+  }
+
+  Future<AiExecutionTicket> _acquireExecution(
+    int epoch,
+    AiExecutionRunBinding binding,
+  ) async {
+    var accepting = true;
+    final pending = Future<AiExecutionTicket>.sync(
+      () => executionGate.acquire(AiContinuationKind.model),
+    ).then((value) {
+      // A late reply may never revive a timed-out or stopped send.
+      if (!accepting) value.discard();
+      return value;
+    });
+    try {
+      final value = await _interruptible(
+        pending.timeout(AiExecutionTicket.ttl), epoch,
+      );
+      try {
+        _checkExecution(epoch, binding);
+        return value;
+      } on Object {
+        value.discard();
+        rethrow;
+      }
+    } on TimeoutException {
+      throw const AiExecutionPaused(AiExecutionPause(
+        AiExecutionPauseReason.timeout, kind: AiContinuationKind.model,
+      ));
+    } on AiExecutionPaused {
+      rethrow;
+    } on _RunStopped {
+      rethrow;
+    } on Object {
+      throw const AiExecutionPaused(AiExecutionPause(
+        AiExecutionPauseReason.unavailable, kind: AiContinuationKind.model,
+      ));
+    } finally {
+      accepting = false;
+    }
+  }
+
   Future<T> _interruptible<T>(Future<T> future, int epoch) => Future.any([
     future,
     _stopSignal!.future.then<T>((_) => throw _RunStopped(_stopReason)),
@@ -967,22 +1117,12 @@ final class AiRunner {
     return redacted.text;
   }
 
-  Future<void Function()?> _redactTail(AiSegment seg, int epoch) async {
+  Future<AiToolDelivery?> _prepareTail(
+    AiSegment seg, int epoch, AiExecutionRunBinding binding,
+  ) async {
     await _refresh(epoch);
     final tail = seg.tail;
-    if (tail is AppUserEntry) {
-      final context = [
-        for (final block in tail.context)
-          block.redact(_redactor, source: _redact),
-      ];
-      seg.setTail(
-        tail.redactedCopy(
-          text: _redact(tail.text, late: true),
-          context: context,
-        ),
-      );
-      _sentContext = List.unmodifiable(context);
-    } else if (tail is AppToolResultsEntry) {
+    if (tail is AppToolResultsEntry) {
       var results = tail.results;
       void Function(List<AiToolResult>)? delivered;
       final prepare = prepareToolResults;
@@ -996,7 +1136,10 @@ final class AiRunner {
           // original tools, including when the run stops while they are held.
           _pendingGitLab = true;
           final pending = Future<AiToolDelivery>.sync(
-            () => prepare(_pendingToolCalls, results, () => _refresh(epoch)),
+            () => prepare(_pendingToolCalls, results, () async {
+              _checkExecution(epoch, binding);
+              await _refresh(epoch);
+            }),
           );
           unawaited(
             pending.then<void>(
@@ -1019,6 +1162,8 @@ final class AiRunner {
             }
           } on _RunStopped {
             rethrow;
+          } on AiExecutionPaused {
+            rethrow;
           } on Object {
             results = [
               for (final tc in _pendingToolCalls) _synthetic(tc, 'read_failed'),
@@ -1026,6 +1171,27 @@ final class AiRunner {
           }
         }
       }
+      return (
+        results: results,
+        delivered: delivered ?? (_) {},
+      );
+    }
+    return null;
+  }
+
+  void Function()? _redactTail(AiSegment seg, AiToolDelivery? delivery) {
+    final tail = seg.tail;
+    if (tail is AppUserEntry) {
+      final context = [
+        for (final block in tail.context)
+          block.redact(_redactor, source: _redact),
+      ];
+      seg.setTail(tail.redactedCopy(
+        text: _redact(tail.text, late: true), context: context,
+      ));
+      _sentContext = List.unmodifiable(context);
+    } else if (tail is AppToolResultsEntry) {
+      final results = delivery?.results ?? tail.results;
       AiToolResult redactedResult(int index) {
         final result = results[index];
         _withheld |= result.withheldPrivateKeyContext;
@@ -1073,7 +1239,7 @@ final class AiRunner {
       );
       // Whole-field permissions only advance after an accepted provider turn.
       // Failed, refused or interrupted sends retain the previous cut state.
-      return delivered == null ? null : () => delivered!(finalResults);
+      return delivery == null ? null : () => delivery.delivered(finalResults);
     }
     return null;
   }

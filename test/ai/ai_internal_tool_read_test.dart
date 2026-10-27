@@ -254,6 +254,7 @@ AiRunner _runner(
   required Future<AiToolResult> Function(AiToolCall) execute,
   required void Function(AiToolResult) onToolResult,
 }) => AiRunner(
+  appInForeground: () => true,
   config: harness.config(),
   wire: harness.wire,
   complete: complete,

@@ -1110,6 +1110,7 @@ final class _DatesHarness {
   _DatesHarness(this.storage, this.fixture) {
     coordinator = PolicyAiWriteCoordinator(
       snapshot: () => AiWritePolicySnapshot(
+        appInForeground: true,
         scope: _scope,
         level: policy.level,
         ceiling: AiAutonomyLevel.bypass,

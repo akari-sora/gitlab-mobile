@@ -437,6 +437,7 @@ void main() {
     final h = base.Harness();
     final snapshots = <String>[];
     final runner = AiRunner(
+      appInForeground: () => true,
       config: h.config(),
       wire: h.wire,
       complete: (plan, {onEvent}) async {
@@ -483,6 +484,7 @@ AiToolSpec _toolSpec(String name) => AiToolSpec(
 
 void _advertiseTools(base.Harness h, List<AiToolSpec> tools) {
   h.runner = AiRunner(
+    appInForeground: () => true,
     config: h.config(),
     wire: h.wire,
     complete: h.complete,

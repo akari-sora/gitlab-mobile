@@ -175,6 +175,7 @@ AiChatController _controller(
   Future<void> Function()? refreshSecrets,
   List<Duration>? historyRetryDelays,
 }) => AiChatController(
+  appInForeground: () => true,
   origin: origin,
   session: environment.session,
   settings: environment.settings,
@@ -436,6 +437,7 @@ void main() {
     await freshSettings.initialize();
     expect(freshSettings.accountRecord(accountKey), isNull);
     final controller = AiChatController(
+      appInForeground: () => true,
       origin: const AiGeneralOrigin(),
       session: environment.session,
       settings: freshSettings,

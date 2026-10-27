@@ -518,6 +518,7 @@ PolicyAiWriteCoordinator _coordinator(
   final budget = AiToolBudget(maxGitLabRequests: 40);
   final coordinator = PolicyAiWriteCoordinator(
     snapshot: () => AiWritePolicySnapshot(
+      appInForeground: true,
       scope: policy.scope,
       level: policy.level,
       ceiling: AiAutonomyLevel.bypass,

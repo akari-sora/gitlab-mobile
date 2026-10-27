@@ -293,6 +293,7 @@ final class _StatusHarness {
   PolicyAiWriteCoordinator newCoordinator(String conversation) =>
       PolicyAiWriteCoordinator(
         snapshot: () => AiWritePolicySnapshot(
+          appInForeground: true,
           scope: scope,
           level: policy.level,
           ceiling: AiAutonomyLevel.bypass,
