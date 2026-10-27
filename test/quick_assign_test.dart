@@ -130,6 +130,9 @@ void main() {
       // Should return to "指派給我"
       expect(find.byKey(const ValueKey('quick-assign-me')), findsOneWidget);
       expect(find.byKey(const ValueKey('quick-unassign-me')), findsNothing);
+      // Drain the attached read-cache disk coordinator so its bounded
+      // invalidation wait cancels its FakeAsync timer before teardown.
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Tapping "修改名單" opens assignees editor', (tester) async {
@@ -183,6 +186,9 @@ void main() {
       await tester.tap(find.byIcon(Icons.close));
       await settleNetworkWidgets(tester);
       expect(find.text('修改指派 · #1'), findsNothing);
+      // Drain the attached read-cache disk coordinator so its bounded
+      // invalidation wait cancels its FakeAsync timer before teardown.
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('MR shows Reviewers section with quick-edit-reviewers button', (tester) async {
@@ -226,6 +232,9 @@ void main() {
       expect(find.byKey(const ValueKey('quick-assign-me')), findsOneWidget);
       expect(find.byKey(const ValueKey('quick-edit-assignees')), findsOneWidget);
       expect(find.byKey(const ValueKey('quick-edit-reviewers')), findsOneWidget);
+      // Drain the attached read-cache disk coordinator so its bounded
+      // invalidation wait cancels its FakeAsync timer before teardown.
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 }

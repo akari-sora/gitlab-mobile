@@ -18,6 +18,7 @@ import 'package:gitlab_mobile/shared/theme.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
+import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show settleWorkspace;
 import 'support/shell_nav.dart';
@@ -181,6 +182,9 @@ void main() {
           }));
         });
         expect(fixture.unhandled, isEmpty);
+        // Drain the attached read-cache disk coordinator (shell screens read
+        // through the session client) before teardown.
+        await pumpUntilComplete(tester, session.readCache.quiesced);
       });
     }
   }
@@ -299,6 +303,9 @@ void main() {
         });
 
         expect(tester.takeException(), isNull);
+        // Same attached-coordinator drain; wide layouts open the issue detail
+        // through the session client.
+        await pumpUntilComplete(tester, session.readCache.quiesced);
         await tester.pumpWidget(const SizedBox());
         await tester.pump();
       });

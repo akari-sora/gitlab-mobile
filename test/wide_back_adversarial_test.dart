@@ -116,6 +116,7 @@ void main() {
       await settleNetworkWidgets(tester);
 
       expect(tester.takeException(), isNull, reason: 'No unhandled exception after 6 rapid pops');
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('1200 dp rapid selection switching (Issue 1 -> 2 -> 3) and single-pop stack deflation', (tester) async {
@@ -212,6 +213,7 @@ void main() {
       final popResult4 = await tester.binding.handlePopRoute();
       expect(popResult4, isFalse);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('840 dp two-pane width constraint, spatial non-overlap, and bidirectional hitTestable rigour', (tester) async {
@@ -312,6 +314,7 @@ void main() {
       expect(find.text('HitTest Left Item 1'), findsOneWidget);
 
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Rapid alternation of selection and pop cycles maintains clean state machine', (tester) async {
@@ -379,6 +382,7 @@ void main() {
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
 
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 }
