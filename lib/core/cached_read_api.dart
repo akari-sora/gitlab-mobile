@@ -1064,6 +1064,7 @@ final class _ReadCache {
   }
 
   void observe(Uri uri, Json json, {bool learnAlias = true}) {
+    api._observeErasedJob(uri, json);
     final p = path(uri);
     if (p.length == 1 && p.first == 'user' && json['id'] is int) {
       verifiedUserId = json['id'] as int;
@@ -1712,9 +1713,17 @@ final class _ReadCache {
           (maxAge == null || age < maxAge);
     }
 
-    CachedRead<T> result(_ReadEntry entry) {
+    Future<CachedRead<T>> result(_ReadEntry entry) async {
       final value = entry.value as T;
       validate?.call(value);
+      if (value is Json && api._observeErasedJob(entry.uri, value)) {
+        await settleDiskSafety();
+        if (api._closed ||
+            !permitted(permission, uri) ||
+            !permitted(permission, entry.uri)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+      }
       return CachedRead(
         value: value,
         fetchedAt: entry.fetchedAt,
@@ -1817,7 +1826,7 @@ final class _ReadCache {
               newer != null &&
               usable(newer) &&
               servesProjectRequest(newer.value)) {
-            return result(newer);
+            return await result(newer);
           }
           final servesHydrated =
               hydrated == null || servesProjectRequest(hydrated.value);
@@ -1914,7 +1923,7 @@ final class _ReadCache {
                 hydrationTicket,
               );
               store(key(canonicalUri, accept), entry);
-              return result(entry);
+              return await result(entry);
             }
           }
         } finally {

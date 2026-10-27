@@ -380,6 +380,88 @@ void main() {
       );
     }
   }
+  for (final contextRead in [false, true]) {
+    test(
+      'real AI ${contextRead ? 'job context' : 'job log'} cannot join a pending terminal trace hydration',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await h.recover();
+        final first = await h.client(1, _adapter('disk-log'));
+        await first.cachedTerminalJobTrace(9, 7);
+        await h.coordinator.flush(
+          DiskBinding(accountKey: _account, generation: 1),
+        );
+        final entry = await h.entry(
+          _instance.api(['projects', '9', 'jobs', '7', 'trace']),
+          'text/plain',
+        );
+        expect(entry?.bodyKind, ReadCacheBodyKind.terminalLog);
+        expect(
+          utf8.decode((entry!.body as ReadCacheTerminalLog).bytes),
+          'disk-log',
+        );
+
+        final adapter = _adapter('network-log');
+        late _HoldLookup held;
+        final api = await h.client(
+          2,
+          adapter,
+          holdTarget: '/jobs/7/trace',
+          onBackend: (backend) => held = backend,
+        );
+        addTearDown(() {
+          if (!held.release.isCompleted) held.release.complete();
+        });
+        final uiMeter = RequestMeter();
+        final uiRead = uiMeter.runAsync(() => api.cachedTerminalJobTrace(9, 7));
+        await held.entered.future.timeout(_deadline);
+        expect(uiMeter.count, 1, reason: 'terminal proof is a network read');
+        final before = adapter.requests.length;
+        final meter = RequestMeter();
+        if (contextRead) {
+          final context = await meter
+              .runAsync(
+                () => loadAiChatContext(
+                  origin: const AiJobOrigin(
+                    project: _project,
+                    jobId: 7,
+                    jobName: 'fixture',
+                  ),
+                  api: api,
+                  redactor: Redactor(secrets: _Secrets()),
+                  accountKey: _account,
+                  refreshSecrets: () async {},
+                  isCurrent: () => true,
+                  now: () => _now,
+                ),
+              )
+              .timeout(_deadline);
+          expect(context.built.blocks.single.text, contains('network-log'));
+          expect(context.built.blocks.single.text, isNot(contains('disk-log')));
+        } else {
+          final result = await meter
+              .runAsync(
+                () => GitLabAiReadPort(api, 9, now: () => _now).jobLog(7),
+              )
+              .timeout(_deadline);
+          expect(result.value, 'network-log');
+          expect(result.requestCount, 1);
+        }
+        expect(held.release.isCompleted, isFalse);
+        expect(meter.count, 1);
+        final requests = adapter.requests.skip(before).toList();
+        expect(requests, hasLength(1));
+        expect(requests.single.method, 'GET');
+        expect(requests.single.uri.path, endsWith('/jobs/7/trace'));
+        held.release.complete();
+        final disk = await uiRead.timeout(_deadline);
+        expect(disk.lineage, CacheLineage.disk);
+        expect(utf8.decode(disk.value.bytes), 'disk-log');
+        expect(uiMeter.count, 1);
+      },
+    );
+  }
   for (final hydrate in [false, true]) {
     test(
       'real AI read port ignores ${hydrate ? 'hydrated memory' : 'disk-only'} pinned file',

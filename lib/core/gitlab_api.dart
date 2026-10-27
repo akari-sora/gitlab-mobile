@@ -1720,6 +1720,51 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     }
   }
 
+  /// A trusted job erase retires both its proof and the exact stored trace.
+  /// Reuse d1 publication fencing and bounded backend cleanup, including when
+  /// the metadata response itself is no-store and never enters memory.
+  bool _observeErasedJob(Uri uri, Json value) {
+    final path = _cache.path(_cache.canonical(uri));
+    if (path.length != 4 || path[0] != 'projects' || path[2] != 'jobs') {
+      return false;
+    }
+    final projectId = int.tryParse(path[1]);
+    final jobId = int.tryParse(path[3]);
+    final pipeline = value['pipeline'];
+    if (projectId == null ||
+        projectId <= 0 ||
+        jobId == null ||
+        jobId <= 0 ||
+        value['id'] != jobId ||
+        (value.containsKey('project_id') && value['project_id'] != projectId) ||
+        (pipeline is Map &&
+            pipeline.containsKey('project_id') &&
+            pipeline['project_id'] != projectId) ||
+        value['erased_at'] == null) {
+      return false;
+    }
+    if (!_cache.enabled) return true;
+    final metadataUri = instance.api(path);
+    final traceUri = instance.api([...path, 'trace']);
+    for (final (target, accept) in [
+      (metadataUri, 'application/json'),
+      (traceUri, 'text/plain'),
+    ]) {
+      final key = _cache.key(target, accept);
+      final ticket = _cache.claimPublication(key, target, accept);
+      _cache.finishPublication(ticket);
+    }
+    final metadataKey = _cache.key(metadataUri, 'application/json');
+    final previous = _cache.entries.remove(metadataKey);
+    if (previous != null) _cache.bytes -= previous.cost;
+    _cache.pending.remove(metadataKey);
+    // Keep a source fence even when durable deletion fails. This is scoped to
+    // this job's trace; d1's privacy revocation leaves global mutations alone.
+    _cache.revoke(traceUri, 404, privacy: true);
+    _cache.discardDiskKey(traceUri, 'text/plain');
+    return true;
+  }
+
   /// An explicitly selected immutable diff version; discovery stays network-only.
   Future<CachedRead<Json>> cachedMergeRequestVersion(
     int projectId,
@@ -1864,6 +1909,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         _cache.finishPublication(ticket);
       }
     }
+    if (_observeErasedJob(metadataUri, metadata)) {
+      await _cache.settleDiskSafety();
+      throw const ApiFailure(FailureKind.unsupported);
+    }
     final finished = metadata['finished_at'];
     final finishedAt = finished is String ? DateTime.tryParse(finished) : null;
     final pipeline = metadata['pipeline'];
@@ -1928,6 +1977,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           current = objectJson(jsonDecode(utf8.decode(response.bytes)));
         } on FormatException {
           throw const ApiFailure(FailureKind.invalidResponse);
+        }
+        if (_observeErasedJob(metadataUri, current)) {
+          await _cache.settleDiskSafety();
+          throw const ApiFailure(FailureKind.unsupported);
         }
         final pipeline = current['pipeline'];
         if (current['id'] != jobId ||
@@ -2182,6 +2235,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
               await subscription.cancel();
             }
             if (_closed) throw const ApiFailure(FailureKind.cancelled);
+            if (terminalCurrent?.call() == false) {
+              await _cache.settleDiskSafety();
+              throw const ApiFailure(FailureKind.unsupported);
+            }
             if (disk != null && lease.isCurrent) {
               Object? raw;
               try {
@@ -2269,11 +2326,11 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           }
         }
         admitted = await _cache.admit(false);
+        if (!_closed && terminalCurrent?.call() == false) {
+          throw const ApiFailure(FailureKind.unsupported);
+        }
         if (_closed || !_cache.permitted(permission, uri)) {
           throw const ApiFailure(FailureKind.cancelled);
-        }
-        if (terminalCurrent?.call() == false) {
-          throw const ApiFailure(FailureKind.unsupported);
         }
         if (!admitted || mayStart?.call() == false) {
           return CachedRead<T>.dropped();
@@ -2288,11 +2345,11 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           issueIdentities: issues,
         );
         await _cache.settleDiskSafety();
+        if (!_closed && terminalCurrent?.call() == false) {
+          throw const ApiFailure(FailureKind.unsupported);
+        }
         if (_closed || !_cache.permitted(permission, uri)) {
           throw const ApiFailure(FailureKind.cancelled);
-        }
-        if (terminalCurrent?.call() == false) {
-          throw const ApiFailure(FailureKind.unsupported);
         }
         // Recheck the attempt after receiving the tail, after all privacy I/O.
         // Both metadata requests are physical requests in RequestMeter. This is
@@ -2300,11 +2357,11 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         if (verifyTerminal != null && !await verifyTerminal()) {
           return CachedRead<T>.dropped();
         }
+        if (!_closed && terminalCurrent?.call() == false) {
+          throw const ApiFailure(FailureKind.unsupported);
+        }
         if (_closed || !_cache.permitted(permission, uri)) {
           throw const ApiFailure(FailureKind.cancelled);
-        }
-        if (terminalCurrent?.call() == false) {
-          throw const ApiFailure(FailureKind.unsupported);
         }
         final bounded = project(loaded.value, fetchedAt, loaded.bytes, true);
         final projected = loaded.store ? bounded : null;

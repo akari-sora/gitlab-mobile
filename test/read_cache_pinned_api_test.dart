@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
+import 'package:gitlab_mobile/core/read_cache_cipher.dart';
 import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/core/read_cache_files.dart';
 import 'package:gitlab_mobile/core/read_cache_projection.dart';
@@ -76,6 +78,118 @@ final class _Storage implements ReadCacheSecureStorage {
   @override
   Future<Map<String, String>> readAll() async => Map.of(values);
 }
+
+final class _Lease implements DiskCommitLease {
+  @override
+  bool isCurrent = true;
+  @override
+  void revoke() => isCurrent = false;
+}
+
+final class _HeldFence implements DiskInvalidationFence {
+  _HeldFence(this.delegate, Future<void> release)
+    : barrier = delegate.barrier.then((result) async {
+        await release;
+        return result;
+      });
+  final DiskInvalidationFence delegate;
+  @override
+  final Future<DiskClearResult> barrier;
+  @override
+  bool get isCurrent => delegate.isCurrent;
+  @override
+  Future<void> get quiesced => delegate.quiesced;
+  @override
+  void revoke() => delegate.revoke();
+}
+
+/// Retains an already decrypted entry across a same-client erase observation.
+final class _TraceBackend implements ReadCacheDiskBackend {
+  _TraceBackend(this.delegate);
+  final ReadCacheDiskBackend delegate;
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  final invalidating = Completer<void>();
+  bool holdLookup = false;
+  bool failDeletion = false;
+  bool holdDeletion = false;
+  final deletionEntered = Completer<void>();
+  final deletionRelease = Completer<void>();
+  final accountRevoked = Completer<void>();
+  DiskCommitLease? writer;
+  final notices = <ReadCacheCleanupState>[];
+
+  @override
+  Future<ProjectedDiskEntry?> lookup(DiskLookup request) async {
+    final entry = await delegate.lookup(request);
+    if (holdLookup &&
+        request.bodyKind == ReadCacheBodyKind.terminalLog &&
+        entry != null) {
+      holdLookup = false;
+      entered.complete();
+      await release.future.timeout(_deadline);
+    }
+    return entry;
+  }
+
+  @override
+  void accept(DiskWriteCandidate candidate, ProjectedDiskEntry entry) {
+    if (candidate.bodyKind == ReadCacheBodyKind.terminalLog) {
+      writer = candidate.lease;
+    }
+    delegate.accept(candidate, entry);
+  }
+
+  @override
+  DiskInvalidationFence invalidate(DiskInvalidation invalidation) {
+    if (failDeletion && invalidation.canonicalKey?.contains('/trace') == true) {
+      throw const ReadCacheFileException(ReadCacheFileFailure.io);
+    }
+    final fence = delegate.invalidate(invalidation);
+    if (invalidation.kind == DiskInvalidationKind.account &&
+        !accountRevoked.isCompleted) {
+      accountRevoked.complete();
+    }
+    if (invalidation.canonicalKey?.contains('/trace') == true &&
+        !invalidating.isCompleted) {
+      invalidating.complete();
+    }
+    if (holdDeletion && invalidation.canonicalKey?.contains('/trace') == true) {
+      deletionEntered.complete();
+      return _HeldFence(fence, deletionRelease.future);
+    }
+    return fence;
+  }
+
+  @override
+  void revoke(DiskBinding binding) => delegate.revoke(binding);
+  @override
+  Future<DiskClearResult> clear(
+    DiskBinding binding,
+    ReadCacheCleanupOperation operation,
+  ) => delegate.clear(binding, operation);
+  @override
+  void reportCleanup(ReadCacheCleanupState state) {
+    notices.add(state);
+    delegate.reportCleanup(state);
+  }
+}
+
+void Function(ReadCacheFileCheckpoint) _holdWriter(
+  ReadCacheFileCheckpoint boundary,
+  SendPort entered,
+  String release,
+) => (step) {
+  if (step != boundary) return;
+  entered.send(step.name);
+  final deadline = DateTime.now().add(_deadline);
+  while (!File(release).existsSync()) {
+    if (DateTime.now().isAfter(deadline)) {
+      throw StateError('synthetic writer hold expired');
+    }
+    sleep(const Duration(milliseconds: 1));
+  }
+};
 
 final class _Harness {
   _Harness({this.controls = true}) {
@@ -160,7 +274,10 @@ final class _Harness {
     return jsonResponse({}, status: 404);
   }
 
-  Future<GitLabApi> client({bool ready = true}) async {
+  Future<GitLabApi> client({
+    bool ready = true,
+    ReadCacheDiskBackend Function(ReadCacheDiskBackend)? wrapBackend,
+  }) async {
     await flush();
     final adapter = FakeAdapter((request) {
       if (request.uri.path.endsWith('/jobs/7/trace') && traceResponse != null) {
@@ -189,12 +306,11 @@ final class _Harness {
     );
     api.bindReadCache(_account, binding.generation);
     expect(await coordinator.activate(binding), ready);
-    api.attachReadCacheDiskBackend(
-      CoordinatedReadCacheDiskBackend(
-        coordinator: coordinator,
-        binding: binding,
-      ),
+    final backend = CoordinatedReadCacheDiskBackend(
+      coordinator: coordinator,
+      binding: binding,
     );
+    api.attachReadCacheDiskBackend(wrapBackend?.call(backend) ?? backend);
     clients.add(api);
     adapters.add(adapter);
     return api;
@@ -231,6 +347,44 @@ final class _Harness {
     await coordinator.quiesced;
     if (root.existsSync()) root.deleteSync(recursive: true);
   }
+}
+
+Future<void> _expectStored(
+  _Harness h,
+  List<String> path, {
+  required bool present,
+}) async {
+  await h.flush();
+  final key = (await h.keys.readKey(_account)).value!;
+  final canonical = readCacheDurableKey(
+    binding: DiskBinding(accountKey: _account, generation: 999),
+    instance: _instance,
+    uri: _instance.api(path),
+    logicalAccept: 'text/plain',
+  )!;
+  final name = await const ReadCacheCipher().entryFileName(key, canonical);
+  final file = File(
+    '${h.root.path}/read_cache/'
+    '${ReadCacheCipher.accountDirectoryName(_account)}/$name',
+  );
+  expect(file.existsSync(), present, reason: 'committed encrypted trace file');
+  final index = await h.files.readIndex(_account, key);
+  expect(
+    index!.entries.any((entry) => entry.fileName == name),
+    present,
+    reason: 'encrypted trace index row',
+  );
+}
+
+Future<void> _seedOtherTrace(_Harness h, GitLabApi api) async {
+  h.extraResponse = (request) {
+    if (request.uri.path.endsWith('/jobs/8/trace')) return _suffix(h.trace);
+    if (request.uri.path.endsWith('/jobs/8')) {
+      return jsonResponse({..._job(), 'id': 8});
+    }
+    return jsonResponse({}, status: 404);
+  };
+  await api.cachedTerminalJobTrace(1, 8);
 }
 
 Matcher _failure(FailureKind kind, {int? status}) => isA<ApiFailure>()
@@ -933,6 +1087,357 @@ void main() {
       expect(read.dropped, isTrue);
       expect(meter.count, 0);
       expect(await h.entry(_tracePath, 'text/plain'), isNull);
+    },
+  );
+
+  for (final postRange in [false, true]) {
+    test(
+      'erase retires committed trace at ${postRange ? 'post-Range' : 'initial'} check',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await h.recover();
+        final api = await h.client();
+        await api.cachedTerminalJobTrace(1, 7);
+        await _seedOtherTrace(h, api);
+        await _expectStored(h, _tracePath, present: true);
+        final erasedAt = _initialNow.toIso8601String();
+        if (postRange) {
+          h.traceResponse = (_) {
+            h.metadata['erased_at'] = erasedAt;
+            return _suffix(h.trace);
+          };
+        } else {
+          h.metadata['erased_at'] = erasedAt;
+        }
+        await expectLater(
+          api.cachedTerminalJobTrace(1, 7, fresh: true),
+          throwsA(_failure(FailureKind.unsupported)),
+        );
+        await _expectStored(h, _tracePath, present: false);
+        await _expectStored(h, [
+          'projects',
+          '1',
+          'jobs',
+          '8',
+          'trace',
+        ], present: true);
+        expect(
+          (await api.cachedTerminalJobTrace(1, 8)).lineage,
+          CacheLineage.memory,
+        );
+
+        // Fresh legal proof cannot make the retired in-memory bytes reusable.
+        h.traceResponse = null;
+        h.metadata = _job();
+        h.trace = utf8.encode('new network trace after retirement\n');
+        await api.cachedRecord(_jobPath, fresh: true, allowDisk: false);
+        final read = await api.cachedTerminalJobTrace(1, 7);
+        expect(read.lineage, CacheLineage.network);
+        expect(read.value.bytes, h.trace);
+      },
+    );
+  }
+
+  for (final direct in [false, true]) {
+    for (final noStore in [false, true]) {
+      test(
+        'erase fences held disk hydration direct=$direct no-store=$noStore',
+        () async {
+          final h = _Harness();
+          addTearDown(h.dispose);
+          await h.recover();
+          final first = await h.client();
+          await first.cachedTerminalJobTrace(1, 7);
+          await _seedOtherTrace(h, first);
+          await _expectStored(h, _tracePath, present: true);
+          late _TraceBackend backend;
+          final api = await h.client(
+            wrapBackend: (delegate) =>
+                backend = _TraceBackend(delegate)..holdLookup = true,
+          );
+          addTearDown(() {
+            if (!backend.release.isCompleted) backend.release.complete();
+          });
+          final read = api.cachedTerminalJobTrace(1, 7);
+          final rejected = expectLater(
+            read,
+            throwsA(_failure(FailureKind.unsupported)),
+          );
+          await backend.entered.future.timeout(_deadline);
+          h.metadata['erased_at'] = _initialNow.toIso8601String();
+          h.metadataNoStore = noStore;
+          if (direct) {
+            await api.record(_jobPath);
+          } else {
+            await api.cachedRecord(_jobPath, fresh: true, allowDisk: false);
+          }
+          backend.release.complete();
+          await rejected;
+          await _expectStored(h, _tracePath, present: false);
+          await _expectStored(h, [
+            'projects',
+            '1',
+            'jobs',
+            '8',
+            'trace',
+          ], present: true);
+          h.metadata = _job();
+          h.metadataNoStore = false;
+          h.trace = utf8.encode('network after cancelled hydration\n');
+          await api.cachedRecord(_jobPath, fresh: true, allowDisk: false);
+          final next = await api.cachedTerminalJobTrace(1, 7);
+          expect(next.lineage, CacheLineage.network);
+          expect(next.value.bytes, h.trace);
+        },
+      );
+    }
+  }
+
+  test(
+    'erased legacy job metadata on disk retires its committed trace',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.recover();
+      final first = await h.client();
+      await first.cachedTerminalJobTrace(1, 7);
+      await _seedOtherTrace(h, first);
+      await h.flush();
+      final binding = DiskBinding(accountKey: _account, generation: 1);
+      const versions = {'global': 0, 'project:1': 0};
+      final candidate = DiskWriteCandidate(
+        binding: binding,
+        uri: _instance.api(_jobPath),
+        logicalAccept: 'application/json',
+        bodyKind: ReadCacheBodyKind.json,
+        fetchedAt: h.now,
+        responseBytes: 512,
+        lease: _Lease(),
+        cacheable: true,
+        noStore: false,
+        firstPage: true,
+        scopeVersions: versions,
+      );
+      final legacy = projectReadCacheResponse(
+        candidate,
+        {..._job(), 'erased_at': _initialNow.toIso8601String()},
+        ReadCacheProjectionContext(
+          instance: _instance,
+          binding: binding,
+          now: h.now,
+          scopeVersions: versions,
+        ),
+      );
+      expect(legacy, isNotNull);
+      h.coordinator.accept(candidate, legacy!);
+      await h.flush();
+      final api = await h.client();
+      final meter = RequestMeter();
+      final read = await meter.runAsync(() => api.cachedRecord(_jobPath));
+      expect(read.lineage, CacheLineage.disk);
+      expect(read.value['erased_at'], isNotNull);
+      expect(meter.count, 0);
+      await _expectStored(h, _tracePath, present: false);
+      await _expectStored(h, [
+        'projects',
+        '1',
+        'jobs',
+        '8',
+        'trace',
+      ], present: true);
+    },
+  );
+
+  test('erased query metadata in memory retires a later trace', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await h.recover();
+    final api = await h.client();
+    h.metadata['erased_at'] = _initialNow.toIso8601String();
+    const query = {'include_retried': 'true'};
+    await api.cachedRecord(_jobPath, query: query, allowDisk: false);
+    h.metadata = _job();
+    await api.cachedTerminalJobTrace(1, 7, fresh: true);
+    await _expectStored(h, _tracePath, present: true);
+    final meter = RequestMeter();
+    final read = await meter.runAsync(
+      () => api.cachedRecord(_jobPath, query: query, allowDisk: false),
+    );
+    expect(read.lineage, CacheLineage.memory);
+    expect(read.value['erased_at'], isNotNull);
+    expect(meter.count, 0);
+    await _expectStored(h, _tracePath, present: false);
+  });
+
+  test(
+    'cached erase cleanup cannot return metadata after account revocation',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.recover();
+      late _TraceBackend backend;
+      final api = await h.client(
+        wrapBackend: (delegate) => backend = _TraceBackend(delegate),
+      );
+      addTearDown(() {
+        if (!backend.deletionRelease.isCompleted) {
+          backend.deletionRelease.complete();
+        }
+      });
+      const query = {'include_retried': 'true'};
+      h.metadata['erased_at'] = _initialNow.toIso8601String();
+      await api.cachedRecord(_jobPath, query: query, allowDisk: false);
+      backend.holdDeletion = true;
+      final read = api.cachedRecord(_jobPath, query: query, allowDisk: false);
+      final rejected = expectLater(
+        read,
+        throwsA(_failure(FailureKind.cancelled)),
+      );
+      await backend.deletionEntered.future.timeout(_deadline);
+      h.extraResponse = (_) => jsonResponse({}, status: 401);
+      final revoked = expectLater(
+        api.record(['projects', '1']),
+        throwsA(_failure(FailureKind.unauthenticated, status: 401)),
+      );
+      await backend.accountRevoked.future.timeout(_deadline);
+      backend.deletionRelease.complete();
+      await rejected;
+      await revoked;
+    },
+  );
+
+  for (final topLevel in [false, true]) {
+    test(
+      'conflicting project identity cannot erase a trace top-level=$topLevel',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await h.recover();
+        final api = await h.client();
+        await api.cachedTerminalJobTrace(1, 7);
+        await h.flush();
+        h.metadata['erased_at'] = _initialNow.toIso8601String();
+        if (topLevel) {
+          h.metadata['project_id'] = 2;
+        } else {
+          h.metadata['pipeline'] = {'id': 6, 'project_id': 2, 'sha': _sha};
+        }
+        await api.record(_jobPath);
+        await _expectStored(h, _tracePath, present: true);
+        expect(
+          (await api.cachedTerminalJobTrace(1, 7)).lineage,
+          CacheLineage.memory,
+        );
+      },
+    );
+  }
+
+  for (final boundary in [
+    null,
+    ReadCacheFileCheckpoint.beforeEntryRename,
+    ReadCacheFileCheckpoint.beforeIndexRename,
+  ]) {
+    test(
+      'erase revokes late writer at ${boundary?.name ?? 'queued'}',
+      () async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        await h.recover();
+        late _TraceBackend backend;
+        final api = await h.client(
+          wrapBackend: (delegate) => backend = _TraceBackend(delegate),
+        );
+        await api.cachedTerminalJobTrace(1, 7);
+        await _seedOtherTrace(h, api);
+        await _expectStored(h, _tracePath, present: true);
+
+        final events = ReceivePort();
+        addTearDown(events.close);
+        final messages = StreamIterator<Object?>(events);
+        final release = File('${h.root.path}/release-writer');
+        addTearDown(() => release.createSync());
+        if (boundary != null) {
+          h.coordinator.configure(
+            keys: h.keys,
+            settings: ReadCacheSettingsStore(h.storage),
+            files: ReadCacheFileStore(
+              root: () async => h.root,
+              clock: () => h.now,
+              checkpoint: _holdWriter(boundary, events.sendPort, release.path),
+            ),
+          );
+        }
+        h.trace = utf8.encode('writer must not resurrect erased trace\n');
+        await api.cachedTerminalJobTrace(1, 7, fresh: true);
+        final lease = backend.writer!;
+        expect(lease.isCurrent, isTrue);
+        final writing = boundary == null ? null : h.flush();
+        if (boundary != null) {
+          expect(await messages.moveNext().timeout(_deadline), isTrue);
+          expect(messages.current, boundary.name);
+        }
+        h.metadata['erased_at'] = _initialNow.toIso8601String();
+        final observing = api.record(_jobPath);
+        try {
+          await Future.any([
+            backend.invalidating.future,
+            observing.then((_) {}),
+          ]).timeout(_deadline);
+          expect(
+            lease.isCurrent,
+            isFalse,
+            reason: 'erase must revoke writer lease',
+          );
+        } finally {
+          release.createSync();
+          await observing;
+          if (writing != null) await writing;
+          await messages.cancel();
+        }
+        await _expectStored(h, _tracePath, present: false);
+        await _expectStored(h, [
+          'projects',
+          '1',
+          'jobs',
+          '8',
+          'trace',
+        ], present: true);
+      },
+    );
+  }
+
+  test(
+    'erase deletion failure reports cleanup without restoring trace memory',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.recover();
+      late _TraceBackend backend;
+      final api = await h.client(
+        wrapBackend: (delegate) => backend = _TraceBackend(delegate),
+      );
+      await api.cachedTerminalJobTrace(1, 7);
+      await h.flush();
+      backend.failDeletion = true;
+      h.metadata['erased_at'] = _initialNow.toIso8601String();
+      expect((await api.record(_jobPath))['erased_at'], isNotNull);
+      expect(backend.notices, hasLength(1));
+      expect(backend.notices.single.code, ReadCacheCleanupCode.cleanupFailed);
+      expect(backend.notices.single.clearResult.complete, isFalse);
+      expect(backend.writer!.isCurrent, isFalse);
+      await expectLater(
+        api.cachedTerminalJobTrace(1, 7),
+        throwsA(_failure(FailureKind.unsupported)),
+      );
+      // Even if a later legal proof appears, failed deletion cannot resurrect
+      // the retained ciphertext. The source fence forces a new network tail.
+      h.metadata = _job();
+      h.trace = utf8.encode('network after failed retirement\n');
+      await api.cachedRecord(_jobPath, fresh: true, allowDisk: false);
+      final next = await api.cachedTerminalJobTrace(1, 7);
+      expect(next.lineage, CacheLineage.network);
+      expect(next.value.bytes, h.trace);
     },
   );
 
