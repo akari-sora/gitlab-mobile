@@ -46,6 +46,9 @@ def verify_merged_manifest(path, flavor):
         _require(node.attrib == {a + 'name': node.get(a + 'name')}, f'{path}: conditional permission')
     app = root.find('application')
     _require(app is not None, f'{path}: missing application')
+    for component in app:
+        _require('agentrunqa' not in component.get(a + 'name', '').lower(),
+                 f'{path}: QA adapter must not be an Android component')
     for name, value in {
         'allowBackup': 'false', 'usesCleartextTraffic': 'false',
         'fullBackupContent': '@xml/backup_rules', 'dataExtractionRules': '@xml/data_extraction_rules',
@@ -822,19 +825,25 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('        if (failure != null) AgentRunsChannel.serviceStartFailed(this, intent?.getStringExtra(EXTRA_PERMIT_ID), failure)\n'
                       '        else AgentRunsChannel.serviceStarted(this, intent?.getStringExtra(EXTRA_PERMIT_ID))\n', command)
         promotion = self._body(command, 'try')
-        self.assertEqual(promotion.strip(), 'promote(RunProgress(1, 0, null, null))\n            null')
+        self.assertEqual(promotion.strip(),
+                         'promote(AgentRunsChannel.startProgress(intent?.getStringExtra(EXTRA_PERMIT_ID)))\n            null')
         self.assertLess(command.index('promote('), command.index('AgentRunsChannel.serviceStarted('))
         failed = self._body(source, 'fun serviceStartFailed')
-        self.assertIn('if (permit.id == expectedId && (instance.permitId == null || instance.permitId == permit.id)) stop(reason)', failed)
-        self.assertLess(command.index('promote('), command.index('intent?.getStringExtra('))
-        self.assertNotIn('return', command[:command.index('promote(')])
+        self.assertIn('if (permit.id == expectedId && (instance.permitId == null || instance.permitId == permit.id)) stop(reason, instance)', failed)
+        # Only the getService stop intent bypasses promotion (C4). All FGS starts
+        # still discharge the foreground obligation before any active reply.
+        stop_branch = self._body(command, 'if (intent?.action == ACTION_STOP_ALL)')
+        self.assertEqual(stop_branch.strip(),
+                         'AgentRunsChannel.notificationStop(this)\n            return START_NOT_STICKY')
+        fgs_start = command[command.index('// Every start'):]
+        self.assertNotIn('return', fgs_start[:fgs_start.index('promote(')])
         self.assertNotIn('stopNative(', command)
         self.assertNotIn('current', promotion)
         start = self._body(source, 'fun serviceStarted')
         self.assertLess(start.index('permit.state = State.ACTIVE'), start.index('active(it.result'))
         self.assertIn('if (permit.id != expectedId) return', start)
         orphan = self._body(start, 'if (permit == null)')
-        self.assertIn('try { instance.stopNative() } catch (_: RuntimeException) { cleanupFailed = true }', orphan)
+        self.assertIn('stopNative(instance)', orphan)
         self.assertIn('return', orphan)
         self.assertIn('State.STARTING', source)
         for forbidden in ('FlutterEngine(', 'SharedPreferences', 'WorkManager', 'AlarmManager',
@@ -859,15 +868,19 @@ class BootstrapTests(unittest.TestCase):
         self.assertNotIn('stopService(', source)
         self.assertNotRegex(source, r'\b(?:context|activity)\??\.stopService\(')
         self.assertNotIn('serviceCreated', source)
-        native = self._body(source, 'private fun stopNative(): Boolean')
-        self.assertIn('val running = service', native)
+        native = self._body(source, 'private fun stopNative(instance:')
+        self.assertIn('val running = service ?: instance', native)
         self.assertIn('running?.stopNative()', native)
         self.assertNotIn('stopSelf(', native)
         start = self._body(source, 'fun serviceStarted')
         self.assertEqual(source.count('service = instance'), 1)
         self.assertNotIn('service =', self._body(source, 'private fun start('))
         instance_stop = self._body(source, 'internal fun stopNative')
-        self.assertTrue(instance_stop.lstrip().startswith('if (!foregroundStarted) return'))
+        self.assertIn('removeForeground()', instance_stop)
+        self.assertIn('if (foregroundStarted) stopForeground(STOP_FOREGROUND_REMOVE)',
+                      self._body(source, 'internal fun removeForeground'))
+        self.assertIn('stopSelf()', self._body(instance_stop, 'finally'))
+        self.assertNotIn('return', instance_stop, 'stale getService stop must stopSelf without promotion')
         promote = self._body(source, 'internal fun promote')
         self.assertGreater(promote.index('foregroundStarted = true'), promote.rindex('startForeground('))
         self.assertEqual(source.count('foregroundStarted = true'), 1)
@@ -899,6 +912,50 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('finishPending(permit, "released")', self._body(source, 'private fun release('))
         self.assertIn('finishPending(permit, reason)', self._body(source, 'private fun notifyInvalidated'))
 
+    def test_stop_intent_preserves_pending_foreground_dispatches_across_revocation(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        self.assertIn('private val pendingForegroundStarts = HashSet<String>()', source)
+        self.assertIn('private var deferredStop: AgentRunService? = null', source)
+        start = self._body(source, 'private fun start(')
+        self.assertLess(start.index('pendingForegroundStarts.add(permit.id)'),
+                        start.index('activity.startForegroundService(intent)'))
+        dispatch = start[start.index('pendingForegroundStarts.add(permit.id)'):]
+        failed_dispatch = self._body(start, 'if (component == null)')
+        self.assertLess(failed_dispatch.index('pendingForegroundStarts.remove(permit.id)'),
+                        failed_dispatch.index('stop("start_failed")'))
+        for exception in ('SecurityException', 'IllegalStateException', 'RuntimeException'):
+            failed = self._body(dispatch, f'catch (_: {exception})')
+            self.assertLess(failed.index('pendingForegroundStarts.remove(permit.id)'), failed.index('stop('))
+        command = self._body(source, 'override fun onStartCommand')
+        stop_branch = self._body(command, 'if (intent?.action == ACTION_STOP_ALL)')
+        self.assertNotIn('startCommandReceived', stop_branch,
+                         'a getService stop is not the queued foreground-start command')
+        self.assertLess(command.index('AgentRunsChannel.startCommandReceived('), command.index('promote('))
+        received = self._body(source, 'fun startCommandReceived(')
+        self.assertIn('expectedId?.let { pendingForegroundStarts.remove(it) }', received)
+        for signature in ('private fun invalidate(', 'private fun release(', 'fun activityDestroyed('):
+            body = self._body(source, signature)
+            self.assertNotIn('pendingForegroundStarts.', body,
+                             'stop/release/detach cannot forget an accepted undelivered start')
+        native = self._body(source, 'private fun stopNative(instance:')
+        self.assertIn('val running = service ?: instance ?: deferredStop', native)
+        self.assertLess(native.index('service = null'), native.index('if (pendingForegroundStarts.isNotEmpty())'))
+        deferred = self._body(native, 'if (pendingForegroundStarts.isNotEmpty())')
+        self.assertIn('deferredStop = running', deferred)
+        self.assertIn('return !cleanupFailed', deferred)
+        self.assertIn('running?.removeForeground()', deferred,
+                      'pending dispatches cannot retain the active foreground notification')
+        self.assertNotIn('stopNative()', deferred)
+        self.assertLess(native.index('deferredStop = null'), native.index('running?.stopNative()'))
+        started = self._body(source, 'fun serviceStarted(')
+        self.assertIn('stopNative(instance)', self._body(started, 'if (permit == null)'))
+        self.assertIn('deferredStop = null', started)
+        failed = self._body(source, 'fun serviceStartFailed(')
+        self.assertIn('stopNative(instance)', self._body(failed, 'if (permit == null)'))
+        self.assertIn('stop(reason, instance)', failed)
+        self.assertIn('if (deferredStop === instance) deferredStop = null',
+                      self._body(source, 'fun serviceEnded('))
+
     def test_agent_destroy_timeout_and_stop_invalidate_before_native_stop_and_callback(self):
         source = bootstrap.AGENT_RUN_SERVICE
         for signature, call in [('override fun onTimeout', 'AgentRunsChannel.serviceTimedOut(this)'),
@@ -908,21 +965,23 @@ class BootstrapTests(unittest.TestCase):
             self.assertNotIn('promote(', body)
             self.assertNotIn('serviceStarted(', body)
         ended = self._body(source, 'fun serviceEnded')
-        self.assertNotIn('stopNative(', ended, 'onDestroy must not stop an already destroyed instance')
+        self.assertLess(ended.index('invalidate()'), ended.index('instance.stopNative()'))
+        self.assertLess(ended.index('service = null'), ended.index('instance.stopNative()'))
+        self.assertLess(ended.index('instance.stopNative()'), ended.index('notifyInvalidated('))
         self.assertLess(ended.index('invalidate()'), ended.index('notifyInvalidated('))
         self.assertIn('current?.id == instance.permitId', ended, 'late destroy is scoped to its permit')
         timeout = self._body(source, 'fun serviceTimedOut')
-        self.assertIn('current?.id == instance.permitId', timeout)
-        self.assertLess(timeout.index('invalidate()'), timeout.index('instance.stopNative()'))
-        self.assertLess(timeout.index('instance.stopNative()'), timeout.index('notifyInvalidated('))
+        self.assertEqual(timeout.strip(), 'serviceEnded(instance, "timeout")')
         stop = self._body(source, 'private fun stop(reason:')
-        self.assertLess(stop.index('invalidate()'), stop.index('stopNative()'))
-        self.assertLess(stop.index('stopNative()'), stop.index('notifyInvalidated('))
+        self.assertLess(stop.index('invalidate()'), stop.index('stopNative(instance)'))
+        self.assertLess(stop.index('stopNative(instance)'), stop.index('notifyInvalidated('))
         invalidation = self._body(source, 'private fun invalidate')
         self.assertLess(invalidation.index('State.INVALIDATED'), invalidation.index('current = null'))
         self.assertIn('permit.nonces.clear()', invalidation)
         native = self._body(source, 'internal fun stopNative')
-        self.assertIn('stopForeground(STOP_FOREGROUND_REMOVE)', native)
+        self.assertIn('removeForeground()', native)
+        self.assertIn('stopForeground(STOP_FOREGROUND_REMOVE)',
+                      self._body(source, 'internal fun removeForeground'))
         self.assertIn('finally', native)
         self.assertIn('stopSelf()', native)
         main = self._body(bootstrap.MAIN_ACTIVITY, 'override fun onDestroy')
@@ -946,6 +1005,10 @@ class BootstrapTests(unittest.TestCase):
         self.assertLess(start.index('sequence(args, result)'), start.index('current = permit'))
         self.assertLess(start.index('visible !== activity'), start.index('current = permit'))
         self.assertIn('permit.latestStartSeq = seq', start)
+        self.assertIn('var latestStartRequestId: String = createdRequestId', source)
+        self.assertIn('permit.latestStartRequestId = requestId', start)
+        self.assertIn('"startRequestId" to permit.latestStartRequestId',
+                      self._body(source, 'private fun notifyInvalidated'))
         self.assertIn('active(result, permit, requestId, seq)', start)
         release = self._body(source, 'private fun release(')
         self.assertIn('byPermit == byRequest', release, 'exactly one release scope')
@@ -964,6 +1027,124 @@ class BootstrapTests(unittest.TestCase):
         self.assertNotIn('notifyInvalidated(', release)
         self.assertIn('cleanupFailed = true', source)
         self.assertIn('if (cleanupFailed) { reject(result, "cleanup_failed"); return }', start)
+
+    def test_stop_all_uses_immutable_explicit_get_service_and_stale_stop_never_promotes(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        notification = self._body(source, 'private fun notification(')
+        self.assertIn('Intent(this, AgentRunService::class.java).setAction(ACTION_STOP_ALL)', notification)
+        self.assertIn('PendingIntent.getService(this, STOP_REQUEST_CODE, stopIntent,', notification)
+        self.assertIn('PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE', notification)
+        self.assertNotIn('getForegroundService', source)
+        self.assertIn('Notification.Action.Builder(null, label, stop)', notification)
+        self.assertIn('if (Build.VERSION.SDK_INT >= 31) action.setAuthenticationRequired(false)', notification)
+        self.assertIn('val stopAction = action.build()', notification)
+        self.assertIn('publicVersion.addAction(stopAction)', notification)
+        self.assertIn('ongoing.addAction(stopAction)', notification)
+        self.assertLess(notification.index('publicVersion.addAction(stopAction)'),
+                        notification.index('publicVersion.build()'))
+        self.assertIn('progress.stopAllLabel?.let { label ->', notification)
+        self.assertIn('STOP_REQUEST_CODE = 6101', source)
+        self.assertIn('ACTION_STOP_ALL = "io.gitlabmobile.agent_runs.STOP_ALL"', source)
+        command = self._body(source, 'override fun onStartCommand')
+        branch = self._body(command, 'if (intent?.action == ACTION_STOP_ALL)')
+        self.assertLess(command.index('if (intent?.action == ACTION_STOP_ALL)'), command.index('promote('))
+        self.assertIn('AgentRunsChannel.notificationStop(this)', branch)
+        self.assertIn('return START_NOT_STICKY', branch)
+        for forbidden in ('startForeground', 'promote(', 'startRuns', 'startService', 'postDelayed', 'invokeMethod'):
+            self.assertNotIn(forbidden, branch)
+        stop = self._body(source, 'fun notificationStop(')
+        self.assertEqual(stop.strip(), 'mainThread()\n        stop("user_stop", instance)')
+        native = self._body(source, 'private fun stopNative(instance:')
+        self.assertIn('val running = service ?: instance', native)
+        self.assertLess(native.index('service = null'), native.index('running?.stopNative()'))
+        instance_stop = self._body(source, 'internal fun stopNative')
+        self.assertNotIn('return', instance_stop)
+        self.assertIn('stopSelf()', self._body(instance_stop, 'finally'))
+
+    def test_stop_paths_cannot_wait_for_dart_or_restart_service_and_detach_drops_engine(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        for text in (bootstrap.MAIN_ACTIVITY, source):
+            destroyed = self._body(text, 'override fun onDestroy')
+            for forbidden in ('startService', 'startForeground', 'promote(', 'postDelayed', 'invokeMethod'):
+                self.assertNotIn(forbidden, destroyed)
+        for signature in ('fun serviceEnded(', 'fun serviceTimedOut(', 'fun notificationStop(',
+                          'fun activityDestroyed(', 'private fun stop(reason:', 'internal fun stopNative'):
+            body = self._body(source, signature)
+            for forbidden in ('startService', 'startForeground', 'promote(', 'postDelayed',
+                              'MethodChannel.Result', 'invokeMethod', 'await', 'CountDownLatch'):
+                self.assertNotIn(forbidden, body, signature)
+        notify = self._body(source, 'private fun notifyInvalidated')
+        self.assertIn('channel?.invokeMethod("permitInvalidated", mapOf(', notify)
+        self.assertNotIn('MethodChannel.Result', notify, 'callback cannot own the native stop continuation')
+        self.assertNotIn('object :', notify)
+        native = self._body(source, 'internal fun stopNative')
+        self.assertLess(native.index('removeForeground()'), native.index('stopSelf()'))
+        detached = self._body(source, 'fun activityDestroyed(')
+        for statement in ('channel?.setMethodCallHandler(null)', 'channel = null', 'owner = null',
+                          'registration = null', 'visible = null', 'testEvents?.close()', 'testEvents = null'):
+            self.assertIn(statement, detached)
+        self.assertLess(detached.index('stop("activity_destroyed")'), detached.index('channel?.setMethodCallHandler(null)'))
+        cleanup = self._body(bootstrap.MAIN_ACTIVITY, 'override fun cleanUpFlutterEngine')
+        self.assertLess(cleanup.index('AgentRunsChannel.activityDestroyed(this)'),
+                        cleanup.index('super.cleanUpFlutterEngine(flutterEngine)'))
+        for forbidden in ('startService', 'startForeground', 'postDelayed'):
+            self.assertNotIn(forbidden, cleanup)
+        self.assertNotRegex(source, r'(?:private|internal)\s+(?:var|val)\s+\w+\s*:\s*FlutterEngine')
+
+    def test_stop_action_label_uses_bounded_dart_progress_and_initial_matching_start(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        progress = self._body(source, 'private fun progress(')
+        self.assertIn('"stopAllLabel" to MAX_TITLE_LENGTH', progress)
+        self.assertIn('value.isBlank()', progress)
+        self.assertIn('value.length > limit', progress)
+        self.assertIn("value.any { it < ' ' || it == '\\u007f' }", progress)
+        self.assertIn('args["stopAllLabel"] as? String', progress)
+        for signature in ('private fun start(', 'private fun update('):
+            self.assertIn('"stopAllLabel"', self._body(source, signature))
+        self.assertIn('current?.takeIf { it.id == expectedId }?.progress ?: RunProgress(1, 0, null, null, null)', source)
+        self.assertIn('promote(AgentRunsChannel.startProgress(intent?.getStringExtra(EXTRA_PERMIT_ID)))', source)
+        bridge = (Path(bootstrap.__file__).resolve().parents[1] /
+                  'lib/features/ai/ai_background_execution.dart').read_text()
+        self.assertIn('l10n.aiRunServiceStopAll', bridge)
+
+    def test_fault_adapter_is_debug_only_explicitly_registered_bounded_and_content_free(self):
+        files = bootstrap.agent_run_files()
+        adapters = [name for name, text in files.items() if 'class AgentRunQaAdapter' in text]
+        self.assertEqual(adapters, [f'src/debug/kotlin/{bootstrap.KOTLIN_PACKAGE}/AgentRunQaAdapter.kt'])
+        qa = bootstrap.AGENT_RUN_QA_ADAPTER
+        self.assertIn('"io.gitlabmobile/agent_runs_qa"', qa)
+        for method in ('configure', 'syntheticTimeout', 'reset'):
+            self.assertIn(f'"{method}" ->', qa)
+        self.assertIn('dropCallback = drop', qa)
+        self.assertIn('!dropCallback', qa)
+        self.assertIn('call.method == "register" && args.isEmpty()', qa)
+        self.assertIn('else if (!registered)', qa)
+        self.assertIn('if (!registered) return result', qa)
+        self.assertIn('replyDelayMs = delay.toLong()', qa)
+        self.assertIn('!in 0L..5000L', qa)
+        self.assertIn('handler.postDelayed({ if (!closed) reply() }, delay)', qa)
+        self.assertIn('AgentRunsChannel.serviceEnded(instance, "synthetic_timeout")', qa)
+        self.assertIn('"event" to "synthetic_timeout"', qa)
+        self.assertNotIn('"synthetic_timeout"', bootstrap.AGENT_RUN_SERVICE)
+        self.assertIn('serviceEnded(instance, "timeout")', bootstrap.AGENT_RUN_SERVICE)
+        for forbidden in ('Intent', 'Activity', 'SharedPreferences', 'File(', 'GitLab', 'account', 'startForeground'):
+            # Comments document the boundary; executable lines cannot cross it.
+            code = '\n'.join(line for line in qa.splitlines() if not line.lstrip().startswith('//'))
+            self.assertNotIn(forbidden, code)
+        self.assertIn('channel.setMethodCallHandler(null)', self._body(qa, 'override fun close'))
+        self.assertIn('handler.removeCallbacksAndMessages(null)', self._body(qa, 'override fun close'))
+        register = self._body(bootstrap.AGENT_RUN_SERVICE, 'fun register(')
+        self.assertIn('Class.forName("io.gitlabmobile.gitlab_mobile.AgentRunQaAdapter")', register)
+        self.assertIn('catch (_: ClassNotFoundException)', register)
+        self.assertNotIn('ReflectiveOperationException', register,
+                         'a broken debug adapter must fail visibly, rather than look like release absence')
+        production_handler = self._body(register, 'bridge.setMethodCallHandler')
+        for forbidden in ('registerServiceQa', 'Class.forName', 'syntheticTimeout', 'dropCallback', 'replyDelayMs'):
+            self.assertNotIn(forbidden, production_handler)
+        self.assertNotIn('"io.gitlabmobile/agent_runs_qa"', bootstrap.AGENT_RUN_SERVICE)
+        root = Path(bootstrap.__file__).resolve().parents[1]
+        self.assertFalse(any('registerServiceQa' in path.read_text() or 'agent_runs_qa' in path.read_text()
+                             for path in (root / 'lib').rglob('*.dart')))
 
     def test_agent_foreground_owner_progress_limits_and_all_sequence_guards(self):
         source = bootstrap.AGENT_RUN_SERVICE
@@ -1045,8 +1226,9 @@ class BootstrapTests(unittest.TestCase):
         notification = self._body(source, 'private fun notification(')
         self.assertIn('NotificationManager.IMPORTANCE_LOW', notification)
         self.assertIn('lockscreenVisibility = Notification.VISIBILITY_PRIVATE', notification)
-        self.assertIn('.setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(publicVersion)', notification)
-        public = notification[notification.index('val publicVersion'):notification.index('return builder()')]
+        self.assertIn('.setVisibility(Notification.VISIBILITY_PRIVATE)', notification)
+        self.assertIn('return ongoing.setPublicVersion(publicVersion.build()).build()', notification)
+        public = notification[notification.index('val publicVersion'):notification.index('val ongoing')]
         self.assertNotIn('progress.', public)
         self.assertIn('R.string.ai_run_service_title', public)
         self.assertIn('R.string.ai_run_service_text', public)
@@ -1054,7 +1236,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('progress.text ?: getString(R.string.ai_run_service_text)', notification)
         self.assertNotRegex(source, r'[\u3400-\u9fff]')
         self.assertNotRegex(notification, r'setContent(?:Title|Text)\("')
-        self.assertNotIn('PendingIntent', notification, 'notification stop action belongs to C4')
+        self.assertIn('PendingIntent.getService(', notification)
         icon = ET.fromstring(bootstrap.AGENT_ICON)
         self.assertEqual(icon.tag, 'vector')
         self.assertEqual({node.get('{' + bootstrap.ANDROID + '}fillColor') for node in icon.findall('path')}, {'#FFFFFFFF'})
@@ -1356,6 +1538,7 @@ class BootstrapTests(unittest.TestCase):
             original.replace('io.gitlabmobile.gitlab_mobile.MainActivity', 'foreign.MainActivity'),
             original.replace('io.gitlabmobile.gitlab_mobile.LinkActivity', 'foreign.LinkActivity'),
             original.replace('</application>', '<activity android:name="foreign.MainActivity" /></application>'),
+            original.replace('</application>', '<activity android:name="io.gitlabmobile.gitlab_mobile.AgentRunQaAdapter" android:exported="true" /></application>'),
         ):
             play.write_text(mutated)
             with self.assertRaises(AssertionError):

@@ -118,12 +118,16 @@ final class AiBackgroundExecution extends ChangeNotifier
   Timer? _progressTimer;
   Timer? _languageTimer;
   Duration? _lastProgressAt;
-  (int, int, String, String)? _lastProgress;
+  (int, int, String, String, String)? _lastProgress;
+  final _stopEvents = StreamController<void>.broadcast(sync: true);
   bool _progressInFlight = false;
   AiBackgroundExecutionStatus _status =
       AiBackgroundExecutionStatus.foregroundOnly;
 
   AiBackgroundExecutionStatus get status => _status;
+
+  /// User stop requests reach the account registry without carrying content.
+  Stream<void> get stopEvents => _stopEvents.stream;
   int get serviceWorkCount => _gates.where((gate) => gate._active).length;
   int get backProtectedCount =>
       _gates.where((gate) => gate._backProtected).length;
@@ -356,6 +360,7 @@ final class AiBackgroundExecution extends ChangeNotifier
           'step': progress.$2,
           'title': progress.$3,
           'text': progress.$4,
+          'stopAllLabel': progress.$5,
         });
         if (!gate._stillStarting(revision) || !_current) {
           if (stopRevision == _stopRevision) {
@@ -395,6 +400,7 @@ final class AiBackgroundExecution extends ChangeNotifier
           } else if (const {
             'user_stop',
             'timeout',
+            'synthetic_timeout',
             'service_destroyed',
             'activity_destroyed',
             'released',
@@ -459,7 +465,7 @@ final class AiBackgroundExecution extends ChangeNotifier
     }
   }
 
-  (int, int, String, String) _progress() {
+  (int, int, String, String, String) _progress() {
     final count = serviceWorkCount.clamp(1, 3);
     var step = 0;
     for (final gate in _gates) {
@@ -470,6 +476,7 @@ final class AiBackgroundExecution extends ChangeNotifier
       step.clamp(0, 1000000),
       l10n.aiRunServiceTitle,
       l10n.aiRunServiceText,
+      l10n.aiRunServiceStopAll,
     );
   }
 
@@ -509,6 +516,7 @@ final class AiBackgroundExecution extends ChangeNotifier
         'step': current.$2,
         'title': current.$3,
         'text': current.$4,
+        'stopAllLabel': current.$5,
       });
       _progressInFlight = false;
       if (!_current || _permit != permit) return;
@@ -651,6 +659,7 @@ final class AiBackgroundExecution extends ChangeNotifier
         gate._revision++;
       }
       owner._setStatus(AiBackgroundExecutionStatus.invalidated);
+      if (!owner._disposed) owner._stopEvents.add(null);
     }
     if (!await _seed()) {
       _orphan = true;
@@ -686,13 +695,15 @@ final class AiBackgroundExecution extends ChangeNotifier
     if (call.method != 'permitInvalidated' || !_current) return;
     final args = call.arguments;
     if (args is! Map<Object?, Object?> ||
-        args.length != 3 ||
+        (args.length != 3 && args.length != 4) ||
         args['version'] is! int ||
         args['version'] != 1 ||
         !_validId(args['permitId']) ||
+        (args.length == 4 && !_validId(args['startRequestId'])) ||
         !const {
           'user_stop',
           'timeout',
+          'synthetic_timeout',
           'service_destroyed',
           'activity_destroyed',
           'start_failed',
@@ -703,8 +714,36 @@ final class AiBackgroundExecution extends ChangeNotifier
       return;
     }
     final permit = args['permitId']! as String;
+    final startRequest = args['startRequestId'];
+    final shared = _shared;
+    final pendingStart =
+        shared != null &&
+        identical(shared.leaseOwner, this) &&
+        shared.leasePermit == null &&
+        _validId(startRequest) &&
+        _gates.any((gate) => gate._starting && gate._requestId == startRequest);
+    final matchingPermit =
+        _permit == permit ||
+        _gates.any((gate) => gate.binding.permitId == permit);
+    final userStop =
+        args['reason'] == 'user_stop' && (matchingPermit || pendingStart);
+    if (pendingStart) {
+      _stopRevision++;
+      for (final gate in _gates) {
+        if (gate._starting && gate._requestId == startRequest) {
+          gate._invalidated = true;
+          gate._released = false;
+          gate._starting = false;
+          gate._requestId = null;
+          gate._revision++;
+        }
+      }
+      shared.leaseOwner = null;
+      _setStatus(AiBackgroundExecutionStatus.invalidated);
+    }
     _invalidatedPermits.add(permit);
     _invalidatePermit(permit, inactiveConfirmed: true);
+    if (userStop && !_disposed) _stopEvents.add(null);
   }
 
   void _invalidatePermit(String permit, {bool inactiveConfirmed = false}) {
@@ -766,6 +805,7 @@ final class AiBackgroundExecution extends ChangeNotifier
       listeners?.owners.remove(this);
       listeners?.retireIfIdle();
     }
+    unawaited(_stopEvents.close());
     super.dispose();
   }
 }

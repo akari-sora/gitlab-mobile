@@ -1,0 +1,532 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
+import 'package:gitlab_mobile/core/ai/ai_transport.dart';
+import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
+import 'package:gitlab_mobile/core/ai/execution_gate.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_levels.dart';
+import 'package:gitlab_mobile/core/ai/wire/responses.dart';
+import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
+import 'package:gitlab_mobile/features/ai/ai_run_registry.dart';
+import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
+
+import 'fx_coord_support.dart' as fx;
+
+const _channel = MethodChannel('io.gitlabmobile/agent_runs');
+
+final class _Service {
+  bool active = false;
+  bool closed = false;
+  int tickets = 0;
+  int starts = 0;
+  String permit = '';
+  final requestByPermit = <String, String>{};
+  Completer<void>? holdStartReply;
+  Completer<void>? startEntered;
+  final calls = <MethodCall>[];
+
+  void install() => TestDefaultBinaryMessengerBinding
+      .instance
+      .defaultBinaryMessenger
+      .setMockMethodCallHandler(_channel, handle);
+
+  Future<Object?> handle(MethodCall call) async {
+    calls.add(call);
+    if (closed) throw MissingPluginException();
+    final args = call.arguments as Map<Object?, Object?>;
+    switch (call.method) {
+      case 'moveTaskToBack':
+        return {
+          'version': 1,
+          'status': 'unsupported',
+          'reason': 'not_implemented',
+        };
+      case 'startRuns':
+        if (!active) permit = 'synthetic-permit-${++starts}';
+        active = true;
+        final issuedPermit = permit;
+        requestByPermit[permit] = args['startRequestId']! as String;
+        if (startEntered case final entered?) {
+          if (!entered.isCompleted) entered.complete();
+        }
+        if (holdStartReply case final hold?) await hold.future;
+        return {
+          'version': 1,
+          'status': 'active',
+          'permitId': issuedPermit,
+          'startRequestId': args['startRequestId'],
+          'opSeq': args['opSeq'],
+        };
+      case 'releaseRuns':
+        final didRelease = active;
+        active = false;
+        return {'version': 1, 'status': 'released', 'didRelease': didRelease};
+      case 'stopAll':
+        active = false;
+        return {'version': 1, 'status': 'stopped'};
+      case 'updateProgress':
+        return active
+            ? {'version': 1, 'status': 'updated', 'permitId': permit}
+            : {'version': 1, 'status': 'rejected', 'reason': 'permit_inactive'};
+      case 'acquireContinuation':
+        if (!active) {
+          return {
+            'version': 1,
+            'status': 'rejected',
+            'reason': 'permit_inactive',
+          };
+        }
+        tickets++;
+        return {
+          'version': 1,
+          'status': 'ticket',
+          'permitId': permit,
+          'kind': args['kind'],
+          'nonce': args['nonce'],
+          'ticketId':
+              '00000000-0000-4000-8000-${tickets.toString().padLeft(12, '0')}',
+        };
+    }
+    throw StateError('Unexpected method ${call.method}');
+  }
+
+  Future<void> stop({required String reason, required bool deliver}) async {
+    active = false;
+    if (!deliver) return;
+    await callback(reason, permit);
+  }
+
+  Future<void> callback(
+    String reason,
+    String callbackPermit, {
+    String? startRequestId,
+  }) async {
+    final done = Completer<void>();
+    final args = <String, Object>{
+      'version': 1,
+      'permitId': callbackPermit,
+      'reason': reason,
+    };
+    final request = startRequestId ?? requestByPermit[callbackPermit];
+    if (request != null) args['startRequestId'] = request;
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          _channel.name,
+          const StandardMethodCodec().encodeMethodCall(
+            MethodCall('permitInvalidated', args),
+          ),
+          (_) => done.complete(),
+        );
+    await done.future;
+  }
+
+  void uninstall() => TestDefaultBinaryMessengerBinding
+      .instance
+      .defaultBinaryMessenger
+      .setMockMethodCallHandler(_channel, null);
+}
+
+AiBackgroundExecution _owner(fx.StackHarness h) => AiBackgroundExecution(
+  accountKey: h.account,
+  generation: h.session.generation,
+  ownerApi: h.session.api!,
+  isCurrent: () => h.session.api != null && !h.session.api!.isClosed,
+  appInForeground: () => h.foreground,
+  channel: _channel,
+);
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  late _Service native;
+  setUp(() {
+    native = _Service()..install();
+  });
+  tearDown(() => native.uninstall());
+
+  test(
+    'notification user stop reaches registry and cancels pending approval',
+    () async {
+      final h = await fx.StackHarness.create();
+      addTearDown(h.dispose);
+      final owner = _owner(h);
+      final registry = AccountAiRunRegistry(
+        session: h.session,
+        settings: h.settings,
+        backgroundExecution: owner,
+        sessionFactory:
+            ({
+              required origin,
+              required session,
+              required settings,
+              required runningCount,
+              wireClientFactory,
+            }) => (
+              session: h.controller,
+              capacityChanged: h.controller.notifyCapacityChanged,
+              dispose: () {},
+            ),
+      );
+      addTearDown(registry.dispose);
+      registry.open(h.controller.origin);
+      // Keep a second run active while the first waits for approval.
+      final other = owner.createGate(
+        conversationId: () => 'second',
+        isCurrent: () => true,
+      );
+      await other.beginRun(runId: 'second-run');
+      h.provider.script.add(
+        (_) => fx.toolTurn('createIssue', {
+          'projectId': 42,
+          'fields': {'title': 'Synthetic bug', 'confidential': false},
+          'reason': 'The user asked for an issue.',
+        }),
+      );
+      final sending = h.controller.send('Create an issue for the bug');
+      await fx.waitFor(
+        () => h.controller.phase == AiChatPhase.awaitingApproval,
+      );
+      final proposal = h.controller.proposals.single;
+      expect(proposal.valid, isTrue);
+      expect(native.active, isTrue);
+      await native.stop(reason: 'user_stop', deliver: true);
+      await sending;
+      expect(proposal.valid, isFalse);
+      expect(h.server.mutations, isEmpty);
+      expect(h.session.api!.isClosed, isFalse);
+      expect(other.status, AiBackgroundExecutionStatus.invalidated);
+      final start = native.calls.firstWhere((c) => c.method == 'startRuns');
+      expect(
+        (start.arguments as Map)['stopAllLabel'],
+        l10n.aiRunServiceStopAll,
+      );
+    },
+  );
+
+  test(
+    'user stop during a delayed start stops a released approval and rejects late active',
+    () async {
+      final h = await fx.StackHarness.create();
+      addTearDown(h.dispose);
+      final owner = _owner(h);
+      final registry = AccountAiRunRegistry(
+        session: h.session,
+        settings: h.settings,
+        backgroundExecution: owner,
+        sessionFactory:
+            ({
+              required origin,
+              required session,
+              required settings,
+              required runningCount,
+              wireClientFactory,
+            }) => (
+              session: h.controller,
+              capacityChanged: h.controller.notifyCapacityChanged,
+              dispose: () {},
+            ),
+      );
+      addTearDown(registry.dispose);
+      registry.open(h.controller.origin);
+      h.provider.script.add(
+        (_) => fx.toolTurn('createIssue', {
+          'projectId': 42,
+          'fields': {'title': 'Synthetic approval', 'confidential': false},
+          'reason': 'The user asked for an issue.',
+        }),
+      );
+      final sending = h.controller.send('Create an issue for the bug');
+      await fx.waitFor(
+        () => h.controller.phase == AiChatPhase.awaitingApproval,
+      );
+      final proposal = h.controller.proposals.single;
+      await fx.waitFor(() => !native.active);
+      final oldPermit = native.permit;
+      final hold = Completer<void>();
+      native.holdStartReply = hold;
+      native.startEntered = Completer<void>();
+      addTearDown(() {
+        if (!hold.isCompleted) hold.complete();
+      });
+      final pending = owner.createGate(
+        conversationId: () => 'pending',
+        isCurrent: () => true,
+      );
+      final start = pending.beginRun(runId: 'pending-run');
+      await native.startEntered!.future.timeout(const Duration(seconds: 5));
+      expect(native.permit, isNot(oldPermit));
+      await native.callback('user_stop', oldPermit);
+      expect(
+        proposal.valid,
+        isTrue,
+        reason: 'a stale old-permit callback cannot stop the new start',
+      );
+      await native.callback(
+        'user_stop',
+        'unknown-old-permit',
+        startRequestId: 'unknown-old-start',
+      );
+      expect(
+        proposal.valid,
+        isTrue,
+        reason: 'an unseen old permit with another start request is stale',
+      );
+      expect(pending.status, AiBackgroundExecutionStatus.starting);
+      await native.stop(reason: 'user_stop', deliver: true);
+      expect(proposal.valid, isFalse);
+      expect(pending.status, AiBackgroundExecutionStatus.invalidated);
+      hold.complete();
+      await start;
+      await sending;
+      expect(pending.status, AiBackgroundExecutionStatus.invalidated);
+      await expectLater(
+        pending.acquire(AiContinuationKind.model),
+        throwsA(isA<AiExecutionPaused>()),
+      );
+      expect(h.session.api!.isClosed, isFalse);
+      expect(h.server.mutations, isEmpty);
+    },
+  );
+
+  test(
+    'user stop preserves an accepted write and its final settlement',
+    () async {
+      final h = await fx.StackHarness.create(
+        level: AiAutonomyLevel.conversationGrant,
+      );
+      addTearDown(h.dispose);
+      final owner = _owner(h);
+      final registry = AccountAiRunRegistry(
+        session: h.session,
+        settings: h.settings,
+        backgroundExecution: owner,
+        sessionFactory:
+            ({
+              required origin,
+              required session,
+              required settings,
+              required runningCount,
+              wireClientFactory,
+            }) => (
+              session: h.controller,
+              capacityChanged: h.controller.notifyCapacityChanged,
+              dispose: () {},
+            ),
+      );
+      addTearDown(registry.dispose);
+      registry.open(h.controller.origin);
+      final response = Completer<void>();
+      addTearDown(() {
+        if (!response.isCompleted) response.complete();
+      });
+      h.server.overrides['POST projects/42/issues'] = (request) async {
+        await response.future;
+        return h.server.workspace.respond(request);
+      };
+      h.provider.script.add(
+        (_) => fx.toolTurn('createIssue', {
+          'projectId': 42,
+          'fields': {'title': 'Synthetic settlement', 'confidential': false},
+          'reason': 'The user asked for an issue.',
+        }),
+      );
+      final sending = h.controller.send('Create an issue for the bug');
+      await fx.waitFor(() => h.server.mutations.isNotEmpty);
+      final settling = registry.inFlightWrites.single;
+      await native.stop(reason: 'user_stop', deliver: true);
+      expect(h.session.api!.isClosed, isFalse);
+      expect(registry.inFlightWrites, contains(same(settling)));
+      response.complete();
+      expect((await settling).state, AiJournalState.succeeded);
+      await sending;
+      expect(h.server.mutations, hasLength(1));
+    },
+  );
+
+  for (final (deliver, modelFirst) in [
+    (true, false),
+    (false, false),
+    (false, true),
+  ]) {
+    test(
+      'timeout ${deliver ? 'delivered' : 'dropped'} ${modelFirst ? 'model first' : 'mutation first'} blocks later model and mutation while accepted write settles',
+      () async {
+        final h = await fx.StackHarness.create(
+          level: AiAutonomyLevel.conversationGrant,
+        );
+        addTearDown(h.dispose);
+        final owner = _owner(h);
+        addTearDown(owner.dispose);
+        h.controller.bindBackgroundExecution(owner);
+        final response = Completer<void>();
+        addTearDown(() {
+          if (!response.isCompleted) response.complete();
+        });
+        h.server.overrides['POST projects/42/issues'] = (request) async {
+          await response.future;
+          return h.server.workspace.respond(request);
+        };
+        h.provider.script.add(
+          (_) => fx.toolTurn('createIssue', {
+            'projectId': 42,
+            'fields': {'title': 'Synthetic settlement', 'confidential': false},
+            'reason': 'The user asked for an issue.',
+          }),
+        );
+        final sending = h.controller.send('Create an issue for the bug');
+        await fx.waitFor(() => h.server.mutations.isNotEmpty);
+        expect(h.controller.inFlightWrites, isNotEmpty);
+        final settling = h.controller.inFlightWrites.single;
+        final second = AiChatController(
+          origin: h.controller.origin,
+          session: h.session,
+          settings: h.settings,
+          runningCount: () => 1,
+          appInForeground: () => h.foreground,
+          clientMayStart: () => true,
+          writeJournal: h.journal,
+          attachmentPicker: h.picker,
+          wireClientFactory:
+              ({required config, required apiKey, required conversationId}) =>
+                  AiWireClient(
+                    transport: AiTransport(
+                      endpoint: AiEndpoint.parse(
+                        config.baseUrl,
+                        allowLanCleartext: false,
+                      ),
+                      apiKey: apiKey ?? '',
+                      authStyle: config.authStyle,
+                      adapter: h.provider.adapter,
+                    ),
+                    wire: const ResponsesFormat(),
+                    config: config,
+                    conversationId: conversationId,
+                    appVersion: 'test',
+                  ),
+        );
+        addTearDown(second.dispose);
+        await second.recheck();
+        await second.setAutonomyLevel(AiAutonomyLevel.conversationGrant);
+        second.bindBackgroundExecution(owner);
+        final entered = Completer<void>();
+        final resume = Completer<void>();
+        addTearDown(() {
+          if (!resume.isCompleted) resume.complete();
+        });
+        h.provider.script.add((_) {
+          h.server.overrides['GET projects/42'] = (request) async {
+            if (!entered.isCompleted) entered.complete();
+            await resume.future;
+            return h.server.workspace.respond(request);
+          };
+          return fx.toolTurn('setStar', {
+            'projectId': 42,
+            'starred': true,
+            'reason': 'The user asked to star the project.',
+          });
+        });
+        final secondSending = second.send('Create another issue for the bug');
+        await entered.future.timeout(const Duration(seconds: 10));
+        // Accepted write and any issued ticket are classified before the baseline.
+        final modelBaseline = h.provider.bodies.length;
+        final mutationBaseline = h.server.mutations.length;
+        final ticketBaseline = native.tickets;
+        final callBaseline = native.calls.length;
+        h.foreground = false;
+        expect(native.active, isTrue);
+        await native.stop(reason: 'timeout', deliver: deliver);
+        expect(native.active, isFalse);
+        if (modelFirst) {
+          response.complete();
+          await sending;
+        } else {
+          resume.complete();
+          await secondSending;
+        }
+        if (modelFirst) {
+          resume.complete();
+          await secondSending;
+        } else {
+          response.complete();
+          await sending;
+        }
+        expect((await settling).state, AiJournalState.succeeded);
+        await fx.waitFor(() => h.controller.inFlightWrites.isEmpty);
+        expect(h.provider.bodies.length - modelBaseline, 0);
+        expect(h.server.mutations.length - mutationBaseline, 0);
+        expect(native.tickets, ticketBaseline);
+        expect(h.session.api!.isClosed, isFalse);
+        expect(second.executionStatus, AiChatExecutionStatus.paused);
+        if (!deliver) {
+          expect(
+            native.calls
+                .skip(callBaseline)
+                .where(
+                  (call) =>
+                      call.method == 'acquireContinuation' &&
+                      (call.arguments as Map)['kind'] ==
+                          (modelFirst ? 'model' : 'mutation'),
+                ),
+            isNotEmpty,
+            reason: native.calls
+                .skip(callBaseline)
+                .map((call) => '${call.method} ${call.arguments}')
+                .join(', '),
+          );
+        }
+      },
+    );
+  }
+
+  for (final reason in [
+    'synthetic_timeout',
+    'service_destroyed',
+    'activity_destroyed',
+  ]) {
+    test(
+      '$reason invalidates the current run without a foreground fallback',
+      () async {
+        final h = await fx.StackHarness.create();
+        addTearDown(h.dispose);
+        final owner = _owner(h);
+        addTearDown(owner.dispose);
+        final gate = owner.createGate(
+          conversationId: () => 'run',
+          isCurrent: () => true,
+        );
+        await gate.beginRun(runId: 'run');
+        await native.stop(reason: reason, deliver: true);
+        expect(gate.status, AiBackgroundExecutionStatus.invalidated);
+        await expectLater(
+          gate.acquire(AiContinuationKind.model),
+          throwsA(isA<AiExecutionPaused>()),
+        );
+        expect(h.session.api!.isClosed, isFalse);
+      },
+    );
+  }
+
+  test('closed channel fails closed for both continuation kinds', () async {
+    final h = await fx.StackHarness.create();
+    addTearDown(h.dispose);
+    final owner = _owner(h);
+    addTearDown(owner.dispose);
+    final gate = owner.createGate(
+      conversationId: () => 'run',
+      isCurrent: () => true,
+    );
+    await gate.beginRun(runId: 'run');
+    h.foreground = false;
+    native.active = false;
+    native.closed = true;
+    for (final kind in AiContinuationKind.values) {
+      await expectLater(gate.acquire(kind), throwsA(isA<AiExecutionPaused>()));
+    }
+    expect(gate.status, AiBackgroundExecutionStatus.invalidated);
+    expect(h.session.api!.isClosed, isFalse);
+  });
+}
