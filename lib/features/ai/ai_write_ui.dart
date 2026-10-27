@@ -116,6 +116,9 @@ String aiOperationLabel(String operationId) => switch (operationId) {
   'createWorkItemActivityComment' => l10n.aiOpCreateNote,
   'createWorkItemActivityReply' => l10n.aiOpCreateDiscussionNote,
   'deleteWorkItemActivityNote' => l10n.aiOpDeleteOwnComment,
+  'editWorkItemActivityNote' => l10n.aiOpUpdateNote,
+  'updateWorkItemContent' => l10n.editWorkItem,
+  'updateWorkItemLabels' => l10n.aiOpSetWorkItemLabels,
   'updateWorkItemAssignees' => l10n.aiOpSetWorkItemAssignees,
   'updateWorkItemDates' => l10n.aiOpSetWorkItemDates,
   'updateWorkItemHealthStatus' => l10n.aiOpSetHealthStatus,
@@ -493,6 +496,7 @@ String? aiRefusalText(String code) => switch (code) {
   'activityLocked' => l10n.aiRefusedDiscussionLocked,
   // MR6b-3: note delete is restricted to the account's own notes.
   'notOwnNote' => l10n.aiRefusedNotOwnNote,
+  'labelUnknown' => l10n.aiRefusedLabelUnknown,
   // MR6b-3: the todo belongs to a different account.
   'todoForeign' => l10n.aiRefusedTodoForeign,
   // A pre-read that hit a transport limit says which, in the app's own words.

@@ -97,12 +97,11 @@ void main() {
       isEmpty,
       reason: 'workspace screens must use named write methods',
     );
-    expect(_currentMr6b3Methods, hasLength(15));
-    expect(_currentMr6b3GraphSites, hasLength(14));
-    expect(_deferredMr6b3Methods, hasLength(3));
-    expect(_deferredMr6b3GraphSites, hasLength(3));
-    // P14: all fifteen current MR6b-3 methods are ledger rows, so nothing
-    // from this batch stays pending; the §7t deferrals stay pending.
+    expect(_currentMr6b3Methods, hasLength(18));
+    expect(_currentMr6b3GraphSites, hasLength(17));
+    expect(_deferredMr6b3Methods, isEmpty);
+    expect(_deferredMr6b3GraphSites, isEmpty);
+    // 3t delivers the final three §7t methods and their exact mutation sites.
     expect(pending3CurrentNamed, isEmpty, reason: 'current MR6b-3 methods');
     expect(pending3DeferredNamed, _deferredMr6b3Methods);
     expect(
@@ -113,7 +112,7 @@ void main() {
     expect(
       pending3CurrentGraph,
       isEmpty,
-      reason: 'the 14 current MR6b-3 graph sites are ledger-covered',
+      reason: 'the 17 current MR6b-3 graph sites are ledger-covered',
     );
     expect(pending3DeferredGraph, _deferredMr6b3GraphSites.keys.toSet());
     // §7t deferrals stay out of the model's tool list.
@@ -299,6 +298,9 @@ const _workspaceWriteImplementations = <String>{
 };
 
 const _currentMr6b3Methods = <String>{
+  'updateWorkItemContent',
+  'editWorkItemActivityNote',
+  'updateWorkItemLabels',
   'updateWorkItemWeight',
   'updateWorkItemStatus',
   'updateWorkItemState',
@@ -316,11 +318,7 @@ const _currentMr6b3Methods = <String>{
   'setIncidentStatus',
 };
 
-const _deferredMr6b3Methods = <String>{
-  'updateWorkItemContent',
-  'editWorkItemActivityNote',
-  'updateWorkItemLabels',
-};
+const _deferredMr6b3Methods = <String>{};
 
 const _pendingMr6b3Methods = <String>{
   ..._currentMr6b3Methods,
@@ -328,6 +326,15 @@ const _pendingMr6b3Methods = <String>{
 };
 
 const _currentMr6b3GraphSites = <(String, String), Set<String>>{
+  ('lib/core/work_item_content_api.dart', 'updateWorkItemContent'): {
+    'updateWorkItemContent',
+  },
+  ('lib/core/work_item_activity_api.dart', 'editWorkItemActivityNote'): {
+    'editWorkItemActivityNote',
+  },
+  ('lib/core/work_item_labels_api.dart', 'updateWorkItemLabels'): {
+    'updateWorkItemLabels',
+  },
   ('lib/core/work_item_state_api.dart', 'updateWorkItemState'): {
     'updateWorkItemState',
   },
@@ -370,14 +377,7 @@ const _currentMr6b3GraphSites = <(String, String), Set<String>>{
   ('lib/core/todo_snooze_api.dart', 'unsnoozeTodo'): {'unsnoozeTodo'},
 };
 
-const _deferredMr6b3GraphSites = <(String, String), String>{
-  ('lib/core/work_item_content_api.dart', 'updateWorkItemContent'):
-      'updateWorkItemContent',
-  ('lib/core/work_item_activity_api.dart', 'editWorkItemActivityNote'):
-      'editWorkItemActivityNote',
-  ('lib/core/work_item_labels_api.dart', 'updateWorkItemLabels'):
-      'updateWorkItemLabels',
-};
+const _deferredMr6b3GraphSites = <(String, String), String>{};
 
 List<String> _graphInventoryProblems(Iterable<_Site> sites) {
   final expected = <(String, String)>{

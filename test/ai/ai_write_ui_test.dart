@@ -855,6 +855,7 @@ void main() {
       'milestoneForbidden',
       'milestoneRejected',
       'notOwnNote',
+      'labelUnknown',
       'noteChanged',
       'noteMissing',
       'notificationConflict',
@@ -1041,8 +1042,7 @@ void main() {
       for (final status in AiWriteResultStatus.values) {
         expect(aiWriteStatusLabel(status), isNotEmpty);
       }
-      // Every ledger row, hidden or not: the MR6b-3 graph rows stay
-      // modelVisible false until P14, but their wording must exist first.
+      // Every ledger row, including the three delivered §7t families.
       for (final row in ProductionAiLedger.rows) {
         expect(
           aiOperationLabel(row.operationId),
@@ -1051,6 +1051,10 @@ void main() {
         );
       }
       for (final key in [
+        'title',
+        'description',
+        'body',
+        'labels',
         'assigneeUsernames',
         'startDate',
         'dueDate',

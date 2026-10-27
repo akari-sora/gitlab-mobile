@@ -710,11 +710,14 @@ void main() {
     'Text\u0000',
     '/close',
     'Text\n/assign @someone',
+    ' /close',
     'x' * (2 * 1024 * 1024 + 1),
+    'x\n' * GitLabApi.maxTextLines,
   ]) {
     test(
       'invalid ordinary Markdown input is rejected before edit preflight',
       () async {
+        expect(isValidWorkItemActivityEditBody(body), isFalse);
         final adapter = FakeAdapter((_) => jsonResponse(_access()));
         final api = testApi(adapter);
         addTearDown(api.close);
@@ -727,4 +730,17 @@ void main() {
       },
     );
   }
+
+  test('pure note edit precheck accepts the exact byte and line bounds', () {
+    expect(isValidWorkItemActivityEditBody('é' * (1024 * 1024)), isTrue);
+    expect(isValidWorkItemActivityEditBody('é' * (1024 * 1024 + 1)), isFalse);
+    expect(
+      isValidWorkItemActivityEditBody(
+        '${'x\n' * (GitLabApi.maxTextLines - 1)}x',
+      ),
+      isTrue,
+    );
+    expect(isValidWorkItemActivityEditBody('    /close'), isTrue);
+    expect(isValidWorkItemActivityEditBody('```\n/close\n```'), isTrue);
+  });
 }

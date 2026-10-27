@@ -452,7 +452,9 @@ void main() {
       expect(row.httpCap, 2 * independentlyCountedReads + 1);
       expect(aiWriteRequestAllowance(_operation), 29);
       expect(aiWriteRequestAllowance(_operation, oauthReplay: false), 15);
-      expect(productionAiLedger.find('editWorkItemActivityNote'), isNull);
+      final edit = productionAiLedger.find('editWorkItemActivityNote')!;
+      expect(edit.modelVisible, isTrue);
+      expect(edit.baseTier, AiWriteTier.t2);
     },
   );
 

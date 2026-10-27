@@ -698,7 +698,7 @@ void main() {
     addTearDown(api.close);
     final target = await _target(api);
     final requestCount = adapter.requests.length;
-    for (final title in ['', '   ', 'bad\u0000title']) {
+    for (final title in ['', '   ', 'bad\u0000title', 'x' * 256, '😀' * 256]) {
       await expectLater(
         api.updateWorkItemContent(target, title: title),
         throwsA(_failure(FailureKind.validation)),
@@ -719,6 +719,71 @@ void main() {
     );
     expect(result.snapshot.summary.title, 'Fresh title');
   });
+
+  test(
+    'pure content precheck matches title code points and description bounds',
+    () {
+      expect(isValidWorkItemContentInput(), isFalse);
+      expect(isValidWorkItemContentInput(title: ''), isFalse);
+      expect(isValidWorkItemContentInput(title: ' \t '), isFalse);
+      expect(isValidWorkItemContentInput(title: 'x' * 255), isTrue);
+      expect(isValidWorkItemContentInput(title: 'x' * 256), isFalse);
+      expect(isValidWorkItemContentInput(title: '😀' * 255), isTrue);
+      expect(isValidWorkItemContentInput(title: '😀' * 256), isFalse);
+      expect(isValidWorkItemContentInput(title: 'e\u0301' * 128), isFalse);
+      expect(isValidWorkItemContentInput(description: ''), isTrue);
+      expect(
+        isValidWorkItemContentInput(description: 'bad\u0000description'),
+        isFalse,
+      );
+      expect(
+        isValidWorkItemContentInput(description: 'x' * GitLabApi.maxTextBytes),
+        isTrue,
+      );
+      expect(
+        isValidWorkItemContentInput(
+          description: 'x' * (GitLabApi.maxTextBytes + 1),
+        ),
+        isFalse,
+      );
+      expect(
+        isValidWorkItemContentInput(
+          description: '😀' * (GitLabApi.maxTextBytes ~/ 4 + 1),
+        ),
+        isFalse,
+      );
+      expect(
+        isValidWorkItemContentInput(
+          description: '\n' * (GitLabApi.maxTextLines - 1),
+        ),
+        isTrue,
+      );
+      expect(
+        isValidWorkItemContentInput(description: '\n' * GitLabApi.maxTextLines),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'expectedUpdatedAt remains a client-side fresh preflight comparison',
+    () async {
+      final adapter = FakeAdapter((_) => jsonResponse(_read()));
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final target = await _target(api);
+      await expectLater(
+        api.updateWorkItemContent(
+          target,
+          title: 'changed',
+          expectedUpdatedAt: _openedAt,
+        ),
+        throwsA(_failure(FailureKind.conflict)),
+      );
+      expect(adapter.requests.where(_mutation), isEmpty);
+      expect(adapter.requests, hasLength(2));
+    },
+  );
 
   final changedPreflight = <String, Map<String, Object?>>{
     'actor': _read(actor: const {'id': 'gid://gitlab/User/8'}),

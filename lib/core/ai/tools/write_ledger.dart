@@ -8,6 +8,9 @@ part 'ledger/rows_deletes.dart';
 part 'ledger/rows_files.dart';
 part 'ledger/rows_graphql_activity_create.dart';
 part 'ledger/rows_graphql_activity_delete.dart';
+part 'ledger/rows_graphql_activity_edit.dart';
+part 'ledger/rows_graphql_content.dart';
+part 'ledger/rows_graphql_labels.dart';
 part 'ledger/rows_graphql_assignees.dart';
 part 'ledger/rows_graphql_dates.dart';
 part 'ledger/rows_graphql_health.dart';
@@ -307,6 +310,9 @@ final class ProductionAiLedger implements AiCapabilityLedger {
     ...aiFileRows,
     ...aiGraphqlActivityCreateRows,
     ...aiGraphqlActivityDeleteRows,
+    ...aiGraphqlActivityEditRows,
+    ...aiGraphqlContentRows,
+    ...aiGraphqlLabelsRows,
     ...aiGraphqlAssigneesRows,
     ...aiGraphqlDatesRows,
     ...aiGraphqlHealthRows,

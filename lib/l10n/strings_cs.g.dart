@@ -2751,4 +2751,6 @@ const _messagesCs = <String>[
   'Kvóta požadavků pro GitLab je téměř vyčerpaná',
   'Tato zpráva nebyla odeslána. Odešlete ji znovu, až bude tlačítko „Odeslat“ opět dostupné.',
   '{verb} {target} {ref}',
+  'Nastavit štítky',
+  'Štítek k nastavení není v seznamu štítků tohoto projektu nebo má stejný název více štítků, takže nebylo nic provedeno.',
 ];
