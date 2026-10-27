@@ -124,7 +124,10 @@ final class AccountAiRunRegistry extends ChangeNotifier
       _invalidate();
       throw StateError('The AI run registry is no longer current');
     }
-    final existing = _sessions[origin.key];
+    // Origins supply resource/entry coordinates only. This registry supplies
+    // the exact account, generation and API boundary, including after renames.
+    final key = origin.key;
+    final existing = _sessions[key];
     if (existing != null) {
       _visits[existing.session] = (_visits[existing.session] ?? 0) + 1;
       return existing.session;
@@ -142,7 +145,7 @@ final class AccountAiRunRegistry extends ChangeNotifier
       handle.dispose();
       throw StateError('The AI run registry changed while opening a session');
     }
-    _sessions[origin.key] = handle;
+    _sessions[key] = handle;
     _visits[handle.session] = 1;
     handle.session.addListener(_handleSessionChanged);
     _lastRunningCount = runningCount;

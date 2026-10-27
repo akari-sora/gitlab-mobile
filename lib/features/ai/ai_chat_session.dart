@@ -7,10 +7,12 @@ import '../../core/ai/runner.dart';
 import '../../core/ai/tools/write_coordinator.dart';
 import 'ai_attachment_session.dart';
 import '../../core/failure.dart';
+import '../../core/group_work_item_identity.dart';
 import '../../core/models.dart';
+import '../../core/work_item_graph_models.dart';
 
 /// Where a conversation starts. It decides the first context the assistant
-/// reads and the project its read-only tools are bound to. An origin carries
+/// reads and the resource its read-only tools are bound to. An origin carries
 /// identifiers only; the session loads and pins the content itself.
 sealed class AiChatOrigin {
   const AiChatOrigin();
@@ -77,6 +79,48 @@ final class AiWorkItemOrigin extends AiChatOrigin {
 
   @override
   String get key => 'item:${project.id}:${kind.name}:$iid';
+}
+
+/// A directly Group-owned Work Item. [group] is the item's namespace, which
+/// can differ from the ancestor group whose descendant list displayed it.
+/// These coordinates select a fresh strict read; they are not a write grant.
+final class AiGroupWorkItemOrigin extends AiChatOrigin {
+  const AiGroupWorkItemOrigin({
+    required this.group,
+    required this.iid,
+    required this.title,
+  });
+
+  final GraphResourceRef group;
+  final int iid;
+  final String title;
+
+  int get groupId =>
+      groupKeyNumericId(group.id) ??
+      (throw const ApiFailure(FailureKind.validation));
+
+  @override
+  String get key => 'group-item:$groupId:$iid';
+}
+
+/// A project Work Item opened from a group page. The actual project owns the
+/// resource; [viewGroupId] only separates this conversation's entry point.
+final class AiProjectWorkItemFromGroupPageOrigin extends AiChatOrigin {
+  const AiProjectWorkItemFromGroupPageOrigin({
+    required this.viewGroupId,
+    required this.project,
+    required this.iid,
+    required this.title,
+  });
+
+  final int viewGroupId;
+  final Project project;
+  final int iid;
+  final String title;
+
+  @override
+  String get key =>
+      'group-page:$viewGroupId:project:${project.id}:workItem:$iid';
 }
 
 /// One text file at a commit.
