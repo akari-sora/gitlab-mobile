@@ -79,6 +79,14 @@ Map<String, Object?> _todo({required bool snoozed, String problem = 'exact'}) {
       todo['id'] = 'gid://gitlab/Todo/20';
     case 'wrongState':
       todo['snoozedUntil'] = snoozed ? '2031-01-01T00:00:00Z' : _untilText;
+    case 'issueAlias':
+      todo['targetType'] = 'ISSUE';
+      todo['targetEntity'] = <String, Object?>{
+        '__typename': 'Issue',
+        'issueId': 'gid://gitlab/Issue/91',
+        'iid': '7',
+        'projectId': null,
+      };
   }
   return todo;
 }
@@ -147,7 +155,130 @@ Future<_Outcome> _groupWrite(GitLabApi api, {required bool snooze}) async {
   }
 }
 
+// Contract harness for G-P13's selected-todo discovery path. The real family
+// still owns scope binding, currentness and ack handling before enabling it.
+Future<_Outcome> _selectedGroupWrite(GitLabApi api, {required bool snooze}) async {
+  final context = api.captureGroupReadEpoch();
+  final expected = DateTime.parse(_untilText);
+  try {
+    final ownership = await (snooze
+        ? api.selectedTodoForSnooze(
+            19,
+            expectedUserId: 7,
+            generation: 1,
+            readEpoch: context.readEpoch,
+            isCurrent: context.isCurrent,
+            exactGroup: (groupId: 2, parentIid: 7),
+          )
+        : api.selectedTodoForUnsnooze(
+            19,
+            expectedUserId: 7,
+            generation: 1,
+            readEpoch: context.readEpoch,
+            isCurrent: context.isCurrent,
+            exactGroup: (groupId: 2, parentIid: 7),
+          ));
+    final selected = ownership.selectedGroupTodo;
+    if (selected == null ||
+        selected.todoId != 19 ||
+        selected.owner.groupGid != _group ||
+        selected.owner.fullPath != _groupPath ||
+        selected.owner.workItemGid != _target ||
+        (snooze
+            ? selected.snoozedUntil != null
+            : selected.snoozedUntil == null ||
+                !selected.snoozedUntil!.isAtSameMomentAs(expected))) {
+      return _Outcome.refused;
+    }
+  } catch (_) {
+    return _Outcome.refused;
+  }
+  try {
+    if (snooze) {
+      final ack = await api.snoozeTodo(19, expected);
+      if (!ack.isAtSameMomentAs(expected)) return _Outcome.uncertain;
+    } else {
+      await api.unsnoozeTodo(19);
+    }
+    return _Outcome.success;
+  } catch (_) {
+    return _Outcome.uncertain;
+  }
+}
+
 void main() {
+  for (final snooze in [true, false]) {
+    final operation = snooze ? 'snooze' : 'unsnooze';
+    for (final acknowledgement in [
+      'exact', 'wrongId', 'missingId', 'wrongTime', 'missingTime',
+    ]) {
+      test('selected group $operation acknowledgement $acknowledgement', () async {
+        var reads = 0;
+        var mutations = 0;
+        final adapter = FakeAdapter((request) {
+          final query = (request.data as Map)['query'] as String;
+          if (query.trimLeft().startsWith('mutation ')) {
+            mutations++;
+            final field = snooze ? 'todoSnooze' : 'todoUnSnooze';
+            return jsonResponse({
+              'data': {
+                field: {
+                  'todo': {
+                    if (acknowledgement != 'missingId')
+                      'id': acknowledgement == 'wrongId'
+                          ? 'gid://gitlab/Todo/20'
+                          : 'gid://gitlab/Todo/19',
+                    if (acknowledgement != 'missingTime')
+                      'snoozedUntil': acknowledgement == 'wrongTime'
+                          ? '2031-01-01T00:00:00Z'
+                          : snooze ? _untilText : null,
+                  },
+                  'errors': <Object>[],
+                },
+              },
+            });
+          }
+          reads++;
+          expect(query, contains('isSnoozed: ${!snooze}'));
+          return jsonResponse(_page(_todo(snoozed: !snooze)));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        expect(
+          await _selectedGroupWrite(api, snooze: snooze),
+          acknowledgement == 'exact' ? _Outcome.success : _Outcome.uncertain,
+        );
+        expect(reads, 1, reason: 'D30 has no post-send readback');
+        expect(mutations, 1, reason: 'the mutation is never replayed');
+        expect(adapter.requests, hasLength(2));
+      });
+    }
+
+    for (final problem in [
+      'foreignActor', 'issueAlias', 'missingTodoProject', 'missingTargetProject',
+    ]) {
+      test('selected group $operation refuses $problem before mutation', () async {
+        var mutations = 0;
+        final adapter = FakeAdapter((request) {
+          final query = (request.data as Map)['query'] as String;
+          if (query.trimLeft().startsWith('mutation ')) {
+            mutations++;
+            throw StateError('unexpected mutation');
+          }
+          return jsonResponse(_page(
+            _todo(snoozed: !snooze, problem: problem),
+            actor: problem == 'foreignActor' ? 'gid://gitlab/User/8' : _actor,
+          ));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        expect(await _selectedGroupWrite(api, snooze: snooze), _Outcome.refused);
+        expect(mutations, 0);
+        expect(adapter.requests, hasLength(1));
+      });
+    }
+  }
+
   for (final snooze in [true, false]) {
     final operation = snooze ? 'snooze' : 'unsnooze';
     test('group $operation D30 succeeds without a readback', () async {
