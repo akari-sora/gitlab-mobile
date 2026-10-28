@@ -1,0 +1,6 @@
+[        ] :app:minifyGitlabReleaseWithR8 (Thread[Execution worker Thread 10,5,main]) started.
+[        ] > Task :app:minifyGitlabReleaseWithR8
+[        ] Caching disabled for task ':app:minifyGitlabReleaseWithR8' because:
+[        ] Task ':app:minifyGitlabReleaseWithR8' is not up-to-date because:
+[ +598 ms] > Task :app:minifyGitlabReleaseWithR8
+[+4103 ms] > Task :app:minifyGitlabReleaseWithR8

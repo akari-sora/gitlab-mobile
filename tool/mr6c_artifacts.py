@@ -16,7 +16,6 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-import tempfile
 import zipfile
 
 TOOL_ROOT = Path(__file__).resolve().parent
@@ -299,10 +298,10 @@ def apk_info(apk, flavor, variant, tools, expected_signer=LOCAL_SIGNER):
     require(values.get('versionCode', '').isdigit() and int(values['versionCode']) > 0,
             f'{apk}: invalid versionCode')
     require(values.get('versionName'), f'{apk}: missing versionName')
-    min_sdk = re.search(r"^sdkVersion:'(\d+)'$", badging, re.M)
-    target_sdk = re.search(r"^targetSdkVersion:'(\d+)'$", badging, re.M)
-    require(min_sdk and min_sdk.group(1) == '24', f'{apk}: minSdk must be 24')
-    require(target_sdk and target_sdk.group(1) == '36', f'{apk}: targetSdk must be 36')
+    min_sdk = re.findall(r"^(?:minSdkVersion|sdkVersion):'([^']*)'$", badging, re.M)
+    target_sdk = re.findall(r"^targetSdkVersion:'([^']*)'$", badging, re.M)
+    require(min_sdk == ['24'], f'{apk}: minSdk must be 24')
+    require(target_sdk == ['36'], f'{apk}: targetSdk must be 36')
     debuggable = bool(re.search(r'^application-debuggable$', badging, re.M))
     require(debuggable == (variant == 'debug'), f'{apk}: unexpected debuggable flag')
     signing = run([tools['apksigner'], 'verify', '--verbose', '--print-certs', apk])
@@ -389,17 +388,24 @@ def r8_build_environment(directory):
 
 
 def executed_r8_task(log, flavor):
-    """Read only the relevant Gradle task marker; discard the private build log."""
+    """Require one fresh execution in Gradle --info, not console progress headers."""
     task = ':app:minify' + flavor.capitalize() + 'ReleaseWithR8'
-    pattern = re.compile(r'(?:^|\])\s*> Task ' + re.escape(task) + r'(?:\s+(.*?))?\s*$')
+    started = re.compile(re.escape(task) + r' \(Thread\[.*\]\) started\.$')
+    pattern = re.compile(r'> Task ' + re.escape(task) + r'(?:\s+(.*?))?\s*$')
     log.seek(0)
-    states = []
+    starts, fresh, states = 0, 0, []
     for line in log:
         line = re.sub(r'\x1b\[[0-9;]*m', '', line.rstrip('\n\r'))
-        match = pattern.search(line)
+        line = re.sub(r'^\[[^\]]*\]\s*', '', line).strip()
+        starts += bool(started.fullmatch(line))
+        fresh += line == f"Task '{task}' is not up-to-date because:"
+        match = pattern.fullmatch(line)
         if match:
             states.append(match.group(1) or '')
-    require(states == [''], f'{flavor}: fresh R8 Gradle task not observed or ambiguous')
+        require(not line.startswith((f"Skipping task '{task}'", f"Loaded cache entry for task '{task}'")),
+                f'{flavor}: R8 Gradle task was skipped or cached')
+    require(starts == fresh == 1 and all(state == '' for state in states),
+            f'{flavor}: fresh R8 Gradle task not observed or ambiguous')
     return task
 
 
@@ -422,14 +428,18 @@ def release_builds(root, expected_lock, output, *, runner=subprocess.run, head=N
             # mkdir(exist_ok=False) prevents reuse of stale or operator-supplied inputs.
             dump_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
             env = r8_build_environment(dump_dir)
-            # Verbose logs can contain local paths and credentials. Keep them in
-            # an unlinked private temporary file and retain only the task marker.
-            with tempfile.TemporaryFile(mode='w+', encoding='utf-8') as log:
+            # Retain private verbose evidence, including failed builds; never print it.
+            log_path = dump_dir.with_name(dump_dir.name + '-gradle.log')
+            entry['gradle_log'] = str(log_path)
+            with os.fdopen(os.open(log_path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600),
+                           'w+', encoding='utf-8') as log:
                 try:
                     result = runner(entry['command'], cwd=root, env=env, stdout=log,
                                     stderr=subprocess.STDOUT, text=True, check=False)
                     entry['exit_code'] = result.returncode
                 finally:
+                    log.flush()
+                    entry['gradle_log_sha256'] = sha256_file(log_path)
                     entry['lock_after'] = sha256_file(lock) if lock.is_file() else None
                     write_json(output, report)
                 require(entry['exit_code'] == 0, f'{flavor}: release build failed')
