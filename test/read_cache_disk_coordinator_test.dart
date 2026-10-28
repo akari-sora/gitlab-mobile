@@ -388,10 +388,10 @@ void _pathFailureTests() {
     ('clear account', 1),
     ('clear state proof', 2),
     ('clear names proof', 3),
-    ('recover sweep', 4),
-    ('recover names', 5),
-    ('disable sweep', 7),
-    ('disable names', 8),
+    ('recover sweep', 7),
+    ('recover names', 9),
+    ('disable sweep', 13),
+    ('disable names', 15),
   ];
   for (final (site, ordinal) in cases) {
     test('C2FU H2 fences every account and clears root: $site', () async {
@@ -1415,7 +1415,11 @@ void _transactionTests() {
         // succeeds. Only a new inventory/decision may reconcile the full fence.
         expect(await h.recover(), isFalse);
         if (!special) expect(await h.recover(), isTrue);
-        expect(h.rootCalls, lessThan(12));
+        expect(
+          h.rootCalls,
+          lessThan(24),
+          reason: 'bounded work across both namespaces',
+        );
         if (special) expect(await h.coordinator.activate(_binding), isFalse);
       },
     );
@@ -1953,7 +1957,8 @@ void _markerOrderTests() {
       h.storage.intercept = null;
       final marker =
           (await h.keys.readMarker(_account)).value! as ReadCacheClearMarker;
-      expect(marker.reason, ReadCacheClearReason.accountClear);
+      expect(marker.reason, ReadCacheClearReason.scopeInvalidation);
+      expect(marker.namespaceOnly, isTrue);
       expect(h.coordinator.state(_account), ReadCacheDiskState.cleaning);
       final fresh = _fresh(h);
       expect(await fresh.recover(_decision, accountKeys: {_account}), isTrue);

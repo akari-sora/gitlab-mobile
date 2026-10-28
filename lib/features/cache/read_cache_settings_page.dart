@@ -45,7 +45,8 @@ OfflineCacheStatus offlineCacheStatus(
     ReadCacheDiskState.cleaning => OfflineCacheStatus.cleaning,
     ReadCacheDiskState.unavailable => OfflineCacheStatus.keyUnavailable,
     ReadCacheDiskState.disabled => OfflineCacheStatus.off,
-    ReadCacheDiskState.closed => OfflineCacheStatus.waiting,
+    ReadCacheDiskState.closed ||
+    ReadCacheDiskState.offlineReadOnly => OfflineCacheStatus.waiting,
   };
 }
 
