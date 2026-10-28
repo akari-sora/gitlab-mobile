@@ -9,6 +9,8 @@ import 'package:dio/io.dart';
 import '../core/failure.dart';
 import '../core/gitlab_api.dart';
 import '../core/instance.dart';
+import '../core/offline/snapshot_media_policy.dart';
+import '../core/offline/snapshot_reader.dart';
 import 'attachment_ref.dart';
 
 enum MarkdownMediaSourceKind { upload, repository, external, data, blocked }
@@ -431,6 +433,82 @@ String markdownMediaExtensionForContentType(String? contentType) =>
       _ => '',
     };
 
+/// Snapshot sources are deliberately separate from GitLabApi and cannot fall
+/// back to a network client.
+abstract interface class SnapshotMediaSource {
+  Future<Uint8List> load(MarkdownMediaSource source, {required int maxBytes});
+  void checkCurrent();
+}
+
+final class SnapshotReaderMediaSource implements SnapshotMediaSource {
+  SnapshotReaderMediaSource({required this.reader, required this.projectPath,
+      required this.refName});
+  final SnapshotRepositoryReader reader;
+  final String projectPath, refName;
+
+  @override
+  void checkCurrent() => reader.checkCurrent();
+
+  @override
+  Future<Uint8List> load(MarkdownMediaSource source, {required int maxBytes}) async {
+    checkCurrent();
+    final owner = reader.owner;
+    final uri = source.uri;
+    final path = source.path;
+    final ref = source.ref;
+    if (source.kind != MarkdownMediaSourceKind.repository || uri == null ||
+        path == null || ref == null) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    final instance = GitLabInstance.parse(owner.instanceKey);
+    final relative = !uri.hasScheme && uri.host.isEmpty;
+    var pathAtSource = projectPath;
+    if (!relative) {
+      if (uri.scheme != 'https' || uri.userInfo.isNotEmpty || !instance.sameOrigin(uri)) {
+        throw const ApiFailure(FailureKind.unsupported);
+      }
+      final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+      final prefix = instance.base.pathSegments.where((s) => s.isNotEmpty).toList();
+      if (segments.length < prefix.length + 5 ||
+          !_startsWith(segments, prefix)) {
+        throw const ApiFailure(FailureKind.unsupported);
+      }
+      final dash = _repositoryDash(segments, prefix.length);
+      if (dash == null || dash + 3 >= segments.length ||
+          (segments[dash + 1] != 'raw' &&
+            (segments[dash + 1] != 'blob' || uri.queryParameters['raw'] != 'true')) ||
+          segments[dash + 2] != ref || segments.sublist(dash + 3).join('/') != path) {
+        throw const ApiFailure(FailureKind.unsupported);
+      }
+      pathAtSource = segments.sublist(prefix.length, dash).join('/');
+    }
+    final coordinate = SnapshotMediaCoordinate(accountKey: owner.accountKey,
+      instanceKey: owner.instanceKey, projectId: int.tryParse(source.project ?? ''),
+      projectPath: pathAtSource, ref: ref, path: path, relative: relative);
+    final entry = await reader.snapshotEntry(path);
+    checkCurrent();
+    final policy = SnapshotMediaPolicy(accountKey: owner.accountKey,
+      instanceKey: owner.instanceKey, projectId: owner.projectId, projectPath: projectPath,
+      sha: owner.sha, refName: refName, subPath: owner.subPath);
+    if (!policy.permits(coordinate, entry)) throw const ApiFailure(FailureKind.unsupported);
+    final bytes = await reader.bytes(path, maxBytes: maxBytes);
+    checkCurrent();
+    return bytes;
+  }
+}
+
+final class _BlockedAdapter implements HttpClientAdapter {
+  int attempts = 0;
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream,
+      Future<void>? cancelFuture) async {
+    attempts++;
+    throw const ApiFailure(FailureKind.unsupported);
+  }
+  @override
+  void close({bool force = false}) {}
+}
+
 /// Loads resolved media. The external client is deliberately separate from
 /// [GitLabApi], and receives no account headers or cookies from it.
 final class MarkdownMediaLoader {
@@ -442,6 +520,8 @@ final class MarkdownMediaLoader {
     bool allowLoopbackAddressesForTesting = false,
     SecurityContext? externalSecurityContextForTesting,
   }) : _api = api,
+       _snapshot = null,
+       _blocked = null,
        _external = _bareExternal(
          external,
          resolver: externalResolver ?? InternetAddress.lookup,
@@ -450,7 +530,19 @@ final class MarkdownMediaLoader {
        ),
        _externalImageTimeout = externalImageTimeout;
 
+  MarkdownMediaLoader.snapshot(SnapshotMediaSource source)
+      : _api = null,
+        _snapshot = source,
+        _blocked = _BlockedAdapter(),
+        _external = Dio(),
+        _externalImageTimeout = const Duration(seconds: 30) {
+    _external.httpClientAdapter = _blocked!;
+  }
+
   final GitLabApi? _api;
+  final SnapshotMediaSource? _snapshot;
+  final _BlockedAdapter? _blocked;
+  int get blockedNetworkAttempts => _blocked?.attempts ?? 0;
   final Dio _external;
   final Duration _externalImageTimeout;
   final Set<CancelToken> _requests = <CancelToken>{};
@@ -470,6 +562,18 @@ final class MarkdownMediaLoader {
     final operation = cancelToken ?? CancelToken();
     _requests.add(operation);
     try {
+      final snapshot = _snapshot;
+      if (snapshot != null) {
+        if (!image || sink != null || source.kind != MarkdownMediaSourceKind.repository) {
+          throw const ApiFailure(FailureKind.unsupported);
+        }
+        final bytes = await snapshot.load(source, maxBytes: _repositoryImageBytes);
+        snapshot.checkCurrent();
+        if (_closed || operation.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+        onProgress?.call(bytes.length, bytes.length);
+        snapshot.checkCurrent();
+        return bytes;
+      }
       switch (source.kind) {
         case MarkdownMediaSourceKind.data:
           final bytes = source.bytes;

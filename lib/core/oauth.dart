@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'failure.dart';
 import 'instance.dart';
 import 'models.dart';
+import 'request_meter.dart';
 
 import '../l10n/l10n.dart';
 // RFC 3986 schemes cannot contain '_'; the Android applicationId still uses gitlab_mobile.
@@ -155,6 +156,12 @@ final class OAuthTokenClient {
     }
     final uri = instance.oauth('token');
     try {
+      final meter = RequestMeter.current;
+      if (meter?.includeOAuthTokens == true) {
+        final admission = meter!.beforeRequest;
+        if (admission != null) await admission();
+        meter.increment();
+      }
       final response = await _dio.requestUri<Map<String, dynamic>>(
         uri,
         data: fields,

@@ -95,7 +95,7 @@ final class _AiRunBudget {
     Future<T> Function(void Function(int) beforeRead) load, {
     required void Function() beforeRequest,
   }) async {
-    final meter = RequestMeter(beforeRequest: beforeRequest);
+    final meter = RequestMeter(onRequest: beforeRequest);
     try {
       return await meter.runAsync(
         () => load((maximum) {
