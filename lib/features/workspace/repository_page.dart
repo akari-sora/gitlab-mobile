@@ -6,14 +6,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../ai/ai_chat_page.dart';
 import '../ai/ai_chat_session.dart';
+import '../offline/offline_status.dart';
+import '../offline/save_sheet.dart';
+import '../offline/snapshot_browser_page.dart';
 import '../../core/ai/tools/sensitive_paths.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/offline/snapshot_schema.dart';
 import '../../core/repository_ref.dart';
 import '../../core/syntax_highlighter.dart';
 import '../../shared/external_link.dart';
 import '../../shared/cache_freshness.dart';
+import '../../shared/code_text_view.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
@@ -604,6 +609,53 @@ class RepositoryTabState extends State<RepositoryTab> {
     }
   }
 
+  /// A complete offline version of this project, offered when the network
+  /// failed (§6.2). Only transport-like failures qualify, never a denial.
+  SnapshotRecord? _offlineFallback(ApiFailure failure) {
+    if (!const {
+      FailureKind.network,
+      FailureKind.server,
+      FailureKind.rateLimited,
+      FailureKind.redirectBlocked,
+      FailureKind.invalidResponse,
+    }.contains(failure.kind)) {
+      return null;
+    }
+    final repositories = OfflineScope.maybeOf(context);
+    if (repositories == null) return null;
+    final saved = completeSnapshotsOf(repositories, widget.project.id);
+    return saved.isEmpty ? null : saved.first;
+  }
+
+  Widget _errorNotice(BuildContext context, ApiFailure error) {
+    final offline = _offlineFallback(error);
+    return FailureNotice(
+      error,
+      onRetry: () => _resolve(fresh: true),
+      account: widget.account,
+      resourceLabel: '${widget.project.path} · ${_currentRef?.name ?? ""}',
+      onSwitchAccount: endSessionFrom(context),
+      offlineSavedAt: offline == null
+          ? null
+          : snapshotDate(offline.savedAt ?? offline.createdAt),
+      onOpenOffline: offline == null ? null : () => _openOffline(offline),
+    );
+  }
+
+  void _openOffline(SnapshotRecord record, {String folder = ''}) {
+    final repositories = OfflineScope.maybeOf(context, listen: false);
+    if (repositories == null) return;
+    unawaited(
+      openSnapshot(
+        context,
+        repositories: repositories,
+        record: record,
+        account: widget.account,
+        folder: folder,
+      ),
+    );
+  }
+
   Widget _refBar(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -662,6 +714,14 @@ class RepositoryTabState extends State<RepositoryTab> {
               ],
             ),
           ),
+          if (ref != null && ref.sha.isNotEmpty)
+            OfflineRefButton(
+              account: widget.account,
+              project: widget.project,
+              reference: ref,
+              folder: _folder,
+              onOpen: (record) => _openOffline(record, folder: _folder),
+            ),
           if (ref != null && ref.sha.isNotEmpty)
             IconButton(
               tooltip: l10n.findFile,
@@ -830,15 +890,7 @@ class RepositoryTabState extends State<RepositoryTab> {
       children: [
         if (_currentRef == null || _currentRef!.sha.isEmpty) _refBar(context),
         if (_loading) const LinearProgressIndicator(minHeight: 2),
-        if (_error != null)
-          FailureNotice(
-            _error!,
-            onRetry: () => _resolve(fresh: true),
-            account: widget.account,
-            resourceLabel:
-                '${widget.project.path} · ${_currentRef?.name ?? ""}',
-            onSwitchAccount: endSessionFrom(context),
-          ),
+        if (_error != null) _errorNotice(context, _error!),
         Expanded(
           child: _currentRef == null || _currentRef!.sha.isEmpty
               ? (_loading
@@ -1353,13 +1405,6 @@ class RepositoryFilePage extends StatefulWidget {
 }
 
 class _RepositoryFilePageState extends State<RepositoryFilePage> {
-  static const _codeStyle = TextStyle(
-    fontFamily: codeFontFamily,
-    fontFamilyFallback: ['Menlo', 'monospace'],
-    fontSize: 13,
-    height: 1.55,
-  );
-
   String? _text, _lastCommit;
   ApiFailure? _error;
   bool _loading = true, _busy = false, _preview = false, _wrap = true;
@@ -1372,10 +1417,9 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
   final _syntaxSpans = SyntaxSpanCache();
 
   int? _selectedLine;
-  List<String> _lines = const [];
-  List<String> _searchLines = const [];
+  CodeTextIndex _index = CodeTextIndex.empty;
+  List<String> get _lines => _index.lines;
   List<int> _visibleIndices = const [];
-  int _longestLineLength = 0;
 
   Timer? _searchTimer;
   int _searchEpoch = 0;
@@ -1455,22 +1499,12 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
 
   void _indexLines(String text) {
     _syntaxSpans.clear();
-    _lines = text.split('\n');
-    _searchLines = [for (final line in _lines) line.toLowerCase()];
-    _visibleIndices = List<int>.generate(_lines.length, (i) => i);
-    _longestLineLength = _lines.fold<int>(0, (n, l) => math.max(n, l.length));
+    _index = CodeTextIndex(text);
+    _visibleIndices = _index.filter('');
   }
 
   void _filterVisible(String value) {
-    final q = value.trim().toLowerCase();
-    if (q.isEmpty) {
-      _visibleIndices = List<int>.generate(_lines.length, (i) => i);
-    } else {
-      _visibleIndices = [
-        for (var i = 0; i < _searchLines.length; i++)
-          if (_searchLines[i].contains(q)) i,
-      ];
-    }
+    _visibleIndices = _index.filter(value);
   }
 
   void _onSearchChanged(String value) {
@@ -2054,166 +2088,16 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                             projectPath: widget.project.path,
                           ),
                         )
-                      : LayoutBuilder(
-                          builder: (context, constraints) {
-                            final fontSize = MediaQuery.textScalerOf(
-                              context,
-                            ).scale(13);
-                            final contentWidth = _wrap
-                                ? constraints.maxWidth
-                                : math.max(
-                                    constraints.maxWidth,
-                                    math.min(
-                                      24000.0,
-                                      _longestLineLength * fontSize * 0.65 + 80,
-                                    ),
-                                  );
-                            return Directionality(
-                              textDirection: TextDirection.ltr,
-                              child: Scrollbar(
-                                controller: _horizontal,
-                                child: SingleChildScrollView(
-                                  controller: _horizontal,
-                                  scrollDirection: Axis.horizontal,
-                                  physics: _wrap
-                                      ? const NeverScrollableScrollPhysics()
-                                      : null,
-                                  child: SizedBox(
-                                    width: contentWidth,
-                                    height: constraints.maxHeight,
-                                    child: SelectionArea(
-                                      child: ListView.builder(
-                                        controller: _vertical,
-                                        itemCount: _visibleIndices.length,
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 12,
-                                        ),
-                                        itemBuilder: (context, index) {
-                                          final lineIndex =
-                                              _visibleIndices[index];
-                                          final lineNumber = lineIndex + 1;
-                                          final isSelected =
-                                              _selectedLine == lineNumber;
-                                          final lineContent = _lines[lineIndex];
-
-                                          return Container(
-                                            key: ValueKey(
-                                              'repository-file-line-$lineNumber',
-                                            ),
-                                            color: isSelected
-                                                ? Theme.of(context)
-                                                      .colorScheme
-                                                      .primaryContainer
-                                                      .withValues(alpha: 0.35)
-                                                : null,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 1,
-                                            ),
-                                            child: Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Semantics(
-                                                  button: true,
-                                                  selected: isSelected,
-                                                  label: l10n.lineNumber(lineNumber),
-                                                  hint: l10n.tapCopyLinePermalink,
-                                                  excludeSemantics: true,
-                                                  onTap: () =>
-                                                      _copyLinePermalink(
-                                                        lineNumber,
-                                                      ),
-                                                  child: InkWell(
-                                                    onTap: () =>
-                                                        _copyLinePermalink(
-                                                          lineNumber,
-                                                        ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          4,
-                                                        ),
-                                                    // Code reads line by line: rows stay at text height and the
-                                                    // number keeps the 24dp WCAG 2.5.8 minimum in a 48dp-wide column.
-                                                    child: ConstrainedBox(
-                                                      constraints:
-                                                          const BoxConstraints(
-                                                            minWidth: 48,
-                                                            minHeight: 24,
-                                                          ),
-                                                      child: Align(
-                                                        alignment: Alignment
-                                                            .centerLeft,
-                                                        child: Text(
-                                                          '$lineNumber',
-                                                          textScaler:
-                                                              MediaQuery.textScalerOf(
-                                                                context,
-                                                              ).clamp(
-                                                                maxScaleFactor:
-                                                                    1.3,
-                                                              ),
-                                                          style: Theme.of(context)
-                                                              .textTheme
-                                                              .bodySmall
-                                                              ?.copyWith(
-                                                                color:
-                                                                    isSelected
-                                                                    ? Theme.of(
-                                                                        context,
-                                                                      ).colorScheme.primary
-                                                                    : null,
-                                                                fontWeight:
-                                                                    isSelected
-                                                                    ? FontWeight
-                                                                          .bold
-                                                                    : null,
-                                                              ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Padding(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          vertical: 2,
-                                                        ),
-                                                    child: Text.rich(
-                                                      lineContent.isEmpty
-                                                          ? const TextSpan(
-                                                              text: ' ',
-                                                            )
-                                                          : _syntaxSpans.highlight(
-                                                              lineIndex,
-                                                              lineContent,
-                                                              extension: widget
-                                                                  .filePath,
-                                                              isDark:
-                                                                  Theme.of(
-                                                                    context,
-                                                                  ).brightness ==
-                                                                  Brightness
-                                                                      .dark,
-                                                              baseStyle:
-                                                                  _codeStyle,
-                                                            ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
+                      : CodeTextView(
+                          index: _index,
+                          visibleIndices: _visibleIndices,
+                          filePath: widget.filePath,
+                          syntaxSpans: _syntaxSpans,
+                          wrap: _wrap,
+                          vertical: _vertical,
+                          horizontal: _horizontal,
+                          selectedLine: _selectedLine,
+                          onLineTap: _copyLinePermalink,
                         ),
                 ),
               ],

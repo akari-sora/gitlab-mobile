@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/offline/offline_repository_coordinator.dart';
 import '../../core/read_cache_disk_contract.dart';
 import '../../shared/adaptive_breakpoints.dart';
 import '../../shared/hub_ui.dart';
@@ -17,6 +18,9 @@ import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
 import '../cache/read_cache_settings_page.dart';
+import '../offline/offline_projects_page.dart';
+import '../offline/offline_repositories.dart';
+import '../offline/offline_status.dart';
 import '../ai/ai_account_removal.dart';
 import '../ai/ai_chat_page.dart' show openAiChatSession;
 import '../ai/ai_background_execution.dart';
@@ -64,9 +68,14 @@ class AuthenticatedApp extends StatefulWidget {
     this.aiSessionFactory,
     this.runNotifications,
     this.aiRunsChannel,
+    this.offlineCoordinator,
   });
   final SessionController session;
   final AppearanceController appearance;
+
+  /// The process owner of offline repository snapshots; tests inject one.
+  /// Defaults to [OfflineRepositoryCoordinator.instance].
+  final OfflineRepositoryCoordinator? offlineCoordinator;
 
   /// The app's language; null where the build does not switch it (tests).
   final LanguageController? language;
@@ -123,8 +132,35 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
   /// The live conversations of [_aiRegistry], for the stop and switch dialogs.
   AiAccountActivity? _aiActivity;
 
+  /// The account's offline projects for this generation (C3b). The tree is
+  /// rebuilt on every account switch, so one adapter belongs to one binding.
+  OfflineRepositories? _offline;
+  AppLifecycleListener? _lifecycle;
+
+  /// The shell's [_MobileShellState._leave], reachable from pushed routes.
+  final _leaveHandler = _LeaveHandler();
+
+  OfflineRepositories? _createOffline() {
+    final coordinator =
+        widget.offlineCoordinator ?? OfflineRepositoryCoordinator.instance;
+    final account = widget.session.active;
+    final api = widget.session.api;
+    if (!coordinator.configured || account == null || api == null) return null;
+    return OfflineRepositories(
+      binding: DiskBinding(
+        accountKey: account.key,
+        generation: widget.session.generation,
+      ),
+      coordinator: coordinator,
+      api: api,
+    );
+  }
+
   @override
   void dispose() {
+    _lifecycle?.dispose();
+    _offline?.dispose();
+    _offline = null;
     widget.session.removeListener(_sessionOwnerChanged);
     _disposeAiRegistry();
     widget.language?.removeListener(_languageChanged);
@@ -186,6 +222,13 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
   @override
   void initState() {
     super.initState();
+    _offline = _createOffline();
+    if (_offline != null) {
+      _lifecycle = AppLifecycleListener(
+        onStateChange: (state) =>
+            _offline?.setForeground(state == AppLifecycleState.resumed),
+      );
+    }
     _links = _bindLinks(widget.session);
     widget.session.addListener(_sessionOwnerChanged);
     widget.language?.addListener(_languageChanged);
@@ -320,31 +363,58 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             runNotifications: widget.ai == null
                 ? null
                 : widget.runNotifications,
+            leaveHandler: _leaveHandler,
           ),
         );
-        final ai = widget.ai;
-        final accountKey = widget.session.active?.key;
-        final api = widget.session.api;
-        if (ai == null || accountKey == null || api == null) {
-          _disposeAiRegistry();
-          return app;
-        }
-        final registry = _currentAiRegistry(ai);
-        final scoped = AiScope(
-          controllers: ai,
-          accountKey: accountKey,
-          child: app,
-        );
-        return AiRunRegistryScope(
-          registry: registry,
-          child: switch (widget.runNotifications) {
-            final gate? => AiRunNotificationScope(gate: gate, child: scoped),
-            null => scoped,
-          },
+        return SessionLeaveScope(
+          leave: _leaveHandler.leave,
+          child: _offlineScope(_aiScoped(app)),
         );
       },
     ),
   );
+
+  Widget _offlineScope(Widget child) {
+    final offline = _offline;
+    final account = widget.session.active;
+    if (offline == null || account == null) return child;
+    return OfflineScope(repositories: offline, account: account, child: child);
+  }
+
+  Widget _aiScoped(Widget app) {
+    final ai = widget.ai;
+    final accountKey = widget.session.active?.key;
+    final api = widget.session.api;
+    if (ai == null || accountKey == null || api == null) {
+      _disposeAiRegistry();
+      return app;
+    }
+    final registry = _currentAiRegistry(ai);
+    final scoped = AiScope(
+      controllers: ai,
+      accountKey: accountKey,
+      child: app,
+    );
+    return AiRunRegistryScope(
+      registry: registry,
+      child: switch (widget.runNotifications) {
+        final gate? => AiRunNotificationScope(gate: gate, child: scoped),
+        null => scoped,
+      },
+    );
+  }
+}
+
+/// Holds the mounted shell's leave handler for [SessionLeaveScope], which sits
+/// above the navigator where the shell's state is out of reach.
+final class _LeaveHandler {
+  Future<void> Function(LeaveIntent intent, Future<void> Function() action)?
+  handler;
+
+  Future<void> leave(LeaveIntent intent, Future<void> Function() action) {
+    final current = handler;
+    return current == null ? action() : current(intent, action);
+  }
 }
 
 class _MobileShell extends StatefulWidget {
@@ -364,9 +434,13 @@ class _MobileShell extends StatefulWidget {
     this.language,
     this.aiActivity,
     this.runNotifications,
+    this.leaveHandler,
   });
   final SessionController session;
   final LauncherShortcuts shortcuts;
+
+  /// Receives [_MobileShellState._leave] for routes above the shell.
+  final _LeaveHandler? leaveHandler;
 
   /// The current account's AI conversations; null (or returning null) when
   /// AI is absent.
@@ -436,9 +510,15 @@ class _MobileShellState extends State<_MobileShell> {
   ApiFailure? _resumeFailure;
   Account? _resumeAccount;
   int? _resumeGeneration;
+  Future<void> _leaveFromScope(
+    LeaveIntent intent,
+    Future<void> Function() action,
+  ) => _leave(action, intent: intent);
+
   @override
   void initState() {
     super.initState();
+    widget.leaveHandler?.handler = _leaveFromScope;
     widget.session.addListener(_onSession);
     widget.shortcuts.addListener(_onShortcut);
     widget.pops.addListener(_chrome.show);
@@ -616,6 +696,9 @@ class _MobileShellState extends State<_MobileShell> {
 
   @override
   void dispose() {
+    if (widget.leaveHandler?.handler == _leaveFromScope) {
+      widget.leaveHandler?.handler = null;
+    }
     _cancelReadCacheNotices?.call();
     _cancelReadCacheNotices = null;
     AiAccountRemoval.changes.removeListener(_onRemovalChanged);
@@ -1052,6 +1135,22 @@ class _MobileShellState extends State<_MobileShell> {
 
   /// §8 account removal: the hold is taken here, synchronously, before any
   /// dialog; the shared job runs the rest.
+  /// Removing the signed-in account deletes its offline projects too (§6.7):
+  /// that is confirmed before the removal takes its hold.
+  Future<void> _confirmRemove(Account account) async {
+    if (_accountLocked || widget.session.busy) return;
+    if (widget.session.active?.key == account.key &&
+        !await confirmOfflineLoss(
+          context,
+          repositories: OfflineScope.maybeOf(context, listen: false),
+          account: account,
+          kind: LeaveKind.remove,
+        )) {
+      return;
+    }
+    if (mounted) _remove(account);
+  }
+
   void _remove(Account account) {
     if (_accountLocked || widget.session.busy) return;
     final job = AiAccountRemoval.begin(account.key);
@@ -1096,8 +1195,24 @@ class _MobileShellState extends State<_MobileShell> {
 
   /// §12.1 guard before switching accounts or signing out. Without AI the
   /// action runs as before.
-  Future<void> _leave(Future<void> Function() action) async {
+  Future<void> _leave(
+    Future<void> Function() action, {
+    LeaveIntent intent = const LeaveIntent(LeaveKind.signOut),
+  }) async {
     if (_accountLocked) return;
+    // §6.7: the offline-projects loss is confirmed first, before the AI
+    // guard and before anything stops, clears or changes the session.
+    final account = widget.session.active;
+    if (account != null &&
+        !await confirmOfflineLoss(
+          context,
+          repositories: OfflineScope.maybeOf(context, listen: false),
+          account: account,
+          kind: intent.kind,
+        )) {
+      return;
+    }
+    if (!mounted || _accountLocked) return;
     final activity = widget.aiActivity?.call();
     if (activity == null) {
       await action();
@@ -1337,14 +1452,20 @@ class _MobileShellState extends State<_MobileShell> {
                                 saved.key == account.key
                             ? null
                             : () => unawaited(
-                                _leave(() => session.select(saved)),
+                                _leave(
+                                  () => session.select(saved),
+                                  intent: LeaveIntent(
+                                    LeaveKind.switchAccount,
+                                    target: saved,
+                                  ),
+                                ),
                               ),
                     trailing: IconButton(
                       tooltip: l10n.removeAccountFromDevice,
                       icon: const Icon(Icons.logout, size: 20),
                       onPressed: session.busy || _accountLocked
                           ? null
-                          : () => _remove(saved),
+                          : () => unawaited(_confirmRemove(saved)),
                     ),
                   ),
                 ],
@@ -1470,6 +1591,7 @@ class _MobileShellState extends State<_MobileShell> {
                   cache: session.readCache,
                   binding: _readCacheBinding(account),
                 ),
+                OfflineProjectsEntry(account: account),
               ],
             ),
             Padding(
@@ -1658,7 +1780,7 @@ class _MobileShellState extends State<_MobileShell> {
                                         onSwitchAccount: () {
                                           if (_accountLocked) return;
                                           final projectId = _recentProjectId;
-                                          unawaited(_leave(() {
+                                          unawaited(_leave(intent: const LeaveIntent(LeaveKind.switchAccount), () {
                                             if (projectId != null) {
                                               widget.session.setPendingResumeTarget(
                                                 ResumeTarget(projectId: projectId, resource: 'project'),
@@ -1683,7 +1805,7 @@ class _MobileShellState extends State<_MobileShell> {
                                         onSwitchAccount: () {
                                           if (_accountLocked) return;
                                           final target = _resumeTarget;
-                                          unawaited(_leave(() {
+                                          unawaited(_leave(intent: const LeaveIntent(LeaveKind.switchAccount), () {
                                             if (target != null) {
                                               widget.session.setPendingResumeTarget(target);
                                             }

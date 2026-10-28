@@ -8,6 +8,8 @@ import '../../l10n/l10n.dart';
 import '../../shared/artifact_storage.dart' show formatByteCount;
 import '../../shared/hub_ui.dart';
 import '../../shared/workspace_ui.dart';
+import '../offline/offline_projects_page.dart';
+import '../offline/offline_status.dart';
 import 'read_cache_disk_coordinator.dart';
 import 'read_cache_settings_store.dart';
 
@@ -256,8 +258,31 @@ class _ReadCacheSettingsPageState extends State<ReadCacheSettingsPage> {
     super.dispose();
   }
 
+  /// L1 (§6.9): clearing and turning off delete the offline projects too, so
+  /// both say how many and how much before anything is written.
+  Future<bool> _confirmClear(String title) {
+    final offline = OfflineScope.maybeOf(context, listen: false);
+    final count = offline == null ? 0 : offlineProjectsAtRisk(offline);
+    return confirmAction(
+      context,
+      title,
+      // With no offline projects there is nothing extra to announce.
+      count == 0
+          ? l10n.offlineCacheClearConfirmDetail
+          : l10n.offlineCacheClearWithProjects(
+              count,
+              snapshotSize(offline!.usedBytes),
+            ),
+      confirmLabel: l10n.offlineCacheClearButton,
+    );
+  }
+
   Future<void> _setEnabled(bool enabled) async {
     if (_busy) return;
+    if (!enabled) {
+      if (!await _confirmClear(l10n.offlineCacheTurnOffTitle) || !mounted) return;
+      if (_busy) return;
+    }
     setState(() => _busy = true);
     var result = ReadCacheSettingChangeResult.storageUnavailable;
     try {
@@ -311,11 +336,7 @@ class _ReadCacheSettingsPageState extends State<ReadCacheSettingsPage> {
 
   Future<void> _clear() async {
     if (_busy) return;
-    final confirmed = await confirmAction(
-      context,
-      l10n.offlineCacheClearConfirmTitle,
-      l10n.offlineCacheClearConfirmDetail,
-    );
+    final confirmed = await _confirmClear(l10n.offlineCacheClearConfirmTitle);
     if (!confirmed || !mounted) return;
     await _retryCleanup();
   }
@@ -384,6 +405,8 @@ class _ReadCacheSettingsPageState extends State<ReadCacheSettingsPage> {
                 leading: const Icon(Icons.data_usage),
                 title: Text(offlineCacheSizeLabel(_cache, widget.binding)),
               ),
+              if (OfflineScope.accountOf(context) case final account?)
+                OfflineProjectsEntry(account: account),
             ],
           ),
           if (notice != null)

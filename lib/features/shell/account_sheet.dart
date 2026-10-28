@@ -33,7 +33,12 @@ Future<void> showAccountSheet(BuildContext context, SessionController session) {
           trailing: const Icon(Icons.swap_horiz),
           onTap: session.busy ? null : () {
             Navigator.pop(sheetContext);
-            unawaited(session.select(saved));
+            // Through the shell's offline-loss and AI confirmations (§6.7).
+            unawaited(SessionLeaveScope.run(
+              context,
+              LeaveIntent(LeaveKind.switchAccount, target: saved),
+              () => session.select(saved),
+            ));
           },
         ),
       ListTile(
@@ -42,7 +47,11 @@ Future<void> showAccountSheet(BuildContext context, SessionController session) {
         title: Text(l10n.addOrSwitchAccount),
         onTap: () {
           Navigator.pop(sheetContext);
-          unawaited(session.endSession());
+          unawaited(SessionLeaveScope.run(
+            context,
+            const LeaveIntent(LeaveKind.signOut),
+            session.endSession,
+          ));
         },
       ),
     ]));
