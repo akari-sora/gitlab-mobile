@@ -54,8 +54,8 @@ Future<void> _uncertain(
 void main() {
   for (final operation in group_fixture.g15LogicalReads.keys) {
     test('real $operation preparation locks the exact group parent', () async {
-      aiGroupWorkItemWritesEnabledForTesting = true;
-      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+      expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+      expect(aiGroupWorkItemWritesAreEnabled, isTrue);
       final h = await group_fixture.G15Harness.create();
       addTearDown(h.dispose);
       final prepared = await h.server.writer.prepare(
@@ -74,13 +74,20 @@ void main() {
         isTrue,
         reason: '$operation must conflict with the actual group WI parent',
       );
+      expect(
+        prepared.releaseName,
+        operation == 'snoozeTodo' || operation == 'unsnoozeTodo'
+            ? '@synthetic'
+            : '$g0ePath#5',
+        reason: '$operation must retain the real prepared release name',
+      );
       expect(h.server.mutations, 0);
     });
   }
 
   test('real uncertain state blocks a different alias in a new run', () async {
-    aiGroupWorkItemWritesEnabledForTesting = true;
-    addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+    expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+    expect(aiGroupWorkItemWritesAreEnabled, isTrue);
     final h = await group_fixture.G15Harness.create();
     addTearDown(h.dispose);
     h.server.mutationStatus = 500;
@@ -117,8 +124,8 @@ void main() {
   test(
     'recovered journal blocks real group proposal from another coordinator',
     () async {
-      aiGroupWorkItemWritesEnabledForTesting = true;
-      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+      expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+      expect(aiGroupWorkItemWritesAreEnabled, isTrue);
       final h = await group_fixture.G15Harness.create();
       addTearDown(h.dispose);
       h.server.mutationStatus = 500;
@@ -163,7 +170,7 @@ void main() {
         ),
         knownSecrets: () => const {},
         safeDisplay: (value) => value,
-        ledger: const group_fixture.G15Ledger(),
+        ledger: productionAiLedger,
         httpCost: (operation) =>
             aiWriteRequestAllowance(operation, oauthReplay: false),
       );
@@ -267,23 +274,16 @@ void main() {
     test(
       'fresh run and operation $operation cannot bypass uncertain group lock',
       () async {
-        aiGroupWorkItemWritesEnabledForTesting = true;
-        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
-        // G0eGraphPort is an explicit seam double; the real journal and
-        // coordinator perform the isolation check.
-        final h = await G0eHarness.create();
+        expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+        expect(aiGroupWorkItemWritesAreEnabled, isTrue);
+        final h = await group_fixture.G15Harness.create();
         addTearDown(h.dispose);
         await _uncertain(h.base.journal);
-        h.beginRun('Update the group work item.');
-        final call = h.call(
-          operation,
-          operation == 'updateGroupWorkItemState'
-              ? {'stateEvent': 'close'}
-              : {'description': 'Synthetic replacement'},
-        );
-        expect(await h.coordinator.propose(call), isNull);
-        expect(h.coordinator.outcomeFor(call.id)?.reasonCode, 'isolated');
-        expect(h.graph.mutations, 0);
+        h.coordinator.beginRun('Update the group work item.');
+        h.coordinator.beginTurn();
+        expect(await h.propose(operation), isNull);
+        expect(h.coordinator.outcomeFor('g15-0')?.reasonCode, 'isolated');
+        expect(h.server.mutations, 0);
       },
     );
   }

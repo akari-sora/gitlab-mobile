@@ -43,36 +43,40 @@ const g15LogicalReads = <String, int>{
   'unsnoozeTodo': 10,
 };
 
+// Expected completed logical reads: proposal, immediately before mutation,
+// and independent readback. These literals come from the D20 call graph.
+const g15ReadPhases = <String, (int, int, int)>{
+  'updateGroupWorkItemState': (4, 9, 1),
+  'updateGroupWorkItemStatus': (4, 9, 1),
+  'updateGroupWorkItemDates': (5, 12, 2),
+  'updateGroupWorkItemHealthStatus': (4, 9, 1),
+  'updateGroupWorkItemAssignees': (8, 17, 1),
+  'updateGroupWorkItemMilestone': (5, 11, 1),
+  'updateGroupWorkItemWeight': (4, 9, 1),
+  'createGroupWorkItemActivityComment': (4, 9, 1),
+  'createGroupWorkItemActivityReply': (6, 13, 1),
+  'deleteGroupWorkItemActivityNote': (6, 13, 1),
+  'setGroupWorkItemActivityNoteReaction': (7, 16, 2),
+  'setGroupWorkItemNotifications': (4, 9, 1),
+  'updateGroupWorkItemContent': (4, 9, 1),
+  'editGroupWorkItemActivityNote': (6, 13, 1),
+  'updateGroupWorkItemLabels': (5, 11, 1),
+  'snoozeTodo': (5, 10, 0),
+  'unsnoozeTodo': (5, 10, 0),
+};
+
 const g15Key = AiConflictKey([g0eAccount, 'group:7', 'workItem', '5']);
 const _group = {'id': 'gid://gitlab/Group/7', 'fullPath': g0ePath};
 const _gid = 'gid://gitlab/WorkItem/91';
 
+// Compatibility wrapper for other G15 files; retain the exact production rows.
 final class G15Ledger implements AiCapabilityLedger {
   const G15Ledger();
   @override
-  AiCapability? find(String operationId) {
-    final row = productionAiLedger.find(operationId);
-    if (row == null || !g15LogicalReads.containsKey(operationId)) return row;
-    // This fixture isolates the group and snooze rows. Guard and matrix tests
-    // independently pin their production visibility.
-    return AiCapability(
-      operationId: row.operationId,
-      namedMethod: row.namedMethod,
-      baseTier: row.baseTier,
-      scopeClass: row.scopeClass,
-      boundary: row.boundary,
-      httpCap: row.httpCap,
-      readback: row.readback,
-      editableField: row.editableField,
-      arguments: row.arguments,
-      modelVisible: true,
-    );
-  }
-
+  AiCapability? find(String operationId) =>
+      productionAiLedger.find(operationId);
   @override
-  List<AiCapability> get modelVisible => [
-    for (final operation in g15LogicalReads.keys) find(operation)!,
-  ];
+  List<AiCapability> get modelVisible => productionAiLedger.modelVisible;
 }
 
 Map<String, Object?> g15Arguments(String operation) {
@@ -110,6 +114,17 @@ final class G15Server {
     oracle.onRequest = (name, mutation, request, payload) {
       final converted = jsonDecode(jsonEncode(payload)) as Map<String, dynamic>;
       _groupPayload(converted);
+      if (name == 'MobilePendingTodosForSnooze' ||
+          name == 'MobileSnoozedTodosForUnsnooze') {
+        final currentUser = (converted['data']! as Map)['currentUser']! as Map;
+        final todos = currentUser['todos']! as Map;
+        (pageSizes[name] ??= []).add((todos['nodes']! as List).length);
+        final pageInfo = todos['pageInfo']! as Map;
+        if (forceTodoContinuation && pageInfo['hasNextPage'] == false) {
+          pageInfo['hasNextPage'] = true;
+          pageInfo['endCursor'] = '400';
+        }
+      }
       if (name == 'MobileProjectWorkItemMilestones' ||
           name == 'MobileProjectAssigneeCandidates') {
         final data = converted['data']! as Map<String, Object?>;
@@ -180,8 +195,9 @@ final class G15Server {
   late final port.GitLabAiWritePort writer;
   bool live = true;
   int logicalReads = 0, mutations = 0, refreshes = 0;
+  int? logicalReadsAtMutation;
   int ownerCorruptions = 0;
-  bool fullPages = false;
+  bool fullPages = false, forceTodoContinuation = false;
   final pageSizes = <String, List<int>>{};
   int? challengeRead, mutationStatus, readbackStatus;
   int? failLogicalRead;
@@ -279,6 +295,7 @@ final class G15Server {
     reads[name] = occurrence;
     if (mutation) {
       mutations++;
+      logicalReadsAtMutation = logicalReads;
       onMutation?.call();
       mutationEntered?.complete();
       if (releaseMutation != null) await releaseMutation!.future;
@@ -668,7 +685,7 @@ final class G15Harness {
       ),
       knownSecrets: () => const {},
       safeDisplay: (value) => value,
-      ledger: const G15Ledger(),
+      ledger: productionAiLedger,
       httpCost: oauth
           ? null
           : (op) => aiWriteRequestAllowance(op, oauthReplay: false),
@@ -711,8 +728,10 @@ final class G15Harness {
 }
 
 void main() {
-  setUp(() => aiGroupWorkItemWritesEnabledForTesting = true);
-  tearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+  setUp(() {
+    expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+    expect(aiGroupWorkItemWritesEnabled, isTrue);
+  });
   test('seventeen group distributions pin static allowances independently', () {
     expect(g15LogicalReads, hasLength(17));
     for (final entry in g15LogicalReads.entries) {
@@ -730,15 +749,10 @@ void main() {
           .find(entry.key)!
           .modelVisible;
       // G14 exposes all fifteen group aliases and the two snooze rows.
+      expect(productionVisible, isTrue, reason: entry.key);
       expect(
-        productionVisible,
-        isTrue,
-        reason: entry.key,
-      );
-      expect(
-        const G15Ledger().find(entry.key)!.modelVisible,
-        isTrue,
-        reason: entry.key,
+        const G15Ledger().find(entry.key),
+        same(productionAiLedger.find(entry.key)),
       );
       expect(2 * entry.value + 1, lessThanOrEqualTo(40));
     }
@@ -892,6 +906,51 @@ void main() {
       });
     }
   }
+  for (final operation in ['snoozeTodo', 'unsnoozeTodo']) {
+    test(
+      '$operation truncated four-page ownership refuses even when found',
+      () async {
+        final h = await G15Harness.create();
+        addTearDown(h.dispose);
+        h.server.forceTodoContinuation = true;
+        final originalGrants = List.of(g0eScope.grants);
+        // The selected Todo is on page one, but ownership must be complete.
+        expect(await h.propose(operation, arguments: {'todoId': 1}), isNull);
+        final outcome = h.coordinator.recordedOutcomeFor('g15-0')!;
+        expect(outcome.state, AiJournalState.notExecuted);
+        expect(outcome.reasonCode, 'todoUnverifiable');
+        expect(outcome.mutationCount, 0);
+        expect(h.server.mutations, 0);
+        expect(h.server.logicalReads, 5);
+        expect(h.server.adapter.requests, hasLength(5));
+        expect(h.server.reads['user'], 1);
+        final query = operation == 'snoozeTodo'
+            ? 'MobilePendingTodosForSnooze'
+            : 'MobileSnoozedTodosForUnsnooze';
+        expect(h.server.reads[query], 4);
+        expect(h.server.pageSizes[query], [100, 100, 100, 100]);
+        expect(h.base.journal.entries(g0eAccount), isEmpty);
+        expect(g0eScope.grants, originalGrants);
+      },
+    );
+    test(
+      '$operation one OAuth replay after capture refuses without mutation',
+      () async {
+        final h = await G15Harness.create(oauth: true);
+        addTearDown(h.dispose);
+        h.server.challengeRead = 1;
+        expect(await h.propose(operation), isNull);
+        expect(
+          h.coordinator.recordedOutcomeFor('g15-0')!.reasonCode,
+          'workItemUnverifiable',
+        );
+        expect(h.server.logicalReads, 1);
+        expect(h.server.adapter.requests, hasLength(2));
+        expect(h.server.refreshAdapter.requests, hasLength(1));
+        expect(h.server.mutations, 0);
+      },
+    );
+  }
   for (final entry in g15LogicalReads.entries) {
     test(
       '${entry.key} reachable OAuth path counts refresh separately',
@@ -958,6 +1017,14 @@ void main() {
           isNotNull,
           reason: h.coordinator.outcomeFor('g15-0')?.reasonCode,
         );
+        final (proposalReads, preMutationReads, readbackReads) =
+            g15ReadPhases[entry.key]!;
+        expect(h.server.logicalReads, proposalReads);
+        expect(h.server.mutations, 0);
+        if (entry.key == 'updateGroupWorkItemDates') {
+          expect(h.server.reads['MobileWorkItemDatesBase'], 1);
+          expect(h.server.reads['MobileWorkItemDatesProbe'], 1);
+        }
         final reserved = h.budget.gitLabRequests;
         expect(reserved, entry.value + 1);
         final outcome = await h.approve(proposal!);
@@ -968,8 +1035,23 @@ void main() {
         );
         expect(outcome.mutationCount, 1);
         expect(h.server.mutations, 1);
+        expect(h.server.logicalReadsAtMutation, preMutationReads);
+        expect(
+          h.server.logicalReads - h.server.logicalReadsAtMutation!,
+          readbackReads,
+        );
         expect(h.server.logicalReads, entry.value, reason: '${h.server.reads}');
+        if (entry.key == 'updateGroupWorkItemDates') {
+          expect(h.server.reads['MobileWorkItemDatesBase'], 4);
+          expect(h.server.reads['MobileWorkItemDatesProbe'], 4);
+        }
         expect(h.server.adapter.requests, hasLength(entry.value + 1));
+        if (entry.key.endsWith('Todo')) {
+          final query = entry.key == 'snoozeTodo'
+              ? 'MobilePendingTodosForSnooze'
+              : 'MobileSnoozedTodosForUnsnooze';
+          expect(h.server.pageSizes[query], List.filled(8, 100));
+        }
         expect(h.budget.gitLabRequests, reserved);
         expect(outcome.readbackConfirmed, !entry.key.endsWith('Todo'));
       },
