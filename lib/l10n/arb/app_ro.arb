@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "Modificarea nu a intrat în vigoare: câmpul are încă vechea valoare. Citește din nou și reîncearcă.",
   "aiRefusedDiscussionLocked": "Această discuție este blocată, deci comentariul sau răspunsul nu a fost trimis.",
   "aiRefusedNotOwnNote": "Această acțiune poate șterge doar comentariile scrise de contul tău, deci nu s-a făcut nimic.",
-  "aiRefusedTodoForeign": "Acest de făcut aparține altui cont, deci nu s-a făcut nimic.",
+  "aiRefusedTodoForeign": "Nu s-a putut confirma că acest de făcut aparține acestui cont și intră în această conversație, deci nu s-a făcut nimic.",
   "aiRefusedProtectedBranch": "Aceasta este o ramură protejată; AI nu o poate șterge sau rescrie, deci nu s-a făcut nimic.",
   "aiRefusedDefaultBranch": "Ramura implicită nu poate fi ștearsă, deci nu s-a făcut nimic.",
   "aiRefusedMergeChecking": "GitLab încă verifică dacă se poate îmbina, deci nu s-a făcut nimic. Încearcă din nou în scurt timp.",
@@ -2849,5 +2849,18 @@
   "aiRecoveryOk": "Am înțeles",
   "aiRecoveryUncertain": "{count} scrieri AI erau în curs de trimitere când aplicația s-a închis ultima dată, iar rezultatul lor este necunoscut. Verifică în GitLab dacă au fost făcute; dacă AI propune mai târziu aceeași scriere, ți se va cere mai întâi confirmarea.",
   "aiRecoveryNotExecuted": "{count} scrieri AI au fost întrerupte înainte de trimitere; nimic nu a ajuns la GitLab.",
-  "aiRecoveryNoResend": "Aceste scrieri nu sunt retrimise automat, iar lucrul AI nu este reluat."
+  "aiRecoveryNoResend": "Aceste scrieri nu sunt retrimise automat, iar lucrul AI nu este reluat.",
+  "aiProposalGroupTarget": "Elementul de lucru #{iid}, care aparține direct grupului {path}",
+  "aiProposalOwnTodo": "Schimbă doar propria ta listă de făcut (@{username}); elementul de lucru în sine nu se schimbă.",
+  "aiProposalDeleteOwnNote": "Șterge doar acest comentariu, scris de tine; înainte de trimitere, aplicația verifică din nou în GitLab că tu ești autorul.",
+  "aiRefusedGroupUnsupported": "GitLab nu oferă această funcție pentru acest element de lucru al grupului (versiunea sau tipul elementului s-ar putea să nu o accepte), deci nu s-a trimis nimic.",
+  "aiRefusedGroupUnverifiable": "Nu s-a putut confirma că acest element de lucru aparține în continuare direct grupului său (grupul poate să fi fost redenumit sau mutat), deci nu s-a trimis nimic. Deschide-l sau adaugă-l din nou.",
+  "aiConsentWritesGroupScope": "Elementele de lucru ale unui grup: AI poate modifica doar elementul pentru care s-a deschis această conversație sau pe cele pe care le adaugi tu; permisiunea nu se extinde niciodată la întregul grup, la subgrupuri sau la proiectele lui.",
+  "aiChatEmptyGroup": "AI citește elementul de lucru #{iid} al grupului {path}. Celelalte elemente de lucru ale grupului și proiectele lui nu fac parte din această conversație.",
+  "aiChatEmptyGroupItem": "AI citește acest element de lucru al grupului. Celelalte elemente de lucru ale grupului și proiectele lui nu fac parte din această conversație.",
+  "aiSuggestWorkItemSummary": "Rezumă acest element de lucru",
+  "aiRemovedGroupWorkItem": "{path} #{iid} a fost eliminat din conversație; AI nu-l mai poate modifica",
+  "aiChatEmptyGroupAdded": "AI citește elementul de lucru #{iid} al grupului {path}. Elementele pe care le-ai adăugat (deasupra casetei de mesaj) fac și ele parte din această conversație; celelalte elemente de lucru ale grupului și proiectele lui nu.",
+  "aiChatEmptyGroupItemAdded": "AI citește acest element de lucru al grupului. Elementele pe care le-ai adăugat (deasupra casetei de mesaj) fac și ele parte din această conversație; celelalte elemente de lucru ale grupului și proiectele lui nu.",
+  "aiRefusedGroupDatesNotSent": "Datele nu au fost trimise: s-ar putea să coincidă deja cu cele actuale, iar pentru un element de lucru al grupului acest caz nu poate fi confirmat fără o cerere suplimentară. Citește din nou datele actuale și încearcă iar."
 }

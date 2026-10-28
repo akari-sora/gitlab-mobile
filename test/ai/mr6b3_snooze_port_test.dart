@@ -1406,6 +1406,81 @@ void main() {
       });
     }
 
+    for (final gateOn in [false, true]) {
+      test('$op global project survives user OAuth refresh gate=$gateOn', () async {
+        aiGroupWorkItemWritesEnabledForTesting = gateOn;
+        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        s.api.close();
+        s = _Server(
+          oauthReplay: true,
+          challengeRead: 1,
+          withGroupContext: true,
+        );
+        final prepared = await s.writePort.prepare(s.request(op, scope: _global));
+        expect(prepared.todoTarget, (projectId: 9, resource: 'issues', iid: 3));
+        expect(prepared.groupTodoTarget, isNull);
+        expect(prepared.groupIdentity, isNull);
+        final result = await s.commit(prepared) as port.AiWriteSettled;
+        expect(result.state, AiJournalState.succeeded);
+        expect(result.mutationCount, 1);
+        expect(s.refreshes, 1);
+        expect(s.userReads, 1);
+        expect(s.ownershipReads, 1);
+        expect(s.requests, hasLength(4));
+        expect(s.mutations, 1);
+      });
+    }
+
+    for (final challengedRead in [1, 2]) {
+      test('$op global group refuses OAuth epoch drift on read $challengedRead', () async {
+        aiGroupWorkItemWritesEnabledForTesting = true;
+        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        s.api.close();
+        s = _Server(
+          oauthReplay: true,
+          challengeRead: challengedRead,
+          withGroupContext: true,
+        );
+        s.todos = [_groupNode(
+          _args(op)['todoId']! as int,
+          snoozed: op == 'unsnoozeTodo',
+        )];
+        await expectLater(
+          s.writePort.prepare(s.request(op, scope: _global)),
+          _refused('todoUnverifiable'),
+        );
+        expect(s.refreshes, 1);
+        expect(s.userReads, 1);
+        expect(s.ownershipReads, 1);
+        expect(s.requests, hasLength(3));
+        expect(s.mutations, 0);
+      });
+    }
+
+    for (final phase in ['user', 'ownership']) {
+      test('$op global project refuses session revocation during $phase', () async {
+        aiGroupWorkItemWritesEnabledForTesting = true;
+        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        s.api.close();
+        s = _Server(withGroupContext: true);
+        s.beforeRequest = (request) {
+          if ((phase == 'user' && request.method == 'GET') ||
+              (phase == 'ownership' && request.method == 'POST')) {
+            s.live = false;
+          }
+        };
+        await expectLater(
+          s.writePort.prepare(s.request(op, scope: _global)),
+          phase == 'user'
+              ? _refused('workItemUnverifiable')
+              : throwsA(isA<ApiFailure>().having(
+                  (e) => e.kind, 'kind', FailureKind.cancelled,
+                )),
+        );
+        expect(s.mutations, 0);
+      });
+    }
+
     test('$op gate-on preserves project owner record', () async {
       aiGroupWorkItemWritesEnabledForTesting = true;
       addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);

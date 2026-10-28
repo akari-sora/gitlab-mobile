@@ -8236,7 +8236,7 @@ final class AppStrings {
   /// 這個寫入只能刪除你自己帳號寫的留言，所以沒有執行。
   String get aiRefusedNotOwnNote => language._messages[2713];
 
-  /// 這個待辦事項不屬於目前的帳號，所以沒有執行。
+  /// 無法確認這個待辦事項屬於目前的帳號，且在這個對話可處理的範圍內，所以沒有執行。
   String get aiRefusedTodoForeign => language._messages[2714];
 
   /// 這是受保護的分支，AI 不能刪除或改寫它，所以沒有執行。
@@ -8643,4 +8643,43 @@ final class AppStrings {
 
   /// 這些寫入不會自動重新送出，相關的 AI 工作也不會恢復。
   String get aiRecoveryNoResend => language._messages[2849];
+
+  /// 直接屬於群組 {path} 的工作項目 #{iid}
+  String aiProposalGroupTarget(Object? path, Object? iid) => _format(language, language._messages[2850], {'path': path, 'iid': iid});
+
+  /// 只會變更你（@{username}）自己的待辦清單，不會改動工作項目本身。
+  String aiProposalOwnTodo(Object? username) => _format(language, language._messages[2851], {'username': username});
+
+  /// 只會刪除你自己寫的這則留言；送出前會再向 GitLab 確認作者是你。
+  String get aiProposalDeleteOwnNote => language._messages[2852];
+
+  /// GitLab 沒有為這個群組工作項目提供這項功能（可能是版本或工作項目類型不支援），所以沒有送出。
+  String get aiRefusedGroupUnsupported => language._messages[2853];
+
+  /// 無法確認這個工作項目仍直接屬於它的群組（群組可能已改名或移動），所以沒有送出。請重新開啟或加入它。
+  String get aiRefusedGroupUnverifiable => language._messages[2854];
+
+  /// 群組擁有的工作項目：AI 只能修改這個對話開啟的那一項，或你自己加入對話的項目；授權不會擴及整個群組、子群組或群組裡的專案。
+  String get aiConsentWritesGroupScope => language._messages[2855];
+
+  /// AI 會讀取群組 {path} 的工作項目 #{iid}。群組的其他工作項目和群組裡的專案不在這個對話的範圍內。
+  String aiChatEmptyGroup(Object? path, Object? iid) => _format(language, language._messages[2856], {'path': path, 'iid': iid});
+
+  /// AI 會讀取這個群組工作項目。群組的其他工作項目和群組裡的專案不在這個對話的範圍內。
+  String get aiChatEmptyGroupItem => language._messages[2857];
+
+  /// 摘要這個工作項目
+  String get aiSuggestWorkItemSummary => language._messages[2858];
+
+  /// 已從對話移除 {path} #{iid}，AI 不能再修改它
+  String aiRemovedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[2859], {'path': path, 'iid': iid});
+
+  /// AI 會讀取群組 {path} 的工作項目 #{iid}。你加入對話的項目（列在輸入框上方）也在這個對話的範圍內；群組其他未加入的工作項目和群組裡的專案則不在範圍內。
+  String aiChatEmptyGroupAdded(Object? path, Object? iid) => _format(language, language._messages[2860], {'path': path, 'iid': iid});
+
+  /// AI 會讀取這個群組工作項目。你加入對話的項目（列在輸入框上方）也在這個對話的範圍內；群組其他未加入的工作項目和群組裡的專案則不在範圍內。
+  String get aiChatEmptyGroupItemAdded => language._messages[2861];
+
+  /// 日期沒有送出：要求的日期可能和目前相同，而群組工作項目在這種情況下無法不多送一次請求就確認歸屬。請重新讀取目前的日期後再試。
+  String get aiRefusedGroupDatesNotSent => language._messages[2862];
 }

@@ -11,6 +11,7 @@ import '../../group_work_item_identity.dart';
 import '../../instance.dart';
 import '../ai_transcript.dart';
 import '../app_text.dart';
+import '../draft_mentions.dart';
 import '../exact_edit.dart' as exact;
 import '../execution_gate.dart';
 import '../wire/wire_format.dart';
@@ -1020,6 +1021,9 @@ final class PolicyAiWriteCoordinator
       final id = _nonce();
       final attachment = _attachment(call.name, arguments);
       var request = _request(call.name, id, policy, arguments, attachment);
+      // Identifier lists need no server provenance. Refuse unsafe items before
+      // freshness or whole-field opening can issue the first HTTP request.
+      _prepareText(request, policy, const AiWriteFreshness(), stringListsOnly: true);
       final rawRequest = request;
       // The allowance remains charged once the first pre-read can start.
       reserved = false;
@@ -1491,6 +1495,7 @@ final class PolicyAiWriteCoordinator
       _requirePending(pending);
       var request = pending.request;
       requireGroupOpeningCurrent();
+      _prepareText(request, snapshot(), const AiWriteFreshness(), stringListsOnly: true);
       var fresh = await readFreshness(request);
       _requirePending(pending);
       requireGroupOpeningCurrent();
@@ -2272,14 +2277,16 @@ final class PolicyAiWriteCoordinator
   _prepareText(
     port.AiWriteRequest request,
     AiWritePolicySnapshot policy,
-    AiWriteFreshness fresh,
-  ) {
+    AiWriteFreshness fresh, {
+    bool stringListsOnly = false,
+  }) {
     final reasons = <AiFixedConfirmReason>[];
     final closingRefs = <String>[];
     final arguments = Map<String, Object?>.from(request.arguments);
     final capability = ledger.find(request.operationId)!;
     final project = arguments['projectId'] as int?;
     String prepare(String value, String field, AiArgSpec spec, String path) {
+      final listItem = spec.type == AiArgType.stringList;
       final classA = spec.text == AiTextRole.quickActionMarkdown;
       // §3.1, placeholder substitution: `[[attachment:att-<n>]]` quotes an
       // upload this conversation finished in an earlier batch, into the
@@ -2300,10 +2307,10 @@ final class PolicyAiWriteCoordinator
             ? text.AiTextClass.quickActionMarkdown
             : text.AiTextClass.plainContent,
         modelText: value,
-        field: fresh.provenance[field],
+        field: listItem ? null : fresh.provenance[field],
         placeholders: placeholders,
         knownSecrets: knownSecrets(),
-        aiAttribution: policy.aiAttribution && classA,
+        aiAttribution: !listItem && policy.aiAttribution && classA,
         visibility: text.AiVisibilityContext(
           polluted: fresh.polluted,
           visibilityUnreadable: fresh.visibilityUnreadable,
@@ -2323,7 +2330,8 @@ final class PolicyAiWriteCoordinator
             ? null
             : attachmentSubstitution?.call(project),
         sameProjectClassA: project != null && !otherProject,
-        currentFieldValue: fresh.currentFields[field],
+        currentFieldValue: listItem ? null : fresh.currentFields[field],
+        allowRebuiltUploads: !listItem,
       );
       if (outcome.policyBlocked || outcome.finalText == null) {
         // An id with no succeeded upload in this project.
@@ -2332,6 +2340,18 @@ final class PolicyAiWriteCoordinator
               ? 'attachmentNotUploaded'
               : outcome.blockedReasonCode,
         );
+      }
+      if (listItem) {
+        final mentions = spec.allowIdentifierMentions
+            ? null
+            : analyzeDraftMentions(outcome.finalText!);
+        final checked = mentions?.text ?? outcome.finalText!;
+        // These are exact server identifiers. Sanitizing one could select a
+        // different label/user, so policy changes refuse the entire request.
+        if (checked != value || (mentions?.mentions.isNotEmpty ?? false)) {
+          throw const _WriteBlocked('policyBlocked');
+        }
+        return value;
       }
       if (spec.text == AiTextRole.pathOrRef) return outcome.finalText!;
       reasons.addAll(
@@ -2372,8 +2392,15 @@ final class PolicyAiWriteCoordinator
 
     Object? visit(Object? value, AiArgSpec spec, String field, String path) {
       if (spec.text == AiTextRole.fragmentEdits) return value;
-      if (spec.type == AiArgType.stringList) return value;
-      if (value is String) return prepare(value, field, spec, path);
+      if (spec.type == AiArgType.stringList) {
+        return [
+          for (final item in value as List<Object?>)
+            prepare(item! as String, field, spec, path),
+        ];
+      }
+      if (value is String) {
+        return stringListsOnly ? value : prepare(value, field, spec, path);
+      }
       if (value is Map<String, Object?>) {
         final properties = _nestedProperties(spec);
         final nestedPath = value['file_path'] ?? value['path'] ?? path;

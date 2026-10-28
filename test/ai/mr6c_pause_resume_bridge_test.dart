@@ -26,7 +26,7 @@ Future<T> _guardedRead<T>(
     }
     return true;
   }
-  return RequestMeter(beforeRequest: current).runAsync(
+  return RequestMeter(onRequest: current).runAsync(
     () => CachedRead.run(read, mayStart: current),
   );
 }

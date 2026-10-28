@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "La modifica non ha avuto effetto: il campo mostra ancora il valore precedente. Rileggi e riprova.",
   "aiRefusedDiscussionLocked": "Questa discussione è bloccata, quindi il commento o la risposta non è stato inviato.",
   "aiRefusedNotOwnNote": "Questa azione può eliminare solo commenti scritti dal tuo stesso account, quindi non è stato fatto nulla.",
-  "aiRefusedTodoForeign": "Questa cosa da fare appartiene a un altro account, quindi non è stato fatto nulla.",
+  "aiRefusedTodoForeign": "Non è stato possibile confermare che questa cosa da fare appartenga a questo account e rientri in questa conversazione, quindi non è stato fatto nulla.",
   "aiRefusedProtectedBranch": "Questo branch è protetto; l'IA non può eliminarlo né riscriverlo, quindi non è stato fatto nulla.",
   "aiRefusedDefaultBranch": "Il branch predefinito non può essere eliminato, quindi non è stato fatto nulla.",
   "aiRefusedMergeChecking": "GitLab sta ancora verificando se l'unione è possibile, quindi non è stato fatto nulla. Riprova tra poco.",
@@ -2849,5 +2849,18 @@
   "aiRecoveryOk": "Ho capito",
   "aiRecoveryUncertain": "{count} scritture AI erano in fase di invio all’ultima chiusura dell’app e il loro risultato è sconosciuto. Controlla in GitLab se sono state fatte; se in seguito la AI propone la stessa scrittura, ti verrà chiesto prima di confermarla.",
   "aiRecoveryNotExecuted": "{count} scritture AI sono state interrotte prima dell’invio; a GitLab non è arrivato nulla.",
-  "aiRecoveryNoResend": "Queste scritture non vengono inviate di nuovo automaticamente e il lavoro AI non riprende."
+  "aiRecoveryNoResend": "Queste scritture non vengono inviate di nuovo automaticamente e il lavoro AI non riprende.",
+  "aiProposalGroupTarget": "Elemento di lavoro #{iid}, che appartiene direttamente al gruppo {path}",
+  "aiProposalOwnTodo": "Cambia solo il tuo elenco di cose da fare (@{username}); l’elemento di lavoro non cambia.",
+  "aiProposalDeleteOwnNote": "Elimina solo questo commento, scritto da te; prima dell’invio, l’app verifica di nuovo su GitLab che ne sei l’autore.",
+  "aiRefusedGroupUnsupported": "GitLab non offre questa funzione per questo elemento di lavoro del gruppo (la versione o il tipo di elemento potrebbero non supportarla), quindi non è stato inviato nulla.",
+  "aiRefusedGroupUnverifiable": "Non è stato possibile confermare che questo elemento di lavoro appartenga ancora direttamente al suo gruppo (il gruppo potrebbe essere stato rinominato o spostato), quindi non è stato inviato nulla. Aprilo o aggiungilo di nuovo.",
+  "aiConsentWritesGroupScope": "Elementi di lavoro di un gruppo: l’IA può modificare solo quello da cui è stata aperta questa conversazione o quelli che aggiungi tu; l’autorizzazione non si estende mai all’intero gruppo, ai sottogruppi o ai suoi progetti.",
+  "aiChatEmptyGroup": "L’IA legge l’elemento di lavoro #{iid} del gruppo {path}. Gli altri elementi di lavoro del gruppo e i suoi progetti sono esclusi da questa conversazione.",
+  "aiChatEmptyGroupItem": "L’IA legge questo elemento di lavoro del gruppo. Gli altri elementi di lavoro del gruppo e i suoi progetti sono esclusi da questa conversazione.",
+  "aiSuggestWorkItemSummary": "Riassumi questo elemento di lavoro",
+  "aiRemovedGroupWorkItem": "{path} #{iid} rimosso dalla conversazione; l’IA non può più modificarlo",
+  "aiChatEmptyGroupAdded": "L’IA legge l’elemento di lavoro #{iid} del gruppo {path}. Anche gli elementi che hai aggiunto (sopra la casella del messaggio) fanno parte di questa conversazione; gli altri elementi di lavoro del gruppo e i suoi progetti no.",
+  "aiChatEmptyGroupItemAdded": "L’IA legge questo elemento di lavoro del gruppo. Anche gli elementi che hai aggiunto (sopra la casella del messaggio) fanno parte di questa conversazione; gli altri elementi di lavoro del gruppo e i suoi progetti no.",
+  "aiRefusedGroupDatesNotSent": "Le date non sono state inviate: potrebbero già coincidere con quelle attuali e, per un elemento di lavoro del gruppo, questo caso non si può confermare senza una richiesta aggiuntiva. Rileggi le date attuali e riprova."
 }

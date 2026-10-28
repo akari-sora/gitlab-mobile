@@ -448,7 +448,7 @@ class _EntryRow extends StatelessWidget {
       title: Text(aiOperationLabel(entry.operationId)),
       subtitle: Text(
         [
-          isolated(entry.releaseName),
+          aiWriteTargetText(entry.operationId, entry.releaseName),
           aiJournalStateLabel(entry.state),
           if (when.isNotEmpty) when,
         ].join(' · '),
@@ -504,7 +504,7 @@ class _InterruptedRow extends StatelessWidget {
                     ),
                     Text(
                       [
-                        isolated(entry.releaseName),
+                        aiWriteTargetText(entry.operationId, entry.releaseName),
                         if (when.isNotEmpty) when,
                       ].join(' · '),
                       style: theme.textTheme.bodySmall,
