@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_work_item_write_registry.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
@@ -12,13 +14,200 @@ import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_status.dart';
 
 import '../support/fake_adapter.dart';
+import '../support/widget_settle.dart';
+import '../support/work_item_health_parent_fixture.dart';
+import '../support/work_item_status_fixture.dart';
 import 'mr6b3g_support.dart';
 
 // These tests exercise the real coordinator and journal through the explicitly
 // synthetic G0e graph port. The port's send counter is not an HTTP counter.
 void main() {
-  setUp(() => aiGroupWorkItemWritesEnabledForTesting = true);
-  tearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+  setUp(() {
+    expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+    expect(aiGroupWorkItemWritesAreEnabled, isTrue);
+  });
+
+  for (final uiKind in AiWorkItemWriteKind.values) {
+    testWidgets('group UI ${uiKind.name} write excludes every AI registry kind', (
+      tester,
+    ) async {
+      final fixture = WorkItemHealthParentFixture();
+      final api = fixture.primaryApi();
+      addTearDown(fixture.closeAll);
+      addTearDown(fixture.releaseHolds);
+      await tester.binding.setSurfaceSize(const Size(1000, 2400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: GraphWorkItemDetailPage.namespace(
+              account: fixture.account,
+              api: api,
+              namespacePath: WorkItemStatusFixture.groupRef.fullPath,
+              expectedNamespaceId: WorkItemStatusFixture.groupRef.id,
+              iid: WorkItemStatusFixture.sharedIid,
+              sessionGeneration: 12,
+              isCurrent: () => true,
+            ),
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      if (uiKind == AiWorkItemWriteKind.status) {
+        final attributes = find.text('屬性');
+        await tester.ensureVisible(attributes);
+        await tester.tap(attributes);
+        await settleNetworkWidgets(tester);
+      }
+      final edit = find.byKey(ValueKey('work-item-${uiKind.name}-edit'));
+      await tester.ensureVisible(edit);
+      await tester.tap(edit);
+      await settleNetworkWidgets(tester);
+      if (uiKind == AiWorkItemWriteKind.dates) {
+        await tester.enterText(
+          find.byKey(const ValueKey('work-item-dates-start-input')),
+          '2026-11-02',
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('work-item-dates-due-input')),
+          '2026-11-09',
+        );
+      } else {
+        final choice = uiKind == AiWorkItemWriteKind.health
+            ? find.byKey(const ValueKey('work-item-health-choice-onTrack'))
+            : find.byKey(
+                const ValueKey(
+                  'work-item-status-choice-${WorkItemStatusFixture.statusDoing}',
+                ),
+              );
+        final scrollable = uiKind == AiWorkItemWriteKind.health
+            ? find.descendant(
+                of: find.byKey(const ValueKey('work-item-health-scroll')),
+                matching: find.byType(Scrollable),
+              )
+            : find.byType(Scrollable).last;
+        await tester.scrollUntilVisible(choice, 120, scrollable: scrollable);
+        await tester.tap(choice);
+      }
+      await tester.pump();
+      final held = Completer<void>();
+      switch (uiKind) {
+        case AiWorkItemWriteKind.status:
+          fixture.status.holdBeforeApply = held;
+        case AiWorkItemWriteKind.dates:
+          fixture.dates.holdBeforeApply = held;
+        case AiWorkItemWriteKind.health:
+          fixture.holdBeforeApply = held;
+      }
+      await tester.tap(find.byKey(ValueKey('work-item-${uiKind.name}-save')));
+      final registry = createAiWorkspaceWorkItemWriteRegistry(
+        api: api,
+        accountKey: fixture.account.key,
+        instanceKey: api.instance.key,
+        generation: 12,
+        isCurrent: () => true,
+      );
+      const gid = WorkItemStatusFixture.groupItemId;
+      await pumpUntil(tester, () => registry.isActive(gid));
+      await pumpUntil(
+        tester,
+        () => switch (uiKind) {
+          AiWorkItemWriteKind.status => fixture.status.awaitingApply,
+          AiWorkItemWriteKind.dates => fixture.dates.awaitingApply,
+          AiWorkItemWriteKind.health => fixture.awaitingApply,
+        },
+      );
+      for (final kind in AiWorkItemWriteKind.values) {
+        expect(registry.tryStart(gid, kind), isNull, reason: kind.name);
+      }
+      held.complete();
+      await pumpUntil(tester, () => !registry.isActive(gid));
+      await settleNetworkWidgets(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await settleNetworkWidgets(tester);
+    });
+  }
+
+  testWidgets('group AI leases disable all three real UI edit controls', (
+    tester,
+  ) async {
+    final fixture = WorkItemHealthParentFixture();
+    final api = fixture.primaryApi();
+    addTearDown(fixture.closeAll);
+    await tester.binding.setSurfaceSize(const Size(1000, 2400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: GraphWorkItemDetailPage.namespace(
+            account: fixture.account,
+            api: api,
+            namespacePath: WorkItemStatusFixture.groupRef.fullPath,
+            expectedNamespaceId: WorkItemStatusFixture.groupRef.id,
+            iid: WorkItemStatusFixture.sharedIid,
+            sessionGeneration: 12,
+            isCurrent: () => true,
+          ),
+        ),
+      ),
+    );
+    await settleNetworkWidgets(tester);
+    final attributes = find.text('屬性');
+    await tester.ensureVisible(attributes);
+    await tester.tap(attributes);
+    await settleNetworkWidgets(tester);
+    final registry = createAiWorkspaceWorkItemWriteRegistry(
+      api: api,
+      accountKey: fixture.account.key,
+      instanceKey: api.instance.key,
+      generation: 12,
+      isCurrent: () => true,
+    );
+    const gid = WorkItemStatusFixture.groupItemId;
+    for (final aiKind in AiWorkItemWriteKind.values) {
+      for (final uiKind in AiWorkItemWriteKind.values) {
+        final edit = find.byKey(ValueKey('work-item-${uiKind.name}-edit'));
+        expect(edit, findsOneWidget, reason: '${aiKind.name}/${uiKind.name}');
+        expect(
+          tester.widget<TextButton>(edit).onPressed,
+          isNotNull,
+          reason: 'baseline ${aiKind.name}/${uiKind.name}',
+        );
+      }
+      final lease = registry.tryStart(gid, aiKind);
+      expect(lease, isNotNull, reason: aiKind.name);
+      await tester.pump();
+      final before = (
+        fixture.status.mutationInputs.length,
+        fixture.dates.datesMutationRequests,
+        fixture.healthMutationRequests,
+      );
+      for (final uiKind in AiWorkItemWriteKind.values) {
+        final edit = find.byKey(ValueKey('work-item-${uiKind.name}-edit'));
+        expect(
+          tester.widget<TextButton>(edit).onPressed,
+          isNull,
+          reason: '${aiKind.name}/${uiKind.name}',
+        );
+        await tester.ensureVisible(edit);
+        await tester.tap(edit);
+        await tester.pump();
+      }
+      expect(
+        (
+          fixture.status.mutationInputs.length,
+          fixture.dates.datesMutationRequests,
+          fixture.healthMutationRequests,
+        ),
+        before,
+        reason: aiKind.name,
+      );
+      registry.settle(lease!, AiWorkItemWriteResult.notSent, null);
+      await settleNetworkWidgets(tester);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    await settleNetworkWidgets(tester);
+  });
 
   for (final operation in <String, Map<String, Object?>>{
     'updateGroupWorkItemState': {'stateEvent': 'close'},
@@ -30,7 +219,8 @@ void main() {
   }.entries) {
     test('${operation.key} double approval has one durable dispatch', () async {
       final h = await _harness();
-      final proposal = await h.coordinator.propose(
+      final coordinator = _Policy(h).coordinator();
+      final proposal = await coordinator.propose(
         h.call(operation.key, operation.value),
       );
       expect(proposal, isNotNull);
@@ -38,9 +228,9 @@ void main() {
         writesBeforeBarrier: 1,
         afterPersist: true,
       );
-      final first = h.coordinator.approve(proposal!);
+      final first = coordinator.approve(proposal!);
       await entered;
-      final second = h.coordinator.approve(proposal);
+      final second = coordinator.approve(proposal);
       expect(h.graph.mutations, 0);
       final disk = await h.base.readDurableJournal();
       expect(
@@ -352,7 +542,7 @@ final class _Policy {
       placeholders: h.placeholders,
       knownSecrets: () => const {},
       safeDisplay: (value) => value,
-      ledger: const G0eLedger(),
+      ledger: productionAiLedger,
       now: () => clock,
     );
     result.beginRun('Update this group work item.');

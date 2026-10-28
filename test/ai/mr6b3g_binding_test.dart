@@ -1,14 +1,63 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
+import 'package:gitlab_mobile/features/ai/ai_scope_add.dart';
+import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import '../support/fake_adapter.dart';
 import '../support/namespace_work_item_query.dart';
 import 'mr6b3g_support.dart';
-import 'mr6b3g_ui_add_test.dart' as ui_add;
-import 'mr6b3_snooze_port_test.dart' as snooze;
+import 'fx_coord_support.dart';
+
+const _expectedPendingTodosForSnoozeQuery = r'''
+query MobilePendingTodosForSnooze($first: Int!, $after: String) {
+  currentUser {
+    id
+    todos(state: pending, isSnoozed: false, first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id targetType snoozedUntil
+        project { id fullPath }
+        group { id fullPath }
+        targetEntity {
+          __typename
+          ... on Issue { issueId: id iid projectId }
+          ... on MergeRequest { mergeRequestId: id iid mergeRequestProject: project { id fullPath } }
+          ... on WorkItem {
+            workItemId: id iid workItemProject: project { id fullPath } namespace { id fullPath }
+          }
+        }
+      }
+    }
+  }
+}''';
+
+const _expectedSnoozedTodosForUnsnoozeQuery = r'''
+query MobileSnoozedTodosForUnsnooze($first: Int!, $after: String) {
+  currentUser {
+    id
+    todos(state: pending, isSnoozed: true, first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id targetType snoozedUntil
+        project { id fullPath }
+        group { id fullPath }
+        targetEntity {
+          __typename
+          ... on Issue { issueId: id iid projectId }
+          ... on MergeRequest { mergeRequestId: id iid mergeRequestProject: project { id fullPath } }
+          ... on WorkItem {
+            workItemId: id iid workItemProject: project { id fullPath } namespace { id fullPath }
+          }
+        }
+      }
+    }
+  }
+}''';
 
 Map<String, Object?> _namespace({int group = 7, int itemGroup = 7}) => {
   'id': 'gid://gitlab/Group/$group',
@@ -45,10 +94,434 @@ AiTargetRef _target({
 );
 
 void main() {
-  // Integrate the existing real UI-add and snooze FakeAdapter fixtures; these
-  // are run here rather than treating their historical runs as new evidence.
-  group('G15 UI-add ownership integration', ui_add.main);
-  group('G15 selected group todo integration', snooze.main);
+  for (final scenario in ['verified', 'drift', 'foreign', 'project']) {
+    test('UI-add $scenario uses fresh identity and production gate', () async {
+      expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+      expect(aiGroupWorkItemWritesAreEnabled, isTrue);
+      var reads = 0;
+      final h = await StackHarness.create(
+        configure: (server) {
+          server.overrides['GET groups/team/sub'] = (_) => jsonResponse({
+            'id': 7,
+            'name': 'Sub',
+            'full_path': g0ePath,
+            'visibility': 'private',
+          });
+          server.overrides['GET groups/7'] = (_) => jsonResponse({
+            'id': 7,
+            'full_path': g0ePath,
+            'visibility': 'private',
+          });
+          server.overrides['POST '] = (request) {
+            final body = request.data! as Map;
+            expect(body['query'], namespaceWorkItemQuery);
+            expect(body['variables'], {'path': g0ePath, 'iid': '5'});
+            reads++;
+            final value = _namespace(
+              group: scenario == 'foreign' ? 8 : 7,
+              itemGroup: scenario == 'foreign' ? 8 : 7,
+            );
+            final item = value['workItem']! as Map<String, Object?>;
+            if (scenario == 'drift' && reads == 2) {
+              item['id'] = 'gid://gitlab/WorkItem/92';
+            }
+            if (scenario == 'project') {
+              item['project'] = {
+                'id': 'gid://gitlab/Project/7',
+                'fullPath': '$g0ePath/app',
+              };
+              item['namespace'] = {
+                'id': 'gid://gitlab/Namespaces::ProjectNamespace/7',
+                'fullPath': '$g0ePath/app',
+              };
+            }
+            return jsonResponse({
+              'data': {'namespace': value},
+            });
+          };
+        },
+      );
+      addTearDown(h.dispose);
+      const link = 'https://example.com/gitlab/groups/team/sub/-/work_items/5';
+      if (scenario == 'verified') await h.controller.send('First question');
+      final before = h.server.adapter.requests.length;
+      final check = await h.controller.checkGroupWorkItem(link);
+      if (scenario != 'verified') {
+        expect(check, isA<AiGroupWorkItemRefused>());
+        expect(
+          (check as AiGroupWorkItemRefused).reason,
+          AiGroupWorkItemRefusal.notGroupOwned,
+        );
+        expect(h.controller.addedGroupWorkItems, isEmpty);
+        expect(
+          h.controller.writePolicySnapshot!.scope.uiAddedGroupWorkItems,
+          isEmpty,
+        );
+        expect(
+          h.server.adapter.requests
+              .skip(before)
+              .every(
+                (request) =>
+                    request.method == 'GET' ||
+                    !((request.data as Map)['query'] as String).startsWith(
+                      'mutation ',
+                    ),
+              ),
+          isTrue,
+        );
+        return;
+      }
+      expect(check, isA<AiGroupWorkItemCandidate>());
+      expect(h.controller.addedGroupWorkItems, isEmpty);
+      expect(
+        await h.controller.addGroupWorkItem(check as AiGroupWorkItemCandidate),
+        isNull,
+      );
+      expect(
+        h
+            .controller
+            .writePolicySnapshot!
+            .scope
+            .uiAddedGroupWorkItems
+            .single
+            .workItemGid,
+        'gid://gitlab/WorkItem/91',
+      );
+      await h.controller.send('Second question');
+      expect(h.provider.bodies, hasLength(2));
+      expect(h.provider.bodies.last, contains('conversation_summary'));
+      expect(h.provider.bodies.last, contains('updateGroupWorkItemState'));
+      expect(
+        h.controller.items.whereType<AiNoticeItem>().where(
+          (item) => item.kind == AiNoticeKind.segmentSummary,
+        ),
+        hasLength(1),
+      );
+      h.controller.removeGroupWorkItem(h.controller.addedGroupWorkItems.single);
+      final next =
+          await h.controller.checkGroupWorkItem(link)
+              as AiGroupWorkItemCandidate;
+      await h.settings.revokeConsent(h.account, stackProviderConfig.id);
+      expect(await h.controller.addGroupWorkItem(next), isNotNull);
+      expect(h.controller.blocker, AiChatBlocker.consentRequired);
+      expect(
+        h.controller.writePolicySnapshot!.scope.uiAddedGroupWorkItems,
+        isEmpty,
+      );
+    });
+  }
+
+  for (final drift in ['none', 'gid', 'owner', 'path']) {
+    test(
+      'UI-added identity writes through coordinator with post-add $drift',
+      () async {
+        var added = false;
+        var state = 'OPEN';
+        var revision = '2026-10-02T00:00:00Z';
+        var stateReads = 0;
+        var mutations = 0;
+        String itemId() => added && drift == 'gid'
+            ? 'gid://gitlab/WorkItem/92'
+            : 'gid://gitlab/WorkItem/91';
+        final h = await StackHarness.create(
+          configure: (server) {
+            server.overrides['GET groups/team/sub'] = (_) => jsonResponse({
+              'id': 7,
+              'name': 'Sub',
+              'full_path': g0ePath,
+              'visibility': 'private',
+            });
+            server.overrides['GET groups/7'] = (_) => jsonResponse({
+              'id': 7,
+              'full_path': g0ePath,
+              'visibility': 'private',
+            });
+            server.overrides['POST '] = (request) {
+              final body = request.data as Map;
+              final query = body['query'] as String;
+              final namespace = _namespace();
+              final detail = namespace['workItem']! as Map<String, Object?>;
+              detail['id'] = itemId();
+              detail['state'] = state;
+              detail['updatedAt'] = revision;
+              if (added && drift == 'owner') {
+                namespace['id'] = 'gid://gitlab/Group/8';
+                detail['namespace'] = {
+                  'id': 'gid://gitlab/Group/8',
+                  'fullPath': g0ePath,
+                };
+              } else if (added && drift == 'path') {
+                namespace['fullPath'] = 'team/renamed';
+                detail['namespace'] = {
+                  'id': 'gid://gitlab/Group/7',
+                  'fullPath': 'team/renamed',
+                };
+              }
+              if (query == namespaceWorkItemQuery) {
+                return jsonResponse({
+                  'data': {'namespace': namespace},
+                });
+              }
+              Map<String, Object?> stateNode() => {
+                'id': itemId(),
+                'iid': '5',
+                'state': state,
+                'updatedAt': revision,
+                'project': null,
+                'namespace': {
+                  'id': 'gid://gitlab/Group/7',
+                  'fullPath': g0ePath,
+                },
+                'workItemType': {'id': 'gid://gitlab/WorkItems::Type/1'},
+                'userPermissions': {'updateWorkItem': true},
+              };
+              if (query.startsWith('query MobileWorkItemState(')) {
+                stateReads++;
+                return jsonResponse({
+                  'data': {'workItem': stateNode()},
+                });
+              }
+              if (query.startsWith('mutation MobileUpdateWorkItemState(')) {
+                mutations++;
+                state = 'CLOSED';
+                revision = '2026-10-02T01:00:00Z';
+                return jsonResponse({
+                  'data': {
+                    'workItemUpdate': {
+                      'errors': <Object?>[],
+                      'workItem': stateNode(),
+                    },
+                  },
+                });
+              }
+              throw StateError('Unexpected synthetic GraphQL query: $query');
+            };
+          },
+        );
+        addTearDown(h.dispose);
+        const link =
+            'https://example.com/gitlab/groups/team/sub/-/work_items/5';
+        final candidate = await h.controller.checkGroupWorkItem(link);
+        expect(candidate, isA<AiGroupWorkItemCandidate>());
+        expect(
+          await h.controller.addGroupWorkItem(
+            candidate as AiGroupWorkItemCandidate,
+          ),
+          isNull,
+        );
+        expect(
+          h
+              .controller
+              .writePolicySnapshot!
+              .scope
+              .uiAddedGroupWorkItems
+              .single
+              .workItemGid,
+          'gid://gitlab/WorkItem/91',
+        );
+        // The server changes only after the real controller has saved the identity.
+        added = true;
+        final before = h.server.adapter.requests.length;
+        h.provider.script.add(
+          (_) => toolTurn('updateGroupWorkItemState', {
+            'groupId': 7,
+            'iid': 5,
+            'stateEvent': 'close',
+            'reason': 'The user requested it.',
+          }),
+        );
+        final sending = h.controller.send('Close team/sub#5');
+        await waitFor(
+          () =>
+              h.controller.proposals.isNotEmpty ||
+              h.controller.phase == AiChatPhase.idle,
+        );
+        final proposals = h.controller.proposals.toList();
+        if (drift == 'none') {
+          expect(proposals, hasLength(1));
+          expect(mutations, 0);
+          final result = await h.controller.approveWrite(proposals.single);
+          await sending;
+          expect(
+            result.state,
+            AiJournalState.succeeded,
+            reason: result.reasonCode,
+          );
+          expect(result.readbackConfirmed, isTrue);
+          expect(result.mutationCount, 1);
+          expect(mutations, 1);
+          expect(state, 'CLOSED');
+        } else {
+          // Clean up a surprise proposal before asserting: this also makes a
+          // skipped GID guard fail without leaving the runner waiting forever.
+          if (proposals.isNotEmpty) {
+            await h.controller.rejectWrite(proposals.single);
+          }
+          await sending;
+          expect(proposals, isEmpty);
+          final writes = h.controller.items.whereType<AiToolRunItem>().where(
+            (item) => item.name == 'updateGroupWorkItemState',
+          );
+          expect(writes.single.writeStatus, AiWriteResultStatus.notExecuted);
+          expect(mutations, 0);
+          if (drift == 'gid') {
+            // The fresh replacement reaches state opening, so only the
+            // coordinator's post-add comparison can reject this identity here.
+            expect(stateReads, 1);
+          }
+        }
+        final reads = h.server.adapter.requests.skip(before).where((request) {
+          final body = request.data;
+          return body is Map && body['query'] == namespaceWorkItemQuery;
+        }).toList();
+        expect(reads, isNotEmpty);
+        expect((reads.first.data as Map)['variables'], {
+          'path': g0ePath,
+          'iid': '5',
+        });
+      },
+    );
+  }
+
+  for (final operation in ['snoozeTodo', 'unsnoozeTodo']) {
+    for (final scenario in ['group', 'projectless', 'fakeOuter', 'foreign']) {
+      test('$operation production group ownership: $scenario', () async {
+        expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+        expect(aiGroupWorkItemWritesAreEnabled, isTrue);
+        final group = {'id': 'gid://gitlab/Group/7', 'fullPath': g0ePath};
+        final entity = <String, Object?>{
+          '__typename': 'WorkItem',
+          'workItemId': 'gid://gitlab/WorkItem/91',
+          'iid': '5',
+          'workItemProject': null,
+          'namespace': group,
+        };
+        final node = <String, Object?>{
+          'id': 'gid://gitlab/Todo/400',
+          'targetType': 'WORKITEM',
+          'snoozedUntil': operation == 'unsnoozeTodo'
+              ? '2099-01-01T00:00:00Z'
+              : null,
+          'project': null,
+          'group': group,
+          'targetEntity': entity,
+        };
+        if (scenario == 'projectless') {
+          node['group'] = null;
+          node['targetEntity'] = null;
+        } else if (scenario == 'fakeOuter') {
+          node['project'] = {
+            'id': 'gid://gitlab/Project/7',
+            'fullPath': g0ePath,
+          };
+          node['group'] = null;
+        } else if (scenario == 'foreign') {
+          final foreign = {'id': 'gid://gitlab/Group/8', 'fullPath': g0ePath};
+          node['group'] = foreign;
+          entity['namespace'] = foreign;
+        }
+        var mutations = 0;
+        final adapter = FakeAdapter((request) {
+          if (request.method == 'GET') {
+            return jsonResponse({'id': 7, 'username': 'tester'});
+          }
+          final body = request.data as Map;
+          final query = body['query'] as String;
+          final variables = body['variables'] as Map;
+          if (query.startsWith('query ')) {
+            return jsonResponse({
+              'data': {
+                'currentUser': {
+                  'id': 'gid://gitlab/User/7',
+                  'todos': {
+                    'nodes': [node],
+                    'pageInfo': {'hasNextPage': false, 'endCursor': null},
+                  },
+                },
+              },
+            });
+          }
+          expect(query, startsWith('mutation MobileTodo'));
+          mutations++;
+          return jsonResponse({
+            'data': {
+              operation == 'snoozeTodo' ? 'todoSnooze' : 'todoUnSnooze': {
+                'todo': {
+                  'id': variables['id'],
+                  'snoozedUntil': operation == 'snoozeTodo'
+                      ? '2099-01-01T00:00:00Z'
+                      : null,
+                },
+                'errors': <String>[],
+              },
+            },
+          });
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final writer = port.GitLabAiWritePort(
+          api,
+          accountKey: g0eAccount,
+          sessionGeneration: 7,
+          isCurrent: () => true,
+        );
+        const global = AiWriteScope(
+          accountKey: g0eAccount,
+          grants: [AiScopeGrant(kind: AiScopeKind.accountGlobal)],
+        );
+        final request = port.AiWriteRequest(
+          operationId: operation,
+          executionId: 'g15-todo-$scenario',
+          scope: scenario == 'projectless' || scenario == 'fakeOuter'
+              ? global
+              : g0eScope,
+          arguments: {
+            'todoId': 400,
+            if (operation == 'snoozeTodo') 'until': '2099-01-01T00:00:00Z',
+          },
+        );
+        if (scenario == 'group') {
+          final prepared = await writer.prepare(request);
+          expect(prepared.projectPath, isNull);
+          expect(prepared.groupTodoTarget?.groupId, 7);
+          expect(prepared.releaseName, '@tester');
+          prepared.bindGraphBeforeMutation(() async {});
+          final outcome = await writer.commit(prepared, mayStart: () => true);
+          expect(outcome, isA<port.AiWriteSettled>());
+          expect((outcome as port.AiWriteSettled).mutationCount, 1);
+          expect(outcome.readbackVerified, isFalse);
+          expect(mutations, 1);
+          expect(adapter.requests, hasLength(3));
+        } else {
+          await expectLater(
+            writer.prepare(request),
+            throwsA(
+              isA<port.AiWriteRefused>().having(
+                (error) => error.reason,
+                'reason',
+                scenario == 'foreign'
+                    ? 'todoUnverifiable'
+                    : 'todoUnsupportedTarget',
+              ),
+            ),
+          );
+          expect(mutations, 0);
+          expect(adapter.requests, hasLength(2));
+        }
+        // Inspect recorded traffic after the call: Dio can wrap assertions
+        // thrown inside the responder as the refusal that a negative expects.
+        final ownershipRead = adapter.requests[1].data as Map;
+        expect(ownershipRead.keys, unorderedEquals(['query', 'variables']));
+        expect(
+          ownershipRead['query'],
+          operation == 'snoozeTodo'
+              ? _expectedPendingTodosForSnoozeQuery
+              : _expectedSnoozedTodosForUnsnoozeQuery,
+        );
+        expect(ownershipRead['variables'], {'first': 100, 'after': null});
+      });
+    }
+  }
 
   for (final (outer, inner) in [(7, 7), (8, 8), (7, 8)]) {
     test(
@@ -111,10 +584,10 @@ void main() {
   test(
     'UI-added authority requires exact verified owner and item; no siblings or descendants',
     () {
-      aiGroupWorkItemWritesEnabledForTesting = true;
-      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+      expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+      expect(aiGroupWorkItemWritesAreEnabled, isTrue);
       final api = Object();
-      final row = const G0eLedger().find('updateGroupWorkItemState')!;
+      final row = productionAiLedger.find('updateGroupWorkItemState')!;
       final scope = AiWriteScope(
         accountKey: g0eAccount,
         grants: g0eScope.grants,

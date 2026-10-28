@@ -7,6 +7,8 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+
+import 'mr6b3g_support.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart';
 
 import '../support/fake_adapter.dart';
@@ -103,34 +105,55 @@ const _projectReadMembers = <String>{
 };
 
 void main() {
+  test('fifteen visible group rows map exactly to approved named methods', () {
+    final rows = ProductionAiLedger.rows
+        .where((row) => row.scopeClass == AiScopeClass.groupWorkItem)
+        .toList();
+    expect(rows, hasLength(15));
+    expect({
+      for (final row in rows) row.operationId: row.namedMethod,
+    }, _aliases);
+    for (final row in rows) {
+      expect(row.boundary, AiWriteBoundary.graph, reason: row.operationId);
+      expect(row.modelVisible, isTrue, reason: row.operationId);
+      expect(row.arguments, containsPair('groupId', isA<AiArgSpec>()));
+      expect(row.arguments, containsPair('iid', isA<AiArgSpec>()));
+      expect(row.arguments, isNot(contains('projectId')));
+    }
+    expect(aiGroupWorkItemWritesEnabled, isTrue);
+    expect(_aliases.keys, isNot(contains('setGroupIncidentStatus')));
+    expect(_aliases.keys, isNot(contains('markTodoDone')));
+    for (final name in ['snoozeTodo', 'unsnoozeTodo']) {
+      expect(
+        productionAiLedger.find(name)!.scopeClass,
+        AiScopeClass.accountTodo,
+      );
+    }
+  });
+
   test(
-    'fifteen visible group rows map exactly to approved named methods',
+    'effective production gate offers every group alias but no project operations',
     () {
-      final rows = ProductionAiLedger.rows
-          .where((row) => row.scopeClass == AiScopeClass.groupWorkItem)
-          .toList();
-      expect(rows, hasLength(15));
-      expect({
-        for (final row in rows) row.operationId: row.namedMethod,
-      }, _aliases);
-      for (final row in rows) {
-        expect(row.boundary, AiWriteBoundary.graph, reason: row.operationId);
-        expect(row.modelVisible, isTrue, reason: row.operationId);
-        expect(row.arguments, containsPair('groupId', isA<AiArgSpec>()));
-        expect(row.arguments, containsPair('iid', isA<AiArgSpec>()));
-        expect(row.arguments, isNot(contains('projectId')));
-      }
-      expect(aiGroupWorkItemWritesEnabled, isTrue);
-      expect(_aliases.keys, isNot(contains('setGroupIncidentStatus')));
-      expect(_aliases.keys, isNot(contains('markTodoDone')));
-      for (final name in ['snoozeTodo', 'unsnoozeTodo']) {
-        expect(
-          productionAiLedger.find(name)!.scopeClass,
-          AiScopeClass.accountTodo,
-        );
-      }
+      expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+      expect(aiGroupWorkItemWritesAreEnabled, isTrue);
+      final offers = toolsForScope(
+        g0eScope,
+      ).map((row) => row.operationId).toSet();
+      expect(offers, {..._aliases.keys, 'snoozeTodo', 'unsnoozeTodo'});
     },
   );
+
+  test('explicit gate-off suppresses all seventeen group-scope offers', () {
+    aiGroupWorkItemWritesEnabledForTesting = false;
+    addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+    final offers = toolsForScope(
+      g0eScope,
+    ).map((row) => row.operationId).toSet();
+    expect(
+      offers.intersection({..._aliases.keys, 'snoozeTodo', 'unsnoozeTodo'}),
+      isEmpty,
+    );
+  });
 
   test(
     'group family part APIs have exact independently pinned read and write members',
