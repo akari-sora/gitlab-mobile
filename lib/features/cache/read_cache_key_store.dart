@@ -269,6 +269,13 @@ final class ReadCacheKeyStore {
   Future<ReadCacheStoreRead<String>> readOfflineRefusal(String accountKey) =>
       _readRaw(offlineRefusalName(accountKey), 'readOfflineRefusal');
 
+  Future<void> writeOfflineRefusal(String accountKey, DateTime when) =>
+      _writeExact(
+        offlineRefusalName(accountKey),
+        when.toUtc().toIso8601String(),
+        'writeOfflineRefusal',
+      );
+
   Future<void> deleteOfflineRefusal(String accountKey) =>
       _deleteExact(offlineRefusalName(accountKey), 'deleteOfflineRefusal');
 

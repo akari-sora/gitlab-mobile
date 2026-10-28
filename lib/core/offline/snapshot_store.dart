@@ -72,6 +72,7 @@ final class SnapshotStore {
     required this.accountKey,
     required List<int> rootKey,
     this.checkpoint,
+    this.mayMutate,
   }) : _root = supportRoot.absolute.path,
        _keys = SnapshotKeyMaterial.derive(List<int>.of(rootKey));
   SnapshotStore.withKeys({
@@ -79,16 +80,31 @@ final class SnapshotStore {
     required this.accountKey,
     required SnapshotKeyMaterial keys,
     this.checkpoint,
+    this.mayMutate,
   }) : _root = supportRoot.absolute.path,
        _keys = Future.value(keys);
 
   final String _root, accountKey;
   final Future<SnapshotKeyMaterial> _keys;
   final void Function(SnapshotStoreCheckpoint)? checkpoint;
+  final bool Function()? mayMutate;
+
+  bool _canMutate(bool Function() mayCommit) =>
+      (mayMutate?.call() ?? true) && mayCommit();
   int _revision = 0;
   int get revision => _revision;
   Directory get supportRoot => Directory(_root);
-  Future<SnapshotKeyMaterial> get workerKeys => _keys;
+  Future<SnapshotKeyMaterial> get workerKeys async {
+    if (!(mayMutate?.call() ?? true)) {
+      throw const SnapshotStoreException(SnapshotStoreError.revoked);
+    }
+    final keys = await _keys;
+    if (!(mayMutate?.call() ?? true)) {
+      throw const SnapshotStoreException(SnapshotStoreError.revoked);
+    }
+    return keys;
+  }
+
   String get _base => '$_root/offline_repo';
   String get accountDirectory =>
       '$_base/${crypto.sha256.convert(utf8.encode(accountKey)).toString().substring(0, 32)}';
@@ -313,7 +329,7 @@ final class SnapshotStore {
     int? expectedRevision,
   }) {
     _name(name);
-    if (!mayCommit()) {
+    if (!_canMutate(mayCommit)) {
       throw const SnapshotStoreException(SnapshotStoreError.revoked);
     }
     String? tempPath;
@@ -365,7 +381,7 @@ final class SnapshotStore {
       if (usage() > snapshotAccountLimit) {
         throw const SnapshotStoreException(SnapshotStoreError.capacity);
       }
-      if (!mayCommit()) {
+      if (!_canMutate(mayCommit)) {
         throw const SnapshotStoreException(SnapshotStoreError.revoked);
       }
       if (expectedRevision != null && expectedRevision != _revision) {
@@ -420,6 +436,9 @@ final class SnapshotStore {
     required int expectedRevision,
     required bool Function() mayCommit,
   }) async {
+    if (!_canMutate(mayCommit)) {
+      throw const SnapshotStoreException(SnapshotStoreError.revoked);
+    }
     if (index.accountKey != accountKey) {
       throw const SnapshotStoreException(SnapshotStoreError.corrupt);
     }
@@ -488,7 +507,7 @@ final class SnapshotStore {
     if (await readIndex() == null) {
       throw const SnapshotStoreException(SnapshotStoreError.corrupt);
     }
-    if (!mayCommit()) {
+    if (!_canMutate(mayCommit)) {
       throw const SnapshotStoreException(SnapshotStoreError.revoked);
     }
   }
@@ -542,6 +561,9 @@ final class SnapshotStore {
     required bool complete,
     required bool Function() mayCommit,
   }) async {
+    if (!_canMutate(mayCommit)) {
+      throw const SnapshotStoreException(SnapshotStoreError.revoked);
+    }
     final name = treeFileName(tree.snapshotId);
     final encoded = await _encrypt(
       name,
@@ -568,7 +590,7 @@ final class SnapshotStore {
       subPath: tree.subPath,
       complete: complete,
     );
-    if (!mayCommit()) {
+    if (!_canMutate(mayCommit)) {
       throw const SnapshotStoreException(SnapshotStoreError.revoked);
     }
   }
@@ -606,14 +628,14 @@ final class SnapshotStore {
     if (_objectId(format, bytes) != id) {
       throw const SnapshotStoreException(SnapshotStoreError.corrupt);
     }
-    if (!mayCommit()) {
+    if (!_canMutate(mayCommit)) {
       throw const SnapshotStoreException(SnapshotStoreError.revoked);
     }
     final name = await blobFileName(format, id);
     try {
       final existing = await readBlob(format, id);
       if (existing != null) {
-        if (!mayCommit()) {
+        if (!_canMutate(mayCommit)) {
           throw const SnapshotStoreException(SnapshotStoreError.revoked);
         }
         return true;
@@ -631,13 +653,16 @@ final class SnapshotStore {
   }
 
   void deleteTree(String id, {required bool Function() mayCommit}) {
+    if (!_canMutate(mayCommit)) {
+      throw const SnapshotStoreException(SnapshotStoreError.revoked);
+    }
     final name = treeFileName(id);
     if (!_chain(create: false)) return;
     final path = '$accountDirectory/$name';
     final type = FileSystemEntity.typeSync(path, followLinks: false);
     if (type == FileSystemEntityType.notFound) return;
     _regular(path);
-    if (!mayCommit()) {
+    if (!_canMutate(mayCommit)) {
       throw const SnapshotStoreException(SnapshotStoreError.revoked);
     }
     File(path).deleteSync();
@@ -650,12 +675,12 @@ final class SnapshotStore {
         final type = FileSystemEntity.typeSync(entity.path, followLinks: false);
         if (type == FileSystemEntityType.directory) {
           remove(Directory(entity.path));
-          if (!mayCommit()) {
+          if (!_canMutate(mayCommit)) {
             throw const SnapshotStoreException(SnapshotStoreError.revoked);
           }
           Directory(entity.path).deleteSync();
         } else if (type == FileSystemEntityType.file) {
-          if (!mayCommit()) {
+          if (!_canMutate(mayCommit)) {
             throw const SnapshotStoreException(SnapshotStoreError.revoked);
           }
           File(entity.path).deleteSync();
@@ -673,7 +698,7 @@ final class SnapshotStore {
         throw const SnapshotStoreException(SnapshotStoreError.untrustedPath);
       }
       remove(Directory(entity.path));
-      if (!mayCommit()) {
+      if (!_canMutate(mayCommit)) {
         throw const SnapshotStoreException(SnapshotStoreError.revoked);
       }
       Directory(entity.path).deleteSync();
@@ -687,8 +712,11 @@ final class SnapshotStore {
     required bool workersRunning,
     required bool Function() mayCommit,
   }) async {
+    if (!_canMutate(mayCommit)) {
+      throw const SnapshotStoreException(SnapshotStoreError.revoked);
+    }
     if (workersRunning) return readIndex();
-    if (!mayCommit()) {
+    if (!_canMutate(mayCommit)) {
       throw const SnapshotStoreException(SnapshotStoreError.revoked);
     }
     final current = await readIndex();
@@ -700,7 +728,7 @@ final class SnapshotStore {
     // Inspect every referenced tree for a newer version before touching files.
     final trees = <String, SnapshotTree?>{};
     for (final record in current.snapshots) {
-      if (!mayCommit()) {
+      if (!_canMutate(mayCommit)) {
         throw const SnapshotStoreException(SnapshotStoreError.revoked);
       }
       try {
@@ -722,7 +750,7 @@ final class SnapshotStore {
     var removed = 0;
     var changed = false;
     for (final record in current.snapshots) {
-      if (!mayCommit()) {
+      if (!_canMutate(mayCommit)) {
         throw const SnapshotStoreException(SnapshotStoreError.revoked);
       }
       if (record.status == SnapshotStatus.superseded) {
@@ -775,9 +803,12 @@ final class SnapshotStore {
     SnapshotIndex index, {
     required bool Function() mayCommit,
   }) async {
+    if (!_canMutate(mayCommit)) {
+      throw const SnapshotStoreException(SnapshotStoreError.revoked);
+    }
     final keep = <String>{};
     for (final record in index.snapshots) {
-      if (!mayCommit()) {
+      if (!_canMutate(mayCommit)) {
         throw const SnapshotStoreException(SnapshotStoreError.revoked);
       }
       final tree = await readTree(record);
@@ -808,7 +839,7 @@ final class SnapshotStore {
         }
         _regular(entity.path);
         if (!keep.contains(relative)) {
-          if (!mayCommit()) {
+          if (!_canMutate(mayCommit)) {
             throw const SnapshotStoreException(SnapshotStoreError.revoked);
           }
           File(entity.path).deleteSync();
