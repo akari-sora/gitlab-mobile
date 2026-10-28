@@ -572,6 +572,7 @@ internal data class RunProgress(val workCount: Int, val step: Int, val title: St
 internal interface AgentRunTestEvents : java.io.Closeable {
     fun wrap(result: MethodChannel.Result): MethodChannel.Result
     fun invalidated(deliver: () -> Unit)
+    fun taskBackInvoked()
 }
 
 internal object AgentRunsChannel {
@@ -676,9 +677,7 @@ internal object AgentRunsChannel {
                             result.success(if (reason == null) reply("stopped") else reply("rejected", "reason" to reason))
                         }
                         "acquireContinuation" -> acquire(args, result)
-                        "moveTaskToBack" -> if (validKeys(args, setOf("opSeq"), result) && sequence(args, result) != null) {
-                            result.success(reply("unsupported", "reason" to "not_implemented"))
-                        }
+                        "moveTaskToBack" -> moveBack(activity, args, result)
                         else -> result.notImplemented()
                     }
                 }
@@ -689,6 +688,22 @@ internal object AgentRunsChannel {
     private fun validKeys(args: Map<*, *>, allowed: Set<String>, result: MethodChannel.Result): Boolean {
         if (args.keys.any { it !in allowed }) { reject(result, "invalid_arguments"); return false }
         return true
+    }
+    private fun moveBack(activity: Activity, args: Map<*, *>, result: MethodChannel.Result) {
+        if (!validKeys(args, setOf("opSeq"), result)) return
+        sequence(args, result) ?: return
+        if (visible !== activity || activity.isFinishing || activity.isDestroyed) {
+            reject(result, "foreground_required"); return
+        }
+        val moved = try {
+            testEvents?.taskBackInvoked()
+            activity.moveTaskToBack(true)
+        } catch (_: SecurityException) {
+            reject(result, "security_exception"); return
+        } catch (_: RuntimeException) {
+            reject(result, "move_failed"); return
+        }
+        result.success(reply(if (moved) "moved" else "not_moved"))
     }
     fun resumed(activity: Activity) { mainThread(); if (owner === activity) visible = activity }
     fun paused(activity: Activity) { mainThread(); if (visible === activity) visible = null }
@@ -964,6 +979,7 @@ internal class AgentRunQaAdapter(messenger: BinaryMessenger) : AgentRunTestEvent
     private var replyDelayMs = 0L
     private var registered = false
     private var closed = false
+    private var taskBackCallCount = 0L
 
     init {
         channel.setMethodCallHandler { call, result ->
@@ -993,9 +1009,13 @@ internal class AgentRunQaAdapter(messenger: BinaryMessenger) : AgentRunTestEvent
                     if (instance != null) AgentRunsChannel.serviceEnded(instance, "synthetic_timeout")
                     result.success(mapOf("version" to 1, "event" to "synthetic_timeout", "didStop" to (instance != null)))
                 } else result.error("invalid_arguments", null, null)
+                "taskBackCalls" -> if (args.isEmpty()) {
+                    result.success(mapOf("version" to 1, "count" to taskBackCallCount))
+                } else result.error("invalid_arguments", null, null)
                 "reset" -> if (args.isEmpty()) {
                     dropCallback = false
                     replyDelayMs = 0L
+                    taskBackCallCount = 0L
                     result.success(mapOf("version" to 1, "status" to "reset"))
                 } else result.error("invalid_arguments", null, null)
                 else -> result.notImplemented()
@@ -1005,6 +1025,10 @@ internal class AgentRunQaAdapter(messenger: BinaryMessenger) : AgentRunTestEvent
 
     override fun invalidated(deliver: () -> Unit) {
         if (!closed && (!registered || !dropCallback)) deliver()
+    }
+
+    override fun taskBackInvoked() {
+        if (!closed && registered) taskBackCallCount++
     }
 
     override fun wrap(result: MethodChannel.Result): MethodChannel.Result {

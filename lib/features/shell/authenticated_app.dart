@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
@@ -18,6 +19,7 @@ import '../auth/session_controller.dart';
 import '../cache/read_cache_settings_page.dart';
 import '../ai/ai_account_removal.dart';
 import '../ai/ai_chat_page.dart' show openAiChatSession;
+import '../ai/ai_background_execution.dart';
 import '../ai/ai_chat_session.dart';
 import '../ai/ai_run_notification_ui.dart';
 import '../ai/ai_run_registry.dart';
@@ -61,6 +63,7 @@ class AuthenticatedApp extends StatefulWidget {
     this.ai,
     this.aiSessionFactory,
     this.runNotifications,
+    this.aiRunsChannel,
   });
   final SessionController session;
   final AppearanceController appearance;
@@ -87,6 +90,11 @@ class AuthenticatedApp extends StatefulWidget {
   /// Tapped AI run notifications, held for the whole process; null where AI
   /// or its notifications are absent. Used only together with [ai].
   final AiRunNotificationGate? runNotifications;
+
+  /// The native AI run channel, for synthetic shell tests; null uses the
+  /// platform's.
+  @visibleForTesting
+  final MethodChannel? aiRunsChannel;
   final LauncherShortcuts shortcuts;
   final ColorScheme? dynamicLight;
   final ColorScheme? dynamicDark;
@@ -227,10 +235,22 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
     if (existing != null && existing.ownsCurrentSession) return existing;
     existing?.dispose();
     final activity = AiAccountActivity();
-    final registry = AccountAiRunRegistry(
+    final channel = widget.aiRunsChannel;
+    late final AccountAiRunRegistry registry;
+    registry = AccountAiRunRegistry(
       session: widget.session,
       settings: ai.settings,
       sessionFactory: activity.track(widget.aiSessionFactory),
+      backgroundExecution: channel == null
+          ? null
+          : AiBackgroundExecution(
+              accountKey: widget.session.active!.key,
+              generation: widget.session.generation,
+              ownerApi: widget.session.api!,
+              isCurrent: () => registry.ownsCurrentSession,
+              appInForeground: aiAppInForeground,
+              channel: channel,
+            ),
     );
     activity.attach(registry);
     _aiActivity = activity;
@@ -1479,6 +1499,60 @@ class _MobileShellState extends State<_MobileShell> {
     );
   }
 
+  bool get _keyboardVisible =>
+      (MediaQuery.maybeViewInsetsOf(context)?.bottom ?? 0) > 0;
+
+  /// Whether root back may move the task to the background right now. The
+  /// bridge calls it again just before the native call, so it reads live
+  /// state only: this shell still mounted and owning [registry], the lock
+  /// open, nothing above the root page (dialog, sheet, pushed page), no
+  /// keyboard, no detail, Home selected and AI work still protected.
+  bool _rootBackEligible(AccountAiRunRegistry registry) {
+    if (!mounted) return false;
+    final lock = widget.lock;
+    return (lock == null || !lock.covering) &&
+        registry.ownsCurrentSession &&
+        identical(
+          context.getInheritedWidgetOfExactType<AiRunRegistryScope>()?.registry,
+          registry,
+        ) &&
+        !Navigator.of(context).canPop() &&
+        !_keyboardVisible &&
+        !_backDispatcher.canHandleBack &&
+        _selected == _home &&
+        registry.backProtectedCount > 0;
+  }
+
+  var _movingBack = false;
+
+  /// Root back with protected AI work: the task goes to the background
+  /// instead of the Activity finishing, so the work keeps its process. One
+  /// call per back press; a press while one is under way is ignored. This
+  /// never starts or stops a run.
+  Future<void> _moveTaskToBack(AccountAiRunRegistry registry) async {
+    if (_movingBack) return;
+    _movingBack = true;
+    try {
+      final result = await registry.backgroundExecution.moveTaskToBack(
+        isBackEligible: () => _rootBackEligible(registry),
+      );
+      switch (result) {
+        case AiTaskBackResult.moved || AiTaskBackResult.notMoved:
+          break;
+        // Whatever went wrong, the app stays open on the root page; it is
+        // never finished while work is protected. Back can be pressed again.
+        case AiTaskBackResult.notEligible ||
+            AiTaskBackResult.unsupported ||
+            AiTaskBackResult.foregroundRequired ||
+            AiTaskBackResult.unavailable ||
+            AiTaskBackResult.failed:
+          break;
+      }
+    } finally {
+      _movingBack = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
@@ -1486,22 +1560,41 @@ class _MobileShellState extends State<_MobileShell> {
     if (account == null || session.api == null) {
       return const Scaffold(body: SizedBox());
     }
+    final aiRuns = switch (AiRunRegistry.maybeOf(context)) {
+      final AccountAiRunRegistry registry => registry,
+      _ => null,
+    };
     return DetailBackScope(
       dispatcher: _backDispatcher,
       depth: 0,
       child: ListenableBuilder(
-        listenable: _backDispatcher,
+        listenable: Listenable.merge([_backDispatcher, ?aiRuns]),
         builder: (context, _) {
+          // D11: AI work that is running, waiting for approval or paused
+          // keeps the root page from closing the app.
+          final protected = (aiRuns?.backProtectedCount ?? 0) > 0;
           return PopScope<Object?>(
-            canPop: _selected == _home && !_backDispatcher.canHandleBack,
+            canPop:
+                _selected == _home &&
+                !_backDispatcher.canHandleBack &&
+                !protected,
             onPopInvokedWithResult: (didPop, _) {
               if (didPop) return;
+              // An open detail, then a tab other than Home, take back first.
               if (_backDispatcher.handleBack()) {
                 return;
               }
               if (_selected != _home) {
                 _chrome.show();
                 setState(() => _selected = _home);
+                return;
+              }
+              if (aiRuns != null && protected) {
+                if (_keyboardVisible) {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  return;
+                }
+                unawaited(_moveTaskToBack(aiRuns));
               }
             },
             child: LayoutBuilder(
