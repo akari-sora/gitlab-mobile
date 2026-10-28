@@ -1,8 +1,10 @@
 from http.client import HTTPSConnection
 import json
+import os
 from pathlib import Path
 import shutil
 import ssl
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -11,10 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from mr6c_https_fixture import Fixture, certificate
 
 
-@unittest.skipUnless(shutil.which('openssl'), 'openssl unavailable')
 class HttpsFixtureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        if shutil.which('openssl') is None:
+            raise RuntimeError('openssl executable is required for HTTPS fixture tests')
         cls.scratch = tempfile.TemporaryDirectory()
         cls.cert, cls.key = certificate(Path(cls.scratch.name) / 'tls')
 
@@ -122,6 +125,21 @@ class HttpsFixtureTests(unittest.TestCase):
     def test_existing_certificate_directory_is_never_replaced(self):
         with self.assertRaises(FileExistsError):
             certificate(self.cert.parent)
+
+
+class HttpsFixturePrerequisiteTests(unittest.TestCase):
+    def test_missing_openssl_fails_the_test_command(self):
+        with tempfile.TemporaryDirectory() as empty_path:
+            result = subprocess.run(
+                [sys.executable, '-m', 'unittest',
+                 'tool.tests.test_mr6c_https_fixture.HttpsFixtureTests.test_existing_certificate_directory_is_never_replaced'],
+                cwd=Path(__file__).resolve().parents[2],
+                env={**os.environ, 'PATH': empty_path},
+                capture_output=True, text=True,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('openssl executable is required for HTTPS fixture tests', result.stderr)
+        self.assertIn('FAILED (errors=1)', result.stderr)
 
 
 if __name__ == '__main__':

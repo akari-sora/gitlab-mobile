@@ -30,6 +30,7 @@ class FakeRunner:
         self.settings = {'sync_mode': 'none', 'timeout': 'null', 'compat': 'absent'}
         self.fail_setting = None
         self.notification_dump = ''
+        self.service_dump = 'ACTIVITY MANAGER SERVICES (dumpsys activity services)\n  (nothing)\n'
         self.doze = {'battery_updates_stopped': False, 'force_idle': False}
         self.mailbox_present = False
         self.sandbox_results = ['EMPTY']
@@ -63,7 +64,7 @@ class FakeRunner:
         elif args[:3] == ['shell', 'pidof', self.pkg]:
             rc = 1
         elif args[:4] == ['shell', 'dumpsys', 'activity', 'services']:
-            output = b'no services'
+            output = self.service_dump.encode()
         elif args[:3] == ['shell', 'dumpsys', 'notification']:
             output = self.notification_dump.encode()
         elif len(args) == 2 and args[0] == 'shell' and 'listing=$(ls -A files/mr6c_qa)' in args[1]:
@@ -328,10 +329,16 @@ class HostChecks(unittest.TestCase):
     def test_v9_driver_requires_matching_journal_and_specific_recovery_evidence(self):
         self.verified()
         report = m.plan('gitlab', 35, ['V9'])
+        journal_file = self.root / 'journal.enc'
+        journal_file.write_bytes(b'synthetic-encrypted-dispatching')
+        before = m.digest(journal_file)
         def phase(adb, cmd):
             if cmd['phase'] == 'prepare':
-                return self.event(cmd, 'barrier')
-            evidence = {'execution_digest': '1' * 64, 'file_digest': '3' * 64,
+                event = self.event(cmd, 'barrier')
+                event['evidence']['file_digest'] = before
+                return event
+            journal_file.write_bytes(b'synthetic-encrypted-writeUncertain')
+            evidence = {'execution_digest': '1' * 64, 'file_digest': m.digest(journal_file),
                         'uncertain': True, 'isolated': True, 'permit_absent': True,
                         'persistent_accounts_verified': True, 'model_calls': 0, 'mutation_calls': 0}
             return {**cmd, 'event': 'done', 'outcome': 'PASS', 'evidence': evidence}
@@ -347,7 +354,9 @@ class HostChecks(unittest.TestCase):
         self.assertEqual(evidence['recovery_subcheck'], 'PASS')
         self.assertEqual(report['device_os'], 'PARTIAL')
         self.assertEqual(report['status'], 'PARTIAL')
-        self.assertNotEqual(evidence['file_digest_before'], evidence['file_digest_after'])
+        self.assertEqual(evidence['file_digest_before'], before)
+        self.assertEqual(evidence['file_digest_after'], m.digest(journal_file))
+        self.assertNotEqual(before, m.digest(journal_file))
         self.assertEqual(evidence['prepare_model_calls'], 3)
         cmd = m.command('s', 'V9', 'task_manager_stop', 'recover', 2)
         invalid = phase(self.adb, cmd)
@@ -357,7 +366,8 @@ class HostChecks(unittest.TestCase):
 
     def test_v9_recovery_pass_requires_service_absent(self):
         self.verified()
-        report = m.plan('gitlab', 35, ['V9'])
+        header = 'ACTIVITY MANAGER SERVICES (dumpsys activity services)\n'
+        present = header + f'  User 0 active services:\n  * ServiceRecord{{abc u0 {self.adb.package}/.AgentRunService}}\n'
         def phase(adb, cmd):
             if cmd['phase'] == 'prepare':
                 return self.event(cmd, 'barrier')
@@ -365,12 +375,33 @@ class HostChecks(unittest.TestCase):
                 'execution_digest': '1' * 64, 'file_digest': '3' * 64, 'uncertain': True,
                 'isolated': True, 'permit_absent': True, 'persistent_accounts_verified': True,
                 'model_calls': 0, 'mutation_calls': 0}}
-        with patch.object(self.adb, 'process_gone', side_effect=[True, False, True, True]), \
-             patch.object(m, 'service_gone', side_effect=[False, True, True, False]), \
-             patch.object(m, 'wait_event', side_effect=lambda adb, cmd, expected: self.event(cmd, expected)), \
-             patch.object(m, 'wait_phase_result', side_effect=phase), self.assertRaises(m.CheckError):
-            m.run_cases(self.adb, ['V9'], report, self.root / 'matrix.json', session='s')
-        self.assertEqual(report['cases']['V9']['task_manager_stop'], 'NOT_RUN')
+        for output in (present, 'Error: service unavailable', '', header, header + '  User 0 active services:\n'):
+            with self.subTest(output=output):
+                report = m.plan('gitlab', 35, ['V9'])
+                with patch.object(self.adb, 'process_gone', side_effect=[True, False, True, True]), \
+                     patch.object(self.adb, 'text', side_effect=[present, self.runner.service_dump,
+                                                                self.runner.service_dump, output]), \
+                     patch.object(m, 'wait_event', side_effect=lambda adb, cmd, expected: self.event(cmd, expected)), \
+                     patch.object(m, 'wait_phase_result', side_effect=phase), self.assertRaises(m.CheckError):
+                    m.run_cases(self.adb, ['V9'], report, self.root / 'matrix.json', session='s')
+                self.assertEqual(report['cases']['V9']['task_manager_stop'], 'NOT_RUN')
+                self.assertNotIn('case_evidence', report)
+
+    def test_service_gone_requires_recognized_absence_or_presence(self):
+        header = 'ACTIVITY MANAGER SERVICES (dumpsys activity services)\n'
+        present = header + f'  User 0 active services:\n  * ServiceRecord{{abc u0 {self.adb.package}/.AgentRunService}}\n'
+        calling_package = present.replace('}', ' c:com.android.shell}')
+        for output, gone in ((present, False), (calling_package, False), (header + '  (nothing)\n', True)):
+            with self.subTest(output=output), patch.object(self.adb, 'text', return_value=output) as read:
+                self.assertEqual(m.service_gone(self.adb), gone)
+                read.assert_called_once_with('shell', 'dumpsys', 'activity', 'services', self.adb.package)
+        for output in ('', ' \n', 'Error: service unavailable', 'unknown', 'no services', header,
+                       header + '  User 0 active services:\n', present.rstrip('}\n'),
+                       header + '  (nothing)\nError: truncated',
+                       header + f'  * ServiceRecord{{abc u0 {self.adb.package}/.OtherService}}\n'):
+            with self.subTest(output=output), patch.object(self.adb, 'text', return_value=output), \
+                 self.assertRaises(m.CheckError):
+                m.service_gone(self.adb)
 
     def test_v9_not_run_after_termination_is_failure(self):
         self.verified()
@@ -461,6 +492,8 @@ class HostChecks(unittest.TestCase):
                           'file_digest_after': '3' * 64})
         with self.assertRaises(m.CheckError):
             seq.check_journal('2' * 64, '2' * 64)
+        with self.assertRaisesRegex(m.CheckError, 'journal file did not change'):
+            seq.check_journal('1' * 64, '2' * 64)
         seq.finish()
         seq.prepare('V1', 'screen_off')
         resets = [a for a, _ in self.runner.calls if 'force-stop' in a]
@@ -506,6 +539,60 @@ class HostChecks(unittest.TestCase):
         self.assertFalse(any('uninstall' in a or 'clear' in a for a, _ in self.runner.calls))
         session.restore()
         self.assertEqual(json.loads(session.receipt.read_text())['state'], 'restored')
+
+    def test_install_rejects_apk_replaced_after_prepare_without_mutation(self):
+        self.verified()
+        qa = self.root / 'qa.apk'
+        qa.write_bytes(b'qa-apk')
+        session = m.InstallSession(self.adb, self.root / 'session', self.metadata)
+        session.prepare(qa)
+        saved_receipt = session.receipt.read_bytes()
+        self.runner.installed = b'replaced-apk'
+        mark = len(self.runner.calls)
+        with self.assertRaises(m.CheckError):
+            session.run(qa, lambda: self.fail('case must not start'))
+        calls = [args for args, _ in self.runner.calls[mark:]]
+        self.assertFalse(any('install' in a or 'force-stop' in a for a in calls))
+        self.assertEqual(self.runner.installed, b'replaced-apk')
+        self.assertEqual(session.receipt.read_bytes(), saved_receipt)
+        self.assertEqual((session.directory / 'original.apk').read_bytes(), b'original-apk')
+        self.assertEqual((session.directory / 'installed-before-install.apk').read_bytes(), b'replaced-apk')
+
+    def test_install_rejects_apk_appeared_after_absent_without_mutation(self):
+        self.verified()
+        self.runner.installed = None
+        qa = self.root / 'qa.apk'
+        qa.write_bytes(b'qa-apk')
+        session = m.InstallSession(self.adb, self.root / 'session', self.metadata)
+        session.prepare(qa, fixed_absent_version=5)
+        saved_receipt = session.receipt.read_bytes()
+        self.runner.installed = b'appeared-apk'
+        mark = len(self.runner.calls)
+        with self.assertRaises(m.CheckError):
+            session.run(qa, lambda: self.fail('case must not start'))
+        calls = [args for args, _ in self.runner.calls[mark:]]
+        self.assertFalse(any('install' in a or 'force-stop' in a for a in calls))
+        self.assertEqual(self.runner.installed, b'appeared-apk')
+        self.assertEqual(session.receipt.read_bytes(), saved_receipt)
+
+    def test_install_rejects_unknown_package_listing_after_absent(self):
+        self.verified()
+        self.runner.installed = None
+        qa = self.root / 'qa.apk'
+        qa.write_bytes(b'qa-apk')
+        session = m.InstallSession(self.adb, self.root / 'session', self.metadata)
+        session.prepare(qa, fixed_absent_version=5)
+        saved_receipt = session.receipt.read_bytes()
+        self.runner.installed = b'appeared-apk'
+        mark = len(self.runner.calls)
+        for output in ('Error: package manager unavailable', 'package:io.gitlabmobile.gitlab_mobi'):
+            with self.subTest(output=output), patch.object(self.adb, 'text', return_value=output), \
+                 self.assertRaises(m.CheckError):
+                session.run(qa, lambda: self.fail('case must not start'))
+        calls = [args for args, _ in self.runner.calls[mark:]]
+        self.assertFalse(any('install' in a or 'force-stop' in a for a in calls))
+        self.assertEqual(self.runner.installed, b'appeared-apk')
+        self.assertEqual(session.receipt.read_bytes(), saved_receipt)
 
     def test_successful_install_restores_original_on_interrupt(self):
         self.verified()

@@ -198,8 +198,13 @@ Unknown provenance means NOT_RUN. The host requires the receipt SHA-256.
 The following read-only preflight chooses the build number, after sandbox
 verification. Set MR6C_SERIAL/AVD/API/FLAVOR and MR6C_SANDBOX_RECEIPT to reviewed
 absolute values. An absent package uses fixed build number5 in an owned
-dedicated AVD that permits retaining QA. The coordinator rechecks the original
-APK before installing, so concurrent version/signer changes are rejected.
+dedicated AVD that permits retaining QA. Before marking install_started or
+restore_pending and before install -r, the coordinator rechecks package
+presence and requires exactly one base APK whose SHA-256 matches the saved
+original; an originally absent package must still be absent. A mismatch stops
+without install or force-stop and retains the original APK and restoration
+receipt (plus the pulled current APK when its digest differs). Keep exclusive
+ownership of the AVD: the check and install are not atomic.
 
 ```sh
 export MR6C_SANDBOX_SHA256="$(python3 -c 'import hashlib,os; print(hashlib.sha256(open(os.environ["MR6C_SANDBOX_RECEIPT"],"rb").read()).hexdigest())')"

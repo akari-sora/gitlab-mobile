@@ -337,7 +337,17 @@ def verify_notifications(before, killed, after):
 
 def service_gone(adb):
     output = adb.text('shell', 'dumpsys', 'activity', 'services', adb.package)
-    return not re.search(re.escape(adb.package) + r'/[^\s}]*AgentRunService\b', output)
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    header = 'ACTIVITY MANAGER SERVICES (dumpsys activity services)'
+    require(lines and lines[0] == header, 'service listing unavailable or unrecognized')
+    if lines == [header, '(nothing)']:
+        return True
+    # Nonempty AOSP dumps have no completion marker. A matching full record
+    # proves presence; absence from a possibly truncated dump proves nothing.
+    present = any(re.fullmatch(r'\* ServiceRecord\{[0-9a-f]+ u[0-9]+ ' + re.escape(adb.package) +
+                              r'/[^\s}]*AgentRunService(?: c:[A-Za-z0-9_.]+)?\}', line) for line in lines[1:])
+    require(present, 'service absence not proven by complete listing')
+    return False
 
 
 class CaseSequence:
@@ -431,6 +441,7 @@ class CaseSequence:
         require(self.prepared_execution_digest is not None and execution_digest == self.prepared_execution_digest,
                 'prepare/recover execution identity not established')
         require(isinstance(file_digest_after, str) and SHA256.fullmatch(file_digest_after), 'invalid recovered journal file digest')
+        require(file_digest_after != self.journal_file_before, 'recovered journal file did not change')
         return {'execution_digest': execution_digest, 'file_digest_before': self.journal_file_before,
                 'file_digest_after': file_digest_after}
 
@@ -444,7 +455,8 @@ class CaseSequence:
 
 def remote_single_apk(adb):
     listing = adb.text('shell', 'pm', 'list', 'packages', adb.package)
-    entries = [line for line in listing.splitlines() if line == 'package:' + adb.package]
+    entries = listing.splitlines()
+    require(all(line == 'package:' + adb.package for line in entries), 'unrecognized installed package listing')
     require(len(entries) <= 1, 'ambiguous installed package')
     if not entries:
         return None
@@ -516,6 +528,13 @@ class InstallSession:
     def install(self, candidate):
         require(self.data is not None and self.data['state'] == 'prepared', 'QA already installed or unprepared')
         require(digest(candidate) == self.data['qa']['sha256'], 'QA candidate changed')
+        current = remote_single_apk(self.adb)
+        original = self.data['original']
+        require((current is None) == (original is None), 'installed package presence changed since prepare')
+        if original is not None:
+            before_install = self.directory / 'installed-before-install.apk'
+            require(pull_verified(self.adb, current, before_install) == original['sha256'],
+                    'installed APK changed since prepare')
         self.data.update(state='install_started', restore_pending=True)
         write_json(self.receipt, self.data)
         self.adb.mutation('install', '-r', str(candidate))

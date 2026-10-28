@@ -311,6 +311,30 @@ Future<void> main() async {
         restarted.isolated(sandbox.account.key, recovered.writeKeys),
         isTrue,
       );
+      final recoveredBytes = await sandbox.verifyRecoveredJournal(
+        recovered,
+        checkpoint['execution_digest']! as String,
+      );
+      expect(sha256.convert(recoveredBytes).toString(), isNot(fileDigest));
+
+      // Simulate a recovery that updated memory but left dispatching on disk.
+      await sandbox.files.write(
+        sandbox.account.key,
+        bytes,
+        mayCommit: () => true,
+      );
+      expect(recovered.state, AiJournalState.writeUncertain);
+      expect(
+        restarted.isolated(sandbox.account.key, recovered.writeKeys),
+        isTrue,
+      );
+      await expectLater(
+        sandbox.verifyRecoveredJournal(
+          recovered,
+          checkpoint['execution_digest']! as String,
+        ),
+        throwsA(isA<QaSandboxUnavailable>()),
+      );
     },
   );
 

@@ -184,6 +184,48 @@ final class QaSandbox {
     );
     return data;
   }
+
+  /// Read the recovered ciphertext independently of the journal's memory.
+  Future<List<int>> verifyRecoveredJournal(
+    AiJournalEntry memoryEntry,
+    String executionDigest,
+  ) async {
+    final key = await keys.readKey(account.key);
+    final bytes = await files.read(account.key);
+    _require(key.failure == null && key.value != null && bytes != null);
+    final decoded = await AiHistoryCipher.decryptJson(
+      bytes!,
+      key.value!,
+      account.key,
+      AiJournalFiles.fileName,
+    );
+    final entries = decoded['entries'];
+    _require(entries is List && entries.length == 1 && entries.single is Map);
+    final diskEntry = Map<String, Object?>.from(
+      (entries as List).single as Map,
+    );
+    _require(
+      diskEntry['account'] == account.key &&
+          diskEntry['execution'] == memoryEntry.executionId &&
+          _objectHash(diskEntry['execution']) == executionDigest &&
+          diskEntry['state'] == 'writeUncertain' &&
+          memoryEntry.writeKeys.isNotEmpty,
+    );
+    void requireKeys(Object? raw, Set<AiConflictKey> keys) {
+      _require(raw is List);
+      final actual = (raw as List).map(jsonEncode).toSet();
+      final expected = keys.map((key) => jsonEncode(key.parts)).toSet();
+      _require(
+        raw.length == expected.length &&
+            actual.length == expected.length &&
+            actual.containsAll(expected),
+      );
+    }
+
+    requireKeys(diskEntry['writes'], memoryEntry.writeKeys);
+    requireKeys(diskEntry['dependencies'], memoryEntry.dependencyKeys);
+    return bytes;
+  }
 }
 
 final class _SyntheticAdapter implements HttpClientAdapter {
@@ -512,10 +554,12 @@ final class QaV9Fixture {
     final permitAbsent = gate.binding.permitId == null;
     final isolated = journal.isolated(sandbox.account.key, entry.writeKeys);
     final uncertain = entry.state == AiJournalState.writeUncertain;
-    final bytes = await sandbox.files.read(sandbox.account.key);
+    final bytes = await sandbox.verifyRecoveredJournal(
+      entry,
+      checkpoint['execution_digest']! as String,
+    );
     _require(
-      bytes != null &&
-          uncertain &&
+      uncertain &&
           isolated &&
           permitAbsent &&
           _providerAdapter.calls == 0 &&
@@ -524,7 +568,7 @@ final class QaV9Fixture {
     gate.dispose();
     return QaJournalRecovered(
       executionDigest: checkpoint['execution_digest']! as String,
-      fileDigest: _hash(bytes!),
+      fileDigest: _hash(bytes),
       uncertain: uncertain,
       isolated: isolated,
       permitAbsent: permitAbsent,
