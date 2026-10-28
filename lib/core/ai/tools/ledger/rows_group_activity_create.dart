@@ -7,7 +7,7 @@ const List<AiCapability> aiGroupActivityCreateRows = <AiCapability>[
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.groupWorkItem,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'groupId': AiArgSpec(AiArgType.integer, required: true),
       'iid': _iid,
@@ -29,7 +29,7 @@ const List<AiCapability> aiGroupActivityCreateRows = <AiCapability>[
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.groupWorkItem,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {
       'groupId': AiArgSpec(AiArgType.integer, required: true),
       'iid': _iid,

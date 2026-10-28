@@ -7,7 +7,7 @@ const List<AiCapability> aiGroupStatusRows = <AiCapability>[
     baseTier: AiWriteTier.t2,
     scopeClass: AiScopeClass.groupWorkItem,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     arguments: <String, AiArgSpec>{
       'groupId': _iid,
       'iid': _iid,

@@ -104,7 +104,7 @@ const _projectReadMembers = <String>{
 
 void main() {
   test(
-    'fifteen group rows map exactly to approved named methods and stay hidden',
+    'fifteen visible group rows map exactly to approved named methods',
     () {
       final rows = ProductionAiLedger.rows
           .where((row) => row.scopeClass == AiScopeClass.groupWorkItem)
@@ -115,12 +115,12 @@ void main() {
       }, _aliases);
       for (final row in rows) {
         expect(row.boundary, AiWriteBoundary.graph, reason: row.operationId);
-        expect(row.modelVisible, isFalse, reason: row.operationId);
+        expect(row.modelVisible, isTrue, reason: row.operationId);
         expect(row.arguments, containsPair('groupId', isA<AiArgSpec>()));
         expect(row.arguments, containsPair('iid', isA<AiArgSpec>()));
         expect(row.arguments, isNot(contains('projectId')));
       }
-      expect(aiGroupWorkItemWritesEnabled, isFalse);
+      expect(aiGroupWorkItemWritesEnabled, isTrue);
       expect(_aliases.keys, isNot(contains('setGroupIncidentStatus')));
       expect(_aliases.keys, isNot(contains('markTodoDone')));
       for (final name in ['snoozeTodo', 'unsnoozeTodo']) {

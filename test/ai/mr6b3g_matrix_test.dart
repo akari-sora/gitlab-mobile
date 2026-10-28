@@ -6,8 +6,8 @@ import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
 import 'mr6b3g_support.dart';
 import 'mr6b3g_t1_test.dart' as group_t1;
 
-// Policy tests use the real, still-hidden production rows and the group test
-// gate. They exercise tier decisions, not the family HTTP implementations.
+// Policy tests use the real production rows and the group test gate.
+// They exercise tier decisions, not the family HTTP implementations.
 const _tiers = <String, AiWriteTier>{
   'updateGroupWorkItemState': AiWriteTier.t2,
   'updateGroupWorkItemStatus': AiWriteTier.t2,
@@ -63,18 +63,18 @@ void main() {
   group('G15 repeated group T1 family fixtures', group_t1.main);
 
   test(
-    'all fifteen actual group rows stay hidden while policy tests use their tiers',
+    'all fifteen actual group rows are visible and retain their tiers',
     () {
       expect(_aliases, hasLength(15));
       for (final name in _aliases) {
         final row = productionAiLedger.find(name);
         expect(row, isNotNull, reason: name);
-        expect(row!.modelVisible, isFalse, reason: name);
+        expect(row!.modelVisible, isTrue, reason: name);
         expect(row.baseTier, _tiers[name], reason: name);
         expect(row.scopeClass, AiScopeClass.groupWorkItem, reason: name);
         expect(row.boundary, AiWriteBoundary.graph, reason: name);
       }
-      expect(aiGroupWorkItemWritesEnabled, isFalse);
+      expect(aiGroupWorkItemWritesEnabled, isTrue);
     },
   );
 

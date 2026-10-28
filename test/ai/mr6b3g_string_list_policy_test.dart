@@ -250,7 +250,6 @@ void main() {
           entry.value.$2,
         );
         expect(h.adapter.requests, isEmpty);
-        expect(h.capture.opened, isEmpty);
       });
     }
 

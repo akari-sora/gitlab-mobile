@@ -533,7 +533,7 @@ void main() {
   });
 
   test(
-    'edit row is hidden T2 whole-field text with independently counted cap29',
+    'edit row is visible T2 whole-field text with independently counted cap29',
     () {
       final row = productionAiLedger.find(_operation)!;
       expect(
@@ -547,7 +547,7 @@ void main() {
       expect(row.readback, isTrue);
       expect(row.baseTier, AiWriteTier.t2);
       expect(row.boundary, AiWriteBoundary.graph);
-      expect(row.modelVisible, isFalse);
+      expect(row.modelVisible, isTrue);
       expect(row.editableField, 'body');
       expect(row.arguments['body']!.text, AiTextRole.quickActionMarkdown);
       expect(row.arguments['body']!.writableField, 'note');
@@ -558,12 +558,12 @@ void main() {
     },
   );
 
-  test('production row stays hidden with the production gate off', () {
-    aiGroupWorkItemWritesEnabledForTesting = null;
+  test('visible production row is not offered with gate override off', () {
+    aiGroupWorkItemWritesEnabledForTesting = false;
     expect(aiGroupWorkItemWritesAreEnabled, isFalse);
     expect(
       productionAiLedger.modelVisible.map((row) => row.operationId),
-      isNot(contains(_operation)),
+      contains(_operation),
     );
     expect(toolsForScope(_scope), isEmpty);
   });

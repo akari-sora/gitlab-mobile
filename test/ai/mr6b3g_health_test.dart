@@ -504,7 +504,7 @@ final class _Harness {
 }
 
 void main() {
-  test('G-P5 pins complete alias, hidden graph row, allowlist and cap 21', () {
+  test('G-P5 pins complete alias, visible graph row, allowlist and cap 21', () {
     expect(groupHealthStageOperations, {_operation});
     expect(
       aiGroupHealthRows.map((row) => row.operationId).toSet(),
@@ -525,10 +525,10 @@ void main() {
       'atRisk',
       'none',
     ]);
-    expect(row.modelVisible, isFalse);
-    expect(productionAiLedger.modelVisible, isNot(contains(row)));
-    expect(aiGroupWorkItemWritesAreEnabled, isFalse);
-    expect(toolsForScope(g0eScope), isEmpty);
+    expect(row.modelVisible, isTrue);
+    expect(productionAiLedger.modelVisible, contains(row));
+    expect(aiGroupWorkItemWritesAreEnabled, isTrue);
+    expect(toolsForScope(g0eScope), contains(row));
   });
 
   test(

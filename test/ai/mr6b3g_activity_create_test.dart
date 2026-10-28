@@ -279,7 +279,7 @@ final class _Server {
   }
 }
 
-/// Only these hidden rows are made visible to this coordinator fixture.
+/// This coordinator fixture isolates these rows.
 final class _Rows implements AiCapabilityLedger {
   const _Rows();
 
@@ -515,7 +515,7 @@ void main() {
     addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
   });
 
-  test('fixed aliases, hidden graph rows, allowlists and static caps', () {
+  test('fixed aliases, visible graph rows, allowlists and static caps', () {
     expect(groupActivityCreateStageOperations, {_comment, _reply});
     expect(aiGroupActivityCreateRows.map((row) => row.operationId).toSet(), {
       _comment,
@@ -523,7 +523,7 @@ void main() {
     });
     expect(aiGroupActivityCreateRows, hasLength(2));
     for (final row in aiGroupActivityCreateRows) {
-      expect(row.modelVisible, isFalse);
+      expect(row.modelVisible, isTrue);
       expect(row.boundary, AiWriteBoundary.graph);
       expect(row.scopeClass, AiScopeClass.groupWorkItem);
       expect(row.baseTier, AiWriteTier.t2);

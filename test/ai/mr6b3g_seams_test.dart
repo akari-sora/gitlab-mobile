@@ -742,24 +742,35 @@ void main() {
   );
 
   test(
-    'production group gate and visible rows remain closed; UI channel starts empty',
+    'production group gate and rows are visible; UI channel starts empty',
     () {
       expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
-      expect(aiGroupWorkItemWritesAreEnabled, isFalse);
+      expect(aiGroupWorkItemWritesAreEnabled, isTrue);
       expect(g0eScope.uiAddedGroupWorkItems, isEmpty);
       final groupRows = ProductionAiLedger.rows.where(
         (row) =>
             row.operationId.contains('GroupWorkItem') ||
             row.scopeClass == AiScopeClass.groupWorkItem,
       );
-      expect(_groupRowsAreHidden(groupRows), isTrue);
+      expect(groupRows, hasLength(15));
+      expect(
+        groupRows.every(
+          (row) => row.modelVisible &&
+              row.boundary == AiWriteBoundary.graph &&
+              row.scopeClass == AiScopeClass.groupWorkItem,
+        ),
+        isTrue,
+      );
       expect(
         productionAiLedger.modelVisible.where(
           (row) => row.scopeClass == AiScopeClass.groupWorkItem,
-        ),
-        isEmpty,
+        ).toSet(),
+        groupRows.toSet(),
       );
-      expect(toolsForScope(g0eScope), isEmpty);
+      expect(
+        toolsForScope(g0eScope).map((row) => row.operationId).toSet(),
+        {...groupRows.map((row) => row.operationId), 'snoozeTodo', 'unsnoozeTodo'},
+      );
     },
   );
 

@@ -96,8 +96,8 @@ void main() {
     },
   );
 
-  test('production gate off refuses real dispatcher before reads', () async {
-    aiGroupWorkItemWritesEnabledForTesting = null;
+  test('gate-off override refuses real dispatcher before reads', () async {
+    aiGroupWorkItemWritesEnabledForTesting = false;
     expect(aiGroupWorkItemWritesAreEnabled, isFalse);
     final f = _PortFixture();
     addTearDown(f.close);
@@ -115,9 +115,9 @@ void main() {
   });
 
   test(
-    'missing context refuses even when the production gate is off',
+    'missing context refuses even when the gate override is off',
     () async {
-      aiGroupWorkItemWritesEnabledForTesting = null;
+      aiGroupWorkItemWritesEnabledForTesting = false;
       final f = _PortFixture(withContext: false);
       addTearDown(f.close);
       await expectLater(
@@ -419,12 +419,12 @@ void main() {
   );
 
   // Appendix C / parent §15: 8, 10, 11, 13, 19, 21, 24-group.
-  test('hidden group graph row pins complete aliases schema and fixed cap', () {
+  test('visible group graph row pins complete aliases schema and fixed cap', () {
     final row = productionAiLedger.find(_operation)!;
     expect(row.boundary, AiWriteBoundary.graph);
     expect(groupDatesStageOperations, {_operation});
-    expect(row.modelVisible, isFalse);
-    expect(productionAiLedger.modelVisible, isNot(contains(row)));
+    expect(row.modelVisible, isTrue);
+    expect(productionAiLedger.modelVisible, contains(row));
     expect(row.baseTier, AiWriteTier.t2);
     expect(row.scopeClass, AiScopeClass.groupWorkItem);
     expect(row.namedMethod, 'updateWorkItemDates');
@@ -1607,7 +1607,7 @@ final class _DatesServer {
   }
 }
 
-// Test-only exposure; the production row and group gate remain hidden/off.
+// The fixture isolates this one row for the coordinator.
 final class _DatesLedger implements AiCapabilityLedger {
   const _DatesLedger();
   @override

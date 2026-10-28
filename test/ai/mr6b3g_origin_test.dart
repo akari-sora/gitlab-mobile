@@ -24,6 +24,26 @@ import 'fx_coord_support.dart';
 import 'mr6b3g_support.dart' show G0eLedger;
 import 'p17_controller_support.dart' show p17ToolNames;
 
+const _groupWriteOffers = {
+  'snoozeTodo',
+  'unsnoozeTodo',
+  'updateGroupWorkItemState',
+  'updateGroupWorkItemStatus',
+  'updateGroupWorkItemDates',
+  'updateGroupWorkItemHealthStatus',
+  'updateGroupWorkItemAssignees',
+  'updateGroupWorkItemMilestone',
+  'updateGroupWorkItemWeight',
+  'createGroupWorkItemActivityComment',
+  'createGroupWorkItemActivityReply',
+  'deleteGroupWorkItemActivityNote',
+  'setGroupWorkItemActivityNoteReaction',
+  'setGroupWorkItemNotifications',
+  'updateGroupWorkItemContent',
+  'editGroupWorkItemActivityNote',
+  'updateGroupWorkItemLabels',
+};
+
 const _group = GraphResourceRef(
   id: 'gid://gitlab/Group/7',
   fullPath: 'team/sub',
@@ -351,7 +371,7 @@ void main() {
           .toSet();
       expect(
         p17ToolNames(h.provider.bodies.single).intersection(writeNames),
-        isEmpty,
+        _groupWriteOffers,
       );
       expect(
         h.provider.bodies.single.toString(),
@@ -496,7 +516,7 @@ void main() {
   for (final origin in <AiChatOrigin>[_groupOrigin, _projectOrigin]) {
     for (final suppliedScope in [false, true]) {
       test(
-        '${origin.key} limits write grant with override=$suppliedScope',
+        '${origin.key} limits write grant with supplied scope=$suppliedScope',
         () async {
           final h = await StackHarness.create(
             origin: origin,
@@ -552,7 +572,7 @@ void main() {
               .map((row) => row.operationId)
               .toSet();
           if (origin is AiGroupWorkItemOrigin) {
-            expect(names.intersection(writeNames), isEmpty);
+            expect(names.intersection(writeNames), _groupWriteOffers);
             expect(h.controller.canAttach, isFalse);
           } else {
             expect(names, contains('createNote'));

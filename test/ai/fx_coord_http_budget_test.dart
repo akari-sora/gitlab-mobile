@@ -131,6 +131,32 @@ const _mr6b3CountedCaps = <String, int>{
   'updateWorkItemWeight': 21,
 };
 
+// Group call paths independently counted in the MR6b-3g §4 table and the
+// group family tests. F is the group freshness GET; P includes current user,
+// strict namespace identity and the family's opening/candidate/locator reads.
+// Snooze is account-global: no group freshness or separate namespace read,
+// just user plus up to four ownership pages per pass, with no readback.
+const _groupCounted =
+    <String, (int fresh, int prepare, int preflight, int readback)>{
+      'updateGroupWorkItemState': (1, 3, 1, 1),
+      'updateGroupWorkItemStatus': (1, 3, 1, 1),
+      'updateGroupWorkItemDates': (1, 4, 2, 2),
+      'updateGroupWorkItemHealthStatus': (1, 3, 1, 1),
+      'updateGroupWorkItemAssignees': (1, 7, 1, 1),
+      'updateGroupWorkItemMilestone': (1, 4, 1, 1),
+      'updateGroupWorkItemWeight': (1, 3, 1, 1),
+      'createGroupWorkItemActivityComment': (1, 3, 1, 1),
+      'createGroupWorkItemActivityReply': (1, 5, 1, 1),
+      'deleteGroupWorkItemActivityNote': (1, 5, 1, 1),
+      'setGroupWorkItemActivityNoteReaction': (1, 6, 2, 2),
+      'setGroupWorkItemNotifications': (1, 3, 1, 1),
+      'updateGroupWorkItemContent': (1, 3, 1, 1),
+      'editGroupWorkItemActivityNote': (1, 5, 1, 1),
+      'updateGroupWorkItemLabels': (1, 4, 1, 1),
+      'snoozeTodo': (0, 5, 0, 0),
+      'unsnoozeTodo': (0, 5, 0, 0),
+    };
+
 int _worstReads(String operation) {
   final (fresh, prepare, readback) = _counted[operation]!;
   return 2 * (fresh + prepare) + readback;
@@ -168,6 +194,7 @@ void main() {
           ..._counted.keys,
           ..._mr6b2CountedCaps.keys,
           ..._mr6b3CountedCaps.keys,
+          ..._groupCounted.keys,
         },
       );
       expect(aiWriteRequestCounts.keys.toSet(), _counted.keys.toSet());
@@ -209,11 +236,32 @@ void main() {
       });
     }
 
+    for (final entry in _groupCounted.entries) {
+      test('${entry.key} reserves independently counted group reads', () {
+        final (fresh, prepare, preflight, readback) = entry.value;
+        final logicalReads = 2 * (fresh + prepare) + preflight + readback;
+        final row = productionAiLedger.find(entry.key);
+        expect(row, isNotNull);
+        expect(row!.modelVisible, isTrue);
+        // One unreplayed mutation; OAuth may replay each resource read once.
+        expect(row.httpCap, 2 * logicalReads + 1);
+        expect(aiWriteRequestAllowance(entry.key), 2 * logicalReads + 1);
+        expect(
+          aiWriteRequestAllowance(entry.key, oauthReplay: false),
+          logicalReads + 1,
+        );
+        expect(row.httpCap, lessThanOrEqualTo(40));
+      });
+    }
+
     test('an unknown operation reserves the largest row', () {
       final largest = [
         for (final operation in _counted.keys) 2 * _worstReads(operation) + 1,
         ..._mr6b2CountedCaps.values,
         ..._mr6b3CountedCaps.values,
+        for (final (fresh, prepare, preflight, readback)
+            in _groupCounted.values)
+          2 * (2 * (fresh + prepare) + preflight + readback) + 1,
       ].reduce((a, b) => a > b ? a : b);
       expect(aiWriteRequestAllowance('notAnOperation'), largest);
       expect(

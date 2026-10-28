@@ -7,7 +7,7 @@ const List<AiCapability> aiGroupReactionRows = <AiCapability>[
     baseTier: AiWriteTier.t1,
     scopeClass: AiScopeClass.groupWorkItem,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     arguments: <String, AiArgSpec>{
       'groupId': AiArgSpec(AiArgType.integer, required: true),
       'iid': _iid,
