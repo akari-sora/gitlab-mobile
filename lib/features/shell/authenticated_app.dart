@@ -24,6 +24,7 @@ import '../offline/offline_status.dart';
 import '../ai/ai_account_removal.dart';
 import '../ai/ai_chat_page.dart' show openAiChatSession;
 import '../ai/ai_background_execution.dart';
+import '../ai/ai_gate.dart';
 import '../ai/ai_recovery_notice.dart';
 import '../ai/ai_write_journal.dart';
 import '../ai/ai_chat_session.dart';
@@ -294,6 +295,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
       backgroundExecution: channel == null
           ? null
           : AiBackgroundExecution(
+              backgroundEnabled: aiBackgroundEnabled,
               accountKey: widget.session.active!.key,
               generation: widget.session.generation,
               ownerApi: widget.session.api!,

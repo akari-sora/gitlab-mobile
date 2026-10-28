@@ -502,6 +502,7 @@ Future<void> main() async {
           .setMockMethodCallHandler(channel, null),
     );
     final owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: 'synthetic-account',
       generation: 1,
       ownerApi: Object(),
@@ -649,6 +650,7 @@ Future<void> main() async {
         sandbox,
         command,
         testChannel: channel,
+        testBackgroundEnabled: true,
         testJournalFence: journalFence,
         releasePolicy: fixtureReleasePolicy,
       );

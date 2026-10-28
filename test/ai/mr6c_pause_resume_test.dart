@@ -1146,6 +1146,7 @@ void main() {
 }
 
 AiBackgroundExecution _owner(fx.StackHarness h) => AiBackgroundExecution(
+  backgroundEnabled: true,
   accountKey: h.account,
   generation: h.session.generation,
   ownerApi: h.session.api!,

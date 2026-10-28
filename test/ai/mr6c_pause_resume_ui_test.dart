@@ -399,6 +399,7 @@ void main() {
       throw StateError('Unexpected method ${call.method}');
     });
     final owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: h.account,
       generation: h.session.generation,
       ownerApi: h.session.api!,
@@ -479,6 +480,7 @@ void main() {
       }
     });
     AiBackgroundExecution makeOwner() => AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: h.account,
       generation: h.session.generation,
       ownerApi: h.session.api!,
@@ -618,6 +620,7 @@ void main() {
       }
     });
     final owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: h.account,
       generation: h.session.generation,
       ownerApi: h.session.api!,

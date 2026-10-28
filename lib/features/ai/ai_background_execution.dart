@@ -176,6 +176,7 @@ enum AiTaskBackResult {
 final class AiBackgroundExecution extends ChangeNotifier
     with WidgetsBindingObserver {
   AiBackgroundExecution({
+    required this.backgroundEnabled,
     required this.accountKey,
     required this.generation,
     required this.ownerApi,
@@ -191,6 +192,8 @@ final class AiBackgroundExecution extends ChangeNotifier
     _attach();
   }
 
+  /// Fixed by production wiring; tests explicitly opt into native execution.
+  final bool backgroundEnabled;
   final String accountKey;
   final int generation;
   final Object ownerApi;
@@ -592,7 +595,7 @@ final class AiBackgroundExecution extends ChangeNotifier
   }
 
   Future<void> _start(AiBackgroundRunGate gate, int revision) {
-    if (!_attach()) {
+    if (!backgroundEnabled || !_attach()) {
       gate._startFailure = AiBackgroundStartFailure.unsupported;
       return Future<void>.value();
     }

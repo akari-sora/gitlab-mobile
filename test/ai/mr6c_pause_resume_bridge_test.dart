@@ -150,6 +150,7 @@ void main() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(channel, peer.handle);
     final owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: 'synthetic',
       generation: 1,
       ownerApi: Object(),
@@ -469,6 +470,7 @@ void main() {
   test('unsupported platform observes lifecycle and requires resume', () async {
     var visible = true;
     final owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: 'synthetic',
       generation: 1,
       ownerApi: Object(),

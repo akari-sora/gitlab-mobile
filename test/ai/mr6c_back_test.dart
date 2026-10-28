@@ -87,6 +87,7 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, native.handle);
     owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: 'synthetic-back-account',
       generation: 1,
       ownerApi: Object(),
@@ -179,6 +180,7 @@ void main() {
     'unsupported host returns typed unsupported without a channel',
     () async {
       final unsupported = AiBackgroundExecution(
+        backgroundEnabled: true,
         accountKey: 'synthetic-unsupported-account',
         generation: 1,
         ownerApi: Object(),
