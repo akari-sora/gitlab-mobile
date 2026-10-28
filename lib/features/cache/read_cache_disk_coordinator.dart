@@ -5,11 +5,14 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../../core/failure.dart';
+import '../../core/gitlab_api.dart';
+import '../../core/offline/offline_repository_coordinator.dart';
 import '../../core/read_cache_cipher.dart';
 import '../../core/read_cache_disk_contract.dart';
 import '../../core/read_cache_files.dart';
 import 'read_cache_key_store.dart';
 import 'read_cache_settings_store.dart';
+import 'offline_repository_namespace.dart';
 
 enum ReadCacheDiskState {
   closed,
@@ -197,6 +200,36 @@ final class ReadCacheDiskCoordinator {
 
   void installUserControls() => _domain.controlsInstalled = true;
 
+  /// Bind C3's HTTP sinks now; join B4 only when disk activation can open it.
+  /// A never-opened participant has no work to drain and must not turn empty
+  /// account cleanup into marker writes while storage remains closed.
+  void bindOfflineRepository(GitLabApi api, DiskBinding binding) {
+    if (!configured) return;
+    var participant = _domain.namespace ?? _domain.pendingOfflineNamespace;
+    if (participant == null) {
+      final offline = OfflineRepositoryNamespace(
+        coordinator: identical(_domain, _processDomain)
+            ? OfflineRepositoryCoordinator.instance
+            : OfflineRepositoryCoordinator(clock: _clock),
+        keys: _keys!,
+        files: _files!,
+      );
+      _domain.pendingOfflineNamespace = offline;
+      participant = offline;
+    }
+    if (participant is OfflineRepositoryNamespace) {
+      participant.coordinator.bindApi(api, binding);
+    }
+  }
+
+  void _installOfflineNamespace() {
+    final pending = _domain.pendingOfflineNamespace;
+    if (_domain.namespace == null && pending != null) {
+      register(pending);
+      _domain.pendingOfflineNamespace = null;
+    }
+  }
+
   /// Storage cleanup does not depend on registration, so startup can erase
   /// old offline data before C3 constructs its runtime participant.
   void register(ReadCacheNamespace namespace) {
@@ -301,7 +334,8 @@ final class ReadCacheDiskCoordinator {
       return blocked;
     }
     try {
-      if (await _domain.namespace?.hasMarker(accountKey) ?? false) {
+      final namespace = _domain.namespace ?? _domain.pendingOfflineNamespace;
+      if (await namespace?.hasMarker(accountKey) ?? false) {
         return blocked;
       }
     } on Object {
@@ -341,6 +375,7 @@ final class ReadCacheDiskCoordinator {
         binding.generation <= _domain.highestGeneration) {
       return false;
     }
+    _installOfflineNamespace();
     account.epoch++;
     account.state = ReadCacheDiskState.offlineReadOnly;
     _domain.highestGeneration = binding.generation;
@@ -719,6 +754,7 @@ final class ReadCacheDiskCoordinator {
         () => _gates(binding) && account.epoch == preparedEpoch,
       );
       if (!_gates(binding) || account.epoch != preparedEpoch) return false;
+      _installOfflineNamespace();
       final namespace = _domain.namespace;
       var namespaceReady = false;
       if (namespace != null) {
@@ -2652,6 +2688,7 @@ bool _matches(ProjectedDiskEntry entry, DiskInvalidation invalidation) {
 final class _Domain {
   Object? startupOwner, startupScan;
   ReadCacheNamespace? namespace;
+  OfflineRepositoryNamespace? pendingOfflineNamespace;
   String? diskRetainedAccountKey;
   DiskBinding? offlineBinding;
   final waits = Map<Object, Set<void Function()>>.identity();

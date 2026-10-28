@@ -166,6 +166,11 @@ final class ReadCacheFileStore {
   final DateTime Function() _clock;
   final void Function(ReadCacheFileCheckpoint)? checkpoint;
 
+  /// The sibling offline namespace uses the same injected Application Support
+  /// root. Its contents and capacity remain independent of the C2 file store.
+  Future<Directory> offlineSupportDirectory() async =>
+      Directory(await _resolveRoot());
+
   Future<String> _resolveRoot() async {
     try {
       return (await _root()).absolute.path;
