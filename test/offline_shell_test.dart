@@ -25,6 +25,10 @@ import 'package:gitlab_mobile/core/providers.dart';
 import 'package:gitlab_mobile/core/rate_budget.dart';
 import 'package:gitlab_mobile/core/read_cache_files.dart';
 import 'package:gitlab_mobile/features/ai/ai_account_removal.dart';
+import 'package:gitlab_mobile/features/ai/ai_history.dart';
+import 'package:gitlab_mobile/features/ai/ai_journal_key_store.dart';
+import 'package:gitlab_mobile/features/ai/ai_stores.dart';
+import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/features/auth/login_screen.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/features/cache/read_cache_disk_coordinator.dart';
@@ -69,6 +73,9 @@ const _readme = '''
 final class _Storage implements ReadCacheSecureStorage {
   final values = <String, String>{};
   bool failOfflineKeyRead = false;
+
+  /// Holds every deletion until completed: storage that never answers.
+  Completer<void>? holdDeletes;
   @override
   Future<String?> read(String key) async {
     if (failOfflineKeyRead &&
@@ -82,11 +89,62 @@ final class _Storage implements ReadCacheSecureStorage {
   Future<void> write(String key, String value) async => values[key] = value;
 
   @override
-  Future<void> delete(String key) async => values.remove(key);
+  Future<void> delete(String key) async {
+    await holdDeletes?.future;
+    values.remove(key);
+  }
 
   @override
   Future<Map<String, String>> readAll() async => Map.of(values);
 }
+
+/// AI history storage whose startup inventory waits until [release].
+final class _HeldHistoryStore implements AiStore, AiStoreSecureInventory {
+  _HeldHistoryStore(this.events);
+  final List<String> events;
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  final memory = MemoryAiStore();
+
+  @override
+  Future<AiTombstoneInventory> readTombstoneInventory() async {
+    events.add('history-start');
+    if (!entered.isCompleted) entered.complete();
+    await release.future;
+    events.add('history-end');
+    return memory.readTombstoneInventory();
+  }
+
+  @override
+  Future<AiSecureInventory> readSecureInventory() =>
+      memory.readSecureInventory();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _JournalKeys extends MemoryAiJournalKeyStore {
+  _JournalKeys(this.events);
+  final List<String> events;
+  final entered = Completer<void>();
+  @override
+  Future<Set<String>> inventoryAccounts() async {
+    events.add('journal-start');
+    if (!entered.isCompleted) entered.complete();
+    return super.inventoryAccounts();
+  }
+}
+
+/// Every AI file under [root] with its size and modification time.
+List<String> _aiFiles(Directory root) => [
+  for (final name in ['ai_history', 'ai_write_journal'])
+    if (Directory('${root.path}/$name').existsSync())
+      for (final entity in Directory(
+        '${root.path}/$name',
+      ).listSync(recursive: true, followLinks: false))
+        '${entity.path} ${entity.statSync().size} '
+            '${entity.statSync().modified.microsecondsSinceEpoch}',
+]..sort();
 
 final class _LockStore implements AppLockStore {
   bool enabled = false, fail = false;
@@ -702,6 +760,13 @@ void main() {
         find.byKey(const ValueKey('offline-banner-action')),
       );
       expect(button.onPressed, isNull);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('offline-banner-action')),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
       hold.completeError(_offlineError());
       await _shown(tester, find.text('仍然無法連上 GitLab'));
       expect(
@@ -758,6 +823,64 @@ void main() {
       final target = session.pendingResumeTarget;
       expect(target?.projectId, 42);
       expect(target?.resource, 'repository');
+      await _finish(tester, h);
+    });
+
+    testWidgets('switch to online from a snapshot opened in 管理離線專案 keeps '
+        'its repository as the resume target', (tester) async {
+      final h = await _realHarness(tester, _network);
+      addTearDown(() => h.dispose(quiesce: false));
+      final session = await h.offlineSession(tester);
+      await tester.pumpWidget(h.app(session));
+      await _shown(tester, _projectRow);
+      await tester.tap(find.byKey(const ValueKey('offline-shell-menu')));
+      await _settle(tester);
+      await tester.tap(find.text('管理離線專案').last);
+      final manageRow = find.byKey(const ValueKey('offline-row-$_snapshotId'));
+      await _shown(tester, manageRow);
+      await tester.tap(manageRow);
+      await _shown(tester, find.byKey(const ValueKey('snapshot-readme')));
+
+      h.responder = (_) =>
+          jsonResponse({'id': 7, 'username': 'coder', 'name': 'Coder'});
+      await tester.runAsync(() => session.probeOffline(manual: false));
+      final snack = find.byKey(const ValueKey('offline-restored-snack'));
+      await _shown(tester, snack);
+      await _settle(tester);
+      await tester.tap(
+        find
+            .descendant(of: snack, matching: find.byType(SnackBarAction))
+            .hitTestable()
+            .first,
+      );
+      await _until(tester, () => session.active != null, what: 'online');
+      final target = session.pendingResumeTarget;
+      expect(target?.projectId, 42);
+      expect(target?.resource, 'repository');
+      await _finish(tester, h);
+    });
+
+    testWidgets('back on the list, switching online names no project', (
+      tester,
+    ) async {
+      final h = await _realHarness(tester, _network);
+      addTearDown(() => h.dispose(quiesce: false));
+      final session = await h.offlineSession(tester);
+      await tester.pumpWidget(h.app(session));
+      await _shown(tester, _projectRow);
+      await tester.tap(_projectRow);
+      await _shown(tester, find.byKey(const ValueKey('snapshot-readme')));
+      Navigator.of(
+        tester.element(find.byKey(const ValueKey('snapshot-readme'))),
+      ).pop();
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('snapshot-readme')), findsNothing);
+
+      h.responder = (_) =>
+          jsonResponse({'id': 7, 'username': 'coder', 'name': 'Coder'});
+      await tester.tap(find.byKey(const ValueKey('offline-banner-action')));
+      await _until(tester, () => session.active != null, what: 'online');
+      expect(session.pendingResumeTarget, isNull);
       await _finish(tester, h);
     });
 
@@ -941,6 +1064,51 @@ void main() {
       tester,
       (_) => jsonResponse({'message': 'bad'}, status: 400),
     );
+
+    testWidgets('before startup recovery has run, picking another account '
+        'still confirms first and only a confirmed pick signs out', (
+      tester,
+    ) async {
+      final h = await unknownFailure(tester);
+      addTearDown(() => h.dispose(quiesce: false));
+      late SessionController session;
+      await tester.runAsync(() async {
+        await h.seed();
+        await h.lock.start();
+        // No startup recovery: the retained key is not known yet.
+        session = h.makeSession(recover: false);
+        await session.initialize();
+      });
+      expect(session.diskRetainedAccountKey, isNull);
+      expect(session.leavingDiskAccountKey, h.account.key);
+      await pumpLogin(tester, session);
+      await _settle(tester);
+      final before = h.adapter.requests.length;
+      await tester.tap(find.text('@other'));
+      await _shown(tester, find.text('要刪除離線專案嗎？'));
+      expect(
+        find.text('切換帳號會刪除 @coder 的 1 個離線專案（4.0 KB）。'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('取消'));
+      await _settle(tester);
+      expect(h.adapter.requests.length, before, reason: 'nothing ran');
+      final kept = await tester.runAsync(
+        () => h.keys.readOfflineKey(h.account.key),
+      );
+      expect(kept!.isFound, isTrue, reason: 'no clear started');
+
+      await tester.tap(find.text('@other'));
+      await _shown(tester, find.text('繼續並刪除'));
+      await tester.tap(find.text('繼續並刪除'));
+      await _until(
+        tester,
+        () => h.adapter.requests.length > before,
+        what: 'the confirmed pick runs',
+      );
+      await _until(tester, () => !session.busy, what: 'pick ends');
+      await _finish(tester, h);
+    });
 
     testWidgets('picking another account confirms the retained account loss '
         'first; the retained account itself asks nothing', (tester) async {
@@ -1141,6 +1309,141 @@ void main() {
       h.storage.failOfflineKeyRead = true;
       expect(await h.cache.offlineSnapshotSummary(h.account.key), isNull);
       expect(h.storage.values, before, reason: 'nothing written');
+    });
+
+    test('a clear that times out says it is retried at the next start, and '
+        'the data stays unreadable', () async {
+      final h = _Harness(_network);
+      addTearDown(h.dispose);
+      await h.seed();
+      await h.lock.start();
+      final session = h.makeSession();
+      await session.initialize();
+      expect(session.offline, isNotNull);
+      final hold = h.storage.holdDeletes = Completer<void>();
+      // Released before the harness drains storage.
+      addTearDown(() {
+        if (!hold.isCompleted) hold.complete();
+      });
+      h.responder = (_) => jsonResponse({'message': 'denied'}, status: 401);
+      await session.probeOffline(manual: false);
+      expect(session.offline, isNull);
+      expect(session.message, '登入已失效，正在刪除 @coder 的離線資料。');
+      const retry = '登入已失效，@coder 的離線資料將在下次啟動時重試刪除。';
+      for (var i = 0; i < 1000 && session.message != retry; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.message, retry);
+      expect(hold.isCompleted, isFalse, reason: 'storage still hangs');
+      final coordinator = h.cache.offlineRepository!;
+      expect(offlineReadable(coordinator.state(h.account.key)), isFalse);
+    });
+  });
+
+  group('AI startup recovery and offline entry', () {
+    late _Harness h;
+    late _HeldHistoryStore history;
+    late _JournalKeys journalKeys;
+    late AiWriteJournal journal;
+    late Directory orphan;
+    final events = <String>[];
+    late Completer<ResponseBody> identity;
+
+    setUp(() async {
+      events.clear();
+      identity = Completer<ResponseBody>();
+      h = _Harness((_) => identity.future);
+      await h.seed();
+      await h.lock.start();
+      // An orphan history directory: AI startup recovery deletes it.
+      orphan = Directory('${h.root.path}/ai_history/${'f' * 32}')
+        ..createSync(recursive: true);
+      File('${orphan.path}/index.v1.bin').writeAsBytesSync([1, 2, 3]);
+      history = _HeldHistoryStore(events);
+      AiHistoryCoordinator.debugReset(
+        store: history,
+        files: AiHistoryFileStore(root: () async => h.root),
+      );
+      journalKeys = _JournalKeys(events);
+      journal = AiWriteJournal(
+        keys: journalKeys,
+        applicationSupport: h.root,
+        processId: 'offline-ai-fence',
+      );
+    });
+
+    tearDown(() async {
+      if (!history.release.isCompleted) history.release.complete();
+      if (!identity.isCompleted) identity.completeError(_offlineError());
+      h.stop();
+      AiHistoryCoordinator.debugReset();
+      await h.dispose();
+    });
+
+    /// Resume is waiting for /user; AI recovery is blocked in its I/O; the
+    /// account qualifies for offline browsing.
+    Future<SessionController> blocked({Duration? timeout}) async {
+      final session = h.makeSession(recover: false);
+      unawaited(
+        timeout == null
+            ? initializeSessionWithAiRecovery(session, journal: journal)
+            : initializeSessionWithAiRecovery(
+                session,
+                journal: journal,
+                recoveryTimeout: timeout,
+              ),
+      );
+      await history.entered.future.timeout(const Duration(seconds: 5));
+      for (var i = 0; i < 500 && !session.canEnterOffline; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(session.canEnterOffline, isTrue);
+      return session;
+    }
+
+    test('entry waits for the AI step in flight; no AI file changes once '
+        'offline is published, and recovery resumes after leaving', () async {
+      final session = await blocked();
+      List<String>? atEntry;
+      session.addListener(() {
+        if (session.offline != null) atEntry ??= _aiFiles(h.root);
+      });
+      final entry = session.enterOffline();
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(session.offline, isNull, reason: 'waits for the AI step');
+      expect(orphan.existsSync(), isTrue);
+
+      history.release.complete();
+      expect(await entry, isTrue);
+      expect(session.offline, isNotNull);
+      expect(events.take(2), ['history-start', 'history-end']);
+      expect(orphan.existsSync(), isFalse, reason: 'written before entry');
+      expect(atEntry, isNotNull);
+
+      // While offline no AI step starts: the journal waits.
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(journalKeys.entered.isCompleted, isFalse);
+      expect(events, isNot(contains('journal-start')));
+      expect(_aiFiles(h.root), atEntry, reason: 'no AI write after entry');
+
+      // Signed out, recovery goes on as before.
+      await session.endSession();
+      await journalKeys.entered.future.timeout(const Duration(seconds: 5));
+    });
+
+    test('an AI step that does not settle in time keeps offline mode closed',
+        () async {
+      final session = await blocked(
+        timeout: const Duration(milliseconds: 300),
+      );
+      expect(await session.enterOffline(), isFalse);
+      expect(session.offline, isNull);
+      expect(orphan.existsSync(), isTrue);
+
+      // Not offline: the step finishes and recovery continues.
+      history.release.complete();
+      await journalKeys.entered.future.timeout(const Duration(seconds: 5));
+      expect(orphan.existsSync(), isFalse);
     });
   });
 }

@@ -174,8 +174,9 @@ class _OfflineAppState extends State<OfflineApp> {
   OfflineRepositories? _repositories;
   bool _restoredAnnounced = false;
 
-  /// The saved project being browsed, so "switch to online" opens its files.
-  int? _browsing;
+  /// The saved project being read, from any page that opened it (home or
+  /// 管理離線專案), so "switch to online" opens its files.
+  final _reading = SnapshotReadingObserver();
 
   SessionController get _session => widget.session;
   bool get _current =>
@@ -241,7 +242,10 @@ class _OfflineAppState extends State<OfflineApp> {
   Future<void> _goOnline() async {
     final offline = _offline;
     if (!_current || offline == null) return;
-    await _session.probeOffline(switchOnline: true, projectId: _browsing);
+    await _session.probeOffline(
+      switchOnline: true,
+      projectId: _reading.projectId,
+    );
     if (!_current || offline.connectionRestored) return;
     _messenger.currentState
       ?..hideCurrentSnackBar()
@@ -252,17 +256,12 @@ class _OfflineAppState extends State<OfflineApp> {
     final repositories = _repositories;
     final offline = _offline;
     if (repositories == null || offline == null) return;
-    _browsing = record.projectId;
-    try {
-      await openSnapshot(
-        context,
-        repositories: repositories,
-        record: record,
-        account: offline.account,
-      );
-    } finally {
-      if (_browsing == record.projectId) _browsing = null;
-    }
+    await openSnapshot(
+      context,
+      repositories: repositories,
+      record: record,
+      account: offline.account,
+    );
   }
 
   void _manage(BuildContext context) {
@@ -314,6 +313,7 @@ class _OfflineAppState extends State<OfflineApp> {
           final useDynamic = widget.appearance.useDynamicColor;
           return MaterialApp(
             navigatorKey: _navigator,
+            navigatorObservers: [_reading],
             scaffoldMessengerKey: _messenger,
             title: appName,
             debugShowCheckedModeBanner: false,
@@ -367,6 +367,40 @@ class _OfflineAppState extends State<OfflineApp> {
         child: app,
       ),
     );
+  }
+}
+
+/// Follows the routes [openSnapshot] pushes ([SnapshotRouteArguments]),
+/// whichever page opened them. [projectId] is the project of the newest one
+/// still on the stack (pages opened above it, such as a file, belong to it),
+/// and null once the user is back where no snapshot is open.
+final class SnapshotReadingObserver extends NavigatorObserver {
+  final _open = <Route<dynamic>, int>{};
+
+  int? get projectId => _open.isEmpty ? null : _open.values.last;
+
+  void _add(Route<dynamic>? route) {
+    if (route?.settings.arguments case SnapshotRouteArguments(:final projectId)) {
+      _open[route!] = projectId;
+    }
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _add(route);
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _open.remove(route);
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _open.remove(route);
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _open.remove(oldRoute);
+    _add(newRoute);
   }
 }
 

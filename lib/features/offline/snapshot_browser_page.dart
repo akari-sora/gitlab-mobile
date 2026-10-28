@@ -89,6 +89,14 @@ RepositoryEntryState entryStateOf(SnapshotTreeEntry entry) =>
         RepositoryEntryState.unsupportedType,
     };
 
+/// The route [openSnapshot] pushes carries this as its arguments, so a
+/// navigator observer can tell which saved project is being read (the
+/// offline shell goes online into that project's files).
+final class SnapshotRouteArguments {
+  const SnapshotRouteArguments(this.projectId);
+  final int projectId;
+}
+
 /// Opens the offline version [record]. Failures go to the shared surface.
 Future<void> openSnapshot(
   BuildContext context, {
@@ -106,6 +114,9 @@ Future<void> openSnapshot(
   }
   await Navigator.of(context).push(
     MaterialPageRoute<void>(
+      settings: RouteSettings(
+        arguments: SnapshotRouteArguments(record.projectId),
+      ),
       builder: (_) => SnapshotBrowserPage(
         repositories: repositories,
         record: record,

@@ -159,10 +159,16 @@ final class _SessionRecovery {
   bool _disposed = false;
   bool _started = false;
 
+  /// AI recovery steps running inside the gate, and their settling.
+  int _aiRunning = 0;
+  Completer<void>? _aiSettled;
+  bool _localWritesClosed = false;
+
   void start() {
     if (_started) return;
     _started = true;
     configureReadCacheDisk(session.readCache);
+    session.settleLocalWrites = _settleAi;
     session.addListener(_changed);
     unawaited(session.whenDisposed.then((_) => dispose()));
     _changed();
@@ -170,6 +176,14 @@ final class _SessionRecovery {
 
   void _changed() {
     if (_disposed || session.isDisposed) return;
+    if (session.localWritesClosed) {
+      _localWritesClosed = true;
+    } else if (_localWritesClosed) {
+      // Offline read-only mode ended, or its entry was refused: AI recovery
+      // waiting in runAi re-checks and may go on.
+      _localWritesClosed = false;
+      _signalDecisionChanged();
+    }
     final decision = session.readCacheStartupDecision;
     if (identical(decision, _seen)) return;
     _seen = decision;
@@ -290,25 +304,60 @@ final class _SessionRecovery {
     _signalDecisionChanged();
   }
 
+  /// Runs one AI recovery step after the read-cache scan, never while the
+  /// session enters or is in offline read-only mode (no local AI writes are
+  /// allowed there); it then waits for the mode to end.
   Future<void> runAi(Future<void> Function() action) async {
     while (!_disposed && !session.isDisposed) {
       final changed = _decisionChanged.future;
       final decision = session.readCacheStartupDecision;
+      if (session.localWritesClosed) _localWritesClosed = true;
       if (decision == null || !identical(decision, _acknowledged) ||
-          !session.isReadCacheDecisionCurrent(decision)) {
+          !session.isReadCacheDecisionCurrent(decision) ||
+          session.localWritesClosed) {
         await changed;
         continue;
       }
       final ran = await _recoveryGate.run(() async {
+        // Checked and counted in the same turn, so an offline entry that
+        // closed the session's local writes either sees this step running or
+        // keeps it from starting.
         if (_disposed || session.isDisposed ||
             !identical(decision, _acknowledged) ||
             !session.isReadCacheDecisionCurrent(decision)) {
           return false;
         }
-        await action();
+        if (session.localWritesClosed) {
+          _localWritesClosed = true;
+          return false;
+        }
+        _aiRunning++;
+        try {
+          await action();
+        } finally {
+          if (--_aiRunning == 0) {
+            final settled = _aiSettled;
+            _aiSettled = null;
+            if (settled != null && !settled.isCompleted) settled.complete();
+          }
+        }
         return true;
       });
       if (ran) return;
+    }
+  }
+
+  /// Offline entry calls this after closing the session's local writes: no
+  /// new AI step starts, and the one running gets [timeout] to settle. False
+  /// means it did not, and the entry is refused.
+  Future<bool> _settleAi() async {
+    if (_disposed || _aiRunning == 0) return true;
+    final settled = _aiSettled ??= Completer<void>();
+    try {
+      await settled.future.timeout(timeout);
+      return true;
+    } on TimeoutException {
+      return false;
     }
   }
 
@@ -325,6 +374,12 @@ final class _SessionRecovery {
       _sessionRecoveries[session] = null;
     }
     session.removeListener(_changed);
+    if (session.settleLocalWrites == _settleAi) {
+      session.settleLocalWrites = null;
+    }
+    final settled = _aiSettled;
+    _aiSettled = null;
+    if (settled != null && !settled.isCompleted) settled.complete();
     _signalDecisionChanged();
   }
 }

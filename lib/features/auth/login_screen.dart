@@ -94,8 +94,9 @@ class _LoginScreenState extends State<LoginScreen> {
   /// The account whose disk data this device kept after a failed resume or
   /// same-account retry (B8/B10): it is the one that loses its offline
   /// projects when the sign-in screen moves on to another account (§6.7).
+  /// The same source as `select`, including before startup recovery ran.
   String? get _retainedKey {
-    final key = widget.session.diskRetainedAccountKey;
+    final key = widget.session.leavingDiskAccountKey;
     if (key == null) return null;
     return widget.session.accounts.any((account) => account.key == key)
         ? key
