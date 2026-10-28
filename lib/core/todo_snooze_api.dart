@@ -124,8 +124,8 @@ typedef SelectedTodoOwnership = ({
 /// go through GraphQL. Writes are never retried.
 ///
 /// Group-write callers must bind the verified owner and Todo ID on the strict
-/// ownership reader before sending: [pendingTodosForSnooze] for snooze and
-/// [snoozedTodosForUnsnooze] for unsnooze. The preflight must prove that the
+/// selected ownership reader before sending: [selectedTodoForSnooze] for snooze
+/// and [selectedTodoForUnsnooze] for unsnooze. The preflight must prove that the
 /// exact Todo belongs to the expected actor and group work item. The
 /// mutation acknowledgement must return the same Todo ID and expected time
 /// (null for unsnooze); a missing or mismatched acknowledgement is uncertain.
@@ -201,6 +201,11 @@ extension TodoSnoozeApi on GitLabApi {
   /// complete project ownership pass. An ID absent from all result fields is
   /// not found; a bound hit with more pages or invalid evidence fails closed.
   /// [exactGroup] binds a group scope; omit it only for accountGlobal admission.
+  /// Without [exactGroup], the owner is self-consistent server evidence from
+  /// this actor's selected Todo, not proof against an independent group grant.
+  /// The full path is the server's own echo even with [exactGroup]; group-scoped
+  /// callers must compare the returned owner's full path with the canonical
+  /// grant path. This evidence never grants general Work Item write access.
   /// Context values and [isCurrent] must come from the captured app context.
   Future<SelectedTodoOwnership> selectedTodoForSnooze(int todoId, {
     required int expectedUserId,
@@ -213,7 +218,8 @@ extension TodoSnoozeApi on GitLabApi {
     actorUserId: expectedUserId, generation: generation, readEpoch: readEpoch,
     isCurrent: isCurrent, exactGroup: exactGroup, maxPages: maxPages);
 
-  /// The same strict discovery for currently snoozed pending Todos.
+  /// The same strict discovery for currently snoozed pending Todos, including
+  /// the evidence and grant-path requirements of [selectedTodoForSnooze].
   Future<SelectedTodoOwnership> selectedTodoForUnsnooze(int todoId, {
     required int expectedUserId,
     required int generation,
