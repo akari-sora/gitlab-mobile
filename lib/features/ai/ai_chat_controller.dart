@@ -468,8 +468,6 @@ class AiChatController extends ChangeNotifier
   AiRunner? _runner;
   AiComplete Function(AiWireClient)? _completeForRunner;
 
-  /// Whether this run's page context delivery is already recorded (§3.1).
-  var _contextDeliveryRecorded = false;
   AiRunnerBinding? _binding;
   final List<AiChatItem> _items = [];
   final Expando<AiChatItem> _successors = Expando<AiChatItem>();
@@ -2162,20 +2160,14 @@ class AiChatController extends ChangeNotifier
         _notifyStream();
       },
       onRestorableResultCut: placeholders.markWholeFieldsCut,
+      onContextDelivered: (sent) {
+        if (current()) _context?.recordDelivery(placeholders, sent);
+      },
       onToolStarted: (call) {
         if (!current()) return;
         _executionStep++;
         _syncExecutionWork();
         _readConfidential |= _context?.readConfidential ?? false;
-        // §3.1: before any tool of this run can write, note whether the
-        // page context this run sent carried the description whole. A
-        // summary that cut it means no whole-field write of it.
-        if (!_contextDeliveryRecorded) {
-          if (_runner case final active?) {
-            _context!.recordDelivery(placeholders, active.sentContext);
-            _contextDeliveryRecorded = true;
-          }
-        }
         final index = _insertRunItem(
           AiToolRunItem(
             name: _toolName(call.name),
@@ -2408,9 +2400,6 @@ class AiChatController extends ChangeNotifier
       }
       final segment = runner.segment;
       final redactions = runner.lateRedactions;
-      // The context this run sends is recorded once, at its first tool, so
-      // a later whole read in the same run is the latest delivery.
-      _contextDeliveryRecorded = false;
       final result = await runner.run(
         turn.modelText,
         // Binding still reads the user's own words, as before.
@@ -2576,6 +2565,7 @@ class AiChatController extends ChangeNotifier
         groupScope: refreshed.groupScope,
         groupMetadata: refreshed.groupMetadata,
         field: previous.field,
+        titleField: previous.titleField,
         readConfidential: previous.readConfidential || refreshed.readConfidential,
         fetchedAt: refreshed.fetchedAt,
       );

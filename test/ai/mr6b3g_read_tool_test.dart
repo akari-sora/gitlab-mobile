@@ -34,10 +34,13 @@ final class _Secrets implements KnownSecretsSource {
   Iterable<String> get current => const [];
 }
 
-Map<String, Object?> _node({String? description = 'Synthetic description'}) => {
+Map<String, Object?> _node({
+  String title = 'Group item',
+  String? description = 'Synthetic description',
+}) => {
   'id': _item,
   'iid': '3',
-  'title': 'Group item',
+  'title': title,
   'state': 'OPEN',
   'createdAt': '2026-10-01T00:00:00Z',
   'updatedAt': '2026-10-02T00:00:00Z',
@@ -371,6 +374,53 @@ void main() {
       expect(clipped.table.seenOnlyCut(clippedField), isTrue);
     },
   );
+
+  for (final description in <String?>['Synthetic description', null]) {
+    test(
+      'group title delivery tracks output cuts with '
+      '${description == null ? 'unavailable' : 'complete'} description',
+      () async {
+        final title = 'group-title-${'x' * 1000}-end';
+        final api = testApi(
+          FakeAdapter(
+            (_) => jsonResponse(
+              _envelope(_node(title: title, description: description)),
+            ),
+          ),
+        );
+        addTearDown(api.close);
+        final h = _catalogue(api);
+        final call = _call('get_group_work_item', {'groupId': 7, 'iid': 3});
+        final cut = await h.catalogue.execute(
+          call,
+          budget: AiToolBudget(maxSingleOutputChars: 250),
+        );
+        expect(cut.result.isError, isFalse);
+        expect(cut.truncated, isTrue);
+        expect(cut.result.content, contains('group-title-'));
+        expect(cut.result.content, isNot(contains(title)));
+        final descriptionField = AiFieldProvenance.groupWorkItem(
+          identity: h.port.verifiedIdentity!,
+          completeValue: true,
+        );
+        final titleField = AiFieldProvenance(
+          resourceKey: descriptionField.resourceKey,
+          fieldName: 'title',
+          completeValue: true,
+          accountKey: descriptionField.accountKey,
+          groupId: descriptionField.groupId,
+          groupFullPath: descriptionField.groupFullPath,
+        );
+        expect(h.table.seenOnlyCut(titleField), isTrue);
+        final whole = await h.catalogue.execute(call, budget: AiToolBudget());
+        expect(whole.result.isError, isFalse);
+        expect(whole.result.content, contains(title));
+        expect(h.table.seenOnlyCut(titleField), isTrue);
+        whole.recordDelivery!(whole.result.plainData);
+        expect(h.table.seenOnlyCut(titleField), isFalse);
+      },
+    );
+  }
 
   test('reserves both OAuth resource requests before sending', () async {
     final adapter = FakeAdapter(
