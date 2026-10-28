@@ -698,6 +698,9 @@ AiTextOutcome prepareWriteText({
   String? currentFieldValue,
   List<String>? secretFragments,
   bool keepNotifications = false,
+  // Exact list identifiers cannot contain a reconstructed attachment, whose
+  // Markdown would otherwise exempt both its upload secret and surrounding text.
+  bool allowRebuiltUploads = true,
 }) {
   // Plan §3.1: a field whose value was cut in what the provider received
   // offers no whole-field write ("這個欄位太長，AI 無法完整編輯").
@@ -756,7 +759,10 @@ AiTextOutcome prepareWriteText({
   if (text.contains('[[upload:') || text.contains('[[attachment:')) {
     return AiTextOutcome.block(AiTextBlockCode.rereadField);
   }
-  final exempt = <String>[...restoredTargets, ..._rebuiltUploads(text)];
+  final exempt = <String>[
+    ...restoredTargets,
+    if (allowRebuiltUploads) ..._rebuiltUploads(text),
+  ];
   if (placeholders.containsUserMessageTarget(text) &&
       !_coveredByExempt(text, placeholders, exempt)) {
     return AiTextOutcome.block(AiTextBlockCode.pasteOnScreen);

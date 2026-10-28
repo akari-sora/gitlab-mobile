@@ -16,7 +16,11 @@ const List<AiCapability> aiGroupAssigneesRows = <AiCapability>[
     arguments: {
       'groupId': AiArgSpec(AiArgType.integer, required: true),
       'iid': _iid,
-      'assigneeUsernames': AiArgSpec(AiArgType.stringList, required: true),
+      'assigneeUsernames': AiArgSpec(
+        AiArgType.stringList,
+        required: true,
+        allowIdentifierMentions: true,
+      ),
     },
   ),
 ];
