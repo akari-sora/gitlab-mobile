@@ -83,7 +83,19 @@ final class AiFieldProvenance {
     this.projectFullPath,
     this.groupFullPath,
     this.accountKey,
-  });
+  }) : _verifiedGroupField = false;
+
+  const AiFieldProvenance._groupWorkItem({
+    required this.resourceKey,
+    required this.fieldName,
+    required this.completeValue,
+    required this.resourceWeb,
+    required this.groupId,
+    required this.groupFullPath,
+    required this.accountKey,
+  }) : projectId = null,
+       projectFullPath = null,
+       _verifiedGroupField = true;
 
   final AiConflictKey resourceKey;
   final String fieldName;
@@ -94,6 +106,7 @@ final class AiFieldProvenance {
   final String? projectFullPath;
   final String? groupFullPath;
   final String? accountKey;
+  final bool _verifiedGroupField;
 
   bool sameField(AiFieldProvenance other) =>
       resourceKey == other.resourceKey &&
@@ -155,14 +168,17 @@ final class AiFieldProvenance {
     if (note && noteKey == null) {
       throw ArgumentError('Invalid group Work Item note identity');
     }
-    return AiFieldProvenance(
+    return AiFieldProvenance._groupWorkItem(
       resourceKey: AiConflictKey(note ? noteKey! : identity.canonicalKey),
       fieldName: note
           ? AiWritableField.workItemNote
           : AiWritableField.workItemDescription,
       completeValue: completeValue,
       // GitLab CE v18.5.0, a2f69d15ebab6fda20fef41f44707ee920510ae8:
-      // config/routes/group.rb:29-34,177-178 (checked 2026-10-27).
+      // gitlab-org/gitlab-foss: config/routes/group.rb:33-38,144-149,190;
+      // config/routes.rb:126-132; lib/banzai/filter/upload_link_filter.rb:36-42;
+      // spec/lib/banzai/filter/upload_link_filter_spec.rb:121-166.
+      // The web route also depends on supports_group_work_items? server-side.
       resourceWeb: identity.instance.projectWeb(
         'groups/${identity.fullPath}/-/work_items/${identity.iid}',
       ),
@@ -450,12 +466,16 @@ final class UploadPlaceholderTable {
       }
       final id = match.group(1)!;
       final entry = _entryForId(id);
+      // Keep the account check even after table admission: each stored token
+      // belongs to the exact field account, not just its numeric group owner.
       if (entry == null ||
           entry.resourceKey != field.resourceKey ||
           entry.fieldName != field.fieldName ||
           entry.accountKey != field.accountKey ||
-          (field.groupId != null &&
-              !_ownsUpload(entry.classifyTarget, field))) {
+          entry.groupId != field.groupId ||
+          (entry.groupId != null &&
+              (!field._verifiedGroupField ||
+                  !_ownsUpload(entry.classifyTarget, field)))) {
         return AiTextOutcome.block(AiTextBlockCode.rereadField);
       }
       replacements.add(
@@ -530,6 +550,7 @@ final class UploadPlaceholderTable {
       if (entry.resourceKey == field.resourceKey &&
           entry.fieldName == field.fieldName &&
           entry.accountKey == field.accountKey &&
+          entry.groupId == field.groupId &&
           entry.rawTarget == raw) {
         return entry;
       }
@@ -548,6 +569,7 @@ final class UploadPlaceholderTable {
         resourceKey: field.resourceKey,
         fieldName: field.fieldName,
         accountKey: field.accountKey,
+        groupId: field.groupId,
         rawTarget: raw,
         classifyTarget: classifyTarget,
       ),
@@ -556,6 +578,12 @@ final class UploadPlaceholderTable {
   }
 
   bool _acceptsField(AiFieldProvenance field) {
+    if (!field._verifiedGroupField &&
+        (field.groupId != null ||
+            field.groupFullPath != null ||
+            field.accountKey != null)) {
+      return false;
+    }
     final sourceAccount = field.accountKey;
     if (sourceAccount == null) return field.groupId == null;
     return sourceAccount == accountKey &&
@@ -632,6 +660,7 @@ final class _UploadEntry {
     required this.resourceKey,
     required this.fieldName,
     required this.accountKey,
+    required this.groupId,
     required this.rawTarget,
     required this.classifyTarget,
   });
@@ -640,6 +669,7 @@ final class _UploadEntry {
   final AiConflictKey resourceKey;
   final String fieldName;
   final String? accountKey;
+  final int? groupId;
   final String rawTarget;
   final String classifyTarget;
 }

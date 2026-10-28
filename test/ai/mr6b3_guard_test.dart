@@ -476,6 +476,7 @@ void main() {
       final nonGraphCalled = <String>{};
       final groupCalled = <String>{};
       final mainWrite = File('lib/core/ai/tools/gitlab_write_port.dart');
+      expect(_apiCascadeViolations(mainWrite.readAsStringSync()), isEmpty);
       final mainCalled = _apiMembers(mainWrite.readAsStringSync());
       final parts = _writePartSources(
         mainWrite.absolute.uri,
@@ -485,6 +486,7 @@ void main() {
       for (final entry in parts.entries) {
         final name = entry.key.pathSegments.last;
         final source = entry.value;
+        expect(_apiCascadeViolations(source), isEmpty, reason: name);
         final members = _apiMembers(source);
         if (name.startsWith('gitlab_write_port_group_')) {
           groupCalled.addAll(members);
@@ -1067,6 +1069,63 @@ void main() {
       }
     });
 
+    test('write guard rejects chained API cascades in main and parts', () {
+      for (final prefix in ['', "part of 'gitlab_write_port.dart';"]) {
+        for (final receiver in [
+          '_api',
+          'alias',
+          'second',
+          'typed',
+          'assigned',
+        ]) {
+          for (final operator in ['..', '?..']) {
+            for (final wrapped in [receiver, '(($receiver))']) {
+              final source =
+                  '$prefix void f() { final alias = _api; '
+                  'final second = alias; '
+                  'final GitLabApi typed = (_api); GitLabApi assigned; assigned = typed; '
+                  '($wrapped${operator}instance.. /* gap */ deleteProject(7)).instance; }';
+              expect(
+                _apiCascadeViolations(source),
+                contains('API cascade in write port'),
+                reason: source,
+              );
+            }
+          }
+        }
+      }
+      expect(
+        _apiCascadeViolations(
+          "// _api..instance..deleteProject(7)\n"
+          "const bait = r'_api..instance..deleteProject(7)'; "
+          'final value = other..instance..deleteProject(7);',
+        ),
+        isEmpty,
+      );
+      expect(
+        _apiReceivers('final base = (_api).instance;'),
+        isNot(contains('base')),
+      );
+      for (final prefix in ['', "part of 'gitlab_write_port.dart';"]) {
+        for (final expression in [
+          '_api as GitLabApi',
+          '(_api) as dynamic',
+          '_api!',
+        ]) {
+          for (final source in [
+            '$prefix void f() { ($expression)..instance..deleteProject(7); }',
+            '$prefix void f() { final alias = $expression; alias..instance..deleteProject(7); }',
+          ]) {
+            expect(
+              _apiCascadeViolations(source),
+              contains('API receiver assertion in write port'),
+              reason: source,
+            );
+          }
+        }
+      }
+    });
+
     test('write part discovery follows URIs outside tools and validates part of', () {
       final main = Uri.file('/fixture/ai/tools/gitlab_write_port.dart');
       final external = main.resolve('../outside.dart');
@@ -1416,9 +1475,21 @@ Set<String> _pythonSet(String source, String name) {
 
 Set<String> _apiMembers(String source) {
   source = _codeOnly(source);
+  return {
+    for (final receiver in _apiReceivers(source))
+      for (final match in RegExp(
+        '\\b${RegExp.escape(receiver)}\\s*(?:\\?\\.\\.|\\.\\.|\\?\\.|\\.)\\s*(\\w+)\\b',
+      ).allMatches(source))
+        match.group(1)!,
+  };
+}
+
+Set<String> _apiReceivers(String source) {
   final receivers = <String>{'_api'};
+  // Optional declaration types do not change aliasing. Require a terminator
+  // so a member access such as `final base = _api.instance` is not an alias.
   final aliases = RegExp(
-    r'\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b(?!\s*(?:[.(]|\?\.))',
+    r'\b(\w+)\s*=\s*(?:\(\s*)*(\w+)\b(?:\s*\))*(?=\s*[;,])',
   );
   var changed = true;
   while (changed) {
@@ -1430,13 +1501,24 @@ Set<String> _apiMembers(String source) {
       }
     }
   }
-  return {
-    for (final receiver in receivers)
-      for (final match in RegExp(
-        '\\b${RegExp.escape(receiver)}\\s*(?:\\?\\.\\.|\\.\\.|\\?\\.|\\.)\\s*(\\w+)\\b',
-      ).allMatches(source))
-        match.group(1)!,
-  };
+  return receivers;
+}
+
+List<String> _apiCascadeViolations(String source) {
+  final code = _codeOnly(source);
+  // Later cascade members cannot be attributed by the member whitelist.
+  // Reject receiver assertions too, so they cannot hide an API alias.
+  final violations = <String>[];
+  for (final receiver in _apiReceivers(code)) {
+    final prefix = '\\b${RegExp.escape(receiver)}\\b(?:\\s*\\))*\\s*';
+    if (RegExp('$prefix(?:\\?\\.\\.|\\.\\.)').hasMatch(code)) {
+      violations.add('API cascade in write port');
+    }
+    if (RegExp('$prefix(?:as\\b|!(?!=))').hasMatch(code)) {
+      violations.add('API receiver assertion in write port');
+    }
+  }
+  return violations;
 }
 
 // Resolve only parts actually declared by the main library, including paths

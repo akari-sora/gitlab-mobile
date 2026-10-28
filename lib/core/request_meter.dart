@@ -2,18 +2,28 @@ import 'dart:async';
 
 /// Counts physical GitLab HTTP requests in the current asynchronous operation.
 final class RequestMeter {
-  RequestMeter({this.beforeRequest});
+  RequestMeter({
+    this.beforeRequest,
+    this.onRequest,
+    this.includeOAuthTokens = false,
+  });
 
-  /// Optional admission for this operation only, before a physical API send.
-  /// Rejected sends consume no request allowance. OAuth rotation is shared
-  /// account work and is not metered by the API request counter.
-  final void Function()? beforeRequest;
+  /// Admission is checked before every physical send, including an OAuth
+  /// replay, so an exhausted lease can be replaced before sending again.
+  /// Transports await it only when present, then count synchronously at send.
+  final Future<void> Function()? beforeRequest;
+
+  /// Checks an optional execution fence and settles admission synchronously at
+  /// the physical send, after cancellation and pacing checks. A rejected send
+  /// must not consume a reservation or increment the count.
+  final void Function()? onRequest;
+  final bool includeOAuthTokens;
   int _count = 0;
 
   int get count => _count;
 
   void increment() {
-    beforeRequest?.call();
+    onRequest?.call();
     _count += 1;
   }
 

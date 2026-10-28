@@ -102,6 +102,10 @@ void _assertGraphRequest(RequestOptions request) {
   expect((body['query']! as String).trimLeft(), startsWith('query '));
   expect(body['variables'], {'path': _path, 'iid': '3'});
   expect(request.followRedirects, isFalse);
+  expect(request.headers['Cache-Control'], 'no-store');
+  expect(request.headers['Authorization'], startsWith('Bearer '));
+  expect(request.headers['Accept'], 'application/json');
+  expect(request.headers.containsKey('PRIVATE-TOKEN'), isFalse);
 }
 
 void main() {
@@ -428,11 +432,12 @@ void main() {
     );
     final api = testApi(adapter);
     addTearDown(api.close);
-    final result = await _catalogue(api).catalogue.executeResult(
+    final execution = await _catalogue(api).catalogue.execute(
       _call('get_group_work_item', {'groupId': 7, 'iid': 3}),
       budget: AiToolBudget(maxGitLabRequests: 1),
     );
-    expect(result.isError, isTrue);
+    expect(execution.result.isError, isTrue);
+    expect(execution.provenance.resource, _scope.workItemGid);
     expect(adapter.requests, isEmpty);
   });
 

@@ -2720,7 +2720,7 @@
   "aiRefusedNotApplied": "The change did not take effect: the field still has its old value. Read the item again and retry.",
   "aiRefusedDiscussionLocked": "This discussion is locked, so the new comment or reply was not sent.",
   "aiRefusedNotOwnNote": "This write may only delete comments written by your own account, so nothing was done.",
-  "aiRefusedTodoForeign": "This to-do belongs to a different account, so nothing was done.",
+  "aiRefusedTodoForeign": "This to-do couldn't be confirmed as belonging to this account and within this conversation's scope, so nothing was done.",
   "aiRefusedProtectedBranch": "This is a protected branch; the AI can't delete or rewrite it, so nothing was done.",
   "aiRefusedDefaultBranch": "The default branch can't be deleted, so nothing was done.",
   "aiRefusedMergeChecking": "GitLab is still checking whether this can be merged, so nothing was done. Try again shortly.",
@@ -2850,5 +2850,18 @@
   "aiRunStartUnavailable": "Background work is unavailable right now.",
   "aiProposalBackgroundUnavailable": "This write was not made: background work could not start.",
   "aiRunCleanupPending": "Work paused: it is not yet confirmed that the background work has ended, and nothing can continue until it is.",
-  "aiRunCleanupRetry": "The cleanup is tried again each time you return to the app; the work can continue only once the cleanup is confirmed."
+  "aiRunCleanupRetry": "The cleanup is tried again each time you return to the app; the work can continue only once the cleanup is confirmed.",
+  "aiProposalGroupTarget": "Work item #{iid}, owned directly by group {path}",
+  "aiProposalOwnTodo": "Changes only your own to-do list (@{username}); the work item itself is not changed.",
+  "aiProposalDeleteOwnNote": "Deletes only this comment, which you wrote; before sending, the app checks with GitLab again that you are its author.",
+  "aiRefusedGroupUnsupported": "GitLab doesn't offer this for this group work item (its version or the work item type may not support it), so nothing was sent.",
+  "aiRefusedGroupUnverifiable": "It couldn't be confirmed that this work item still belongs directly to its group (the group may have been renamed or moved), so nothing was sent. Open or add it again.",
+  "aiConsentWritesGroupScope": "Work items a group owns: the AI may change only the one this conversation was opened on, or ones you add to it yourself; the permission never extends to the whole group, its subgroups or its projects.",
+  "aiChatEmptyGroup": "The AI reads work item #{iid} of group {path}. The group's other work items and its projects are outside this conversation.",
+  "aiChatEmptyGroupItem": "The AI reads this group work item. The group's other work items and its projects are outside this conversation.",
+  "aiSuggestWorkItemSummary": "Summarize this work item",
+  "aiRemovedGroupWorkItem": "Removed {path} #{iid} from the conversation; the AI can no longer change it",
+  "aiChatEmptyGroupAdded": "The AI reads work item #{iid} of group {path}. The items you added (listed above the message box) are also in this conversation's scope; the group's other work items and its projects are not.",
+  "aiChatEmptyGroupItemAdded": "The AI reads this group work item. The items you added (listed above the message box) are also in this conversation's scope; the group's other work items and its projects are not.",
+  "aiRefusedGroupDatesNotSent": "The dates were not sent: they may already match the current dates, and for a group work item that case cannot be confirmed without an extra request. Read the current dates again and retry."
 }

@@ -246,6 +246,20 @@ final class ReadCacheKeyStore {
   Future<void> deleteOfflineKey(String accountKey) =>
       _deleteExact(offlineKeyName(accountKey), 'deleteOfflineKey');
 
+  Future<void> writeOfflineKey(String accountKey, Uint8List key) async {
+    if (key.length != 32) {
+      throw const ReadCacheStoreException(
+        ReadCacheStoreFailure(ReadCacheStoreFailureKind.invalidValue,
+          'writeOfflineKey'),
+      );
+    }
+    await _writeExact(offlineKeyName(accountKey), base64Url.encode(key),
+      'writeOfflineKey');
+  }
+
+  Future<void> writeOfflineMarker(String accountKey, String value) =>
+      _writeExact(offlineMarkerName(accountKey), value, 'writeOfflineMarker');
+
   Future<ReadCacheStoreRead<String>> readOfflineMarker(String accountKey) =>
       _readRaw(offlineMarkerName(accountKey), 'readOfflineMarker');
 

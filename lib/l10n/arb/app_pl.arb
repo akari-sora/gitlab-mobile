@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "Zmiana nie weszła w życie: pole ma nadal poprzednią wartość. Odczytaj ponownie i spróbuj jeszcze raz.",
   "aiRefusedDiscussionLocked": "Ta dyskusja jest zablokowana, więc komentarz lub odpowiedź nie został wysłany.",
   "aiRefusedNotOwnNote": "Ta operacja może usuwać tylko komentarze napisane przez własne konto, więc nic nie zostało zrobione.",
-  "aiRefusedTodoForeign": "Ta pozycja do zrobienia należy do innego konta, więc nic nie zostało zrobione.",
+  "aiRefusedTodoForeign": "Nie udało się potwierdzić, że ta pozycja do zrobienia należy do tego konta i mieści się w zakresie tej rozmowy, więc nic nie zostało zrobione.",
   "aiRefusedProtectedBranch": "To gałąź chroniona; AI nie może jej usunąć ani przepisać, więc nic nie zostało zrobione.",
   "aiRefusedDefaultBranch": "Nie można usunąć gałęzi domyślnej, więc nic nie zostało zrobione.",
   "aiRefusedMergeChecking": "GitLab nadal sprawdza, czy można scalić, więc nic nie zostało zrobione. Spróbuj ponownie za chwilę.",
@@ -2844,5 +2844,18 @@
   "aiRunStartUnavailable": "Praca w tle jest teraz niedostępna.",
   "aiProposalBackgroundUnavailable": "Ten zapis nie został wykonany: nie udało się uruchomić pracy w tle.",
   "aiRunCleanupPending": "Praca wstrzymana: nie potwierdzono jeszcze, że praca w tle się zakończyła, i do tego czasu nie można kontynuować.",
-  "aiRunCleanupRetry": "Czyszczenie jest ponawiane za każdym razem, gdy wracasz do aplikacji; praca może być kontynuowana dopiero po potwierdzeniu czyszczenia."
+  "aiRunCleanupRetry": "Czyszczenie jest ponawiane za każdym razem, gdy wracasz do aplikacji; praca może być kontynuowana dopiero po potwierdzeniu czyszczenia.",
+  "aiProposalGroupTarget": "Element roboczy #{iid} należący bezpośrednio do grupy {path}",
+  "aiProposalOwnTodo": "Zmienia tylko Twoją własną listę rzeczy do zrobienia (@{username}); sam element roboczy się nie zmienia.",
+  "aiProposalDeleteOwnNote": "Usuwa tylko ten komentarz, napisany przez Ciebie; przed wysłaniem aplikacja ponownie sprawdzi w GitLab, czy jesteś jego autorem.",
+  "aiRefusedGroupUnsupported": "GitLab nie udostępnia tej funkcji dla tego elementu roboczego grupy (może jej nie obsługiwać wersja lub typ elementu), więc nic nie zostało wysłane.",
+  "aiRefusedGroupUnverifiable": "Nie udało się potwierdzić, że ten element roboczy nadal należy bezpośrednio do swojej grupy (grupa mogła zostać przemianowana lub przeniesiona), więc nic nie zostało wysłane. Otwórz go lub dodaj ponownie.",
+  "aiConsentWritesGroupScope": "Elementy robocze grupy: AI może zmieniać tylko ten, dla którego otwarto tę rozmowę, albo te, które dodasz samodzielnie; uprawnienie nigdy nie obejmuje całej grupy, jej podgrup ani projektów.",
+  "aiChatEmptyGroup": "AI odczytuje element roboczy #{iid} grupy {path}. Inne elementy robocze grupy i jej projekty są poza tą rozmową.",
+  "aiChatEmptyGroupItem": "AI odczytuje ten element roboczy grupy. Inne elementy robocze grupy i jej projekty są poza tą rozmową.",
+  "aiSuggestWorkItemSummary": "Podsumuj ten element roboczy",
+  "aiRemovedGroupWorkItem": "Usunięto {path} #{iid} z rozmowy; AI nie może go już zmieniać",
+  "aiChatEmptyGroupAdded": "AI odczytuje element roboczy #{iid} grupy {path}. Dodane przez Ciebie elementy (nad polem wiadomości) też należą do tej rozmowy; inne elementy robocze grupy i jej projekty nie.",
+  "aiChatEmptyGroupItemAdded": "AI odczytuje ten element roboczy grupy. Dodane przez Ciebie elementy (nad polem wiadomości) też należą do tej rozmowy; inne elementy robocze grupy i jej projekty nie.",
+  "aiRefusedGroupDatesNotSent": "Daty nie zostały wysłane: mogą już być takie same jak obecne, a dla elementu roboczego grupy nie da się tego potwierdzić bez dodatkowego żądania. Odczytaj ponownie bieżące daty i spróbuj jeszcze raz."
 }
