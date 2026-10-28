@@ -115,7 +115,13 @@ final class SessionController extends ChangeNotifier {
   );
 
   Future<void> _acceptIdentity(String key) async {
-    if (readCache.configured) await readCache.deleteOfflineRefused(key);
+    if (!readCache.configured) return;
+    try {
+      await readCache.deleteOfflineRefused(key);
+    } on Object {
+      // The coordinator keeps disk admission closed. Fresh online identity
+      // proof remains valid even when marker removal cannot be confirmed.
+    }
   }
 
   final ApplicationIdLookup applicationIdFor;

@@ -183,10 +183,9 @@ extension OfflineRepositoryApi on GitLabApi {
           if (status == 401 && attempt == 0 && _credential is OAuthCredential) {
             try {
               if (await _identityRefresh()) continue;
+            } on OAuthRefreshRefused {
+              return const IdentityRefused401();
             } on ApiFailure catch (failure) {
-              if (failure.kind == FailureKind.unauthenticated) {
-                return const IdentityRefused401();
-              }
               return _identityFailure(failure);
             } on Object {
               return const IdentityUnknown(
@@ -316,7 +315,10 @@ extension OfflineRepositoryApi on GitLabApi {
           (_credential as OAuthCredential).accessToken != current.accessToken;
     }
     final gate = () async {
-      final rotated = await oauth.refreshForIdentity(current);
+      final rotated = await oauth.refreshForIdentity(
+        current,
+        rateBudget: rateBudget,
+      );
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
       _cache.clear(revoke: false);
       _credential = current.replacedBy(rotated);

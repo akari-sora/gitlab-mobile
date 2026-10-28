@@ -427,7 +427,7 @@ void main() {
     addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
   });
   test(
-    'fixed alias row is hidden T2 group graph with bounded exact-title schema',
+    'fixed alias row is visible T2 group graph with bounded exact-title schema',
     () {
       final row = productionAiLedger.find(_op)!;
       expect(groupLabelsStageOperations, {_op});
@@ -435,18 +435,18 @@ void main() {
         aiGroupLabelsRows.map((row) => row.operationId).toSet(),
         groupLabelsStageOperations,
       );
-      expect(row.modelVisible, isFalse);
+      expect(row.modelVisible, isTrue);
       expect(row.scopeClass, AiScopeClass.groupWorkItem);
       expect(row.namedMethod, 'updateWorkItemLabels');
       expect(row.readback, isTrue);
-      expect(aiGroupWorkItemWritesEnabled, isFalse);
+      expect(aiGroupWorkItemWritesEnabled, isTrue);
       expect(
         productionAiLedger.modelVisible.any((row) => row.operationId == _op),
-        isFalse,
+        isTrue,
       );
       expect(
         toolsForScope(g0eScope).any((row) => row.operationId == _op),
-        isFalse,
+        isTrue,
       );
       expect(row.baseTier, AiWriteTier.t2);
       expect(row.boundary, AiWriteBoundary.graph);

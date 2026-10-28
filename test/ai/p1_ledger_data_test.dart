@@ -56,6 +56,24 @@ const _mr6b3Operations = <String>{
   'unsnoozeTodo',
 };
 
+const _groupOperations = <String>{
+  'updateGroupWorkItemState',
+  'updateGroupWorkItemStatus',
+  'updateGroupWorkItemDates',
+  'updateGroupWorkItemHealthStatus',
+  'updateGroupWorkItemAssignees',
+  'updateGroupWorkItemMilestone',
+  'updateGroupWorkItemWeight',
+  'createGroupWorkItemActivityComment',
+  'createGroupWorkItemActivityReply',
+  'deleteGroupWorkItemActivityNote',
+  'setGroupWorkItemActivityNoteReaction',
+  'setGroupWorkItemNotifications',
+  'updateGroupWorkItemContent',
+  'editGroupWorkItemActivityNote',
+  'updateGroupWorkItemLabels',
+};
+
 const _mr6b2Operations = <String>{
   'edit_file',
   'createFile',
@@ -105,10 +123,15 @@ const _mr6b2Operations = <String>{
 };
 
 void main() {
-  test('the ledger exposes exactly the MR6b-1, MR6b-2 and MR6b-3 rows', () {
+  test('the ledger exposes exactly the project and group operation sets', () {
     expect(
       productionAiLedger.modelVisible.map((row) => row.operationId).toSet(),
-      {..._baselineOperations, ..._mr6b2Operations, ..._mr6b3Operations},
+      {
+        ..._baselineOperations,
+        ..._mr6b2Operations,
+        ..._mr6b3Operations,
+        ..._groupOperations,
+      },
     );
     expect(
       ProductionAiLedger.rows.map((row) => row.operationId).toSet(),

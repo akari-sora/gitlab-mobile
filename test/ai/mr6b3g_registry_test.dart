@@ -532,7 +532,7 @@ void main() {
   test(
     'each group family refuses without context and HTTP at its delivered stage',
     () async {
-      expect(aiGroupWorkItemWritesEnabled, isFalse);
+      expect(aiGroupWorkItemWritesEnabled, isTrue);
       final adapter = FakeAdapter((_) => jsonResponse({}));
       final api = testApi(adapter);
       addTearDown(api.close);

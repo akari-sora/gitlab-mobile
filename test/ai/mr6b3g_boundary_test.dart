@@ -29,8 +29,10 @@ const _conversation = 'g0e-seams';
 const _actualConversation = 'g15-real-group';
 
 void main() {
-  setUp(() => aiGroupWorkItemWritesEnabledForTesting = true);
-  tearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+  setUp(() {
+    expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+    expect(aiGroupWorkItemWritesEnabled, isTrue);
+  });
 
   for (final operation in _operations.entries) {
     test(
