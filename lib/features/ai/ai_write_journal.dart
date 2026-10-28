@@ -38,6 +38,7 @@ final class AiJournalRecoveryResult {
     required this.keyStatus,
     required this.removalPending,
     required this.interruptedWrites,
+    required this.uncertainWrites,
     required this.isolatedWrites,
     required Object interruptionToken,
   }) : _interruptionToken = interruptionToken;
@@ -47,6 +48,14 @@ final class AiJournalRecoveryResult {
   /// Null when the tombstone could not be read and no removal is confirmed.
   final bool? removalPending;
   final int? interruptedWrites;
+
+  /// Of [interruptedWrites], those already dispatching (now writeUncertain);
+  /// the rest were only prepared and became notExecuted.
+  final int? uncertainWrites;
+  int? get notExecutedWrites =>
+      interruptedWrites == null || uncertainWrites == null
+      ? null
+      : interruptedWrites! - uncertainWrites!;
   final int? isolatedWrites;
   final Object _interruptionToken;
 
@@ -410,6 +419,7 @@ final class AiWriteJournal {
           ? null
           : false,
       interruptedWrites: ready ? owner.recoveredInterruptedWrites : null,
+      uncertainWrites: ready ? owner.recoveredUncertainWrites : null,
       isolatedWrites: ready
           ? owner.data.entries.values.where((entry) => entry._isolates).length
           : null,
@@ -428,6 +438,7 @@ final class AiWriteJournal {
       return false;
     }
     owner.recoveredInterruptedWrites = 0;
+    owner.recoveredUncertainWrites = 0;
     owner.recoveryInterruptionToken = Object();
     return true;
   }
@@ -1180,12 +1191,14 @@ final class AiWriteJournal {
       final data = owner.data.copy();
       var changed = false;
       var interrupted = 0;
+      var uncertain = 0;
       for (final entry in List.of(data.entries.values)) {
         if (entry.processId == processId) continue;
         if (entry.state == AiJournalState.prepared ||
             entry.state == AiJournalState.dispatching) {
           changed = true;
           interrupted++;
+          if (entry.state == AiJournalState.dispatching) uncertain++;
           data.entries[entry.executionId] = entry._change({
             'state': entry.state == AiJournalState.prepared
                 ? 'notExecuted'
@@ -1196,6 +1209,7 @@ final class AiWriteJournal {
       if (changed) await _save(account, data, epoch: owner.ownerEpoch);
       if (interrupted > 0) {
         owner.recoveredInterruptedWrites += interrupted;
+        owner.recoveredUncertainWrites += uncertain;
         owner.recoveryInterruptionToken = Object();
       }
       owner.recovered = true;
@@ -1316,6 +1330,7 @@ final class AiWriteJournal {
     await _store.deleteResetPending(account);
     owner.status = AiJournalKeyStatus.found;
     owner.recoveredInterruptedWrites = 0;
+    owner.recoveredUncertainWrites = 0;
     owner.recoveryInterruptionToken = Object();
     owner.uncertain.clear();
     owner.ephemeral.clear();
@@ -1422,6 +1437,7 @@ final class AiWriteJournal {
     owner.key = null;
     owner.data = _Snapshot();
     owner.recoveredInterruptedWrites = 0;
+    owner.recoveredUncertainWrites = 0;
     owner.recoveryInterruptionToken = Object();
     owner.ephemeral.clear();
     owner.runs.clear();
@@ -1478,6 +1494,7 @@ final class _Account {
   AiJournalKeyStatus? status;
   bool recovered = false;
   int recoveredInterruptedWrites = 0;
+  int recoveredUncertainWrites = 0;
   Object recoveryInterruptionToken = Object();
 
   /// Recovered on its first write rather than from a loaded account list.

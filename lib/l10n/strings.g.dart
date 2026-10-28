@@ -8527,9 +8527,15 @@ final class AppStrings {
   /// AI 寫入被中斷
   String get aiRecoveryTitle => language._messages[2810];
 
-  /// 應用程式上次關閉時，有 {count} 筆 AI 寫入還沒確認結果。它們不會自動重新送出，相關的 AI 工作也不會恢復。請到 GitLab 查看這些變更是否已經完成；AI 之後若提出相同的寫入，會先請你確認。
-  String aiRecoveryInterrupted(Object? count) => _format(language, language._messages[2811], {'count': count});
-
   /// 知道了
-  String get aiRecoveryOk => language._messages[2812];
+  String get aiRecoveryOk => language._messages[2811];
+
+  /// 有 {count} 筆 AI 寫入在應用程式上次關閉時正在送出，結果未知。請到 GitLab 查看是否已經完成；AI 之後若提出相同的寫入，會先請你確認。
+  String aiRecoveryUncertain(Object? count) => _format(language, language._messages[2812], {'count': count});
+
+  /// 有 {count} 筆 AI 寫入在送出前就被中斷，沒有送到 GitLab。
+  String aiRecoveryNotExecuted(Object? count) => _format(language, language._messages[2813], {'count': count});
+
+  /// 這些寫入不會自動重新送出，相關的 AI 工作也不會恢復。
+  String get aiRecoveryNoResend => language._messages[2814];
 }

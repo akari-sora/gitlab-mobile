@@ -477,6 +477,66 @@ final class AiRunNotifications extends ChangeNotifier {
         });
   }
 
+  var _recoverySequence = 0;
+
+  /// C7 next-start recovery: one generic "interrupted" result notification,
+  /// the same content-free title and text as a live run's (D10), in the
+  /// result ID range. Its route names no conversation, so a tap only brings
+  /// the app to Home through the gate, where the start-up notice explains
+  /// it. Posted only while notifications are enabled; it never resends,
+  /// restores or approves anything. Completes with whether it was posted.
+  Future<bool> showRecoveredInterruption({required int generation}) {
+    final posted = Completer<bool>();
+    _delivery = _delivery
+        .then((_) async {
+          if (_disposed || !supported || !await initialize()) {
+            return posted.complete(false);
+          }
+          final state = await areNotificationsEnabled();
+          if (_disposed || state.appEnabled != true) {
+            return posted.complete(false);
+          }
+          final payload = AiRunNotificationRoute(
+            conversationId: 'recovery-${_recoverySequence++}',
+            generation: generation,
+          ).encode();
+          var id = _resultIds.allocate(payload);
+          if (id == null) {
+            await _refreshResultReservations();
+            id = _resultIds.allocate(payload);
+          }
+          id ??= _resultIds.replaceOldest(payload);
+          if (id == null || _disposed) {
+            if (id == null) _setResultRangeFull(true);
+            return posted.complete(false);
+          }
+          _setResultRangeFull(false);
+          final text = _text();
+          await _plugin.show(
+            id: id,
+            title: text.title,
+            body: text.bodyFor(AiRunNotificationKind.interrupted),
+            notificationDetails: NotificationDetails(
+              android: AndroidNotificationDetails(
+                'ai_run_results_v1',
+                text.resultChannelName,
+                icon: 'ic_ai_runs',
+                importance: Importance.defaultImportance,
+                priority: Priority.defaultPriority,
+                visibility: NotificationVisibility.private,
+              ),
+            ),
+            payload: payload,
+          );
+          posted.complete(true);
+        })
+        .catchError((Object _) {
+          _setFailure(AiRunNotificationFailure.delivery);
+          if (!posted.isCompleted) posted.complete(false);
+        });
+    return posted.future;
+  }
+
   void _receiveResponse(NotificationResponse response) {
     if (_disposed ||
         response.notificationResponseType !=

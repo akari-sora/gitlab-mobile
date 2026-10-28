@@ -2811,6 +2811,8 @@
   "aiRunCleanupPending": "작업이 일시 중지됨: 백그라운드 작업이 끝났는지 아직 확인되지 않아 그때까지 계속할 수 없습니다.",
   "aiRunCleanupRetry": "다음에 앱으로 돌아오면 다시 확인합니다. 확인된 뒤에는 새 메시지를 보낼 수 있습니다.",
   "aiRecoveryTitle": "AI 쓰기가 중단됨",
-  "aiRecoveryInterrupted": "앱이 마지막으로 종료될 때 AI 쓰기 {count}건의 결과가 확인되지 않았습니다. 자동으로 다시 보내지 않으며 AI 작업도 재개되지 않습니다. GitLab에서 변경이 반영되었는지 확인하세요. 나중에 AI가 같은 쓰기를 제안하면 먼저 확인을 요청합니다.",
-  "aiRecoveryOk": "확인"
+  "aiRecoveryOk": "확인",
+  "aiRecoveryUncertain": "앱이 마지막으로 종료될 때 AI 쓰기 {count}건을 보내는 중이었으며 결과를 알 수 없습니다. GitLab에서 반영되었는지 확인하세요. 나중에 AI가 같은 쓰기를 제안하면 먼저 확인을 요청합니다.",
+  "aiRecoveryNotExecuted": "AI 쓰기 {count}건은 보내기 전에 중단되어 GitLab에 아무것도 전송되지 않았습니다.",
+  "aiRecoveryNoResend": "이 쓰기는 자동으로 다시 보내지 않으며 AI 작업도 재개되지 않습니다."
 }

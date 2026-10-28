@@ -2811,6 +2811,8 @@
   "aiRunCleanupPending": "Çalışma duraklatıldı: arka plan çalışmasının bittiği henüz doğrulanmadı ve o zamana kadar devam edilemez.",
   "aiRunCleanupRetry": "Uygulamaya bir sonraki dönüşünüzde yeniden denetlenir; ardından yeni bir mesaj gönderebilirsiniz.",
   "aiRecoveryTitle": "AI yazmaları kesintiye uğradı",
-  "aiRecoveryInterrupted": "Uygulama son kapandığında {count} AI yazmasının sonucu doğrulanmamıştı. Bunlar otomatik olarak yeniden gönderilmez ve AI çalışması devam etmez. Bu değişikliklerin yapılıp yapılmadığını GitLab’de kontrol edin; AI daha sonra aynı yazmayı önerirse önce onayınız istenir.",
-  "aiRecoveryOk": "Anladım"
+  "aiRecoveryOk": "Anladım",
+  "aiRecoveryUncertain": "Uygulama son kapandığında {count} AI yazması gönderiliyordu ve sonuçları bilinmiyor. Yapılıp yapılmadıklarını GitLab’de kontrol edin; AI daha sonra aynı yazmayı önerirse önce onayınız istenir.",
+  "aiRecoveryNotExecuted": "{count} AI yazması gönderilmeden önce kesildi; GitLab’e hiçbir şey ulaşmadı.",
+  "aiRecoveryNoResend": "Bu yazmalar otomatik olarak yeniden gönderilmez ve AI çalışması devam etmez."
 }

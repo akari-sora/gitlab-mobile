@@ -6,6 +6,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/features/ai/ai_journal_key_store.dart';
 import 'package:gitlab_mobile/features/ai/ai_recovery_notice.dart';
+import 'package:gitlab_mobile/features/ai/ai_run_notification_ui.dart';
+import 'package:gitlab_mobile/features/ai/ai_run_notifications.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/features/security/app_lock.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
@@ -14,6 +16,8 @@ import 'package:gitlab_mobile/main.dart'
 import 'package:gitlab_mobile/shared/theme.dart';
 
 import '../session_test.dart' show MemoryAccountStore, controllerFor;
+import '../support/ai_run_notification_shell.dart'
+    show FakeNotificationPlatform;
 import '../support/workspace_fixture.dart';
 
 const _a = 'https://synthetic.example/gitlab#7';
@@ -75,24 +79,34 @@ void main() {
   });
   tearDown(() => root.deleteSync(recursive: true));
 
-  /// A previous process that died with [writes] dispatching per account, and
-  /// this process's journal after its start-up recovery (not yet reported).
+  /// A previous process that died with [writes] dispatching and [prepared]
+  /// only prepared per account, and this process's journal after its
+  /// start-up recovery (not yet reported).
   Future<AiWriteJournal> afterDeath(
     WidgetTester tester,
-    Map<String, int> writes,
-  ) async => (await tester.runAsync(() async {
+    Map<String, int> writes, {
+    Map<String, int> prepared = const {},
+    List<String> accounts = const [_a, _b],
+  }) async => (await tester.runAsync(() async {
     final old = AiWriteJournal(
       keys: keys,
       applicationSupport: root,
       processId: 'old-process',
     );
-    await old.recoverAfterAccountsLoaded([_a, _b]);
-    for (final MapEntry(key: account, value: count) in writes.entries) {
+    await old.recoverAfterAccountsLoaded(accounts);
+    var n = 0;
+    for (final account in {...writes.keys, ...prepared.keys}) {
       await old.ensureInitialized(account);
-      for (var i = 0; i < count; i++) {
-        final id = '${account.hashCode}-$i';
+      for (
+        var i = 0;
+        i < (writes[account] ?? 0) + (prepared[account] ?? 0);
+        i++
+      ) {
+        final id = 'write-${n++}';
         await old.prepare(draft: _draft(id, account));
-        await old.markDispatching(executionId: id);
+        if (i < (writes[account] ?? 0)) {
+          await old.markDispatching(executionId: id);
+        }
       }
     }
     final next = AiWriteJournal(
@@ -100,7 +114,7 @@ void main() {
       applicationSupport: root,
       processId: 'next-process',
     );
-    await next.recoverAfterAccountsLoaded([_a, _b]);
+    await next.recoverAfterAccountsLoaded(accounts);
     return next;
   }))!;
 
@@ -142,7 +156,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(_notice), findsOneWidget);
     expect(find.text(l10n.aiRecoveryTitle), findsOneWidget);
-    expect(find.text(l10n.aiRecoveryInterrupted('1')), findsOneWidget);
+    expect(find.text(l10n.aiRecoveryUncertain('1')), findsOneWidget);
+    expect(find.text(l10n.aiRecoveryNoResend), findsOneWidget);
+    expect(find.textContaining(l10n.aiRecoveryNotExecuted('0')), findsNothing);
     // Visible but not dismissed: still unacknowledged.
     expect(journal.recoveryResult(_a).mayNotifyInterruption, isTrue);
     await tester.tap(find.byKey(_ok));
@@ -156,6 +172,36 @@ void main() {
     await tester.pumpWidget(_host(notice(journal, _a), tag: 'zh-TW'));
     await tester.pumpAndSettle();
     expect(find.byKey(_notice), findsNothing);
+  });
+
+  testWidgets('writes cut off before sending say nothing was sent (Codex '
+      'R1)', (tester) async {
+    final journal = await afterDeath(tester, {}, prepared: {_a: 2});
+    final summary = journal.recoveryResult(_a);
+    expect(summary.uncertainWrites, 0);
+    expect(summary.notExecutedWrites, 2);
+    markAiJournalRecovered(journal);
+    await tester.pumpWidget(_host(notice(journal, _a)));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiRecoveryNotExecuted('2')), findsOneWidget);
+    // No "check GitLab" line: nothing was sent.
+    expect(find.text(l10n.aiRecoveryUncertain('2')), findsNothing);
+    expect(find.text(l10n.aiRecoveryUncertain('0')), findsNothing);
+    expect(journal.entries(_a).map((e) => e.state).toSet(), {
+      AiJournalState.notExecuted,
+    });
+  });
+
+  testWidgets('sent and unsent writes are told apart (Codex R1)', (
+    tester,
+  ) async {
+    final journal = await afterDeath(tester, {_a: 1}, prepared: {_a: 2});
+    markAiJournalRecovered(journal);
+    await tester.pumpWidget(_host(notice(journal, _a)));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiRecoveryUncertain('1')), findsOneWidget);
+    expect(find.text(l10n.aiRecoveryNotExecuted('2')), findsOneWidget);
+    expect(find.text(l10n.aiRecoveryNoResend), findsOneWidget);
   });
 
   testWidgets('a notice that goes away unseen comes back', (tester) async {
@@ -180,7 +226,7 @@ void main() {
     markAiJournalRecovered(journal);
     await tester.pumpWidget(_host(notice(journal, _a)));
     await tester.pumpAndSettle();
-    expect(find.text(l10n.aiRecoveryInterrupted('1')), findsOneWidget);
+    expect(find.text(l10n.aiRecoveryUncertain('1')), findsOneWidget);
     await tester.tap(find.byKey(_ok));
     await tester.pumpAndSettle();
     expect(journal.recoveryResult(_a).mayNotifyInterruption, isFalse);
@@ -189,7 +235,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(_host(notice(journal, _b)));
     await tester.pumpAndSettle();
-    expect(find.text(l10n.aiRecoveryInterrupted('2')), findsOneWidget);
+    expect(find.text(l10n.aiRecoveryUncertain('2')), findsOneWidget);
     await tester.tap(find.byKey(_ok));
     await tester.pumpAndSettle();
     expect(journal.recoveryResult(_b).mayNotifyInterruption, isFalse);
@@ -247,5 +293,112 @@ void main() {
     await tester.tap(find.byKey(_ok));
     await tester.pumpAndSettle();
     expect(journal.recoveryResult(_a).mayNotifyInterruption, isFalse);
+  });
+
+  group('interrupted notification after next-start recovery (Codex R1)', () {
+    late FakeNotificationPlatform platform;
+    setUp(() => (platform = FakeNotificationPlatform()).install());
+    tearDown(() => platform.uninstall());
+    final android = TargetPlatformVariant.only(TargetPlatform.android);
+
+    /// A signed-in session whose account had [writes] interrupted.
+    Future<(AiWriteJournal, String, int, AiRunNotifications)> start(
+      WidgetTester tester, {
+      int writes = 1,
+    }) async {
+      final fixture = WorkspaceFixture();
+      final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-token');
+      });
+      final key = session.active!.key;
+      final journal = await afterDeath(
+        tester,
+        {if (writes > 0) key: writes},
+        accounts: [key],
+      );
+      final notifications = AiRunNotifications(text: aiRunNotificationText);
+      addTearDown(notifications.dispose);
+      expect(await notifications.initialize(), isTrue);
+      final notifier = AiRecoveryNotifier(
+        journal: journal,
+        notifications: notifications,
+        session: session,
+      );
+      addTearDown(notifier.dispose);
+      return (journal, key, session.generation, notifications);
+    }
+
+    testWidgets('posted once per recovered account, generic, after the pass', (
+      tester,
+    ) async {
+      platform.notificationsEnabled = true;
+      final (journal, key, generation, _) = await start(tester);
+      await tester.pump();
+      expect(platform.shows, isEmpty, reason: 'no finished pass yet');
+      markAiJournalRecovered(journal);
+      await tester.pump();
+      await tester.pump();
+      expect(platform.shows, hasLength(1));
+      final show = platform.shows.single;
+      expect(show['title'], l10n.aiRunNoticeTitle);
+      expect(show['body'], l10n.aiRunNoticeInterrupted);
+      final id = show['id']! as int;
+      expect(
+        id,
+        inInclusiveRange(
+          AiRunNotifications.resultFirstId,
+          AiRunNotifications.resultLastId,
+        ),
+      );
+      // Routing only: no conversation, so a tap lands on Home and the
+      // start-up notice explains it.
+      final route = AiRunNotificationRoute.decode(show['payload'] as String?);
+      expect(route?.generation, generation);
+      expect(route?.conversationId, startsWith('recovery-'));
+      expect('$show', isNot(contains(key)));
+      // Posting acknowledges nothing; the in-app notice still shows.
+      expect(journal.recoveryResult(key).mayNotifyInterruption, isTrue);
+      markAiJournalRecovered(journal);
+      await tester.pump();
+      await tester.pump();
+      expect(platform.shows, hasLength(1));
+    }, variant: android);
+
+    testWidgets('nothing while notifications are off', (tester) async {
+      platform.notificationsEnabled = false;
+      final (journal, _, _, _) = await start(tester);
+      markAiJournalRecovered(journal);
+      await tester.pump();
+      await tester.pump();
+      expect(platform.shows, isEmpty);
+    }, variant: android);
+
+    testWidgets('nothing without interrupted writes', (tester) async {
+      platform.notificationsEnabled = true;
+      final (journal, _, _, _) = await start(tester, writes: 0);
+      markAiJournalRecovered(journal);
+      await tester.pump();
+      await tester.pump();
+      expect(platform.shows, isEmpty);
+    }, variant: android);
+
+    testWidgets('nothing after the account summary was acknowledged', (
+      tester,
+    ) async {
+      platform.notificationsEnabled = true;
+      final (journal, key, _, _) = await start(tester);
+      expect(
+        journal.acknowledgeRecovery(key, journal.recoveryResult(key)),
+        isTrue,
+      );
+      markAiJournalRecovered(journal);
+      await tester.pump();
+      await tester.pump();
+      expect(platform.shows, isEmpty);
+    }, variant: android);
   });
 }

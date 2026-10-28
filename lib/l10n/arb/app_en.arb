@@ -2817,6 +2817,8 @@
   "aiRunCleanupPending": "Work paused: it is not yet confirmed that the background work has ended, and nothing can continue until it is.",
   "aiRunCleanupRetry": "This is checked again the next time you return to the app; after that you can send a new message.",
   "aiRecoveryTitle": "AI writes were interrupted",
-  "aiRecoveryInterrupted": "When the app last closed, {count} AI writes had not confirmed their result. They are not sent again automatically, and the AI work does not resume. Check in GitLab whether these changes were made; if the AI proposes the same write later, you will be asked to confirm it first.",
-  "aiRecoveryOk": "Got it"
+  "aiRecoveryOk": "Got it",
+  "aiRecoveryUncertain": "{count} AI writes were being sent when the app last closed, and their result is unknown. Check in GitLab whether they were made; if the AI proposes the same write later, you will be asked to confirm it first.",
+  "aiRecoveryNotExecuted": "{count} AI writes were cut off before they were sent; nothing reached GitLab.",
+  "aiRecoveryNoResend": "These writes are not sent again automatically, and the AI work does not resume."
 }

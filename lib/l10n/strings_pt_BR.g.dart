@@ -2813,6 +2813,8 @@ const _messagesPtBr = <String>[
   'Trabalho pausado: ainda não foi confirmado que o trabalho em segundo plano terminou, e nada pode continuar até lá.',
   'Isso será verificado de novo na próxima vez que você voltar ao app; depois você poderá enviar uma nova mensagem.',
   'Escritas de AI foram interrompidas',
-  'Quando o app foi fechado pela última vez, {count} escritas de AI não tinham confirmado o resultado. Elas não são enviadas de novo automaticamente, e o trabalho de AI não é retomado. Verifique no GitLab se essas alterações foram feitas; se a AI propuser a mesma escrita depois, sua confirmação será pedida primeiro.',
   'Entendi',
+  '{count} escritas de AI estavam sendo enviadas quando o app foi fechado pela última vez, e o resultado é desconhecido. Verifique no GitLab se foram feitas; se a AI propuser a mesma escrita depois, sua confirmação será pedida primeiro.',
+  '{count} escritas de AI foram interrompidas antes do envio; nada chegou ao GitLab.',
+  'Essas escritas não são enviadas de novo automaticamente, e o trabalho de AI não é retomado.',
 ];

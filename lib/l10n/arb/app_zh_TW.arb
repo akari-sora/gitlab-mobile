@@ -11783,16 +11783,28 @@
     "description": "Start-up dialog title: AI writes were cut off when the app last closed (process ended).",
     "placeholders": {}
   },
-  "aiRecoveryInterrupted": "應用程式上次關閉時，有 {count} 筆 AI 寫入還沒確認結果。它們不會自動重新送出，相關的 AI 工作也不會恢復。請到 GitLab 查看這些變更是否已經完成；AI 之後若提出相同的寫入，會先請你確認。",
-  "@aiRecoveryInterrupted": {
-    "description": "Start-up dialog text. {count} is the number of interrupted AI writes whose result is unknown. Nothing is resent or resumed; the user checks GitLab; a repeated identical proposal asks for confirmation.",
+  "aiRecoveryOk": "知道了",
+  "@aiRecoveryOk": {
+    "description": "Dismisses the start-up recovery dialog; only then is the notice marked as seen.",
+    "placeholders": {}
+  },
+  "aiRecoveryUncertain": "有 {count} 筆 AI 寫入在應用程式上次關閉時正在送出，結果未知。請到 GitLab 查看是否已經完成；AI 之後若提出相同的寫入，會先請你確認。",
+  "@aiRecoveryUncertain": {
+    "description": "Start-up dialog line. {count} AI writes were already being sent when the app closed (now writeUncertain): the result is unknown, check GitLab; an identical later proposal asks for confirmation.",
     "placeholders": {
       "count": {}
     }
   },
-  "aiRecoveryOk": "知道了",
-  "@aiRecoveryOk": {
-    "description": "Dismisses the start-up recovery dialog; only then is the notice marked as seen.",
+  "aiRecoveryNotExecuted": "有 {count} 筆 AI 寫入在送出前就被中斷，沒有送到 GitLab。",
+  "@aiRecoveryNotExecuted": {
+    "description": "Start-up dialog line. {count} AI writes were cut off before sending (now notExecuted): nothing reached GitLab.",
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiRecoveryNoResend": "這些寫入不會自動重新送出，相關的 AI 工作也不會恢復。",
+  "@aiRecoveryNoResend": {
+    "description": "Start-up dialog closing line: interrupted writes are never resent automatically and the AI work does not resume.",
     "placeholders": {}
   }
 }

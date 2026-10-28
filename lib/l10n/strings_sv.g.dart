@@ -2813,6 +2813,8 @@ const _messagesSv = <String>[
   'Arbetet pausat: det är ännu inte bekräftat att arbetet i bakgrunden har avslutats, och inget kan fortsätta innan dess.',
   'Det kontrolleras igen nästa gång du återvänder till appen; därefter kan du skicka ett nytt meddelande.',
   'AI-skrivningar avbröts',
-  'När appen senast stängdes hade {count} AI-skrivningar inte bekräftat sitt resultat. De skickas inte igen automatiskt och AI-arbetet återupptas inte. Kontrollera i GitLab om ändringarna gjordes; om AI senare föreslår samma skrivning ombeds du först bekräfta den.',
   'Uppfattat',
+  '{count} AI-skrivningar höll på att skickas när appen senast stängdes, och resultatet är okänt. Kontrollera i GitLab om de gjordes; om AI senare föreslår samma skrivning ombeds du först bekräfta den.',
+  '{count} AI-skrivningar avbröts innan de skickades; inget nådde GitLab.',
+  'De här skrivningarna skickas inte igen automatiskt och AI-arbetet återupptas inte.',
 ];

@@ -2813,6 +2813,8 @@ const _messagesPl = <String>[
   'Praca wstrzymana: nie potwierdzono jeszcze, że praca w tle się zakończyła, i do tego czasu nie można kontynuować.',
   'Zostanie to sprawdzone ponownie, gdy następnym razem wrócisz do aplikacji; potem możesz wysłać nową wiadomość.',
   'Zapisy AI zostały przerwane',
-  'Gdy aplikacja została ostatnio zamknięta, wynik {count} zapisów AI nie był potwierdzony. Nie zostaną automatycznie wysłane ponownie, a praca AI nie zostanie wznowiona. Sprawdź w GitLab, czy te zmiany zostały wprowadzone; jeśli AI później zaproponuje ten sam zapis, najpierw poprosimy cię o potwierdzenie.',
   'Rozumiem',
+  '{count} zapisów AI było w trakcie wysyłania, gdy aplikacja została ostatnio zamknięta, a ich wynik jest nieznany. Sprawdź w GitLab, czy zostały wprowadzone; jeśli AI później zaproponuje ten sam zapis, najpierw poprosimy cię o potwierdzenie.',
+  '{count} zapisów AI przerwano przed wysłaniem; nic nie dotarło do GitLab.',
+  'Te zapisy nie zostaną automatycznie wysłane ponownie, a praca AI nie zostanie wznowiona.',
 ];

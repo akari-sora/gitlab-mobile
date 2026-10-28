@@ -2811,6 +2811,8 @@
   "aiRunCleanupPending": "作業を一時停止しました。バックグラウンドの処理が終了したことをまだ確認できていないため、それまでは続行できません。",
   "aiRunCleanupRetry": "次にアプリに戻ったときに再確認します。確認できたら新しいメッセージを送信できます。",
   "aiRecoveryTitle": "AI の書き込みが中断されました",
-  "aiRecoveryInterrupted": "前回アプリが終了したとき、{count} 件の AI の書き込みは結果が確認できていませんでした。自動で再送信されることはなく、AI の作業も再開されません。変更が反映されたかどうかを GitLab で確認してください。後で AI が同じ書き込みを提案した場合は、先に確認を求めます。",
-  "aiRecoveryOk": "わかりました"
+  "aiRecoveryOk": "わかりました",
+  "aiRecoveryUncertain": "前回アプリが終了したとき、{count} 件の AI の書き込みを送信中で、結果は不明です。反映されたかどうかを GitLab で確認してください。後で AI が同じ書き込みを提案した場合は、先に確認を求めます。",
+  "aiRecoveryNotExecuted": "{count} 件の AI の書き込みは送信前に中断され、GitLab には何も送られていません。",
+  "aiRecoveryNoResend": "これらの書き込みが自動で再送信されることはなく、AI の作業も再開されません。"
 }

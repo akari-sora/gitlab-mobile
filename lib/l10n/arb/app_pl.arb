@@ -2811,6 +2811,8 @@
   "aiRunCleanupPending": "Praca wstrzymana: nie potwierdzono jeszcze, że praca w tle się zakończyła, i do tego czasu nie można kontynuować.",
   "aiRunCleanupRetry": "Zostanie to sprawdzone ponownie, gdy następnym razem wrócisz do aplikacji; potem możesz wysłać nową wiadomość.",
   "aiRecoveryTitle": "Zapisy AI zostały przerwane",
-  "aiRecoveryInterrupted": "Gdy aplikacja została ostatnio zamknięta, wynik {count} zapisów AI nie był potwierdzony. Nie zostaną automatycznie wysłane ponownie, a praca AI nie zostanie wznowiona. Sprawdź w GitLab, czy te zmiany zostały wprowadzone; jeśli AI później zaproponuje ten sam zapis, najpierw poprosimy cię o potwierdzenie.",
-  "aiRecoveryOk": "Rozumiem"
+  "aiRecoveryOk": "Rozumiem",
+  "aiRecoveryUncertain": "{count} zapisów AI było w trakcie wysyłania, gdy aplikacja została ostatnio zamknięta, a ich wynik jest nieznany. Sprawdź w GitLab, czy zostały wprowadzone; jeśli AI później zaproponuje ten sam zapis, najpierw poprosimy cię o potwierdzenie.",
+  "aiRecoveryNotExecuted": "{count} zapisów AI przerwano przed wysłaniem; nic nie dotarło do GitLab.",
+  "aiRecoveryNoResend": "Te zapisy nie zostaną automatycznie wysłane ponownie, a praca AI nie zostanie wznowiona."
 }

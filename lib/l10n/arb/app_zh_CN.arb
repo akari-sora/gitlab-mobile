@@ -2811,6 +2811,8 @@
   "aiRunCleanupPending": "工作已暂停：还无法确认后台工作已经结束，在此之前不能继续。",
   "aiRunCleanupRetry": "下次回到应用时会再次确认；确认后可以发送新消息。",
   "aiRecoveryTitle": "AI 写入被中断",
-  "aiRecoveryInterrupted": "应用上次关闭时，有 {count} 笔 AI 写入还没有确认结果。它们不会自动重新发送，相关的 AI 工作也不会恢复。请到 GitLab 查看这些更改是否已经完成；之后如果 AI 提出相同的写入，会先请你确认。",
-  "aiRecoveryOk": "知道了"
+  "aiRecoveryOk": "知道了",
+  "aiRecoveryUncertain": "有 {count} 笔 AI 写入在应用上次关闭时正在发送，结果未知。请到 GitLab 查看是否已经完成；之后如果 AI 提出相同的写入，会先请你确认。",
+  "aiRecoveryNotExecuted": "有 {count} 笔 AI 写入在发送前就被中断，没有发送到 GitLab。",
+  "aiRecoveryNoResend": "这些写入不会自动重新发送，相关的 AI 工作也不会恢复。"
 }

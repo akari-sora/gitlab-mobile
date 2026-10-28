@@ -2813,6 +2813,8 @@ const _messagesDe = <String>[
   'Arbeit pausiert: Es ist noch nicht bestätigt, dass die Arbeit im Hintergrund beendet ist; bis dahin kann nichts fortgesetzt werden.',
   'Das wird erneut geprüft, wenn Sie das nächste Mal zur App zurückkehren; danach können Sie eine neue Nachricht senden.',
   'AI-Schreibvorgänge wurden unterbrochen',
-  'Als die App zuletzt geschlossen wurde, war bei {count} AI-Schreibvorgängen das Ergebnis noch nicht bestätigt. Sie werden nicht automatisch erneut gesendet, und die AI-Arbeit wird nicht fortgesetzt. Prüfen Sie in GitLab, ob diese Änderungen ausgeführt wurden; schlägt die AI später denselben Schreibvorgang vor, werden Sie zuerst um Bestätigung gebeten.',
   'Verstanden',
+  '{count} AI-Schreibvorgänge wurden gerade gesendet, als die App zuletzt geschlossen wurde; ihr Ergebnis ist unbekannt. Prüfen Sie in GitLab, ob sie ausgeführt wurden; schlägt die AI später denselben Schreibvorgang vor, werden Sie zuerst um Bestätigung gebeten.',
+  '{count} AI-Schreibvorgänge wurden vor dem Senden unterbrochen; bei GitLab ist nichts angekommen.',
+  'Diese Schreibvorgänge werden nicht automatisch erneut gesendet, und die AI-Arbeit wird nicht fortgesetzt.',
 ];
