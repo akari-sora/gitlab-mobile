@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'failure.dart';
 import 'instance.dart';
 import 'models.dart';
+import 'rate_budget.dart';
 import 'request_meter.dart';
 
 import '../l10n/l10n.dart';
@@ -162,7 +163,10 @@ final class OAuthTokenClient {
 
   /// Refresh for identity probing, retaining a bounded `invalid_grant`
   /// distinction without treating other token endpoint errors as refusal.
-  Future<OAuthCredential> refreshForIdentity(OAuthCredential current) async {
+  Future<OAuthCredential> refreshForIdentity(
+    OAuthCredential current, {
+    required GitLabRateBudget rateBudget,
+  }) async {
     try {
       final meter = RequestMeter.current;
       if (meter?.includeOAuthTokens == true) {
@@ -170,6 +174,7 @@ final class OAuthTokenClient {
         if (admission != null) await admission();
         meter.increment();
       }
+      final sequence = rateBudget.nextSequence();
       final response = await _dio.requestUri<ResponseBody>(
         instance.oauth('token'),
         data: {
@@ -192,6 +197,16 @@ final class OAuthTokenClient {
         ),
       );
       final status = response.statusCode ?? 0;
+      if (status == 429) {
+        rateBudget.noteResponse(
+          headers: response.headers.map,
+          statusCode: status,
+          requestClass: RateRequestClass.global,
+          sequence: sequence,
+          trusted: true,
+          honorServerCooldown: true,
+        );
+      }
       final body = response.data;
       final isJson =
           (response.headers.value('content-type') ?? '')
@@ -237,7 +252,12 @@ final class OAuthTokenClient {
           decoded['error'] == 'invalid_grant') {
         throw const OAuthRefreshRefused();
       }
-      if (status < 200 || status >= 300) throw ApiFailure.fromStatus(status);
+      if (status < 200 || status >= 300) {
+        throw ApiFailure.fromStatus(
+          status,
+          retryAt: rateBudget.retryAtFor(RateRequestClass.global),
+        );
+      }
       if (decoded is! Map<String, dynamic>) {
         throw const ApiFailure(FailureKind.invalidResponse);
       }

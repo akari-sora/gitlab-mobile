@@ -160,12 +160,15 @@ final class GitLabRateBudget {
     return cleanup || snapshot().level != RateLevel.critical;
   }
 
+  /// Identity-token probes preserve server deadlines beyond ordinary caps.
+  /// Missing-header fallback backoff still uses the ordinary per-class cap.
   void noteResponse({
     required Map<String, List<String>> headers,
     required int statusCode,
     required RateRequestClass requestClass,
     required int sequence,
     required bool trusted,
+    bool honorServerCooldown = false,
   }) {
     if (_closed || !trusted) return;
     final normalized = <String, List<String>>{
@@ -175,7 +178,11 @@ final class GitLabRateBudget {
     final name = _one(normalized, 'ratelimit-name') ?? 'default';
     final limit = _nonNegativeInt(normalized, 'ratelimit-limit');
     final remaining = _nonNegativeInt(normalized, 'ratelimit-remaining');
-    final resetAt = _resetAt(normalized, now);
+    final resetAt = _resetAt(
+      normalized,
+      now,
+      honorServerCooldown: honorServerCooldown,
+    );
 
     if (limit != null &&
         limit > 0 &&
@@ -208,7 +215,9 @@ final class GitLabRateBudget {
       final cooldownAt =
           resetAt ??
           _fallbackReset(now, requestClass, advance: advancesFallback);
-      final capped = _capCooldown(now, cooldownAt, requestClass);
+      final capped = honorServerCooldown && resetAt != null
+          ? resetAt
+          : _capCooldown(now, cooldownAt, requestClass);
       final previous = _cooldowns[requestClass];
       if (previous == null || capped.isAfter(previous.until)) {
         _cooldowns[requestClass] = _Cooldown(capped);
@@ -260,11 +269,20 @@ final class GitLabRateBudget {
     return proposed.isAfter(cap) ? cap : proposed;
   }
 
-  DateTime? _resetAt(Map<String, List<String>> headers, DateTime now) {
+  DateTime? _resetAt(
+    Map<String, List<String>> headers,
+    DateTime now, {
+    bool honorServerCooldown = false,
+  }) {
+    final maximum = honorServerCooldown
+        ? _epochSeconds(8640000000000)!.difference(now)
+        : const Duration(hours: 24);
     final retryAfter = _one(headers, 'retry-after');
     final retrySeconds = _strictNonNegativeInt(retryAfter);
     if (retrySeconds != null) {
-      return now.add(Duration(seconds: math.min(retrySeconds, 86400)));
+      return now.add(
+        Duration(seconds: math.min(retrySeconds, maximum.inSeconds)),
+      );
     }
     final retryDate = _parseDate(retryAfter);
     if (retryDate != null) {
@@ -273,9 +291,7 @@ final class GitLabRateBudget {
           ? retryDate.difference(now)
           : retryDate.difference(serverDate);
       if (!delay.isNegative) {
-        return now.add(
-          delay > const Duration(hours: 24) ? const Duration(hours: 24) : delay,
-        );
+        return now.add(delay > maximum ? maximum : delay);
       }
     }
 

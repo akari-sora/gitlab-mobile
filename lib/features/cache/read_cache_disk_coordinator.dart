@@ -278,6 +278,11 @@ final class ReadCacheDiskCoordinator {
       rethrow;
     } finally {
       account.offlineRefusalDeletes--;
+      if (account.offlineRefusalDeletes == 0) {
+        final settled = account.offlineRefusalSettled;
+        account.offlineRefusalSettled = null;
+        if (!account.offlineRefusalPending) settled?.call();
+      }
     }
   }
 
@@ -1511,6 +1516,7 @@ final class ReadCacheDiskCoordinator {
     if (!accountWide && current != null && current.accountWide) {
       return current;
     }
+    account.offlineRefusalSettled = null;
     account.epoch++;
     account.cleanup = true;
     account.clearComplete = false;
@@ -1796,6 +1802,7 @@ final class ReadCacheDiskCoordinator {
     // Revoked callers can have abandoned an already dispatched native marker
     // write. Drain that lane before taking the inventory used to prove empty.
     await account.markerTail;
+    final emptyEpoch = account.epoch;
     final inventory = await _keys!.readInventory();
     try {
       if (await _empty(
@@ -1808,6 +1815,9 @@ final class ReadCacheDiskCoordinator {
         account.intent = null;
         account.clearComplete = true;
         intent.completed = true;
+        if (intent.accountWide && account.epoch == emptyEpoch) {
+          account.offlineRefusalPending = false;
+        }
         return const DiskClearResult(
           keyGoneConfirmed: true,
           directoryGoneConfirmed: true,
@@ -1860,6 +1870,7 @@ final class ReadCacheDiskCoordinator {
     }
     final offlineDirectoryGone =
         !intent.accountWide || await _deleteOfflineDirectory(account.key);
+    final refusalEpoch = account.epoch;
     final offlineMarkersGone =
         !intent.accountWide ||
         (offlineKeyGone &&
@@ -1888,11 +1899,19 @@ final class ReadCacheDiskCoordinator {
         durable &&
         inventory.status == ReadCacheStoreReadStatus.found &&
         inventory.malformedNames.isEmpty) {
-      complete = await _removeIntent(account, intent);
+      complete =
+          await _removeIntent(account, intent) &&
+          intent.valid &&
+          account.intent == null &&
+          intent.revision == account.revision &&
+          pathRevision == _domain.pathRevision;
       if (complete) {
         account.invalidations.clear();
         account.clearComplete = true;
         intent.completed = true;
+        if (intent.accountWide && account.epoch == refusalEpoch) {
+          account.offlineRefusalPending = false;
+        }
         // Retained selection belongs to the current session/startup owner.
         // This clear may be finishing after a newer same-account activation.
       }
@@ -1983,12 +2002,28 @@ final class ReadCacheDiskCoordinator {
       sessionOwner: sessionOwner,
       onFailure: onFailure,
     ).then((result) {
-      if (result.complete &&
+      final epoch = account.epoch;
+      bool current() =>
+          result.complete &&
           pathRevision == _domain.pathRevision &&
           intent.valid &&
+          intent.completed &&
+          intent.revision == account.revision &&
+          account.intent == null &&
+          account.epoch == epoch &&
           operation == ReadCacheCleanupOperation.settingsClear &&
-          _domain.active == binding) {
-        unawaited(activate(binding));
+          _domain.active == binding;
+      void reopen() {
+        if (current()) unawaited(activate(binding));
+      }
+
+      if (current()) {
+        // Native refusal deletes are outside the cleanup I/O lane. Their
+        // counter keeps admission closed until the last one proves absence.
+        if (account.offlineRefusalDeletes > 0) {
+          account.offlineRefusalSettled = reopen;
+        }
+        reopen();
       }
       return result;
     });
@@ -2863,6 +2898,7 @@ final class _Account {
   bool clearComplete = false;
   bool offlineRefusalPending = false;
   int offlineRefusalDeletes = 0;
+  void Function()? offlineRefusalSettled;
   bool get offlineRefusalBlocked =>
       offlineRefusalPending || offlineRefusalDeletes > 0;
   DiskBinding? sessionFence;

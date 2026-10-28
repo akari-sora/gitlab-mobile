@@ -315,7 +315,10 @@ extension OfflineRepositoryApi on GitLabApi {
           (_credential as OAuthCredential).accessToken != current.accessToken;
     }
     final gate = () async {
-      final rotated = await oauth.refreshForIdentity(current);
+      final rotated = await oauth.refreshForIdentity(
+        current,
+        rateBudget: rateBudget,
+      );
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
       _cache.clear(revoke: false);
       _credential = current.replacedBy(rotated);
