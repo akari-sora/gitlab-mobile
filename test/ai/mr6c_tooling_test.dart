@@ -14,6 +14,7 @@ import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import '../../tool/mr6c_qa_fixture.dart';
 import '../../tool/mr6c_qa_protocol.dart';
+import 'release_policy_support.dart';
 
 Map<String, Object> _command({
   int sequence = 1,
@@ -649,6 +650,7 @@ Future<void> main() async {
         command,
         testChannel: channel,
         testJournalFence: journalFence,
+        releasePolicy: fixtureReleasePolicy,
       );
       addTearDown(fixture.dispose);
       addTearDown(() {

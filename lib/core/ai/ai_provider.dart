@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 
 import '../../l10n/l10n.dart';
 import 'ai_endpoint.dart';
+import 'tools/release_policy.dart';
 import 'tools/tool_catalogue_version.dart' show aiToolCatalogueVersion;
 import 'tools/write_levels.dart';
 
@@ -45,6 +46,7 @@ final class AiWritePolicy {
     required this.hardLineOperationIds,
     required this.fixedConfirmOperationIds,
     this.escalationRuleIds = const <String>{},
+    this.releasePolicyIdentity,
     required this.resetConfirmWindow,
   });
 
@@ -55,6 +57,7 @@ final class AiWritePolicy {
   final Set<String> hardLineOperationIds;
   final Set<String> fixedConfirmOperationIds;
   final Set<String> escalationRuleIds;
+  final String? releasePolicyIdentity;
   final Duration resetConfirmWindow;
 
   /// Snapshots caller-owned sets before a contract freezes its hash.
@@ -73,6 +76,7 @@ final class AiWritePolicy {
       hardLineOperationIds: Set.unmodifiable(hardLineOperationIds),
       fixedConfirmOperationIds: Set.unmodifiable(fixedConfirmOperationIds),
       escalationRuleIds: Set.unmodifiable(escalationRuleIds),
+      releasePolicyIdentity: releasePolicyIdentity,
       resetConfirmWindow: resetConfirmWindow,
     );
   }
@@ -89,6 +93,7 @@ final class AiWritePolicy {
     'hardLineOperationIds': hardLineOperationIds.toList()..sort(),
     'fixedConfirmOperationIds': fixedConfirmOperationIds.toList()..sort(),
     'escalationRuleIds': escalationRuleIds.toList()..sort(),
+    'releasePolicyIdentity': releasePolicyIdentity,
     'resetConfirmWindowMicros': resetConfirmWindow.inMicroseconds,
     'levels': <String, Object?>{
       for (final level in AiAutonomyLevel.values)
@@ -290,11 +295,17 @@ final class AiConsentContract {
     required this.dataUse,
     required this.disclosureVersion,
     AiWritePolicy? writePolicy,
+    String? releasePolicyIdentity,
     this.routedModel,
     this.policyUrl,
     this.retentionDays,
     this.policyCheckedOn,
   }) : dataCategories = Set.unmodifiable(dataCategories),
+       releasePolicyIdentity = toolsEnabled
+           ? releasePolicyIdentity ??
+                 writePolicy?.releasePolicyIdentity ??
+                 productionAiReleasePolicy.canonicalIdentity
+           : null,
        writePolicy = writePolicy?.copyWith(
          agreedCeiling: toolsEnabled
              ? writePolicy.agreedCeiling
@@ -310,6 +321,7 @@ final class AiConsentContract {
   final int toolCatalogueVersion;
   final Set<String> dataCategories;
   final AiWritePolicy? writePolicy;
+  final String? releasePolicyIdentity;
   final String policyIdentity;
   final String? routedModel;
   final AiDataUse dataUse;
@@ -335,6 +347,7 @@ final class AiConsentContract {
               'dataUse': dataUse.name,
               'disclosureVersion': disclosureVersion,
               'writePolicy': writePolicy?.toCanonicalJson(),
+              'releasePolicyIdentity': releasePolicyIdentity,
             }),
           ),
         ),
@@ -345,8 +358,10 @@ final class AiConsentContract {
 /// Versions shared by current-contract callers, including settings.
 const aiDisclosureVersion = 2;
 
-AiConsentContract aiCurrentConsentContractFor(AiProviderConfig provider) =>
-    aiConsentContractFor(provider);
+AiConsentContract aiCurrentConsentContractFor(
+  AiProviderConfig provider, {
+  AiReleasePolicyView releasePolicy = productionAiReleasePolicy,
+}) => aiConsentContractFor(provider, releasePolicy: releasePolicy);
 
 /// Derives the disclosure from the actual recipient and the bundled policy table.
 /// Unknown models and custom recipients never inherit a known model's policy.
@@ -356,6 +371,8 @@ AiConsentContract aiConsentContractFor(
   int disclosureVersion = aiDisclosureVersion,
   Set<String>? dataCategories,
   AiWritePolicy? writePolicy,
+  AiReleasePolicyView releasePolicy = productionAiReleasePolicy,
+  String? releasePolicyIdentity,
 }) {
   final preset = AiPresets.all
       .where((candidate) => candidate.id == provider.presetId)
@@ -421,6 +438,10 @@ AiConsentContract aiConsentContractFor(
     toolCatalogueVersion: toolCatalogueVersion,
     dataCategories: categories,
     writePolicy: writePolicy,
+    releasePolicyIdentity:
+        releasePolicyIdentity ??
+        writePolicy?.releasePolicyIdentity ??
+        releasePolicy.canonicalIdentity,
     policyIdentity: policyIdentity,
     routedModel: modelSensitive ? provider.model : null,
     dataUse: policy?.dataUse ?? AiDataUse.unknown,

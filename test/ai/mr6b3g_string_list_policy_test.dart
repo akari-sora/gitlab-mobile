@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -114,6 +115,7 @@ final class _Harness {
     final group = operation.startsWith('updateGroup');
     final budget = AiToolBudget(maxGitLabRequests: 40);
     h.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: group ? g0eScope : mr6b3Scope,

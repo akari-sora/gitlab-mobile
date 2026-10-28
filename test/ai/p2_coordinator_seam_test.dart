@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -816,6 +817,7 @@ final class _Fixture implements port.AiGitLabWritePort {
     this.captureOnly = captureOnly;
     delegate = port.GitLabAiWritePort(h.api, accountKey: coordAccount);
     coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: scope,
         level: AiAutonomyLevel.confirmEach,

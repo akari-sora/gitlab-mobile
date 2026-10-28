@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -38,7 +39,7 @@ void main() {
       aiConversationConsentContract(
         harness.settings,
         harness.accountKey,
-        harness.settings.providers.single,
+        harness.settings.providers.single, releasePolicy: fixtureReleasePolicy
       ).writePolicy,
       isNull,
     );
@@ -186,7 +187,8 @@ final class _Harness {
       final contract = settings.consentContractFor(
         workspace.account.key,
         provider,
-        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.lowRiskAuto),
+        releasePolicy: fixtureReleasePolicy,
+        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.lowRiskAuto, releasePolicy: fixtureReleasePolicy),
         agreedCeiling: AiAutonomyLevel.lowRiskAuto,
       );
       await settings.grantConsent(workspace.account.key, contract, const {
@@ -211,6 +213,7 @@ final class _Harness {
     var portCreations = 0;
     late final _Harness harness;
     final controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       origin: const AiGeneralOrigin(),
       session: session,
       settings: settings,

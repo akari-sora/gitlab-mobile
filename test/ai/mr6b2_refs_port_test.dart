@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
@@ -82,7 +83,7 @@ void main() {
         );
         expect(row.httpCap, row.operationId.startsWith('delete') ? 17 : 19);
         expect(row.readback, !row.operationId.startsWith('delete'));
-        expect(productionAiLedger.modelVisible, contains(row));
+        expect(fixtureAiLedger.modelVisible, contains(row));
       }
       final create = productionAiLedger.find('createRelease')!;
       final update = productionAiLedger.find('updateRelease')!;
@@ -911,6 +912,7 @@ final class _Harness {
   _Harness(this.server, this.h, AiAutonomyLevel level) {
     placeholders = text.UploadPlaceholderTable(instance: h.api.instance);
     coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: coordScope,

@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -294,6 +295,7 @@ final class _Server {
 final class _Harness {
   _Harness(this.base, this.server, {bool patAllowance = false}) {
     coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: g0eScope,
         level: base.policy.level,

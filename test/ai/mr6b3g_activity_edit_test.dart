@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -433,6 +434,7 @@ final class _Harness {
       ),
     );
     harness.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: _scope,
@@ -562,10 +564,10 @@ void main() {
     aiGroupWorkItemWritesEnabledForTesting = false;
     expect(aiGroupWorkItemWritesAreEnabled, isFalse);
     expect(
-      productionAiLedger.modelVisible.map((row) => row.operationId),
+      fixtureAiLedger.modelVisible.map((row) => row.operationId),
       contains(_operation),
     );
-    expect(toolsForScope(_scope), isEmpty);
+    expect(toolsForScope(_scope, releasePolicy: fixtureReleasePolicy), isEmpty);
   });
 
   for (final context in ['missing', 'revoked', 'generation']) {

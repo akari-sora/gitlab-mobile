@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -265,6 +266,7 @@ final class _Environment {
       'provider': _providerId,
     });
     environment.catalogue = AiToolCatalogue(
+      releasePolicy: fixtureReleasePolicy,
       port: GitLabAiReadPort(session.api!, 42),
       scope: _scope(account),
       redactor: Redactor(secrets: secrets),

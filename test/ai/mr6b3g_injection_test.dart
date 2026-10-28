@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
@@ -56,6 +57,7 @@ Future<G0eHarness> _productionHarness() async {
   final h = await G0eHarness.create();
   h.coordinator.stop();
   h.coordinator = PolicyAiWriteCoordinator(
+    releasePolicy: fixtureReleasePolicy,
     snapshot: () => AiWritePolicySnapshot(
       scope: h.scope,
       level: h.level,
@@ -84,7 +86,7 @@ Future<G0eHarness> _productionHarness() async {
     placeholders: h.placeholders,
     knownSecrets: () => h.secrets,
     safeDisplay: (value) => value,
-    ledger: productionAiLedger,
+    ledger: fixtureAiLedger,
   );
   h.beginRun();
   return h;
@@ -106,6 +108,7 @@ void main() {
           const head = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
           const base = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
           final catalogue = AiToolCatalogue(
+            releasePolicy: fixtureReleasePolicy,
             port: _InjectionReadPort(),
             scope: const AiResourceScope(
               accountKey: g0eAccount,
@@ -216,6 +219,7 @@ void main() {
         final h = await _productionHarness();
         addTearDown(h.dispose);
         final catalogue = AiToolCatalogue.group(
+          releasePolicy: fixtureReleasePolicy,
           port: GitLabAiGroupReadPort(
             api,
             instance: api.instance,
@@ -728,6 +732,7 @@ void main() {
         // The loaded controller owns the source facts. An independently
         // granted project target exercises their real coordinator/text seam.
         final coordinator = PolicyAiWriteCoordinator(
+          releasePolicy: fixtureReleasePolicy,
           snapshot: () => AiWritePolicySnapshot(
             scope: AiWriteScope(
               accountKey: h.account,

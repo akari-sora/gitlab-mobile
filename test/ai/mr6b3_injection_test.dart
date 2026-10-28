@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
@@ -333,6 +334,7 @@ void main() {
         final h = await _harness();
         final budget = AiToolBudget(maxGitLabRequests: 40);
         final coordinator = PolicyAiWriteCoordinator(
+          releasePolicy: fixtureReleasePolicy,
           snapshot: () => AiWritePolicySnapshot(
             appInForeground: true,
             scope: mr6b3Scope,
@@ -355,7 +357,7 @@ void main() {
           ),
           knownSecrets: () => const {},
           safeDisplay: (value) => value,
-          ledger: productionAiLedger,
+          ledger: fixtureAiLedger,
           httpCost: (op) => aiWriteRequestAllowance(op, oauthReplay: false),
         );
         addTearDown(coordinator.stop);
@@ -430,6 +432,7 @@ void main() {
       final h = await _harness(level: AiAutonomyLevel.bypass);
       final budget = AiToolBudget(maxGitLabRequests: 40);
       final coordinator = PolicyAiWriteCoordinator(
+        releasePolicy: fixtureReleasePolicy,
         snapshot: () => const AiWritePolicySnapshot(
           appInForeground: true,
           scope: mr6b3Scope,
@@ -452,7 +455,7 @@ void main() {
         ),
         knownSecrets: () => const {},
         safeDisplay: (value) => value,
-        ledger: productionAiLedger,
+        ledger: fixtureAiLedger,
       );
       addTearDown(coordinator.stop);
       coordinator.beginRun('Update work item #3.');

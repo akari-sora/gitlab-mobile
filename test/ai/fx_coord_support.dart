@@ -1,5 +1,8 @@
 // Shared harnesses for the fx-coord tests (MR6b-1 review round 1).
 
+import 'release_policy_support.dart';
+import 'mr6b3_support.dart' show Mr6b3JournalFiles;
+import 'package:gitlab_mobile/core/ai/tools/release_policy.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -12,7 +15,7 @@ import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart'
-    show GitLabAiWritePort;
+    show AiGitLabWritePort, GitLabAiWritePort;
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
@@ -74,15 +77,23 @@ AiToolCall coordNoteCall(String id, {String body = 'synthetic body'}) =>
     );
 
 final class CoordHarness {
-  CoordHarness._(this.root, this.journal, this.adapter, this.api, this.budget)
-    : _maxGitLabRequests = budget.maxGitLabRequests;
+  CoordHarness._(
+    this.root,
+    this.journal,
+    this.adapter,
+    this.api,
+    this.budget,
+    this.files,
+  ) : _maxGitLabRequests = budget.maxGitLabRequests;
 
   static Future<CoordHarness> create({
     int maxGitLabRequests = 40,
     Responder? responder,
   }) async {
     final root = Directory.systemTemp.createTempSync('fx-coord-');
+    final files = Mr6b3JournalFiles(root);
     final journal = AiWriteJournal(
+      files: files,
       keys: MemoryAiJournalKeyStore(),
       applicationSupport: root,
       processId: 'fx-coord-test',
@@ -100,12 +111,14 @@ final class CoordHarness {
       adapter,
       api,
       AiToolBudget(maxGitLabRequests: maxGitLabRequests),
+      files,
     );
     harness.coordinator = harness.newCoordinator();
     return harness;
   }
 
   final Directory root;
+  final Mr6b3JournalFiles files;
   final AiWriteJournal journal;
   final FakeAdapter adapter;
   final GitLabApi api;
@@ -139,15 +152,23 @@ final class CoordHarness {
   Completer<void>? freshnessEntered;
   Completer<void>? releaseFreshness;
   int freshnessReads = 0;
+  int portCreations = 0;
 
   /// The fresh read (1-based) that waits on [freshnessEntered]; null: any.
   int? barrierRead;
 
   PolicyAiWriteCoordinator newCoordinator({
     String conversationId = 'fx-coord-conversation',
+    AiReleasePolicyView? releasePolicy,
+    AiCapabilityLedger? ledger,
+    AiWriteScope scope = coordScope,
+    AiGitLabWritePort Function()? portFactory,
+    AiWriteFragmentChecker? checkFragments,
   }) => PolicyAiWriteCoordinator(
+    releasePolicy: releasePolicy ?? fixtureReleasePolicy,
+    ledger: ledger,
     snapshot: () => AiWritePolicySnapshot(
-      scope: coordScope,
+      scope: scope,
       level: level,
       ceiling: AiAutonomyLevel.bypass,
       consentHash: 'consent-v2',
@@ -157,7 +178,11 @@ final class CoordHarness {
       appInForeground: foreground,
       clientMayStart: clientMayStart,
     ),
-    createPort: () => GitLabAiWritePort(api, accountKey: coordAccount),
+    createPort: () {
+      portCreations++;
+      return portFactory?.call() ??
+          GitLabAiWritePort(api, accountKey: coordAccount);
+    },
     journal: journal,
     conversationId: conversationId,
     budget: () => budget,
@@ -181,6 +206,7 @@ final class CoordHarness {
     safeDisplay: (value) => value,
     now: () => clock,
     attachments: attachments,
+    checkFragments: checkFragments,
   );
 
   /// Holds one picked file as `att-<n>`.
@@ -380,7 +406,8 @@ final class StackHarness {
     AiWriteScope Function(StackServer server)? writeScope,
     List<PickedAttachment?> picks = const [],
     void Function(StackServer server)? configure,
-    Future<void> Function(SessionController session, StackServer server)? prepareSession,
+    Future<void> Function(SessionController session, StackServer server)?
+    prepareSession,
     DateTime Function()? now,
     Future<void> Function()? refreshSecrets,
   }) async {
@@ -411,8 +438,12 @@ final class StackHarness {
       settings.consentContractFor(
         workspace.account.key,
         config,
-        writePolicy: aiMr6b1WritePolicy(level),
+        writePolicy: aiMr6b1WritePolicy(
+          level,
+          releasePolicy: fixtureReleasePolicy,
+        ),
         agreedCeiling: level,
+        releasePolicy: fixtureReleasePolicy,
       ),
       const {'synthetic': true},
     );
@@ -438,6 +469,7 @@ final class StackHarness {
       picker,
     );
     harness.controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       origin:
           origin ??
           AiFileOrigin(

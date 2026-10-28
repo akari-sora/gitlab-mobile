@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -517,6 +518,7 @@ final class _Policy {
   PolicyAiWriteCoordinator coordinator({String conversation = 'g15-races'}) {
     final budget = AiToolBudget(maxGitLabRequests: 40);
     final result = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: scope,
         level: level,
@@ -542,7 +544,7 @@ final class _Policy {
       placeholders: h.placeholders,
       knownSecrets: () => const {},
       safeDisplay: (value) => value,
-      ledger: productionAiLedger,
+      ledger: fixtureAiLedger,
       now: () => clock,
     );
     result.beginRun('Update this group work item.');

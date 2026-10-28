@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -7,6 +8,7 @@ import 'package:gitlab_mobile/core/ai/exact_edit.dart' as exact;
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/graphql_write_classify.dart';
 import 'package:gitlab_mobile/core/ai/tools/graphql_write_hooks.dart';
+import 'package:gitlab_mobile/core/ai/tools/release_policy.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
@@ -269,9 +271,12 @@ final class Mr6b3Harness {
     required this.keys,
     required this.journal,
     required this.port,
+    required this.releasePolicy,
   });
 
-  static Future<Mr6b3Harness> create() async {
+  static Future<Mr6b3Harness> create({
+    AiReleasePolicyView? releasePolicy,
+  }) async {
     final root = Directory.systemTemp.createTempSync('mr6b3-dispatch-');
     final files = Mr6b3JournalFiles(root);
     final keys = Mr6b3JournalKeyStore();
@@ -289,6 +294,7 @@ final class Mr6b3Harness {
       keys: keys,
       journal: journal,
       port: Mr6b3GraphPort(),
+      releasePolicy: releasePolicy ?? fixtureReleasePolicy,
     );
     harness.coordinator = harness._newCoordinator();
     harness.beginRun();
@@ -300,6 +306,7 @@ final class Mr6b3Harness {
   final Mr6b3JournalKeyStore keys;
   final AiWriteJournal journal;
   final Mr6b3GraphPort port;
+  final AiReleasePolicyView releasePolicy;
   final Mr6b3Policy policy = Mr6b3Policy();
   String Function(String)? safeDisplay;
   DateTime clock = DateTime.utc(2026, 10, 23, 12);
@@ -308,6 +315,7 @@ final class Mr6b3Harness {
   int _callId = 0;
 
   PolicyAiWriteCoordinator _newCoordinator() => PolicyAiWriteCoordinator(
+    releasePolicy: releasePolicy,
     snapshot: () => AiWritePolicySnapshot(
       appInForeground: true,
       scope: mr6b3Scope,

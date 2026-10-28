@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -350,6 +351,7 @@ final class P10Coordinator {
     );
     harness.budget = AiToolBudget(maxGitLabRequests: budget);
     harness.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: p10Scope,

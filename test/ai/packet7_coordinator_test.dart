@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -595,6 +596,7 @@ final class _Harness {
   PolicyAiWriteCoordinator newCoordinator({
     String conversationId = 'conversation-1',
   }) => PolicyAiWriteCoordinator(
+    releasePolicy: fixtureReleasePolicy,
     snapshot: () => AiWritePolicySnapshot(
       scope: _scope,
       level: level,
@@ -636,7 +638,7 @@ final class _Harness {
   static Future<_Harness> create({
     int maxGitLabRequests = 40,
     int Function(String)? httpCost,
-    AiCapabilityLedger ledger = productionAiLedger,
+    AiCapabilityLedger? ledger,
     Responder? responder,
   }) async {
     final root = Directory.systemTemp.createTempSync('packet7-coordinator-');
@@ -678,7 +680,7 @@ final class _Harness {
       adapter: adapter,
       api: api,
       toolBudget: AiToolBudget(maxGitLabRequests: maxGitLabRequests),
-      ledger: ledger,
+      ledger: ledger ?? fixtureAiLedger,
       httpCost: httpCost,
     );
   }

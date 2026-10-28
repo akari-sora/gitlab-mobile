@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -430,6 +431,7 @@ final class _Harness {
     await h.journal.ensureInitialized(mr6b3Account);
     h.budget = AiToolBudget(maxGitLabRequests: requests);
     h.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: h.scope,
@@ -529,7 +531,7 @@ void main() {
         expect(row.modelVisible, isTrue);
         expect(row.readback, isTrue);
         expect(
-          productionAiLedger.modelVisible.map((r) => r.operationId),
+          fixtureAiLedger.modelVisible.map((r) => r.operationId),
           contains(op),
         );
         expect(

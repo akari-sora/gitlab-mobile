@@ -335,7 +335,7 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertTrue(version.is_file(), "Catalogue version needs its own file")
         source = version.read_text(encoding="utf-8")
         self.assertNotRegex(source, r"(?m)^\s*(?:import|export|part)\b")
-        self.assertRegex(source, r"const\s+aiToolCatalogueVersion\s*=\s*5\s*;")
+        self.assertRegex(source, r"const\s+aiToolCatalogueVersion\s*=\s*6\s*;")
         catalogue = (AI_ROOT / "tools" / "tool_catalogue.dart").read_text(
             encoding="utf-8"
         )

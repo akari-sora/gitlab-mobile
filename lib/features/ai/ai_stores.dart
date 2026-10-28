@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../core/ai/ai_endpoint.dart';
 import '../../core/ai/ai_failure.dart';
 import '../../core/ai/ai_provider.dart';
+import '../../core/ai/tools/release_policy.dart';
 import 'ai_journal_key_store.dart';
 
 enum AiStoreReadStatus { found, absent, unavailable }
@@ -2002,6 +2003,7 @@ final class AiSettingsController extends ChangeNotifier {
     AiProviderConfig provider, {
     AiWritePolicy? writePolicy,
     AiAutonomyLevel? agreedCeiling,
+    AiReleasePolicyView releasePolicy = productionAiReleasePolicy,
   }) {
     final account = _accounts[accountKey];
     final agreed =
@@ -2012,6 +2014,7 @@ final class AiSettingsController extends ChangeNotifier {
     return aiConsentContractFor(
       provider,
       writePolicy: writePolicy?.copyWith(agreedCeiling: agreed),
+      releasePolicy: releasePolicy,
     );
   }
 
@@ -2250,6 +2253,7 @@ final class AiSettingsController extends ChangeNotifier {
               disclosureVersion: contract.disclosureVersion,
               dataCategories: contract.dataCategories,
               writePolicy: contract.writePolicy,
+              releasePolicyIdentity: contract.releasePolicyIdentity,
             ).hash !=
             contract.hash) {
       throw const AiStoreException(

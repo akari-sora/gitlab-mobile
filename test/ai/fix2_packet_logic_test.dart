@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
@@ -140,6 +141,7 @@ void main() {
       final h = await Mr6b2Harness.create(level: AiAutonomyLevel.bypass);
       addTearDown(h.dispose);
       final coordinator = PolicyAiWriteCoordinator(
+        releasePolicy: fixtureReleasePolicy,
         snapshot: () => const AiWritePolicySnapshot(
           appInForeground: true,
           scope: mr6b2Scope, level: AiAutonomyLevel.bypass,

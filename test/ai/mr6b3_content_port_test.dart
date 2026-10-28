@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
@@ -996,6 +997,7 @@ final class _Harness {
     this.aiAttribution = false,
   }) {
     coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: _scope,

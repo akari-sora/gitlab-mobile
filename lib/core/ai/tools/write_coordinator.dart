@@ -18,6 +18,7 @@ import '../wire/wire_format.dart';
 import '../write_text.dart' as text;
 import 'gitlab_write_port.dart' as port;
 import 'graphql_write_hooks.dart';
+import 'release_policy.dart';
 import 'target_binding.dart';
 import 'tool_catalogue.dart';
 import 'write_ledger.dart';
@@ -532,7 +533,8 @@ final class PolicyAiWriteCoordinator
     required this.placeholders,
     required this.knownSecrets,
     required this.safeDisplay,
-    this.ledger = productionAiLedger,
+    AiCapabilityLedger? ledger,
+    this.releasePolicy = productionAiReleasePolicy,
     this.attachments,
     this.attachmentSubstitution,
     this.checkFragments,
@@ -547,7 +549,8 @@ final class PolicyAiWriteCoordinator
     AiExecutionGate? executionGate,
     DateTime Function()? now,
     int Function(String)? httpCost,
-  }) : executionGate = executionGate ?? ForegroundAiExecutionGate(
+  }) : ledger = ledger ?? ProductionAiLedger(releasePolicy: releasePolicy),
+       executionGate = executionGate ?? ForegroundAiExecutionGate(
          appInForeground: () => snapshot().appInForeground,
        ),
        _now = now ?? DateTime.now,
@@ -566,6 +569,7 @@ final class PolicyAiWriteCoordinator
   final Set<String> Function() knownSecrets;
   final String Function(String) safeDisplay;
   final AiCapabilityLedger ledger;
+  final AiReleasePolicyView releasePolicy;
   final AiAttachmentSession? attachments;
   final text.AttachmentSubstitution? Function(int projectId)?
   attachmentSubstitution;
@@ -761,7 +765,11 @@ final class PolicyAiWriteCoordinator
     final scope = _scopeSummary(policy.scope);
     return [
       for (final capability
-          in toolsForScope(policy.scope, ledger: ledger))
+          in toolsForScope(
+            policy.scope,
+            ledger: ledger,
+            releasePolicy: releasePolicy,
+          ))
         AiToolSpec(
           name: capability.operationId,
           description:
@@ -974,7 +982,8 @@ final class PolicyAiWriteCoordinator
       return null;
     }
     final capability = ledger.find(call.name);
-    if (capability == null || !capability.modelVisible) {
+    if (capability == null || !capability.modelVisible ||
+        !releasePolicy.allowsWriteOperation(call.name)) {
       _record(call, _notExecuted(call, 'unknownOperation'));
       return null;
     }
@@ -985,6 +994,9 @@ final class PolicyAiWriteCoordinator
     try {
       final arguments = _arguments(call, capability);
       var target = _target(capability, arguments, policy);
+      if (!releasePolicy.allowsWrite(call.name, target.kind)) {
+        throw const _WriteBlocked('unknownOperation');
+      }
       // §2: a todo id is a global id. Its issue or merge request is known
       // only once the port reads the todo, so its scope is decided on that
       // pre-read below (and the port refuses a todo outside the scope).
@@ -1056,6 +1068,9 @@ final class PolicyAiWriteCoordinator
       }
       final scanReasons = _checkTextScan(prepared, policy, fresh);
       if (ownerFromPreRead) target = _todoTarget(prepared, policy.scope);
+      if (!_releasedTargets(call.name, target, prepared)) {
+        throw const _WriteBlocked('unknownOperation');
+      }
       // Only non-text reasons survive edits.
       // Text reasons are recomputed from the edited payload; scan reasons
       // from the opened target. Dispatch recomputes both.
@@ -1523,7 +1538,9 @@ final class PolicyAiWriteCoordinator
           !_preparedGroupIdentityMatches(opened, snapshot())) {
         throw const _WriteBlocked('workItemUnverifiable');
       }
-      if (opened != null) fresh = _withPreparedFields(fresh, opened, snapshot());
+      if (opened != null) {
+        fresh = _withPreparedFields(fresh, opened, snapshot());
+      }
       final processed = _prepareText(request, snapshot(), fresh);
       request = processed.request;
       if (_digest(request) != proposal.payloadDigest) {
@@ -1538,6 +1555,9 @@ final class PolicyAiWriteCoordinator
       final prepared = opened ?? await _port!.prepare(request);
       if (opened != null) prepared.bindPreparedText(request);
       _requirePending(pending);
+      if (!_releasedTargets(proposal.operationId, pending.target, prepared)) {
+        throw const _WriteBlocked('unknownOperation');
+      }
       if ((prepared.groupIdentity != null && !prepared.hasCurrentGroupIdentity) ||
           (capability.scopeClass == AiScopeClass.groupWorkItem &&
               !_preparedGroupIdentityMatches(prepared, snapshot()))) {
@@ -1628,6 +1648,14 @@ final class PolicyAiWriteCoordinator
       final outcome = await _port!.commit(
         prepared,
         mayStart: () {
+          if (!_releasedTargets(
+            proposal.operationId,
+            pending.target,
+            prepared,
+          )) {
+            boundaryFailure = 'unknownOperation';
+            return false;
+          }
           if (_pendingFailure(pending) != null) return false;
           if ((prepared.groupIdentity != null && !prepared.hasCurrentGroupIdentity) ||
               (capability.scopeClass == AiScopeClass.groupWorkItem &&
@@ -2176,6 +2204,16 @@ final class PolicyAiWriteCoordinator
                   }.contains(value)))
         '$key=$value',
   ].join(', ');
+
+  bool _releasedTargets(
+    String operationId,
+    AiTargetRef target,
+    port.AiWritePrepared prepared,
+  ) =>
+      releasePolicy.allowsWrite(operationId, target.kind) &&
+      prepared.bindingTargets.every(
+        (bound) => releasePolicy.allowsWrite(operationId, bound.kind),
+      );
 
   AiTierDecision _tier(
     AiCapability capability,
@@ -2858,12 +2896,7 @@ AiTargetRef _target(
         current.groupFullPath == path &&
         current.iid == iid;
     final note = args['noteId'] as int?;
-    final kind = switch (capability.operationId) {
-      'setGroupWorkItemActivityNoteReaction' => AiTargetKind.emoji,
-      'deleteGroupWorkItemActivityNote' ||
-      'editGroupWorkItemActivityNote' => AiTargetKind.note,
-      _ => AiTargetKind.groupWorkItem,
-    };
+    final kind = aiWriteProposalTargetKind(capability);
     return AiTargetRef(
       kind: kind,
       side: AiResourceSide.group,
@@ -2880,20 +2913,9 @@ AiTargetRef _target(
           : AiTargetOrigin.proposed,
     );
   }
-  final kind = switch (capability.scopeClass) {
-    AiScopeClass.workItem => AiTargetKind.issue,
-    AiScopeClass.mergeRequest => AiTargetKind.mergeRequest,
-    AiScopeClass.resource =>
-      args['resource'] == 'merge_requests'
-          ? AiTargetKind.mergeRequest
-          : AiTargetKind.issue,
-    AiScopeClass.accountTodo ||
-    AiScopeClass.accountGlobalOnly => AiTargetKind.todo,
-    AiScopeClass.groupWorkItem => AiTargetKind.groupWorkItem,
-    AiScopeClass.project ||
-    AiScopeClass.projectUpload ||
-    AiScopeClass.personalNamespace => AiTargetKind.project,
-  };
+  final kind = aiWriteProposalTargetKind(capability,
+    mergeRequest: args['resource'] == 'merge_requests',
+  );
   final bound = scope.grants.any(
     (grant) =>
         (capability.scopeClass == AiScopeClass.accountGlobalOnly &&
@@ -3195,11 +3217,12 @@ const aiWriteRequestCounts = <String, AiWriteRequestCount>{
 /// when it is proposed. The ledger cap includes the mutation allowance (two
 /// for cancel's compatibility fallback) and doubled logical GETs for OAuth
 /// replay. A PAT needs each GET only once. An unknown
-/// operation reserves the largest visible ledger cap for compatibility.
+/// operation reserves the largest implemented model-visible ledger cap.
 int aiWriteRequestAllowance(String operation, {bool oauthReplay = true}) {
   final cap = productionAiLedger.find(operation)?.httpCap ??
-      productionAiLedger.modelVisible.fold<int>(0, (most, row) => row.httpCap > most ? row.httpCap : most,
-      );
+      ProductionAiLedger.rows
+          .where((row) => row.modelVisible)
+          .fold<int>(0, (most, row) => row.httpCap > most ? row.httpCap : most);
   final mutations = operation == 'cancelAutoMerge' ? 2 : 1;
   return oauthReplay ? cap : (cap - mutations) ~/ 2 + mutations;
 }
@@ -3265,7 +3288,9 @@ bool _hasFragmentRole(Map<String, Object?> values, Map<String, AiArgSpec> specs,
     if (spec.text == AiTextRole.fragmentEdits) return true;
     final value = entry.value;
     final nested = _nestedProperties(spec);
-    if (value is Map<String, Object?> && _hasFragmentRole(value, nested)) return true;
+    if (value is Map<String, Object?> && _hasFragmentRole(value, nested)) {
+      return true;
+    }
     if (value is List<Object?> && value.any((item) =>
         item is Map<String, Object?> && _hasFragmentRole(item, nested),
         )) {

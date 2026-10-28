@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -253,6 +254,7 @@ final class P6Coordinator {
     await journal.ensureInitialized(p6Account);
     final harness = P6Coordinator._(server, root, journal);
     harness.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: p6Scope,

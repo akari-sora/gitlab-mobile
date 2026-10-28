@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
@@ -234,6 +235,7 @@ void main() {
         instance: GitLabInstance.parse('https://example.com/gitlab'),
       );
       final catalogue = AiToolCatalogue(
+        releasePolicy: fixtureReleasePolicy,
         port: GitLabAiReadPort(h.server.api, 9),
         scope: AiResourceScope(
           accountKey: mr6b2Account,
@@ -523,6 +525,7 @@ Future<Map<String, AiToolResult>> _realInjectionReads() async {
   });
   final api = testApi(adapter);
   final catalogue = AiToolCatalogue(
+    releasePolicy: fixtureReleasePolicy,
     port: GitLabAiReadPort(api, 9),
     scope: AiResourceScope(
       accountKey: mr6b2Account,

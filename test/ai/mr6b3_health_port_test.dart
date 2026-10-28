@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -402,6 +403,7 @@ final class _P5CoordinatorHarness {
     );
     harness.budget = AiToolBudget(maxGitLabRequests: maxHttp);
     harness.coordinator = coord.PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => coord.AiWritePolicySnapshot(
         appInForeground: true,
         scope: mr6b3Scope,
@@ -540,6 +542,7 @@ final class _RealP5CoordinatorHarness {
       port: port,
     );
     harness.coordinator = coord.PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => const coord.AiWritePolicySnapshot(
         appInForeground: true,
         scope: _scope,
@@ -652,7 +655,7 @@ void main() {
     expect(row.httpCap, 21);
     expect(row.readback, isTrue);
     expect(row.modelVisible, isTrue);
-    expect(productionAiLedger.modelVisible, contains(row));
+    expect(fixtureAiLedger.modelVisible, contains(row));
     expect(row.arguments.keys, {'projectId', 'iid', 'healthStatus'});
     expect(row.arguments['healthStatus']!.enumValues, [
       'onTrack',

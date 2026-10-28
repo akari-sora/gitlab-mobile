@@ -15,6 +15,7 @@ import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 
+import 'ai/release_policy_support.dart';
 import 'support/fake_adapter.dart';
 
 const _deadline = Duration(seconds: 20);
@@ -73,6 +74,7 @@ void main() {
           now = now.add(const Duration(seconds: 59));
 
           final catalogue = AiToolCatalogue(
+            releasePolicy: fixtureReleasePolicy,
             // Keep provider delivery checks on the synthetic cache timeline.
             port: GitLabAiReadPort(api, 9, now: () => now),
             scope: const AiResourceScope(

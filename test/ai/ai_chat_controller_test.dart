@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -156,7 +157,7 @@ Future<AiProviderConfig> _configure(
     final contract = aiConversationConsentContract(
       environment.settings,
       environment.workspace.account.key,
-      saved,
+      saved, releasePolicy: fixtureReleasePolicy
     );
     await environment.settings.grantConsent(
       environment.workspace.account.key,
@@ -175,6 +176,7 @@ AiChatController _controller(
   Future<void> Function()? refreshSecrets,
   List<Duration>? historyRetryDelays,
 }) => AiChatController(
+  releasePolicy: fixtureReleasePolicy,
   appInForeground: () => true,
   origin: origin,
   session: environment.session,
@@ -437,6 +439,7 @@ void main() {
     await freshSettings.initialize();
     expect(freshSettings.accountRecord(accountKey), isNull);
     final controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       appInForeground: () => true,
       origin: const AiGeneralOrigin(),
       session: environment.session,
@@ -1216,7 +1219,7 @@ void main() {
         aiConversationConsentContract(
           environment.settings,
           environment.workspace.account.key,
-          changed,
+          changed, releasePolicy: fixtureReleasePolicy
         ),
         const {'synthetic': true},
       );
@@ -1288,7 +1291,7 @@ void main() {
         aiConversationConsentContract(
           environment.settings,
           environment.workspace.account.key,
-          changed,
+          changed, releasePolicy: fixtureReleasePolicy
         ),
         const {'synthetic': true},
       );
@@ -1395,7 +1398,7 @@ void main() {
         aiConversationConsentContract(
           environment.settings,
           environment.workspace.account.key,
-          changed,
+          changed, releasePolicy: fixtureReleasePolicy
         ),
         const {'synthetic': true},
       );
@@ -3122,7 +3125,7 @@ void main() {
       aiConversationConsentContract(
           environment.settings,
           environment.workspace.account.key,
-          second,
+          second, releasePolicy: fixtureReleasePolicy
         ),
       const {'synthetic': true},
     );
@@ -3390,7 +3393,7 @@ void main() {
         aiConversationConsentContract(
           environment.settings,
           environment.workspace.account.key,
-          changed,
+          changed, releasePolicy: fixtureReleasePolicy
         ),
         const {'synthetic': true},
       );

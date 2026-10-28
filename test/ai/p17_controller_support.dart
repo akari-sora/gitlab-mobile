@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -91,7 +92,8 @@ final class P17ScanFixture {
       settings.consentContractFor(
         workspace.account.key,
         config,
-        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.bypass),
+        releasePolicy: fixtureReleasePolicy,
+        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.bypass, releasePolicy: fixtureReleasePolicy),
         agreedCeiling: AiAutonomyLevel.bypass,
       ),
       const {'synthetic': true},
@@ -115,6 +117,7 @@ final class P17ScanFixture {
     server.contents[p6L] = 'synthetic-test-token\nalpha\n';
     final scanPort = P17ScanPort(server);
     final controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       origin: AiFileOrigin(
         project: workspace.project,
         path: 'README.md',

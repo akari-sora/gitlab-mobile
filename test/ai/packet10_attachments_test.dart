@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -799,10 +800,11 @@ final class _Harness {
         ? settings.consentContractFor(
             account,
             saved,
-            writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.lowRiskAuto),
+            releasePolicy: fixtureReleasePolicy,
+            writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.lowRiskAuto, releasePolicy: fixtureReleasePolicy),
             agreedCeiling: AiAutonomyLevel.lowRiskAuto,
           )
-        : aiCurrentConsentContractFor(saved);
+        : aiCurrentConsentContractFor(saved, releasePolicy: fixtureReleasePolicy);
     await settings.grantConsent(account, contract, const {'synthetic': true});
 
     final root = Directory.systemTemp.createTempSync('packet10-attachments-');
@@ -833,6 +835,7 @@ final class _Harness {
     harness._mutations = mutations;
     harness._providerAdapter = providerAdapter;
     harness.controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       origin: const AiGeneralOrigin(),
       session: session,
       settings: settings,

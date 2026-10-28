@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -293,6 +294,7 @@ final class _StatusHarness {
 
   PolicyAiWriteCoordinator newCoordinator(String conversation) =>
       PolicyAiWriteCoordinator(
+        releasePolicy: fixtureReleasePolicy,
         snapshot: () => AiWritePolicySnapshot(
           appInForeground: true,
           scope: scope,
@@ -515,7 +517,7 @@ void main() {
     expect(row.scopeClass, AiScopeClass.workItem);
     expect(row.modelVisible, isTrue);
     expect(
-      productionAiLedger.modelVisible.map((row) => row.operationId),
+      fixtureAiLedger.modelVisible.map((row) => row.operationId),
       contains(_operation),
     );
     expect(row.namedMethod, _operation);

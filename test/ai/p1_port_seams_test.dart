@@ -52,8 +52,8 @@ AiWriteSettled _classified(AiWritePrepared prepared, String code) =>
     );
 
 void main() {
-  test('production catalogue version is 5 and still dependency free', () {
-    expect(aiToolCatalogueVersion, 5);
+  test('production catalogue version is 6 and still dependency free', () {
+    expect(aiToolCatalogueVersion, 6);
     final source = File(
       'lib/core/ai/tools/tool_catalogue_version.dart',
     ).readAsStringSync();

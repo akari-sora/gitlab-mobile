@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
@@ -16,7 +17,7 @@ AiWriteScope _scope(AiScopeKind kind, int projectId) => AiWriteScope(
   ],
 );
 
-AiCapability _row(String operationId) => productionAiLedger.modelVisible
+AiCapability _row(String operationId) => fixtureAiLedger.modelVisible
     .firstWhere((row) => row.operationId == operationId);
 
 final _project42 = AiTargetRef(kind: AiTargetKind.project, projectId: 42);
@@ -31,7 +32,7 @@ void main() {
       AiScopeKind.mergeRequest,
     ]) {
       expect(
-        toolsForScope(_scope(kind, 42)),
+        toolsForScope(_scope(kind, 42), releasePolicy: fixtureReleasePolicy),
         contains(upload),
         reason: '$kind',
       );
@@ -52,7 +53,7 @@ void main() {
   test('an issue grant still does not cover project-wide writes', () {
     final createLabel = _row('createLabel');
     expect(
-      toolsForScope(_scope(AiScopeKind.workItem, 42)),
+      toolsForScope(_scope(AiScopeKind.workItem, 42), releasePolicy: fixtureReleasePolicy),
       isNot(contains(createLabel)),
     );
     expect(

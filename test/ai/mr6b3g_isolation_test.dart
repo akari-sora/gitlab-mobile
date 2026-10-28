@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
@@ -142,6 +143,7 @@ void main() {
       await recovered.recoverAfterAccountsLoaded([g0eAccount]);
       final budget = AiToolBudget(maxGitLabRequests: 40);
       final peer = PolicyAiWriteCoordinator(
+        releasePolicy: fixtureReleasePolicy,
         snapshot: () => AiWritePolicySnapshot(
           scope: g0eScope,
           level: AiAutonomyLevel.confirmEach,
@@ -170,7 +172,7 @@ void main() {
         ),
         knownSecrets: () => const {},
         safeDisplay: (value) => value,
-        ledger: productionAiLedger,
+        ledger: fixtureAiLedger,
         httpCost: (operation) =>
             aiWriteRequestAllowance(operation, oauthReplay: false),
       );

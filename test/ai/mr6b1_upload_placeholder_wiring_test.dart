@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -567,7 +568,8 @@ final class _Harness {
       settings.consentContractFor(
         workspace.account.key,
         config,
-        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.lowRiskAuto),
+        releasePolicy: fixtureReleasePolicy,
+        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.lowRiskAuto, releasePolicy: fixtureReleasePolicy),
         agreedCeiling: AiAutonomyLevel.lowRiskAuto,
       ),
       const {'synthetic': true},
@@ -585,6 +587,7 @@ final class _Harness {
     final provider = _Provider();
     final harness = _Harness(root, server, provider, session, settings);
     harness.controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       origin: AiFileOrigin(
         project: workspace.project,
         path: 'README.md',

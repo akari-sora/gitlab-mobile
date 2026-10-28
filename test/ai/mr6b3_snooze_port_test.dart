@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -405,6 +406,7 @@ final class _Harness {
       ..level = level;
     h.budget = AiToolBudget(maxGitLabRequests: limit);
     h.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: h.scope,
@@ -723,7 +725,7 @@ void main() {
         expect(row.boundary, AiWriteBoundary.graph);
         expect(row.namedMethod, op);
         expect(row.modelVisible, isTrue);
-        expect(productionAiLedger.modelVisible, contains(row));
+        expect(fixtureAiLedger.modelVisible, contains(row));
         expect(
           row.arguments.keys.toSet(),
           op == 'snoozeTodo' ? {'todoId', 'until'} : {'todoId'},

@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -320,6 +321,7 @@ final class _Harness {
     await journal.ensureInitialized(merge.account);
     final harness = _Harness(root, journal);
     harness.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: merge.scope,
         level: harness.level,

@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -67,7 +68,7 @@ void main() {
     expect(row.scopeClass, AiScopeClass.workItem);
     expect(row.boundary, AiWriteBoundary.graph);
     expect(row.modelVisible, isTrue);
-    expect(productionAiLedger.modelVisible, contains(row));
+    expect(fixtureAiLedger.modelVisible, contains(row));
     expect(row.readback, isTrue);
     expect(row.arguments.keys.toSet(), {'projectId', 'iid', 'status'});
     expect(row.arguments.values.every((arg) => arg.required), isTrue);
@@ -381,7 +382,7 @@ void main() {
   test(
     'P12 production ledger offers the operation and holds it for approval',
     () async {
-      final h = await _Harness.create(ledger: productionAiLedger);
+      final h = await _Harness.create(ledger: fixtureAiLedger);
       addTearDown(h.dispose);
       final proposal = await h.propose();
       expect(proposal, isNotNull);
@@ -799,6 +800,7 @@ final class _Harness {
       AiToolBudget(maxGitLabRequests: maxRequests),
     );
     h.coordinator = coord.PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => coord.AiWritePolicySnapshot(
         appInForeground: true,
         scope: _scope,

@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/intent_lexicon.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
@@ -503,7 +504,7 @@ void main() {
             expect(decision.typedName, 'team/project');
           }
           expect(
-            toolsForScope(g0eScope).map((item) => item.operationId),
+            toolsForScope(g0eScope, releasePolicy: fixtureReleasePolicy).map((item) => item.operationId),
             isNot(contains(operation)),
           );
         },

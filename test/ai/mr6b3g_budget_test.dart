@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -76,7 +77,7 @@ final class G15Ledger implements AiCapabilityLedger {
   AiCapability? find(String operationId) =>
       productionAiLedger.find(operationId);
   @override
-  List<AiCapability> get modelVisible => productionAiLedger.modelVisible;
+  List<AiCapability> get modelVisible => fixtureAiLedger.modelVisible;
 }
 
 Map<String, Object?> g15Arguments(String operation) {
@@ -649,6 +650,7 @@ final class G15Harness {
       AiToolBudget(maxGitLabRequests: maxRequests),
     );
     h.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: g0eScope,
         level: h.base.policy.level,
@@ -685,7 +687,7 @@ final class G15Harness {
       ),
       knownSecrets: () => const {},
       safeDisplay: (value) => value,
-      ledger: productionAiLedger,
+      ledger: fixtureAiLedger,
       httpCost: oauth
           ? null
           : (op) => aiWriteRequestAllowance(op, oauthReplay: false),

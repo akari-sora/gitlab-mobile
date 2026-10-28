@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +20,7 @@ void main() {
 
   PolicyAiWriteCoordinator coordinator(List<AiScopeGrant> grants) =>
       PolicyAiWriteCoordinator(
+        releasePolicy: fixtureReleasePolicy,
         snapshot: () => AiWritePolicySnapshot(
           scope: AiWriteScope(accountKey: _account, grants: grants),
           level: AiAutonomyLevel.confirmEach,

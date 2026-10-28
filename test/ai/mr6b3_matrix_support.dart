@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -1263,6 +1264,7 @@ final class Mr6b3ApiHarness {
     final budget = AiToolBudget(maxGitLabRequests: maxGitLabRequests);
     late final Mr6b3ApiHarness harness;
     final coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: mr6b3Scope,
         level: policy.level,
@@ -1297,7 +1299,7 @@ final class Mr6b3ApiHarness {
       placeholders: text.UploadPlaceholderTable(instance: server.api.instance),
       knownSecrets: () => const <String>{},
       safeDisplay: (value) => value,
-      ledger: productionAiLedger,
+      ledger: fixtureAiLedger,
       checkFragments:
           (
             scan, {

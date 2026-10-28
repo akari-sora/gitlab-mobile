@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart';
@@ -280,7 +281,7 @@ void main() {
               : AiWriteTier.hardLine,
         );
         expect(
-          toolsForScope(_scope).map((row) => row.operationId),
+          toolsForScope(_scope, releasePolicy: fixtureReleasePolicy).map((row) => row.operationId),
           contains(op),
         );
         final prepared = await f.port.prepare(_request(op));

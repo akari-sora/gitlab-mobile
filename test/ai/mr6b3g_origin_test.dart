@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
@@ -315,6 +316,7 @@ void main() {
               wireClientFactory,
             }) {
               final controller = AiChatController(
+                releasePolicy: fixtureReleasePolicy,
                 origin: origin,
                 session: session,
                 settings: settings,
@@ -466,6 +468,7 @@ void main() {
     );
     addTearDown(h.dispose);
     final controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       origin: _groupOrigin,
       session: h.session,
       settings: h.settings,

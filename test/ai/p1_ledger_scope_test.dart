@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
@@ -49,20 +50,20 @@ const _newScopeRows = _TestLedger(<AiCapability>[_global, _create, _fork]);
 void main() {
   test('new scope classes are offered only by their intended grants', () {
     expect(
-      toolsForScope(_scope(AiScopeKind.accountGlobal), ledger: _newScopeRows),
+      toolsForScope(_scope(AiScopeKind.accountGlobal), ledger: _newScopeRows, releasePolicy: fixtureReleasePolicy),
       <AiCapability>[_global],
     );
     expect(
       toolsForScope(
         _scope(AiScopeKind.project, projectId: 42),
-        ledger: _newScopeRows,
+        ledger: _newScopeRows, releasePolicy: fixtureReleasePolicy
       ),
       <AiCapability>[_create, _fork],
     );
     expect(
       toolsForScope(
         _scope(AiScopeKind.workItem, projectId: 42),
-        ledger: _newScopeRows,
+        ledger: _newScopeRows, releasePolicy: fixtureReleasePolicy
       ),
       isEmpty,
     );

@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -361,6 +362,7 @@ final class _Fixture {
     final f = _Fixture(base, server, adapter, api, tokens);
     f.budget = AiToolBudget(maxGitLabRequests: maxRequests);
     f.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: g0eScope,
         level: f.level,

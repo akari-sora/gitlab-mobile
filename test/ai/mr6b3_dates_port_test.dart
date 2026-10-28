@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -76,7 +77,7 @@ void main() {
       final row = productionAiLedger.find(_operation)!;
       expect(row.boundary, AiWriteBoundary.graph);
       expect(row.modelVisible, isTrue);
-      expect(productionAiLedger.modelVisible, contains(row));
+      expect(fixtureAiLedger.modelVisible, contains(row));
       expect(row.baseTier, AiWriteTier.t2);
       expect(row.scopeClass, AiScopeClass.workItem);
       expect(row.namedMethod, _operation);
@@ -1129,6 +1130,7 @@ final class _DatesLedger implements AiCapabilityLedger {
 final class _DatesHarness {
   _DatesHarness(this.storage, this.fixture) {
     coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: _scope,

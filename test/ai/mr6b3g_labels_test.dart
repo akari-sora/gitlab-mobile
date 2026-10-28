@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -338,6 +339,7 @@ final class _Harness {
     await h.journal.ensureInitialized(mr6b3Account);
     h.budget = AiToolBudget(maxGitLabRequests: 40);
     h.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: g0eScope,
@@ -441,11 +443,11 @@ void main() {
       expect(row.readback, isTrue);
       expect(aiGroupWorkItemWritesEnabled, isTrue);
       expect(
-        productionAiLedger.modelVisible.any((row) => row.operationId == _op),
+        fixtureAiLedger.modelVisible.any((row) => row.operationId == _op),
         isTrue,
       );
       expect(
-        toolsForScope(g0eScope).any((row) => row.operationId == _op),
+        toolsForScope(g0eScope, releasePolicy: fixtureReleasePolicy).any((row) => row.operationId == _op),
         isTrue,
       );
       expect(row.baseTier, AiWriteTier.t2);

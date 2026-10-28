@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -370,6 +371,7 @@ final class _FilePreviewHarness {
       secrets: const _Secrets([_known, _displayPathSecret]),
     );
     harness.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => const AiWritePolicySnapshot(
         appInForeground: true,
         scope: p6Scope,
@@ -449,6 +451,7 @@ final class _DraftPreviewHarness {
       ],
     );
     harness.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => const AiWritePolicySnapshot(
         appInForeground: true,
         scope: merge.scope,
@@ -512,6 +515,7 @@ final class _FieldsPreviewHarness {
       secrets: const _Secrets([_displayPathSecret]),
     );
     base.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => const AiWritePolicySnapshot(
         appInForeground: true,
         scope: coordScope,

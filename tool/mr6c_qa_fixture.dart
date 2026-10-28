@@ -12,6 +12,7 @@ import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
+import 'package:gitlab_mobile/core/ai/tools/release_policy.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -347,6 +348,7 @@ final class QaV9Fixture {
     this.command, {
     @visibleForTesting this.testChannel,
     @visibleForTesting this.testJournalFence,
+    @visibleForTesting this.releasePolicy = productionAiReleasePolicy,
   }) : workspace = WorkspaceFixture();
   final QaSandbox sandbox;
   final QaCommand command;
@@ -354,6 +356,8 @@ final class QaV9Fixture {
   final MethodChannel? testChannel;
   @visibleForTesting
   final AiJournalAccountFence? testJournalFence;
+  @visibleForTesting
+  final AiReleasePolicyView releasePolicy;
   final WorkspaceFixture workspace;
   late final _SyntheticAdapter _gitlab = _SyntheticAdapter(workspace);
   final _SyntheticProvider _providerAdapter = _SyntheticProvider();
@@ -497,7 +501,8 @@ final class QaV9Fixture {
       settings.consentContractFor(
         sandbox.account.key,
         config,
-        writePolicy: aiMr6b1WritePolicy(level),
+        releasePolicy: releasePolicy,
+        writePolicy: aiMr6b1WritePolicy(level, releasePolicy: releasePolicy),
         agreedCeiling: level,
       ),
       const {'synthetic': true},
@@ -521,6 +526,7 @@ final class QaV9Fixture {
             wireClientFactory,
           }) {
             final controller = AiChatController(
+              releasePolicy: releasePolicy,
               origin: origin,
               session: session,
               settings: settings,

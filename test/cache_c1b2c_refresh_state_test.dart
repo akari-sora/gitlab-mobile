@@ -18,6 +18,7 @@ import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
 
 import 'ai/fx_coord_support.dart';
+import 'ai/release_policy_support.dart';
 import 'session_test.dart' show MemoryAccountStore;
 import 'support/fake_adapter.dart';
 
@@ -238,8 +239,12 @@ final class _RefreshHarness {
       settings.consentContractFor(
         server.workspace.account.key,
         config,
-        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.confirmEach),
+        writePolicy: aiMr6b1WritePolicy(
+          AiAutonomyLevel.confirmEach,
+          releasePolicy: fixtureReleasePolicy,
+        ),
         agreedCeiling: AiAutonomyLevel.confirmEach,
+        releasePolicy: fixtureReleasePolicy,
       ),
       const {'synthetic': true},
     );
@@ -265,6 +270,7 @@ final class _RefreshHarness {
       clock,
     );
     harness.controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       origin: AiWorkItemOrigin(
         project: server.workspace.project,
         kind: AiWorkItemKind.issue,

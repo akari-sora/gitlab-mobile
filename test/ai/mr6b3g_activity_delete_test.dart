@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -452,6 +453,7 @@ final class _Harness {
       AiToolBudget(maxGitLabRequests: allowance),
     );
     harness.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: harness.appInForeground,
         scope: g0eScope,
@@ -576,7 +578,7 @@ void main() {
       expect(row.namedMethod, 'deleteWorkItemActivityNote');
       expect(row.modelVisible, isTrue);
       expect(row.readback, isTrue);
-      expect(productionAiLedger.modelVisible, contains(row));
+      expect(fixtureAiLedger.modelVisible, contains(row));
       expect(groupActivityDeleteStageOperations, {_operation});
       expect(row.arguments.keys, unorderedEquals(_args.keys));
       for (final argument in row.arguments.values) {

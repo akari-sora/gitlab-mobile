@@ -7,8 +7,14 @@ import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 void main() {
-  test('AI gate defaults off during MR1', () {
-    expect(aiAssistantEnabled, isFalse);
+  test('AI gate defaults off and follows the explicit compile-time define', () {
+    expect(
+      aiAssistantEnabled,
+      const bool.fromEnvironment('MERGELINE_AI_ASSISTANT'),
+    );
+    if (!const bool.hasEnvironment('MERGELINE_AI_ASSISTANT')) {
+      expect(aiAssistantEnabled, isFalse);
+    }
   });
 
   test('HTTP failures preserve AI semantics and allowlisted metadata', () {

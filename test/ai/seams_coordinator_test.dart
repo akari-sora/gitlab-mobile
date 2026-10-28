@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -166,6 +167,7 @@ final class _Fixture {
     );
     final f = _Fixture(server, h, captured);
     h.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: f.scope,
         level: h.level,

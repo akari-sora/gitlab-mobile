@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -484,6 +485,7 @@ PolicyAiWriteCoordinator _peer(
 }) {
   final budget = AiToolBudget(maxGitLabRequests: 40);
   final coordinator = PolicyAiWriteCoordinator(
+    releasePolicy: fixtureReleasePolicy,
     snapshot: () => AiWritePolicySnapshot(
       appInForeground: true,
       scope: mr6b3Scope,

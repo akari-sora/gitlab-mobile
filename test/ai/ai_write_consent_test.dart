@@ -236,20 +236,20 @@ void main() {
     },
   );
 
-  test('§15 row 11 versions 1 through 5 require different consent', () {
-    expect(aiToolCatalogueVersion, 5);
+  test('§15 row 11 versions 1 through 6 require different consent', () {
+    expect(aiToolCatalogueVersion, 6);
     expect(aiDisclosureVersion, 2);
     final provider = _provider('a');
     final current = aiConsentContractFor(provider, writePolicy: _policy());
     final hashes = <String>{
-      for (final version in [1, 2, 3, 4, 5])
+      for (final version in [1, 2, 3, 4, 5, 6])
         aiConsentContractFor(
           provider,
           toolCatalogueVersion: version,
           writePolicy: _policy(),
         ).hash,
     };
-    expect(hashes, hasLength(5));
+    expect(hashes, hasLength(6));
     expect(
       aiConsentContractFor(
         provider,

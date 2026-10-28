@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -282,6 +283,7 @@ final class _Harness {
     await h.journal.ensureInitialized(mr6b3Account);
     h.budget = AiToolBudget(maxGitLabRequests: 80);
     h.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: mr6b3Scope,

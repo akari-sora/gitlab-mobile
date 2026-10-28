@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -83,6 +84,7 @@ _catalogue(GitLabApi api, {bool Function()? current}) {
   );
   return (
     catalogue: AiToolCatalogue.group(
+      releasePolicy: fixtureReleasePolicy,
       port: port,
       scope: _scope,
       redactor: Redactor(secrets: _Secrets()),

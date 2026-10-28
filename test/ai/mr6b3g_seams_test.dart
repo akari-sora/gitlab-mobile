@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
@@ -132,6 +133,7 @@ _titleDelivery(G0eHarness harness, String source) async {
   final redactor = Redactor(secrets: _TitleSecrets());
   if (source == 'catalogue output') {
     final catalogue = AiToolCatalogue.group(
+      releasePolicy: fixtureReleasePolicy,
       port: GitLabAiGroupReadPort(
         api,
         instance: api.instance,
@@ -762,13 +764,13 @@ void main() {
         isTrue,
       );
       expect(
-        productionAiLedger.modelVisible.where(
+        fixtureAiLedger.modelVisible.where(
           (row) => row.scopeClass == AiScopeClass.groupWorkItem,
         ).toSet(),
         groupRows.toSet(),
       );
       expect(
-        toolsForScope(g0eScope).map((row) => row.operationId).toSet(),
+        toolsForScope(g0eScope, releasePolicy: fixtureReleasePolicy).map((row) => row.operationId).toSet(),
         {...groupRows.map((row) => row.operationId), 'snoozeTodo', 'unsnoozeTodo'},
       );
     },
