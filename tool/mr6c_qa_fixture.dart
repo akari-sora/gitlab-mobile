@@ -15,6 +15,7 @@ import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/core/read_cache_files.dart';
 import 'package:gitlab_mobile/features/cache/read_cache_disk_coordinator.dart';
 import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
@@ -260,7 +261,11 @@ final class _SyntheticAdapter implements HttpClientAdapter {
   }
 
   @override
-  void close({bool force = false}) {}
+  void close({bool force = false}) {
+    // End the synthetic transport as well as Dio's cancelled request. A 503
+    // cannot turn this deliberately unacknowledged mutation into success.
+    if (!_hold.isCompleted) _hold.complete(ResponseBody.fromString('', 503));
+  }
 }
 
 final class _SyntheticProvider implements HttpClientAdapter {
@@ -329,21 +334,80 @@ const _provider = AiProviderConfig(
   recipientRevision: 1,
 );
 
-/// Owns real app controllers and a never-completing synthetic accepted write.
+/// Owns real app controllers and a synthetic write held until host disposal.
 final class QaV9Fixture {
-  QaV9Fixture(this.sandbox, this.command, {@visibleForTesting this.testChannel})
-    : workspace = WorkspaceFixture();
+  QaV9Fixture(
+    this.sandbox,
+    this.command, {
+    @visibleForTesting this.testChannel,
+    @visibleForTesting this.testJournalFence,
+  }) : workspace = WorkspaceFixture();
   final QaSandbox sandbox;
   final QaCommand command;
   @visibleForTesting
   final MethodChannel? testChannel;
+  @visibleForTesting
+  final AiJournalAccountFence? testJournalFence;
   final WorkspaceFixture workspace;
   late final _SyntheticAdapter _gitlab = _SyntheticAdapter(workspace);
   final _SyntheticProvider _providerAdapter = _SyntheticProvider();
-  late final SessionController session;
-  late final AiSettingsController settings;
-  late AccountAiRunRegistry registry;
+  SessionController? _session;
+  SessionController get session => _session!;
+  AiSettingsController? _settings;
+  AiSettingsController get settings => _settings!;
+  AccountAiRunRegistry? _registry;
+  AccountAiRunRegistry get registry => _registry!;
   late final AiWriteJournal journal = AiWriteJournal.instance;
+  Future<void>? _send;
+  Future<void>? _operation;
+  Future<void>? _disposal;
+  final _closing = Completer<void>();
+
+  Future<T> _track<T>(Future<T> Function() action) {
+    _require(!_closing.isCompleted && _operation == null);
+    final result = action();
+    // The caller receives the original error; teardown joins its completion
+    // even when the caller used Future.timeout and has already stopped waiting.
+    _operation = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  /// Host teardown must join accepted writes: disposing their UI owner only
+  /// cancels transport; the real settlement still flushes writeUncertain.
+  Future<void> dispose() => _disposal ??= _dispose();
+
+  Future<void> _dispose() async {
+    _closing.complete();
+    final writes = _registry?.stopAndSnapshotWrites() ?? [];
+    final nativeRelease = _registry?.backgroundExecution.releaseRuns();
+    _registry?.dispose();
+    _settings?.dispose();
+    final owner = _session;
+    if (owner != null) {
+      owner.readCache.revoke(
+        DiskBinding(
+          accountKey: sandbox.account.key,
+          generation: owner.generation,
+        ),
+      );
+      owner.dispose();
+    }
+    try {
+      // These futures complete after the terminal journal transaction. The
+      // runner may stop before an already accepted mutation has settled.
+      await Future.wait(writes);
+      await _send;
+    } finally {
+      await Future.wait<void>([
+        ?_operation,
+        ?nativeRelease,
+        if (owner != null) owner.readCache.quiesced,
+      ]);
+    }
+  }
 
   AiBackgroundExecution? get _testOwner => testChannel == null
       ? null
@@ -358,12 +422,13 @@ final class QaV9Fixture {
         );
 
   Future<void> _startSession() async {
+    _require(!_closing.isCompleted);
     final cache = ReadCacheDiskCoordinator(coordinationScope: Object());
     configureReadCacheDisk(
       cache,
       files: ReadCacheFileStore(root: () async => sandbox.support),
     );
-    session = SessionController(
+    _session = SessionController(
       sandbox.store,
       readCache: cache,
       createApi: (instance, credential, oauth, rotated) {
@@ -382,6 +447,7 @@ final class QaV9Fixture {
       },
     );
     await session.initialize();
+    _require(!_closing.isCompleted);
     _require(
       session.accountsLoaded &&
           session.accounts.length == 1 &&
@@ -393,19 +459,25 @@ final class QaV9Fixture {
       await configureAiWriteJournal(
         keys: sandbox.keys,
         applicationSupport: () async => sandbox.support,
+        fence: testJournalFence,
       ),
     );
     // Recovery can delete orphans; it must never precede sandbox preflight.
     await AiHistoryCoordinator.instance.startRecovery(session);
     await recoverAiWriteJournalAfterAccountsLoaded(session, journal);
+    _require(!_closing.isCompleted);
     _require(journal.recovered(sandbox.account.key));
-    settings = AiSettingsController(MemoryAiStore());
+    _settings = AiSettingsController(MemoryAiStore());
     await settings.initialize();
   }
 
-  Future<QaJournalBarrier> prepare() async {
+  Future<QaJournalBarrier> prepare() => _track(_prepare);
+
+  Future<QaJournalBarrier> _prepare() async {
     await sandbox.seed();
+    _require(!_closing.isCompleted);
     await _startSession();
+    _require(!_closing.isCompleted);
     const level = AiAutonomyLevel.conversationGrant;
     final config = await settings.saveProvider(_provider);
     await settings.loadAccount(sandbox.account.key);
@@ -429,7 +501,8 @@ final class QaV9Fixture {
       path: 'README.md',
       sha: WorkspaceFixture.sha,
     );
-    registry = AccountAiRunRegistry(
+    _require(!_closing.isCompleted);
+    _registry = AccountAiRunRegistry(
       session: session,
       settings: settings,
       backgroundExecution: _testOwner,
@@ -481,13 +554,17 @@ final class QaV9Fixture {
     await controller.recheck();
     _require(controller.canSend);
     await controller.setAutonomyLevel(level);
+    _require(!_closing.isCompleted);
     _require(controller.autonomyLevel == level);
-    unawaited(
-      controller
-          .send('Create an issue for the synthetic bug')
-          .catchError((Object _) {}),
-    );
-    await _gitlab.mutationEntered.future.timeout(const Duration(seconds: 60));
+    _send = controller.send('Create an issue for the synthetic bug');
+    // Observe errors immediately; teardown also awaits the original future so
+    // a failed send is still reported by the host test.
+    unawaited(_send!.catchError((Object _) {}));
+    await Future.any([
+      _gitlab.mutationEntered.future,
+      _closing.future.then((_) => throw const QaSandboxUnavailable()),
+    ]).timeout(const Duration(seconds: 60));
+    _require(!_closing.isCompleted);
     final entries = journal.entries(sandbox.account.key);
     _require(
       entries.length == 1 &&
@@ -534,10 +611,13 @@ final class QaV9Fixture {
     );
   }
 
-  Future<QaJournalRecovered> recover() async {
+  Future<QaJournalRecovered> recover() => _track(_recover);
+
+  Future<QaJournalRecovered> _recover() async {
     final checkpoint = await sandbox.verifyRecovery(command);
     await _startSession();
-    registry = AccountAiRunRegistry(
+    _require(!_closing.isCompleted);
+    _registry = AccountAiRunRegistry(
       session: session,
       settings: settings,
       backgroundExecution: _testOwner,
