@@ -2267,10 +2267,20 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _tail = null;
           _tailClipped = false;
         }
+        // The load below replaces any load deferred while the dialog covered
+        // the page; it defers again by itself if the page is hidden.
+        _reloadWhenVisible = false;
       });
       await _load();
     } catch (e) { if (mounted) { showFailure(context, e); } }
-    finally { if (mounted) { setState(() { _busy = false; _confirming = false; }); } }
+    finally {
+      if (mounted) {
+        setState(() { _busy = false; _confirming = false; });
+        // A load deferred while the confirmation or the action blocked it
+        // (for example a hidden-time failure) runs now, if still visible.
+        _resumeWhenVisible();
+      }
+    }
   }
   bool get _ownerCurrent => mounted && !widget.api.isClosed &&
       widget.account.key == _routeOwner.account.key && identical(widget.api, _routeOwner.api) &&

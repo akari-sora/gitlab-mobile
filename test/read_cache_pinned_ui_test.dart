@@ -629,6 +629,55 @@ void main() {
       });
     }
 
+    // FIX4 (review r3 P2): a load deferred while a job action blocked it runs
+    // once the action ends; the log is not left empty until a manual refresh.
+    testWidgets('a hidden-time failure deferred behind a job action reloads when the action ends', (tester) async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      expect(await _run(tester, h.recover), isTrue);
+      final tailHold = Completer<void>(), actionHold = Completer<void>();
+      var traceCalls = 0;
+      final adapter = FakeAdapter((request) async {
+        if (request.uri.path.endsWith('/jobs/7/retry')) {
+          await actionHold.future;
+          return jsonResponse({'message': 'synthetic failure'}, status: 500);
+        }
+        if (_isTrace(request, 7)) {
+          if (traceCalls++ == 0) {
+            await tailHold.future;
+            return jsonResponse({'message': 'forbidden'}, status: 403);
+          }
+          return _suffix(utf8.encode('${_line(3)}\n'));
+        }
+        if (request.uri.path.endsWith('/jobs/7')) return jsonResponse(_job(7));
+        return jsonResponse({}, status: 404);
+      });
+      final api = await _run(tester, () => h.client(adapter));
+      await tester.pumpWidget(_jobPage(api));
+      await _until(tester, () => traceCalls == 1, 'tail held');
+      // The job menu works while the log is still loading.
+      await tester.tap(find.byTooltip('工作操作'));
+      for (var i = 0; i < 6; i++) { await tester.pump(const Duration(milliseconds: 100)); }
+      await tester.tap(find.text('重試工作'));
+      for (var i = 0; i < 6; i++) { await tester.pump(const Duration(milliseconds: 100)); }
+      expect(find.text('確認'), findsOneWidget, reason: 'the confirmation covers the log page');
+      // The held tail fails while the dialog covers the page: deferred.
+      tailHold.complete();
+      await settleNetworkWidgets(tester);
+      expect(find.text('沒有操作權限', skipOffstage: false), findsNothing);
+      await tester.tap(find.text('確認'));
+      // The action stays pending through every route-transition frame.
+      for (var i = 0; i < 20; i++) { await tester.pump(const Duration(milliseconds: 100)); }
+      await settleNetworkWidgets(tester);
+      expect(adapter.requests.where((r) => r.uri.path.endsWith('/jobs/7/retry')), hasLength(1));
+      expect(find.text(_line(3)), findsNothing, reason: 'still blocked by the running action');
+      actionHold.complete();
+      await _until(tester, () => _shown(find.text(_line(3))), 'deferred log load ran after the action');
+      expect(traceCalls, 2);
+      await tester.pump(const Duration(milliseconds: 500)); // confirm dialog cleanup
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('tail in flight across backgrounding is not shown; it refreshes on resume', (tester) async {
       final h = _Harness();
       addTearDown(h.dispose);
