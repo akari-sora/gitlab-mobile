@@ -9,6 +9,8 @@ stages: [verify, build, deliver]
 variables:
   DEBIAN_FRONTEND: noninteractive
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  # Routing only. 7R must also change the literal build flags after acceptance.
+  MR7_RELEASE_AI: 'false'
 default:
   image: python:3.13-slim
   tags: [grok-box, ondemand, gitlab-mobile]
@@ -72,6 +74,19 @@ flutter_checks:
     paths: [ci-output/, coverage/]
     reports:
       junit: ci-output/junit.xml
+flutter_ai_checks:
+  extends: [.flutter, .regular]
+  stage: verify
+  timeout: 25m
+  coverage: '/Coverage: (\d+(?:\.\d+)?)%/'
+  script:
+    - bash ci/check.sh ai
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths: [ci-output-ai/, coverage-ai/]
+    reports:
+      junit: ci-output-ai/junit.xml
 native_templates:
   extends: [.flutter, .regular]
   stage: verify
@@ -93,6 +108,8 @@ android_debug:
       artifacts: false
     - job: flutter_checks
       artifacts: true
+    - job: flutter_ai_checks
+      artifacts: false
     - job: native_templates
       artifacts: true
   cache:
@@ -108,13 +125,42 @@ android_debug:
   script:
     - python3 ci/install_packages.py openjdk-21-jdk-headless
     - source ci/install_android.sh
-    - bash ci/build_android.sh
+    - bash ci/build_android.sh --ai-assistant false --ai-background false
   variables:
     GITLAB_MOBILE_ALLOW_EPHEMERAL_DEBUG_SIGNING: '1'
   artifacts:
     expire_in: 14 days
     paths: [artifacts/]
     expose_as: Android development APK
+mr7_release_attestation:
+  extends: .flutter
+  stage: deliver
+  needs:
+    - job: android_debug
+      artifacts: true
+  timeout: 25m
+  interruptible: false
+  retry: 0
+  environment:
+    name: mr7-release
+    action: verify
+  rules:
+    - if: '$GH2GL_SYNC == "1" || $LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1"'
+      when: never
+    - if: '$CI_PROJECT_ID == "86648389" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "merge_request_event"'
+      when: manual
+      allow_failure: true
+  before_script:
+    - export TAR_OPTIONS="${TAR_OPTIONS:+$TAR_OPTIONS }--no-same-owner"
+    - python3 ci/install_packages.py git curl xz-utils unzip libglu1-mesa ca-certificates openjdk-21-jdk-headless
+    - source ci/install_flutter.sh
+    - source ci/install_android.sh
+  script:
+    - python3 ci/mr7_attestation.py create --receipts-job-id "${MR7_RECEIPTS_JOB_ID:-}"
+  artifacts:
+    access: maintainer
+    expire_in: never
+    paths: [mr7-attestation/]
 publish_preview:
   stage: deliver
   needs:
@@ -126,11 +172,37 @@ publish_preview:
   rules:
     - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1" || $GH2GL_SYNC == "1"'
       when: never
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PROJECT_ID == "86648389" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "merge_request_event" && $MR7_RELEASE_AI != "true"'
   before_script:
-    - python3 ci/install_packages.py curl ca-certificates
+    - python3 ci/install_packages.py git curl ca-certificates
   script:
-    - bash ci/deliver_preview.sh
+    - bash ci/deliver_preview.sh off
+publish_preview_ai:
+  extends: .flutter
+  stage: deliver
+  needs:
+    - job: android_debug
+      artifacts: true
+  timeout: 25m
+  interruptible: false
+  retry: 0
+  resource_group: preview-delivery
+  environment:
+    name: mr7-release
+    action: verify
+  rules:
+    - if: '$GH2GL_SYNC == "1" || $LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1"'
+      when: never
+    - if: '$CI_PROJECT_ID == "86648389" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "merge_request_event"'
+      when: manual
+      allow_failure: true
+  before_script:
+    - export TAR_OPTIONS="${TAR_OPTIONS:+$TAR_OPTIONS }--no-same-owner"
+    - python3 ci/install_packages.py git curl xz-utils unzip libglu1-mesa ca-certificates openjdk-21-jdk-headless
+    - source ci/install_flutter.sh
+    - source ci/install_android.sh
+  script:
+    - bash ci/deliver_preview.sh ai
 live_crud_smoke:
   extends: .flutter
   stage: verify
