@@ -8,6 +8,7 @@ import 'package:local_auth/local_auth.dart';
 import '../../core/brand.dart';
 
 import '../../l10n/l10n.dart';
+
 /// The device check behind the app lock: biometrics, or the screen lock's
 /// PIN, pattern or password where there are no biometrics.
 abstract interface class AppLockAuthenticator {
@@ -85,6 +86,8 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
   final DateTime Function() _clock;
 
   bool _loaded = false;
+  bool _loadFailed = false;
+  int _loadTicket = 0;
   bool _enabled = false;
   bool _available = false;
   bool _locked = false;
@@ -96,7 +99,9 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
 
   /// False until the stored choice is known; the app stays covered until then.
   bool get loaded => _loaded;
+  bool get loadFailed => _loadFailed;
   bool get enabled => _enabled;
+  bool get offlineCovering => !_loaded || _loadFailed || locked;
 
   /// Whether the device has a screen lock, so the lock can be turned on.
   bool get available => _available;
@@ -119,21 +124,39 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
     if (_started) return;
     _started = true;
     WidgetsBinding.instance.addObserver(this);
-    var enabled = false;
-    try {
-      enabled = await _store.read();
-    } catch (_) {
-      enabled = false;
-    }
+    await _loadSettings();
     if (_disposed) return;
-    _enabled = enabled;
-    _locked = enabled;
-    _loaded = true;
-    notifyListeners();
     // Only the settings switch needs this; it never holds the cover up.
     final available = await _authenticator.available();
     if (_disposed) return;
     _available = available;
+    notifyListeners();
+  }
+
+  /// The offline shell keeps its cover visible until this read succeeds.
+  Future<void> reload() async {
+    if (!_started) return start();
+    if (_disposed) return;
+    _loaded = false;
+    notifyListeners();
+    await _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final ticket = ++_loadTicket;
+    var enabled = false;
+    var failed = false;
+    try {
+      enabled = await _store.read();
+    } catch (_) {
+      enabled = false;
+      failed = true;
+    }
+    if (_disposed || ticket != _loadTicket) return;
+    _loadFailed = failed;
+    _enabled = enabled;
+    _locked = enabled;
+    _loaded = true;
     notifyListeners();
   }
 

@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/offline/offline_repository_coordinator.dart';
+import '../../core/offline/snapshot_schema.dart';
+import '../../core/offline/snapshot_store.dart';
 import '../../core/read_cache_cipher.dart';
 import '../../core/read_cache_disk_contract.dart';
 import '../../core/read_cache_files.dart';
@@ -142,7 +144,13 @@ final class ReadCacheDiskCoordinator {
   bool get startupRecovered => _domain.recovered;
   bool get controlsInstalled => _domain.controlsInstalled;
   String? get diskRetainedAccountKey => _domain.diskRetainedAccountKey;
-  ReadCacheDiskState state(String accountKey) => _account(accountKey).state;
+  ReadCacheDiskState state(String accountKey) {
+    final account = _account(accountKey);
+    return account.offlineRefusalBlocked && !account.cleanup
+        ? ReadCacheDiskState.unavailable
+        : account.state;
+  }
+
   ReadCacheNotice? notice(DiskBinding binding) => _notices[binding];
   List<ReadCacheNotice> get signedOutNotices =>
       List.unmodifiable(_signedOut.values);
@@ -199,6 +207,85 @@ final class ReadCacheDiskCoordinator {
   }
 
   void installUserControls() => _domain.controlsInstalled = true;
+
+  /// The C3 owner shares this coordinator's storage and coordination scope.
+  OfflineRepositoryCoordinator? get offlineRepository {
+    if (!configured) return null;
+    final existing = _domain.namespace ?? _domain.pendingOfflineNamespace;
+    if (existing is OfflineRepositoryNamespace) return existing.coordinator;
+    if (existing != null) return null;
+    final participant = OfflineRepositoryNamespace(
+      coordinator: identical(_domain, _processDomain)
+          ? OfflineRepositoryCoordinator.instance
+          : OfflineRepositoryCoordinator(clock: _clock),
+      keys: _keys!,
+      files: _files!,
+    );
+    _domain.pendingOfflineNamespace = participant;
+    return participant.coordinator;
+  }
+
+  Future<bool> readOfflineRefused(String accountKey) async {
+    if (!configured) {
+      throw const ReadCacheStoreException(
+        ReadCacheStoreFailure(
+          ReadCacheStoreFailureKind.unavailable,
+          'readOfflineRefusal',
+        ),
+      );
+    }
+    if (_account(accountKey).offlineRefusalBlocked) return true;
+    final result = await _keys!.readOfflineRefusal(accountKey);
+    if (result.status == ReadCacheStoreReadStatus.unavailable) {
+      throw ReadCacheStoreException(result.failure!);
+    }
+    return result.status == ReadCacheStoreReadStatus.found;
+  }
+
+  Future<void> writeOfflineRefused(String accountKey, DateTime when) {
+    if (!configured) {
+      throw const ReadCacheStoreException(
+        ReadCacheStoreFailure(
+          ReadCacheStoreFailureKind.unavailable,
+          'writeOfflineRefusal',
+        ),
+      );
+    }
+    return _keys!.writeOfflineRefusal(accountKey, when);
+  }
+
+  Future<void> deleteOfflineRefused(String accountKey) async {
+    if (!configured) {
+      throw const ReadCacheStoreException(
+        ReadCacheStoreFailure(
+          ReadCacheStoreFailureKind.unavailable,
+          'deleteOfflineRefusal',
+        ),
+      );
+    }
+    final account = _account(accountKey);
+    account.offlineRefusalDeletes++;
+    try {
+      await _keys!.deleteOfflineRefusal(accountKey);
+      account.offlineRefusalPending = false;
+    } on Object {
+      // Delete may have succeeded before readback failed. Keep treating the
+      // marker as present until a later verified removal succeeds.
+      account.offlineRefusalPending = true;
+      account.offlineRefusalFailures++;
+      account.epoch++;
+      _dropQueue(account);
+      (_domain.namespace ?? _domain.pendingOfflineNamespace)?.fence(accountKey);
+      rethrow;
+    } finally {
+      account.offlineRefusalDeletes--;
+      if (account.offlineRefusalDeletes == 0) {
+        final settled = account.offlineRefusalSettled;
+        account.offlineRefusalSettled = null;
+        if (!account.offlineRefusalPending) settled?.call();
+      }
+    }
+  }
 
   /// Bind C3's HTTP sinks now; join B4 only when disk activation can open it.
   /// A never-opened participant has no work to drain and must not turn empty
@@ -314,6 +401,7 @@ final class ReadCacheDiskCoordinator {
         !deviceOffPending &&
         _domain.preferenceChanges == 0 &&
         diskRetainedAccountKey == accountKey &&
+        !account.offlineRefusalBlocked &&
         account.state == ReadCacheDiskState.closed &&
         account.epoch == epoch &&
         account.intent?.accountWide != true;
@@ -343,6 +431,59 @@ final class ReadCacheDiskCoordinator {
     }
     final key = await _keys!.readOfflineKey(accountKey);
     return current() ? key : blocked;
+  }
+
+  /// Inspect an authenticated index without opening the namespace or writing.
+  Future<SnapshotIndex?> offlineEligibilityIndex(
+    String accountKey,
+  ) async {
+    final epoch = _account(accountKey).epoch;
+    final revision = _domain.startupRevision;
+    final initial = await readOfflineEligibilityKey(accountKey);
+    if (!initial.isFound || initial.value == null) return null;
+    try {
+      final store = SnapshotStore(
+        supportRoot: await _files!.offlineSupportDirectory(),
+        accountKey: accountKey,
+        rootKey: initial.value!,
+      );
+      final index = await store.readIndex();
+      if (index == null) return null;
+      var complete = false;
+      for (final record in index.snapshots) {
+        if (record.status != SnapshotStatus.complete) continue;
+        try {
+          if (await store.readTree(record) != null) {
+            complete = true;
+            break;
+          }
+        } on SnapshotStoreException catch (error) {
+          if (error.code != SnapshotStoreError.corrupt &&
+              error.code != SnapshotStoreError.authenticationFailed &&
+              error.code != SnapshotStoreError.tooLarge) {
+            rethrow;
+          }
+        } on SnapshotSchemaException catch (error) {
+          if (error.code == SnapshotSchemaError.newerSchema) rethrow;
+        }
+      }
+      if (!complete) return null;
+      final finalKey = await readOfflineEligibilityKey(accountKey);
+      final bytes = finalKey.value;
+      if (!finalKey.isFound ||
+          bytes == null ||
+          bytes.length != initial.value!.length ||
+          _account(accountKey).epoch != epoch ||
+          _domain.startupRevision != revision) {
+        return null;
+      }
+      for (var i = 0; i < bytes.length; i++) {
+        if (bytes[i] != initial.value![i]) return null;
+      }
+      return index;
+    } on Object {
+      return null;
+    }
   }
 
   /// Reserved for the current SessionController's C3c `_enterOffline` path.
@@ -375,6 +516,7 @@ final class ReadCacheDiskCoordinator {
         binding.generation <= _domain.highestGeneration) {
       return false;
     }
+    if (_domain.namespace == null && offlineRepository == null) return false;
     _installOfflineNamespace();
     account.epoch++;
     account.state = ReadCacheDiskState.offlineReadOnly;
@@ -397,7 +539,12 @@ final class ReadCacheDiskCoordinator {
     account.state = ReadCacheDiskState.closed;
     _domain.revokedThrough = max(_domain.revokedThrough, binding.generation);
     _domain.offlineBinding = null;
-    _domain.namespace?.fence(binding.accountKey);
+    final namespace = _domain.namespace;
+    if (namespace is OfflineRepositoryNamespace) {
+      namespace.coordinator.closeReadOnly(binding);
+    } else {
+      namespace?.fence(binding.accountKey);
+    }
   }
 
   void Function() subscribe(ReadCacheNoticeSink sink) {
@@ -622,6 +769,7 @@ final class ReadCacheDiskCoordinator {
       _domain.recovered &&
       _domain.setting == ReadCacheSettingsState.enabled &&
       _domain.active == binding &&
+      !_account(binding.accountKey).offlineRefusalBlocked &&
       !_account(binding.accountKey).cleanup;
 
   bool _ready(DiskBinding binding) =>
@@ -1437,6 +1585,7 @@ final class ReadCacheDiskCoordinator {
     if (!accountWide && current != null && current.accountWide) {
       return current;
     }
+    account.offlineRefusalSettled = null;
     account.epoch++;
     account.cleanup = true;
     account.clearComplete = false;
@@ -1727,6 +1876,7 @@ final class ReadCacheDiskCoordinator {
     // Revoked callers can have abandoned an already dispatched native marker
     // write. Drain that lane before taking the inventory used to prove empty.
     await account.markerTail;
+    final emptyRefusalFailures = account.offlineRefusalFailures;
     final inventory = await _keys!.readInventory();
     try {
       if (await _empty(
@@ -1739,6 +1889,10 @@ final class ReadCacheDiskCoordinator {
         account.intent = null;
         account.clearComplete = true;
         intent.completed = true;
+        if (intent.accountWide &&
+            account.offlineRefusalFailures == emptyRefusalFailures) {
+          account.offlineRefusalPending = false;
+        }
         return const DiskClearResult(
           keyGoneConfirmed: true,
           directoryGoneConfirmed: true,
@@ -1791,6 +1945,7 @@ final class ReadCacheDiskCoordinator {
     }
     final offlineDirectoryGone =
         !intent.accountWide || await _deleteOfflineDirectory(account.key);
+    final refusalFailures = account.offlineRefusalFailures;
     final offlineMarkersGone =
         !intent.accountWide ||
         (offlineKeyGone &&
@@ -1820,11 +1975,20 @@ final class ReadCacheDiskCoordinator {
         durable &&
         inventory.status == ReadCacheStoreReadStatus.found &&
         inventory.malformedNames.isEmpty) {
-      complete = await _removeIntent(account, intent);
+      complete =
+          await _removeIntent(account, intent) &&
+          intent.valid &&
+          account.intent == null &&
+          intent.revision == account.revision &&
+          pathRevision == _domain.pathRevision;
       if (complete) {
         account.invalidations.clear();
         account.clearComplete = true;
         intent.completed = true;
+        if (intent.accountWide &&
+            account.offlineRefusalFailures == refusalFailures) {
+          account.offlineRefusalPending = false;
+        }
         // Retained selection belongs to the current session/startup owner.
         // This clear may be finishing after a newer same-account activation.
       }
@@ -1915,12 +2079,28 @@ final class ReadCacheDiskCoordinator {
       sessionOwner: sessionOwner,
       onFailure: onFailure,
     ).then((result) {
-      if (result.complete &&
+      final epoch = account.epoch;
+      bool current() =>
+          result.complete &&
           pathRevision == _domain.pathRevision &&
           intent.valid &&
+          intent.completed &&
+          intent.revision == account.revision &&
+          account.intent == null &&
+          account.epoch == epoch &&
           operation == ReadCacheCleanupOperation.settingsClear &&
-          _domain.active == binding) {
-        unawaited(activate(binding));
+          _domain.active == binding;
+      void reopen() {
+        if (current()) unawaited(activate(binding));
+      }
+
+      if (current()) {
+        // Native refusal deletes are outside the cleanup I/O lane. Their
+        // counter keeps admission closed until the last one proves absence.
+        if (account.offlineRefusalDeletes > 0) {
+          account.offlineRefusalSettled = reopen;
+        }
+        reopen();
       }
       return result;
     });
@@ -2806,6 +2986,13 @@ final class _Account {
   bool indexDirty = false, flushForced = false;
   bool indexExists = false, unusedKey = false;
   bool clearComplete = false;
+  bool offlineRefusalPending = false;
+  int offlineRefusalDeletes = 0;
+  // Lifecycle epochs do not invalidate confirmed refusal-marker cleanup.
+  int offlineRefusalFailures = 0;
+  void Function()? offlineRefusalSettled;
+  bool get offlineRefusalBlocked =>
+      offlineRefusalPending || offlineRefusalDeletes > 0;
   DiskBinding? sessionFence;
   int indexRevision = 0;
   final invalidations = <DiskInvalidation>{};

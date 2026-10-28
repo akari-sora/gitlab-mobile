@@ -230,6 +230,23 @@ final class OfflineRepositoryCoordinator {
     if (a.binding != null) _emit(a.binding!);
   }
 
+  /// Retire a read-only binding without scheduling or performing deletion.
+  void closeReadOnly(DiskBinding binding) {
+    final a = _account(binding.accountKey);
+    if (a.binding != binding ||
+        a.state != OfflineRepositoryState.offlineReadOnly) {
+      return;
+    }
+    a.epoch++;
+    a.state = OfflineRepositoryState.closed;
+    a.binding = null;
+    a.api = null;
+    a.apiBinding = null;
+    a.store = null;
+    a.storeKey = null;
+    _emit(binding);
+  }
+
   SnapshotPermit capture(DiskBinding binding, int projectId, {String? jobId}) {
     final a = _account(binding.accountKey);
     final p = SnapshotPermit._(
@@ -320,6 +337,14 @@ final class OfflineRepositoryCoordinator {
     Future<T> Function(SnapshotStore, SnapshotIndex?) body, {
     DateTime? consentAt,
     bool allowReadOnly = false,
+  }) => _maintain(p, body, consentAt: consentAt, allowReadOnly: allowReadOnly);
+
+  Future<T?> _maintain<T>(
+    SnapshotPermit p,
+    Future<T> Function(SnapshotStore, SnapshotIndex?) body, {
+    DateTime? consentAt,
+    bool allowReadOnly = false,
+    bool explicitDeletion = false,
   }) async {
     final a = _account(p.binding.accountKey);
     var corruptIndex = false;
@@ -331,10 +356,28 @@ final class OfflineRepositoryCoordinator {
             SnapshotFailure.offlineCacheDisabled,
           );
         }
+        if (a.state == OfflineRepositoryState.offlineReadOnly &&
+            consentAt != null) {
+          throw const SnapshotOperationException(
+            SnapshotFailure.offlineCacheDisabled,
+          );
+        }
         try {
-          final store = await _loadStore(p, create: consentAt != null);
+          var store = await _loadStore(p, create: consentAt != null);
           p.check();
           if (store == null) return null;
+          if (explicitDeletion &&
+              a.state == OfflineRepositoryState.offlineReadOnly) {
+            store = SnapshotStore(
+              supportRoot: store.supportRoot,
+              accountKey: p.binding.accountKey,
+              rootKey: a.storeKey!,
+              mayMutate: () =>
+                  p.isCurrent &&
+                  a.state == OfflineRepositoryState.offlineReadOnly,
+            );
+            p.check();
+          }
           SnapshotIndex? index;
           try {
             index = await store.readIndex();
@@ -351,10 +394,15 @@ final class OfflineRepositoryCoordinator {
           p.check();
           final value = await body(store, index);
           p.check();
-          try {
-            await _excludeBackup?.call(store.supportRoot, p.binding.accountKey);
-          } on Object {
-            // Backup exclusion remains best effort after directories are created.
+          if (a.state == OfflineRepositoryState.ready) {
+            try {
+              await _excludeBackup?.call(
+                store.supportRoot,
+                p.binding.accountKey,
+              );
+            } on Object {
+              // Backup exclusion remains best effort after directories are created.
+            }
           }
           p.check();
           return value;
@@ -453,15 +501,22 @@ final class OfflineRepositoryCoordinator {
         key.bytes!.length != 32) {
       _keyUnavailable(p);
     }
+    final epoch = a.epoch;
     final store = SnapshotStore(
       supportRoot: root,
       accountKey: p.binding.accountKey,
       rootKey: key.bytes!,
+      mayMutate: () =>
+          a.binding == p.binding &&
+          a.epoch == epoch &&
+          a.state == OfflineRepositoryState.ready,
     );
-    try {
-      await _excludeBackup?.call(root, p.binding.accountKey);
-    } on Object {
-      // Backup exclusion is best effort; adapter records the failure.
+    if (a.state == OfflineRepositoryState.ready) {
+      try {
+        await _excludeBackup?.call(root, p.binding.accountKey);
+      } on Object {
+        // Backup exclusion is best effort; adapter records the failure.
+      }
     }
     p.check();
     a.store = store;
@@ -694,22 +749,27 @@ final class OfflineRepositoryCoordinator {
       await job.stop();
     }
     final p = capture(binding, 0);
-    await maintain<void>(p, (files, index) async {
-      if (index == null) return;
-      files.deleteTree(id, mayCommit: () => p.isCurrent);
-      final updated = index.copyWith(
-        snapshots: index.snapshots.where((s) => s.id != id).toList(),
-        gcPending: true,
-      );
-      await files.writeIndex(
-        updated,
-        expectedRevision: files.revision,
-        mayCommit: () => p.isCurrent,
-      );
-      if (a.state == OfflineRepositoryState.ready && a.jobs.isEmpty) {
-        await files.collectGarbage(updated, mayCommit: () => p.isCurrent);
-      }
-    }, allowReadOnly: true);
+    await _maintain<void>(
+      p,
+      (files, index) async {
+        if (index == null) return;
+        files.deleteTree(id, mayCommit: () => p.isCurrent);
+        final updated = index.copyWith(
+          snapshots: index.snapshots.where((s) => s.id != id).toList(),
+          gcPending: true,
+        );
+        await files.writeIndex(
+          updated,
+          expectedRevision: files.revision,
+          mayCommit: () => p.isCurrent,
+        );
+        if (a.state == OfflineRepositoryState.ready && a.jobs.isEmpty) {
+          await files.collectGarbage(updated, mayCommit: () => p.isCurrent);
+        }
+      },
+      allowReadOnly: true,
+      explicitDeletion: true,
+    );
     p.check();
     _emit(binding);
   }

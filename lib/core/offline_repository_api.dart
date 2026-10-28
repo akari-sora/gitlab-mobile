@@ -1,5 +1,54 @@
 part of 'gitlab_api.dart';
 
+sealed class IdentityVerdict {
+  const IdentityVerdict();
+  ApiFailure? get failure;
+}
+
+final class IdentityOk extends IdentityVerdict {
+  const IdentityOk(this.user);
+  final GitLabUser user;
+  @override
+  ApiFailure? get failure => null;
+}
+
+final class IdentityRefused401 extends IdentityVerdict {
+  const IdentityRefused401();
+  @override
+  ApiFailure get failure =>
+      const ApiFailure(FailureKind.unauthenticated, status: 401);
+}
+
+final class IdentityRefused403 extends IdentityVerdict {
+  const IdentityRefused403();
+  @override
+  ApiFailure get failure =>
+      const ApiFailure(FailureKind.forbidden, status: 403);
+}
+
+final class IdentityNoVerdict extends IdentityVerdict {
+  const IdentityNoVerdict(this.failure);
+  @override
+  final ApiFailure failure;
+  FailureKind get kind => failure.kind;
+}
+
+final class IdentityUnknown extends IdentityVerdict {
+  const IdentityUnknown(this.failure);
+  @override
+  final ApiFailure failure;
+  FailureKind get kind => failure.kind;
+}
+
+IdentityVerdict _identityFailure(ApiFailure failure) => switch (failure.kind) {
+  FailureKind.network ||
+  FailureKind.server ||
+  FailureKind.rateLimited ||
+  FailureKind.redirectBlocked ||
+  FailureKind.invalidResponse => IdentityNoVerdict(failure),
+  _ => IdentityUnknown(failure),
+};
+
 /// Failure categories specific to a snapshot request. UI translation is owned
 /// by the presentation layer.
 enum OfflineRequestFailureKind {
@@ -80,6 +129,210 @@ bool _offlineNoStore(Headers headers) => (headers.value('cache-control') ?? '')
     .any((directive) => directive.trim().split('=').first == 'no-store');
 
 extension OfflineRepositoryApi on GitLabApi {
+  /// An isolated, uncached identity request. It does not trigger the regular
+  /// read-cache 401 handling before the caller has classified the verdict.
+  Future<IdentityVerdict> identityCheck() async {
+    final uri = instance.api(['user']);
+    final token = CancelToken();
+    _requests.add(token);
+    try {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        if (_closed || token.isCancelled) {
+          return const IdentityUnknown(ApiFailure(FailureKind.cancelled));
+        }
+        if (!instance.allowsApi(uri)) {
+          return const IdentityUnknown(ApiFailure(FailureKind.unsupported));
+        }
+        _checkRate(uri);
+        final admission = RequestMeter.current?.beforeRequest;
+        if (admission != null) await admission();
+        if (_closed || token.isCancelled) {
+          return const IdentityUnknown(ApiFailure(FailureKind.cancelled));
+        }
+        _checkRate(uri);
+        final sequence = rateBudget.nextSequence();
+        RequestMeter.current?.increment();
+        final response = await _dio.requestUri<ResponseBody>(
+          uri,
+          cancelToken: token,
+          options: Options(
+            method: 'GET',
+            responseType: ResponseType.stream,
+            followRedirects: false,
+            maxRedirects: 0,
+            validateStatus: (status) => status != null,
+            headers: _authHeaders,
+          ),
+        );
+        if (_closed || token.isCancelled) {
+          await _releaseBody(response.data);
+          return const IdentityUnknown(ApiFailure(FailureKind.cancelled));
+        }
+        _noteRateLimit(response, uri, sequence);
+        final status = response.statusCode ?? 0;
+        if (status < 200 || status >= 300) {
+          // Only a bounded GitLab JSON error can establish identity refusal.
+          final errorBytes = await _identityBody(response.data, token, 4096);
+          if (_closed || token.isCancelled) {
+            return const IdentityUnknown(ApiFailure(FailureKind.cancelled));
+          }
+          if ((status == 401 || status == 403) &&
+              !_identityRefusal(response.headers, errorBytes)) {
+            return IdentityUnknown(ApiFailure.fromStatus(status));
+          }
+          if (status == 401 && attempt == 0 && _credential is OAuthCredential) {
+            try {
+              if (await _identityRefresh()) continue;
+            } on OAuthRefreshRefused {
+              return const IdentityRefused401();
+            } on ApiFailure catch (failure) {
+              return _identityFailure(failure);
+            } on Object {
+              return const IdentityUnknown(
+                ApiFailure(FailureKind.invalidResponse),
+              );
+            }
+          }
+          if (status == 401) return const IdentityRefused401();
+          if (status == 403) return const IdentityRefused403();
+          return _identityFailure(
+            ApiFailure.fromStatus(
+              status,
+              retryAt: rateBudget.retryAtFor(_rateClass(uri)),
+            ),
+          );
+        }
+        final bytes = await _identityBody(
+          response.data,
+          token,
+          4 * 1024 * 1024,
+        );
+        if (_closed || token.isCancelled) {
+          return const IdentityUnknown(ApiFailure(FailureKind.cancelled));
+        }
+        final contentType = (response.headers.value('content-type') ?? '')
+            .split(';')
+            .first
+            .trim()
+            .toLowerCase();
+        if (status != 200 ||
+            contentType != 'application/json' ||
+            bytes == null) {
+          return const IdentityNoVerdict(
+            ApiFailure(FailureKind.invalidResponse),
+          );
+        }
+        try {
+          final decoded = jsonDecode(utf8.decode(bytes));
+          if (decoded is! Map<String, dynamic> || decoded['id'] is! int) {
+            return const IdentityNoVerdict(
+              ApiFailure(FailureKind.invalidResponse),
+            );
+          }
+          return IdentityOk(GitLabUser.fromJson(decoded));
+        } on FormatException {
+          return const IdentityNoVerdict(
+            ApiFailure(FailureKind.invalidResponse),
+          );
+        }
+      }
+      return const IdentityUnknown(ApiFailure(FailureKind.invalidResponse));
+    } on ApiFailure catch (failure) {
+      return _identityFailure(failure);
+    } on DioException catch (error) {
+      if (_closed ||
+          token.isCancelled ||
+          error.type == DioExceptionType.cancel) {
+        return const IdentityUnknown(ApiFailure(FailureKind.cancelled));
+      }
+      if (error.type == DioExceptionType.unknown &&
+          error.error is! IOException) {
+        return const IdentityUnknown(ApiFailure(FailureKind.invalidResponse));
+      }
+      return const IdentityNoVerdict(ApiFailure(FailureKind.network));
+    } on Object {
+      return const IdentityUnknown(ApiFailure(FailureKind.invalidResponse));
+    } finally {
+      _requests.remove(token);
+    }
+  }
+
+  bool _identityRefusal(Headers headers, Uint8List? bytes) {
+    final contentType = (headers.value('content-type') ?? '')
+        .split(';')
+        .first
+        .trim()
+        .toLowerCase();
+    if (contentType != 'application/json' || bytes == null) return false;
+    try {
+      final value = jsonDecode(utf8.decode(bytes));
+      return value is Map<String, dynamic> &&
+          (value.containsKey('message') || value.containsKey('error'));
+    } on FormatException {
+      return false;
+    }
+  }
+
+  Future<Uint8List?> _identityBody(
+    ResponseBody? body,
+    CancelToken token,
+    int maxBytes,
+  ) async {
+    if (body == null) return null;
+    final iterator = StreamIterator<Uint8List>(body.stream);
+    final bytes = BytesBuilder(copy: false);
+    final watch = Stopwatch()..start();
+    try {
+      while (true) {
+        final remaining = const Duration(seconds: 5) - watch.elapsed;
+        if (remaining <= Duration.zero) return null;
+        final next = await Future.any<Object>([
+          iterator.moveNext().timeout(remaining),
+          token.whenCancel.then<Object>((_) => _rawStreamCancelled),
+        ]);
+        if (identical(next, _rawStreamCancelled)) return null;
+        if (next != true) return bytes.takeBytes();
+        final chunk = iterator.current;
+        if (bytes.length + chunk.length > maxBytes) return null;
+        bytes.add(chunk);
+      }
+    } on Object {
+      return null;
+    } finally {
+      await iterator.cancel();
+    }
+  }
+
+  /// Shares the normal refresh gate but preserves its failure for the verdict.
+  Future<bool> _identityRefresh() async {
+    final current = _credential;
+    final oauth = _oauth;
+    if (current is! OAuthCredential || oauth == null) return false;
+    final pending = _refreshing;
+    if (pending != null) {
+      await pending;
+      return _credential is OAuthCredential &&
+          (_credential as OAuthCredential).accessToken != current.accessToken;
+    }
+    final gate = () async {
+      final rotated = await oauth.refreshForIdentity(
+        current,
+        rateBudget: rateBudget,
+      );
+      if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      _cache.clear(revoke: false);
+      _credential = current.replacedBy(rotated);
+      await _onOAuthRotated?.call(_credential as OAuthCredential);
+    }();
+    _refreshing = gate;
+    try {
+      await gate;
+      return true;
+    } finally {
+      if (identical(_refreshing, gate)) _refreshing = null;
+    }
+  }
+
   Future<OfflineVersionProbe> probeOfflineVersion({
     required int projectId,
     required OfflineRefKind kind,

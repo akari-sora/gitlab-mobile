@@ -6,6 +6,9 @@ import '../../core/instance.dart';
 import '../../core/models.dart';
 import '../../core/oauth.dart';
 import '../../core/read_cache_disk_contract.dart';
+import '../../core/rate_budget.dart';
+import '../offline/offline_gate.dart';
+import '../security/app_lock.dart';
 import '../cache/read_cache_disk_backend.dart';
 import '../cache/read_cache_disk_coordinator.dart';
 import 'account_store.dart';
@@ -22,17 +25,29 @@ typedef ApiFactory =
       Future<void> Function(OAuthCredential rotated) onOAuthRotated,
     );
 typedef ApplicationIdLookup = String? Function(GitLabInstance instance);
+typedef IdentityApiFactory =
+    GitLabApi Function(
+      GitLabInstance instance,
+      AccountCredential credential,
+      OAuthTokenClient? oauth,
+      Future<void> Function(OAuthCredential rotated) onOAuthRotated,
+      GitLabRateBudget rateBudget,
+    );
 
 final class SessionController extends ChangeNotifier {
   SessionController(
     this.store, {
     ApiFactory? createApi,
+    IdentityApiFactory? createIdentityApi,
     ApplicationIdLookup? applicationIdFor,
     AuthorizationBrowser? browser,
     OAuthTokenClient Function(GitLabInstance instance, String clientId)?
     createOAuth,
     ReadCacheDiskCoordinator? readCache,
+    AppLockController? appLock,
+    DateTime Function()? clock,
   }) : _createApi = createApi,
+       _createIdentityApi = createIdentityApi,
        readCache = readCache ?? ReadCacheDiskCoordinator.instance,
        applicationIdFor = applicationIdFor ?? oauthApplicationIdFor,
        _browser = browser,
@@ -41,10 +56,49 @@ final class SessionController extends ChangeNotifier {
            ((instance, clientId) =>
                OAuthTokenClient(instance: instance, clientId: clientId)) {
     this.readCache.claimStartupSession(this);
+    offlineGate = OfflineGate(
+      readCache: this.readCache,
+      appLock: appLock,
+      clock: clock,
+    );
   }
   final AccountStore store;
   final ReadCacheDiskCoordinator readCache;
   final ApiFactory? _createApi;
+  final IdentityApiFactory? _createIdentityApi;
+  late final OfflineGate offlineGate;
+  OfflineSession? offline;
+  OfflineEligibility? _offlineEligibility;
+  Future<OfflineEligibility?>? _qualification;
+  Future<void>? _offlineProbeTask;
+  Future<bool>? _earlyEntryTask;
+  Completer<void>? _resumeDone;
+  final _earlyValidationTickets = <int>{};
+  String? get diskRetainedAccountKey => readCache.diskRetainedAccountKey;
+  bool get canEnterOffline =>
+      offlineModeEnabled &&
+      resuming &&
+      _offlineEligibility != null &&
+      offlineGate.lockReadable;
+  bool get offlineProbing => offlineGate.probing || _offlineProbeTask != null;
+
+  void bindOfflineAppLock(AppLockController lock) =>
+      offlineGate.bindAppLock(lock);
+
+  void _closeClient(GitLabApi? client) => client?.close(
+    closeRateBudget: !identical(client.rateBudget, offlineGate.rateBudget),
+  );
+
+  Future<void> _acceptIdentity(String key) async {
+    if (!readCache.configured) return;
+    try {
+      await readCache.deleteOfflineRefused(key);
+    } on Object {
+      // The coordinator keeps disk admission closed. Fresh online identity
+      // proof remains valid even when marker removal cannot be confirmed.
+    }
+  }
+
   final ApplicationIdLookup applicationIdFor;
   final AuthorizationBrowser? _browser;
   final OAuthTokenClient Function(GitLabInstance instance, String clientId)
@@ -199,8 +253,11 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<void> initialize() async {
-    if (_disposed || !readCache.ownsStartupSession(this)) return;
+    if (_disposed || offline != null || !readCache.ownsStartupSession(this)) {
+      return;
+    }
     final ticket = ++_operation;
+    _offlineEligibility = null;
     _invalidateReadCacheDecision();
     _accountsReadable = false;
     _signOutMarkerReadable = false;
@@ -211,7 +268,7 @@ final class SessionController extends ChangeNotifier {
       // A delayed initialize supersedes whatever is in flight. Its candidate
       // is released here, because that operation's own release only clears
       // `busy` while its ticket is current.
-      _pending?.close();
+      _closeClient(_pending);
       _pending = null;
       _pendingResumeTarget = null;
       busy = false;
@@ -269,56 +326,347 @@ final class SessionController extends ChangeNotifier {
       message = null;
       _emit();
       if (!_current(ticket)) return;
-      GitLabApi? candidate;
-      try {
-        candidate = _client(match.instance, match.credential, account: match);
-        _pending = candidate;
-        final user = await candidate.currentUser();
-        if (!_current(ticket)) return;
-        if (user.id != match.user.id) {
-          throw const ApiFailure(FailureKind.unauthenticated);
-        }
-        final credential = candidate.credential;
-        _activate(
-          Account(instance: match.instance, user: user, credential: credential),
-          candidate,
-        );
-        candidate = null;
-      } on ApiFailure catch (error) {
-        if (_current(ticket)) {
-          message = l10n.titleThenDetail(error.title, error.detail);
-          // Drop the remembered key only when the credential itself is dead.
-          // Transient failures keep it so the next launch can retry.
-          if (error.kind == FailureKind.unauthenticated) {
-            _clearKnownCandidate(match);
-            _publishReadCacheDecision(null);
-            try {
-              await _enqueueLastActive(null);
-            } catch (_) {}
+      offlineGate.stop();
+      offlineGate.resetBudget();
+      final qualification = _qualification = offlineGate.check(
+        match,
+        isCurrent: () => _current(ticket),
+      );
+      unawaited(
+        qualification.then((value) {
+          if (_current(ticket) && resuming) {
+            _offlineEligibility = value;
+            _emit();
           }
+        }),
+      );
+      GitLabApi? candidate;
+      final done = _resumeDone = Completer<void>();
+      try {
+        candidate = _client(
+          match.instance,
+          match.credential,
+          account: match,
+          identityCandidate: true,
+        );
+        _pending = candidate;
+        final verdict = await offlineGate.probe(candidate.identityCheck);
+        if (!_current(ticket)) return;
+        final entry = _earlyEntryTask;
+        if (entry != null) {
+          await entry;
+          if (!_current(ticket)) return;
+        }
+        if (_earlyValidationTickets.remove(ticket)) {
+          await _handleOfflineVerdict(match, verdict, ticket: ticket);
+          return;
+        }
+        if (!_current(ticket)) return;
+        if (verdict is IdentityOk && verdict.user.id == match.user.id) {
+          await _acceptIdentity(match.key);
+          if (!_current(ticket)) return;
+          _activate(
+            Account(
+              instance: match.instance,
+              user: verdict.user,
+              credential: candidate.credential,
+            ),
+            candidate,
+          );
+          candidate = null;
+        } else if (verdict is IdentityNoVerdict) {
+          final eligible = await qualification;
+          if (!_current(ticket)) return;
+          final entered =
+              eligible != null &&
+              await _enterOffline(eligible, ticket: ticket);
+          if (!_current(ticket)) return;
+          if (entered) {
+            offlineGate.scheduleRetry();
+          } else {
+            _showIdentityFailure(verdict);
+          }
+        } else {
+          await _handleIdentityVerdict(match, verdict, ticket: ticket);
+          if (_current(ticket)) _showIdentityFailure(verdict);
         }
       } catch (_) {
-        if (_current(ticket)) {
-          message = l10n.accountReverifyNoSwitch;
-        }
+        if (_current(ticket)) message = l10n.accountReverifyNoSwitch;
       } finally {
-        if (candidate != null) {
-          candidate.close();
-          if (identical(_pending, candidate)) _pending = null;
-        } else if (_current(ticket)) {
-          _pending = null;
-        }
+        _earlyValidationTickets.remove(ticket);
+        _closeClient(candidate);
+        if (identical(_pending, candidate) || _current(ticket)) _pending = null;
+        if (!done.isCompleted) done.complete();
+        if (identical(_resumeDone, done)) _resumeDone = null;
       }
     } finally {
       if (_current(ticket)) {
         if (_readCacheStartupDecision == null) {
           _publishReadCacheDecision(null);
         }
-        initializing = false;
-        resuming = false;
-        resumingAccount = null;
+        if (offline == null) {
+          initializing = false;
+          resuming = false;
+          resumingAccount = null;
+        }
       }
       if (!_disposed) _emit();
+    }
+  }
+
+  void _showIdentityFailure(IdentityVerdict verdict) {
+    final failure =
+        verdict.failure ?? const ApiFailure(FailureKind.unauthenticated);
+    message = l10n.titleThenDetail(failure.title, failure.detail);
+    _emit();
+  }
+
+  Future<bool> _handleIdentityVerdict(
+    Account account,
+    IdentityVerdict verdict, {
+    required int ticket,
+  }) async {
+    var retained = true;
+    if (!_current(ticket)) return retained;
+    if (verdict is IdentityRefused401 ||
+        (verdict is IdentityOk && verdict.user.id != account.user.id)) {
+      retained = false;
+      // clear() fences both namespaces synchronously, before its first await.
+      _clearKnownCandidate(account);
+      _leaveOffline(account);
+      _publishReadCacheDecision(null);
+      try {
+        await _enqueueLastActive(null);
+      } catch (_) {}
+    } else if (verdict is IdentityRefused403) {
+      try {
+        await readCache.writeOfflineRefused(account.key, offlineGate.now);
+      } catch (_) {
+        if (!_current(ticket)) return retained;
+        retained = false;
+        _clearKnownCandidate(account);
+        _publishReadCacheDecision(null);
+        try {
+          await _enqueueLastActive(null);
+        } catch (_) {}
+      }
+      if (!_current(ticket)) return retained;
+      _leaveOffline(account);
+    }
+    return retained;
+  }
+
+  void _leaveOffline(Account account) {
+    final current = offline;
+    if (current == null || current.account.key != account.key) return;
+    readCache.closeOfflineReadOnly(
+      DiskBinding(accountKey: account.key, generation: current.generation),
+      sessionOwner: this,
+    );
+    offline = null;
+    offlineGate.stop();
+    _advanceGeneration();
+    _emit();
+  }
+
+  Future<void> _handleOfflineVerdict(
+    Account account,
+    IdentityVerdict verdict, {
+    required int ticket,
+  }) async {
+    bool current() =>
+        _current(ticket) &&
+        offline?.account.key == account.key &&
+        offline?.validationTicket == ticket;
+    if (!current()) return;
+    if (verdict is IdentityOk && verdict.user.id == account.user.id) {
+      await _acceptIdentity(account.key);
+      if (!current()) return;
+      offline?.connectionRestored = true;
+      offlineGate.connectionSucceeded();
+    } else if (verdict is IdentityNoVerdict) {
+      offlineGate.scheduleRetry();
+    } else {
+      await _handleIdentityVerdict(account, verdict, ticket: ticket);
+      if (!_current(ticket)) return;
+      if (verdict is IdentityUnknown) _leaveOffline(account);
+      _showIdentityFailure(verdict);
+    }
+    _emit();
+  }
+
+  Future<bool> enterOffline() async {
+    if (!resuming || !offlineModeEnabled) return false;
+    final ticket = _operation;
+    final eligible = _offlineEligibility ?? await _qualification;
+    if (eligible == null || !_current(ticket) || !resuming) return false;
+    final existing = _earlyEntryTask;
+    if (existing != null) return existing;
+    _earlyValidationTickets.add(ticket);
+    final entry = _earlyEntryTask = _enterOffline(eligible, ticket: ticket);
+    try {
+      final entered = await entry;
+      if (!entered) _earlyValidationTickets.remove(ticket);
+      return entered;
+    } finally {
+      if (identical(_earlyEntryTask, entry)) _earlyEntryTask = null;
+    }
+  }
+
+  Future<bool> _enterOffline(
+    OfflineEligibility eligible, {
+    required int ticket,
+  }) async {
+    if (!offlineModeEnabled ||
+        !_current(ticket) ||
+        active != null ||
+        offline != null ||
+        !offlineGate.lockReadable ||
+        !OfflineGate.recent(eligible.lastValidatedAt, offlineGate.now)) {
+      return false;
+    }
+    final nextGeneration = ++_issuedGeneration;
+    final binding = DiskBinding(
+      accountKey: eligible.account.key,
+      generation: nextGeneration,
+    );
+    if (!await readCache.enterOfflineReadOnly(binding, sessionOwner: this)) {
+      return false;
+    }
+    if (!_current(ticket) ||
+        !offlineModeEnabled ||
+        !offlineGate.lockReadable ||
+        active != null ||
+        offline != null ||
+        !resuming) {
+      readCache.closeOfflineReadOnly(binding, sessionOwner: this);
+      return false;
+    }
+    _closeClient(api);
+    api = null;
+    active = null;
+    generation = nextGeneration;
+    offline = OfflineSession(
+      account: eligible.account,
+      validationTicket: ticket,
+      lastValidatedAt: eligible.lastValidatedAt,
+      generation: generation,
+    );
+    readCache.retainDiskAccount(eligible.account.key, sessionOwner: this);
+    initializing = false;
+    resuming = false;
+    resumingAccount = null;
+    message = null;
+    offlineGate.start(
+      lastValidatedAt: eligible.lastValidatedAt,
+      onProbe: () => probeOffline(manual: false),
+      onExpire: () => _leaveOffline(eligible.account),
+    );
+    _emit();
+    return true;
+  }
+
+  /// A successful background check changes the banner. Explicit online retry
+  /// validates again before giving the account a content-capable API client.
+  Future<void> probeOffline({
+    bool manual = true,
+    bool switchOnline = false,
+    int? projectId,
+  }) {
+    final current = offline;
+    if (current == null || !offlineGate.recheckAge()) return Future.value();
+    Future<void> joined(Future<void> task) => !switchOnline
+        ? task
+        : task.then((_) {
+            if (identical(offline, current)) {
+              return probeOffline(
+                manual: false,
+                switchOnline: true,
+                projectId: projectId,
+              );
+            }
+          });
+    final task = _offlineProbeTask;
+    if (task != null) return joined(task);
+    if (offlineGate.probing) {
+      return joined(_resumeDone?.future ?? Future.value());
+    }
+    late final Future<void> result;
+    result =
+        _probeOffline(
+          current,
+          manual: manual,
+          switchOnline: switchOnline,
+          projectId: projectId,
+        ).whenComplete(() {
+          if (identical(_offlineProbeTask, result)) _offlineProbeTask = null;
+          _emit();
+        });
+    _offlineProbeTask = result;
+    _emit();
+    return result;
+  }
+
+  Future<void> _probeOffline(
+    OfflineSession current, {
+    required bool manual,
+    required bool switchOnline,
+    int? projectId,
+  }) async {
+    final ticket = ++_operation;
+    current.validationTicket = ticket;
+    final account = _accountForKey(current.account.key) ?? current.account;
+    GitLabApi? candidate;
+    try {
+      final verdict = await offlineGate.probe(() {
+        final client = candidate = _client(
+          account.instance,
+          account.credential,
+          account: account,
+          identityCandidate: true,
+        );
+        _pending = client;
+        return client.identityCheck();
+      }, manual: manual && !switchOnline);
+      if (!_current(ticket) ||
+          !identical(offline, current) ||
+          current.validationTicket != ticket) {
+        return;
+      }
+      if (switchOnline &&
+          verdict is IdentityOk &&
+          verdict.user.id == account.user.id &&
+          candidate != null &&
+          _current(ticket) &&
+          identical(offline, current)) {
+        await _acceptIdentity(account.key);
+        if (!_current(ticket) || !identical(offline, current)) return;
+        _activate(
+          Account(
+            instance: account.instance,
+            user: verdict.user,
+            credential: candidate!.credential,
+          ),
+          candidate!,
+        );
+        candidate = null;
+        if (projectId != null) {
+          _pendingResumeTarget = ResumeTarget(
+            projectId: projectId,
+            resource: 'repository',
+          );
+        }
+      } else {
+        await _handleOfflineVerdict(account, verdict, ticket: ticket);
+      }
+    } catch (_) {
+      if (_current(ticket)) {
+        _leaveOffline(account);
+        message = l10n.accountReverifyNoSwitch;
+      }
+    } finally {
+      _closeClient(candidate);
+      if (identical(_pending, candidate)) _pending = null;
     }
   }
 
@@ -331,7 +679,8 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<void> connect(String instanceText, String rawToken) async {
-    if (busy ||
+    if (offline != null ||
+        busy ||
         initializing ||
         resuming ||
         _disposed ||
@@ -356,6 +705,8 @@ final class SessionController extends ChangeNotifier {
         user: user,
         credential: candidate.credential,
       );
+      await _acceptIdentity(account.key);
+      if (!_current(ticket)) return;
       final previous = List<Account>.of(_accounts);
       _remember(account);
       final staged = _accounts;
@@ -392,7 +743,8 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<void> select(Account saved) async {
-    if (initializing ||
+    if (offline != null ||
+        initializing ||
         resuming ||
         _disposed ||
         !readCache.ownsStartupSession(this)) {
@@ -435,11 +787,22 @@ final class SessionController extends ChangeNotifier {
       }
       candidate = _client(saved.instance, saved.credential, account: saved);
       _pending = candidate;
-      final user = await candidate.currentUser();
+      final verdict = await candidate.identityCheck();
       if (!_current(ticket)) return;
-      if (user.id != saved.user.id) {
-        throw const ApiFailure(FailureKind.unauthenticated);
+      if (verdict is! IdentityOk || verdict.user.id != saved.user.id) {
+        final retained = await _handleIdentityVerdict(
+          saved,
+          verdict,
+          ticket: ticket,
+        );
+        if (!_current(ticket)) return;
+        _publishReadCacheDecision(retryRetained && retained ? saved.key : null);
+        _showIdentityFailure(verdict);
+        return;
       }
+      await _acceptIdentity(saved.key);
+      if (!_current(ticket)) return;
+      final user = verdict.user;
       final credential = candidate.credential;
       _activate(
         Account(instance: saved.instance, user: user, credential: credential),
@@ -475,7 +838,8 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<void> connectOAuth(String instanceText) async {
-    if (busy ||
+    if (offline != null ||
+        busy ||
         initializing ||
         resuming ||
         _disposed ||
@@ -526,6 +890,8 @@ final class SessionController extends ChangeNotifier {
         user: user,
         credential: candidate.credential,
       );
+      await _acceptIdentity(account.key);
+      if (!_current(ticket)) return;
       final previous = List<Account>.of(_accounts);
       _remember(account);
       final staged = _accounts;
@@ -564,6 +930,7 @@ final class SessionController extends ChangeNotifier {
     AccountCredential credential, {
     OAuthTokenClient? oauth,
     Account? account,
+    bool identityCandidate = false,
   }) {
     final oauthClient =
         oauth ??
@@ -573,6 +940,16 @@ final class SessionController extends ChangeNotifier {
         };
     Future<void> onRotated(OAuthCredential rotated) =>
         _persistRotated(rotated, account);
+    final identityFactory = _createIdentityApi;
+    if (identityCandidate && identityFactory != null) {
+      return identityFactory(
+        instance,
+        credential,
+        oauthClient,
+        onRotated,
+        offlineGate.rateBudget,
+      );
+    }
     final factory = _createApi;
     if (factory != null) {
       return factory(instance, credential, oauthClient, onRotated);
@@ -582,6 +959,7 @@ final class SessionController extends ChangeNotifier {
       credential: credential,
       oauth: oauthClient,
       onOAuthRotated: onRotated,
+      rateBudget: identityCandidate ? offlineGate.rateBudget : null,
     );
   }
 
@@ -675,7 +1053,7 @@ final class SessionController extends ChangeNotifier {
 
   void _releaseCandidate(GitLabApi? candidate, int ticket) {
     if (candidate != null) {
-      candidate.close();
+      _closeClient(candidate);
       if (identical(_pending, candidate)) _pending = null;
     } else if (_current(ticket)) {
       _pending = null;
@@ -688,6 +1066,19 @@ final class SessionController extends ChangeNotifier {
   }
 
   void _activate(Account account, GitLabApi client) {
+    final leavingOffline = offline;
+    if (leavingOffline != null) {
+      readCache.closeOfflineReadOnly(
+        DiskBinding(
+          accountKey: leavingOffline.account.key,
+          generation: leavingOffline.generation,
+        ),
+        sessionOwner: this,
+      );
+    }
+    offline = null;
+    _offlineEligibility = null;
+    offlineGate.stop();
     // A new session for an already active account still follows C2's D1
     // departure rule. B8 applies only when there is no active session.
     final previous = active;
@@ -712,7 +1103,7 @@ final class SessionController extends ChangeNotifier {
       accountKeys: _accounts.map((account) => account.key).toSet(),
     );
     readCache.retainDiskAccount(account.key, sessionOwner: this);
-    api?.close();
+    _closeClient(api);
     active = account;
     api = client;
     generation = nextGeneration;
@@ -840,6 +1231,7 @@ final class SessionController extends ChangeNotifier {
     _invalidateReadCacheDecision();
     final previousKey =
         active?.key ??
+        offline?.account.key ??
         resumingAccount?.key ??
         readCache.diskRetainedAccountKey ??
         retainedAccountKey ??
@@ -853,11 +1245,14 @@ final class SessionController extends ChangeNotifier {
       );
     }
     readCache.retainDiskAccount(null, sessionOwner: this);
-    _pending?.close();
+    _closeClient(_pending);
     _pending = null;
-    api?.close();
+    _closeClient(api);
     api = null;
     active = null;
+    offline = null;
+    _offlineEligibility = null;
+    offlineGate.stop();
     resuming = false;
     resumingAccount = null;
     initializing = false;
@@ -909,7 +1304,8 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<({bool removed, ApiFailure? failure})> remove(Account account) async {
-    if (busy ||
+    if (offline != null ||
+        busy ||
         initializing ||
         resuming ||
         _disposed ||
@@ -1010,12 +1406,23 @@ final class SessionController extends ChangeNotifier {
 
   @override
   void dispose() {
+    final leaving = offline;
+    if (leaving != null) {
+      readCache.closeOfflineReadOnly(
+        DiskBinding(
+          accountKey: leaving.account.key,
+          generation: leaving.generation,
+        ),
+        sessionOwner: this,
+      );
+    }
     _disposed = true;
     _operation++;
     _invalidateReadCacheDecision();
     _disposal.complete();
-    _pending?.close();
-    api?.close();
+    offlineGate.dispose();
+    _closeClient(_pending);
+    _closeClient(api);
     readCache.releaseSession(this);
     _pendingResumeTarget = null;
     super.dispose();
