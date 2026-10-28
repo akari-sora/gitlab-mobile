@@ -373,7 +373,11 @@ final class SessionController extends ChangeNotifier {
           if (!_current(ticket)) return;
           final entered =
               eligible != null &&
-              await _enterOffline(eligible, ticket: ticket);
+              await _enterOffline(
+                eligible,
+                ticket: ticket,
+                reason: verdict.failure,
+              );
           if (!_current(ticket)) return;
           if (entered) {
             offlineGate.scheduleRetry();
@@ -479,14 +483,55 @@ final class SessionController extends ChangeNotifier {
       offline?.connectionRestored = true;
       offlineGate.connectionSucceeded();
     } else if (verdict is IdentityNoVerdict) {
+      offline
+        ?..reason = verdict.failure
+        ..connectionRestored = false;
       offlineGate.scheduleRetry();
     } else {
-      await _handleIdentityVerdict(account, verdict, ticket: ticket);
+      final retained = await _handleIdentityVerdict(
+        account,
+        verdict,
+        ticket: ticket,
+      );
       if (!_current(ticket)) return;
       if (verdict is IdentityUnknown) _leaveOffline(account);
-      _showIdentityFailure(verdict);
+      if (retained) {
+        _showIdentityFailure(verdict);
+      } else {
+        _reportOfflineDeletion(account);
+      }
     }
     _emit();
+  }
+
+  /// §5.6: the offline account's data is unreadable at once and deleted in
+  /// the background; the sign-in screen says so, then how the deletion ended.
+  void _reportOfflineDeletion(Account account) {
+    final username = account.user.username;
+    final deleting = message = l10n.offlineSignInExpiredDeleting(username);
+    _emit();
+    final clearing = _readCacheClears[account.key];
+    void finished() {
+      if (_disposed || message != deleting) return;
+      final failed = readCache.signedOutSnapshot.keys.any(
+        (binding) => binding.accountKey == account.key,
+      );
+      message = failed
+          ? l10n.offlineSignInExpiredRetry(username)
+          : l10n.offlineSignInExpiredDeleted(username);
+      _emit();
+    }
+
+    if (clearing == null) {
+      finished();
+      return;
+    }
+    unawaited(
+      clearing.then<void>(
+        (_) => finished(),
+        onError: (Object _, StackTrace _) => finished(),
+      ),
+    );
   }
 
   Future<bool> enterOffline() async {
@@ -510,6 +555,7 @@ final class SessionController extends ChangeNotifier {
   Future<bool> _enterOffline(
     OfflineEligibility eligible, {
     required int ticket,
+    ApiFailure? reason,
   }) async {
     if (!offlineModeEnabled ||
         !_current(ticket) ||
@@ -545,7 +591,7 @@ final class SessionController extends ChangeNotifier {
       validationTicket: ticket,
       lastValidatedAt: eligible.lastValidatedAt,
       generation: generation,
-    );
+    )..reason = reason;
     readCache.retainDiskAccount(eligible.account.key, sessionOwner: this);
     initializing = false;
     resuming = false;
@@ -554,7 +600,12 @@ final class SessionController extends ChangeNotifier {
     offlineGate.start(
       lastValidatedAt: eligible.lastValidatedAt,
       onProbe: () => probeOffline(manual: false),
-      onExpire: () => _leaveOffline(eligible.account),
+      onExpire: () {
+        if (offline?.account.key != eligible.account.key) return;
+        _leaveOffline(eligible.account);
+        message = l10n.offlineValidationExpired;
+        _emit();
+      },
     );
     _emit();
     return true;

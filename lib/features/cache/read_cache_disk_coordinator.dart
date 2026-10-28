@@ -447,6 +447,49 @@ final class ReadCacheDiskCoordinator {
     }
   }
 
+  /// What signing out of [accountKey] would delete from its offline
+  /// snapshots, for the §6.7 confirmations shown while no session is active
+  /// (the resume and sign-in screens). It only reads: no namespace is opened,
+  /// no key is created or repaired and nothing is written. Null when that
+  /// cannot be known now (an unavailable key, an unreadable index); an account
+  /// without a key or an index, or one whose account-wide clear has started,
+  /// has nothing left to lose.
+  Future<({int count, int bytes})?> offlineSnapshotSummary(
+    String accountKey,
+  ) async {
+    const none = (count: 0, bytes: 0);
+    if (!configured) return none;
+    if (_domain.accounts[accountKey]?.intent?.accountWide == true) return none;
+    try {
+      final key = await _keys!.readOfflineKey(accountKey);
+      switch (key.status) {
+        case ReadCacheStoreReadStatus.absent:
+          return none;
+        case ReadCacheStoreReadStatus.unavailable:
+          return null;
+        case ReadCacheStoreReadStatus.found:
+          break;
+      }
+      final store = SnapshotStore(
+        supportRoot: await _files!.offlineSupportDirectory(),
+        accountKey: accountKey,
+        rootKey: key.value!,
+      );
+      final index = await store.readIndex();
+      if (index == null) return none;
+      final kept = [
+        for (final record in index.snapshots)
+          if (record.status != SnapshotStatus.superseded) record,
+      ];
+      return (
+        count: kept.length,
+        bytes: kept.fold<int>(0, (sum, record) => sum + record.storedBytes),
+      );
+    } on Object {
+      return null;
+    }
+  }
+
   /// Reserved for the current SessionController's C3c `_enterOffline` path.
   /// This changes cache admission only; it creates no API client or UI mode.
   Future<bool> enterOfflineReadOnly(

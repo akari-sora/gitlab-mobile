@@ -229,18 +229,30 @@ void main() {
   });
 
   test(
-    'production shell flag blocks entry even with a readable snapshot',
+    'the production shell flag admits entry with a readable snapshot',
     () async {
       final h = _Harness(_network);
       addTearDown(h.dispose);
       await h.seed();
       await h.lock.start();
       offlineModeShellReadyForTesting = null;
+      expect(offlineModeShellReady, isTrue);
       final session = h.makeSession();
       await session.initialize();
-      expect(session.offline, isNull);
+      expect(session.offline?.account.key, h.account.key);
     },
   );
+
+  test('turning the shell flag off still blocks entry', () async {
+    final h = _Harness(_network);
+    addTearDown(h.dispose);
+    await h.seed();
+    await h.lock.start();
+    offlineModeShellReadyForTesting = false;
+    final session = h.makeSession();
+    await session.initialize();
+    expect(session.offline, isNull);
+  });
 
   for (final kind in [
     'network',

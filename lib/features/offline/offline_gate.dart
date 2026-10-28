@@ -9,8 +9,10 @@ import '../../core/rate_budget.dart';
 import '../cache/read_cache_disk_coordinator.dart';
 import '../security/app_lock.dart';
 
-/// Flip only with the account-keyed OfflineApp and its network/lock boundary.
-const bool offlineModeShellReady = false;
+/// On since C3c-2: `main` renders the generation-keyed OfflineApp, below the
+/// offline network boundary and the app lock, whenever the session controller
+/// enters the offline state. Tests may still turn it off.
+const bool offlineModeShellReady = true;
 
 @visibleForTesting
 bool? offlineModeShellReadyForTesting;
@@ -36,6 +38,10 @@ final class OfflineSession {
   final int generation;
   int validationTicket;
   bool connectionRestored = false;
+
+  /// Why GitLab gave no identity verdict the last time it was asked; null
+  /// until the first such answer (an early entry). The banner reads it.
+  ApiFailure? reason;
 }
 
 /// Qualification only reads closed storage. The probe owns no content client.

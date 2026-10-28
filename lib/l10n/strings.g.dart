@@ -8997,4 +8997,94 @@ final class AppStrings {
 
   /// 清除
   String get offlineCacheClearButton => language._messages[2967];
+
+  /// 離線瀏覽
+  String get offlineBrowseAction => language._messages[2968];
+
+  /// 驗證完成之前，可以先瀏覽已保存的專案。
+  String get offlineBrowseHint => language._messages[2969];
+
+  /// 目前無法離線瀏覽。
+  String get offlineEnterFailed => language._messages[2970];
+
+  /// 離線瀏覽
+  String get offlineShellTitle => language._messages[2971];
+
+  /// 離線 · 只能瀏覽已保存的專案
+  String get offlineBannerNetwork => language._messages[2972];
+
+  /// GitLab 暫時沒有回應 · 只能瀏覽已保存的專案
+  String get offlineBannerServer => language._messages[2973];
+
+  /// GitLab 限流中 · 只能瀏覽已保存的專案
+  String get offlineBannerRateLimited => language._messages[2974];
+
+  /// GitLab 限流中（約 {minutes} 分鐘）· 只能瀏覽已保存的專案
+  String offlineBannerRateLimitedMinutes(Object? minutes) => _format(language, language._messages[2975], {'minutes': minutes});
+
+  /// 網路可能需要登入（例如 Wi-Fi 認證頁）· 只能瀏覽已保存的專案
+  String get offlineBannerSignIn => language._messages[2976];
+
+  /// 尚未連上 GitLab · 只能瀏覽已保存的專案
+  String get offlineBannerChecking => language._messages[2977];
+
+  /// 已恢復連線
+  String get offlineBannerRestored => language._messages[2978];
+
+  /// 重試連線
+  String get offlineRetryConnection => language._messages[2979];
+
+  /// 正在檢查連線…
+  String get offlineCheckingConnection => language._messages[2980];
+
+  /// 切換到線上
+  String get offlineSwitchOnline => language._messages[2981];
+
+  /// 仍然無法連上 GitLab
+  String get offlineStillOffline => language._messages[2982];
+
+  /// 上次驗證：{when}
+  String offlineLastValidated(Object? when) => _format(language, language._messages[2983], {'when': when});
+
+  /// 連線後會開啟 1 個連結
+  String get offlinePendingLink => language._messages[2984];
+
+  /// 管理離線專案
+  String get offlineManageProjects => language._messages[2985];
+
+  /// 已保存的專案
+  String get offlineSavedProjectsTitle => language._messages[2986];
+
+  /// 沒有可以離線瀏覽的專案
+  String get offlineNothingToBrowse => language._messages[2987];
+
+  /// 連線後可以再次保存專案。
+  String get offlineNothingToBrowseDetail => language._messages[2988];
+
+  /// 無法讀取 App 鎖定設定
+  String get offlineLockUnreadableTitle => language._messages[2989];
+
+  /// 讀取成功之前，不會顯示離線內容。
+  String get offlineLockUnreadableDetail => language._messages[2990];
+
+  /// 若登入的是其他帳號，會刪除 @{username} 的 {count} 個離線專案（{size}）。
+  String offlineLossConnect(Object? username, Object? count, Object? size) => _format(language, language._messages[2991], {'username': username, 'count': count, 'size': size});
+
+  /// 會刪除 @{username} 在這台裝置上的離線專案（目前無法讀取數量）。
+  String offlineLossUnknown(Object? username) => _format(language, language._messages[2992], {'username': username});
+
+  /// 若登入的是其他帳號，會刪除 @{username} 在這台裝置上的離線專案（目前無法讀取數量）。
+  String offlineLossConnectUnknown(Object? username) => _format(language, language._messages[2993], {'username': username});
+
+  /// 登入已失效，正在刪除 @{username} 的離線資料。
+  String offlineSignInExpiredDeleting(Object? username) => _format(language, language._messages[2994], {'username': username});
+
+  /// 登入已失效，已刪除 @{username} 的離線資料。
+  String offlineSignInExpiredDeleted(Object? username) => _format(language, language._messages[2995], {'username': username});
+
+  /// 登入已失效，@{username} 的離線資料將在下次啟動時重試刪除。
+  String offlineSignInExpiredRetry(Object? username) => _format(language, language._messages[2996], {'username': username});
+
+  /// 離線瀏覽只能在上次驗證後 30 天內使用。請連線後重新驗證。
+  String get offlineValidationExpired => language._messages[2997];
 }

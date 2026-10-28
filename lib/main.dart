@@ -27,6 +27,7 @@ import 'features/auth/session_controller.dart';
 import 'features/cache/read_cache_disk_coordinator.dart';
 import 'features/cache/read_cache_key_store.dart';
 import 'features/cache/read_cache_settings_store.dart';
+import 'features/offline/offline_app.dart';
 import 'features/shell/authenticated_app.dart';
 import 'features/shell/incoming_links.dart';
 import 'features/security/app_lock.dart';
@@ -485,6 +486,13 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
       unawaited(notifications.initialize());
     }
     final session = ref.read(sessionProvider);
+    // The offline gate admits the offline shell only once this controller's
+    // setting has been read (§5.9), so it is bound and started before the
+    // session initializes. Started before the first frame's app exists, so its
+    // back handling also runs before the navigator's while the app is locked.
+    final lock = ref.read(appLockProvider);
+    session.bindOfflineAppLock(lock);
+    unawaited(lock.start());
     _readCacheLifecycle = AppLifecycleListener(onStateChange: (state) {
       if (state == AppLifecycleState.resumed) {
         final active = session.active;
@@ -506,9 +514,6 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     unawaited(ref.read(appearanceProvider).load());
     // Looks for an update once per launch (when allowed); never gates a frame.
     unawaited(ref.read(appUpdateProvider).start());
-    // Started before the first frame's app exists, so its back handling runs
-    // before the navigator's while the app is locked.
-    unawaited(ref.read(appLockProvider).start());
   }
   @override
   void dispose() {
@@ -530,25 +535,39 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     if (account != null) unawaited(_shortcuts.publish(account));
   }
 
-  void _syncShortcuts(bool signedIn, String? accountKey) {
+  /// The offline shell has no account client, so shortcuts are bound to no
+  /// account there; it still counts as a session, so leaving it for the
+  /// sign-in screen clears the published shortcuts like a sign-out (§5.11).
+  void _syncShortcuts(bool signedIn, bool offline, String? accountKey) {
     _shortcuts.bind(signedIn ? accountKey : null);
-    if (!signedIn && _sessionWasActive) {
+    final active = signedIn || offline;
+    if (!active && _sessionWasActive) {
       unawaited(_shortcuts.clearPublished());
     }
-    _sessionWasActive = signedIn;
+    _sessionWasActive = active;
   }
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final appearance = ref.watch(appearanceProvider);
     return ListenableBuilder(listenable: Listenable.merge([session, appearance, _language]), builder: (context, _) {
-      final signedIn = session.active != null && session.api != null;
-      _syncShortcuts(signedIn, session.active?.key);
+      final offline = session.offline;
+      final signedIn =
+          offline == null && session.active != null && session.api != null;
+      _syncShortcuts(signedIn, offline != null, session.active?.key);
       if (signedIn) {
         return AuthenticatedApp(
           key: ValueKey(session.generation), session: session, appearance: appearance, shortcuts: _shortcuts,
           updates: ref.read(appUpdateProvider), incoming: _links, lock: ref.read(appLockProvider),
           language: _language, ai: _ai, runNotifications: _runNotificationGate,
+        );
+      }
+      // Before resuming and initializing (§5.5): the offline read-only shell,
+      // a new tree for every generation, with no account API client.
+      if (offline != null) {
+        return OfflineApp(
+          key: ValueKey(session.generation), session: session, appearance: appearance,
+          lock: ref.read(appLockProvider), language: _language, incoming: _links,
         );
       }
       return DynamicColorBuilder(builder: (light, dark) {
@@ -574,16 +593,60 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   }
 }
 
-class _ResumeScreen extends StatelessWidget {
+class _ResumeScreen extends StatefulWidget {
   const _ResumeScreen({required this.session});
   final SessionController session;
   @override
+  State<_ResumeScreen> createState() => _ResumeScreenState();
+}
+
+class _ResumeScreenState extends State<_ResumeScreen> {
+  bool _entering = false;
+  bool _leaving = false;
+
+  /// §5.1 early entry: browse the saved projects while `/user` still runs.
+  Future<void> _browseOffline() async {
+    if (_entering) return;
+    setState(() => _entering = true);
+    final entered = await widget.session.enterOffline();
+    if (!mounted) return;
+    setState(() => _entering = false);
+    if (!entered) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.offlineEnterFailed)),
+      );
+    }
+  }
+
+  /// Leaving the account being restored deletes its offline projects (§6.7),
+  /// so that is confirmed before anything stops.
+  Future<void> _useAnotherAccount() async {
+    if (_leaving) return;
+    final session = widget.session;
+    final account = session.resumingAccount;
+    if (account != null) {
+      setState(() => _leaving = true);
+      final confirmed = await confirmRetainedOfflineLoss(
+        context,
+        session,
+        accountKey: account.key,
+        kind: RetainedLeave.switchAccount,
+      );
+      if (!mounted) return;
+      setState(() => _leaving = false);
+      if (!confirmed || session.resumingAccount?.key != account.key) return;
+    }
+    unawaited(session.endSession());
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final session = widget.session;
     final username = session.resumingAccount?.user.username ?? '';
     final theme = Theme.of(context);
     return Scaffold(
-      body: SafeArea(child: Center(child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+      body: SafeArea(child: Center(child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
             padding: const EdgeInsets.all(16),
@@ -600,7 +663,27 @@ class _ResumeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           const CircularProgressIndicator(),
-          TextButton(onPressed: () { unawaited(session.endSession()); }, child: Text(l10n.useAnotherAccount)),
+          if (session.canEnterOffline) ...[
+            const SizedBox(height: 24),
+            FilledButton.tonalIcon(
+              key: const ValueKey('resume-browse-offline'),
+              onPressed: _entering ? null : () => unawaited(_browseOffline()),
+              icon: const Icon(Icons.cloud_off_outlined, size: 20),
+              label: Text(l10n.offlineBrowseAction),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.offlineBrowseHint,
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          const SizedBox(height: 8),
+          TextButton(
+            key: const ValueKey('resume-use-another-account'),
+            onPressed: _leaving ? null : () => unawaited(_useAnotherAccount()),
+            child: Text(l10n.useAnotherAccount),
+          ),
         ]),
       ))),
     );
