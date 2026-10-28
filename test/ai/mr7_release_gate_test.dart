@@ -8,9 +8,7 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/release_policy.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
-import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
-import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_gate.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
@@ -19,6 +17,8 @@ import '../../tool/mr7/candidate_release_policy.dart';
 import '../support/fake_adapter.dart';
 import 'fx_coord_support.dart';
 import 'mr6b3_support.dart';
+import 'mr7_release_gate_support.dart';
+import 'p6_support.dart';
 import 'release_policy_support.dart';
 
 final class _Secrets implements KnownSecretsSource {
@@ -46,6 +46,31 @@ final class _FutureLedger implements AiCapabilityLedger {
       id == future.operationId ? future : productionAiLedger.find(id);
   @override
   List<AiCapability> get modelVisible => [future, ...ProductionAiLedger.rows];
+}
+
+/// The internal batch is normally model-hidden. A visible test-only copy
+/// isolates its release gate; a separate test locks the actual hidden row.
+final class _VisibleRowLedger implements AiCapabilityLedger {
+  _VisibleRowLedger(AiCapability source)
+    : row = AiCapability(
+        operationId: source.operationId,
+        baseTier: source.baseTier,
+        scopeClass: source.scopeClass,
+        namedMethod: source.namedMethod,
+        arguments: source.arguments,
+        httpCap: source.httpCap,
+        readback: source.readback,
+        editableField: source.editableField,
+        boundary: source.boundary,
+      );
+
+  final AiCapability row;
+
+  @override
+  AiCapability? find(String id) => id == row.operationId ? row : null;
+
+  @override
+  List<AiCapability> get modelVisible => [row];
 }
 
 void main() {
@@ -180,89 +205,201 @@ void main() {
     },
   );
 
-  test('forged production reads refuse without requests', () async {
-    final adapter = FakeAdapter((_) => throw StateError('unexpected request'));
+  test('release-gate cases cover every read and production write row', () {
+    expect(mr7ReadArguments.keys.toSet(), fixtureReleasePolicy.readNames);
+    expect(mr7WriteArguments.keys.toSet(), {
+      for (final row in ProductionAiLedger.rows) row.operationId,
+    });
+  });
+
+  for (final entry in mr7ReadArguments.entries) {
+    test(
+      'forged production read ${entry.key} refuses an executable call',
+      () async {
+        final call = AiToolCall(
+          id: entry.key,
+          name: entry.key,
+          arguments: entry.value,
+        );
+        for (final view in [fixtureReleasePolicy, productionAiReleasePolicy]) {
+          final released = identical(view, fixtureReleasePolicy);
+          final adapter = mr7ReadAdapter();
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final redactor = Redactor(secrets: _Secrets());
+          final catalogue = entry.key == 'get_group_work_item'
+              ? AiToolCatalogue.group(
+                  port: GitLabAiGroupReadPort(
+                    api,
+                    instance: api.instance,
+                    actorUserId: 7,
+                    generation: 1,
+                    isCurrent: () => true,
+                  ),
+                  scope: mr7GroupScope,
+                  redactor: redactor,
+                  releasePolicy: view,
+                )
+              : AiToolCatalogue(
+                  port: GitLabAiReadPort(api, 9),
+                  scope: mr7ReadScope(entry.key),
+                  redactor: redactor,
+                  releasePolicy: view,
+                );
+          final budget = AiToolBudget();
+          expect(
+            catalogue.specs.map((spec) => spec.name),
+            released ? contains(call.name) : isEmpty,
+          );
+          final result = await catalogue.execute(call, budget: budget);
+          expect(
+            result.result.isError,
+            !released,
+            reason: result.result.content,
+          );
+          expect(adapter.requests, released ? isNotEmpty : isEmpty);
+          expect(result.gitLabRequests, released ? greaterThan(0) : 0);
+          expect(budget.gitLabRequests, released ? greaterThan(0) : 0);
+        }
+      },
+    );
+  }
+
+  test('unknown project and group reads refuse without requests', () async {
+    final adapter = mr7ReadAdapter();
     final api = testApi(adapter);
     addTearDown(api.close);
-    final catalogue = AiToolCatalogue(
-      port: GitLabAiReadPort(api, 9),
-      scope: const AiResourceScope(
-        accountKey: coordAccount,
-        instanceKey: 'https://example.com/gitlab',
-        projectId: 9,
-        projectPath: 'team/example-9',
-        current: AiResourceRef(kind: AiResourceKind.issue, id: 3),
+    final redactor = Redactor(secrets: _Secrets());
+    for (final catalogue in [
+      AiToolCatalogue(
+        port: GitLabAiReadPort(api, 9),
+        scope: mr7ReadScope('get_issue'),
+        redactor: redactor,
       ),
-      redactor: Redactor(secrets: _Secrets()),
-    );
-    final group = AiToolCatalogue.group(
-      port: GitLabAiGroupReadPort(
-        api,
-        instance: GitLabInstance.parse('https://example.com/gitlab'),
-        actorUserId: 7,
-        generation: 1,
-        isCurrent: () => true,
+      AiToolCatalogue.group(
+        port: GitLabAiGroupReadPort(
+          api,
+          instance: api.instance,
+          actorUserId: 7,
+          generation: 1,
+          isCurrent: () => true,
+        ),
+        scope: mr7GroupScope,
+        redactor: redactor,
       ),
-      scope: const AiGroupResourceScope(
-        accountKey: coordAccount,
-        instanceKey: 'https://example.com/gitlab',
-        groupId: 5,
-        groupFullPath: 'fixture/group',
-        iid: 3,
-        workItemGid: 'gid://gitlab/WorkItem/30',
-      ),
-      redactor: Redactor(secrets: _Secrets()),
-    );
-    final budget = AiToolBudget();
-    expect(catalogue.specs, isEmpty);
-    expect(group.specs, isEmpty);
-    for (final name in {...fixtureReleasePolicy.readNames, 'future_read'}) {
-      final result = await catalogue.executeResult(
-        AiToolCall(id: name, name: name, arguments: const {}),
-        budget: budget,
+    ]) {
+      final result = await catalogue.execute(
+        AiToolCall(id: 'unknown', name: 'future_read', arguments: const {}),
+        budget: AiToolBudget(),
       );
-      expect(result.isError, isTrue, reason: name);
-      final groupResult = await group.executeResult(
-        AiToolCall(id: name, name: name, arguments: const {}),
-        budget: budget,
-      );
-      expect(groupResult.isError, isTrue, reason: name);
+      expect(result.result.isError, isTrue);
+      expect(result.gitLabRequests, 0);
     }
     expect(adapter.requests, isEmpty);
   });
 
+  for (final row in ProductionAiLedger.rows) {
+    test(
+      'forged production write ${row.operationId} refuses before freshness and port',
+      () async {
+        final call = mr7WriteCall(row.operationId);
+        for (final view in [fixtureReleasePolicy, productionAiReleasePolicy]) {
+          final released = identical(view, fixtureReleasePolicy);
+          final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
+          addTearDown(h.dispose);
+          if (row.operationId == 'upload_attachment') {
+            await h.attach('shot.png', [1, 2, 3]);
+          }
+          final probe = Mr7WriteProbe();
+          final c = h.newCoordinator(
+            releasePolicy: view,
+            scope: mr7WriteScope(row),
+            portFactory: () => probe,
+            ledger: row.modelVisible ? null : _VisibleRowLedger(row),
+          );
+          c.beginRun('Requested synthetic action.');
+          c.beginTurn();
+          expect(await c.propose(call), isNull);
+          expect(
+            h.freshnessReads,
+            released ? 1 : 0,
+            reason: c.recordedOutcomeFor(call.id)?.reasonCode,
+          );
+          expect(h.portCreations, released ? 1 : 0);
+          expect(probe.requests, released ? hasLength(1) : isEmpty);
+          if (released) {
+            expect(probe.requests.single.operationId, call.name);
+          } else {
+            expect(
+              c.recordedOutcomeFor(call.id)?.reasonCode,
+              'unknownOperation',
+            );
+          }
+          expect(h.adapter.requests, isEmpty);
+          expect(h.journal.entries(coordAccount), isEmpty);
+          c.stop('done');
+        }
+      },
+    );
+  }
+
   test(
-    'forged production writes refuse before freshness, port or journal',
+    'internal batch has executable arguments but remains model-hidden',
+    () async {
+      final server = P6Server();
+      addTearDown(server.api.close);
+      final row = ProductionAiLedger.rows.singleWhere(
+        (row) => !row.modelVisible,
+      );
+      expect(row.operationId, 'batchApplySuggestions');
+      final call = mr7WriteCall(row.operationId);
+      final prepared = await server.writePort.prepare(
+        p6Request(row.operationId, {...mr7WriteArguments[row.operationId]!}),
+      );
+      expect(prepared.request.operationId, row.operationId);
+      expect(server.adapter.requests, isNotEmpty);
+      for (final view in [fixtureReleasePolicy, productionAiReleasePolicy]) {
+        final h = await CoordHarness.create();
+        addTearDown(h.dispose);
+        final c = h.newCoordinator(releasePolicy: view);
+        c.beginRun('Apply the suggestions.');
+        c.beginTurn();
+        expect(await c.propose(call), isNull);
+        expect(h.freshnessReads, 0);
+        expect(h.portCreations, 0);
+        expect(h.adapter.requests, isEmpty);
+        expect(h.journal.entries(coordAccount), isEmpty);
+        c.stop('done');
+      }
+    },
+  );
+
+  test(
+    'unknown future writes refuse before freshness, port or journal',
     () async {
       final h = await CoordHarness.create();
       addTearDown(h.dispose);
-      for (final row in [
-        const _FutureLedger().modelVisible.first,
-        ...ProductionAiLedger.rows,
-      ]) {
-        final c = h.newCoordinator(
-          releasePolicy: productionAiReleasePolicy,
-          ledger: const _FutureLedger(),
-        );
-        c.beginRun('synthetic');
-        c.beginTurn();
-        expect(
-          await c.propose(
-            AiToolCall(
-              id: row.operationId,
-              name: row.operationId,
-              arguments: const {},
-            ),
+      final c = h.newCoordinator(
+        releasePolicy: productionAiReleasePolicy,
+        ledger: const _FutureLedger(),
+      );
+      c.beginRun('Future operation.');
+      c.beginTurn();
+      expect(
+        await c.propose(
+          AiToolCall(
+            id: 'future',
+            name: 'futureWrite',
+            arguments: {'reason': 'Synthetic future action.'},
           ),
-          isNull,
-          reason: row.operationId,
-        );
-        c.stop('done');
-      }
-      expect(h.adapter.requests, isEmpty);
+        ),
+        isNull,
+      );
       expect(h.freshnessReads, 0);
       expect(h.portCreations, 0);
+      expect(h.adapter.requests, isEmpty);
       expect(h.journal.entries(coordAccount), isEmpty);
+      c.stop('done');
     },
   );
 
@@ -297,6 +434,75 @@ void main() {
     expect(h.mutations, 1);
     expect(h.journal.entries(coordAccount), isNotEmpty);
   });
+
+  for (final revokeAfterDispatch in [false, true]) {
+    final stage = revokeAfterDispatch ? 'final send' : 'prepare';
+    test(
+      'prepared file target release is checked at $stage with owner allowed',
+      () async {
+        final server = P6Server()..missing = true;
+        addTearDown(server.api.close);
+        final arguments = p6Args('createFile');
+        final prepared = await server.writePort.prepare(
+          p6Request('createFile', arguments),
+        );
+        expect(prepared.bindingTargets, hasLength(1));
+        expect(prepared.bindingTargets.single.kind, AiTargetKind.file);
+        final h = await CoordHarness.create(responder: server.respond);
+        addTearDown(h.dispose);
+        final view = _MutableView({
+          'createFile': {
+            AiTargetKind.project,
+            if (revokeAfterDispatch) AiTargetKind.file,
+          },
+        });
+        final c = h.newCoordinator(
+          releasePolicy: view,
+          checkFragments: mr7FragmentChecker,
+        );
+        c.beginRun('Create src/a.txt in team/example-9.');
+        c.beginTurn();
+        final call = AiToolCall(
+          id: 'bound-file',
+          name: 'createFile',
+          arguments: {...arguments, 'reason': 'Requested new file.'},
+        );
+        final proposal = await c.propose(call);
+        if (revokeAfterDispatch) {
+          expect(proposal, isNotNull);
+          final entered = h.files.armBarrier(
+            writesBeforeBarrier: 1,
+            afterPersist: true,
+          );
+          final pending = c.approve(
+            proposal!,
+            typedName: proposal.tier.typedName,
+          );
+          await entered;
+          view.writeTargets = {
+            'createFile': {AiTargetKind.project},
+          };
+          h.files.releaseBarrier();
+          expect((await pending).state, AiJournalState.notExecuted);
+          expect(
+            h.journal.entries(coordAccount).single.state,
+            AiJournalState.notExecuted,
+          );
+        } else {
+          expect(proposal, isNull);
+          expect(c.recordedOutcomeFor(call.id)?.reasonCode, 'unknownOperation');
+          expect(h.journal.entries(coordAccount), isEmpty);
+        }
+        expect(view.allowsWrite('createFile', AiTargetKind.project), isTrue);
+        expect(view.allowsWrite('createFile', AiTargetKind.file), isFalse);
+        expect(h.freshnessReads, greaterThan(0));
+        expect(h.portCreations, 1);
+        expect(h.adapter.requests, isNotEmpty);
+        expect(server.mutations, 0);
+        c.stop('done');
+      },
+    );
+  }
 
   for (final removeTarget in [false, true]) {
     final label = removeTarget ? 'target kind' : 'operation';

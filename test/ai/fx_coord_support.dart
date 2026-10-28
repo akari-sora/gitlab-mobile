@@ -15,7 +15,7 @@ import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart'
-    show GitLabAiWritePort;
+    show AiGitLabWritePort, GitLabAiWritePort;
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
@@ -161,11 +161,14 @@ final class CoordHarness {
     String conversationId = 'fx-coord-conversation',
     AiReleasePolicyView? releasePolicy,
     AiCapabilityLedger? ledger,
+    AiWriteScope scope = coordScope,
+    AiGitLabWritePort Function()? portFactory,
+    AiWriteFragmentChecker? checkFragments,
   }) => PolicyAiWriteCoordinator(
     releasePolicy: releasePolicy ?? fixtureReleasePolicy,
     ledger: ledger,
     snapshot: () => AiWritePolicySnapshot(
-      scope: coordScope,
+      scope: scope,
       level: level,
       ceiling: AiAutonomyLevel.bypass,
       consentHash: 'consent-v2',
@@ -177,7 +180,8 @@ final class CoordHarness {
     ),
     createPort: () {
       portCreations++;
-      return GitLabAiWritePort(api, accountKey: coordAccount);
+      return portFactory?.call() ??
+          GitLabAiWritePort(api, accountKey: coordAccount);
     },
     journal: journal,
     conversationId: conversationId,
@@ -202,6 +206,7 @@ final class CoordHarness {
     safeDisplay: (value) => value,
     now: () => clock,
     attachments: attachments,
+    checkFragments: checkFragments,
   );
 
   /// Holds one picked file as `att-<n>`.
