@@ -7,6 +7,7 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _actorId = 'gid://gitlab/User/7';
 
@@ -102,6 +103,119 @@ Future<WorkItemNotificationTarget> _target(
 )).target!;
 
 void main() {
+  for (final failure in ['errors', 'schema', 'cancelled']) {
+    test('strict group notifications post-send $failure is uncertain', () async {
+      var sent = 0;
+      var current = true;
+      final adapter = FakeAdapter((request) {
+        if (!_mutation(request)) return jsonResponse(_read(group: true));
+        sent++;
+        if (failure == 'cancelled') current = false;
+        if (failure == 'schema') {
+          return jsonResponse({'errors': [{'extensions': {'code': 'undefinedField'}}]});
+        }
+        return jsonResponse({'data': {'workItemSubscribe': {'errors': ['refused']}}});
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final summary = _summary(group: true);
+      final strict = summary.withStrictGroupOwner(strictGroupOwner(api, summary));
+      final target = (await api.workItemNotifications(strict, expectedUserId: 7)).target!;
+      await expectLater(api.setWorkItemNotifications(target, subscribed: true, isCurrent: () => current), throwsA(_failure(FailureKind.writeUncertain)));
+      expect(sent, 1);
+    });
+  }
+
+  test('strict group notifications reject another API before any request', () async {
+    final first = testApi(FakeAdapter((_) => fail('unexpected request')));
+    final adapter = FakeAdapter((_) => fail('unexpected request'));
+    final second = testApi(adapter);
+    addTearDown(first.close);
+    addTearDown(second.close);
+    final summary = _summary(group: true);
+    final strict = summary.withStrictGroupOwner(strictGroupOwner(first, summary));
+    await expectLater(second.workItemNotifications(strict, expectedUserId: 7), throwsA(isA<ApiFailure>()));
+    expect(adapter.requests, isEmpty);
+  });
+  test('strict group notifications reject omitted project before noop', () async {
+    var reads = 0;
+    final adapter = FakeAdapter((_) {
+      reads++;
+      final response = _read(group: true);
+      if (reads == 2) {
+        ((response['data']! as Map)['workItem'] as Map).remove('project');
+      }
+      return jsonResponse(response);
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final summary = _summary(group: true);
+    final strict = summary.withStrictGroupOwner(strictGroupOwner(api, summary));
+    final target = (await api.workItemNotifications(strict, expectedUserId: 7)).target!;
+    await expectLater(api.setWorkItemNotifications(target, subscribed: false), throwsA(_failure(FailureKind.invalidResponse)));
+    expect(adapter.requests.where(_mutation), isEmpty);
+  });
+  for (final problem in ['exact', 'missing', 'project', 'namespace']) {
+    for (final phase in ['opening', 'preflight', 'ack', 'readback']) {
+      test('strict group notifications $problem at $phase', () async {
+        var reads = 0;
+        var sent = 0;
+        final adapter = FakeAdapter((request) {
+          if (_mutation(request)) {
+            sent++;
+            final response = _ack(group: true);
+            final data = response['data']! as Map;
+            final payload = data['workItemSubscribe'] as Map;
+            final item = payload['workItem'] as Map<String, Object?>;
+            if (phase == 'ack') corruptGroupOwner(item, problem);
+            return jsonResponse(response);
+          }
+          reads++;
+          final response = _read(group: true, widgets: [
+            {'type': 'NOTIFICATIONS', 'subscribed': reads >= 3},
+          ]);
+          final item = (response['data']! as Map)['workItem'] as Map<String, Object?>;
+          if ((phase == 'opening' && reads == 1) ||
+              (phase == 'preflight' && reads == 2) ||
+              (phase == 'readback' && reads == 3)) {
+            corruptGroupOwner(item, problem);
+          }
+          return jsonResponse(response);
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final summary = _summary(group: true);
+        final strict = summary.withStrictGroupOwner(strictGroupOwner(api, summary));
+        final opening = api.workItemNotifications(strict, expectedUserId: 7);
+        if (problem != 'exact' && phase == 'opening') {
+          await expectLater(opening, throwsA(_failure(FailureKind.invalidResponse)));
+        } else {
+          final target = (await opening).target!;
+          final result = api.setWorkItemNotifications(target, subscribed: true);
+          if (problem == 'exact') {
+            expect((await result).subscribed, isTrue);
+          } else {
+            final kind = phase == 'preflight'
+                ? FailureKind.invalidResponse : FailureKind.writeUncertain;
+            await expectLater(result, throwsA(_failure(kind)));
+          }
+        }
+        expect(sent, problem != 'exact' &&
+            (phase == 'opening' || phase == 'preflight') ? 0 : 1);
+      });
+    }
+  }
+
+  test('default group notifications accept omitted project', () async {
+    final response = _read(group: true);
+    final item = (response['data']! as Map)['workItem'] as Map<String, Object?>;
+    item.remove('project');
+    final adapter = FakeAdapter((_) => jsonResponse(response));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    expect((await api.workItemNotifications(_summary(group: true), expectedUserId: 7)).target, isNotNull);
+    expect(adapter.requests.where(_mutation), isEmpty);
+  });
   for (final group in [false, true]) {
     test('${group ? 'group' : 'project'} subscription uses exact desired state '
         'and confirms an independent same-actor readback', () async {

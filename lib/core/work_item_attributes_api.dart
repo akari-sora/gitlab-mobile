@@ -134,6 +134,7 @@ extension WorkItemAttributesApi on GitLabApi {
     WorkItemAttributeKind kind, {
     bool Function()? isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     _validateExpectedAttributeIdentity(expected);
     _requireCurrentWorkItemRequest(isCurrent);
     final response = await _read(
@@ -152,7 +153,7 @@ extension WorkItemAttributesApi on GitLabApi {
         throw const ApiFailure(FailureKind.invisible);
       }
       final node = objectJson(data['workItem']);
-      final identity = _parseAttributeIdentity(node);
+      final identity = _parseAttributeIdentity(node, expected: expected);
       _requireExpectedAttributeIdentity(identity, expected);
       final rawWidgets = node['widgets'];
       if (rawWidgets == null) {
@@ -230,7 +231,15 @@ void _validateExpectedAttributeIdentity(WorkItemGraphSummary expected) {
 }
 
 ({String id, int iid, GraphResourceRef? project, GraphResourceRef? namespace})
-_parseAttributeIdentity(Json node) {
+_parseAttributeIdentity(
+  Json node, {
+  WorkItemGraphSummary? expected,
+  VerifiedGroupWorkItemIdentity? strictGroupOwner,
+}) {
+  _requireStrictGroupWorkItemOwner(
+    node,
+    expected?.strictGroupOwner ?? strictGroupOwner,
+  );
   final id = requiredString(node, 'id');
   if (!_validOpaqueGraphId(id)) {
     throw const FormatException('Invalid work item identity');

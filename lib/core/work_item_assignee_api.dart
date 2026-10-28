@@ -195,6 +195,7 @@ extension WorkItemAssigneeApi on GitLabApi {
     int maxPages = _assigneeMaxPages,
   }) {
     _validateAssigneeMaxPages(maxPages);
+    _requireStrictGroupOwnerApi(this, detail.summary.strictGroupOwner);
     _validateAssigneeExpected(detail.summary, expectedUserId);
     return _readWorkItemAssignees(
       detail.summary,
@@ -379,7 +380,10 @@ extension WorkItemAssigneeApi on GitLabApi {
         throw const FormatException('Wrong assignee acknowledgement');
       }
     } on ApiFailure catch (failure) {
-      if (failure.kind == FailureKind.validation) rethrow;
+      if (target.summary.strictGroupOwner == null &&
+          failure.kind == FailureKind.validation) {
+        rethrow;
+      }
       throw _assigneesUncertain;
     } on Object {
       throw _assigneesUncertain;
@@ -662,7 +666,10 @@ _parseAssigneeReadPage(
       );
     }
     final node = objectJson(data['workItem']);
-    final summary = _parseWorkItemSummary(node);
+    final summary = _parseWorkItemSummary(
+      node,
+      strictGroupOwner: expected.strictGroupOwner,
+    );
     if (!_sameAssigneeIdentity(summary, expected)) {
       throw const FormatException('Wrong assignee identity');
     }
@@ -713,7 +720,10 @@ _parseAssigneeReadPage(
 })
 _parseAssigneeWidgetNode(Object? raw, WorkItemGraphSummary expected) {
   final node = objectJson(raw);
-  final summary = _parseWorkItemSummary(node);
+  final summary = _parseWorkItemSummary(
+    node,
+    strictGroupOwner: expected.strictGroupOwner,
+  );
   if (!_sameAssigneeIdentity(summary, expected)) {
     throw const FormatException('Wrong assignee identity');
   }

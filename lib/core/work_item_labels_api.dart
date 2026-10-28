@@ -181,6 +181,13 @@ mutation MobileUpdateWorkItemLabels($input: WorkItemUpdateInput!) {
 }
 ''';
 
+// Keep the UI document unchanged; AI group acknowledgements also select the
+// parent evidence already available on WorkItem in GitLab 18.11.
+final _strictGroupWorkItemLabelMutation = _workItemLabelMutation.replaceFirst(
+  'workItem { id updatedAt }',
+  'workItem { id iid updatedAt project { id fullPath } namespace { id fullPath } }',
+);
+
 enum _LabelReadRole { load, fence, confirm }
 
 final class WorkItemLabelAccess {
@@ -529,7 +536,9 @@ extension WorkItemLabelApi on GitLabApi {
         graphMutation: true,
         onSendStarted: () => didSend = true,
         data: {
-          'query': _workItemLabelMutation,
+          'query': target.opening.summary.strictGroupOwner == null
+              ? _workItemLabelMutation
+              : _strictGroupWorkItemLabelMutation,
           'variables': {'input': input},
         },
       );
@@ -548,9 +557,15 @@ extension WorkItemLabelApi on GitLabApi {
       acknowledged = _parseLabelAcknowledgement(
         response.bytes,
         target.opening.summary.id,
+        strictGroupOwner: target.opening.summary.strictGroupOwner,
       );
     } on ApiFailure catch (failure) {
-      throw WorkItemLabelWriteFailure(failure: failure, mutationSent: true);
+      throw WorkItemLabelWriteFailure(
+        failure: target.opening.summary.strictGroupOwner == null
+            ? failure
+            : _labelsUncertain,
+        mutationSent: true,
+      );
     } on Object {
       throw WorkItemLabelWriteFailure(
         failure: _labelsUncertain,
@@ -607,6 +622,7 @@ extension WorkItemLabelApi on GitLabApi {
     required int maxPages,
     DateTime? requiredUpdatedAt,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     if (expectedUserId <= 0 || generation < 0) {
       throw const ApiFailure(FailureKind.validation);
     }
@@ -834,7 +850,10 @@ _parseLabelPage(
   final actorId = _requiredLabelActor(data, expectedUserId);
   if (data['workItem'] == null) throw _labelsReadForbidden;
   final node = objectJson(data['workItem']);
-  final summary = _parseWorkItemSummary(node);
+  final summary = _parseWorkItemSummary(
+    node,
+    strictGroupOwner: expected.strictGroupOwner,
+  );
   if (!_sameLabelScope(summary, expected)) {
     throw role == _LabelReadRole.fence ? _labelsConflict : _labelsUnsupported;
   }
@@ -998,7 +1017,11 @@ String _requiredLabelActor(Json data, int expectedUserId) {
   return actorId;
 }
 
-DateTime _parseLabelAcknowledgement(Uint8List bytes, String workItemId) {
+DateTime _parseLabelAcknowledgement(
+  Uint8List bytes,
+  String workItemId, {
+  VerifiedGroupWorkItemIdentity? strictGroupOwner,
+}) {
   try {
     final envelope = objectJson(jsonDecode(utf8.decode(bytes)));
     final topErrors = envelope['errors'];
@@ -1025,6 +1048,7 @@ DateTime _parseLabelAcknowledgement(Uint8List bytes, String workItemId) {
     final item = payload['workItem'];
     if (item is! Map) throw _labelsUncertain;
     final node = objectJson(item);
+    _requireStrictGroupWorkItemOwner(node, strictGroupOwner);
     if (node['id'] != workItemId) throw _labelsUncertain;
     return _workItemTimestamp(node['updatedAt']);
   } on ApiFailure {

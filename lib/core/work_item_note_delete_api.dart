@@ -71,6 +71,7 @@ extension WorkItemActivityDeleteApi on GitLabApi {
     WorkItemActivityNote expectedNote, {
     bool Function()? isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     _validateExpectedAttributeIdentity(expected);
     _workItemActivityModelId(expected.id);
     if (expectedNote.system ||
@@ -205,7 +206,7 @@ extension WorkItemActivityDeleteApi on GitLabApi {
         throw const FormatException('Changed deletion readback actor');
       }
       _requireActivityIdentity(
-        _parseAttributeIdentity(objectJson(data['workItem'])),
+        _parseActivityIdentity(objectJson(data['workItem']), target._identity),
         target._identity,
       );
       if (!data.containsKey('note') || data['note'] != null) {

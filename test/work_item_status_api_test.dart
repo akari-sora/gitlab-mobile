@@ -13,6 +13,7 @@ import 'package:gitlab_mobile/core/work_item_status_models.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_status.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 import 'support/c2d7_barrier.dart';
 
 const _actorId = 'gid://gitlab/User/7';
@@ -282,6 +283,127 @@ WorkItemStatusMutationSent _handoff(List<Object> tokens) => (started) {
 };
 
 void main() {
+  for (final problem in ['exact', 'missing', 'project', 'namespace', 'payloadErrors', 'cancelled', 'schemaErrors']) {
+    for (final phase in ['opening', 'preflight', 'noop', 'ack', 'readback']) {
+      if (['payloadErrors', 'cancelled', 'schemaErrors'].contains(problem) && phase != 'ack') continue;
+      test('strict status $phase $problem validates raw group owner', () async {
+        var reads = 0;
+        var writes = 0;
+        var current = true;
+        final adapter = FakeAdapter((request) {
+          late Map<String, Object?> response;
+          late Map<String, Object?> item;
+          if (_isMutation(request)) {
+            writes++;
+            response = _ack(group: true);
+            item =
+                ((response['data'] as Map)['workItemUpdate'] as Map)['workItem']
+                    as Map<String, Object?>;
+            if (phase == 'ack') {
+              if (problem == 'payloadErrors') {
+                final payload = (response['data'] as Map)['workItemUpdate'] as Map;
+                payload['errors'] = ['rejected'];
+                payload.remove('workItem');
+              } else if (problem == 'cancelled') {
+                current = false;
+              } else if (problem == 'schemaErrors') {
+                response = {'errors': [{'message': 'unknown field', 'extensions': {'code': 'undefinedField'}}]};
+              } else {
+                corruptGroupOwner(item, problem);
+              }
+            }
+          } else {
+            reads++;
+            response = _read(
+              group: true,
+              updatedAt: reads < 3 ? _openedAt : _savedAt,
+              assignment: _status(reads < 3 ? _oldStatusId : _newStatusId),
+            );
+            item =
+                (response['data'] as Map)['workItem'] as Map<String, Object?>;
+            if ((phase == 'opening' && reads == 1) ||
+                ((phase == 'preflight' || phase == 'noop') && reads == 2) ||
+                (phase == 'readback' && reads == 3)) {
+              corruptGroupOwner(item, problem);
+            }
+          }
+          return jsonResponse(response);
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final opening = api.workItemStatus(
+          strictGroupDetail(api, _detail(group: true)),
+          expectedUserId: 7,
+          generation: 12,
+          isCurrent: () => current,
+        );
+        if (phase == 'opening' && problem != 'exact') {
+          await expectLater(opening, throwsA(isA<ApiFailure>()));
+          expect(writes, 0);
+          return;
+        }
+        final access = await opening;
+        if (phase == 'opening') return;
+        final save = api.updateWorkItemStatus(
+          access.target!,
+          candidateId: phase == 'noop' ? _oldStatusId : _newStatusId,
+          isCurrent: () => current,
+          onMutationSent: _handoff(<Object>[]),
+        );
+        if (problem == 'exact') {
+          expect(
+            (await save).status,
+            phase == 'noop'
+                ? WorkItemStatusSaveStatus.noop
+                : WorkItemStatusSaveStatus.success,
+          );
+        } else {
+          final post = phase == 'ack' || phase == 'readback';
+          await expectLater(
+            save,
+            throwsA(
+              isA<WorkItemStatusWriteFailure>()
+                  .having((e) => e.mutationSent, 'sent', post)
+                  .having(
+                    (e) => post
+                        ? e.failure.kind == FailureKind.writeUncertain
+                        : e.failure.kind != FailureKind.writeUncertain,
+                    'classification',
+                    isTrue,
+                  ),
+            ),
+          );
+        }
+        expect(
+          writes,
+          phase == 'noop' || (phase == 'preflight' && problem != 'exact')
+              ? 0
+              : 1,
+        );
+      });
+    }
+  }
+
+  test(
+    'default status accepts omitted project for group compatibility',
+    () async {
+      final item = _node(group: true)..remove('project');
+      final api = testApi(
+        FakeAdapter((_) => jsonResponse(_read(group: true, workItem: item))),
+      );
+      addTearDown(api.close);
+      expect(
+        (await api.workItemStatus(
+          _detail(group: true),
+          expectedUserId: 7,
+          generation: 12,
+          isCurrent: () => true,
+        )).target,
+        isNotNull,
+      );
+    },
+  );
+
   test('C2-D8 STATUS registers before the disk barrier', () async {
     final adapter = FakeAdapter((request) => jsonResponse(_read()));
     final api = testApi(adapter);
