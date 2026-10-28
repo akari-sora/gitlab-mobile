@@ -15,8 +15,10 @@ import 'package:gitlab_mobile/core/request_meter.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_context.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_page.dart' show aiOriginTitle;
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_scope_add.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 
 import '../support/fake_adapter.dart';
 import '../support/namespace_work_item_query.dart';
@@ -370,6 +372,28 @@ void main() {
       expect(adapter.requests.map((r) => r.method), ['GET', 'POST']);
     });
   }
+
+  // MR6b-3g full UI (§6.1): what the page says the conversation covers is
+  // what the context loaded: one group item, no project around it.
+  test('a group context covers exactly the item its title and scope line '
+      'name, with no project to read around it', () async {
+    final adapter = _groupAdapter();
+    final context = await _load(_groupOrigin, adapter);
+    final scope = context.groupScope!;
+    expect(context.scope, isNull);
+    expect((scope.groupId, scope.groupFullPath, scope.iid), (7, 'team/sub', 3));
+    expect(
+      aiOriginTitle(_groupOrigin, safe: (text) => text),
+      startsWith('${scope.groupFullPath} #${scope.iid} '),
+    );
+    final line = l10n.aiChatEmptyGroup(scope.groupFullPath, scope.iid);
+    expect(line, contains(scope.groupFullPath));
+    expect(line, contains('#${scope.iid}'));
+    // The project sentence ("other data from the same project") would be
+    // wrong here: there is no project.
+    expect(line, isNot(l10n.aiChatEmpty));
+    expect(adapter.requests.map((r) => r.method), ['GET', 'POST']);
+  });
 
   for (final missing in ['namespace', 'workItem']) {
     test('group strict context refuses missing root $missing', () async {
