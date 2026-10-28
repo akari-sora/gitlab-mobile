@@ -4,6 +4,7 @@ import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
+import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -12,10 +13,12 @@ import 'package:gitlab_mobile/features/ai/ai_chat_context.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_run_registry.dart';
+import 'package:gitlab_mobile/features/ai/ai_scope_add.dart';
 
 import '../support/fake_adapter.dart';
 import '../support/namespace_work_item_query.dart';
 import 'fx_coord_support.dart';
+import 'mr6b3g_support.dart' show G0eLedger;
 import 'p17_controller_support.dart' show p17ToolNames;
 
 const _group = GraphResourceRef(
@@ -84,6 +87,8 @@ void _configureGroup(
 }
 
 void main() {
+  group('user-added group item', _uiAddedOrigins);
+
   test('origins use numeric owner and entry keys, never paths or titles', () {
     expect(_groupOrigin.key, 'group-item:7:5');
     expect(_projectOrigin.key, 'group-page:7:project:42:workItem:5');
@@ -444,4 +449,218 @@ void main() {
       );
     }
   }
+}
+
+/// U-add next to a group-page entry: two groups answer the same iid 5.
+void _configureTwoGroups(StackServer server) {
+  _configureGroup(server);
+  const groups = {
+    'team/sub': (id: 7, item: 'gid://gitlab/WorkItem/91'),
+    'team/other': (id: 8, item: 'gid://gitlab/WorkItem/95'),
+  };
+  server.overrides['POST '] = (request) {
+    final body = request.data! as Map<String, Object?>;
+    expect(body['query'], namespaceWorkItemQuery);
+    final variables = body['variables']! as Map<String, Object?>;
+    final path = variables['path']! as String;
+    expect(variables['iid'], '5');
+    final group = groups[path]!;
+    final gid = 'gid://gitlab/Group/${group.id}';
+    return jsonResponse({
+      'data': {
+        'namespace': {
+          'id': gid,
+          'fullPath': path,
+          'workItem': {
+            'id': group.item,
+            'iid': '5',
+            'title': 'Item of $path',
+            'state': 'OPEN',
+            'createdAt': '2026-10-01T00:00:00Z',
+            'updatedAt': '2026-10-02T00:00:00Z',
+            'project': null,
+            'namespace': {'id': gid, 'fullPath': path},
+            'workItemType': {
+              'id': 'gid://gitlab/WorkItems::Type/1',
+              'name': 'Task',
+            },
+            'widgets': <Object?>[],
+          },
+        },
+      },
+    });
+  };
+  for (final MapEntry(key: path, value: group) in groups.entries) {
+    server.overrides['GET groups/$path'] = (_) => jsonResponse({
+      'id': group.id,
+      'name': path,
+      'full_path': path,
+      'visibility': 'private',
+    });
+    server.overrides['GET groups/${group.id}'] = (_) => jsonResponse({
+      'id': group.id,
+      'full_path': path,
+      'visibility': 'private',
+    });
+  }
+}
+
+void _uiAddedOrigins() {
+  AiTargetRef target(
+    int groupId,
+    String path,
+    String gid,
+    AiTargetOrigin origin,
+  ) => AiTargetRef(
+    kind: AiTargetKind.groupWorkItem,
+    side: AiResourceSide.group,
+    groupId: groupId,
+    groupFullPath: path,
+    iid: 5,
+    workItemGid: gid,
+    origin: origin,
+  );
+
+  test('a group entry keeps its own grant; a user-added same-iid item in '
+      'another group is a separate grant', () async {
+    aiGroupWorkItemWritesEnabledForTesting = true;
+    addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+    final h = await StackHarness.create(
+      origin: _groupOrigin,
+      level: AiAutonomyLevel.bypass,
+      configure: _configureTwoGroups,
+    );
+    addTearDown(h.dispose);
+    final controller = h.controller;
+    expect(controller.offersGroupWorkItemAdd, isTrue);
+    // The entry's own item is already in scope; it is not added twice.
+    final own = await controller.checkGroupWorkItem(
+      'https://example.com/gitlab/groups/team/sub/-/work_items/5',
+    );
+    expect(
+      (own as AiGroupWorkItemRefused).reason,
+      AiGroupWorkItemRefusal.alreadyInScope,
+    );
+    final other = await controller.checkGroupWorkItem(
+      'https://example.com/gitlab/groups/team/other/-/work_items/5',
+    );
+    expect(
+      await controller.addGroupWorkItem(other as AiGroupWorkItemCandidate),
+      isNull,
+    );
+    final scope = controller.writePolicySnapshot!.scope;
+    expect(
+      [
+        for (final grant in scope.grants)
+          (grant.kind, grant.groupId, grant.groupFullPath, grant.iid),
+      ],
+      [
+        (AiScopeKind.groupWorkItem, 7, 'team/sub', 5),
+        (AiScopeKind.groupWorkItem, 8, 'team/other', 5),
+      ],
+    );
+    expect(
+      [for (final identity in scope.uiAddedGroupWorkItems) identity.groupId],
+      [8],
+    );
+    expect(controller.origin.key, 'group-item:7:5');
+    expect(controller.writePolicySnapshot!.currentResource!.groupId, 7);
+    final capability = const G0eLedger().find('updateGroupWorkItemState')!;
+    const item91 = 'gid://gitlab/WorkItem/91';
+    const item95 = 'gid://gitlab/WorkItem/95';
+    expect(
+      scopeAdmits(
+        scope,
+        capability,
+        target(8, 'team/other', item95, AiTargetOrigin.uiAdded),
+      ),
+      isTrue,
+    );
+    // The entry's item keeps its own authority and never borrows the
+    // user-added one, and the added identity never covers the entry's.
+    expect(
+      scopeAdmits(
+        scope,
+        capability,
+        target(7, 'team/sub', item91, AiTargetOrigin.currentResource),
+      ),
+      isTrue,
+    );
+    expect(
+      scopeAdmits(
+        scope,
+        capability,
+        target(7, 'team/sub', item91, AiTargetOrigin.uiAdded),
+      ),
+      isFalse,
+    );
+    expect(
+      scopeAdmits(
+        scope,
+        capability,
+        target(8, 'team/other', item91, AiTargetOrigin.uiAdded),
+      ),
+      isFalse,
+    );
+
+    controller.removeGroupWorkItem(controller.addedGroupWorkItems.single);
+    final narrowed = controller.writePolicySnapshot!.scope;
+    expect(narrowed.uiAddedGroupWorkItems, isEmpty);
+    expect(
+      [for (final grant in narrowed.grants) (grant.groupId, grant.iid)],
+      [(7, 5)],
+    );
+  });
+
+  test(
+    'a project item from a group page never widens to its project or group',
+    () async {
+      final h = await StackHarness.create(
+        origin: _projectOrigin,
+        level: AiAutonomyLevel.bypass,
+        configure: _configureTwoGroups,
+      );
+      addTearDown(h.dispose);
+      final check = await h.controller.checkGroupWorkItem(
+        'https://example.com/gitlab/groups/team/sub/-/work_items/5',
+      );
+      expect(
+        await h.controller.addGroupWorkItem(check as AiGroupWorkItemCandidate),
+        isNull,
+      );
+      final scope = h.controller.writePolicySnapshot!.scope;
+      expect(
+        [
+          for (final grant in scope.grants)
+            (
+              grant.kind,
+              grant.projectId,
+              grant.groupId,
+              grant.groupFullPath,
+              grant.iid,
+            ),
+        ],
+        [
+          (AiScopeKind.workItem, 42, null, null, 5),
+          (AiScopeKind.groupWorkItem, null, 7, 'team/sub', 5),
+        ],
+      );
+      expect(
+        scope.grants.where(
+          (grant) =>
+              grant.kind == AiScopeKind.project ||
+              grant.kind == AiScopeKind.accountGlobal,
+        ),
+        isEmpty,
+      );
+      // The project's own link stays a project link: never added here.
+      final project = await h.controller.checkGroupWorkItem(
+        'https://example.com/gitlab/studio/mobile-workspace/-/work_items/5',
+      );
+      expect(
+        (project as AiGroupWorkItemRefused).reason,
+        AiGroupWorkItemRefusal.projectLink,
+      );
+    },
+  );
 }
