@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "AI का बैकग्राउंड काम",
   "aiRunServiceTitle": "AI सहायक काम कर रहा है",
   "aiRunServiceText": "आप ऐप छोड़ सकते हैं; काम चलता रहेगा।",
+  "aiRunServiceStopAll": "सब रोकें",
   "aiNotConfigured": "कॉन्फ़िगर नहीं किया गया",
   "aiProvidersHeading": "प्रदाता",
   "aiAddProvider": "प्रदाता जोड़ें",

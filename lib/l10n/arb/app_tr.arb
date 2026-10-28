@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "Arka planda AI çalışması",
   "aiRunServiceTitle": "AI asistanı çalışıyor",
   "aiRunServiceText": "Uygulamadan çıkabilirsiniz; çalışma devam eder.",
+  "aiRunServiceStopAll": "Tümünü durdur",
   "aiNotConfigured": "Yapılandırılmadı",
   "aiProvidersHeading": "Sağlayıcılar",
   "aiAddProvider": "Sağlayıcı ekle",

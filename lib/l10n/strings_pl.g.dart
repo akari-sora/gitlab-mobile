@@ -2122,6 +2122,7 @@ const _messagesPl = <String>[
   'Praca AI w tle',
   'Asystent AI pracuje',
   'Możesz opuścić aplikację; praca będzie kontynuowana.',
+  'Zatrzymaj wszystko',
   'Nie skonfigurowano',
   'Dostawcy',
   'Dodaj dostawcę',

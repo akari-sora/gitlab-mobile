@@ -2122,6 +2122,7 @@ const _messagesPtBr = <String>[
   'Trabalho de IA em segundo plano',
   'O assistente de IA está trabalhando',
   'Você pode sair do app; o trabalho continua.',
+  'Parar tudo',
   'Não configurado',
   'Provedores',
   'Adicionar provedor',

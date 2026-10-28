@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "Práce AI na pozadí",
   "aiRunServiceTitle": "Asistent AI pracuje",
   "aiRunServiceText": "Aplikaci můžete opustit, práce bude pokračovat.",
+  "aiRunServiceStopAll": "Zastavit vše",
   "aiNotConfigured": "Nenakonfigurováno",
   "aiProvidersHeading": "Poskytovatelé",
   "aiAddProvider": "Přidat poskytovatele",
