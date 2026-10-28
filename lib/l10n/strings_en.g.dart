@@ -2812,4 +2812,7 @@ const _messagesEn = <String>[
   'This write was not made: background work could not start.',
   'Work paused: it is not yet confirmed that the background work has ended, and nothing can continue until it is.',
   'This is checked again the next time you return to the app; after that you can send a new message.',
+  'AI writes were interrupted',
+  'When the app last closed, {count} AI writes had not confirmed their result. They are not sent again automatically, and the AI work does not resume. Check in GitLab whether these changes were made; if the AI proposes the same write later, you will be asked to confirm it first.',
+  'Got it',
 ];

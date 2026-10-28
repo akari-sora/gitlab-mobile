@@ -8523,4 +8523,13 @@ final class AppStrings {
 
   /// 下次回到應用程式時會再確認；確認後可以傳送新訊息。
   String get aiRunCleanupRetry => language._messages[2809];
+
+  /// AI 寫入被中斷
+  String get aiRecoveryTitle => language._messages[2810];
+
+  /// 應用程式上次關閉時，有 {count} 筆 AI 寫入還沒確認結果。它們不會自動重新送出，相關的 AI 工作也不會恢復。請到 GitLab 查看這些變更是否已經完成；AI 之後若提出相同的寫入，會先請你確認。
+  String aiRecoveryInterrupted(Object? count) => _format(language, language._messages[2811], {'count': count});
+
+  /// 知道了
+  String get aiRecoveryOk => language._messages[2812];
 }

@@ -2812,4 +2812,7 @@ const _messagesId = <String>[
   'Penulisan ini tidak dilakukan: pekerjaan latar belakang tidak dapat dimulai.',
   'Pekerjaan dijeda: belum dipastikan bahwa pekerjaan latar belakang telah berakhir, dan tidak ada yang dapat dilanjutkan sebelum itu.',
   'Ini akan diperiksa lagi saat Anda kembali ke aplikasi berikutnya; setelah itu Anda dapat mengirim pesan baru.',
+  'Penulisan AI terputus',
+  'Saat aplikasi terakhir ditutup, hasil {count} penulisan AI belum dipastikan. Penulisan itu tidak dikirim ulang secara otomatis, dan pekerjaan AI tidak dilanjutkan. Periksa di GitLab apakah perubahan ini sudah dibuat; jika nanti AI mengusulkan penulisan yang sama, Anda akan diminta mengonfirmasinya terlebih dahulu.',
+  'Mengerti',
 ];

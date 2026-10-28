@@ -2812,4 +2812,7 @@ const _messagesRo = <String>[
   'Această scriere nu a fost făcută: lucrul în fundal nu a putut porni.',
   'Lucru întrerupt temporar: încă nu s-a confirmat că lucrul în fundal s-a încheiat, iar până atunci nu se poate continua.',
   'Se va verifica din nou data viitoare când revii în aplicație; apoi poți trimite un mesaj nou.',
+  'Scrieri AI întrerupte',
+  'Când aplicația s-a închis ultima dată, {count} scrieri AI nu își confirmaseră rezultatul. Nu sunt retrimise automat, iar lucrul AI nu este reluat. Verifică în GitLab dacă aceste modificări au fost făcute; dacă AI propune mai târziu aceeași scriere, ți se va cere mai întâi confirmarea.',
+  'Am înțeles',
 ];

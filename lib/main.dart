@@ -22,6 +22,7 @@ import 'features/ai/ai_scope.dart';
 import 'features/ai/ai_settings_provider.dart';
 import 'features/ai/ai_stores.dart';
 import 'features/ai/ai_write_journal.dart';
+import 'features/ai/ai_recovery_notice.dart';
 import 'features/shell/app_shortcuts.dart';
 import 'features/auth/session_controller.dart';
 import 'features/cache/read_cache_disk_coordinator.dart';
@@ -424,6 +425,8 @@ Future<void> recoverAiWriteJournalAfterAccountsLoaded(
     _journalRecoveryTails[journal] = tail;
     try {
       await recovery;
+      // Lets the signed-in shell read this pass's recovery summaries.
+      markAiJournalRecovered(journal);
     } on Object {
       return;
     } finally {

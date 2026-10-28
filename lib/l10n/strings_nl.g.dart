@@ -2812,4 +2812,7 @@ const _messagesNl = <String>[
   'Deze schrijfactie is niet uitgevoerd: het werk op de achtergrond kon niet starten.',
   'Werk gepauzeerd: het is nog niet bevestigd dat het werk op de achtergrond is beëindigd, en tot die tijd kan niets doorgaan.',
   'Dit wordt opnieuw gecontroleerd wanneer je de volgende keer naar de app terugkeert; daarna kun je een nieuw bericht sturen.',
+  'AI-schrijfacties zijn onderbroken',
+  'Toen de app de laatste keer sloot, hadden {count} AI-schrijfacties hun resultaat niet bevestigd. Ze worden niet automatisch opnieuw verstuurd en het AI-werk wordt niet hervat. Controleer in GitLab of deze wijzigingen zijn doorgevoerd; stelt de AI later dezelfde schrijfactie voor, dan wordt je eerst om bevestiging gevraagd.',
+  'Begrepen',
 ];

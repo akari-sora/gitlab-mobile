@@ -2812,4 +2812,7 @@ const _messagesIt = <String>[
   'Questa scrittura non è stata eseguita: il lavoro in background non è potuto partire.',
   'Lavoro in pausa: non è ancora confermato che il lavoro in background sia terminato, e fino ad allora non si può continuare.',
   'Verrà ricontrollato la prossima volta che torni nell’app; dopo potrai inviare un nuovo messaggio.',
+  'Scritture AI interrotte',
+  'All’ultima chiusura dell’app, {count} scritture AI non avevano confermato il risultato. Non vengono inviate di nuovo automaticamente e il lavoro AI non riprende. Controlla in GitLab se queste modifiche sono state fatte; se in seguito la AI propone la stessa scrittura, ti verrà chiesto prima di confermarla.',
+  'Ho capito',
 ];

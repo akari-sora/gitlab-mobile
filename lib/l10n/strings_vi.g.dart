@@ -2812,4 +2812,7 @@ const _messagesVi = <String>[
   'Lần ghi này chưa được thực hiện: không thể khởi động tác vụ chạy nền.',
   'Đã tạm dừng công việc: chưa xác nhận được tác vụ chạy nền đã kết thúc, và chưa thể tiếp tục cho đến khi xác nhận.',
   'Việc này sẽ được kiểm tra lại vào lần tới bạn quay lại ứng dụng; sau đó bạn có thể gửi tin nhắn mới.',
+  'Các lần ghi của AI bị gián đoạn',
+  'Khi ứng dụng đóng lần trước, {count} lần ghi của AI chưa xác nhận được kết quả. Chúng sẽ không tự động được gửi lại và công việc của AI sẽ không tiếp tục. Hãy kiểm tra trên GitLab xem các thay đổi này đã được thực hiện chưa; nếu sau này AI đề xuất đúng lần ghi đó, bạn sẽ được yêu cầu xác nhận trước.',
+  'Đã hiểu',
 ];

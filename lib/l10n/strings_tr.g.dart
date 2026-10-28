@@ -2812,4 +2812,7 @@ const _messagesTr = <String>[
   'Bu yazma yapılmadı: arka plan çalışması başlatılamadı.',
   'Çalışma duraklatıldı: arka plan çalışmasının bittiği henüz doğrulanmadı ve o zamana kadar devam edilemez.',
   'Uygulamaya bir sonraki dönüşünüzde yeniden denetlenir; ardından yeni bir mesaj gönderebilirsiniz.',
+  'AI yazmaları kesintiye uğradı',
+  'Uygulama son kapandığında {count} AI yazmasının sonucu doğrulanmamıştı. Bunlar otomatik olarak yeniden gönderilmez ve AI çalışması devam etmez. Bu değişikliklerin yapılıp yapılmadığını GitLab’de kontrol edin; AI daha sonra aynı yazmayı önerirse önce onayınız istenir.',
+  'Anladım',
 ];

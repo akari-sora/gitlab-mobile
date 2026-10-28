@@ -2812,4 +2812,7 @@ const _messagesCs = <String>[
   'Tento zápis nebyl proveden: práci na pozadí se nepodařilo spustit.',
   'Práce pozastavena: zatím není potvrzeno, že práce na pozadí skončila, a do té doby nelze pokračovat.',
   'Znovu se to ověří, až se příště vrátíte do aplikace; potom můžete poslat novou zprávu.',
+  'Zápisy AI byly přerušeny',
+  'Když se aplikace naposledy zavřela, u {count} zápisů AI nebyl potvrzen výsledek. Automaticky se znovu neodešlou a práce AI nebude pokračovat. Ověřte v GitLabu, zda byly tyto změny provedeny; pokud AI později navrhne stejný zápis, nejprve vás požádáme o potvrzení.',
+  'Rozumím',
 ];

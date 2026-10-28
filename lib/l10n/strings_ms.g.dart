@@ -2812,4 +2812,7 @@ const _messagesMs = <String>[
   'Penulisan ini tidak dibuat: kerja latar belakang tidak dapat dimulakan.',
   'Kerja dijeda: belum disahkan bahawa kerja latar belakang telah tamat, dan tiada apa yang boleh diteruskan sebelum itu.',
   'Ini akan disemak semula apabila anda kembali ke apl kali seterusnya; selepas itu anda boleh menghantar mesej baharu.',
+  'Penulisan AI terganggu',
+  'Semasa apl ditutup kali terakhir, keputusan {count} penulisan AI belum disahkan. Penulisan itu tidak dihantar semula secara automatik dan kerja AI tidak disambung. Semak dalam GitLab sama ada perubahan ini telah dibuat; jika AI mencadangkan penulisan yang sama kemudian, anda akan diminta mengesahkannya dahulu.',
+  'Faham',
 ];

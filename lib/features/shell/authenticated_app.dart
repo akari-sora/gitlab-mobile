@@ -18,12 +18,13 @@ import '../auth/session_controller.dart';
 import '../ai/ai_account_removal.dart';
 import '../ai/ai_chat_page.dart' show openAiChatSession;
 import '../ai/ai_background_execution.dart';
+import '../ai/ai_recovery_notice.dart';
+import '../ai/ai_write_journal.dart';
 import '../ai/ai_chat_session.dart';
 import '../ai/ai_run_notification_ui.dart';
 import '../ai/ai_run_registry.dart';
 import '../ai/ai_scope.dart';
 import '../ai/ai_settings_page.dart';
-import '../ai/ai_write_journal.dart';
 import '../workspace/activity_page.dart';
 import '../workspace/groups_page.dart';
 import '../workspace/project_page.dart';
@@ -62,6 +63,7 @@ class AuthenticatedApp extends StatefulWidget {
     this.aiSessionFactory,
     this.runNotifications,
     this.aiRunsChannel,
+    this.writeJournal,
   });
   final SessionController session;
   final AppearanceController appearance;
@@ -93,6 +95,11 @@ class AuthenticatedApp extends StatefulWidget {
   /// platform's.
   @visibleForTesting
   final MethodChannel? aiRunsChannel;
+
+  /// The journal whose start-up recovery the shell reports; tests pass their
+  /// own, the app uses [AiWriteJournal.instance].
+  @visibleForTesting
+  final AiWriteJournal? writeJournal;
   final LauncherShortcuts shortcuts;
   final ColorScheme? dynamicLight;
   final ColorScheme? dynamicDark;
@@ -258,6 +265,19 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
     return _aiRegistry = registry;
   }
 
+  /// Above the shell, under the navigator: a start-up recovery notice for
+  /// the signed-in account opens as a dialog over Home.
+  Widget _recoveryNotice(Widget shell) {
+    final accountKey = widget.session.active?.key;
+    if (accountKey == null) return shell;
+    return AiRecoveryNotice(
+      journal: widget.writeJournal ?? AiWriteJournal.instance,
+      accountKey: accountKey,
+      lock: widget.lock,
+      child: shell,
+    );
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.appearance,
@@ -299,7 +319,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
           supportedLocales: appLocales,
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           navigatorObservers: [_pops],
-          home: _MobileShell(
+          home: _recoveryNotice(_MobileShell(
             session: widget.session,
             shortcuts: widget.shortcuts,
             pops: _pops,
@@ -318,7 +338,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             runNotifications: widget.ai == null
                 ? null
                 : widget.runNotifications,
-          ),
+          )),
         );
         final ai = widget.ai;
         final accountKey = widget.session.active?.key;

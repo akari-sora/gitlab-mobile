@@ -2809,5 +2809,8 @@
   "aiRunStartUnavailable": "Le travail en arrière-plan est indisponible pour le moment.",
   "aiProposalBackgroundUnavailable": "Cette écriture n’a pas été effectuée : le travail en arrière-plan n’a pas pu démarrer.",
   "aiRunCleanupPending": "Travail en pause : la fin du travail en arrière-plan n’est pas encore confirmée, et rien ne peut continuer d’ici là.",
-  "aiRunCleanupRetry": "Cela sera vérifié de nouveau la prochaine fois que vous reviendrez dans l’app ; vous pourrez ensuite envoyer un nouveau message."
+  "aiRunCleanupRetry": "Cela sera vérifié de nouveau la prochaine fois que vous reviendrez dans l’app ; vous pourrez ensuite envoyer un nouveau message.",
+  "aiRecoveryTitle": "Des écritures AI ont été interrompues",
+  "aiRecoveryInterrupted": "À la dernière fermeture de l’app, {count} écritures AI n’avaient pas confirmé leur résultat. Elles ne sont pas renvoyées automatiquement et le travail AI ne reprend pas. Vérifiez dans GitLab si ces modifications ont été faites ; si l’AI propose plus tard la même écriture, une confirmation vous sera d’abord demandée.",
+  "aiRecoveryOk": "Compris"
 }

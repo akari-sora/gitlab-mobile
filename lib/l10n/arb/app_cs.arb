@@ -2809,5 +2809,8 @@
   "aiRunStartUnavailable": "Práce na pozadí teď není k dispozici.",
   "aiProposalBackgroundUnavailable": "Tento zápis nebyl proveden: práci na pozadí se nepodařilo spustit.",
   "aiRunCleanupPending": "Práce pozastavena: zatím není potvrzeno, že práce na pozadí skončila, a do té doby nelze pokračovat.",
-  "aiRunCleanupRetry": "Znovu se to ověří, až se příště vrátíte do aplikace; potom můžete poslat novou zprávu."
+  "aiRunCleanupRetry": "Znovu se to ověří, až se příště vrátíte do aplikace; potom můžete poslat novou zprávu.",
+  "aiRecoveryTitle": "Zápisy AI byly přerušeny",
+  "aiRecoveryInterrupted": "Když se aplikace naposledy zavřela, u {count} zápisů AI nebyl potvrzen výsledek. Automaticky se znovu neodešlou a práce AI nebude pokračovat. Ověřte v GitLabu, zda byly tyto změny provedeny; pokud AI později navrhne stejný zápis, nejprve vás požádáme o potvrzení.",
+  "aiRecoveryOk": "Rozumím"
 }

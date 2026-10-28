@@ -2812,4 +2812,7 @@ const _messagesEs = <String>[
   'Esta escritura no se realizó: el trabajo en segundo plano no pudo iniciarse.',
   'Trabajo en pausa: aún no se ha confirmado que el trabajo en segundo plano terminó, y no se puede continuar hasta entonces.',
   'Se comprobará de nuevo la próxima vez que vuelvas a la app; después podrás enviar un mensaje nuevo.',
+  'Se interrumpieron escrituras de AI',
+  'Cuando la app se cerró por última vez, {count} escrituras de AI no habían confirmado su resultado. No se vuelven a enviar automáticamente y el trabajo de AI no se reanuda. Comprueba en GitLab si se hicieron estos cambios; si la AI propone la misma escritura más adelante, se te pedirá que la confirmes primero.',
+  'Entendido',
 ];

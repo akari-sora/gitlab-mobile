@@ -2809,5 +2809,8 @@
   "aiRunStartUnavailable": "Kerja latar belakang tidak tersedia sekarang.",
   "aiProposalBackgroundUnavailable": "Penulisan ini tidak dibuat: kerja latar belakang tidak dapat dimulakan.",
   "aiRunCleanupPending": "Kerja dijeda: belum disahkan bahawa kerja latar belakang telah tamat, dan tiada apa yang boleh diteruskan sebelum itu.",
-  "aiRunCleanupRetry": "Ini akan disemak semula apabila anda kembali ke apl kali seterusnya; selepas itu anda boleh menghantar mesej baharu."
+  "aiRunCleanupRetry": "Ini akan disemak semula apabila anda kembali ke apl kali seterusnya; selepas itu anda boleh menghantar mesej baharu.",
+  "aiRecoveryTitle": "Penulisan AI terganggu",
+  "aiRecoveryInterrupted": "Semasa apl ditutup kali terakhir, keputusan {count} penulisan AI belum disahkan. Penulisan itu tidak dihantar semula secara automatik dan kerja AI tidak disambung. Semak dalam GitLab sama ada perubahan ini telah dibuat; jika AI mencadangkan penulisan yang sama kemudian, anda akan diminta mengesahkannya dahulu.",
+  "aiRecoveryOk": "Faham"
 }

@@ -2812,4 +2812,7 @@ const _messagesFr = <String>[
   'Cette écriture n’a pas été effectuée : le travail en arrière-plan n’a pas pu démarrer.',
   'Travail en pause : la fin du travail en arrière-plan n’est pas encore confirmée, et rien ne peut continuer d’ici là.',
   'Cela sera vérifié de nouveau la prochaine fois que vous reviendrez dans l’app ; vous pourrez ensuite envoyer un nouveau message.',
+  'Des écritures AI ont été interrompues',
+  'À la dernière fermeture de l’app, {count} écritures AI n’avaient pas confirmé leur résultat. Elles ne sont pas renvoyées automatiquement et le travail AI ne reprend pas. Vérifiez dans GitLab si ces modifications ont été faites ; si l’AI propose plus tard la même écriture, une confirmation vous sera d’abord demandée.',
+  'Compris',
 ];

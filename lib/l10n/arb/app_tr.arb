@@ -2809,5 +2809,8 @@
   "aiRunStartUnavailable": "Arka plan çalışması şu anda kullanılamıyor.",
   "aiProposalBackgroundUnavailable": "Bu yazma yapılmadı: arka plan çalışması başlatılamadı.",
   "aiRunCleanupPending": "Çalışma duraklatıldı: arka plan çalışmasının bittiği henüz doğrulanmadı ve o zamana kadar devam edilemez.",
-  "aiRunCleanupRetry": "Uygulamaya bir sonraki dönüşünüzde yeniden denetlenir; ardından yeni bir mesaj gönderebilirsiniz."
+  "aiRunCleanupRetry": "Uygulamaya bir sonraki dönüşünüzde yeniden denetlenir; ardından yeni bir mesaj gönderebilirsiniz.",
+  "aiRecoveryTitle": "AI yazmaları kesintiye uğradı",
+  "aiRecoveryInterrupted": "Uygulama son kapandığında {count} AI yazmasının sonucu doğrulanmamıştı. Bunlar otomatik olarak yeniden gönderilmez ve AI çalışması devam etmez. Bu değişikliklerin yapılıp yapılmadığını GitLab’de kontrol edin; AI daha sonra aynı yazmayı önerirse önce onayınız istenir.",
+  "aiRecoveryOk": "Anladım"
 }
