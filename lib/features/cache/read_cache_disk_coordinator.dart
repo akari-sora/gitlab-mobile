@@ -144,7 +144,13 @@ final class ReadCacheDiskCoordinator {
   bool get startupRecovered => _domain.recovered;
   bool get controlsInstalled => _domain.controlsInstalled;
   String? get diskRetainedAccountKey => _domain.diskRetainedAccountKey;
-  ReadCacheDiskState state(String accountKey) => _account(accountKey).state;
+  ReadCacheDiskState state(String accountKey) {
+    final account = _account(accountKey);
+    return account.offlineRefusalBlocked && !account.cleanup
+        ? ReadCacheDiskState.unavailable
+        : account.state;
+  }
+
   ReadCacheNotice? notice(DiskBinding binding) => _notices[binding];
   List<ReadCacheNotice> get signedOutNotices =>
       List.unmodifiable(_signedOut.values);
@@ -228,6 +234,7 @@ final class ReadCacheDiskCoordinator {
         ),
       );
     }
+    if (_account(accountKey).offlineRefusalBlocked) return true;
     final result = await _keys!.readOfflineRefusal(accountKey);
     if (result.status == ReadCacheStoreReadStatus.unavailable) {
       throw ReadCacheStoreException(result.failure!);
@@ -247,7 +254,7 @@ final class ReadCacheDiskCoordinator {
     return _keys!.writeOfflineRefusal(accountKey, when);
   }
 
-  Future<void> deleteOfflineRefused(String accountKey) {
+  Future<void> deleteOfflineRefused(String accountKey) async {
     if (!configured) {
       throw const ReadCacheStoreException(
         ReadCacheStoreFailure(
@@ -256,7 +263,22 @@ final class ReadCacheDiskCoordinator {
         ),
       );
     }
-    return _keys!.deleteOfflineRefusal(accountKey);
+    final account = _account(accountKey);
+    account.offlineRefusalDeletes++;
+    try {
+      await _keys!.deleteOfflineRefusal(accountKey);
+      account.offlineRefusalPending = false;
+    } on Object {
+      // Delete may have succeeded before readback failed. Keep treating the
+      // marker as present until a later verified removal succeeds.
+      account.offlineRefusalPending = true;
+      account.epoch++;
+      _dropQueue(account);
+      (_domain.namespace ?? _domain.pendingOfflineNamespace)?.fence(accountKey);
+      rethrow;
+    } finally {
+      account.offlineRefusalDeletes--;
+    }
   }
 
   /// Bind C3's HTTP sinks now; join B4 only when disk activation can open it.
@@ -373,6 +395,7 @@ final class ReadCacheDiskCoordinator {
         !deviceOffPending &&
         _domain.preferenceChanges == 0 &&
         diskRetainedAccountKey == accountKey &&
+        !account.offlineRefusalBlocked &&
         account.state == ReadCacheDiskState.closed &&
         account.epoch == epoch &&
         account.intent?.accountWide != true;
@@ -422,10 +445,20 @@ final class ReadCacheDiskCoordinator {
       if (index == null) return null;
       var complete = false;
       for (final record in index.snapshots) {
-        if (record.status == SnapshotStatus.complete &&
-            await store.readTree(record) != null) {
-          complete = true;
-          break;
+        if (record.status != SnapshotStatus.complete) continue;
+        try {
+          if (await store.readTree(record) != null) {
+            complete = true;
+            break;
+          }
+        } on SnapshotStoreException catch (error) {
+          if (error.code != SnapshotStoreError.corrupt &&
+              error.code != SnapshotStoreError.authenticationFailed &&
+              error.code != SnapshotStoreError.tooLarge) {
+            rethrow;
+          }
+        } on SnapshotSchemaException catch (error) {
+          if (error.code == SnapshotSchemaError.newerSchema) rethrow;
         }
       }
       if (!complete) return null;
@@ -730,6 +763,7 @@ final class ReadCacheDiskCoordinator {
       _domain.recovered &&
       _domain.setting == ReadCacheSettingsState.enabled &&
       _domain.active == binding &&
+      !_account(binding.accountKey).offlineRefusalBlocked &&
       !_account(binding.accountKey).cleanup;
 
   bool _ready(DiskBinding binding) =>
@@ -2827,6 +2861,10 @@ final class _Account {
   bool cleanup = false, indexTrusted = false;
   bool indexDirty = false, flushForced = false;
   bool clearComplete = false;
+  bool offlineRefusalPending = false;
+  int offlineRefusalDeletes = 0;
+  bool get offlineRefusalBlocked =>
+      offlineRefusalPending || offlineRefusalDeletes > 0;
   DiskBinding? sessionFence;
   int indexRevision = 0;
   final invalidations = <DiskInvalidation>{};

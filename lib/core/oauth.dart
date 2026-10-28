@@ -121,6 +121,11 @@ String authorizationCodeFromCallback(
   return code;
 }
 
+/// Only a bounded, verified token-endpoint `invalid_grant` establishes refusal.
+final class OAuthRefreshRefused implements Exception {
+  const OAuthRefreshRefused();
+}
+
 final class OAuthTokenClient {
   OAuthTokenClient({required this.instance, required this.clientId, Dio? dio})
     : _dio = dio ?? Dio() {
@@ -230,7 +235,7 @@ final class OAuthTokenClient {
       if (status == 400 &&
           decoded is Map<String, dynamic> &&
           decoded['error'] == 'invalid_grant') {
-        throw const ApiFailure(FailureKind.unauthenticated, status: 401);
+        throw const OAuthRefreshRefused();
       }
       if (status < 200 || status >= 300) throw ApiFailure.fromStatus(status);
       if (decoded is! Map<String, dynamic>) {

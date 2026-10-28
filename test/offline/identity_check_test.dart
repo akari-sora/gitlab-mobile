@@ -165,6 +165,70 @@ void main() {
     }
   });
 
+  for (final outcome in [
+    'HTML 401',
+    'HTML 403',
+    'unrelated JSON 401',
+    'unrelated JSON 403',
+    'server 503',
+    'malformed invalid_grant',
+    'oversized invalid_grant',
+  ]) {
+    test('OAuth token endpoint $outcome cannot establish refusal', () async {
+      final instance = GitLabInstance.parse('https://example.com');
+      final auth = FakeAdapter((request) {
+        expect(request.uri, instance.oauth('token'));
+        return switch (outcome) {
+          'HTML 401' || 'HTML 403' => ResponseBody.fromString(
+            '<html>proxy</html>',
+            outcome == 'HTML 401' ? 401 : 403,
+            headers: {
+              'content-type': ['text/html'],
+            },
+          ),
+          'unrelated JSON 401' || 'unrelated JSON 403' => jsonResponse({
+            'error': 'invalid_client',
+          }, status: outcome == 'unrelated JSON 401' ? 401 : 403),
+          'server 503' => jsonResponse({'error': 'invalid_grant'}, status: 503),
+          'malformed invalid_grant' => ResponseBody.fromString(
+            '{"error":"invalid_grant"',
+            400,
+            headers: {
+              'content-type': ['application/json'],
+            },
+          ),
+          _ => jsonResponse({
+            'error': 'invalid_grant',
+            'padding': 'x' * 4096,
+          }, status: 400),
+        };
+      });
+      final transport = FakeAdapter(
+        (_) => jsonResponse({'message': 'expired'}, status: 401),
+      );
+      final api = GitLabApi(
+        instance: instance,
+        credential: const OAuthCredential(
+          accessToken: 'old',
+          refreshToken: 'old-refresh',
+          clientId: 'id',
+        ),
+        dio: Dio()..httpClientAdapter = transport,
+        oauth: OAuthTokenClient(
+          instance: instance,
+          clientId: 'id',
+          dio: Dio()..httpClientAdapter = auth,
+        ),
+      );
+      addTearDown(api.close);
+
+      final verdict = await api.identityCheck();
+      expect(verdict, anyOf(isA<IdentityUnknown>(), isA<IdentityNoVerdict>()));
+      expect(transport.requests, hasLength(1));
+      expect(auth.requests, hasLength(1));
+    });
+  }
+
   test('cooldown survives closing a client that shares its budget', () async {
     final instance = GitLabInstance.parse('https://example.com');
     final budget = GitLabRateBudget();
