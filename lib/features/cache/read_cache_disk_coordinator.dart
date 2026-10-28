@@ -665,7 +665,7 @@ final class ReadCacheDiskCoordinator {
     return _serial(account, () => _prepare(binding));
   }
 
-  Future<bool> _prepare(DiskBinding binding) async {
+  Future<bool> _prepare(DiskBinding binding, {bool forWrite = false}) async {
     final account = _account(binding.accountKey);
     if (!_gates(binding)) return false;
     final epoch = account.epoch;
@@ -730,22 +730,30 @@ final class ReadCacheDiskCoordinator {
           account.cleanup = false;
         }
         if (!_gates(binding)) return false;
-        final creationEpoch = account.epoch;
-        final bytes = Uint8List.fromList(
-          List.generate(32, (_) => _random.nextInt(256)),
-        );
-        await _keys!.writeKey(account.key, bytes);
-        if (!_gates(binding) || account.epoch != creationEpoch) {
-          // A late secure write is drained before the queued clear deletes it.
-          return false;
+        account.keyBytes = null;
+        // Activation and recovery may open an empty account without persisting
+        // anything. Only a live entry in the serialized write lane needs a key.
+        if (forWrite && account.pending.any((work) => work.lease.isCurrent)) {
+          final creationEpoch = account.epoch;
+          final bytes = Uint8List.fromList(
+            List.generate(32, (_) => _random.nextInt(256)),
+          );
+          await _keys!.writeKey(account.key, bytes);
+          // writeKey includes readback; remember this confirmed unused key even
+          // if backgrounding revoked the entry while secure storage was busy.
+          account.unusedKey = true;
+          if (!_gates(binding) || account.epoch != creationEpoch) {
+            // A late secure write is drained before the queued clear deletes it.
+            return false;
+          }
+          final confirmed = await _keys!.readKey(account.key);
+          if (!_gates(binding) || account.epoch != creationEpoch) return false;
+          if (!confirmed.isFound || !_sameBytes(bytes, confirmed.value!)) {
+            _unavailable(account, binding);
+            return false;
+          }
+          account.keyBytes = confirmed.value;
         }
-        final confirmed = await _keys!.readKey(account.key);
-        if (!_gates(binding) || account.epoch != creationEpoch) return false;
-        if (!confirmed.isFound || !_sameBytes(bytes, confirmed.value!)) {
-          _unavailable(account, binding);
-          return false;
-        }
-        account.keyBytes = confirmed.value;
       }
       if (!_gates(binding)) return false;
       final preparedEpoch = account.epoch;
@@ -754,6 +762,14 @@ final class ReadCacheDiskCoordinator {
         () => _gates(binding) && account.epoch == preparedEpoch,
       );
       if (!_gates(binding) || account.epoch != preparedEpoch) return false;
+      if (account.unusedKey &&
+          account.entries.isEmpty &&
+          !account.indexExists &&
+          account.pending.isEmpty &&
+          account.intent == null) {
+        await _discardUnusedKey(account);
+        if (!_gates(binding) || account.epoch != preparedEpoch) return false;
+      }
       _installOfflineNamespace();
       final namespace = _domain.namespace;
       var namespaceReady = false;
@@ -803,11 +819,23 @@ final class ReadCacheDiskCoordinator {
   Future<void> _loadIndex(_Account account, bool Function() current) async {
     // A partially reconstructed map cannot prove a scoped deletion set.
     account.indexTrusted = false;
-    final key = account.keyBytes!;
+    final key = account.keyBytes;
+    if (key == null) {
+      // _prepare already proved there were no files, or completed key repair.
+      account.entries.clear();
+      account.unindexed.clear();
+      account.indexExists = false;
+      account.indexTrusted = true;
+      account.indexDirty = false;
+      return;
+    }
     ReadCacheIndex? index;
     var readable = true;
+    // A damaged index is still an existing file which may need replacement.
+    account.indexExists = true;
     try {
       index = await _file(() => _files!.readIndex(account.key, key));
+      account.indexExists = index != null;
     } on ReadCacheCodecException {
       // A damaged index never proves a deletion set. Full clear is the fallback.
       readable = false;
@@ -878,6 +906,7 @@ final class ReadCacheDiskCoordinator {
                   (r) => metadata.containsKey(r.index.fileName),
                 )));
     account.indexDirty = !account.indexTrusted;
+    if (account.entries.isNotEmpty) account.unusedKey = false;
   }
 
   Future<ProjectedDiskEntry?> lookup(DiskLookup lookup) {
@@ -897,6 +926,7 @@ final class ReadCacheDiskCoordinator {
     return _serial(account, () async {
       try {
         if (!lease.isCurrent) return null;
+        if (account.keyBytes == null) return null;
         final keyRead = await _keys!.readKey(account.key);
         if (!lease.isCurrent) return null;
         if (keyRead.status == ReadCacheStoreReadStatus.unavailable) {
@@ -1049,6 +1079,12 @@ final class ReadCacheDiskCoordinator {
                 _scheduleBatch(binding);
                 return;
               }
+              if (account.keyBytes == null &&
+                  (!await _prepare(binding, forWrite: true) ||
+                      account.keyBytes == null)) {
+                _dropQueue(account);
+                return;
+              }
               final epoch = account.epoch;
               final indexRevision = account.indexRevision;
               bool current() => _ready(binding) && account.epoch == epoch;
@@ -1129,6 +1165,7 @@ final class ReadCacheDiskCoordinator {
                       ),
                     );
                     account.unindexed[work.entry.canonicalKey] = work.lease;
+                    account.unusedKey = false;
                     account.indexDirty = true;
                   });
                 } finally {
@@ -1161,6 +1198,18 @@ final class ReadCacheDiskCoordinator {
             if (!account.cleanup) account.state = ReadCacheDiskState.closed;
             _dropQueue(account);
           } finally {
+            if (_ready(binding) &&
+                account.unusedKey &&
+                account.entries.isEmpty &&
+                !account.indexExists &&
+                account.pending.isEmpty &&
+                account.intent == null) {
+              try {
+                await _discardUnusedKey(account);
+              } on Object {
+                _unavailable(account, binding);
+              }
+            }
             account.flushForced = false;
           }
         }).whenComplete(() {
@@ -1237,10 +1286,28 @@ final class ReadCacheDiskCoordinator {
     return false;
   }
 
+  Future<void> _discardUnusedKey(_Account account) async {
+    // No entry has committed under this key. Keep a concurrent empty-store
+    // invalidation on the proof path while the serialized delete/readback drains.
+    account.keyBytes = null;
+    await _keys!.deleteKey(account.key);
+    account.unusedKey = false;
+  }
+
   Future<bool> _commitIndex(_Account account, bool Function() current) async {
     bool permitted() =>
         current() && account.unindexed.values.every((lease) => lease.isCurrent);
     while (permitted()) {
+      if (account.entries.isEmpty && !account.indexExists) {
+        if (account.unusedKey && account.pending.isEmpty) {
+          await _discardUnusedKey(account);
+        }
+        if (!permitted()) return false;
+        account.indexTrusted = true;
+        account.indexDirty = false;
+        account.unindexed.clear();
+        return true;
+      }
       final index = ReadCacheIndex(
         entries: account.entries.values.map((e) => e.index).toList(),
       );
@@ -1284,6 +1351,7 @@ final class ReadCacheDiskCoordinator {
       if (staged == null) return false;
       return _file(() {
         if (staged.commit() == ReadCacheCommitResult.committed) {
+          account.indexExists = true;
           account.indexTrusted = true;
           account.indexDirty = false;
           account.unindexed.clear();
@@ -1383,6 +1451,7 @@ final class ReadCacheDiskCoordinator {
       lease.revoke();
     }
     account.keyBytes = null;
+    account.unusedKey = false;
     if (accountWide) {
       _domain.namespace?.fence(account.key);
       if (_domain.offlineBinding?.accountKey == account.key) {
@@ -1628,15 +1697,19 @@ final class ReadCacheDiskCoordinator {
     ReadCacheSecureInventory inventory,
     bool hadWork, {
     bool accountWide = true,
+    ReadCacheClearMarker? ownedMarker,
+    bool allowQueuedWork = false,
   }) async =>
       inventory.status == ReadCacheStoreReadStatus.found &&
       inventory.malformedNames.isEmpty &&
       !inventory.keys.containsKey(account.key) &&
-      !inventory.markers.containsKey(account.key) &&
+      (!inventory.markers.containsKey(account.key) ||
+          (ownedMarker != null &&
+              inventory.markers[account.key]?.value == ownedMarker)) &&
       !hadWork &&
-      account.pending.isEmpty &&
+      (allowQueuedWork || account.pending.isEmpty) &&
       account.inFlight.isEmpty &&
-      account.reads.isEmpty &&
+      (allowQueuedWork || account.reads.isEmpty) &&
       await _directoryGone(account.key) &&
       (!accountWide ||
           (!inventory.containsAccount(account.key) &&
@@ -1739,6 +1812,7 @@ final class ReadCacheDiskCoordinator {
     account.unindexed.clear();
     account.indexTrusted = false;
     account.indexDirty = false;
+    account.indexExists = false;
     var complete = false;
     if (keyGone &&
         directoryGone &&
@@ -2006,7 +2080,9 @@ final class ReadCacheDiskCoordinator {
             accountWide: false,
           ));
     if (intent != null && !intent.full) intent.users++;
-    final proveEmpty = !account.indexTrusted && !_ready(binding);
+    final proveEmpty =
+        (account.keyBytes == null && account.indexTrusted && _ready(binding)) ||
+        (!account.indexTrusted && !_ready(binding));
     final markerReady = intent != null && !intent.full && !proveEmpty
         ? _persist(account, intent)
         : null;
@@ -2054,31 +2130,41 @@ final class ReadCacheDiskCoordinator {
             account.intent != intent) {
           return _none;
         }
-        if (proveEmpty) await account.markerTail;
-        if (proveEmpty &&
+        final emptyCandidate =
+            proveEmpty || (account.keyBytes == null && account.indexTrusted);
+        if (emptyCandidate) await account.markerTail;
+        if (emptyCandidate &&
             await _empty(
               account,
               await _keys!.readInventory(),
               false,
               accountWide: false,
+              ownedMarker: intent.durable ? intent.marker : null,
+              // Scope-matching work was revoked synchronously. Registered reads
+              // and remaining candidates wait behind this serialized section.
+              allowQueuedWork: true,
             )) {
           if (!fence.isCurrent ||
               account.intent != intent ||
               !intent.valid ||
               account.cleanup ||
-              account.pending.isNotEmpty ||
-              account.inFlight.isNotEmpty ||
-              account.reads.isNotEmpty) {
+              account.inFlight.isNotEmpty) {
             return _none;
           }
           intent.users--;
-          if (intent.users == 0) account.intent = null;
+          if (intent.users == 0) {
+            if (intent.durable) {
+              if (!await _removeIntent(account, intent)) return _none;
+            } else {
+              account.intent = null;
+            }
+          }
           scopeSucceeded = true;
           account.invalidations.remove(invalidation);
-          return const DiskClearResult(
+          return DiskClearResult(
             keyGoneConfirmed: true,
             directoryGoneConfirmed: true,
-            markerDurable: false,
+            markerDurable: intent.durable,
             complete: true,
           );
         }
@@ -2718,6 +2804,7 @@ final class _Account {
   int epoch = 0, revision = 0, work = 0, queuedBytes = 0, retryAttempt = 0;
   bool cleanup = false, indexTrusted = false;
   bool indexDirty = false, flushForced = false;
+  bool indexExists = false, unusedKey = false;
   bool clearComplete = false;
   DiskBinding? sessionFence;
   int indexRevision = 0;
