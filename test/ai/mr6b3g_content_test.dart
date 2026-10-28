@@ -715,18 +715,201 @@ void main() {
     );
   }
 
-  test(
-    'shared title provenance seam conservatively refuses fieldTooLong',
-    () async {
-      final h = await _Harness.create();
-      addTearDown(h.close);
-      expect(await h.propose({'title': 'Changed title'}), isNull);
-      expect(h.outcomes.single.reasonCode, text.AiTextBlockCode.fieldTooLong);
-      expect(h.fixture.server.successfulReads, 4);
-      expect(h.fixture.server.mutations, 0);
-      expect(h.storage.journal.entries(mr6b3Account), isEmpty);
-    },
-  );
+  for (final combined in [false, true]) {
+    final fields = combined ? 'title+description' : 'title-only';
+    test(
+      'coordinator $fields writes once with strict independent readback',
+      () async {
+        final h = await _Harness.create();
+        addTearDown(h.close);
+        const title = '  Changed title  ';
+        const description = 'Changed description';
+        final proposal = await h.propose({
+          'title': title,
+          if (combined) 'description': description,
+        });
+        expect(proposal, isNotNull, reason: h.outcomes.toString());
+        expect((proposal!.preview as port.AiFieldsPreview).fields, {
+          'title': title,
+          if (combined) 'description': description,
+        });
+        expect(h.fixture.server.successfulReads, 4);
+        expect(h.fixture.server.contentReads, 1);
+        expect(h.fixture.server.mutations, 0);
+        expect(h.storage.journal.entries(mr6b3Account), isEmpty);
+
+        final result = await h.approve(proposal);
+        expect(
+          result.state,
+          AiJournalState.succeeded,
+          reason: result.reasonCode,
+        );
+        expect(result.readbackConfirmed, isTrue);
+        expect(result.mutationCount, 1);
+        expect(h.fixture.server.input, {
+          'id': 'gid://gitlab/WorkItem/91',
+          'title': title,
+          if (combined) 'descriptionWidget': {'description': description},
+        });
+        expect(h.fixture.server.title, title);
+        expect(
+          h.fixture.server.description,
+          combined ? description : 'Original description',
+        );
+        expect(h.fixture.server.contentReads, 4);
+        expect(h.fixture.server.readStages, {
+          'freshness': 2,
+          'actor': 2,
+          'namespace': 2,
+          'content': 4,
+        });
+        expect(h.fixture.server.adapter.requests, hasLength(11));
+        expect(h.fixture.server.mutations, 1);
+        expect(
+          h.storage.journal.entries(mr6b3Account).last.state,
+          AiJournalState.succeeded,
+        );
+        await h.approve(proposal);
+        expect(h.fixture.server.mutations, 1);
+      },
+    );
+
+    for (final corruption in ['title', 'owner']) {
+      test(
+        'coordinator $fields rejects independent readback $corruption drift',
+        () async {
+          final h = await _Harness.create();
+          addTearDown(h.close);
+          final proposal = await h.propose({
+            'title': 'Changed title',
+            if (combined) 'description': 'Changed description',
+          });
+          expect(proposal, isNotNull);
+          h.fixture.server.tamper = (stage, node) {
+            if (stage != 'content4') return;
+            if (corruption == 'title') {
+              node['title'] = 'Different readback title';
+            } else {
+              node['namespace'] = {
+                'id': 'gid://gitlab/Group/8',
+                'fullPath': _path,
+              };
+            }
+          };
+          final result = await h.approve(proposal!);
+          expect(result.state, AiJournalState.writeUncertain);
+          expect(result.readbackConfirmed, isFalse);
+          expect(h.fixture.server.title, 'Changed title');
+          expect(h.fixture.server.contentReads, 4);
+          expect(h.fixture.server.mutations, 1);
+          expect(
+            h.storage.journal.entries(mr6b3Account).last.state,
+            AiJournalState.writeUncertain,
+          );
+        },
+      );
+    }
+
+    for (final source in ['description', 'note']) {
+      test('$source upload token in $fields refuses before mutation', () async {
+        final h = await _Harness.create(level: AiAutonomyLevel.bypass);
+        addTearDown(h.close);
+        const original =
+            '[file](/uploads/0123456789abcdef0123456789abcdef/a.png)';
+        h.fixture.server.description = original;
+        final field = text.AiFieldProvenance.groupWorkItem(
+          identity: g0eIdentity(h.fixture.server.api, fullPath: _path, iid: 31),
+          completeValue: true,
+          noteId: source == 'note' ? 71 : null,
+        );
+        final masked = h.placeholders.redactOutgoing(original, field: field);
+        expect(masked, contains('[[upload:'));
+        expect(
+          await h.propose({
+            'title': masked,
+            if (combined) 'description': 'Safe description',
+          }),
+          isNull,
+        );
+        expect(h.outcomes.single.reasonCode, text.AiTextBlockCode.rereadField);
+        expect(h.fixture.server.successfulReads, 4);
+        expect(h.fixture.server.mutations, 0);
+        expect(h.storage.journal.entries(mr6b3Account), isEmpty);
+      });
+    }
+  }
+
+  for (final atDispatch in [false, true]) {
+    final phase = atDispatch ? 'dispatch' : 'proposal';
+    for (final cut in ['excerpt', 'output limit']) {
+      test('$cut title refuses at $phase despite complete opening', () async {
+        final h = await _Harness.create(level: AiAutonomyLevel.bypass);
+        addTearDown(h.close);
+        final description = text.AiFieldProvenance.groupWorkItem(
+          identity: g0eIdentity(h.fixture.server.api, fullPath: _path, iid: 31),
+          completeValue: true,
+        );
+        final title = text.AiFieldProvenance(
+          resourceKey: description.resourceKey,
+          fieldName: 'title',
+          completeValue: true,
+          resourceWeb: description.resourceWeb,
+          accountKey: description.accountKey,
+          groupId: description.groupId,
+          groupFullPath: description.groupFullPath,
+        );
+        void cutTitle() {
+          h.placeholders.recordFieldDelivery(title, whole: cut != 'excerpt');
+          if (cut == 'output limit') h.placeholders.markWholeFieldsCut();
+        }
+
+        if (!atDispatch) cutTitle();
+        final proposal = await h.propose({
+          'title': 'Changed title',
+          'description': 'Changed description',
+        });
+        if (atDispatch) {
+          expect(proposal, isNotNull);
+          cutTitle();
+          final result = await h.approve(proposal!);
+          expect(result.state, AiJournalState.notExecuted);
+          expect(result.reasonCode, text.AiTextBlockCode.fieldTooLong);
+        } else {
+          expect(proposal, isNull);
+          expect(
+            h.outcomes.single.reasonCode,
+            text.AiTextBlockCode.fieldTooLong,
+          );
+          expect(h.storage.journal.entries(mr6b3Account), isEmpty);
+        }
+        expect(h.fixture.server.contentReads, atDispatch ? 2 : 1);
+        expect(h.fixture.server.mutations, 0);
+      });
+    }
+  }
+
+  test('valid title cannot authorize a note token in description', () async {
+    final h = await _Harness.create(level: AiAutonomyLevel.bypass);
+    addTearDown(h.close);
+    final field = text.AiFieldProvenance.groupWorkItem(
+      identity: g0eIdentity(h.fixture.server.api, fullPath: _path, iid: 31),
+      completeValue: true,
+      noteId: 71,
+    );
+    final masked = h.placeholders.redactOutgoing(
+      '[file](/uploads/0123456789abcdef0123456789abcdef/a.png)',
+      field: field,
+    );
+    expect(masked, contains('[[upload:'));
+    expect(
+      await h.propose({'title': 'Changed title', 'description': masked}),
+      isNull,
+    );
+    expect(h.outcomes.single.reasonCode, text.AiTextBlockCode.rereadField);
+    expect(h.fixture.server.successfulReads, 4);
+    expect(h.fixture.server.mutations, 0);
+    expect(h.storage.journal.entries(mr6b3Account), isEmpty);
+  });
 
   test(
     'shared text pipeline refuses external embeds and secrets before mutation',
@@ -1101,7 +1284,6 @@ void _groupContracts() {
         });
         expect(proposal, isNull);
         expect(h.outcomes.single.reasonCode, switch (mismatch) {
-          'title' => text.AiTextBlockCode.fieldTooLong,
           'incomplete' => text.AiTextBlockCode.redactionMarker,
           _ => text.AiTextBlockCode.rereadField,
         });
