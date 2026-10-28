@@ -81,6 +81,13 @@ mutation MobileSetWorkItemHealthStatus($input: WorkItemUpdateInput!) {
 '''
         .trim();
 
+// The group-only acknowledgement requests ownership in the same mutation
+// response. The ordinary UI query remains unchanged.
+final _workItemHealthEditStrictMutation = _workItemHealthEditMutation.replaceFirst(
+  '      id\n      updatedAt',
+  '      id\n      iid\n      updatedAt\n      project { id fullPath }\n      namespace { id fullPath }',
+);
+
 final class WorkItemHealthEditAccess {
   const WorkItemHealthEditAccess._({
     required this.snapshot,
@@ -160,6 +167,7 @@ extension WorkItemHealthEditApi on GitLabApi {
     required int generation,
     required bool Function() isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, detail.summary.strictGroupOwner);
     _validateHealthExpected(detail, expectedUserId, generation);
     _requireHealthCurrent(this, isCurrent);
     return _readWorkItemHealth(
@@ -234,7 +242,9 @@ extension WorkItemHealthEditApi on GitLabApi {
     }
 
     final requestData = <String, Object?>{
-      'query': _workItemHealthEditMutation,
+      'query': target._opening.summary.strictGroupOwner == null
+          ? _workItemHealthEditMutation
+          : _workItemHealthEditStrictMutation,
       'variables': {
         'input': <String, Object?>{
           'id': before.snapshot.summary.id,
@@ -272,7 +282,7 @@ extension WorkItemHealthEditApi on GitLabApi {
       _requireHealthUpdateOwner(this, target, generation, isCurrent);
       final acknowledgement = _parseHealthAcknowledgement(
         response.bytes,
-        target._opening.summary.id,
+        target._opening.summary,
       );
       final preflightRevision = before.snapshot.summary.updatedAt;
 
@@ -323,8 +333,14 @@ extension WorkItemHealthEditApi on GitLabApi {
       }
       throw const FormatException('Health update outcome drift');
     } on WorkItemHealthEditFailure {
+      if (didSend && target._opening.summary.strictGroupOwner != null) {
+        throw WorkItemHealthEditFailure(_healthUncertain, true);
+      }
       rethrow;
     } on _HealthPayloadValidation {
+      if (target._opening.summary.strictGroupOwner != null) {
+        throw WorkItemHealthEditFailure(_healthUncertain, true);
+      }
       throw WorkItemHealthEditFailure(
         ApiFailure(
           FailureKind.validation,
@@ -476,7 +492,10 @@ _ParsedHealthWorkItem _parseHealthWorkItem(
   required bool requireRevision,
 }) {
   final node = objectJson(raw);
-  final summary = _parseWorkItemSummary(node);
+  final summary = _parseWorkItemSummary(
+    node,
+    strictGroupOwner: expected.strictGroupOwner,
+  );
   if (!_sameHealthStableIdentity(summary, expected) ||
       (requireRevision && summary.updatedAt != expected.updatedAt)) {
     throw const _HealthExpectedConflict();
@@ -577,7 +596,7 @@ _parseHealthWidgets(Object? rawWidgets) {
 
 _HealthAcknowledgement _parseHealthAcknowledgement(
   Uint8List bytes,
-  String expectedId,
+  WorkItemGraphSummary expected,
 ) {
   final envelope = _healthEnvelope(bytes);
   final payload = objectJson(objectJson(envelope['data'])['workItemUpdate']);
@@ -590,7 +609,8 @@ _HealthAcknowledgement _parseHealthAcknowledgement(
   }
   if (errors.isNotEmpty) throw const _HealthPayloadValidation();
   final node = objectJson(payload['workItem']);
-  if (requiredString(node, 'id') != expectedId) {
+  _requireStrictGroupWorkItemOwner(node, expected.strictGroupOwner);
+  if (requiredString(node, 'id') != expected.id) {
     throw const FormatException('Wrong health acknowledgement identity');
   }
   final widgets = _parseHealthWidgets(node['widgets']);

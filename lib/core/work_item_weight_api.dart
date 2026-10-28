@@ -139,6 +139,7 @@ extension WorkItemWeightApi on GitLabApi {
     required int expectedUserId,
     bool Function()? isCurrent,
   }) {
+    _requireStrictGroupOwnerApi(this, detail.summary.strictGroupOwner);
     _validateContentExpected(detail, expectedUserId);
     return _readWorkItemWeight(
       detail.summary,
@@ -232,8 +233,9 @@ extension WorkItemWeightApi on GitLabApi {
       );
       _requireAcknowledgedWeight(acknowledged.snapshot, weight);
     } on ApiFailure catch (failure) {
-      if (failure.kind == FailureKind.unsupported ||
-          failure.kind == FailureKind.validation) {
+      if (target._snapshot.summary.strictGroupOwner == null &&
+          (failure.kind == FailureKind.unsupported ||
+              failure.kind == FailureKind.validation)) {
         rethrow;
       }
       throw _weightUncertain;
@@ -336,7 +338,10 @@ void _validateWeightInput(int? weight) {
   bool requirePermission = true,
 }) {
   final node = objectJson(raw);
-  final summary = _parseWorkItemSummary(node);
+  final summary = _parseWorkItemSummary(
+    node,
+    strictGroupOwner: expected.strictGroupOwner,
+  );
   _requireExpectedMilestoneIdentity(summary, expected);
   bool? readWorkItem;
   bool? adminWorkItem;

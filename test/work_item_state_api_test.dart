@@ -7,10 +7,12 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
+import 'package:gitlab_mobile/core/rate_budget.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/work_item_state_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _workItemId = 'gid://gitlab/WorkItem/31';
 const _typeId = 'gid://gitlab/WorkItems::Type/9';
@@ -114,6 +116,199 @@ Matcher _failure(FailureKind kind) =>
     isA<ApiFailure>().having((failure) => failure.kind, 'kind', kind);
 
 void main() {
+  for (final strict in [false, true]) {
+    for (final stage in ['cache clock', 'current check']) {
+      for (final phase in ['before send', 'after ack', 'during readback']) {
+        if (stage == 'cache clock' && phase == 'during readback') continue;
+        test(
+          '${strict ? 'strict' : 'default'} state $stage exception $phase',
+          () async {
+            final summary = _summary(group: true);
+            final now = DateTime.utc(2026, 10, 28);
+            var reads = 0;
+            var writes = 0;
+            var preparingSend = false;
+            var injections = 0;
+            final adapter = FakeAdapter((request) {
+              if (_mutation(request)) {
+                writes++;
+                return jsonResponse(_write(summary));
+              }
+              reads++;
+              return jsonResponse(
+                _read(
+                  summary,
+                  state: reads == 1 ? 'OPEN' : 'CLOSED',
+                  updatedAt: reads == 1 ? _updated : _changed,
+                ),
+              );
+            });
+            bool shouldFail() => switch (phase) {
+              'before send' => stage == 'cache clock'
+                  ? preparingSend
+                  : reads == 1,
+              'after ack' => writes == 1,
+              'during readback' => reads == 2,
+              _ => false,
+            };
+            final api = GitLabApi(
+              instance: GitLabInstance.parse('https://example.com/gitlab'),
+              token: 'synthetic-test-token',
+              dio: Dio()..httpClientAdapter = adapter,
+              cdnAdapter: adapter,
+              rateBudget: GitLabRateBudget(now: () => now),
+              readCacheClock: () {
+                if (stage == 'cache clock' &&
+                    shouldFail() &&
+                    injections == 0) {
+                  injections++;
+                  throw StateError('$phase cache clock');
+                }
+                return now;
+              },
+            );
+            addTearDown(api.close);
+            final expected = strict
+                ? summary.withStrictGroupOwner(strictGroupOwner(api, summary))
+                : summary;
+            await expectLater(
+              api.updateWorkItemState(
+                expected,
+                WorkItemStateEvent.close,
+                expectedUpdatedAt: _updated,
+                isCurrent: () {
+                  if (stage == 'current check' && shouldFail()) {
+                    injections++;
+                    throw StateError('$phase current check');
+                  }
+                  return true;
+                },
+                beforeMutation: () async => preparingSend = true,
+                mayStart: () => true,
+              ),
+              throwsA(
+                strict && phase != 'before send'
+                    ? _failure(FailureKind.writeUncertain)
+                    : isA<StateError>(),
+              ),
+            );
+            expect(injections, 1);
+            expect(writes, phase == 'before send' ? 0 : 1);
+            expect(
+              adapter.requests.map(_mutation),
+              phase == 'before send'
+                  ? [false]
+                  : phase == 'after ack'
+                  ? [false, true]
+                  : [false, true, false],
+              reason: 'one mutation at most and no resend or extra reads',
+            );
+          },
+        );
+      }
+    }
+  }
+
+  for (final problem in ['exact', 'missing', 'project', 'namespace', 'payloadErrors', 'cancelled', 'schemaErrors']) {
+    for (final phase in ['opening', 'preflight', 'ack', 'readback', 'noop']) {
+      if (['payloadErrors', 'cancelled', 'schemaErrors'].contains(problem) && phase != 'ack') continue;
+      test('strict state $phase $problem validates raw owner', () async {
+        final summary = _summary(group: true);
+        var reads = 0;
+        var writes = 0;
+        var current = true;
+        final adapter = FakeAdapter((request) {
+          if (_mutation(request)) {
+            writes++;
+            final item = _node(
+              summary,
+              state: 'CLOSED',
+              updatedAt: _changed,
+              includePermission: false,
+            );
+            var response = _write(summary, workItem: item);
+            if (phase == 'ack') {
+              if (problem == 'payloadErrors') {
+                final payload = (response['data'] as Map)['workItemUpdate'] as Map;
+                payload['errors'] = ['rejected'];
+                payload.remove('workItem');
+              } else if (problem == 'cancelled') {
+                current = false;
+              } else if (problem == 'schemaErrors') {
+                response = {'errors': [{'message': 'unknown field', 'extensions': {'code': 'undefinedField'}}]};
+              } else {
+                corruptGroupOwner(item, problem);
+              }
+            }
+            return jsonResponse(response);
+          }
+          reads++;
+          final item = _node(
+            summary,
+            state: reads == 1 ? 'OPEN' : 'CLOSED',
+            updatedAt: reads == 1 ? _updated : _changed,
+          );
+          if ((phase == 'opening' || phase == 'preflight' || phase == 'noop') &&
+                  reads == 1 ||
+              phase == 'readback' && reads == 2) {
+            corruptGroupOwner(item, problem);
+          }
+          return jsonResponse({
+            'data': {'workItem': item},
+          });
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final expected = summary.withStrictGroupOwner(
+          strictGroupOwner(api, summary),
+        );
+        final Future<Object> action = phase == 'opening'
+            ? api.workItemState(expected)
+            : api.updateWorkItemState(
+                expected,
+                phase == 'noop'
+                    ? WorkItemStateEvent.reopen
+                    : WorkItemStateEvent.close,
+                expectedUpdatedAt: _updated,
+                isCurrent: () => current,
+              );
+        if (problem == 'exact') {
+          await action;
+        } else {
+          final kind = phase == 'ack' || phase == 'readback'
+              ? FailureKind.writeUncertain
+              : FailureKind.invalidResponse;
+          await expectLater(action, throwsA(_failure(kind)));
+        }
+        expect(
+          writes,
+          phase == 'opening' ||
+                  phase == 'noop' ||
+                  (problem != 'exact' && phase == 'preflight')
+              ? 0
+              : 1,
+        );
+      });
+    }
+  }
+
+  test(
+    'default state accepts omitted project for group compatibility',
+    () async {
+      final summary = _summary(group: true);
+      final item = _node(summary)..remove('project');
+      final adapter = FakeAdapter(
+        (_) => jsonResponse({
+          'data': {'workItem': item},
+        }),
+      );
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      expect((await api.workItemState(summary)).project, isNull);
+      expect(adapter.requests.where(_mutation), isEmpty);
+    },
+  );
+
   for (final group in [false, true]) {
     test(
       '${group ? 'group' : 'project'} preflight uses opaque identity and exact owner',

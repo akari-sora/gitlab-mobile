@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 import 'support/c2d7_barrier.dart';
 
 const _actorId = 'gid://gitlab/User/7';
@@ -184,6 +185,115 @@ Future<WorkItemContentTarget> _target(
 )).target!;
 
 void main() {
+  for (final failure in ['errors', 'schema', 'cancelled']) {
+    test('strict group content post-send $failure is uncertain', () async {
+      var sent = 0;
+      var current = true;
+      final adapter = FakeAdapter((request) {
+        if (!_mutation(request)) return jsonResponse(_read(group: true));
+        sent++;
+        if (failure == 'cancelled') current = false;
+        if (failure == 'schema') {
+          return jsonResponse({'errors': [{'extensions': {'code': 'undefinedField'}}]});
+        }
+        return jsonResponse({'data': {'workItemUpdate': {'errors': ['refused']}}});
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final target = (await api.workItemContent(strictGroupDetail(api, _detail(group: true)), expectedUserId: 7)).target!;
+      await expectLater(api.updateWorkItemContent(target, title: 'changed', isCurrent: () => current), throwsA(_failure(FailureKind.writeUncertain)));
+      expect(sent, 1);
+    });
+  }
+
+  test('strict group content rejects another API before any request', () async {
+    final first = testApi(FakeAdapter((_) => fail('unexpected request')));
+    final adapter = FakeAdapter((_) => fail('unexpected request'));
+    final second = testApi(adapter);
+    addTearDown(first.close);
+    addTearDown(second.close);
+    await expectLater(second.workItemContent(strictGroupDetail(first, _detail(group: true)), expectedUserId: 7), throwsA(isA<ApiFailure>()));
+    expect(adapter.requests, isEmpty);
+  });
+  test('strict group content rejects omitted project before noop', () async {
+    var reads = 0;
+    final adapter = FakeAdapter((_) {
+      reads++;
+      final response = _read(group: true);
+      if (reads == 2) {
+        ((response['data']! as Map)['workItem'] as Map).remove('project');
+      }
+      return jsonResponse(response);
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = (await api.workItemContent(strictGroupDetail(api, _detail(group: true)), expectedUserId: 7)).target!;
+    await expectLater(api.updateWorkItemContent(target, title: 'Fresh title'), throwsA(_failure(FailureKind.invalidResponse)));
+    expect(adapter.requests.where(_mutation), isEmpty);
+  });
+  for (final problem in ['exact', 'missing', 'project', 'namespace']) {
+    for (final phase in ['opening', 'preflight', 'ack', 'readback']) {
+      test('strict group content $problem at $phase', () async {
+        var reads = 0;
+        var sent = 0;
+        final adapter = FakeAdapter((request) {
+          if (_mutation(request)) {
+            sent++;
+            final response = _ack(group: true, widgets: const []);
+            final payload = (response['data']! as Map)['workItemUpdate'] as Map;
+            final item = payload['workItem'] as Map<String, Object?>;
+            if (phase == 'ack') corruptGroupOwner(item, problem);
+            return jsonResponse(response);
+          }
+          reads++;
+          final response = _read(
+            group: true,
+            title: reads < 3 ? 'Fresh title' : 'Changed title',
+            updatedAt: reads < 3 ? _freshAt : _savedAt,
+            widgets: const [],
+          );
+          final item = (response['data']! as Map)['workItem'] as Map<String, Object?>;
+          if ((phase == 'opening' && reads == 1) ||
+              (phase == 'preflight' && reads == 2) ||
+              (phase == 'readback' && reads == 3)) {
+            corruptGroupOwner(item, problem);
+          }
+          return jsonResponse(response);
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final opening = api.workItemContent(
+          strictGroupDetail(api, _detail(group: true)), expectedUserId: 7,
+        );
+        if (problem != 'exact' && phase == 'opening') {
+          await expectLater(opening, throwsA(_failure(FailureKind.invalidResponse)));
+        } else {
+          final target = (await opening).target!;
+          final result = api.updateWorkItemContent(target, title: 'Changed title');
+          if (problem == 'exact') {
+            expect((await result).snapshot.summary.title, 'Changed title');
+          } else {
+            final kind = phase == 'preflight'
+                ? FailureKind.invalidResponse : FailureKind.writeUncertain;
+            await expectLater(result, throwsA(_failure(kind)));
+          }
+        }
+        expect(sent, problem != 'exact' &&
+            (phase == 'opening' || phase == 'preflight') ? 0 : 1);
+      });
+    }
+  }
+
+  test('default group content accepts omitted project', () async {
+    final response = _read(group: true);
+    final item = (response['data']! as Map)['workItem'] as Map<String, Object?>;
+    item.remove('project');
+    final adapter = FakeAdapter((_) => jsonResponse(response));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    expect((await api.workItemContent(_detail(group: true), expectedUserId: 7)).target, isNotNull);
+    expect(adapter.requests.where(_mutation), isEmpty);
+  });
   test('C2-D8 content callback failure is cancelled before gate and send', () async {
     final adapter = FakeAdapter((_) => jsonResponse(_read()));
     final api = testApi(adapter);

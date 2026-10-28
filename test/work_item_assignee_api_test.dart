@@ -6,6 +6,7 @@ import 'package:gitlab_mobile/core/work_item_assignee_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _actorId = 'gid://gitlab/User/7';
 final _createdAt = DateTime.utc(2026, 10, 1);
@@ -219,6 +220,123 @@ List<Map<String, Object?>> _users(int from, int count) => [
 ];
 
 void main() {
+  for (final problem in ['exact', 'missing', 'project', 'namespace', 'payloadErrors', 'cancelled', 'schemaErrors']) {
+    for (final phase in ['opening', 'preflight', 'noop', 'ack', 'readback']) {
+      if (['payloadErrors', 'cancelled', 'schemaErrors'].contains(problem) && phase != 'ack') continue;
+      test(
+        'strict assignees $phase $problem validates raw group owner',
+        () async {
+          var reads = 0;
+          var writes = 0;
+        var current = true;
+          final adapter = FakeAdapter((request) {
+            late Map<String, Object?> response;
+            late Map<String, Object?> item;
+            if (_isMutation(request)) {
+              writes++;
+              response = _mutationBody(group: true, users: [_user(11)]);
+              item =
+                  ((response['data'] as Map)['workItemUpdate']
+                          as Map)['workItem']
+                      as Map<String, Object?>;
+              if (phase == 'ack') {
+              if (problem == 'payloadErrors') {
+                final payload = (response['data'] as Map)['workItemUpdate'] as Map;
+                payload['errors'] = ['rejected'];
+                payload.remove('workItem');
+              } else if (problem == 'cancelled') {
+                current = false;
+              } else if (problem == 'schemaErrors') {
+                response = {'errors': [{'message': 'unknown field', 'extensions': {'code': 'undefinedField'}}]};
+              } else {
+                corruptGroupOwner(item, problem);
+              }
+            }
+            } else {
+              reads++;
+              response = _read(
+                group: true,
+                users: [reads < 3 ? _user(10) : _user(11)],
+                updatedAt: reads < 3 ? _freshAt : _savedAt,
+              );
+              item =
+                  (response['data'] as Map)['workItem'] as Map<String, Object?>;
+              if ((phase == 'opening' && reads == 1) ||
+                  ((phase == 'preflight' || phase == 'noop') && reads == 2) ||
+                  (phase == 'readback' && reads == 3)) {
+                corruptGroupOwner(item, problem);
+              }
+            }
+            return jsonResponse(response);
+          });
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final opening = api.workItemAssignees(
+            strictGroupDetail(api, _detail(group: true)),
+            expectedUserId: 7,
+          );
+          if (phase == 'opening' && problem != 'exact') {
+            await expectLater(opening, throwsA(isA<ApiFailure>()));
+            expect(writes, 0);
+            return;
+          }
+          final access = await opening;
+          if (phase == 'opening') return;
+          final save = api.updateWorkItemAssignees(
+            access.target!,
+            isCurrent: () => current,
+            assigneeIds: [
+              phase == 'noop' ? 'gid://gitlab/User/10' : 'gid://gitlab/User/11',
+            ],
+          );
+          if (problem == 'exact') {
+            expect((await save).assigneeIds, [
+              phase == 'noop' ? 'gid://gitlab/User/10' : 'gid://gitlab/User/11',
+            ]);
+          } else {
+            final post = phase == 'ack' || phase == 'readback';
+            await expectLater(
+              save,
+              throwsA(
+                isA<ApiFailure>().having(
+                  (e) => post
+                      ? e.kind == FailureKind.writeUncertain
+                      : e.kind != FailureKind.writeUncertain,
+                  'classification',
+                  isTrue,
+                ),
+              ),
+            );
+          }
+          expect(
+            writes,
+            phase == 'noop' || (phase == 'preflight' && problem != 'exact')
+                ? 0
+                : 1,
+          );
+        },
+      );
+    }
+  }
+
+  test(
+    'default assignees accept omitted project for group compatibility',
+    () async {
+      final item = _node(group: true, users: [])..remove('project');
+      final api = testApi(
+        FakeAdapter((_) => jsonResponse(_read(group: true, workItem: item))),
+      );
+      addTearDown(api.close);
+      expect(
+        (await api.workItemAssignees(
+          _detail(group: true),
+          expectedUserId: 7,
+        )).target,
+        isNotNull,
+      );
+    },
+  );
+
   test(
     'project and group reads repeat actor and full identity on every page',
     () async {

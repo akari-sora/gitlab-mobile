@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/work_item_labels_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _user = 'gid://gitlab/User/7';
 const _item = 'gid://gitlab/WorkItem/100';
@@ -46,6 +47,153 @@ final _opened = DateTime.utc(2026, 10, 3, 9);
 final _touched = DateTime.utc(2026, 10, 3, 10);
 
 void main() {
+  for (final failure in ['errors', 'schema', 'cancelled']) {
+    test('strict group labels post-send $failure is uncertain', () async {
+      var sent = 0;
+      var current = true;
+      final adapter = FakeAdapter((request) {
+        if (!_isMutation(request)) return jsonResponse(_envelope(_groupNode(labels: [_label(_priority)])));
+        sent++;
+        if (failure == 'cancelled') {
+          current = false;
+          return jsonResponse({'data': {'workItemUpdate': {
+            'errors': <String>[],
+            'workItem': {'id': _item, 'iid': '15', 'updatedAt': _touched.toIso8601String(),
+              'project': null, 'namespace': {'id': _group, 'fullPath': _groupPath}},
+          }}});
+        }
+        if (failure == 'schema') {
+          return jsonResponse({'errors': [{'extensions': {'code': 'undefinedField'}}]});
+        }
+        return jsonResponse({'data': {'workItemUpdate': {'errors': ['refused']}}});
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final target = (await api.workItemLabels(strictGroupDetail(api, _groupDetail()), expectedUserId: 7, generation: 1)).target!;
+      await expectLater(api.updateWorkItemLabels(target, desiredLabelIds: const [], isCurrent: () => current), throwsA(isA<WorkItemLabelWriteFailure>()
+        .having((e) => e.mutationSent, 'sent', isTrue)
+        .having((e) => e.failure.kind, 'kind', FailureKind.writeUncertain)));
+      expect(sent, 1);
+    });
+  }
+
+  test('strict group labels reject another API before any request', () async {
+    final first = testApi(FakeAdapter((_) => fail('unexpected request')));
+    final adapter = FakeAdapter((_) => fail('unexpected request'));
+    final second = testApi(adapter);
+    addTearDown(first.close);
+    addTearDown(second.close);
+    await expectLater(second.workItemLabels(strictGroupDetail(first, _groupDetail()), expectedUserId: 7, generation: 1), throwsA(isA<ApiFailure>()));
+    expect(adapter.requests, isEmpty);
+  });
+  test('strict group labels reject omitted project before noop', () async {
+    var reads = 0;
+    final adapter = FakeAdapter((_) {
+      reads++;
+      final node = _groupNode(labels: [_label(_priority)]);
+      if (reads == 2) node.remove('project');
+      return jsonResponse(_envelope(node));
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = (await api.workItemLabels(strictGroupDetail(api, _groupDetail()), expectedUserId: 7, generation: 1)).target!;
+    await expectLater(api.updateWorkItemLabels(target, desiredLabelIds: [_priority]), throwsA(isA<WorkItemLabelWriteFailure>().having((e) => e.mutationSent, 'sent', isFalse)));
+    expect(adapter.requests.where(_isMutation), isEmpty);
+  });
+  for (final problem in ['exact', 'missing', 'project', 'namespace']) {
+    for (final phase in ['opening', 'preflight', 'ack', 'readback']) {
+      test('strict group labels $problem at $phase', () async {
+        var reads = 0;
+        var sent = 0;
+        final adapter = FakeAdapter((request) {
+          if (_isMutation(request)) {
+            sent++;
+            final response = _ack(_touched);
+            final payload = (response['data']! as Map)['workItemUpdate'] as Map;
+            final item = Map<String, Object?>.from(payload['workItem'] as Map);
+            payload['workItem'] = item;
+            item.addAll({
+              'iid': '15', 'project': null,
+              'namespace': {'id': _group, 'fullPath': _groupPath},
+            });
+            if (phase == 'ack') corruptGroupOwner(item, problem);
+            return jsonResponse(response);
+          }
+          reads++;
+          final node = _groupNode(
+            labels: reads < 3 ? [_label(_priority)] : <Object?>[],
+            updatedAt: reads < 3 ? null : _touched.toIso8601String(),
+          );
+          if ((phase == 'opening' && reads == 1) ||
+              (phase == 'preflight' && reads == 2) ||
+              (phase == 'readback' && reads == 3)) {
+            corruptGroupOwner(node, problem);
+          }
+          return jsonResponse(_envelope(node));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final opening = api.workItemLabels(
+          strictGroupDetail(api, _groupDetail()), expectedUserId: 7, generation: 1,
+        );
+        if (problem != 'exact' && phase == 'opening') {
+          await expectLater(opening, throwsA(isA<ApiFailure>()));
+        } else {
+          final target = (await opening).target!;
+          final result = api.updateWorkItemLabels(target, desiredLabelIds: const []);
+          if (problem == 'exact') {
+            expect((await result).status, WorkItemLabelSaveStatus.success);
+          } else {
+            await expectLater(result, throwsA(
+              isA<WorkItemLabelWriteFailure>()
+                .having((e) => e.mutationSent, 'sent', phase != 'preflight')
+                .having((e) => phase == 'preflight' || e.failure.kind == FailureKind.writeUncertain, 'classification', isTrue),
+            ));
+          }
+        }
+        expect(sent, problem != 'exact' &&
+            (phase == 'opening' || phase == 'preflight') ? 0 : 1);
+        if (sent == 1) {
+          expect(_query(adapter.requests.singleWhere(_isMutation)),
+              contains('project { id fullPath } namespace { id fullPath }'));
+        }
+      });
+    }
+  }
+
+  test('default group labels accept omitted project', () async {
+    final node = _groupNode(labels: [_label(_priority)])..remove('project');
+    final adapter = FakeAdapter((_) => jsonResponse(_envelope(node)));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    expect((await api.workItemLabels(_groupDetail(), expectedUserId: 7, generation: 1)).target, isNotNull);
+    expect(adapter.requests.where(_isMutation), isEmpty);
+  });
+
+  for (final problem in ['exact', 'missing', 'project', 'namespace']) {
+    test('strict group labels $problem on continuation page', () async {
+      var page = 0;
+      final adapter = FakeAdapter((request) {
+        page++;
+        final node = _groupNode(labels: page == 1 ? [_label(_priority)] : <Object?>[]);
+        final widget = (node['widgets'] as List).single as Map;
+        final connection = widget['labels'] as Map;
+        connection['pageInfo'] = {'hasNextPage': page == 1, 'endCursor': page == 1 ? 'next' : null};
+        if (page == 2) corruptGroupOwner(node, problem);
+        return jsonResponse(_envelope(node));
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final opening = api.workItemLabels(strictGroupDetail(api, _groupDetail()), expectedUserId: 7, generation: 1);
+      if (problem == 'exact') {
+        expect((await opening).target, isNotNull);
+      } else {
+        await expectLater(opening, throwsA(isA<ApiFailure>()));
+      }
+      expect(page, 2);
+      expect(adapter.requests.where(_isMutation), isEmpty);
+    });
+  }
   test('C2-D8 labels callback failure is not sent before gate', () async {
     final adapter = FakeAdapter((_) => jsonResponse(_envelope(_itemNode())));
     final api = testApi(adapter);

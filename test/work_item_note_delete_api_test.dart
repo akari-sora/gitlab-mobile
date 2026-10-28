@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _noteId = 'gid://gitlab/Note/401';
 const _discussionId = 'gid://gitlab/Discussion/synthetic-discussion';
@@ -167,7 +168,251 @@ Future<WorkItemActivityDeleteTarget> _target(
   _displayedNote(),
 )).target!;
 
+void _corruptGroupOwner(Map<Object?, Object?> node, String problem) {
+  switch (problem) {
+    case 'omitted':
+      node.remove('project');
+    case 'project':
+      node['project'] = {
+        'id': 'gid://gitlab/Project/42',
+        'fullPath': 'team/example-42',
+      };
+    case 'foreign':
+      node['namespace'] = {'id': 'gid://gitlab/Group/8', 'fullPath': 'team'};
+    case 'path':
+      node['namespace'] = {'id': 'gid://gitlab/Group/7', 'fullPath': 'other'};
+    case 'exact':
+      break;
+  }
+}
+
 void main() {
+  test(
+    'strict delete rejects an owner issued by another API before HTTP',
+    () async {
+      final ownerAdapter = FakeAdapter(
+        (_) => throw StateError('no request expected'),
+      );
+      final adapter = FakeAdapter(
+        (_) => throw StateError('no request expected'),
+      );
+      final owner = testApi(ownerAdapter);
+      final other = testApi(adapter);
+      addTearDown(owner.close);
+      addTearDown(other.close);
+      final summary = _summary(group: true);
+      final strict = summary.withStrictGroupOwner(
+        strictGroupOwner(owner, summary),
+      );
+      await expectLater(
+        other.workItemActivityDeleteAccess(
+          strict,
+          _discussion(),
+          _displayedNote(),
+        ),
+        throwsA(_failure(FailureKind.cancelled)),
+      );
+      expect(adapter.requests, isEmpty);
+      expect(ownerAdapter.requests, isEmpty);
+    },
+  );
+
+  for (final phase in ['opening', 'preflight']) {
+    for (final problem in ['exact', 'omitted', 'project', 'foreign', 'path']) {
+      test(
+        'strict group delete PHASE owner PROBLEM preserves acceptance boundary'
+            .replaceAll('PHASE', phase)
+            .replaceAll('PROBLEM', problem),
+        () async {
+          var call = 0;
+          var hooks = 0;
+          final adapter = FakeAdapter((request) {
+            call++;
+            if (_mutation(request)) return jsonResponse(_ack());
+            if (_query(request).contains('DeleteReadback')) {
+              return jsonResponse(_readback(group: true));
+            }
+            final envelope = _access(group: true);
+            if (phase == 'opening' && call == 1 ||
+                phase == 'preflight' && call == 2) {
+              _corruptGroupOwner(
+                (envelope['data'] as Map)['workItem'] as Map,
+                problem,
+              );
+            }
+            return jsonResponse(envelope);
+          });
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final summary = _summary(group: true);
+          final strict = summary.withStrictGroupOwner(
+            strictGroupOwner(api, summary),
+          );
+          final run = () async {
+            final target = (await api.workItemActivityDeleteAccess(
+              strict,
+              _discussion(),
+              _displayedNote(),
+            )).target!;
+            return api.deleteWorkItemActivityNote(
+              target,
+              beforeMutation: () async {
+                hooks++;
+              },
+              mayStart: () {
+                hooks++;
+                return true;
+              },
+            );
+          }();
+          if (problem == 'exact') {
+            await run;
+            expect(adapter.requests.where(_mutation), hasLength(1));
+            expect(adapter.requests, hasLength(4));
+            expect(hooks, 2);
+          } else {
+            await expectLater(
+              run,
+              throwsA(_failure(FailureKind.invalidResponse)),
+            );
+            expect(adapter.requests.where(_mutation), isEmpty);
+            expect(hooks, 0);
+          }
+        },
+      );
+    }
+  }
+
+  for (final phase in ['opening', 'preflight']) {
+    for (final problem in ['omitted', 'project']) {
+      test(
+        'strict group delete $phase note project $problem refuses',
+        () async {
+          var call = 0;
+          final adapter = FakeAdapter((request) {
+            call++;
+            final envelope = _access(group: true);
+            if (phase == 'opening' && call == 1 ||
+                phase == 'preflight' && call == 2) {
+              _corruptGroupOwner(
+                (envelope['data'] as Map)['note'] as Map,
+                problem,
+              );
+            }
+            return jsonResponse(envelope);
+          });
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final summary = _summary(group: true);
+          final strict = summary.withStrictGroupOwner(
+            strictGroupOwner(api, summary),
+          );
+          await expectLater(() async {
+            final target = (await api.workItemActivityDeleteAccess(
+              strict,
+              _discussion(),
+              _displayedNote(),
+            )).target!;
+            await api.deleteWorkItemActivityNote(target);
+          }(), throwsA(_failure(FailureKind.invalidResponse)));
+          expect(adapter.requests.where(_mutation), isEmpty);
+        },
+      );
+    }
+  }
+
+  for (final problem in [
+    'omitted',
+    'project',
+    'foreign',
+    'path',
+    'workItemId',
+    'iid',
+    'note present',
+    'note key missing',
+    'throw',
+    'cancel',
+  ]) {
+    test(
+      'strict delete readback $problem is uncertain after exactly one send',
+      () async {
+        var current = true;
+        final adapter = FakeAdapter((request) {
+          if (_mutation(request)) return jsonResponse(_ack());
+          if (_query(request).contains('DeleteReadback')) {
+            if (problem == 'throw') {
+              throw StateError('synthetic readback failure');
+            }
+            if (problem == 'cancel') current = false;
+            final item = _identity(_summary(group: true));
+            if (['omitted', 'project', 'foreign', 'path'].contains(problem)) {
+              _corruptGroupOwner(item, problem);
+            }
+            if (problem == 'workItemId') {
+              item['id'] = 'gid://gitlab/WorkItem/42';
+            }
+            if (problem == 'iid') item['iid'] = '9';
+            return jsonResponse(
+              _readback(
+                group: true,
+                workItem: item,
+                note: problem == 'note present' ? _note(group: true) : null,
+                includeNote: problem != 'note key missing',
+              ),
+            );
+          }
+          return jsonResponse(_access(group: true));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final summary = _summary(group: true);
+        final strict = summary.withStrictGroupOwner(
+          strictGroupOwner(api, summary),
+        );
+        final target = (await api.workItemActivityDeleteAccess(
+          strict,
+          _discussion(),
+          _displayedNote(),
+        )).target!;
+        await expectLater(
+          api.deleteWorkItemActivityNote(target, isCurrent: () => current),
+          throwsA(_failure(FailureKind.writeUncertain)),
+        );
+        expect(adapter.requests.where(_mutation), hasLength(1));
+        expect(adapter.requests, hasLength(4));
+        await expectLater(
+          api.deleteWorkItemActivityNote(target),
+          throwsA(_failure(FailureKind.writeUncertain)),
+        );
+        expect(adapter.requests, hasLength(4));
+      },
+    );
+  }
+
+  test(
+    'default group delete accepts omitted parent and note project',
+    () async {
+      final adapter = FakeAdapter((request) {
+        final envelope = _access(group: true);
+        final data = envelope['data'] as Map;
+        (data['workItem'] as Map).remove('project');
+        (data['note'] as Map).remove('project');
+        return jsonResponse(envelope);
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      expect(
+        (await api.workItemActivityDeleteAccess(
+          _summary(group: true),
+          _discussion(),
+          _displayedNote(),
+        )).target,
+        isNotNull,
+      );
+      expect(adapter.requests.where(_mutation), isEmpty);
+    },
+  );
+
   for (final group in [false, true]) {
     test('${group ? 'group' : 'project'} delete sends the exact opaque note ID '
         'and independently confirms absence', () async {

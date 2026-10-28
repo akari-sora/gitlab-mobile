@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/work_item_attribute_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _actorId = 'gid://gitlab/User/7';
 const _sentinel = Object();
@@ -264,6 +265,115 @@ Future<WorkItemWeightTarget> _target(
 }
 
 void main() {
+  for (final problem in ['exact', 'missing', 'project', 'namespace', 'payloadErrors', 'cancelled', 'schemaErrors']) {
+    for (final phase in ['opening', 'preflight', 'noop', 'ack', 'readback']) {
+      if (['payloadErrors', 'cancelled', 'schemaErrors'].contains(problem) && phase != 'ack') continue;
+      test('strict weight $phase $problem validates raw group owner', () async {
+        var reads = 0;
+        var writes = 0;
+        var current = true;
+        final adapter = FakeAdapter((request) {
+          late Map<String, Object?> response;
+          late Map<String, Object?> item;
+          if (_mutation(request)) {
+            writes++;
+            response = _ack(group: true, weight: 8);
+            item =
+                ((response['data'] as Map)['workItemUpdate'] as Map)['workItem']
+                    as Map<String, Object?>;
+            if (phase == 'ack') {
+              if (problem == 'payloadErrors') {
+                final payload = (response['data'] as Map)['workItemUpdate'] as Map;
+                payload['errors'] = ['rejected'];
+                payload.remove('workItem');
+              } else if (problem == 'cancelled') {
+                current = false;
+              } else if (problem == 'schemaErrors') {
+                response = {'errors': [{'message': 'unknown field', 'extensions': {'code': 'undefinedField'}}]};
+              } else {
+                corruptGroupOwner(item, problem);
+              }
+            }
+          } else {
+            reads++;
+            response = _read(
+              group: true,
+              weight: reads < 3 ? 3 : 8,
+              updatedAt: reads < 3 ? _freshAt : _savedAt,
+            );
+            item =
+                (response['data'] as Map)['workItem'] as Map<String, Object?>;
+            if ((phase == 'opening' && reads == 1) ||
+                ((phase == 'preflight' || phase == 'noop') && reads == 2) ||
+                (phase == 'readback' && reads == 3)) {
+              corruptGroupOwner(item, problem);
+            }
+          }
+          return jsonResponse(response);
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final opening = api.workItemWeight(
+          strictGroupDetail(api, _detail(group: true)),
+          expectedUserId: 7,
+        );
+        if (phase == 'opening' && problem != 'exact') {
+          await expectLater(opening, throwsA(isA<ApiFailure>()));
+          expect(writes, 0);
+          return;
+        }
+        final access = await opening;
+        if (phase == 'opening') return;
+        final save = api.updateWorkItemWeight(
+          access.target!,
+          weight: phase == 'noop' ? 3 : 8,
+          isCurrent: () => current,
+        );
+        if (problem == 'exact') {
+          expect((await save).value!.weight, phase == 'noop' ? 3 : 8);
+        } else {
+          final post = phase == 'ack' || phase == 'readback';
+          await expectLater(
+            save,
+            throwsA(
+              isA<ApiFailure>().having(
+                (e) => post
+                    ? e.kind == FailureKind.writeUncertain
+                    : e.kind != FailureKind.writeUncertain,
+                'classification',
+                isTrue,
+              ),
+            ),
+          );
+        }
+        expect(
+          writes,
+          phase == 'noop' || (phase == 'preflight' && problem != 'exact')
+              ? 0
+              : 1,
+        );
+      });
+    }
+  }
+
+  test(
+    'default weight accepts omitted project for group compatibility',
+    () async {
+      final item = _node(group: true)..remove('project');
+      final api = testApi(
+        FakeAdapter((_) => jsonResponse(_read(group: true, workItem: item))),
+      );
+      addTearDown(api.close);
+      expect(
+        (await api.workItemWeight(
+          _detail(group: true),
+          expectedUserId: 7,
+        )).target,
+        isNotNull,
+      );
+    },
+  );
+
   for (final group in [false, true]) {
     for (final desired in <int?>[21, 0, 2147483647, null]) {
       final scope = group ? 'group' : 'project';
