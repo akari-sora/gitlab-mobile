@@ -255,6 +255,7 @@ extension WorkItemMilestoneApi on GitLabApi {
     required int expectedUserId,
     bool Function()? isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.summary.strictGroupOwner);
     _validateMilestoneExpected(expected, expectedUserId);
     return _readWorkItemMilestone(
       expected.summary,
@@ -516,8 +517,9 @@ extension WorkItemMilestoneApi on GitLabApi {
         throw const FormatException('Wrong milestone acknowledgement');
       }
     } on ApiFailure catch (failure) {
-      if (failure.kind == FailureKind.unsupported ||
-          failure.kind == FailureKind.validation) {
+      if (target._snapshot.summary.strictGroupOwner == null &&
+          (failure.kind == FailureKind.unsupported ||
+              failure.kind == FailureKind.validation)) {
         rethrow;
       }
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -615,7 +617,10 @@ _ParsedMilestoneWorkItem _parseMilestoneWorkItem(
   required bool requirePermission,
 }) {
   final node = objectJson(raw);
-  final summary = _parseWorkItemSummary(node);
+  final summary = _parseWorkItemSummary(
+    node,
+    strictGroupOwner: expected.strictGroupOwner,
+  );
   _requireExpectedMilestoneIdentity(summary, expected);
   var readWorkItem = false;
   var setWorkItemMetadata = false;

@@ -139,6 +139,7 @@ void main() {
 
       // Verify mutual exclusivity across all sizes
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Widget-level 839 dp vs 840 dp: Single-Pane vs Two-Pane transition', (tester) async {
@@ -186,6 +187,7 @@ void main() {
       expect(find.byKey(const ValueKey('adaptive-detail-pane')), findsOneWidget);
       expect(find.byType(BackButton), findsNothing, reason: 'Two-pane mode should not show full-screen back button');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Widget-level 1199 dp vs 1200 dp: Max width 960 dp constraint boundary', (tester) async {
@@ -240,6 +242,7 @@ void main() {
       expect(wideContainer, findsOneWidget);
       final cappedWidth = tester.getSize(wideContainer).width;
       expect(cappedWidth, closeTo(960.0, 0.1), reason: 'On 1600 dp screen, detail content container must be capped at 960 dp');
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 
@@ -289,6 +292,7 @@ void main() {
       expect(find.byKey(const ValueKey('adaptive-empty-pane')), findsOneWidget);
       expect(find.text('請選擇專案'), findsOneWidget);
       expect(find.byKey(const ValueKey('adaptive-detail-pane')), findsNothing);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('WorkItemsTab: Issues vs MRs specification Empty States', (tester) async {
@@ -385,6 +389,7 @@ void main() {
       expect(find.text('檔案'), findsOneWidget);
       expect(find.byIcon(Icons.check_circle), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('List search filter updates master list while detail pane retains selection', (tester) async {
@@ -445,6 +450,7 @@ void main() {
       expect(find.byIcon(Icons.check_circle), findsOneWidget);
       expect(find.text('檔案'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 
@@ -557,6 +563,7 @@ void main() {
       expect(find.text('Mobile Workspace'), findsNothing);
       expect(find.text('請選擇專案'), findsNothing);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('AuthenticatedApp Shell NavigationRail offset probe: 840 dp vs 921 dp content transition', (tester) async {
@@ -614,6 +621,7 @@ void main() {
         reason: 'At 840 dp screen width, content area reaches 759 dp (expandedMinWithRail) and switches to Two-Pane');
       expect(find.text('請選擇專案'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Probing ProjectsPage didUpdateWidget resilience when account switches without rekeying', (tester) async {
@@ -685,6 +693,7 @@ void main() {
       final hasRetainedOldProject = find.text('檔案').evaluate().isNotEmpty;
       // We document this observation for forensic audit.
       expect(hasRetainedOldProject, isTrue);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 
@@ -825,6 +834,7 @@ void main() {
       final handledRootBack = await tester.binding.handlePopRoute();
       expect(handledRootBack, isFalse, reason: 'At the Home root, shell should not consume system back');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Stress test: multi-page pagination, scroll position tracking, and window resizing 1000 -> 800 -> 1000 dp with zero duplicate API calls', (tester) async {
@@ -1011,6 +1021,7 @@ void main() {
       expect(tester.state<ScrollableState>(twoPaneScrollableAfter).position.pixels, closeTo(scrolledOffset, 2.0),
         reason: 'Scroll position must be preserved across resize back to 1000 dp');
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Stress test: continuous oscillation 1200 <-> 840 <-> 600 <-> 412 dp with active Issue 42 preserves controller and hierarchy', (tester) async {
@@ -1098,6 +1109,7 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 }

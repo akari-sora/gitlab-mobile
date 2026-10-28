@@ -115,6 +115,7 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
     int maxPages = _workItemActivityReactionPageLimit,
   }) async {
     _validateWorkItemActivityReactionMaxPages(maxPages);
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     _validateExpectedAttributeIdentity(expected);
     _workItemActivityModelId(expected.id);
     if (expectedNote.system ||
@@ -200,6 +201,8 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
       );
     }
 
+    // The independent readback below checks the bound strict group owner and
+    // the requested reaction state; the acknowledgement cannot name the parent.
     if (beforeMutation != null) await beforeMutation();
     if (mayStart != null && !mayStart()) {
       throw const ApiFailure(FailureKind.cancelled);
@@ -318,7 +321,7 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
           throw const ApiFailure(FailureKind.invisible);
         }
         _requireActivityIdentity(
-          _parseAttributeIdentity(objectJson(data['workItem'])),
+          _parseActivityIdentity(objectJson(data['workItem']), identity),
           identity,
         );
         final value = _parseActivityEditNote(

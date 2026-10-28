@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _noteId = 'gid://gitlab/Note/401';
 const _discussionId = 'gid://gitlab/Discussion/synthetic-discussion';
@@ -187,7 +188,320 @@ Future<WorkItemActivityEditTarget> _target(
   _displayedNote(deletedAuthor: deletedAuthor),
 )).target!;
 
+void _corruptGroupOwner(Map<Object?, Object?> node, String problem) {
+  switch (problem) {
+    case 'omitted':
+      node.remove('project');
+    case 'project':
+      node['project'] = {
+        'id': 'gid://gitlab/Project/42',
+        'fullPath': 'team/example-42',
+      };
+    case 'foreign':
+      node['namespace'] = {'id': 'gid://gitlab/Group/8', 'fullPath': 'team'};
+    case 'path':
+      node['namespace'] = {'id': 'gid://gitlab/Group/7', 'fullPath': 'other'};
+    case 'id':
+      node['id'] = 'gid://gitlab/WorkItem/42';
+    case 'iid':
+      node['iid'] = '9';
+    case 'exact':
+      break;
+  }
+}
+
 void main() {
+  for (final problem in [
+    'exact',
+    'omitted',
+    'project',
+    'foreign',
+    'path',
+    'id',
+    'iid',
+    'missing parent',
+    'missing note',
+    'wrong note',
+    'wrong body',
+    'wrong noteable',
+    'missing note project',
+    'ack body',
+    'ack noteable',
+    'ack project',
+    'malformed ack',
+    'readback throws',
+    'readback cancelled',
+    'cancel after ack',
+    'cancel during readback',
+  ]) {
+    test('strict group edit requires independent owner and note readback: '
+        '$problem', () async {
+      var current = true;
+      var hooks = 0;
+      final adapter = FakeAdapter((request) {
+        if (_mutation(request)) {
+          final changes = <String, Object?>{};
+          if (problem == 'ack body') changes['body'] = 'Other body';
+          if (problem == 'ack noteable') changes['noteableId'] = 42;
+          if (problem == 'ack project') {
+            changes['project'] = {
+              'id': 'gid://gitlab/Project/42',
+              'fullPath': 'team/example-42',
+            };
+          }
+          if (problem == 'malformed ack') {
+            return jsonResponse({
+              'data': {'updateNote': null},
+            });
+          }
+          if (problem == 'cancel after ack') current = false;
+          return jsonResponse(_ack(group: true, changes: changes));
+        }
+        if (_query(request).contains('NoteReadback')) {
+          if (problem == 'readback throws') throw StateError('readback failed');
+          if (problem == 'readback cancelled') {
+            throw DioException(
+              requestOptions: request,
+              type: DioExceptionType.cancel,
+            );
+          }
+          if (problem == 'cancel during readback') current = false;
+          final envelope = _readback(group: true);
+          final data = envelope['data'] as Map;
+          _corruptGroupOwner(data['workItem'] as Map, problem);
+          final note = data['note'] as Map;
+          if (problem == 'missing parent') data.remove('workItem');
+          if (problem == 'missing note') data['note'] = null;
+          if (problem == 'wrong note') note['id'] = 'gid://gitlab/Note/999';
+          if (problem == 'wrong body') note['body'] = 'Other body';
+          if (problem == 'wrong noteable') note['noteableId'] = 42;
+          if (problem == 'missing note project') note.remove('project');
+          return jsonResponse(envelope);
+        }
+        return jsonResponse(_access(group: true));
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final summary = _summary(group: true);
+      final strict = summary.withStrictGroupOwner(
+        strictGroupOwner(api, summary),
+      );
+      final target = (await api.workItemActivityEditAccess(
+        strict,
+        _discussion(),
+        _displayedNote(),
+      )).target!;
+      Future<WorkItemActivityNote> attempt() => api.editWorkItemActivityNote(
+        target,
+        _replacement,
+        isCurrent: () => current,
+        beforeMutation: () async {
+          hooks++;
+        },
+        mayStart: () {
+          hooks++;
+          return true;
+        },
+      );
+      if (problem == 'exact') {
+        expect((await attempt()).body, _replacement);
+      } else {
+        await expectLater(
+          attempt(),
+          throwsA(_failure(FailureKind.writeUncertain)),
+        );
+      }
+      final requests = adapter.requests.length;
+      expect(
+        requests,
+        problem.startsWith('ack ') ||
+                problem == 'malformed ack' ||
+                problem == 'cancel after ack'
+            ? 3
+            : 4,
+      );
+      expect(hooks, 2);
+      expect(adapter.requests.where(_mutation), hasLength(1));
+      await expectLater(
+        attempt(),
+        throwsA(_failure(FailureKind.writeUncertain)),
+      );
+      expect(adapter.requests, hasLength(requests));
+    });
+  }
+
+  test(
+    'default group edit accepts omitted project through ack and readback',
+    () async {
+      final adapter = FakeAdapter((request) {
+        final envelope = _mutation(request)
+            ? _ack(group: true)
+            : _query(request).contains('NoteReadback')
+            ? _readback(group: true)
+            : _access(group: true);
+        final data = envelope['data'] as Map;
+        (data['workItem'] as Map?)?.remove('project');
+        ((data['updateNote'] as Map?)?['note'] as Map?)?.remove('project');
+        (data['note'] as Map?)?.remove('project');
+        return jsonResponse(envelope);
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final target = await _target(api, group: true);
+      expect(
+        (await api.editWorkItemActivityNote(target, _replacement)).body,
+        _replacement,
+      );
+      expect(adapter.requests, hasLength(4));
+      expect(adapter.requests.where(_mutation), hasLength(1));
+    },
+  );
+
+  test(
+    'strict edit rejects an owner issued by another API before HTTP',
+    () async {
+      final ownerAdapter = FakeAdapter(
+        (_) => throw StateError('no request expected'),
+      );
+      final adapter = FakeAdapter(
+        (_) => throw StateError('no request expected'),
+      );
+      final owner = testApi(ownerAdapter);
+      final other = testApi(adapter);
+      addTearDown(owner.close);
+      addTearDown(other.close);
+      final summary = _summary(group: true);
+      final strict = summary.withStrictGroupOwner(
+        strictGroupOwner(owner, summary),
+      );
+      await expectLater(
+        other.workItemActivityEditAccess(
+          strict,
+          _discussion(),
+          _displayedNote(),
+        ),
+        throwsA(_failure(FailureKind.cancelled)),
+      );
+      expect(adapter.requests, isEmpty);
+      expect(ownerAdapter.requests, isEmpty);
+    },
+  );
+
+  for (final phase in ['opening', 'preflight']) {
+    for (final problem in ['omitted', 'project', 'foreign', 'path']) {
+      test(
+        'strict group edit PHASE owner PROBLEM refuses before hooks'
+            .replaceAll('PHASE', phase)
+            .replaceAll('PROBLEM', problem),
+        () async {
+          var call = 0;
+          var hooks = 0;
+          final adapter = FakeAdapter((request) {
+            call++;
+            final envelope = _access(group: true);
+            if (phase == 'opening' && call == 1 ||
+                phase == 'preflight' && call == 2) {
+              _corruptGroupOwner(
+                (envelope['data'] as Map)['workItem'] as Map,
+                problem,
+              );
+            }
+            return jsonResponse(envelope);
+          });
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final summary = _summary(group: true);
+          final strict = summary.withStrictGroupOwner(
+            strictGroupOwner(api, summary),
+          );
+          final run = () async {
+            final target = (await api.workItemActivityEditAccess(
+              strict,
+              _discussion(),
+              _displayedNote(),
+            )).target!;
+            return api.editWorkItemActivityNote(
+              target,
+              _replacement,
+              beforeMutation: () async {
+                hooks++;
+              },
+              mayStart: () {
+                hooks++;
+                return true;
+              },
+            );
+          }();
+          await expectLater(
+            run,
+            throwsA(_failure(FailureKind.invalidResponse)),
+          );
+          expect(adapter.requests.where(_mutation), isEmpty);
+          expect(hooks, 0);
+        },
+      );
+    }
+  }
+
+  for (final problem in ['exact', 'omitted', 'project', 'foreign', 'path']) {
+    test('strict group edit noop still validates preflight $problem', () async {
+      var call = 0;
+      final adapter = FakeAdapter((request) {
+        call++;
+        final envelope = _access(group: true);
+        if (call == 2) {
+          _corruptGroupOwner(
+            (envelope['data'] as Map)['workItem'] as Map,
+            problem,
+          );
+        }
+        return jsonResponse(envelope);
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final summary = _summary(group: true);
+      final strict = summary.withStrictGroupOwner(
+        strictGroupOwner(api, summary),
+      );
+      final target = (await api.workItemActivityEditAccess(
+        strict,
+        _discussion(),
+        _displayedNote(),
+      )).target!;
+      final result = api.editWorkItemActivityNote(target, _originalBody);
+      if (problem == 'exact') {
+        expect((await result).body, _originalBody);
+      } else {
+        await expectLater(
+          result,
+          throwsA(_failure(FailureKind.invalidResponse)),
+        );
+      }
+      expect(adapter.requests.where(_mutation), isEmpty);
+    });
+  }
+
+  test('default group edit accepts omitted parent and note project', () async {
+    final adapter = FakeAdapter((request) {
+      final envelope = _access(group: true);
+      final data = envelope['data'] as Map;
+      (data['workItem'] as Map).remove('project');
+      (data['note'] as Map).remove('project');
+      return jsonResponse(envelope);
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    expect(
+      (await api.workItemActivityEditAccess(
+        _summary(group: true),
+        _discussion(),
+        _displayedNote(),
+      )).target,
+      isNotNull,
+    );
+    expect(adapter.requests.where(_mutation), isEmpty);
+  });
+
   for (final group in [false, true]) {
     test('${group ? 'group' : 'project'} edit preserves Markdown and verifies '
         'exact note without assuming author permission', () async {

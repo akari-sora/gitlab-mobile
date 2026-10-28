@@ -211,6 +211,7 @@ extension WorkItemDatesApi on GitLabApi {
     required int generation,
     bool Function()? isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, detail.summary.strictGroupOwner);
     _validateDatesExpected(detail.summary, expectedUserId, generation);
     final snapshot = await _readWorkItemDates(
       detail.summary,
@@ -272,7 +273,12 @@ extension WorkItemDatesApi on GitLabApi {
       dueDate,
     );
     if (validation != null) return validation;
-    if (_datesRequestIsNoop(target.snapshot, mode, startDate, dueDate)) {
+    final isNoop = _datesRequestIsNoop(target.snapshot, mode, startDate, dueDate);
+    final strictOwner = target.summary.strictGroupOwner != null;
+    if (isNoop) {
+      // The existing noop has no fresh read. Strict mode cannot prove current
+      // ownership from that opening snapshot without an extra request.
+      if (strictOwner) throw const ApiFailure(FailureKind.unsupported);
       return WorkItemDatesWriteResult(
         outcome: WorkItemDatesWriteOutcome.applied,
         snapshot: target.snapshot,
@@ -293,12 +299,18 @@ extension WorkItemDatesApi on GitLabApi {
       );
     } on ApiFailure catch (failure) {
       if (failure.kind == FailureKind.cancelled) rethrow;
+      if (strictOwner) {
+        if (failure.kind == FailureKind.writeUncertain) throw _datesInvalidResponse;
+        rethrow;
+      }
       throw _datesUncertain;
     } on Object {
+      if (strictOwner) throw _datesInvalidResponse;
       throw _datesUncertain;
     }
     if (before.actorId != target.actorId) throw _datesCancelled;
     if (!_sameDatesStateFence(before, target.snapshot)) {
+      if (strictOwner) throw const ApiFailure(FailureKind.conflict);
       throw _datesUncertain;
     }
     if (!before.readWorkItem || !before.setWorkItemMetadata) {
@@ -312,7 +324,6 @@ extension WorkItemDatesApi on GitLabApi {
     _requireDatesCurrent(target._openingIsCurrent);
     _requireDatesCurrent(isCurrent);
     if (isClosed) throw _datesCancelled;
-
     if (beforeMutation != null) await beforeMutation();
     _reportGraphMutationStart(onMutationSent);
 
@@ -762,7 +773,10 @@ _ParsedDatesNode _parseDatesNode(
   required _DatesReadRole role,
 }) {
   final node = objectJson(raw);
-  final summary = _parseWorkItemSummary(node);
+  final summary = _parseWorkItemSummary(
+    node,
+    strictGroupOwner: expected.strictGroupOwner,
+  );
   if (!_sameDatesIdentity(summary, expected)) {
     throw role == _DatesReadRole.access
         ? const FormatException('Wrong dates identity')

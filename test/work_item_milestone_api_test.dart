@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/work_item_milestone_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _actorId = 'gid://gitlab/User/7';
 final _createdAt = DateTime.utc(2026, 10, 1);
@@ -217,6 +218,123 @@ Future<WorkItemMilestoneTarget> _target(
 )).target!;
 
 void main() {
+  for (final problem in ['exact', 'missing', 'project', 'namespace', 'payloadErrors', 'cancelled', 'schemaErrors']) {
+    for (final phase in ['opening', 'preflight', 'noop', 'ack', 'readback']) {
+      if (['payloadErrors', 'cancelled', 'schemaErrors'].contains(problem) && phase != 'ack') continue;
+      test(
+        'strict milestone $phase $problem validates raw group owner',
+        () async {
+          var reads = 0;
+          var writes = 0;
+        var current = true;
+          final adapter = FakeAdapter((request) {
+            late Map<String, Object?> response;
+            late Map<String, Object?> item;
+            if (_query(request).startsWith('mutation ')) {
+              writes++;
+              response = _ack(group: true, milestone: null);
+              item =
+                  ((response['data'] as Map)['workItemUpdate']
+                          as Map)['workItem']
+                      as Map<String, Object?>;
+              if (phase == 'ack') {
+              if (problem == 'payloadErrors') {
+                final payload = (response['data'] as Map)['workItemUpdate'] as Map;
+                payload['errors'] = ['rejected'];
+                payload.remove('workItem');
+              } else if (problem == 'cancelled') {
+                current = false;
+              } else if (problem == 'schemaErrors') {
+                response = {'errors': [{'message': 'unknown field', 'extensions': {'code': 'undefinedField'}}]};
+              } else {
+                corruptGroupOwner(item, problem);
+              }
+            }
+            } else {
+              reads++;
+              response = _read(
+                group: true,
+                milestone: reads < 3 ? _milestone(groupOwner: true) : null,
+                updatedAt: reads < 3 ? _freshAt : _savedAt,
+              );
+              item =
+                  (response['data'] as Map)['workItem'] as Map<String, Object?>;
+              if ((phase == 'opening' && reads == 1) ||
+                  ((phase == 'preflight' || phase == 'noop') && reads == 2) ||
+                  (phase == 'readback' && reads == 3)) {
+                corruptGroupOwner(item, problem);
+              }
+            }
+            return jsonResponse(response);
+          });
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final opening = api.workItemMilestone(
+            strictGroupDetail(api, _detail(group: true)),
+            expectedUserId: 7,
+          );
+          if (phase == 'opening' && problem != 'exact') {
+            await expectLater(opening, throwsA(isA<ApiFailure>()));
+            expect(writes, 0);
+            return;
+          }
+          final access = await opening;
+          if (phase == 'opening') return;
+          final save = api.updateWorkItemMilestone(
+            access.target!,
+            isCurrent: () => current,
+            selection: phase == 'noop'
+                ? access.target!.currentSelection
+                : access.target!.clearSelection,
+          );
+          if (problem == 'exact') {
+            expect(
+              (await save).snapshot.milestone,
+              phase == 'noop' ? isNotNull : isNull,
+            );
+          } else {
+            final post = phase == 'ack' || phase == 'readback';
+            await expectLater(
+              save,
+              throwsA(
+                isA<ApiFailure>().having(
+                  (e) => post
+                      ? e.kind == FailureKind.writeUncertain
+                      : e.kind != FailureKind.writeUncertain,
+                  'classification',
+                  isTrue,
+                ),
+              ),
+            );
+          }
+          expect(
+            writes,
+            phase == 'noop' || (phase == 'preflight' && problem != 'exact')
+                ? 0
+                : 1,
+          );
+        },
+      );
+    }
+  }
+
+  test(
+    'default milestone accepts omitted project for group compatibility',
+    () async {
+      final response = _read(group: true);
+      ((response['data'] as Map)['workItem'] as Map).remove('project');
+      final api = testApi(FakeAdapter((_) => jsonResponse(response)));
+      addTearDown(api.close);
+      expect(
+        (await api.workItemMilestone(
+          _detail(group: true),
+          expectedUserId: 7,
+        )).target,
+        isNotNull,
+      );
+    },
+  );
+
   for (final group in [false, true]) {
     test(
       '${group ? 'group' : 'project'} read uses metadata permissions and exposes server expiry',

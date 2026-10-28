@@ -5,10 +5,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/work_item_health_edit_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _actorId = 'gid://gitlab/User/7';
 const _generation = 12;
@@ -323,6 +325,8 @@ void _expectMutationInput(RequestOptions request, String id, String? desired) {
   expect('workItemUpdate'.allMatches(query).length, 1);
   expect(query, isNot(contains('currentUser')));
   expect(query, isNot(contains('userPermissions')));
+  expect(query, isNot(contains('project { id fullPath }')));
+  expect(query, isNot(contains('namespace { id fullPath }')));
   expect(request.followRedirects, isFalse);
   expect(request.maxRedirects, 0);
   expect(_variables(request).keys.toList(), ['input']);
@@ -382,6 +386,200 @@ Future<void> _expectConsumed(
 }
 
 void main() {
+  for (final strict in [false, true]) {
+    for (final afterSend in [false, true]) {
+      test('health typed cache failure strict=$strict afterSend=$afterSend', () async {
+        var writes = 0;
+        var armed = false;
+        var injected = false;
+        final adapter = FakeAdapter((request) {
+          if (_isMutation(request)) {
+            writes++;
+            return jsonResponse(_ack(group: true, value: 'atRisk'));
+          }
+          return jsonResponse(_read(group: true, value: 'needsAttention'));
+        });
+        final api = GitLabApi(
+          instance: GitLabInstance.parse('https://example.com/gitlab'),
+          token: 'synthetic-test-token',
+          dio: Dio()..httpClientAdapter = adapter,
+          cdnAdapter: adapter,
+          readCacheClock: () {
+            if (armed && !injected && (afterSend ? writes > 0 : writes == 0)) {
+              injected = true;
+              throw const WorkItemHealthEditFailure(
+                ApiFailure(FailureKind.forbidden),
+                false,
+              );
+            }
+            return DateTime.now();
+          },
+        );
+        addTearDown(api.close);
+        final detail = strict
+            ? strictGroupDetail(api, _detail(group: true))
+            : _detail(group: true);
+        final access = await api.workItemHealthEdit(
+          detail,
+          expectedUserId: 7,
+          generation: _generation,
+          isCurrent: () => true,
+        );
+        armed = true;
+        final expected = afterSend
+            ? (strict ? FailureKind.writeUncertain : FailureKind.forbidden)
+            : FailureKind.invalidResponse;
+        await expectLater(
+          api.updateWorkItemHealthStatus(
+            access.target!,
+            desired: WorkItemHealthEditValue.atRisk,
+            generation: _generation,
+            isCurrent: () => true,
+          ),
+          throwsA(_editFailure(expected, afterSend && strict)),
+        );
+        expect(injected, isTrue);
+        expect(writes, afterSend ? 1 : 0);
+        if (afterSend) {
+          expect(adapter.requests, hasLength(3));
+        }
+      });
+    }
+  }
+
+  for (final problem in ['exact', 'missing', 'project', 'namespace', 'payloadErrors', 'cancelled', 'schemaErrors']) {
+    for (final phase in ['opening', 'preflight', 'noop', 'ack', 'readback']) {
+      if (['payloadErrors', 'cancelled', 'schemaErrors'].contains(problem) && phase != 'ack') continue;
+      test('strict health $phase $problem validates raw group owner', () async {
+        var reads = 0;
+        var writes = 0;
+        var current = true;
+        final adapter = FakeAdapter((request) {
+          late Map<String, Object?> response;
+          late Map<String, Object?> item;
+          if (_isMutation(request)) {
+            writes++;
+            expect(_query(request), contains('project { id fullPath }'));
+            expect(_query(request), contains('namespace { id fullPath }'));
+            response = _ack(
+              group: true,
+              value: 'atRisk',
+              updatedAt: _newerRevision,
+            );
+            item =
+                ((response['data'] as Map)['workItemUpdate'] as Map)['workItem']
+                    as Map<String, Object?>;
+            if (phase == 'ack') {
+              if (problem == 'payloadErrors') {
+                final payload = (response['data'] as Map)['workItemUpdate'] as Map;
+                payload['errors'] = ['rejected'];
+                payload.remove('workItem');
+              } else if (problem == 'cancelled') {
+                current = false;
+              } else if (problem == 'schemaErrors') {
+                response = {'errors': [{'message': 'unknown field', 'extensions': {'code': 'undefinedField'}}]};
+              } else {
+                corruptGroupOwner(item, problem);
+              }
+            }
+          } else {
+            reads++;
+            response = _read(
+              group: true,
+              value: reads < 3 ? 'needsAttention' : 'atRisk',
+              updatedAt: reads < 3 ? _revision : _newerRevision,
+            );
+            item =
+                (response['data'] as Map)['workItem'] as Map<String, Object?>;
+            if ((phase == 'opening' && reads == 1) ||
+                ((phase == 'preflight' || phase == 'noop') && reads == 2) ||
+                (phase == 'readback' && reads == 3)) {
+              corruptGroupOwner(item, problem);
+            }
+          }
+          return jsonResponse(response);
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final detail = strictGroupDetail(api, _detail(group: true));
+        final opening = api.workItemHealthEdit(
+          detail,
+          expectedUserId: 7,
+          generation: _generation,
+          isCurrent: () => current,
+        );
+        if (phase == 'opening' && problem != 'exact') {
+          await expectLater(opening, throwsA(isA<ApiFailure>()));
+          expect(writes, 0);
+          return;
+        }
+        final access = await opening;
+        if (phase == 'opening') {
+          expect(writes, 0);
+          return;
+        }
+        final save = api.updateWorkItemHealthStatus(
+          access.target!,
+          desired: phase == 'noop'
+              ? WorkItemHealthEditValue.needsAttention
+              : WorkItemHealthEditValue.atRisk,
+          generation: _generation,
+          isCurrent: () => current,
+        );
+        if (problem == 'exact') {
+          expect(
+            (await save).status,
+            phase == 'noop'
+                ? WorkItemHealthEditSaveStatus.noop
+                : WorkItemHealthEditSaveStatus.success,
+          );
+        } else {
+          final post = phase == 'ack' || phase == 'readback';
+          await expectLater(
+            save,
+            throwsA(
+              isA<WorkItemHealthEditFailure>()
+                  .having((e) => e.mutationSent, 'sent', post)
+                  .having(
+                    (e) => post
+                        ? e.failure.kind == FailureKind.writeUncertain
+                        : e.failure.kind != FailureKind.writeUncertain,
+                    'classification',
+                    isTrue,
+                  ),
+            ),
+          );
+        }
+        expect(
+          writes,
+          phase == 'noop' || (phase == 'preflight' && problem != 'exact')
+              ? 0
+              : 1,
+        );
+      });
+    }
+  }
+
+  test(
+    'default health accepts omitted project for group compatibility',
+    () async {
+      final item = _node(group: true)..remove('project');
+      final api = testApi(
+        FakeAdapter((_) => jsonResponse(_read(group: true, workItem: item))),
+      );
+      addTearDown(api.close);
+      expect(
+        (await api.workItemHealthEdit(
+          _detail(group: true),
+          expectedUserId: 7,
+          generation: _generation,
+          isCurrent: () => true,
+        )).target,
+        isNotNull,
+      );
+    },
+  );
+
   test('pure edit models preserve strict values and immutable rollups', () {
     expect(WorkItemHealthEditValue.onTrack.graphValue, 'onTrack');
     expect(WorkItemHealthEditValue.needsAttention.graphValue, 'needsAttention');

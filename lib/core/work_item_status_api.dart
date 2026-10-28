@@ -152,6 +152,7 @@ extension WorkItemStatusApi on GitLabApi {
     required int generation,
     bool Function()? isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, detail.summary.strictGroupOwner);
     _validateStatusExpected(detail.summary, expectedUserId, generation);
     final loaded = await _readWorkItemStatus(
       detail.summary,
@@ -330,7 +331,8 @@ extension WorkItemStatusApi on GitLabApi {
         throw _statusUncertain;
       }
     } on ApiFailure catch (failure) {
-      if (failure.kind == FailureKind.validation) {
+      if (target._expected.strictGroupOwner == null &&
+          failure.kind == FailureKind.validation) {
         throw WorkItemStatusWriteFailure(
           failure: failure,
           mutationSent: true,
@@ -436,7 +438,10 @@ extension WorkItemStatusApi on GitLabApi {
         throw const ApiFailure(FailureKind.invisible);
       }
       final node = objectJson(data['workItem']);
-      final summary = _parseWorkItemSummary(node);
+      final summary = _parseWorkItemSummary(
+        node,
+        strictGroupOwner: expected.strictGroupOwner,
+      );
       if (!_sameStatusIdentity(summary, expected)) {
         throw const FormatException('Wrong STATUS work item identity');
       }
@@ -750,6 +755,7 @@ WorkItemStatusAcknowledgement _parseStatusAcknowledgement(
       );
     }
     final node = objectJson(payload['workItem']);
+    _requireStrictGroupWorkItemOwner(node, target._expected.strictGroupOwner);
     final id = requiredString(node, 'id');
     final iid = _positiveWorkItemInt(node['iid']);
     final project = _parseOptionalResourceRef(node['project']);

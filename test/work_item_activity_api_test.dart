@@ -7,10 +7,12 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
+import 'package:gitlab_mobile/core/rate_budget.dart';
 import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _workItemId = 'gid://gitlab/WorkItem/31';
 const _projectId = 'gid://gitlab/Project/42';
@@ -225,7 +227,700 @@ bool _isMutation(RequestOptions request) {
       (data['query'] as String).startsWith('mutation ');
 }
 
+Map<String, Object?> _strictGroupIdentity() => _identity(
+  id: _groupExpected.id,
+  iid: '${_groupExpected.iid}',
+  project: null,
+  namespace: {'id': _groupExpected.namespace!.id, 'fullPath': 'team'},
+);
+
+void _corruptGroupOwner(Map<Object?, Object?> node, String problem) {
+  switch (problem) {
+    case 'omitted':
+      node.remove('project');
+    case 'project':
+      node['project'] = {'id': _projectId, 'fullPath': _path};
+    case 'foreign':
+      node['namespace'] = {'id': 'gid://gitlab/Group/8', 'fullPath': 'team'};
+    case 'path':
+      node['namespace'] = {'id': 'gid://gitlab/Group/7', 'fullPath': 'other'};
+    case 'id':
+      node['id'] = 'gid://gitlab/WorkItem/42';
+    case 'iid':
+      node['iid'] = '9';
+    case 'exact':
+      break;
+  }
+}
+
+Map<String, Object?> _groupPage({bool continuation = false}) =>
+    _activityEnvelope(
+      id: _groupExpected.id,
+      iid: '${_groupExpected.iid}',
+      project: null,
+      namespace: {'id': _groupExpected.namespace!.id, 'fullPath': 'team'},
+      widgets: [
+        _notesWidget(
+          nodes: [
+            _discussion(
+              nodes: [_note()],
+              notesNext: continuation,
+              notesCursor: continuation ? 'notes-a' : null,
+            ),
+          ],
+          next: continuation,
+          cursor: continuation ? 'discussions-a' : null,
+        ),
+      ],
+    );
+
+Map<String, Object?> _groupReadback({String body = 'Group comment'}) => {
+  'data': {
+    'workItem': _strictGroupIdentity(),
+    'note': _writeNote(body: body, noteableId: 41, project: null),
+  },
+};
+
 void main() {
+  for (final reply in [false, true]) {
+    for (final strictMode in [false, true]) {
+      for (final stage in ['cache finalizer', 'current check']) {
+        test(
+          '${strictMode ? 'strict' : 'default'} group '
+          '${reply ? 'reply' : 'comment'} post-send exception in $stage',
+          () async {
+            var ackReturned = false;
+            var clockFailures = 0;
+            final now = DateTime.utc(2026, 10, 28);
+            final adapter = FakeAdapter((request) {
+              if (_isMutation(request)) {
+                ackReturned = true;
+                return jsonResponse(
+                  _writeAck(
+                    note: _writeNote(
+                      body: 'Group comment',
+                      noteableId: 41,
+                      project: null,
+                    ),
+                  ),
+                );
+              }
+              final query = (request.data as Map)['query'] as String;
+              if (query.startsWith('query MobileWorkItemActivity(')) {
+                return jsonResponse(_groupPage());
+              }
+              return jsonResponse(
+                _writeAccess(
+                  expected: _groupExpected,
+                  anchor: reply
+                      ? _writeNote(id: _noteId, noteableId: 41, project: null)
+                      : null,
+                ),
+              );
+            });
+            final api = GitLabApi(
+              instance: GitLabInstance.parse('https://example.com/gitlab'),
+              token: 'synthetic-test-token',
+              dio: Dio()..httpClientAdapter = adapter,
+              cdnAdapter: adapter,
+              rateBudget: GitLabRateBudget(now: () => now),
+              readCacheClock: () {
+                if (ackReturned &&
+                    stage == 'cache finalizer' &&
+                    clockFailures == 0) {
+                  clockFailures++;
+                  throw StateError('post-send cache finalizer');
+                }
+                return now;
+              },
+            );
+            addTearDown(api.close);
+            final expected = strictMode
+                ? _groupExpected.withStrictGroupOwner(
+                    strictGroupOwner(api, _groupExpected),
+                  )
+                : _groupExpected;
+            bool isCurrent() {
+              if (ackReturned && stage == 'current check') {
+                throw StateError('post-send current check');
+              }
+              return true;
+            }
+
+            late final Future<WorkItemActivityCreatedNote> Function() attempt;
+            if (reply) {
+              final page = await api.workItemActivity(expected);
+              final target = page.replyTargetsByNote[_noteId]!;
+              attempt = () => api.createWorkItemActivityReply(
+                target,
+                'Group comment',
+                isCurrent: isCurrent,
+              );
+            } else {
+              final target = (await api.workItemActivityWriteAccess(
+                expected,
+              )).commentTarget!;
+              attempt = () => api.createWorkItemActivityComment(
+                target,
+                'Group comment',
+                isCurrent: isCurrent,
+              );
+            }
+            await expectLater(
+              attempt(),
+              throwsA(
+                strictMode
+                    ? _failure(FailureKind.writeUncertain)
+                    : isA<StateError>(),
+              ),
+            );
+            expect(clockFailures, stage == 'cache finalizer' ? 1 : 0);
+            expect(adapter.requests.where(_isMutation), hasLength(1));
+            expect(adapter.requests, hasLength(3));
+            await expectLater(
+              attempt(),
+              throwsA(_failure(FailureKind.writeUncertain)),
+            );
+            expect(adapter.requests, hasLength(3));
+          },
+        );
+      }
+    }
+  }
+
+  for (final reply in [false, true]) {
+    for (final problem in [
+      'exact',
+      'omitted',
+      'project',
+      'foreign',
+      'path',
+      'id',
+      'iid',
+      'missing parent',
+      'missing note',
+      'wrong note',
+      'wrong body',
+      'wrong noteable',
+      'missing note project',
+      'ack body',
+      'ack noteable',
+      'ack project',
+      'malformed ack',
+      'schema ack',
+      'readback throws',
+      'readback cancelled',
+      'cancel after ack',
+      'cancel during readback',
+    ]) {
+      test('strict group ${reply ? 'reply' : 'comment'} requires independent '
+          'owner and note readback: $problem', () async {
+        var current = true;
+        var hooks = 0;
+        final adapter = FakeAdapter((request) {
+          final query = (request.data as Map)['query'] as String;
+          if (_isMutation(request)) {
+            final note = _writeNote(
+              body: 'Group comment',
+              noteableId: 41,
+              project: null,
+            );
+            if (problem == 'ack body') note['body'] = 'Other body';
+            if (problem == 'ack noteable') note['noteableId'] = 42;
+            if (problem == 'ack project') {
+              note['project'] = {'id': _projectId, 'fullPath': _path};
+            }
+            if (problem == 'malformed ack') {
+              return jsonResponse({
+                'data': {'createNote': null},
+              });
+            }
+            if (problem == 'schema ack') {
+              return jsonResponse(
+                _schemaError(
+                  'undefinedField',
+                  'Unsupported acknowledgement field',
+                ),
+              );
+            }
+            if (problem == 'cancel after ack') current = false;
+            return jsonResponse(_writeAck(note: note));
+          }
+          if (query.contains('NoteReadback')) {
+            if (problem == 'readback throws') {
+              throw StateError('readback failed');
+            }
+            if (problem == 'readback cancelled') {
+              throw DioException(
+                requestOptions: request,
+                type: DioExceptionType.cancel,
+              );
+            }
+            if (problem == 'cancel during readback') current = false;
+            final envelope = _groupReadback();
+            final data = envelope['data'] as Map;
+            _corruptGroupOwner(data['workItem'] as Map, problem);
+            final note = data['note'] as Map;
+            if (problem == 'missing parent') data.remove('workItem');
+            if (problem == 'missing note') data['note'] = null;
+            if (problem == 'wrong note') note['id'] = 'gid://gitlab/Note/999';
+            if (problem == 'wrong body') note['body'] = 'Other body';
+            if (problem == 'wrong noteable') note['noteableId'] = 42;
+            if (problem == 'missing note project') note.remove('project');
+            return jsonResponse(envelope);
+          }
+          if (query.startsWith('query MobileWorkItemActivity(')) {
+            return jsonResponse(_groupPage());
+          }
+          return jsonResponse(
+            _writeAccess(
+              expected: _groupExpected,
+              anchor: reply
+                  ? _writeNote(id: _noteId, noteableId: 41, project: null)
+                  : null,
+            ),
+          );
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final expected = _groupExpected.withStrictGroupOwner(
+          strictGroupOwner(api, _groupExpected),
+        );
+        late final Future<WorkItemActivityCreatedNote> Function() attempt;
+        Future<void> beforeMutation() async {
+          hooks++;
+        }
+
+        bool mayStart() {
+          hooks++;
+          return true;
+        }
+
+        if (reply) {
+          final page = await api.workItemActivity(expected);
+          final target = page.replyTargetsByNote[_noteId]!;
+          attempt = () => api.createWorkItemActivityReply(
+            target,
+            'Group comment',
+            isCurrent: () => current,
+            beforeMutation: beforeMutation,
+            mayStart: mayStart,
+          );
+        } else {
+          final target = (await api.workItemActivityWriteAccess(
+            expected,
+          )).commentTarget!;
+          attempt = () => api.createWorkItemActivityComment(
+            target,
+            'Group comment',
+            isCurrent: () => current,
+            beforeMutation: beforeMutation,
+            mayStart: mayStart,
+          );
+        }
+        if (problem == 'exact') {
+          expect((await attempt()).note.body, 'Group comment');
+        } else {
+          await expectLater(
+            attempt(),
+            throwsA(_failure(FailureKind.writeUncertain)),
+          );
+        }
+        final requests = adapter.requests.length;
+        expect(
+          requests,
+          problem.startsWith('ack ') ||
+                  problem == 'malformed ack' ||
+                  problem == 'schema ack' ||
+                  problem == 'cancel after ack'
+              ? 3
+              : 4,
+        );
+        expect(hooks, 2);
+        expect(adapter.requests.where(_isMutation), hasLength(1));
+        await expectLater(
+          attempt(),
+          throwsA(_failure(FailureKind.writeUncertain)),
+        );
+        expect(adapter.requests, hasLength(requests));
+      });
+    }
+
+    test('default group ${reply ? 'reply' : 'comment'} still accepts omitted '
+        'parent and note project through send and readback', () async {
+      final adapter = FakeAdapter((request) {
+        final query = (request.data as Map)['query'] as String;
+        final Map<String, Object?> envelope;
+        if (_isMutation(request)) {
+          final note = _writeNote(
+            body: 'Group comment',
+            noteableId: 41,
+            project: null,
+          )..remove('project');
+          return jsonResponse(_writeAck(note: note));
+        } else if (query.contains('NoteReadback')) {
+          envelope = _groupReadback();
+        } else if (query.startsWith('query MobileWorkItemActivity(')) {
+          envelope = _groupPage();
+        } else {
+          envelope = _writeAccess(
+            expected: _groupExpected,
+            anchor: reply
+                ? _writeNote(id: _noteId, noteableId: 41, project: null)
+                : null,
+          );
+        }
+        final data = envelope['data'] as Map;
+        (data['workItem'] as Map).remove('project');
+        (data['note'] as Map?)?.remove('project');
+        (data['anchor'] as Map?)?.remove('project');
+        return jsonResponse(envelope);
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final WorkItemActivityCreatedNote result;
+      if (reply) {
+        final page = await api.workItemActivity(_groupExpected);
+        result = await api.createWorkItemActivityReply(
+          page.replyTargetsByNote[_noteId]!,
+          'Group comment',
+        );
+      } else {
+        final target = (await api.workItemActivityWriteAccess(
+          _groupExpected,
+        )).commentTarget!;
+        result = await api.createWorkItemActivityComment(
+          target,
+          'Group comment',
+        );
+      }
+      expect(result.note.body, 'Group comment');
+      expect(adapter.requests, hasLength(4));
+      expect(adapter.requests.where(_isMutation), hasLength(1));
+    });
+  }
+
+  test(
+    'strict activity rejects an owner issued by another API before HTTP',
+    () async {
+      final ownerAdapter = FakeAdapter(
+        (_) => throw StateError('no request expected'),
+      );
+      final adapter = FakeAdapter(
+        (_) => throw StateError('no request expected'),
+      );
+      final owner = testApi(ownerAdapter);
+      final other = testApi(adapter);
+      addTearDown(owner.close);
+      addTearDown(other.close);
+      final summary = _groupExpected;
+      final strict = summary.withStrictGroupOwner(
+        strictGroupOwner(owner, summary),
+      );
+      await expectLater(
+        other.workItemActivity(strict),
+        throwsA(_failure(FailureKind.cancelled)),
+      );
+      await expectLater(
+        other.workItemActivityWriteAccess(strict),
+        throwsA(_failure(FailureKind.cancelled)),
+      );
+      expect(adapter.requests, isEmpty);
+      expect(ownerAdapter.requests, isEmpty);
+    },
+  );
+
+  for (final path in ['page', 'access']) {
+    for (final problem in ['exact', 'omitted', 'project', 'foreign', 'path']) {
+      test('strict group activity $path checks $problem owner', () async {
+        final adapter = FakeAdapter((request) {
+          final envelope = path == 'page'
+              ? _groupPage()
+              : _writeAccess(expected: _groupExpected);
+          final node = ((envelope['data'] as Map)['workItem'] as Map);
+          _corruptGroupOwner(node, problem);
+          return jsonResponse(envelope);
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final expected = _groupExpected.withStrictGroupOwner(
+          strictGroupOwner(api, _groupExpected),
+        );
+        final result = path == 'page'
+            ? api.workItemActivity(expected)
+            : api.workItemActivityWriteAccess(expected);
+        if (problem == 'exact') {
+          await result;
+        } else {
+          await expectLater(
+            result,
+            throwsA(_failure(FailureKind.invalidResponse)),
+          );
+        }
+        expect(adapter.requests.where(_isMutation), isEmpty);
+      });
+    }
+    test('default group activity $path accepts omitted project', () async {
+      final adapter = FakeAdapter((request) {
+        final envelope = path == 'page'
+            ? _groupPage()
+            : _writeAccess(expected: _groupExpected);
+        ((envelope['data'] as Map)['workItem'] as Map).remove('project');
+        return jsonResponse(envelope);
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      if (path == 'page') {
+        await api.workItemActivity(_groupExpected);
+      } else {
+        expect(
+          (await api.workItemActivityWriteAccess(_groupExpected)).commentTarget,
+          isNotNull,
+        );
+      }
+      expect(adapter.requests.where(_isMutation), isEmpty);
+    });
+  }
+
+  for (final problem in ['omitted', 'project', 'foreign', 'path']) {
+    test(
+      'strict group comment preflight $problem refuses before hooks',
+      () async {
+        var call = 0;
+        var hooks = 0;
+        final adapter = FakeAdapter((request) {
+          call++;
+          final envelope = _writeAccess(expected: _groupExpected);
+          if (call == 2) {
+            _corruptGroupOwner(
+              (envelope['data'] as Map)['workItem'] as Map,
+              problem,
+            );
+          }
+          return jsonResponse(envelope);
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final expected = _groupExpected.withStrictGroupOwner(
+          strictGroupOwner(api, _groupExpected),
+        );
+        final target = (await api.workItemActivityWriteAccess(
+          expected,
+        )).commentTarget!;
+        await expectLater(
+          api.createWorkItemActivityComment(
+            target,
+            'Group comment',
+            beforeMutation: () async {
+              hooks++;
+            },
+            mayStart: () {
+              hooks++;
+              return true;
+            },
+          ),
+          throwsA(_failure(FailureKind.invalidResponse)),
+        );
+        expect(hooks, 0);
+        expect(adapter.requests.where(_isMutation), isEmpty);
+        expect(call, 2);
+      },
+    );
+  }
+
+  test(
+    'strict group activity unsupported controls never triggers a fallback query',
+    () async {
+      final adapter = FakeAdapter(
+        (request) => jsonResponse(
+          _schemaError(
+            'argumentNotAccepted',
+            'unsupported filter',
+            details: const {
+              'name': 'discussions',
+              'typeName': 'Field',
+              'argumentName': 'filter',
+            },
+          ),
+        ),
+      );
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final expected = _groupExpected.withStrictGroupOwner(
+        strictGroupOwner(api, _groupExpected),
+      );
+      await expectLater(
+        api.workItemActivity(expected),
+        throwsA(_failure(FailureKind.unsupported)),
+      );
+      expect(adapter.requests, hasLength(1));
+      expect(adapter.requests.where(_isMutation), isEmpty);
+    },
+  );
+
+  for (final problem in ['exact', 'omitted', 'project', 'foreign', 'path']) {
+    test(
+      'strict group activity continuation preserves owner: $problem',
+      () async {
+        var call = 0;
+        final adapter = FakeAdapter((request) {
+          call++;
+          final envelope = _groupPage(continuation: call == 1);
+          if (call == 2) {
+            _corruptGroupOwner(
+              (envelope['data'] as Map)['workItem'] as Map,
+              problem,
+            );
+          }
+          return jsonResponse(envelope);
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final expected = _groupExpected.withStrictGroupOwner(
+          strictGroupOwner(api, _groupExpected),
+        );
+        final first = await api.workItemActivity(expected);
+        final next = api.workItemActivityNext(first.nextDiscussions!);
+        if (problem == 'exact') {
+          await next;
+        } else {
+          await expectLater(
+            next,
+            throwsA(_failure(FailureKind.invalidResponse)),
+          );
+        }
+        expect(adapter.requests.where(_isMutation), isEmpty);
+      },
+    );
+  }
+
+  for (final phase in ['continuation', 'anchor', 'reply']) {
+    for (final problem in [
+      'exact',
+      'omitted',
+      'project',
+      if (phase != 'anchor') 'foreign',
+    ]) {
+      test(
+        'strict group note continuation and reply checks $phase $problem',
+        () async {
+          var call = 0;
+          final adapter = FakeAdapter((request) {
+            call++;
+            if (call == 1) return jsonResponse(_groupPage(continuation: true));
+            if (call == 2) {
+              final query = (request.data as Map)['query'] as String;
+              expect(query, contains('noteableType'));
+              expect(query, contains('noteableId'));
+              final workItem = _strictGroupIdentity();
+              final anchor = <String, Object?>{
+                'id': _noteId,
+                'project': null,
+                'noteableType': 'Issue',
+                'noteableId': 41,
+                'discussion': _discussion(nodes: [_note()]),
+              };
+              if (phase == 'continuation') {
+                _corruptGroupOwner(workItem, problem);
+              }
+              if (phase == 'anchor') _corruptGroupOwner(anchor, problem);
+              return jsonResponse({
+                'data': {'workItem': workItem, 'anchor': anchor},
+              });
+            }
+            if (call == 3) {
+              final envelope = _writeAccess(
+                expected: _groupExpected,
+                anchor: _writeNote(id: _noteId, noteableId: 41, project: null),
+              );
+              if (phase == 'reply') {
+                _corruptGroupOwner(
+                  (envelope['data'] as Map)['workItem'] as Map,
+                  problem,
+                );
+              }
+              return jsonResponse(envelope);
+            }
+            if (call == 4) {
+              return jsonResponse(
+                _writeAck(
+                  note: _writeNote(
+                    body: 'Group reply',
+                    noteableId: 41,
+                    project: null,
+                  ),
+                ),
+              );
+            }
+            return jsonResponse(_groupReadback(body: 'Group reply'));
+          });
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final expected = _groupExpected.withStrictGroupOwner(
+            strictGroupOwner(api, _groupExpected),
+          );
+          final first = await api.workItemActivity(expected);
+          final result = () async {
+            final next = await api.workItemDiscussionNotesNext(
+              first.nextNotesByDiscussion[_discussionId]!,
+            );
+            return api.createWorkItemActivityReply(
+              next.replyTargetsByNote[_noteId]!,
+              'Group reply',
+            );
+          }();
+          if (problem == 'exact') {
+            expect((await result).note.body, 'Group reply');
+            expect(adapter.requests.where(_isMutation), hasLength(1));
+            expect(adapter.requests, hasLength(5));
+          } else {
+            await expectLater(
+              result,
+              throwsA(_failure(FailureKind.invalidResponse)),
+            );
+            expect(adapter.requests.where(_isMutation), isEmpty);
+          }
+        },
+      );
+    }
+  }
+
+  for (final wrong in ['missing', 'wrong']) {
+    test(
+      'strict discussion continuation rejects $wrong anchor noteable',
+      () async {
+        var call = 0;
+        final adapter = FakeAdapter((request) {
+          call++;
+          if (call == 1) return jsonResponse(_groupPage(continuation: true));
+          final anchor = <String, Object?>{
+            'id': _noteId,
+            'project': null,
+            'noteableType': 'Issue',
+            if (wrong == 'wrong') 'noteableId': 42,
+            'discussion': _discussion(nodes: [_note()]),
+          };
+          return jsonResponse({
+            'data': {'workItem': _strictGroupIdentity(), 'anchor': anchor},
+          });
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final expected = _groupExpected.withStrictGroupOwner(
+          strictGroupOwner(api, _groupExpected),
+        );
+        final page = await api.workItemActivity(expected);
+        await expectLater(
+          api.workItemDiscussionNotesNext(
+            page.nextNotesByDiscussion[_discussionId]!,
+          ),
+          throwsA(_failure(FailureKind.invalidResponse)),
+        );
+        expect(adapter.requests.where(_isMutation), isEmpty);
+      },
+    );
+  }
+
   test(
     'fixed activity query parses bounded discussions and nullable author',
     () async {

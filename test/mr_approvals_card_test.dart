@@ -105,6 +105,9 @@ void main() {
       // Verify: Reverted to "批准"
       expect(find.byKey(const ValueKey('mr-approve-btn')), findsOneWidget);
       expect(find.byKey(const ValueKey('mr-unapprove-btn')), findsNothing);
+      // Drain the attached read-cache disk coordinator so its bounded
+      // invalidation wait cancels its FakeAsync timer before teardown.
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('MR shows reached threshold when pre-approved by another reviewer', (tester) async {
@@ -152,6 +155,9 @@ void main() {
       expect(find.textContaining('已達核准門檻'), findsOneWidget);
       expect(find.textContaining('@reviewer'), findsOneWidget);
       expect(find.byKey(const ValueKey('mr-approve-btn')), findsOneWidget);
+      // Drain the attached read-cache disk coordinator so its bounded
+      // invalidation wait cancels its FakeAsync timer before teardown.
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 }

@@ -8523,4 +8523,61 @@ final class AppStrings {
 
   /// 已使用：無法確認
   String get offlineCacheSizeUnknown => language._messages[2809];
+
+  /// 加入群組工作項目
+  String get aiAddGroupWorkItem => language._messages[2810];
+
+  /// 貼上 {instance} 上直接屬於群組的工作項目連結。此次新增的授權只涵蓋這個工作項目及其留言，不包含群組的其他工作項目或其中的專案；對話原有的範圍不變。
+  String aiAddGroupWorkItemIntro(Object? instance) => _format(language, language._messages[2811], {'instance': instance});
+
+  /// 工作項目連結
+  String get aiAddGroupWorkItemLink => language._messages[2812];
+
+  /// 檢查
+  String get aiAddGroupWorkItemCheck => language._messages[2813];
+
+  /// 檢查中…
+  String get aiAddGroupWorkItemChecking => language._messages[2814];
+
+  /// AI 對它提出的修改，仍依這個對話的寫入方式確認或執行。你可以隨時在輸入框上方移除它。
+  String get aiAddGroupWorkItemConfirmDetail => language._messages[2815];
+
+  /// 加入後，這個對話的「{level}」會結束；需要時請重新選擇。
+  String aiAddGroupWorkItemGrantEnds(Object? level) => _format(language, language._messages[2816], {'level': level});
+
+  /// 加入對話
+  String get aiAddGroupWorkItemConfirm => language._messages[2817];
+
+  /// 已加入 {path} #{iid}
+  String aiAddedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[2818], {'path': path, 'iid': iid});
+
+  /// 已加入；新增的授權只涵蓋此項及其留言
+  String get aiAddedGroupWorkItemHint => language._messages[2819];
+
+  /// 從對話中移除
+  String get aiRemoveGroupWorkItem => language._messages[2820];
+
+  /// 這不是完整的群組工作項目連結。請在 GitLab 開啟該工作項目，複製頁面網址後再貼上。沒有加入任何項目。
+  String get aiAddGroupWorkItemMalformed => language._messages[2821];
+
+  /// 這個連結不在 {instance} 上，只能加入目前帳號所在 GitLab 的工作項目。沒有加入任何項目。
+  String aiAddGroupWorkItemOtherInstance(Object? instance) => _format(language, language._messages[2822], {'instance': instance});
+
+  /// 這個連結屬於專案。這裡只能加入直接屬於群組的工作項目。沒有加入任何項目。
+  String get aiAddGroupWorkItemProjectLink => language._messages[2823];
+
+  /// 這個群組連結沒有指向單一工作項目。沒有加入任何項目。
+  String get aiAddGroupWorkItemNotWorkItem => language._messages[2824];
+
+  /// 這個工作項目已在這個對話中。
+  String get aiAddGroupWorkItemAlreadyAdded => language._messages[2825];
+
+  /// GitLab 沒有確認這個工作項目直接屬於連結中的群組，或檢查期間它有變動。沒有加入任何項目。
+  String get aiAddGroupWorkItemNotGroupOwned => language._messages[2826];
+
+  /// AI 正在工作或有寫入等你處理時不能加入。沒有加入任何項目。
+  String get aiAddGroupWorkItemUnavailable => language._messages[2827];
+
+  /// 檢查結果已過期，沒有加入任何項目。請重新檢查連結。
+  String get aiAddGroupWorkItemStale => language._messages[2828];
 }

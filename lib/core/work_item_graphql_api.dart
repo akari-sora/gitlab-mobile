@@ -1168,8 +1168,10 @@ WorkItemGraphSummary _parseWorkItemSummary(
   Object? raw, {
   bool summaries = false,
   int? tier,
+  VerifiedGroupWorkItemIdentity? strictGroupOwner,
 }) {
   final node = objectJson(raw);
+  _requireStrictGroupWorkItemOwner(node, strictGroupOwner);
   final id = requiredString(node, 'id');
   if (!_validOpaqueGraphId(id)) {
     throw const FormatException('Invalid work item ID');
@@ -1270,7 +1272,40 @@ WorkItemGraphSummary _parseWorkItemSummary(
     type: type,
     author: author,
     widgets: widgets,
+    strictGroupOwner: strictGroupOwner,
   );
+}
+
+/// Ownership evidence cannot cross API/account or instance boundaries.
+void _requireStrictGroupOwnerApi(
+  GitLabApi api,
+  VerifiedGroupWorkItemIdentity? owner,
+) {
+  if (owner != null &&
+      (!identical(owner.apiOwner, api) ||
+          owner.instance.key != api.instance.key ||
+          api.isClosed)) {
+    throw const ApiFailure(FailureKind.cancelled);
+  }
+}
+
+/// Check the raw response before nullable parsing loses key presence. No
+/// evidence from an earlier response can substitute for the current owner.
+void _requireStrictGroupWorkItemOwner(
+  Json node,
+  VerifiedGroupWorkItemIdentity? owner,
+) {
+  if (owner == null) return;
+  final namespace = node['namespace'];
+  if (!node.containsKey('project') ||
+      node['project'] != null ||
+      namespace is! Map ||
+      namespace['id'] != owner.groupGid ||
+      namespace['fullPath'] != owner.fullPath ||
+      node['id'] != owner.workItemGid ||
+      _positiveWorkItemInt(node['iid']) != owner.iid) {
+    throw const FormatException('Unproven group work item owner');
+  }
 }
 
 WorkItemGraphAuthor? _parseWorkItemAuthor(Object? raw) {

@@ -257,8 +257,9 @@ extension WorkItemContentApi on GitLabApi {
         throw const FormatException('Wrong content acknowledgement');
       }
     } on ApiFailure catch (failure) {
-      if (failure.kind == FailureKind.unsupported ||
-          failure.kind == FailureKind.validation) {
+      if (target._snapshot.summary.strictGroupOwner == null &&
+          (failure.kind == FailureKind.unsupported ||
+              failure.kind == FailureKind.validation)) {
         rethrow;
       }
       throw const ApiFailure(FailureKind.writeUncertain);
@@ -293,6 +294,7 @@ extension WorkItemContentApi on GitLabApi {
     required int expectedUserId,
     bool Function()? isCurrent,
   }) async {
+    _requireStrictGroupOwnerApi(this, expected.strictGroupOwner);
     _requireCurrentWorkItemRequest(isCurrent);
     final response = await _read(
       instance.graphQL,
@@ -360,7 +362,10 @@ _ParsedWorkItemContent _parseContentWorkItem(
   required bool requirePermission,
 }) {
   final node = objectJson(raw);
-  final summary = _parseWorkItemSummary(node);
+  final summary = _parseWorkItemSummary(
+    node,
+    strictGroupOwner: expected.strictGroupOwner,
+  );
   _requireExpectedContentIdentity(summary, expected);
 
   bool canUpdate = false;

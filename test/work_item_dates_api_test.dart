@@ -12,6 +12,7 @@ import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/c2d7_barrier.dart';
 import 'support/fake_adapter.dart';
+import 'support/strict_group_owner.dart';
 
 const _actor = 'gid://gitlab/User/7';
 const _item = 'gid://gitlab/WorkItem/100';
@@ -47,7 +48,213 @@ typedef _MutationResponder =
       Map<String, Object?> widget,
     );
 
+WorkItemGraphDetail _groupDatesDetail() {
+  final detail = _detail();
+  final old = detail.summary;
+  return WorkItemGraphDetail(
+    summary: WorkItemGraphSummary(
+      id: old.id,
+      iid: old.iid,
+      title: old.title,
+      state: old.state,
+      createdAt: old.createdAt,
+      updatedAt: old.updatedAt,
+      project: null,
+      namespace: const GraphResourceRef(
+        id: 'gid://gitlab/Group/84',
+        fullPath: 'qa/synthetic-group',
+      ),
+      type: old.type,
+    ),
+    description: detail.description,
+    widgetsAvailable: detail.widgetsAvailable,
+    widgetTypes: detail.widgetTypes,
+    descriptionWidget: detail.descriptionWidget,
+    assignees: detail.assignees,
+    labels: detail.labels,
+    hierarchy: detail.hierarchy,
+    dates: detail.dates,
+  );
+}
+
 void main() {
+  for (final problem in ['exact', 'missing', 'project', 'namespace', 'payloadErrors', 'cancelled', 'schemaErrors']) {
+    for (final phase in [
+      'openingBase',
+      'openingProbe',
+      'preflightBase',
+      'preflightProbe',
+      'ack',
+      'readbackBase',
+      'readbackProbe',
+    ]) {
+      if (['payloadErrors', 'cancelled', 'schemaErrors'].contains(problem) && phase != 'ack') continue;
+      test('strict dates $phase $problem validates raw group owner', () async {
+        var reads = 0;
+        var writes = 0;
+        var current = true;
+        final initial = const _ServerState();
+        final saved = initial.copyWith(startDate: '2026-10-04');
+        final adapter = FakeAdapter((request) {
+          final kind = _requestKind(request);
+          late Map<String, Object?> response;
+          late Map<String, Object?> item;
+          if (kind == _RequestKind.mutation) {
+            writes++;
+            response = _ackEnvelope(saved);
+            item =
+                ((response['data'] as Map)['workItemUpdate'] as Map)['workItem']
+                    as Map<String, Object?>;
+          } else {
+            reads++;
+            response = _readEnvelope(
+              reads <= 4 ? initial : saved,
+              ee: kind == _RequestKind.probe,
+            );
+            item =
+                (response['data'] as Map)['workItem'] as Map<String, Object?>;
+          }
+          item['project'] = null;
+          item['namespace'] = {
+            'id': 'gid://gitlab/Group/84',
+            'fullPath': 'qa/synthetic-group',
+          };
+          final malformed = switch (phase) {
+            'openingBase' => reads == 1 && kind == _RequestKind.base,
+            'openingProbe' => reads == 2 && kind == _RequestKind.probe,
+            'preflightBase' => reads == 3 && kind == _RequestKind.base,
+            'preflightProbe' => reads == 4 && kind == _RequestKind.probe,
+            'ack' => kind == _RequestKind.mutation,
+            'readbackBase' => reads == 5 && kind == _RequestKind.base,
+            'readbackProbe' => reads == 6 && kind == _RequestKind.probe,
+            _ => false,
+          };
+          if (malformed && phase != 'ack') corruptGroupOwner(item, problem);
+          if (phase == 'ack' && kind == _RequestKind.mutation) {
+              if (problem == 'payloadErrors') {
+                final payload = (response['data'] as Map)['workItemUpdate'] as Map;
+                payload['errors'] = ['rejected'];
+                payload.remove('workItem');
+              } else if (problem == 'cancelled') {
+                current = false;
+              } else if (problem == 'schemaErrors') {
+                response = {'errors': [{'message': 'unknown field', 'extensions': {'code': 'undefinedField'}}]};
+              } else {
+                corruptGroupOwner(item, problem);
+              }
+            }
+          return jsonResponse(response);
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final opening = api.workItemDates(
+          strictGroupDetail(api, _groupDatesDetail()),
+          expectedUserId: 7,
+          generation: 4,
+          isCurrent: () => current,
+        );
+        if (phase.startsWith('opening') && problem != 'exact') {
+          await expectLater(opening, throwsA(isA<ApiFailure>()));
+          expect(writes, 0);
+          return;
+        }
+        final access = await opening;
+        if (phase.startsWith('opening')) return;
+        final save = api.updateWorkItemDates(
+          access.target!,
+          mode: WorkItemDatesMode.manual,
+          startDate: '2026-10-04',
+          dueDate: null,
+          onMutationSent: () {},
+          isCurrent: () => current,
+        );
+        if (problem == 'exact') {
+          expect((await save).outcome, WorkItemDatesWriteOutcome.applied);
+        } else if (phase.startsWith('preflight')) {
+          await expectLater(save, throwsA(isA<ApiFailure>().having(
+            (e) => e.kind, 'kind', FailureKind.invalidResponse)));
+        } else {
+          final outcome = await save;
+          expect(outcome.outcome, WorkItemDatesWriteOutcome.writeUncertain);
+          expect(outcome.mutationSent, isTrue);
+        }
+        expect(
+          writes,
+          phase.startsWith('preflight') && problem != 'exact' ? 0 : 1,
+        );
+      });
+    }
+  }
+
+  test('strict dates noop refuses before extra reads or mutation hooks', () async {
+    var mutations = 0;
+    var hooks = 0;
+    final adapter = FakeAdapter((request) {
+      final kind = _requestKind(request);
+      if (kind == _RequestKind.mutation) mutations++;
+      final response = _readEnvelope(
+        const _ServerState(),
+        ee: kind == _RequestKind.probe,
+      );
+      final item = (response['data'] as Map)['workItem'] as Map;
+      item['project'] = null;
+      item['namespace'] = {
+        'id': 'gid://gitlab/Group/84',
+        'fullPath': 'qa/synthetic-group',
+      };
+      return jsonResponse(response);
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final access = await api.workItemDates(
+      strictGroupDetail(api, _groupDatesDetail()),
+      expectedUserId: 7,
+      generation: 4,
+    );
+    await expectLater(api.updateWorkItemDates(
+      access.target!,
+      mode: WorkItemDatesMode.manual,
+      startDate: null,
+      dueDate: null,
+      onMutationSent: () => hooks++,
+      beforeMutation: () async { hooks++; },
+      mayStart: () { hooks++; return true; },
+    ), throwsA(isA<ApiFailure>().having(
+      (e) => e.kind, 'kind', FailureKind.unsupported)));
+    expect(mutations, 0);
+    expect(hooks, 0);
+    expect(adapter.requests, hasLength(2), reason: 'opening only; no extra noop read');
+  });
+
+  test(
+    'default dates accept omitted project for group compatibility',
+    () async {
+      final adapter = FakeAdapter((request) {
+        final response = _readEnvelope(
+          const _ServerState(),
+          ee: _requestKind(request) == _RequestKind.probe,
+        );
+        final item = (response['data'] as Map)['workItem'] as Map;
+        item.remove('project');
+        item['namespace'] = {
+          'id': 'gid://gitlab/Group/84',
+          'fullPath': 'qa/synthetic-group',
+        };
+        return jsonResponse(response);
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      expect(
+        (await api.workItemDates(
+          _groupDatesDetail(),
+          expectedUserId: 7,
+          generation: 4,
+        )).target,
+        isNotNull,
+      );
+    },
+  );
+
   test('C2-D8 dates callback failure is cancelled before gate and send', () async {
     final server = _DatesServer(
       initial: const _ServerState(),
