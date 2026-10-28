@@ -15,6 +15,11 @@ import '../../shared/reveal_transition.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
+import '../../core/repository_ref.dart';
+import '../offline/offline_repositories.dart';
+import '../offline/offline_status.dart';
+import '../offline/save_sheet.dart';
+import '../offline/snapshot_browser_page.dart';
 import 'repository_page.dart';
 import 'work_item_page.dart';
 import 'ci_page.dart';
@@ -54,6 +59,7 @@ class ProjectPage extends StatefulWidget {
 enum _ProjectHeaderAction {
   copyId,
   openWeb,
+  offline,
 }
 
 class _ProjectPageState extends State<ProjectPage>
@@ -466,6 +472,36 @@ class _ProjectPageState extends State<ProjectPage>
     super.dispose();
   }
 
+  /// "離線保存…" / "離線版本…" (§6.2): the default branch, whole repository.
+  void _openOfflineSheet(OfflineRepositories offline) {
+    final branch = _project.defaultBranch;
+    unawaited(
+      openOfflineSaveSheet(
+        context,
+        repositories: offline,
+        account: widget.account,
+        project: _project,
+        ref: branch == null || branch.isEmpty
+            ? null
+            : RepositoryRef(
+                kind: RepositoryRefKind.branch,
+                name: branch,
+                sha: '',
+                protected: false,
+                isDefault: true,
+              ),
+        onOpen: (record) => unawaited(
+          openSnapshot(
+            context,
+            repositories: offline,
+            record: record,
+            account: widget.account,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final marked = _project.markedForDeletionOn != null;
@@ -539,6 +575,21 @@ class _ProjectPageState extends State<ProjectPage>
             },
             child: Text(l10n.openInGitlab),
           ),
+          if (OfflineScope.maybeOf(context, listen: false) case final offline?)
+            PopupMenuItem(
+              key: const ValueKey('project-header-action-offline'),
+              value: _ProjectHeaderAction.offline,
+              // After the menu has popped: the sheet must not be the route
+              // the menu closes.
+              onTap: () => WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _openOfflineSheet(offline);
+              }),
+              child: Text(
+                completeSnapshotsOf(offline, _project.id).isEmpty
+                    ? l10n.offlineSaveMenu
+                    : l10n.offlineVersionMenu,
+              ),
+            ),
         ];
       },
     );

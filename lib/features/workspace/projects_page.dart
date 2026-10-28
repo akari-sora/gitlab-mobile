@@ -603,7 +603,9 @@ class _ProjectsPageState extends State<ProjectsPage> {
       body: StatusBarInset(child: SafeArea(top: false, child: RecordsFeed(key: _feed,
         identity: groups ? 'groups/$_query' : 'projects/$_scope/$_sort/$_query', storageId: 'projects',
         account: account, resourceLabel: groups ? l10n.groupList : l10n.projectList, underShell: true, grouped: true,
-        onSwitchAccount: () { unawaited(widget.session.endSession()); },
+        // Through the shell's offline-loss and AI confirmations (§6.7).
+        onSwitchAccount: () => unawaited(SessionLeaveScope.run(
+          context, const LeaveIntent(LeaveKind.signOut), widget.session.endSession)),
         topSlivers: (context, _) => [_appBar(context)],
         leading: (context, _) => _controls(context),
         empty: groups

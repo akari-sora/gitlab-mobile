@@ -1,11 +1,18 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../core/gitlab_api.dart';
 import '../core/models.dart';
+import '../core/offline/snapshot_reader.dart';
+import '../core/repository_reader.dart';
 import '../core/providers.dart';
 import 'artifact_storage.dart';
 import 'attachment_budget.dart';
@@ -16,7 +23,9 @@ import 'external_link.dart';
 import 'in_app_links.dart';
 import 'markdown_media.dart';
 import 'markdown_media_source.dart';
+import 'markdown_media_svg.dart';
 import 'markdown_media_syntax.dart';
+import 'network_boundary.dart';
 import 'theme.dart';
 
 import '../l10n/l10n.dart';
@@ -34,6 +43,100 @@ final _link = RegExp(r'\[([^\[\]]*)\]\((?:[^()]|\([^()]*\))*\)');
 final _strongOrStrike = RegExp(r'\*\*|~~');
 final _underscoreStrong = RegExp(r'(?<![A-Za-z0-9_])__(?=[^\s_])((?:[^_]|_(?!_))*[^\s_])__(?![A-Za-z0-9_])');
 final _escaped = RegExp(r'\\([!-/:-@\[-`{-~])');
+
+/// GitLab's heading anchor for [text]: lower case, non-word characters
+/// removed, spaces turned into hyphens and repeated hyphens collapsed.
+String markdownHeadingSlug(String text) => text
+    .trim()
+    .toLowerCase()
+    .replaceAll(RegExp(r'[^\p{L}\p{N}\p{M}_\- ]', unicode: true), '')
+    .replaceAll(' ', '-')
+    .replaceAll(RegExp(r'-{2,}'), '-');
+
+/// The inline element every snapshot heading starts with; it renders as a
+/// zero-size [_HeadingAnchor] that gives the heading its identity.
+const _headingAnchorTag = 'mergeline-heading-anchor';
+
+md.Node? _withHeadingAnchor(md.Node? node) {
+  if (node is! md.Element) return node;
+  return md.Element(node.tag, [
+    md.Element.empty(_headingAnchorTag),
+    ...?node.children,
+  ])..attributes.addAll(node.attributes);
+}
+
+/// ATX headings (`## Title`) with a leading anchor element.
+final class _AnchoredHeaderSyntax extends md.HeaderSyntax {
+  const _AnchoredHeaderSyntax();
+  @override
+  md.Node parse(md.BlockParser parser) => _withHeadingAnchor(super.parse(parser))!;
+}
+
+/// Setext headings (`Title` over `===`) with a leading anchor element.
+final class _AnchoredSetextHeaderSyntax extends md.SetextHeaderSyntax {
+  const _AnchoredSetextHeaderSyntax();
+  @override
+  md.Node? parse(md.BlockParser parser) => _withHeadingAnchor(super.parse(parser));
+}
+
+/// GitHub-flavoured Markdown as the renderer parses it, with the heading
+/// syntaxes replaced *in their own place*. markdown 7.3.1 tries custom block
+/// syntaxes, then the extension set's, then `BlockParser.standardBlockSyntaxes`
+/// (empty line, HTML block, setext heading, ATX heading, …). The anchored
+/// headings therefore sit after every GFM extension syntax (so a table whose
+/// first header cell starts with `#` stays a table) and after the standard
+/// empty-line and HTML-block syntaxes, in the standard setext-then-ATX
+/// order. Every block keeps its precedence; headings only gain the marker.
+/// The later standard copies are never reached for a heading.
+final _anchoredExtensionSet = md.ExtensionSet(
+  List<md.BlockSyntax>.unmodifiable(<md.BlockSyntax>[
+    ...md.ExtensionSet.gitHubFlavored.blockSyntaxes,
+    const md.EmptyBlockSyntax(),
+    const md.HtmlBlockSyntax(),
+    const _AnchoredSetextHeaderSyntax(),
+    const _AnchoredHeaderSyntax(),
+  ]),
+  md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
+);
+
+final class _HeadingAnchorBuilder extends MarkdownElementBuilder {
+  @override
+  Widget? visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) => const _HeadingAnchor();
+}
+
+/// Where a heading starts; [MarkdownView] scrolls to it for `#anchor` links.
+class _HeadingAnchor extends StatelessWidget {
+  const _HeadingAnchor();
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// Markdown read from an offline repository snapshot (§5.8, §6.6). Repository
+/// images come only from the snapshot, through the reader and its media
+/// policy; links that resolve to the same snapshot open locally. Outside the
+/// snapshot nothing is fetched while the [NetworkBoundary] is offline.
+final class SnapshotMarkdownContext {
+  const SnapshotMarkdownContext({
+    required this.reader,
+    required this.projectPath,
+    required this.refName,
+    this.openPath,
+  });
+
+  /// The completed snapshot's reader; it owns the account and project fences.
+  final SnapshotRepositoryReader reader;
+
+  /// The project path and ref name the snapshot was saved with.
+  final String projectPath, refName;
+
+  /// Opens a path of the same snapshot (a folder or a file) in place.
+  final void Function(String path)? openPath;
+}
 
 /// A code span stands in as U+FDD0, its index and U+FDD1 while a line's
 /// links and tags are removed, so code inside a link label survives. These
@@ -274,7 +377,8 @@ class MarkdownView extends StatefulWidget {
     this.selectable = true,
     this.externalMediaClient,
     this.offline = false,
-  });
+    this.snapshot,
+  }) : assert(!(offline && snapshot != null));
   final String text;
   final Uri? base;
   final GitLabApi? api;
@@ -297,6 +401,10 @@ class MarkdownView extends StatefulWidget {
   /// media are never fetched, only named, and a link opens after the user
   /// has seen its full address and confirmed.
   final bool offline;
+
+  /// Markdown from an offline snapshot; see [SnapshotMarkdownContext]. Not
+  /// used together with [offline], whose AI behaviour stays unchanged.
+  final SnapshotMarkdownContext? snapshot;
 
   @override
   State<MarkdownView> createState() => _MarkdownViewState();
@@ -357,9 +465,23 @@ class _MarkdownViewState extends State<MarkdownView> {
     external: widget.externalMediaClient,
   );
 
+  /// Reads repository images from the snapshot only; its external client
+  /// refuses every request, so a missed path fails instead of connecting.
+  MarkdownMediaLoader? _snapshotMedia;
+
+  MarkdownMediaLoader _snapshotLoader(SnapshotMarkdownContext snapshot) =>
+      _snapshotMedia ??= MarkdownMediaLoader.snapshot(
+        SnapshotReaderMediaSource(
+          reader: snapshot.reader,
+          projectPath: snapshot.projectPath,
+          refName: snapshot.refName,
+        ),
+      );
+
   @override
   void dispose() {
     _media?.close();
+    _snapshotMedia?.close();
     super.dispose();
   }
 
@@ -393,10 +515,13 @@ class _MarkdownViewState extends State<MarkdownView> {
         oldWidget.base != widget.base ||
         oldWidget.projectWeb != widget.projectWeb ||
         oldWidget.account?.key != widget.account?.key ||
-        oldWidget.externalMediaClient != widget.externalMediaClient) {
+        oldWidget.externalMediaClient != widget.externalMediaClient ||
+        !identical(oldWidget.snapshot?.reader, widget.snapshot?.reader)) {
       _contentEpoch++;
       _media?.close();
       _media = null;
+      _snapshotMedia?.close();
+      _snapshotMedia = null;
       _owned = AttachmentBudget();
     }
   }
@@ -404,8 +529,26 @@ class _MarkdownViewState extends State<MarkdownView> {
   Future<void> _openLink(BuildContext context, String href) async {
     final parsed = Uri.tryParse(href);
     if (parsed == null) return;
+    final snapshot = widget.snapshot;
+    // An in-page anchor scrolls to its heading; nothing is opened (§5.8).
+    if (snapshot != null && href.trimLeft().startsWith('#')) {
+      _scrollToAnchor(href.trim().substring(1));
+      return;
+    }
     final base = widget.base;
     final uri = parsed.hasScheme ? parsed : base?.resolveUri(parsed);
+    if (snapshot != null) {
+      if (uri != null && await _openInSnapshot(snapshot, uri)) return;
+      if (!context.mounted) return;
+      if (NetworkBoundary.blocks(context)) {
+        // Offline the address can only be copied: no browser, share or
+        // download, and no in-app navigation that needs the API (§5.8).
+        if (uri != null || parsed.hasScheme) {
+          await _showOfflineLink(context, uri ?? parsed);
+        }
+        return;
+      }
+    }
     if (uri == null || !safeExternalUri(uri)) return;
     if (widget.offline && !await _confirmOpen(context, uri)) return;
     if (!context.mounted) return;
@@ -449,6 +592,185 @@ class _MarkdownViewState extends State<MarkdownView> {
     }
     await openExternal(context, uri);
   }
+
+  /// Scrolls to the heading whose GitLab anchor is [fragment]; an unknown
+  /// anchor does nothing.
+  ///
+  /// Identity is structural, not textual: in a snapshot view every heading
+  /// is parsed with a zero-size [_HeadingAnchor] as its first child (see
+  /// [_anchoredExtensionSet]), so the n-th rendered anchor *is* the n-th
+  /// heading. The anchor's slug and occurrence (`-1`, `-2`) select n from
+  /// the same parse, and the view scrolls to that anchor's context. Linked
+  /// headings, TOC links with the same label and repeated headings need no
+  /// special cases.
+  void _scrollToAnchor(String fragment) {
+    String id;
+    try {
+      id = Uri.decodeComponent(fragment).toLowerCase();
+    } on ArgumentError {
+      return;
+    }
+    if (id.startsWith('user-content-')) id = id.substring(13);
+    final document = md.Document(
+      blockSyntaxes: _blockSyntaxes(),
+      inlineSyntaxes: _inlineSyntaxes(),
+      extensionSet: _anchoredExtensionSet,
+      encodeHtml: false,
+    );
+    final headings = <md.Element>[];
+    void walk(List<md.Node> nodes) {
+      for (final node in nodes) {
+        if (node is! md.Element) continue;
+        final first = node.children?.firstOrNull;
+        if (first is md.Element && first.tag == _headingAnchorTag) {
+          headings.add(node);
+        } else {
+          walk(node.children ?? const []);
+        }
+      }
+    }
+
+    walk(document.parseLines(const LineSplitter().convert(widget.text)));
+    final seen = <String, int>{};
+    int? target;
+    for (var i = 0; i < headings.length; i++) {
+      final slug = markdownHeadingSlug(headings[i].textContent);
+      final count = seen[slug] ?? 0;
+      seen[slug] = count + 1;
+      if ((count == 0 ? slug : '$slug-$count') == id) {
+        target = i;
+        break;
+      }
+    }
+    if (target == null || !mounted) return;
+    final anchors = <Element>[];
+    void visit(Element element) {
+      if (element.widget is _HeadingAnchor) {
+        anchors.add(element);
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    context.visitChildElements(visit);
+    // The render and this parse come from the same source and syntaxes; a
+    // different count means they disagree, and nothing is guessed.
+    if (anchors.length != headings.length) return;
+    unawaited(
+      Scrollable.ensureVisible(
+        anchors[target],
+        duration: const Duration(milliseconds: 250),
+        alignment: 0.05,
+      ),
+    );
+  }
+
+  List<md.BlockSyntax> _blockSyntaxes() => [MarkdownMediaBlockSyntax()];
+
+  List<md.InlineSyntax> _inlineSyntaxes() => [
+    MarkdownMediaImageSyntax(),
+    MarkdownMediaInlineSyntax(),
+    MarkdownMediaAutolinkSyntax(),
+    MarkdownLiteralLessThanSyntax(),
+    MarkdownMediaLinkSyntax(),
+  ];
+
+  /// The repository path [uri] points to inside this snapshot, or null. A
+  /// link counts when it is on the account's instance, in the project the
+  /// snapshot was saved from, at its ref name or SHA, and within its folder.
+  String? _snapshotPath(SnapshotMarkdownContext snapshot, Uri uri) {
+    final instance = widget.account?.instance ?? widget.api?.instance;
+    if (instance == null || !instance.sameOrigin(uri)) return null;
+    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    final prefix = instance.base.pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.length < prefix.length + 4) return null;
+    for (var i = 0; i < prefix.length; i++) {
+      if (segments[i] != prefix[i]) return null;
+    }
+    final dash = segments.indexOf('-', prefix.length);
+    if (dash < 0 || dash + 2 >= segments.length) return null;
+    if (segments.sublist(prefix.length, dash).join('/') != snapshot.projectPath) {
+      return null;
+    }
+    if (segments[dash + 1] != 'blob' && segments[dash + 1] != 'tree') {
+      return null;
+    }
+    final owner = snapshot.reader.owner;
+    final ref = segments[dash + 2];
+    if (ref != owner.sha && ref != snapshot.refName) return null;
+    final path = segments.sublist(dash + 3).join('/');
+    final sub = owner.subPath;
+    if (path.isEmpty) return sub.isEmpty ? '' : null;
+    if (sub.isNotEmpty && path != sub && !path.startsWith('$sub/')) return null;
+    return path;
+  }
+
+  /// Opens [uri] inside the snapshot when it names a folder or file there.
+  Future<bool> _openInSnapshot(SnapshotMarkdownContext snapshot, Uri uri) async {
+    final open = snapshot.openPath;
+    final path = _snapshotPath(snapshot, uri);
+    if (open == null || path == null) return false;
+    if (path.isEmpty || path == snapshot.reader.owner.subPath) {
+      open(path);
+      return true;
+    }
+    try {
+      final entry = await snapshot.reader.snapshotEntry(path);
+      if (entry == null || !mounted) return false;
+      open(path);
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Offline, a link outside the snapshot can only be copied.
+  Future<void> _showOfflineLink(BuildContext context, Uri uri) =>
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              key: const ValueKey('snapshot-link-sheet'),
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  l10n.snapshotLinkTitle,
+                  style: Theme.of(sheetContext).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                // The full address, left to right in every language.
+                Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: SelectableText(uri.toString()),
+                ),
+                const SizedBox(height: 16),
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: FilledButton.tonalIcon(
+                    key: const ValueKey('snapshot-link-copy'),
+                    onPressed: () async {
+                      await Clipboard.setData(
+                        ClipboardData(text: uri.toString()),
+                      );
+                      if (!sheetContext.mounted) return;
+                      Navigator.of(sheetContext).pop();
+                      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                        SnackBar(content: Text(l10n.copiedLabel)),
+                      );
+                    },
+                    icon: const Icon(Icons.copy, size: 18),
+                    label: Text(l10n.snapshotLinkCopy),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   Future<bool> _confirmOpen(BuildContext context, Uri uri) async {
     final open = await showDialog<bool>(
@@ -517,6 +839,30 @@ class _MarkdownViewState extends State<MarkdownView> {
         projectId: projectId,
         projectWeb: projectWeb,
       );
+      final snapshot = widget.snapshot;
+      if (snapshot != null) {
+        final image = kind != 'media' && kind != 'video' && kind != 'audio';
+        if (image && source.kind == MarkdownMediaSourceKind.repository) {
+          return _SnapshotImage(
+            key: ValueKey(('snapshot-media', _contentEpoch, uri)),
+            source: source,
+            loader: _snapshotLoader(snapshot),
+            reader: snapshot.reader,
+            alt: alt,
+          );
+        }
+        // Uploads, external, media and anything else are never fetched
+        // offline; online they keep the ordinary behaviour below.
+        if (NetworkBoundary.blocks(context) ||
+            source.kind == MarkdownMediaSourceKind.repository) {
+          return _SnapshotMediaPlaceholder(
+            alt: alt,
+            note: source.kind == MarkdownMediaSourceKind.repository
+                ? l10n.snapshotMediaNotSaved
+                : l10n.snapshotMediaOffline,
+          );
+        }
+      }
         final extension = (source.filename ?? '').split('.').last.toLowerCase();
       final explicitMedia =
           kind == 'media' || kind == 'video' || kind == 'audio';
@@ -594,20 +940,21 @@ class _MarkdownViewState extends State<MarkdownView> {
       key: ValueKey(_contentEpoch),
       data: text,
       selectable: false,
-      blockSyntaxes: [MarkdownMediaBlockSyntax()],
-      inlineSyntaxes: [
-        MarkdownMediaImageSyntax(),
-        MarkdownMediaInlineSyntax(),
-        MarkdownMediaAutolinkSyntax(),
-        MarkdownLiteralLessThanSyntax(),
-        MarkdownMediaLinkSyntax(),
-      ],
+      // Only a snapshot view resolves in-page anchors, so only it marks its
+      // headings; every other view renders exactly as before.
+      blockSyntaxes: _blockSyntaxes(),
+      inlineSyntaxes: _inlineSyntaxes(),
+      // Null keeps the renderer's default (GitHub-flavoured) for every other
+      // view; the anchor re-parse uses this same set.
+      extensionSet: widget.snapshot != null ? _anchoredExtensionSet : null,
       builders: {
         markdownMediaElement: _MarkdownMediaElementBuilder(
           buildMedia: buildMedia,
           openLink: (href) => _openLink(context, href),
         ),
         markdownHtmlBlockElement: _MarkdownHtmlBlockBuilder(),
+        if (widget.snapshot != null)
+          _headingAnchorTag: _HeadingAnchorBuilder(),
       },
       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         h1: Theme.of(context).textTheme.headlineSmall,
@@ -718,6 +1065,167 @@ class _OfflineMedia extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A repository image read from the snapshot through its media policy.
+/// Anything the policy refuses, or that was not saved, becomes a placeholder.
+class _SnapshotImage extends StatefulWidget {
+  const _SnapshotImage({
+    super.key,
+    required this.source,
+    required this.loader,
+    required this.reader,
+    this.alt,
+  });
+
+  final MarkdownMediaSource source;
+  final MarkdownMediaLoader loader;
+  final SnapshotRepositoryReader reader;
+  final String? alt;
+
+  @override
+  State<_SnapshotImage> createState() => _SnapshotImageState();
+}
+
+class _SnapshotImageState extends State<_SnapshotImage> {
+  Uint8List? _bytes;
+  bool _svg = false;
+  String? _note;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final bytes = await widget.loader.load(widget.source);
+      final svg = await sanitizeMarkdownSvg(
+        bytes,
+        contentType: (widget.source.path ?? '').toLowerCase().endsWith('.svg')
+            ? 'image/svg+xml'
+            : null,
+      );
+      widget.reader.checkCurrent();
+      if (!mounted) return;
+      setState(() {
+        _bytes = svg ?? bytes;
+        _svg = svg != null;
+      });
+    } on Object {
+      final note = await _reason();
+      if (mounted) setState(() => _note = note);
+    }
+  }
+
+  /// "Not saved" only when the snapshot itself lacks this file; any other
+  /// refusal (another project or ref, an upload) is not loaded offline.
+  Future<String> _reason() async {
+    final path = widget.source.path;
+    final owner = widget.reader.owner;
+    if (path == null ||
+        widget.source.ref != owner.sha ||
+        widget.source.project != '${owner.projectId}') {
+      return l10n.snapshotMediaOffline;
+    }
+    try {
+      final state = await widget.reader.entryState(path);
+      return state == RepositoryEntryState.available
+          ? l10n.snapshotMediaOffline
+          : l10n.snapshotMediaNotSaved;
+    } on Object {
+      return l10n.snapshotMediaNotSaved;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final note = _note;
+    if (note != null) {
+      return _SnapshotMediaPlaceholder(alt: widget.alt, note: note);
+    }
+    final bytes = _bytes;
+    if (bytes == null) {
+      return SizedBox(
+        width: 32,
+        height: 32,
+        child: CircularProgressIndicator(semanticsLabel: l10n.attachmentLoading),
+      );
+    }
+    final fallback = _SnapshotMediaPlaceholder(
+      alt: widget.alt,
+      note: l10n.snapshotDamaged,
+    );
+    return ConstrainedBox(
+      key: const ValueKey('snapshot-image'),
+      constraints: const BoxConstraints(maxHeight: 480),
+      child: _svg
+          ? SvgPicture.memory(
+              bytes,
+              semanticsLabel: widget.alt,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => fallback,
+            )
+          : Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              semanticLabel: widget.alt,
+              errorBuilder: (_, _, _) => fallback,
+            ),
+    );
+  }
+}
+
+/// Stands in for media that an offline snapshot view does not show.
+class _SnapshotMediaPlaceholder extends StatelessWidget {
+  const _SnapshotMediaPlaceholder({required this.alt, required this.note});
+
+  final String? alt;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = (alt ?? '').trim();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Container(
+        key: const ValueKey('snapshot-media-placeholder'),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.image_not_supported_outlined,
+              size: 20,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (label.isNotEmpty)
+                    Text(isolated(label), style: theme.textTheme.bodyMedium),
+                  Text(
+                    note,
+                    style: (label.isEmpty
+                            ? theme.textTheme.bodyMedium
+                            : theme.textTheme.bodySmall)
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

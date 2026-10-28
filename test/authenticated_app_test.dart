@@ -894,7 +894,7 @@ void main() {
       await settleNetworkWidgets(tester);
       await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('確認'));
+      await tester.tap(find.text('清除'));
       await pumpUntil(tester, () => cache.notice(binding) == null,
         description: 'the settings clear supersedes the notice');
       await pumpUntil(tester, () => find.text('已清除離線快取').evaluate().isNotEmpty);
@@ -936,7 +936,7 @@ void main() {
       await settleNetworkWidgets(tester);
       await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('確認'));
+      await tester.tap(find.text('清除'));
       await pumpUntil(tester, () => find.text('已清除離線快取').evaluate().isNotEmpty);
       await tester.pump(const Duration(milliseconds: 500)); // confirm dialog cleanup
 

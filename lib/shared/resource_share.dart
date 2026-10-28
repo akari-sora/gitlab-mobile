@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'external_link.dart';
+import 'network_boundary.dart';
 
 import '../l10n/l10n.dart';
 /// A compact native share action for a canonical GitLab web URL.
@@ -68,6 +69,8 @@ class _ResourceShareButtonState extends State<ResourceShareButton> {
 
   Future<void> _share() async {
     if (_busy || !_mayShare) return;
+    // An offline snapshot never reaches the system share sheet (§5.8).
+    if (NetworkBoundary.refuse(context)) return;
     final uri = widget.uri;
     final ownerKey = widget.ownerKey;
     final originalIsCurrent = widget.isCurrent;

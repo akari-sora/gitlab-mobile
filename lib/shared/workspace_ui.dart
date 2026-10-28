@@ -13,6 +13,42 @@ import 'theme.dart';
 import '../l10n/l10n.dart';
 export 'resume_target.dart';
 
+/// Why the signed-in session is about to end (D1, §6.7): every way out of an
+/// account deletes its read cache and offline projects.
+enum LeaveKind { switchAccount, signOut, remove }
+
+final class LeaveIntent {
+  const LeaveIntent(this.kind, {this.target});
+  final LeaveKind kind;
+
+  /// The account switched to, when there is one.
+  final Account? target;
+}
+
+/// Runs every way out of the session through the shell's confirmations: the
+/// offline-projects loss first, then the AI guard (§6.7). Placed above the
+/// navigator, so sheets and pushed pages use it too.
+class SessionLeaveScope extends InheritedWidget {
+  const SessionLeaveScope({super.key, required this.leave, required super.child});
+
+  /// Confirms [intent] and then runs `action`; returns without running it
+  /// when the user cancels.
+  final Future<void> Function(LeaveIntent intent, Future<void> Function() action) leave;
+
+  /// Runs [action] through the nearest scope, or directly without one.
+  static Future<void> run(
+    BuildContext context,
+    LeaveIntent intent,
+    Future<void> Function() action,
+  ) {
+    final scope = context.getInheritedWidgetOfExactType<SessionLeaveScope>();
+    return scope == null ? action() : scope.leave(intent, action);
+  }
+
+  @override
+  bool updateShouldNotify(SessionLeaveScope oldWidget) => leave != oldWidget.leave;
+}
+
 /// Ends the active session so the user can pick another account. Does not rotate accounts.
 VoidCallback endSessionFrom(BuildContext context, [ResumeTarget? resumeTarget]) => () {
   try {
@@ -20,10 +56,12 @@ VoidCallback endSessionFrom(BuildContext context, [ResumeTarget? resumeTarget]) 
       context,
       listen: false,
     ).read(sessionProvider);
-    if (resumeTarget != null) {
-      session.setPendingResumeTarget(resumeTarget);
-    }
-    unawaited(session.endSession(switching: resumeTarget != null));
+    unawaited(SessionLeaveScope.run(context, const LeaveIntent(LeaveKind.signOut), () {
+      if (resumeTarget != null) {
+        session.setPendingResumeTarget(resumeTarget);
+      }
+      return session.endSession(switching: resumeTarget != null);
+    }));
   } catch (_) {}
 };
 
@@ -651,6 +689,8 @@ class FailureNotice extends StatelessWidget {
     this.onSwitchAccount,
     this.resumeTarget,
     this.onRetryCleanup,
+    this.offlineSavedAt,
+    this.onOpenOffline,
   });
   final ApiFailure error;
   final Account? account;
@@ -661,6 +701,11 @@ class FailureNotice extends StatelessWidget {
 
   /// Retries only the offline-cache cleanup of a read-cache notice.
   final VoidCallback? onRetryCleanup;
+
+  /// A complete offline version of the same project exists (§6.2): offered
+  /// on network failures as "view offline version (saved …)".
+  final String? offlineSavedAt;
+  final VoidCallback? onOpenOffline;
   @override
   Widget build(BuildContext context) {
     Account? effectiveAccount = account;
@@ -677,12 +722,16 @@ class FailureNotice extends StatelessWidget {
           listen: false,
         ).read(sessionProvider);
         effectiveAccount ??= session.active;
-        effectiveSwitch ??= () {
-          if (resumeTarget != null) {
-            session.setPendingResumeTarget(resumeTarget);
-          }
-          unawaited(session.endSession(switching: resumeTarget != null));
-        };
+        effectiveSwitch ??= () => unawaited(SessionLeaveScope.run(
+          context,
+          const LeaveIntent(LeaveKind.signOut),
+          () {
+            if (resumeTarget != null) {
+              session.setPendingResumeTarget(resumeTarget);
+            }
+            return session.endSession(switching: resumeTarget != null);
+          },
+        ));
       } catch (_) {}
     } else if (resumeTarget != null) {
       final original = effectiveSwitch;
@@ -751,6 +800,13 @@ class FailureNotice extends StatelessWidget {
                       onPressed: effectiveSwitch,
                       child: Text(l10n.switchAccount),
                     ),
+                  if (onOpenOffline != null && offlineSavedAt != null)
+                    TextButton.icon(
+                      key: const ValueKey('failure-open-offline'),
+                      onPressed: onOpenOffline,
+                      icon: const Icon(Icons.offline_pin_outlined, size: 18),
+                      label: Text(l10n.offlineViewSaved(offlineSavedAt)),
+                    ),
                 ],
               ),
               ExpansionTile(
@@ -805,6 +861,7 @@ Future<bool> confirmAction(
   String detail, {
   String? requiredText,
   ValueChanged<Route<dynamic>>? onRoute,
+  String? confirmLabel,
 }) async {
   final input = TextEditingController();
   final answer = await showDialog<bool>(
@@ -847,7 +904,7 @@ Future<bool> confirmAction(
                         _withoutIsolates(requiredText)
                 ? null
                 : () => Navigator.pop(context, true),
-            child: Text(l10n.confirmAction),
+            child: Text(confirmLabel ?? l10n.confirmAction),
           ),
         ],
       ),
