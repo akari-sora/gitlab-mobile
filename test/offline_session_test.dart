@@ -389,26 +389,38 @@ void main() {
   });
 
   test(
-    'production shell flag blocks entry even with a readable snapshot',
+    'the production shell flag admits entry with a readable snapshot',
     () async {
       final h = _Harness(_network);
       addTearDown(h.dispose);
       await h.seed();
       await h.lock.start();
       offlineModeShellReadyForTesting = null;
+      expect(offlineModeShellReady, isTrue);
       final session = h.makeSession();
       await session.initialize();
-      expect(session.offline, isNull);
+      expect(session.offline?.account.key, h.account.key);
     },
   );
+
+  test('turning the shell flag off still blocks entry', () async {
+    final h = _Harness(_network);
+    addTearDown(h.dispose);
+    await h.seed();
+    await h.lock.start();
+    offlineModeShellReadyForTesting = false;
+    final session = h.makeSession();
+    await session.initialize();
+    expect(session.offline, isNull);
+  });
 
   for (final kind in ['HTML 401', 'unrelated JSON 401']) {
     test(
       'production OAuth $kind preserves last-active, keys and files',
       () async {
         offlineModeShellReadyForTesting = null;
-        expect(offlineModeShellReady, isFalse);
-        expect(offlineModeEnabled, isFalse);
+        expect(offlineModeShellReady, isTrue);
+        expect(offlineModeEnabled, isTrue);
         var tokenRequests = 0;
         final h = _Harness(
           (_) => jsonResponse({'message': 'expired'}, status: 401),
@@ -460,8 +472,8 @@ void main() {
         'production online resume survives refusal $failure failure; marker=$markerPresent',
         () async {
           offlineModeShellReadyForTesting = null;
-          expect(offlineModeShellReady, isFalse);
-          expect(offlineModeEnabled, isFalse);
+          expect(offlineModeShellReady, isTrue);
+          expect(offlineModeEnabled, isTrue);
           final h = _Harness(
             (_) => jsonResponse({'id': 7, 'username': 'test', 'name': 'Test'}),
           );
@@ -526,7 +538,7 @@ void main() {
         'settings clear reopens verified session after refusal $failure failure; seeded=$seedCache',
         (tester) async {
           offlineModeShellReadyForTesting = null;
-          expectSync(offlineModeEnabled, isFalse);
+          expectSync(offlineModeEnabled, isTrue);
           final h = _Harness(_onlineProject);
           addTearDown(() => pumpUntilComplete(tester, h.dispose()));
           final session = await _refusalFailureSession(
@@ -798,7 +810,8 @@ void main() {
       addTearDown(h.dispose);
       await h.seed();
       await h.lock.start();
-      offlineModeShellReadyForTesting = null;
+      // Exercise closed-storage eligibility before shell admission.
+      offlineModeShellReadyForTesting = false;
       final session = h.makeSession();
       await session.initialize();
       await _eventually(() => h.cache.startupRecovered);

@@ -75,12 +75,37 @@ final class SessionController extends ChangeNotifier {
   Completer<void>? _resumeDone;
   final _earlyValidationTickets = <int>{};
   String? get diskRetainedAccountKey => readCache.diskRetainedAccountKey;
+
+  /// The account whose disk data signing in elsewhere deletes: the retained
+  /// account once startup recovery has run, and until then the account the
+  /// current startup decision keeps. [select] uses the same source, so a
+  /// confirmation shown before it names the account it actually clears.
+  String? get leavingDiskAccountKey {
+    final decision = _readCacheStartupDecision;
+    return readCache.diskRetainedAccountKey ??
+        (decision != null && decision.readable && !decision.signOutPending
+            ? decision.resumeAccountKey
+            : null);
+  }
   bool get canEnterOffline =>
       offlineModeEnabled &&
       resuming &&
       _offlineEligibility != null &&
       offlineGate.lockReadable;
   bool get offlineProbing => offlineGate.probing || _offlineProbeTask != null;
+
+  int _offlineEntries = 0;
+
+  /// True while offline read-only mode is being entered or is on. That mode
+  /// allows no local AI writes (AGENTS.md:9), so `main`'s AI startup recovery
+  /// starts no step while this holds and resumes once it clears.
+  bool get localWritesClosed => offline != null || _offlineEntries > 0;
+
+  /// Set by `main`: waits, bounded, for the AI startup recovery step already
+  /// running to settle, and returns false if it did not. Offline entry closes
+  /// [localWritesClosed] first and publishes [offline] only after this
+  /// returned true, so no AI file is written once the mode is visible.
+  Future<bool> Function()? settleLocalWrites;
 
   void bindOfflineAppLock(AppLockController lock) =>
       offlineGate.bindAppLock(lock);
@@ -130,6 +155,11 @@ final class SessionController extends ChangeNotifier {
   ReadCacheStartupDecision? get readCacheStartupDecision =>
       _readCacheStartupDecision;
   final _readCacheClears = <String, Future<void>>{};
+
+  /// The bounded result of each account's latest clear. Unlike
+  /// [_readCacheClears] it does not wait for the I/O to drain, so it ends
+  /// within the coordinator's barrier even when storage hangs.
+  final _readCacheClearResults = <String, Future<DiskClearResult>>{};
 
   bool isReadCacheDecisionCurrent(ReadCacheStartupDecision decision) =>
       !_disposed &&
@@ -181,6 +211,7 @@ final class SessionController extends ChangeNotifier {
           : null,
       onFailure: onFailure,
     );
+    _readCacheClearResults[binding.accountKey] = result;
     late final Future<void> tail;
     tail = result.then((_) => readCache.quiesced).then<void>((_) {
       if (identical(_readCacheClears[binding.accountKey], tail)) {
@@ -379,7 +410,11 @@ final class SessionController extends ChangeNotifier {
           if (!_current(ticket)) return;
           final entered =
               eligible != null &&
-              await _enterOffline(eligible, ticket: ticket);
+              await _enterOffline(
+                eligible,
+                ticket: ticket,
+                reason: verdict.failure,
+              );
           if (!_current(ticket)) return;
           if (entered) {
             offlineGate.scheduleRetry();
@@ -485,14 +520,58 @@ final class SessionController extends ChangeNotifier {
       offline?.connectionRestored = true;
       offlineGate.connectionSucceeded();
     } else if (verdict is IdentityNoVerdict) {
+      offline
+        ?..reason = verdict.failure
+        ..connectionRestored = false;
       offlineGate.scheduleRetry();
     } else {
-      await _handleIdentityVerdict(account, verdict, ticket: ticket);
+      final retained = await _handleIdentityVerdict(
+        account,
+        verdict,
+        ticket: ticket,
+      );
       if (!_current(ticket)) return;
       if (verdict is IdentityUnknown) _leaveOffline(account);
-      _showIdentityFailure(verdict);
+      if (retained) {
+        _showIdentityFailure(verdict);
+      } else {
+        _reportOfflineDeletion(account);
+      }
     }
     _emit();
+  }
+
+  /// §5.6: the offline account's data is unreadable at once and deleted in
+  /// the background; the sign-in screen says so, then how the deletion ended.
+  void _reportOfflineDeletion(Account account) {
+    final username = account.user.username;
+    final deleting = message = l10n.offlineSignInExpiredDeleting(username);
+    _emit();
+    // The bounded result, not the drain: a clear that times out leaves its
+    // marker for the next start, and the screen says so at once.
+    final clearing = _readCacheClearResults[account.key];
+    void finished(bool complete) {
+      if (_disposed || message != deleting) return;
+      message = complete
+          ? l10n.offlineSignInExpiredDeleted(username)
+          : l10n.offlineSignInExpiredRetry(username);
+      _emit();
+    }
+
+    if (clearing == null) {
+      finished(
+        !readCache.signedOutSnapshot.keys.any(
+          (binding) => binding.accountKey == account.key,
+        ),
+      );
+      return;
+    }
+    unawaited(
+      clearing.then<void>(
+        (result) => finished(result.complete),
+        onError: (Object _, StackTrace _) => finished(false),
+      ),
+    );
   }
 
   Future<bool> enterOffline() async {
@@ -516,6 +595,7 @@ final class SessionController extends ChangeNotifier {
   Future<bool> _enterOffline(
     OfflineEligibility eligible, {
     required int ticket,
+    ApiFailure? reason,
   }) async {
     if (!offlineModeEnabled ||
         !_current(ticket) ||
@@ -525,6 +605,23 @@ final class SessionController extends ChangeNotifier {
         !OfflineGate.recent(eligible.lastValidatedAt, offlineGate.now)) {
       return false;
     }
+    _offlineEntries++;
+    try {
+      return await _enterOfflineClosed(eligible, ticket: ticket, reason: reason);
+    } finally {
+      _offlineEntries--;
+      // A refused entry reopens AI recovery; a published one keeps it closed.
+      if (offline == null && _offlineEntries == 0) _emit();
+    }
+  }
+
+  Future<bool> _enterOfflineClosed(
+    OfflineEligibility eligible, {
+    required int ticket,
+    ApiFailure? reason,
+  }) async {
+    final settle = settleLocalWrites;
+    if (settle != null && !await settle()) return false;
     final nextGeneration = ++_issuedGeneration;
     final binding = DiskBinding(
       accountKey: eligible.account.key,
@@ -551,7 +648,7 @@ final class SessionController extends ChangeNotifier {
       validationTicket: ticket,
       lastValidatedAt: eligible.lastValidatedAt,
       generation: generation,
-    );
+    )..reason = reason;
     readCache.retainDiskAccount(eligible.account.key, sessionOwner: this);
     initializing = false;
     resuming = false;
@@ -560,7 +657,12 @@ final class SessionController extends ChangeNotifier {
     offlineGate.start(
       lastValidatedAt: eligible.lastValidatedAt,
       onProbe: () => probeOffline(manual: false),
-      onExpire: () => _leaveOffline(eligible.account),
+      onExpire: () {
+        if (offline?.account.key != eligible.account.key) return;
+        _leaveOffline(eligible.account);
+        message = l10n.offlineValidationExpired;
+        _emit();
+      },
     );
     _emit();
     return true;
@@ -753,11 +855,7 @@ final class SessionController extends ChangeNotifier {
     // The current startup decision can still be waiting for its disk scan.
     // Preserve its selected account as well as a fully recovered one.
     final decision = _readCacheStartupDecision;
-    final retainedKey =
-        readCache.diskRetainedAccountKey ??
-        (decision != null && decision.readable && !decision.signOutPending
-            ? decision.resumeAccountKey
-            : null);
+    final retainedKey = leavingDiskAccountKey;
     final retryRetained =
         active == null &&
         saved.key == retainedKey &&

@@ -12729,36 +12729,6 @@
       }
     }
   },
-  "offlineLossSwitchUnknown": "切換帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。",
-  "@offlineLossSwitchUnknown": {
-    "description": "Confirmation detail when the offline project inventory is not loaded or failed; never taken for zero",
-    "placeholders": {
-      "username": {
-        "type": "String",
-        "example": "octocat"
-      }
-    }
-  },
-  "offlineLossSignOutUnknown": "登出會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。",
-  "@offlineLossSignOutUnknown": {
-    "description": "Confirmation detail when the inventory is unknown",
-    "placeholders": {
-      "username": {
-        "type": "String",
-        "example": "octocat"
-      }
-    }
-  },
-  "offlineLossRemoveUnknown": "移除帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。",
-  "@offlineLossRemoveUnknown": {
-    "description": "Confirmation detail when the inventory is unknown",
-    "placeholders": {
-      "username": {
-        "type": "String",
-        "example": "octocat"
-      }
-    }
-  },
   "offlineLossProceed": "繼續並刪除",
   "@offlineLossProceed": {
     "description": "Confirm button",
@@ -12778,11 +12748,6 @@
       }
     }
   },
-  "offlineCacheClearUnknownProjects": "會刪除自動快取與這個帳號的所有離線專案（目前無法確認有幾個），這個動作無法復原。",
-  "@offlineCacheClearUnknownProjects": {
-    "description": "Clear-cache and turn-off confirmation when the offline project inventory is unknown",
-    "placeholders": {}
-  },
   "offlineCacheTurnOffTitle": "關閉離線快取？",
   "@offlineCacheTurnOffTitle": {
     "description": "Confirmation title before turning the offline cache off",
@@ -12791,6 +12756,204 @@
   "offlineCacheClearButton": "清除",
   "@offlineCacheClearButton": {
     "description": "Confirm button of the clear-cache dialog",
+    "placeholders": {}
+  },
+  "offlineBrowseAction": "離線瀏覽",
+  "@offlineBrowseAction": {
+    "description": "Button on the account-restore screen: open the saved offline projects without waiting for GitLab",
+    "placeholders": {}
+  },
+  "offlineBrowseHint": "驗證完成之前，可以先瀏覽已保存的專案。",
+  "@offlineBrowseHint": {
+    "description": "Note under the browse-offline button on the account-restore screen",
+    "placeholders": {}
+  },
+  "offlineEnterFailed": "目前無法離線瀏覽。",
+  "@offlineEnterFailed": {
+    "description": "Snack bar when the offline shell could not be opened after the button was tapped",
+    "placeholders": {}
+  },
+  "offlineShellTitle": "離線瀏覽",
+  "@offlineShellTitle": {
+    "description": "App bar title of the offline read-only shell",
+    "placeholders": {}
+  },
+  "offlineBannerNetwork": "離線 · 只能瀏覽已保存的專案",
+  "@offlineBannerNetwork": {
+    "description": "Offline banner, first line: the device has no connection to GitLab",
+    "placeholders": {}
+  },
+  "offlineBannerServer": "GitLab 暫時沒有回應 · 只能瀏覽已保存的專案",
+  "@offlineBannerServer": {
+    "description": "Offline banner, first line: GitLab answered with a server error (5xx)",
+    "placeholders": {}
+  },
+  "offlineBannerRateLimited": "GitLab 限流中 · 只能瀏覽已保存的專案",
+  "@offlineBannerRateLimited": {
+    "description": "Offline banner, first line: GitLab rate limit, reset time unknown",
+    "placeholders": {}
+  },
+  "offlineBannerRateLimitedMinutes": "GitLab 限流中（約 {minutes} 分鐘）· 只能瀏覽已保存的專案",
+  "@offlineBannerRateLimitedMinutes": {
+    "description": "Offline banner, first line: GitLab rate limit with the minutes until it resets",
+    "placeholders": {
+      "minutes": {
+        "type": "String",
+        "example": "12"
+      }
+    }
+  },
+  "offlineBannerSignIn": "網路可能需要登入（例如 Wi-Fi 認證頁）· 只能瀏覽已保存的專案",
+  "@offlineBannerSignIn": {
+    "description": "Offline banner, first line: a redirect or a non-GitLab page answered, e.g. a Wi-Fi captive portal",
+    "placeholders": {}
+  },
+  "offlineBannerChecking": "尚未連上 GitLab · 只能瀏覽已保存的專案",
+  "@offlineBannerChecking": {
+    "description": "Offline banner, first line: entered offline before GitLab has answered at all",
+    "placeholders": {}
+  },
+  "offlineBannerRestored": "已恢復連線",
+  "@offlineBannerRestored": {
+    "description": "Offline banner and snack bar: GitLab confirmed the account again; the user can switch online",
+    "placeholders": {}
+  },
+  "offlineRetryConnection": "重試連線",
+  "@offlineRetryConnection": {
+    "description": "Offline banner button: check GitLab again and go online when it confirms the account",
+    "placeholders": {}
+  },
+  "offlineCheckingConnection": "正在檢查連線…",
+  "@offlineCheckingConnection": {
+    "description": "Screen-reader label of the offline banner while the connection check runs",
+    "placeholders": {}
+  },
+  "offlineSwitchOnline": "切換到線上",
+  "@offlineSwitchOnline": {
+    "description": "Offline banner and snack-bar action: leave the offline shell for the signed-in app",
+    "placeholders": {}
+  },
+  "offlineStillOffline": "仍然無法連上 GitLab",
+  "@offlineStillOffline": {
+    "description": "Snack bar after a manual retry when GitLab still cannot be reached",
+    "placeholders": {}
+  },
+  "offlineLastValidated": "上次驗證：{when}",
+  "@offlineLastValidated": {
+    "description": "Offline account row; when is a relative time such as 3 days ago",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "3 天前"
+      }
+    }
+  },
+  "offlinePendingLink": "連線後會開啟 1 個連結",
+  "@offlinePendingLink": {
+    "description": "Offline shell line: a link from another app waits until the app is online again",
+    "placeholders": {}
+  },
+  "offlineManageProjects": "管理離線專案",
+  "@offlineManageProjects": {
+    "description": "Offline shell menu item and row: open the offline projects management page",
+    "placeholders": {}
+  },
+  "offlineSavedProjectsTitle": "已保存的專案",
+  "@offlineSavedProjectsTitle": {
+    "description": "Offline shell section title above the saved projects",
+    "placeholders": {}
+  },
+  "offlineNothingToBrowse": "沒有可以離線瀏覽的專案",
+  "@offlineNothingToBrowse": {
+    "description": "Offline shell empty state title when no complete saved project is left",
+    "placeholders": {}
+  },
+  "offlineNothingToBrowseDetail": "連線後可以再次保存專案。",
+  "@offlineNothingToBrowseDetail": {
+    "description": "Offline shell empty state detail",
+    "placeholders": {}
+  },
+  "offlineLockUnreadableTitle": "無法讀取 App 鎖定設定",
+  "@offlineLockUnreadableTitle": {
+    "description": "Cover over the offline shell when the App lock setting cannot be read",
+    "placeholders": {}
+  },
+  "offlineLockUnreadableDetail": "讀取成功之前，不會顯示離線內容。",
+  "@offlineLockUnreadableDetail": {
+    "description": "Detail of the cover over the offline shell when the App lock setting cannot be read",
+    "placeholders": {}
+  },
+  "offlineLossConnect": "若登入的是其他帳號，會刪除 @{username} 的 {count} 個離線專案（{size}）。",
+  "@offlineLossConnect": {
+    "description": "Confirmation detail before signing in on the sign-in screen while another account keeps offline projects; username without @, count a number, size formatted",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      },
+      "count": {
+        "type": "String",
+        "example": "3"
+      },
+      "size": {
+        "type": "String",
+        "example": "12 MB"
+      }
+    }
+  },
+  "offlineLossUnknown": "會刪除 @{username} 在這台裝置上的離線專案（目前無法讀取數量）。",
+  "@offlineLossUnknown": {
+    "description": "Confirmation detail before leaving an account whose offline projects cannot be counted right now; username without @",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineLossConnectUnknown": "若登入的是其他帳號，會刪除 @{username} 在這台裝置上的離線專案（目前無法讀取數量）。",
+  "@offlineLossConnectUnknown": {
+    "description": "Confirmation detail before signing in while the remembered account keeps offline projects that cannot be counted; username without @",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineSignInExpiredDeleting": "登入已失效，正在刪除 @{username} 的離線資料。",
+  "@offlineSignInExpiredDeleting": {
+    "description": "Sign-in screen message after GitLab refused the offline account; its offline data is being deleted; username without @",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineSignInExpiredDeleted": "登入已失效，已刪除 @{username} 的離線資料。",
+  "@offlineSignInExpiredDeleted": {
+    "description": "Sign-in screen message once the refused account offline data is deleted; username without @",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineSignInExpiredRetry": "登入已失效，@{username} 的離線資料將在下次啟動時重試刪除。",
+  "@offlineSignInExpiredRetry": {
+    "description": "Sign-in screen message when deleting the refused account offline data failed and is retried at next start; username without @",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineValidationExpired": "離線瀏覽只能在上次驗證後 30 天內使用。請連線後重新驗證。",
+  "@offlineValidationExpired": {
+    "description": "Sign-in screen message when offline browsing ended because the last verification is older than 30 days",
     "placeholders": {}
   },
   "aiRecoveryTitle": "AI 寫入被中斷",
@@ -12917,6 +13080,41 @@
   "aiRefusedGroupDatesNotSent": "日期沒有送出：要求的日期可能和目前相同，而群組工作項目在這種情況下無法不多送一次請求就確認歸屬。請重新讀取目前的日期後再試。",
   "@aiRefusedGroupDatesNotSent": {
     "description": "Why a date change on a group work item was not sent: the requested dates may equal the current ones, and the app does not send an extra request to prove group ownership for that case.",
+    "placeholders": {}
+  },
+  "offlineLossSwitchUnknown": "切換帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。",
+  "@offlineLossSwitchUnknown": {
+    "description": "Confirmation detail when the offline project inventory is not loaded or failed; never taken for zero",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineLossSignOutUnknown": "登出會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。",
+  "@offlineLossSignOutUnknown": {
+    "description": "Confirmation detail when the inventory is unknown",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineLossRemoveUnknown": "移除帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。",
+  "@offlineLossRemoveUnknown": {
+    "description": "Confirmation detail when the inventory is unknown",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineCacheClearUnknownProjects": "會刪除自動快取與這個帳號的所有離線專案（目前無法確認有幾個），這個動作無法復原。",
+  "@offlineCacheClearUnknownProjects": {
+    "description": "Clear-cache and turn-off confirmation when the offline project inventory is unknown",
     "placeholders": {}
   }
 }

@@ -8986,81 +8986,171 @@ final class AppStrings {
   /// 移除帳號會刪除 @{username} 的 {count} 個離線專案（{size}）。
   String offlineLossRemove(Object? username, Object? count, Object? size) => _format(language, language._messages[2963], {'username': username, 'count': count, 'size': size});
 
-  /// 切換帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
-  String offlineLossSwitchUnknown(Object? username) => _format(language, language._messages[2964], {'username': username});
-
-  /// 登出會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
-  String offlineLossSignOutUnknown(Object? username) => _format(language, language._messages[2965], {'username': username});
-
-  /// 移除帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
-  String offlineLossRemoveUnknown(Object? username) => _format(language, language._messages[2966], {'username': username});
-
   /// 繼續並刪除
-  String get offlineLossProceed => language._messages[2967];
+  String get offlineLossProceed => language._messages[2964];
 
   /// 會刪除自動快取與 {count} 個離線專案（共 {size}），這個動作無法復原。
-  String offlineCacheClearWithProjects(Object? count, Object? size) => _format(language, language._messages[2968], {'count': count, 'size': size});
-
-  /// 會刪除自動快取與這個帳號的所有離線專案（目前無法確認有幾個），這個動作無法復原。
-  String get offlineCacheClearUnknownProjects => language._messages[2969];
+  String offlineCacheClearWithProjects(Object? count, Object? size) => _format(language, language._messages[2965], {'count': count, 'size': size});
 
   /// 關閉離線快取？
-  String get offlineCacheTurnOffTitle => language._messages[2970];
+  String get offlineCacheTurnOffTitle => language._messages[2966];
 
   /// 清除
-  String get offlineCacheClearButton => language._messages[2971];
+  String get offlineCacheClearButton => language._messages[2967];
+
+  /// 離線瀏覽
+  String get offlineBrowseAction => language._messages[2968];
+
+  /// 驗證完成之前，可以先瀏覽已保存的專案。
+  String get offlineBrowseHint => language._messages[2969];
+
+  /// 目前無法離線瀏覽。
+  String get offlineEnterFailed => language._messages[2970];
+
+  /// 離線瀏覽
+  String get offlineShellTitle => language._messages[2971];
+
+  /// 離線 · 只能瀏覽已保存的專案
+  String get offlineBannerNetwork => language._messages[2972];
+
+  /// GitLab 暫時沒有回應 · 只能瀏覽已保存的專案
+  String get offlineBannerServer => language._messages[2973];
+
+  /// GitLab 限流中 · 只能瀏覽已保存的專案
+  String get offlineBannerRateLimited => language._messages[2974];
+
+  /// GitLab 限流中（約 {minutes} 分鐘）· 只能瀏覽已保存的專案
+  String offlineBannerRateLimitedMinutes(Object? minutes) => _format(language, language._messages[2975], {'minutes': minutes});
+
+  /// 網路可能需要登入（例如 Wi-Fi 認證頁）· 只能瀏覽已保存的專案
+  String get offlineBannerSignIn => language._messages[2976];
+
+  /// 尚未連上 GitLab · 只能瀏覽已保存的專案
+  String get offlineBannerChecking => language._messages[2977];
+
+  /// 已恢復連線
+  String get offlineBannerRestored => language._messages[2978];
+
+  /// 重試連線
+  String get offlineRetryConnection => language._messages[2979];
+
+  /// 正在檢查連線…
+  String get offlineCheckingConnection => language._messages[2980];
+
+  /// 切換到線上
+  String get offlineSwitchOnline => language._messages[2981];
+
+  /// 仍然無法連上 GitLab
+  String get offlineStillOffline => language._messages[2982];
+
+  /// 上次驗證：{when}
+  String offlineLastValidated(Object? when) => _format(language, language._messages[2983], {'when': when});
+
+  /// 連線後會開啟 1 個連結
+  String get offlinePendingLink => language._messages[2984];
+
+  /// 管理離線專案
+  String get offlineManageProjects => language._messages[2985];
+
+  /// 已保存的專案
+  String get offlineSavedProjectsTitle => language._messages[2986];
+
+  /// 沒有可以離線瀏覽的專案
+  String get offlineNothingToBrowse => language._messages[2987];
+
+  /// 連線後可以再次保存專案。
+  String get offlineNothingToBrowseDetail => language._messages[2988];
+
+  /// 無法讀取 App 鎖定設定
+  String get offlineLockUnreadableTitle => language._messages[2989];
+
+  /// 讀取成功之前，不會顯示離線內容。
+  String get offlineLockUnreadableDetail => language._messages[2990];
+
+  /// 若登入的是其他帳號，會刪除 @{username} 的 {count} 個離線專案（{size}）。
+  String offlineLossConnect(Object? username, Object? count, Object? size) => _format(language, language._messages[2991], {'username': username, 'count': count, 'size': size});
+
+  /// 會刪除 @{username} 在這台裝置上的離線專案（目前無法讀取數量）。
+  String offlineLossUnknown(Object? username) => _format(language, language._messages[2992], {'username': username});
+
+  /// 若登入的是其他帳號，會刪除 @{username} 在這台裝置上的離線專案（目前無法讀取數量）。
+  String offlineLossConnectUnknown(Object? username) => _format(language, language._messages[2993], {'username': username});
+
+  /// 登入已失效，正在刪除 @{username} 的離線資料。
+  String offlineSignInExpiredDeleting(Object? username) => _format(language, language._messages[2994], {'username': username});
+
+  /// 登入已失效，已刪除 @{username} 的離線資料。
+  String offlineSignInExpiredDeleted(Object? username) => _format(language, language._messages[2995], {'username': username});
+
+  /// 登入已失效，@{username} 的離線資料將在下次啟動時重試刪除。
+  String offlineSignInExpiredRetry(Object? username) => _format(language, language._messages[2996], {'username': username});
+
+  /// 離線瀏覽只能在上次驗證後 30 天內使用。請連線後重新驗證。
+  String get offlineValidationExpired => language._messages[2997];
 
   /// AI 寫入被中斷
-  String get aiRecoveryTitle => language._messages[2972];
+  String get aiRecoveryTitle => language._messages[2998];
 
   /// 知道了
-  String get aiRecoveryOk => language._messages[2973];
+  String get aiRecoveryOk => language._messages[2999];
 
   /// 有 {count} 筆 AI 寫入在應用程式上次關閉時正在送出，結果未知。請到 GitLab 查看是否已經完成；AI 之後若提出相同的寫入，會先請你確認。
-  String aiRecoveryUncertain(Object? count) => _format(language, language._messages[2974], {'count': count});
+  String aiRecoveryUncertain(Object? count) => _format(language, language._messages[3000], {'count': count});
 
   /// 有 {count} 筆 AI 寫入在送出前就被中斷，沒有送到 GitLab。
-  String aiRecoveryNotExecuted(Object? count) => _format(language, language._messages[2975], {'count': count});
+  String aiRecoveryNotExecuted(Object? count) => _format(language, language._messages[3001], {'count': count});
 
   /// 這些寫入不會自動重新送出，相關的 AI 工作也不會恢復。
-  String get aiRecoveryNoResend => language._messages[2976];
+  String get aiRecoveryNoResend => language._messages[3002];
 
   /// 直接屬於群組 {path} 的工作項目 #{iid}
-  String aiProposalGroupTarget(Object? path, Object? iid) => _format(language, language._messages[2977], {'path': path, 'iid': iid});
+  String aiProposalGroupTarget(Object? path, Object? iid) => _format(language, language._messages[3003], {'path': path, 'iid': iid});
 
   /// 只會變更你（@{username}）自己的待辦清單，不會改動工作項目本身。
-  String aiProposalOwnTodo(Object? username) => _format(language, language._messages[2978], {'username': username});
+  String aiProposalOwnTodo(Object? username) => _format(language, language._messages[3004], {'username': username});
 
   /// 只會刪除你自己寫的這則留言；送出前會再向 GitLab 確認作者是你。
-  String get aiProposalDeleteOwnNote => language._messages[2979];
+  String get aiProposalDeleteOwnNote => language._messages[3005];
 
   /// GitLab 沒有為這個群組工作項目提供這項功能（可能是版本或工作項目類型不支援），所以沒有送出。
-  String get aiRefusedGroupUnsupported => language._messages[2980];
+  String get aiRefusedGroupUnsupported => language._messages[3006];
 
   /// 無法確認這個工作項目仍直接屬於它的群組（群組可能已改名或移動），所以沒有送出。請重新開啟或加入它。
-  String get aiRefusedGroupUnverifiable => language._messages[2981];
+  String get aiRefusedGroupUnverifiable => language._messages[3007];
 
   /// 群組擁有的工作項目：AI 只能修改這個對話開啟的那一項，或你自己加入對話的項目；授權不會擴及整個群組、子群組或群組裡的專案。
-  String get aiConsentWritesGroupScope => language._messages[2982];
+  String get aiConsentWritesGroupScope => language._messages[3008];
 
   /// AI 會讀取群組 {path} 的工作項目 #{iid}。群組的其他工作項目和群組裡的專案不在這個對話的範圍內。
-  String aiChatEmptyGroup(Object? path, Object? iid) => _format(language, language._messages[2983], {'path': path, 'iid': iid});
+  String aiChatEmptyGroup(Object? path, Object? iid) => _format(language, language._messages[3009], {'path': path, 'iid': iid});
 
   /// AI 會讀取這個群組工作項目。群組的其他工作項目和群組裡的專案不在這個對話的範圍內。
-  String get aiChatEmptyGroupItem => language._messages[2984];
+  String get aiChatEmptyGroupItem => language._messages[3010];
 
   /// 摘要這個工作項目
-  String get aiSuggestWorkItemSummary => language._messages[2985];
+  String get aiSuggestWorkItemSummary => language._messages[3011];
 
   /// 已從對話移除 {path} #{iid}，AI 不能再修改它
-  String aiRemovedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[2986], {'path': path, 'iid': iid});
+  String aiRemovedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[3012], {'path': path, 'iid': iid});
 
   /// AI 會讀取群組 {path} 的工作項目 #{iid}。你加入對話的項目（列在輸入框上方）也在這個對話的範圍內；群組其他未加入的工作項目和群組裡的專案則不在範圍內。
-  String aiChatEmptyGroupAdded(Object? path, Object? iid) => _format(language, language._messages[2987], {'path': path, 'iid': iid});
+  String aiChatEmptyGroupAdded(Object? path, Object? iid) => _format(language, language._messages[3013], {'path': path, 'iid': iid});
 
   /// AI 會讀取這個群組工作項目。你加入對話的項目（列在輸入框上方）也在這個對話的範圍內；群組其他未加入的工作項目和群組裡的專案則不在範圍內。
-  String get aiChatEmptyGroupItemAdded => language._messages[2988];
+  String get aiChatEmptyGroupItemAdded => language._messages[3014];
 
   /// 日期沒有送出：要求的日期可能和目前相同，而群組工作項目在這種情況下無法不多送一次請求就確認歸屬。請重新讀取目前的日期後再試。
-  String get aiRefusedGroupDatesNotSent => language._messages[2989];
+  String get aiRefusedGroupDatesNotSent => language._messages[3015];
+
+  /// 切換帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
+  String offlineLossSwitchUnknown(Object? username) => _format(language, language._messages[3016], {'username': username});
+
+  /// 登出會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
+  String offlineLossSignOutUnknown(Object? username) => _format(language, language._messages[3017], {'username': username});
+
+  /// 移除帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
+  String offlineLossRemoveUnknown(Object? username) => _format(language, language._messages[3018], {'username': username});
+
+  /// 會刪除自動快取與這個帳號的所有離線專案（目前無法確認有幾個），這個動作無法復原。
+  String get offlineCacheClearUnknownProjects => language._messages[3019];
 }

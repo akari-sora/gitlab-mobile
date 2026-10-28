@@ -89,6 +89,14 @@ RepositoryEntryState entryStateOf(SnapshotTreeEntry entry) =>
         RepositoryEntryState.unsupportedType,
     };
 
+/// The route [openSnapshot] pushes carries this as its arguments, so a
+/// navigator observer can tell which saved project is being read (the
+/// offline shell goes online into that project's files).
+final class SnapshotRouteArguments {
+  const SnapshotRouteArguments(this.projectId);
+  final int projectId;
+}
+
 /// Calls [onRevoked] once the reader's permit no longer holds (an access
 /// fence for the project, an account fence, the account leaving). The pages
 /// then drop every decrypted value they show (GLM r1 #1).
@@ -129,6 +137,9 @@ Future<void> openSnapshot(
   }
   await Navigator.of(context).push(
     MaterialPageRoute<void>(
+      settings: RouteSettings(
+        arguments: SnapshotRouteArguments(record.projectId),
+      ),
       builder: (_) => SnapshotBrowserPage(
         repositories: repositories,
         record: record,

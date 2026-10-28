@@ -28,6 +28,7 @@ import 'features/auth/session_controller.dart';
 import 'features/cache/read_cache_disk_coordinator.dart';
 import 'features/cache/read_cache_key_store.dart';
 import 'features/cache/read_cache_settings_store.dart';
+import 'features/offline/offline_app.dart';
 import 'features/shell/authenticated_app.dart';
 import 'features/shell/incoming_links.dart';
 import 'features/security/app_lock.dart';
@@ -159,10 +160,16 @@ final class _SessionRecovery {
   bool _disposed = false;
   bool _started = false;
 
+  /// AI recovery steps running inside the gate, and their settling.
+  int _aiRunning = 0;
+  Completer<void>? _aiSettled;
+  bool _localWritesClosed = false;
+
   void start() {
     if (_started) return;
     _started = true;
     configureReadCacheDisk(session.readCache);
+    session.settleLocalWrites = _settleAi;
     session.addListener(_changed);
     unawaited(session.whenDisposed.then((_) => dispose()));
     _changed();
@@ -170,6 +177,14 @@ final class _SessionRecovery {
 
   void _changed() {
     if (_disposed || session.isDisposed) return;
+    if (session.localWritesClosed) {
+      _localWritesClosed = true;
+    } else if (_localWritesClosed) {
+      // Offline read-only mode ended, or its entry was refused: AI recovery
+      // waiting in runAi re-checks and may go on.
+      _localWritesClosed = false;
+      _signalDecisionChanged();
+    }
     final decision = session.readCacheStartupDecision;
     if (identical(decision, _seen)) return;
     _seen = decision;
@@ -290,25 +305,60 @@ final class _SessionRecovery {
     _signalDecisionChanged();
   }
 
+  /// Runs one AI recovery step after the read-cache scan, never while the
+  /// session enters or is in offline read-only mode (no local AI writes are
+  /// allowed there); it then waits for the mode to end.
   Future<void> runAi(Future<void> Function() action) async {
     while (!_disposed && !session.isDisposed) {
       final changed = _decisionChanged.future;
       final decision = session.readCacheStartupDecision;
+      if (session.localWritesClosed) _localWritesClosed = true;
       if (decision == null || !identical(decision, _acknowledged) ||
-          !session.isReadCacheDecisionCurrent(decision)) {
+          !session.isReadCacheDecisionCurrent(decision) ||
+          session.localWritesClosed) {
         await changed;
         continue;
       }
       final ran = await _recoveryGate.run(() async {
+        // Checked and counted in the same turn, so an offline entry that
+        // closed the session's local writes either sees this step running or
+        // keeps it from starting.
         if (_disposed || session.isDisposed ||
             !identical(decision, _acknowledged) ||
             !session.isReadCacheDecisionCurrent(decision)) {
           return false;
         }
-        await action();
+        if (session.localWritesClosed) {
+          _localWritesClosed = true;
+          return false;
+        }
+        _aiRunning++;
+        try {
+          await action();
+        } finally {
+          if (--_aiRunning == 0) {
+            final settled = _aiSettled;
+            _aiSettled = null;
+            if (settled != null && !settled.isCompleted) settled.complete();
+          }
+        }
         return true;
       });
       if (ran) return;
+    }
+  }
+
+  /// Offline entry calls this after closing the session's local writes: no
+  /// new AI step starts, and the one running gets [timeout] to settle. False
+  /// means it did not, and the entry is refused.
+  Future<bool> _settleAi() async {
+    if (_disposed || _aiRunning == 0) return true;
+    final settled = _aiSettled ??= Completer<void>();
+    try {
+      await settled.future.timeout(timeout);
+      return true;
+    } on TimeoutException {
+      return false;
     }
   }
 
@@ -325,6 +375,12 @@ final class _SessionRecovery {
       _sessionRecoveries[session] = null;
     }
     session.removeListener(_changed);
+    if (session.settleLocalWrites == _settleAi) {
+      session.settleLocalWrites = null;
+    }
+    final settled = _aiSettled;
+    _aiSettled = null;
+    if (settled != null && !settled.isCompleted) settled.complete();
     _signalDecisionChanged();
   }
 }
@@ -489,6 +545,13 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
       unawaited(notifications.initialize());
     }
     final session = ref.read(sessionProvider);
+    // The offline gate admits the offline shell only once this controller's
+    // setting has been read (§5.9), so it is bound and started before the
+    // session initializes. Started before the first frame's app exists, so its
+    // back handling also runs before the navigator's while the app is locked.
+    final lock = ref.read(appLockProvider);
+    session.bindOfflineAppLock(lock);
+    unawaited(lock.start());
     // C7: the interrupted notification after next-start journal recovery.
     _recoveryNotifier = notifications == null
         ? null
@@ -518,9 +581,6 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     unawaited(ref.read(appearanceProvider).load());
     // Looks for an update once per launch (when allowed); never gates a frame.
     unawaited(ref.read(appUpdateProvider).start());
-    // Started before the first frame's app exists, so its back handling runs
-    // before the navigator's while the app is locked.
-    unawaited(ref.read(appLockProvider).start());
   }
   @override
   void dispose() {
@@ -543,25 +603,39 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     if (account != null) unawaited(_shortcuts.publish(account));
   }
 
-  void _syncShortcuts(bool signedIn, String? accountKey) {
+  /// The offline shell has no account client, so shortcuts are bound to no
+  /// account there; it still counts as a session, so leaving it for the
+  /// sign-in screen clears the published shortcuts like a sign-out (§5.11).
+  void _syncShortcuts(bool signedIn, bool offline, String? accountKey) {
     _shortcuts.bind(signedIn ? accountKey : null);
-    if (!signedIn && _sessionWasActive) {
+    final active = signedIn || offline;
+    if (!active && _sessionWasActive) {
       unawaited(_shortcuts.clearPublished());
     }
-    _sessionWasActive = signedIn;
+    _sessionWasActive = active;
   }
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final appearance = ref.watch(appearanceProvider);
     return ListenableBuilder(listenable: Listenable.merge([session, appearance, _language]), builder: (context, _) {
-      final signedIn = session.active != null && session.api != null;
-      _syncShortcuts(signedIn, session.active?.key);
+      final offline = session.offline;
+      final signedIn =
+          offline == null && session.active != null && session.api != null;
+      _syncShortcuts(signedIn, offline != null, session.active?.key);
       if (signedIn) {
         return AuthenticatedApp(
           key: ValueKey(session.generation), session: session, appearance: appearance, shortcuts: _shortcuts,
           updates: ref.read(appUpdateProvider), incoming: _links, lock: ref.read(appLockProvider),
           language: _language, ai: _ai, runNotifications: _runNotificationGate,
+        );
+      }
+      // Before resuming and initializing (§5.5): the offline read-only shell,
+      // a new tree for every generation, with no account API client.
+      if (offline != null) {
+        return OfflineApp(
+          key: ValueKey(session.generation), session: session, appearance: appearance,
+          lock: ref.read(appLockProvider), language: _language, incoming: _links,
         );
       }
       return DynamicColorBuilder(builder: (light, dark) {
@@ -587,16 +661,60 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   }
 }
 
-class _ResumeScreen extends StatelessWidget {
+class _ResumeScreen extends StatefulWidget {
   const _ResumeScreen({required this.session});
   final SessionController session;
   @override
+  State<_ResumeScreen> createState() => _ResumeScreenState();
+}
+
+class _ResumeScreenState extends State<_ResumeScreen> {
+  bool _entering = false;
+  bool _leaving = false;
+
+  /// §5.1 early entry: browse the saved projects while `/user` still runs.
+  Future<void> _browseOffline() async {
+    if (_entering) return;
+    setState(() => _entering = true);
+    final entered = await widget.session.enterOffline();
+    if (!mounted) return;
+    setState(() => _entering = false);
+    if (!entered) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.offlineEnterFailed)),
+      );
+    }
+  }
+
+  /// Leaving the account being restored deletes its offline projects (§6.7),
+  /// so that is confirmed before anything stops.
+  Future<void> _useAnotherAccount() async {
+    if (_leaving) return;
+    final session = widget.session;
+    final account = session.resumingAccount;
+    if (account != null) {
+      setState(() => _leaving = true);
+      final confirmed = await confirmRetainedOfflineLoss(
+        context,
+        session,
+        accountKey: account.key,
+        kind: RetainedLeave.switchAccount,
+      );
+      if (!mounted) return;
+      setState(() => _leaving = false);
+      if (!confirmed || session.resumingAccount?.key != account.key) return;
+    }
+    unawaited(session.endSession());
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final session = widget.session;
     final username = session.resumingAccount?.user.username ?? '';
     final theme = Theme.of(context);
     return Scaffold(
-      body: SafeArea(child: Center(child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+      body: SafeArea(child: Center(child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
             padding: const EdgeInsets.all(16),
@@ -613,7 +731,27 @@ class _ResumeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           const CircularProgressIndicator(),
-          TextButton(onPressed: () { unawaited(session.endSession()); }, child: Text(l10n.useAnotherAccount)),
+          if (session.canEnterOffline) ...[
+            const SizedBox(height: 24),
+            FilledButton.tonalIcon(
+              key: const ValueKey('resume-browse-offline'),
+              onPressed: _entering ? null : () => unawaited(_browseOffline()),
+              icon: const Icon(Icons.cloud_off_outlined, size: 20),
+              label: Text(l10n.offlineBrowseAction),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.offlineBrowseHint,
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          const SizedBox(height: 8),
+          TextButton(
+            key: const ValueKey('resume-use-another-account'),
+            onPressed: _leaving ? null : () => unawaited(_useAnotherAccount()),
+            child: Text(l10n.useAnotherAccount),
+          ),
         ]),
       ))),
     );

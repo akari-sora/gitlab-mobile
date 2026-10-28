@@ -7,6 +7,7 @@ import '../../core/read_cache_disk_contract.dart';
 import '../../shared/workspace_ui.dart';
 import '../ai/ai_account_removal.dart';
 import '../ai/ai_write_journal.dart';
+import '../offline/offline_app.dart';
 import 'session_controller.dart';
 
 import '../../l10n/l10n.dart';
@@ -90,8 +91,58 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// §8 account removal: the hold is taken here, synchronously, before any
-  /// dialog. No account is signed in, so there is no run to stop.
+  /// The account whose disk data this device kept after a failed resume or
+  /// same-account retry (B8/B10): it is the one that loses its offline
+  /// projects when the sign-in screen moves on to another account (§6.7).
+  /// The same source as `select`, including before startup recovery ran.
+  String? get _retainedKey {
+    final key = widget.session.leavingDiskAccountKey;
+    if (key == null) return null;
+    return widget.session.accounts.any((account) => account.key == key)
+        ? key
+        : null;
+  }
+
+  /// §6.7 before anything changes: true when the user goes on.
+  Future<bool> _confirmLeavingRetained(RetainedLeave kind) async {
+    final retained = _retainedKey;
+    if (retained == null) return true;
+    final confirmed = await confirmRetainedOfflineLoss(
+      context,
+      widget.session,
+      accountKey: retained,
+      kind: kind,
+    );
+    return confirmed && mounted;
+  }
+
+  /// Picking the retained account itself is the same-account retry (B8) and
+  /// asks nothing; any other account first confirms the retained one's loss.
+  Future<void> _select(Account account) async {
+    final session = widget.session;
+    if (session.busy || AiAccountRemoval.anyRunning) return;
+    if (account.key != _retainedKey &&
+        !await _confirmLeavingRetained(RetainedLeave.switchAccount)) {
+      return;
+    }
+    if (session.busy || AiAccountRemoval.anyRunning) return;
+    await session.select(account);
+  }
+
+  /// Removing the retained account confirms its offline projects first, then
+  /// §8 account removal runs.
+  Future<void> _confirmRemove(Account account) async {
+    if (AiAccountRemoval.anyRunning || widget.session.busy) return;
+    if (account.key == _retainedKey &&
+        !await _confirmLeavingRetained(RetainedLeave.remove)) {
+      return;
+    }
+    if (mounted) _remove(account);
+  }
+
+  /// §8 account removal: the hold is taken here, synchronously, before the
+  /// removal's own dialogs. No account is signed in, so there is no run to
+  /// stop.
   void _remove(Account account) {
     if (AiAccountRemoval.anyRunning || widget.session.busy) return;
     final job = AiAccountRemoval.begin(account.key);
@@ -177,6 +228,12 @@ class _LoginScreenState extends State<LoginScreen> {
         _form.currentState?.validate() != true) {
       return;
     }
+    if (!await _confirmLeavingRetained(RetainedLeave.connect) ||
+        !mounted ||
+        widget.session.busy ||
+        AiAccountRemoval.anyRunning) {
+      return;
+    }
     FocusScope.of(context).unfocus();
     await widget.session.connect(_instance.text, _token.text);
     if (mounted && widget.session.active != null) {
@@ -188,6 +245,12 @@ class _LoginScreenState extends State<LoginScreen> {
     if (widget.session.busy ||
         AiAccountRemoval.anyRunning ||
         _oauthApplicationId == null) {
+      return;
+    }
+    if (!await _confirmLeavingRetained(RetainedLeave.connect) ||
+        !mounted ||
+        widget.session.busy ||
+        AiAccountRemoval.anyRunning) {
       return;
     }
     FocusScope.of(context).unfocus();
@@ -285,7 +348,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   onTap: locked
                                       ? null
                                       : () {
-                                          unawaited(session.select(account));
+                                          unawaited(_select(account));
                                         },
                                   trailing: IconButton(
                                     key: Key('removeAccount-${account.key}'),
@@ -293,7 +356,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     icon: const Icon(Icons.logout, size: 20),
                                     onPressed: locked
                                         ? null
-                                        : () => _remove(account),
+                                        : () => unawaited(
+                                            _confirmRemove(account),
+                                          ),
                                   ),
                                 ),
                               ),
