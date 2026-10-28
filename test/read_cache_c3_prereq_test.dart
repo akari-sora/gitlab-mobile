@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -172,11 +173,17 @@ final class Harness {
       files: files,
       settings: ReadCacheSettingsStore(storage),
       controlsInstalled: true,
-      schedule: (_, _) => () {},
+      schedule: (_, action) {
+        if (!captureSchedule) return () {};
+        scheduled.add(action);
+        return () => scheduled.remove(action);
+      },
     );
   }
   final root = Directory.systemTemp.createTempSync('c3-prereq-');
   final storage = MemoryStorage();
+  var captureSchedule = false;
+  final scheduled = <void Function()>[];
   late final ReadCacheKeyStore keys;
   late final ReadCacheFileStore files;
   late final ReadCacheDiskCoordinator cache;
@@ -277,6 +284,73 @@ Future<void> until(bool Function() condition) async {
     condition(),
     isTrue,
     reason: 'controlled operation failed to reach checkpoint',
+  );
+}
+
+/// Corrupt C2 index, then pause the scoped marker read so an account-wide
+/// clear can become the newer owner before the untrusted-index fallback.
+Future<void> expectScopedFallbackKeepsAccountWideClear(
+  Harness h,
+  ReadCacheCleanupOperation operation,
+) async {
+  await h.seed(account);
+  expect(await h.recover(), isTrue);
+  h.cache.register(h.namespace);
+  expect(await h.cache.activate(binding), isTrue);
+  h.namespace.failStop = true;
+  h.storage.markerReadGate = Completer<void>();
+  h.storage.markerReadStarted = Completer<void>();
+  final scope = h.cache.invalidate(
+    DiskInvalidation(
+      binding: binding,
+      kind: DiskInvalidationKind.mutation,
+      scopeTags: {'project:1'},
+    ),
+  );
+  await h.storage.markerReadStarted!.future.timeout(const Duration(seconds: 5));
+  final full = h.cache.clear(binding, operation);
+  h.storage.markerReadGate!.complete();
+  final scopeOutcome = await scope.barrier.then<Object>(
+    (result) => result,
+    onError: (Object error) => error,
+  );
+  final cleared = await full;
+  await h.cache.quiesced;
+  expect(scopeOutcome, isA<ApiFailure>(), reason: operation.name);
+  expect(cleared.complete, isFalse, reason: operation.name);
+  expect(
+    h.directory('read_cache', account).existsSync(),
+    isTrue,
+    reason: operation.name,
+  );
+  expect(
+    h.directory('offline_repo', account).existsSync(),
+    isTrue,
+    reason: operation.name,
+  );
+  expect(
+    (await h.keys.readKey(account)).isFound,
+    isTrue,
+    reason: operation.name,
+  );
+  expect(
+    (await h.keys.readOfflineKey(account)).isFound,
+    isTrue,
+    reason: operation.name,
+  );
+  final marker = await h.keys.readMarker(account);
+  expect(marker.isFound, isTrue, reason: operation.name);
+  final value = marker.value! as ReadCacheClearMarker;
+  expect(value.namespaceOnly, isFalse, reason: operation.name);
+  expect(
+    value.reason,
+    ReadCacheClearReason.accountClear,
+    reason: operation.name,
+  );
+  expect(
+    h.cache.state(account),
+    ReadCacheDiskState.cleaning,
+    reason: operation.name,
   );
 }
 
@@ -1101,6 +1175,129 @@ void main() {
           ),
           isEmpty,
         );
+      },
+    );
+
+    test(
+      'scoped fallback cannot downgrade a later account-wide clear',
+      () async {
+        for (final operation in [
+          ReadCacheCleanupOperation.settingsClear,
+          ReadCacheCleanupOperation.signOut,
+          ReadCacheCleanupOperation.accountRemoval,
+        ]) {
+          final local = Harness();
+          addTearDown(local.dispose);
+          await expectScopedFallbackKeepsAccountWideClear(local, operation);
+        }
+      },
+    );
+
+    test(
+      'scoped timeout cannot downgrade a pending account-wide clear',
+      () async {
+        h.captureSchedule = true;
+        await h.seed(account);
+        expect(await h.recover(), isTrue);
+        h.cache.register(h.namespace);
+        expect(await h.cache.activate(binding), isTrue);
+        h.namespace.failStop = true;
+        h.namespace.stopGate = Completer<void>();
+        final full = h.cache.clear(binding, ReadCacheCleanupOperation.signOut);
+        await until(() => h.storage.events.contains('stop:$account'));
+        final scheduledBefore = h.scheduled.length;
+        final scope = h.cache.invalidate(
+          DiskInvalidation(
+            binding: binding,
+            kind: DiskInvalidationKind.mutation,
+            scopeTags: {'project:1'},
+          ),
+        );
+        expect(h.scheduled.length, scheduledBefore + 1);
+        h.scheduled[scheduledBefore]();
+        h.namespace.stopGate!.complete();
+        final scopeOutcome = await scope.barrier.then<Object>(
+          (result) => result,
+          onError: (Object error) => error,
+        );
+        final cleared = await full;
+        await h.cache.quiesced;
+        expect(scopeOutcome, isA<ApiFailure>());
+        expect(cleared.complete, isFalse);
+        // The timed-out barrier revokes its own fence, so a downgraded
+        // in-memory intent is persisted by the next scoped join. A still-valid
+        // account-wide owner reaches namespace stop again and does not finish.
+        final stopsBefore = h.storage.events
+            .where((event) => event == 'stop:$account')
+            .length;
+        final followUp = await h.cache
+            .invalidate(
+              DiskInvalidation(
+                binding: binding,
+                kind: DiskInvalidationKind.mutation,
+                scopeTags: {'project:1'},
+              ),
+            )
+            .barrier
+            .then<Object>((result) => result, onError: (Object error) => error);
+        await h.cache.quiesced;
+        expect(followUp, isA<ApiFailure>());
+        expect(
+          h.storage.events.where((event) => event == 'stop:$account').length,
+          greaterThan(stopsBefore),
+        );
+        expect(h.directory('read_cache', account).existsSync(), isTrue);
+        expect(h.directory('offline_repo', account).existsSync(), isTrue);
+        expect((await h.keys.readKey(account)).isFound, isTrue);
+        expect((await h.keys.readOfflineKey(account)).isFound, isTrue);
+        final marker = await h.keys.readMarker(account);
+        expect(marker.isFound, isTrue);
+        final value = marker.value! as ReadCacheClearMarker;
+        expect(value.namespaceOnly, isFalse);
+        expect(value.reason, ReadCacheClearReason.accountClear);
+        expect(h.cache.state(account), ReadCacheDiskState.cleaning);
+      },
+    );
+
+    test(
+      'restart recovers a pending account-wide clear after a scoped fallback',
+      () async {
+        await expectScopedFallbackKeepsAccountWideClear(
+          h,
+          ReadCacheCleanupOperation.settingsClear,
+        );
+        final restarted = ReadCacheDiskCoordinator(
+          coordinationScope: Object(),
+          keys: h.keys,
+          files: h.files,
+          settings: ReadCacheSettingsStore(h.storage),
+          controlsInstalled: true,
+          schedule: (_, _) => () {},
+        );
+        final namespace = Namespace(h.storage.events);
+        restarted.register(namespace);
+        expect(
+          await restarted.recover(
+            const ReadCacheStartupDecision(
+              operationTicket: 2,
+              accountListRevision: 2,
+              accountsReadable: true,
+              signOutMarkerReadable: true,
+              lastActiveReadable: true,
+              signOutPending: false,
+              resumeAccountKey: account,
+            ),
+            accountKeys: {account, other},
+          ),
+          isTrue,
+        );
+        await restarted.quiesced;
+        expect(h.directory('offline_repo', account).existsSync(), isFalse);
+        expect(h.directory('read_cache', account).existsSync(), isFalse);
+        expect((await h.keys.readOfflineKey(account)).isFound, isFalse);
+        expect((await h.keys.readKey(account)).isFound, isFalse);
+        expect((await h.keys.readMarker(account)).isFound, isFalse);
+        expect(namespace.events, contains('stopped:$account'));
       },
     );
   });

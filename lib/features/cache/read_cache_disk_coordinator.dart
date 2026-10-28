@@ -685,6 +685,7 @@ final class ReadCacheDiskCoordinator {
                   ReadCacheCipher.accountDirectoryName(account.key),
                 ))) {
           final intent = _fullIntent(account, ReadCacheClearReason.keyRepair);
+          if (intent.accountWide) return false;
           final cleared = await _clearNow(account, intent, hadWork: true);
           if (!cleared.complete || _domain.active != binding) return false;
           // Key repair owns this fence; no other clear may have superseded it.
@@ -868,6 +869,7 @@ final class ReadCacheDiskCoordinator {
         }
         if (!keyRead.isFound) {
           final intent = _fullIntent(account, ReadCacheClearReason.keyRepair);
+          if (intent.accountWide) return null;
           await _clearNow(account, intent, hadWork: true);
           return null;
         }
@@ -1029,6 +1031,7 @@ final class ReadCacheDiskCoordinator {
                   account,
                   ReadCacheClearReason.keyRepair,
                 );
+                if (intent.accountWide) return;
                 await _clearNow(account, intent, hadWork: true);
                 return;
               }
@@ -1324,6 +1327,12 @@ final class ReadCacheDiskCoordinator {
   }) {
     // Key repair and uncertain C2 projections must not erase saved projects.
     accountWide = accountWide && reason != ReadCacheClearReason.keyRepair;
+    final current = account.intent;
+    // A pending account-wide clear stays the owner. A C2 fallback must not
+    // replace its intent, marker, or completion proof.
+    if (!accountWide && current != null && current.accountWide) {
+      return current;
+    }
     account.epoch++;
     account.cleanup = true;
     account.clearComplete = false;
@@ -1620,6 +1629,7 @@ final class ReadCacheDiskCoordinator {
         if (account.intent != intent || !intent.valid) return _none;
         account.intent = null;
         account.clearComplete = true;
+        intent.completed = true;
         return const DiskClearResult(
           keyGoneConfirmed: true,
           directoryGoneConfirmed: true,
@@ -1704,6 +1714,7 @@ final class ReadCacheDiskCoordinator {
       if (complete) {
         account.invalidations.clear();
         account.clearComplete = true;
+        intent.completed = true;
         // Retained selection belongs to the current session/startup owner.
         // This clear may be finishing after a newer same-account activation.
       }
@@ -1754,10 +1765,14 @@ final class ReadCacheDiskCoordinator {
       );
       // A preceding barrier may have completed this exact full-clear owner.
       // Never join across a path incident, which installs a replacement owner.
+      // A narrower fallback must not satisfy an account-wide clear: the proof
+      // stays on that owner and its revision, after its own scope was emptied.
       if (pathRevision == _domain.pathRevision &&
           !result.complete &&
+          intent.completed &&
+          intent.accountWide &&
+          intent.revision == account.revision &&
           account.intent == null &&
-          account.clearComplete &&
           intent.valid) {
         result = const DiskClearResult(
           keyGoneConfirmed: true,
@@ -2032,6 +2047,9 @@ final class ReadCacheDiskCoordinator {
           );
         }
         final durable = await (markerReady ?? _persist(account, intent));
+        if (account.intent?.accountWide == true && account.intent != intent) {
+          return _none;
+        }
         if (!durable || !account.indexTrusted) {
           final full = _fullIntent(
             account,
@@ -2041,6 +2059,9 @@ final class ReadCacheDiskCoordinator {
           return await _clearNow(account, full, hadWork: true);
         }
         final key = await _keys!.readKey(account.key);
+        if (account.intent?.accountWide == true && account.intent != intent) {
+          return _none;
+        }
         if (!key.isFound) {
           final full = _fullIntent(
             account,
@@ -2098,7 +2119,9 @@ final class ReadCacheDiskCoordinator {
           complete: false,
         );
       } on Object {
-        if (pathRevision != _domain.pathRevision || account.intent != intent) {
+        if (pathRevision != _domain.pathRevision ||
+            account.intent != intent ||
+            intent?.accountWide == true) {
           return _none;
         }
         final full = _fullIntent(
@@ -2111,10 +2134,13 @@ final class ReadCacheDiskCoordinator {
     });
     final waited = _wait(binding, operation, raw, () {
       fence.revoke();
-      if (pathRevision != _domain.pathRevision || account.intent != intent) {
+      if (pathRevision != _domain.pathRevision ||
+          account.intent != intent ||
+          intent == null ||
+          intent.accountWide) {
         return;
       }
-      intent?.valid = false;
+      intent.valid = false;
       _fullIntent(
         account,
         ReadCacheClearReason.scopeInvalidation,
@@ -2123,7 +2149,9 @@ final class ReadCacheDiskCoordinator {
     }, succeeded: (value) => scopeSucceeded || value.complete);
     final barrier = waited.then((result) {
       if (scopeSucceeded || result.complete) return result;
-      if (pathRevision == _domain.pathRevision && !account.cleanup) {
+      if (pathRevision == _domain.pathRevision &&
+          !account.cleanup &&
+          account.intent?.accountWide != true) {
         _fullIntent(
           account,
           ReadCacheClearReason.scopeInvalidation,
@@ -2680,7 +2708,7 @@ final class _Intent {
   final int revision;
   final bool full;
   final bool accountWide;
-  bool durable = false, valid = true;
+  bool durable = false, valid = true, completed = false;
   int users = 0;
 }
 
