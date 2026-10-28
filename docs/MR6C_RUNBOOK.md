@@ -14,9 +14,8 @@ pending receipt. A handshake, launch or process death alone cannot pass a case.
 All V1–V12/device/OS/API/flavor outcomes, iOS, default six-hour timeout and
 API 24–30 back are NOT_RUN. V1 network is NOT_VERIFIED. API 34 system timeout
 is not applicable, never PASS. This packet ran no native generation, APK build,
-emulator, physical device or live GitLab. The lead must integrate the reviewed
-C6/C7 changes and rerun on the resulting source; only existing branch refs were
-read here. Current main lacks C6's back counter and C7's startup recovery UI.
+emulator, physical device or live GitLab. Rerun on a source snapshot containing
+the reviewed C1–C8 changes and bind all evidence to that snapshot.
 
 **Host commands that can run now**, from the repo root:
 
@@ -44,13 +43,13 @@ export MR6C_SOURCE="$PWD"
 export MR6C_SOURCE_HEAD="$(git rev-parse HEAD)"
 export MR6C_FLUTTER=/Users/iml1s/fvm/versions/3.47.2/bin/flutter
 export MR6C_SESSION_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/mr6c-c8.XXXXXX")"
-export MR6C_GENERATED_ROOT="$MR6C_SESSION_ROOT/generated"
+unset MR6C_GENERATED_ROOT
 export MR6C_EVIDENCE="$MR6C_SESSION_ROOT/evidence"
 df -h "$MR6C_SESSION_ROOT"
 python3 - <<'PY'
 import hashlib, json, os, pathlib, shutil, subprocess
 source = pathlib.Path(os.environ['MR6C_SOURCE'])
-target = pathlib.Path(os.environ['MR6C_GENERATED_ROOT'])
+target = pathlib.Path(os.environ['MR6C_SESSION_ROOT']) / 'generated'
 evidence = pathlib.Path(os.environ['MR6C_EVIDENCE'])
 target.mkdir(exist_ok=False)
 evidence.mkdir(exist_ok=False)
@@ -66,6 +65,7 @@ tool/mr6c_qa_fixture.dart
 tool/mr6c_socket_transport.dart
 test/ai/mr6c_socket_tooling_test.dart
 tool/tests/test_mr6c_artifacts.py
+tool/tests/fixtures/mr6c_gradle_9_3_1_r8.txt
 tool/tests/test_mr6c_emulator_checks.py
 tool/tests/test_mr6c_https_fixture.py'''.splitlines()
 manifest = {}
@@ -82,7 +82,7 @@ for name in sorted(set(filter(None, tracked)) | set(added)):
 receipt = {'source_head': os.environ['MR6C_SOURCE_HEAD'], 'files': manifest}
 (evidence / 'source-snapshot.json').write_text(json.dumps(receipt, indent=2) + '\n')
 PY
-cd "$MR6C_GENERATED_ROOT"
+cd "$MR6C_SESSION_ROOT/generated"
 export MR6C_LOCK_SHA256="$(python3 -c 'import hashlib; print(hashlib.sha256(open("pubspec.lock", "rb").read()).hexdigest())')"
 ```
 
@@ -105,7 +105,8 @@ python3 -m compileall -q ci tool
 fvm flutter test --no-pub test/ai test/app_lock_test.dart test/authenticated_app_shell_adaptive_test.dart
 fvm flutter build apk --debug --flavor gitlab --no-pub
 fvm flutter build apk --debug --flavor play --no-pub
-MR6C_GENERATED_ROOT="$PWD" python3 -m unittest discover -s tool/tests -p 'test_bootstrap.py' -v
+export MR6C_GENERATED_ROOT="$PWD"
+python3 -m unittest discover -s tool/tests -p 'test_bootstrap.py' -v
 python3 tool/mr6c_artifacts.py build-release --root "$PWD" --source-head "$MR6C_SOURCE_HEAD" --expected-lock-sha256 "$MR6C_LOCK_SHA256" --output "$MR6C_EVIDENCE/release-builds.json"
 ```
 
@@ -114,6 +115,8 @@ The last command invokes the exact release gitlab/play builds without
 A mismatch/nonzero fails without repairing the lock. New packaged APKs need a
 public inventory receipt: source, entrypoint, QA/gate flags, version, SDK,
 size/hash and public signer. These tools do not publish or create that receipt.
+Set `MR6C_GENERATED_ROOT` only after both debug builds: the native manifest
+test must fail if that variable names a tree without actual merged manifests.
 
 **Artifact/R8 readback.** Reuses C1's actual XML/helper and build-config checks;
 all four flavor/variant manifests/APKs must exist. Missing files fail without
@@ -124,10 +127,15 @@ renamed methods. The reflected QA class-name string is not a packaged handler.
 `build-release` creates exclusive private `release-builds-r8-gitlab` and
 `release-builds-r8-play` directories beside its JSON output. It runs verbose
 Flutter release builds with the Gradle daemon disabled, requests compiler input
-dumps, requires a fresh R8 minify task, and inspects the complete program.jar
+dumps, requires one task start plus a not-up-to-date execution message in
+Gradle's `--info` log, rejects cached/skipped outcomes, and inspects the complete program.jar
 and feature program jars in exactly one R8 release dump. It binds dump, APK,
 mapping, source HEAD and lock hashes in each receipt. Host fakes test these
 fences; actual pinned-toolchain propagation/dump shape still needs a real build.
+Each flavor's verbose log is retained beside the dump directory as
+`release-builds-r8-<flavor>-gradle.log` at mode `0600`, with its path and SHA-256
+in the build report, including failed builds. Treat it as private local
+evidence and review/redact before sharing it.
 
 ```sh
 python3 tool/mr6c_artifacts.py readback --root "$PWD" --source-head "$MR6C_SOURCE_HEAD" --gitlab-r8-inputs "$MR6C_EVIDENCE/release-builds-r8-gitlab/receipt.json" --play-r8-inputs "$MR6C_EVIDENCE/release-builds-r8-play/receipt.json" --output "$MR6C_EVIDENCE/artifacts.json"
@@ -166,6 +174,37 @@ Only Pixel_9 or Pixel_9_MR6c_API34/35/36, qemu=1 and the exact API are allowed.
 Pixel_9 has historical owner accounts. Unknown/non-synthetic data means NOT_RUN,
 including installation, launch, force-stop and cleanup. A clean other flavor or
 pm path absence does not prove this sandbox has no retained owner data.
+
+After verifying the dedicated AVD and a free emulator port, launch it in a
+separate process session so it survives the launching shell's teardown. Set
+`MR6C_EMULATOR_PORT` explicitly and boot only one owned AVD at a time:
+
+```sh
+export MR6C_EMULATOR_PORT MR6C_AVD MR6C_API
+export MR6C_SERIAL="emulator-$MR6C_EMULATOR_PORT"
+python3 - <<'PY'
+import os, pathlib, subprocess
+root = pathlib.Path(os.environ['MR6C_EVIDENCE'])
+api = os.environ['MR6C_API']
+with (root / f'emulator-{api}.log').open('xb') as log:
+    child = subprocess.Popen(['emulator', '-avd', os.environ['MR6C_AVD'],
+        '-port', os.environ['MR6C_EMULATOR_PORT'], '-no-snapshot-save', '-no-boot-anim'],
+        stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+        start_new_session=True)
+(root / f'emulator-{api}.pid').write_text(str(child.pid) + '\n')
+PY
+deadline=$(($(date +%s)+300))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  boot=$(adb -s "$MR6C_SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+  [ "$boot" = 1 ] && break
+  sleep 2
+done
+[ "$boot" = 1 ]
+```
+
+Check the boot result before continuing. At the end, use
+`adb -s "$MR6C_SERIAL" emu kill` and verify that the saved emulator PID has
+exited before starting another AVD.
 
 ```sh
 adb devices -l

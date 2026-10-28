@@ -2,6 +2,7 @@ import json
 import io
 import os
 from pathlib import Path
+import re
 import shlex
 import sys
 import tempfile
@@ -67,6 +68,8 @@ class ArtifactTests(unittest.TestCase):
             self.assertIn('-Dorg.gradle.daemon=false', kwargs['env']['GRADLE_OPTS'])
             self.assertIn('-Dorg.gradle.caching=false', kwargs['env']['GRADLE_OPTS'])
             kwargs['stdout'].write(f'> Task :app:minify{flavor.capitalize()}ReleaseWithR8{task_state}\n')
+            fixture = Path(__file__).with_name('fixtures') / 'mr6c_gradle_9_3_1_r8.txt'
+            kwargs['stdout'].write(fixture.read_text().replace('Gitlab', flavor.capitalize()))
             apk = self.root / f'build/app/outputs/flutter-apk/app-{flavor}-release.apk'
             apk.parent.mkdir(parents=True, exist_ok=True)
             apk.write_bytes(('apk-' + flavor).encode())
@@ -115,6 +118,44 @@ class ArtifactTests(unittest.TestCase):
         with patch.object(m, 'run', side_effect=[self.badging, self.signing]):
             with self.assertRaises(m.EvidenceError):
                 m.apk_info(self.apk, 'gitlab', 'release', self.tools)
+
+    def test_old_and_aapt2_36_sdk_fields_require_exact_values(self):
+        for field in ('sdkVersion', 'minSdkVersion'):
+            badging = self.badging.replace('sdkVersion:', field + ':')
+            with self.subTest(field=field), patch.object(m, 'run', side_effect=[badging, self.signing]):
+                data = m.apk_info(self.apk, 'gitlab', 'debug', self.tools)
+                self.assertEqual((data['min_sdk'], data['target_sdk']), (24, 36))
+            for invalid in (badging.replace(f"{field}:'24'", f"{field}:'23'"),
+                            badging.replace("targetSdkVersion:'36'", "targetSdkVersion:'35'"),
+                            badging.replace(field + ':', 'unknownSdkVersion:'),
+                            badging + "minSdkVersion:'23'\n",
+                            badging + "targetSdkVersion:'35'\n"):
+                with self.subTest(field=field, invalid=invalid), \
+                     patch.object(m, 'run', side_effect=[invalid, self.signing]):
+                    with self.assertRaises(m.EvidenceError):
+                        m.apk_info(self.apk, 'gitlab', 'debug', self.tools)
+
+    def test_r8_execution_from_recorded_gradle_info_log(self):
+        fixture = Path(__file__).with_name('fixtures') / 'mr6c_gradle_9_3_1_r8.txt'
+        recorded = fixture.read_text()
+        for flavor in ('gitlab', 'play'):
+            log = recorded.replace('Gitlab', flavor.capitalize())
+            with self.subTest(flavor=flavor):
+                self.assertEqual(m.executed_r8_task(io.StringIO(log), flavor),
+                                 f':app:minify{flavor.capitalize()}ReleaseWithR8')
+                prefixed = ''.join('[ +12 ms] ' + re.sub(r'^\[[^\]]*\]\s*', '', line) + '\n'
+                                   for line in log.splitlines())
+                self.assertEqual(m.executed_r8_task(io.StringIO(prefixed), flavor),
+                                 f':app:minify{flavor.capitalize()}ReleaseWithR8')
+        for invalid in ('', recorded * 2,
+                        recorded.replace("Task ':app:minifyGitlabReleaseWithR8' is not up-to-date because:", ''),
+                        recorded.replace(':app:minifyGitlabReleaseWithR8 (Thread', ':app:unrelated (Thread'),
+                        recorded + "Skipping task ':app:minifyGitlabReleaseWithR8' as it is up-to-date.\n",
+                        recorded + "Loaded cache entry for task ':app:minifyGitlabReleaseWithR8' with cache key abc\n",
+                        *(recorded + f'> Task :app:minifyGitlabReleaseWithR8 {state}\n'
+                          for state in ('UP-TO-DATE', 'FROM-CACHE', 'SKIPPED', 'NO-SOURCE', 'FAILED'))):
+            with self.subTest(invalid=invalid), self.assertRaises(m.EvidenceError):
+                m.executed_r8_task(io.StringIO(invalid), 'gitlab')
 
     def test_pre_r8_inputs_bound_to_apk_and_scanned_for_qa_classes(self):
         jar = self.jar([m.SERVICE, 'example.Foo'])
@@ -260,6 +301,10 @@ class ArtifactTests(unittest.TestCase):
         self.assertNotIn('--no-pub', calls[0])
         self.assertEqual(len(calls), 1)
         self.assertEqual(json.loads(output.read_text()), result)
+        entry_log = Path(entry['gradle_log'])
+        self.assertTrue(entry_log.is_file())
+        self.assertEqual(entry_log.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(entry['gradle_log_sha256'], m.sha256_file(entry_log))
 
     def test_release_build_stops_on_lock_drift_even_if_build_succeeded(self):
         lock = self.root / 'pubspec.lock'
@@ -291,6 +336,9 @@ class ArtifactTests(unittest.TestCase):
             self.assertEqual(verified['completeness'], 'SAME_INVOCATION_CAPTURE')
             self.assertEqual(verified['flavor'], flavor)
             self.assertEqual(verified['mapping_sha256'], entry['mapping_sha256'])
+            log = Path(entry['gradle_log'])
+            self.assertIn('is not up-to-date because:', log.read_text())
+            self.assertEqual(entry['gradle_log_sha256'], m.sha256_file(log))
 
     def test_missing_or_cached_r8_build_never_generates_a_receipt(self):
         lock = self.root / 'pubspec.lock'
