@@ -192,18 +192,16 @@ class CheckScriptTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
                 self.assertEqual(timeout_args, ['--signal=TERM', '--kill-after=15s', '22m'])
                 self.assertEqual(commands[:2], [['pub', 'get', '--enforce-lockfile'], ['analyze', '--no-pub']])
-                test_args = commands[2]
-                self.assertEqual(test_args[:5], ['test', '--no-pub', '--coverage', '--timeout=60s', '--machine'])
-                defines = [arg for arg in test_args if arg.startswith('--dart-define=')]
+                expected_args = ['test', '--no-pub', '--coverage', '--timeout=60s', '--machine']
+                if mode == 'ai':
+                    expected_args += ['--dart-define=MERGELINE_AI_ASSISTANT=true',
+                                      '--dart-define=MERGELINE_AI_BACKGROUND=false',
+                                      '--coverage-path=coverage-ai/lcov.info']
+                self.assertEqual(commands[2], expected_args)
                 output = 'ci-output' if mode == 'default' else 'ci-output-ai'
                 coverage = 'coverage' if mode == 'default' else 'coverage-ai'
                 self.assertIn(f'{output}/junit.xml', files)
                 self.assertIn(f'{coverage}/lcov.info', files)
-                if mode == 'default':
-                    self.assertEqual(defines, [])
-                else:
-                    self.assertEqual(defines, ['--dart-define=MERGELINE_AI_ASSISTANT=true',
-                                               '--dart-define=MERGELINE_AI_BACKGROUND=false'])
 
     def test_failed_flutter_test_remains_a_failure(self):
         result, _, _, files = self.run_check('ai', test_exit='7')

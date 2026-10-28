@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -68,6 +69,89 @@ class FakeGitLab:
 
     def trace(self, job_id):
         return self.log
+
+
+class PipelineSourcePolicyTests(unittest.TestCase):
+    # https://docs.gitlab.com/ci/jobs/job_rules/#ci_pipeline_source-predefined-variable
+    SOURCES = ('api', 'chat', 'external', 'external_pull_request_event',
+               'merge_request_event', 'ondemand_dast_scan', 'ondemand_dast_validation',
+               'parent_pipeline', 'pipeline', 'push', 'schedule',
+               'security_orchestration_policy', 'trigger', 'web', 'webide')
+
+    def rule_matches(self, condition, variables):
+        """Evaluate the comparisons and &&/|| used by these delivery rules."""
+        def matches(term):
+            match = re.fullmatch(r'\$(\w+)\s*(==|!=|=~)\s*(?:"([^"]*)"|/([^/]*)/)',
+                                 term.strip())
+            self.assertIsNotNone(match, f'Unsupported rule term: {term}')
+            variable, operator, literal, pattern = match.groups()
+            value = variables.get(variable, '')
+            if operator == '=~':
+                return re.search(pattern, value) is not None
+            return (value == literal) if operator == '==' else (value != literal)
+
+        return any(all(matches(term) for term in group.split('&&'))
+                   for group in condition.split('||'))
+
+    def test_pipeline_source_rules_and_validators_agree_for_every_documented_source(self):
+        content = (ROOT / '.gitlab-ci.yml').read_text()
+        for name in ('publish_preview', 'publish_preview_ai', 'mr7_release_attestation'):
+            block = re.search(rf'^{name}:\n(.*?)(?=\n\S|\Z)', content, re.M | re.S)
+            self.assertIsNotNone(block, name)
+            rules_block = re.search(r'^  rules:\n(.*?)(?=\n  \S|\Z)', block[1], re.M | re.S)
+            self.assertIsNotNone(rules_block, name)
+            rules = re.findall(r"^    - if: '([^\n]+)'\n((?:      [^\n]+\n)*)",
+                               rules_block[1] + '\n', re.M)
+            self.assertEqual(len(rules), 2, name)
+            for source in self.SOURCES:
+                with self.subTest(job=name, source=source):
+                    expected = m.pipeline_source_allowed(name, source)
+                    variables = {'CI_PIPELINE_SOURCE': source, 'CI_PROJECT_ID': str(m.PROJECT),
+                                 'CI_COMMIT_REF_PROTECTED': 'true', 'CI_COMMIT_BRANCH': 'main',
+                                 'MR7_RELEASE_AI': 'false'}
+                    decision = None
+                    for condition, attributes in rules:
+                        if self.rule_matches(condition, variables):
+                            when = re.search(r'^      when: (\w+)$', attributes, re.M)
+                            decision = when[1] if when else 'on_success'
+                            break
+                    self.assertEqual(decision, ('on_success' if name == 'publish_preview'
+                                                else 'manual') if expected else None)
+                    api = FakeGitLab()
+                    api.pipeline['source'] = source
+                    current = job(50, name, 'running')
+                    current['source'] = source
+                    for validator in (
+                        lambda: m.verify_current_job(current, name, SHA),
+                        lambda: m.verify_job(api, current, name, SHA, status='running'),
+                    ):
+                        if expected:
+                            validator()
+                        else:
+                            with self.assertRaises(m.GateError):
+                                validator()
+
+    def test_off_trigger_and_pipeline_keep_identity_checks(self):
+        for source in ('trigger', 'pipeline'):
+            for path, value in ((('name',), 'other'), (('status',), 'success'),
+                                (('ref',), 'other'), (('tag',), True),
+                                (('commit', 'id'), 'f' * 40), (('pipeline', 'project_id'), 1),
+                                (('pipeline', 'sha'), 'f' * 40), (('pipeline', 'ref'), 'other'),
+                                (('web_url',), 'https://example.invalid/jobs/50')):
+                with self.subTest(source=source, path=path):
+                    current = job(50, 'publish_preview', 'running')
+                    current['source'] = source
+                    target = current
+                    for key in path[:-1]:
+                        target = target[key]
+                    target[path[-1]] = value
+                    with self.assertRaises(m.GateError):
+                        m.verify_current_job(current, 'publish_preview', SHA)
+            api = FakeGitLab()
+            api.pipeline['source'] = source
+            api.protected = False
+            with self.subTest(source=source, protected=False), self.assertRaises(m.GateError):
+                m.verify_job(api, job(50, 'publish_preview'), 'publish_preview', SHA)
 
 
 class DeliveryGateTests(unittest.TestCase):

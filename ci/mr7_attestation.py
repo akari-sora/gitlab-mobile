@@ -17,6 +17,12 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 PROJECT = 86648389
 RELEASE_REF = "main"
+# Off delivery preserves every non-MR source admitted by workflow.rules.
+# Attestation, AI delivery and their evidence jobs keep the strict source set.
+PIPELINE_SOURCE_POLICY = {
+    "off": {"exclude": ("merge_request_event",)},
+    "ai": {"include": ("push", "web", "api", "schedule")},
+}
 API = "https://gitlab.com/api/v4"
 WEB = "https://gitlab.com/aa22396584/gitlab-mobile"
 STABLE_CERT = "5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d"
@@ -167,6 +173,15 @@ class GitLab:
                          limit=8 * 1024 * 1024)
 
 
+def pipeline_source_allowed(name, source):
+    if not isinstance(source, str) or not source:
+        return False
+    policy = PIPELINE_SOURCE_POLICY["off" if name == "publish_preview" else "ai"]
+    if "include" in policy:
+        return source in policy["include"]
+    return source not in policy["exclude"]
+
+
 def verify_job(api, job, name, sha, *, status="success", pipeline_id=None):
     job_id = numeric_id(job.get("id"))
     pipeline = job.get("pipeline", {})
@@ -182,7 +197,7 @@ def verify_job(api, job, name, sha, *, status="success", pipeline_id=None):
     actual = api.get(f"pipelines/{pid}")
     require(actual.get("id") == pid and actual.get("project_id") == PROJECT
             and actual.get("sha") == sha and actual.get("ref") == RELEASE_REF
-            and actual.get("source") in ("push", "web", "api", "schedule")
+            and pipeline_source_allowed(name, actual.get("source"))
             and actual.get("web_url") == f"{WEB}/-/pipelines/{pid}", "Untrusted release pipeline")
     require(api.get(f"repository/branches/{RELEASE_REF}").get("protected") is True,
             "Release branch is not protected")
@@ -193,7 +208,7 @@ def verify_job(api, job, name, sha, *, status="success", pipeline_id=None):
 def verify_current_job(job, name, sha):
     pipeline = job.get("pipeline", {})
     require(job.get("name") == name and job.get("status") == "running"
-            and job.get("source") in ("push", "web", "api", "schedule")
+            and pipeline_source_allowed(name, job.get("source"))
             and job.get("ref") == RELEASE_REF and job.get("tag") is False
             and job.get("commit", {}).get("id") == sha
             and pipeline.get("sha") == sha and pipeline.get("ref") == RELEASE_REF
