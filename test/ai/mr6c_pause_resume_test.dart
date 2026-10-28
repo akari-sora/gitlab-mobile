@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +11,10 @@ import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/failure.dart';
+import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
@@ -18,7 +23,7 @@ import 'fx_coord_support.dart' as fx;
 import 'mr6c_support.dart';
 import 'runner_test.dart' as base;
 import '../support/workspace_fixture.dart';
-import '../support/fake_adapter.dart' show jsonResponse;
+import '../support/fake_adapter.dart' show FakeAdapter, jsonResponse;
 
 const _channel = MethodChannel('io.gitlabmobile/c5_pause_test');
 
@@ -559,6 +564,206 @@ void main() {
       },
     );
   }
+
+  test(
+    'UI read does not join an execution-gated controller context refresh',
+    () async {
+      var offset = Duration.zero;
+      final aiEntered = Completer<void>();
+      final aiResponse = Completer<void>();
+      final uiEntered = Completer<void>();
+      final uiResponse = Completer<void>();
+      addTearDown(() {
+        if (!aiResponse.isCompleted) aiResponse.complete();
+        if (!uiResponse.isCompleted) uiResponse.complete();
+      });
+      final h = await fx.StackHarness.create(
+        now: () => DateTime.now().add(offset),
+        configure: (server) {
+          server.workspace.issues[1] = server.workspace.issue(
+            1,
+            'Synthetic issue',
+          );
+          server.overrides['GET projects/42/issues/1/notes'] = (_) =>
+              jsonResponse([]);
+        },
+        origin: AiWorkItemOrigin(
+          project: WorkspaceFixture().project,
+          kind: AiWorkItemKind.issue,
+          iid: 1,
+          title: 'Synthetic issue',
+        ),
+      );
+      addTearDown(h.dispose);
+      final native = _Native(denied: true)..install();
+      addTearDown(native.uninstall);
+      final owner = _owner(h);
+      addTearDown(owner.dispose);
+      h.controller.bindBackgroundExecution(owner);
+      var issueReads = 0;
+      h.server.overrides['GET projects/42/issues/1'] = (request) async {
+        offset = Duration.zero;
+        if (++issueReads == 1) {
+          aiEntered.complete();
+          await aiResponse.future;
+        } else {
+          if (!uiEntered.isCompleted) uiEntered.complete();
+          await uiResponse.future;
+        }
+        return h.server.workspace.respond(request);
+      };
+      offset = const Duration(minutes: 2);
+      h.session.api!.clearReadCache();
+      final sending = h.controller.send('inspect the issue');
+      await aiEntered.future;
+      final ui = h.session.api!.cachedRecord(['projects', '42', 'issues', '1']);
+      // A fresh AI refresh cannot publish a caller-specific paused Future for UI.
+      await uiEntered.future.timeout(const Duration(seconds: 5));
+      expect(issueReads, 2);
+      h.foreground = false;
+      owner.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      final requests = h.server.adapter.requests.length;
+      aiResponse.complete();
+      await sending;
+      uiResponse.complete();
+      expect((await ui).value['title'], 'Synthetic issue');
+      expect(
+        h.controller.executionPause?.reason,
+        AiExecutionPauseReason.foregroundRequired,
+      );
+      expect(h.controller.blocker, AiChatBlocker.none);
+      expect(h.server.adapter.requests, hasLength(requests));
+      expect(h.provider.bodies, isEmpty);
+      h.foreground = true;
+      owner.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await owner.onForeground();
+      await fx.waitFor(() => h.controller.canResumeRun);
+      expect(native.starts, 1);
+      expect(h.server.adapter.requests, hasLength(requests));
+      await h.controller.resumeRun();
+      expect(h.controller.lastEnd, AiRunEnd.done);
+      expect(h.provider.bodies, hasLength(1));
+      expect(h.controller.items.whereType<AiUserItem>(), hasLength(1));
+    },
+  );
+
+  test(
+    'a UI cooldown during OAuth cannot replace the controller context pause',
+    () async {
+      var clock = DateTime.utc(2026, 10, 28);
+      final tokenEntered = Completer<void>();
+      final tokenResponse = Completer<void>();
+      addTearDown(() {
+        if (!tokenResponse.isCompleted) tokenResponse.complete();
+      });
+      final tokens = FakeAdapter((_) async {
+        tokenEntered.complete();
+        await tokenResponse.future;
+        return jsonResponse({
+          'access_token': 'new-access',
+          'refresh_token': 'new-refresh',
+          'token_type': 'bearer',
+        });
+      });
+      final h = await fx.StackHarness.create(
+        now: () => clock,
+        configure: (server) {
+          server.workspace.issues[1] = server.workspace.issue(
+            1,
+            'Synthetic issue',
+          );
+          server.overrides['GET projects/42/issues/1/notes'] = (_) =>
+              jsonResponse([]);
+        },
+        prepareSession: (session, server) async {
+          final instance = session.api!.instance;
+          session.api!.close();
+          session.api = GitLabApi(
+            instance: instance,
+            credential: const OAuthCredential(
+              accessToken: 'old-access',
+              refreshToken: 'old-refresh',
+              clientId: 'synthetic-client',
+            ),
+            dio: Dio()..httpClientAdapter = server.adapter,
+            oauth: OAuthTokenClient(
+              instance: instance,
+              clientId: 'synthetic-client',
+              dio: Dio()..httpClientAdapter = tokens,
+            ),
+            readCacheClock: () => clock,
+          )..bindReadCache(server.workspace.account.key, session.generation);
+        },
+        origin: AiWorkItemOrigin(
+          project: WorkspaceFixture().project,
+          kind: AiWorkItemKind.issue,
+          iid: 1,
+          title: 'Synthetic issue',
+        ),
+      );
+      addTearDown(h.dispose);
+      final native = _Native(denied: true)..install();
+      addTearDown(native.uninstall);
+      final owner = _owner(h);
+      addTearDown(owner.dispose);
+      h.controller.bindBackgroundExecution(owner);
+      h.server.overrides['GET projects/42/issues/1'] = (request) =>
+          request.headers['Authorization'] == 'Bearer old-access'
+          ? jsonResponse({}, status: 401)
+          : h.server.workspace.respond(request);
+      clock = clock.add(const Duration(minutes: 2));
+      final sending = h.controller.send('inspect the issue');
+      await tokenEntered.future;
+      h.foreground = false;
+      owner.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      h.server.overrides['GET user'] = (_) => jsonResponse(
+        {},
+        status: 429,
+        headers: const {
+          'retry-after': ['60'],
+        },
+      );
+      await expectLater(
+        h.session.api!.currentUser(),
+        throwsA(isA<ApiFailure>()),
+      );
+      final requests = h.server.adapter.requests.length;
+      tokenResponse.complete();
+      await sending;
+      expect(
+        h.controller.executionPause?.reason,
+        AiExecutionPauseReason.foregroundRequired,
+      );
+      expect(h.controller.blocker, AiChatBlocker.none);
+      expect(h.controller.failure, isNull);
+      expect(h.session.api!.credential.accessToken, 'new-access');
+      expect(tokens.requests, hasLength(1));
+      expect(h.server.adapter.requests, hasLength(requests));
+      expect(h.provider.bodies, isEmpty);
+      h.foreground = true;
+      owner.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await owner.onForeground();
+      expect(
+        h.controller.canResumeRun,
+        isFalse,
+        reason: 'the cooldown is still enforced',
+      );
+      clock = clock.add(const Duration(seconds: 61));
+      h.session.api!.rateBudget.snapshot();
+      await fx.waitFor(() => h.controller.canResumeRun);
+      expect(native.starts, 1);
+      expect(h.server.adapter.requests, hasLength(requests));
+      await h.controller.resumeRun();
+      expect(h.controller.lastEnd, AiRunEnd.done);
+      expect(h.server.adapter.requests, hasLength(requests + 4));
+      expect(h.provider.bodies, hasLength(1));
+      expect(h.controller.items.whereType<AiUserItem>(), hasLength(1));
+      expect(native.starts, 2);
+      await h.controller.resumeRun();
+      expect(h.server.adapter.requests, hasLength(requests + 4));
+      expect(h.provider.bodies, hasLength(1));
+    },
+  );
 
   test(
     'pre-run pause carries spent preparation time into the resumed runner',

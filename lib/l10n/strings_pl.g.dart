@@ -2811,5 +2811,5 @@ const _messagesPl = <String>[
   'Praca w tle jest teraz niedostępna.',
   'Ten zapis nie został wykonany: nie udało się uruchomić pracy w tle.',
   'Praca wstrzymana: nie potwierdzono jeszcze, że praca w tle się zakończyła, i do tego czasu nie można kontynuować.',
-  'Zostanie to sprawdzone ponownie, gdy następnym razem wrócisz do aplikacji; potem możesz wysłać nową wiadomość.',
+  'Czyszczenie jest ponawiane za każdym razem, gdy wracasz do aplikacji; praca może być kontynuowana dopiero po potwierdzeniu czyszczenia.',
 ];

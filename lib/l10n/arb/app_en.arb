@@ -2815,5 +2815,5 @@
   "aiRunStartUnavailable": "Background work is unavailable right now.",
   "aiProposalBackgroundUnavailable": "This write was not made: background work could not start.",
   "aiRunCleanupPending": "Work paused: it is not yet confirmed that the background work has ended, and nothing can continue until it is.",
-  "aiRunCleanupRetry": "This is checked again the next time you return to the app; after that you can send a new message."
+  "aiRunCleanupRetry": "The cleanup is tried again each time you return to the app; the work can continue only once the cleanup is confirmed."
 }

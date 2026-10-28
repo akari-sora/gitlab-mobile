@@ -2811,5 +2811,5 @@ const _messagesTr = <String>[
   'Arka plan çalışması şu anda kullanılamıyor.',
   'Bu yazma yapılmadı: arka plan çalışması başlatılamadı.',
   'Çalışma duraklatıldı: arka plan çalışmasının bittiği henüz doğrulanmadı ve o zamana kadar devam edilemez.',
-  'Uygulamaya bir sonraki dönüşünüzde yeniden denetlenir; ardından yeni bir mesaj gönderebilirsiniz.',
+  'Temizlik, uygulamaya her döndüğünüzde yeniden denenir; çalışma ancak temizlik doğrulandıktan sonra devam edebilir.',
 ];

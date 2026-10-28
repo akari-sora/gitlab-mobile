@@ -2809,5 +2809,5 @@
   "aiRunStartUnavailable": "O trabalho em segundo plano não está disponível agora.",
   "aiProposalBackgroundUnavailable": "Esta escrita não foi feita: o trabalho em segundo plano não pôde começar.",
   "aiRunCleanupPending": "Trabalho pausado: ainda não foi confirmado que o trabalho em segundo plano terminou, e nada pode continuar até lá.",
-  "aiRunCleanupRetry": "Isso será verificado de novo na próxima vez que você voltar ao app; depois você poderá enviar uma nova mensagem."
+  "aiRunCleanupRetry": "A limpeza é tentada de novo cada vez que você volta ao app; o trabalho só pode continuar depois que a limpeza for confirmada."
 }

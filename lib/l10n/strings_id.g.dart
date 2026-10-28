@@ -2811,5 +2811,5 @@ const _messagesId = <String>[
   'Pekerjaan latar belakang tidak tersedia saat ini.',
   'Penulisan ini tidak dilakukan: pekerjaan latar belakang tidak dapat dimulai.',
   'Pekerjaan dijeda: belum dipastikan bahwa pekerjaan latar belakang telah berakhir, dan tidak ada yang dapat dilanjutkan sebelum itu.',
-  'Ini akan diperiksa lagi saat Anda kembali ke aplikasi berikutnya; setelah itu Anda dapat mengirim pesan baru.',
+  'Pembersihan dicoba lagi setiap kali Anda kembali ke aplikasi; pekerjaan baru dapat dilanjutkan setelah pembersihan dipastikan.',
 ];

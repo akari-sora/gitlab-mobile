@@ -2809,5 +2809,5 @@
   "aiRunStartUnavailable": "Pekerjaan latar belakang tidak tersedia saat ini.",
   "aiProposalBackgroundUnavailable": "Penulisan ini tidak dilakukan: pekerjaan latar belakang tidak dapat dimulai.",
   "aiRunCleanupPending": "Pekerjaan dijeda: belum dipastikan bahwa pekerjaan latar belakang telah berakhir, dan tidak ada yang dapat dilanjutkan sebelum itu.",
-  "aiRunCleanupRetry": "Ini akan diperiksa lagi saat Anda kembali ke aplikasi berikutnya; setelah itu Anda dapat mengirim pesan baru."
+  "aiRunCleanupRetry": "Pembersihan dicoba lagi setiap kali Anda kembali ke aplikasi; pekerjaan baru dapat dilanjutkan setelah pembersihan dipastikan."
 }

@@ -2811,5 +2811,5 @@ const _messagesIt = <String>[
   'Il lavoro in background non è disponibile al momento.',
   'Questa scrittura non è stata eseguita: il lavoro in background non è potuto partire.',
   'Lavoro in pausa: non è ancora confermato che il lavoro in background sia terminato, e fino ad allora non si può continuare.',
-  'Verrà ricontrollato la prossima volta che torni nell’app; dopo potrai inviare un nuovo messaggio.',
+  'La pulizia viene ritentata ogni volta che torni nell’app; il lavoro può continuare solo quando la pulizia è confermata.',
 ];

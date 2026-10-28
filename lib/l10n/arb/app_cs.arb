@@ -2809,5 +2809,5 @@
   "aiRunStartUnavailable": "Práce na pozadí teď není k dispozici.",
   "aiProposalBackgroundUnavailable": "Tento zápis nebyl proveden: práci na pozadí se nepodařilo spustit.",
   "aiRunCleanupPending": "Práce pozastavena: zatím není potvrzeno, že práce na pozadí skončila, a do té doby nelze pokračovat.",
-  "aiRunCleanupRetry": "Znovu se to ověří, až se příště vrátíte do aplikace; potom můžete poslat novou zprávu."
+  "aiRunCleanupRetry": "Úklid se zkusí znovu pokaždé, když se vrátíte do aplikace; v práci lze pokračovat až po potvrzení úklidu."
 }

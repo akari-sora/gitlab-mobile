@@ -138,6 +138,9 @@ enum AiBackgroundStartDisposition {
   unavailable,
 }
 
+/// Whether the native service has any unconfirmed cleanup in progress.
+enum AiBackgroundCleanupConfirmation { pending, confirmed }
+
 enum AiBackgroundStartFailure {
   unsupported,
   foregroundRequired,
@@ -210,6 +213,8 @@ final class AiBackgroundExecution extends ChangeNotifier
   bool _localOrphan = false;
   int _localStopRevision = 0;
   int _localStopsInFlight = 0;
+  int _localImmediateCleanups = 0;
+  int _localReleasePending = 0;
   String? _permit;
   Timer? _progressTimer;
   Timer? _languageTimer;
@@ -229,13 +234,30 @@ final class AiBackgroundExecution extends ChangeNotifier
       _gates.where((gate) => gate._backProtected).length;
 
   bool get _current => !_disposed && _isCurrent();
+  AiBackgroundCleanupConfirmation get cleanupConfirmation =>
+      _orphan ||
+          _stopsInFlight != 0 ||
+          _immediateCleanups != 0 ||
+          _releasePending != 0
+      ? AiBackgroundCleanupConfirmation.pending
+      : AiBackgroundCleanupConfirmation.confirmed;
+
+  void _notifyCleanupChange(AiBackgroundCleanupConfirmation previous) {
+    if (previous == cleanupConfirmation) return;
+    for (final owner in _shared?.owners.toList(growable: false) ?? [this]) {
+      if (!owner._disposed) owner.notifyListeners();
+    }
+  }
+
   bool get _orphan => _shared?.orphan ?? _localOrphan;
   set _orphan(bool value) {
+    final previous = cleanupConfirmation;
     if (_shared case final shared?) {
       shared.orphan = value;
     } else {
       _localOrphan = value;
     }
+    _notifyCleanupChange(previous);
   }
 
   int get _stopRevision => _shared?.stopRevision ?? _localStopRevision;
@@ -249,11 +271,36 @@ final class AiBackgroundExecution extends ChangeNotifier
 
   int get _stopsInFlight => _shared?.stopsInFlight ?? _localStopsInFlight;
   set _stopsInFlight(int value) {
+    final previous = cleanupConfirmation;
     if (_shared case final shared?) {
       shared.stopsInFlight = value;
     } else {
       _localStopsInFlight = value;
     }
+    _notifyCleanupChange(previous);
+  }
+
+  int get _immediateCleanups =>
+      _shared?.immediateCleanups ?? _localImmediateCleanups;
+  set _immediateCleanups(int value) {
+    final previous = cleanupConfirmation;
+    if (_shared case final shared?) {
+      shared.immediateCleanups = value;
+    } else {
+      _localImmediateCleanups = value;
+    }
+    _notifyCleanupChange(previous);
+  }
+
+  int get _releasePending => _shared?.releasePending ?? _localReleasePending;
+  set _releasePending(int value) {
+    final previous = cleanupConfirmation;
+    if (_shared case final shared?) {
+      shared.releasePending = value;
+    } else {
+      _localReleasePending = value;
+    }
+    _notifyCleanupChange(previous);
   }
 
   AiBackgroundRunGate createGate({
@@ -366,14 +413,26 @@ final class AiBackgroundExecution extends ChangeNotifier
         _channel.setMethodCallHandler(listeners.dispatch);
         channels[_channel.name] = listeners;
       }
+      final previousShared =
+          listeners.orphan ||
+              listeners.stopsInFlight != 0 ||
+              listeners.immediateCleanups != 0 ||
+              listeners.releasePending != 0
+          ? AiBackgroundCleanupConfirmation.pending
+          : AiBackgroundCleanupConfirmation.confirmed;
       listeners.orphan = listeners.orphan || _localOrphan;
       listeners.stopRevision += _localStopRevision;
       listeners.stopsInFlight += _localStopsInFlight;
+      listeners.immediateCleanups += _localImmediateCleanups;
+      listeners.releasePending += _localReleasePending;
       _localOrphan = false;
       _localStopRevision = 0;
       _localStopsInFlight = 0;
+      _localImmediateCleanups = 0;
+      _localReleasePending = 0;
       listeners.owners.add(this);
       _shared = listeners;
+      _notifyCleanupChange(previousShared);
       _attachedMessenger = messenger;
       return true;
     } on Object {
@@ -618,10 +677,8 @@ final class AiBackgroundExecution extends ChangeNotifier
   }) async {
     final shared = _shared;
     final stopRevision = _stopRevision;
-    if (shared != null) {
-      shared.immediateCleanups++;
-      shared.releasePending++;
-    }
+    _immediateCleanups++;
+    _releasePending++;
     try {
       final reply = await _invoke('releaseRuns', {
         'opSeq': _nextSequence(),
@@ -646,11 +703,9 @@ final class AiBackgroundExecution extends ChangeNotifier
         }
       }
     } finally {
-      if (shared != null) {
-        shared.immediateCleanups--;
-        shared.releasePending--;
-        shared.retireIfIdle();
-      }
+      _immediateCleanups--;
+      _releasePending--;
+      shared?.retireIfIdle();
     }
   }
 
@@ -788,7 +843,7 @@ final class AiBackgroundExecution extends ChangeNotifier
   }) {
     final shared = _shared;
     final stopRevision = _stopRevision;
-    if (shared != null) shared.releasePending++;
+    _releasePending++;
     return _serial(() async {
       try {
         final reply = await _invoke('releaseRuns', {
@@ -829,7 +884,7 @@ final class AiBackgroundExecution extends ChangeNotifier
           if (rebound) notifyListeners();
         }
       } finally {
-        if (shared != null) shared.releasePending--;
+        _releasePending--;
       }
     });
   }
@@ -1036,6 +1091,8 @@ final class AiBackgroundRunGate implements AiExecutionGate {
   AiBackgroundStartResult? _lastStartResult;
 
   AiBackgroundStartResult? get lastStartResult => _lastStartResult;
+  AiBackgroundCleanupConfirmation get cleanupConfirmation =>
+      _owner.cleanupConfirmation;
   bool get requiresExplicitResume => _needsExplicitResume || _invalidated;
 
   /// Approval keeps its waiting state until the bridge confirms release.

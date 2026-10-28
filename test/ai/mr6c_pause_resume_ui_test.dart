@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -88,6 +90,9 @@ final class _Session extends ChangeNotifier
   AiExecutionPause? executionPause;
   @override
   AiBackgroundStartResult? serviceStartResult;
+  @override
+  AiBackgroundCleanupConfirmation cleanupConfirmation =
+      AiBackgroundCleanupConfirmation.confirmed;
   bool resumable = false;
   @override
   bool get canResumeRun => canSend && resumable;
@@ -436,6 +441,274 @@ void main() {
     await tester.pump(const Duration(minutes: 13));
   });
 
+  testWidgets('a timed-out start cannot continue during scoped cleanup or '
+      'after its rejection', (tester) async {
+    final h = (await tester.runAsync(fx.StackHarness.create))!;
+    const channel = MethodChannel('io.gitlabmobile/c5_ui_timeout_cleanup');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final heldStart = Completer<Map<String, Object>>();
+    final heldRelease = Completer<Map<String, Object>>();
+    var starts = 0;
+    var releases = 0;
+    var stops = 0;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      switch (call.method) {
+        case 'startRuns':
+          starts++;
+          if (starts == 1) return heldStart.future;
+          return {'version': 1, 'status': 'rejected', 'reason': 'start_denied'};
+        case 'releaseRuns':
+          releases++;
+          if (releases == 1) return heldRelease.future;
+          return {'version': 1, 'status': 'released', 'didRelease': false};
+        case 'stopAll':
+          stops++;
+          return {'version': 1, 'status': 'stopped'};
+        default:
+          return {
+            'version': 1,
+            'status': 'unsupported',
+            'reason': 'not_implemented',
+          };
+      }
+    });
+    AiBackgroundExecution makeOwner() => AiBackgroundExecution(
+      accountKey: h.account,
+      generation: h.session.generation,
+      ownerApi: h.session.api!,
+      isCurrent: () => !h.controller.isDisposed,
+      appInForeground: () => h.foreground,
+      channel: channel,
+    );
+    final owner = makeOwner();
+    final otherOwner = makeOwner();
+    final otherTransitions = <AiBackgroundCleanupConfirmation>[];
+    otherOwner.addListener(() {
+      otherTransitions.add(otherOwner.cleanupConfirmation);
+    });
+    var disposed = false;
+    void cleanUp() {
+      if (disposed) return;
+      disposed = true;
+      owner.dispose();
+      otherOwner.dispose();
+      h.dispose();
+      messenger.setMockMethodCallHandler(channel, null);
+    }
+
+    addTearDown(cleanUp);
+    h.controller.bindBackgroundExecution(owner);
+    await tester.runAsync(() async {
+      await h.controller.send('inspect the file');
+      await fx.waitFor(() => releases == 1 && h.controller.canResumeRun);
+    });
+    final requests = h.server.adapter.requests.length;
+    expect(
+      h.controller.serviceStartResult?.failure,
+      AiBackgroundStartFailure.timeout,
+    );
+    expect(
+      h.controller.cleanupConfirmation,
+      AiBackgroundCleanupConfirmation.pending,
+    );
+    expect(
+      otherOwner.cleanupConfirmation,
+      AiBackgroundCleanupConfirmation.pending,
+    );
+    expect(otherTransitions, contains(AiBackgroundCleanupConfirmation.pending));
+    await tester.pumpWidget(_host(AiChatPage(session: h.controller)));
+    await tester.pump();
+    expect(find.byKey(_resume), findsNothing);
+    expect(find.text(l10n.aiRunStartTimeout), findsOneWidget);
+    expect(starts, 1);
+    expect(h.provider.bodies, isEmpty);
+    expect(h.server.adapter.requests.length, requests);
+
+    await tester.runAsync(() async {
+      heldRelease.complete({'version': 1, 'status': 'rejected'});
+      await fx.waitFor(
+        () => owner.status == AiBackgroundExecutionStatus.unavailable,
+      );
+    });
+    await tester.pump();
+    expect(
+      h.controller.cleanupConfirmation,
+      AiBackgroundCleanupConfirmation.pending,
+    );
+    expect(find.byKey(_resume), findsNothing);
+    expect(starts, 1);
+    expect(h.provider.bodies, isEmpty);
+    expect(h.server.adapter.requests.length, requests);
+
+    await tester.runAsync(owner.onForeground);
+    await tester.pump();
+    expect(stops, 1);
+    expect(
+      h.controller.cleanupConfirmation,
+      AiBackgroundCleanupConfirmation.confirmed,
+    );
+    expect(
+      otherOwner.cleanupConfirmation,
+      AiBackgroundCleanupConfirmation.confirmed,
+    );
+    expect(otherTransitions.last, AiBackgroundCleanupConfirmation.confirmed);
+    expect(find.byKey(_resume), findsOneWidget);
+    expect(starts, 1);
+    expect(h.provider.bodies, isEmpty);
+    expect(h.server.adapter.requests.length, requests);
+
+    await tester.tap(find.byKey(_resume));
+    for (var i = 0; i < 200 && h.controller.lastEnd != AiRunEnd.done; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    expect(h.controller.lastEnd, AiRunEnd.done);
+    expect(starts, 2);
+    expect(h.provider.bodies, hasLength(1));
+    expect(h.controller.items.whereType<AiUserItem>(), hasLength(1));
+    heldStart.complete({
+      'version': 1,
+      'status': 'rejected',
+      'reason': 'start_denied',
+    });
+    await tester.pumpWidget(const SizedBox());
+    cleanUp();
+    await tester.pump(const Duration(minutes: 13));
+  });
+
+  testWidgets('confirmed cleanup restores explicit continuation of the same '
+      'real controller run', (tester) async {
+    final h = (await tester.runAsync(fx.StackHarness.create))!;
+    const channel = MethodChannel('io.gitlabmobile/c5_ui_cleanup_recovery');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final confirmed = Completer<Map<String, Object>>();
+    var starts = 0;
+    var stops = 0;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      switch (call.method) {
+        case 'startRuns':
+          starts++;
+          return {
+            'version': 1,
+            'status': 'rejected',
+            'reason': starts == 1 ? 'cleanup_failed' : 'start_denied',
+          };
+        case 'releaseRuns':
+          return {'version': 1, 'status': 'released', 'didRelease': false};
+        case 'stopAll':
+          stops++;
+          return stops == 1
+              ? {'version': 1, 'status': 'rejected'}
+              : confirmed.future;
+        default:
+          return {
+            'version': 1,
+            'status': 'unsupported',
+            'reason': 'not_implemented',
+          };
+      }
+    });
+    final owner = AiBackgroundExecution(
+      accountKey: h.account,
+      generation: h.session.generation,
+      ownerApi: h.session.api!,
+      isCurrent: () => !h.controller.isDisposed,
+      appInForeground: () => h.foreground,
+      channel: channel,
+    );
+    var disposed = false;
+    void cleanUp() {
+      if (disposed) return;
+      disposed = true;
+      owner.dispose();
+      h.dispose();
+      messenger.setMockMethodCallHandler(channel, null);
+    }
+
+    addTearDown(cleanUp);
+    h.controller.bindBackgroundExecution(owner);
+    await tester.runAsync(() async {
+      await h.controller.send('inspect the file');
+      await fx.waitFor(() => h.controller.canResumeRun);
+    });
+    final requests = h.server.adapter.requests.length;
+    expect(starts, 1);
+    expect(h.provider.bodies, isEmpty);
+    expect(
+      h.controller.cleanupConfirmation,
+      AiBackgroundCleanupConfirmation.pending,
+    );
+    expect(
+      h.controller.serviceStartResult?.disposition,
+      AiBackgroundStartDisposition.unavailable,
+    );
+
+    await tester.pumpWidget(_host(AiChatPage(session: h.controller)));
+    await tester.pump();
+    expect(find.byKey(_resume), findsNothing);
+    expect(find.text(l10n.aiRunCleanupPending), findsOneWidget);
+
+    await tester.runAsync(owner.onForeground);
+    await tester.pump();
+    expect(stops, 1);
+    expect(find.byKey(_resume), findsNothing);
+    expect(
+      h.controller.cleanupConfirmation,
+      AiBackgroundCleanupConfirmation.pending,
+    );
+
+    Future<void>? pending;
+    await tester.runAsync(() async {
+      pending = owner.onForeground();
+      await fx.waitFor(() => stops == 2);
+    });
+    await tester.pump();
+    expect(find.byKey(_resume), findsNothing);
+    expect(
+      h.controller.cleanupConfirmation,
+      AiBackgroundCleanupConfirmation.pending,
+    );
+    await tester.runAsync(() async {
+      confirmed.complete({'version': 1, 'status': 'stopped'});
+      await pending;
+    });
+    await tester.pump();
+    expect(
+      h.controller.cleanupConfirmation,
+      AiBackgroundCleanupConfirmation.confirmed,
+    );
+    // The last start is historical; cleanup changes a separate signal.
+    expect(
+      h.controller.serviceStartResult?.disposition,
+      AiBackgroundStartDisposition.unavailable,
+    );
+    expect(find.byKey(_resume), findsOneWidget);
+    expect(find.text(l10n.aiRunCleanupPending), findsNothing);
+    expect(starts, 1);
+    expect(h.server.adapter.requests.length, requests);
+    expect(h.provider.bodies, isEmpty);
+
+    await tester.tap(find.byKey(_resume));
+    for (var i = 0; i < 200 && h.controller.lastEnd != AiRunEnd.done; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    expect(h.controller.lastEnd, AiRunEnd.done);
+    expect(starts, 2);
+    expect(h.provider.bodies, hasLength(1));
+    expect(h.controller.items.whereType<AiUserItem>(), hasLength(1));
+    expect(find.byKey(_resume), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    cleanUp();
+    await tester.pump(const Duration(minutes: 13));
+  });
+
   group('paused and invalidated states', () {
     for (final (reason, text, icon) in [
       (
@@ -590,6 +863,7 @@ void main() {
         'foreground (Codex 3)', (tester) async {
       final session = _Session()
         ..resumable = true
+        ..cleanupConfirmation = AiBackgroundCleanupConfirmation.pending
         ..executionPause = const AiExecutionPause(
           AiExecutionPauseReason.permitInactive,
         )

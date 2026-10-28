@@ -2809,5 +2809,5 @@
   "aiRunStartUnavailable": "Arbeit im Hintergrund ist gerade nicht verfügbar.",
   "aiProposalBackgroundUnavailable": "Dieser Schreibvorgang wurde nicht ausgeführt: Die Arbeit im Hintergrund konnte nicht starten.",
   "aiRunCleanupPending": "Arbeit pausiert: Es ist noch nicht bestätigt, dass die Arbeit im Hintergrund beendet ist; bis dahin kann nichts fortgesetzt werden.",
-  "aiRunCleanupRetry": "Das wird erneut geprüft, wenn Sie das nächste Mal zur App zurückkehren; danach können Sie eine neue Nachricht senden."
+  "aiRunCleanupRetry": "Die Bereinigung wird bei jeder Rückkehr zur App erneut versucht; erst wenn sie bestätigt ist, kann die Arbeit fortgesetzt werden."
 }

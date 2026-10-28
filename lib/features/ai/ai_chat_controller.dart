@@ -92,9 +92,10 @@ final class _AiRunBudget {
   }
 
   Future<T> measureContext<T>(
-    Future<T> Function(void Function(int) beforeRead) load,
-  ) async {
-    final meter = RequestMeter();
+    Future<T> Function(void Function(int) beforeRead) load, {
+    required void Function() beforeRequest,
+  }) async {
+    final meter = RequestMeter(beforeRequest: beforeRequest);
     try {
       return await meter.runAsync(
         () => load((maximum) {
@@ -353,6 +354,11 @@ class AiChatController extends ChangeNotifier
   @override
   AiBackgroundStartResult? get serviceStartResult =>
       _backgroundGate?.lastStartResult;
+
+  @override
+  AiBackgroundCleanupConfirmation get cleanupConfirmation =>
+      _backgroundGate?.cleanupConfirmation ??
+      AiBackgroundCleanupConfirmation.confirmed;
 
   @override
   bool get canResumeRun =>
@@ -3149,17 +3155,29 @@ class AiChatController extends ChangeNotifier
             refreshSecrets: _refreshSecrets,
             isCurrent: current,
             now: _now,
+            fresh: true,
             beforeRead: (maximum) {
               if (!current()) throw const ApiFailure(FailureKind.cancelled);
               beforeRead(maximum);
             },
           ),
+          beforeRequest: () {
+            if (!current()) throw const ApiFailure(FailureKind.cancelled);
+          },
         ),
         mayStart: current,
       ));
     } on AiExecutionPaused {
       rethrow;
-    } on Object {
+    } on Object catch (error) {
+      // A shared cooldown can refuse a replay before its operation meter runs.
+      // Retain both the execution pause and the cooldown for explicit resume.
+      if (error is ApiFailure &&
+          error.kind == FailureKind.rateLimited &&
+          _current(epoch) &&
+          isPreparing()) {
+        _checkPreparationExecution();
+      }
       if (_current(epoch) && isPreparing()) {
         _contextFailed = true;
         _blocker = AiChatBlocker.contextUnavailable;

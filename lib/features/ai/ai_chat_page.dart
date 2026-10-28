@@ -983,7 +983,8 @@ class _AiChatPageState extends State<AiChatPage> {
     final start = continuation?.serviceStartResult;
     // Unconfirmed cleanup forbids all execution, even in the foreground.
     final cleanupPending =
-        start?.disposition == AiBackgroundStartDisposition.unavailable;
+        continuation?.cleanupConfirmation ==
+        AiBackgroundCleanupConfirmation.pending;
     final runPaused = idle && (pause != null || canResume)
         ? _RunPausedCard(
             pause: pause,
@@ -993,6 +994,9 @@ class _AiChatPageState extends State<AiChatPage> {
               _ => null,
             },
             start: start,
+            cleanupPending:
+                cleanupPending &&
+                start?.disposition == AiBackgroundStartDisposition.unavailable,
             onResume: canResume && !cleanupPending ? _resume : null,
           )
         : null;
@@ -2249,6 +2253,7 @@ class _RunPausedCard extends StatelessWidget {
     required this.pause,
     required this.status,
     required this.start,
+    required this.cleanupPending,
     required this.onResume,
   });
 
@@ -2258,6 +2263,7 @@ class _RunPausedCard extends StatelessWidget {
   /// The last service start; a refused start that invalidated the run says
   /// why, and unconfirmed cleanup replaces the whole message.
   final AiBackgroundStartResult? start;
+  final bool cleanupPending;
   final VoidCallback? onResume;
 
   @override
@@ -2269,7 +2275,7 @@ class _RunPausedCard extends StatelessWidget {
         : null;
     // Ticket and nonce details are internal: they all read as one pause.
     final (icon, text, detail) = switch (pause?.reason) {
-      _ when start?.disposition == AiBackgroundStartDisposition.unavailable => (
+      _ when cleanupPending => (
         Icons.sync_problem,
         l10n.aiRunCleanupPending,
         l10n.aiRunCleanupRetry,

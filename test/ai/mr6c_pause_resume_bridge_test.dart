@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
+import 'package:gitlab_mobile/core/request_meter.dart';
 import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
 
 import '../support/fake_adapter.dart';
@@ -16,14 +17,19 @@ import '../support/fake_adapter.dart';
 Future<T> _guardedRead<T>(
   AiBackgroundRunGate gate,
   Future<T> Function() read,
-) => CachedRead.run(read, mayStart: () {
-  if (!gate.executionEligible) {
-    throw const AiExecutionPaused(AiExecutionPause(
-      AiExecutionPauseReason.foregroundRequired,
-    ));
+) {
+  bool current() {
+    if (!gate.executionEligible) {
+      throw const AiExecutionPaused(AiExecutionPause(
+        AiExecutionPauseReason.foregroundRequired,
+      ));
+    }
+    return true;
   }
-  return true;
-});
+  return RequestMeter(beforeRequest: current).runAsync(
+    () => CachedRead.run(read, mayStart: current),
+  );
+}
 
 final class _Peer {
   _Peer(this.channel);
@@ -213,7 +219,7 @@ void main() {
 
   for (final boundary in ['unauthorized response', 'token response']) {
     test(
-      'serviceless context admission pauses OAuth after $boundary',
+      'serviceless context pauses API replay but preserves OAuth after $boundary',
       () async {
         var foreground = true;
         final (owner, gate, peer) = await setup(() => foreground);
@@ -225,6 +231,15 @@ void main() {
           if (!response.isCompleted) response.complete();
         });
         final adapter = FakeAdapter((request) async {
+          if (request.uri.path.endsWith('/repository/branches/main')) {
+            return jsonResponse({
+              'name': 'main',
+              'commit': {'id': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'},
+            });
+          }
+          if (request.uri.path.endsWith('/repository/tree')) {
+            fail('an unrelated pinned disk entry must remain eligible');
+          }
           if (request.headers['Authorization'] == 'Bearer old-access') {
             if (boundary == 'unauthorized response') {
               if (!entered.isCompleted) entered.complete();
@@ -259,11 +274,22 @@ void main() {
             clientId: 'synthetic-client',
             dio: Dio()..httpClientAdapter = tokens,
           ),
+          readCacheSource: (uri, _) async =>
+              uri.path.endsWith('/repository/tree')
+                  ? CacheDiskEntry(
+                      value: ApiPage<Json>(const [
+                        {'name': 'README.md', 'path': 'README.md', 'type': 'blob'},
+                      ]),
+                      fetchedAt: DateTime.now().subtract(const Duration(hours: 2)),
+                      responseBytes: 64,
+                    )
+                  : null,
         );
+        api.bindReadCache('${instance.key}#7', 1);
         addTearDown(api.close);
         Future<CachedRead<Json>> read() => _guardedRead(
           gate,
-          () => api.cachedRecord(['projects', '42', 'issues', '1']),
+          () => api.cachedRecord(['projects', '42', 'issues', '1'], fresh: true),
         );
         final reading = read();
         await entered.future;
@@ -273,18 +299,35 @@ void main() {
         response.complete();
         await paused;
         expect(adapter.requests, hasLength(1));
-        expect(tokens.requests, hasLength(boundary == 'token response' ? 1 : 0));
+        // OAuth rotation is account work; the AI meter fences only API sends.
+        expect(tokens.requests, hasLength(1));
+        expect(api.credential.accessToken, 'new-access');
         foreground = true;
         owner.didChangeAppLifecycleState(AppLifecycleState.resumed);
         await owner.onForeground();
         expect(gate.executionEligible, isFalse);
         expect(adapter.requests, hasLength(1));
+        final ui = await api.cachedRecord(['projects', '42', 'issues', '1']);
+        expect(ui.value['title'], 'Synthetic issue');
+        expect(ui.superseded, isFalse);
+        await api.cachedRecord([
+          'projects', '42', 'repository', 'branches', 'main',
+        ]);
+        final tree = await api.cachedRecords(
+          ['projects', '42', 'repository', 'tree'],
+          query: const {
+            'ref': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'path': '',
+            'per_page': '50',
+          },
+        );
+        expect(tree.lineage, CacheLineage.disk);
+        expect(tree.value.items.single['name'], 'README.md');
+        expect(gate.executionEligible, isFalse);
+        expect(peer.starts, 1);
         await gate.resumeRun();
         expect((await read()).value['title'], 'Synthetic issue');
-        expect(
-          adapter.requests,
-          hasLength(boundary == 'token response' ? 2 : 3),
-        );
+        expect(adapter.requests, hasLength(4));
         expect(tokens.requests, hasLength(1));
         expect(gate.binding.runId, 'logical-run');
         expect(peer.starts, 2);

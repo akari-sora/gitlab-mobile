@@ -2811,5 +2811,5 @@ const _messagesNl = <String>[
   'Werk op de achtergrond is nu niet beschikbaar.',
   'Deze schrijfactie is niet uitgevoerd: het werk op de achtergrond kon niet starten.',
   'Werk gepauzeerd: het is nog niet bevestigd dat het werk op de achtergrond is beëindigd, en tot die tijd kan niets doorgaan.',
-  'Dit wordt opnieuw gecontroleerd wanneer je de volgende keer naar de app terugkeert; daarna kun je een nieuw bericht sturen.',
+  'De opruiming wordt opnieuw geprobeerd telkens wanneer je naar de app terugkeert; het werk kan pas doorgaan als de opruiming is bevestigd.',
 ];

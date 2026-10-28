@@ -8521,6 +8521,6 @@ final class AppStrings {
   /// 工作已暫停：還無法確認背景工作已經結束，在那之前不能繼續。
   String get aiRunCleanupPending => language._messages[2808];
 
-  /// 下次回到應用程式時會再確認；確認後可以傳送新訊息。
+  /// 每次回到應用程式時都會再嘗試清理；要等清理確認完成，工作才能繼續。
   String get aiRunCleanupRetry => language._messages[2809];
 }
