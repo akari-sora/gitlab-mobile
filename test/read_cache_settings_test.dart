@@ -224,6 +224,7 @@ void main() {
     await _run(tester, h.ready);
     await tester.pumpWidget(_page(h));
     await tester.tap(find.byKey(const ValueKey('read-cache-switch')));
+    await _confirmTurnOff(tester);
     await pumpUntil(tester, () => find.text('已關閉離線快取並清除資料').evaluate().isNotEmpty);
     expect(h.storage.values[ReadCacheSettingsStore.key], '0');
     expect(h.accountDirectory.existsSync(), isFalse);
@@ -242,6 +243,7 @@ void main() {
     h.storage.failSettingWrite = true;
     await tester.pumpWidget(_page(h));
     await tester.tap(find.byKey(const ValueKey('read-cache-switch')));
+    await _confirmTurnOff(tester);
     // The device sweep completed, the preference did not: say exactly that.
     await pumpUntil(tester, () => find.text('無法儲存設定。離線快取已清除，這次使用期間保持關閉。').evaluate().isNotEmpty);
     expect(find.text('已關閉離線快取並清除資料'), findsNothing);
@@ -260,6 +262,7 @@ void main() {
     h.storage.failInventory = true;
     await tester.pumpWidget(_page(h));
     await tester.tap(find.byKey(const ValueKey('read-cache-switch')));
+    await _confirmTurnOff(tester);
     await pumpUntil(tester, () => find.text('無法確認離線快取已關閉並清除。這次使用期間保持關閉，請重試清除。').evaluate().isNotEmpty);
     await pumpUntil(tester, () => find.byKey(const ValueKey('read-cache-retry-cleanup')).evaluate().isNotEmpty);
     expect(find.text('已關閉離線快取並清除資料'), findsNothing);
@@ -338,6 +341,7 @@ void main() {
     h.storage.failInventory = true;
     await tester.pumpWidget(_page(h));
     await tester.tap(find.byKey(const ValueKey('read-cache-switch')));
+    await _confirmTurnOff(tester);
     await pumpUntil(tester, () => find.text('無法確認離線快取已關閉並清除。這次使用期間保持關閉，請重試清除。').evaluate().isNotEmpty);
     ScaffoldMessenger.of(tester.element(find.byType(ListView))).hideCurrentSnackBar();
     await tester.pumpAndSettle();
@@ -386,7 +390,7 @@ void main() {
       if (whose == 'this account') {
         await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('確認'));
+        await tester.tap(find.text('清除'));
       } else {
         clearing = h.coordinator.clear(
           DiskBinding(accountKey: _other, generation: 0), ReadCacheCleanupOperation.signOut);
@@ -422,7 +426,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('清除離線快取？'), findsOneWidget);
     expect(find.text('會刪除這台裝置上此帳號的離線快取。GitLab 上的資料不受影響。'), findsOneWidget);
-    await tester.tap(find.text('確認'));
+    await tester.tap(find.text('清除'));
     await pumpUntil(tester, () => find.text('已清除離線快取').evaluate().isNotEmpty);
     expect(h.entryFiles().where((file) => before.contains(file.path)), isEmpty);
     await pumpUntil(tester, () => h.coordinator.state(_account) == ReadCacheDiskState.ready,
@@ -456,7 +460,7 @@ void main() {
     await tester.pumpWidget(_page(h));
     await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('確認'));
+    await tester.tap(find.text('清除'));
     await pumpUntil(tester, () => find.text('無法清除離線快取。離線快取已暫停使用，重試清除完成後才會恢復。').evaluate().isNotEmpty);
     expect(find.text('已清除離線快取'), findsNothing);
     expect(h.coordinator.state(_account), isNot(ReadCacheDiskState.ready));
@@ -475,6 +479,7 @@ void main() {
     await _run(tester, h.ready);
     await tester.pumpWidget(_page(h));
     await tester.tap(find.byKey(const ValueKey('read-cache-switch')));
+    await _confirmTurnOff(tester);
     await pumpUntil(tester, () => find.text('已關閉離線快取並清除資料').evaluate().isNotEmpty);
     ScaffoldMessenger.of(tester.element(find.byType(ListView))).hideCurrentSnackBar();
     await tester.pumpAndSettle();
@@ -549,4 +554,13 @@ void main() {
     expect(_switchValue(tester), isFalse);
     expect(_status('已關閉'), findsOneWidget);
   });
+}
+
+/// L1 (C3b §6.9): turning the cache off asks first, with the same text as a
+/// clear.
+Future<void> _confirmTurnOff(WidgetTester tester) async {
+  await tester.pumpAndSettle();
+  expect(find.text('關閉離線快取？'), findsOneWidget);
+  await tester.tap(find.text('清除'));
+  await tester.pump();
 }

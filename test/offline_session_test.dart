@@ -25,6 +25,7 @@ import 'package:gitlab_mobile/features/cache/read_cache_settings_page.dart';
 import 'package:gitlab_mobile/features/cache/read_cache_settings_store.dart';
 import 'package:gitlab_mobile/features/offline/offline_gate.dart';
 import 'package:gitlab_mobile/features/security/app_lock.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 
 import 'offline/coordinator_regression_test.dart' show completeRecord, jobId;
 import 'session_test.dart' show MemoryAccountStore;
@@ -337,7 +338,12 @@ Future<void> _clearFromSettings(
   );
   await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('確認'));
+  await tester.tap(
+    find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.text(l10n.offlineCacheClearButton),
+    ),
+  );
   await pumpUntil(
     tester,
     () => find.text('已清除離線快取').evaluate().isNotEmpty,
@@ -383,26 +389,38 @@ void main() {
   });
 
   test(
-    'production shell flag blocks entry even with a readable snapshot',
+    'the production shell flag admits entry with a readable snapshot',
     () async {
       final h = _Harness(_network);
       addTearDown(h.dispose);
       await h.seed();
       await h.lock.start();
       offlineModeShellReadyForTesting = null;
+      expect(offlineModeShellReady, isTrue);
       final session = h.makeSession();
       await session.initialize();
-      expect(session.offline, isNull);
+      expect(session.offline?.account.key, h.account.key);
     },
   );
+
+  test('turning the shell flag off still blocks entry', () async {
+    final h = _Harness(_network);
+    addTearDown(h.dispose);
+    await h.seed();
+    await h.lock.start();
+    offlineModeShellReadyForTesting = false;
+    final session = h.makeSession();
+    await session.initialize();
+    expect(session.offline, isNull);
+  });
 
   for (final kind in ['HTML 401', 'unrelated JSON 401']) {
     test(
       'production OAuth $kind preserves last-active, keys and files',
       () async {
         offlineModeShellReadyForTesting = null;
-        expect(offlineModeShellReady, isFalse);
-        expect(offlineModeEnabled, isFalse);
+        expect(offlineModeShellReady, isTrue);
+        expect(offlineModeEnabled, isTrue);
         var tokenRequests = 0;
         final h = _Harness(
           (_) => jsonResponse({'message': 'expired'}, status: 401),
@@ -454,8 +472,8 @@ void main() {
         'production online resume survives refusal $failure failure; marker=$markerPresent',
         () async {
           offlineModeShellReadyForTesting = null;
-          expect(offlineModeShellReady, isFalse);
-          expect(offlineModeEnabled, isFalse);
+          expect(offlineModeShellReady, isTrue);
+          expect(offlineModeEnabled, isTrue);
           final h = _Harness(
             (_) => jsonResponse({'id': 7, 'username': 'test', 'name': 'Test'}),
           );
@@ -520,7 +538,7 @@ void main() {
         'settings clear reopens verified session after refusal $failure failure; seeded=$seedCache',
         (tester) async {
           offlineModeShellReadyForTesting = null;
-          expectSync(offlineModeEnabled, isFalse);
+          expectSync(offlineModeEnabled, isTrue);
           final h = _Harness(_onlineProject);
           addTearDown(() => pumpUntilComplete(tester, h.dispose()));
           final session = await _refusalFailureSession(
@@ -587,29 +605,32 @@ void main() {
         final settled = lateFailure
             ? expectLater(pending, throwsA(isA<ReadCacheStoreException>()))
             : pending;
-        await pumpUntilComplete(tester, started.future);
+        try {
+          await pumpUntilComplete(tester, started.future);
 
-        await _clearFromSettings(tester, h, binding);
+          await _clearFromSettings(tester, h, binding);
 
-        await pumpUntilComplete(tester, () async {
-          expectSync(
-            h.cache.state(h.account.key),
-            isNot(ReadCacheDiskState.ready),
-          );
-          expectSync(await h.cache.readOfflineRefused(h.account.key), isTrue);
-          expectSync(
-            (await h.cache.readOfflineEligibilityKey(h.account.key)).isFound,
-            isFalse,
-          );
-          // Successful clear must not admit this network result while held.
-          await session.api!.project('1', refresh: true);
-          await h.cache.flush(binding);
-          expectSync(h.cache.stats.retainedEntries, 0);
-        }());
-
-        h.storage.failRefusalRead = lateFailure;
-        held.complete();
-        await pumpUntilComplete(tester, settled);
+          await pumpUntilComplete(tester, () async {
+            expectSync(
+              h.cache.state(h.account.key),
+              isNot(ReadCacheDiskState.ready),
+            );
+            expectSync(await h.cache.readOfflineRefused(h.account.key), isTrue);
+            expectSync(
+              (await h.cache.readOfflineEligibilityKey(h.account.key)).isFound,
+              isFalse,
+            );
+            // Successful clear must not admit this network result while held.
+            await session.api!.project('1', refresh: true);
+            await h.cache.flush(binding);
+            expectSync(h.cache.stats.retainedEntries, 0);
+          }());
+        } finally {
+          // An earlier assertion must not leave expectLater waiting forever.
+          h.storage.failRefusalRead = lateFailure;
+          held.complete();
+          await pumpUntilComplete(tester, settled);
+        }
         if (lateFailure) {
           h.storage.failRefusalRead = false;
           expectSync(
@@ -653,44 +674,55 @@ void main() {
             generation: session.generation,
           );
           final heldDelete = Completer<void>();
-          Future<void>? failed;
-          if (newerFailure) {
-            final deleteStarted = Completer<void>();
-            h.storage.holdRefusalDelete = heldDelete;
-            h.storage.refusalDeleteStarted = deleteStarted;
-            failed = expectLater(
-              h.cache.deleteOfflineRefused(h.account.key),
-              throwsA(isA<ReadCacheStoreException>()),
-            );
-            await pumpUntilComplete(tester, deleteStarted.future);
-          }
           final heldProof = Completer<void>();
-          final proofStarted = Completer<void>();
-          if (proof == 'inventory') {
-            h.storage.holdInventory = heldProof;
-            h.storage.inventoryStarted = proofStarted;
-          } else {
-            h.storage.holdMarkerDelete = heldProof;
-            h.storage.markerDeleteStarted = proofStarted;
-          }
-          await tester.pumpWidget(
-            MaterialApp(
-              home: ReadCacheSettingsPage(cache: h.cache, binding: binding),
-            ),
-          );
-          await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('確認'));
-          await pumpUntilComplete(tester, proofStarted.future);
+          Future<void>? failed;
+          try {
+            if (newerFailure) {
+              final deleteStarted = Completer<void>();
+              h.storage.holdRefusalDelete = heldDelete;
+              h.storage.refusalDeleteStarted = deleteStarted;
+              failed = expectLater(
+                h.cache.deleteOfflineRefused(h.account.key),
+                throwsA(isA<ReadCacheStoreException>()),
+              );
+              await pumpUntilComplete(tester, deleteStarted.future);
+            }
+            final proofStarted = Completer<void>();
+            if (proof == 'inventory') {
+              h.storage.holdInventory = heldProof;
+              h.storage.inventoryStarted = proofStarted;
+            } else {
+              h.storage.holdMarkerDelete = heldProof;
+              h.storage.markerDeleteStarted = proofStarted;
+            }
+            await tester.pumpWidget(
+              MaterialApp(
+                home: ReadCacheSettingsPage(cache: h.cache, binding: binding),
+              ),
+            );
+            await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
+            await tester.pumpAndSettle();
+            await tester.tap(
+              find.descendant(
+                of: find.byType(AlertDialog),
+                matching: find.text(l10n.offlineCacheClearButton),
+              ),
+            );
+            await pumpUntilComplete(tester, proofStarted.future);
 
-          h.cache.background();
-          if (failed != null) {
-            h.storage.failRefusalRead = true;
-            heldDelete.complete();
-            await pumpUntilComplete(tester, failed);
-            h.storage.failRefusalRead = false;
+            h.cache.background();
+          } finally {
+            try {
+              if (failed != null) {
+                h.storage.failRefusalRead = true;
+                heldDelete.complete();
+                await pumpUntilComplete(tester, failed);
+              }
+            } finally {
+              h.storage.failRefusalRead = false;
+              heldProof.complete();
+            }
           }
-          heldProof.complete();
           await pumpUntil(
             tester,
             () => find.text('已清除離線快取').evaluate().isNotEmpty,
@@ -745,17 +777,20 @@ void main() {
       h.storage.holdRefusalDelete = held;
       h.storage.refusalDeleteStarted = started;
       final pending = h.cache.deleteOfflineRefused(h.account.key);
-      await pumpUntilComplete(tester, started.future);
-      await _clearFromSettings(tester, h, binding);
+      try {
+        await pumpUntilComplete(tester, started.future);
+        await _clearFromSettings(tester, h, binding);
 
-      final removal = h.cache.clear(
-        binding,
-        ReadCacheCleanupOperation.accountRemoval,
-      );
-      await pumpUntilComplete(tester, removal);
-      expectSync((await removal).complete, isTrue);
-      held.complete();
-      await pumpUntilComplete(tester, pending);
+        final removal = h.cache.clear(
+          binding,
+          ReadCacheCleanupOperation.accountRemoval,
+        );
+        await pumpUntilComplete(tester, removal);
+        expectSync((await removal).complete, isTrue);
+      } finally {
+        held.complete();
+        await pumpUntilComplete(tester, pending);
+      }
       await pumpUntilComplete(tester, h.cache.quiesced);
 
       expectSync(h.cache.state(h.account.key), isNot(ReadCacheDiskState.ready));
@@ -775,7 +810,8 @@ void main() {
       addTearDown(h.dispose);
       await h.seed();
       await h.lock.start();
-      offlineModeShellReadyForTesting = null;
+      // Exercise closed-storage eligibility before shell admission.
+      offlineModeShellReadyForTesting = false;
       final session = h.makeSession();
       await session.initialize();
       await _eventually(() => h.cache.startupRecovered);
@@ -790,20 +826,25 @@ void main() {
         pending,
         throwsA(isA<ReadCacheStoreException>()),
       );
-      await started.future;
+      try {
+        await started.future;
 
-      // A second operation confirms absence while the first is still in flight.
-      await h.cache.deleteOfflineRefused(h.account.key);
-      expect(await h.cache.readOfflineRefused(h.account.key), isTrue);
-      expect(
-        (await h.cache.readOfflineEligibilityKey(h.account.key)).isFound,
-        isFalse,
-      );
-
-      h.storage.failRefusalRead = true;
-      held.complete();
-      await failed;
-      h.storage.failRefusalRead = false;
+        // A second operation confirms absence while the first is still in flight.
+        await h.cache.deleteOfflineRefused(h.account.key);
+        expect(await h.cache.readOfflineRefused(h.account.key), isTrue);
+        expect(
+          (await h.cache.readOfflineEligibilityKey(h.account.key)).isFound,
+          isFalse,
+        );
+      } finally {
+        h.storage.failRefusalRead = true;
+        held.complete();
+        try {
+          await failed;
+        } finally {
+          h.storage.failRefusalRead = false;
+        }
+      }
       expect(await h.cache.readOfflineRefused(h.account.key), isTrue);
       expect(
         (await h.cache.readOfflineEligibilityKey(h.account.key)).isFound,
@@ -1282,17 +1323,32 @@ void main() {
     expect(session.offline, isNotNull);
   });
 
-  test('lock setting load timeout rejects offline entry', () async {
+  testWidgets('lock setting load timeout rejects offline entry', (
+    tester,
+  ) async {
     final h = _Harness(_network);
-    addTearDown(h.dispose);
-    await h.seed();
+    addTearDown(() => pumpUntilComplete(tester, h.dispose()));
+    await pumpUntilComplete(tester, h.seed());
     h.lockStore.pending = Completer<bool>();
     final loading = h.lock.start();
     final session = h.makeSession();
-    await session.initialize();
-    expect(session.offline, isNull);
-    h.lockStore.pending!.complete(false);
-    await loading;
+    var identityStarted = false, initialized = false;
+    // Qualification installs its lock timeout before creating this client.
+    h.onIdentityClient = (_) => identityStarted = true;
+    final initialize = session.initialize().whenComplete(
+      () => initialized = true,
+    );
+    try {
+      await pumpUntil(tester, () => identityStarted, step: Duration.zero);
+      await tester.pump(const Duration(milliseconds: 1999));
+      expect(initialized, isFalse);
+      await tester.pump(const Duration(milliseconds: 1));
+      await pumpUntilComplete(tester, initialize);
+      expect(session.offline, isNull);
+    } finally {
+      h.lockStore.pending!.complete(false);
+      await pumpUntilComplete(tester, loading);
+    }
   });
 
   test(
