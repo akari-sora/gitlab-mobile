@@ -22,6 +22,7 @@ import 'features/ai/ai_scope.dart';
 import 'features/ai/ai_settings_provider.dart';
 import 'features/ai/ai_stores.dart';
 import 'features/ai/ai_write_journal.dart';
+import 'features/ai/ai_recovery_notice.dart';
 import 'features/shell/app_shortcuts.dart';
 import 'features/auth/session_controller.dart';
 import 'features/cache/read_cache_disk_coordinator.dart';
@@ -424,6 +425,8 @@ Future<void> recoverAiWriteJournalAfterAccountsLoaded(
     _journalRecoveryTails[journal] = tail;
     try {
       await recovery;
+      // Lets the signed-in shell read this pass's recovery summaries.
+      markAiJournalRecovered(journal);
     } on Object {
       return;
     } finally {
@@ -452,6 +455,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   late final AiControllers? _ai;
   late final AiRunNotifications? _runNotifications;
   late final AiRunNotificationGate? _runNotificationGate;
+  AiRecoveryNotifier? _recoveryNotifier;
   late final AppLifecycleListener _readCacheLifecycle;
   _SessionRecovery? _sessionRecovery;
   bool _sessionWasActive = false;
@@ -485,6 +489,14 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
       unawaited(notifications.initialize());
     }
     final session = ref.read(sessionProvider);
+    // C7: the interrupted notification after next-start journal recovery.
+    _recoveryNotifier = notifications == null
+        ? null
+        : AiRecoveryNotifier(
+            journal: AiWriteJournal.instance,
+            notifications: notifications,
+            session: session,
+          );
     _readCacheLifecycle = AppLifecycleListener(onStateChange: (state) {
       if (state == AppLifecycleState.resumed) {
         final active = session.active;
@@ -514,6 +526,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   void dispose() {
     _readCacheLifecycle.dispose();
     _sessionRecovery?.dispose();
+    _recoveryNotifier?.dispose();
     _runNotificationGate?.dispose();
     _runNotifications?.dispose();
     _language.removeListener(_languageChanged);

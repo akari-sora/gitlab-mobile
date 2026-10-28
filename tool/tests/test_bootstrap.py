@@ -1013,6 +1013,41 @@ class BootstrapTests(unittest.TestCase):
         destroyed = self._body(source, 'fun activityDestroyed')
         self.assertLess(destroyed.index('stop("activity_destroyed")'), destroyed.index('channel = null'))
 
+    def test_engine_detach_checks_the_exact_engine_and_owner_before_revoking(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        cleanup = self._body(bootstrap.MAIN_ACTIVITY, 'override fun cleanUpFlutterEngine')
+        self.assertLess(cleanup.index('AgentRunsChannel.engineDetached(flutterEngine, this)'),
+                        cleanup.index('super.cleanUpFlutterEngine(flutterEngine)'))
+        detach = self._body(source, 'fun engineDetached(')
+        self.assertIn('if (engineReference?.get() !== engine) return', detach)
+        self.assertLess(detach.index('if (engineReference?.get() !== engine) return'),
+                        detach.index('activityDestroyed(activity)'))
+        destroyed = self._body(source, 'fun activityDestroyed(')
+        self.assertIn('if (owner !== activity || registration !== expectedBinding) return', destroyed)
+        self.assertLess(destroyed.index('stop("activity_destroyed")'),
+                        destroyed.index('channel?.setMethodCallHandler(null)'))
+        self.assertIn('engineReference = null', destroyed)
+
+    def test_engine_lifecycle_is_binding_scoped_and_does_not_modify_listener_iteration(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        register = self._body(source, 'fun register(')
+        self.assertLess(register.index('owner?.let { activityDestroyed(it) }'),
+                        register.index('registration = binding'))
+        self.assertIn('engineReference = WeakReference(engine)', register)
+        self.assertIn('engine.addEngineLifecycleListener(listener)', register)
+        restart = self._body(register, 'override fun onPreEngineRestart')
+        self.assertIn('if (registration === binding) stop("activity_destroyed")', restart)
+        destroyed_callback = self._body(register, 'override fun onEngineWillDestroy')
+        self.assertIn('activityDestroyed(activity, binding, engineDestroying = true)', destroyed_callback)
+        for callback in (restart, destroyed_callback):
+            self.assertNotIn('removeEngineLifecycleListener', callback)
+        destroyed = self._body(source, 'fun activityDestroyed(')
+        self.assertIn('if (!engineDestroying && listener != null)', destroyed)
+        self.assertIn('engine?.removeEngineLifecycleListener(listener)', destroyed)
+        self.assertLess(destroyed.index('stop("activity_destroyed")'),
+                        destroyed.index('engineReference = null'))
+        self.assertIn('engineListener = null', destroyed)
+
     def test_agent_ordering_request_release_and_cancel_before_start_are_generated(self):
         source = bootstrap.AGENT_RUN_SERVICE
         sequence = self._body(source, 'private fun sequence')
@@ -1109,11 +1144,11 @@ class BootstrapTests(unittest.TestCase):
             self.assertIn(statement, detached)
         self.assertLess(detached.index('stop("activity_destroyed")'), detached.index('channel?.setMethodCallHandler(null)'))
         cleanup = self._body(bootstrap.MAIN_ACTIVITY, 'override fun cleanUpFlutterEngine')
-        self.assertLess(cleanup.index('AgentRunsChannel.activityDestroyed(this)'),
+        self.assertLess(cleanup.index('AgentRunsChannel.engineDetached(flutterEngine, this)'),
                         cleanup.index('super.cleanUpFlutterEngine(flutterEngine)'))
         for forbidden in ('startService', 'startForeground', 'postDelayed'):
             self.assertNotIn(forbidden, cleanup)
-        self.assertNotRegex(source, r'(?:private|internal)\s+(?:var|val)\s+\w+\s*:\s*FlutterEngine')
+        self.assertNotRegex(source, r'(?:private|internal)\s+(?:var|val)\s+\w+\s*:\s*FlutterEngine(?!\.)')
 
     def test_stop_action_label_uses_bounded_dart_progress_and_initial_matching_start(self):
         source = bootstrap.AGENT_RUN_SERVICE
@@ -1180,12 +1215,11 @@ class BootstrapTests(unittest.TestCase):
         self.assertLess(self._body(bootstrap.MAIN_ACTIVITY, 'override fun onPause').index('AgentRunsChannel.paused(this)'),
                         self._body(bootstrap.MAIN_ACTIVITY, 'override fun onPause').index('super.onPause()'))
         register = self._body(source, 'fun register(')
-        changed = self._body(register, 'if (owner !== activity)')
-        self.assertIn('if (owner != null) stop("activity_destroyed")', changed)
-        self.assertIn('visible = null', changed)
+        self.assertIn('owner?.let { activityDestroyed(it) }', register)
         self.assertIn('val reason = if (stop("user_stop")) null else "cleanup_failed"', register)
         destroyed = self._body(source, 'fun activityDestroyed')
-        for expression in ('if (owner !== activity) return', 'visible = null', 'owner = null', 'registration = null'):
+        for expression in ('if (owner !== activity || registration !== expectedBinding) return',
+                           'visible = null', 'owner = null', 'registration = null'):
             self.assertIn(expression, destroyed)
         start = self._body(source, 'private fun start(')
         self.assertIn('if (visible !== activity || activity.isFinishing || activity.isDestroyed)', start)
