@@ -404,6 +404,10 @@ class _MarkdownViewState extends State<MarkdownView> {
   /// Reads repository images from the snapshot only; its external client
   /// refuses every request, so a missed path fails instead of connecting.
   MarkdownMediaLoader? _snapshotMedia;
+
+  /// The style sheet of the last build, so an anchor can tell headings from
+  /// body text with the same words.
+  MarkdownStyleSheet? _styleSheet;
   MarkdownMediaLoader _snapshotLoader(SnapshotMarkdownContext snapshot) =>
       _snapshotMedia ??= MarkdownMediaLoader.snapshot(
         SnapshotReaderMediaSource(
@@ -538,12 +542,13 @@ class _MarkdownViewState extends State<MarkdownView> {
       return;
     }
     if (id.startsWith('user-content-')) id = id.substring(13);
-    final headings = <String>[];
+    final headings = <({String tag, String text})>[];
     void walk(List<md.Node> nodes) {
       for (final node in nodes) {
         if (node is! md.Element) continue;
         if (RegExp(r'^h[1-6]$').hasMatch(node.tag)) {
-          headings.add(node.textContent);
+          final text = node.textContent.trim();
+          if (text.isNotEmpty) headings.add((tag: node.tag, text: text));
         } else {
           walk(node.children ?? const []);
         }
@@ -556,23 +561,38 @@ class _MarkdownViewState extends State<MarkdownView> {
       ).parseLines(widget.text.split('\n')),
     );
     final seen = <String, int>{};
-    String? target;
-    for (final heading in headings) {
-      final slug = markdownHeadingSlug(heading);
+    int? target;
+    for (var i = 0; i < headings.length; i++) {
+      final slug = markdownHeadingSlug(headings[i].text);
       final count = seen[slug] ?? 0;
       seen[slug] = count + 1;
       if ((count == 0 ? slug : '$slug-$count') == id) {
-        target = heading.trim();
+        target = i;
         break;
       }
     }
-    if (target == null || !mounted) return;
+    final sheet = _styleSheet;
+    if (target == null || sheet == null || !mounted) return;
+    // Rendered text is visited in document order and paired with the parsed
+    // headings in order, so the n-th rendered heading is heading n: a link
+    // with the same label (it has a recognizer) or a paragraph with the same
+    // words (body size) is never taken for a heading, and a repeated heading
+    // keeps its occurrence (`-1`, `-2`). A heading that cannot be matched
+    // stops the pairing, so a wrong target is never chosen.
+    var next = 0;
     Element? found;
     void visit(Element element) {
       if (found != null) return;
       final widget = element.widget;
-      if (widget is RichText && widget.text.toPlainText().trim() == target) {
-        found = element;
+      if (widget is RichText) {
+        if (next < headings.length &&
+            _rendersHeading(widget.text, headings[next], sheet)) {
+          if (next == target) {
+            found = element;
+            return;
+          }
+          next++;
+        }
         return;
       }
       element.visitChildElements(visit);
@@ -588,6 +608,29 @@ class _MarkdownViewState extends State<MarkdownView> {
         ),
       );
     }
+  }
+
+  /// Whether [text] is the rendering of [heading]: the same words, no link,
+  /// and the heading level's font size from [sheet].
+  static bool _rendersHeading(
+    InlineSpan text,
+    ({String tag, String text}) heading,
+    MarkdownStyleSheet sheet,
+  ) {
+    if (text.toPlainText().trim() != heading.text) return false;
+    var link = false;
+    double? size;
+    text.visitChildren((span) {
+      if (span is TextSpan) {
+        if (span.recognizer != null) link = true;
+        if (size == null && (span.text ?? '').isNotEmpty) {
+          size = span.style?.fontSize;
+        }
+      }
+      return true;
+    });
+    final expected = sheet.styles[heading.tag]?.fontSize;
+    return !link && expected != null && size == expected;
   }
 
   /// The repository path [uri] points to inside this snapshot, or null. A
@@ -870,7 +913,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         ),
         markdownHtmlBlockElement: _MarkdownHtmlBlockBuilder(),
       },
-      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+      styleSheet: _styleSheet = MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         h1: Theme.of(context).textTheme.headlineSmall,
         h2: Theme.of(context).textTheme.titleLarge,
         h3: Theme.of(context).textTheme.titleMedium,

@@ -216,7 +216,8 @@ void main() {
       final paused = repositories.snapshots.singleWhere((s) => s.id == job.id);
       expect(snapshotStatusLabel(recordStatus(paused, null)).$2, '已暫停');
 
-      await h.stream!.close();
+      // Closing the held archive stream can wait on the cancelled request's
+      // pipe; the resumed save reads a fresh archive instead.
       h.stream = null;
       final resumed = repositories.save(h.request(projectId: 5), resume: paused);
       expect(await h.run(resumed), isNotNull);
