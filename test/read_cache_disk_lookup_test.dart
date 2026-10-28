@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/read_cache_cipher.dart';
@@ -232,6 +233,7 @@ void main() {
     () async {
       final h = _Harness();
       addTearDown(h.dispose);
+      await h.keys.writeKey(_account, Uint8List(32));
       await h.start(h.coordinator);
       final entry = h.entry(ReadCacheBodyKind.text, 'synthetic');
       final key = (await h.keys.readKey(_account)).value!;
@@ -250,7 +252,12 @@ void main() {
         isNull,
       );
       expect(File(path).existsSync(), isFalse);
-      await h.expectEvicted(entry);
+      await h.coordinator.flush(_binding);
+      expect(
+        await h.files.readEntry(_account, key, entry.canonicalKey),
+        isNull,
+      );
+      expect(await h.files.readIndex(_account, key), isNull);
     },
   );
 

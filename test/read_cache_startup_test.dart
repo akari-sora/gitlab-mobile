@@ -299,6 +299,163 @@ class _Harness {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  for (final route in ['Settings clear', 'sign-out', 'removal']) {
+    test(
+      '$route relaunch without browsing stays keyless until a real read',
+      () async {
+        final h = _Harness(controls: true);
+        final saved = _account(1);
+        h.accounts.accounts = [saved];
+        h.accounts.lastActive = saved.key;
+        expect(
+          await ReadCacheSettingsStore(h.storage).writeEnabled(true),
+          isTrue,
+        );
+        await h.start();
+        await h.recovered();
+        await _until(
+          () => h.cache.state(saved.key) == ReadCacheDiskState.ready,
+        );
+        final binding = DiskBinding(
+          accountKey: saved.key,
+          generation: h.session.generation,
+        );
+        await h.session.api!.cachedRecord(['projects', '7']);
+        await h.cache.flush(binding);
+        final oldKey = (await h.keys.readKey(saved.key)).value!;
+        expect(
+          (await h.files.readIndex(saved.key, oldKey))!.entries,
+          hasLength(1),
+        );
+        final writes = h.storage.keyWrites;
+        expect(writes, 1);
+
+        switch (route) {
+          case 'Settings clear':
+            final result = await h.cache.clear(
+              binding,
+              ReadCacheCleanupOperation.settingsClear,
+            );
+            expect(result.keyGoneConfirmed, isTrue);
+            expect(result.directoryGoneConfirmed, isTrue);
+            expect(result.complete, isTrue);
+          case 'sign-out':
+            await h.session.endSession();
+          case 'removal':
+            final previousRoot = artifactStorageRoot;
+            artifactStorageRoot = () async => h.root;
+            addTearDown(() => artifactStorageRoot = previousRoot);
+            expect((await h.session.remove(saved)).removed, isTrue);
+        }
+        await h.cache.quiesced;
+        expect(h.directory(saved).existsSync(), isFalse);
+        h.cache.background();
+        h.session.dispose();
+        await startupRecoveryQuiescedForTesting(h.session);
+
+        final cache = ReadCacheDiskCoordinator(
+          keys: ReadCacheKeyStore(h.storage),
+          files: ReadCacheFileStore(root: () async => h.root),
+          settings: ReadCacheSettingsStore(h.storage),
+          coordinationScope: Object(),
+          controlsInstalled: true,
+        );
+        final requests = <String>[];
+        final session = SessionController(
+          h.accounts,
+          readCache: cache,
+          createApi: (instance, credential, oauth, rotated) => GitLabApi(
+            instance: instance,
+            credential: credential,
+            dio: Dio()
+              ..httpClientAdapter = FakeAdapter((request) async {
+                requests.add(request.uri.path);
+                return jsonResponse(
+                  request.uri.path.endsWith('/user')
+                      ? {'id': 1, 'username': 'user1'}
+                      : {
+                          'id': int.parse(request.uri.pathSegments.last),
+                          'name': 'Synthetic',
+                          'path_with_namespace': 'synthetic/project',
+                        },
+                );
+              }),
+          ),
+        );
+        addTearDown(() async {
+          cache.background();
+          session.dispose();
+          await startupRecoveryQuiescedForTesting(session);
+          await cache.quiesced;
+        });
+        await initializeSessionWithAiRecovery(
+          session,
+          journal: AiWriteJournal(
+            keys: MemoryAiJournalKeyStore(),
+            applicationSupport: h.root,
+            processId: 'synthetic-empty-index-relaunch',
+          ),
+        );
+        await startupRecoveryQuiescedForTesting(session);
+        await _until(() => cache.startupRecovered);
+        DiskBinding? resumed;
+        if (route == 'Settings clear') {
+          resumed = DiskBinding(
+            accountKey: saved.key,
+            generation: session.generation,
+          );
+          await _until(
+            () => cache.state(saved.key) == ReadCacheDiskState.ready,
+          );
+          expect(await cache.resume(resumed), isTrue);
+          await cache.flush(resumed);
+        } else {
+          expect(session.active, isNull);
+        }
+        await cache.quiesced;
+        expect(
+          requests,
+          route == 'Settings clear' ? ['/gitlab/api/v4/user'] : isEmpty,
+        );
+        expect(cache.setting, ReadCacheSettingsState.enabled);
+        expect(h.storage.operations, contains('key delete'));
+        final reopenedKey = await h.keys.readKey(saved.key);
+        expect(
+          reopenedKey.value,
+          isNot(orderedEquals(oldKey)),
+          reason: 'The original key must not survive cleanup',
+        );
+        expect(
+          (await h.keys.readInventory()).isEmpty,
+          isTrue,
+          reason:
+              'key writes before clear: $writes; after idle relaunch: '
+              '${h.storage.keyWrites}; original key was deleted',
+        );
+        expect(h.storage.keyWrites, writes);
+        expect(await h.files.accountDirectoryNames(), isEmpty);
+
+        if (resumed != null) {
+          // Concurrent first real reads share the serialized key creation lane.
+          await Future.wait([
+            session.api!.cachedRecord(['projects', '7']),
+            session.api!.cachedRecord(['projects', '8']),
+          ]);
+          await Future.wait([cache.flush(resumed), cache.flush(resumed)]);
+          await cache.quiesced;
+          final newKey = (await h.keys.readKey(saved.key)).value!;
+          expect(newKey, isNot(orderedEquals(oldKey)));
+          expect(h.storage.keyWrites, writes + 1);
+          expect(
+            (await h.files.readIndex(saved.key, newKey))!.entries,
+            hasLength(2),
+          );
+          expect(await h.files.entryFiles(saved.key, newKey), hasLength(2));
+        }
+      },
+    );
+  }
+
   test('issue 36 m-1 settings clear joins a completed barrier clear', () async {
     final h = _Harness(controls: true);
     final saved = _account(1);
@@ -1514,17 +1671,15 @@ void main() {
       expect(h.session.api!.readCacheGeneration, h.session.generation);
       expect(h.directory(saved).existsSync(), isFalse);
       final replacementKey = await h.keys.readKey(saved.key);
-      expect(replacementKey.isFound, isTrue);
-      expect(
-        replacementKey.value,
-        isNot(orderedEquals(List<int>.filled(32, 17))),
-      );
+      expect(replacementKey.status, ReadCacheStoreReadStatus.absent);
       await h.session.api!.cachedRecord(['projects', '7']);
       await h.cache.flush(
         DiskBinding(accountKey: saved.key, generation: h.session.generation),
       );
       final key = await h.keys.readKey(saved.key);
       expect(key.isFound, isTrue);
+      expect(key.value, isNot(orderedEquals(List<int>.filled(32, 17))));
+      expect(h.storage.keyWrites, 2);
       expect(await h.files.entryFiles(saved.key, key.value), hasLength(1));
     },
   );

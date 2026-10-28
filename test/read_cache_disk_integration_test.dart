@@ -1101,7 +1101,12 @@ void main() {
       await api.record(['projects', '1', 'issues', '2']);
       await h.coordinator.quiesced;
       await h.coordinator.flush(binding);
-      expect(await h.entry(c.uri, 'application/json'), isNull);
+      expect(
+        (await h.keys.readKey(_account)).status,
+        ReadCacheStoreReadStatus.absent,
+      );
+      expect(h.storage.keyWrites, 0);
+      expect(await h.files.accountDirectoryNames(), isEmpty);
     },
   );
 
@@ -1405,7 +1410,12 @@ void main() {
       await h.coordinator.flush(
         DiskBinding(accountKey: _account, generation: 1),
       );
-      expect(await h.entry(c.uri, 'application/json'), isNull);
+      expect(
+        (await h.keys.readKey(_account)).status,
+        ReadCacheStoreReadStatus.absent,
+      );
+      expect(h.storage.keyWrites, 0);
+      expect(await h.files.accountDirectoryNames(), isEmpty);
       expect(h.coordinator.stats.queuedEntries, 0);
       await _prerequisites(api, c);
       await _read(api, c, fresh: true);
