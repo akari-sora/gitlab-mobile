@@ -53,6 +53,10 @@ final class G15Ledger implements AiCapabilityLedger {
   AiCapability? find(String operationId) {
     final row = productionAiLedger.find(operationId);
     if (row == null || !g15LogicalReads.containsKey(operationId)) return row;
+    // Production group rows stay hidden until G14. Passing that flag through
+    // would make propose return unknownOperation, so this copy is explicitly
+    // visible. Snooze rows are already visible; forcing true leaves them
+    // unchanged. Guard and matrix tests pin the production flag separately.
     return AiCapability(
       operationId: row.operationId,
       namedMethod: row.namedMethod,
@@ -63,6 +67,7 @@ final class G15Ledger implements AiCapabilityLedger {
       readback: row.readback,
       editableField: row.editableField,
       arguments: row.arguments,
+      modelVisible: true,
     );
   }
 
@@ -187,6 +192,12 @@ final class G15Server {
   int? failReadOccurrence;
   int failReadStatus = 500;
   bool corruptReadbackOwner = false, _replaying = false;
+
+  /// After a real mutation acknowledgement, put the opening status and
+  /// revision back so the independent readback still shows the old pair.
+  bool restoreOpeningOnReadback = false;
+  String? acknowledgedRevision;
+  String? acknowledgedStatusId;
   final reads = <String, int>{};
   final rejectedFixtures = <String>[];
   final inputs = <Map<String, Object?>>[];
@@ -410,6 +421,8 @@ final class G15Server {
         'MobileWorkItemActivityEditAccess',
       _ => name,
     };
+    final openingRevision = oracle.revision;
+    final openingStatusId = oracle.statusId;
     try {
       final response = await oracle.adapter.respond(
         adaptedName == name
@@ -421,6 +434,12 @@ final class G15Server {
                 },
               ),
       );
+      if (mutation && restoreOpeningOnReadback) {
+        acknowledgedRevision = oracle.revision;
+        acknowledgedStatusId = oracle.statusId;
+        oracle.revision = openingRevision;
+        oracle.statusId = openingStatusId;
+      }
       if (!corruptReadbackOwner || mutations == 0 || mutation) return response;
       final payload =
           jsonDecode(await utf8.decoder.bind(response.stream).join())
@@ -707,6 +726,22 @@ void main() {
       expect(
         aiWriteRequestAllowance(entry.key, oauthReplay: false),
         entry.value + 1,
+        reason: entry.key,
+      );
+      final productionVisible = productionAiLedger
+          .find(entry.key)!
+          .modelVisible;
+      // Group rows are hidden until G14. Snooze rows are already visible;
+      // the copy forces visible so hidden rows can be driven, and must not
+      // hide a row production already exposes.
+      expect(
+        productionVisible,
+        entry.key.endsWith('Todo') ? isTrue : isFalse,
+        reason: entry.key,
+      );
+      expect(
+        const G15Ledger().find(entry.key)!.modelVisible,
+        isTrue,
         reason: entry.key,
       );
       expect(2 * entry.value + 1, lessThanOrEqualTo(40));

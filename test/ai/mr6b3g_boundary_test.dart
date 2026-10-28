@@ -26,6 +26,7 @@ const _operations = <String, Map<String, Object?>>{
 };
 const _groupKey = AiConflictKey([g0eAccount, 'group:7', 'workItem', '5']);
 const _conversation = 'g0e-seams';
+const _actualConversation = 'g15-real-group';
 
 void main() {
   setUp(() => aiGroupWorkItemWritesEnabledForTesting = true);
@@ -543,6 +544,8 @@ void main() {
     test('$operation actual no-change boundary', () async {
       final h = await actual.G15Harness.create();
       addTearDown(h.dispose);
+      await _seedJournalMark(h.base.journal);
+      final opening = _GroupOpening.capture(h.server);
       switch (operation) {
         case 'updateGroupWorkItemState':
           h.server.oracle.workItemState = 'CLOSED';
@@ -578,29 +581,174 @@ void main() {
         reason: h.coordinator.recordedOutcomeFor('g15-0')?.reasonCode,
       );
       final proposal = maybeProposal!;
+      final reserved = h.budget.gitLabRequests;
+      expect(reserved, aiWriteRequestAllowance(operation, oauthReplay: false));
       final outcome = await h
           .approve(proposal)
           .timeout(const Duration(seconds: 30));
+      expect(h.server.mutations, 0);
+      final entry = _entry(h.base.journal, proposal.executionId);
+      expect(entry.state, AiJournalState.notExecuted);
+      // No-change and the dates same-value refusal both finish before
+      // dispatch, so the journal reservation and confirmation mark return.
+      expect(
+        h.base.journal.conversationWriteCount(g0eAccount, _actualConversation),
+        0,
+      );
+      expect(
+        h.base.journal.requiresConfirmation(g0eAccount, entry.writeKeys),
+        isTrue,
+      );
+      expect(h.base.journal.isolated(g0eAccount, entry.writeKeys), isFalse);
+      expect(h.budget.gitLabRequests, reserved);
       if (operation == 'updateGroupWorkItemDates') {
         expect(outcome.state, AiJournalState.notExecuted);
         expect(outcome.reasonCode, 'unsupported');
         expect(outcome.noChange, isFalse);
-        expect(await h.propose(operation), isNull);
+        await _expectActualFailStop(h, call: 1);
+        expect(h.budget.gitLabRequests, reserved);
       } else {
         expect(
           outcome.state,
           AiJournalState.succeeded,
           reason: outcome.reasonCode,
         );
+        expect(outcome.reasonCode, 'noChange');
         expect(outcome.noChange, isTrue);
+        expect(outcome.mutationCount, 0);
+        opening.restore(h.server);
+        final continuedProposal = await h.propose(operation);
+        expect(
+          continuedProposal,
+          isNotNull,
+          reason: h.coordinator.recordedOutcomeFor('g15-1')?.reasonCode,
+        );
+        expect(
+          h.budget.gitLabRequests,
+          reserved + aiWriteRequestAllowance(operation, oauthReplay: false),
+        );
+        final continued = await h
+            .approve(continuedProposal!)
+            .timeout(const Duration(seconds: 30));
+        expect(
+          continued.state,
+          AiJournalState.succeeded,
+          reason: continued.reasonCode,
+        );
+        expect(continued.reasonCode, 'succeeded');
+        expect(continued.noChange, isFalse);
+        expect(continued.mutationCount, 1);
+        expect(h.server.mutations, 1);
+        expect(
+          _entry(h.base.journal, continuedProposal.executionId).state,
+          AiJournalState.succeeded,
+        );
+        expect(
+          h.base.journal.conversationWriteCount(
+            g0eAccount,
+            _actualConversation,
+          ),
+          1,
+        );
+        expect(
+          h.base.journal.requiresConfirmation(g0eAccount, entry.writeKeys),
+          isFalse,
+        );
+        expect(h.base.journal.isolated(g0eAccount, entry.writeKeys), isFalse);
       }
-      expect(h.server.mutations, 0);
-      expect(
-        _entry(h.base.journal, proposal.executionId).state,
-        AiJournalState.notExecuted,
-      );
     });
   }
+
+  for (final operation in [
+    'updateGroupWorkItemDates',
+    'updateGroupWorkItemHealthStatus',
+    'updateGroupWorkItemStatus',
+    'updateGroupWorkItemState',
+  ]) {
+    test(
+      '$operation post-send unchanged acknowledgement is uncertain',
+      () async {
+        final h = await actual.G15Harness.create();
+        addTearDown(h.dispose);
+        final opening = _GroupOpening.capture(h.server);
+        final proposal = (await h.propose(operation))!;
+        // HTTP 200 with the opening value and revision on both the
+        // acknowledgement and the independent readback.
+        h.server.oracle.applyMutations = false;
+        final outcome = await h
+            .approve(proposal)
+            .timeout(const Duration(seconds: 30));
+        expect(
+          outcome.state,
+          AiJournalState.writeUncertain,
+          reason: outcome.reasonCode,
+        );
+        expect(outcome.reasonCode, 'writeUncertain');
+        expect(outcome.noChange, isFalse);
+        expect(outcome.mutationCount, 1);
+        expect(h.server.mutations, 1);
+        opening.expectHeld(h.server, operation);
+        expect(
+          _entry(h.base.journal, proposal.executionId).state,
+          AiJournalState.writeUncertain,
+        );
+        expect(
+          (await _durableEntry(h, proposal.executionId))['state'],
+          'writeUncertain',
+        );
+        expect(
+          h.base.journal.isolated(
+            g0eAccount,
+            _entry(h.base.journal, proposal.executionId).writeKeys,
+          ),
+          isTrue,
+        );
+        await _expectActualFailStop(h, call: 1);
+      },
+    );
+  }
+
+  test(
+    'updateGroupWorkItemStatus acknowledgement mismatch is uncertain',
+    () async {
+      final h = await actual.G15Harness.create();
+      addTearDown(h.dispose);
+      final opening = _GroupOpening.capture(h.server);
+      final proposal = (await h.propose('updateGroupWorkItemStatus'))!;
+      h.server.restoreOpeningOnReadback = true;
+      final outcome = await h
+          .approve(proposal)
+          .timeout(const Duration(seconds: 30));
+      expect(
+        outcome.state,
+        AiJournalState.writeUncertain,
+        reason: outcome.reasonCode,
+      );
+      expect(outcome.reasonCode, 'writeUncertain');
+      expect(outcome.mutationCount, 1);
+      expect(h.server.mutations, 1);
+      expect(h.server.acknowledgedStatusId, isNot(opening.statusId));
+      expect(h.server.acknowledgedRevision, isNot(opening.revision));
+      expect(h.server.oracle.statusId, opening.statusId);
+      expect(h.server.oracle.revision, opening.revision);
+      expect(
+        _entry(h.base.journal, proposal.executionId).state,
+        AiJournalState.writeUncertain,
+      );
+      expect(
+        (await _durableEntry(h, proposal.executionId))['state'],
+        'writeUncertain',
+      );
+      expect(
+        h.base.journal.isolated(
+          g0eAccount,
+          _entry(h.base.journal, proposal.executionId).writeKeys,
+        ),
+        isTrue,
+      );
+      await _expectActualFailStop(h, call: 1);
+    },
+  );
 }
 
 Future<G0eHarness> _harness() async {
@@ -675,6 +823,102 @@ Future<void> _expectFailStop(G0eHarness h) async {
   expect(outcome.reasonCode, 'previousWriteIncomplete');
   expect(outcome.mutationCount, 0);
   expect(h.graph.mutations, before);
+}
+
+Future<void> _expectActualFailStop(
+  actual.G15Harness h, {
+  required int call,
+}) async {
+  final requests = h.server.adapter.requests.length;
+  final mutations = h.server.mutations;
+  expect(await h.propose('updateGroupWorkItemWeight'), isNull);
+  final outcome = h.coordinator.recordedOutcomeFor('g15-$call')!;
+  expect(outcome.state, AiJournalState.notExecuted);
+  expect(outcome.reasonCode, 'previousWriteIncomplete');
+  expect(outcome.mutationCount, 0);
+  expect(h.server.adapter.requests, hasLength(requests));
+  expect(h.server.mutations, mutations);
+}
+
+Future<Map<String, Object?>> _durableEntry(
+  actual.G15Harness h,
+  String execution,
+) async {
+  final durable = await h.base.readDurableJournal();
+  return (durable['entries']! as List).cast<Map<String, Object?>>().singleWhere(
+    (entry) => entry['execution'] == execution,
+  );
+}
+
+final class _GroupOpening {
+  _GroupOpening._(actual.G15Server server)
+    : revision = server.oracle.revision,
+      state = server.oracle.workItemState,
+      statusId = server.oracle.statusId,
+      startDate = server.oracle.startDate,
+      dueDate = server.oracle.dueDate,
+      health = server.oracle.healthStatus,
+      users = List<int>.of(server.oracle.users),
+      milestoneId = server.oracle.milestoneId,
+      weight = server.oracle.weight,
+      notificationsOn = server.oracle.notificationsOn,
+      reactionAwarded = server.oracle.reactionAwarded,
+      title = server.title,
+      description = server.description,
+      labels = List<String>.of(server.labels),
+      noteBody = server.noteBody;
+
+  factory _GroupOpening.capture(actual.G15Server server) =>
+      _GroupOpening._(server);
+
+  final String revision;
+  final String state;
+  final String statusId;
+  final String startDate;
+  final String dueDate;
+  final String health;
+  final List<int> users;
+  final String? milestoneId;
+  final int? weight;
+  final bool notificationsOn;
+  final bool reactionAwarded;
+  final String title;
+  final String description;
+  final List<String> labels;
+  final String noteBody;
+
+  void restore(actual.G15Server server) {
+    server.oracle.workItemState = state;
+    server.oracle.statusId = statusId;
+    server.oracle.startDate = startDate;
+    server.oracle.dueDate = dueDate;
+    server.oracle.healthStatus = health;
+    server.oracle.users = users;
+    server.oracle.milestoneId = milestoneId;
+    server.oracle.weight = weight;
+    server.oracle.notificationsOn = notificationsOn;
+    server.oracle.reactionAwarded = reactionAwarded;
+    server.title = title;
+    server.description = description;
+    server.labels = labels;
+    server.noteBody = noteBody;
+    server.oracle.revision = revision;
+  }
+
+  void expectHeld(actual.G15Server server, String operation) {
+    expect(server.oracle.revision, revision, reason: operation);
+    switch (operation) {
+      case 'updateGroupWorkItemDates':
+        expect(server.oracle.startDate, startDate);
+        expect(server.oracle.dueDate, dueDate);
+      case 'updateGroupWorkItemHealthStatus':
+        expect(server.oracle.healthStatus, health);
+      case 'updateGroupWorkItemStatus':
+        expect(server.oracle.statusId, statusId);
+      case 'updateGroupWorkItemState':
+        expect(server.oracle.workItemState, state);
+    }
+  }
 }
 
 Future<AiWriteJournal> _recoverActual(actual.G15Harness h) async {

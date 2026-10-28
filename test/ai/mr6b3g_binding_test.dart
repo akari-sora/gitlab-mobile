@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
+import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 
@@ -83,7 +84,16 @@ void main() {
           expect(result.identity.groupId, 7);
           expect(result.identity.workItemGid, 'gid://gitlab/WorkItem/91');
         } else {
-          await expectLater(future, throwsA(anything));
+          await expectLater(
+            future,
+            throwsA(
+              isA<ApiFailure>().having(
+                (failure) => failure.kind,
+                'kind',
+                FailureKind.invalidResponse,
+              ),
+            ),
+          );
         }
         expect(adapter.requests, hasLength(2));
         expect(adapter.requests.first.method, 'GET');
