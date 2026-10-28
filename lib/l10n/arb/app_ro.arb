@@ -2829,5 +2829,20 @@
   "aiAddGroupWorkItemAlreadyAdded": "Acest element de lucru este deja în această conversație.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab nu a confirmat că acest element de lucru aparține direct grupului din link sau s-a schimbat în timpul verificării. Nu s-a adăugat nimic.",
   "aiAddGroupWorkItemUnavailable": "Poți adăuga un element de lucru doar când AI nu lucrează și nicio scriere nu te așteaptă. Nu s-a adăugat nimic.",
-  "aiAddGroupWorkItemStale": "Verificarea nu mai este actuală, așa că nu s-a adăugat nimic. Verifică din nou linkul."
+  "aiAddGroupWorkItemStale": "Verificarea nu mai este actuală, așa că nu s-a adăugat nimic. Verifică din nou linkul.",
+  "aiRunPaused": "Lucru întrerupt temporar",
+  "aiRunPausedForeground": "Lucru întrerupt temporar: ține aplicația deschisă pentru a continua",
+  "aiRunPausedTimeout": "Lucru întrerupt temporar: verificarea dinainte de continuare a expirat",
+  "aiRunCanResume": "Poți continua acest lucru de unde s-a oprit",
+  "aiRunResume": "Continuă",
+  "aiRunResumeTitle": "Continui lucrul?",
+  "aiRunResumeDuplicate": "Este posibil ca o scriere din acest lucru să fi fost deja făcută. Dacă AI propune din nou aceeași modificare după ce continui, ți se va cere mai întâi confirmarea.",
+  "aiRunResumeRebilling": "Continuarea trimite din nou cereri către furnizorul AI, care le poate factura din nou.",
+  "aiRunForegroundOnly": "Lucrul în fundal nu a pornit; lucrul continuă doar cât timp aplicația este deschisă.",
+  "aiRunStartDenied": "De data aceasta sistemul nu a permis lucrul în fundal.",
+  "aiRunStartTimeout": "Lucrul în fundal nu a pornit la timp.",
+  "aiRunStartUnavailable": "Lucrul în fundal nu este disponibil acum.",
+  "aiProposalBackgroundUnavailable": "Această scriere nu a fost făcută: lucrul în fundal nu a putut porni.",
+  "aiRunCleanupPending": "Lucru întrerupt temporar: încă nu s-a confirmat că lucrul în fundal s-a încheiat, iar până atunci nu se poate continua.",
+  "aiRunCleanupRetry": "Curățarea se reîncearcă de fiecare dată când revii în aplicație; lucrul poate continua doar după ce curățarea este confirmată."
 }

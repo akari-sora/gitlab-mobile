@@ -1,14 +1,20 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
+import 'package:gitlab_mobile/core/ai/redaction.dart';
+import 'package:gitlab_mobile/core/ai/runner.dart';
+import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/graphql_write_classify.dart';
 import 'package:gitlab_mobile/core/ai/tools/graphql_write_hooks.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
+import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
+import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart'
     show AiWriteFreshness;
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
+import 'package:gitlab_mobile/features/ai/ai_chat_context.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
@@ -17,6 +23,7 @@ import '../support/fake_adapter.dart';
 import '../support/namespace_work_item_query.dart';
 import 'fx_coord_support.dart';
 import 'mr6b3g_support.dart';
+import 'runner_test.dart' as runner_test show Harness, call, spec;
 
 void _gate(bool value) {
   aiGroupWorkItemWritesEnabledForTesting = value;
@@ -42,13 +49,14 @@ Map<String, Object?> _namespace({
   int groupId = 7,
   int iid = 5,
   String path = g0ePath,
+  String title = 'Group item',
 }) => {
   'id': 'gid://gitlab/Group/$groupId',
   'fullPath': path,
   'workItem': {
     'id': 'gid://gitlab/WorkItem/91',
     'iid': '$iid',
-    'title': 'Group item',
+    'title': title,
     'state': 'OPEN',
     'createdAt': '2026-10-01T00:00:00Z',
     'updatedAt': '2026-10-02T00:00:00Z',
@@ -66,7 +74,666 @@ bool _groupRowsAreHidden(Iterable<AiCapability> rows) => rows.every(
       row.scopeClass == AiScopeClass.groupWorkItem,
 );
 
+text.AiFieldProvenance _titleField(G0eHarness harness) {
+  final description = text.AiFieldProvenance.groupWorkItem(
+    identity: g0eIdentity(harness.api),
+    completeValue: true,
+  );
+  return text.AiFieldProvenance(
+    resourceKey: description.resourceKey,
+    fieldName: 'title',
+    completeValue: true,
+    resourceWeb: description.resourceWeb,
+    accountKey: description.accountKey,
+    groupId: description.groupId,
+    groupFullPath: description.groupFullPath,
+  );
+}
+
+final class _TitleSecrets implements KnownSecretsSource {
+  @override
+  Iterable<String> get current => const [];
+}
+
+/// Both delivery paths use their production reader and projection over the
+/// same synthetic server value as the coordinator's complete opening.
+Future<
+  ({Future<void> Function(bool whole) deliver, AiToolCatalogue? catalogue})
+>
+_titleDelivery(G0eHarness harness, String source) async {
+  final title = harness.graph.currentFields['title']!;
+  final adapter = FakeAdapter((request) {
+    if (request.method == 'GET') {
+      expect(request.uri.path, '/gitlab/api/v4/groups/7');
+      return jsonResponse({
+        'id': 7,
+        'full_path': g0ePath,
+        'visibility': 'private',
+      });
+    }
+    expect(request.uri.path, '/gitlab/api/graphql');
+    expect((request.data! as Map)['query'], namespaceWorkItemQuery);
+    expect((request.data! as Map)['variables'], {'path': g0ePath, 'iid': '5'});
+    final namespace = _namespace(title: title);
+    (namespace['workItem']! as Map<String, Object?>)['widgets'] = [
+      if (harness.graph.currentFields.containsKey('description'))
+        {
+          'type': 'DESCRIPTION',
+          'description': harness.graph.currentFields['description'],
+          'edited': false,
+        },
+    ];
+    return jsonResponse({
+      'data': {'namespace': namespace},
+    });
+  });
+  final api = testApi(adapter);
+  addTearDown(api.close);
+  final redactor = Redactor(secrets: _TitleSecrets());
+  if (source == 'catalogue output') {
+    final catalogue = AiToolCatalogue.group(
+      port: GitLabAiGroupReadPort(
+        api,
+        instance: api.instance,
+        actorUserId: 7,
+        generation: 7,
+        isCurrent: () => true,
+      ),
+      scope: AiGroupResourceScope(
+        accountKey: g0eAccount,
+        instanceKey: api.instance.key,
+        groupId: 7,
+        groupFullPath: g0ePath,
+        iid: 5,
+        workItemGid: 'gid://gitlab/WorkItem/91',
+      ),
+      redactor: redactor,
+      placeholders: harness.placeholders,
+    );
+    return (
+      catalogue: catalogue,
+      deliver: (bool whole) async {
+        final result = await catalogue.execute(
+          AiToolCall(
+            id: 'title-read',
+            name: 'get_group_work_item',
+            arguments: {'groupId': 7, 'iid': 5},
+          ),
+          budget: AiToolBudget(maxSingleOutputChars: whole ? 20000 : 600),
+        );
+        expect(result.result.isError, isFalse);
+        expect(result.truncated, !whole);
+        expect(result.result.content.contains(title), whole);
+        result.recordDelivery!(result.result.plainData);
+      },
+    );
+  }
+  final context = await loadAiChatContext(
+    origin: const AiGroupWorkItemOrigin(
+      group: GraphResourceRef(id: 'gid://gitlab/Group/7', fullPath: g0ePath),
+      iid: 5,
+      title: 'Untrusted entry title',
+    ),
+    api: api,
+    redactor: redactor,
+    accountKey: g0eAccount,
+    refreshSecrets: () async {},
+    isCurrent: () => true,
+  );
+  return (
+    catalogue: null,
+    deliver: (bool whole) async {
+      final sent = whole
+          ? context.built.blocks
+          : [
+              AiContextBlock.fromData(
+                source: 'conversation_summary',
+                data: buildAiProjectionData(
+                  context: context.built.blocks,
+                  entries: const [],
+                  budget: 2000,
+                  redact: (value) => value,
+                ),
+              ),
+            ];
+      expect(sent.map((block) => block.text).join().contains(title), whole);
+      context.recordDelivery(harness.placeholders, sent);
+    },
+  );
+}
+
+AiRunner _titleRunner(
+  G0eHarness h,
+  AiToolCatalogue catalogue,
+  runner_test.Harness provider,
+) => AiRunner(
+  appInForeground: () => true,
+  config: provider.config(),
+  wire: provider.wire,
+  complete: provider.complete,
+  secrets: provider.secrets,
+  refreshSecrets: () async {},
+  guard: AiRunGuard(
+    expectedGeneration: 1,
+    ownerApi: provider.owner,
+    generation: () => 1,
+    api: () => provider.owner,
+    recipientRevision: () => 1,
+    consentValid: () => true,
+  ),
+  system: 'Synthetic title delivery.',
+  tools: [runner_test.spec, ...catalogue.specs],
+  onRestorableResultCut: h.placeholders.markWholeFieldsCut,
+  executeTool: (tool) async {
+    if (tool.name == 'get_group_work_item') {
+      final result = await catalogue.executeResult(
+        tool,
+        budget: AiToolBudget(),
+      );
+      expect(result.uploadPlaceholders, isFalse);
+      expect(result.content, contains(h.graph.currentFields['title']!));
+      return result;
+    }
+    return AiToolResult(
+      callId: tool.id,
+      name: tool.name,
+      content: 'p' * (tool.id == 'padding-5' ? 19500 : 20000),
+    );
+  },
+  prepareToolResults: (calls, results, beforeDelivery) =>
+      catalogue.prepareDelivery(
+        calls,
+        results,
+        budget: AiToolBudget(),
+        beforeDelivery: beforeDelivery,
+      ),
+  close: () {},
+  cancelActive: () {},
+);
+
 void main() {
+  group('FIX1 real title delivery to coordinator', () {
+    for (final source in ['catalogue output', 'context projection']) {
+      for (final atDispatch in [false, true]) {
+        for (final combined in [false, true]) {
+          test(
+            '$source cut refuses ${atDispatch ? 'dispatch' : 'proposal'} '
+            '${combined ? 'title+description' : 'title-only'} until whole reread',
+            () async {
+              _gate(true);
+              final h = await G0eHarness.create();
+              addTearDown(h.dispose);
+              h.graph.currentFields['title'] = 'Original group title. ' * 100;
+              final deliver = (await _titleDelivery(h, source)).deliver;
+              final fields = {
+                'title': '  Changed title  ',
+                if (combined) 'description': 'Safe replacement description',
+              };
+              final call = h.call('updateGroupWorkItemContent', fields);
+              await deliver(atDispatch);
+              final proposal = await h.coordinator.propose(call);
+              if (atDispatch) {
+                expect(proposal, isNotNull);
+                await deliver(false);
+                final result = await h.coordinator.approve(proposal!);
+                expect(result.state, AiJournalState.notExecuted);
+                expect(result.reasonCode, text.AiTextBlockCode.fieldTooLong);
+              } else {
+                expect(proposal, isNull);
+                expect(
+                  h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+                  text.AiTextBlockCode.fieldTooLong,
+                );
+              }
+              expect(h.graph.prepares, atDispatch ? 2 : 1);
+              expect(h.graph.mutations, 0);
+
+              // An opening cannot clear the cut; only a subsequent whole
+              // delivery of this same title can authorize the replacement.
+              h.beginRun();
+              final stillCut = h.call('updateGroupWorkItemContent', fields);
+              expect(await h.coordinator.propose(stillCut), isNull);
+              expect(
+                h.coordinator.recordedOutcomeFor(stillCut.id)!.reasonCode,
+                text.AiTextBlockCode.fieldTooLong,
+              );
+              expect(h.graph.mutations, 0);
+              await deliver(true);
+              h.beginRun();
+              final allowed = await h.coordinator.propose(
+                h.call('updateGroupWorkItemContent', fields),
+              );
+              expect(allowed, isNotNull);
+              expect(
+                (allowed!.preview as port.AiFieldsPreview).fields['title'],
+                fields['title'],
+              );
+              final result = await h.coordinator.approve(allowed);
+              expect(
+                result.state,
+                AiJournalState.succeeded,
+                reason: result.reasonCode,
+              );
+              expect(h.graph.dispatched!.arguments['title'], fields['title']);
+              if (combined) {
+                expect(
+                  h.graph.dispatched!.arguments['description'],
+                  fields['description'],
+                );
+              }
+              expect(h.graph.mutations, 1);
+            },
+          );
+        }
+      }
+    }
+  });
+
+  for (final atDispatch in [false, true]) {
+    test('FIX1 runner aggregate cut of title without description refuses '
+        '${atDispatch ? 'dispatch' : 'proposal'}', () async {
+      _gate(true);
+      final h = await G0eHarness.create();
+      addTearDown(h.dispose);
+      h.graph.currentFields
+        ..['title'] = 'Original group title. ' * 100
+        ..remove('description');
+      final source = await _titleDelivery(h, 'catalogue output');
+      final catalogue = source.catalogue!;
+      final call = h.call('updateGroupWorkItemContent', {'title': 'Changed'});
+      final proposal = atDispatch ? await h.coordinator.propose(call) : null;
+      if (atDispatch) expect(proposal, isNotNull);
+
+      final provider = runner_test.Harness();
+      var response = 0;
+      provider.respond = (_, _) async => switch (++response) {
+        1 => provider.turn(
+          calls: [for (var i = 0; i < 4; i++) runner_test.call('padding-$i')],
+        ),
+        2 => provider.turn(
+          calls: [
+            runner_test.call('padding-4'),
+            runner_test.call('padding-5'),
+            AiToolCall(
+              id: 'title-read',
+              name: 'get_group_work_item',
+              arguments: {'groupId': 7, 'iid': 5},
+            ),
+          ],
+        ),
+        _ => provider.turn(text: 'Finished reading.'),
+      };
+      final runner = _titleRunner(h, catalogue, provider);
+      final run = await runner.run('Read the title.');
+      expect(run.reason, AiRunEnd.done);
+      final delivered = runner.segment!.entries
+          .whereType<AppToolResultsEntry>()
+          .expand((entry) => entry.results)
+          .singleWhere((result) => result.name == 'get_group_work_item');
+      expect(delivered.truncated, isTrue);
+      expect(
+        delivered.content,
+        isNot(contains(h.graph.currentFields['title']!)),
+      );
+      if (atDispatch) {
+        final result = await h.coordinator.approve(proposal!);
+        expect(result.state, AiJournalState.notExecuted);
+        expect(result.reasonCode, text.AiTextBlockCode.fieldTooLong);
+      } else {
+        expect(await h.coordinator.propose(call), isNull);
+        expect(
+          h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+          text.AiTextBlockCode.fieldTooLong,
+        );
+      }
+      expect(h.graph.mutations, 0);
+      await source.deliver(true);
+      h.beginRun();
+      final allowed = await h.coordinator.propose(
+        h.call('updateGroupWorkItemContent', {'title': 'Changed'}),
+      );
+      expect(allowed, isNotNull);
+      expect(
+        (await h.coordinator.approve(allowed!)).state,
+        AiJournalState.succeeded,
+      );
+      expect(h.graph.mutations, 1);
+    });
+  }
+
+  for (final atDispatch in [false, true]) {
+    test('FIX1 runner summary after whole title refuses '
+        '${atDispatch ? 'dispatch' : 'proposal'} until reread', () async {
+      _gate(true);
+      final h = await G0eHarness.create();
+      addTearDown(h.dispose);
+      h.graph.currentFields
+        ..['title'] = 'Original group title. ' * 100
+        ..remove('description');
+      final source = await _titleDelivery(h, 'catalogue output');
+      final provider = runner_test.Harness();
+      var response = 0;
+      provider.respond = (_, _) async => ++response == 1
+          ? provider.turn(
+              calls: [
+                AiToolCall(
+                  id: 'title-read',
+                  name: 'get_group_work_item',
+                  arguments: {'groupId': 7, 'iid': 5},
+                ),
+              ],
+            )
+          : provider.turn(text: 'Finished.');
+      final runner = _titleRunner(h, source.catalogue!, provider);
+      expect((await runner.run('Read title.')).reason, AiRunEnd.done);
+      expect(provider.payloads.last, contains(h.graph.currentFields['title']!));
+      final call = h.call('updateGroupWorkItemContent', {'title': 'Changed'});
+      final proposal = atDispatch ? await h.coordinator.propose(call) : null;
+      if (atDispatch) expect(proposal, isNotNull);
+      runner.forceProjection();
+      expect((await runner.run('Summarize.')).reason, AiRunEnd.done);
+      expect(provider.payloads.last, contains('conversation_summary'));
+      expect(
+        provider.payloads.last,
+        isNot(contains(h.graph.currentFields['title']!)),
+      );
+      if (atDispatch) {
+        final result = await h.coordinator.approve(proposal!);
+        expect(result.state, AiJournalState.notExecuted);
+        expect(result.reasonCode, text.AiTextBlockCode.fieldTooLong);
+      } else {
+        expect(await h.coordinator.propose(call), isNull);
+        expect(
+          h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+          text.AiTextBlockCode.fieldTooLong,
+        );
+      }
+      expect(h.graph.mutations, 0);
+      await source.deliver(true);
+      h.beginRun();
+      final allowed = await h.coordinator.propose(
+        h.call('updateGroupWorkItemContent', {'title': 'Changed'}),
+      );
+      expect(allowed, isNotNull);
+      expect(
+        (await h.coordinator.approve(allowed!)).state,
+        AiJournalState.succeeded,
+      );
+      expect(h.graph.mutations, 1);
+    });
+  }
+
+  test(
+    'FIX1 whole read cannot clear a title cut before model delivery',
+    () async {
+      _gate(true);
+      final h = await G0eHarness.create();
+      addTearDown(h.dispose);
+      h.graph.currentFields['title'] = 'Original group title. ' * 100;
+      final source = await _titleDelivery(h, 'catalogue output');
+      await source.deliver(false);
+      final whole = await source.catalogue!.execute(
+        AiToolCall(
+          id: 'pending-whole-title',
+          name: 'get_group_work_item',
+          arguments: {'groupId': 7, 'iid': 5},
+        ),
+        budget: AiToolBudget(),
+      );
+      expect(whole.truncated, isFalse);
+      final call = h.call('updateGroupWorkItemContent', {'title': 'Changed'});
+      expect(await h.coordinator.propose(call), isNull);
+      expect(
+        h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+        text.AiTextBlockCode.fieldTooLong,
+      );
+      expect(h.graph.mutations, 0);
+      whole.recordDelivery!(whole.result.plainData);
+      h.beginRun();
+      final proposal = await h.coordinator.propose(
+        h.call('updateGroupWorkItemContent', {'title': 'Changed'}),
+      );
+      expect(proposal, isNotNull);
+      expect(
+        (await h.coordinator.approve(proposal!)).state,
+        AiJournalState.succeeded,
+      );
+      expect(h.graph.mutations, 1);
+    },
+  );
+
+  group('G0j opening title provenance', () {
+    for (final combined in [false, true]) {
+      test(
+        'coordinator ${combined ? 'title+description' : 'title-only'} succeeds',
+        () async {
+          _gate(true);
+          final h = await G0eHarness.create();
+          addTearDown(h.dispose);
+          const title = '  Updated group title  ';
+          const description = 'Updated group description';
+          // Freshness alone calls the title incomplete. The strict opening's
+          // whole currentFields must supply the evidence for both text rounds.
+          final field = _titleField(h);
+          h.priorProvenance = {
+            'title': text.AiFieldProvenance(
+              resourceKey: field.resourceKey,
+              fieldName: 'title',
+              completeValue: false,
+              accountKey: field.accountKey,
+              groupId: field.groupId,
+              groupFullPath: field.groupFullPath,
+              resourceWeb: field.resourceWeb,
+            ),
+          };
+          final call = h.call('updateGroupWorkItemContent', {
+            'title': title,
+            if (combined) 'description': description,
+          });
+          final proposal = await h.coordinator.propose(call);
+          expect(
+            proposal,
+            isNotNull,
+            reason: h.coordinator.recordedOutcomeFor(call.id)?.reasonCode,
+          );
+          expect(
+            (proposal!.preview as port.AiFieldsPreview).fields['title'],
+            title,
+          );
+          expect(h.graph.mutations, 0);
+          final result = await h.coordinator.approve(proposal);
+          expect(
+            result.state,
+            AiJournalState.succeeded,
+            reason: result.reasonCode,
+          );
+          expect(h.graph.dispatched!.arguments['title'], title);
+          if (combined) {
+            expect(h.graph.dispatched!.arguments['description'], description);
+          } else {
+            expect(
+              h.graph.dispatched!.arguments,
+              isNot(contains('description')),
+            );
+          }
+          expect(h.freshnessReads, 2);
+          expect(h.graph.events, ['open:1', 'open:2', 'start', 'send']);
+          expect(h.graph.mutations, 1);
+        },
+      );
+    }
+
+    for (final atDispatch in [false, true]) {
+      final phase = atDispatch ? 'dispatch' : 'proposal';
+      test(
+        'missing opening title refuses at $phase despite prior provenance',
+        () async {
+          _gate(true);
+          final h = await G0eHarness.create();
+          addTearDown(h.dispose);
+          h.priorProvenance = {'title': _titleField(h)};
+          final call = h.call('updateGroupWorkItemContent', {
+            'title': 'Changed',
+          });
+          if (!atDispatch) h.graph.currentFields.remove('title');
+          final proposal = await h.coordinator.propose(call);
+          if (atDispatch) {
+            expect(proposal, isNotNull);
+            h.graph.currentFields.remove('title');
+            final result = await h.coordinator.approve(proposal!);
+            expect(result.state, AiJournalState.notExecuted);
+            expect(result.reasonCode, text.AiTextBlockCode.fieldTooLong);
+          } else {
+            expect(proposal, isNull);
+            expect(
+              h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+              text.AiTextBlockCode.fieldTooLong,
+            );
+          }
+          expect(h.graph.mutations, 0);
+        },
+      );
+
+      for (final cut in ['excerpt', 'output limit']) {
+        test(
+          '$cut title refuses at $phase despite a complete opening',
+          () async {
+            _gate(true);
+            final h = await G0eHarness.create();
+            addTearDown(h.dispose);
+            void cutTitle() {
+              final field = _titleField(h);
+              h.placeholders.recordFieldDelivery(
+                field,
+                whole: cut != 'excerpt',
+              );
+              if (cut == 'output limit') h.placeholders.markWholeFieldsCut();
+            }
+
+            final call = h.call('updateGroupWorkItemContent', {
+              'title': 'Changed',
+              'description': 'Safe description',
+            });
+            if (!atDispatch) cutTitle();
+            final proposal = await h.coordinator.propose(call);
+            if (atDispatch) {
+              expect(proposal, isNotNull);
+              cutTitle();
+              final result = await h.coordinator.approve(proposal!);
+              expect(result.state, AiJournalState.notExecuted);
+              expect(result.reasonCode, text.AiTextBlockCode.fieldTooLong);
+            } else {
+              expect(proposal, isNull);
+              expect(
+                h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+                text.AiTextBlockCode.fieldTooLong,
+              );
+            }
+            expect(h.graph.prepares, atDispatch ? 2 : 1);
+            expect(h.graph.mutations, 0);
+          },
+        );
+      }
+    }
+
+    test('whole title delivery clears an earlier excerpt refusal', () async {
+      _gate(true);
+      final h = await G0eHarness.create();
+      addTearDown(h.dispose);
+      final field = _titleField(h);
+      h.placeholders.recordFieldDelivery(field, whole: false);
+      expect(
+        await h.coordinator.propose(
+          h.call('updateGroupWorkItemContent', {'title': 'Changed'}),
+        ),
+        isNull,
+      );
+      h.placeholders.recordFieldDelivery(field, whole: true);
+      h.beginRun();
+      final proposal = await h.coordinator.propose(
+        h.call('updateGroupWorkItemContent', {'title': 'Changed'}),
+      );
+      expect(proposal, isNotNull);
+      final result = await h.coordinator.approve(proposal!);
+      expect(result.state, AiJournalState.succeeded, reason: result.reasonCode);
+      expect(h.graph.mutations, 1);
+    });
+
+    test('stale opening identity cannot authorize a title edit', () async {
+      _gate(true);
+      final h = await G0eHarness.create();
+      addTearDown(h.dispose);
+      h.graph.live = false;
+      final call = h.call('updateGroupWorkItemContent', {'title': 'Changed'});
+      expect(await h.coordinator.propose(call), isNull);
+      expect(
+        h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+        'workItemUnverifiable',
+      );
+      expect(h.graph.mutations, 0);
+    });
+
+    for (final source in ['description', 'note']) {
+      for (final combined in [false, true]) {
+        test('$source upload token in ${combined ? 'combined' : 'title-only'} '
+            'proposal refuses', () async {
+          _gate(true);
+          final h = await G0eHarness.create();
+          addTearDown(h.dispose);
+          final field = text.AiFieldProvenance.groupWorkItem(
+            identity: g0eIdentity(h.api),
+            completeValue: true,
+            noteId: source == 'note' ? 12 : null,
+          );
+          const original =
+              '[file](/uploads/0123456789abcdef0123456789abcdef/file.txt)';
+          final masked = h.placeholders.redactOutgoing(original, field: field);
+          expect(masked, contains('[[upload:'));
+          final call = h.call('updateGroupWorkItemContent', {
+            'title': masked,
+            if (combined) 'description': 'Safe description',
+          });
+          expect(await h.coordinator.propose(call), isNull);
+          expect(
+            h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+            text.AiTextBlockCode.rereadField,
+          );
+          expect(h.graph.prepares, 1);
+          expect(h.graph.mutations, 0);
+        });
+      }
+    }
+
+    test(
+      'valid title cannot allow a cross-field note token in description',
+      () async {
+        _gate(true);
+        final h = await G0eHarness.create();
+        addTearDown(h.dispose);
+        final note = text.AiFieldProvenance.groupWorkItem(
+          identity: g0eIdentity(h.api),
+          completeValue: true,
+          noteId: 12,
+        );
+        final masked = h.placeholders.redactOutgoing(
+          '[file](/uploads/0123456789abcdef0123456789abcdef/file.txt)',
+          field: note,
+        );
+        expect(masked, contains('[[upload:'));
+        final call = h.call('updateGroupWorkItemContent', {
+          'title': 'Changed',
+          'description': masked,
+        });
+        expect(await h.coordinator.propose(call), isNull);
+        expect(
+          h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+          text.AiTextBlockCode.rereadField,
+        );
+        expect(h.graph.mutations, 0);
+      },
+    );
+  });
+
   test(
     'freshness defaults retain unknown source evidence for older readers',
     () {

@@ -177,6 +177,7 @@ final class AiToolCatalogue {
   final DateTime Function() _now;
   final Random _nonceRandom = Random.secure();
   final _fetchedAt = Expando<DateTime>();
+  final _deliveryRecords = Expando<void Function(AiAppText)>();
 
   static final List<AiToolSpec> _specs = List.unmodifiable([
     _spec(
@@ -325,7 +326,7 @@ final class AiToolCatalogue {
     final prepared = [...results];
     final fetchedAt = [for (final call in calls) _fetchedAt[call]];
     final recordDelivery = <void Function(AiAppText)?>[
-      for (final _ in results) null,
+      for (final call in calls) _deliveryRecords[call],
     ];
     for (var i = 0; i < prepared.length; i++) {
       if (!prepared[i].isError && _expired(fetchedAt[i])) {
@@ -377,7 +378,10 @@ final class AiToolCatalogue {
     bool reread = false,
   }) async {
     final fallback = _live('bound project');
-    if (!reread) _fetchedAt[call] = null;
+    if (!reread) {
+      _fetchedAt[call] = null;
+      _deliveryRecords[call] = null;
+    }
     var reservedRequests = 0;
     var completedRequests = 0;
     RequestMeter? requestMeter;
@@ -454,6 +458,9 @@ final class AiToolCatalogue {
         );
       }
       var restorable = placeholders == null ? null : raw.restorable;
+      var deliveries = placeholders == null
+          ? null
+          : raw.deliveries ?? raw.restorable;
       var structured = raw.json
           ? _redactStructured(
               cleanValue,
@@ -461,8 +468,7 @@ final class AiToolCatalogue {
               restorable: restorable,
             )
           : null;
-      var redacted =
-          structured?.redaction ?? redactor.redactSource(cleanText);
+      var redacted = structured?.redaction ?? redactor.redactSource(cleanText);
       final redactedProvenance = redactor.redactSource(provenance.label);
       final nonce = _nextNonce();
       AiAppText buildData() {
@@ -478,6 +484,7 @@ final class AiToolCatalogue {
           ),
         ]);
       }
+
       var data = buildData();
       var completeContent = data.encode();
       // Delivery replaces already charged output; the runner clips it to the
@@ -486,18 +493,29 @@ final class AiToolCatalogue {
           ? min(completeContent.length, budget.maxSingleOutputChars)
           : budget.availableOutput(completeContent.length);
       var groupClipped = false;
-      if (_groupPort != null && restorable != null &&
+      if (_groupPort != null &&
+          restorable != null &&
           data.clipped(available).encode().length != completeContent.length) {
         // A clipped group description must not expose a restorable token.
         // Invalidate any earlier whole delivery of this field in this table.
         final owner = cleanValue;
         if (owner is Map<String, Object?>) {
           final field = restorable(const ['description'], owner);
-          if (field != null) placeholders!.recordFieldDelivery(field, whole: false);
+          if (field != null) {
+            placeholders!.recordFieldDelivery(field, whole: false);
+          }
         }
         structured = _redactStructured(cleanValue, raw.fragmentFields);
         redacted = structured.redaction;
         restorable = null;
+        // Keep tracking the title after dropping restorable tokens. The
+        // description remains cut until a later complete group delivery.
+        final tracked = deliveries;
+        deliveries = tracked == null
+            ? null
+            : (path, owner) => path.length == 1 && path.single == 'title'
+                  ? tracked(path, owner)
+                  : null;
         data = buildData();
         completeContent = data.encode();
         available = reread
@@ -507,15 +525,17 @@ final class AiToolCatalogue {
       }
       final clipped = data.clipped(available);
       final content = clipped.encode();
-      final truncated = groupClipped || content.length != completeContent.length;
+      final truncated =
+          groupClipped || content.length != completeContent.length;
       if (!reread) budget.recordOutput(content.length);
-      if (structured != null && restorable != null) {
+      if (structured != null && deliveries != null) {
         _recordDeliveries(
           data,
           clipped,
           structured.value,
-          restorable,
+          deliveries,
           allowWhole: !reread,
+          allowTitleWhole: false,
         );
       }
       final fetchedAt = raw.fetchedAt ?? raw.provenance.observedAt;
@@ -523,9 +543,9 @@ final class AiToolCatalogue {
       // timestamp paired with that result; refreshed delivery data is local.
       if (!reread) _fetchedAt[call] = fetchedAt;
       final deliveryStructured = structured;
-      final deliveryRestorable = restorable;
+      final deliveryFields = deliveries;
       final deliveryData = data;
-      return AiToolExecution(
+      final execution = AiToolExecution(
         result: AiToolResult.fromData(
           callId: call.id,
           name: call.name,
@@ -544,15 +564,17 @@ final class AiToolCatalogue {
             redactedProvenance.withheldPrivateKeyContext,
         gitLabRequests: completedRequests,
         fetchedAt: fetchedAt,
-        recordDelivery: deliveryStructured != null && deliveryRestorable != null
+        recordDelivery: deliveryStructured != null && deliveryFields != null
             ? (delivered) => _recordDeliveries(
                 deliveryData,
                 delivered,
                 deliveryStructured.value,
-                deliveryRestorable,
+                deliveryFields,
               )
             : null,
       );
+      if (!reread) _deliveryRecords[call] = execution.recordDelivery;
+      return execution;
     } on _ToolValidation catch (error) {
       completedRequests = requestMeter?.count ?? 0;
       return await _error(
@@ -634,6 +656,19 @@ final class AiToolCatalogue {
               ),
             )
           : null,
+      deliveries: (path, owner) {
+        if (path.length != 1) return null;
+        final description = AiFieldProvenance.groupWorkItem(
+          identity: read.value.identity,
+          completeValue: true,
+        );
+        if (path.single == 'title') return _titleField(description);
+        if (path.single == 'description' &&
+            read.value.value['description_status'] == 'complete') {
+          return description;
+        }
+        return null;
+      },
     );
   }
 
@@ -690,6 +725,7 @@ final class AiToolCatalogue {
       readConfidential: read.value['confidential'] == true,
       readInternal: _readInternalNote(read.value),
       restorable: _discussionFields('issues', iid),
+      deliveries: _discussionFields('issues', iid, includeTitle: true),
       fetchedAt: read.fetchedAt,
       freshnessRetried: read.freshnessRetried,
     );
@@ -705,6 +741,7 @@ final class AiToolCatalogue {
       requestCount: read.requestCount,
       readInternal: _readInternalNote(read.value),
       restorable: _discussionFields('merge_requests', iid),
+      deliveries: _discussionFields('merge_requests', iid, includeTitle: true),
       fetchedAt: read.fetchedAt,
       freshnessRetried: read.freshnessRetried,
     );
@@ -813,7 +850,8 @@ final class AiToolCatalogue {
           read.value['visibility'] != 'internal',
       readInternal: read.value['visibility'] == 'internal',
       readVisibility: read.value['visibility'] is String
-          ? read.value['visibility'] as String : null,
+          ? read.value['visibility'] as String
+          : null,
       restorable: _descriptionField(
         () => AiProjectFieldProvenance.snippetDescription(
           instance: placeholders!.instance,
@@ -832,9 +870,13 @@ final class AiToolCatalogue {
           path.length == 1 && path.single == 'description' ? field() : null;
 
   /// The complete values in a `_projectDiscussion` projection that a write
-  /// can put back whole: the description and each note's body, keyed by the
-  /// note's numeric ID.
-  _RestorableFields _discussionFields(String resource, int iid) {
+  /// can put back whole: title, description and each note's body, keyed by
+  /// the note's numeric ID. Title is tracked but is not restorable.
+  _RestorableFields _discussionFields(
+    String resource,
+    int iid, {
+    bool includeTitle = false,
+  }) {
     AiFieldProvenance field({int? noteId}) => AiFieldProvenance.gitLab(
       instance: placeholders!.instance,
       projectId: scope.projectId,
@@ -844,6 +886,9 @@ final class AiToolCatalogue {
       noteId: noteId,
     );
     return (path, owner) {
+      if (includeTitle && path.length == 1 && path.single == 'title') {
+        return _titleField(field());
+      }
       if (path.length == 1 && path.single == 'description') return field();
       if (path.length == 2 && path[0] == 'notes' && path[1] == 'body') {
         final id = owner['id'];
@@ -852,6 +897,18 @@ final class AiToolCatalogue {
       return null;
     };
   }
+
+  AiFieldProvenance _titleField(AiFieldProvenance source) => AiFieldProvenance(
+    resourceKey: source.resourceKey,
+    fieldName: 'title',
+    completeValue: source.completeValue,
+    resourceWeb: source.resourceWeb,
+    projectId: source.projectId,
+    groupId: source.groupId,
+    projectFullPath: source.projectFullPath,
+    groupFullPath: source.groupFullPath,
+    accountKey: source.accountKey,
+  );
 
   Future<_RawToolResult> _mergeRequestDiff() async {
     if (scope.current.kind != AiResourceKind.mergeRequest) {
@@ -1206,7 +1263,7 @@ final class AiToolCatalogue {
     );
   }
 
-  /// Tells the placeholder table which restorable fields of [complete] the
+  /// Tells the placeholder table which tracked fields of [complete] the
   /// provider gets whole in [clipped]. A clip keeps a prefix of the readable
   /// strings and may cut the last one, so a field is whole when its value
   /// survives at its own position unchanged. Plan §3.1: a field cut here
@@ -1217,6 +1274,7 @@ final class AiToolCatalogue {
     Object? structured,
     _RestorableFields restorable, {
     bool allowWhole = true,
+    bool allowTitleWhole = true,
   }) {
     final table = placeholders;
     if (table == null) return;
@@ -1234,7 +1292,10 @@ final class AiToolCatalogue {
           kept[index] == entry.value;
       // Preparation can be rolled back after a failed provider send. It may
       // conservatively mark a cut, but cannot upgrade an earlier cut to whole.
-      if (!whole || allowWhole) {
+      // A read can be followed by a write in the same tool batch, before the
+      // provider receives its result. Only accepted delivery upgrades a title.
+      if (!whole ||
+          (allowWhole && (allowTitleWhole || entry.field.fieldName != 'title'))) {
         table.recordFieldDelivery(entry.field, whole: whole);
       }
     }
@@ -1277,7 +1338,8 @@ final class _RawToolResult {
        readInternal = false,
        readVisibility = null,
        fragmentFields = const {},
-       restorable = null;
+       restorable = null,
+       deliveries = null;
 
   const _RawToolResult.json(
     this.value,
@@ -1289,6 +1351,7 @@ final class _RawToolResult {
     this.requestCount = 0,
     this.fragmentFields = const {},
     this.restorable,
+    this.deliveries,
     this.fetchedAt,
     this.freshnessRetried = false,
   }) : json = true,
@@ -1310,12 +1373,16 @@ final class _RawToolResult {
   /// Which string values, by their path of map keys, are a complete
   /// restorable field. Null for every other tool.
   final _RestorableFields? restorable;
+
+  /// Fields whose complete or clipped model delivery must be tracked,
+  /// including non-restorable titles.
+  final _RestorableFields? deliveries;
 }
 
 typedef _RestorableFields =
     AiFieldProvenance? Function(List<String> path, Map<String, Object?> owner);
 
-/// The restorable string values of a projected JSON value with their index
+/// The tracked string values of a projected JSON value with their index
 /// among its readable strings (each map key, then its value; list items in
 /// order), and how many readable strings it has in all.
 ({List<({int index, AiFieldProvenance field, String value})> values, int count})

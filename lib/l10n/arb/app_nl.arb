@@ -2829,5 +2829,20 @@
   "aiAddGroupWorkItemAlreadyAdded": "Dit werkitem staat al in dit gesprek.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab heeft niet bevestigd dat dit werkitem rechtstreeks bij de groep uit de link hoort, of het is tijdens de controle veranderd. Er is niets toegevoegd.",
   "aiAddGroupWorkItemUnavailable": "Je kunt een werkitem alleen toevoegen als de AI niet bezig is en er geen schrijfactie op je wacht. Er is niets toegevoegd.",
-  "aiAddGroupWorkItemStale": "Deze controle is verouderd, dus er is niets toegevoegd. Controleer de link opnieuw."
+  "aiAddGroupWorkItemStale": "Deze controle is verouderd, dus er is niets toegevoegd. Controleer de link opnieuw.",
+  "aiRunPaused": "Werk gepauzeerd",
+  "aiRunPausedForeground": "Werk gepauzeerd: houd de app open om door te gaan",
+  "aiRunPausedTimeout": "Werk gepauzeerd: de controle voor het doorgaan duurde te lang",
+  "aiRunCanResume": "Je kunt dit werk voortzetten waar het stopte",
+  "aiRunResume": "Doorgaan",
+  "aiRunResumeTitle": "Werk voortzetten?",
+  "aiRunResumeDuplicate": "Een schrijfactie van dit werk is mogelijk al uitgevoerd. Stelt de AI na het doorgaan dezelfde wijziging opnieuw voor, dan wordt je eerst om bevestiging gevraagd.",
+  "aiRunResumeRebilling": "Doorgaan stuurt opnieuw verzoeken naar de AI-aanbieder, die opnieuw kunnen worden gefactureerd.",
+  "aiRunForegroundOnly": "Het werk op de achtergrond is niet gestart; het werk gaat alleen door zolang de app open is.",
+  "aiRunStartDenied": "Het systeem stond werk op de achtergrond deze keer niet toe.",
+  "aiRunStartTimeout": "Het werk op de achtergrond is niet op tijd gestart.",
+  "aiRunStartUnavailable": "Werk op de achtergrond is nu niet beschikbaar.",
+  "aiProposalBackgroundUnavailable": "Deze schrijfactie is niet uitgevoerd: het werk op de achtergrond kon niet starten.",
+  "aiRunCleanupPending": "Werk gepauzeerd: het is nog niet bevestigd dat het werk op de achtergrond is beëindigd, en tot die tijd kan niets doorgaan.",
+  "aiRunCleanupRetry": "De opruiming wordt opnieuw geprobeerd telkens wanneer je naar de app terugkeert; het werk kan pas doorgaan als de opruiming is bevestigd."
 }

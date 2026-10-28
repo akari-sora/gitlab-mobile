@@ -53,8 +53,8 @@ AiChatSessionHandle _createAiChatSession({
   );
 }
 
-/// Whether the app is on screen. Until MR6c adds the foreground service, a
-/// write starts only while the app is visible.
+/// Whether the app is on screen. A permitless continuation and every explicit
+/// approval require visibility; service-backed continuations use their gate.
 bool aiAppInForeground() => switch (WidgetsBinding.instance.lifecycleState) {
   AppLifecycleState.resumed || AppLifecycleState.inactive => true,
   _ => false,

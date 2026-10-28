@@ -2829,5 +2829,20 @@
   "aiAddGroupWorkItemAlreadyAdded": "Det här arbetsobjektet finns redan i den här konversationen.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab bekräftade inte att arbetsobjektet hör direkt till gruppen i länken, eller så ändrades det under kontrollen. Inget lades till.",
   "aiAddGroupWorkItemUnavailable": "Du kan bara lägga till ett arbetsobjekt när AI inte arbetar och ingen skrivning väntar på dig. Inget lades till.",
-  "aiAddGroupWorkItemStale": "Kontrollen är inaktuell, så inget lades till. Kontrollera länken igen."
+  "aiAddGroupWorkItemStale": "Kontrollen är inaktuell, så inget lades till. Kontrollera länken igen.",
+  "aiRunPaused": "Arbetet pausat",
+  "aiRunPausedForeground": "Arbetet pausat: håll appen öppen för att fortsätta",
+  "aiRunPausedTimeout": "Arbetet pausat: kontrollen före fortsättningen tog för lång tid",
+  "aiRunCanResume": "Du kan fortsätta det här arbetet där det stannade",
+  "aiRunResume": "Fortsätt",
+  "aiRunResumeTitle": "Fortsätta arbetet?",
+  "aiRunResumeDuplicate": "En skrivning i det här arbetet kan redan ha gjorts. Om AI föreslår samma ändring igen när du fortsätter ombeds du först bekräfta den.",
+  "aiRunResumeRebilling": "Att fortsätta skickar förfrågningar till AI-leverantören igen, vilket kan debiteras igen.",
+  "aiRunForegroundOnly": "Arbetet i bakgrunden startade inte; arbetet fortsätter bara medan appen är öppen.",
+  "aiRunStartDenied": "Systemet tillät inte arbete i bakgrunden den här gången.",
+  "aiRunStartTimeout": "Arbetet i bakgrunden startade inte i tid.",
+  "aiRunStartUnavailable": "Arbete i bakgrunden är inte tillgängligt just nu.",
+  "aiProposalBackgroundUnavailable": "Den här skrivningen gjordes inte: arbetet i bakgrunden kunde inte starta.",
+  "aiRunCleanupPending": "Arbetet pausat: det är ännu inte bekräftat att arbetet i bakgrunden har avslutats, och inget kan fortsätta innan dess.",
+  "aiRunCleanupRetry": "Rensningen görs om varje gång du återvänder till appen; arbetet kan fortsätta först när rensningen har bekräftats."
 }

@@ -11887,5 +11887,80 @@
   "@aiAddGroupWorkItemStale": {
     "description": "The confirmed check is out of date (newer check, new conversation or account change).",
     "placeholders": {}
+  },
+  "aiRunPaused": "工作已暫停",
+  "@aiRunPaused": {
+    "description": "Chat card: an AI run paused at a safe point for an internal reason (ticket, nonce, background unavailable). No detail is shown.",
+    "placeholders": {}
+  },
+  "aiRunPausedForeground": "工作已暫停：要開著應用程式才能繼續",
+  "@aiRunPausedForeground": {
+    "description": "Chat card: an AI run paused because the app left the foreground or its background permit ended; it continues only after the user taps Continue with the app open.",
+    "placeholders": {}
+  },
+  "aiRunPausedTimeout": "工作已暫停：繼續前的檢查逾時",
+  "@aiRunPausedTimeout": {
+    "description": "Chat card: an AI run paused because the check that lets it continue (background permit) did not answer in time.",
+    "placeholders": {}
+  },
+  "aiRunCanResume": "可以從中斷的地方繼續這項工作",
+  "@aiRunCanResume": {
+    "description": "Chat card: a stopped AI run can be continued from where it stopped (same run, same limits).",
+    "placeholders": {}
+  },
+  "aiRunResume": "繼續執行",
+  "@aiRunResume": {
+    "description": "Button on the paused-run card: continue the same AI run. It adds no new message.",
+    "placeholders": {}
+  },
+  "aiRunResumeTitle": "要繼續執行嗎？",
+  "@aiRunResumeTitle": {
+    "description": "Confirmation title before continuing a paused AI run.",
+    "placeholders": {}
+  },
+  "aiRunResumeDuplicate": "這項工作的寫入可能已經完成。繼續後若 AI 再提出相同的變更，會先請你確認。",
+  "@aiRunResumeDuplicate": {
+    "description": "Confirmation text: the run already handled a write, which may have been made; a repeated identical proposal will ask for confirmation.",
+    "placeholders": {}
+  },
+  "aiRunResumeRebilling": "繼續會再向 AI 供應商送出請求，可能會再次計費。",
+  "@aiRunResumeRebilling": {
+    "description": "Confirmation text: the run already called the AI provider, so continuing sends requests again and the provider may bill again.",
+    "placeholders": {}
+  },
+  "aiRunForegroundOnly": "背景執行沒有啟動，工作只會在應用程式開啟時繼續。",
+  "@aiRunForegroundOnly": {
+    "description": "Chat row: the background service did not start, so the run continues only while the app is open.",
+    "placeholders": {}
+  },
+  "aiRunStartDenied": "系統這次不允許在背景執行。",
+  "@aiRunStartDenied": {
+    "description": "Chat row reason: the operating system refused to start background work (denied or not permitted).",
+    "placeholders": {}
+  },
+  "aiRunStartTimeout": "背景執行沒有及時啟動。",
+  "@aiRunStartTimeout": {
+    "description": "Chat row reason: background work did not start within the time allowed.",
+    "placeholders": {}
+  },
+  "aiRunStartUnavailable": "背景執行目前無法使用。",
+  "@aiRunStartUnavailable": {
+    "description": "Chat row reason: background work cannot be used right now (channel refused or unavailable).",
+    "placeholders": {}
+  },
+  "aiProposalBackgroundUnavailable": "這筆寫入沒有執行：背景執行無法啟動。",
+  "@aiProposalBackgroundUnavailable": {
+    "description": "Proposal card after Approve: background work could not start for this approval and nothing was sent. Usually the run then pauses and the chat offers Continue.",
+    "placeholders": {}
+  },
+  "aiRunCleanupPending": "工作已暫停：還無法確認背景工作已經結束，在那之前不能繼續。",
+  "@aiRunCleanupPending": {
+    "description": "Chat card: the end of earlier background work is not confirmed (cleanup unconfirmed), so no AI work may continue, even in the foreground. No Continue button.",
+    "placeholders": {}
+  },
+  "aiRunCleanupRetry": "每次回到應用程式時都會再嘗試清理；要等清理確認完成，工作才能繼續。",
+  "@aiRunCleanupRetry": {
+    "description": "Chat card detail: the cleanup is retried each time the app returns to the foreground; work can continue only after a cleanup is confirmed (a failed retry keeps it blocked).",
+    "placeholders": {}
   }
 }

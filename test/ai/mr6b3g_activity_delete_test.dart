@@ -605,6 +605,7 @@ void main() {
       expect(prepared.groupIdentity!.workItemGid, _workItem);
       expect(prepared.hasCurrentGroupIdentity, isTrue);
       expect(prepared.bindingDigest, matches(RegExp(r'^[a-f0-9]{64}$')));
+      expect(prepared.journal.updatedAt, '2026-10-01T01:03:04.000Z');
       expect(prepared.writeKeys.single.parts, [
         mr6b3Account,
         'group:7',
@@ -985,9 +986,8 @@ void main() {
   test(
     'initial GraphQL actor mismatch cannot delete another actor own note',
     () async {
-      // Author and GraphQL actor agree on User/8, so the access-level
-      // author==actor check passes; only the REST account binding
-      // (user 7) refuses the delete.
+      // The activity author is User/8, so the REST user 7 check refuses
+      // before the GraphQL access query is made.
       final server = _Server()
         ..authorId = 'gid://gitlab/User/8'
         ..actorId = 'gid://gitlab/User/8';
@@ -1008,8 +1008,24 @@ void main() {
             'when the GraphQL actor equals the author',
       );
       expect(result, _refused('notOwnNote'));
+      expect(server.logicalReads['MobileWorkItemActivityEditAccess'], isNull);
     },
   );
+
+  test('access actor mismatch rejects the REST user own note', () async {
+    final server = _Server()
+      ..userId = 7
+      ..authorId = _actorId
+      ..actorId = 'gid://gitlab/User/8'
+      ..canDelete = true;
+    addTearDown(server.api.close);
+    await expectLater(
+      server.writePort.prepare(_request()),
+      throwsA(_refused('notOwnNote')),
+    );
+    expect(server.logicalReads['MobileWorkItemActivityEditAccess'], 1);
+    expect(server.mutations, 0);
+  });
 
   for (final drift in [
     'author',
@@ -1414,6 +1430,9 @@ void main() {
         expect(h.server.refreshes, 0);
         expect(h.server.mutations, 1);
         expect(h.budget.gitLabRequests, 29);
+        final durable = await h.readDurableJournal();
+        final entry = (durable['entries']! as List).single as Map;
+        expect(entry['updated_at'], '2026-10-01T01:03:04.000Z');
         expect(
           h.journal.entries(mr6b3Account).last.state,
           AiJournalState.succeeded,

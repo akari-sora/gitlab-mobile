@@ -2829,5 +2829,20 @@
   "aiAddGroupWorkItemAlreadyAdded": "Este elemento de trabajo ya está en esta conversación.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab no confirmó que este elemento de trabajo pertenezca directamente al grupo del enlace, o cambió durante la comprobación. No se añadió nada.",
   "aiAddGroupWorkItemUnavailable": "Solo puedes añadir un elemento de trabajo cuando la IA no está trabajando y ninguna escritura espera tu respuesta. No se añadió nada.",
-  "aiAddGroupWorkItemStale": "Esta comprobación está desactualizada, así que no se añadió nada. Vuelve a comprobar el enlace."
+  "aiAddGroupWorkItemStale": "Esta comprobación está desactualizada, así que no se añadió nada. Vuelve a comprobar el enlace.",
+  "aiRunPaused": "Trabajo en pausa",
+  "aiRunPausedForeground": "Trabajo en pausa: mantén la app abierta para continuar",
+  "aiRunPausedTimeout": "Trabajo en pausa: la comprobación previa a continuar superó el tiempo de espera",
+  "aiRunCanResume": "Puedes continuar este trabajo desde donde se detuvo",
+  "aiRunResume": "Continuar",
+  "aiRunResumeTitle": "¿Continuar el trabajo?",
+  "aiRunResumeDuplicate": "Es posible que una escritura de este trabajo ya se haya realizado. Si la AI vuelve a proponer el mismo cambio al continuar, se te pedirá que lo confirmes primero.",
+  "aiRunResumeRebilling": "Continuar envía de nuevo solicitudes al proveedor de AI, que podría volver a cobrarlas.",
+  "aiRunForegroundOnly": "El trabajo en segundo plano no se inició; el trabajo continúa solo mientras la app esté abierta.",
+  "aiRunStartDenied": "Esta vez el sistema no permitió el trabajo en segundo plano.",
+  "aiRunStartTimeout": "El trabajo en segundo plano no se inició a tiempo.",
+  "aiRunStartUnavailable": "El trabajo en segundo plano no está disponible ahora.",
+  "aiProposalBackgroundUnavailable": "Esta escritura no se realizó: el trabajo en segundo plano no pudo iniciarse.",
+  "aiRunCleanupPending": "Trabajo en pausa: aún no se ha confirmado que el trabajo en segundo plano terminó, y no se puede continuar hasta entonces.",
+  "aiRunCleanupRetry": "La limpieza se vuelve a intentar cada vez que vuelves a la app; el trabajo solo puede continuar cuando se confirme la limpieza."
 }

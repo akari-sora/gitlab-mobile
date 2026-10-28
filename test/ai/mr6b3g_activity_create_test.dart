@@ -68,9 +68,14 @@ Map<String, Object?> _note({String id = _anchor, String body = 'Anchor'}) => {
   },
 };
 
-Map<String, Object?> _thread({List<Object?>? notes, bool next = false}) => {
-  'id': _discussion,
-  'replyId': _replyId,
+Map<String, Object?> _thread({
+  String id = _discussion,
+  String replyId = _replyId,
+  List<Object?>? notes,
+  bool next = false,
+}) => {
+  'id': id,
+  'replyId': replyId,
   'createdAt': '2026-10-01T01:00:00Z',
   'notes': {
     'nodes': notes ?? [_note()],
@@ -172,6 +177,14 @@ final class _Server {
               'discussions': {
                 'nodes': paging == 'outer' && phase == 'activity'
                     ? <Object?>[]
+                    : paging == 'third' && phase == 'activityNext'
+                    ? [
+                        _thread(
+                          id: 'gid://gitlab/Discussion/second',
+                          replyId: 'gid://gitlab/Discussion/second',
+                          notes: [_note(id: 'gid://gitlab/Note/400')],
+                        ),
+                      ]
                     : [
                         _thread(
                           notes: paging == 'nested'
@@ -630,7 +643,15 @@ void main() {
         final f = await _Fixture.create();
         await expectLater(
           f.writer.prepare(f.request(op, extra: extra)),
-          throwsA(anyOf(isA<port.AiWriteRefused>(), isA<ApiFailure>())),
+          (extra.values.single! as int) <= 0
+              ? throwsA(
+                  isA<ApiFailure>().having(
+                    (e) => e.kind,
+                    'kind',
+                    FailureKind.validation,
+                  ),
+                )
+              : _refused('activityUnverifiable'),
         );
         expect(f.server.inputs, isEmpty);
         expect(f.server.counts['namespace'], isNull);
@@ -679,7 +700,7 @@ void main() {
             } else {
               await expectLater(
                 f.writer.prepare(f.request(op)),
-                throwsA(anyOf(isA<port.AiWriteRefused>(), isA<ApiFailure>())),
+                _refused('activityUnverifiable'),
               );
             }
             expect(f.server.counts[phase], 1);

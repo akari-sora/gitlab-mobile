@@ -2829,5 +2829,20 @@
   "aiAddGroupWorkItemAlreadyAdded": "Tato pracovní položka už v této konverzaci je.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab nepotvrdil, že tato pracovní položka patří přímo skupině z odkazu, nebo se během kontroly změnila. Nic nebylo přidáno.",
   "aiAddGroupWorkItemUnavailable": "Pracovní položku lze přidat jen tehdy, když AI nepracuje a žádný zápis na vás nečeká. Nic nebylo přidáno.",
-  "aiAddGroupWorkItemStale": "Výsledek kontroly je zastaralý, takže nic nebylo přidáno. Zkontrolujte odkaz znovu."
+  "aiAddGroupWorkItemStale": "Výsledek kontroly je zastaralý, takže nic nebylo přidáno. Zkontrolujte odkaz znovu.",
+  "aiRunPaused": "Práce pozastavena",
+  "aiRunPausedForeground": "Práce pozastavena: pro pokračování nechte aplikaci otevřenou",
+  "aiRunPausedTimeout": "Práce pozastavena: kontrola před pokračováním vypršela",
+  "aiRunCanResume": "V této práci můžete pokračovat tam, kde se zastavila",
+  "aiRunResume": "Pokračovat",
+  "aiRunResumeTitle": "Pokračovat v práci?",
+  "aiRunResumeDuplicate": "Zápis v této práci už mohl být proveden. Pokud AI po pokračování navrhne stejnou změnu znovu, nejprve vás požádáme o potvrzení.",
+  "aiRunResumeRebilling": "Pokračování znovu odešle požadavky poskytovateli AI, který je může znovu zpoplatnit.",
+  "aiRunForegroundOnly": "Práce na pozadí se nespustila; práce pokračuje jen tehdy, když je aplikace otevřená.",
+  "aiRunStartDenied": "Systém tentokrát nepovolil práci na pozadí.",
+  "aiRunStartTimeout": "Práce na pozadí se nespustila včas.",
+  "aiRunStartUnavailable": "Práce na pozadí teď není k dispozici.",
+  "aiProposalBackgroundUnavailable": "Tento zápis nebyl proveden: práci na pozadí se nepodařilo spustit.",
+  "aiRunCleanupPending": "Práce pozastavena: zatím není potvrzeno, že práce na pozadí skončila, a do té doby nelze pokračovat.",
+  "aiRunCleanupRetry": "Úklid se zkusí znovu pokaždé, když se vrátíte do aplikace; v práci lze pokračovat až po potvrzení úklidu."
 }
