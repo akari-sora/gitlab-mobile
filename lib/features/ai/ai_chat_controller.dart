@@ -92,9 +92,10 @@ final class _AiRunBudget {
   }
 
   Future<T> measureContext<T>(
-    Future<T> Function(void Function(int) beforeRead) load,
-  ) async {
-    final meter = RequestMeter();
+    Future<T> Function(void Function(int) beforeRead) load, {
+    required void Function() beforeRequest,
+  }) async {
+    final meter = RequestMeter(beforeRequest: beforeRequest);
     try {
       return await meter.runAsync(
         () => load((maximum) {
@@ -355,6 +356,11 @@ class AiChatController extends ChangeNotifier
       _backgroundGate?.lastStartResult;
 
   @override
+  AiBackgroundCleanupConfirmation get cleanupConfirmation =>
+      _backgroundGate?.cleanupConfirmation ??
+      AiBackgroundCleanupConfirmation.confirmed;
+
+  @override
   bool get canResumeRun =>
       canSend &&
       (_pendingPreparation != null || (_runner?.canResume ?? false)) &&
@@ -507,8 +513,6 @@ class AiChatController extends ChangeNotifier
   AiRunner? _runner;
   AiComplete Function(AiWireClient)? _completeForRunner;
 
-  /// Whether this run's page context delivery is already recorded (§3.1).
-  var _contextDeliveryRecorded = false;
   AiRunnerBinding? _binding;
   final List<AiChatItem> _items = [];
   final Expando<AiChatItem> _successors = Expando<AiChatItem>();
@@ -2650,20 +2654,14 @@ class AiChatController extends ChangeNotifier
         _notifyStream();
       },
       onRestorableResultCut: placeholders.markWholeFieldsCut,
+      onContextDelivered: (sent) {
+        if (current()) _context?.recordDelivery(placeholders, sent);
+      },
       onToolStarted: (call) {
         if (!current()) return;
         _executionStep++;
         _syncExecutionWork();
         _readConfidential |= _context?.readConfidential ?? false;
-        // §3.1: before any tool of this run can write, note whether the
-        // page context this run sent carried the description whole. A
-        // summary that cut it means no whole-field write of it.
-        if (!_contextDeliveryRecorded) {
-          if (_runner case final active?) {
-            _context!.recordDelivery(placeholders, active.sentContext);
-            _contextDeliveryRecorded = true;
-          }
-        }
         final index = _insertRunItem(
           AiToolRunItem(
             name: _toolName(call.name),
@@ -2967,9 +2965,6 @@ class AiChatController extends ChangeNotifier
       }
       final segment = runner.segment;
       final redactions = runner.lateRedactions;
-      // The context this run sends is recorded once, at its first tool, so
-      // a later whole read in the same run is the latest delivery.
-      _contextDeliveryRecorded = false;
       preparationTimer.cancel();
       preparing = false;
       enteredRunner = true;
@@ -3149,17 +3144,29 @@ class AiChatController extends ChangeNotifier
             refreshSecrets: _refreshSecrets,
             isCurrent: current,
             now: _now,
+            fresh: true,
             beforeRead: (maximum) {
               if (!current()) throw const ApiFailure(FailureKind.cancelled);
               beforeRead(maximum);
             },
           ),
+          beforeRequest: () {
+            if (!current()) throw const ApiFailure(FailureKind.cancelled);
+          },
         ),
         mayStart: current,
       ));
     } on AiExecutionPaused {
       rethrow;
-    } on Object {
+    } on Object catch (error) {
+      // A shared cooldown can refuse a replay before its operation meter runs.
+      // Retain both the execution pause and the cooldown for explicit resume.
+      if (error is ApiFailure &&
+          error.kind == FailureKind.rateLimited &&
+          _current(epoch) &&
+          isPreparing()) {
+        _checkPreparationExecution();
+      }
       if (_current(epoch) && isPreparing()) {
         _contextFailed = true;
         _blocker = AiChatBlocker.contextUnavailable;
@@ -3197,6 +3204,7 @@ class AiChatController extends ChangeNotifier
         groupScope: refreshed.groupScope,
         groupMetadata: refreshed.groupMetadata,
         field: previous.field,
+        titleField: previous.titleField,
         readConfidential: previous.readConfidential || refreshed.readConfidential,
         fetchedAt: refreshed.fetchedAt,
       );

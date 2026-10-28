@@ -428,6 +428,153 @@ void main() {
 
   group('independent inventory', () {
     test(
+      'includes offline namespace without interpreting its markers',
+      () async {
+        final storage = _MemorySecureStorage()
+          ..values.addAll({
+            ReadCacheKeyStore.offlineKeyName('key-only'): base64Url.encode(
+              Uint8List(32),
+            ),
+            ReadCacheKeyStore.offlineKeyName('bad-key'): 'broken',
+            ReadCacheKeyStore.offlineMarkerName('pending'): '{"version":99}',
+            ReadCacheKeyStore.offlineRefusalName('refused'): 'unknown-version',
+            'ai_history_key.v1.YQ==': 'untouched',
+          });
+        final store = ReadCacheKeyStore(storage);
+        final inventory = await store.readInventory();
+
+        expect(
+          ReadCacheKeyStore.offlineKeyName('a'),
+          'offline_repo_key.v1.YQ==',
+        );
+        expect(
+          ReadCacheKeyStore.offlineMarkerName('a'),
+          'offline_repo_clear_pending.v1.YQ==',
+        );
+        expect(
+          ReadCacheKeyStore.offlineRefusalName('a'),
+          'offline_refused.v1.YQ==',
+        );
+        expect(
+          inventory.accountKeys,
+          unorderedEquals(['key-only', 'bad-key', 'pending', 'refused']),
+        );
+        expect(inventory.pendingAccountKeys, ['pending']);
+        expect(inventory.containsAccount('bad-key'), isTrue);
+        expect(inventory.containsAccount('missing'), isFalse);
+        expect(inventory.isEmpty, isFalse);
+        expect(inventory.offlineKeys['key-only']!.value, Uint8List(32));
+        expect(
+          inventory.offlineKeys['bad-key']!.failure!.kind,
+          ReadCacheStoreFailureKind.malformed,
+        );
+        expect(inventory.malformedValues, {
+          ReadCacheKeyStore.offlineKeyName('bad-key'),
+        });
+        expect(inventory.offlineMarkers['pending']!.value, '{"version":99}');
+        expect(inventory.offlineRefusals['refused']!.value, 'unknown-version');
+        expect(storage.values['ai_history_key.v1.YQ=='], 'untouched');
+        expect(storage.writeCount, 0);
+        expect(storage.deleteCount, 0);
+      },
+    );
+
+    test(
+      'offline primitives distinguish unavailable and verify each deletion',
+      () async {
+        final storage = _MemorySecureStorage()
+          ..values.addAll({
+            ReadCacheKeyStore.offlineKeyName('a'): base64Url.encode(
+              Uint8List(32),
+            ),
+            ReadCacheKeyStore.offlineMarkerName('a'): 'pending',
+            ReadCacheKeyStore.offlineRefusalName('a'): 'refused',
+          });
+        final store = ReadCacheKeyStore(storage);
+        storage.failRead = true;
+        expect(
+          (await store.readOfflineKey('a')).status,
+          ReadCacheStoreReadStatus.unavailable,
+        );
+        expect(
+          (await store.readOfflineMarker('a')).status,
+          ReadCacheStoreReadStatus.unavailable,
+        );
+        expect(
+          (await store.readOfflineRefusal('a')).status,
+          ReadCacheStoreReadStatus.unavailable,
+        );
+        storage.failRead = false;
+        storage.retainAfterDelete = true;
+        for (final operation in <Future<void> Function()>[
+          () => store.deleteOfflineKey('a'),
+          () => store.deleteOfflineMarker('a'),
+          () => store.deleteOfflineRefusal('a'),
+        ]) {
+          await expectLater(
+            operation(),
+            throwsA(_failure(ReadCacheStoreFailureKind.readbackMismatch)),
+          );
+        }
+        storage.retainAfterDelete = false;
+        await store.deleteOfflineKey('a');
+        await store.deleteOfflineMarker('a');
+        await store.deleteOfflineRefusal('a');
+        expect(
+          (await store.readOfflineKey('a')).status,
+          ReadCacheStoreReadStatus.absent,
+        );
+        expect(
+          (await store.readOfflineMarker('a')).status,
+          ReadCacheStoreReadStatus.absent,
+        );
+        expect(
+          (await store.readOfflineRefusal('a')).status,
+          ReadCacheStoreReadStatus.absent,
+        );
+        expect((await store.readInventory()).isEmpty, isTrue);
+        storage.failReadAll = true;
+        expect((await store.readInventory()).isEmpty, isFalse);
+      },
+    );
+
+    test(
+      'malformed offline names are exact and cannot address another namespace',
+      () async {
+        final names = [
+          '${ReadCacheKeyStore.offlineKeyPrefix}%%%',
+          '${ReadCacheKeyStore.offlineMarkerPrefix}YQ',
+          ReadCacheKeyStore.offlineRefusalPrefix,
+        ];
+        final canonical = [
+          ReadCacheKeyStore.offlineKeyName('a'),
+          ReadCacheKeyStore.offlineMarkerName('a'),
+          ReadCacheKeyStore.offlineRefusalName('a'),
+        ];
+        final storage = _MemorySecureStorage()
+          ..values.addEntries(
+            [...names, ...canonical].map((name) => MapEntry(name, 'value')),
+          )
+          ..values['ai_history_key.v1.YQ=='] = 'untouched';
+        final store = ReadCacheKeyStore(storage);
+        expect((await store.readInventory()).malformedNames, names.toSet());
+        for (final name in canonical) {
+          expect(
+            () => store.deleteInventoryName(name),
+            throwsA(_failure(ReadCacheStoreFailureKind.invalidValue)),
+          );
+        }
+        for (final name in names) {
+          await store.deleteInventoryName(name);
+        }
+        for (final name in canonical) {
+          expect(storage.values[name], 'value');
+        }
+        expect(storage.values['ai_history_key.v1.YQ=='], 'untouched');
+      },
+    );
+
+    test(
       'lists only two prefixes and classifies malformed names and values',
       () async {
         final key = Uint8List.fromList(List<int>.generate(32, (i) => i));

@@ -8422,120 +8422,225 @@ final class AppStrings {
   /// 請先完成或關閉目前的編輯，再開啟通知
   String get aiRunNoticeFinishEditFirst => language._messages[2775];
 
+  /// 儲存與快取
+  String get storageAndCacheLabel => language._messages[2776];
+
+  /// 離線快取
+  String get offlineCacheLabel => language._messages[2777];
+
+  /// 你看過的部分內容（符合條件者）會加密保存在這台裝置。網路不穩時可先顯示上次的版本，並在背景更新。開啟 App 時仍需先成功驗證登入。登出、切換或移除帳號時會清除。
+  String get offlineCacheDescription => language._messages[2778];
+
+  /// 使用中
+  String get offlineCacheStatusOn => language._messages[2779];
+
+  /// 已關閉
+  String get offlineCacheStatusOff => language._messages[2780];
+
+  /// 下次開啟 App 或切換帳號後開始保存
+  String get offlineCacheStatusWaiting => language._messages[2781];
+
+  /// 正在清除
+  String get offlineCacheStatusCleaning => language._messages[2782];
+
+  /// 安全儲存空間無法使用，暫不保存
+  String get offlineCacheStatusUnavailable => language._messages[2783];
+
+  /// 無法讀取設定，這次使用期間不保存
+  String get offlineCacheStatusSettingUnreadable => language._messages[2784];
+
+  /// 清除未完成，暫停使用
+  String get offlineCacheStatusCleanupPending => language._messages[2785];
+
+  /// 已使用 {size}
+  String offlineCacheSize(Object? size) => _format(language, language._messages[2786], {'size': size});
+
+  /// 清除離線快取
+  String get offlineCacheClearAction => language._messages[2787];
+
+  /// 清除離線快取？
+  String get offlineCacheClearConfirmTitle => language._messages[2788];
+
+  /// 會刪除這台裝置上此帳號的離線快取。GitLab 上的資料不受影響。
+  String get offlineCacheClearConfirmDetail => language._messages[2789];
+
+  /// 已清除離線快取
+  String get offlineCacheCleared => language._messages[2790];
+
+  /// 已關閉離線快取並清除資料
+  String get offlineCacheTurnedOff => language._messages[2791];
+
+  /// 無法確認離線快取已關閉並清除。這次使用期間保持關閉，請重試清除。
+  String get offlineCacheTurnOffUnconfirmed => language._messages[2792];
+
+  /// 無法儲存設定。離線快取保持關閉。
+  String get offlineCacheTurnOnFailed => language._messages[2793];
+
+  /// 重試清除
+  String get offlineCacheRetryCleanup => language._messages[2794];
+
+  /// 變更尚未送出
+  String get readCacheBlockedTitle => language._messages[2795];
+
+  /// 離線快取無法清除，所以這項變更沒有送到 GitLab。請先重試清除，再重新送出。
+  String get readCacheBlockedDetail => language._messages[2796];
+
+  /// 離線快取待清除
+  String get readCachePreservedTitle => language._messages[2797];
+
+  /// 操作的結果不受影響。離線快取已暫停使用，清除完成後才會恢復。
+  String get readCachePreservedDetail => language._messages[2798];
+
+  /// 離線快取已暫停
+  String get readCachePrivacyTitle => language._messages[2799];
+
+  /// 畫面上是剛從 GitLab 取得的內容。舊的離線快取還沒清除，已暫停使用。
+  String get readCachePrivacyDetail => language._messages[2800];
+
+  /// 無法清除離線快取
+  String get readCacheCleanupFailedTitle => language._messages[2801];
+
+  /// 離線快取尚未清除。帳號已保留，請重試移除。
+  String get readCacheRetainedDetail => language._messages[2802];
+
+  /// 離線快取尚未清除
+  String get readCacheSignedOutTitle => language._messages[2803];
+
+  /// 已登出，但這台裝置上的離線快取還沒清除完成。可以重試清除。
+  String get readCacheSignedOutDetail => language._messages[2804];
+
+  /// 離線快取已暫停使用，重試清除完成後才會恢復。
+  String get readCacheClosedDetail => language._messages[2805];
+
+  /// Log 太長，前段已截掉，只顯示最後一部分。
+  String get readCacheLogTruncated => language._messages[2806];
+
+  /// 上次的清除完成後，才能重新開啟離線快取。
+  String get offlineCacheOnNeedsCleanup => language._messages[2807];
+
+  /// 無法儲存設定。離線快取已清除，這次使用期間保持關閉。
+  String get offlineCacheOffNotSaved => language._messages[2808];
+
+  /// 已使用約 {size}
+  String offlineCacheSizeApprox(Object? size) => _format(language, language._messages[2809], {'size': size});
+
+  /// 已使用：無法確認
+  String get offlineCacheSizeUnknown => language._messages[2810];
+
   /// 加入群組工作項目
-  String get aiAddGroupWorkItem => language._messages[2776];
+  String get aiAddGroupWorkItem => language._messages[2811];
 
   /// 貼上 {instance} 上直接屬於群組的工作項目連結。此次新增的授權只涵蓋這個工作項目及其留言，不包含群組的其他工作項目或其中的專案；對話原有的範圍不變。
-  String aiAddGroupWorkItemIntro(Object? instance) => _format(language, language._messages[2777], {'instance': instance});
+  String aiAddGroupWorkItemIntro(Object? instance) => _format(language, language._messages[2812], {'instance': instance});
 
   /// 工作項目連結
-  String get aiAddGroupWorkItemLink => language._messages[2778];
+  String get aiAddGroupWorkItemLink => language._messages[2813];
 
   /// 檢查
-  String get aiAddGroupWorkItemCheck => language._messages[2779];
+  String get aiAddGroupWorkItemCheck => language._messages[2814];
 
   /// 檢查中…
-  String get aiAddGroupWorkItemChecking => language._messages[2780];
+  String get aiAddGroupWorkItemChecking => language._messages[2815];
 
   /// AI 對它提出的修改，仍依這個對話的寫入方式確認或執行。你可以隨時在輸入框上方移除它。
-  String get aiAddGroupWorkItemConfirmDetail => language._messages[2781];
+  String get aiAddGroupWorkItemConfirmDetail => language._messages[2816];
 
   /// 加入後，這個對話的「{level}」會結束；需要時請重新選擇。
-  String aiAddGroupWorkItemGrantEnds(Object? level) => _format(language, language._messages[2782], {'level': level});
+  String aiAddGroupWorkItemGrantEnds(Object? level) => _format(language, language._messages[2817], {'level': level});
 
   /// 加入對話
-  String get aiAddGroupWorkItemConfirm => language._messages[2783];
+  String get aiAddGroupWorkItemConfirm => language._messages[2818];
 
   /// 已加入 {path} #{iid}
-  String aiAddedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[2784], {'path': path, 'iid': iid});
+  String aiAddedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[2819], {'path': path, 'iid': iid});
 
   /// 已加入；新增的授權只涵蓋此項及其留言
-  String get aiAddedGroupWorkItemHint => language._messages[2785];
+  String get aiAddedGroupWorkItemHint => language._messages[2820];
 
   /// 從對話中移除
-  String get aiRemoveGroupWorkItem => language._messages[2786];
+  String get aiRemoveGroupWorkItem => language._messages[2821];
 
   /// 這不是完整的群組工作項目連結。請在 GitLab 開啟該工作項目，複製頁面網址後再貼上。沒有加入任何項目。
-  String get aiAddGroupWorkItemMalformed => language._messages[2787];
+  String get aiAddGroupWorkItemMalformed => language._messages[2822];
 
   /// 這個連結不在 {instance} 上，只能加入目前帳號所在 GitLab 的工作項目。沒有加入任何項目。
-  String aiAddGroupWorkItemOtherInstance(Object? instance) => _format(language, language._messages[2788], {'instance': instance});
+  String aiAddGroupWorkItemOtherInstance(Object? instance) => _format(language, language._messages[2823], {'instance': instance});
 
   /// 這個連結屬於專案。這裡只能加入直接屬於群組的工作項目。沒有加入任何項目。
-  String get aiAddGroupWorkItemProjectLink => language._messages[2789];
+  String get aiAddGroupWorkItemProjectLink => language._messages[2824];
 
   /// 這個群組連結沒有指向單一工作項目。沒有加入任何項目。
-  String get aiAddGroupWorkItemNotWorkItem => language._messages[2790];
+  String get aiAddGroupWorkItemNotWorkItem => language._messages[2825];
 
   /// 這個工作項目已在這個對話中。
-  String get aiAddGroupWorkItemAlreadyAdded => language._messages[2791];
+  String get aiAddGroupWorkItemAlreadyAdded => language._messages[2826];
 
   /// GitLab 沒有確認這個工作項目直接屬於連結中的群組，或檢查期間它有變動。沒有加入任何項目。
-  String get aiAddGroupWorkItemNotGroupOwned => language._messages[2792];
+  String get aiAddGroupWorkItemNotGroupOwned => language._messages[2827];
 
   /// AI 正在工作或有寫入等你處理時不能加入。沒有加入任何項目。
-  String get aiAddGroupWorkItemUnavailable => language._messages[2793];
+  String get aiAddGroupWorkItemUnavailable => language._messages[2828];
 
   /// 檢查結果已過期，沒有加入任何項目。請重新檢查連結。
-  String get aiAddGroupWorkItemStale => language._messages[2794];
+  String get aiAddGroupWorkItemStale => language._messages[2829];
 
   /// 工作已暫停
-  String get aiRunPaused => language._messages[2795];
+  String get aiRunPaused => language._messages[2830];
 
   /// 工作已暫停：要開著應用程式才能繼續
-  String get aiRunPausedForeground => language._messages[2796];
+  String get aiRunPausedForeground => language._messages[2831];
 
   /// 工作已暫停：繼續前的檢查逾時
-  String get aiRunPausedTimeout => language._messages[2797];
+  String get aiRunPausedTimeout => language._messages[2832];
 
   /// 可以從中斷的地方繼續這項工作
-  String get aiRunCanResume => language._messages[2798];
+  String get aiRunCanResume => language._messages[2833];
 
   /// 繼續執行
-  String get aiRunResume => language._messages[2799];
+  String get aiRunResume => language._messages[2834];
 
   /// 要繼續執行嗎？
-  String get aiRunResumeTitle => language._messages[2800];
+  String get aiRunResumeTitle => language._messages[2835];
 
   /// 這項工作的寫入可能已經完成。繼續後若 AI 再提出相同的變更，會先請你確認。
-  String get aiRunResumeDuplicate => language._messages[2801];
+  String get aiRunResumeDuplicate => language._messages[2836];
 
   /// 繼續會再向 AI 供應商送出請求，可能會再次計費。
-  String get aiRunResumeRebilling => language._messages[2802];
+  String get aiRunResumeRebilling => language._messages[2837];
 
   /// 背景執行沒有啟動，工作只會在應用程式開啟時繼續。
-  String get aiRunForegroundOnly => language._messages[2803];
+  String get aiRunForegroundOnly => language._messages[2838];
 
   /// 系統這次不允許在背景執行。
-  String get aiRunStartDenied => language._messages[2804];
+  String get aiRunStartDenied => language._messages[2839];
 
   /// 背景執行沒有及時啟動。
-  String get aiRunStartTimeout => language._messages[2805];
+  String get aiRunStartTimeout => language._messages[2840];
 
   /// 背景執行目前無法使用。
-  String get aiRunStartUnavailable => language._messages[2806];
+  String get aiRunStartUnavailable => language._messages[2841];
 
   /// 這筆寫入沒有執行：背景執行無法啟動。
-  String get aiProposalBackgroundUnavailable => language._messages[2807];
+  String get aiProposalBackgroundUnavailable => language._messages[2842];
 
   /// 工作已暫停：還無法確認背景工作已經結束，在那之前不能繼續。
-  String get aiRunCleanupPending => language._messages[2808];
+  String get aiRunCleanupPending => language._messages[2843];
 
-  /// 下次回到應用程式時會再確認；確認後可以傳送新訊息。
-  String get aiRunCleanupRetry => language._messages[2809];
+  /// 每次回到應用程式時都會再嘗試清理；要等清理確認完成，工作才能繼續。
+  String get aiRunCleanupRetry => language._messages[2844];
 
   /// AI 寫入被中斷
-  String get aiRecoveryTitle => language._messages[2810];
+  String get aiRecoveryTitle => language._messages[2845];
 
   /// 知道了
-  String get aiRecoveryOk => language._messages[2811];
+  String get aiRecoveryOk => language._messages[2846];
 
   /// 有 {count} 筆 AI 寫入在應用程式上次關閉時正在送出，結果未知。請到 GitLab 查看是否已經完成；AI 之後若提出相同的寫入，會先請你確認。
-  String aiRecoveryUncertain(Object? count) => _format(language, language._messages[2812], {'count': count});
+  String aiRecoveryUncertain(Object? count) => _format(language, language._messages[2847], {'count': count});
 
   /// 有 {count} 筆 AI 寫入在送出前就被中斷，沒有送到 GitLab。
-  String aiRecoveryNotExecuted(Object? count) => _format(language, language._messages[2813], {'count': count});
+  String aiRecoveryNotExecuted(Object? count) => _format(language, language._messages[2848], {'count': count});
 
   /// 這些寫入不會自動重新送出，相關的 AI 工作也不會恢復。
-  String get aiRecoveryNoResend => language._messages[2814];
+  String get aiRecoveryNoResend => language._messages[2849];
 }

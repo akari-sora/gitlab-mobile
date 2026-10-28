@@ -5,6 +5,7 @@ import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/features/projects/project_controller.dart';
 import 'support/fake_adapter.dart';
 
@@ -12,6 +13,175 @@ Matcher failure(FailureKind kind) =>
     isA<ApiFailure>().having((e) => e.kind, 'kind', kind);
 
 void main() {
+  test('an admitted UI file read completes HEAD and GET after its cache '
+      'admission predicate becomes false', () async {
+    final enteredHead = Completer<void>();
+    final heldHead = Completer<ResponseBody>();
+    final adapter = FakeAdapter((request) {
+      if (request.method == 'HEAD') {
+        enteredHead.complete();
+        return heldHead.future;
+      }
+      return ResponseBody.fromString('synthetic file', 200);
+    });
+    final api = testApi(adapter);
+    api.bindReadCache('${api.instance.key}#7', 1);
+    addTearDown(api.close);
+    var current = true;
+    final result = CachedRead.run(
+      () => api.textFile(8, 'b' * 40, 'README.md'),
+      mayStart: () => current,
+    );
+    await enteredHead.future.timeout(const Duration(seconds: 5));
+    current = false;
+    heldHead.complete(
+      ResponseBody.fromString(
+        '',
+        200,
+        headers: {
+          'x-gitlab-size': ['14'],
+        },
+      ),
+    );
+    expect(await result, 'synthetic file');
+    expect(adapter.requests.map((request) => request.method), ['HEAD', 'GET']);
+    expect(
+      adapter.requests.every(
+        (request) => request.headers['PRIVATE-TOKEN'] == 'synthetic-test-token',
+      ),
+      isTrue,
+    );
+  });
+
+  for (final pauseAt in ['401 response', 'token response']) {
+    test('an admitted UI read refreshes and replays when its cache predicate '
+        'changes at $pauseAt', () async {
+      final issueEntered = Completer<void>();
+      final held401 = Completer<ResponseBody>();
+      final tokenEntered = Completer<void>();
+      final heldToken = Completer<ResponseBody>();
+      var issueRequests = 0;
+      var treeNetworkReads = 0;
+      var diskReads = 0;
+      final now = DateTime.utc(2026, 10, 23, 8);
+      final fetchedAt = now.subtract(const Duration(hours: 2));
+      const sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final apiAdapter = FakeAdapter((request) {
+        final path = request.uri.path;
+        if (path.endsWith('/issues/2')) {
+          issueRequests++;
+          if (issueRequests == 1) {
+            expect(request.headers['Authorization'], 'Bearer old-access');
+            issueEntered.complete();
+            return held401.future;
+          }
+          expect(request.headers['Authorization'], 'Bearer new-access');
+          return jsonResponse({'id': 2, 'title': 'after refresh'});
+        }
+        if (path.endsWith('/repository/branches/main')) {
+          return jsonResponse({
+            'name': 'main',
+            'commit': {'id': sha},
+          });
+        }
+        if (path.endsWith('/repository/tree')) {
+          treeNetworkReads++;
+          return jsonResponse(const <Object?>[]);
+        }
+        fail('unexpected API request ${request.uri}');
+      });
+      final tokenAdapter = FakeAdapter((request) {
+        expect(request.method, 'POST');
+        expect(request.headers['Authorization'], isNull);
+        expect(request.headers['PRIVATE-TOKEN'], isNull);
+        final data = request.data;
+        final body = data is Map
+            ? data.map((key, value) => MapEntry('$key', '$value'))
+            : Uri.splitQueryString(data as String);
+        expect(body['grant_type'], 'refresh_token');
+        expect(body['refresh_token'], 'old-refresh');
+        tokenEntered.complete();
+        return heldToken.future;
+      });
+      final instance = GitLabInstance.parse('https://example.com/gitlab');
+      OAuthCredential? persisted;
+      final api = GitLabApi(
+        instance: instance,
+        credential: const OAuthCredential(
+          accessToken: 'old-access',
+          refreshToken: 'old-refresh',
+          clientId: 'synthetic-client',
+        ),
+        dio: Dio()..httpClientAdapter = apiAdapter,
+        oauth: OAuthTokenClient(
+          instance: instance,
+          clientId: 'synthetic-client',
+          dio: Dio()..httpClientAdapter = tokenAdapter,
+        ),
+        onOAuthRotated: (rotated) async => persisted = rotated,
+        readCacheClock: () => now,
+        readCacheSource: (uri, _) async {
+          if (!uri.path.endsWith('/repository/tree')) return null;
+          diskReads++;
+          return CacheDiskEntry(
+            value: ApiPage<Json>(const <Json>[
+              {
+                'id': sha,
+                'name': 'README.md',
+                'type': 'blob',
+                'path': 'README.md',
+              },
+            ]),
+            fetchedAt: fetchedAt,
+            responseBytes: 64,
+          );
+        },
+      );
+      api.bindReadCache('${instance.key}#7', 1);
+      addTearDown(api.close);
+      var current = true;
+      final result = CachedRead.run(
+        () => api.cachedRecord(<String>['projects', '1', 'issues', '2']),
+        mayStart: () => current,
+      );
+      await issueEntered.future.timeout(const Duration(seconds: 5));
+      if (pauseAt == '401 response') current = false;
+      held401.complete(jsonResponse({'message': 'expired'}, status: 401));
+      await tokenEntered.future.timeout(const Duration(seconds: 5));
+      if (pauseAt == 'token response') current = false;
+      heldToken.complete(
+        jsonResponse({
+          'access_token': 'new-access',
+          'refresh_token': 'new-refresh',
+          'token_type': 'bearer',
+        }),
+      );
+      final read = await result;
+      expect(read.value['title'], 'after refresh');
+      expect(issueRequests, 2);
+      expect(tokenAdapter.requests, hasLength(1));
+      expect(persisted?.accessToken, 'new-access');
+      expect(persisted?.refreshToken, 'new-refresh');
+
+      await api.cachedRecord(<String>[
+        'projects',
+        '1',
+        'repository',
+        'branches',
+        'main',
+      ]);
+      final tree = await api.cachedRecords(
+        <String>['projects', '1', 'repository', 'tree'],
+        query: const <String, String>{'ref': sha, 'path': '', 'per_page': '50'},
+      );
+      expect(tree.lineage, CacheLineage.disk);
+      expect(tree.fetchedAt, fetchedAt);
+      expect(tree.value.items.single['name'], 'README.md');
+      expect(diskReads, 1);
+      expect(treeNetworkReads, 0);
+    });
+  }
+
   test(
     'A04 GET /user validates identity and sends token only in header',
     () async {

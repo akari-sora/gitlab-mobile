@@ -11,7 +11,59 @@ import '../../core/read_cache_files.dart';
 import 'read_cache_key_store.dart';
 import 'read_cache_settings_store.dart';
 
-enum ReadCacheDiskState { closed, ready, cleaning, disabled, unavailable }
+enum ReadCacheDiskState {
+  closed,
+  offlineReadOnly,
+  ready,
+  cleaning,
+  disabled,
+  unavailable,
+}
+
+/// C2 owns account cleanup even when the offline implementation is not loaded.
+/// The registered participant owns its epochs, workers and maintenance lock.
+/// [fence] and [open] must change admission synchronously. [stopAndWait] must
+/// acknowledge quiescence (including main-isolate commits), using stop/ack/kill
+/// for workers; a timeout is never permission to delete under a live writer.
+abstract interface class ReadCacheNamespace {
+  String get name;
+  void fence(String accountKey);
+  Future<void> stopAndWait(String accountKey);
+  Future<void> deleteKey(String accountKey);
+  Future<void> deleteDirectory(String accountKey);
+  void open(DiskBinding binding, ReadCacheDiskState mode);
+
+  /// An unreadable marker must throw, rather than report absence.
+  Future<bool> hasMarker(String accountKey);
+}
+
+/// C3a supplies authoritative HTTP classification and project epoch/deletion.
+/// Ordinary C2 eviction, including no-store, is not project revocation.
+abstract interface class ReadCacheNamespaceSecurity {
+  DiskInvalidationFence invalidatePermission(
+    DiskBinding binding,
+    int projectId,
+  );
+}
+
+enum ReadCacheSettingChangeResult {
+  complete,
+  cleanupPending,
+  storageUnavailable,
+}
+
+/// Device-wide cleanup survives account changes and failed marker writes in
+/// this process. A stored off preference makes startup repeat the whole sweep.
+final class ReadCacheSettingsSnapshot {
+  const ReadCacheSettingsSnapshot({
+    required this.setting,
+    required this.deviceOffPending,
+    required this.deviceOffInFlight,
+  });
+
+  final ReadCacheSettingsState setting;
+  final bool deviceOffPending, deviceOffInFlight;
+}
 
 /// Schedulers return a cancellation function. Tests can advance the same clock
 /// used for queue deadlines and caller timeouts without delaying native I/O.
@@ -25,9 +77,20 @@ final class ReadCacheDiskStats {
     this.dropped, {
     this.retainedEntries = 0,
     this.unindexedEntries = 0,
+    this.retainedBytes = 0,
+    this.diskUsageBytes,
   });
   final int queuedEntries, queuedBytes, dropped;
   final int retainedEntries, unindexedEntries;
+
+  /// Encrypted bytes of the indexed entries known to this process (C2e, read
+  /// only for the settings page). No names, keys or paths.
+  final int retainedBytes;
+
+  /// Confirmed whole-device usage, or null when it cannot be established.
+  /// Currently only a confirmed empty device sweep reports a number (zero).
+  /// Indexed entry bytes must never be used as a fallback for this value.
+  final int? diskUsageBytes;
 }
 
 /// The only owner of read-cache keys, intents and transactions. No production
@@ -75,10 +138,30 @@ final class ReadCacheDiskCoordinator {
   bool get configured => _keys != null && _files != null && _settings != null;
   bool get startupRecovered => _domain.recovered;
   bool get controlsInstalled => _domain.controlsInstalled;
+  String? get diskRetainedAccountKey => _domain.diskRetainedAccountKey;
   ReadCacheDiskState state(String accountKey) => _account(accountKey).state;
   ReadCacheNotice? notice(DiskBinding binding) => _notices[binding];
   List<ReadCacheNotice> get signedOutNotices =>
       List.unmodifiable(_signedOut.values);
+
+  /// Read-only C2e accessors: the login retry needs each signed-out binding,
+  /// and the settings page shows the effective device preference.
+  Map<DiskBinding, ReadCacheNotice> get signedOutSnapshot =>
+      Map.unmodifiable(_signedOut);
+  ReadCacheSettingsState get setting => _domain.setting;
+  bool get deviceOffPending =>
+      _domain.deviceOffPending || _domain.deviceOffOperations > 0;
+
+  /// Read-only (C2e size line): a device-off sweep, or any account's full
+  /// clear, is in progress or unfinished anywhere on this device.
+  bool get cleanupPendingAnywhere =>
+      deviceOffPending ||
+      _domain.accounts.values.any((account) => account.intent?.full ?? false);
+  ReadCacheSettingsSnapshot get settingsSnapshot => ReadCacheSettingsSnapshot(
+    setting: setting,
+    deviceOffPending: deviceOffPending,
+    deviceOffInFlight: _domain.deviceOffOperations > 0,
+  );
 
   ReadCacheDiskStats get stats => ReadCacheDiskStats(
     _domain.accounts.values.fold(0, (n, a) => n + a.pending.length),
@@ -92,6 +175,13 @@ final class ReadCacheDiskCoordinator {
       0,
       (n, a) => n + a.unindexed.length,
     ),
+    retainedBytes: _domain.accounts.values.fold(
+      0,
+      (n, a) => a.entries.values.fold(n, (m, r) => m + r.index.sizeBytes),
+    ),
+    diskUsageBytes: configured && !deviceOffPending
+        ? _domain.diskUsageBytes
+        : null,
   );
 
   void configure({
@@ -106,6 +196,174 @@ final class ReadCacheDiskCoordinator {
   }
 
   void installUserControls() => _domain.controlsInstalled = true;
+
+  /// Storage cleanup does not depend on registration, so startup can erase
+  /// old offline data before C3 constructs its runtime participant.
+  void register(ReadCacheNamespace namespace) {
+    if (namespace.name != 'offline_repo') {
+      throw ArgumentError('Unsupported read-cache namespace');
+    }
+    final previous = _domain.namespace;
+    if (previous != null && !identical(previous, namespace)) {
+      throw StateError('Read-cache namespace already registered');
+    }
+    _domain.namespace = namespace;
+    for (final account in _domain.accounts.values) {
+      namespace.fence(account.key);
+    }
+    // A late participant stays fenced until activation checks both markers.
+  }
+
+  void retainDiskAccount(String? key, {required Object sessionOwner}) {
+    if (!ownsStartupSession(sessionOwner)) return;
+    if (key != null) _account(key);
+    _domain.diskRetainedAccountKey = key;
+  }
+
+  DiskInvalidationFence invalidateProjectPermission(
+    DiskBinding binding,
+    int projectId,
+  ) {
+    if (projectId <= 0) throw ArgumentError.value(projectId, 'projectId');
+    if (binding != _domain.active && binding != _domain.offlineBinding) {
+      final stale = _Fence()..revoke();
+      stale.finish(Future.value(_none), Future.value());
+      return stale;
+    }
+    final namespace = _domain.namespace;
+    if (namespace is ReadCacheNamespaceSecurity) {
+      return (namespace as ReadCacheNamespaceSecurity).invalidatePermission(
+        binding,
+        projectId,
+      );
+    }
+    namespace?.fence(binding.accountKey);
+    throw StateError('Namespace security handler unavailable');
+  }
+
+  /// Every verified activation installs all fences before publishing its new
+  /// binding. Deletion remains on the shared asynchronous I/O lane.
+  void fenceOtherAccounts(
+    DiskBinding target, {
+    Object? sessionOwner,
+    Set<String> accountKeys = const {},
+  }) {
+    if (sessionOwner != null && !ownsStartupSession(sessionOwner)) return;
+    for (final key in accountKeys) {
+      _account(key);
+    }
+    final retained = diskRetainedAccountKey;
+    if (retained != null) _account(retained);
+    _account(target.accountKey);
+    for (final account in List.of(_domain.accounts.values)) {
+      if (account.key == target.accountKey ||
+          (account.cleanup && account.intent?.accountWide == true)) {
+        continue;
+      }
+      final binding = _domain.active?.accountKey == account.key
+          ? _domain.active!
+          : DiskBinding(accountKey: account.key, generation: 0);
+      unawaited(clear(binding, ReadCacheCleanupOperation.signOut));
+    }
+  }
+
+  /// Read-only C3 qualification while C2 is closed. An absent/unavailable key
+  /// never repairs storage, creates a key, or deletes existing ciphertext.
+  Future<ReadCacheStoreRead<Uint8List>> readOfflineEligibilityKey(
+    String accountKey,
+  ) async {
+    final account = _account(accountKey);
+    final epoch = account.epoch;
+    bool current() =>
+        configured &&
+        _domain.recovered &&
+        _domain.setting == ReadCacheSettingsState.enabled &&
+        !deviceOffPending &&
+        _domain.preferenceChanges == 0 &&
+        diskRetainedAccountKey == accountKey &&
+        account.state == ReadCacheDiskState.closed &&
+        account.epoch == epoch &&
+        account.intent?.accountWide != true;
+    const blocked = ReadCacheStoreRead<Uint8List>.unavailable(
+      ReadCacheStoreFailure(
+        ReadCacheStoreFailureKind.unavailable,
+        'offlineEligibility',
+      ),
+    );
+    if (!current()) return blocked;
+    final marker = await _keys!.readMarker(accountKey);
+    final offlineMarker = await _keys!.readOfflineMarker(accountKey);
+    final refused = await _keys!.readOfflineRefusal(accountKey);
+    if (!current() ||
+        marker.status != ReadCacheStoreReadStatus.absent ||
+        offlineMarker.status != ReadCacheStoreReadStatus.absent ||
+        refused.status != ReadCacheStoreReadStatus.absent) {
+      return blocked;
+    }
+    try {
+      if (await _domain.namespace?.hasMarker(accountKey) ?? false) {
+        return blocked;
+      }
+    } on Object {
+      return blocked;
+    }
+    final key = await _keys!.readOfflineKey(accountKey);
+    return current() ? key : blocked;
+  }
+
+  /// Reserved for the current SessionController's C3c `_enterOffline` path.
+  /// This changes cache admission only; it creates no API client or UI mode.
+  Future<bool> enterOfflineReadOnly(
+    DiskBinding binding, {
+    required Object sessionOwner,
+  }) async {
+    if (!ownsStartupSession(sessionOwner) ||
+        binding.generation <= _domain.revokedThrough ||
+        binding.generation <= _domain.highestGeneration) {
+      return false;
+    }
+    final account = _account(binding.accountKey);
+    final epoch = account.epoch;
+    final key = await readOfflineEligibilityKey(binding.accountKey);
+    if (!key.isFound ||
+        !configured ||
+        !_domain.recovered ||
+        deviceOffPending ||
+        _domain.preferenceChanges != 0 ||
+        _domain.setting != ReadCacheSettingsState.enabled ||
+        diskRetainedAccountKey != binding.accountKey ||
+        account.epoch != epoch ||
+        account.state != ReadCacheDiskState.closed ||
+        account.cleanup ||
+        account.intent != null ||
+        binding.generation <= _domain.revokedThrough ||
+        !ownsStartupSession(sessionOwner) ||
+        binding.generation <= _domain.highestGeneration) {
+      return false;
+    }
+    account.epoch++;
+    account.state = ReadCacheDiskState.offlineReadOnly;
+    _domain.highestGeneration = binding.generation;
+    _domain.offlineBinding = binding;
+    _domain.namespace?.open(binding, ReadCacheDiskState.offlineReadOnly);
+    return true;
+  }
+
+  void closeOfflineReadOnly(
+    DiskBinding binding, {
+    required Object sessionOwner,
+  }) {
+    if (!ownsStartupSession(sessionOwner) ||
+        _domain.offlineBinding != binding) {
+      return;
+    }
+    final account = _account(binding.accountKey);
+    account.epoch++;
+    account.state = ReadCacheDiskState.closed;
+    _domain.revokedThrough = max(_domain.revokedThrough, binding.generation);
+    _domain.offlineBinding = null;
+    _domain.namespace?.fence(binding.accountKey);
+  }
 
   void Function() subscribe(ReadCacheNoticeSink sink) {
     _subscribers.add(sink);
@@ -198,6 +456,7 @@ final class ReadCacheDiskCoordinator {
     )) {
       release();
     }
+    if (ownsStartupSession(owner)) _domain.startupOwner = null;
   }
 
   _Account _account(String key) =>
@@ -230,6 +489,9 @@ final class ReadCacheDiskCoordinator {
     bool clearingRoot = false,
     bool recoverySweep = false,
   }) async {
+    // Any file operation invalidates the previous empty-root proof. Failure
+    // cannot turn cleared in-memory indexes into a claim of zero disk usage.
+    _domain.diskUsageBytes = null;
     try {
       return await action();
     } on Object catch (error) {
@@ -321,6 +583,7 @@ final class ReadCacheDiskCoordinator {
       _domain.controlsInstalled &&
       _domain.foreground &&
       _domain.preferenceChanges == 0 &&
+      !deviceOffPending &&
       _domain.recovered &&
       _domain.setting == ReadCacheSettingsState.enabled &&
       _domain.active == binding &&
@@ -342,6 +605,13 @@ final class ReadCacheDiskCoordinator {
             _domain.latestVerified != null &&
             _domain.latestVerified != binding)) {
       return Future.value(false);
+    }
+    final offline = _domain.offlineBinding;
+    if (offline != null) {
+      _domain.namespace?.fence(offline.accountKey);
+      _account(offline.accountKey).epoch++;
+      _account(offline.accountKey).state = ReadCacheDiskState.closed;
+      _domain.offlineBinding = null;
     }
     _domain.highestGeneration = binding.generation;
     _domain.latestVerified = binding;
@@ -380,7 +650,16 @@ final class ReadCacheDiskCoordinator {
           intent.revision == account.revision &&
           marker.value == intent.marker;
       if (!ownedScope) {
-        final full = _fullIntent(account, ReadCacheClearReason.accountClear);
+        final namespaceOnly =
+            marker.value is ReadCacheClearMarker &&
+            (marker.value! as ReadCacheClearMarker).namespaceOnly;
+        final full = _fullIntent(
+          account,
+          namespaceOnly
+              ? ReadCacheClearReason.scopeInvalidation
+              : ReadCacheClearReason.accountClear,
+          accountWide: !namespaceOnly,
+        );
         await _clearNow(account, full, hadWork: true);
         return false;
       }
@@ -406,6 +685,7 @@ final class ReadCacheDiskCoordinator {
                   ReadCacheCipher.accountDirectoryName(account.key),
                 ))) {
           final intent = _fullIntent(account, ReadCacheClearReason.keyRepair);
+          if (intent.accountWide) return false;
           final cleared = await _clearNow(account, intent, hadWork: true);
           if (!cleared.complete || _domain.active != binding) return false;
           // Key repair owns this fence; no other clear may have superseded it.
@@ -439,7 +719,19 @@ final class ReadCacheDiskCoordinator {
         () => _gates(binding) && account.epoch == preparedEpoch,
       );
       if (!_gates(binding) || account.epoch != preparedEpoch) return false;
+      final namespace = _domain.namespace;
+      var namespaceReady = false;
+      if (namespace != null) {
+        final marker = await _keys!.readOfflineMarker(account.key);
+        if (!_gates(binding) || account.epoch != preparedEpoch) return false;
+        namespaceReady =
+            marker.status == ReadCacheStoreReadStatus.absent &&
+            !await namespace.hasMarker(account.key);
+        if (!_gates(binding) || account.epoch != preparedEpoch) return false;
+      }
       account.state = ReadCacheDiskState.ready;
+      _domain.offlineBinding = null;
+      if (namespaceReady) namespace!.open(binding, ReadCacheDiskState.ready);
       account.retryAttempt = 0;
       account.cancelRetry?.call();
       account.cancelRetry = null;
@@ -577,6 +869,7 @@ final class ReadCacheDiskCoordinator {
         }
         if (!keyRead.isFound) {
           final intent = _fullIntent(account, ReadCacheClearReason.keyRepair);
+          if (intent.accountWide) return null;
           await _clearNow(account, intent, hadWork: true);
           return null;
         }
@@ -738,6 +1031,7 @@ final class ReadCacheDiskCoordinator {
                   account,
                   ReadCacheClearReason.keyRepair,
                 );
+                if (intent.accountWide) return;
                 await _clearNow(account, intent, hadWork: true);
                 return;
               }
@@ -983,6 +1277,7 @@ final class ReadCacheDiskCoordinator {
   void revoke(DiskBinding binding) {
     final account = _account(binding.accountKey);
     if (_domain.active != binding) return;
+    _domain.namespace?.fence(binding.accountKey);
     _domain.revokedThrough = max(_domain.revokedThrough, binding.generation);
     account.epoch++;
     account.state = account.cleanup
@@ -1010,7 +1305,11 @@ final class ReadCacheDiskCoordinator {
       for (final work in account.inFlight) {
         work.lease.revoke();
       }
-      if (!account.cleanup) account.state = ReadCacheDiskState.closed;
+      // C3 workers retain their own admission/epochs while backgrounded (B9).
+      if (!account.cleanup &&
+          account.state != ReadCacheDiskState.offlineReadOnly) {
+        account.state = ReadCacheDiskState.closed;
+      }
     }
   }
 
@@ -1021,7 +1320,19 @@ final class ReadCacheDiskCoordinator {
     return activate(binding);
   }
 
-  _Intent _fullIntent(_Account account, ReadCacheClearReason reason) {
+  _Intent _fullIntent(
+    _Account account,
+    ReadCacheClearReason reason, {
+    bool accountWide = true,
+  }) {
+    // Key repair and uncertain C2 projections must not erase saved projects.
+    accountWide = accountWide && reason != ReadCacheClearReason.keyRepair;
+    final current = account.intent;
+    // A pending account-wide clear stays the owner. A C2 fallback must not
+    // replace its intent, marker, or completion proof.
+    if (!accountWide && current != null && current.accountWide) {
+      return current;
+    }
     account.epoch++;
     account.cleanup = true;
     account.clearComplete = false;
@@ -1036,20 +1347,34 @@ final class ReadCacheDiskCoordinator {
       lease.revoke();
     }
     account.keyBytes = null;
-    final intent = _Intent(_marker(reason), ++account.revision, full: true);
+    if (accountWide) {
+      _domain.namespace?.fence(account.key);
+      if (_domain.offlineBinding?.accountKey == account.key) {
+        _domain.offlineBinding = null;
+      }
+    }
+    final intent = _Intent(
+      _marker(reason, namespaceOnly: !accountWide),
+      ++account.revision,
+      full: true,
+      accountWide: accountWide,
+    );
     account.intent = intent;
     return intent;
   }
 
-  ReadCacheClearMarker _marker(ReadCacheClearReason reason) =>
-      ReadCacheClearMarker(
-        intentId: List.generate(
-          16,
-          (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
-        ).join(),
-        reason: reason,
-        requestedAt: _clock().toUtc(),
-      );
+  ReadCacheClearMarker _marker(
+    ReadCacheClearReason reason, {
+    bool namespaceOnly = false,
+  }) => ReadCacheClearMarker(
+    intentId: List.generate(
+      16,
+      (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join(),
+    reason: reason,
+    requestedAt: _clock().toUtc(),
+    namespaceOnly: namespaceOnly,
+  );
 
   Future<T> _markerSerial<T>(_Account account, Future<T> Function() action) {
     final result = Completer<T>();
@@ -1101,7 +1426,13 @@ final class ReadCacheDiskCoordinator {
         var pending = account.intent;
         if (pending != null) {
           if (!pending.valid) {
-            pending = _fullIntent(account, ReadCacheClearReason.accountClear);
+            pending = _fullIntent(
+              account,
+              pending.accountWide
+                  ? ReadCacheClearReason.accountClear
+                  : ReadCacheClearReason.scopeInvalidation,
+              accountWide: pending.accountWide,
+            );
           }
           pending.durable = false;
           await _persistNow(account, pending);
@@ -1115,7 +1446,13 @@ final class ReadCacheDiskCoordinator {
         var pending = account.intent;
         if (pending != null) {
           if (!pending.valid) {
-            pending = _fullIntent(account, ReadCacheClearReason.accountClear);
+            pending = _fullIntent(
+              account,
+              pending.accountWide
+                  ? ReadCacheClearReason.accountClear
+                  : ReadCacheClearReason.scopeInvalidation,
+              accountWide: pending.accountWide,
+            );
           }
           pending.durable = false;
           await _persistNow(account, pending);
@@ -1132,11 +1469,130 @@ final class ReadCacheDiskCoordinator {
         !names.contains(ReadCacheCipher.accountDirectoryName(accountKey));
   }
 
+  Future<bool> _offlineDirectoryGone(String accountKey) async {
+    final state = await _files!.offlineAccountDirectoryState(accountKey);
+    final names = await _files!.offlineAccountDirectoryNames();
+    return state == ReadCacheDirectoryState.absent &&
+        !names.contains(ReadCacheCipher.accountDirectoryName(accountKey));
+  }
+
+  Future<bool> _stopNamespace(String accountKey) async {
+    try {
+      await _domain.namespace?.stopAndWait(accountKey);
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<bool> _deleteOfflineKey(String accountKey) async {
+    var ok = true;
+    try {
+      await _domain.namespace?.deleteKey(accountKey);
+    } on Object {
+      ok = false;
+    }
+    try {
+      await _keys!.deleteOfflineKey(accountKey);
+      return ok &&
+          (await _keys!.readOfflineKey(accountKey)).status ==
+              ReadCacheStoreReadStatus.absent;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<bool> _deleteOfflineDirectory(String accountKey) async {
+    var ok = true;
+    try {
+      await _domain.namespace?.deleteDirectory(accountKey);
+    } on Object {
+      ok = false;
+    }
+    try {
+      await _files!.clearOfflineAccount(accountKey);
+      return await _offlineDirectoryGone(accountKey) && ok;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<bool> _deleteOfflineMarkers(String accountKey) async {
+    var ok = true;
+    try {
+      await _keys!.deleteOfflineRefusal(accountKey);
+    } on Object {
+      ok = false;
+    }
+    try {
+      await _keys!.deleteOfflineMarker(accountKey);
+    } on Object {
+      ok = false;
+    }
+    return ok;
+  }
+
+  Future<bool> _recoverOfflineClear(String accountKey) async {
+    _domain.namespace?.fence(accountKey);
+    if (!await _stopNamespace(accountKey)) return false;
+    final keyGone = await _deleteOfflineKey(accountKey);
+    final directoryGone = await _deleteOfflineDirectory(accountKey);
+    if (!keyGone || !directoryGone) return false;
+    try {
+      await _keys!.deleteOfflineMarker(accountKey);
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<bool> _clearMalformedInventory(
+    ReadCacheSecureInventory inventory,
+  ) async {
+    final c2 = inventory.malformedNames.any(
+      (name) =>
+          name.startsWith(ReadCacheKeyStore.keyPrefix) ||
+          name.startsWith(ReadCacheKeyStore.markerPrefix),
+    );
+    final offline = inventory.malformedNames.any(
+      (name) =>
+          name.startsWith(ReadCacheKeyStore.offlineKeyPrefix) ||
+          name.startsWith(ReadCacheKeyStore.offlineMarkerPrefix) ||
+          name.startsWith(ReadCacheKeyStore.offlineRefusalPrefix),
+    );
+    if (offline) {
+      for (final account in _domain.accounts.values) {
+        _domain.namespace?.fence(account.key);
+      }
+      for (final account in _domain.accounts.values) {
+        if (!await _stopNamespace(account.key)) return false;
+      }
+    }
+    // Paths never come from undecodable secure-storage input.
+    if (c2) {
+      await _file(() => _files!.clearRoot(), clearingRoot: true);
+      if ((await _file(() => _files!.accountDirectoryNames())).isNotEmpty) {
+        return false;
+      }
+    }
+    if (offline) {
+      await _files!.clearOfflineRoot();
+      if ((await _files!.offlineAccountDirectoryNames()).isNotEmpty) {
+        return false;
+      }
+    }
+    for (final name in inventory.malformedNames) {
+      await _keys!.deleteInventoryName(name);
+    }
+    return true;
+  }
+
   Future<bool> _empty(
     _Account account,
     ReadCacheSecureInventory inventory,
-    bool hadWork,
-  ) async =>
+    bool hadWork, {
+    bool accountWide = true,
+  }) async =>
       inventory.status == ReadCacheStoreReadStatus.found &&
       inventory.malformedNames.isEmpty &&
       !inventory.keys.containsKey(account.key) &&
@@ -1145,7 +1601,11 @@ final class ReadCacheDiskCoordinator {
       account.pending.isEmpty &&
       account.inFlight.isEmpty &&
       account.reads.isEmpty &&
-      await _directoryGone(account.key);
+      await _directoryGone(account.key) &&
+      (!accountWide ||
+          (!inventory.containsAccount(account.key) &&
+              _domain.namespace == null &&
+              await _offlineDirectoryGone(account.key)));
 
   Future<DiskClearResult> _clearNow(
     _Account account,
@@ -1160,10 +1620,16 @@ final class ReadCacheDiskCoordinator {
     await account.markerTail;
     final inventory = await _keys!.readInventory();
     try {
-      if (await _empty(account, inventory, hadWork)) {
+      if (await _empty(
+        account,
+        inventory,
+        hadWork,
+        accountWide: intent.accountWide,
+      )) {
         if (account.intent != intent || !intent.valid) return _none;
         account.intent = null;
         account.clearComplete = true;
+        intent.completed = true;
         return const DiskClearResult(
           keyGoneConfirmed: true,
           directoryGoneConfirmed: true,
@@ -1181,6 +1647,14 @@ final class ReadCacheDiskCoordinator {
     // persistence/removal retain their separate exact-owner checks.
     if (pathRevision != _domain.pathRevision) return _none;
     final durable = await (markerReady ?? _persist(account, intent));
+    if (intent.accountWide && !await _stopNamespace(account.key)) {
+      return DiskClearResult(
+        keyGoneConfirmed: false,
+        directoryGoneConfirmed: false,
+        markerDurable: durable,
+        complete: false,
+      );
+    }
     var keyGone = false, directoryGone = false;
     try {
       await _keys!.deleteKey(account.key);
@@ -1190,12 +1664,31 @@ final class ReadCacheDiskCoordinator {
     } on Object {
       // Directory deletion proceeds even if secure storage is unavailable.
     }
+    final offlineKeyGone =
+        !intent.accountWide || await _deleteOfflineKey(account.key);
     try {
       await _file(() => _files!.clearAccount(account.key));
       directoryGone = await _directoryGone(account.key);
     } on Object {
       // Neither an acknowledgement nor an I/O error is evidence of absence.
     }
+    if (pathRevision != _domain.pathRevision) {
+      return DiskClearResult(
+        keyGoneConfirmed: keyGone && offlineKeyGone,
+        directoryGoneConfirmed: false,
+        markerDurable: false,
+        complete: false,
+      );
+    }
+    final offlineDirectoryGone =
+        !intent.accountWide || await _deleteOfflineDirectory(account.key);
+    final offlineMarkersGone =
+        !intent.accountWide ||
+        (offlineKeyGone &&
+            offlineDirectoryGone &&
+            await _deleteOfflineMarkers(account.key));
+    keyGone = keyGone && offlineKeyGone;
+    directoryGone = directoryGone && offlineDirectoryGone;
     // A path incident installed a replacement owner. Preserve deletion proofs
     // for removal without completing or modifying that replacement intent.
     if (pathRevision != _domain.pathRevision) {
@@ -1213,6 +1706,7 @@ final class ReadCacheDiskCoordinator {
     var complete = false;
     if (keyGone &&
         directoryGone &&
+        offlineMarkersGone &&
         durable &&
         inventory.status == ReadCacheStoreReadStatus.found &&
         inventory.malformedNames.isEmpty) {
@@ -1220,6 +1714,9 @@ final class ReadCacheDiskCoordinator {
       if (complete) {
         account.invalidations.clear();
         account.clearComplete = true;
+        intent.completed = true;
+        // Retained selection belongs to the current session/startup owner.
+        // This clear may be finishing after a newer same-account activation.
       }
     }
     return DiskClearResult(
@@ -1268,10 +1765,14 @@ final class ReadCacheDiskCoordinator {
       );
       // A preceding barrier may have completed this exact full-clear owner.
       // Never join across a path incident, which installs a replacement owner.
+      // A narrower fallback must not satisfy an account-wide clear: the proof
+      // stays on that owner and its revision, after its own scope was emptied.
       if (pathRevision == _domain.pathRevision &&
           !result.complete &&
+          intent.completed &&
+          intent.accountWide &&
+          intent.revision == account.revision &&
           account.intent == null &&
-          account.clearComplete &&
           intent.valid) {
         result = const DiskClearResult(
           keyGoneConfirmed: true,
@@ -1377,6 +1878,7 @@ final class ReadCacheDiskCoordinator {
       final failure = reportCleanup(binding, state);
       onFailure?.call(failure);
     }
+
     final cancel = _schedule(barrierLimit, () {
       timeout();
       report(_none, ReadCacheCleanupCode.barrierTimedOut);
@@ -1459,9 +1961,13 @@ final class ReadCacheDiskCoordinator {
         : account.cleanup
         ? account.intent
         : (account.intent ??= _Intent(
-            _marker(ReadCacheClearReason.scopeInvalidation),
+            _marker(
+              ReadCacheClearReason.scopeInvalidation,
+              namespaceOnly: true,
+            ),
             ++account.revision,
             full: false,
+            accountWide: false,
           ));
     if (intent != null && !intent.full) intent.users++;
     final proveEmpty = !account.indexTrusted && !_ready(binding);
@@ -1482,7 +1988,11 @@ final class ReadCacheDiskCoordinator {
         if (preferencePending && !account.cleanup) {
           // Settings owns the sweep until this serial section starts. Do not
           // dispatch a marker write behind its final inventory proof.
-          final full = _fullIntent(account, ReadCacheClearReason.accountClear);
+          final full = _fullIntent(
+            account,
+            ReadCacheClearReason.scopeInvalidation,
+            accountWide: false,
+          );
           return await _clearNow(account, full, hadWork: false);
         }
         if (account.cleanup) {
@@ -1510,7 +2020,12 @@ final class ReadCacheDiskCoordinator {
         }
         if (proveEmpty) await account.markerTail;
         if (proveEmpty &&
-            await _empty(account, await _keys!.readInventory(), false)) {
+            await _empty(
+              account,
+              await _keys!.readInventory(),
+              false,
+              accountWide: false,
+            )) {
           if (!fence.isCurrent ||
               account.intent != intent ||
               !intent.valid ||
@@ -1532,13 +2047,27 @@ final class ReadCacheDiskCoordinator {
           );
         }
         final durable = await (markerReady ?? _persist(account, intent));
+        if (account.intent?.accountWide == true && account.intent != intent) {
+          return _none;
+        }
         if (!durable || !account.indexTrusted) {
-          final full = _fullIntent(account, ReadCacheClearReason.accountClear);
+          final full = _fullIntent(
+            account,
+            ReadCacheClearReason.scopeInvalidation,
+            accountWide: false,
+          );
           return await _clearNow(account, full, hadWork: true);
         }
         final key = await _keys!.readKey(account.key);
+        if (account.intent?.accountWide == true && account.intent != intent) {
+          return _none;
+        }
         if (!key.isFound) {
-          final full = _fullIntent(account, ReadCacheClearReason.accountClear);
+          final full = _fullIntent(
+            account,
+            ReadCacheClearReason.scopeInvalidation,
+            accountWide: false,
+          );
           return await _clearNow(account, full, hadWork: true);
         }
         account.keyBytes = key.value;
@@ -1565,7 +2094,8 @@ final class ReadCacheDiskCoordinator {
           if (!account.unindexed.values.any((lease) => !lease.isCurrent)) {
             final full = _fullIntent(
               account,
-              ReadCacheClearReason.accountClear,
+              ReadCacheClearReason.scopeInvalidation,
+              accountWide: false,
             );
             return await _clearNow(account, full, hadWork: true);
           }
@@ -1589,25 +2119,44 @@ final class ReadCacheDiskCoordinator {
           complete: false,
         );
       } on Object {
-        if (pathRevision != _domain.pathRevision || account.intent != intent) {
+        if (pathRevision != _domain.pathRevision ||
+            account.intent != intent ||
+            intent?.accountWide == true) {
           return _none;
         }
-        final full = _fullIntent(account, ReadCacheClearReason.accountClear);
+        final full = _fullIntent(
+          account,
+          ReadCacheClearReason.scopeInvalidation,
+          accountWide: false,
+        );
         return await _clearNow(account, full, hadWork: true);
       }
     });
     final waited = _wait(binding, operation, raw, () {
       fence.revoke();
-      if (pathRevision != _domain.pathRevision || account.intent != intent) {
+      if (pathRevision != _domain.pathRevision ||
+          account.intent != intent ||
+          intent == null ||
+          intent.accountWide) {
         return;
       }
-      intent?.valid = false;
-      _fullIntent(account, ReadCacheClearReason.accountClear);
+      intent.valid = false;
+      _fullIntent(
+        account,
+        ReadCacheClearReason.scopeInvalidation,
+        accountWide: false,
+      );
     }, succeeded: (value) => scopeSucceeded || value.complete);
     final barrier = waited.then((result) {
       if (scopeSucceeded || result.complete) return result;
-      if (pathRevision == _domain.pathRevision && !account.cleanup) {
-        _fullIntent(account, ReadCacheClearReason.accountClear);
+      if (pathRevision == _domain.pathRevision &&
+          !account.cleanup &&
+          account.intent?.accountWide != true) {
+        _fullIntent(
+          account,
+          ReadCacheClearReason.scopeInvalidation,
+          accountWide: false,
+        );
       }
       throw ApiFailure.readCacheCleanup(
         _notices[binding]?.failure.cleanup ??
@@ -1653,57 +2202,80 @@ final class ReadCacheDiskCoordinator {
     if (!current() || setting == ReadCacheSettingsState.unavailable) {
       return false;
     }
+    _domain.setting = setting;
+    if (setting == ReadCacheSettingsState.disabled) {
+      _domain.deviceOffPending = true;
+      _domain.deviceOffConfirmed = false;
+      _domain.diskUsageBytes = null;
+    }
     final inventory = await _keys!.readInventory();
     if (!current() || inventory.status != ReadCacheStoreReadStatus.found) {
       return false;
     }
-    _domain.setting = setting;
-    for (final key in {
-      ...accountKeys,
-      ...inventory.keys.keys,
-      ...inventory.markers.keys,
-    }) {
+    for (final key in {...accountKeys, ...inventory.accountKeys}) {
       _account(key);
     }
     for (final account in _domain.accounts.values) {
       account.epoch++;
       _dropQueue(account);
       account.state = ReadCacheDiskState.closed;
+      _domain.namespace?.fence(account.key);
     }
     final retained =
         !decision.signOutPending &&
-            setting == ReadCacheSettingsState.enabled &&
-            accountKeys.contains(decision.resumeAccountKey)
-        ? <String>{decision.resumeAccountKey!}
+            !deviceOffPending &&
+            setting == ReadCacheSettingsState.enabled
+        ? <String>{
+            if (accountKeys.contains(decision.resumeAccountKey))
+              decision.resumeAccountKey!,
+            if (accountKeys.contains(diskRetainedAccountKey))
+              diskRetainedAccountKey!,
+          }
         : <String>{};
     final success = await _serial<bool>(null, () async {
       if (!current()) return false;
       var ok = true;
       if (inventory.malformedNames.isNotEmpty) {
         try {
-          await _file(() => _files!.clearRoot(), clearingRoot: true);
-          if ((await _file(() => _files!.accountDirectoryNames())).isNotEmpty) {
-            return false;
-          }
-          for (final name in inventory.malformedNames) {
-            if (!current()) return false;
-            await _keys!.deleteInventoryName(name);
-          }
+          if (!await _clearMalformedInventory(inventory)) return false;
         } on Object {
           return false;
         }
       }
       for (final key in {
-        ...inventory.markers.keys,
-        ...inventory.keys.keys.where((k) => !retained.contains(k)),
+        ...inventory.pendingAccountKeys,
+        ...inventory.accountKeys.where((k) => !retained.contains(k)),
         ..._domain.accounts.values
             .where((a) => a.intent?.full == true && a.intent!.valid)
             .map((a) => a.key),
       }) {
         if (!current()) return false;
         final account = _account(key);
-        final intent = _fullIntent(account, ReadCacheClearReason.startup);
+        final marker = inventory.markers[key];
+        final retainedAccount = retained.contains(key);
+        if (retainedAccount &&
+            marker == null &&
+            inventory.offlineMarkers.containsKey(key)) {
+          if (!await _recoverOfflineClear(key)) ok = false;
+          continue;
+        }
+        // Legacy/unknown markers still mean full-account recovery. Only new,
+        // explicitly scoped v2 repair markers authorize C2-only cleanup.
+        final namespaceOnly =
+            retainedAccount &&
+            marker?.value is ReadCacheClearMarker &&
+            (marker!.value! as ReadCacheClearMarker).namespaceOnly;
+        final intent = _fullIntent(
+          account,
+          namespaceOnly
+              ? ReadCacheClearReason.scopeInvalidation
+              : ReadCacheClearReason.startup,
+          accountWide: !namespaceOnly,
+        );
         final result = await _clearNow(account, intent, hadWork: true);
+        if (namespaceOnly && inventory.offlineMarkers.containsKey(key)) {
+          if (!await _recoverOfflineClear(key)) ok = false;
+        }
         if (pathRevision != _domain.pathRevision) return false;
         if (result.complete) {
           account.cleanup = account.sessionFence != null;
@@ -1735,19 +2307,29 @@ final class ReadCacheDiskCoordinator {
         return false;
       }
       try {
+        await _files!.clearOfflineAccountDirectoriesExcept(retained);
+      } on Object {
+        return false;
+      }
+      try {
         final names = await _file(() => _files!.accountDirectoryNames());
         final retainedNames = retained
             .map(ReadCacheCipher.accountDirectoryName)
             .toSet();
-        if (names.any((name) => !retainedNames.contains(name))) return false;
+        if (names.any((name) => !retainedNames.contains(name)) ||
+            (await _files!.offlineAccountDirectoryNames()).any(
+              (name) => !retainedNames.contains(name),
+            )) {
+          return false;
+        }
       } on Object {
         return false;
       }
       final confirmed = await _keys!.readInventory();
       if (confirmed.status != ReadCacheStoreReadStatus.found ||
           confirmed.malformedNames.isNotEmpty ||
-          confirmed.markers.isNotEmpty ||
-          confirmed.keys.keys.any((k) => !retained.contains(k))) {
+          confirmed.pendingAccountKeys.isNotEmpty ||
+          confirmed.accountKeys.any((k) => !retained.contains(k))) {
         return false;
       }
       return ok &&
@@ -1755,7 +2337,19 @@ final class ReadCacheDiskCoordinator {
           pathRevision == _domain.pathRevision;
     });
     if (!success || !current()) return false;
+    if (retained.isEmpty) {
+      // This pass proved both the root and the entire inventory empty.
+      _domain.deviceOffPending = false;
+      _domain.deviceOffConfirmed = true;
+      _domain.diskUsageBytes = 0;
+    }
     _domain.recovered = true;
+    _domain.diskRetainedAccountKey =
+        retained.contains(decision.resumeAccountKey)
+        ? decision.resumeAccountKey
+        : retained.contains(diskRetainedAccountKey)
+        ? diskRetainedAccountKey
+        : null;
     final active = _domain.active;
     if (active != null) {
       if (retained.contains(active.accountKey)) {
@@ -1775,22 +2369,98 @@ final class ReadCacheDiskCoordinator {
     ReadCacheCleanupOperation operation,
   ) => clear(binding, operation);
 
-  Future<bool> setEnabled(bool enabled) async {
-    if (!configured) return false;
+  /// Compatibility wrapper. New controls should use [setEnabledResult] to
+  /// distinguish an unproven device-off cleanup from a storage failure.
+  Future<bool> setEnabled(bool enabled) async =>
+      await setEnabledResult(enabled) == ReadCacheSettingChangeResult.complete;
+
+  /// Refuses an enable without writing the preference while device-off is
+  /// pending or in flight, even if none of its markers could be persisted.
+  Future<ReadCacheSettingChangeResult> setEnabledResult(bool enabled) {
+    if (!configured) {
+      return Future.value(ReadCacheSettingChangeResult.storageUnavailable);
+    }
+    if (enabled && deviceOffPending) {
+      return Future.value(ReadCacheSettingChangeResult.cleanupPending);
+    }
+    if (!enabled) _beginDeviceOff();
+    final future = _preferenceChange(() => _storeEnabled(enabled));
+    return enabled
+        ? future
+        : future.whenComplete(() => _domain.deviceOffOperations--);
+  }
+
+  void _beginDeviceOff() {
+    _domain.deviceOffOperations++;
+    _domain.deviceOffPending = true;
+    _domain.deviceOffConfirmed = false;
+    _domain.diskUsageBytes = null;
+    for (final account in _domain.accounts.values) {
+      _domain.namespace?.fence(account.key);
+    }
+    _domain.offlineBinding = null;
+  }
+
+  Future<T> _preferenceChange<T>(Future<T> Function() action) {
     _domain.preferenceChanges++;
     _domain.startupRevision++;
     _domain.recovered = false;
     _suspendAccounts();
-    try {
-      return await _storeEnabled(enabled);
-    } finally {
-      _domain.preferenceChanges--;
-      _domain.recovered = false;
-      _domain.startupRevision++;
-    }
+    final future = _domain.preferenceTail.then((_) async {
+      try {
+        return await action();
+      } finally {
+        _domain.preferenceChanges--;
+        _domain.recovered = false;
+        _domain.startupRevision++;
+      }
+    });
+    _domain.preferenceTail = future.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stack) {},
+    );
+    return future;
   }
 
-  Future<bool> _storeEnabled(bool enabled) async {
+  /// Repeats the complete device sweep, including foreign accounts/orphans
+  /// and final root/inventory confirmation. It never writes the preference.
+  /// Unavailable inventory authorizes no file or key deletion. Completion is
+  /// device-wide; markerDurable is false because there is no device marker.
+  Future<DiskClearResult> retryDeviceOff() {
+    if (!configured) return Future.value(_none);
+    _beginDeviceOff();
+    return _preferenceChange(() async {
+      if (!await _sweepDeviceOff()) return _none;
+      return const DiskClearResult(
+        keyGoneConfirmed: true,
+        directoryGoneConfirmed: true,
+        markerDurable: false,
+        complete: true,
+      );
+    }).whenComplete(() => _domain.deviceOffOperations--);
+  }
+
+  Future<ReadCacheSettingChangeResult> _storeEnabled(bool enabled) async {
+    // An off requested after this call was queued takes precedence. Also
+    // inspect a fresh process's preference before its first enable write:
+    // stored 0 is durable evidence that a device sweep must be proven first.
+    if (enabled) {
+      if (deviceOffPending) return ReadCacheSettingChangeResult.cleanupPending;
+      if (!_domain.deviceOffConfirmed &&
+          _domain.setting != ReadCacheSettingsState.enabled) {
+        _domain.setting = await _settings!.read();
+        if (deviceOffPending) {
+          return ReadCacheSettingChangeResult.cleanupPending;
+        }
+        if (_domain.setting == ReadCacheSettingsState.disabled) {
+          _domain.deviceOffPending = true;
+          return ReadCacheSettingChangeResult.cleanupPending;
+        }
+        if (_domain.setting == ReadCacheSettingsState.unavailable) {
+          return ReadCacheSettingChangeResult.storageUnavailable;
+        }
+      }
+    }
     final stored = await _settings!.writeEnabled(enabled);
     if (!stored) _domain.setting = ReadCacheSettingsState.unavailable;
     if (stored) {
@@ -1798,110 +2468,117 @@ final class ReadCacheDiskCoordinator {
           ? ReadCacheSettingsState.enabled
           : ReadCacheSettingsState.disabled;
     }
-    if (!enabled) {
-      // Include accounts whose first key write is not in secure inventory yet.
-      // Fence/persist before drain; inventory and the final proof share the I/O
-      // section with that late write, so no success can race its completion.
-      final intents = <String, _Intent>{};
-      final markers = <String, Future<bool>>{};
-      for (final account in _domain.accounts.values) {
-        final intent = _fullIntent(account, ReadCacheClearReason.accountClear);
-        intents[account.key] = intent;
-        if (account.work > 0 || _domain.work > 0) {
-          markers[account.key] = _persist(account, intent);
-        }
-      }
-      final cleared = await _serial<bool>(null, () async {
-        final inventory = await _keys!.readInventory();
-        if (inventory.status != ReadCacheStoreReadStatus.found) return false;
-        for (final key in {...inventory.keys.keys, ...inventory.markers.keys}) {
-          _account(key);
-        }
-        try {
-          if (inventory.malformedNames.isNotEmpty) {
-            await _file(() => _files!.clearRoot(), clearingRoot: true);
-            if ((await _file(
-              () => _files!.accountDirectoryNames(),
-            )).isNotEmpty) {
-              return false;
-            }
-            for (final name in inventory.malformedNames) {
-              await _keys!.deleteInventoryName(name);
-            }
-          }
-          for (final key in {
-            ...intents.keys,
-            ...inventory.keys.keys,
-            ...inventory.markers.keys,
-          }) {
-            final account = _account(key);
-            final intent = intents[key] ??= _fullIntent(
-              account,
-              ReadCacheClearReason.accountClear,
-            );
-            final result = await _clearNow(
-              account,
-              intent,
-              hadWork: markers.containsKey(key),
-              markerReady: markers[key],
-            );
-            if (!result.complete &&
-                !(account.intent == null && account.clearComplete)) {
-              return false;
-            }
-            // Recovery's activate compares the verified binding with this fence.
-            account.cleanup = account.sessionFence != null;
-          }
-          await _file(() => _files!.clearAccountDirectoriesExcept({}));
-          final confirmed = await _keys!.readInventory();
-          if (confirmed.status != ReadCacheStoreReadStatus.found ||
-              confirmed.keys.isNotEmpty ||
-              confirmed.markers.isNotEmpty ||
-              confirmed.malformedNames.isNotEmpty ||
-              (await _file(() => _files!.accountDirectoryNames())).isNotEmpty) {
-            return false;
-          }
-          for (final account in _domain.accounts.values) {
-            account.state = stored
-                ? ReadCacheDiskState.disabled
-                : ReadCacheDiskState.unavailable;
-          }
-          return true;
-        } on Object {
-          return false;
-        }
-      });
-      if (!cleared) {
-        for (final key in intents.keys) {
-          final account = _account(key);
-          final pending = account.intent;
-          if (pending != null && pending.full && pending.valid) {
-            await _persist(account, pending);
-          }
-          final active = _domain.active;
-          final binding = active?.accountKey == key
-              ? active!
-              : account.sessionFence ??
-                    DiskBinding(accountKey: key, generation: 0);
-          reportCleanup(
-            binding,
-            _cleanup(
-              ReadCacheCleanupOperation.settingsClear,
-              DiskClearResult(
-                keyGoneConfirmed: false,
-                directoryGoneConfirmed: false,
-                markerDurable: pending?.durable ?? false,
-                complete: false,
-              ),
-              ReadCacheCleanupCode.cleanupFailed,
-            ),
-          );
-        }
-        return false;
-      }
+    if (!enabled && !await _sweepDeviceOff()) {
+      return ReadCacheSettingChangeResult.cleanupPending;
     }
     // Re-enabling still requires a fresh startup decision and verified binding.
-    return stored;
+    return stored
+        ? ReadCacheSettingChangeResult.complete
+        : ReadCacheSettingChangeResult.storageUnavailable;
+  }
+
+  Future<bool> _sweepDeviceOff() async {
+    _domain.deviceOffPending = true;
+    _domain.deviceOffConfirmed = false;
+    // Include accounts whose first key write is not in secure inventory yet.
+    // Fence/persist before drain; inventory and the final proof share the I/O
+    // section with that late write, so no success can race its completion.
+    final intents = <String, _Intent>{};
+    final markers = <String, Future<bool>>{};
+    for (final account in _domain.accounts.values) {
+      final intent = _fullIntent(account, ReadCacheClearReason.accountClear);
+      intents[account.key] = intent;
+      if (account.work > 0 || _domain.work > 0) {
+        markers[account.key] = _persist(account, intent);
+      }
+    }
+    final cleared = await _serial<bool>(null, () async {
+      final inventory = await _keys!.readInventory();
+      if (inventory.status != ReadCacheStoreReadStatus.found) return false;
+      for (final key in inventory.accountKeys) {
+        _account(key);
+      }
+      try {
+        if (inventory.malformedNames.isNotEmpty &&
+            !await _clearMalformedInventory(inventory)) {
+          return false;
+        }
+        for (final key in {...intents.keys, ...inventory.accountKeys}) {
+          final account = _account(key);
+          final intent = intents[key] ??= _fullIntent(
+            account,
+            ReadCacheClearReason.accountClear,
+          );
+          final result = await _clearNow(
+            account,
+            intent,
+            hadWork: markers.containsKey(key),
+            markerReady: markers[key],
+          );
+          if (!result.complete &&
+              !(account.intent == null && account.clearComplete)) {
+            return false;
+          }
+          // Recovery's activate compares the verified binding with this fence.
+          account.cleanup = account.sessionFence != null;
+        }
+        await _file(() => _files!.clearAccountDirectoriesExcept({}));
+        await _files!.clearOfflineAccountDirectoriesExcept({});
+        final confirmed = await _keys!.readInventory();
+        if (confirmed.status != ReadCacheStoreReadStatus.found ||
+            !confirmed.isEmpty ||
+            (await _file(() => _files!.accountDirectoryNames())).isNotEmpty ||
+            (await _files!.offlineAccountDirectoryNames()).isNotEmpty) {
+          return false;
+        }
+        for (final account in _domain.accounts.values) {
+          account.state = _domain.setting == ReadCacheSettingsState.disabled
+              ? ReadCacheDiskState.disabled
+              : ReadCacheDiskState.unavailable;
+        }
+        _domain.deviceOffPending = false;
+        _domain.deviceOffConfirmed = true;
+        _domain.diskUsageBytes = 0;
+        return true;
+      } on Object {
+        return false;
+      }
+    });
+    if (!cleared) {
+      for (final key in intents.keys) {
+        final account = _account(key);
+        final pending = account.intent;
+        if (pending != null && pending.full && pending.valid) {
+          await _persist(account, pending);
+        }
+        final active = _domain.active;
+        final binding = active?.accountKey == key
+            ? active!
+            : account.sessionFence ??
+                  DiskBinding(accountKey: key, generation: 0);
+        reportCleanup(
+          binding,
+          _cleanup(
+            ReadCacheCleanupOperation.settingsClear,
+            DiskClearResult(
+              keyGoneConfirmed: false,
+              directoryGoneConfirmed: false,
+              markerDurable: pending?.durable ?? false,
+              complete: false,
+            ),
+            ReadCacheCleanupCode.cleanupFailed,
+          ),
+        );
+      }
+      return false;
+    }
+    for (final binding in List.of(_notices.keys)) {
+      if (_notices[binding]?.failure.cleanup?.operation ==
+          ReadCacheCleanupOperation.settingsClear) {
+        supersedeNotice(binding);
+      }
+    }
+    return true;
   }
 }
 
@@ -1974,13 +2651,20 @@ bool _matches(ProjectedDiskEntry entry, DiskInvalidation invalidation) {
 
 final class _Domain {
   Object? startupOwner, startupScan;
+  ReadCacheNamespace? namespace;
+  String? diskRetainedAccountKey;
+  DiskBinding? offlineBinding;
   final waits = Map<Object, Set<void Function()>>.identity();
   final notices = <DiskBinding, ReadCacheNotice>{};
   final signedOut = <DiskBinding, ReadCacheNotice>{};
   final subscribers = <ReadCacheNoticeSink>{};
   final accounts = <String, _Account>{};
   Future<void> tail = Future.value();
+  Future<void> preferenceTail = Future.value();
   bool recovered = false, controlsInstalled = false, foreground = true;
+  bool deviceOffPending = false, deviceOffConfirmed = false;
+  int deviceOffOperations = 0;
+  int? diskUsageBytes;
   ReadCacheSettingsState setting = ReadCacheSettingsState.unavailable;
   DiskBinding? active;
   DiskBinding? latestVerified;
@@ -2014,11 +2698,17 @@ final class _Account {
 }
 
 final class _Intent {
-  _Intent(this.marker, this.revision, {required this.full});
+  _Intent(
+    this.marker,
+    this.revision, {
+    required this.full,
+    this.accountWide = true,
+  });
   final ReadCacheClearMarker marker;
   final int revision;
   final bool full;
-  bool durable = false, valid = true;
+  final bool accountWide;
+  bool durable = false, valid = true, completed = false;
   int users = 0;
 }
 

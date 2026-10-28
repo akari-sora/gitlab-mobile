@@ -11,6 +11,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/job_trace.dart';
 import '../../core/models.dart';
 import '../../core/rate_budget.dart';
+import '../../core/read_cache_disk_contract.dart';
 import '../../shared/external_link.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
@@ -1933,6 +1934,11 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
 
 // Storage, progress and sharing primitives are exported from artifact_storage.dart.
 
+/// A finished job's tail load reached a moment when the page was hidden.
+final class _HiddenLoad implements Exception {
+  const _HiddenLoad();
+}
+
 class JobLogPage extends StatefulWidget {
   const JobLogPage({super.key, required this.account, required this.api, required this.project, required this.id,
     this.generation = 0, this.sharer = const SystemArtifactSharer(), this.artifactDirectory = jobArtifactDirectory,
@@ -1958,6 +1964,18 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   JobTrace _indexed = JobTrace.empty;
   BytesBuilder _rawBytes = BytesBuilder(copy: false);
   int _traceOffset = 0;
+
+  /// The verified tail of this attempt's finished log, when one is shown. Its
+  /// offsets are absolute; it may start after byte 0 (C2 §4.5).
+  ReadCacheTerminalLog? _tail;
+
+  /// Whether leading lines of the tail were also left out, to stay within the
+  /// screen's line limit.
+  bool _tailClipped = false;
+
+  /// A finished-job load stopped because the page was hidden; it runs again
+  /// once the page is visible.
+  bool _reloadWhenVisible = false;
   List<int> _sectionOrder = const <int>[];
   List<List<int>> _sectionChildren = const <List<int>>[];
   List<int> _sectionRoots = const <int>[];
@@ -2002,7 +2020,33 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     }
     _tickerModeChanged();
   }
-  void _tickerModeChanged() => _schedule();
+  void _tickerModeChanged() {
+    _schedule();
+    _resumeWhenVisible();
+  }
+
+  /// On screen: ticker on, route on top and the app in front. Before the first
+  /// lifecycle event the app counts as in front.
+  bool get _visible {
+    if (!mounted) return false;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return _tickerMode?.value.enabled != false &&
+        ModalRoute.isCurrentOf(context) != false &&
+        (lifecycle == null || lifecycle == AppLifecycleState.resumed);
+  }
+
+  /// Repeats a load the page skipped while hidden. Notifications can arrive
+  /// during a build, so the load starts after the frame.
+  void _resumeWhenVisible() {
+    if (!_reloadWhenVisible) return;
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (!_reloadWhenVisible || !_visible || _loading || _busy || _confirming) return;
+        _reloadWhenVisible = false;
+        unawaited(_load());
+      })
+      ..ensureVisualUpdate();
+  }
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -2021,7 +2065,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) { _timer?.cancel(); }
-    else { _schedule(); }
+    else { _schedule(); _resumeWhenVisible(); }
   }
   void _schedule() {
     if (!_auto || !mounted || _tickerMode?.value.enabled != true ||
@@ -2051,6 +2095,13 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     try {
       final job = await widget.api.record(['projects', '${widget.project.id}', 'jobs', '$jobId']);
       if (!current()) { return; }
+      // A finished job read from its start (or already shown as a tail) uses
+      // the pinned terminal tail; a job seen running keeps the polled path.
+      // That tail path neither starts nor shows anything while the page is
+      // hidden: it runs again when the page is visible.
+      final terminal = const {'success', 'failed', 'canceled', 'skipped'}.contains(job['status']);
+      final useTail = terminal && (_tail != null || (_traceOffset == 0 && _rawBytes.isEmpty));
+      if (useTail && !_visible) throw const _HiddenLoad();
       // Metadata and trace have independent failure modes. Keep the controls
       // usable even when an expired or oversized trace cannot be displayed.
       setState(() {
@@ -2059,13 +2110,36 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _auto = false; _timer?.cancel();
         }
       });
-      final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
+      final tail = useTail ? await _terminalTail(jobId, () => current() && _visible) : null;
       if (!current()) { return; }
-      if (chunk.isEof) {
+      // Hidden now: the fallback read below must not start either.
+      if (useTail && !_visible) throw const _HiddenLoad();
+      var changed = false;
+      if (tail != null) {
+        // A fresh builder: the tail never joins bytes of an earlier read or
+        // attempt, and the next offset is the tail's absolute end.
+        _rawBytes = BytesBuilder(copy: false)..add(tail.bytes);
+        _traceOffset = tail.nextOffset;
+        _tail = tail;
         _auto = false;
         _timer?.cancel();
-      }
-      if (chunk.bytes.isNotEmpty || _rawBytes.isEmpty) {
+        changed = true;
+      } else {
+        if (_tail != null) {
+          // The tail no longer applies; restart the original path from byte 0.
+          _tail = null;
+          _rawBytes = BytesBuilder(copy: false);
+          _traceOffset = 0;
+        }
+        final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
+        if (!current()) { return; }
+        // The bounded fallback after `unsupported` may finish while hidden.
+        if (useTail && !_visible) throw const _HiddenLoad();
+        if (chunk.isEof) {
+          _auto = false;
+          _timer?.cancel();
+        }
+        changed = chunk.bytes.isNotEmpty || _rawBytes.isEmpty;
         if (chunk.bytes.isNotEmpty) {
           if (chunk.nextOffset != null && chunk.nextOffset! < _traceOffset) {
             _rawBytes = BytesBuilder(copy: false);
@@ -2076,7 +2150,17 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             _traceOffset = chunk.nextOffset ?? _rawBytes.length;
           }
         }
-        final text = utf8.decode(_rawBytes.toBytes(), allowMalformed: true);
+      }
+      if (changed) {
+        var text = utf8.decode(_rawBytes.toBytes(), allowMalformed: true);
+        // A 2 MiB tail can hold more lines than the screen parses; keep its
+        // last lines. Display only: offsets and stored bytes are unchanged.
+        _tailClipped = false;
+        if (_tail != null) {
+          final kept = _lastLines(text, GitLabApi.maxTextLines - 1);
+          _tailClipped = kept.length != text.length;
+          text = kept;
+        }
         final parsed = JobTrace.parse(text);
         setState(() {
           _trace = parsed;
@@ -2095,9 +2179,57 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           if (current() && _scroll.hasClients) { _scroll.jumpTo(_scroll.position.maxScrollExtent); }
         });
       }
+    } on _HiddenLoad {
+      if (current()) _reloadWhenVisible = true;
     } catch (e) {
-      if (current()) { setState(() { _error = safeFailure(e); _auto = false; _timer?.cancel(); }); }
-    } finally { if (current()) { setState(() => _loading = false); } }
+      if (current()) {
+        if (_visible) {
+          setState(() { _error = safeFailure(e); _auto = false; _timer?.cancel(); });
+        } else {
+          // A failure that lands while hidden is neither shown nor allowed to
+          // stop polling; the load runs again once the page is visible.
+          _reloadWhenVisible = true;
+        }
+      }
+    } finally {
+      if (current()) {
+        setState(() => _loading = false);
+        // The page may have come back while this load was still running.
+        _resumeWhenVisible();
+      }
+    }
+  }
+
+  /// The end of [text] holding at most [newlines] line breaks.
+  static String _lastLines(String text, int newlines) {
+    var seen = 0;
+    for (var i = text.length - 1; i >= 0; i--) {
+      if (text.codeUnitAt(i) != 0x0A) continue;
+      if (++seen > newlines) return text.substring(i + 1);
+    }
+    return text;
+  }
+
+  /// The finished job's verified tail, from memory, the offline cache or one
+  /// bounded range read. Null only when GitLab cannot serve it that way
+  /// (`unsupported`); every other failure is the page's failure. A read that
+  /// would start after the page went away or out of sight is dropped.
+  Future<ReadCacheTerminalLog?> _terminalTail(int jobId, bool Function() current) async {
+    try {
+      final read = await CachedRead.run(
+        () => widget.api.cachedTerminalJobTrace(widget.project.id, jobId),
+        mayStart: current,
+      );
+      if (read.dropped) {
+        // Hidden before the read could start: not a failure, it runs later.
+        if (mounted && !_visible) throw const _HiddenLoad();
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      return read.value;
+    } on ApiFailure catch (failure) {
+      if (failure.kind == FailureKind.unsupported) return null;
+      rethrow;
+    }
   }
   Future<void> _openAi() async {
     final job = _job;
@@ -2132,11 +2264,23 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _currentMatch = 0; _searchController.clear(); _follow = true; _sectionOpen.clear();
           _rawBytes = BytesBuilder(copy: false);
           _traceOffset = 0;
+          _tail = null;
+          _tailClipped = false;
         }
+        // The load below replaces any load deferred while the dialog covered
+        // the page; it defers again by itself if the page is hidden.
+        _reloadWhenVisible = false;
       });
       await _load();
     } catch (e) { if (mounted) { showFailure(context, e); } }
-    finally { if (mounted) { setState(() { _busy = false; _confirming = false; }); } }
+    finally {
+      if (mounted) {
+        setState(() { _busy = false; _confirming = false; });
+        // A load deferred while the confirmation or the action blocked it
+        // (for example a hidden-time failure) runs now, if still visible.
+        _resumeWhenVisible();
+      }
+    }
   }
   bool get _ownerCurrent => mounted && !widget.api.isClosed &&
       widget.account.key == _routeOwner.account.key && identical(widget.api, _routeOwner.api) &&
@@ -2652,6 +2796,15 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
               ],
             ],
           ),
+        ),
+        if ((_tail?.truncated ?? false) || _tailClipped) Padding(
+          key: const ValueKey('job-log-truncated'),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Row(children: [
+            Icon(Icons.vertical_align_top, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Expanded(child: Text(l10n.readCacheLogTruncated, style: Theme.of(context).textTheme.bodySmall)),
+          ]),
         ),
         if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _load,

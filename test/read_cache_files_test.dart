@@ -2036,6 +2036,92 @@ void main() {
     },
   );
 
+  test(
+    'offline inventory and selective cleanup handle nested trees safely',
+    () async {
+      final files = store();
+      final hash = ReadCacheCipher.accountDirectoryName(_account);
+      final otherHash = ReadCacheCipher.accountDirectoryName(_otherAccount);
+      final first = Directory('${root.path}/offline_repo/$hash');
+      final other = Directory('${root.path}/offline_repo/$otherHash');
+      final blob = File('${first.path}/b/blob.v99.bin');
+      blob.parent.createSync(recursive: true);
+      blob.writeAsBytesSync([1, 2, 3]);
+      final temporary = File('${other.path}/tmp/part');
+      temporary.parent.createSync(recursive: true);
+      temporary.writeAsBytesSync([4]);
+      final outside = Directory('${root.path}/outside')..createSync();
+      final sentinel = File('${outside.path}/sentinel')..writeAsBytesSync([5]);
+      Link('${other.path}/tmp/link').createSync(outside.path);
+
+      expect(
+        await files.offlineAccountDirectoryNames(),
+        unorderedEquals([hash, otherHash]),
+      );
+      expect(
+        await files.offlineAccountDirectoryState(_account),
+        ReadCacheDirectoryState.hasFiles,
+      );
+      await files.clearOfflineAccountDirectoriesExcept({_account});
+      expect(blob.readAsBytesSync(), [1, 2, 3]);
+      expect(other.existsSync(), isFalse);
+      expect(sentinel.readAsBytesSync(), [5]);
+      await files.clearOfflineAccount(_account);
+      expect(
+        await files.offlineAccountDirectoryState(_account),
+        ReadCacheDirectoryState.absent,
+      );
+      expect(await files.offlineAccountDirectoryNames(), isEmpty);
+      await files.clearOfflineRoot();
+      expect(Directory('${root.path}/offline_repo').existsSync(), isFalse);
+      expect(sentinel.readAsBytesSync(), [5]);
+    },
+  );
+
+  test(
+    'offline bytes do not count toward C2 capacity or mutate C2 files',
+    () async {
+      final files = store();
+      final c2Name = await files.writeEntry(_entry(), _key);
+      final c2File = File('${accountDirectory().path}/$c2Name');
+      final c2Bytes = c2File.readAsBytesSync();
+      final before = await files.usage(_account, _key);
+      final hash = ReadCacheCipher.accountDirectoryName(_account);
+      final offline = File('${root.path}/offline_repo/$hash/b/snapshot.v1.bin');
+      offline.parent.createSync(recursive: true);
+      offline.writeAsBytesSync(List<int>.filled(1024 * 1024, 42));
+      final after = await files.usage(_account, _key);
+      expect(after.accountBytes, before.accountBytes);
+      expect(after.deviceBytes, before.deviceBytes);
+      await files.clearOfflineAccount(_account);
+      expect(c2File.readAsBytesSync(), c2Bytes);
+      expect(
+        (await files.readEntry(_account, _key, _entry().canonicalKey))!.body,
+        _entry().body,
+      );
+    },
+  );
+
+  test('offline sweep refuses foreign account names before deleting', () async {
+    final files = store();
+    final hash = ReadCacheCipher.accountDirectoryName(_account);
+    final valid = File('${root.path}/offline_repo/$hash/index.v99.bin');
+    valid.parent.createSync(recursive: true);
+    valid.writeAsBytesSync([7]);
+    Directory('${root.path}/offline_repo/not-an-account').createSync();
+    await expectLater(
+      files.offlineAccountDirectoryNames(),
+      fileFailure(ReadCacheFileFailure.untrustedPath),
+    );
+    await expectLater(
+      files.clearOfflineAccountDirectoriesExcept({}),
+      fileFailure(ReadCacheFileFailure.untrustedPath),
+    );
+    expect(valid.readAsBytesSync(), [7]);
+    await files.clearOfflineRoot();
+    expect(Directory('${root.path}/offline_repo').existsSync(), isFalse);
+  });
+
   for (final name in [
     'foreign',
     'a' * 31,

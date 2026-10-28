@@ -138,6 +138,9 @@ enum AiBackgroundStartDisposition {
   unavailable,
 }
 
+/// Whether the native service has any unconfirmed cleanup in progress.
+enum AiBackgroundCleanupConfirmation { pending, confirmed }
+
 enum AiBackgroundStartFailure {
   unsupported,
   foregroundRequired,
@@ -221,6 +224,8 @@ final class AiBackgroundExecution extends ChangeNotifier
   bool _localOrphan = false;
   int _localStopRevision = 0;
   int _localStopsInFlight = 0;
+  int _localImmediateCleanups = 0;
+  int _localReleasePending = 0;
   String? _permit;
   Timer? _progressTimer;
   Timer? _languageTimer;
@@ -240,13 +245,30 @@ final class AiBackgroundExecution extends ChangeNotifier
       _gates.where((gate) => gate._backProtected).length;
 
   bool get _current => !_disposed && _isCurrent();
+  AiBackgroundCleanupConfirmation get cleanupConfirmation =>
+      _orphan ||
+          _stopsInFlight != 0 ||
+          _immediateCleanups != 0 ||
+          _releasePending != 0
+      ? AiBackgroundCleanupConfirmation.pending
+      : AiBackgroundCleanupConfirmation.confirmed;
+
+  void _notifyCleanupChange(AiBackgroundCleanupConfirmation previous) {
+    if (previous == cleanupConfirmation) return;
+    for (final owner in _shared?.owners.toList(growable: false) ?? [this]) {
+      if (!owner._disposed) owner.notifyListeners();
+    }
+  }
+
   bool get _orphan => _shared?.orphan ?? _localOrphan;
   set _orphan(bool value) {
+    final previous = cleanupConfirmation;
     if (_shared case final shared?) {
       shared.orphan = value;
     } else {
       _localOrphan = value;
     }
+    _notifyCleanupChange(previous);
   }
 
   int get _stopRevision => _shared?.stopRevision ?? _localStopRevision;
@@ -260,11 +282,36 @@ final class AiBackgroundExecution extends ChangeNotifier
 
   int get _stopsInFlight => _shared?.stopsInFlight ?? _localStopsInFlight;
   set _stopsInFlight(int value) {
+    final previous = cleanupConfirmation;
     if (_shared case final shared?) {
       shared.stopsInFlight = value;
     } else {
       _localStopsInFlight = value;
     }
+    _notifyCleanupChange(previous);
+  }
+
+  int get _immediateCleanups =>
+      _shared?.immediateCleanups ?? _localImmediateCleanups;
+  set _immediateCleanups(int value) {
+    final previous = cleanupConfirmation;
+    if (_shared case final shared?) {
+      shared.immediateCleanups = value;
+    } else {
+      _localImmediateCleanups = value;
+    }
+    _notifyCleanupChange(previous);
+  }
+
+  int get _releasePending => _shared?.releasePending ?? _localReleasePending;
+  set _releasePending(int value) {
+    final previous = cleanupConfirmation;
+    if (_shared case final shared?) {
+      shared.releasePending = value;
+    } else {
+      _localReleasePending = value;
+    }
+    _notifyCleanupChange(previous);
   }
 
   AiBackgroundRunGate createGate({
@@ -331,7 +378,12 @@ final class AiBackgroundExecution extends ChangeNotifier
 
   /// A non-UUID permit can never match a native-generated UUID. Its rejected
   /// progress request advances the sequence without changing work or the task.
-  /// A stale reply supplies the process high-water mark before the real call.
+  /// A peer that still answers this probe with the historical
+  /// `unsupported` / `not_implemented` handshake also started no work and
+  /// moved no task. Treating that reply as a missing channel skips the start,
+  /// so a timed-out or cleanup-failed run never enters scoped cleanup or
+  /// explicit continuation. A stale reply supplies the process high-water
+  /// mark before the real call.
   Future<bool> _seed() {
     if (_seeded) return Future<bool>.value(true);
     if (!_attach()) return Future<bool>.value(false);
@@ -343,8 +395,10 @@ final class AiBackgroundExecution extends ChangeNotifier
           'workCount': 1,
           'step': 0,
         });
-        if (reply?['status'] == 'rejected' &&
-            reply?['reason'] == 'permit_inactive') {
+        if ((reply?['status'] == 'rejected' &&
+                reply?['reason'] == 'permit_inactive') ||
+            (reply?['status'] == 'unsupported' &&
+                reply?['reason'] == 'not_implemented')) {
           _seeded = true;
           return true;
         }
@@ -381,14 +435,26 @@ final class AiBackgroundExecution extends ChangeNotifier
         _channel.setMethodCallHandler(listeners.dispatch);
         channels[_channel.name] = listeners;
       }
+      final previousShared =
+          listeners.orphan ||
+              listeners.stopsInFlight != 0 ||
+              listeners.immediateCleanups != 0 ||
+              listeners.releasePending != 0
+          ? AiBackgroundCleanupConfirmation.pending
+          : AiBackgroundCleanupConfirmation.confirmed;
       listeners.orphan = listeners.orphan || _localOrphan;
       listeners.stopRevision += _localStopRevision;
       listeners.stopsInFlight += _localStopsInFlight;
+      listeners.immediateCleanups += _localImmediateCleanups;
+      listeners.releasePending += _localReleasePending;
       _localOrphan = false;
       _localStopRevision = 0;
       _localStopsInFlight = 0;
+      _localImmediateCleanups = 0;
+      _localReleasePending = 0;
       listeners.owners.add(this);
       _shared = listeners;
+      _notifyCleanupChange(previousShared);
       _attachedMessenger = messenger;
       return true;
     } on Object {
@@ -698,10 +764,8 @@ final class AiBackgroundExecution extends ChangeNotifier
   }) async {
     final shared = _shared;
     final stopRevision = _stopRevision;
-    if (shared != null) {
-      shared.immediateCleanups++;
-      shared.releasePending++;
-    }
+    _immediateCleanups++;
+    _releasePending++;
     try {
       final reply = await _invoke('releaseRuns', {
         'opSeq': _nextSequence(),
@@ -726,11 +790,9 @@ final class AiBackgroundExecution extends ChangeNotifier
         }
       }
     } finally {
-      if (shared != null) {
-        shared.immediateCleanups--;
-        shared.releasePending--;
-        shared.retireIfIdle();
-      }
+      _immediateCleanups--;
+      _releasePending--;
+      shared?.retireIfIdle();
       if (cleanupAfterDetach && _orphan && _current && _appInForeground()) {
         unawaited(onForeground());
       }
@@ -872,7 +934,7 @@ final class AiBackgroundExecution extends ChangeNotifier
   }) {
     final shared = _shared;
     final stopRevision = _stopRevision;
-    if (shared != null) shared.releasePending++;
+    _releasePending++;
     return _serial(() async {
       try {
         final reply = await _invoke('releaseRuns', {
@@ -913,7 +975,7 @@ final class AiBackgroundExecution extends ChangeNotifier
           if (rebound) notifyListeners();
         }
       } finally {
-        if (shared != null) shared.releasePending--;
+        _releasePending--;
         // Reattachment may precede a failed detach cleanup reply. A visible
         // owner must still clean the orphan without restarting any run.
         if (cleanupAfterDetach && _orphan && _current && _appInForeground()) {
@@ -984,7 +1046,8 @@ final class AiBackgroundExecution extends ChangeNotifier
       _setStatus(AiBackgroundExecutionStatus.invalidated);
       return;
     }
-    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
       var changed = false;
       for (final gate in _gates) {
         if (gate._current &&
@@ -1145,6 +1208,8 @@ final class AiBackgroundRunGate implements AiExecutionGate {
   AiBackgroundStartResult? _lastStartResult;
 
   AiBackgroundStartResult? get lastStartResult => _lastStartResult;
+  AiBackgroundCleanupConfirmation get cleanupConfirmation =>
+      _owner.cleanupConfirmation;
   bool get requiresExplicitResume => _needsExplicitResume || _invalidated;
 
   /// Approval keeps its waiting state until the bridge confirms release.
@@ -1381,7 +1446,9 @@ final class AiBackgroundRunGate implements AiExecutionGate {
     final request = _requestId;
     _requestId = null;
     if (request != null) {
-      unawaited(_cleanupRequest(request, cleanupAfterDetach: cleanupAfterDetach));
+      unawaited(
+        _cleanupRequest(request, cleanupAfterDetach: cleanupAfterDetach),
+      );
     }
   }
 

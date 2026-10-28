@@ -128,6 +128,7 @@ final class AiRunner {
     this.onTextChanged,
     this.onToolStarted,
     this.onRestorableResultCut,
+    this.onContextDelivered,
     this.onToolResult,
     this.confirmCleartext,
     this.listInterfaceAddresses = listAiInterfaceAddresses,
@@ -203,6 +204,9 @@ final class AiRunner {
   /// A tool result that carried whole writable fields was cut after its
   /// read recorded them (§3.1: no whole-field write of a value seen cut).
   final void Function()? onRestorableResultCut;
+
+  /// Page context actually accepted by the provider, before its tools run.
+  final void Function(List<AiContextBlock> sent)? onContextDelivered;
   final void Function(AiToolResult result)? onToolResult;
   final Future<bool> Function()? confirmCleartext;
   final AiInterfaceAddressLister listInterfaceAddresses;
@@ -708,6 +712,17 @@ final class AiRunner {
           if (!refused) _recordUsage(latestUsage, encoded.length);
         }
         _check(epoch);
+        if (seg.tail case AppUserEntry(:final context) when context.isNotEmpty) {
+          // Prior tool fields are reduced to summaries on segment rollover.
+          // Invalidate them first, then allow any whole page fields actually
+          // present in this accepted context to be recorded again.
+          if (_segmentContext.any(
+            (block) => block.source == 'conversation_summary',
+          )) {
+            onRestorableResultCut?.call();
+          }
+          onContextDelivered?.call(context);
+        }
         delivered?.call();
         seg.freezeWith(
           turn.output,
