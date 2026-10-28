@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -32,6 +33,56 @@ Future<void> main() async {
     expect(qaMayStart(enabled: false, android: true), isFalse);
     expect(qaMayStart(enabled: true, android: false), isFalse);
     expect(qaMayStart(enabled: true, android: true), isTrue);
+  });
+
+  test('deadline and real file I/O publish distinct FAIL reasons', () async {
+    final dir = await Directory.systemTemp.createTemp('mr6c-failure-');
+    addTearDown(() => dir.delete(recursive: true));
+    final mailbox = QaMailbox(dir);
+    Future<Object> failure(Future<void> operation) async {
+      try {
+        await operation;
+      } on Object catch (error) {
+        return error;
+      }
+      throw StateError('expected a failure');
+    }
+
+    final timeout = await failure(
+      Completer<void>().future.timeout(Duration.zero),
+    );
+    final io = await failure(
+      File('${dir.path}/private-missing-file').readAsString().then((_) {}),
+    );
+    for (final phase in ['prepare', 'recover']) {
+      final command = QaCommand.parse({..._command(), 'phase': phase});
+      for (final (error, reason) in [
+        (timeout, 'deadline'),
+        (io, 'io_error'),
+        (TimeoutException('termination'), 'deadline'),
+        (TimeoutException('barrier'), 'deadline'),
+        (StateError('private failure'), 'unexpected_error'),
+        (const FormatException('private content'), 'unexpected_error'),
+        (const QaSandboxUnavailable(), 'unexpected_error'),
+        (PlatformException(code: 'private-code'), 'unexpected_error'),
+      ]) {
+        await mailbox.publish(qaFailureEvent(command, error));
+        final encoded = await File('${dir.path}/event.json').readAsString();
+        final event = jsonDecode(encoded) as Map<String, dynamic>;
+        expect(event['phase'], phase);
+        expect(event['event'], 'error');
+        expect(event['outcome'], 'FAIL');
+        expect(event['evidence'], {'reason': reason});
+        expect(encoded, isNot(contains('private')));
+        expect(encoded, isNot(contains(dir.path)));
+        final rejected = qaPreflightRejected(command, error).toJson();
+        final refused = phase == 'prepare' && error is QaSandboxUnavailable;
+        expect(rejected['outcome'], refused ? 'NOT_RUN' : 'FAIL');
+        expect(rejected['evidence'], {
+          'reason': refused ? 'fixture_unavailable' : reason,
+        });
+      }
+    }
   });
 
   test('strict command schema rejects malformed, extra and private fields', () {
@@ -210,6 +261,48 @@ Future<void> main() async {
   );
 
   test(
+    'sandbox accepts only the exact regular ProfileVerifier marker',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('mr6c-profile-marker-');
+      addTearDown(() => dir.delete(recursive: true));
+      FlutterSecureStorage.setMockInitialValues({});
+      const storage = FlutterSecureStorage();
+      final sandbox = QaSandbox(support: dir, storage: storage);
+      await File('${dir.path}/profileInstalled').create();
+      await sandbox.verifyEmpty();
+      await File('${dir.path}/profileInstalled.tmp').create();
+      await expectLater(
+        sandbox.verifyEmpty(),
+        throwsA(isA<QaSandboxUnavailable>()),
+      );
+      expect(await storage.readAll(), isEmpty);
+    },
+  );
+
+  for (final kind in ['directory', 'link', 'dangling link']) {
+    test('sandbox rejects a ProfileVerifier marker that is a $kind', () async {
+      final root = await Directory.systemTemp.createTemp('mr6c-profile-type-');
+      addTearDown(() => root.delete(recursive: true));
+      final dir = await Directory('${root.path}/support').create();
+      final marker = '${dir.path}/profileInstalled';
+      if (kind == 'directory') {
+        await Directory(marker).create();
+      } else {
+        final target = File('${root.path}/target');
+        if (kind == 'link') await target.create();
+        await Link(marker).create(target.path);
+      }
+      FlutterSecureStorage.setMockInitialValues({});
+      const storage = FlutterSecureStorage();
+      await expectLater(
+        QaSandbox(support: dir, storage: storage).seed(),
+        throwsA(isA<QaSandboxUnavailable>()),
+      );
+      expect(await storage.readAll(), isEmpty);
+    });
+  }
+
+  test(
     'recovery preflight binds the exact encrypted journal before recovery',
     () async {
       final dir = await Directory.systemTemp.createTemp('mr6c-journal-');
@@ -220,6 +313,7 @@ Future<void> main() async {
         storage: const FlutterSecureStorage(),
       );
       await Directory('${dir.path}/mr6c_qa').create();
+      await File('${dir.path}/profileInstalled').create();
       await sandbox.seed();
       final journal = AiWriteJournal(
         keys: sandbox.keys,
