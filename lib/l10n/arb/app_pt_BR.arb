@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "A alteração não teve efeito: o campo segue com o valor antigo. Leia novamente e tente outra vez.",
   "aiRefusedDiscussionLocked": "Esta discussão está bloqueada, então o comentário ou resposta não foi enviado.",
   "aiRefusedNotOwnNote": "Esta ação só pode excluir comentários escritos pela sua própria conta, então nada foi feito.",
-  "aiRefusedTodoForeign": "Esta pendência pertence a outra conta, então nada foi feito.",
+  "aiRefusedTodoForeign": "Não foi possível confirmar que esta pendência pertence a esta conta e está no escopo desta conversa, então nada foi feito.",
   "aiRefusedProtectedBranch": "Esta é uma branch protegida; a IA não pode excluí-la nem reescrevê-la, então nada foi feito.",
   "aiRefusedDefaultBranch": "A branch padrão não pode ser excluída, então nada foi feito.",
   "aiRefusedMergeChecking": "O GitLab ainda está verificando se é possível mesclar, então nada foi feito. Tente novamente em instantes.",
@@ -2844,5 +2844,18 @@
   "aiRunStartUnavailable": "O trabalho em segundo plano não está disponível agora.",
   "aiProposalBackgroundUnavailable": "Esta escrita não foi feita: o trabalho em segundo plano não pôde começar.",
   "aiRunCleanupPending": "Trabalho pausado: ainda não foi confirmado que o trabalho em segundo plano terminou, e nada pode continuar até lá.",
-  "aiRunCleanupRetry": "A limpeza é tentada de novo cada vez que você volta ao app; o trabalho só pode continuar depois que a limpeza for confirmada."
+  "aiRunCleanupRetry": "A limpeza é tentada de novo cada vez que você volta ao app; o trabalho só pode continuar depois que a limpeza for confirmada.",
+  "aiProposalGroupTarget": "Item de trabalho #{iid}, que pertence diretamente ao grupo {path}",
+  "aiProposalOwnTodo": "Só muda a sua própria lista de pendências (@{username}); o item de trabalho em si não muda.",
+  "aiProposalDeleteOwnNote": "Só exclui este comentário, escrito por você; antes do envio, o app confere de novo no GitLab que você é o autor.",
+  "aiRefusedGroupUnsupported": "O GitLab não oferece isso para este item de trabalho do grupo (a versão ou o tipo do item podem não ter suporte), então nada foi enviado.",
+  "aiRefusedGroupUnverifiable": "Não foi possível confirmar que este item de trabalho ainda pertence diretamente ao grupo (o grupo pode ter sido renomeado ou movido), então nada foi enviado. Abra ou adicione o item de novo.",
+  "aiConsentWritesGroupScope": "Itens de trabalho de um grupo: a IA só pode alterar aquele em que esta conversa foi aberta ou os que você mesmo adicionar; a permissão nunca se estende ao grupo inteiro, aos subgrupos nem aos projetos dele.",
+  "aiChatEmptyGroup": "A IA lê o item de trabalho #{iid} do grupo {path}. Os outros itens de trabalho do grupo e os projetos dele ficam fora desta conversa.",
+  "aiChatEmptyGroupItem": "A IA lê este item de trabalho do grupo. Os outros itens de trabalho do grupo e os projetos dele ficam fora desta conversa.",
+  "aiSuggestWorkItemSummary": "Resuma este item de trabalho",
+  "aiRemovedGroupWorkItem": "{path} #{iid} foi removido da conversa; a IA não pode mais alterá-lo",
+  "aiChatEmptyGroupAdded": "A IA lê o item de trabalho #{iid} do grupo {path}. Os itens que você adicionou (acima da caixa de mensagem) também fazem parte desta conversa; os outros itens de trabalho do grupo e os projetos dele, não.",
+  "aiChatEmptyGroupItemAdded": "A IA lê este item de trabalho do grupo. Os itens que você adicionou (acima da caixa de mensagem) também fazem parte desta conversa; os outros itens de trabalho do grupo e os projetos dele, não.",
+  "aiRefusedGroupDatesNotSent": "As datas não foram enviadas: elas podem já ser iguais às atuais e, em um item de trabalho do grupo, esse caso não pode ser confirmado sem uma solicitação extra. Leia as datas atuais de novo e tente outra vez."
 }

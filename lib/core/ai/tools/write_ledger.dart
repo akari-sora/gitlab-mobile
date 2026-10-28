@@ -265,12 +265,19 @@ final class AiArgSpec {
     this.modelVisible = true,
     this.portVisible = true,
     this.enumValues,
-  }) : assert(enumValues == null || type == AiArgType.string);
+    this.allowIdentifierMentions = false,
+  }) : assert(enumValues == null || type == AiArgType.string),
+       assert(!allowIdentifierMentions || type == AiArgType.stringList);
 
   final AiArgType type;
   final bool required;
   final AiTextRole text;
   final String? writableField;
+
+  /// Username list items use names (including a literal @name) as identifiers,
+  /// not notification text. Only the mention check is exempt; all secret,
+  /// placeholder, upload and untrusted-text checks still apply (D32).
+  final bool allowIdentifierMentions;
 
   /// Closed nested object fields. An empty map means the object has no
   /// ledger-defined nested shape.

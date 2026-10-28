@@ -33,6 +33,8 @@ AiWriteProposal _proposal({
   AiWritePreview? preview,
   bool showSquash = false,
   String? editableField = 'body',
+  String releaseName = '!44',
+  String typedNameValue = 'team/example',
 }) => AiWriteProposal(
   executionId: 'exec-1',
   operationId: operationId,
@@ -40,7 +42,7 @@ AiWriteProposal _proposal({
     decision: AiGateDecision.requireApproval,
     tier: tier,
     requiresTypedName: typedName,
-    typedName: typedName ? 'team/example' : null,
+    typedName: typedName ? typedNameValue : null,
     reasons: reasons,
     reusesStoredVariables: tier == AiWriteTier.t3,
     showSquash: showSquash,
@@ -54,7 +56,7 @@ AiWriteProposal _proposal({
   writePolicyRevision: 1,
   consentHash: 'hash',
   scopeRevision: 1,
-  releaseName: '!44',
+  releaseName: releaseName,
   fields: fields,
   upload: upload,
   closingRefs: closingRefs,
@@ -1588,7 +1590,594 @@ void main() {
       }
     });
   });
+  // MR6b-3g full UI (§6.1): the group owner, full path and #iid on every
+  // group card; own-note delete and own to-do wording; a missing feature
+  // and a lost ownership proof read differently from a plain refusal.
+  group('group work-item cards', () {
+    const groupAlias = 'updateGroupWorkItemState';
+    const ltrIsolate = '\u2068';
+    const popIsolate = '\u2069';
+
+    test('the owning group is read only from a group alias release name', () {
+      expect(aiGroupWriteTarget(groupAlias, 'team/sub#5'), (
+        path: 'team/sub',
+        iid: 5,
+      ));
+      for (final alias in _groupAliases.keys) {
+        expect(aiGroupWriteTarget(alias, 'a/b.c_d-e#12'), (
+          path: 'a/b.c_d-e',
+          iid: 12,
+        ), reason: alias);
+      }
+      // A project write with the same shape, a to-do and an unknown id are
+      // never a group's: the operation decides, not the text.
+      for (final (operationId, name) in const [
+        ('updateWorkItemState', 'team/sub#5'),
+        ('createNote', 'team/sub#5'),
+        ('snoozeTodo', '@alice'),
+        ('notAnOperation', 'team/sub#5'),
+      ]) {
+        expect(aiGroupWriteTarget(operationId, name), isNull, reason: name);
+      }
+      // A name the port would never build, or one the redaction changed.
+      for (final name in const [
+        'team/sub',
+        '#5',
+        'team/sub#',
+        'team/sub#0',
+        'team/sub#05',
+        'team/sub#+5',
+        'team/sub#5x',
+        'team/../sub#5',
+        'team sub#5',
+        '[REDACTED]#5',
+        'team/sub#5#6',
+      ]) {
+        expect(aiGroupWriteTarget(groupAlias, name), isNull, reason: name);
+      }
+      expect(aiWriteTargetText(groupAlias, 'team/sub#5'), 'team/sub #5');
+      expect(aiWriteTargetText('updateWorkItemState', '#5'), '#5');
+      expect(aiOwnTodoUsername('snoozeTodo', '@alice'), 'alice');
+      expect(aiOwnTodoUsername('unsnoozeTodo', '@alice'), 'alice');
+      for (final (operationId, name) in const [
+        ('markTodoDone', '@alice'),
+        ('snoozeTodo', 'alice'),
+        ('snoozeTodo', '@'),
+        ('snoozeTodo', '@a b'),
+      ]) {
+        expect(aiOwnTodoUsername(operationId, name), isNull, reason: name);
+      }
+    });
+
+    test('in Arabic the path and #iid are isolated one piece at a time', () {
+      useLanguage(languageForTag('ar')!);
+      addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+      expect(
+        aiWriteTargetText(groupAlias, 'team/sub#5'),
+        '${ltrIsolate}team/sub$popIsolate $ltrIsolate#5$popIsolate',
+      );
+      // Not one isolate around `team/sub#5`.
+      expect(
+        aiWriteTargetText(groupAlias, 'team/sub#5'),
+        isNot(contains('team/sub#5')),
+      );
+      expect(
+        aiFieldValue('labels', '["bug","ui"]'),
+        '${ltrIsolate}bug$popIsolate, ${ltrIsolate}ui$popIsolate',
+      );
+    });
+
+    testWidgets('every group alias card names its owning group and number', (
+      tester,
+    ) async {
+      for (final alias in _groupAliases.keys) {
+        final proposal = _proposal(
+          operationId: alias,
+          fields: const {},
+          editableField: null,
+          releaseName: 'team/sub#5',
+        );
+        await tester.pumpWidget(
+          _host(
+            AiWriteProposalCard(
+              proposal: proposal,
+              session: _Writes([proposal]),
+            ),
+          ),
+        );
+        final line = find.byKey(const ValueKey('ai-proposal-group-target'));
+        expect(line, findsOneWidget, reason: alias);
+        expect(
+          tester.widget<Text>(line).data,
+          l10n.aiProposalGroupTarget('team/sub', 5),
+          reason: alias,
+        );
+        // The subtitle keeps only the tier; the raw `team/sub#5` never
+        // shows, so it cannot read like a project path.
+        expect(find.text(aiTierLabel(AiWriteTier.t2)), findsOneWidget);
+        expect(find.textContaining('team/sub#5'), findsNothing, reason: alias);
+        expect(tester.takeException(), isNull);
+      }
+      // A project work item keeps its one-line subtitle and no group line.
+      final project = _proposal(
+        operationId: 'updateWorkItemState',
+        fields: const {},
+        editableField: null,
+        releaseName: '#5',
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: project, session: _Writes([project])),
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey('ai-proposal-group-target')),
+        findsNothing,
+      );
+      expect(find.text('${aiTierLabel(AiWriteTier.t2)} · #5'), findsOneWidget);
+    });
+
+    testWidgets('the same number in another group reads differently', (
+      tester,
+    ) async {
+      final first = _proposal(
+        operationId: groupAlias,
+        fields: const {'stateEvent': 'close'},
+        editableField: null,
+        releaseName: 'team/a#5',
+      );
+      final second = _proposal(
+        operationId: groupAlias,
+        fields: const {'stateEvent': 'close'},
+        editableField: null,
+        releaseName: 'team/b#5',
+      );
+      await tester.pumpWidget(
+        _host(
+          Column(
+            children: [
+              AiWriteProposalCard(proposal: first, session: _Writes([first])),
+              AiWriteProposalCard(proposal: second, session: _Writes([second])),
+            ],
+          ),
+        ),
+      );
+      expect(find.text(l10n.aiProposalGroupTarget('team/a', 5)), findsOne);
+      expect(find.text(l10n.aiProposalGroupTarget('team/b', 5)), findsOne);
+      expect(find.text(l10n.aiOpCloseGroupWorkItem), findsNWidgets(2));
+    });
+
+    testWidgets('deleting your own group comment names the owner, the '
+        'author and the text, and needs the exact group name', (tester) async {
+      final proposal = _proposal(
+        operationId: 'deleteGroupWorkItemActivityNote',
+        tier: AiWriteTier.t4,
+        typedName: true,
+        typedNameValue: 'team/sub#5',
+        fields: const {},
+        editableField: null,
+        releaseName: 'team/sub#5',
+        preview: const AiDeletePreview(
+          targetName: '',
+          path: 'team/sub',
+          parentName: 'team/sub#5',
+          author: '@alice',
+          excerpt: 'An old synthetic comment.',
+        ),
+      );
+      final writes = _Writes([proposal]);
+      await tester.pumpWidget(
+        _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+      );
+      expect(find.text(l10n.aiOpDeleteOwnComment), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('ai-proposal-own-note')),
+        findsOneWidget,
+      );
+      expect(find.text(l10n.aiProposalDeleteOwnNote), findsOneWidget);
+      expect(find.text(l10n.aiProposalGroupTarget('team/sub', 5)), findsOne);
+      // The preview: the group (not a "path"), the parent as path and #iid,
+      // the author, the text and that it cannot be undone.
+      expect(find.text(l10n.groupLabel), findsOneWidget);
+      expect(find.text(l10n.aiPreviewPath), findsNothing);
+      expect(find.text('team/sub'), findsOneWidget);
+      expect(find.text('team/sub #5'), findsOneWidget);
+      expect(find.text('@alice'), findsOneWidget);
+      expect(find.textContaining('An old synthetic comment.'), findsOne);
+      expect(
+        find.byKey(const ValueKey('ai-preview-cannot-undo')),
+        findsOneWidget,
+      );
+      expect(find.text(l10n.aiProposalTypeName('team/sub#5')), findsOne);
+      final approve = find.byKey(const ValueKey('ai-proposal-approve'));
+      final typed = find.byKey(const ValueKey('ai-proposal-typed-name'));
+      expect(tester.widget<ButtonStyleButton>(approve).onPressed, isNull);
+      // The number alone, the path alone, another group or the project form
+      // of the name never confirm a group delete.
+      for (final wrong in const [
+        '#5',
+        'team/sub',
+        'team/other#5',
+        'team/sub#6',
+      ]) {
+        await tester.enterText(typed, wrong);
+        await tester.pump();
+        expect(
+          tester.widget<ButtonStyleButton>(approve).onPressed,
+          isNull,
+          reason: wrong,
+        );
+      }
+      // Direction marks copied from an Arabic interface still match.
+      await tester.enterText(typed, '${ltrIsolate}team/sub#5$popIsolate');
+      await tester.pump();
+      await tester.tap(approve);
+      await tester.pumpAndSettle();
+      expect(writes.approvals.single.typedName, 'team/sub#5');
+    });
+
+    testWidgets('a project comment delete names the own-comment limit too', (
+      tester,
+    ) async {
+      final proposal = _proposal(
+        operationId: 'deleteWorkItemActivityNote',
+        tier: AiWriteTier.t4,
+        typedName: true,
+        typedNameValue: '#5',
+        fields: const {},
+        editableField: null,
+        releaseName: '#5',
+        preview: const AiDeletePreview(
+          targetName: '',
+          path: 'team/app',
+          parentName: '#5',
+          author: '@alice',
+        ),
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+        ),
+      );
+      expect(find.text(l10n.aiProposalDeleteOwnNote), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('ai-proposal-group-target')),
+        findsNothing,
+      );
+      // A project's path keeps its own label.
+      expect(find.text(l10n.aiPreviewPath), findsOneWidget);
+      expect(find.text(l10n.groupLabel), findsNothing);
+    });
+
+    testWidgets('a to-do snooze says only your own to-do list changes', (
+      tester,
+    ) async {
+      for (final operationId in const ['snoozeTodo', 'unsnoozeTodo']) {
+        final proposal = _proposal(
+          operationId: operationId,
+          tier: AiWriteTier.t1,
+          fields: operationId == 'snoozeTodo'
+              ? const {'until': '2026-10-30T09:00:00Z'}
+              : const {},
+          editableField: null,
+          releaseName: '@alice',
+        );
+        await tester.pumpWidget(
+          _host(
+            AiWriteProposalCard(
+              proposal: proposal,
+              session: _Writes([proposal]),
+            ),
+          ),
+        );
+        final line = find.byKey(const ValueKey('ai-proposal-own-todo'));
+        expect(line, findsOneWidget, reason: operationId);
+        expect(tester.widget<Text>(line).data, l10n.aiProposalOwnTodo('alice'));
+        expect(tester.widget<Text>(line).data, contains('@alice'));
+        expect(
+          find.byKey(const ValueKey('ai-proposal-group-target')),
+          findsNothing,
+        );
+      }
+      final done = _proposal(
+        operationId: 'markTodoDone',
+        tier: AiWriteTier.t1,
+        fields: const {},
+        editableField: null,
+        releaseName: '@alice',
+      );
+      await tester.pumpWidget(
+        _host(AiWriteProposalCard(proposal: done, session: _Writes([done]))),
+      );
+      expect(find.byKey(const ValueKey('ai-proposal-own-todo')), findsNothing);
+    });
+
+    test('a missing feature and a lost ownership proof have their own words '
+        'on a group alias only', () {
+      for (final alias in _groupAliases.keys) {
+        // The dates row's `unsupported` is D29's strict no-op refusal, not a
+        // missing feature (FIX1 R2).
+        expect(
+          aiRefusalText('unsupported', operationId: alias),
+          alias == 'updateGroupWorkItemDates'
+              ? l10n.aiRefusedGroupDatesNotSent
+              : l10n.aiRefusedGroupUnsupported,
+          reason: alias,
+        );
+        expect(
+          aiRefusalText('healthUnsupported', operationId: alias),
+          l10n.aiRefusedGroupUnsupported,
+        );
+        expect(
+          aiRefusalText('workItemUnverifiable', operationId: alias),
+          l10n.aiRefusedGroupUnverifiable,
+        );
+        // Everything else keeps the shared sentence.
+        expect(
+          aiRefusalText('forbidden', operationId: alias),
+          l10n.aiRefusedPermission,
+        );
+        expect(
+          aiRefusalText('stateConflict', operationId: alias),
+          l10n.aiRefusedChanged,
+        );
+        expect(aiRefusalText('somethingNew', operationId: alias), isNull);
+      }
+      for (final operationId in const [
+        null,
+        'updateWorkItemState',
+        'snoozeTodo',
+        'notAnOperation',
+      ]) {
+        expect(
+          aiRefusalText('unsupported', operationId: operationId),
+          l10n.aiRefusedNotAllowed,
+          reason: operationId,
+        );
+        expect(
+          aiRefusalText('workItemUnverifiable', operationId: operationId),
+          l10n.aiRefusedUnverifiable,
+        );
+      }
+      expect(l10n.aiRefusedGroupUnsupported, isNot(l10n.aiRefusedNotAllowed));
+      // The project dates row keeps the shared sentence.
+      expect(
+        aiRefusalText('unsupported', operationId: 'updateWorkItemDates'),
+        l10n.aiRefusedNotAllowed,
+      );
+    });
+
+    // FIX1 R2: the group dates port passes the core's strict no-op refusal on
+    // as `unsupported` (pinned by mr6b3g_dates_test "strict noop has journal
+    // notExecuted, no write charge, and fail-stop": notExecuted, reason
+    // `unsupported`, zero mutations). The card says the dates were not sent
+    // and may already match, never that GitLab lacks the feature.
+    testWidgets('a group dates no-op refusal says the dates may already '
+        'match, not that the feature is missing', (tester) async {
+      final proposal = _proposal(
+        operationId: 'updateGroupWorkItemDates',
+        fields: const {'mode': 'manual', 'startDate': '2026-10-05'},
+        editableField: null,
+        releaseName: 'team/sub#5',
+      );
+      final writes = _Writes([proposal])
+        ..answer = (_) => const AiWriteOutcome(
+          state: AiJournalState.notExecuted,
+          reasonCode: 'unsupported',
+        );
+      await tester.pumpWidget(
+        _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiRefusedGroupDatesNotSent), findsOneWidget);
+      expect(find.text(l10n.aiRefusedGroupUnsupported), findsNothing);
+      expect(find.text(l10n.aiRefusedNotAllowed), findsNothing);
+    });
+
+    testWidgets('a refused group approval says the feature is missing', (
+      tester,
+    ) async {
+      final proposal = _proposal(
+        operationId: 'updateGroupWorkItemHealthStatus',
+        fields: const {'healthStatus': 'atRisk'},
+        editableField: null,
+        releaseName: 'team/sub#5',
+      );
+      final writes = _Writes([proposal])
+        ..answer = (_) => const AiWriteOutcome(
+          state: AiJournalState.notExecuted,
+          reasonCode: 'healthUnsupported',
+        );
+      await tester.pumpWidget(
+        _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiRefusedGroupUnsupported), findsOneWidget);
+      expect(find.text(l10n.aiRefusedNotAllowed), findsNothing);
+    });
+
+    test('label and assignee lists read as names; an empty list stays '
+        'visible', () {
+      expect(aiFieldValue('labels', '["bug","ui"]'), 'bug, ui');
+      expect(aiFieldValue('labels', '[]'), '[]');
+      expect(aiFieldValue('labels', 'not json'), 'not json');
+      expect(aiFieldValue('labels', '[1,"ui"]'), '[1,"ui"]');
+      expect(aiFieldValue('assigneeUsernames', '[]'), '[]');
+    });
+
+    testWidgets('a settled group edit names its group and number', (
+      tester,
+    ) async {
+      final proposal = _proposal(
+        operationId: 'editGroupWorkItemActivityNote',
+        releaseName: 'team/sub#5',
+      )..editedText = 'My own careful words.';
+      await tester.pumpWidget(
+        _host(AiSettledEditCard(proposal: proposal, onDismiss: () {})),
+      );
+      expect(
+        find.text('${l10n.aiWriteStatusNotExecuted} · team/sub #5'),
+        findsOneWidget,
+      );
+    });
+
+    for (final (tag, scale) in const [
+      ('zh-TW', 2.0),
+      ('ar', 2.0),
+      ('ar', 1.0),
+    ]) {
+      testWidgets('a long group path card fits 320dp in $tag at ${scale}x', (
+        tester,
+      ) async {
+        useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        tester.view.physicalSize = const Size(320, 640);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        const path =
+            'synthetic-organisation/platform-division/mobile-applications-team';
+        const name = '$path#4242';
+        final proposal = _proposal(
+          operationId: 'deleteGroupWorkItemActivityNote',
+          tier: AiWriteTier.t4,
+          typedName: true,
+          typedNameValue: name,
+          fields: const {},
+          editableField: null,
+          releaseName: name,
+          preview: const AiDeletePreview(
+            targetName: '',
+            path: path,
+            parentName: name,
+            author: '@alice',
+            excerpt: 'An old synthetic comment.',
+          ),
+        );
+        await tester.pumpWidget(
+          _host(
+            AiWriteProposalCard(
+              proposal: proposal,
+              session: _Writes([proposal]),
+            ),
+            tag: tag,
+            scale: scale,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final line = find.byKey(const ValueKey('ai-proposal-group-target'));
+        expect(line, findsOneWidget);
+        final text = tester.widget<Text>(line).data!;
+        expect(text, l10n.aiProposalGroupTarget(path, 4242));
+        if (tag == 'ar') {
+          expect(Directionality.of(tester.element(line)), TextDirection.rtl);
+          // Path and `#4242` are separate isolates, never one `path#4242`.
+          expect(text, contains('$ltrIsolate$path$popIsolate'));
+          expect(text, contains('$ltrIsolate#4242$popIsolate'));
+          expect(text, isNot(contains(name)));
+        }
+        // Everything the user acts on is reachable at this size.
+        for (final key in const [
+          'ai-proposal-typed-name',
+          'ai-proposal-approve',
+          'ai-proposal-reject',
+        ]) {
+          await tester.ensureVisible(find.byKey(ValueKey(key)));
+          expect(tester.takeException(), isNull, reason: key);
+        }
+      });
+    }
+
+    test('every language words the group card, scope and result lines', () {
+      addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+      expect(appLanguages, hasLength(24));
+      for (final language in appLanguages) {
+        useLanguage(language);
+        final reason = language.tag;
+        for (final text in [
+          l10n.aiProposalGroupTarget('team/sub', 5),
+          l10n.aiChatEmptyGroup('team/sub', 5),
+          l10n.aiRemovedGroupWorkItem('team/sub', 5),
+        ]) {
+          expect(text, contains('team/sub'), reason: reason);
+          // The sigil and number stay together, isolated as one in Arabic.
+          expect(
+            text,
+            contains(language.rtl ? '$ltrIsolate#5$popIsolate' : '#5'),
+            reason: reason,
+          );
+        }
+        final ownTodo = l10n.aiProposalOwnTodo('alice');
+        expect(
+          ownTodo,
+          contains(language.rtl ? '$ltrIsolate@alice$popIsolate' : '@alice'),
+          reason: reason,
+        );
+        for (final text in [
+          l10n.aiProposalDeleteOwnNote,
+          l10n.aiRefusedGroupUnsupported,
+          l10n.aiRefusedGroupUnverifiable,
+          l10n.aiConsentWritesGroupScope,
+          l10n.aiChatEmptyGroupItem,
+          l10n.aiSuggestWorkItemSummary,
+        ]) {
+          expect(text.trim(), isNotEmpty, reason: reason);
+        }
+        // Each one says something the shared sentence does not.
+        expect(
+          l10n.aiRefusedGroupUnsupported,
+          isNot(l10n.aiRefusedNotAllowed),
+          reason: reason,
+        );
+        expect(
+          l10n.aiRefusedGroupUnverifiable,
+          isNot(l10n.aiRefusedUnverifiable),
+          reason: reason,
+        );
+        // FIX1: the dates no-op sentence and the added-items scope lines.
+        expect(
+          {
+            l10n.aiRefusedGroupDatesNotSent,
+            l10n.aiRefusedGroupUnsupported,
+            l10n.aiRefusedNotAllowed,
+          },
+          hasLength(3),
+          reason: reason,
+        );
+        expect(
+          l10n.aiChatEmptyGroupAdded('team/sub', 5),
+          allOf(
+            contains('team/sub'),
+            contains(language.rtl ? '$ltrIsolate#5$popIsolate' : '#5'),
+            isNot(l10n.aiChatEmptyGroup('team/sub', 5)),
+          ),
+          reason: reason,
+        );
+        expect(
+          l10n.aiChatEmptyGroupItemAdded,
+          isNot(l10n.aiChatEmptyGroupItem),
+          reason: reason,
+        );
+        expect(
+          l10n.aiSuggestWorkItemSummary,
+          isNot(l10n.aiSuggestIssueSummary),
+          reason: reason,
+        );
+        if (language.tag != 'en') {
+          expect(
+            l10n.aiProposalGroupTarget('team/sub', 5),
+            isNot(_englishGroupTarget),
+            reason: reason,
+          );
+        }
+      }
+    });
+  });
 }
+
+const _englishGroupTarget = 'Work item #5, owned directly by group team/sub';
 
 /// The level button reads the session through [AiChatSession]; only the
 /// write members matter here.
