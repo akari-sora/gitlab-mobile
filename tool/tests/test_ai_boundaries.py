@@ -113,6 +113,8 @@ WRITE_PORT_MEMBERS = {
     "isClosed",
     "instance",
     "currentUser",
+    "selectedTodoForSnooze",
+    "selectedTodoForUnsnooze",
     "record",
     "records",
     "fileMetadata",
@@ -780,7 +782,9 @@ class AiBoundaryTest(unittest.TestCase):
             else:
                 non_graph.update(members)
         self.assertEqual(non_graph, NON_GRAPH_WRITE_PORT_MEMBERS)
-        self.assertEqual(graph, _MR6B3_WRITE_PORT_MEMBERS | _MR6B3T_WRITE_PORT_MEMBERS | {"instance", "currentUser"})
+        self.assertEqual(graph, _MR6B3_WRITE_PORT_MEMBERS | _MR6B3T_WRITE_PORT_MEMBERS | {
+            "instance", "currentUser", "selectedTodoForSnooze", "selectedTodoForUnsnooze",
+        })
 
     def test_g0e_namespace_location_guard_rejects_part_and_tearoff(self):
         self.assertTrue(self._namespace_write_violations("void f() => _api.namespaceWorkItem;", is_main=False))

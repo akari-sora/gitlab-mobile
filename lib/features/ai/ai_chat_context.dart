@@ -8,7 +8,7 @@ import '../../core/ai/tools/sensitive_paths.dart';
 import '../../core/ai/tools/tool_scope.dart';
 import '../../core/ai/tools/target_binding.dart' show isValidAiGroupPath;
 import '../../core/ai/write_text.dart'
-    show AiFieldProvenance, UploadPlaceholderTable;
+    show AiConflictKey, AiFieldProvenance, UploadPlaceholderTable;
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/group_work_item_identity.dart';
@@ -24,6 +24,7 @@ final class AiChatContext {
     this.groupScope,
     this.groupMetadata,
     this.field,
+    this.titleField,
     this.fetchedAt,
     this.readConfidential = false,
   }) : assert(scope == null || groupScope == null);
@@ -53,24 +54,32 @@ final class AiChatContext {
   /// field the AI can write back whole.
   final AiContextField? field;
 
+  /// Title delivery is tracked independently of upload restoration.
+  final AiContextField? titleField;
+
   /// Records on [table] whether a request that carried [sent] gave the
-  /// provider the description whole. [sent] is what one request attached:
+  /// provider each writable field whole. [sent] is what one request attached:
   /// this page context, a conversation summary cut from it, or nothing (the
   /// context already went out in this segment). Plan §3.1 offers no
   /// whole-field write of a value the provider saw cut, so call this for
   /// every request that carries context, before its tools run.
   void recordDelivery(UploadPlaceholderTable table, List<AiContextBlock> sent) {
-    final field = this.field;
-    if (field == null || sent.isEmpty) return;
-    var whole = false;
-    for (final block in sent) {
-      final strings = block.plainData.plainStrings.toList();
-      for (var i = 0; i + 1 < strings.length && !whole; i++) {
-        whole = strings[i] == 'description' && strings[i + 1] == field.sent;
+    if (sent.isEmpty) return;
+    for (final (name, field) in [
+      ('description', this.field),
+      ('title', titleField),
+    ]) {
+      if (field == null) continue;
+      var whole = false;
+      for (final block in sent) {
+        final strings = block.plainData.plainStrings.toList();
+        for (var i = 0; i + 1 < strings.length && !whole; i++) {
+          whole = strings[i] == name && strings[i + 1] == field.sent;
+        }
+        if (whole) break;
       }
-      if (whole) break;
+      table.recordFieldDelivery(field.provenance, whole: whole);
     }
-    table.recordFieldDelivery(field.provenance, whole: whole);
   }
 }
 
@@ -111,6 +120,25 @@ AiContextField _descriptionField({
   // The context builders strip ANSI escapes and redact every string the same
   // way. Should the two ever differ, the field reads as cut: the safe side.
   sent: redactor.redactSource(description.replaceAll(_ansi, '')).text,
+);
+
+AiContextField _titleField({
+  required AiFieldProvenance source,
+  required Redactor redactor,
+  required String title,
+}) => AiContextField(
+  provenance: AiFieldProvenance(
+    resourceKey: source.resourceKey,
+    fieldName: 'title',
+    completeValue: true,
+    resourceWeb: source.resourceWeb,
+    projectId: source.projectId,
+    projectFullPath: source.projectFullPath,
+    groupId: source.groupId,
+    groupFullPath: source.groupFullPath,
+    accountKey: source.accountKey,
+  ),
+  sent: redactor.redactSource(title.replaceAll(_ansi, '')).text,
 );
 
 final _ansi = RegExp(
@@ -225,6 +253,7 @@ Future<AiChatContext> loadAiChatContext({
     groupScope: context.groupScope,
     groupMetadata: context.groupMetadata,
     field: context.field,
+    titleField: context.titleField,
     readConfidential: context.readConfidential,
     fetchedAt: origin is AiGeneralOrigin || origin is AiFileOrigin
         ? null
@@ -370,6 +399,22 @@ Future<AiChatContext> _loadGroupWorkItem(
       // The fixed namespace document/model does not expose confidential. Do not
       // derive false from its absence or widen the core query in this packet.
       groupMetadata: AiGroupContextMetadata(visibility: visibility),
+      titleField: _titleField(
+        // Delivery tracking uses the same account/group/IID field key as the
+        // coordinator. This does not supply opening identity or permission.
+        source: AiFieldProvenance(
+          resourceKey: AiConflictKey(
+            '($accountKey, group:$groupId, workItem, ${item.iid})',
+          ),
+          fieldName: 'title',
+          completeValue: true,
+          accountKey: accountKey,
+          groupId: groupId,
+          groupFullPath: path,
+        ),
+        redactor: builder.redactor,
+        title: item.title,
+      ),
     );
   });
 }
@@ -553,6 +598,14 @@ Future<AiChatContext> _loadIssue(
   _requireCurrent(isCurrent);
 
   final description = _optionalString(item, 'description') ?? '';
+  final field = _descriptionField(
+    api: api,
+    redactor: builder.redactor,
+    project: origin.project,
+    resource: 'issues',
+    iid: origin.iid,
+    description: description,
+  );
   final built = builder.discussion(
     AiDiscussionContextInput(
       kind: 'issue',
@@ -569,13 +622,11 @@ Future<AiChatContext> _loadIssue(
   return AiChatContext(
     built: built,
     readConfidential: item['confidential'] == true,
-    field: _descriptionField(
-      api: api,
+    field: field,
+    titleField: _titleField(
+      source: field.provenance,
       redactor: builder.redactor,
-      project: origin.project,
-      resource: 'issues',
-      iid: origin.iid,
-      description: description,
+      title: _requiredString(item, 'title'),
     ),
     scope: _scope(
       accountKey: accountKey,
@@ -669,6 +720,14 @@ Future<AiChatContext> _loadMergeRequest(
         throw const FormatException('Merge request diff entry is invalid.'),
   ];
   final description = _optionalString(item, 'description') ?? '';
+  final field = _descriptionField(
+    api: api,
+    redactor: builder.redactor,
+    project: origin.project,
+    resource: 'merge_requests',
+    iid: origin.iid,
+    description: description,
+  );
   final built = builder.mergeRequest(
     AiMergeRequestContextInput(
       iid: origin.iid,
@@ -685,13 +744,11 @@ Future<AiChatContext> _loadMergeRequest(
   );
   return AiChatContext(
     built: built,
-    field: _descriptionField(
-      api: api,
+    field: field,
+    titleField: _titleField(
+      source: field.provenance,
       redactor: builder.redactor,
-      project: origin.project,
-      resource: 'merge_requests',
-      iid: origin.iid,
-      description: description,
+      title: _requiredString(item, 'title'),
     ),
     scope: _scope(
       accountKey: accountKey,
