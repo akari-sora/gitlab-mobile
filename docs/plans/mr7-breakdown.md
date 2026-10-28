@@ -121,7 +121,7 @@ emulator 一律用該 source SHA 實際 production allowlists；7D 先交付素�
 | **7B1 REST T1/T2，Codex** | 新增 `tool/mr7/rest_scenarios.dart`、`test/ai/mr7_sandbox_rest_test.dart`；只交付自己的 case definitions，不改 7B0 shared runner | §5.2 REST／upload／draft cases；主責 8/9/14/19/20/23/32；每個 operation 全鏈證據，實例缺功能的個別 variant NOT_RUN，所屬 tool closed；手機實際 picker／確認 UI 未跑仍 NOT_RUN |
 | **7B2 project GraphQL，Codex** | 新增 `tool/mr7/graphql_scenarios.dart`、`test/ai/mr7_sandbox_graphql_test.dart` | project WI widgets／activity／incident 等；主責 10/16/24/25/29；group fixtures 只做拒絕負例，不 live 寫 group；無 server feature／權限即 NOT_RUN／closed |
 | **7B3 advanced T3/T4，Codex** | 新增 `tool/mr7/advanced_scenarios.dart`、`test/ai/mr7_sandbox_advanced_test.dart` | refs/files/MR/CI/snippets/registry/project settings 的 sandbox-only variants；主責 8/9/18/20/26/30/31/32；personal/account-global、不可造出的 registry 或 schedule variant 保持 NOT_RUN／closed，不縮短 tier 契約 |
-| **7C Play 聲明，Codex 技術表／lead 提交** | 新增 `docs/MR7_PLAY_DECLARATIONS.md`；`tool/bootstrap.py`／`tool/tests/test_bootstrap.py` 在本包才取得 ownership，只有確定需要的 permission／flavor 修正；不並改 7A 檔案。所有對外文字交 Claude | §6 的 FGS／data safety／權限／AI policy／privacy-policy mapping。主責 11/15/22/23/27/28（政策與 artifact 子列），device V1–V7 與 Console 提交／核准 NOT_RUN，不能用表單草稿升格 |
+| **7C Play 聲明，Codex 技術表／lead 提交** | 新增 `docs/MR7_PLAY_DECLARATIONS.md`；`tool/bootstrap.py`／`tool/tests/test_bootstrap.py` 在本包才取得 ownership，只有確定需要的 permission／flavor 修正；不並改 7A 檔案。所有對外文字交 Claude | §6 的 FGS／data safety／權限／AI policy／privacy-policy mapping。主責 11/15/22/23/27/28（政策與 artifact 子列），device V1–V12（依本包相關功能列適用子集）、R8 最佳化／QA 接縫缺席的 artifact 檢查與 Console 提交／核准 NOT_RUN，不能用表單草稿升格 |
 | **7D listing／UI 交接，lead／Claude** | `docs/STORE_LISTING.md`、新增 `docs/MR7_LISTING_HANDOFF.md`；所有 UI widget／`lib/l10n/`（含產生檔）、通知及 reporting 體驗由 lead 分派的單一 Claude owner 修改 | §7 的素材／語意／320dp/2×/RTL／24 locale；主責 2/7/11/12/14/15/16/27/28/31 的 UI。Codex 可執行非文案驗證。未實測 screenshot／report receipt／Play device 一律 NOT_RUN |
 | **7R final closure／release receipt，Codex；merge／publication 由 lead** | 7A 檔案整批串行交棒給 7R；`docs/V0_6_AI_VERIFICATION.md`、`docs/PLAN_STATUS.md`、`docs/CI.md`、`docs/ANDROID_RELEASE_INVENTORY.json`、必要的 `docs/ANDROID_SIGNING.md` 公開狀態；新增 `docs/MR7_RELEASE_EVIDENCE.md` | §8 收斂所有 32 列及 operation manifest、關閉失敗能力、final-SHA CI／package 反讀。只有合格 gitlab release build 加 AI=true；background 預設 false。Play AI／iOS／未跑 device 列不代勾；不自動 tag 或發布 |
 
@@ -131,7 +131,7 @@ emulator 一律用該 source SHA 實際 production allowlists；7D 先交付素�
 
 ### §4.1 每包精確驗收指令
 
-下列命令**本次皆 NOT_RUN**；新增測試／flags／CLI 要由對應包實作後才存在。使用 `.fvmrc` 的 Flutter **3.47.2**、已提交 lock。`MR7_EVIDENCE` 由實作者指向 session scratch／小型 git-ignored 目錄，不含 secret、不提交大型輸出。全套檢查會耗時，依 `ci/check.sh` 的 timeouts 及完成 marker 驗收，禁止拿被中斷的計數當總數。
+下列命令**本次皆 NOT_RUN**；新增測試／flags／CLI 要由對應包實作後才存在。使用 `.fvmrc` 的 Flutter **3.47.2**、已提交 lock。`MR7_EVIDENCE` 由實作者指向 session scratch／小型 git-ignored 目錄，不含 secret、不提交大型輸出。每包先跑共通區塊，再只跑該包區塊；累積整合須等所列各包全部交付。全套檢查沿 `ci/check.sh:12` 的 GNU `timeout`（每模式 12 分鐘、TERM 後 15 秒 KILL）與 `ci/test_report.py:86` 的完成事件檢查，禁止拿被中斷的計數當總數；缺少同款 timeout 的環境不執行無總期限的替代命令。
 
 ```sh
 # 共通（每包至少跑受影響測試，再由 7R 跑完整組合）
@@ -144,39 +144,87 @@ python3 -m unittest discover -s ci/tests -p '*_test.py' -v
 python3 -m unittest discover -s tool/tests -p 'test_*.py' -v
 python3 -m compileall -q ci tool
 for script in ci/*.sh; do bash -n "$script"; done
+```
 
-# 7A 新增測試；保留「未配置預設 off」及明確 on 的兩種編譯證據
-fvm flutter test --no-pub test/ai/mr7_release_gate_test.dart test/ai/mr7_background_gate_test.dart test/ai/ai_failure_test.dart
-fvm flutter test --no-pub --dart-define=MERGELINE_AI_ASSISTANT=true --dart-define=MERGELINE_AI_BACKGROUND=false test/ai/mr7_release_gate_test.dart test/ai/mr7_background_gate_test.dart test/ai/ai_failure_test.dart
+```sh
+# 7A1：runtime gate；未配置預設 off 與明確 on，不引用 A2 的 background test
+fvm flutter test --no-pub test/ai/mr7_release_gate_test.dart test/ai/ai_failure_test.dart
+fvm flutter test --no-pub --dart-define=MERGELINE_AI_ASSISTANT=true --dart-define=MERGELINE_AI_BACKGROUND=false test/ai/mr7_release_gate_test.dart test/ai/ai_failure_test.dart
+```
+
+```sh
+# 7A2（依 A1）：background gate，兩種編譯模式
+fvm flutter test --no-pub test/ai/mr7_background_gate_test.dart
+fvm flutter test --no-pub --dart-define=MERGELINE_AI_ASSISTANT=true --dart-define=MERGELINE_AI_BACKGROUND=false test/ai/mr7_background_gate_test.dart
+```
+
+```sh
+# 7A3（依 A2）：CI／flags／attestation／publisher
 python3 -m unittest discover -s tool/tests -p test_mr7_release_flags.py -v
 python3 -m unittest discover -s ci/tests -p mr7_delivery_gate_test.py -v
+```
 
-# 7B0–7B3：順序與各包相同；每條測試只用 synthetic transport
+```sh
+# 7B0（依 A3）：runner／contract，僅 synthetic transport
 python3 -m unittest discover -s tool/tests -p test_mr7_sandbox_runner.py -v
 fvm flutter test --no-pub test/ai/mr7_sandbox_contract_test.dart
-fvm flutter test --no-pub test/ai/mr7_sandbox_rest_test.dart
-fvm flutter test --no-pub test/ai/mr7_sandbox_graphql_test.dart
-fvm flutter test --no-pub test/ai/mr7_sandbox_advanced_test.dart
+```
 
+```sh
+# 7B1（依 B0）：REST cases，僅 synthetic transport
+fvm flutter test --no-pub test/ai/mr7_sandbox_rest_test.dart
+```
+
+```sh
+# 7B2（依 B1）：project GraphQL cases，僅 synthetic transport
+fvm flutter test --no-pub test/ai/mr7_sandbox_graphql_test.dart
+```
+
+```sh
+# 7B3（依 B2）：advanced cases，僅 synthetic transport
+fvm flutter test --no-pub test/ai/mr7_sandbox_advanced_test.dart
+```
+
+```sh
+# 累積整合：僅在 7A1–7A3、7B0–7B3 全部交付後執行，另跑共通 Python checks
+fvm flutter test --no-pub --dart-define=MERGELINE_AI_ASSISTANT=true --dart-define=MERGELINE_AI_BACKGROUND=false test/ai/mr7_release_gate_test.dart test/ai/mr7_background_gate_test.dart test/ai/ai_failure_test.dart test/ai/mr7_sandbox_contract_test.dart test/ai/mr7_sandbox_rest_test.dart test/ai/mr7_sandbox_graphql_test.dart test/ai/mr7_sandbox_advanced_test.dart
+```
+
+```sh
 # 7C：manifest／flavor／QA 邊界合成守衛，並另做 §6 artifact 反讀
 python3 -m unittest discover -s tool/tests -p test_bootstrap.py -v
 python3 -m unittest discover -s tool/tests -p test_ai_boundaries.py -v
+```
 
+```sh
 # 7D：實際改動相應 widget tests；完整語意／視覺矩陣另按 §7
-fvm flutter gen-l10n
+python3 tool/l10n.py
+python3 tool/l10n.py --check
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tool/tests -p 'test_l10n.py' -v
 git diff --check
 fvm flutter test --no-pub test/ai/ai_entry_points_test.dart test/ai/ai_consent_dialog_test.dart test/ai/ai_write_ui_test.dart test/ai/ai_report_sender_test.dart
+```
 
+```sh
 # 7R：完整 default-off 與 release-on tests，不能只跑 test/ai
-fvm flutter test --no-pub --coverage --timeout=60s --machine > "$MR7_EVIDENCE/default-tests.jsonl"
-python3 ci/test_report.py "$MR7_EVIDENCE/default-tests.jsonl" "$MR7_EVIDENCE/default-junit.xml"
-fvm flutter test --no-pub --coverage --timeout=60s --machine --dart-define=MERGELINE_AI_ASSISTANT=true --dart-define=MERGELINE_AI_BACKGROUND=false > "$MR7_EVIDENCE/release-tests.jsonl"
-python3 ci/test_report.py "$MR7_EVIDENCE/release-tests.jsonl" "$MR7_EVIDENCE/release-junit.xml"
+mr7_default_test_status=0
+timeout --signal=TERM --kill-after=15s 12m fvm flutter test --no-pub --coverage --timeout=60s --machine > "$MR7_EVIDENCE/default-tests.jsonl" 2> "$MR7_EVIDENCE/default-stderr.txt" || mr7_default_test_status=$?
+mr7_default_report_status=0
+python3 ci/test_report.py "$MR7_EVIDENCE/default-tests.jsonl" "$MR7_EVIDENCE/default-junit.xml" || mr7_default_report_status=$?
+mr7_release_test_status=0
+timeout --signal=TERM --kill-after=15s 12m fvm flutter test --no-pub --coverage --timeout=60s --machine --dart-define=MERGELINE_AI_ASSISTANT=true --dart-define=MERGELINE_AI_BACKGROUND=false > "$MR7_EVIDENCE/release-tests.jsonl" 2> "$MR7_EVIDENCE/release-stderr.txt" || mr7_release_test_status=$?
+mr7_release_report_status=0
+python3 ci/test_report.py "$MR7_EVIDENCE/release-tests.jsonl" "$MR7_EVIDENCE/release-junit.xml" || mr7_release_report_status=$?
+printf 'default_test_exit=%s\ndefault_report_exit=%s\nrelease_test_exit=%s\nrelease_report_exit=%s\n' "$mr7_default_test_status" "$mr7_default_report_status" "$mr7_release_test_status" "$mr7_release_report_status" | tee "$MR7_EVIDENCE/check-status.txt"
+test "$mr7_default_test_status" -eq 0
+test "$mr7_default_report_status" -eq 0
+test "$mr7_release_test_status" -eq 0
+test "$mr7_release_report_status" -eq 0
 ```
 
 7A 的 CI 接線要讓 `ci/check.sh --ai-enabled`（**新增的受限 option**，只轉成上列兩個 literal defines）跑同樣完整 suite／timeout／report。現有無參數模式仍測 default-off；新 regular `flutter_ai_checks` job 跑 on，android build 必須 needs 兩者及 Python／native jobs。不得以一個 selected gate test 替代全套 release-on suite；兩種模式的 counts 各自完整，不能混加。
 
-7D 命令中 gen-l10n 的 diff 由 Claude 檢查；不是要求 Codex 在本規劃任務改 l10n。文案完整性不只比 key 數，還須人工查 §15 第 15 列的方向、否定與條件。
+7D 命令中 `python3 tool/l10n.py` 產生的 ARB／`*.g.dart` diff 由 Claude 檢查；不是要求 Codex 在本規劃任務改 l10n。文案完整性不只比 key 數，還須人工查 §15 第 15 列的方向、否定與條件。
 
 ## §5 Sandbox live-write 的完整合約
 
@@ -196,7 +244,7 @@ python3 tool/run_mr7_sandbox.py --expected-user-id "$MR7_EXPECTED_USER_ID" --nam
 1. **身份與 setup。** 固定完整 instance（scheme/host/port/subpath）、`GET /user` 比對 expected numeric ID；驗 user 個人 namespace ownership，確認 unique run nonce 與費用上限。建立只含 synthetic seed 的 private sandbox；setup POST /projects 是 harness 管理操作，**不算 AI createProject 通過**。紀錄 server UTC、完整 numeric ID + path_with_namespace + namespace ID + owner ID，拒絕 86648389、現有專案、group namespace、fork、mirror、真實變數／外部 integration。若 sandbox ID/path 無法雙查對上，零測試寫入。
 2. **每次送出前重新雙查。** uncached GET project-by-ID 及 URL-encoded full path，兩邊必須是同一 numeric ID／完整 path／owner／private 狀態，resource 的 project_id 亦相符。所有 follow-up、async job、retry、readback 先綁定同一 instance/account generation；禁止 redirect 帶憑證。rename／transfer／權限漂移立即停。groupId、其他 projectId、personal snippet、全帳號 target 在 final transport 再拒絕，不只靠模型 prompt。
 3. **API 預讀。** 真實 API 取得版本／SHA／resource ID／現況，凍結 proposal 及副作用（預設／保護分支、source-branch removal、pipeline／stored parameters、mentions／attachment ownership）。記 payload digest、operation、tier、budget，不保留本文或 auth。模型只見 synthetic fixture；不得匯入 owner 真專案／events body 當 context。
-4. **confirm。** 真 provider 經 production runner、catalogue、coordinator 產生 proposal；host adapter 顯示相同 policy 的 bounded target／diff／tier，owner 明確確認才寫入，hardLine／固定確認／typed target 不減免。outer harness 的案例授權不代替產品所需確認。readOnly 或拒絕／修改後取消案例證明 mutation=0；auto/bypass 的安全規則優先在 fake transport 矩陣驗，不向模型開無限 sandbox 自主迴圈。host adapter 是 host-confirm 證據，app 卡片／鍵盤／RTL 另需 emulator。
+4. **confirm。** 真 provider 經 production runner、catalogue、coordinator 產生 proposal；host adapter 顯示相同 policy 的 bounded target／diff／tier，**sandbox 額外要求 owner 明確確認才寫入**，不改產品 retry/play 的 bypass 自動執行政策；hardLine／固定確認／typed target 不減免。outer harness 的案例授權不代替產品所需確認。readOnly 或拒絕／修改後取消案例證明 mutation=0；auto/bypass 的安全規則優先在 fake transport 矩陣驗，不向模型開無限 sandbox 自主迴圈。host adapter 是 host-confirm 證據，app 卡片／鍵盤／RTL 另需 emulator。
 5. **write。** production named wrapper／sealed GraphQL document 實送一次；嚴格量 account HTTP budget、lease、最後同步 epoch／consent／visibility／429 gate。外層 transport 只能在綁定的 sandbox 內發 mutation，連 mutation 的前置副作用也不可越界。禁止 general REST/GraphQL executor、任意 field/path、直接 port 呼叫繞過 AI 的成功宣稱。
 6. **independent readback。** 另建 uncached read-only observer client（可同 owner 身份，獨立 transport／request，不用 mutation response、UI cache、假 port 或同一內存模型作 oracle）；以 exact returned ID 及 sandbox owner 重讀 server field／SHA／notes／refs／job state。刪除同時記父列表／身份驗證、時間窗與 server ack；看見 404 不能獨自推出已刪。eventual consistency 有固定短上限，未收斂就 uncertain／NOT_VERIFIED，不重送 mutation。核心 ack-only 的 todo 不竄改核心語義；額外 observer 不能證明則不開該 tool。
 7. **events 範圍。** baseline 在 setup 建 project **之前**取得；場景中持續檢查，finalizer 的 cleanup DELETE／終止 deleteProject／最後任何 mutation 之後，再取 server end time，以 clock margin 的完整 UTC window 對 `GET /users/:id/events` 做最後一次完整分頁；after/before 日期只是粗篩，再精確比 created_at／event ID。讀完 pagination、待 bounded 延遲後補查，保存 scrubbed event ID/time/action/project_id 集合與頁數，window 涵蓋管理用 setup／cleanup 寫入。所有 project events 必須屬 sandbox；非 project／無 project_id、不可讀頁、429、時間窗缺口或其他專案事件均標 isolation 未證明並停止，不能靠忽略事件達成零外部事件。cleanup 後讀取失敗即整批 isolation NOT_VERIFIED，不能宣稱已通過；已刪的 sandbox 記刪除狀態，尚在的保留 quarantine，不再發新寫入。先請 owner 在該 window 暫停同帳號其他寫入，避免混入工作事件；若不能隔離，該批 NOT_RUN。events 未涵蓋所有 API 效果，所以另以 request ledger（全部 mutation 的 path／target ID）與獨立 readback 補強；不宣稱 GitLab events 是全域不可漏的 audit log。
@@ -216,7 +264,7 @@ python3 tool/run_mr7_sandbox.py --expected-user-id "$MR7_EXPECTED_USER_ID" --nam
 | 7B1 T2 組織／上傳 | createLabel、updateLabel、createMilestone、updateMilestone、setMilestoneState、createBoard、renameBoard、setBoardSystemListHidden、createBoardList、moveBoardList、moveBoardCard、upload_attachment | upload bytes 僅 synthetic memory fixture，provider 只送允許 metadata；multipart／slow timeout／placeholder provenance 各自判定。`rows_t12.dart:596` 是 tool row，`:611` 只是 filename argument 的 modelVisible=false，不可誤認整個 upload 隱藏 |
 | 7B2 project GraphQL T1/T2/T4 | updateWorkItemState、updateWorkItemStatus、updateWorkItemDates、updateWorkItemHealthStatus、updateWorkItemAssignees、updateWorkItemMilestone、updateWorkItemWeight、updateWorkItemContent、updateWorkItemLabels、createWorkItemActivityComment、createWorkItemActivityReply、editWorkItemActivityNote、deleteWorkItemActivityNote、setWorkItemActivityNoteReaction、setWorkItemNotifications、setIncidentStatus；snoozeTodo、unsnoozeTodo 另依 7-D5 | project WI／incident 的可用版本與付費功能要實查；reaction/notifications 為 T1，delete activity 為 T4，其餘主要 T2；snooze 共享多 scope，缺 group/accountGlobal 證據預設整 row closed |
 | 7B3 files／refs／MR T3/T4 | edit_file、createFile、deleteFile、applySuggestion、createBranch、deleteBranch、createTag、deleteTag、createRelease、updateRelease、deleteRelease、mergeRequest、approveMergeRequest、rebaseMergeRequest、cancelAutoMerge、publishDraftNotes、deleteDraftNote | default/protected ref、CAS、merge snapshot／CI config／closing issues、whole draft batch scan、source branch removal、approval／protected branch escalation全驗；batchApplySuggestions 目前 hidden，保持 closed／NOT_RUN |
-| 7B3 CI T3→T4／T4 | createPipeline、pipelineAction、jobAction、playPipelineSchedule、deletePipeline | retry/play 的 T4／固定確認與既有 variables／inputs 不重讀、不新增契約；僅 sandbox synthetic echo CI、無部署／外部 runner。未證 server 重試參數行為則保留 §22.3 gap，相關 operation closed |
+| 7B3 CI T3→T4／T4 | createPipeline、pipelineAction、jobAction、playPipelineSchedule、deletePipeline | retry/play 為 T4，一般等級需確認（不輸入名稱）；bypass 在目標綁定成立且未命中其他固定確認規則時可自動執行（`docs/plans/ai-writes-plan-v6.md:20`、`:543`；`lib/core/ai/tools/write_ledger.dart:108`）。§5.1 的 sandbox owner 確認是額外限制。既有 variables／inputs 不重讀、不新增；僅 sandbox synthetic echo CI、無部署／外部 runner。未證 server 重試參數行為則保留 §22.3 gap，相關 operation closed |
 | 7B3 snippets T2→高 tier／T4 | createSnippet、updateSnippetMetadata、updateSnippet、updateSnippetFiles、deleteSnippetFile、deleteSnippet | 僅 sandbox project snippet；visibility／provenance／file-set CAS、刪除與新非私有內容 escalation 各驗；不碰 personal snippets |
 | 7B3 deletes T4 | deleteNote、deleteDiscussionNote、deleteIssue、deleteMergeRequest、deleteLabel、deleteMilestone、deleteBoard、deleteBoardList、deletePackage、deletePackageFile、deleteContainerRepository、deleteContainerTag | 只刪本 run synthetic fixtures；registry fixture 不可建立／觀察就 NOT_RUN／closed，不拿 owner 現存 package 當耗材 |
 | 7B3 project hardLine | editProject、deleteProject | edit 限 synthetic sandbox；deleteProject 是全 suite 最後的終止案例，先雙查 ID/path/owner，之後不再寫。獨立 observer 記 deletion request／retention／父 namespace 列表及可用 server 狀態；不要求已刪專案再成功雙查，也不把單獨 404 當刪除證明。未能獨立確認結果就 NOT_VERIFIED／closed。harness cleanup 不算 AI deleteProject 通過，finalizer 不再重刪。保護／轉移等越界欄位拒絕 |
@@ -237,7 +285,7 @@ target Android 14/API 34+ 的 app 需要為使用的 FGS 宣告 manifest type、
 | permission／manifest element | 目前來源／預期用途 | 7C 必驗的兩 flavor artifact |
 |---|---|---|
 | INTERNET | bootstrap.py:182，GitLab／provider 網路 | gitlab／play 都有；HTTP LAN 能否送出由真網路與 Dart policy 另外驗 |
-| FOREGROUND_SERVICE、FOREGROUND_SERVICE_DATA_SYNC、POST_NOTIFICATIONS | bootstrap.py:399；AgentRunService=dataSync／nonexported／stopWithTask=true | manifest 唯一且正確 type；權限 allow/deny、停用 channel、泛用鎖屏內容、停止、真 timeout 等仍由 C8 V1–V7 真跑；未跑 NOT_RUN |
+| FOREGROUND_SERVICE、FOREGROUND_SERVICE_DATA_SYNC、POST_NOTIFICATIONS | bootstrap.py:399；AgentRunService=dataSync／nonexported／stopWithTask=true | manifest 唯一且正確 type；權限 allow/deny、停用 channel、泛用鎖屏內容、停止、真 timeout 等仍由 C8 V1–V12 中的相關列真跑；未跑 NOT_RUN |
 | VIBRATE | flutter_local_notifications 的預期 merged 權限，`docs/plans/mr6c-breakdown.md:152` 要求反讀 | 以當時釘版外掛 merged manifest 為準；不能只引用 plan 就稱有／無 |
 | USE_BIOMETRIC、USE_FINGERPRINT、ACCESS_NETWORK_STATE、WAKE_LOCK | 歷史 release inventory `docs/ANDROID_RELEASE_INVENTORY.json:705` 已見，分別關聯 app lock／媒體等現有功能 | 逐權限標來源／功能；不是 MR7 新增的假設，也不能抄歷史 APK 當新 APK 清單 |
 | REQUEST_INSTALL_PACKAGES＋UpdateFileProvider | bootstrap.py:1298，gitlab 自更新 | gitlab 有，play **無**；Play 由 Play update API，不能將 gitlab APK 當 Play proof |
@@ -289,6 +337,14 @@ LAN HTTP：真 loopback 與另一台 LAN 主機分開。LAN 主機是 off-device
 `docs/STORE_LISTING.md:3` 的 listing 從未提交，`:28`–`:35` 的 package／分類／長度與目前無 AI 的 copy 仍是基線，不能先改成所有工具可用。`:59`–`:71` 的本機 cache 聲明也不涵蓋 AI off-device flow。
 
 Claude 取得 7R 候選 capability manifest、7C data-flow／policy draft 後，交付：各語系實際可用功能文字、provider/費用及 opt-in 說明、confirmation／unknown／stop／foreground-only 限制、不支援／未過能力不出現的截圖清單、隱私政策與 support/report URL、Play reviewer 的 synthetic access 步驟。只用 synthetic repos／帳號顯示資料；不含 PAT、私有 project path、通知私有內容或真 provider key。品牌用 Mergeline，沿現有 trademark／圖示限制。
+
+父計畫 `docs/plans/ai-writes-plan-v6.md:515` 的三項主打素材由 Claude 逐項交接；每項綁實際 **Play flavor** 的 full SHA／artifact hash／AI 與 background flags／production capability digest、所需 read/write 能力的合格證據與該畫面的實錄。Play AI=false 或任一所需能力未過時，該項 **NOT_RUN／不展示**，不得挪用 gitlab flavor 或 candidate-only 成功；目前三項皆 NOT_RUN：
+
+| 條件式主打素材 | 必須對上的能力／證據（source 僅定位，不代表通過） |
+|---|---|
+| AI 讀 Job log → 提議修正 | `get_job_log`（`lib/core/ai/tools/tool_catalogue.dart:226`）的 P／read scope、真 provider 提議與 app proposal 畫面；若素材包含套用修正，另需該 write operation 的 W／E |
+| AI 建立 MR | `createMergeRequest`（`lib/core/ai/tools/ledger/rows_t12.dart:273`）的 sandbox W、獨立 readback 與 app E；未建立成功不能以草稿畫面宣稱完成 |
+| 在確認卡核准合併 | `mergeRequest`（`lib/core/ai/tools/ledger/rows_merge.dart:10`）的確認前 mutation=0、確認後 sandbox W／獨立 readback 與 app E；素材若另呈現 MR approval，另綁 `approveMergeRequest`（同檔 `:25`）的證據 |
 
 驗收：owned emulator 上實際候選 flavor 的入口→provider consent→scope→proposal→編輯／拒絕／確認→readback／unknown→停止；320dp、2× text、RTL、24 locale 的 key 與意圖方向／否定／條件；FGS 未開就不拍「背景工作已支援」。app screenshot、widget/golden 與 Play listing screenshot 分類記錄，生成圖不稱真裝置截圖。使用公有 repo 的 emulator smoke 繼續**拒絕所有寫入**；authenticated approve 只限 §5 的 sandbox 且須明確標註，兩套證據不混用。
 
@@ -350,7 +406,7 @@ GITLAB_MOBILE_SIGNING_PROPERTIES="$PLAY_SIGNING_PROPERTIES" fvm flutter build ap
 | 12／`:547` | readonly frozen prefix／write新 segment／tool pairing；S＋E | MR6a/6b；7A、7D | S 基線 transcript／write_history；release 與 E NOT_RUN |
 | 13／`:548` | importer／固定 GraphQL document／OAuth refresh；S＋W | MR6b-1/2/3；7A、7B2 | S 基線 boundary／guard tests；真 OAuth 只可專用帳號授權後做，預設 NOT_RUN，不用 PAT 結果冒充 |
 | 14／`:549` | quick action／text role／mentions／secret／visibility；S＋E＋synthetic-content W | MR6a/6b-1/2；7B1、7D | S 基線 quick_actions／plain_text／redaction；W、24 locale 畫面 NOT_RUN |
-| 15／`:550` | 24 locale 語意／否定／條件／history；S key checks＋E＋Claude 人審 | MR6a/6b UI；7D（Claude）、7C 對外一致性 | 有合成／歷史 UI 基線，不是當前 24 語意全過；本批 NOT_RUN |
+| 15／`:550` | 24 locale 語意／否定／條件：S key checks＋E＋Claude 人審；`aiReadOnlyPromise` 移除：S 全 `lib/`（含 24 ARB／產生檔）零引用掃描＋新寫入揭露（`lib/features/ai/ai_consent_dialog.dart:297`），依父計畫 `:442`；history 格式版本 +1 往返：S，`lib/features/ai/ai_history_codec.dart:12` 的 1→2 與既有 `test/ai/packet7_write_history_test.dart:28` | 24 語與舊 key 移除：7D（Claude），7C 對外一致性；格式往返：7R（Codex）重跑既有測試 | 24 語：歷史 UI 基線，本批語意／E NOT_RUN；舊 key：本次 source 掃描無引用，release SHA 掃描／揭露 E NOT_RUN；格式：既有 S 基線，本批 round trip NOT_RUN |
 | 16／`:551` | target intent／URL/UI／同 iid／引用否定；S＋W＋E | MR6b-2/3/g；7A、7B0/2、7D | S 基線 binding／origin／locator；group 正式 G14/G15 未關 gate，W/E NOT_RUN |
 | 17／`:552` | soft20s/write21s／active12min／wall30min；S fake clock＋E | MR6b-1、MR6c；7A、7R／C8 | S 基線 timeout／execution gate；真 OS／latency NOT_RUN，native TTL 沿 C-D4 |
 | 18／`:553` | fail-stop 後續 mutation=0／no-op 繼續；S＋W | MR6b-1/2/3；7B0/3 | S 基線 coordinator；真 W NOT_RUN，後續標 NOT_RUN，不自動重試 |
@@ -384,7 +440,7 @@ P 的責任是 public API 相容性／匿名 reads／無 credentials：7R 在同
 | raw response、錯誤 trace／provider replay 洩漏內容 | runner allowlist 輸出、關 HTTP debug／shell xtrace；先用假 secret 做 leak tests，失敗不啟 live |
 | 未知寫入與 cleanup 衝突 | 留 sandbox quarantined，零新寫入，保留隔離與調查 receipt；cleanup NOT_RUN，不在 finally 強刪 |
 | MR7 final define 一合併就 preview 上傳／結果補 docs 又改 SHA | 7A 先建 AI-on 手動 delivery＋受控外部 exact-SHA attestation；7R 合併後驗完才放行；docs-only receipt commit 不冒充 tested release。無法保護則 AI define 繼續 false |
-| C8 全是 host 工具、背景真 OS 未跑 | 7A background false；無安全 foreground-only 接縫就 global false；C8 V1–V7／R8 原案號繼續列 NOT_RUN |
+| C8 全是 host 工具、背景真 OS 未跑 | 7A background false；無安全 foreground-only 接縫就 global false；C8 V1–V12 與 R8（release 最佳化與產物檢查，非 V 系列案號）繼續列 NOT_RUN |
 | §22.3 retry/play 參數及 channel 延遲未知 | 不加讀 variables 權限；不得承諾 server 參數安全複製；未實證關 tool。native latency 由 C8 量，不用 host VM 取代 |
 | FGS dataSync／specialUse 未核准 | foreground-only；type 不自動切換。7C 準備真影片與時限行為，Console acceptance NOT_RUN |
 | AI policy 是否適用、mailto/share 不足 | 預設適用且 reporting gap 未過；Play AI off，7D/lead 補合法 in-app 報告流程／收件證據再開 |
