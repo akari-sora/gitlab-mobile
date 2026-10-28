@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -51,6 +52,55 @@ String markdownHeadingSlug(String text) => text
     .replaceAll(RegExp(r'[^\p{L}\p{N}\p{M}_\- ]', unicode: true), '')
     .replaceAll(' ', '-')
     .replaceAll(RegExp(r'-{2,}'), '-');
+
+/// The inline element every snapshot heading starts with; it renders as a
+/// zero-size [_HeadingAnchor] that gives the heading its identity.
+const _headingAnchorTag = 'mergeline-heading-anchor';
+
+md.Node? _withHeadingAnchor(md.Node? node) {
+  if (node is! md.Element) return node;
+  return md.Element(node.tag, [
+    md.Element.empty(_headingAnchorTag),
+    ...?node.children,
+  ])..attributes.addAll(node.attributes);
+}
+
+/// ATX headings (`## Title`) with a leading anchor element.
+final class _AnchoredHeaderSyntax extends md.HeaderSyntax {
+  const _AnchoredHeaderSyntax();
+  @override
+  md.Node parse(md.BlockParser parser) => _withHeadingAnchor(super.parse(parser))!;
+}
+
+/// Setext headings (`Title` over `===`) with a leading anchor element.
+final class _AnchoredSetextHeaderSyntax extends md.SetextHeaderSyntax {
+  const _AnchoredSetextHeaderSyntax();
+  @override
+  md.Node? parse(md.BlockParser parser) => _withHeadingAnchor(super.parse(parser));
+}
+
+/// Tried before the standard heading syntaxes, which they replace.
+const _anchoredBlockSyntaxes = <md.BlockSyntax>[
+  _AnchoredHeaderSyntax(),
+  _AnchoredSetextHeaderSyntax(),
+];
+
+final class _HeadingAnchorBuilder extends MarkdownElementBuilder {
+  @override
+  Widget? visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) => const _HeadingAnchor();
+}
+
+/// Where a heading starts; [MarkdownView] scrolls to it for `#anchor` links.
+class _HeadingAnchor extends StatelessWidget {
+  const _HeadingAnchor();
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
 
 /// Markdown read from an offline repository snapshot (§5.8, §6.6). Repository
 /// images come only from the snapshot, through the reader and its media
@@ -405,9 +455,6 @@ class _MarkdownViewState extends State<MarkdownView> {
   /// refuses every request, so a missed path fails instead of connecting.
   MarkdownMediaLoader? _snapshotMedia;
 
-  /// The style sheet of the last build, so an anchor can tell headings from
-  /// body text with the same words.
-  MarkdownStyleSheet? _styleSheet;
   MarkdownMediaLoader _snapshotLoader(SnapshotMarkdownContext snapshot) =>
       _snapshotMedia ??= MarkdownMediaLoader.snapshot(
         SnapshotReaderMediaSource(
@@ -534,6 +581,14 @@ class _MarkdownViewState extends State<MarkdownView> {
 
   /// Scrolls to the heading whose GitLab anchor is [fragment]; an unknown
   /// anchor does nothing.
+  ///
+  /// Identity is structural, not textual: in a snapshot view every heading
+  /// is parsed with a zero-size [_HeadingAnchor] as its first child (see
+  /// [_anchoredBlockSyntaxes]), so the n-th rendered anchor *is* the n-th
+  /// heading. The anchor's slug and occurrence (`-1`, `-2`) select n from
+  /// the same parse, and the view scrolls to that anchor's context. Linked
+  /// headings, TOC links with the same label and repeated headings need no
+  /// special cases.
   void _scrollToAnchor(String fragment) {
     String id;
     try {
@@ -542,28 +597,30 @@ class _MarkdownViewState extends State<MarkdownView> {
       return;
     }
     if (id.startsWith('user-content-')) id = id.substring(13);
-    final headings = <({String tag, String text})>[];
+    final document = md.Document(
+      blockSyntaxes: _blockSyntaxes(anchored: true),
+      inlineSyntaxes: _inlineSyntaxes(),
+      extensionSet: md.ExtensionSet.gitHubFlavored,
+      encodeHtml: false,
+    );
+    final headings = <md.Element>[];
     void walk(List<md.Node> nodes) {
       for (final node in nodes) {
         if (node is! md.Element) continue;
-        if (RegExp(r'^h[1-6]$').hasMatch(node.tag)) {
-          final text = node.textContent.trim();
-          if (text.isNotEmpty) headings.add((tag: node.tag, text: text));
+        final first = node.children?.firstOrNull;
+        if (first is md.Element && first.tag == _headingAnchorTag) {
+          headings.add(node);
         } else {
           walk(node.children ?? const []);
         }
       }
     }
 
-    walk(
-      md.Document(
-        extensionSet: md.ExtensionSet.gitHubFlavored,
-      ).parseLines(widget.text.split('\n')),
-    );
+    walk(document.parseLines(const LineSplitter().convert(widget.text)));
     final seen = <String, int>{};
     int? target;
     for (var i = 0; i < headings.length; i++) {
-      final slug = markdownHeadingSlug(headings[i].text);
+      final slug = markdownHeadingSlug(headings[i].textContent);
       final count = seen[slug] ?? 0;
       seen[slug] = count + 1;
       if ((count == 0 ? slug : '$slug-$count') == id) {
@@ -571,67 +628,41 @@ class _MarkdownViewState extends State<MarkdownView> {
         break;
       }
     }
-    final sheet = _styleSheet;
-    if (target == null || sheet == null || !mounted) return;
-    // Rendered text is visited in document order and paired with the parsed
-    // headings in order, so the n-th rendered heading is heading n: a link
-    // with the same label (it has a recognizer) or a paragraph with the same
-    // words (body size) is never taken for a heading, and a repeated heading
-    // keeps its occurrence (`-1`, `-2`). A heading that cannot be matched
-    // stops the pairing, so a wrong target is never chosen.
-    var next = 0;
-    Element? found;
+    if (target == null || !mounted) return;
+    final anchors = <Element>[];
     void visit(Element element) {
-      if (found != null) return;
-      final widget = element.widget;
-      if (widget is RichText) {
-        if (next < headings.length &&
-            _rendersHeading(widget.text, headings[next], sheet)) {
-          if (next == target) {
-            found = element;
-            return;
-          }
-          next++;
-        }
+      if (element.widget is _HeadingAnchor) {
+        anchors.add(element);
         return;
       }
       element.visitChildElements(visit);
     }
 
     context.visitChildElements(visit);
-    if (found case final element?) {
-      unawaited(
-        Scrollable.ensureVisible(
-          element,
-          duration: const Duration(milliseconds: 250),
-          alignment: 0.05,
-        ),
-      );
-    }
+    // The render and this parse come from the same source and syntaxes; a
+    // different count means they disagree, and nothing is guessed.
+    if (anchors.length != headings.length) return;
+    unawaited(
+      Scrollable.ensureVisible(
+        anchors[target],
+        duration: const Duration(milliseconds: 250),
+        alignment: 0.05,
+      ),
+    );
   }
 
-  /// Whether [text] is the rendering of [heading]: the same words, no link,
-  /// and the heading level's font size from [sheet].
-  static bool _rendersHeading(
-    InlineSpan text,
-    ({String tag, String text}) heading,
-    MarkdownStyleSheet sheet,
-  ) {
-    if (text.toPlainText().trim() != heading.text) return false;
-    var link = false;
-    double? size;
-    text.visitChildren((span) {
-      if (span is TextSpan) {
-        if (span.recognizer != null) link = true;
-        if (size == null && (span.text ?? '').isNotEmpty) {
-          size = span.style?.fontSize;
-        }
-      }
-      return true;
-    });
-    final expected = sheet.styles[heading.tag]?.fontSize;
-    return !link && expected != null && size == expected;
-  }
+  List<md.BlockSyntax> _blockSyntaxes({required bool anchored}) => [
+    MarkdownMediaBlockSyntax(),
+    if (anchored) ..._anchoredBlockSyntaxes,
+  ];
+
+  List<md.InlineSyntax> _inlineSyntaxes() => [
+    MarkdownMediaImageSyntax(),
+    MarkdownMediaInlineSyntax(),
+    MarkdownMediaAutolinkSyntax(),
+    MarkdownLiteralLessThanSyntax(),
+    MarkdownMediaLinkSyntax(),
+  ];
 
   /// The repository path [uri] points to inside this snapshot, or null. A
   /// link counts when it is on the account's instance, in the project the
@@ -898,22 +929,20 @@ class _MarkdownViewState extends State<MarkdownView> {
       key: ValueKey(_contentEpoch),
       data: text,
       selectable: false,
-      blockSyntaxes: [MarkdownMediaBlockSyntax()],
-      inlineSyntaxes: [
-        MarkdownMediaImageSyntax(),
-        MarkdownMediaInlineSyntax(),
-        MarkdownMediaAutolinkSyntax(),
-        MarkdownLiteralLessThanSyntax(),
-        MarkdownMediaLinkSyntax(),
-      ],
+      // Only a snapshot view resolves in-page anchors, so only it marks its
+      // headings; every other view renders exactly as before.
+      blockSyntaxes: _blockSyntaxes(anchored: widget.snapshot != null),
+      inlineSyntaxes: _inlineSyntaxes(),
       builders: {
         markdownMediaElement: _MarkdownMediaElementBuilder(
           buildMedia: buildMedia,
           openLink: (href) => _openLink(context, href),
         ),
         markdownHtmlBlockElement: _MarkdownHtmlBlockBuilder(),
+        if (widget.snapshot != null)
+          _headingAnchorTag: _HeadingAnchorBuilder(),
       },
-      styleSheet: _styleSheet = MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         h1: Theme.of(context).textTheme.headlineSmall,
         h2: Theme.of(context).textTheme.titleLarge,
         h3: Theme.of(context).textTheme.titleMedium,

@@ -60,7 +60,14 @@ final class SnapshotSaveJob {
   SnapshotRecord? snapshot;
   DateTime? retryAt;
   int page = 0, requests = 0;
-  bool _pause = false, _cancel = false;
+  bool _pause = false, _cancel = false, _treePersisted = false;
+
+  /// Read-only (C3b): this run's index record has a persisted tree for its
+  /// current SHA, either reused on resume or written after the last tree
+  /// page. Only then does pausing leave a record that recovery keeps and
+  /// that can resume; before it (queued, resolving, listing, or a resume
+  /// that fell back to a fresh save) a pause would lose the record.
+  bool get treePersisted => _treePersisted;
   CancelToken? _token;
   SnapshotPermit? _permit;
   final _completion = Completer<SnapshotRecord?>();
@@ -313,6 +320,7 @@ final class SnapshotSaveQueue {
     void Function()? cancelArchive;
     job.failure = null;
     job.page = 0;
+    job._treePersisted = false;
     final permit = job._permit = await coordinator.registerJob(
       binding,
       job.request.projectId,
@@ -450,6 +458,7 @@ final class SnapshotSaveQueue {
             }
             files = store;
             tree = await store.readTree(resume);
+            job._treePersisted = tree != null;
             record = resume.copyWith(
               status: SnapshotStatus.saving,
               clearFailure: true,
@@ -649,7 +658,9 @@ final class SnapshotSaveQueue {
               complete: false,
               mayCommit: () => permit.isCurrent,
             );
+            job._treePersisted = true;
           });
+          _emit(job);
         }
         permit.check();
         lease?.release();

@@ -409,22 +409,14 @@ class _SnapshotRowTile extends StatelessWidget {
   final VoidCallback? onOpen;
   final ValueChanged<_RowAction> onAction;
 
-  /// Pausing keeps a row only when the paused record will survive recovery,
-  /// which drops any record without a readable tree (FIX1 #3, FIX2 #1):
-  /// - a resumed paused or failed record already has its tree;
-  /// - a new save writes its tree only after the last tree page, so it is
-  ///   pausable from downloading on, never while queued, resolving, listing
-  ///   or waiting (the index record alone is not resumable).
-  /// Anything else offers 取消保存 only.
-  bool get _pausable {
-    final job = row.job;
-    if (job == null) return false;
-    return job.resumeRecord != null ||
-        const {
-          SnapshotJobPhase.downloading,
-          SnapshotJobPhase.finalizing,
-        }.contains(job.phase);
-  }
+  /// Pause is offered only when the job itself reports that its current
+  /// index record has a persisted tree for its current SHA
+  /// ([SnapshotSaveJob.treePersisted]): only then does the paused record
+  /// survive recovery and resume (FIX1 #3, FIX2 #1, FIX3 #1). No phase or
+  /// resume-argument heuristic: a resume that fell back to a fresh save at a
+  /// moved branch has no such tree until its new one is written. Anything
+  /// else offers 取消保存 only.
+  bool get _pausable => row.job?.treePersisted ?? false;
 
   List<_RowAction> _actions(SnapshotRowStatus status) => [
     if (online && status.complete) _RowAction.update,

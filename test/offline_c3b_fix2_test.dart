@@ -63,7 +63,8 @@ final class _GatedSave {
       cdnAdapter: adapter,
       rateBudget: GitLabRateBudget(now: () => fixtureResponses.now),
     )..bindReadCache(fixture.binding.accountKey, fixture.binding.generation);
-    coordinator = OfflineRepositoryCoordinator()
+    // Recovery ages records on the fixture clock, like the queue does.
+    coordinator = OfflineRepositoryCoordinator(clock: () => fixtureResponses.now)
       ..configure(
         keys: fixture.MemoryKeys(),
         supportRoot: () async => root,
@@ -242,6 +243,136 @@ void main() {
     expect(find.text('已保存'), findsOneWidget);
   });
 
+  // FIX3 #1: a paused record older than 24 hours whose branch has moved
+  // resumes as a fresh save; until its new tree exists Pause would lose it.
+  const moved = 'cccccccccccccccccccccccccccccccccccccccc';
+
+  /// Saves, pauses during download, waits 25 hours, moves the branch and
+  /// resumes; the resumed save is held at its first tree page.
+  Future<(_GatedSave, SnapshotRecord, SnapshotSaveJob)> expiredResume(
+    WidgetTester tester,
+  ) async {
+    late _GatedSave g;
+    late SnapshotRecord paused;
+    late SnapshotSaveJob resumed;
+    await tester.runAsync(() async {
+      g = _GatedSave();
+      final h = g.fixtureResponses;
+      h.stream = StreamController<Uint8List>();
+      await g.repositories.refresh();
+      final first = g.repositories.save(h.request(projectId: 41));
+      await _realUntil(
+        () => first.phase == SnapshotJobPhase.downloading,
+        what: 'first save downloading',
+      );
+      expect(first.treePersisted, isTrue);
+      g.repositories.pause(first);
+      await first.completion.timeout(const Duration(seconds: 10));
+      await _realUntil(
+        () => g.repositories.snapshots.any(
+          (s) => s.id == first.id && s.status == SnapshotStatus.paused,
+        ),
+        what: 'first save paused',
+      );
+      paused = g.repositories.snapshots.singleWhere((s) => s.id == first.id);
+      h.now = h.now.add(const Duration(hours: 25));
+      h.sha = moved;
+      h.stream = StreamController<Uint8List>();
+      g.treeGate = Completer<void>();
+      resumed = g.repositories.save(h.request(projectId: 41), resume: paused);
+      await _realUntil(
+        () => resumed.phase == SnapshotJobPhase.listing,
+        what: 'resume listing',
+      );
+      // The old tree is not reused: the record now names the moved commit
+      // and has no tree for it yet.
+      expect(resumed.resumeRecord, isNotNull);
+      expect(resumed.treePersisted, isFalse);
+      await g.repositories.refresh();
+      expect(
+        g.repositories.snapshots.singleWhere((s) => s.id == paused.id).sha,
+        moved,
+      );
+    });
+    addTearDown(() => g.dispose());
+    return (g, paused, resumed);
+  }
+
+  testWidgets('an expired resume at a moved branch offers Pause only after its new tree', (
+    tester,
+  ) async {
+    final (g, paused, resumed) = await expiredResume(tester);
+    await tester.pumpWidget(
+      _host(
+        OfflineProjectsPage(repositories: g.repositories, account: _account),
+        g.repositories,
+      ),
+    );
+    await _frames(tester);
+    final menu = find.byKey(ValueKey('offline-row-menu-${paused.id}'));
+    await tester.tap(menu);
+    await _frames(tester);
+    expect(find.text('暫停'), findsNothing, reason: 'the resume has no tree for this SHA');
+    expect(find.text('取消保存'), findsOneWidget);
+    await tester.tapAt(Offset.zero);
+    await _frames(tester);
+
+    await tester.runAsync(() async {
+      g.treeGate!.complete();
+      await _realUntil(() => resumed.treePersisted, what: 'new tree written');
+    });
+    await _frames(tester);
+    await tester.tap(menu);
+    await _frames(tester);
+    expect(find.text('暫停'), findsOneWidget);
+    await tester.tap(find.text('暫停'));
+    await _frames(tester);
+    late SnapshotRecord kept;
+    await tester.runAsync(() async {
+      await resumed.completion.timeout(const Duration(seconds: 10));
+      // An explicit recovery, the step that drops tree-less records.
+      await g.coordinator.recover(fixture.binding);
+      await g.repositories.refresh();
+      kept = g.repositories.snapshots.singleWhere((s) => s.id == paused.id);
+      expect(kept.status, SnapshotStatus.paused);
+      expect(kept.sha, moved);
+    });
+    await _frames(tester);
+    expect(find.text('已暫停'), findsOneWidget);
+
+    await tester.runAsync(() async {
+      g.fixtureResponses.stream = null;
+      final again = g.repositories.save(
+        g.fixtureResponses.request(projectId: 41),
+        resume: kept,
+      );
+      expect(await again.completion.timeout(const Duration(seconds: 10)), isNotNull);
+      await _realUntil(
+        () => g.repositories.snapshots.any(
+          (s) => s.id == paused.id && s.status == SnapshotStatus.complete,
+        ),
+        what: 'resumed to complete',
+      );
+    });
+    await _frames(tester);
+    expect(find.text('已保存'), findsOneWidget);
+  });
+
+  // The premise of the rule above: pausing that same listing state does lose
+  // the record once recovery runs, so not offering it is required.
+  testWidgets('pausing an expired resume before its tree loses the record', (
+    tester,
+  ) async {
+    final (g, paused, resumed) = await expiredResume(tester);
+    await tester.runAsync(() async {
+      g.repositories.pause(resumed);
+      await resumed.completion.timeout(const Duration(seconds: 10));
+      await g.coordinator.recover(fixture.binding);
+      await g.repositories.refresh();
+      expect(g.repositories.snapshots.where((s) => s.id == paused.id), isEmpty);
+    });
+  });
+
   group('anchors bind to the rendered heading', () {
     late save.SaveHarness h;
     late OfflineRepositories repositories;
@@ -310,6 +441,35 @@ void main() {
       await tester.pumpAndSettle();
       expect(_top(tester, heading), inInclusiveRange(0, 600));
       expect(find.byKey(const ValueKey('snapshot-link-sheet')), findsNothing);
+    });
+
+    testWidgets('a linked heading is a target', (tester) async {
+      await pumpMarkdown(
+        tester,
+        '[go](#project)\n\n'
+        '${paragraphs(60, 'a')}\n# [Project](https://example.test/group/project)\n\nDone.\n',
+      );
+      final heading = find.text('Project', findRichText: true);
+      expect(_top(tester, heading.evaluate().single), greaterThan(600));
+      await tester.tap(find.text('go', findRichText: true));
+      await tester.pumpAndSettle();
+      expect(_top(tester, heading.evaluate().single), inInclusiveRange(0, 600));
+    });
+
+    testWidgets('a plain heading after a linked heading is reached', (
+      tester,
+    ) async {
+      await pumpMarkdown(
+        tester,
+        '# [Project](https://example.test/group/project)\n\n'
+        '[jump](#install-guide)\n\n'
+        '${paragraphs(60, 'a')}\n## Install Guide\n\nEnd.\n',
+      );
+      final heading = _headings('Install Guide').single;
+      expect(_top(tester, heading), greaterThan(600));
+      await tester.tap(find.text('jump', findRichText: true));
+      await tester.pumpAndSettle();
+      expect(_top(tester, heading), inInclusiveRange(0, 600));
     });
 
     testWidgets('a repeated heading is reached by its -1 anchor', (
