@@ -378,7 +378,12 @@ final class AiBackgroundExecution extends ChangeNotifier
 
   /// A non-UUID permit can never match a native-generated UUID. Its rejected
   /// progress request advances the sequence without changing work or the task.
-  /// A stale reply supplies the process high-water mark before the real call.
+  /// A peer that still answers this probe with the historical
+  /// `unsupported` / `not_implemented` handshake also started no work and
+  /// moved no task. Treating that reply as a missing channel skips the start,
+  /// so a timed-out or cleanup-failed run never enters scoped cleanup or
+  /// explicit continuation. A stale reply supplies the process high-water
+  /// mark before the real call.
   Future<bool> _seed() {
     if (_seeded) return Future<bool>.value(true);
     if (!_attach()) return Future<bool>.value(false);
@@ -390,8 +395,10 @@ final class AiBackgroundExecution extends ChangeNotifier
           'workCount': 1,
           'step': 0,
         });
-        if (reply?['status'] == 'rejected' &&
-            reply?['reason'] == 'permit_inactive') {
+        if ((reply?['status'] == 'rejected' &&
+                reply?['reason'] == 'permit_inactive') ||
+            (reply?['status'] == 'unsupported' &&
+                reply?['reason'] == 'not_implemented')) {
           _seeded = true;
           return true;
         }
