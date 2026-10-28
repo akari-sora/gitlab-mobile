@@ -20,6 +20,7 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
 
+import 'ai/release_policy_support.dart';
 import 'support/fake_adapter.dart';
 
 const _head = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -75,6 +76,7 @@ AiToolCatalogue _catalogue(
   DateTime Function()? now,
   UploadPlaceholderTable? placeholders,
 }) => AiToolCatalogue(
+  releasePolicy: fixtureReleasePolicy,
   port: GitLabAiReadPort(api, 9, now: now),
   scope: _scope,
   redactor: Redactor(secrets: const _Secrets()),

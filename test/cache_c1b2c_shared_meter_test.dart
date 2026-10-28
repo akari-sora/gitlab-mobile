@@ -18,6 +18,7 @@ import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
 
+import 'ai/release_policy_support.dart';
 import 'session_test.dart' show MemoryAccountStore;
 import 'support/fake_adapter.dart';
 import 'support/workspace_fixture.dart';
@@ -182,7 +183,12 @@ final class _Harness {
     await settings.loadAccount(workspace.account.key);
     await settings.grantConsent(
       workspace.account.key,
-      aiConversationConsentContract(settings, workspace.account.key, provider),
+      aiConversationConsentContract(
+        settings,
+        workspace.account.key,
+        provider,
+        releasePolicy: fixtureReleasePolicy,
+      ),
       const {'synthetic': true},
     );
     addTearDown(() {
@@ -198,6 +204,7 @@ final class _Harness {
 
   Future<AiChatController> controller(HttpClientAdapter provider) async {
     final controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       appInForeground: () => true,
       origin: AiWorkItemOrigin(
         project: workspace.project,

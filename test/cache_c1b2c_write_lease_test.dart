@@ -12,6 +12,7 @@ import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 
 import 'ai/fx_coord_support.dart';
+import 'ai/release_policy_support.dart';
 import 'support/fake_adapter.dart';
 import 'support/workspace_fixture.dart';
 
@@ -41,6 +42,7 @@ Future<AiChatController> _controller(
   AiWriteFreshnessReader readFreshness,
 ) async {
   final controller = AiChatController(
+    releasePolicy: fixtureReleasePolicy,
     origin: AiFileOrigin(
       project: harness.server.workspace.project,
       path: 'README.md',

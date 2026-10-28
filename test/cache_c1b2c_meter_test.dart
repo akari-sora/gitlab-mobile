@@ -14,6 +14,7 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/core/request_meter.dart';
 
+import 'ai/release_policy_support.dart';
 import 'support/fake_adapter.dart';
 
 const _head = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -38,6 +39,7 @@ final class _MeterPort implements AiGitLabReadPort {
 }
 
 AiToolCatalogue _catalogue(_MeterPort port) => AiToolCatalogue(
+  releasePolicy: fixtureReleasePolicy,
   port: port,
   scope: const AiResourceScope(
     accountKey: 'instance|7',
@@ -253,6 +255,7 @@ void main() {
       api.bindReadCache('${instance.key}#7', 1);
       addTearDown(api.close);
       final catalogue = AiToolCatalogue(
+        releasePolicy: fixtureReleasePolicy,
         port: GitLabAiReadPort(api, 9),
         scope: const AiResourceScope(
           accountKey: 'instance|7',
@@ -335,6 +338,7 @@ void main() {
         );
         addTearDown(api.close);
         final catalogue = AiToolCatalogue(
+          releasePolicy: fixtureReleasePolicy,
           port: GitLabAiReadPort(api, 9),
           scope: const AiResourceScope(
             accountKey: 'instance|7',
