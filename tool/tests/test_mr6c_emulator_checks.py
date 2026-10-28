@@ -470,6 +470,17 @@ class HostChecks(unittest.TestCase):
         with self.assertRaises(m.CheckError):
             m.validate_event(error, cmd, 'error')
 
+    def test_error_reason_allowlist_preserves_fail_and_rejects_unknown(self):
+        cmd = m.command('session-errors', 'V9', 'task_manager_stop', 'recover', 2)
+        for reason in ('deadline', 'io_error', 'unexpected_error', 'invalid_command'):
+            event = {**cmd, 'event': 'error', 'outcome': 'FAIL', 'evidence': {'reason': reason}}
+            self.assertEqual(m.validate_event(event, cmd, 'error'), event)
+            with self.assertRaises(m.CheckError):
+                m.validate_event({**event, 'outcome': 'PASS'}, cmd, 'error')
+        with self.assertRaises(m.CheckError):
+            m.validate_event({**cmd, 'event': 'error', 'outcome': 'FAIL',
+                              'evidence': {'reason': 'private-error-text'}}, cmd, 'error')
+
     def test_prepare_recover_no_reset_or_install_and_next_case_resets(self):
         self.verified()
         seq = m.CaseSequence(self.adb, 'nonce1')

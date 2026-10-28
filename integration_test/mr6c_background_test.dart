@@ -13,6 +13,19 @@ import '../tool/mr6c_qa_protocol.dart';
 const _qaEnabled = bool.fromEnvironment('MR6C_QA');
 const _phaseDeadline = Duration(minutes: 30);
 
+Future<void> _publishFailure(
+  QaMailbox mailbox,
+  QaEvent event,
+  Object error,
+) async {
+  // Fixed identifiers and the exception type only; never messages or payloads.
+  debugPrint(
+    'MR6C_QA_FAILURE phase=${event.command.phase} '
+    'reason=${event.reason!.name} exception_type=${error.runtimeType}',
+  );
+  await mailbox.publish(event);
+}
+
 Future<void> main() async {
   // Nothing, including plugin initialization or account access, runs without
   // the explicit build-time define and Android. There is no exported trigger.
@@ -62,9 +75,13 @@ Future<void> main() async {
         } else {
           await sandbox.verifyRecovery(command);
         }
-      } on Object {
+      } on Object catch (error) {
         // No account, recovery or network side effects before preflight passes.
-        await mailbox.publish(qaPreflightRejected(command));
+        await _publishFailure(
+          mailbox,
+          qaPreflightRejected(command, error),
+          error,
+        );
         return;
       }
       final fixture = QaV9Fixture(sandbox, command);
@@ -113,17 +130,10 @@ Future<void> main() async {
         /* no raw errors */
       }
     }
-  } on Object {
+  } on Object catch (error) {
     if (mailbox != null && command != null) {
       try {
-        await mailbox.publish(
-          QaEvent(
-            command,
-            QaEventKind.error,
-            QaOutcome.fail,
-            reason: QaReason.ioError,
-          ),
-        );
+        await _publishFailure(mailbox, qaFailureEvent(command, error), error);
       } on Object {
         /* no raw errors */
       }

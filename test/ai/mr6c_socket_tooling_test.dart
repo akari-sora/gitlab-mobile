@@ -303,14 +303,15 @@ Future<void> main() async {
   );
 
   test('recovery preflight failure cannot be downgraded to NOT_RUN', () {
+    const error = QaSandboxUnavailable();
     expect(
-      qaPreflightRejected(command('prepare')).toJson()['outcome'],
+      qaPreflightRejected(command('prepare'), error).toJson()['outcome'],
       'NOT_RUN',
     );
-    final result = qaPreflightRejected(command('recover')).toJson();
+    final result = qaPreflightRejected(command('recover'), error).toJson();
     expect(result['event'], 'error');
     expect(result['outcome'], 'FAIL');
-    expect(result['evidence'], {'reason': 'io_error'});
+    expect(result['evidence'], {'reason': 'unexpected_error'});
   });
 
   test(

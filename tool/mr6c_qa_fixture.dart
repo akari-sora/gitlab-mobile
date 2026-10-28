@@ -37,11 +37,6 @@ import 'package:gitlab_mobile/main.dart'
 import '../test/support/workspace_fixture.dart';
 import 'mr6c_qa_protocol.dart';
 
-/// Preflight rejection is deliberately content-free.
-final class QaSandboxUnavailable implements Exception {
-  const QaSandboxUnavailable();
-}
-
 void _require(bool value) {
   if (!value) throw const QaSandboxUnavailable();
 }
@@ -83,7 +78,18 @@ final class QaSandbox {
       'mr6c_qa',
       if (recover) 'ai_write_journal',
       'ai_history',
+      'profileInstalled',
     });
+    // AndroidX ProfileVerifier 1.4.0 writes this startup cache in files/.
+    // Accept only its exact regular-file name, never a directory or link.
+    final profileType = FileSystemEntity.typeSync(
+      '${support.path}/profileInstalled',
+      followLinks: false,
+    );
+    _require(
+      profileType == FileSystemEntityType.notFound ||
+          profileType == FileSystemEntityType.file,
+    );
     // No history is seeded by this fixture. Empty directories are harmless.
     _checkDirectory(Directory('${support.path}/ai_history'), {});
     final journalRoot = Directory('${support.path}/ai_write_journal');
