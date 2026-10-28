@@ -161,6 +161,7 @@ AiBackgroundExecution _owner(
   Mr6cClock? clock,
   bool Function()? current,
 }) => AiBackgroundExecution(
+  backgroundEnabled: true,
   accountKey: 'synthetic-account',
   generation: 8,
   ownerApi: Object(),
@@ -778,6 +779,7 @@ void main() {
       await gate.beginRun(runId: 'run-1');
       final ticket = await gate.acquire(AiContinuationKind.model);
       final second = AiBackgroundExecution(
+        backgroundEnabled: true,
         accountKey: 'different-owner',
         generation: 9,
         ownerApi: Object(),
@@ -821,6 +823,7 @@ void main() {
       await gate.beginRun(runId: 'run-1');
       final ticket = await gate.acquire(AiContinuationKind.model);
       final second = AiBackgroundExecution(
+        backgroundEnabled: true,
         accountKey: 'different-owner',
         generation: 9,
         ownerApi: Object(),
@@ -944,6 +947,7 @@ void main() {
         );
         addTearDown(h.dispose);
         final owner = AiBackgroundExecution(
+          backgroundEnabled: true,
           accountKey: h.account,
           generation: h.session.generation,
           ownerApi: h.session.api!,
@@ -997,6 +1001,7 @@ void main() {
       );
       addTearDown(h.dispose);
       final owner = AiBackgroundExecution(
+        backgroundEnabled: true,
         accountKey: h.account,
         generation: h.session.generation,
         ownerApi: h.session.api!,
@@ -1054,6 +1059,7 @@ void main() {
       final h = await fx.StackHarness.create();
       addTearDown(h.dispose);
       final owner = AiBackgroundExecution(
+        backgroundEnabled: true,
         accountKey: h.account,
         generation: h.session.generation,
         ownerApi: h.session.api!,
@@ -1093,6 +1099,7 @@ void main() {
       final h = await fx.StackHarness.create();
       addTearDown(h.dispose);
       final owner = AiBackgroundExecution(
+        backgroundEnabled: true,
         accountKey: h.account,
         generation: h.session.generation,
         ownerApi: h.session.api!,
@@ -1426,6 +1433,7 @@ void main() {
       final h = await fx.StackHarness.create();
       addTearDown(h.dispose);
       final owner = AiBackgroundExecution(
+        backgroundEnabled: true,
         accountKey: h.account,
         generation: h.session.generation,
         ownerApi: h.session.api!,
@@ -1476,6 +1484,7 @@ void main() {
         final h = await fx.StackHarness.create();
         addTearDown(h.dispose);
         final owner = AiBackgroundExecution(
+          backgroundEnabled: true,
           accountKey: h.account,
           generation: h.session.generation,
           ownerApi: h.session.api!,
@@ -1527,6 +1536,7 @@ void main() {
     final h = await fx.StackHarness.create();
     addTearDown(h.dispose);
     final owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: h.account,
       generation: h.session.generation,
       ownerApi: h.session.api!,
@@ -1574,6 +1584,7 @@ void main() {
     final h = await fx.StackHarness.create();
     addTearDown(h.dispose);
     final owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: h.account,
       generation: h.session.generation,
       ownerApi: h.session.api!,
@@ -1628,6 +1639,7 @@ void main() {
       final h = await fx.StackHarness.create();
       addTearDown(h.dispose);
       final owner = AiBackgroundExecution(
+        backgroundEnabled: true,
         accountKey: h.account,
         generation: h.session.generation,
         ownerApi: h.session.api!,
@@ -1676,6 +1688,7 @@ void main() {
       final h = await fx.StackHarness.create();
       addTearDown(h.dispose);
       final owner = AiBackgroundExecution(
+        backgroundEnabled: true,
         accountKey: h.account,
         generation: h.session.generation,
         ownerApi: h.session.api!,
@@ -1729,6 +1742,7 @@ void main() {
           final h = await fx.StackHarness.create();
           addTearDown(h.dispose);
           final owner = AiBackgroundExecution(
+            backgroundEnabled: true,
             accountKey: h.account,
             generation: h.session.generation,
             ownerApi: h.session.api!,
@@ -2028,6 +2042,7 @@ void main() {
     addTearDown(h.dispose);
     native.rejectStart = true;
     final owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: h.account,
       generation: h.session.generation,
       ownerApi: h.session.api!,
@@ -2077,6 +2092,7 @@ void main() {
     final h = await fx.StackHarness.create();
     addTearDown(h.dispose);
     final owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: h.account,
       generation: h.session.generation,
       ownerApi: h.session.api!,

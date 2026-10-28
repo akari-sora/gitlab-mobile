@@ -46,6 +46,7 @@ import '../workspace/graph_work_items_page.dart'
 import 'ai_chat_context.dart';
 import 'ai_chat_session.dart';
 import 'ai_background_execution.dart';
+import 'ai_gate.dart';
 import 'ai_attachment_session.dart';
 import 'ai_history.dart';
 import 'ai_runner_binding.dart';
@@ -267,6 +268,7 @@ class AiChatController extends ChangeNotifier
 
   AiBackgroundExecution get _executionOwner {
     final owner = _backgroundExecution ??= AiBackgroundExecution(
+      backgroundEnabled: aiBackgroundEnabled,
       accountKey: _accountKey,
       generation: _generation,
       ownerApi: _api,

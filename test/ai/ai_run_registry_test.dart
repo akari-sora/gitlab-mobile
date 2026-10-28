@@ -101,6 +101,7 @@ void main() {
     await session.connect('https://example.com/gitlab', 'synthetic-token');
 
     final wrongOwner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: session.active!.key,
       generation: session.generation + 1,
       ownerApi: session.api!,

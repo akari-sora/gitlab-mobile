@@ -129,6 +129,7 @@ void main() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(channel, native.handle);
     final owner = AiBackgroundExecution(
+      backgroundEnabled: true,
       accountKey: account,
       generation: generation,
       ownerApi: api ?? Object(),

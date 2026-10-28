@@ -158,6 +158,7 @@ final class _Service {
 }
 
 AiBackgroundExecution _owner(fx.StackHarness h) => AiBackgroundExecution(
+  backgroundEnabled: true,
   accountKey: h.account,
   generation: h.session.generation,
   ownerApi: h.session.api!,
@@ -686,6 +687,7 @@ void main() {
         addTearDown(h.dispose);
         var oldCurrent = true;
         final oldOwner = AiBackgroundExecution(
+          backgroundEnabled: true,
           accountKey: changedIdentity == 'account' ? 'old-account' : h.account,
           generation: changedIdentity == 'generation'
               ? h.session.generation - 1

@@ -347,6 +347,7 @@ final class QaV9Fixture {
     this.sandbox,
     this.command, {
     @visibleForTesting this.testChannel,
+    @visibleForTesting this.testBackgroundEnabled = false,
     @visibleForTesting this.testJournalFence,
     @visibleForTesting this.releasePolicy = productionAiReleasePolicy,
   }) : workspace = WorkspaceFixture();
@@ -354,6 +355,8 @@ final class QaV9Fixture {
   final QaCommand command;
   @visibleForTesting
   final MethodChannel? testChannel;
+  @visibleForTesting
+  final bool testBackgroundEnabled;
   @visibleForTesting
   final AiJournalAccountFence? testJournalFence;
   @visibleForTesting
@@ -422,6 +425,7 @@ final class QaV9Fixture {
   AiBackgroundExecution? get _testOwner => testChannel == null
       ? null
       : AiBackgroundExecution(
+          backgroundEnabled: testBackgroundEnabled,
           accountKey: sandbox.account.key,
           generation: session.generation,
           ownerApi: session.api!,

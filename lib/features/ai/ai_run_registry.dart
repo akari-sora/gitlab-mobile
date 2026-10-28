@@ -9,6 +9,7 @@ import '../auth/session_controller.dart';
 import 'ai_chat_controller.dart';
 import 'ai_chat_session.dart';
 import 'ai_background_execution.dart';
+import 'ai_gate.dart';
 import 'ai_stores.dart';
 
 /// A session plus the cleanup operation for its concrete implementation.
@@ -92,6 +93,7 @@ final class AccountAiRunRegistry extends ChangeNotifier
     this.backgroundExecution =
         backgroundExecution ??
         AiBackgroundExecution(
+          backgroundEnabled: aiBackgroundEnabled,
           accountKey: accountKey,
           generation: generation,
           ownerApi: api,
