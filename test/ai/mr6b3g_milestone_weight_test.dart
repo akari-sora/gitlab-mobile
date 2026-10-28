@@ -368,7 +368,7 @@ final class _Server {
       .length;
 }
 
-// Only visibility is changed in this test ledger; the production rows stay hidden.
+// Isolate the milestone and weight aliases in this test ledger.
 final class _P8Ledger implements AiCapabilityLedger {
   const _P8Ledger();
 
@@ -517,7 +517,7 @@ void main() {
   });
 
   test(
-    'fixed complete alias set, hidden T2 graph rows, schemas and static caps',
+    'fixed complete alias set, visible T2 graph rows, schemas and static caps',
     () {
       expect(groupMilestoneWeightStageOperations, {_milestone, _weight});
       for (final op in _operations) {
@@ -526,11 +526,11 @@ void main() {
         expect(row.baseTier, AiWriteTier.t2);
         expect(row.scopeClass, AiScopeClass.groupWorkItem);
         expect(row.boundary, AiWriteBoundary.graph);
-        expect(row.modelVisible, isFalse);
+        expect(row.modelVisible, isTrue);
         expect(row.readback, isTrue);
         expect(
           productionAiLedger.modelVisible.map((r) => r.operationId),
-          isNot(contains(op)),
+          contains(op),
         );
         expect(
           row.arguments.keys,
@@ -555,7 +555,7 @@ void main() {
           op == _milestone ? 13 : 11,
         );
       }
-      expect(aiGroupWorkItemWritesEnabled, isFalse);
+      expect(aiGroupWorkItemWritesEnabled, isTrue);
     },
   );
 

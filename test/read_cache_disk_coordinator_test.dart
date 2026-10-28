@@ -238,20 +238,23 @@ ProjectedDiskEntry _entry(
       : make('x' * (serializedBytes - base.serializedLength));
 }
 
-DiskWriteCandidate _candidate(ProjectedDiskEntry entry, [_Lease? lease]) =>
-    DiskWriteCandidate(
-      binding: _binding,
-      uri: Uri.parse('https://synthetic.example/subpath/api/v4/projects/1'),
-      logicalAccept: 'text/plain',
-      bodyKind: entry.bodyKind,
-      fetchedAt: entry.fetchedAt,
-      responseBytes: entry.serializedLength,
-      lease: lease ?? _Lease(),
-      cacheable: true,
-      noStore: false,
-      firstPage: true,
-      scopeTags: entry.scopeTags,
-    );
+DiskWriteCandidate _candidate(
+  ProjectedDiskEntry entry, [
+  _Lease? lease,
+  DiskBinding binding = _binding,
+]) => DiskWriteCandidate(
+  binding: binding,
+  uri: Uri.parse('https://synthetic.example/subpath/api/v4/projects/1'),
+  logicalAccept: 'text/plain',
+  bodyKind: entry.bodyKind,
+  fetchedAt: entry.fetchedAt,
+  responseBytes: entry.serializedLength,
+  lease: lease ?? _Lease(),
+  cacheable: true,
+  noStore: false,
+  firstPage: true,
+  scopeTags: entry.scopeTags,
+);
 
 Future<void> _readyHarness(_Harness h) async {
   expect(await h.recover(), isTrue);
@@ -781,6 +784,9 @@ void _transactionTests() {
       expect(h.dir().existsSync(), isFalse);
       c.installUserControls();
       expect(await c.activate(_binding), isTrue);
+      expect(h.storage.keyWrites, 0);
+      c.accept(_candidate(entry), entry);
+      await c.flush(_binding);
       expect(h.storage.keyWrites, 1);
     },
   );
@@ -1252,6 +1258,7 @@ void _transactionTests() {
       final h = _Harness();
       addTearDown(h.dispose);
       expect(await h.recover(), isTrue);
+      expect(await h.coordinator.activate(_binding), isTrue);
       final at = Completer<void>();
       final release = Completer<void>();
       var writes = false;
@@ -1264,14 +1271,16 @@ void _transactionTests() {
           await release.future;
         }
       };
-      final activation = h.coordinator.activate(_binding);
+      final entry = _entry(h, 1);
+      h.coordinator.accept(_candidate(entry), entry);
+      final writing = h.coordinator.flush(_binding);
       await at.future;
       final clear = h.coordinator.clear(
         _binding,
         ReadCacheCleanupOperation.accountRemoval,
       );
       release.complete();
-      expect(await activation, isFalse);
+      await writing;
       expect((await clear).complete, isTrue);
       expect(h.storage.keyWrites, 1);
       expect(
@@ -1565,6 +1574,11 @@ void _markerOrderTests() {
         ),
         isTrue,
       );
+      expect(h.storage.keyWrites, 1);
+      const next = DiskBinding(accountKey: _account, generation: 2);
+      final entry = _entry(h, 2);
+      h.coordinator.accept(_candidate(entry, null, next), entry);
+      await h.coordinator.flush(next);
       expect(h.storage.keyWrites, 2);
     },
   );
@@ -1658,26 +1672,34 @@ void _markerOrderTests() {
   );
 
   test(
-    'unavailable key write or mismatched readback never opens the cache',
+    'unavailable first key write or mismatched readback closes the cache',
     () async {
       final h = _Harness();
       addTearDown(h.dispose);
       expect(await h.recover(), isTrue);
+      expect(await h.coordinator.activate(_binding), isTrue);
       h.storage.intercept = (operation, name) async {
         if (operation == 'write' &&
             name == ReadCacheKeyStore.keyName(_account)) {
           throw StateError('synthetic write failure');
         }
       };
-      expect(await h.coordinator.activate(_binding), isFalse);
+      await _save(h, _entry(h, 1));
+      expect(h.coordinator.state(_account), ReadCacheDiskState.unavailable);
+      expect(h.storage.keyWrites, 0);
       expect(h.dir().existsSync(), isFalse);
+      h.storage.intercept = null;
+      expect(await h.coordinator.activate(_binding), isTrue);
       h.storage.intercept = (operation, name) async {
         if (operation == 'read' &&
-            name == ReadCacheKeyStore.keyName(_account)) {
+            name == ReadCacheKeyStore.keyName(_account) &&
+            h.storage.keyWrites > 0) {
           h.storage.values.remove(name);
         }
       };
-      expect(await h.coordinator.activate(_binding), isFalse);
+      await _save(h, _entry(h, 2));
+      expect(h.coordinator.state(_account), isNot(ReadCacheDiskState.ready));
+      expect(h.storage.keyWrites, 1);
       expect(h.dir().existsSync(), isFalse);
     },
   );
@@ -2010,6 +2032,7 @@ void _fix1Tests() {
     final h = _Harness();
     addTearDown(h.dispose);
     expect(await h.recover(), isTrue);
+    expect(await h.coordinator.activate(_binding), isTrue);
     final at = Completer<void>();
     final release = Completer<void>();
     h.storage.intercept = (operation, name) async {
@@ -2018,7 +2041,9 @@ void _fix1Tests() {
         await release.future;
       }
     };
-    final activation = h.coordinator.activate(_binding);
+    final entry = _entry(h, 1);
+    h.coordinator.accept(_candidate(entry), entry);
+    final writing = h.coordinator.flush(_binding);
     await at.future;
     var finished = false;
     final disabled = h.coordinator.setEnabled(false).then((result) {
@@ -2031,7 +2056,7 @@ void _fix1Tests() {
     }
     final finishedBeforeDrain = finished;
     release.complete();
-    expect(await activation, isFalse);
+    await writing;
     expect(await disabled, isTrue);
     await h.coordinator.quiesced;
     expect(finishedBeforeDrain, isFalse);
@@ -2110,6 +2135,7 @@ void _fix1Tests() {
       () async {
         final h = _Harness();
         addTearDown(h.dispose);
+        await h.seedKey();
         await _readyHarness(h);
         await h.keys.deleteKey(_account);
         final keyAt = Completer<void>(), keyRelease = Completer<void>();
@@ -2258,6 +2284,7 @@ void _fix1Tests() {
         final h = _Harness();
         addTearDown(h.dispose);
         expect(await h.recover(), isTrue);
+        expect(await h.coordinator.activate(_binding), isTrue);
         var unavailable = true;
         h.storage.intercept = (operation, name) async {
           if (name == ReadCacheKeyStore.keyName(_account) &&
@@ -2268,11 +2295,12 @@ void _fix1Tests() {
             throw StateError('synthetic unavailable');
           }
         };
-        expect(await h.coordinator.activate(_binding), isFalse);
+        await _save(h, _entry(h, 1));
+        expect(h.coordinator.state(_account), ReadCacheDiskState.unavailable);
         expect(h.dir().existsSync(), isFalse);
         final roots = h.rootCalls;
         final existing = h.storage.values[ReadCacheKeyStore.keyName(_account)];
-        for (final seconds in [1, 5, 30]) {
+        for (final seconds in readback ? [1, 5, 30] : [1]) {
           final timers = h.clock.pending.where((timer) => !timer.cancelled);
           expect(timers, hasLength(1));
           final scheduled = timers.single;
@@ -2285,11 +2313,15 @@ void _fix1Tests() {
           if (readback) expect(h.rootCalls, roots);
           expect(h.dir().existsSync(), isFalse);
           expect(h.storage.keyWrites, readback ? 1 : 0);
-          if (seconds == 30) unavailable = false;
+          if (seconds == 30 || !readback) unavailable = false;
           h.clock.advance(const Duration(milliseconds: 1));
           await h.coordinator.quiesced;
         }
         expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+        if (!readback) {
+          expect(h.storage.keyWrites, 0);
+          await _save(h, _entry(h, 2));
+        }
         expect(h.storage.keyWrites, 1);
         if (readback) {
           expect(
@@ -2334,7 +2366,9 @@ void _fix1Tests() {
       await h.coordinator.quiesced;
       await Future<void>.delayed(Duration.zero);
       expect(indexRenames, 2);
-      expect(_keyReads(h) - reads, 2);
+      // First-write preparation adds the absent-key read and two readbacks;
+      // every subsequent batch performs just one key read.
+      expect(_keyReads(h) - reads, 5);
       expect(h.coordinator.stats.queuedEntries, 1);
       h.clock.advance(const Duration(milliseconds: 1999));
       await h.coordinator.quiesced;
@@ -2343,7 +2377,7 @@ void _fix1Tests() {
       await h.coordinator.quiesced;
       await Future<void>.delayed(Duration.zero);
       expect(indexRenames, 3);
-      expect(_keyReads(h) - reads, 3);
+      expect(_keyReads(h) - reads, 6);
       final key = (await h.keys.readKey(_account)).value!;
       expect((await h.files.readIndex(_account, key))!.entries, hasLength(65));
     },
@@ -2522,6 +2556,7 @@ void _fix1Tests() {
     () async {
       final h = _Harness();
       addTearDown(h.dispose);
+      await h.seedKey();
       await _readyHarness(h);
       final key = (await h.keys.readKey(_account)).value!;
       final writes = h.storage.markerWrites;
@@ -2534,6 +2569,362 @@ void _fix1Tests() {
         ReadCacheStoreReadStatus.absent,
       );
       expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+    },
+  );
+
+  test('a keyless empty barrier leaves storage empty until a write', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await _readyHarness(h);
+    expect(
+      (await h.coordinator.invalidate(_mutation()).barrier).complete,
+      isTrue,
+    );
+    expect(h.storage.markerWrites, 0);
+    expect(h.storage.keyWrites, 0);
+    expect((await h.keys.readInventory()).isEmpty, isTrue);
+    expect(h.dir().existsSync(), isFalse);
+    expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+    await _save(h, _entry(h, 1));
+    expect(h.storage.keyWrites, 1);
+    final key = (await h.keys.readKey(_account)).value!;
+    expect((await h.files.readIndex(_account, key))!.entries, hasLength(1));
+  });
+
+  test(
+    'unavailable populated account persists scope marker before draining',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _readyHarness(h);
+      final entry = _entry(h, 1);
+      await _save(h, entry);
+      h.storage.failKeyRead = true;
+      expect(
+        await h.coordinator.lookup(
+          DiskLookup(
+            binding: _binding,
+            canonicalKey: entry.canonicalKey,
+            bodyKind: entry.bodyKind,
+            lease: _Lease(),
+          ),
+        ),
+        isNull,
+      );
+      expect(h.coordinator.state(_account), ReadCacheDiskState.unavailable);
+      h.storage.failKeyRead = false;
+
+      final keyAt = Completer<void>(), release = Completer<void>();
+      final markerReadback = Completer<bool>();
+      var held = false;
+      h.storage.intercept = (operation, name) async {
+        if (operation == 'read' &&
+            name == ReadCacheKeyStore.keyName(_account) &&
+            !held) {
+          held = true;
+          keyAt.complete();
+          await release.future;
+        }
+        if (operation == 'read' &&
+            name == ReadCacheKeyStore.markerName(_account) &&
+            h.storage.values.containsKey(name) &&
+            !markerReadback.isCompleted) {
+          markerReadback.complete(true);
+        }
+      };
+      final activation = h.coordinator.activate(_binding);
+      await keyAt.future.timeout(const Duration(seconds: 5));
+      final barrier = h.coordinator.invalidate(_mutation()).barrier;
+      final durableBeforeDrain = await markerReadback.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => false,
+      );
+      release.complete();
+      await activation;
+      await barrier;
+      await h.coordinator.quiesced;
+      expect(
+        durableBeforeDrain,
+        isTrue,
+        reason:
+            'a populated account needs its durable marker before old I/O drains',
+      );
+      expect((await h.keys.readMarker(_account)).isFound, isFalse);
+    },
+  );
+
+  test('invalidating a held first key write leaves no key or file', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await _readyHarness(h);
+    final keyAt = Completer<void>(), release = Completer<void>();
+    var held = false;
+    h.storage.intercept = (operation, name) async {
+      if (operation == 'write' &&
+          name == ReadCacheKeyStore.keyName(_account) &&
+          !held) {
+        held = true;
+        keyAt.complete();
+        await release.future;
+      }
+    };
+    final entry = _entry(h, 1);
+    h.coordinator.accept(_candidate(entry), entry);
+    final writing = h.coordinator.flush(_binding);
+    await keyAt.future.timeout(const Duration(seconds: 5));
+    final barrier = h.coordinator.invalidate(_mutation()).barrier;
+    release.complete();
+    await writing;
+    await barrier;
+    await h.coordinator.quiesced;
+    h.storage.intercept = null;
+    expect((await h.keys.readInventory()).isEmpty, isTrue);
+    expect(h.dir().existsSync(), isFalse);
+    expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+
+    final writes = h.storage.keyWrites;
+    await _save(h, _entry(h, 2));
+    expect(h.storage.keyWrites, writes + 1);
+    final key = (await h.keys.readKey(_account)).value!;
+    expect((await h.files.readIndex(_account, key))!.entries, hasLength(1));
+  });
+
+  test(
+    'capacity-rejected first write leaves no key or account files',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _readyHarness(h);
+      final padding = File('${h.dir(_other).path}/padding.bin');
+      _capacitySparseFile(padding, readCacheDeviceByteLimit);
+      await _save(h, _entry(h, 1));
+      await h.coordinator.quiesced;
+      expect(h.coordinator.stats.dropped, 1);
+      expect((await h.keys.readKey(_account)).isFound, isFalse);
+      expect(h.dir().existsSync(), isFalse);
+      expect(padding.existsSync(), isTrue);
+      expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+
+      final writes = h.storage.keyWrites;
+      padding.deleteSync();
+      await _save(h, _entry(h, 2));
+      expect(h.storage.keyWrites, writes + 1);
+      final key = (await h.keys.readKey(_account)).value!;
+      expect((await h.files.readIndex(_account, key))!.entries, hasLength(1));
+    },
+  );
+
+  test('background during first key write discards it on resume', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await _readyHarness(h);
+    final at = Completer<void>(), release = Completer<void>();
+    h.storage.intercept = (operation, name) async {
+      if (operation == 'write' &&
+          name == ReadCacheKeyStore.keyName(_account) &&
+          !at.isCompleted) {
+        at.complete();
+        await release.future;
+      }
+    };
+    final entry = _entry(h, 1);
+    h.coordinator.accept(_candidate(entry), entry);
+    final writing = h.coordinator.flush(_binding);
+    await at.future.timeout(const Duration(seconds: 5));
+    h.coordinator.background();
+    release.complete();
+    await writing;
+    await h.coordinator.quiesced;
+    h.storage.intercept = null;
+    expect(await h.coordinator.resume(_binding), isTrue);
+    await h.coordinator.quiesced;
+    expect((await h.keys.readInventory()).isEmpty, isTrue);
+    expect(h.dir().existsSync(), isFalse);
+    expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+    await _save(h, _entry(h, 2));
+    expect(h.storage.keyWrites, 2);
+    final key = (await h.keys.readKey(_account)).value!;
+    expect((await h.files.readIndex(_account, key))!.entries, hasLength(1));
+  });
+
+  test(
+    'failed unused key deletion retries and confirms deletion before ready',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _readyHarness(h);
+      final padding = File('${h.dir(_other).path}/padding.bin');
+      _capacitySparseFile(padding, readCacheDeviceByteLimit);
+      h.storage.failKeyDelete = true;
+      await _save(h, _entry(h, 1));
+      await h.coordinator.quiesced;
+      expect(h.coordinator.state(_account), ReadCacheDiskState.unavailable);
+      expect((await h.keys.readKey(_account)).isFound, isTrue);
+      expect(h.dir().existsSync(), isFalse);
+      h.storage.failKeyDelete = false;
+      h.clock.advance(const Duration(seconds: 5));
+      await h.coordinator.quiesced;
+      expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+      final keyName = ReadCacheKeyStore.keyName(_account);
+      final deletion = h.storage.calls.lastIndexOf('delete:$keyName');
+      expect(deletion, greaterThanOrEqualTo(0));
+      expect(h.storage.calls.sublist(deletion + 1), contains('read:$keyName'));
+      expect((await h.keys.readKey(_account)).isFound, isFalse);
+      padding.deleteSync();
+      await _save(h, _entry(h, 2));
+      expect(h.storage.keyWrites, 2);
+      final key = (await h.keys.readKey(_account)).value!;
+      expect((await h.files.readIndex(_account, key))!.entries, hasLength(1));
+    },
+  );
+
+  test(
+    'unused first key survives a rejected batch with later pending work',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _readyHarness(h);
+      for (var i = 0; i < 32; i++) {
+        final entry = _entry(h, i);
+        final lease = _Lease();
+        h.coordinator.accept(_candidate(entry, lease), entry);
+        lease.revoke();
+      }
+      final survivor = _entry(h, 32);
+      h.coordinator.accept(_candidate(survivor), survivor);
+      await h.coordinator.quiesced;
+      expect(h.coordinator.stats.queuedEntries, 1);
+      expect(h.storage.keyWrites, 1);
+      expect((await h.keys.readKey(_account)).isFound, isTrue);
+      h.clock.advance(const Duration(seconds: 2));
+      await h.coordinator.quiesced;
+      expect(h.storage.keyWrites, 1);
+      final key = (await h.keys.readKey(_account)).value!;
+      final index = (await h.files.readIndex(_account, key))!;
+      expect(index.entries, hasLength(1));
+      expect(
+        index.entries.single.fileName,
+        await const ReadCacheCipher().entryFileName(key, survivor.canonicalKey),
+      );
+    },
+  );
+
+  test(
+    'overlapping scopes retain marker until held unused key deletion completes',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _readyHarness(h);
+      final keyAt = Completer<void>(), keyRelease = Completer<void>();
+      final deleteAt = Completer<void>(), deleteRelease = Completer<void>();
+      final keyName = ReadCacheKeyStore.keyName(_account);
+      final markerName = ReadCacheKeyStore.markerName(_account);
+      h.storage.intercept = (operation, name) async {
+        if (operation == 'write' && name == keyName && !keyAt.isCompleted) {
+          keyAt.complete();
+          await keyRelease.future;
+        }
+        if (operation == 'delete' && name == keyName && !deleteAt.isCompleted) {
+          deleteAt.complete();
+          await deleteRelease.future;
+        }
+      };
+      final entry = _entry(h, 1);
+      h.coordinator.accept(_candidate(entry), entry);
+      final writing = h.coordinator.flush(_binding);
+      await keyAt.future.timeout(const Duration(seconds: 5));
+      final first = h.coordinator.invalidate(_mutation()).barrier;
+      keyRelease.complete();
+      await deleteAt.future.timeout(const Duration(seconds: 5));
+      expect(h.storage.values.containsKey(markerName), isTrue);
+      final second = h.coordinator.invalidate(_mutation('project:2')).barrier;
+      deleteRelease.complete();
+      await writing;
+      await first;
+      await second;
+      await h.coordinator.quiesced;
+      h.storage.intercept = null;
+      expect(
+        h.storage.calls.lastIndexOf('delete:$markerName'),
+        greaterThan(h.storage.calls.lastIndexOf('delete:$keyName')),
+      );
+      expect((await h.keys.readInventory()).isEmpty, isTrue);
+      expect(h.dir().existsSync(), isFalse);
+      expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+      await _save(h, _entry(h, 2));
+      final key = (await h.keys.readKey(_account)).value!;
+      expect((await h.files.readIndex(_account, key))!.entries, hasLength(1));
+    },
+  );
+
+  test(
+    'keyless scope barrier preserves an unrelated queued candidate',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _readyHarness(h);
+      final entry = _entry(h, 1, scopes: {'project:2'});
+      h.coordinator.accept(_candidate(entry), entry);
+      await h.coordinator.invalidate(_mutation()).barrier;
+      expect(h.coordinator.stats.queuedEntries, 1);
+      expect(h.storage.keyWrites, 0);
+      expect((await h.keys.readInventory()).isEmpty, isTrue);
+      await h.coordinator.flush(_binding);
+      expect(h.storage.keyWrites, 1);
+      final key = (await h.keys.readKey(_account)).value!;
+      expect((await h.files.readIndex(_account, key))!.entries, hasLength(1));
+    },
+  );
+
+  test('keyless scope barrier permits a lookup queued behind it', () async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await _readyHarness(h);
+    final entry = _entry(h, 1, scopes: {'project:2'});
+    final barrier = h.coordinator.invalidate(_mutation()).barrier;
+    final lookup = h.coordinator.lookup(
+      DiskLookup(
+        binding: _binding,
+        canonicalKey: entry.canonicalKey,
+        bodyKind: entry.bodyKind,
+        lease: _Lease(),
+      ),
+    );
+    expect((await barrier).complete, isTrue);
+    expect(await lookup, isNull);
+    expect(h.storage.markerWrites, 0);
+    expect(h.storage.keyWrites, 0);
+    expect((await h.keys.readInventory()).isEmpty, isTrue);
+    expect(h.dir().existsSync(), isFalse);
+    expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+    await _save(h, entry);
+    expect(h.storage.keyWrites, 1);
+    final key = (await h.keys.readKey(_account)).value!;
+    expect((await h.files.readIndex(_account, key))!.entries, hasLength(1));
+  });
+
+  test(
+    'flush repairs an existing damaged empty index without rekeying',
+    () async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.seedKey();
+      final originalKey = (await h.keys.readKey(_account)).value!;
+      final directory = h.dir()..createSync(recursive: true);
+      File('${directory.path}/index.v1.bin').writeAsBytesSync([0]);
+      await _readyHarness(h);
+      await h.coordinator.flush(_binding);
+      await h.coordinator.quiesced;
+      expect(h.coordinator.state(_account), ReadCacheDiskState.ready);
+      expect(h.storage.keyWrites, 1);
+      expect(
+        (await h.keys.readKey(_account)).value,
+        orderedEquals(originalKey),
+      );
+      final repaired = await h.files.readIndex(_account, originalKey);
+      expect(repaired, isNotNull);
+      expect(repaired!.entries, isEmpty);
+      expect(await h.files.entryFiles(_account, originalKey), isEmpty);
     },
   );
 
@@ -2773,6 +3164,7 @@ void _fix2Tests() {
   test('FIX2 N1 forced overdue flush drains full 32-entry batches', () async {
     final h = _Harness();
     addTearDown(h.dispose);
+    await h.seedKey();
     await _readyHarness(h);
     final events = ReceivePort();
     final batches = <int>[];
@@ -3971,9 +4363,39 @@ void main() {
       h.coordinator.activate(_binding),
     ]);
     expect(results, everyElement(isTrue));
+    expect(h.storage.keyWrites, 0);
+    final first = _entry(h, 1);
+    final second = _entry(h, 2);
+    h.coordinator.accept(_candidate(first), first);
+    otherWrapper.accept(_candidate(second), second);
+    await Future.wait([
+      h.coordinator.flush(_binding),
+      otherWrapper.flush(_binding),
+    ]);
     expect(h.storage.keyWrites, 1);
     expect((await h.keys.readKey(_account)).isFound, isTrue);
+    final key = (await h.keys.readKey(_account)).value!;
+    expect((await h.files.readIndex(_account, key))!.entries, hasLength(2));
   });
+
+  test(
+    'an empty account without an index does not publish an empty index',
+    () async {
+      // Also cover a key left by versions which eagerly keyed empty accounts.
+      await h.seedKey();
+      await _readyHarness(h);
+      final result = await h.coordinator.invalidate(_mutation()).barrier;
+      await h.coordinator.quiesced;
+      expect(result.keyGoneConfirmed, isFalse);
+      expect(h.storage.keyWrites, 1);
+      expect(
+        h.dir().existsSync(),
+        isFalse,
+        reason:
+            'index bytes: ${File('${h.dir().path}/index.v1.bin').existsSync() ? File('${h.dir().path}/index.v1.bin').lengthSync() : 0}',
+      );
+    },
+  );
 
   test('existing key is reused without writing a replacement', () async {
     await h.seedKey();
@@ -4084,12 +4506,15 @@ void main() {
         }
         expect(await h.coordinator.activate(_binding), isTrue);
         expect(h.storage.markerWrites, 1);
-        expect(h.storage.keyWrites, 1);
+        expect(h.storage.keyWrites, 0);
         expect(h.dir().existsSync(), isFalse);
         expect(
           (await h.keys.readMarker(_account)).status,
           ReadCacheStoreReadStatus.absent,
         );
+        expect((await h.keys.readKey(_account)).isFound, isFalse);
+        await _save(h, _entry(h, 1));
+        expect(h.storage.keyWrites, 1);
         expect((await h.keys.readKey(_account)).isFound, isTrue);
         final writeMarker = h.storage.calls.indexWhere(
           (c) => c.startsWith('write:${ReadCacheKeyStore.markerPrefix}'),

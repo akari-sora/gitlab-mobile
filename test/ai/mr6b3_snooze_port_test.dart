@@ -904,6 +904,8 @@ void main() {
       'unknown',
     ]) {
       test('$op accountGlobal refuses $bad as todoUnsupportedTarget', () async {
+        s.api.close();
+        s = _Server(withGroupContext: true);
         if (bad == 'group') {
           aiGroupWorkItemWritesEnabledForTesting = false;
           addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
@@ -938,14 +940,14 @@ void main() {
       });
     }
 
-    // G14 owns migration of the production gate assertion. Explicit gate-off
-    // negatives above stay; gate-on integration uses only the testing override.
+    // Exercise production gate-on with the real verified group fixture.
+    // The explicit gate-off negatives above remain in force.
     for (final global in [false, true]) {
       test(
-        '$op gate-on group success uses strict owner global=$global',
+        '$op production gate-on group success uses strict owner global=$global',
         () async {
-          aiGroupWorkItemWritesEnabledForTesting = true;
-          addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+          expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+          expect(aiGroupWorkItemWritesAreEnabled, isTrue);
           s.api.close();
           s = _Server(withGroupContext: true);
           final id = _args(op)['todoId']! as int;
@@ -1407,28 +1409,30 @@ void main() {
     }
 
     for (final gateOn in [false, true]) {
-      test('$op global project survives user OAuth refresh gate=$gateOn', () async {
-        aiGroupWorkItemWritesEnabledForTesting = gateOn;
-        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
-        s.api.close();
-        s = _Server(
-          oauthReplay: true,
-          challengeRead: 1,
-          withGroupContext: true,
-        );
-        final prepared = await s.writePort.prepare(s.request(op, scope: _global));
-        expect(prepared.todoTarget, (projectId: 9, resource: 'issues', iid: 3));
-        expect(prepared.groupTodoTarget, isNull);
-        expect(prepared.groupIdentity, isNull);
-        final result = await s.commit(prepared) as port.AiWriteSettled;
-        expect(result.state, AiJournalState.succeeded);
-        expect(result.mutationCount, 1);
-        expect(s.refreshes, 1);
-        expect(s.userReads, 1);
-        expect(s.ownershipReads, 1);
-        expect(s.requests, hasLength(4));
-        expect(s.mutations, 1);
-      });
+      for (final challengedRead in [1, 2]) {
+        test('$op global project survives OAuth refresh read=$challengedRead gate=$gateOn', () async {
+          aiGroupWorkItemWritesEnabledForTesting = gateOn;
+          addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+          s.api.close();
+          s = _Server(
+            oauthReplay: true,
+            challengeRead: challengedRead,
+            withGroupContext: true,
+          );
+          final prepared = await s.writePort.prepare(s.request(op, scope: _global));
+          expect(prepared.todoTarget, (projectId: 9, resource: 'issues', iid: 3));
+          expect(prepared.groupTodoTarget, isNull);
+          expect(prepared.groupIdentity, isNull);
+          final result = await s.commit(prepared) as port.AiWriteSettled;
+          expect(result.state, AiJournalState.succeeded);
+          expect(result.mutationCount, 1);
+          expect(s.refreshes, 1);
+          expect(s.userReads, 1);
+          expect(s.ownershipReads, 1);
+          expect(s.requests, hasLength(4));
+          expect(s.mutations, 1);
+        });
+      }
     }
 
     for (final challengedRead in [1, 2]) {
@@ -2115,6 +2119,8 @@ void main() {
     test(
       '$op global scope with proposed typed target still needs confirmation in bypass',
       () async {
+        s.api.close();
+        s = _Server(withGroupContext: true);
         harness = await _Harness.create(
           s,
           scope: _global,

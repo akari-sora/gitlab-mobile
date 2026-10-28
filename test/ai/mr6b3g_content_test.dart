@@ -40,13 +40,13 @@ void main() {
     addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
   });
   _groupContracts();
-  test('fixed hidden alias has group scope, text roles and cap 21', () {
+  test('fixed visible alias has group scope, text roles and cap 21', () {
     final row = productionAiLedger.find(_operation)!;
     expect(
       aiGroupContentRows.map((row) => row.operationId).toSet(),
       groupContentStageOperations,
     );
-    expect(row.modelVisible, isFalse);
+    expect(row.modelVisible, isTrue);
     expect(row.namedMethod, 'updateWorkItemContent');
     expect(row.scopeClass, AiScopeClass.groupWorkItem);
     expect(row.baseTier, AiWriteTier.t2);
@@ -981,12 +981,12 @@ void _groupContracts() {
       }
     });
   }
-  test('production row and gate remain hidden with no model offer', () {
-    aiGroupWorkItemWritesEnabledForTesting = null;
+  test('visible production row is not offered with gate override off', () {
+    aiGroupWorkItemWritesEnabledForTesting = false;
     expect(aiGroupWorkItemWritesAreEnabled, isFalse);
     expect(
       productionAiLedger.modelVisible.map((row) => row.operationId),
-      isNot(contains(_operation)),
+      contains(_operation),
     );
     expect(toolsForScope(_scope), isEmpty);
   });

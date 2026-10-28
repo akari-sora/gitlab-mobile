@@ -138,20 +138,29 @@ void main() {
     final operations = rows.map((r) => r.operationId).toList();
     expect(operations.toSet(), hasLength(operations.length));
     expect(_groupAliasMethods, hasLength(15));
+    expect(rows, hasLength(33));
+    expect(rows.where((row) => !row.modelVisible), isEmpty);
+    expect(operations.toSet(), {
+      ..._currentMr6b3Methods,
+      ..._groupAliasMethods.keys,
+    });
+    expect(rows.map((row) => row.namedMethod).toSet(), _currentMr6b3Methods);
+    expect(rows.map((row) => row.namedMethod).toSet(), hasLength(18));
+    expect(_currentMr6b3GraphSites, hasLength(17));
     for (final entry in _groupAliasMethods.entries) {
       final original = rows.where((r) => r.operationId == entry.value).toList();
       expect(original, hasLength(1), reason: entry.key);
       expect(original.single.namedMethod, entry.value);
+      expect(original.single.modelVisible, isTrue, reason: entry.value);
       final sites = _currentMr6b3GraphSites.entries
           .where((site) => site.value.contains(entry.value))
           .toList();
       expect(sites, hasLength(1), reason: entry.key);
       final aliases = rows.where((r) => r.operationId == entry.key).toList();
-      expect(aliases.length, lessThanOrEqualTo(1), reason: entry.key);
-      if (aliases.isNotEmpty) {
-        expect(aliases.single.namedMethod, entry.value);
-        expect(aliases.single.scopeClass, AiScopeClass.groupWorkItem);
-      }
+      expect(aliases, hasLength(1), reason: entry.key);
+      expect(aliases.single.namedMethod, entry.value);
+      expect(aliases.single.scopeClass, AiScopeClass.groupWorkItem);
+      expect(aliases.single.modelVisible, isTrue, reason: entry.key);
     }
     for (final row in rows) {
       if (!_currentMr6b3Methods.contains(row.operationId)) {

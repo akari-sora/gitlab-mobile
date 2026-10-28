@@ -31,6 +31,40 @@ enum AiJournalKeyStatus {
   overSize,
 }
 
+/// Content-free startup evidence. Counts stay unknown until recovery succeeds.
+final class AiJournalRecoveryResult {
+  const AiJournalRecoveryResult._({
+    required this.recovered,
+    required this.keyStatus,
+    required this.removalPending,
+    required this.interruptedWrites,
+    required this.uncertainWrites,
+    required this.isolatedWrites,
+    required Object interruptionToken,
+  }) : _interruptionToken = interruptionToken;
+
+  final bool recovered;
+  final AiJournalKeyStatus? keyStatus;
+  /// Null when the tombstone could not be read and no removal is confirmed.
+  final bool? removalPending;
+  final int? interruptedWrites;
+
+  /// Of [interruptedWrites], those already dispatching (now writeUncertain);
+  /// the rest were only prepared and became notExecuted.
+  final int? uncertainWrites;
+  int? get notExecutedWrites =>
+      interruptedWrites == null || uncertainWrites == null
+      ? null
+      : interruptedWrites! - uncertainWrites!;
+  final int? isolatedWrites;
+  final Object _interruptionToken;
+
+  /// The host still checks notification permission and the current account.
+  /// This never restores a run, proposal, ticket, attachment or route.
+  bool get mayNotifyInterruption =>
+      recovered && removalPending == false && (interruptedWrites ?? 0) > 0;
+}
+
 final class AiJournalException implements Exception {
   const AiJournalException(this.reason);
   final String reason;
@@ -366,6 +400,49 @@ final class AiWriteJournal {
   bool recovered(String accountKey) => _account(accountKey).recovered;
   AiJournalKeyStatus? recoveryStatus(String accountKey) =>
       _account(accountKey).status;
+  AiJournalRecoveryResult recoveryResult(String accountKey) {
+    final owner = _account(accountKey);
+    final removing = owner.tombstone || removalHeld(accountKey);
+    final ready =
+        owner.recovered &&
+        (owner.status == AiJournalKeyStatus.found ||
+            owner.status == AiJournalKeyStatus.uninitialized) &&
+        !tombstoneFlag(accountKey) &&
+        !removing &&
+        !_resets.containsKey(accountKey);
+    return AiJournalRecoveryResult._(
+      recovered: ready,
+      keyStatus: owner.status,
+      removalPending: removing
+          ? true
+          : owner.tombstoneReadUnavailable
+          ? null
+          : false,
+      interruptedWrites: ready ? owner.recoveredInterruptedWrites : null,
+      uncertainWrites: ready ? owner.recoveredUncertainWrites : null,
+      isolatedWrites: ready
+          ? owner.data.entries.values.where((entry) => entry._isolates).length
+          : null,
+      interruptionToken: owner.recoveryInterruptionToken,
+    );
+  }
+
+  /// Acknowledge only after the host has presented this exact pending evidence.
+  /// Repeated startup passes preserve it; a newer event cannot be consumed by
+  /// an older snapshot or one from a different account. This grants no writes.
+  bool acknowledgeRecovery(String accountKey, AiJournalRecoveryResult result) {
+    final owner = _account(accountKey);
+    if (!result.mayNotifyInterruption ||
+        !recoveryResult(accountKey).mayNotifyInterruption ||
+        !identical(result._interruptionToken, owner.recoveryInterruptionToken)) {
+      return false;
+    }
+    owner.recoveredInterruptedWrites = 0;
+    owner.recoveredUncertainWrites = 0;
+    owner.recoveryInterruptionToken = Object();
+    return true;
+  }
+
   List<AiJournalEntry> entries(String accountKey) =>
       List.unmodifiable(_account(accountKey).data.entries.values);
   int conversationWriteCount(String accountKey, String conversationId) =>
@@ -1113,11 +1190,15 @@ final class AiWriteJournal {
       if (status != AiJournalKeyStatus.found) return;
       final data = owner.data.copy();
       var changed = false;
+      var interrupted = 0;
+      var uncertain = 0;
       for (final entry in List.of(data.entries.values)) {
         if (entry.processId == processId) continue;
         if (entry.state == AiJournalState.prepared ||
             entry.state == AiJournalState.dispatching) {
           changed = true;
+          interrupted++;
+          if (entry.state == AiJournalState.dispatching) uncertain++;
           data.entries[entry.executionId] = entry._change({
             'state': entry.state == AiJournalState.prepared
                 ? 'notExecuted'
@@ -1126,6 +1207,11 @@ final class AiWriteJournal {
         }
       }
       if (changed) await _save(account, data, epoch: owner.ownerEpoch);
+      if (interrupted > 0) {
+        owner.recoveredInterruptedWrites += interrupted;
+        owner.recoveredUncertainWrites += uncertain;
+        owner.recoveryInterruptionToken = Object();
+      }
       owner.recovered = true;
     } on Object {
       owner.status = AiJournalKeyStatus.unavailable;
@@ -1243,6 +1329,9 @@ final class AiWriteJournal {
     await _save(account, initial, epoch: owner.ownerEpoch, allowNew: true);
     await _store.deleteResetPending(account);
     owner.status = AiJournalKeyStatus.found;
+    owner.recoveredInterruptedWrites = 0;
+    owner.recoveredUncertainWrites = 0;
+    owner.recoveryInterruptionToken = Object();
     owner.uncertain.clear();
     owner.ephemeral.clear();
     owner.runs.clear();
@@ -1347,6 +1436,9 @@ final class AiWriteJournal {
     await _store.deleteKey(account);
     owner.key = null;
     owner.data = _Snapshot();
+    owner.recoveredInterruptedWrites = 0;
+    owner.recoveredUncertainWrites = 0;
+    owner.recoveryInterruptionToken = Object();
     owner.ephemeral.clear();
     owner.runs.clear();
     owner.uncertain.clear();
@@ -1401,6 +1493,9 @@ final class _Account {
   Uint8List? key;
   AiJournalKeyStatus? status;
   bool recovered = false;
+  int recoveredInterruptedWrites = 0;
+  int recoveredUncertainWrites = 0;
+  Object recoveryInterruptionToken = Object();
 
   /// Recovered on its first write rather than from a loaded account list.
   bool joined = false;

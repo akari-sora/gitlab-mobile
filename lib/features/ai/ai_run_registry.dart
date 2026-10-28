@@ -119,6 +119,7 @@ final class AccountAiRunRegistry extends ChangeNotifier
   late final StreamSubscription<void> _stopSubscription;
   final Map<String, AiChatSessionHandle> _sessions =
       <String, AiChatSessionHandle>{};
+  final Set<Future<AiWriteOutcome>> _retiredWrites = {};
   var _disposed = false;
 
   /// Open pages per session; release drops a session only after the last.
@@ -271,6 +272,7 @@ final class AccountAiRunRegistry extends ChangeNotifier
   /// Packet 9 snapshots these before changing the account/API generation.
   @override
   List<Future<AiWriteOutcome>> get inFlightWrites => List.unmodifiable([
+    ..._retiredWrites,
     for (final source
         in _sessions.values
             .map((handle) => handle.session)
@@ -400,6 +402,19 @@ final class AccountAiRunRegistry extends ChangeNotifier
     }
     for (final handle in handles) {
       handle.session.stop();
+      if (handle.session case AiWriteSettlementSource source) {
+        for (final pending in source.inFlightWrites) {
+          if (!_retiredWrites.add(pending)) continue;
+          // Disposal removes routing and execution authority immediately;
+          // accepted writes keep their original Future until settlement.
+          unawaited(
+            pending.then<void>(
+              (_) => _retiredWrites.remove(pending),
+              onError: (Object _, StackTrace _) => _retiredWrites.remove(pending),
+            ),
+          );
+        }
+      }
       handle.dispose();
     }
     backgroundExecution.dispose();

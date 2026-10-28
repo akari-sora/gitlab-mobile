@@ -51,7 +51,7 @@ const _args = <String, Object?>{
   'candidateId': _candidate,
 };
 
-// Expose only this hidden row to the test coordinator, retaining its contract.
+// Isolate the status row in the test coordinator, retaining its contract.
 final class _StatusLedger implements AiCapabilityLedger {
   @override
   AiCapability? find(String operationId) {
@@ -571,8 +571,8 @@ void main() {
     addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
   });
 
-  test('production gate and hidden row refuse before freshness', () async {
-    aiGroupWorkItemWritesEnabledForTesting = null;
+  test('explicit gate-off override refuses before freshness', () async {
+    aiGroupWorkItemWritesEnabledForTesting = false;
     final h = await _StatusHarness.create();
     addTearDown(h.dispose);
     expect(aiGroupWorkItemWritesAreEnabled, isFalse);
@@ -998,12 +998,12 @@ void main() {
     });
   }
 
-  test('G-P3 row stays hidden with exact graph args, T2 and fixed cap 21', () {
+  test('G-P3 row is visible with exact graph args, T2 and fixed cap 21', () {
     final row = productionAiLedger.find(_operation)!;
     expect(row.boundary, AiWriteBoundary.graph);
     expect(row.baseTier, AiWriteTier.t2);
     expect(row.scopeClass, AiScopeClass.groupWorkItem);
-    expect(row.modelVisible, isFalse);
+    expect(row.modelVisible, isTrue);
     expect(groupStatusStageOperations, {'updateGroupWorkItemStatus'});
     expect(
       aiGroupStatusRows.map((row) => row.operationId),
@@ -1011,7 +1011,7 @@ void main() {
     );
     expect(
       productionAiLedger.modelVisible.map((row) => row.operationId),
-      isNot(contains(_operation)),
+      contains(_operation),
     );
     expect(row.namedMethod, 'updateWorkItemStatus');
     expect(row.readback, isTrue);

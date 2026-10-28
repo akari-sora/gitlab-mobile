@@ -910,7 +910,7 @@ void _lifecycleTests() {
 
 void main() {
   _lifecycleTests();
-  test('G-P2 pins the complete hidden state row and fixed cap', () {
+  test('G-P2 pins the complete visible state row and fixed cap', () {
     expect(groupStateContractOperations, {_operation});
     expect(groupStateStageOperations, {_operation});
     expect(
@@ -922,7 +922,7 @@ void main() {
     expect(row.baseTier, AiWriteTier.t2);
     expect(row.scopeClass, AiScopeClass.groupWorkItem);
     expect(row.boundary, AiWriteBoundary.graph);
-    expect(row.modelVisible, isFalse);
+    expect(row.modelVisible, isTrue);
     expect(row.readback, isTrue);
     expect(row.arguments.keys.toSet(), {'groupId', 'iid', 'stateEvent'});
     expect(row.arguments.values.every((arg) => arg.required), isTrue);
@@ -933,7 +933,7 @@ void main() {
     expect(aiWriteRequestAllowance(_operation), 21);
     expect(aiWriteRequestAllowance(_operation, oauthReplay: false), 11);
     expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
-    expect(aiGroupWorkItemWritesAreEnabled, isFalse);
+    expect(aiGroupWorkItemWritesAreEnabled, isTrue);
   });
 
   for (final event in ['close', 'reopen']) {

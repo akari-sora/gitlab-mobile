@@ -335,7 +335,7 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertTrue(version.is_file(), "Catalogue version needs its own file")
         source = version.read_text(encoding="utf-8")
         self.assertNotRegex(source, r"(?m)^\s*(?:import|export|part)\b")
-        self.assertRegex(source, r"const\s+aiToolCatalogueVersion\s*=\s*4\s*;")
+        self.assertRegex(source, r"const\s+aiToolCatalogueVersion\s*=\s*5\s*;")
         catalogue = (AI_ROOT / "tools" / "tool_catalogue.dart").read_text(
             encoding="utf-8"
         )
@@ -815,9 +815,9 @@ class AiBoundaryTest(unittest.TestCase):
                         self.assertTrue(self._namespace_write_violations(access, is_main=False))
                         self.assertTrue(self._namespace_write_violations(resolver + " void other() => " + access + ";", is_main=True))
 
-    def test_g0e_group_target_gate_is_pinned_and_never_assigned_in_lib(self):
+    def test_g14_group_target_gate_is_pinned_and_never_assigned_in_lib(self):
         ledger = (AI_ROOT / "tools" / "write_ledger.dart").read_text()
-        self.assertRegex(ledger, r"\bconst\s+bool\s+aiGroupWorkItemWritesEnabled\s*=\s*false\s*;")
+        self.assertRegex(ledger, r"\bconst\s+bool\s+aiGroupWorkItemWritesEnabled\s*=\s*true\s*;")
         violations = []
         for path in (ROOT / "lib").rglob("*.dart"):
             for finding in self._group_gate_assignment_violations(path.read_text()):

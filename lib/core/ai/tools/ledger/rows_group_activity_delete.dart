@@ -7,7 +7,7 @@ const List<AiCapability> aiGroupActivityDeleteRows = <AiCapability>[
     baseTier: AiWriteTier.t4,
     scopeClass: AiScopeClass.groupWorkItem,
     boundary: AiWriteBoundary.graph,
-    modelVisible: false,
+    modelVisible: true,
     arguments: {'groupId': _iid, 'iid': _iid, 'noteId': _iid},
     // L = 2 * (group freshness1 + user1 + namespace1 + locator2 + access1)
     //     + preflight1 + readback1 = 14; cap = 2L + mutation1 = 29.

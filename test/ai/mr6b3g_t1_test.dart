@@ -547,7 +547,7 @@ Map<String, Object?> _discussion({
   },
 };
 
-/// Tests may offer hidden production rows without changing their graph boundary.
+/// The test ledger isolates the T1 rows without changing their graph boundary.
 final class _TestLedger implements AiCapabilityLedger {
   const _TestLedger();
 
@@ -874,8 +874,8 @@ void main() {
       expect(server.adapter.requests, isEmpty);
     });
 
-    test('$op keeps the production gate off and rows unoffered', () async {
-      aiGroupWorkItemWritesEnabledForTesting = null;
+    test('$op gate-off override keeps rows unoffered', () async {
+      aiGroupWorkItemWritesEnabledForTesting = false;
       expect(aiGroupWorkItemWritesAreEnabled, isFalse);
       expect(
         toolsForScope(_scope()).map((row) => row.operationId),
@@ -1181,15 +1181,15 @@ void main() {
   );
 
   test(
-    'G-P11 ledger rows are hidden, graph, T1, closed and independently capped',
+    'G-P11 ledger rows are visible, graph, T1, closed and independently capped',
     () {
       for (final op in _operations) {
         final row = productionAiLedger.find(op)!;
         expect(groupT1StageOperations, unorderedEquals(_operations));
-        expect(row.modelVisible, isFalse);
+        expect(row.modelVisible, isTrue);
         expect(
           productionAiLedger.modelVisible.map((entry) => entry.operationId),
-          isNot(contains(op)),
+          contains(op),
         );
         expect(row.boundary, AiWriteBoundary.graph);
         expect(row.baseTier, AiWriteTier.t1);

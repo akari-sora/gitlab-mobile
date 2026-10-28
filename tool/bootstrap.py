@@ -389,7 +389,7 @@ MAIN_ACTIVITY = FRAGMENT_MAIN_ACTIVITY.replace(
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        AgentRunsChannel.activityDestroyed(this)
+        AgentRunsChannel.engineDetached(flutterEngine, this)
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }
@@ -439,6 +439,7 @@ import android.os.Looper
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.BinaryMessenger
+import java.lang.ref.WeakReference
 import java.util.UUID
 
 class AgentRunService : Service() {
@@ -601,6 +602,8 @@ internal object AgentRunsChannel {
     private var owner: Activity? = null
     private var visible: Activity? = null
     private var registration: Any? = null
+    private var engineReference: WeakReference<FlutterEngine>? = null
+    private var engineListener: FlutterEngine.EngineLifecycleListener? = null
     private var testEvents: AgentRunTestEvents? = null
     private var lastOpSeq = 0L
     private var cleanupFailed = false
@@ -642,12 +645,9 @@ internal object AgentRunsChannel {
 
     fun register(engine: FlutterEngine, activity: Activity) {
         mainThread()
-        if (owner !== activity) {
-            if (owner != null) stop("activity_destroyed")
-            visible = null
-        }
-        channel?.setMethodCallHandler(null)
-        testEvents?.close()
+        // A new channel binding cannot inherit authority from an old Dart engine,
+        // even if Android reuses the same Activity instance.
+        owner?.let { activityDestroyed(it) }
         // The optional debug class installs an inert registration channel. Only
         // C8's explicit Dart QA entry activates it; release has no QA handler.
         testEvents = try {
@@ -660,6 +660,19 @@ internal object AgentRunsChannel {
         val binding = Any()
         registration = binding
         owner = activity
+        engineReference = WeakReference(engine)
+        val listener = object : FlutterEngine.EngineLifecycleListener {
+            override fun onPreEngineRestart() {
+                if (registration === binding) stop("activity_destroyed")
+            }
+            override fun onEngineWillDestroy() {
+                // FlutterEngine is iterating its listener set here; do not remove
+                // this listener synchronously from inside the callback.
+                activityDestroyed(activity, binding, engineDestroying = true)
+            }
+        }
+        engineListener = listener
+        engine.addEngineLifecycleListener(listener)
         channel = MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL).also { bridge ->
             bridge.setMethodCallHandler { call, rawResult ->
                 mainThread()
@@ -707,13 +720,23 @@ internal object AgentRunsChannel {
     }
     fun resumed(activity: Activity) { mainThread(); if (owner === activity) visible = activity }
     fun paused(activity: Activity) { mainThread(); if (visible === activity) visible = null }
-    fun activityDestroyed(activity: Activity) {
+    fun engineDetached(engine: FlutterEngine, activity: Activity) {
         mainThread()
-        if (owner !== activity) return
+        if (engineReference?.get() !== engine) return
+        activityDestroyed(activity)
+    }
+    fun activityDestroyed(activity: Activity, expectedBinding: Any? = registration, engineDestroying: Boolean = false) {
+        mainThread()
+        if (owner !== activity || registration !== expectedBinding) return
         stop("activity_destroyed")
         visible = null
         owner = null
         registration = null
+        val engine = engineReference?.get()
+        val listener = engineListener
+        engineReference = null
+        engineListener = null
+        if (!engineDestroying && listener != null) engine?.removeEngineLifecycleListener(listener)
         channel?.setMethodCallHandler(null)
         channel = null
         testEvents?.close()

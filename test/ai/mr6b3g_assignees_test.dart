@@ -36,7 +36,7 @@ const _scope = AiWriteScope(
 );
 const _writeKey = AiConflictKey([mr6b3Account, 'group:7', 'workItem', '3']);
 
-// Test visibility exposes only the implemented alias; production stays hidden.
+// Isolate the assignee alias in this test coordinator.
 final class _Ledger implements AiCapabilityLedger {
   const _Ledger();
   static const row = AiCapability(
@@ -535,13 +535,12 @@ void main() {
     addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
   });
   _groupSpecificTests();
-  // G14 owns production visibility; the family row remains hidden.
-  test('G-P6 pins complete alias and hidden T2 graph row with cap 37', () {
+  test('G-P6 pins complete alias and visible T2 graph row with cap 37', () {
     final row = productionAiLedger.find(_operation)!;
     expect(row.baseTier, AiWriteTier.t2);
     expect(row.scopeClass, AiScopeClass.groupWorkItem);
     expect(row.boundary, AiWriteBoundary.graph);
-    expect(row.modelVisible, isFalse);
+    expect(row.modelVisible, isTrue);
     expect(groupAssigneesStageOperations, {'updateGroupWorkItemAssignees'});
     expect(row.readback, isTrue);
     expect(row.httpCap, 37);
@@ -554,11 +553,11 @@ void main() {
     expect(row.arguments['assigneeUsernames']!.type, AiArgType.stringList);
     expect(
       productionAiLedger.modelVisible.map((row) => row.operationId),
-      isNot(contains(_operation)),
+      contains(_operation),
     );
     expect(
       toolsForScope(_scope).map((row) => row.operationId),
-      isNot(contains(_operation)),
+      contains(_operation),
     );
     expect(aiWriteRequestAllowance(_operation), 37);
     expect(aiWriteRequestAllowance(_operation, oauthReplay: false), 19);

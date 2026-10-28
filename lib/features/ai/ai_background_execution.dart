@@ -760,6 +760,7 @@ final class AiBackgroundExecution extends ChangeNotifier
   Future<void> _cleanupRequest(
     String request, {
     bool confirmedRejected = false,
+    bool cleanupAfterDetach = false,
   }) async {
     final shared = _shared;
     final stopRevision = _stopRevision;
@@ -792,6 +793,9 @@ final class AiBackgroundExecution extends ChangeNotifier
       _immediateCleanups--;
       _releasePending--;
       shared?.retireIfIdle();
+      if (cleanupAfterDetach && _orphan && _current && _appInForeground()) {
+        unawaited(onForeground());
+      }
     }
   }
 
@@ -924,6 +928,7 @@ final class AiBackgroundExecution extends ChangeNotifier
 
   Future<void> _queuePermitRelease(
     String permit, {
+    bool cleanupAfterDetach = false,
     List<(AiBackgroundRunGate, AiExecutionRunBinding, int)> approvalWaits =
         const [],
   }) {
@@ -971,6 +976,11 @@ final class AiBackgroundExecution extends ChangeNotifier
         }
       } finally {
         _releasePending--;
+        // Reattachment may precede a failed detach cleanup reply. A visible
+        // owner must still clean the orphan without restarting any run.
+        if (cleanupAfterDetach && _orphan && _current && _appInForeground()) {
+          unawaited(onForeground());
+        }
       }
     });
   }
@@ -1020,9 +1030,24 @@ final class AiBackgroundExecution extends ChangeNotifier
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      // Dart can outlive its Activity. Native owns destruction and stopping,
+      // but a lost callback must not leave an already-issued ticket usable.
+      final permit = _permit;
+      for (final gate in _gates) {
+        gate.cancelStart(cleanupAfterDetach: true);
+        gate._invalidated = true;
+        gate._released = false;
+        gate._needsExplicitResume = true;
+        gate._revision++;
+      }
+      _cancelProgress();
+      if (permit != null) _invalidatePermit(permit, cleanupAfterDetach: true);
+      _setStatus(AiBackgroundExecutionStatus.invalidated);
+      return;
+    }
     if (state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
+        state == AppLifecycleState.paused) {
       var changed = false;
       for (final gate in _gates) {
         if (gate._current &&
@@ -1078,7 +1103,11 @@ final class AiBackgroundExecution extends ChangeNotifier
     _invalidatePermit(permit, inactiveConfirmed: true);
   }
 
-  void _invalidatePermit(String permit, {bool inactiveConfirmed = false}) {
+  void _invalidatePermit(
+    String permit, {
+    bool inactiveConfirmed = false,
+    bool cleanupAfterDetach = false,
+  }) {
     _invalidatedPermits.add(permit);
     var affected = false;
     for (final gate in _gates) {
@@ -1104,7 +1133,9 @@ final class AiBackgroundExecution extends ChangeNotifier
         shared.leasePermit = null;
         shared.retireIfIdle();
       } else {
-        unawaited(_queuePermitRelease(permit));
+        unawaited(
+          _queuePermitRelease(permit, cleanupAfterDetach: cleanupAfterDetach),
+        );
       }
     }
   }
@@ -1372,12 +1403,14 @@ final class AiBackgroundRunGate implements AiExecutionGate {
   Future<void> _cleanupRequest(
     String request, {
     bool confirmedRejected = false,
+    bool cleanupAfterDetach = false,
   }) {
     if (_cleaningRequest == request) return _cleanup!;
     _cleaningRequest = request;
     return _cleanup = _owner._cleanupRequest(
       request,
       confirmedRejected: confirmedRejected,
+      cleanupAfterDetach: cleanupAfterDetach,
     );
   }
 
@@ -1404,7 +1437,7 @@ final class AiBackgroundRunGate implements AiExecutionGate {
     if (changed) _owner._workChanged();
   }
 
-  void cancelStart() {
+  void cancelStart({bool cleanupAfterDetach = false}) {
     if (!_starting) return;
     _invalidated = true;
     _released = false;
@@ -1412,7 +1445,11 @@ final class AiBackgroundRunGate implements AiExecutionGate {
     _starting = false;
     final request = _requestId;
     _requestId = null;
-    if (request != null) unawaited(_cleanupRequest(request));
+    if (request != null) {
+      unawaited(
+        _cleanupRequest(request, cleanupAfterDetach: cleanupAfterDetach),
+      );
+    }
   }
 
   void release() {
