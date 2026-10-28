@@ -101,6 +101,63 @@ void main() {
   });
 
   test(
+    'context delivery is reported on accepted answers, not unsent turns',
+    () async {
+      final harness = Harness();
+      var response = 0;
+      harness.respond = (_, _) async {
+        if (++response == 2) {
+          throw const AiFailure(AiFailureKind.rateLimited, notSent: true);
+        }
+        return harness.turn(text: 'answer');
+      };
+      final events = <String>[];
+      final runner = AiRunner(
+        appInForeground: () => true,
+        config: harness.config(),
+        wire: harness.wire,
+        complete: harness.complete,
+        secrets: harness.secrets,
+        refreshSecrets: () async {},
+        guard: AiRunGuard(
+          expectedGeneration: 1,
+          ownerApi: harness.owner,
+          generation: () => 1,
+          api: () => harness.owner,
+          recipientRevision: () => 1,
+          consentValid: () => true,
+        ),
+        system: 'Synthetic prompt.',
+        context: [AiContextBlock(source: 'work_item', text: 'Complete title')],
+        onRestorableResultCut: () => events.add('cut'),
+        onContextDelivered: (sent) =>
+            events.add('context:${sent.single.source}'),
+        close: () {},
+        cancelActive: () {},
+      );
+
+      expect((await runner.run('first')).reason, AiRunEnd.done);
+      expect(events, ['context:work_item']);
+      runner.forceProjection();
+      expect((await runner.run('unsent')).reason, AiRunEnd.failed);
+      expect(events, ['context:work_item']);
+      runner.forceProjection();
+      expect((await runner.run('retry')).reason, AiRunEnd.done);
+      expect(events, [
+        'context:work_item',
+        'cut',
+        'context:conversation_summary',
+      ]);
+      expect((await runner.run('same segment')).reason, AiRunEnd.done);
+      expect(events, [
+        'context:work_item',
+        'cut',
+        'context:conversation_summary',
+      ]);
+    },
+  );
+
+  test(
     'restored display history is re-redacted into a fresh projection',
     () async {
       final harness = Harness();
