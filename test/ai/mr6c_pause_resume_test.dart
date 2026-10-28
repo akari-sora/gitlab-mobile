@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
+import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/execution_gate.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
@@ -1033,10 +1034,22 @@ void main() {
   testWidgets(
     'expired preparation cannot replace a later context and holds its read lease',
     (tester) async {
-      var offset = Duration.zero;
+      // Context age, cache timestamps and the preparation timer share the
+      // widget clock. Real I/O may settle without advancing that clock.
+      final now = tester.binding.clock.now;
       final h = (await tester.runAsync(
         () => fx.StackHarness.create(
-          now: () => DateTime.now().add(offset),
+          now: now,
+          prepareSession: (session, server) async {
+            final previous = session.api!;
+            previous.close();
+            session.api = GitLabApi(
+              instance: previous.instance,
+              credential: previous.credential,
+              dio: Dio()..httpClientAdapter = server.adapter,
+              readCacheClock: now,
+            )..bindReadCache(server.workspace.account.key, session.generation);
+          },
           configure: (server) {
             server.workspace.issues[1] = server.workspace.issue(
               1,
@@ -1054,7 +1067,28 @@ void main() {
         ),
       ))!;
       addTearDown(h.dispose);
-      offset = const Duration(minutes: 2);
+
+      Future<void> waitFor(bool Function() ready, String checkpoint) async {
+        final elapsed = Stopwatch()..start();
+        while (!ready()) {
+          if (elapsed.elapsed >= const Duration(seconds: 20)) {
+            fail(
+              'Timed out waiting for $checkpoint: '
+              '${h.controller.phase} ${h.controller.failure} '
+              '${h.controller.blocker}',
+            );
+          }
+          // Drain immediate timers as well as microtasks without aging context.
+          await tester.pump(Duration.zero);
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 1)),
+          );
+        }
+        await tester.pump(Duration.zero);
+      }
+
+      final originalContext = h.controller.contextForTesting;
+      await tester.pump(const Duration(minutes: 2));
       final entered = Completer<void>();
       final response = Completer<void>();
       addTearDown(() {
@@ -1065,39 +1099,47 @@ void main() {
         await response.future;
         return h.server.workspace.respond(request);
       };
-      final expired = h.controller.send('old attempt');
-      for (var i = 0; i < 30 && !entered.isCompleted; i++) {
-        await tester.pump(const Duration(milliseconds: 10));
-        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-      }
-      expect(
-        entered.isCompleted,
-        isTrue,
-        reason:
-            '${h.controller.phase} ${h.controller.failure} ${h.controller.blocker}; '
-            '${h.server.adapter.requests.map((r) => '${r.method} ${r.uri.path}').toList()}',
-      );
+      var expiredDone = false;
+      final expired = h.controller.send('old attempt').whenComplete(() {
+        expiredDone = true;
+      });
+      await waitFor(() => entered.isCompleted, 'the held context read');
+      expect(expiredDone, isFalse);
       await tester.pump(const Duration(minutes: 12));
+      await waitFor(() => expiredDone, 'preparation timeout');
       await expired;
       expect(h.controller.lastEnd, AiRunEnd.failed);
+      expect(
+        h.controller.failure,
+        isA<AiFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          AiFailureKind.timeout,
+        ),
+      );
       expect(h.controller.budgetAllocator.activeLeases, 1);
-      offset = Duration.zero;
+      expect(h.provider.bodies, isEmpty);
       h.server.overrides.remove('GET projects/42/issues/1');
-      final next = h.controller.send('new attempt');
-      for (var i = 0; i < 30 && h.controller.phase != AiChatPhase.idle; i++) {
-        await tester.pump(const Duration(milliseconds: 10));
-        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-      }
+      var nextDone = false;
+      final next = h.controller.send('new attempt').whenComplete(() {
+        nextDone = true;
+      });
+      await waitFor(() => nextDone, 'the later send');
       await next;
       expect(h.controller.lastEnd, AiRunEnd.done);
       final context = h.controller.contextForTesting;
+      expect(context, isNotNull);
+      expect(context, isNot(same(originalContext)));
+      expect(h.controller.budgetAllocator.activeLeases, 1);
+      expect(h.provider.bodies, hasLength(1));
       response.complete();
-      for (var i = 0; i < 10; i++) {
-        await tester.pump(const Duration(milliseconds: 10));
-        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-      }
+      await waitFor(
+        () => h.controller.budgetAllocator.activeLeases == 0,
+        'the expired read lease to settle',
+      );
       expect(h.controller.contextForTesting, same(context));
       expect(h.controller.lastEnd, AiRunEnd.done);
+      expect(h.provider.bodies, hasLength(1));
       expect(h.controller.budgetAllocator.activeLeases, 0);
     },
   );
