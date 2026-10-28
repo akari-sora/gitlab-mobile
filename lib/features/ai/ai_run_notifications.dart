@@ -507,14 +507,18 @@ final class AiRunNotifications extends ChangeNotifier {
             conversationId: 'recovery-${_recoverySequence++}',
             generation: generation,
           ).encode();
+          // No wait since the last check: allocating here is still eligible.
           var id = _resultIds.allocate(payload);
           if (id == null) {
             await _refreshResultReservations();
-            id = _resultIds.allocate(payload);
+            // Checked again before the range is touched (Codex R3).
+            if (!ready()) return posted.complete(false);
+            id =
+                _resultIds.allocate(payload) ??
+                _resultIds.replaceOldest(payload);
           }
-          id ??= _resultIds.replaceOldest(payload);
-          if (id == null || !ready()) {
-            if (id == null) _setResultRangeFull(true);
+          if (id == null) {
+            _setResultRangeFull(true);
             return posted.complete(false);
           }
           _setResultRangeFull(false);

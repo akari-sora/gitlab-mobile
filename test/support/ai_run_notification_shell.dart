@@ -94,13 +94,21 @@ final class FakeNotificationPlatform {
       .defaultBinaryMessenger
       .setMockMethodCallHandler(_channel, null);
 
+  /// Holds the active-notification read while set.
+  Completer<void>? activeBarrier;
+
+  Future<Object?> _activeNotifications() async {
+    await activeBarrier?.future;
+    return const <Object?>[];
+  }
+
   Future<Object?> _handle(MethodCall call) async {
     calls.add(call);
     return switch (call.method) {
       'initialize' => true,
       'getNotificationAppLaunchDetails' => await _launchDetails(),
       'cancel' || 'show' => null,
-      'getActiveNotifications' => const <Object?>[],
+      'getActiveNotifications' => await _activeNotifications(),
       'areNotificationsEnabled' => notificationsEnabled,
       'getNotificationChannels' => channels,
       'requestNotificationsPermission' => await _requestPermission(),

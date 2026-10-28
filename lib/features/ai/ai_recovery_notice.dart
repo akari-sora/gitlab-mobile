@@ -187,34 +187,65 @@ final class AiRecoveryNotifier {
   final AiRunNotifications notifications;
   final SessionController session;
   late final ValueListenable<int> _passes;
-  final _attempted = <String>{};
+
+  /// Accounts told, or given up for good (removed, acknowledged, refused).
+  final _done = <String>{};
+
+  /// Accounts with a post under way.
+  final _inFlight = <String>{};
   bool _disposed = false;
 
   void _deliver() {
     if (_disposed || _passes.value == 0 || !session.accountsLoaded) return;
     for (final account in session.accounts) {
       final key = account.key;
-      if (_attempted.contains(key) ||
+      if (_done.contains(key) ||
+          _inFlight.contains(key) ||
           !journal.recoveryResult(key).mayNotifyInterruption) {
         continue;
       }
-      _attempted.add(key);
-      final generation = session.generation;
-      unawaited(
-        notifications.showRecoveredInterruption(
-          generation: generation,
-          // Delivery waits (plugin start, permission, active notifications):
-          // the account must still be stored and not being removed, its
-          // summary still unacknowledged, the session generation unchanged.
-          stillEligible: () =>
-              !_disposed &&
-              !session.isDisposed &&
-              session.generation == generation &&
-              session.accounts.any((account) => account.key == key) &&
-              journal.recoveryResult(key).mayNotifyInterruption,
-        ),
-      );
+      _post(key);
     }
+  }
+
+  bool _eligible(String key, int generation) =>
+      !_disposed &&
+      !session.isDisposed &&
+      session.generation == generation &&
+      session.accounts.any((account) => account.key == key) &&
+      journal.recoveryResult(key).mayNotifyInterruption;
+
+  void _post(String key) {
+    _inFlight.add(key);
+    final generation = session.generation;
+    unawaited(
+      notifications
+          .showRecoveredInterruption(
+            generation: generation,
+            // Delivery waits (plugin start, permission, active
+            // notifications): the account must still be stored and not
+            // being removed, its summary still unacknowledged, the session
+            // generation unchanged.
+            stillEligible: () => _eligible(key, generation),
+          )
+          .then((posted) {
+            _inFlight.remove(key);
+            if (_disposed) return;
+            // Only a new generation (the same account activating, as an
+            // auto-resume does) keeps the attempt: it is posted again for the
+            // generation now current. Removal, acknowledgement and refusal
+            // (notifications off, range full) end it for this process.
+            final retry =
+                !posted &&
+                session.generation != generation &&
+                _eligible(key, session.generation);
+            if (retry) {
+              _post(key);
+            } else {
+              _done.add(key);
+            }
+          }),
+    );
   }
 
   void dispose() {

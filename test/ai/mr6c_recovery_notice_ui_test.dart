@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/features/ai/ai_recovery_notice.dart';
 import 'package:gitlab_mobile/features/ai/ai_run_notification_ui.dart';
 import 'package:gitlab_mobile/features/ai/ai_run_notifications.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
+import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/features/security/app_lock.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/main.dart'
@@ -300,6 +301,7 @@ void main() {
     setUp(() => (platform = FakeNotificationPlatform()).install());
     tearDown(() => platform.uninstall());
     final android = TargetPlatformVariant.only(TargetPlatform.android);
+    late SessionController lastSession;
 
     /// A signed-in session whose account had [writes] interrupted.
     Future<(AiWriteJournal, String, int, AiRunNotifications)> start(
@@ -315,6 +317,7 @@ void main() {
         await session.initialize();
         await session.connect('https://example.com/gitlab', 'synthetic-token');
       });
+      lastSession = session;
       final key = session.active!.key;
       final journal = await afterDeath(
         tester,
@@ -448,6 +451,93 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(platform.shows, hasLength(1));
+    }, variant: android);
+
+    testWidgets('an auto-resume of the same account during delivery posts '
+        'for the new generation (Codex R3)', (tester) async {
+      platform
+        ..notificationsEnabled = true
+        ..launchBarrier = Completer<void>();
+      final (journal, key, generation, _) = await start(
+        tester,
+        initialize: false,
+      );
+      markAiJournalRecovered(journal);
+      await tester.pump();
+      // The saved account activates again (auto-resume) while delivery waits.
+      final session = lastSession;
+      await tester.runAsync(() => session.select(session.active!));
+      expect(session.generation, greaterThan(generation));
+      expect(session.active?.key, key);
+      platform.launchBarrier!.complete();
+      for (var i = 0; i < 6; i++) {
+        await tester.pump();
+      }
+      expect(platform.shows, hasLength(1));
+      final route = AiRunNotificationRoute.decode(
+        platform.shows.single['payload'] as String?,
+      );
+      expect(route?.generation, session.generation);
+      expect(journal.recoveryResult(key).mayNotifyInterruption, isTrue);
+      // Still once per summary: a later pass posts nothing more.
+      markAiJournalRecovered(journal);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump();
+      }
+      expect(platform.shows, hasLength(1));
+    }, variant: android);
+
+    testWidgets('a post dropped after the active-notification read leaves '
+        'the ID range untouched (Codex R3)', (tester) async {
+      platform.notificationsEnabled = true;
+      const range =
+          AiRunNotifications.resultLastId -
+          AiRunNotifications.resultFirstId +
+          1;
+
+      /// Fills the result range, optionally drops one post while the active
+      /// notifications are read, then returns the ID the next post gets.
+      Future<int> nextId({required bool dropOne}) async {
+        final notifications = AiRunNotifications(text: aiRunNotificationText);
+        addTearDown(notifications.dispose);
+        expect(await notifications.initialize(), isTrue);
+        for (var i = 0; i < range; i++) {
+          expect(
+            await notifications.showRecoveredInterruption(
+              generation: 1,
+              stillEligible: () => true,
+            ),
+            isTrue,
+          );
+        }
+        if (dropOne) {
+          final shows = platform.shows.length;
+          platform.activeBarrier = Completer<void>();
+          var eligible = true;
+          final dropped = notifications.showRecoveredInterruption(
+            generation: 1,
+            stillEligible: () => eligible,
+          );
+          await tester.pump();
+          eligible = false;
+          platform.activeBarrier!.complete();
+          expect(await dropped, isFalse);
+          expect(platform.shows, hasLength(shows));
+          platform.activeBarrier = null;
+        }
+        expect(
+          await notifications.showRecoveredInterruption(
+            generation: 1,
+            stillEligible: () => true,
+          ),
+          isTrue,
+        );
+        return platform.shows.last['id']! as int;
+      }
+
+      // The dropped post claimed nothing: the next one gets the same ID it
+      // gets when nothing was dropped.
+      expect(await nextId(dropOne: true), await nextId(dropOne: false));
     }, variant: android);
   });
 }
