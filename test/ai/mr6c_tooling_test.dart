@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,6 +9,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:crypto/crypto.dart';
 import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
+import 'package:gitlab_mobile/features/ai/ai_journal_fence.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import '../../tool/mr6c_qa_fixture.dart';
@@ -24,6 +26,53 @@ Map<String, Object> _command({
   'phase': 'prepare',
   'sequence': sequence,
 };
+
+final class _HeldJournalFence implements AiJournalAccountFence {
+  final _delegate = AiHistoryJournalFence();
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  bool hold = false;
+
+  @override
+  bool isCleaning(String accountKey) => _delegate.isCleaning(accountKey);
+
+  @override
+  Future<T> run<T>(String accountKey, Future<T> Function() action) async {
+    if (hold) {
+      if (!entered.isCompleted) entered.complete();
+      await release.future;
+    }
+    return _delegate.run(accountKey, action);
+  }
+}
+
+final class _HeldStorage extends FlutterSecureStorage {
+  final entered = Completer<void>();
+  final release = Completer<Map<String, String>>();
+
+  @override
+  Future<Map<String, String>> readAll({
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    if (!entered.isCompleted) {
+      entered.complete();
+      return release.future;
+    }
+    return super.readAll(
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+}
 
 Future<void> main() async {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -380,6 +429,42 @@ Future<void> main() async {
     expect(nativeCalls.map((call) => call.method), ['updateProgress']);
   });
 
+  test('V9 teardown joins preparation after its caller times out', () async {
+    final dir = await Directory.systemTemp.createTemp('mr6c-v9-startup-');
+    addTearDown(() => dir.delete(recursive: true));
+    FlutterSecureStorage.setMockInitialValues({});
+    final storage = _HeldStorage();
+    final fixture = QaV9Fixture(
+      QaSandbox(support: dir, storage: storage),
+      QaCommand.parse({..._command(), 'variant': 'task_manager_stop'}),
+    );
+    addTearDown(fixture.dispose);
+    addTearDown(() {
+      if (!storage.release.isCompleted) storage.release.complete({});
+    });
+    final preparation = fixture.prepare();
+    final cancelled = expectLater(
+      preparation,
+      throwsA(isA<QaSandboxUnavailable>()),
+    );
+    await storage.entered.future.timeout(const Duration(seconds: 5));
+    await expectLater(
+      preparation.timeout(Duration.zero),
+      throwsA(isA<TimeoutException>()),
+    );
+    var disposed = false;
+    final disposal = fixture.dispose().then((_) => disposed = true);
+    try {
+      await Future<void>.delayed(Duration.zero);
+      expect(disposed, isFalse);
+    } finally {
+      storage.release.complete({});
+    }
+    await cancelled;
+    await disposal.timeout(const Duration(seconds: 5));
+    expect(dir.listSync(), isEmpty);
+  });
+
   test(
     'V9 prepare reaches a held production journal dispatch on a host mock channel',
     () async {
@@ -392,6 +477,7 @@ Future<void> main() async {
       const channel = MethodChannel('mr6c-host-native-mock');
       var ticket = 0;
       var nativeActive = false;
+      final nativeReleased = Completer<void>();
       final nativeCalls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
@@ -443,6 +529,7 @@ Future<void> main() async {
               case 'releaseRuns':
                 final didRelease = nativeActive;
                 nativeActive = false;
+                if (!nativeReleased.isCompleted) nativeReleased.complete();
                 return {
                   'version': 1,
                   'status': 'released',
@@ -463,11 +550,16 @@ Future<void> main() async {
         ..._command(),
         'variant': 'task_manager_stop',
       });
-      final fixture = QaV9Fixture(sandbox, command, testChannel: channel);
+      final journalFence = _HeldJournalFence();
+      final fixture = QaV9Fixture(
+        sandbox,
+        command,
+        testChannel: channel,
+        testJournalFence: journalFence,
+      );
+      addTearDown(fixture.dispose);
       addTearDown(() {
-        fixture.registry.dispose();
-        fixture.settings.dispose();
-        fixture.session.dispose();
+        if (!journalFence.release.isCompleted) journalFence.release.complete();
       });
       final barrier = await fixture.prepare().timeout(
         const Duration(seconds: 20),
@@ -519,6 +611,39 @@ Future<void> main() async {
         (await sandbox.verifyRecovery(recoverCommand))['execution_digest'],
         barrier.executionDigest,
       );
+
+      // Hold the real terminal journal transaction, rather than relying on
+      // filesystem timing to catch teardown returning before accepted writes.
+      final writes = fixture.registry.inFlightWrites;
+      expect(writes, hasLength(1));
+      journalFence.hold = true;
+      var disposed = false;
+      final disposal = fixture.dispose().then((_) => disposed = true);
+      try {
+        await journalFence.entered.future.timeout(const Duration(seconds: 5));
+        await nativeReleased.future.timeout(const Duration(seconds: 5));
+        await Future<void>.delayed(Duration.zero);
+        expect(disposed, isFalse);
+        expect(fixture.session.isDisposed, isTrue);
+        expect(
+          fixture.journal.entries(sandbox.account.key).single.state,
+          AiJournalState.dispatching,
+        );
+      } finally {
+        journalFence.release.complete();
+        await Future.wait(writes);
+      }
+      await disposal.timeout(const Duration(seconds: 5));
+      expect(fixture.registry.inFlightWrites, isEmpty);
+      expect(nativeActive, isFalse);
+      final key = (await sandbox.keys.readKey(sandbox.account.key)).value!;
+      final settled = await AiHistoryCipher.decryptJson(
+        (await sandbox.files.read(sandbox.account.key))!,
+        key,
+        sandbox.account.key,
+        AiJournalFiles.fileName,
+      );
+      expect((settled['entries'] as List).single['state'], 'writeUncertain');
     },
   );
 }
