@@ -2794,5 +2794,20 @@
   "aiAddGroupWorkItemAlreadyAdded": "Este item de trabalho já está nesta conversa.",
   "aiAddGroupWorkItemNotGroupOwned": "O GitLab não confirmou que este item de trabalho pertence diretamente ao grupo do link, ou ele mudou durante a verificação. Nada foi adicionado.",
   "aiAddGroupWorkItemUnavailable": "Só é possível adicionar um item de trabalho quando a IA não está trabalhando e nenhuma gravação espera por você. Nada foi adicionado.",
-  "aiAddGroupWorkItemStale": "Esta verificação está desatualizada, então nada foi adicionado. Verifique o link de novo."
+  "aiAddGroupWorkItemStale": "Esta verificação está desatualizada, então nada foi adicionado. Verifique o link de novo.",
+  "aiRunPaused": "Trabalho pausado",
+  "aiRunPausedForeground": "Trabalho pausado: mantenha o app aberto para continuar",
+  "aiRunPausedTimeout": "Trabalho pausado: a verificação antes de continuar esgotou o tempo",
+  "aiRunCanResume": "Você pode continuar este trabalho de onde ele parou",
+  "aiRunResume": "Continuar",
+  "aiRunResumeTitle": "Continuar o trabalho?",
+  "aiRunResumeDuplicate": "Uma escrita deste trabalho pode já ter sido feita. Se a AI propuser a mesma alteração de novo depois que você continuar, será pedida sua confirmação primeiro.",
+  "aiRunResumeRebilling": "Continuar envia de novo solicitações ao provedor de AI, que podem ser cobradas novamente.",
+  "aiRunForegroundOnly": "O trabalho em segundo plano não começou; o trabalho continua só enquanto o app estiver aberto.",
+  "aiRunStartDenied": "Desta vez o sistema não permitiu o trabalho em segundo plano.",
+  "aiRunStartTimeout": "O trabalho em segundo plano não começou a tempo.",
+  "aiRunStartUnavailable": "O trabalho em segundo plano não está disponível agora.",
+  "aiProposalBackgroundUnavailable": "Esta escrita não foi feita: o trabalho em segundo plano não pôde começar.",
+  "aiRunCleanupPending": "Trabalho pausado: ainda não foi confirmado que o trabalho em segundo plano terminou, e nada pode continuar até lá.",
+  "aiRunCleanupRetry": "A limpeza é tentada de novo cada vez que você volta ao app; o trabalho só pode continuar depois que a limpeza for confirmada."
 }

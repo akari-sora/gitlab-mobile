@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ai/ai_display.dart';
 import '../../core/ai/ai_report.dart';
+import '../../core/ai/execution_gate.dart';
 import '../../core/ai/quick_actions.dart';
 import '../../core/brand.dart';
 import '../../core/ai/runner.dart';
@@ -28,6 +29,7 @@ import 'ai_report_sheet.dart';
 import 'ai_run_notification_ui.dart';
 import 'ai_message_body.dart';
 import 'ai_attachment_session.dart';
+import 'ai_background_execution.dart';
 import 'ai_scope.dart';
 import 'ai_scope_add.dart';
 import 'ai_settings_page.dart';
@@ -644,6 +646,41 @@ class _AiChatPageState extends State<AiChatPage> {
     );
   }
 
+  /// Continues the paused logical run where it stopped. It is never
+  /// automatic and adds no message: the user taps Continue, and confirms
+  /// first when a write may already have happened or the provider may bill
+  /// again.
+  Future<void> _resume() async {
+    final session = _session;
+    if (!session.canResumeRun) return;
+    final warnings = switch (session) {
+      final AiRunContinuationSession run => run.resumeWarnings,
+      _ => const <AiRunResumeWarning>{},
+    };
+    if (warnings.isNotEmpty &&
+        !await confirmAction(
+          context,
+          l10n.aiRunResumeTitle,
+          [
+            if (warnings.contains(AiRunResumeWarning.possibleDuplicate))
+              l10n.aiRunResumeDuplicate,
+            if (warnings.contains(AiRunResumeWarning.possibleRebilling))
+              l10n.aiRunResumeRebilling,
+          ].join('\n\n'),
+        )) {
+      return;
+    }
+    if (!mounted) return;
+    // Continuing can start the background work again, like a send.
+    await askForAiRunNotifications(context, disclose: _discloseNoReminders);
+    if (!mounted || !identical(session, _session) || !session.canResumeRun) {
+      return;
+    }
+    _toNewest();
+    session.confirmCleartext = _confirmCleartext;
+    await session.resumeRun();
+  }
+
   /// Brings the newest content (the list is reversed) back into view.
   void _toNewest() {
     if (!_scroll.hasClients || _scroll.offset <= 0) return;
@@ -934,6 +971,43 @@ class _AiChatPageState extends State<AiChatPage> {
             onResume: _sendPauseEnded,
           )
         : null;
+    final continuation = switch (_session) {
+      final AiRunContinuationSession run => run,
+      _ => null,
+    };
+    final idle =
+        _session.phase == AiChatPhase.idle &&
+        _session.blocker == AiChatBlocker.none;
+    final canResume = continuation?.canResumeRun ?? false;
+    final pause = continuation?.executionPause;
+    final start = continuation?.serviceStartResult;
+    // Unconfirmed cleanup forbids all execution, even in the foreground.
+    final cleanupPending =
+        continuation?.cleanupConfirmation ==
+        AiBackgroundCleanupConfirmation.pending;
+    final runPaused = idle && (pause != null || canResume)
+        ? _RunPausedCard(
+            pause: pause,
+            status: switch (_session) {
+              final AiExecutionChatSession execution =>
+                execution.executionStatus,
+              _ => null,
+            },
+            start: start,
+            cleanupPending:
+                cleanupPending &&
+                start?.disposition == AiBackgroundStartDisposition.unavailable,
+            onResume: canResume && !cleanupPending ? _resume : null,
+          )
+        : null;
+    // Only while work is under way or waiting to continue: the result stays
+    // on the run after it ends.
+    final foregroundOnly =
+        runPaused != null ||
+            _session.phase == AiChatPhase.running ||
+            _session.phase == AiChatPhase.awaitingApproval
+        ? _ForegroundOnlyRow.reasonFor(start)
+        : null;
     // A card that just appeared sits by the composer; scroll it into view.
     if (notice != null && !_showedNotice) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1002,6 +1076,7 @@ class _AiChatPageState extends State<AiChatPage> {
               (items.last as AiAssistantItem).state ==
                   AiAssistantState.streaming))
         const _Thinking(),
+      if (foregroundOnly != null) _ForegroundOnlyRow(reason: foregroundOnly),
       if (_session.phase == AiChatPhase.idle) ...[
         if (_session.lastEnd case final end?
             when !const {
@@ -1016,6 +1091,7 @@ class _AiChatPageState extends State<AiChatPage> {
         if (_session.offerNewConversation)
           _NewConversationOffer(onStart: _session.startNewConversation),
       ],
+      ?runPaused,
       // Last, so it sits just above the composer.
       ?notice,
     ];
@@ -2168,6 +2244,195 @@ class _Composer extends StatelessWidget {
     );
   }
 }
+
+/// A run that stopped part-way and can be continued: why it paused, and the
+/// Continue button while the controller allows it. Continuing is never
+/// automatic, not even when the app returns to the foreground.
+class _RunPausedCard extends StatelessWidget {
+  const _RunPausedCard({
+    required this.pause,
+    required this.status,
+    required this.start,
+    required this.cleanupPending,
+    required this.onResume,
+  });
+
+  final AiExecutionPause? pause;
+  final AiChatExecutionStatus? status;
+
+  /// The last service start; a refused start that invalidated the run says
+  /// why, and unconfirmed cleanup replaces the whole message.
+  final AiBackgroundStartResult? start;
+  final bool cleanupPending;
+  final VoidCallback? onResume;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final startReason =
+        start?.disposition == AiBackgroundStartDisposition.invalidated
+        ? _startFailureText(start?.failure)
+        : null;
+    // Ticket and nonce details are internal: they all read as one pause.
+    final (icon, text, detail) = switch (pause?.reason) {
+      _ when cleanupPending => (
+        Icons.sync_problem,
+        l10n.aiRunCleanupPending,
+        l10n.aiRunCleanupRetry,
+      ),
+      null ||
+      AiExecutionPauseReason.foregroundRequired ||
+      AiExecutionPauseReason.permitInactive when startReason != null => (
+        Icons.pause_circle_outline,
+        l10n.aiRunPaused,
+        startReason,
+      ),
+      null when status == AiChatExecutionStatus.invalidated => (
+        Icons.pause_circle_outline,
+        l10n.aiRunPausedForeground,
+        null,
+      ),
+      null => (Icons.play_circle_outline, l10n.aiRunCanResume, null),
+      AiExecutionPauseReason.foregroundRequired ||
+      AiExecutionPauseReason.permitInactive => (
+        Icons.pause_circle_outline,
+        l10n.aiRunPausedForeground,
+        null,
+      ),
+      AiExecutionPauseReason.timeout => (
+        Icons.timer_off_outlined,
+        l10n.aiRunPausedTimeout,
+        null,
+      ),
+      AiExecutionPauseReason.runLimit => (
+        Icons.hourglass_top,
+        l10n.aiChatTooManyRunning('${AiRunRegistry.maxRunning}'),
+        null,
+      ),
+      AiExecutionPauseReason.unavailable ||
+      AiExecutionPauseReason.ticketExpired ||
+      AiExecutionPauseReason.invalidTicket ||
+      AiExecutionPauseReason.runChanged ||
+      AiExecutionPauseReason.nonceReplayed ||
+      AiExecutionPauseReason.nonceCapacity => (
+        Icons.pause_circle_outline,
+        l10n.aiRunPaused,
+        null,
+      ),
+    };
+    return Card(
+      key: const ValueKey('ai-chat-run-paused'),
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            MergeSemantics(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(text),
+                        if (detail != null)
+                          Text(
+                            detail,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (onResume != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: FilledButton.tonalIcon(
+                  key: const ValueKey('ai-chat-resume'),
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: Text(l10n.aiRunResume),
+                  onPressed: onResume,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The background service was refused or could not start: the run goes on,
+/// but only while the app is open. Names the kind of refusal, never the
+/// platform's own message.
+class _ForegroundOnlyRow extends StatelessWidget {
+  const _ForegroundOnlyRow({required this.reason});
+
+  final String reason;
+
+  /// The reason line for a start that fell back to the foreground, or null.
+  /// Only a foreground fallback continues while the app is open: an
+  /// invalidated start pauses the run and unconfirmed cleanup forbids it, so
+  /// the pause card explains those.
+  static String? reasonFor(AiBackgroundStartResult? result) =>
+      result?.disposition == AiBackgroundStartDisposition.foregroundOnly
+      ? _startFailureText(result?.failure)
+      : null;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurfaceVariant;
+    final style = theme.textTheme.bodySmall?.copyWith(color: color);
+    return MergeSemantics(
+      key: const ValueKey('ai-chat-foreground-only'),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.smartphone, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.aiRunForegroundOnly, style: style),
+                Text(reason, style: style),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The kind of a refused service start, never the platform's own message.
+/// A platform without the service, a start asked for from the background, a
+/// run that changed meanwhile and unconfirmed cleanup (explained on its own)
+/// return null.
+String? _startFailureText(AiBackgroundStartFailure? failure) =>
+    switch (failure) {
+      AiBackgroundStartFailure.startDenied ||
+      AiBackgroundStartFailure.securityException => l10n.aiRunStartDenied,
+      AiBackgroundStartFailure.timeout => l10n.aiRunStartTimeout,
+      AiBackgroundStartFailure.channelRefused ||
+      AiBackgroundStartFailure.channelUnavailable => l10n.aiRunStartUnavailable,
+      AiBackgroundStartFailure.unsupported ||
+      AiBackgroundStartFailure.foregroundRequired ||
+      AiBackgroundStartFailure.runChanged ||
+      AiBackgroundStartFailure.cleanupFailed ||
+      null => null,
+    };
 
 /// Says why the send button is off while the account's GitLab request budget
 /// pauses sending, and when that ends. It updates as the minutes pass and

@@ -162,11 +162,12 @@ Future<AiChatContext> loadAiChatContext({
   required bool Function() isCurrent,
   DateTime Function()? now,
   void Function(int maxRequests)? beforeRead,
+  bool fresh = false,
 }) async {
   _requireCurrent(isCurrent);
   final builder = AiContextBuilders(redactor: redactor);
   final nonce = _nonce();
-  final reads = _AiContextReads(api, now ?? DateTime.now, beforeRead);
+  final reads = _AiContextReads(api, now ?? DateTime.now, beforeRead, fresh);
 
   final context = switch (origin) {
     AiGeneralOrigin() => AiChatContext(
@@ -420,17 +421,22 @@ Future<AiChatContext> _loadGroupWorkItem(
 
 /// Keeps the original timestamps while composing several cache-backed reads.
 final class _AiContextReads {
-  _AiContextReads(this.api, this.now, this.beforeRead) : fetchedAt = now();
+  _AiContextReads(this.api, this.now, this.beforeRead, this.fresh)
+    : fetchedAt = now();
 
   final GitLabApi api;
   final DateTime Function() now;
   final void Function(int maxRequests)? beforeRead;
+  // Execution-gated refreshes must neither join nor publish a shared UI
+  // pending read: an AI-only pause cannot become the UI caller's result.
+  final bool fresh;
   DateTime fetchedAt;
 
   Future<Json> record(List<String> path) async {
     beforeRead?.call(4);
     var read = await api.cachedRecord(
       path,
+      fresh: fresh,
       maxAge: _aiContextMaxAge,
       allowDisk: false,
     );
@@ -456,6 +462,7 @@ final class _AiContextReads {
       path,
       query: query,
       next: next,
+      fresh: fresh,
       maxAge: _aiContextMaxAge,
       allowDisk: false,
     );

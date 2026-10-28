@@ -2794,5 +2794,20 @@
   "aiAddGroupWorkItemAlreadyAdded": "Bu iş öğesi zaten bu konuşmada.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab bu iş öğesinin doğrudan bağlantıdaki gruba ait olduğunu doğrulamadı ya da öğe denetim sırasında değişti. Hiçbir şey eklenmedi.",
   "aiAddGroupWorkItemUnavailable": "İş öğesi yalnızca AI çalışmıyorken ve hiçbir yazma sizi beklemiyorken eklenebilir. Hiçbir şey eklenmedi.",
-  "aiAddGroupWorkItemStale": "Bu denetim güncel değil, bu yüzden hiçbir şey eklenmedi. Bağlantıyı yeniden denetleyin."
+  "aiAddGroupWorkItemStale": "Bu denetim güncel değil, bu yüzden hiçbir şey eklenmedi. Bağlantıyı yeniden denetleyin.",
+  "aiRunPaused": "Çalışma duraklatıldı",
+  "aiRunPausedForeground": "Çalışma duraklatıldı: devam etmek için uygulamayı açık tutun",
+  "aiRunPausedTimeout": "Çalışma duraklatıldı: devam etmeden önceki denetim zaman aşımına uğradı",
+  "aiRunCanResume": "Bu çalışmaya kaldığı yerden devam edebilirsiniz",
+  "aiRunResume": "Devam et",
+  "aiRunResumeTitle": "Çalışmaya devam edilsin mi?",
+  "aiRunResumeDuplicate": "Bu çalışmadaki bir yazma zaten yapılmış olabilir. Devam ettikten sonra AI aynı değişikliği yeniden önerirse önce onayınız istenir.",
+  "aiRunResumeRebilling": "Devam etmek AI sağlayıcısına yeniden istek gönderir; bu istekler yeniden ücretlendirilebilir.",
+  "aiRunForegroundOnly": "Arka plan çalışması başlamadı; çalışma yalnızca uygulama açıkken sürer.",
+  "aiRunStartDenied": "Sistem bu kez arka plan çalışmasına izin vermedi.",
+  "aiRunStartTimeout": "Arka plan çalışması zamanında başlamadı.",
+  "aiRunStartUnavailable": "Arka plan çalışması şu anda kullanılamıyor.",
+  "aiProposalBackgroundUnavailable": "Bu yazma yapılmadı: arka plan çalışması başlatılamadı.",
+  "aiRunCleanupPending": "Çalışma duraklatıldı: arka plan çalışmasının bittiği henüz doğrulanmadı ve o zamana kadar devam edilemez.",
+  "aiRunCleanupRetry": "Temizlik, uygulamaya her döndüğünüzde yeniden denenir; çalışma ancak temizlik doğrulandıktan sonra devam edebilir."
 }

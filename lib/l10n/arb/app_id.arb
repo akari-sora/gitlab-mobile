@@ -2794,5 +2794,20 @@
   "aiAddGroupWorkItemAlreadyAdded": "Item kerja ini sudah ada di percakapan ini.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab tidak mengonfirmasi bahwa item kerja ini langsung dimiliki grup di tautan, atau item berubah selama pemeriksaan. Tidak ada yang ditambahkan.",
   "aiAddGroupWorkItemUnavailable": "Item kerja hanya dapat ditambahkan saat AI tidak bekerja dan tidak ada penulisan yang menunggu Anda. Tidak ada yang ditambahkan.",
-  "aiAddGroupWorkItemStale": "Hasil pemeriksaan sudah usang, jadi tidak ada yang ditambahkan. Periksa tautan lagi."
+  "aiAddGroupWorkItemStale": "Hasil pemeriksaan sudah usang, jadi tidak ada yang ditambahkan. Periksa tautan lagi.",
+  "aiRunPaused": "Pekerjaan dijeda",
+  "aiRunPausedForeground": "Pekerjaan dijeda: biarkan aplikasi terbuka untuk melanjutkan",
+  "aiRunPausedTimeout": "Pekerjaan dijeda: pemeriksaan sebelum melanjutkan melewati batas waktu",
+  "aiRunCanResume": "Anda dapat melanjutkan pekerjaan ini dari titik berhentinya",
+  "aiRunResume": "Lanjutkan",
+  "aiRunResumeTitle": "Lanjutkan pekerjaan?",
+  "aiRunResumeDuplicate": "Penulisan dalam pekerjaan ini mungkin sudah dilakukan. Jika AI mengusulkan perubahan yang sama lagi setelah Anda melanjutkan, Anda akan diminta mengonfirmasinya terlebih dahulu.",
+  "aiRunResumeRebilling": "Melanjutkan akan mengirim permintaan lagi ke penyedia AI, yang mungkin ditagih lagi.",
+  "aiRunForegroundOnly": "Pekerjaan latar belakang tidak dimulai; pekerjaan hanya berlanjut selama aplikasi terbuka.",
+  "aiRunStartDenied": "Kali ini sistem tidak mengizinkan pekerjaan latar belakang.",
+  "aiRunStartTimeout": "Pekerjaan latar belakang tidak dimulai tepat waktu.",
+  "aiRunStartUnavailable": "Pekerjaan latar belakang tidak tersedia saat ini.",
+  "aiProposalBackgroundUnavailable": "Penulisan ini tidak dilakukan: pekerjaan latar belakang tidak dapat dimulai.",
+  "aiRunCleanupPending": "Pekerjaan dijeda: belum dipastikan bahwa pekerjaan latar belakang telah berakhir, dan tidak ada yang dapat dilanjutkan sebelum itu.",
+  "aiRunCleanupRetry": "Pembersihan dicoba lagi setiap kali Anda kembali ke aplikasi; pekerjaan baru dapat dilanjutkan setelah pembersihan dipastikan."
 }

@@ -2794,5 +2794,20 @@
   "aiAddGroupWorkItemAlreadyAdded": "Questo elemento di lavoro è già in questa conversazione.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab non ha confermato che questo elemento di lavoro appartiene direttamente al gruppo del link, oppure è cambiato durante la verifica. Non è stato aggiunto nulla.",
   "aiAddGroupWorkItemUnavailable": "Puoi aggiungere un elemento di lavoro solo quando l’IA non sta lavorando e nessuna scrittura ti aspetta. Non è stato aggiunto nulla.",
-  "aiAddGroupWorkItemStale": "Questa verifica non è più valida, quindi non è stato aggiunto nulla. Verifica di nuovo il link."
+  "aiAddGroupWorkItemStale": "Questa verifica non è più valida, quindi non è stato aggiunto nulla. Verifica di nuovo il link.",
+  "aiRunPaused": "Lavoro in pausa",
+  "aiRunPausedForeground": "Lavoro in pausa: tieni l’app aperta per continuare",
+  "aiRunPausedTimeout": "Lavoro in pausa: il controllo prima di continuare è scaduto",
+  "aiRunCanResume": "Puoi continuare questo lavoro da dove si è interrotto",
+  "aiRunResume": "Continua",
+  "aiRunResumeTitle": "Continuare il lavoro?",
+  "aiRunResumeDuplicate": "Una scrittura di questo lavoro potrebbe essere già stata eseguita. Se dopo la ripresa la AI propone di nuovo la stessa modifica, ti verrà chiesto prima di confermarla.",
+  "aiRunResumeRebilling": "Continuando si inviano di nuovo richieste al fornitore AI, che potrebbe addebitarle di nuovo.",
+  "aiRunForegroundOnly": "Il lavoro in background non è partito; il lavoro continua solo mentre l’app è aperta.",
+  "aiRunStartDenied": "Questa volta il sistema non ha consentito il lavoro in background.",
+  "aiRunStartTimeout": "Il lavoro in background non è partito in tempo.",
+  "aiRunStartUnavailable": "Il lavoro in background non è disponibile al momento.",
+  "aiProposalBackgroundUnavailable": "Questa scrittura non è stata eseguita: il lavoro in background non è potuto partire.",
+  "aiRunCleanupPending": "Lavoro in pausa: non è ancora confermato che il lavoro in background sia terminato, e fino ad allora non si può continuare.",
+  "aiRunCleanupRetry": "La pulizia viene ritentata ogni volta che torni nell’app; il lavoro può continuare solo quando la pulizia è confermata."
 }

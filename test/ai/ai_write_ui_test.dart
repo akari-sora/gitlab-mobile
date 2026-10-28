@@ -993,6 +993,40 @@ void main() {
     expect(find.text(l10n.aiProposalTooManyRunning), findsOneWidget);
   });
 
+  testWidgets('an approval refused for background work says only what '
+      'happened', (
+    tester,
+  ) async {
+    final proposal = _proposal();
+    final writes = _Writes([proposal])
+      ..answer = (_) => const AiWriteOutcome(
+        state: AiJournalState.notExecuted,
+        reasonCode: 'executionPaused',
+      );
+    await tester.pumpWidget(
+      _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+    );
+    await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiProposalBackgroundUnavailable), findsOneWidget);
+    expect(find.text(l10n.aiProposalNotRun), findsNothing);
+    // GLM M1: the run usually withdraws the proposal, so the text must not
+    // claim it is still valid or ask to approve again.
+    expect(
+      l10n.aiProposalBackgroundUnavailable,
+      isNot(anyOf(contains('有效'), contains('再核准'))),
+    );
+    // Calm, not an error: nothing was sent.
+    final message = tester.widget<Text>(
+      find.text(l10n.aiProposalBackgroundUnavailable),
+    );
+    final scheme = Theme.of(
+      tester.element(find.byType(AiWriteProposalCard)),
+    ).colorScheme;
+    expect(message.style?.color, isNot(scheme.error));
+    expect(find.byKey(const ValueKey('ai-proposal-approve')), findsOneWidget);
+  });
+
   for (final (code, text) in [
     ('alreadyMerged', () => l10n.aiRefusedAlreadyMerged),
     ('headMoved', () => l10n.aiRefusedChanged),

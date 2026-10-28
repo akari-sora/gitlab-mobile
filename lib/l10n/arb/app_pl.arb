@@ -2794,5 +2794,20 @@
   "aiAddGroupWorkItemAlreadyAdded": "Ten element roboczy jest już w tej rozmowie.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab nie potwierdził, że ten element roboczy należy bezpośrednio do grupy z linku, albo zmienił się podczas sprawdzania. Nic nie zostało dodane.",
   "aiAddGroupWorkItemUnavailable": "Element roboczy można dodać tylko wtedy, gdy AI nie pracuje i żaden zapis nie czeka na ciebie. Nic nie zostało dodane.",
-  "aiAddGroupWorkItemStale": "Wynik sprawdzenia jest nieaktualny, więc nic nie zostało dodane. Sprawdź link ponownie."
+  "aiAddGroupWorkItemStale": "Wynik sprawdzenia jest nieaktualny, więc nic nie zostało dodane. Sprawdź link ponownie.",
+  "aiRunPaused": "Praca wstrzymana",
+  "aiRunPausedForeground": "Praca wstrzymana: aby kontynuować, nie zamykaj aplikacji",
+  "aiRunPausedTimeout": "Praca wstrzymana: sprawdzenie przed kontynuacją przekroczyło limit czasu",
+  "aiRunCanResume": "Możesz kontynuować tę pracę od miejsca, w którym się zatrzymała",
+  "aiRunResume": "Kontynuuj",
+  "aiRunResumeTitle": "Kontynuować pracę?",
+  "aiRunResumeDuplicate": "Zapis w tej pracy mógł już zostać wykonany. Jeśli po kontynuacji AI ponownie zaproponuje tę samą zmianę, najpierw poprosimy cię o potwierdzenie.",
+  "aiRunResumeRebilling": "Kontynuacja ponownie wysyła żądania do dostawcy AI, który może naliczyć opłatę jeszcze raz.",
+  "aiRunForegroundOnly": "Praca w tle nie została uruchomiona; będzie kontynuowana tylko wtedy, gdy aplikacja jest otwarta.",
+  "aiRunStartDenied": "Tym razem system nie zezwolił na pracę w tle.",
+  "aiRunStartTimeout": "Praca w tle nie uruchomiła się na czas.",
+  "aiRunStartUnavailable": "Praca w tle jest teraz niedostępna.",
+  "aiProposalBackgroundUnavailable": "Ten zapis nie został wykonany: nie udało się uruchomić pracy w tle.",
+  "aiRunCleanupPending": "Praca wstrzymana: nie potwierdzono jeszcze, że praca w tle się zakończyła, i do tego czasu nie można kontynuować.",
+  "aiRunCleanupRetry": "Czyszczenie jest ponawiane za każdym razem, gdy wracasz do aplikacji; praca może być kontynuowana dopiero po potwierdzeniu czyszczenia."
 }
