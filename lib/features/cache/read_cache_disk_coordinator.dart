@@ -117,6 +117,12 @@ final class ReadCacheDiskCoordinator {
   ReadCacheSettingsState get setting => _domain.setting;
   bool get deviceOffPending =>
       _domain.deviceOffPending || _domain.deviceOffOperations > 0;
+
+  /// Read-only (C2e size line): a device-off sweep, or any account's full
+  /// clear, is in progress or unfinished anywhere on this device.
+  bool get cleanupPendingAnywhere =>
+      deviceOffPending ||
+      _domain.accounts.values.any((account) => account.intent?.full ?? false);
   ReadCacheSettingsSnapshot get settingsSnapshot => ReadCacheSettingsSnapshot(
     setting: setting,
     deviceOffPending: deviceOffPending,

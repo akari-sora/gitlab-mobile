@@ -72,14 +72,15 @@ void _afterFrame(VoidCallback action) {
 }
 
 /// The size line. A confirmed device total is shown as is. Without one, the
-/// indexed entry bytes are shown as an estimate, but only while no cleanup is
-/// pending or failed; otherwise the size is unknown. Never a bare zero unless
-/// the coordinator confirmed an empty device.
+/// indexed entry bytes (summed over every account) are shown as an estimate,
+/// but only while no cleanup is in progress, pending or failed anywhere on the
+/// device; otherwise the size is unknown. Never a bare zero unless the
+/// coordinator confirmed an empty device.
 String offlineCacheSizeLabel(ReadCacheDiskCoordinator cache, DiskBinding binding) {
   final stats = cache.stats;
   final usage = stats.diskUsageBytes;
   if (usage != null) return l10n.offlineCacheSize(formatByteCount(usage));
-  if (cache.deviceOffPending || cache.notice(binding) != null) {
+  if (cache.cleanupPendingAnywhere || cache.notice(binding) != null) {
     return l10n.offlineCacheSizeUnknown;
   }
   return l10n.offlineCacheSizeApprox(formatByteCount(stats.retainedBytes));
@@ -93,6 +94,12 @@ ApiFailure _deviceCleanupPending(DiskClearResult result) =>
       code: ReadCacheCleanupCode.cleanupFailed,
       clearResult: result,
     ));
+
+/// Ticks whenever a cleanup started from these surfaces completes and so has
+/// superseded its pending notice. The coordinator does not announce a
+/// superseded notice, so the shell listens here to stop merging new notices
+/// with one that no longer exists.
+final offlineCacheCleanupResolved = ValueNotifier<int>(0);
 
 /// Retries a pending cleanup from the settings surfaces. While a device-wide
 /// turn-off is unfinished it repeats that whole device sweep (every account,
@@ -119,6 +126,7 @@ Future<void> retryOfflineCacheCleanup(
       onFailure: (value) => failure = value,
     );
   }
+  if (result.complete) offlineCacheCleanupResolved.value++;
   onDone?.call();
   if (!context.mounted) return;
   if (result.complete) {

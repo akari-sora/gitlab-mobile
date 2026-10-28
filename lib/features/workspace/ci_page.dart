@@ -2112,7 +2112,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       });
       final tail = useTail ? await _terminalTail(jobId, () => current() && _visible) : null;
       if (!current()) { return; }
-      // Also covers the bounded fallback after `unsupported`.
+      // Hidden now: the fallback read below must not start either.
       if (useTail && !_visible) throw const _HiddenLoad();
       var changed = false;
       if (tail != null) {
@@ -2133,6 +2133,8 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         }
         final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
         if (!current()) { return; }
+        // The bounded fallback after `unsupported` may finish while hidden.
+        if (useTail && !_visible) throw const _HiddenLoad();
         if (chunk.isEof) {
           _auto = false;
           _timer?.cancel();
@@ -2180,7 +2182,15 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     } on _HiddenLoad {
       if (current()) _reloadWhenVisible = true;
     } catch (e) {
-      if (current()) { setState(() { _error = safeFailure(e); _auto = false; _timer?.cancel(); }); }
+      if (current()) {
+        if (_visible) {
+          setState(() { _error = safeFailure(e); _auto = false; _timer?.cancel(); });
+        } else {
+          // A failure that lands while hidden is neither shown nor allowed to
+          // stop polling; the load runs again once the page is visible.
+          _reloadWhenVisible = true;
+        }
+      }
     } finally {
       if (current()) {
         setState(() => _loading = false);

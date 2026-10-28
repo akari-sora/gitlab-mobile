@@ -423,6 +423,7 @@ class _MobileShellState extends State<_MobileShell> {
     widget.shortcuts.addListener(_onShortcut);
     widget.pops.addListener(_chrome.show);
     widget.pops.addListener(_syncReadCacheNoticeMerge);
+    offlineCacheCleanupResolved.addListener(_syncReadCacheNoticeMerge);
     widget.updates?.addListener(_onUpdates);
     widget.incoming?.addListener(_onIncoming);
     widget.runNotifications?.addListener(_onRunNotification);
@@ -545,9 +546,11 @@ class _MobileShellState extends State<_MobileShell> {
       ..ensureVisualUpdate();
   }
 
-  /// Repeats merge only while the shown notice is still pending. Once a clear
-  /// (here, on the settings page or anywhere else) supersedes it, the next
-  /// independent failure of the same kind is shown again.
+  /// Repeats merge only while the shown notice is still pending. A completed
+  /// clear from Settings or a notice retry signals at once
+  /// (`offlineCacheCleanupResolved`), even while Settings is still open; a
+  /// route pop re-checks too. The next independent failure of the same kind is
+  /// then shown again.
   void _syncReadCacheNoticeMerge() {
     final account = widget.session.active;
     if (_shownReadCacheNotice == null || account == null) return;
@@ -604,6 +607,7 @@ class _MobileShellState extends State<_MobileShell> {
     if (!_gone.isCompleted) _gone.complete();
     widget.pops.removeListener(_chrome.show);
     widget.pops.removeListener(_syncReadCacheNoticeMerge);
+    offlineCacheCleanupResolved.removeListener(_syncReadCacheNoticeMerge);
     _backDispatcher.dispose();
     _chrome.dispose();
     _meScroll.dispose();

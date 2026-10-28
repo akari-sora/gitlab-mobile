@@ -910,6 +910,56 @@ void main() {
       expect(snack(preservedText), findsOneWidget, reason: 'an independent new failure is not merged away');
     });
 
+    // FIX3 (review r2 P2-1): the merge is released when the clear completes,
+    // not on a later pop: a same-kind failure that arrives while Settings is
+    // still open is presented.
+    testWidgets('a same-kind failure arriving while Settings is still open after a clear is presented', (tester) async {
+      final (session, store) = await signIn(tester);
+      final cache = store.readCache;
+      final binding = DiskBinding(accountKey: session.active!.key, generation: session.generation);
+      await tester.pumpWidget(
+        AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
+      );
+      await settleNetworkWidgets(tester);
+      cache.reportCleanup(binding, preserved);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(snack(preservedText), findsOneWidget);
+      ScaffoldMessenger.of(tester.element(find.byType(NavigationBar))).hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('我的')));
+      await settleNetworkWidgets(tester);
+      final row = find.byKey(const ValueKey('read-cache-row'));
+      await tester.scrollUntilVisible(row, 200);
+      await tester.tap(row);
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('確認'));
+      await pumpUntil(tester, () => find.text('已清除離線快取').evaluate().isNotEmpty);
+      await tester.pump(const Duration(milliseconds: 500)); // confirm dialog cleanup
+
+      // Settings is still open: an independent failure of the same kind.
+      expect(find.byType(ReadCacheSettingsPage), findsOneWidget);
+      cache.reportCleanup(binding, preserved);
+      await tester.pump();
+      final messenger = ScaffoldMessenger.of(tester.element(find.byType(ReadCacheSettingsPage)));
+      messenger.hideCurrentSnackBar(); // the "cleared" snack bar
+      await tester.pumpAndSettle();
+      expect(snack(preservedText), findsOneWidget, reason: 'presented without waiting for a pop');
+      messenger.hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+      Navigator.of(tester.element(find.byType(ReadCacheSettingsPage))).pop();
+      await tester.pumpAndSettle();
+
+      // Still merging while that second notice stays pending.
+      cache.reportCleanup(binding, preserved);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(snack(preservedText), findsNothing);
+    });
+
     testWidgets('notices reach only this account and generation, merge, and mark the 我的 row', (tester) async {
       final (session, store) = await signIn(tester);
       final cache = store.readCache;

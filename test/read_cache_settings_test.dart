@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -28,6 +29,7 @@ final class _Storage implements ReadCacheSecureStorage {
   final values = <String, String>{};
   bool failSettingWrite = false, failInventory = false, failKeyDelete = false;
   final failDeleteNames = <String>{};
+  final holdDeletes = <String, Completer<void>>{};
   int settingWrites = 0;
   @override
   Future<String?> read(String key) async => values[key];
@@ -42,6 +44,8 @@ final class _Storage implements ReadCacheSecureStorage {
 
   @override
   Future<void> delete(String key) async {
+    final hold = holdDeletes[key];
+    if (hold != null) await hold.future;
     if ((failKeyDelete && key == ReadCacheKeyStore.keyName(_account)) ||
         failDeleteNames.contains(key)) {
       throw StateError('synthetic key delete failure');
@@ -365,6 +369,48 @@ void main() {
     expect(find.byKey(const ValueKey('read-cache-on-blocked')), findsNothing);
     expect(find.byKey(const ValueKey('read-cache-retry-cleanup')), findsNothing);
   });
+
+  // FIX3 (review r2 P2-3): no estimate while any account clear is in progress
+  // anywhere on the device (the indexed bytes cover every account).
+  for (final whose in ['this account', 'another account']) {
+    testWidgets('size is unknown while a clear of $whose is in flight', (tester) async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await _run(tester, h.ready);
+      await _run(tester, () => h.keys.writeKey(_other, Uint8List.fromList(List.generate(32, (i) => i))));
+      await tester.pumpWidget(_page(h));
+      expect(find.textContaining('已使用約'), findsOneWidget);
+      final account = whose == 'this account' ? _account : _other;
+      final hold = h.storage.holdDeletes[ReadCacheKeyStore.keyName(account)] = Completer<void>();
+      late Future<DiskClearResult> clearing;
+      if (whose == 'this account') {
+        await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('確認'));
+      } else {
+        clearing = h.coordinator.clear(
+          DiskBinding(accountKey: _other, generation: 0), ReadCacheCleanupOperation.signOut);
+      }
+      await pumpUntil(tester, () => h.coordinator.cleanupPendingAnywhere,
+        description: 'the clear has installed its intent');
+      // Rebuild as any settings/notice change would.
+      await tester.pumpWidget(_page(h, DiskBinding(accountKey: _account, generation: 1)));
+      await tester.pump();
+      expect(find.text('已使用：無法確認'), findsOneWidget, reason: 'no estimate while a clear is in flight');
+      expect(find.textContaining('已使用約'), findsNothing);
+      hold.complete();
+      if (whose == 'this account') {
+        await pumpUntil(tester, () => find.text('已清除離線快取').evaluate().isNotEmpty);
+        await tester.pump(const Duration(milliseconds: 500)); // confirm dialog cleanup
+      } else {
+        expect((await _run(tester, () => clearing)).complete, isTrue);
+      }
+      await pumpUntil(tester, () => !h.coordinator.cleanupPendingAnywhere);
+      await tester.pumpWidget(_page(h));
+      await tester.pump();
+      expect(find.text('已使用：無法確認'), findsNothing);
+    });
+  }
 
   testWidgets('clear asks first, deletes, and reopens the same session (m-10)', (tester) async {
     final h = _Harness();

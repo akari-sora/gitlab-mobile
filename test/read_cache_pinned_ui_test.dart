@@ -20,6 +20,7 @@ import 'package:gitlab_mobile/features/workspace/diff_page.dart';
 import 'package:gitlab_mobile/features/workspace/records_feed.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/cache_freshness.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart' show FailureNotice;
 
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
@@ -546,6 +547,84 @@ void main() {
         await _until(tester, () => _shown(find.text(_line(0))), 'loaded on return');
         expect(adapter.requests.where((r) => _isTrace(r, 7)).map(_isSuffix), [true]);
         expect(metadataCalls, greaterThan(1), reason: 'the skipped load ran again');
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    // FIX3 (review r2 P2-2): the fallback chunk after `unsupported` and any
+    // failure that lands while hidden are not published; the load runs again.
+    testWidgets('an in-flight unsupported fallback chunk across hide is not shown; loads on return', (tester) async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      expect(await _run(tester, h.recover), isTrue);
+      final hold = Completer<void>();
+      var chunkCalls = 0;
+      final adapter = FakeAdapter((request) async {
+        if (_isTrace(request, 7)) {
+          // No length: the tail cannot prove EOF, so the page falls back.
+          if (_isSuffix(request)) return ResponseBody.fromString('ignored\n', 200);
+          if (chunkCalls++ == 0) await hold.future;
+          return ResponseBody.fromString('fallback output\n', 200);
+        }
+        if (request.uri.path.endsWith('/jobs/7')) return jsonResponse(_job(7));
+        return jsonResponse({}, status: 404);
+      });
+      final api = await _run(tester, () => h.client(adapter));
+      final visible = ValueNotifier(true);
+      addTearDown(visible.dispose);
+      await tester.pumpWidget(_jobPage(api, visible: visible));
+      await _until(tester, () => chunkCalls == 1, 'fallback chunk requested');
+      visible.value = false;
+      await tester.pump();
+      hold.complete();
+      await settleNetworkWidgets(tester);
+      expect(find.text('fallback output', skipOffstage: false), findsNothing,
+        reason: 'a fallback chunk finished while hidden is not shown');
+      visible.value = true;
+      await _until(tester, () => _shown(find.text('fallback output')), 'loaded on return');
+      expect(chunkCalls, 2);
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final failing in ['metadata', 'tail']) {
+      testWidgets('a delayed $failing failure while hidden is not shown; loads on return', (tester) async {
+        final h = _Harness();
+        addTearDown(h.dispose);
+        expect(await _run(tester, h.recover), isTrue);
+        final hold = Completer<void>();
+        var metadataCalls = 0, traceCalls = 0;
+        final adapter = FakeAdapter((request) async {
+          if (_isTrace(request, 7)) {
+            if (failing == 'tail' && traceCalls++ == 0) {
+              await hold.future;
+              return jsonResponse({'message': 'forbidden'}, status: 403);
+            }
+            return _suffix(utf8.encode('${_line(2)}\n'));
+          }
+          if (request.uri.path.endsWith('/jobs/7')) {
+            if (failing == 'metadata' && metadataCalls++ == 0) {
+              await hold.future;
+              return jsonResponse({'message': 'forbidden'}, status: 403);
+            }
+            return jsonResponse(_job(7));
+          }
+          return jsonResponse({}, status: 404);
+        });
+        final api = await _run(tester, () => h.client(adapter));
+        final visible = ValueNotifier(true);
+        addTearDown(visible.dispose);
+        await tester.pumpWidget(_jobPage(api, visible: visible));
+        await _until(tester, () => failing == 'metadata' ? metadataCalls == 1 : traceCalls == 1, 'request held');
+        visible.value = false;
+        await tester.pump();
+        hold.complete();
+        await settleNetworkWidgets(tester);
+        expect(find.text('沒有操作權限', skipOffstage: false), findsNothing,
+          reason: 'a failure that lands while hidden is not shown');
+        expect(find.byType(FailureNotice, skipOffstage: false), findsNothing);
+        visible.value = true;
+        await _until(tester, () => _shown(find.text(_line(2))), 'loaded on return');
+        expect(find.byType(FailureNotice), findsNothing);
         expect(tester.takeException(), isNull);
       });
     }
