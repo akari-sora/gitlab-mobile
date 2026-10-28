@@ -35,6 +35,7 @@ final class _Service {
   Completer<void>? releaseEntered;
   Completer<void>? holdStopReply;
   Completer<void>? stopEntered;
+  void Function(MethodCall)? onCall;
   final calls = <MethodCall>[];
 
   void install() => TestDefaultBinaryMessengerBinding
@@ -44,6 +45,7 @@ final class _Service {
 
   Future<Object?> handle(MethodCall call) async {
     calls.add(call);
+    onCall?.call(call);
     if (closed) throw MissingPluginException();
     final args = call.arguments as Map<Object?, Object?>;
     switch (call.method) {
@@ -157,15 +159,17 @@ final class _Service {
       .setMockMethodCallHandler(_channel, null);
 }
 
-AiBackgroundExecution _owner(fx.StackHarness h) => AiBackgroundExecution(
-  backgroundEnabled: true,
-  accountKey: h.account,
-  generation: h.session.generation,
-  ownerApi: h.session.api!,
-  isCurrent: () => h.session.api != null && !h.session.api!.isClosed,
-  appInForeground: () => h.foreground,
-  channel: _channel,
-);
+AiBackgroundExecution _owner(fx.StackHarness h, {AiExecutionClock? clock}) =>
+    AiBackgroundExecution(
+      backgroundEnabled: true,
+      accountKey: h.account,
+      generation: h.session.generation,
+      ownerApi: h.session.api!,
+      isCurrent: () => h.session.api != null && !h.session.api!.isClosed,
+      appInForeground: () => h.foreground,
+      channel: _channel,
+      clock: clock,
+    );
 
 AccountAiRunRegistry _registry(
   fx.StackHarness h,
@@ -884,7 +888,9 @@ void main() {
           level: AiAutonomyLevel.conversationGrant,
         );
         addTearDown(h.dispose);
-        final owner = _owner(h);
+        // Freeze progress throttling so its timer cannot discover the dropped
+        // stop before the continuation under test reaches the native channel.
+        final owner = _owner(h, clock: () => Duration.zero);
         addTearDown(owner.dispose);
         h.controller.bindBackgroundExecution(owner);
         final response = Completer<void>();
@@ -962,21 +968,33 @@ void main() {
         final mutationBaseline = h.server.mutations.length;
         final ticketBaseline = native.tickets;
         final callBaseline = native.calls.length;
+        final expectedKind = modelFirst ? 'model' : 'mutation';
+        final continuationEntered = Completer<void>();
+        native.onCall = (call) {
+          if (call.method == 'acquireContinuation' &&
+              (call.arguments as Map)['kind'] == expectedKind &&
+              !continuationEntered.isCompleted) {
+            continuationEntered.complete();
+          }
+        };
         h.foreground = false;
         expect(native.active, isTrue);
         await native.stop(reason: 'timeout', deliver: deliver);
         expect(native.active, isFalse);
         if (modelFirst) {
           response.complete();
-          await sending;
         } else {
           resume.complete();
-          await secondSending;
+        }
+        if (!deliver) {
+          await continuationEntered.future.timeout(const Duration(seconds: 10));
         }
         if (modelFirst) {
+          await sending;
           resume.complete();
           await secondSending;
         } else {
+          await secondSending;
           response.complete();
           await sending;
         }
@@ -994,8 +1012,7 @@ void main() {
                 .where(
                   (call) =>
                       call.method == 'acquireContinuation' &&
-                      (call.arguments as Map)['kind'] ==
-                          (modelFirst ? 'model' : 'mutation'),
+                      (call.arguments as Map)['kind'] == expectedKind,
                 ),
             isNotEmpty,
             reason: native.calls
