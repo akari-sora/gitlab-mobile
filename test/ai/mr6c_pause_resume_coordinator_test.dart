@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +18,7 @@ final class _Session {
     gate = Mr6cExecutionGate(binding: binding(), clock: Mr6cClock())
       ..foreground = true;
     h.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: scope,
         level: h.level,
@@ -352,6 +354,7 @@ void main() {
       clock: Mr6cClock(),
     )..foreground = true;
     final newCoordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: otherScope,
         level: AiAutonomyLevel.bypass,

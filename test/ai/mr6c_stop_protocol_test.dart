@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 
 import 'package:flutter/services.dart';
@@ -194,6 +195,7 @@ AccountAiRunRegistry _registry(
 );
 
 AiChatController _otherConversation(fx.StackHarness h) => AiChatController(
+  releasePolicy: fixtureReleasePolicy,
   origin: AiJobOrigin(
     project: h.server.workspace.project,
     jobId: 501,
@@ -903,6 +905,7 @@ void main() {
         expect(h.controller.inFlightWrites, isNotEmpty);
         final settling = h.controller.inFlightWrites.single;
         final second = AiChatController(
+          releasePolicy: fixtureReleasePolicy,
           origin: h.controller.origin,
           session: h.session,
           settings: h.settings,

@@ -4,6 +4,7 @@
 // Plan v6 §3.1: a summary cut refuses a whole-field write with `fieldTooLong`.
 // A later whole read in the same run lifts that mark (ledger rounds 2/3 m1).
 
+import 'release_policy_support.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -78,7 +79,7 @@ Widget _host(Widget child) => MaterialApp(
 
 void main() {
   test(
-    'issue12 r2 m3 production factory approved write performs one mutation',
+    'issue12 r2 m3 approved write performs one mutation with production gates',
     () async {
       TestWidgetsFlutterBinding.ensureInitialized()
           .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
@@ -105,7 +106,8 @@ void main() {
         settings.consentContractFor(
           fixture.account.key,
           config,
-          writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.confirmEach),
+          releasePolicy: fixtureReleasePolicy,
+          writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.confirmEach, releasePolicy: fixtureReleasePolicy),
           agreedCeiling: AiAutonomyLevel.confirmEach,
         ),
         const {'synthetic': true},
@@ -137,7 +139,29 @@ void main() {
       final registry = AccountAiRunRegistry(
         session: session,
         settings: settings,
-        sessionFactory: activity.track(null),
+        sessionFactory: activity.track(({
+          required origin,
+          required session,
+          required settings,
+          required runningCount,
+          wireClientFactory,
+        }) {
+          final controller = AiChatController(
+            origin: origin,
+            session: session,
+            settings: settings,
+            runningCount: runningCount,
+            wireClientFactory: wireClientFactory,
+            appInForeground: aiAppInForeground,
+            clientMayStart: aiClientMayStart(session),
+            releasePolicy: fixtureReleasePolicy,
+          );
+          return (
+            session: controller,
+            capacityChanged: controller.notifyCapacityChanged,
+            dispose: controller.dispose,
+          );
+        }),
         wireClientFactory:
             ({
               required AiProviderConfig config,
@@ -162,8 +186,7 @@ void main() {
       activity.attach(registry);
       addTearDown(registry.dispose);
 
-      // Match AuthenticatedApp's activity.track(null), which uses the app's
-      // production factory and supplies the real foreground and client gates.
+      // Use the app's foreground and client gates with the synthetic policy.
       final controller =
           registry.open(
                 AiFileOrigin(
@@ -472,6 +495,7 @@ void main() {
       _Port port,
       UploadPlaceholderTable placeholders,
     ) => AiToolCatalogue(
+      releasePolicy: fixtureReleasePolicy,
       port: port,
       scope: const AiResourceScope(
         accountKey: '$root#7',

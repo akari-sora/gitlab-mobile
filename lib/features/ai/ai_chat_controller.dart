@@ -20,6 +20,7 @@ import '../../core/ai/runner.dart';
 import '../../core/ai/exact_edit.dart' as exact;
 import '../../core/ai/tools/gitlab_read_port.dart';
 import '../../core/ai/tools/field_provenance.dart';
+import '../../core/ai/tools/release_policy.dart';
 import '../../core/ai/tools/gitlab_write_port.dart' as writes;
 import '../../core/ai/tools/tool_catalogue.dart';
 import '../../core/ai/tools/target_binding.dart';
@@ -178,7 +179,8 @@ class AiChatController extends ChangeNotifier
     ledger.AiWriteScope Function()? writeScope,
     AiWriteFreshnessReader? readWriteFreshness,
     @visibleForTesting
-    ledger.AiCapabilityLedger capabilityLedger = ledger.productionAiLedger,
+    ledger.AiCapabilityLedger? capabilityLedger,
+    AiReleasePolicyView releasePolicy = productionAiReleasePolicy,
     writes.AiGitLabWritePort Function()? writePortFactory,
     AttachmentPicker? attachmentPicker,
     DateTime Function()? now,
@@ -195,7 +197,9 @@ class AiChatController extends ChangeNotifier
        _writeJournal = writeJournal ?? AiWriteJournal.instance,
        _writeScopeOverride = writeScope,
        _readWriteFreshness = readWriteFreshness,
-       _capabilityLedger = capabilityLedger,
+       _capabilityLedger = capabilityLedger ??
+           ledger.ProductionAiLedger(releasePolicy: releasePolicy),
+       _releasePolicy = releasePolicy,
        _writePortFactory = writePortFactory,
        _attachmentPicker = attachmentPicker ?? const PluginAttachmentPicker(),
        _now = now ?? DateTime.now,
@@ -434,6 +438,7 @@ class AiChatController extends ChangeNotifier
   final ledger.AiWriteScope Function()? _writeScopeOverride;
   final AiWriteFreshnessReader? _readWriteFreshness;
   final ledger.AiCapabilityLedger _capabilityLedger;
+  final AiReleasePolicyView _releasePolicy;
   final writes.AiGitLabWritePort Function()? _writePortFactory;
   final AttachmentPicker _attachmentPicker;
   final DateTime Function() _now;
@@ -850,7 +855,10 @@ class AiChatController extends ChangeNotifier
       return false;
     }
     return ledger
-        .toolsForScope(policy.scope)
+        .toolsForScope(policy.scope,
+          ledger: _capabilityLedger,
+          releasePolicy: _releasePolicy,
+        )
         .any(
           (ledger.AiCapability capability) =>
               capability.operationId == _uploadOperation,
@@ -1449,7 +1457,9 @@ class AiChatController extends ChangeNotifier
   );
 
   AiConsentContract _consentContract(AiProviderConfig provider) =>
-      aiConversationConsentContract(settings, _accountKey, provider);
+      aiConversationConsentContract(settings, _accountKey, provider,
+        releasePolicy: _releasePolicy,
+      );
 
   ledger.AiWriteScope _writeScope() => _withUiAdded(_originWriteScope());
 
@@ -2457,6 +2467,7 @@ class AiChatController extends ChangeNotifier
         ? null
         : groupPort != null
         ? AiToolCatalogue.group(
+            releasePolicy: _releasePolicy,
             port: groupPort,
             scope: groupScope!,
             redactor: _redactor,
@@ -2465,6 +2476,7 @@ class AiChatController extends ChangeNotifier
             now: _now,
           )
         : scope == null ? null : AiToolCatalogue(
+            releasePolicy: _releasePolicy,
             port: GitLabAiReadPort(_api, scope.projectId, now: _now),
             scope: scope,
             redactor: _redactor,
@@ -2489,6 +2501,7 @@ class AiChatController extends ChangeNotifier
     _completeForRunner = complete;
     final coordinator = PolicyAiWriteCoordinator(
       ledger: _capabilityLedger,
+      releasePolicy: _releasePolicy,
       executionGate: _executionGate,
       snapshot: () => _writeSnapshot(config),
       createPort:
@@ -3900,29 +3913,36 @@ String _writeId(Map<String, Object?> args, String key) {
 
 /// Canonical disclosure for the production catalogue. The UI owner uses
 /// this same policy when requesting a new write grant.
-AiWritePolicy aiProductionWritePolicy(AiAutonomyLevel agreedCeiling) =>
+AiWritePolicy aiProductionWritePolicy(AiAutonomyLevel agreedCeiling, {
+  AiReleasePolicyView releasePolicy = productionAiReleasePolicy,
+}) =>
     AiWritePolicy(
-      policyVersion: 4,
+      policyVersion: 5,
       agreedCeiling: agreedCeiling,
       catalogueVersion: aiToolCatalogueVersion,
       operationIds: {
-        for (final capability in ledger.productionAiLedger.modelVisible)
+        for (final capability in
+            ledger.ProductionAiLedger(releasePolicy: releasePolicy).modelVisible)
           capability.operationId,
       },
       hardLineOperationIds: {
-        for (final capability in ledger.productionAiLedger.modelVisible)
+        for (final capability in
+            ledger.ProductionAiLedger(releasePolicy: releasePolicy).modelVisible)
           if (capability.baseTier == ledger.AiWriteTier.hardLine)
             capability.operationId,
       },
       fixedConfirmOperationIds: ledger.aiFixedConfirmOperationIds,
       escalationRuleIds: aiProductionWriteEscalationRuleIds,
+      releasePolicyIdentity: releasePolicy.canonicalIdentity,
       resetConfirmWindow: aiWriteResetConfirmWindow,
     );
 
 /// Compatibility for earlier packet fixtures; production uses the canonical
 /// policy above, including all current operations and escalation rules.
-AiWritePolicy aiMr6b1WritePolicy(AiAutonomyLevel agreedCeiling) =>
-    aiProductionWritePolicy(agreedCeiling);
+AiWritePolicy aiMr6b1WritePolicy(AiAutonomyLevel agreedCeiling, {
+  AiReleasePolicyView releasePolicy = productionAiReleasePolicy,
+}) =>
+    aiProductionWritePolicy(agreedCeiling, releasePolicy: releasePolicy);
 
 String _toolExcerpt(String text) {
   final clipped = clipAiText(text, 2000);
@@ -4014,21 +4034,25 @@ AiWireClient _createWireClient({
 AiConsentContract aiConversationConsentContract(
   AiSettingsController settings,
   String accountKey,
-  AiProviderConfig provider,
-) {
-  if (!provider.toolsEnabled) return aiCurrentConsentContractFor(provider);
+  AiProviderConfig provider, {
+  AiReleasePolicyView releasePolicy = productionAiReleasePolicy,
+}) {
+  if (!provider.toolsEnabled) {
+    return aiCurrentConsentContractFor(provider, releasePolicy: releasePolicy);
+  }
   final account = settings.accountRecord(accountKey);
   final ceiling = account?.ceiling ?? AiAutonomyLevel.readOnly;
   final saved =
       account?.consents[provider.id]?.agreedCeiling ?? AiAutonomyLevel.readOnly;
   final agreed = ceiling.index > saved.index ? ceiling : saved;
   if (agreed == AiAutonomyLevel.readOnly) {
-    return aiCurrentConsentContractFor(provider);
+    return aiCurrentConsentContractFor(provider, releasePolicy: releasePolicy);
   }
   return settings.consentContractFor(
     accountKey,
     provider,
-    writePolicy: aiProductionWritePolicy(agreed),
+    writePolicy: aiProductionWritePolicy(agreed, releasePolicy: releasePolicy),
+    releasePolicy: releasePolicy,
     agreedCeiling: agreed,
   );
 }

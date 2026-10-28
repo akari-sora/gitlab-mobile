@@ -37,14 +37,15 @@ AiWritePolicy _policy({
 );
 
 void main() {
-  test('production policy uses v4 with the complete current catalogue', () {
+  test('production policy uses v5 with the closed release catalogue', () {
     final policy = aiProductionWritePolicy(AiAutonomyLevel.bypass);
-    expect(policy.policyVersion, 4);
+    expect(policy.policyVersion, 5);
     expect(policy.catalogueVersion, aiToolCatalogueVersion);
     expect(policy.escalationRuleIds, aiProductionWriteEscalationRuleIds);
     expect(policy.operationIds, {
       for (final row in productionAiLedger.modelVisible) row.operationId,
     });
+    expect(policy.operationIds, isEmpty);
     expect(
       aiMr6b1WritePolicy(AiAutonomyLevel.bypass).toCanonicalJson(),
       policy.toCanonicalJson(),

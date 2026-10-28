@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
@@ -206,6 +207,7 @@ void main() {
     final secrets = base.Secrets();
     final redactor = Redactor(secrets: secrets);
     final catalogue = AiToolCatalogue(
+      releasePolicy: fixtureReleasePolicy,
       port: _Port(),
       scope: _scope(),
       redactor: redactor,
@@ -531,6 +533,7 @@ void _expectCutStringHasNoTrailingPrefix(AiAppText actual, String secret) {
 
 AiToolCatalogue _catalogue(_Port port, KnownSecretsSource secrets) =>
     AiToolCatalogue(
+      releasePolicy: fixtureReleasePolicy,
       port: port,
       scope: _scope(),
       redactor: Redactor(secrets: secrets),

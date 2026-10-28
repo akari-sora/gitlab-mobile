@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -164,9 +165,10 @@ void _assertGroupFreshRead(List<RequestOptions> requests) {
 AiChatController _controller(
   StackHarness h, {
   AiChatOrigin origin = _origin,
-  AiCapabilityLedger capabilityLedger = productionAiLedger,
+  AiCapabilityLedger? capabilityLedger,
   port.AiGitLabWritePort Function()? writePortFactory,
 }) => AiChatController(
+  releasePolicy: fixtureReleasePolicy,
   origin: origin,
   session: h.session,
   settings: h.settings,
@@ -174,7 +176,7 @@ AiChatController _controller(
   writeJournal: h.journal,
   appInForeground: () => true,
   clientMayStart: () => true,
-  capabilityLedger: capabilityLedger,
+  capabilityLedger: capabilityLedger ?? fixtureAiLedger,
   writePortFactory: writePortFactory,
   wireClientFactory:
       ({required config, required apiKey, required conversationId}) =>
@@ -1013,6 +1015,7 @@ void main() {
         addTearDown(h.dispose);
         var clock = DateTime.now();
         final controller = AiChatController(
+          releasePolicy: fixtureReleasePolicy,
           origin: _origin,
           session: h.session,
           settings: h.settings,

@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
@@ -880,6 +881,7 @@ void main() {
         final requestCount = adapter.requests.length;
         final toolResult =
             await AiToolCatalogue(
+              releasePolicy: fixtureReleasePolicy,
               port: GitLabAiReadPort(testApi(adapter), _project.id),
               scope: result.scope!,
               redactor: Redactor(secrets: const _Secrets()),

@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -424,7 +425,7 @@ void main() {
     expect(row.boundary, AiWriteBoundary.graph);
     expect(groupDatesStageOperations, {_operation});
     expect(row.modelVisible, isTrue);
-    expect(productionAiLedger.modelVisible, contains(row));
+    expect(fixtureAiLedger.modelVisible, contains(row));
     expect(row.baseTier, AiWriteTier.t2);
     expect(row.scopeClass, AiScopeClass.groupWorkItem);
     expect(row.namedMethod, 'updateWorkItemDates');
@@ -1637,6 +1638,7 @@ final class _DatesHarness {
         policy.alive &&
         identical(ownerApiOverride ?? server.api, server.api);
     coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: foreground,
         scope: _scope,

@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -137,7 +138,7 @@ void main() {
       expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
       expect(aiGroupWorkItemWritesAreEnabled, isTrue);
       final offers = toolsForScope(
-        g0eScope,
+        g0eScope, releasePolicy: fixtureReleasePolicy
       ).map((row) => row.operationId).toSet();
       expect(offers, {..._aliases.keys, 'snoozeTodo', 'unsnoozeTodo'});
     },
@@ -147,7 +148,7 @@ void main() {
     aiGroupWorkItemWritesEnabledForTesting = false;
     addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
     final offers = toolsForScope(
-      g0eScope,
+      g0eScope, releasePolicy: fixtureReleasePolicy
     ).map((row) => row.operationId).toSet();
     expect(
       offers.intersection({..._aliases.keys, 'snoozeTodo', 'unsnoozeTodo'}),
@@ -291,6 +292,7 @@ void main() {
         isCurrent: () => true,
       );
       final catalogue = AiToolCatalogue.group(
+        releasePolicy: fixtureReleasePolicy,
         port: reader,
         scope: const AiGroupResourceScope(
           accountKey: 'https://example.com/gitlab#7',

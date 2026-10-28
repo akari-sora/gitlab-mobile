@@ -1,4 +1,5 @@
 // G14: the production group catalogue and its renewed consent boundary.
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
@@ -91,6 +92,7 @@ final class _Writes {
   static Future<_Writes> create() async {
     final h = _Writes(await Mr6b3Harness.create());
     h.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: h.scope,
         level: h.level,
@@ -157,21 +159,22 @@ final class _Writes {
 }
 
 void main() {
-  test('G14 production versions, gate and all 15 aliases are current', () {
-    expect(aiToolCatalogueVersion, 5);
+  test('G14 rows remain intact while the MR7 release policy is closed', () {
+    expect(aiToolCatalogueVersion, 6);
     expect(aiDisclosureVersion, 2);
     expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
     expect(aiGroupWorkItemWritesAreEnabled, isTrue);
     final policy = aiProductionWritePolicy(AiAutonomyLevel.bypass);
-    expect(policy.policyVersion, 4);
-    expect(policy.catalogueVersion, 5);
+    expect(policy.policyVersion, 5);
+    expect(policy.catalogueVersion, 6);
+    expect(policy.operationIds, isEmpty);
     final groups = ProductionAiLedger.rows.where(
       (row) => row.scopeClass == AiScopeClass.groupWorkItem,
     );
     expect(groups.map((row) => row.operationId).toSet(), _aliases);
     for (final row in groups) {
       expect(row.modelVisible, isTrue, reason: row.operationId);
-      expect(policy.operationIds, contains(row.operationId));
+      expect(fixtureAiLedger.modelVisible, contains(row));
     }
     expect(policy.fixedConfirmOperationIds, aiFixedConfirmOperationIds);
     expect(policy.escalationRuleIds, aiProductionWriteEscalationRuleIds);
@@ -256,9 +259,9 @@ void main() {
         }
         final provider = h.settings.providers.single;
         final current = level == AiAutonomyLevel.readOnly
-            ? aiCurrentConsentContractFor(provider)
-            : aiConversationConsentContract(h.settings, h.account, provider);
-        final currentPolicy = aiProductionWritePolicy(level);
+            ? aiCurrentConsentContractFor(provider, releasePolicy: fixtureReleasePolicy)
+            : aiConversationConsentContract(h.settings, h.account, provider, releasePolicy: fixtureReleasePolicy);
+        final currentPolicy = aiProductionWritePolicy(level, releasePolicy: fixtureReleasePolicy);
         final old = aiConsentContractFor(
           provider,
           toolCatalogueVersion: 4,

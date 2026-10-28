@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
@@ -39,7 +40,7 @@ void main() {
         unorderedEquals(['discussionId', 'noteId', 'suggestionId']),
       );
       expect(
-        productionAiLedger.modelVisible.any(
+        fixtureAiLedger.modelVisible.any(
           (r) => r.operationId == 'batchApplySuggestions',
         ),
         isFalse,

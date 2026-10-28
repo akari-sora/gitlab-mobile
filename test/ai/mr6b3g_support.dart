@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/graphql_write_classify.dart';
@@ -217,6 +218,7 @@ final class G0eHarness {
   }) async {
     final harness = G0eHarness._(await Mr6b3Harness.create(), Object());
     harness.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: harness.scope,
         level: harness.level,

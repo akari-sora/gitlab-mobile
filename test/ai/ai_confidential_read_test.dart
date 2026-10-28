@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -51,6 +52,7 @@ final class _Port implements AiGitLabReadPort {
 }
 
 AiToolCatalogue _catalogue(_Port port) => AiToolCatalogue(
+  releasePolicy: fixtureReleasePolicy,
   port: port,
   scope: AiResourceScope(
     accountKey: 'synthetic-account',

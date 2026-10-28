@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -50,7 +51,7 @@ final class _VisibleDeletes implements AiCapabilityLedger {
 
   @override
   List<AiCapability> get modelVisible => [
-    ...productionAiLedger.modelVisible,
+    ...fixtureAiLedger.modelVisible,
     for (final op in deleteCases.keys) find(op)!,
   ];
 }
@@ -115,6 +116,7 @@ final class _Fixture {
   void newConversation() {
     final budget = AiToolBudget();
     coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: scope,
         level: level,

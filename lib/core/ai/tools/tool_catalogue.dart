@@ -10,12 +10,16 @@ import '../write_text.dart'
     show AiFieldProvenance, AiTextBlockCode, UploadPlaceholderTable;
 import 'field_provenance.dart';
 import 'gitlab_read_port.dart';
+import 'release_policy.dart';
 import 'sensitive_paths.dart';
 import 'tool_scope.dart';
 
 export 'tool_catalogue_version.dart' show aiToolCatalogueVersion;
 
 const aiSensitivePathBlocked = '[blocked by policy: sensitive file]';
+
+/// No read name is released without its own evidence (MR7 §3.1).
+const Set<String> aiReleasedReadNames = <String>{};
 
 final class AiToolBudget {
   AiToolBudget({
@@ -136,6 +140,7 @@ final class AiToolCatalogue {
     required AiGitLabReadPort port,
     required AiResourceScope scope,
     required this.redactor,
+    this.releasePolicy = productionAiReleasePolicy,
     this.refreshSecrets,
     this.placeholders,
     DateTime Function()? now,
@@ -149,6 +154,7 @@ final class AiToolCatalogue {
     required AiGitLabGroupReadPort port,
     required AiGroupResourceScope scope,
     required this.redactor,
+    this.releasePolicy = productionAiReleasePolicy,
     this.refreshSecrets,
     this.placeholders,
     DateTime Function()? now,
@@ -167,6 +173,7 @@ final class AiToolCatalogue {
   AiResourceScope get scope =>
       _scope ?? (throw const _ToolValidation('project tools unavailable'));
   final Redactor redactor;
+  final AiReleasePolicyView releasePolicy;
   final Future<void> Function()? refreshSecrets;
 
   /// The conversation's upload placeholder table. With it, the complete
@@ -284,7 +291,11 @@ final class AiToolCatalogue {
     ),
   ]);
 
-  List<AiToolSpec> get specs => _groupPort != null
+  List<AiToolSpec> get specs => List.unmodifiable(
+    _availableSpecs.where((spec) => releasePolicy.allowsRead(spec.name)),
+  );
+
+  List<AiToolSpec> get _availableSpecs => _groupPort != null
       ? _groupSpecs
       : port is AiGitLabFieldReadPort
       ? List.unmodifiable([..._specs, ..._fieldSpecs])
@@ -386,6 +397,9 @@ final class AiToolCatalogue {
     var completedRequests = 0;
     RequestMeter? requestMeter;
     try {
+      if (!releasePolicy.allowsRead(call.name)) {
+        throw const _ToolValidation('unknown tool');
+      }
       final arguments = _arguments(call);
       final requestCost = _requestCost(call.name);
       final nativePort = _port is GitLabAiReadPort ? _port : null;
@@ -610,6 +624,9 @@ final class AiToolCatalogue {
     String name,
     Map<String, Object?> arguments,
   ) {
+    if (!releasePolicy.allowsRead(name)) {
+      throw const _ToolValidation('unknown tool');
+    }
     if (_groupPort != null) {
       if (name != 'get_group_work_item') {
         throw const _ToolValidation('unknown tool');

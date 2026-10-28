@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -164,7 +165,8 @@ final class _OAuthHarness {
       settings.consentContractFor(
         account.key,
         config,
-        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.confirmEach),
+        releasePolicy: fixtureReleasePolicy,
+        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.confirmEach, releasePolicy: fixtureReleasePolicy),
         agreedCeiling: AiAutonomyLevel.confirmEach,
       ),
       const {'synthetic': true},
@@ -181,6 +183,7 @@ final class _OAuthHarness {
     final provider = StackProvider();
     late final AiChatController controller;
     controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       origin: AiFileOrigin(
         project: server.workspace.project,
         path: 'README.md',

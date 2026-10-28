@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -40,7 +41,7 @@ void main() {
       expect(row.httpCap, 2 * (2 * (1 + count.$1) + count.$2) + 1);
       expect(row.httpCap, count.$3);
       expect(row.httpCap, lessThanOrEqualTo(40));
-      expect(productionAiLedger.modelVisible, contains(row));
+      expect(fixtureAiLedger.modelVisible, contains(row));
     }
     final metadata = productionAiLedger.find('updateSnippetMetadata')!;
     expect(metadata.editableField, 'description');

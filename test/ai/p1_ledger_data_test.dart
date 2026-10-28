@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 
@@ -125,7 +126,7 @@ const _mr6b2Operations = <String>{
 void main() {
   test('the ledger exposes exactly the project and group operation sets', () {
     expect(
-      productionAiLedger.modelVisible.map((row) => row.operationId).toSet(),
+      fixtureAiLedger.modelVisible.map((row) => row.operationId).toSet(),
       {
         ..._baselineOperations,
         ..._mr6b2Operations,

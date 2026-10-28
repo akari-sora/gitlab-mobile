@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -427,6 +428,7 @@ final class _Harness {
       AiToolBudget(maxGitLabRequests: maxHttp),
     );
     h.coordinator = coord.PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => coord.AiWritePolicySnapshot(
         scope: g0eScope,
         level: AiAutonomyLevel.confirmEach,
@@ -526,9 +528,9 @@ void main() {
       'none',
     ]);
     expect(row.modelVisible, isTrue);
-    expect(productionAiLedger.modelVisible, contains(row));
+    expect(fixtureAiLedger.modelVisible, contains(row));
     expect(aiGroupWorkItemWritesAreEnabled, isTrue);
-    expect(toolsForScope(g0eScope), contains(row));
+    expect(toolsForScope(g0eScope, releasePolicy: fixtureReleasePolicy), contains(row));
   });
 
   test(

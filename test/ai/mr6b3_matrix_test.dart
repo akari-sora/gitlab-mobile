@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
@@ -424,7 +425,7 @@ AiTierDecision _decision(
   AiAutonomyLevel level, {
   AiTierFacts facts = const AiTierFacts(),
 }) => decideListed(
-  ledger: productionAiLedger,
+  ledger: fixtureAiLedger,
   operationId: operation,
   build: (capability) => AiTierInput(
     level: level,

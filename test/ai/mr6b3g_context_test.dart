@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as writes;
@@ -135,6 +136,7 @@ final class _ContextFixture {
 
   Future<PolicyAiWriteCoordinator> coordinator(Mr6b3Harness base) async {
     final coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: g0eScope,
         level: AiAutonomyLevel.confirmEach,

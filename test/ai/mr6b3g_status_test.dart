@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -397,6 +398,7 @@ final class _StatusHarness {
 
   PolicyAiWriteCoordinator newCoordinator(String conversation) =>
       PolicyAiWriteCoordinator(
+        releasePolicy: fixtureReleasePolicy,
         snapshot: () => AiWritePolicySnapshot(
           appInForeground: true,
           scope: scope,
@@ -576,7 +578,7 @@ void main() {
     final h = await _StatusHarness.create();
     addTearDown(h.dispose);
     expect(aiGroupWorkItemWritesAreEnabled, isFalse);
-    expect(toolsForScope(_scope), isEmpty);
+    expect(toolsForScope(_scope, releasePolicy: fixtureReleasePolicy), isEmpty);
     expect(await h.propose(), isNull);
     expect(h.server.adapter.requests, isEmpty);
   });
@@ -1010,7 +1012,7 @@ void main() {
       unorderedEquals(groupStatusStageOperations),
     );
     expect(
-      productionAiLedger.modelVisible.map((row) => row.operationId),
+      fixtureAiLedger.modelVisible.map((row) => row.operationId),
       contains(_operation),
     );
     expect(row.namedMethod, 'updateWorkItemStatus');

@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -103,7 +104,8 @@ final class _Fixture {
       settings.consentContractFor(
         p6Account,
         config,
-        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.bypass),
+        releasePolicy: fixtureReleasePolicy,
+        writePolicy: aiMr6b1WritePolicy(AiAutonomyLevel.bypass, releasePolicy: fixtureReleasePolicy),
         agreedCeiling: AiAutonomyLevel.bypass,
       ),
       const {'synthetic': true},
@@ -128,6 +130,7 @@ final class _Fixture {
     final server = P6Server()..missing = operation == 'createFile';
     final scanPort = _ScanPort(server, operation, replacement);
     final controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       origin: const AiGeneralOrigin(),
       session: session,
       settings: settings,

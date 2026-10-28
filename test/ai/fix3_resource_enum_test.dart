@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -205,6 +206,7 @@ void main() {
 
 PolicyAiWriteCoordinator _specsCoordinator(Directory root) {
   return PolicyAiWriteCoordinator(
+    releasePolicy: fixtureReleasePolicy,
     snapshot: () => AiWritePolicySnapshot(
       scope: _scope,
       level: AiAutonomyLevel.confirmEach,
@@ -277,6 +279,7 @@ final class _Fixture implements port.AiGitLabWritePort {
     budget = AiToolBudget(maxGitLabRequests: 40);
     delegate = port.GitLabAiWritePort(api, accountKey: _account);
     _coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: _scope,
         level: AiAutonomyLevel.confirmEach,
@@ -303,7 +306,7 @@ final class _Fixture implements port.AiGitLabWritePort {
       ),
       knownSecrets: () => const {},
       safeDisplay: (value) => value,
-      ledger: productionAiLedger,
+      ledger: fixtureAiLedger,
     );
     _coordinator!.beginRun('Apply the requested change in team/example-9');
     _coordinator!.beginTurn();

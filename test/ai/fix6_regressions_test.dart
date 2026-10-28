@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
@@ -59,6 +60,7 @@ void main() {
       test('R6-VERIFY-ALIAS ${shape.$1} $format', () async {
         final h = base.Harness(format: format);
         final catalogue = AiToolCatalogue(
+          releasePolicy: fixtureReleasePolicy,
           port: _Port('config:\n  api: ${shape.$2}\nend\n'),
           scope: const AiResourceScope(
             accountKey: 'instance|7',

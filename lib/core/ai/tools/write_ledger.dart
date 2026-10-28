@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../group_work_item_identity.dart';
 import '../../instance.dart';
+import 'release_policy.dart';
+import 'target_binding.dart' show AiTargetKind;
 import 'write_levels.dart';
 
 export 'write_levels.dart';
@@ -61,6 +63,12 @@ enum AiScopeKind {
   groupWorkItem,
   accountGlobal,
 }
+
+/// MR7 starts closed. Only 7R adds operations with complete release evidence.
+/// Shared operations (including todo snooze) stay closed until every supported
+/// ownership context is proven; project evidence cannot authorize group todos.
+const Map<String, Set<AiTargetKind>> aiReleasedWriteTargets =
+    <String, Set<AiTargetKind>>{};
 
 /// How a capability is admitted by a grant. Group work items have no MR6b-1 tool.
 enum AiScopeClass {
@@ -311,8 +319,7 @@ final class AiCapability {
   final AiWriteTier baseTier;
   final AiScopeClass scopeClass;
 
-  /// MR6b-1 exposes implemented T1 and T2 rows. Higher tiers stay out of the
-  /// model tool list; tests build those rows themselves.
+  /// Implementation visibility is additionally restricted by release policy.
   final bool modelVisible;
 
   /// Packet 5 method. `upload_attachment` calls `uploadProjectFile`.
@@ -338,7 +345,9 @@ abstract interface class AiCapabilityLedger {
 }
 
 final class ProductionAiLedger implements AiCapabilityLedger {
-  const ProductionAiLedger();
+  const ProductionAiLedger({this.releasePolicy = productionAiReleasePolicy});
+
+  final AiReleasePolicyView releasePolicy;
 
   static const List<AiCapability> rows = <AiCapability>[
     ...aiT12Rows,
@@ -385,15 +394,17 @@ final class ProductionAiLedger implements AiCapabilityLedger {
     for (final AiCapability row in rows) row.operationId: row,
   };
 
-  static final List<AiCapability> _visible = List<AiCapability>.unmodifiable(
-    rows.where((AiCapability row) => row.modelVisible),
-  );
-
   @override
   AiCapability? find(String operationId) => _index[operationId];
 
   @override
-  List<AiCapability> get modelVisible => _visible;
+  List<AiCapability> get modelVisible => List<AiCapability>.unmodifiable(
+    rows.where(
+      (row) =>
+          row.modelVisible &&
+          releasePolicy.allowsWriteOperation(row.operationId),
+    ),
+  );
 }
 
 const ProductionAiLedger productionAiLedger = ProductionAiLedger();
@@ -402,18 +413,53 @@ const ProductionAiLedger productionAiLedger = ProductionAiLedger();
 /// writable grant, or only a group work item (no MR6b-1 tool admits it).
 List<AiCapability> toolsForScope(
   AiWriteScope scope, {
-  AiCapabilityLedger ledger = productionAiLedger,
+  AiCapabilityLedger? ledger,
+  AiReleasePolicyView releasePolicy = productionAiReleasePolicy,
 }) {
   if (!scope.allowsWrites) return const <AiCapability>[];
+  final capabilities =
+      ledger ?? ProductionAiLedger(releasePolicy: releasePolicy);
   return <AiCapability>[
-    for (final AiCapability row in ledger.modelVisible)
-      if (_offered(scope, row)) row,
+    for (final AiCapability row in capabilities.modelVisible)
+      if (releasePolicy.allowsWriteOperation(row.operationId) &&
+          _offered(scope, row, releasePolicy))
+        row,
   ];
 }
 
-bool offersWriteTools(AiWriteScope scope) => toolsForScope(scope).isNotEmpty;
+bool offersWriteTools(
+  AiWriteScope scope, {
+  AiReleasePolicyView releasePolicy = productionAiReleasePolicy,
+}) => toolsForScope(scope, releasePolicy: releasePolicy).isNotEmpty;
 
-bool _offered(AiWriteScope scope, AiCapability row) {
+/// The owning target known before opening a port. Prepared child targets must
+/// also be released, and are rechecked by the coordinator at the final send.
+AiTargetKind aiWriteProposalTargetKind(
+  AiCapability row, {
+  bool mergeRequest = false,
+}) => switch (row.scopeClass) {
+  AiScopeClass.workItem => AiTargetKind.issue,
+  AiScopeClass.mergeRequest => AiTargetKind.mergeRequest,
+  AiScopeClass.resource =>
+    mergeRequest ? AiTargetKind.mergeRequest : AiTargetKind.issue,
+  AiScopeClass.accountTodo ||
+  AiScopeClass.accountGlobalOnly => AiTargetKind.todo,
+  AiScopeClass.groupWorkItem => switch (row.operationId) {
+    'setGroupWorkItemActivityNoteReaction' => AiTargetKind.emoji,
+    'deleteGroupWorkItemActivityNote' ||
+    'editGroupWorkItemActivityNote' => AiTargetKind.note,
+    _ => AiTargetKind.groupWorkItem,
+  },
+  AiScopeClass.project ||
+  AiScopeClass.projectUpload ||
+  AiScopeClass.personalNamespace => AiTargetKind.project,
+};
+
+bool _offered(
+  AiWriteScope scope,
+  AiCapability row,
+  AiReleasePolicyView releasePolicy,
+) {
   for (final AiScopeGrant grant in scope.grants) {
     if (grant.kind == AiScopeKind.groupWorkItem &&
         (grant.groupId == null ||
@@ -426,7 +472,22 @@ bool _offered(AiWriteScope scope, AiCapability row) {
             grant.projectPath != null)) {
       continue;
     }
-    if (_grantOffers(grant.kind, row)) return true;
+    if (!_grantOffers(grant.kind, row)) continue;
+    final mergeRequest = grant.kind == AiScopeKind.mergeRequest;
+    if (releasePolicy.allowsWrite(
+      row.operationId,
+      aiWriteProposalTargetKind(row, mergeRequest: mergeRequest),
+    )) {
+      return true;
+    }
+    if (grant.kind == AiScopeKind.project &&
+        row.scopeClass == AiScopeClass.resource &&
+        releasePolicy.allowsWrite(
+          row.operationId,
+          aiWriteProposalTargetKind(row, mergeRequest: true),
+        )) {
+      return true;
+    }
   }
   return false;
 }

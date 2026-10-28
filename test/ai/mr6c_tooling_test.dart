@@ -1,3 +1,4 @@
+import 'mr6c_v9_test_support.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -463,7 +464,7 @@ Future<void> main() async {
         ..._command(),
         'variant': 'task_manager_stop',
       });
-      final fixture = QaV9Fixture(sandbox, command, testChannel: channel);
+      final fixture = TestV9Fixture(sandbox, command, testChannel: channel);
       addTearDown(() {
         fixture.registry.dispose();
         fixture.settings.dispose();

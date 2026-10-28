@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -183,6 +184,7 @@ final class _Fixture {
     await journal.ensureInitialized(coordAccount);
     final f = _Fixture(server, h, journal, files, keys);
     h.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: coordScope,
         level: h.level,

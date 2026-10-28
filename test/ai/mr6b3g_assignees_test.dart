@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
@@ -423,6 +424,7 @@ final class _Flow {
   _Flow._(this.server, this.shared, int maxRequests)
     : budget = AiToolBudget(maxGitLabRequests: maxRequests) {
     coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: _scope,
@@ -552,11 +554,11 @@ void main() {
     expect(row.arguments.values.every((arg) => arg.required), isTrue);
     expect(row.arguments['assigneeUsernames']!.type, AiArgType.stringList);
     expect(
-      productionAiLedger.modelVisible.map((row) => row.operationId),
+      fixtureAiLedger.modelVisible.map((row) => row.operationId),
       contains(_operation),
     );
     expect(
-      toolsForScope(_scope).map((row) => row.operationId),
+      toolsForScope(_scope, releasePolicy: fixtureReleasePolicy).map((row) => row.operationId),
       contains(_operation),
     );
     expect(aiWriteRequestAllowance(_operation), 37);
@@ -1877,7 +1879,7 @@ void _groupSpecificTests() {
     expect(await flow.propose(['alice']), isNull);
     expect(flow.coordinator.outcomeFor('p6-0')!.reasonCode, 'policyDenied');
     expect(flow.server.adapter.requests, isEmpty);
-    expect(toolsForScope(_scope), isEmpty);
+    expect(toolsForScope(_scope, releasePolicy: fixtureReleasePolicy), isEmpty);
   });
 
   // Challenge each logical read independently; count adapters, not row math.

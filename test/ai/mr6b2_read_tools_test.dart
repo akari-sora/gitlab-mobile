@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -558,6 +559,7 @@ final class _Harness {
     final api = testApi(adapter, host: _root);
     addTearDown(api.close);
     catalogue = AiToolCatalogue(
+      releasePolicy: fixtureReleasePolicy,
       port: GitLabAiReadPort(api, 9),
       scope: const AiResourceScope(
         accountKey: '$_root#7',

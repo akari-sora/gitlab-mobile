@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -589,6 +590,7 @@ final class _Fixture {
   int callId = 0;
 
   PolicyAiWriteCoordinator _coordinator() => PolicyAiWriteCoordinator(
+    releasePolicy: fixtureReleasePolicy,
     snapshot: () => const AiWritePolicySnapshot(
       appInForeground: true,
       scope: _scope,
@@ -700,7 +702,7 @@ void main() {
       expect(row.arguments.keys, isNot(contains('discussionId')));
     }
     expect(
-      productionAiLedger.modelVisible.map((row) => row.operationId),
+      fixtureAiLedger.modelVisible.map((row) => row.operationId),
       containsAll(aiGraphqlActivityCreateRows.map((row) => row.operationId)),
     );
   });

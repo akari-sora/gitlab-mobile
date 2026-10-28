@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/intent_lexicon.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
@@ -453,7 +454,7 @@ void main() {
       addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
       expect(
         decideListed(
-          ledger: productionAiLedger,
+          ledger: fixtureAiLedger,
           operationId: 'not_a_listed_operation',
           build: (AiCapability capability) => AiTierInput(
             level: AiAutonomyLevel.bypass,
@@ -592,7 +593,7 @@ void main() {
       expect(_bind('', [target(5, 3)], scope: scope).allBound, isFalse);
       expect(_bind('', [target(4, 9)], scope: scope).allBound, isFalse);
       final offered = toolsForScope(
-        scope,
+        scope, releasePolicy: fixtureReleasePolicy
       ).map((row) => row.operationId).toSet();
       expect(offered, containsAll(['snoozeTodo', 'unsnoozeTodo']));
       expect(offered, isNot(contains('markTodoDone')));
@@ -669,8 +670,8 @@ void main() {
         grants: <AiScopeGrant>[],
       );
       expect(empty.allowsWrites, isFalse);
-      expect(offersWriteTools(empty), isFalse);
-      expect(toolsForScope(empty), isEmpty);
+      expect(offersWriteTools(empty, releasePolicy: fixtureReleasePolicy), isFalse);
+      expect(toolsForScope(empty, releasePolicy: fixtureReleasePolicy), isEmpty);
       expect(
         decideTier(
           AiTierInput(
@@ -749,7 +750,7 @@ void main() {
         isTrue,
       );
       final Set<String> offered = toolsForScope(
-        scope,
+        scope, releasePolicy: fixtureReleasePolicy
       ).map((AiCapability row) => row.operationId).toSet();
       expect(
         offered,
@@ -772,11 +773,11 @@ void main() {
 
     test('project, merge request and todo scopes offer different tools', () {
       expect(
-        toolsForScope(_projectScope),
-        hasLength(productionAiLedger.modelVisible.length - _groupOperations.length - 1),
+        toolsForScope(_projectScope, releasePolicy: fixtureReleasePolicy),
+        hasLength(fixtureAiLedger.modelVisible.length - _groupOperations.length - 1),
       );
       final Set<String> projectTools = toolsForScope(
-        _projectScope,
+        _projectScope, releasePolicy: fixtureReleasePolicy
       ).map((AiCapability row) => row.operationId).toSet();
       expect(
         projectTools,
@@ -801,7 +802,7 @@ void main() {
         ],
       );
       final Set<String> mergeTools = toolsForScope(
-        merge,
+        merge, releasePolicy: fixtureReleasePolicy
       ).map((AiCapability row) => row.operationId).toSet();
       expect(
         mergeTools,
@@ -822,7 +823,7 @@ void main() {
       );
       expect(
         toolsForScope(
-          todos,
+          todos, releasePolicy: fixtureReleasePolicy
         ).map((AiCapability row) => row.operationId).toList(),
         <String>[
           'markTodoDone',
@@ -841,7 +842,7 @@ void main() {
           ),
         ],
       );
-      expect(offersWriteTools(groupOnly), isFalse); // Missing numeric group ID.
+      expect(offersWriteTools(groupOnly, releasePolicy: fixtureReleasePolicy), isFalse); // Missing numeric group ID.
     });
 
     test('production group scope offers only group aliases and snoozes', () {
@@ -857,7 +858,7 @@ void main() {
           ),
         ],
       );
-      final offered = toolsForScope(scope).map((row) => row.operationId).toSet();
+      final offered = toolsForScope(scope, releasePolicy: fixtureReleasePolicy).map((row) => row.operationId).toSet();
       expect(offered, {..._groupOperations, 'snoozeTodo', 'unsnoozeTodo'});
       expect(offered, isNot(contains('markTodoDone')));
     });
@@ -876,8 +877,8 @@ void main() {
           ),
         ],
       );
-      expect(offersWriteTools(scope), isFalse);
-      expect(toolsForScope(scope), isEmpty);
+      expect(offersWriteTools(scope, releasePolicy: fixtureReleasePolicy), isFalse);
+      expect(toolsForScope(scope, releasePolicy: fixtureReleasePolicy), isEmpty);
     });
   });
 
@@ -990,7 +991,7 @@ void main() {
         expect(directionsFor(operation), isEmpty, reason: operation);
       }
       expect(
-        productionAiLedger.modelVisible
+        fixtureAiLedger.modelVisible
             .map((AiCapability row) => row.operationId)
             .toSet(),
         _productionOperations,

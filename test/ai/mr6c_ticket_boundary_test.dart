@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -304,6 +305,7 @@ void main() {
           addTearDown(h.dispose);
           final read = _RereadPort(h);
           final catalogue = AiToolCatalogue(
+            releasePolicy: fixtureReleasePolicy,
             port: read,
             scope: const AiResourceScope(
               accountKey: mr6b2Account,
@@ -690,6 +692,7 @@ void main() {
     var visible = true;
     var clientChecks = 0;
     final controller = AiChatController(
+      releasePolicy: fixtureReleasePolicy,
       origin: const AiGeneralOrigin(),
       session: h.session,
       settings: h.settings,
@@ -1716,6 +1719,7 @@ final class _WriteHarness {
     AiWritePolicySnapshot Function()? policySnapshot,
   }) =>
       PolicyAiWriteCoordinator(
+        releasePolicy: fixtureReleasePolicy,
         snapshot: policySnapshot ?? () => AiWritePolicySnapshot(
           scope: mr6b2Scope,
           level: level,

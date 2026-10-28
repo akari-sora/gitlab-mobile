@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -542,6 +543,7 @@ final class Mr6b2Harness {
     final selectedScope = scope ?? this.scope;
     final selectedPolicy = policy ?? this.policy;
     return PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         scope: selectedScope,
         level: selectedPolicy.level,

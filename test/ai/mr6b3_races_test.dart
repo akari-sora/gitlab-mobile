@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -517,6 +518,7 @@ PolicyAiWriteCoordinator _coordinator(
 }) {
   final budget = AiToolBudget(maxGitLabRequests: 40);
   final coordinator = PolicyAiWriteCoordinator(
+    releasePolicy: fixtureReleasePolicy,
     snapshot: () => AiWritePolicySnapshot(
       appInForeground: true,
       scope: policy.scope,

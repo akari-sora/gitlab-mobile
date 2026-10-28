@@ -1,6 +1,7 @@
 // C4 (§4.4): each write reserves its own counted worst case of GitLab
 // requests, not nearly the whole 40-request budget of a send.
 
+import 'release_policy_support.dart';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -187,7 +188,7 @@ void main() {
     test('covers every write the model can call', () {
       expect(
         {
-          for (final capability in productionAiLedger.modelVisible)
+          for (final capability in fixtureAiLedger.modelVisible)
             capability.operationId,
         },
         {

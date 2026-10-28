@@ -1,3 +1,4 @@
+import 'release_policy_support.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -362,6 +363,7 @@ final class _Harness {
       text.UploadPlaceholderTable(instance: server.api.instance),
     );
     harness.coordinator = PolicyAiWriteCoordinator(
+      releasePolicy: fixtureReleasePolicy,
       snapshot: () => AiWritePolicySnapshot(
         appInForeground: true,
         scope: mr6b3Scope,
@@ -391,7 +393,7 @@ final class _Harness {
       placeholders: harness.placeholders,
       knownSecrets: () => knownSecrets,
       safeDisplay: (value) => value,
-      ledger: productionAiLedger,
+      ledger: fixtureAiLedger,
       now: () => harness.clock,
     );
     harness.coordinator.beginRun('Edit my note 401 on #3 in $_path.');
