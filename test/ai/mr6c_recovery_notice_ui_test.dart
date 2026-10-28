@@ -305,6 +305,7 @@ void main() {
     Future<(AiWriteJournal, String, int, AiRunNotifications)> start(
       WidgetTester tester, {
       int writes = 1,
+      bool initialize = true,
     }) async {
       final fixture = WorkspaceFixture();
       final session = controllerFor(MemoryAccountStore(), fixture.adapter);
@@ -322,7 +323,7 @@ void main() {
       );
       final notifications = AiRunNotifications(text: aiRunNotificationText);
       addTearDown(notifications.dispose);
-      expect(await notifications.initialize(), isTrue);
+      if (initialize) expect(await notifications.initialize(), isTrue);
       final notifier = AiRecoveryNotifier(
         journal: journal,
         notifications: notifications,
@@ -399,6 +400,54 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(platform.shows, isEmpty);
+    }, variant: android);
+
+    // Codex R2: the summary is checked again after every wait in delivery.
+    for (final (label, change) in [
+      (
+        'account removal starts',
+        (AiWriteJournal journal, String key) => journal.beginRemoval(key),
+      ),
+      (
+        'the summary is acknowledged',
+        (AiWriteJournal journal, String key) =>
+            journal.acknowledgeRecovery(key, journal.recoveryResult(key)),
+      ),
+    ]) {
+      testWidgets('dropped when $label while the plugin starts', (
+        tester,
+      ) async {
+        platform
+          ..notificationsEnabled = true
+          ..launchBarrier = Completer<void>();
+        final (journal, key, _, _) = await start(tester, initialize: false);
+        markAiJournalRecovered(journal);
+        await tester.pump();
+        // Delivery is queued behind getNotificationAppLaunchDetails.
+        expect(platform.shows, isEmpty);
+        change(journal, key);
+        expect(journal.recoveryResult(key).mayNotifyInterruption, isFalse);
+        platform.launchBarrier!.complete();
+        await tester.pump();
+        await tester.pump();
+        expect(platform.shows, isEmpty);
+      }, variant: android);
+    }
+
+    testWidgets('posted when nothing changed while the plugin starts', (
+      tester,
+    ) async {
+      platform
+        ..notificationsEnabled = true
+        ..launchBarrier = Completer<void>();
+      final (journal, _, _, _) = await start(tester, initialize: false);
+      markAiJournalRecovered(journal);
+      await tester.pump();
+      expect(platform.shows, isEmpty);
+      platform.launchBarrier!.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(platform.shows, hasLength(1));
     }, variant: android);
   });
 }

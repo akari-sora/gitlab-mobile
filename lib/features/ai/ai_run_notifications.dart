@@ -485,15 +485,22 @@ final class AiRunNotifications extends ChangeNotifier {
   /// the app to Home through the gate, where the start-up notice explains
   /// it. Posted only while notifications are enabled; it never resends,
   /// restores or approves anything. Completes with whether it was posted.
-  Future<bool> showRecoveredInterruption({required int generation}) {
+  /// [stillEligible] is checked again after every wait and right before the
+  /// post (account, removal, acknowledgement, generation); a false answer
+  /// drops it.
+  Future<bool> showRecoveredInterruption({
+    required int generation,
+    required bool Function() stillEligible,
+  }) {
     final posted = Completer<bool>();
+    bool ready() => !_disposed && stillEligible();
     _delivery = _delivery
         .then((_) async {
-          if (_disposed || !supported || !await initialize()) {
+          if (!ready() || !supported || !await initialize() || !ready()) {
             return posted.complete(false);
           }
           final state = await areNotificationsEnabled();
-          if (_disposed || state.appEnabled != true) {
+          if (!ready() || state.appEnabled != true) {
             return posted.complete(false);
           }
           final payload = AiRunNotificationRoute(
@@ -506,7 +513,7 @@ final class AiRunNotifications extends ChangeNotifier {
             id = _resultIds.allocate(payload);
           }
           id ??= _resultIds.replaceOldest(payload);
-          if (id == null || _disposed) {
+          if (id == null || !ready()) {
             if (id == null) _setResultRangeFull(true);
             return posted.complete(false);
           }

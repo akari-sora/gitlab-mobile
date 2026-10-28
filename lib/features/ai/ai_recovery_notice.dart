@@ -199,8 +199,20 @@ final class AiRecoveryNotifier {
         continue;
       }
       _attempted.add(key);
+      final generation = session.generation;
       unawaited(
-        notifications.showRecoveredInterruption(generation: session.generation),
+        notifications.showRecoveredInterruption(
+          generation: generation,
+          // Delivery waits (plugin start, permission, active notifications):
+          // the account must still be stored and not being removed, its
+          // summary still unacknowledged, the session generation unchanged.
+          stillEligible: () =>
+              !_disposed &&
+              !session.isDisposed &&
+              session.generation == generation &&
+              session.accounts.any((account) => account.key == key) &&
+              journal.recoveryResult(key).mayNotifyInterruption,
+        ),
       );
     }
   }
