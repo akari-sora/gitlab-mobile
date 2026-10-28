@@ -66,7 +66,255 @@ bool _groupRowsAreHidden(Iterable<AiCapability> rows) => rows.every(
       row.scopeClass == AiScopeClass.groupWorkItem,
 );
 
+text.AiFieldProvenance _titleField(G0eHarness harness) {
+  final description = text.AiFieldProvenance.groupWorkItem(
+    identity: g0eIdentity(harness.api),
+    completeValue: true,
+  );
+  return text.AiFieldProvenance(
+    resourceKey: description.resourceKey,
+    fieldName: 'title',
+    completeValue: true,
+    resourceWeb: description.resourceWeb,
+    accountKey: description.accountKey,
+    groupId: description.groupId,
+    groupFullPath: description.groupFullPath,
+  );
+}
+
 void main() {
+  group('G0j opening title provenance', () {
+    for (final combined in [false, true]) {
+      test(
+        'coordinator ${combined ? 'title+description' : 'title-only'} succeeds',
+        () async {
+          _gate(true);
+          final h = await G0eHarness.create();
+          addTearDown(h.dispose);
+          const title = '  Updated group title  ';
+          const description = 'Updated group description';
+          // Freshness alone calls the title incomplete. The strict opening's
+          // whole currentFields must supply the evidence for both text rounds.
+          final field = _titleField(h);
+          h.priorProvenance = {
+            'title': text.AiFieldProvenance(
+              resourceKey: field.resourceKey,
+              fieldName: 'title',
+              completeValue: false,
+              accountKey: field.accountKey,
+              groupId: field.groupId,
+              groupFullPath: field.groupFullPath,
+              resourceWeb: field.resourceWeb,
+            ),
+          };
+          final call = h.call('updateGroupWorkItemContent', {
+            'title': title,
+            if (combined) 'description': description,
+          });
+          final proposal = await h.coordinator.propose(call);
+          expect(
+            proposal,
+            isNotNull,
+            reason: h.coordinator.recordedOutcomeFor(call.id)?.reasonCode,
+          );
+          expect(
+            (proposal!.preview as port.AiFieldsPreview).fields['title'],
+            title,
+          );
+          expect(h.graph.mutations, 0);
+          final result = await h.coordinator.approve(proposal);
+          expect(
+            result.state,
+            AiJournalState.succeeded,
+            reason: result.reasonCode,
+          );
+          expect(h.graph.dispatched!.arguments['title'], title);
+          if (combined) {
+            expect(h.graph.dispatched!.arguments['description'], description);
+          } else {
+            expect(
+              h.graph.dispatched!.arguments,
+              isNot(contains('description')),
+            );
+          }
+          expect(h.freshnessReads, 2);
+          expect(h.graph.events, ['open:1', 'open:2', 'start', 'send']);
+          expect(h.graph.mutations, 1);
+        },
+      );
+    }
+
+    for (final atDispatch in [false, true]) {
+      final phase = atDispatch ? 'dispatch' : 'proposal';
+      test(
+        'missing opening title refuses at $phase despite prior provenance',
+        () async {
+          _gate(true);
+          final h = await G0eHarness.create();
+          addTearDown(h.dispose);
+          h.priorProvenance = {'title': _titleField(h)};
+          final call = h.call('updateGroupWorkItemContent', {
+            'title': 'Changed',
+          });
+          if (!atDispatch) h.graph.currentFields.remove('title');
+          final proposal = await h.coordinator.propose(call);
+          if (atDispatch) {
+            expect(proposal, isNotNull);
+            h.graph.currentFields.remove('title');
+            final result = await h.coordinator.approve(proposal!);
+            expect(result.state, AiJournalState.notExecuted);
+            expect(result.reasonCode, text.AiTextBlockCode.fieldTooLong);
+          } else {
+            expect(proposal, isNull);
+            expect(
+              h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+              text.AiTextBlockCode.fieldTooLong,
+            );
+          }
+          expect(h.graph.mutations, 0);
+        },
+      );
+
+      for (final cut in ['excerpt', 'output limit']) {
+        test(
+          '$cut title refuses at $phase despite a complete opening',
+          () async {
+            _gate(true);
+            final h = await G0eHarness.create();
+            addTearDown(h.dispose);
+            void cutTitle() {
+              final field = _titleField(h);
+              h.placeholders.recordFieldDelivery(
+                field,
+                whole: cut != 'excerpt',
+              );
+              if (cut == 'output limit') h.placeholders.markWholeFieldsCut();
+            }
+
+            final call = h.call('updateGroupWorkItemContent', {
+              'title': 'Changed',
+              'description': 'Safe description',
+            });
+            if (!atDispatch) cutTitle();
+            final proposal = await h.coordinator.propose(call);
+            if (atDispatch) {
+              expect(proposal, isNotNull);
+              cutTitle();
+              final result = await h.coordinator.approve(proposal!);
+              expect(result.state, AiJournalState.notExecuted);
+              expect(result.reasonCode, text.AiTextBlockCode.fieldTooLong);
+            } else {
+              expect(proposal, isNull);
+              expect(
+                h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+                text.AiTextBlockCode.fieldTooLong,
+              );
+            }
+            expect(h.graph.prepares, atDispatch ? 2 : 1);
+            expect(h.graph.mutations, 0);
+          },
+        );
+      }
+    }
+
+    test('whole title delivery clears an earlier excerpt refusal', () async {
+      _gate(true);
+      final h = await G0eHarness.create();
+      addTearDown(h.dispose);
+      final field = _titleField(h);
+      h.placeholders.recordFieldDelivery(field, whole: false);
+      expect(
+        await h.coordinator.propose(
+          h.call('updateGroupWorkItemContent', {'title': 'Changed'}),
+        ),
+        isNull,
+      );
+      h.placeholders.recordFieldDelivery(field, whole: true);
+      h.beginRun();
+      final proposal = await h.coordinator.propose(
+        h.call('updateGroupWorkItemContent', {'title': 'Changed'}),
+      );
+      expect(proposal, isNotNull);
+      final result = await h.coordinator.approve(proposal!);
+      expect(result.state, AiJournalState.succeeded, reason: result.reasonCode);
+      expect(h.graph.mutations, 1);
+    });
+
+    test('stale opening identity cannot authorize a title edit', () async {
+      _gate(true);
+      final h = await G0eHarness.create();
+      addTearDown(h.dispose);
+      h.graph.live = false;
+      final call = h.call('updateGroupWorkItemContent', {'title': 'Changed'});
+      expect(await h.coordinator.propose(call), isNull);
+      expect(
+        h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+        'workItemUnverifiable',
+      );
+      expect(h.graph.mutations, 0);
+    });
+
+    for (final source in ['description', 'note']) {
+      for (final combined in [false, true]) {
+        test('$source upload token in ${combined ? 'combined' : 'title-only'} '
+            'proposal refuses', () async {
+          _gate(true);
+          final h = await G0eHarness.create();
+          addTearDown(h.dispose);
+          final field = text.AiFieldProvenance.groupWorkItem(
+            identity: g0eIdentity(h.api),
+            completeValue: true,
+            noteId: source == 'note' ? 12 : null,
+          );
+          const original =
+              '[file](/uploads/0123456789abcdef0123456789abcdef/file.txt)';
+          final masked = h.placeholders.redactOutgoing(original, field: field);
+          expect(masked, contains('[[upload:'));
+          final call = h.call('updateGroupWorkItemContent', {
+            'title': masked,
+            if (combined) 'description': 'Safe description',
+          });
+          expect(await h.coordinator.propose(call), isNull);
+          expect(
+            h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+            text.AiTextBlockCode.rereadField,
+          );
+          expect(h.graph.prepares, 1);
+          expect(h.graph.mutations, 0);
+        });
+      }
+    }
+
+    test(
+      'valid title cannot allow a cross-field note token in description',
+      () async {
+        _gate(true);
+        final h = await G0eHarness.create();
+        addTearDown(h.dispose);
+        final note = text.AiFieldProvenance.groupWorkItem(
+          identity: g0eIdentity(h.api),
+          completeValue: true,
+          noteId: 12,
+        );
+        final masked = h.placeholders.redactOutgoing(
+          '[file](/uploads/0123456789abcdef0123456789abcdef/file.txt)',
+          field: note,
+        );
+        expect(masked, contains('[[upload:'));
+        final call = h.call('updateGroupWorkItemContent', {
+          'title': 'Changed',
+          'description': masked,
+        });
+        expect(await h.coordinator.propose(call), isNull);
+        expect(
+          h.coordinator.recordedOutcomeFor(call.id)!.reasonCode,
+          text.AiTextBlockCode.rereadField,
+        );
+        expect(h.graph.mutations, 0);
+      },
+    );
+  });
+
   test(
     'freshness defaults retain unknown source evidence for older readers',
     () {
