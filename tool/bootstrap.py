@@ -1344,6 +1344,63 @@ def apply_launcher_icons(flutter: str, *, offline: bool = False) -> None:
     subprocess.run([dart, 'run', 'flutter_launcher_icons'], cwd=ROOT, check=True, timeout=120)
 
 
+IOS_APP_DELEGATE_TEMPLATE = '''import Flutter
+import UIKit
+
+@main
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  ) -> Bool {
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+  }
+}
+'''
+
+IOS_BACKUP_REGISTRATION = '''    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    let backupChannel = FlutterMethodChannel(
+      name: "mergeline/backup",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    backupChannel.setMethodCallHandler { call, result in
+      guard call.method == "excludeFromBackup" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let arguments = call.arguments as? [String: Any],
+            let path = arguments["path"] as? String, !path.isEmpty else {
+        result(FlutterError(code: "invalidArguments", message: nil, details: nil))
+        return
+      }
+      do {
+        var url = URL(fileURLWithPath: path, isDirectory: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try url.setResourceValues(values)
+        result(nil)
+      } catch {
+        result(FlutterError(code: "backupExclusionFailed", message: nil, details: nil))
+      }
+    }'''
+
+def ios_backup_app_delegate(folder: Path) -> tuple[Path, str]:
+    path = folder / 'Runner/AppDelegate.swift'
+    text = path.read_text(encoding='utf-8')
+    expected = IOS_APP_DELEGATE_TEMPLATE.replace(
+        '    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)',
+        IOS_BACKUP_REGISTRATION,
+        1,
+    )
+    if text not in (IOS_APP_DELEGATE_TEMPLATE, expected):
+        raise RuntimeError('Unknown iOS AppDelegate template; review required.')
+    return path, expected
+
+
 def configure_ios(folder: Path) -> None:
     # Match ONLY Runner configurations (exclude RunnerTests). Fail on template drift.
     project = folder / 'Runner.xcodeproj/project.pbxproj'
@@ -1363,7 +1420,9 @@ def configure_ios(folder: Path) -> None:
     changed = blocks.sub(patch, text)
     if count != 3:
         raise RuntimeError(f'Expected 3 iOS Runner configurations, found {count}; template review required.')
+    app_delegate, backup_delegate = ios_backup_app_delegate(folder)
     project.write_text(changed, encoding='utf-8')
+    app_delegate.write_text(backup_delegate, encoding='utf-8')
     (folder / 'Runner/Runner.entitlements').write_text('''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>keychain-access-groups</key><array/></dict></plist>

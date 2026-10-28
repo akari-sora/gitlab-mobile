@@ -34,6 +34,7 @@ import 'work_item_dates_models.dart';
 import '../l10n/l10n.dart';
 part 'workspace_api.dart';
 part 'cached_read_api.dart';
+part 'offline_repository_api.dart';
 part 'incident_api.dart';
 part 'analytics_api.dart';
 part 'package_download_api.dart';
@@ -191,6 +192,12 @@ final class GitLabApi {
   final DateTime Function() _readCacheClock;
   final ReadCacheSource? _readCacheSource;
   final GitLabRateBudget rateBudget;
+  late final RunBudgetAllocator runBudget = RunBudgetAllocator(rateBudget);
+  DiskBinding? _offlineBinding;
+  void Function(OfflineAccessLoss)? _offlineAccessSink;
+  void Function(DiskBinding, int)? _offlineAliasProbeSink;
+  void Function(DiskBinding)? _offlineValidatedSink;
+  DateTime? _offlineLastValidated;
   late final _ReadCache _cache = _ReadCache(this);
   final Future<void> Function(OAuthCredential rotated)? _onOAuthRotated;
   Future<void>? _refreshing;
@@ -299,6 +306,7 @@ final class GitLabApi {
     Map<String, String>? headers,
     bool allowRangeNotSatisfiable = false,
     bool graphQuery = false,
+    CancelToken? cancelToken,
   }) => _send(
     uri,
     method: method,
@@ -308,6 +316,7 @@ final class GitLabApi {
     headers: headers,
     allowRangeNotSatisfiable: allowRangeNotSatisfiable,
     graphQuery: graphQuery,
+    cancelToken: cancelToken,
   );
 
   /// Shared request path for JSON calls and multipart uploads.
@@ -324,8 +333,9 @@ final class GitLabApi {
     bool graphMutation = false,
     Duration? sendTimeout,
     void Function()? onSendStarted,
+    CancelToken? cancelToken,
   }) async {
-    if (_closed) {
+    if (_closed || cancelToken?.isCancelled == true) {
       const failure = ApiFailure(FailureKind.cancelled);
       if (graphMutation) {
         (Zone.current[#graphMutationBlockedBeforeSend]
@@ -341,6 +351,11 @@ final class GitLabApi {
     _checkRate(uri, method);
     final cancel = CancelToken();
     _requests.add(cancel);
+    if (cancelToken != null) {
+      unawaited(cancelToken.whenCancel.then((_) {
+        if (!cancel.isCancelled) cancel.cancel();
+      }));
+    }
     // Only private, fixed GraphQL queries use this read path. POST mutations
     // retain the write fences and are never retried automatically.
     final writing = method != 'GET' && method != 'HEAD' && !graphQuery;
@@ -348,6 +363,11 @@ final class GitLabApi {
     var writeStarted = false;
     var sendStarted = false;
     try {
+      // Offline admission meters are read-only. Suspending here for a write
+      // would separate its synchronous authorization permit from the send.
+      if (writing && RequestMeter.current?.beforeRequest != null) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
       if (writing) {
         _cache.write(affected, starting: true);
         writeStarted = true;
@@ -361,7 +381,11 @@ final class GitLabApi {
           );
         }
       }
+      // Ordinary write permits must reach the send without an async gap.
+      final admission = RequestMeter.current?.beforeRequest;
+      if (admission != null) await admission();
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      if (cancel.isCancelled) throw const ApiFailure(FailureKind.cancelled);
       onSendStarted?.call();
       if (graphMutation) {
         (Zone.current[#graphMutationSendStarted] as void Function()?)?.call();
@@ -408,11 +432,15 @@ final class GitLabApi {
         );
       }
       if (status < 200 || status >= 300) {
+        final aliasProject = _offlineAliasProject(uri);
         _cache.revoke(uri, status,
             terminal401: _credential is! OAuthCredential || retried);
+        final consumed = method == 'GET' &&
+            await _offlineHandleAccessLoss(uri, status, response.headers, body,
+                cancelToken: cancel, aliasProject: aliasProject);
         await _cache.settleDiskSafety();
         if (_closed) throw const ApiFailure(FailureKind.cancelled);
-        if (body != null) await body.stream.listen((_) {}).cancel();
+        if (!consumed && body != null) await body.stream.listen((_) {}).cancel();
         var refreshed = false;
         if (status == 401 && !retried) {
           try {
@@ -440,6 +468,7 @@ final class GitLabApi {
               headers: headers,
               allowRangeNotSatisfiable: allowRangeNotSatisfiable,
               graphQuery: graphQuery,
+              cancelToken: cancelToken,
             );
           }
           throw _knownMutation401(refreshSucceeded: true);
@@ -493,6 +522,9 @@ final class GitLabApi {
             : FailureKind.network);
       }
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      if (method == 'GET' && _offlineNeedsValidation(response.headers)) {
+        _offlineNoteValidatedJson(response.headers, bytes.toBytes());
+      }
       return (
         bytes: bytes.takeBytes(),
         headers: response.headers,
@@ -937,6 +969,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       throw const ApiFailure(FailureKind.cancelled);
     }
     _checkRate(uri);
+    final admission = RequestMeter.current?.beforeRequest;
+    if (admission != null) await admission();
+    if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
     final sequence = rateBudget.nextSequence();
     RequestMeter.current?.increment();
     final response = await _dio.requestUri<ResponseBody>(
@@ -954,11 +989,16 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     _noteRateLimit(response, uri, sequence);
     final status = response.statusCode ?? 0;
     if (status < 200 || status >= 300) {
+      final aliasProject = _offlineAliasProject(uri);
       _cache.revoke(uri, status,
           terminal401: _credential is! OAuthCredential || !allowRefresh);
+      final consumed = await _offlineHandleAccessLoss(
+        uri, status, response.headers, response.data,
+        cancelToken: token, aliasProject: aliasProject,
+      );
       await _cache.settleDiskSafety();
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
-      await _releaseBody(response.data);
+      if (!consumed) await _releaseBody(response.data);
       if (_closed || token.isCancelled) {
         throw const ApiFailure(FailureKind.cancelled);
       }
@@ -1303,6 +1343,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
   }) async {
     if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
     _checkRate(uri);
+    final admission = RequestMeter.current?.beforeRequest;
+    if (admission != null) await admission();
+    if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
     final sequence = rateBudget.nextSequence();
     RequestMeter.current?.increment();
     final response = await _dio.requestUri<ResponseBody>(
@@ -1495,6 +1538,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       throw const ApiFailure(FailureKind.cancelled);
     }
     if (authenticated) _checkRate(uri);
+    final admission = RequestMeter.current?.beforeRequest;
+    if (admission != null) await admission();
+    if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
     final sequence = rateBudget.nextSequence();
     RequestMeter.current?.increment();
     final response = await (client ?? _dio).requestUri<ResponseBody>(

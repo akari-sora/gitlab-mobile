@@ -403,7 +403,14 @@ final class GitLabRateBudget {
 }
 
 final class RunBudgetAllocator {
-  RunBudgetAllocator(this.rateBudget);
+  factory RunBudgetAllocator(GitLabRateBudget rateBudget) =>
+      _accountAllocators[rateBudget] ??= RunBudgetAllocator._(rateBudget);
+
+  RunBudgetAllocator._(this.rateBudget);
+
+  // API and AI callers already share the account's rate budget. Canonicalizing
+  // here also shares leases without introducing an offline import in AI.
+  static final _accountAllocators = Expando<RunBudgetAllocator>();
 
   final GitLabRateBudget rateBudget;
   final Set<RunBudgetLease> _leases = <RunBudgetLease>{};
