@@ -113,6 +113,8 @@ WRITE_PORT_MEMBERS = {
     "isClosed",
     "instance",
     "currentUser",
+    "selectedTodoForSnooze",
+    "selectedTodoForUnsnooze",
     "record",
     "records",
     "fileMetadata",
@@ -638,6 +640,34 @@ class AiBoundaryTest(unittest.TestCase):
                        write_valid.replace("strictIdentity: true", "strictIdentity: false"),
                        write_valid.replace("actorUserId: actorUserId", "actorUserId: grant.groupId")):
             self.assertTrue(self._group_identity_factory_violations(write_port, mutant))
+        todo_core = "lib/core/todo_snooze_api.dart"
+        todo_valid = (
+            "Future<SelectedTodoOwnership> _selectedTodoOwnership() async { "
+            "await _todosForSnoozeOwnership(query, 4, false, "
+            "expectedActorId: 'gid://gitlab/User/$actorUserId', "
+            "isCurrent: isCurrent, inspectRawTodo: (node) { "
+            + call + "; }); }"
+        )
+        self.assertEqual(self._group_identity_factory_violations(todo_core, todo_valid), [])
+        for path, mutant in (
+            (todo_core, todo_valid.replace("await _todosForSnoozeOwnership", call + "; await _todosForSnoozeOwnership")),
+            (todo_core, todo_valid.replace("; }); }", "; }); " + call + "; }")),
+            (todo_core, todo_valid.replace("_selectedTodoOwnership", "_otherTodoOwnership")),
+            (todo_core, todo_valid.replace("inspectRawTodo:", "inspectOtherTodo:")),
+            (todo_core, todo_valid.replace("(node) {", "(other) {")),
+            (todo_core, todo_valid.replace("actorUserId: actorUserId", "actorUserId: expectedUserId")),
+            (todo_core, todo_valid.replace("_todosForSnoozeOwnership", "untrusted")),
+            (todo_core, todo_valid.replace("query, 4, false", "query, 4, true")),
+            (todo_core, todo_valid.replace("expectedActorId: 'gid://gitlab/User/$actorUserId', ", "")),
+            (todo_core, todo_valid.replace("'gid://gitlab/User/$actorUserId'", "'gid://gitlab/User/$expectedUserId'")),
+            (todo_core, todo_valid.replace("'gid://gitlab/User/$actorUserId'", "'gid://gitlab/Group/$actorUserId'")),
+            (todo_core, todo_valid.replace("isCurrent: isCurrent, ", "")),
+            (todo_core, todo_valid.replace("isCurrent: isCurrent", "isCurrent: otherCurrent")),
+            (todo_core, todo_valid.replace("inspectRawTodo: (node) {", "nested(inspectRawTodo: (node) {").replace("; }); }", "; })); }")),
+            ("lib/core/other_api.dart", todo_valid),
+        ):
+            with self.subTest(path=path, mutant=mutant):
+                self.assertTrue(self._group_identity_factory_violations(path, mutant))
         valid_wiring = "GitLabAiGroupReadPort(api, actorUserId: session.active!.user.id)"
         self.assertEqual(self._group_port_actor_violations(controller, valid_wiring), [])
         for mutant in (
@@ -752,7 +782,9 @@ class AiBoundaryTest(unittest.TestCase):
             else:
                 non_graph.update(members)
         self.assertEqual(non_graph, NON_GRAPH_WRITE_PORT_MEMBERS)
-        self.assertEqual(graph, _MR6B3_WRITE_PORT_MEMBERS | _MR6B3T_WRITE_PORT_MEMBERS | {"instance", "currentUser"})
+        self.assertEqual(graph, _MR6B3_WRITE_PORT_MEMBERS | _MR6B3T_WRITE_PORT_MEMBERS | {
+            "instance", "currentUser", "selectedTodoForSnooze", "selectedTodoForUnsnooze",
+        })
 
     def test_g0e_namespace_location_guard_rejects_part_and_tearoff(self):
         self.assertTrue(self._namespace_write_violations("void f() => _api.namespaceWorkItem;", is_main=False))
@@ -1438,6 +1470,44 @@ class AiBoundaryTest(unittest.TestCase):
                 for branch in re.finditer(r"\bif\s*\(\s*strictIdentity\s*\)\s*\{", code[method_block[0]:method_block[1]]):
                     block = cls._brace_block(code, method_block[0] + branch.end() - 1)
                     if block and block[1] <= method_block[1]:
+                        allowed.append(block)
+        elif relative == "lib/core/todo_snooze_api.dart":
+            for method in re.finditer(
+                r"\bFuture\s*<\s*SelectedTodoOwnership\s*>\s+_selectedTodoOwnership\s*\([\s\S]*?\)\s*async\s*\{",
+                code,
+            ):
+                method_block = cls._brace_block(code, method.end() - 1)
+                if not method_block:
+                    continue
+                for call in re.finditer(
+                    r"(?<![\w.])_todosForSnoozeOwnership\s*\(",
+                    code[method_block[0]:method_block[1]],
+                ):
+                    opening = method_block[0] + call.end() - 1
+                    spans = cls._argument_spans(code, opening)
+                    if not spans or len(spans) < 6 or spans[-1][1] >= method_block[1]:
+                        continue
+                    args = [code[start:end] for start, end in spans]
+                    if not re.fullmatch(r"\s*false\s*", args[2]):
+                        continue
+                    actors = [source[start:end] for start, end in spans
+                              if re.match(r"\s*expectedActorId\s*:", code[start:end])]
+                    currents = [arg for arg in args
+                                if re.match(r"\s*isCurrent\s*:", arg)]
+                    callbacks = [(start, end) for start, end in spans
+                                 if re.match(r"\s*inspectRawTodo\s*:", code[start:end])]
+                    if (len(actors) != 1 or not re.fullmatch(
+                            r"\s*expectedActorId\s*:\s*'gid://gitlab/User/\$actorUserId'\s*", actors[0])
+                            or len(currents) != 1 or not re.fullmatch(
+                                r"\s*isCurrent\s*:\s*isCurrent\s*", currents[0])
+                            or len(callbacks) != 1):
+                        continue
+                    start, end = callbacks[0]
+                    callback = re.match(r"\s*inspectRawTodo\s*:\s*\(\s*node\s*\)\s*\{", code[start:end])
+                    if not callback:
+                        continue
+                    block = cls._brace_block(code, start + callback.end() - 1)
+                    if block and block[1] <= end and not code[block[1]:end].strip():
                         allowed.append(block)
         violations = []
         for match in locations:

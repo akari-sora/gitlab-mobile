@@ -116,10 +116,44 @@ Map<String, Object?> _node(
   },
 };
 
+const _groupScope = AiWriteScope(
+  accountKey: mr6b3Account,
+  grants: [
+    AiScopeGrant(
+      kind: AiScopeKind.groupWorkItem,
+      groupId: 5,
+      groupFullPath: 'team',
+      iid: 3,
+    ),
+  ],
+);
+
+Map<String, Object?> _groupNode(
+  int id, {
+  bool snoozed = false,
+  int groupId = 5,
+  int iid = 3,
+  String path = 'team',
+}) {
+  final node = _node(id, snoozed: snoozed);
+  final namespace = {'id': 'gid://gitlab/Group/$groupId', 'fullPath': path};
+  node['project'] = null;
+  node['group'] = namespace;
+  final entity = node['targetEntity']! as Map<String, Object?>;
+  entity['workItemProject'] = null;
+  entity['namespace'] = namespace;
+  entity['iid'] = '$iid';
+  return node;
+}
+
 // Every response comes through the real API adapter. Unknown endpoints fail,
 // including the old observation query and any REST todo/target fallback.
 final class _Server {
-  _Server({this.oauthReplay = false}) {
+  _Server({
+    this.oauthReplay = false,
+    this.challengeRead,
+    bool withGroupContext = false,
+  }) {
     todos = [
       _node(1), // Never snoozed.
       _node(2, snoozed: true), // Future snooze.
@@ -146,7 +180,13 @@ final class _Server {
       }
       if (oauthReplay && read) {
         _replayNext = !_replayNext;
-        if (_replayNext) return jsonResponse({}, status: 401);
+        if (_replayNext) {
+          _logicalReads++;
+          if (challengeRead == null || _logicalReads == challengeRead) {
+            return jsonResponse({}, status: 401);
+          }
+          _replayNext = false;
+        }
       }
       if (request.method == 'GET' && request.uri.path.endsWith('/user')) {
         userReads++;
@@ -256,10 +296,17 @@ final class _Server {
     } else {
       api = testApi(adapter);
     }
-    writePort = port.GitLabAiWritePort(api, accountKey: mr6b3Account);
+    writePort = port.GitLabAiWritePort(
+      api,
+      accountKey: mr6b3Account,
+      sessionGeneration: withGroupContext ? 7 : null,
+      isCurrent: withGroupContext ? () => live : null,
+    );
   }
 
   final bool oauthReplay;
+  final int? challengeRead;
+  int _logicalReads = 0;
   late final FakeAdapter adapter;
   late final GitLabApi api;
   late final port.GitLabAiWritePort writePort;
@@ -269,6 +316,7 @@ final class _Server {
   bool forceMore = false;
   int user = 7;
   int actor = 7;
+  bool live = true;
   int userReads = 0;
   int ownershipReads = 0;
   int mutations = 0;
@@ -366,6 +414,7 @@ final class _Harness {
         writePolicyRevision: 1,
         scopeRevision: 1,
         sessionGeneration: h.generation,
+        ownerApi: server.api,
         alive: h.alive,
         consentValid: true,
         clientMayStart: h.mayStart,
@@ -865,6 +914,7 @@ void main() {
         switch (bad) {
           case 'group':
             node['project'] = null;
+            node['group'] = {'id': 'gid://gitlab/Group/5', 'fullPath': 'team'};
             entity['workItemProject'] = null;
             entity['namespace'] = {'id': 'gid://gitlab/Group/5', 'fullPath': 'team'};
           case 'projectless':
@@ -887,6 +937,514 @@ void main() {
         expect(s.mutations, 0);
       });
     }
+
+    // G14 owns migration of the production gate assertion. Explicit gate-off
+    // negatives above stay; gate-on integration uses only the testing override.
+    for (final global in [false, true]) {
+      test(
+        '$op gate-on group success uses strict owner global=$global',
+        () async {
+          aiGroupWorkItemWritesEnabledForTesting = true;
+          addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+          s.api.close();
+          s = _Server(withGroupContext: true);
+          final id = _args(op)['todoId']! as int;
+          s.todos = [_groupNode(id, snoozed: op == 'unsnoozeTodo')];
+          final prepared = await s.writePort.prepare(
+            s.request(op, scope: global ? _global : _groupScope),
+          );
+          expect(prepared.todoTarget, isNull);
+          expect(prepared.groupTodoTarget, (
+            groupId: 5,
+            groupFullPath: 'team',
+            iid: 3,
+            workItemGid: 'gid://gitlab/WorkItem/91',
+          ));
+          expect(prepared.projectPath, isNull);
+          expect(prepared.releaseName, '@tester');
+          expect(prepared.groupIdentity!.apiOwner, same(s.api));
+          expect(prepared.groupIdentity!.generation, 7);
+          expect(prepared.hasCurrentGroupIdentity, isTrue);
+          expect(prepared.writeKeys, {
+            AiConflictKey([mr6b3Account, 'todos', '$id']),
+            const AiConflictKey([
+              mr6b3Account,
+              'group:5',
+              'workItem',
+              '3',
+              'todo',
+              '7',
+            ]),
+          });
+          expect(prepared.dependencyKeys, {
+            const AiConflictKey([mr6b3Account, 'group:5', 'workItem', '3']),
+          });
+          final target = prepared.bindingTargets.single;
+          expect(target.side, AiResourceSide.group);
+          expect(target.groupId, 5);
+          expect(target.parentIid, 3);
+          expect(target.projectId, isNull);
+          expect(
+            target.origin,
+            global ? AiTargetOrigin.proposed : AiTargetOrigin.currentResource,
+          );
+          final preview = (prepared.preview as port.AiFieldsPreview).fields;
+          expect(preview, containsPair('groupFullPath', 'team'));
+          expect(preview.containsKey('projectId'), isFalse);
+          final result = await s.commit(prepared) as port.AiWriteSettled;
+          expect(result.state, AiJournalState.succeeded);
+          expect(result.readbackVerified, isFalse);
+          expect(result.mutationCount, 1);
+          expect(s.userReads, 1);
+          expect(s.ownershipReads, 1);
+          expect(s.requests, hasLength(3));
+          expect(s.mutations, 1);
+          expect(
+            await s.writePort.commit(prepared, mayStart: () => true),
+            isA<port.AiWriteNotSent>(),
+          );
+          expect(s.mutations, 1);
+        },
+      );
+
+      test(
+        '$op group coordinator prepares both rounds global=$global',
+        () async {
+          aiGroupWorkItemWritesEnabledForTesting = true;
+          addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+          s.api.close();
+          s = _Server(withGroupContext: true);
+          final id = _args(op)['todoId']! as int;
+          // Global may act on this user's legitimate todo in another group.
+          s.todos = [
+            _groupNode(
+              id,
+              snoozed: op == 'unsnoozeTodo',
+              groupId: global ? 8 : 5,
+              path: global ? 'another/group' : 'team',
+            ),
+          ];
+          harness = await _Harness.create(
+            s,
+            scope: global ? _global : _groupScope,
+          );
+          final h = harness!;
+          s.onMutation = () async {
+            expect(
+              h.journal.entries(mr6b3Account).single.state,
+              AiJournalState.dispatching,
+            );
+            expect(jsonEncode(await h.durable()), contains('dispatching'));
+          };
+          final proposal = await h.propose(op);
+          expect(
+            proposal,
+            isNotNull,
+            reason: h.coordinator.outcomeFor(h.lastCall)?.reasonCode,
+          );
+          final result = await h.approve(proposal!);
+          expect(
+            result.state,
+            AiJournalState.succeeded,
+            reason: result.reasonCode,
+          );
+          expect(result.readbackConfirmed, isFalse);
+          expect(s.userReads, 2);
+          expect(s.ownershipReads, 2);
+          expect(s.requests, hasLength(5));
+          expect(s.mutations, 1);
+        },
+      );
+    }
+
+    test('$op exact group path mismatch stops after ownership proof', () async {
+      aiGroupWorkItemWritesEnabledForTesting = true;
+      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+      s.api.close();
+      s = _Server(withGroupContext: true);
+      s.todos = [
+        _groupNode(
+          _args(op)['todoId']! as int,
+          snoozed: op == 'unsnoozeTodo',
+          path: 'team/renamed',
+        ),
+      ];
+      await expectLater(
+        s.writePort.prepare(s.request(op, scope: _groupScope)),
+        _refused('todoForeign'),
+      );
+      expect(s.userReads, 1);
+      expect(s.ownershipReads, 1);
+      expect(s.requests, hasLength(2));
+      expect(s.mutations, 0);
+    });
+
+    for (final bad in [
+      'foreignGroup',
+      'foreignIid',
+      'foreignPath',
+      'projectDescendant',
+      'forgedNamespace',
+      'missingOuterProject',
+      'missingTargetProject',
+      'forgedWorkItem',
+      'rawIssueAlias',
+      'actor',
+      'user',
+      'absent',
+    ]) {
+      test('$op strict group refuses $bad before mutation', () async {
+        aiGroupWorkItemWritesEnabledForTesting = true;
+        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        s.api.close();
+        s = _Server(withGroupContext: true);
+        final id = _args(op)['todoId']! as int;
+        final node = _groupNode(
+          id,
+          snoozed: op == 'unsnoozeTodo',
+          groupId: bad == 'foreignGroup' ? 8 : 5,
+          iid: bad == 'foreignIid' ? 4 : 3,
+          path: bad == 'foreignPath' ? 'renamed' : 'team',
+        );
+        final entity = node['targetEntity']! as Map<String, Object?>;
+        switch (bad) {
+          case 'projectDescendant':
+            node['project'] = _project();
+            entity['workItemProject'] = _project();
+            node['group'] = null;
+            entity['namespace'] = {
+              'id': 'gid://gitlab/Namespaces::ProjectNamespace/9',
+              'fullPath': 'team/example-9',
+            };
+          case 'forgedNamespace':
+            node['group'] = {'id': 'gid://gitlab/Group/8', 'fullPath': 'team'};
+          case 'missingOuterProject':
+            node.remove('project');
+          case 'missingTargetProject':
+            entity.remove('workItemProject');
+          case 'forgedWorkItem':
+            entity['workItemId'] = 'gid://gitlab/Epic/91';
+          case 'rawIssueAlias':
+            node['targetType'] = 'ISSUE';
+            entity['__typename'] = 'Issue';
+            entity['issueId'] = 'gid://gitlab/Issue/91';
+            entity['projectId'] = null;
+          case 'actor':
+            s.actor = 8;
+          case 'user':
+            s.user = 8;
+        }
+        s.todos = bad == 'absent' ? [] : [node];
+        final global = {
+          'forgedNamespace',
+          'missingOuterProject',
+          'missingTargetProject',
+          'forgedWorkItem',
+          'rawIssueAlias',
+        }.contains(bad);
+        final reason = switch (bad) {
+          'foreignPath' || 'projectDescendant' => 'todoForeign',
+          'rawIssueAlias' => 'todoUnsupportedTarget',
+          'user' => 'workItemUnverifiable',
+          'absent' => 'todoNotFound',
+          _ => 'todoUnverifiable',
+        };
+        await expectLater(
+          s.writePort.prepare(
+            s.request(op, scope: global ? _global : _groupScope),
+          ),
+          _refused(reason),
+        );
+        expect(s.mutations, 0);
+      });
+    }
+
+    for (final drift in ['gid', 'group', 'iid', 'path', 'time']) {
+      test('$op group dispatch refuses $drift drift', () async {
+        aiGroupWorkItemWritesEnabledForTesting = true;
+        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        s.api.close();
+        s = _Server(withGroupContext: true);
+        final id = _args(op)['todoId']! as int;
+        final node = _groupNode(id, snoozed: op == 'unsnoozeTodo');
+        s.todos = [node];
+        harness = await _Harness.create(s, scope: _global);
+        final h = harness!;
+        final proposal = await h.propose(op);
+        expect(proposal, isNotNull);
+        final entity = node['targetEntity']! as Map<String, Object?>;
+        switch (drift) {
+          case 'gid':
+            entity['workItemId'] = 'gid://gitlab/WorkItem/92';
+          case 'group':
+            final namespace = {
+              'id': 'gid://gitlab/Group/8',
+              'fullPath': 'other',
+            };
+            entity['namespace'] = namespace;
+            node['group'] = namespace;
+          case 'iid':
+            entity['iid'] = '4';
+          case 'path':
+            final namespace = {
+              'id': 'gid://gitlab/Group/5',
+              'fullPath': 'renamed',
+            };
+            entity['namespace'] = namespace;
+            node['group'] = namespace;
+          case 'time':
+            node['snoozedUntil'] = op == 'snoozeTodo'
+                ? '2020-01-01T00:00:00Z'
+                : _timeScalar(_future.add(const Duration(days: 1)));
+        }
+        final result = await h.approve(proposal!);
+        expect(result.state, AiJournalState.notExecuted);
+        expect(result.reasonCode, 'targetChanged');
+        expect(s.mutations, 0);
+      });
+    }
+
+    for (final phase in [
+      'missingContext',
+      'beforeUser',
+      'afterUser',
+      'afterPage',
+      'beforeCommit',
+      'duringFlush',
+      'afterSend',
+    ]) {
+      test('$op group currentness $phase', () async {
+        aiGroupWorkItemWritesEnabledForTesting = true;
+        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        s.api.close();
+        s = _Server(withGroupContext: phase != 'missingContext');
+        final id = _args(op)['todoId']! as int;
+        s.todos = [_groupNode(id, snoozed: op == 'unsnoozeTodo')];
+        if (phase == 'beforeUser') s.live = false;
+        s.beforeRequest = (request) {
+          if (phase == 'afterUser' && request.method == 'GET') s.live = false;
+          if (phase == 'afterPage' && request.method == 'POST') {
+            s.api.clearReadCache();
+          }
+        };
+        if (['missingContext', 'beforeUser', 'afterUser'].contains(phase)) {
+          await expectLater(
+            s.writePort.prepare(s.request(op, scope: _groupScope)),
+            _refused('workItemUnverifiable'),
+          );
+          expect(s.requests, hasLength(phase == 'afterUser' ? 1 : 0));
+        } else if (phase == 'afterPage') {
+          await expectLater(
+            s.writePort.prepare(s.request(op, scope: _groupScope)),
+            throwsA(
+              isA<ApiFailure>().having(
+                (e) => e.kind,
+                'kind',
+                FailureKind.cancelled,
+              ),
+            ),
+          );
+        } else {
+          final prepared = await s.writePort.prepare(
+            s.request(op, scope: _groupScope),
+          );
+          if (phase == 'beforeCommit') s.api.clearReadCache();
+          if (phase == 'afterSend') s.onMutation = () => s.live = false;
+          final result = await s.commit(
+            prepared,
+            beforeMutation: () async {
+              if (phase == 'duringFlush') s.api.clearReadCache();
+            },
+          );
+          if (phase == 'afterSend') {
+            expect(
+              (result as port.AiWriteSettled).state,
+              AiJournalState.writeUncertain,
+            );
+          } else {
+            expect(result, isA<port.AiWriteNotSent>());
+          }
+        }
+        expect(s.mutations, phase == 'afterSend' ? 1 : 0);
+      });
+    }
+
+    test('$op group revocation at disk barrier prevents HTTP', () async {
+      aiGroupWorkItemWritesEnabledForTesting = true;
+      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+      s.api.close();
+      s = _Server(withGroupContext: true);
+      s.todos = [
+        _groupNode(_args(op)['todoId']! as int, snoozed: op == 'unsnoozeTodo'),
+      ];
+      final barrier = Completer<DiskClearResult>();
+      final backend = _MutationBarrier(() => barrier.future);
+      s.api.bindReadCache(mr6b3Account, 1);
+      s.api.attachReadCacheDiskBackend(backend);
+      final prepared = await s.writePort.prepare(
+        s.request(op, scope: _groupScope),
+      );
+      final sending = s.commit(prepared);
+      await backend.entered.future;
+      expect(s.mutations, 0);
+      s.live = false;
+      barrier.complete(_emptyClear);
+      final result = await sending;
+      expect(result, isA<port.AiWriteNotSent>());
+      expect(s.mutations, 0);
+      expect(s.requests, hasLength(2));
+    });
+
+    for (final ack in ['id', 'missingTime', 'time']) {
+      test('$op group accepted $ack mismatch is uncertain', () async {
+        aiGroupWorkItemWritesEnabledForTesting = true;
+        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        s.api.close();
+        s = _Server(withGroupContext: true);
+        final id = _args(op)['todoId']! as int;
+        s.todos = [_groupNode(id, snoozed: op == 'unsnoozeTodo')];
+        s.editAck = (payload) {
+          final todo = payload['todo']! as Map<String, Object?>;
+          if (ack == 'id') todo['id'] = 'gid://gitlab/Todo/999';
+          if (ack == 'missingTime') todo.remove('snoozedUntil');
+          if (ack == 'time') {
+            todo['snoozedUntil'] = _timeScalar(
+              _future.add(const Duration(days: 1)),
+            );
+          }
+        };
+        harness = await _Harness.create(s, scope: _groupScope);
+        final h = harness!;
+        final proposal = await h.propose(op);
+        expect(proposal, isNotNull);
+        final result = await h.approve(proposal!);
+        expect(result.state, AiJournalState.writeUncertain);
+        expect(result.readbackConfirmed, isFalse);
+        expect(s.mutations, 1);
+        expect(s.ownershipReads, 2);
+        expect(await h.propose(op), isNull);
+        expect(s.mutations, 1);
+      });
+    }
+
+    for (final complete in [false, true]) {
+      test('$op group four-page bound complete=$complete', () async {
+        aiGroupWorkItemWritesEnabledForTesting = true;
+        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        s.api.close();
+        s = _Server(withGroupContext: true);
+        s.done.clear();
+        s.todos = List.generate(
+          400,
+          (i) => _groupNode(i + 1, snoozed: op == 'unsnoozeTodo'),
+        );
+        s.forceMore = !complete;
+        harness = await _Harness.create(s, scope: _groupScope);
+        final h = harness!;
+        final proposal = await h.propose(
+          op,
+          args: {..._args(op), 'todoId': complete ? 400 : 1},
+        );
+        if (complete) {
+          expect(proposal, isNotNull);
+          expect((await h.approve(proposal!)).state, AiJournalState.succeeded);
+          expect(s.userReads, 2);
+          expect(s.ownershipReads, 8);
+          expect(s.requests, hasLength(11));
+          expect(s.mutations, 1);
+          expect(h.budget.gitLabRequests, 21);
+        } else {
+          expect(proposal, isNull);
+          expect(
+            h.coordinator.outcomeFor(h.lastCall)?.reasonCode,
+            'todoUnverifiable',
+          );
+          expect(s.userReads, 1);
+          expect(s.ownershipReads, 4);
+          expect(s.requests, hasLength(5));
+          expect(s.mutations, 0);
+        }
+      });
+    }
+
+    for (final challengedRead in [1, 2, 3, 4, 5]) {
+      test('$op group OAuth refresh revokes read $challengedRead', () async {
+        aiGroupWorkItemWritesEnabledForTesting = true;
+        addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+        s.api.close();
+        s = _Server(
+          oauthReplay: true,
+          challengeRead: challengedRead,
+          withGroupContext: true,
+        );
+        s.done.clear();
+        s.todos = List.generate(
+          400,
+          (i) => _groupNode(i + 1, snoozed: op == 'unsnoozeTodo'),
+        );
+        await expectLater(
+          s.writePort.prepare(
+            s.request(
+              op,
+              scope: _groupScope,
+              args: {..._args(op), 'todoId': 400},
+            ),
+          ),
+          challengedRead == 1
+              ? _refused('workItemUnverifiable')
+              : throwsA(
+                  isA<ApiFailure>().having(
+                    (e) => e.kind,
+                    'kind',
+                    FailureKind.cancelled,
+                  ),
+                ),
+        );
+        expect(s.refreshes, 1);
+        expect(s.requests, hasLength(challengedRead + 1));
+        expect(s.mutations, 0);
+      });
+    }
+
+    test('$op gate-on preserves project owner record', () async {
+      aiGroupWorkItemWritesEnabledForTesting = true;
+      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+      s.api.close();
+      s = _Server(withGroupContext: true);
+      final prepared = await s.writePort.prepare(s.request(op, scope: _global));
+      expect(prepared.todoTarget, (projectId: 9, resource: 'issues', iid: 3));
+      expect(prepared.groupTodoTarget, isNull);
+      expect(prepared.groupIdentity, isNull);
+      expect(
+        (await s.commit(prepared) as port.AiWriteSettled).state,
+        AiJournalState.succeeded,
+      );
+    });
+
+    test('$op multiple group grants remain refused before HTTP', () async {
+      aiGroupWorkItemWritesEnabledForTesting = true;
+      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+      s.api.close();
+      s = _Server(withGroupContext: true);
+      final scope = AiWriteScope(
+        accountKey: mr6b3Account,
+        grants: [
+          ..._groupScope.grants,
+          const AiScopeGrant(
+            kind: AiScopeKind.groupWorkItem,
+            groupId: 8,
+            groupFullPath: 'another/group',
+            iid: 3,
+          ),
+        ],
+      );
+      await expectLater(
+        s.writePort.prepare(s.request(op, scope: scope)),
+        _refused('todoForeign'),
+      );
+      expect(s.requests, isEmpty);
+      expect(s.mutations, 0);
+    });
 
     test(
       '$op distinguishes foreign scope/account/actor and absent IDs',

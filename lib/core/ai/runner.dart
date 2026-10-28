@@ -121,12 +121,14 @@ final class AiRunner {
     this.executeTool,
     this.prepareToolResults,
     this.resetToolBudget,
+    this.resumeToolBudget,
     this.beginToolTurn,
     this.toolBudgetExhausted,
     this.onEvent,
     this.onTextChanged,
     this.onToolStarted,
     this.onRestorableResultCut,
+    this.onContextDelivered,
     this.onToolResult,
     this.confirmCleartext,
     this.listInterfaceAddresses = listAiInterfaceAddresses,
@@ -190,6 +192,7 @@ final class AiRunner {
   final Future<AiToolResult> Function(AiToolCall)? executeTool;
   final AiPrepareToolResults? prepareToolResults;
   final void Function()? resetToolBudget;
+  final void Function()? resumeToolBudget;
   final void Function()? beginToolTurn;
   final bool Function()? toolBudgetExhausted;
   final void Function(AiEvent)? onEvent;
@@ -201,6 +204,9 @@ final class AiRunner {
   /// A tool result that carried whole writable fields was cut after its
   /// read recorded them (§3.1: no whole-field write of a value seen cut).
   final void Function()? onRestorableResultCut;
+
+  /// Page context actually accepted by the provider, before its tools run.
+  final void Function(List<AiContextBlock> sent)? onContextDelivered;
   final void Function(AiToolResult result)? onToolResult;
   final Future<bool> Function()? confirmCleartext;
   final AiInterfaceAddressLister listInterfaceAddresses;
@@ -235,6 +241,15 @@ final class AiRunner {
   List<AiContextBlock> _segmentContext = const [];
   List<AiContextBlock> _sentContext = const [];
   _ActiveRunDeadline? _activeDeadline;
+  _LogicalRun? _logicalRun;
+  AiExecutionPause? _requestedPause;
+
+  /// Process-local continuation only. History cannot reconstruct this state.
+  bool get canResume => !_running && (_logicalRun?.resumable ?? false);
+  int get modelCallsUsed => _logicalRun?.modelCalls ?? 0;
+  int get toolCallsUsed => _logicalRun?.toolCalls ?? 0;
+  Duration get remainingActiveTime =>
+      _activeDeadline?.remaining ?? _logicalRun?.remainingActive ?? runDeadline;
 
   /// The redacted context blocks attached to the last run's user message, as
   /// last redacted before sending: the page context, or a conversation
@@ -275,6 +290,14 @@ final class AiRunner {
     } else {
       _cancelActive();
     }
+  }
+
+  /// Native invalidation interrupts an active wait; foreground return grants
+  /// no new work. Only a later explicit resume can continue this run.
+  void pause(AiExecutionPause pause) {
+    if (!_running) return;
+    _requestedPause = pause;
+    stop();
   }
 
   /// Only a key/revision change may preserve this conversation. A different
@@ -326,21 +349,65 @@ final class AiRunner {
   /// the request a proposal card shows; it defaults to [userText]. The
   /// controller passes the user's own text, so a filename in that block
   /// never binds a target or authorizes a write.
-  Future<AiRunResult> run(String userText, {String? bindingUtterance}) async {
+  Future<AiRunResult> run(
+    String userText, {
+    String? bindingUtterance,
+    Duration activePreparation = Duration.zero,
+  }) {
+    if (_running) throw StateError('A runner has one active send.');
+    final logical = _LogicalRun(
+      userText: userText,
+      bindingUtterance: bindingUtterance ?? userText,
+      binding: executionGate.binding,
+      remainingActive: runDeadline,
+    );
+    _logicalRun = logical;
+    chargeActivePreparation(activePreparation);
+    return _run(logical, resuming: false);
+  }
+
+  /// Continue without replenishing allowances or reviving an interrupted
+  /// provider/tool Future. The caller must explicitly renew its gate first.
+  Future<AiRunResult> resumeRun({Duration activePreparation = Duration.zero}) {
+    if (!canResume) throw StateError('There is no paused run to resume.');
+    chargeActivePreparation(activePreparation);
+    return _run(_logicalRun!, resuming: true);
+  }
+
+  /// Service, secret and context preparation also spend this run's allowance,
+  /// including an explicit continuation attempt that fails before [_run].
+  void chargeActivePreparation(Duration elapsed) {
+    if (_running) throw StateError('Preparation precedes active execution.');
+    final logical = _logicalRun;
+    if (logical == null || elapsed <= Duration.zero) return;
+    final remaining = logical.remainingActive - elapsed;
+    logical.remainingActive = remaining.isNegative ? Duration.zero : remaining;
+    if (logical.remainingActive == Duration.zero) logical.resumable = false;
+  }
+
+  /// An explicit approval starts active preparation before renewing service.
+  void beginApprovalPreparation() => _activeDeadline?.setPaused(false);
+
+  /// An unaccepted approval leaves the existing proposal waiting.
+  void restoreApprovalWait() => _activeDeadline?.setPaused(true);
+
+  Future<AiRunResult> _run(_LogicalRun logical, {required bool resuming}) async {
     if (_running) throw StateError('A runner has one active send.');
     _running = true;
+    logical.resumable = false;
+    _requestedPause = null;
     _sentContext = const [];
     final epoch = ++_epoch;
     _stopSignal = Completer<void>();
     final deadline = _ActiveRunDeadline(
-      duration: runDeadline,
+      duration: logical.remainingActive,
       now: _now,
       onExpire: () => stop(AiRunEnd.failed),
     )..start();
     _activeDeadline = deadline;
-    var modelCalls = 0;
-    var toolCalls = 0;
-    var outputChars = 0;
+    var modelCalls = logical.modelCalls;
+    var toolCalls = logical.toolCalls;
+    var outputChars = logical.outputChars;
     var finishing = false;
     var answer = '';
     var partial = StringBuffer();
@@ -399,13 +466,17 @@ final class AiRunner {
         safe,
       ).clipped(math.min(20000, 120000 - outputChars));
       outputChars += data.encode().length;
-      return AiToolResult.fromData(
+      final paired = AiToolResult.fromData(
         callId: call.id,
         name: call.name,
         data: data,
         isError: original.isError,
         notExecuted: recorded == null || original.notExecuted,
       );
+      if (writeCoordinator?.handles(call.name) ?? false) {
+        logical.interruptedWrites[paired] = call;
+      }
+      return paired;
     }
 
     AiRunResult result(
@@ -413,6 +484,8 @@ final class AiRunner {
       AiFailure? failure,
       bool offer = false,
     }) {
+      logical.resumable =
+          reason == AiRunEnd.stopped || reason == AiRunEnd.newSecret;
       String display;
       try {
         display = _redact(answer);
@@ -432,10 +505,38 @@ final class AiRunner {
     }
 
     try {
-      writeCoordinator?.beginRun(bindingUtterance ?? userText);
+      if (resuming) {
+        if (!_sameLogicalBinding(logical.binding, executionBinding)) {
+          throw const AiExecutionPaused(AiExecutionPause(
+            AiExecutionPauseReason.runChanged,
+          ));
+        }
+        final coordinator = writeCoordinator;
+        if (coordinator is AiWriteRunContinuation) {
+          (coordinator as AiWriteRunContinuation).resumeRun();
+        } else if (coordinator != null) {
+          throw const AiExecutionPaused(AiExecutionPause(
+            AiExecutionPauseReason.unavailable,
+          ));
+        }
+        _needsProjection = true;
+      } else {
+        writeCoordinator?.beginRun(logical.bindingUtterance);
+      }
       _refreshToolPolicy();
+      if (resuming &&
+          (logical.toolPolicyRevision != _nextToolPolicyRevision ||
+              logical.toolFingerprint != _toolFingerprint(_nextTools))) {
+        throw const AiExecutionPaused(AiExecutionPause(
+          AiExecutionPauseReason.runChanged,
+        ));
+      }
+      logical.toolPolicyRevision = _nextToolPolicyRevision;
+      logical.toolFingerprint = _toolFingerprint(_nextTools);
       _check(epoch);
       await _refresh(epoch);
+      if (resuming) _checkExecution(epoch, executionBinding);
+      if (modelCalls >= 6) return result(AiRunEnd.toolBudget);
       if (actualInputTokens + estimatedInputTokens >= conversationTokenCap) {
         return result(AiRunEnd.tokenBudget);
       }
@@ -456,11 +557,15 @@ final class AiRunner {
         }
       }
       _check(epoch);
-      resetToolBudget?.call();
-      final text = _redact(userText);
+      if (resuming) {
+        resumeToolBudget?.call();
+      } else {
+        resetToolBudget?.call();
+      }
+      final text = _redact(logical.userText);
       var seg = _segment;
       if (seg == null || _needsProjection || !seg.replayable || !_verify(seg)) {
-        seg = _newSegment(text, previous: seg);
+        seg = _newSegment(text, previous: seg, refreshWriteOutcomes: resuming);
       }
       seg.removeFinalAnswerNote();
       previousTail = seg.tail;
@@ -472,7 +577,7 @@ final class AiRunner {
         previousTail = seg.tail;
         await _setUserTail(seg, text, epoch);
       }
-      for (var call = 1; call <= 6; call++) {
+      while (modelCalls < 6) {
         _check(epoch);
         await _refresh(epoch);
         if (!_verify(seg)) {
@@ -483,7 +588,7 @@ final class AiRunner {
           return result(AiRunEnd.tokenBudget);
         }
         finishing |=
-            call == 6 ||
+            modelCalls == 5 ||
             toolCalls >= 12 ||
             outputChars >= 120000 ||
             (toolBudgetExhausted?.call() ?? false);
@@ -531,7 +636,7 @@ final class AiRunner {
             _segment = segmentBeforeSend;
             _needsProjection = true;
           }
-          return result(AiRunEnd.contextTooLong, offer: call == 1);
+          return result(AiRunEnd.contextTooLong, offer: modelCalls == 0);
         }
         _checkExecution(epoch, executionBinding);
         ticket.consumeOnce(
@@ -607,6 +712,17 @@ final class AiRunner {
           if (!refused) _recordUsage(latestUsage, encoded.length);
         }
         _check(epoch);
+        if (seg.tail case AppUserEntry(:final context) when context.isNotEmpty) {
+          // Prior tool fields are reduced to summaries on segment rollover.
+          // Invalidate them first, then allow any whole page fields actually
+          // present in this accepted context to be recorded again.
+          if (_segmentContext.any(
+            (block) => block.source == 'conversation_summary',
+          )) {
+            onRestorableResultCut?.call();
+          }
+          onContextDelivered?.call(context);
+        }
         delivered?.call();
         seg.freezeWith(
           turn.output,
@@ -833,6 +949,7 @@ final class AiRunner {
       answer = await _partialAnswer(answer, partial.toString(), epoch);
       return result(AiRunEnd.stopped);
     } on _RunStopped catch (stopped) {
+      pause = _requestedPause;
       restoreUnsentTail();
       answer = await _partialAnswer(answer, partial.toString(), epoch);
       return result(
@@ -859,6 +976,11 @@ final class AiRunner {
       );
     } finally {
       ticket?.discard();
+      logical.modelCalls = modelCalls;
+      logical.toolCalls = toolCalls;
+      logical.outputChars = outputChars;
+      logical.remainingActive = deadline.remaining;
+      if (logical.remainingActive <= Duration.zero) logical.resumable = false;
       deadline.dispose();
       if (identical(_activeDeadline, deadline)) _activeDeadline = null;
       _running = false;
@@ -907,7 +1029,11 @@ final class AiRunner {
     seg.setTail(AppUserEntry(text: text, context: blocks));
   }
 
-  AiSegment _newSegment(String userText, {AiSegment? previous}) {
+  AiSegment _newSegment(
+    String userText, {
+    AiSegment? previous,
+    bool refreshWriteOutcomes = false,
+  }) {
     // The system prompt is the app's own text: its `[[attachment:att-1]]`
     // example reaches the provider intact. Every other source still turns
     // such a literal into an ordinary marker.
@@ -937,7 +1063,10 @@ final class AiRunner {
       if (budget < 1000) throw const AiFailure(AiFailureKind.contextTooLong);
       final summary = buildAiProjectionData(
         context: context,
-        entries: previous?.entries ?? const [],
+        entries: refreshWriteOutcomes
+            ? _settledProjectionEntries(previous?.entries ?? const [])
+                .toList(growable: false)
+            : previous?.entries ?? const [],
         history: _displayHistory,
         budget: budget,
         redact: _redact,
@@ -954,6 +1083,24 @@ final class AiRunner {
     _segmentToolPolicyRevision = _nextToolPolicyRevision;
     _needsProjection = false;
     return next;
+  }
+
+  Iterable<AiEntry> _settledProjectionEntries(Iterable<AiEntry> entries) sync* {
+    final coordinator = writeCoordinator;
+    for (final entry in entries) {
+      if (entry is! AppToolResultsEntry || coordinator is! AiWriteStateSource) {
+        yield entry;
+        continue;
+      }
+      yield entry.copyWith(results: [
+        for (final result in entry.results)
+          if (_logicalRun?.interruptedWrites[result] case final call?)
+            (coordinator as AiWriteStateSource)
+                    .recordedOutcomeFor(call.id)?.toToolResult(call) ?? result
+          else
+            result,
+      ]);
+    }
   }
 
   void _refreshToolPolicy() {
@@ -1311,6 +1458,37 @@ final class _RunStopped implements Exception {
   final AiRunEnd reason;
 }
 
+bool _sameLogicalBinding(
+  AiExecutionRunBinding previous,
+  AiExecutionRunBinding current,
+) =>
+    previous.accountKey == current.accountKey &&
+    previous.generation == current.generation &&
+    identical(previous.ownerApi, current.ownerApi) &&
+    previous.conversationId == current.conversationId &&
+    previous.runId == current.runId;
+
+final class _LogicalRun {
+  _LogicalRun({
+    required this.userText,
+    required this.bindingUtterance,
+    required this.binding,
+    required this.remainingActive,
+  });
+
+  final String userText;
+  final String bindingUtterance;
+  final AiExecutionRunBinding binding;
+  Duration remainingActive;
+  int modelCalls = 0;
+  int toolCalls = 0;
+  int outputChars = 0;
+  bool resumable = false;
+  Object? toolPolicyRevision;
+  String? toolFingerprint;
+  final Map<AiToolResult, AiToolCall> interruptedWrites = Map.identity();
+}
+
 String _toolFingerprint(List<AiToolSpec> tools) => jsonEncode([
   for (final tool in tools)
     {
@@ -1335,6 +1513,11 @@ final class _ActiveRunDeadline {
   Timer? _timer;
   var _paused = false;
   var _disposed = false;
+
+  Duration get remaining {
+    if (!_disposed && !_paused) _consumeActiveTime();
+    return _remaining.isNegative ? Duration.zero : _remaining;
+  }
 
   void start() {
     if (_disposed || _startedAt != null) return;

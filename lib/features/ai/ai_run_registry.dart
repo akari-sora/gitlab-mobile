@@ -53,8 +53,8 @@ AiChatSessionHandle _createAiChatSession({
   );
 }
 
-/// Whether the app is on screen. Until MR6c adds the foreground service, a
-/// write starts only while the app is visible.
+/// Whether the app is on screen. A permitless continuation and every explicit
+/// approval require visibility; service-backed continuations use their gate.
 bool aiAppInForeground() => switch (WidgetsBinding.instance.lifecycleState) {
   AppLifecycleState.resumed || AppLifecycleState.inactive => true,
   _ => false,
@@ -98,6 +98,9 @@ final class AccountAiRunRegistry extends ChangeNotifier
           isCurrent: () => ownsCurrentSession,
           appInForeground: aiAppInForeground,
         );
+    _stopSubscription = this.backgroundExecution.stopEvents.listen((_) {
+      if (ownsCurrentSession) stopAndSnapshotWrites();
+    });
     _session.addListener(_handleOwnerChanged);
   }
 
@@ -113,6 +116,7 @@ final class AccountAiRunRegistry extends ChangeNotifier
   final String accountKey;
   final GitLabApi api;
   late final AiBackgroundExecution backgroundExecution;
+  late final StreamSubscription<void> _stopSubscription;
   final Map<String, AiChatSessionHandle> _sessions =
       <String, AiChatSessionHandle>{};
   var _disposed = false;
@@ -381,6 +385,7 @@ final class AccountAiRunRegistry extends ChangeNotifier
     _disposed = true;
     _visits.clear();
     _session.removeListener(_handleOwnerChanged);
+    unawaited(_stopSubscription.cancel());
     final handles = _sessions.values.toList(growable: false);
     _sessions.clear();
     for (final subscription in _eventSubscriptions.values) {

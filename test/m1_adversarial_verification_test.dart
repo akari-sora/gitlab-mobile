@@ -290,6 +290,7 @@ void main() {
       expect(find.text('目標：group/forbidden-repo'), findsOneWidget);
       expect(find.text('重新整理'), findsOneWidget);
       expect(find.text('切換帳號'), findsOneWidget);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Adversarial: Network failure on resume recovers upon retry', (tester) async {
@@ -415,6 +416,7 @@ void main() {
       // Failure notice should be dismissed and recovered issue displayed
       expect(find.text('Recovered Issue After Retry'), findsOneWidget);
       expect(find.byType(FailureNotice), findsNothing);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
 
     testWidgets('Adversarial: In-flight resume cancelled by mid-flight account switch (Generation Isolation)', (tester) async {
@@ -424,6 +426,7 @@ void main() {
       final store = MemoryAccountStore()..accounts = [accountA, accountB, accountC];
 
       final completerB = Completer<Map<String, dynamic>>();
+      var resolvingB = false;
 
       final adapter = FakeAdapter((request) {
         final token = request.headers['private-token'];
@@ -437,6 +440,7 @@ void main() {
         if (path.contains('/projects/group%2Fslow-repo')) {
           if (token == 'token-b') {
             // Delay resolution for Account B
+            resolvingB = true;
             return completerB.future.then((data) => jsonResponse(data));
           }
           if (token == 'token-c') {
@@ -481,8 +485,8 @@ void main() {
 
       // Start logging into Account B
       await tester.tap(find.text('登入 Account B'));
-      // Pump initial frame so _openResumeTarget starts and awaits api.project
-      await tester.pump();
+      await pumpUntil(tester, () => resolvingB,
+          description: 'Account B project resolution is in flight');
 
       // Now while Account B is awaiting project response, user immediately forces switch to Account C
       // This increments generation
@@ -504,6 +508,7 @@ void main() {
       expect(session.active?.key, accountC.key);
       expect(find.text('Stale B Repo'), findsNothing);
       expect(find.text('App 帳號：@user_b'), findsNothing);
+      await pumpUntilComplete(tester, session.readCache.quiesced);
     });
   });
 

@@ -63,12 +63,14 @@ typedef AiChatWireClientFactory =
 final _accountRunBudgets = Expando<RunBudgetAllocator>();
 
 final class _AiRunBudget {
-  _AiRunBudget(this.lease)
-    : tools = AiToolBudget(maxGitLabRequests: lease.granted);
+  _AiRunBudget(this.lease, {AiToolBudget? previousTools})
+    : tools = previousTools ?? AiToolBudget(maxGitLabRequests: lease.granted),
+      _consumed = previousTools?.gitLabRequests ?? 0;
 
   final RunBudgetLease lease;
   final AiToolBudget tools;
-  int _consumed = 0;
+  int _consumed;
+  bool settled = false;
   bool modelStarted = false;
   final Set<Future<void>> _reads = {};
   PolicyAiWriteCoordinator? writes;
@@ -90,9 +92,10 @@ final class _AiRunBudget {
   }
 
   Future<T> measureContext<T>(
-    Future<T> Function(void Function(int) beforeRead) load,
-  ) async {
-    final meter = RequestMeter();
+    Future<T> Function(void Function(int) beforeRead) load, {
+    required void Function() beforeRequest,
+  }) async {
+    final meter = RequestMeter(beforeRequest: beforeRequest);
     try {
       return await meter.runAsync(
         () => load((maximum) {
@@ -140,6 +143,7 @@ final class _AiRunBudget {
         consumeTools();
       } finally {
         lease.release();
+        settled = true;
       }
     }
   }
@@ -154,6 +158,7 @@ class AiChatController extends ChangeNotifier
         AiWriteChatSession,
         AiWriteAuditSession,
         AiExecutionChatSession,
+        AiRunContinuationSession,
         AiRunNotificationSource,
         AiWriteSettlementSource,
         AiScopeAddSession {
@@ -250,6 +255,7 @@ class AiChatController extends ChangeNotifier
   bool _observingExecution = false;
   AiBackgroundRunGate? _backgroundGate;
   AiExecutionPause? _executionPause;
+  bool _approvalStarting = false;
   int _executionStep = 0;
   final _notificationEvents =
       StreamController<AiRunNotificationEvent>.broadcast(sync: true);
@@ -299,7 +305,17 @@ class AiChatController extends ChangeNotifier
   }
 
   void _executionChanged() {
-    if (_alive) _notify();
+    if (!_alive) return;
+    if (_executionPause == null &&
+        _backgroundGate?.status == AiBackgroundExecutionStatus.invalidated &&
+        (_phase == AiChatPhase.running ||
+            _phase == AiChatPhase.awaitingApproval)) {
+      _executionPause = const AiExecutionPause(
+        AiExecutionPauseReason.permitInactive,
+      );
+      _runner?.pause(_executionPause!);
+    }
+    _notify();
   }
 
   @override
@@ -327,11 +343,35 @@ class AiChatController extends ChangeNotifier
       _alive &&
           (serviceWorkCount > 0 ||
               _phase == AiChatPhase.awaitingApproval ||
-              _executionPause != null)
+              _executionPause != null ||
+              _continuationBudget != null && (_runner?.canResume ?? false))
       ? 1
       : 0;
 
+  @override
   AiExecutionPause? get executionPause => _executionPause;
+
+  @override
+  AiBackgroundStartResult? get serviceStartResult =>
+      _backgroundGate?.lastStartResult;
+
+  @override
+  AiBackgroundCleanupConfirmation get cleanupConfirmation =>
+      _backgroundGate?.cleanupConfirmation ??
+      AiBackgroundCleanupConfirmation.confirmed;
+
+  @override
+  bool get canResumeRun =>
+      canSend &&
+      (_pendingPreparation != null || (_runner?.canResume ?? false)) &&
+      (_continuationBudget?.settled ?? false);
+
+  @override
+  Set<AiRunResumeWarning> get resumeWarnings => Set.unmodifiable({
+    if ((_runner?.modelCallsUsed ?? 0) > 0)
+      AiRunResumeWarning.possibleRebilling,
+    if (_writeRows.isNotEmpty) AiRunResumeWarning.possibleDuplicate,
+  });
 
   @override
   AiChatExecutionStatus get executionStatus => _executionPause != null
@@ -401,6 +441,8 @@ class AiChatController extends ChangeNotifier
   StreamSubscription<RateBudgetSnapshot>? _rateChanges;
   StreamSubscription<void>? _budgetChanges;
   _AiRunBudget? _runBudget;
+  _AiRunBudget? _continuationBudget;
+  ({String text, int? userIndex, Duration remainingActive})? _pendingPreparation;
 
   @visibleForTesting
   RunBudgetAllocator get budgetAllocator => _budgetAllocator;
@@ -471,8 +513,6 @@ class AiChatController extends ChangeNotifier
   AiRunner? _runner;
   AiComplete Function(AiWireClient)? _completeForRunner;
 
-  /// Whether this run's page context delivery is already recorded (§3.1).
-  var _contextDeliveryRecorded = false;
   AiRunnerBinding? _binding;
   final List<AiChatItem> _items = [];
   final Expando<AiChatItem> _successors = Expando<AiChatItem>();
@@ -619,6 +659,56 @@ class AiChatController extends ChangeNotifier
         editedText: editedText,
       );
     }
+    if (!_appInForeground() || editedText != null) {
+      return coordinator.approve(
+        proposal,
+        typedName: typedName,
+        editedText: editedText,
+      );
+    }
+    coordinator.checkNow();
+    if (!proposal.valid || !proposals.contains(proposal)) {
+      return coordinator.approve(proposal, typedName: typedName);
+    }
+    if (_phase == AiChatPhase.awaitingApproval) {
+      if (_approvalStarting) {
+        return const AiWriteOutcome(
+          state: AiJournalState.notExecuted,
+          reasonCode: 'approvalInProgress',
+        );
+      }
+      _approvalStarting = true;
+      _runner?.beginApprovalPreparation();
+      // Bridge listeners read work synchronously during start. Present active
+      // work before that notification so it cannot cancel its own start.
+      _phase = AiChatPhase.running;
+      final AiBackgroundStartResult start;
+      try {
+        start = await _executionGate.restartForApproval();
+      } finally {
+        _approvalStarting = false;
+      }
+      if (!_alive || !identical(coordinator, _writes)) {
+        return const AiWriteOutcome(
+          state: AiJournalState.notExecuted,
+          reasonCode: 'invalidProposal',
+        );
+      }
+      if (start.disposition == AiBackgroundStartDisposition.invalidated ||
+          start.disposition == AiBackgroundStartDisposition.unavailable) {
+        _executionPause = const AiExecutionPause(
+          AiExecutionPauseReason.permitInactive,
+          kind: AiContinuationKind.mutation,
+        );
+        _runner?.pause(_executionPause!);
+        _notify();
+        return AiWriteOutcome(
+          state: AiJournalState.notExecuted,
+          reasonCode: 'executionPaused',
+          pause: _executionPause,
+        );
+      }
+    }
     if (_phase == AiChatPhase.awaitingApproval) {
       _phase = AiChatPhase.running;
       _notify();
@@ -632,6 +722,7 @@ class AiChatController extends ChangeNotifier
         proposal.valid &&
         _phase == AiChatPhase.running &&
         proposals.contains(proposal)) {
+      _runner?.restoreApprovalWait();
       _phase = AiChatPhase.awaitingApproval;
       _notify();
     }
@@ -2462,6 +2553,7 @@ class AiChatController extends ChangeNotifier
       complete: complete(client),
       secrets: _secrets,
       refreshSecrets: _refreshSecrets,
+      now: _now,
       guard: AiRunGuard(
         expectedGeneration: _generation,
         ownerApi: _api,
@@ -2542,6 +2634,12 @@ class AiChatController extends ChangeNotifier
           runBudget?.writes = coordinator;
         }
       },
+      resumeToolBudget: () {
+        if (current()) {
+          runBudget = _runBudget;
+          runBudget?.writes = coordinator;
+        }
+      },
       beginToolTurn: () => budget().beginTurn(),
       toolBudgetExhausted: () => budget().exhausted,
       context: context.built.blocks,
@@ -2556,20 +2654,14 @@ class AiChatController extends ChangeNotifier
         _notifyStream();
       },
       onRestorableResultCut: placeholders.markWholeFieldsCut,
+      onContextDelivered: (sent) {
+        if (current()) _context?.recordDelivery(placeholders, sent);
+      },
       onToolStarted: (call) {
         if (!current()) return;
         _executionStep++;
         _syncExecutionWork();
         _readConfidential |= _context?.readConfidential ?? false;
-        // §3.1: before any tool of this run can write, note whether the
-        // page context this run sent carried the description whole. A
-        // summary that cut it means no whole-field write of it.
-        if (!_contextDeliveryRecorded) {
-          if (_runner case final active?) {
-            _context!.recordDelivery(placeholders, active.sentContext);
-            _contextDeliveryRecorded = true;
-          }
-        }
         final index = _insertRunItem(
           AiToolRunItem(
             name: _toolName(call.name),
@@ -2684,8 +2776,14 @@ class AiChatController extends ChangeNotifier
   }
 
   @override
-  Future<void> send(String text) async {
-    if (!_alive || _phase != AiChatPhase.idle || text.trim().isEmpty) return;
+  Future<void> send(String text) => _send(text);
+
+  @override
+  Future<void> resumeRun() => _send('', resuming: true);
+
+  Future<void> _send(String text, {bool resuming = false}) async {
+    if (!_alive || _phase != AiChatPhase.idle) return;
+    if (resuming ? !canResumeRun : text.trim().isEmpty) return;
     if (_blocker != AiChatBlocker.none &&
         _blocker != AiChatBlocker.tooManyRunning) {
       return;
@@ -2695,12 +2793,28 @@ class AiChatController extends ChangeNotifier
       return;
     }
     if (!canSend) return;
-    final lease = _budgetAllocator.acquire(40);
+    final pendingPreparation = resuming ? _pendingPreparation : null;
+    final continuingRunner = resuming && pendingPreparation == null;
+    if (pendingPreparation != null) text = pendingPreparation.text;
+    final previousBudget = resuming ? _continuationBudget : null;
+    final allowance = previousBudget == null
+        ? 40
+        : max(0, previousBudget.tools.maxGitLabRequests -
+            previousBudget.tools.gitLabRequests);
+    final lease = _budgetAllocator.acquire(allowance);
     if (lease == null) {
       _notify();
       return;
     }
-    final runBudget = _AiRunBudget(lease);
+    if (resuming && lease.granted < allowance) {
+      lease.release();
+      _notify();
+      return;
+    }
+    final runBudget = _AiRunBudget(lease, previousTools: previousBudget?.tools);
+    if (resuming) runBudget.modelStarted = previousBudget!.modelStarted;
+    _continuationBudget = null;
+    _pendingPreparation = null;
     _runBudget = runBudget;
     final epoch = _epoch;
     _phase = AiChatPhase.running;
@@ -2709,20 +2823,62 @@ class AiChatController extends ChangeNotifier
     _offerNewConversation = false;
     _lastEnd = null;
     _executionPause = null;
-    _executionStep = 0;
+    if (!resuming) _executionStep = 0;
     _emittedEvents.clear();
     _settingsChangedDuringRun = false;
     _usage = null;
     _notify();
-    var userAdded = false;
-    int? userIndex;
+    var userAdded = pendingPreparation != null;
+    int? userIndex = pendingPreparation?.userIndex;
+    final preparationStarted = _now();
+    final preparationAllowance = pendingPreparation?.remainingActive ??
+        (continuingRunner
+            ? _runner!.remainingActiveTime
+            : const Duration(minutes: 12));
+    final earlierPreparation = pendingPreparation == null
+        ? Duration.zero
+        : const Duration(minutes: 12) - pendingPreparation.remainingActive;
+    final preparationExpired = Completer<Never>();
+    final preparationTimer = Timer(preparationAllowance, () {
+      preparationExpired.completeError(
+        const AiFailure(AiFailureKind.timeout, notSent: true),
+      );
+    });
+    var enteredRunner = false;
+    var preparing = true;
+    Duration preparationElapsed() {
+      final elapsed = _now().difference(preparationStarted);
+      return elapsed.isNegative ? Duration.zero : elapsed;
+    }
+    Future<T> prepare<T>(Future<T> operation) async {
+      final value = await Future.any([operation, preparationExpired.future]);
+      if (preparationElapsed() >= preparationAllowance) {
+        throw const AiFailure(AiFailureKind.timeout, notSent: true);
+      }
+      return value;
+    }
     try {
-      await _executionGate.beginRun(runId: _newId());
+      final start = resuming
+          ? await prepare(_executionGate.resumeRun())
+          : await prepare(_executionGate.beginRun(runId: _newId()));
+      if (start.disposition == AiBackgroundStartDisposition.invalidated ||
+          start.disposition == AiBackgroundStartDisposition.unavailable) {
+        throw const AiExecutionPaused(AiExecutionPause(
+          AiExecutionPauseReason.permitInactive,
+        ));
+      }
       if (!_current(epoch)) return;
-      await _refreshSecrets();
+      _checkPreparationExecution();
+      await prepare(_refreshSecrets());
       if (!_current(epoch)) return;
+      _checkPreparationExecution();
       _redactDisplayIfNeeded();
-      await _refreshContextForSend(epoch);
+      await prepare(_refreshContextForSend(
+        epoch,
+        resuming: continuingRunner,
+        budget: runBudget,
+        isPreparing: () => preparing,
+      ));
       if (!_current(epoch)) return;
       // A refresh or another run may have depleted the shared API budget.
       if (_phase != AiChatPhase.stopping && sendBlockReason != null) {
@@ -2737,11 +2893,18 @@ class AiChatController extends ChangeNotifier
       // The page context goes with the first request this segment delivers;
       // its "What was sent" chips go with that message.
       final first = _runner == null || _contextPending;
-      _items.add(
-        AiUserItem(text: clean.text, chips: first ? _chips() : const []),
-      );
+      if (!resuming) {
+        _items.add(
+          AiUserItem(text: clean.text, chips: first ? _chips() : const []),
+        );
+        userIndex = _items.length - 1;
+      } else if (pendingPreparation != null && userIndex != null) {
+        _replaceItem(
+          userIndex,
+          AiUserItem(text: clean.text, chips: first ? _chips() : const []),
+        );
+      }
       userAdded = true;
-      userIndex = _items.length - 1;
       if (_phase == AiChatPhase.stopping) {
         // Nothing was sent, so only blocked-path chips stay; the next message
         // carries the others.
@@ -2782,13 +2945,13 @@ class AiChatController extends ChangeNotifier
       // tool list of the segment this send uses.
       final uploadInSegment = _uploadToolInSegment();
       if (!uploadInSegment) _dropHeldAttachments();
-      final turn = _attachmentTurn(
+      final turn = continuingRunner ? null : _attachmentTurn(
         text,
         uploadInSegment: uploadInSegment,
         outgoing: _outgoingUserText(text),
       );
-      if (turn.chips.isNotEmpty) {
-        if (_items[userIndex] case AiUserItem(
+      if (turn != null && turn.chips.isNotEmpty) {
+        if (_items[userIndex!] case AiUserItem(
           text: final shown,
           :final chips,
         )) {
@@ -2802,13 +2965,16 @@ class AiChatController extends ChangeNotifier
       }
       final segment = runner.segment;
       final redactions = runner.lateRedactions;
-      // The context this run sends is recorded once, at its first tool, so
-      // a later whole read in the same run is the latest delivery.
-      _contextDeliveryRecorded = false;
-      final result = await runner.run(
-        turn.modelText,
+      preparationTimer.cancel();
+      preparing = false;
+      enteredRunner = true;
+      final result = continuingRunner ? await runner.resumeRun(
+        activePreparation: preparationElapsed(),
+      ) : await runner.run(
+        turn!.modelText,
         // Binding still reads the user's own words, as before.
         bindingUtterance: turn.bindingUtterance ?? text,
+        activePreparation: earlierPreparation + preparationElapsed(),
       );
       if (!_current(epoch)) return;
       _settleChips(
@@ -2857,6 +3023,7 @@ class AiChatController extends ChangeNotifier
       _settleChips(userIndex, sent: false);
       if (error is AiExecutionPaused) {
         _executionPause = error.pause;
+        if (_phase == AiChatPhase.stopping) _lastEnd = AiRunEnd.stopped;
       } else {
         _failure = _assistantIndex != null
             ? _mapFailure(error)
@@ -2866,11 +3033,12 @@ class AiChatController extends ChangeNotifier
         _lastEnd = AiRunEnd.failed;
       }
       if (_assistantIndex == null) {
-        if (!userAdded) {
+        if (!userAdded && !resuming) {
           // Redacting may be what failed (text over the scan limit); then the
           // message is not shown rather than thrown again.
           try {
             _items.add(AiUserItem(text: _redactor.redactSource(text).text));
+            userIndex = _items.length - 1;
           } on Object {
             // Only the notice below remains.
           }
@@ -2879,10 +3047,35 @@ class AiChatController extends ChangeNotifier
       } else {
         _setAssistant('', AiAssistantState.interrupted);
       }
+      if (error is AiExecutionPaused && !continuingRunner && !enteredRunner) {
+        final remaining = preparationAllowance - preparationElapsed();
+        if (remaining > Duration.zero) {
+          // No runner turn exists yet. Keep its input and spent preparation
+          // allowance process-local until the explicit resumeRun action.
+          _pendingPreparation = (
+            text: text,
+            userIndex: userIndex,
+            remainingActive: remaining,
+          );
+        }
+      }
     } finally {
+      preparationTimer.cancel();
+      preparing = false;
+      if (continuingRunner && !enteredRunner) {
+        _runner?.chargeActivePreparation(preparationElapsed());
+      }
       // A stopped runner can return while its GitLab operation still settles.
       // Keep its lease until metering refunds the reservation to actual HTTP.
-      unawaited(runBudget.release());
+      if (_current(epoch) &&
+          (_pendingPreparation != null ||
+              (continuingRunner || enteredRunner) &&
+                  (_runner?.canResume ?? false))) {
+        _continuationBudget = runBudget;
+      }
+      unawaited(runBudget.release().then((_) {
+        if (_alive && identical(_continuationBudget, runBudget)) _notify();
+      }));
       if (identical(_runBudget, runBudget)) _runBudget = null;
       if (_current(epoch)) {
         _phase = AiChatPhase.idle;
@@ -2916,30 +3109,71 @@ class AiChatController extends ChangeNotifier
     }
   }
 
-  Future<void> _refreshContextForSend(int epoch) async {
+  void _checkPreparationExecution() {
+    final gate = _executionGate;
+    if (!gate.executionEligible) {
+      throw AiExecutionPaused(AiExecutionPause(
+        gate.binding.permitId == null
+            ? AiExecutionPauseReason.foregroundRequired
+            : AiExecutionPauseReason.permitInactive,
+      ));
+    }
+  }
+
+  Future<void> _refreshContextForSend(
+    int epoch, {
+    bool resuming = false,
+    required _AiRunBudget budget,
+    required bool Function() isPreparing,
+  }) async {
+    bool current() {
+      if (!_current(epoch) || !isPreparing()) return false;
+      _checkPreparationExecution();
+      return true;
+    }
     if (!(_context?.isExpired(_now()) ?? false)) return;
     final AiChatContext refreshed;
     try {
-      refreshed = await _runBudget!.measureContext(
-        (beforeRead) => loadAiChatContext(
-          origin: origin,
-          api: _api,
-          redactor: _redactor,
-          accountKey: _accountKey,
-          refreshSecrets: _refreshSecrets,
-          isCurrent: () => _current(epoch),
-          now: _now,
-          beforeRead: beforeRead,
+      refreshed = await budget.read(() => CachedRead.run(
+        () => budget.measureContext(
+          (beforeRead) => loadAiChatContext(
+            origin: origin,
+            api: _api,
+            redactor: _redactor,
+            accountKey: _accountKey,
+            refreshSecrets: _refreshSecrets,
+            isCurrent: current,
+            now: _now,
+            fresh: true,
+            beforeRead: (maximum) {
+              if (!current()) throw const ApiFailure(FailureKind.cancelled);
+              beforeRead(maximum);
+            },
+          ),
+          beforeRequest: () {
+            if (!current()) throw const ApiFailure(FailureKind.cancelled);
+          },
         ),
-      );
-    } on Object {
-      if (_current(epoch)) {
+        mayStart: current,
+      ));
+    } on AiExecutionPaused {
+      rethrow;
+    } on Object catch (error) {
+      // A shared cooldown can refuse a replay before its operation meter runs.
+      // Retain both the execution pause and the cooldown for explicit resume.
+      if (error is ApiFailure &&
+          error.kind == FailureKind.rateLimited &&
+          _current(epoch) &&
+          isPreparing()) {
+        _checkPreparationExecution();
+      }
+      if (_current(epoch) && isPreparing()) {
         _contextFailed = true;
         _blocker = AiChatBlocker.contextUnavailable;
       }
       rethrow;
     }
-    if (!_current(epoch) || _phase == AiChatPhase.stopping) return;
+    if (!current() || _phase == AiChatPhase.stopping) return;
     if (refreshed.isExpired(_now())) {
       throw const ApiFailure(FailureKind.network);
     }
@@ -2970,10 +3204,18 @@ class AiChatController extends ChangeNotifier
         groupScope: refreshed.groupScope,
         groupMetadata: refreshed.groupMetadata,
         field: previous.field,
+        titleField: previous.titleField,
         readConfidential: previous.readConfidential || refreshed.readConfidential,
         fetchedAt: refreshed.fetchedAt,
       );
       return;
+    }
+    if (resuming) {
+      // A changed pinned source cannot silently replace the continuation's
+      // runner, coordinator, run ID or budgets. A new send may adopt it.
+      throw const AiExecutionPaused(AiExecutionPause(
+        AiExecutionPauseReason.runChanged,
+      ));
     }
     final oldRunner = _runner;
     final placeholders = _placeholders;
@@ -3427,6 +3669,8 @@ class AiChatController extends ChangeNotifier
   void _clearConversation({bool keepDisplay = false}) {
     _backgroundGate?.cancelStart();
     _executionPause = null;
+    _continuationBudget = null;
+    _pendingPreparation = null;
     _binding?.dispose();
     _binding = null;
     _runner?.stop(AiRunEnd.stoppedBySettings);

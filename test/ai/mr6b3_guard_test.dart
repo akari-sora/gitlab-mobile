@@ -470,6 +470,7 @@ void main() {
       expect(_fixedReads.keys.toSet(), _fixedMutations.keys.toSet());
       expect(_fixedReads, hasLength(15));
       final graphDelta = {..._graphReadMembers, ..._fixedReads.keys};
+      expect(graphDelta, hasLength(35));
       expect(_pythonSet(boundary, '_MR6B3_WRITE_PORT_MEMBERS'), graphDelta);
       final called = <String>{};
       final nonGraphCalled = <String>{};
@@ -552,6 +553,8 @@ void main() {
         ..._mr6b3tMethods,
         'instance',
         'currentUser',
+        'selectedTodoForSnooze',
+        'selectedTodoForUnsnooze',
       });
       expect(called, isNot(contains('namespaceWorkItem')));
       expect(called, isNot(contains('snoozedTodos')));

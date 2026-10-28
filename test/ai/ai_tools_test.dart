@@ -8,6 +8,8 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/sensitive_paths.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
+import 'package:gitlab_mobile/core/ai/write_text.dart';
+import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/request_meter.dart';
 
 import '../support/fake_adapter.dart';
@@ -138,6 +140,61 @@ AiToolCall _call(String name, Map<String, Object?> arguments) =>
     AiToolCall(id: 'call-1', name: name, arguments: arguments);
 
 void main() {
+  for (final resource in ['issues', 'merge_requests']) {
+    test(
+      'project $resource title tracks cut and subsequent whole read',
+      () async {
+        final title = 'project-title-${'x' * 1000}-end';
+        final port = _FakePort()
+          ..discussion = {
+            'iid': 3,
+            'title': title,
+            'description': 'description',
+            'notes': <Object?>[],
+          };
+        final instance = GitLabInstance.parse('https://gitlab.example');
+        final table = UploadPlaceholderTable(instance: instance);
+        final catalogue = AiToolCatalogue(
+          port: port,
+          scope: _scope(),
+          redactor: Redactor(secrets: _Secrets()),
+          placeholders: table,
+        );
+        final base = AiFieldProvenance.gitLab(
+          instance: instance,
+          projectId: 9,
+          projectPath: 'group/project',
+          resource: resource,
+          iid: 3,
+        );
+        final field = AiFieldProvenance(
+          resourceKey: base.resourceKey,
+          fieldName: 'title',
+          completeValue: true,
+        );
+        final call = _call(
+          resource == 'issues' ? 'get_issue' : 'get_merge_request',
+          {'iid': 3},
+        );
+        final cut = await catalogue.execute(
+          call,
+          budget: AiToolBudget(maxSingleOutputChars: 250),
+        );
+        expect(cut.result.isError, isFalse);
+        expect(cut.truncated, isTrue);
+        expect(cut.result.content, contains('project-title-'));
+        expect(cut.result.content, isNot(contains(title)));
+        expect(table.seenOnlyCut(field), isTrue);
+        final whole = await catalogue.execute(call, budget: AiToolBudget());
+        expect(whole.result.isError, isFalse);
+        expect(whole.result.content, contains(title));
+        expect(table.seenOnlyCut(field), isTrue);
+        whole.recordDelivery!(whole.result.plainData);
+        expect(table.seenOnlyCut(field), isFalse);
+      },
+    );
+  }
+
   for (final name in ['get_issue', 'read_file']) {
     test(
       'FIX2 executeResult retains plain $name values for re-redaction',
