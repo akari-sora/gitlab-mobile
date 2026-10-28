@@ -3308,6 +3308,9 @@ void _fix2Tests() {
         final markerAfterFailure = (await h.keys.readMarker(_account)).isFound;
         h.storage.failInventory = false;
         h.storage.failMarkerWrite = false;
+        expect(await h.coordinator.setEnabled(true), isFalse);
+        expect(h.coordinator.deviceOffPending, isTrue);
+        expect((await h.coordinator.retryDeviceOff()).complete, isTrue);
         expect(await h.coordinator.setEnabled(true), isTrue);
         expect(await h.recover(), isTrue);
         const next = DiskBinding(accountKey: _account, generation: 2);

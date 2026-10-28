@@ -11589,6 +11589,191 @@
     "placeholders": {}
   },
   "aiRunNoticeFinishEditFirst": "請先完成或關閉目前的編輯，再開啟通知",
+  "storageAndCacheLabel": "儲存與快取",
+  "@storageAndCacheLabel": {
+    "description": "Me tab section and page title for the device storage and offline cache settings",
+    "placeholders": {}
+  },
+  "offlineCacheLabel": "離線快取",
+  "@offlineCacheLabel": {
+    "description": "Name of the encrypted on-device read cache and its switch",
+    "placeholders": {}
+  },
+  "offlineCacheDescription": "你看過的部分內容（符合條件者）會加密保存在這台裝置。網路不穩時可先顯示上次的版本，並在背景更新。開啟 App 時仍需先成功驗證登入。登出、切換或移除帳號時會清除。",
+  "@offlineCacheDescription": {
+    "description": "Explains, without over-promising, that only eligible parts of viewed content are kept, that opening the app still needs a sign-in check, and when it is cleared",
+    "placeholders": {}
+  },
+  "offlineCacheStatusOn": "使用中",
+  "@offlineCacheStatusOn": {
+    "description": "Offline cache status: on and in use",
+    "placeholders": {}
+  },
+  "offlineCacheStatusOff": "已關閉",
+  "@offlineCacheStatusOff": {
+    "description": "Offline cache status: the device setting is off",
+    "placeholders": {}
+  },
+  "offlineCacheStatusWaiting": "下次開啟 App 或切換帳號後開始保存",
+  "@offlineCacheStatusWaiting": {
+    "description": "The setting is on but the cache opens only at the next verified sign-in or app start",
+    "placeholders": {}
+  },
+  "offlineCacheStatusCleaning": "正在清除",
+  "@offlineCacheStatusCleaning": {
+    "description": "Offline cache status: clearing in progress",
+    "placeholders": {}
+  },
+  "offlineCacheStatusUnavailable": "安全儲存空間無法使用，暫不保存",
+  "@offlineCacheStatusUnavailable": {
+    "description": "Offline cache status: the secure-storage key cannot be read, so nothing is saved",
+    "placeholders": {}
+  },
+  "offlineCacheStatusSettingUnreadable": "無法讀取設定，這次使用期間不保存",
+  "@offlineCacheStatusSettingUnreadable": {
+    "description": "Offline cache status: the device setting could not be read or saved, so the cache stays closed this session",
+    "placeholders": {}
+  },
+  "offlineCacheStatusCleanupPending": "清除未完成，暫停使用",
+  "@offlineCacheStatusCleanupPending": {
+    "description": "Offline cache status: a clear did not finish, so the cache is paused",
+    "placeholders": {}
+  },
+  "offlineCacheSize": "已使用 {size}",
+  "@offlineCacheSize": {
+    "description": "Encrypted bytes the offline cache uses; size is already formatted, such as 1.2 MB",
+    "placeholders": {
+      "size": {
+        "type": "String",
+        "example": "1.2 MB"
+      }
+    }
+  },
+  "offlineCacheClearAction": "清除離線快取",
+  "@offlineCacheClearAction": {
+    "description": "Button that clears the offline cache",
+    "placeholders": {}
+  },
+  "offlineCacheClearConfirmTitle": "清除離線快取？",
+  "@offlineCacheClearConfirmTitle": {
+    "description": "Confirmation title before clearing the offline cache",
+    "placeholders": {}
+  },
+  "offlineCacheClearConfirmDetail": "會刪除這台裝置上此帳號的離線快取。GitLab 上的資料不受影響。",
+  "@offlineCacheClearConfirmDetail": {
+    "description": "Confirmation detail before clearing the offline cache",
+    "placeholders": {}
+  },
+  "offlineCacheCleared": "已清除離線快取",
+  "@offlineCacheCleared": {
+    "description": "Shown after the offline cache was confirmed cleared",
+    "placeholders": {}
+  },
+  "offlineCacheTurnedOff": "已關閉離線快取並清除資料",
+  "@offlineCacheTurnedOff": {
+    "description": "Shown after the off setting was saved and the cache confirmed cleared",
+    "placeholders": {}
+  },
+  "offlineCacheTurnOffUnconfirmed": "無法確認離線快取已關閉並清除。這次使用期間保持關閉，請重試清除。",
+  "@offlineCacheTurnOffUnconfirmed": {
+    "description": "Turning off could not confirm both the saved setting and the cleared data; never claims either",
+    "placeholders": {}
+  },
+  "offlineCacheTurnOnFailed": "無法儲存設定。離線快取保持關閉。",
+  "@offlineCacheTurnOnFailed": {
+    "description": "Turning the offline cache on could not be saved",
+    "placeholders": {}
+  },
+  "offlineCacheRetryCleanup": "重試清除",
+  "@offlineCacheRetryCleanup": {
+    "description": "Action that retries only the offline-cache cleanup, never the original operation",
+    "placeholders": {}
+  },
+  "readCacheBlockedTitle": "變更尚未送出",
+  "@readCacheBlockedTitle": {
+    "description": "Read-cache cleanup notice: the barrier stopped a change before anything was sent",
+    "placeholders": {}
+  },
+  "readCacheBlockedDetail": "離線快取無法清除，所以這項變更沒有送到 GitLab。請先重試清除，再重新送出。",
+  "@readCacheBlockedDetail": {
+    "description": "Read-cache cleanup notice detail: nothing was sent; retry the cleanup, then submit again",
+    "placeholders": {}
+  },
+  "readCachePreservedTitle": "離線快取待清除",
+  "@readCachePreservedTitle": {
+    "description": "Read-cache cleanup notice: the operation finished but the cache still needs clearing",
+    "placeholders": {}
+  },
+  "readCachePreservedDetail": "操作的結果不受影響。離線快取已暫停使用，清除完成後才會恢復。",
+  "@readCachePreservedDetail": {
+    "description": "Read-cache cleanup notice detail: the original result stands; only the cache is paused",
+    "placeholders": {}
+  },
+  "readCachePrivacyTitle": "離線快取已暫停",
+  "@readCachePrivacyTitle": {
+    "description": "Read-cache cleanup notice: fresh network content is shown while the old cache is paused",
+    "placeholders": {}
+  },
+  "readCachePrivacyDetail": "畫面上是剛從 GitLab 取得的內容。舊的離線快取還沒清除，已暫停使用。",
+  "@readCachePrivacyDetail": {
+    "description": "Read-cache cleanup notice detail: the shown content came from GitLab just now",
+    "placeholders": {}
+  },
+  "readCacheCleanupFailedTitle": "無法清除離線快取",
+  "@readCacheCleanupFailedTitle": {
+    "description": "Read-cache cleanup notice title when a clear failed (account kept, or cache closed)",
+    "placeholders": {}
+  },
+  "readCacheRetainedDetail": "離線快取尚未清除。帳號已保留，請重試移除。",
+  "@readCacheRetainedDetail": {
+    "description": "Read-cache cleanup notice detail during account removal: the account stays",
+    "placeholders": {}
+  },
+  "readCacheSignedOutTitle": "離線快取尚未清除",
+  "@readCacheSignedOutTitle": {
+    "description": "Read-cache cleanup notice on the sign-in screen: the signed-out cache is not cleared yet",
+    "placeholders": {}
+  },
+  "readCacheSignedOutDetail": "已登出，但這台裝置上的離線快取還沒清除完成。可以重試清除。",
+  "@readCacheSignedOutDetail": {
+    "description": "Read-cache cleanup notice detail after sign-out; the session stays signed out",
+    "placeholders": {}
+  },
+  "readCacheClosedDetail": "離線快取已暫停使用，重試清除完成後才會恢復。",
+  "@readCacheClosedDetail": {
+    "description": "Read-cache cleanup notice detail when the cache stays closed after a failed clear",
+    "placeholders": {}
+  },
+  "readCacheLogTruncated": "Log 太長，前段已截掉，只顯示最後一部分。",
+  "@readCacheLogTruncated": {
+    "description": "Shown above a finished job log shown as its tail (at most 2 MiB, and the screen line limit); the beginning was cut off",
+    "placeholders": {}
+  },
+  "offlineCacheOnNeedsCleanup": "上次的清除完成後，才能重新開啟離線快取。",
+  "@offlineCacheOnNeedsCleanup": {
+    "description": "Why the switch cannot be turned on: the previous device-wide clear has not finished",
+    "placeholders": {}
+  },
+  "offlineCacheOffNotSaved": "無法儲存設定。離線快取已清除，這次使用期間保持關閉。",
+  "@offlineCacheOffNotSaved": {
+    "description": "Turning off cleared the whole device cache for certain, but the off setting could not be saved",
+    "placeholders": {}
+  },
+  "offlineCacheSizeApprox": "已使用約 {size}",
+  "@offlineCacheSizeApprox": {
+    "description": "Estimated space used, from indexed entries only; size is already formatted, such as 1.2 MB",
+    "placeholders": {
+      "size": {
+        "type": "String",
+        "example": "1.2 MB"
+      }
+    }
+  },
+  "offlineCacheSizeUnknown": "已使用：無法確認",
+  "@offlineCacheSizeUnknown": {
+    "description": "Space used cannot be confirmed because a clear is pending or failed",
+    "placeholders": {}
+  },
   "aiAddGroupWorkItem": "加入群組工作項目",
   "@aiAddGroupWorkItem": {
     "description": "Chat menu item and sheet title: add one group work item to this AI conversation (U-add).",
@@ -11701,6 +11886,81 @@
   "aiAddGroupWorkItemStale": "檢查結果已過期，沒有加入任何項目。請重新檢查連結。",
   "@aiAddGroupWorkItemStale": {
     "description": "The confirmed check is out of date (newer check, new conversation or account change).",
+    "placeholders": {}
+  },
+  "aiRunPaused": "工作已暫停",
+  "@aiRunPaused": {
+    "description": "Chat card: an AI run paused at a safe point for an internal reason (ticket, nonce, background unavailable). No detail is shown.",
+    "placeholders": {}
+  },
+  "aiRunPausedForeground": "工作已暫停：要開著應用程式才能繼續",
+  "@aiRunPausedForeground": {
+    "description": "Chat card: an AI run paused because the app left the foreground or its background permit ended; it continues only after the user taps Continue with the app open.",
+    "placeholders": {}
+  },
+  "aiRunPausedTimeout": "工作已暫停：繼續前的檢查逾時",
+  "@aiRunPausedTimeout": {
+    "description": "Chat card: an AI run paused because the check that lets it continue (background permit) did not answer in time.",
+    "placeholders": {}
+  },
+  "aiRunCanResume": "可以從中斷的地方繼續這項工作",
+  "@aiRunCanResume": {
+    "description": "Chat card: a stopped AI run can be continued from where it stopped (same run, same limits).",
+    "placeholders": {}
+  },
+  "aiRunResume": "繼續執行",
+  "@aiRunResume": {
+    "description": "Button on the paused-run card: continue the same AI run. It adds no new message.",
+    "placeholders": {}
+  },
+  "aiRunResumeTitle": "要繼續執行嗎？",
+  "@aiRunResumeTitle": {
+    "description": "Confirmation title before continuing a paused AI run.",
+    "placeholders": {}
+  },
+  "aiRunResumeDuplicate": "這項工作的寫入可能已經完成。繼續後若 AI 再提出相同的變更，會先請你確認。",
+  "@aiRunResumeDuplicate": {
+    "description": "Confirmation text: the run already handled a write, which may have been made; a repeated identical proposal will ask for confirmation.",
+    "placeholders": {}
+  },
+  "aiRunResumeRebilling": "繼續會再向 AI 供應商送出請求，可能會再次計費。",
+  "@aiRunResumeRebilling": {
+    "description": "Confirmation text: the run already called the AI provider, so continuing sends requests again and the provider may bill again.",
+    "placeholders": {}
+  },
+  "aiRunForegroundOnly": "背景執行沒有啟動，工作只會在應用程式開啟時繼續。",
+  "@aiRunForegroundOnly": {
+    "description": "Chat row: the background service did not start, so the run continues only while the app is open.",
+    "placeholders": {}
+  },
+  "aiRunStartDenied": "系統這次不允許在背景執行。",
+  "@aiRunStartDenied": {
+    "description": "Chat row reason: the operating system refused to start background work (denied or not permitted).",
+    "placeholders": {}
+  },
+  "aiRunStartTimeout": "背景執行沒有及時啟動。",
+  "@aiRunStartTimeout": {
+    "description": "Chat row reason: background work did not start within the time allowed.",
+    "placeholders": {}
+  },
+  "aiRunStartUnavailable": "背景執行目前無法使用。",
+  "@aiRunStartUnavailable": {
+    "description": "Chat row reason: background work cannot be used right now (channel refused or unavailable).",
+    "placeholders": {}
+  },
+  "aiProposalBackgroundUnavailable": "這筆寫入沒有執行：背景執行無法啟動。",
+  "@aiProposalBackgroundUnavailable": {
+    "description": "Proposal card after Approve: background work could not start for this approval and nothing was sent. Usually the run then pauses and the chat offers Continue.",
+    "placeholders": {}
+  },
+  "aiRunCleanupPending": "工作已暫停：還無法確認背景工作已經結束，在那之前不能繼續。",
+  "@aiRunCleanupPending": {
+    "description": "Chat card: the end of earlier background work is not confirmed (cleanup unconfirmed), so no AI work may continue, even in the foreground. No Continue button.",
+    "placeholders": {}
+  },
+  "aiRunCleanupRetry": "每次回到應用程式時都會再嘗試清理；要等清理確認完成，工作才能繼續。",
+  "@aiRunCleanupRetry": {
+    "description": "Chat card detail: the cleanup is retried each time the app returns to the foreground; work can continue only after a cleanup is confirmed (a failed retry keeps it blocked).",
     "placeholders": {}
   }
 }

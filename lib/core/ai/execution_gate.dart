@@ -21,6 +21,8 @@ final class AiExecutionRunBinding {
   final String runId;
   String? _permitId;
   String? get permitId => _permitId;
+  int _revision = 0;
+  int get revision => _revision;
 
   /// C-D5: the bridge calls this only after a successful normal release and
   /// only while this exact run waits solely for approval. It cannot attach a
@@ -29,6 +31,17 @@ final class AiExecutionRunBinding {
   bool rebindForForegroundApproval({required String releasedPermitId}) {
     if (_permitId == null || _permitId != releasedPermitId) return false;
     _permitId = null;
+    _revision++;
+    return true;
+  }
+
+  /// The bridge may attach a freshly started permit after an explicit visible
+  /// approval for this same run. This is never called by lifecycle callbacks.
+  /// Tickets capture the previous permit and cannot survive the transition.
+  bool rebindForExplicitContinuation({required String runId, String? permitId}) {
+    if (runId.isEmpty || this.runId != runId) return false;
+    _permitId = permitId;
+    _revision++;
     return true;
   }
 }
@@ -85,6 +98,7 @@ final class AiExecutionTicket {
     required AiExecutionClock clock,
     required bool Function() isCurrent,
   }) : _permitAtIssue = binding.permitId,
+       _bindingRevision = binding.revision,
        _clock = clock,
        _isCurrent = isCurrent;
 
@@ -95,6 +109,7 @@ final class AiExecutionTicket {
   final String ticketId;
   final Duration requestStartedAt;
   final String? _permitAtIssue;
+  final int _bindingRevision;
   final AiExecutionClock _clock;
   final bool Function() _isCurrent;
   var _spent = false;
@@ -114,6 +129,7 @@ final class AiExecutionTicket {
     _spent = true;
     if (spent ||
         !identical(this.binding, binding) ||
+        binding.revision != _bindingRevision ||
         this.binding.permitId != _permitAtIssue ||
         this.kind != kind ||
         nonce.isEmpty ||

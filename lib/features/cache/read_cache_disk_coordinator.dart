@@ -13,6 +13,25 @@ import 'read_cache_settings_store.dart';
 
 enum ReadCacheDiskState { closed, ready, cleaning, disabled, unavailable }
 
+enum ReadCacheSettingChangeResult {
+  complete,
+  cleanupPending,
+  storageUnavailable,
+}
+
+/// Device-wide cleanup survives account changes and failed marker writes in
+/// this process. A stored off preference makes startup repeat the whole sweep.
+final class ReadCacheSettingsSnapshot {
+  const ReadCacheSettingsSnapshot({
+    required this.setting,
+    required this.deviceOffPending,
+    required this.deviceOffInFlight,
+  });
+
+  final ReadCacheSettingsState setting;
+  final bool deviceOffPending, deviceOffInFlight;
+}
+
 /// Schedulers return a cancellation function. Tests can advance the same clock
 /// used for queue deadlines and caller timeouts without delaying native I/O.
 typedef ReadCacheScheduler =
@@ -25,9 +44,20 @@ final class ReadCacheDiskStats {
     this.dropped, {
     this.retainedEntries = 0,
     this.unindexedEntries = 0,
+    this.retainedBytes = 0,
+    this.diskUsageBytes,
   });
   final int queuedEntries, queuedBytes, dropped;
   final int retainedEntries, unindexedEntries;
+
+  /// Encrypted bytes of the indexed entries known to this process (C2e, read
+  /// only for the settings page). No names, keys or paths.
+  final int retainedBytes;
+
+  /// Confirmed whole-device usage, or null when it cannot be established.
+  /// Currently only a confirmed empty device sweep reports a number (zero).
+  /// Indexed entry bytes must never be used as a fallback for this value.
+  final int? diskUsageBytes;
 }
 
 /// The only owner of read-cache keys, intents and transactions. No production
@@ -80,6 +110,25 @@ final class ReadCacheDiskCoordinator {
   List<ReadCacheNotice> get signedOutNotices =>
       List.unmodifiable(_signedOut.values);
 
+  /// Read-only C2e accessors: the login retry needs each signed-out binding,
+  /// and the settings page shows the effective device preference.
+  Map<DiskBinding, ReadCacheNotice> get signedOutSnapshot =>
+      Map.unmodifiable(_signedOut);
+  ReadCacheSettingsState get setting => _domain.setting;
+  bool get deviceOffPending =>
+      _domain.deviceOffPending || _domain.deviceOffOperations > 0;
+
+  /// Read-only (C2e size line): a device-off sweep, or any account's full
+  /// clear, is in progress or unfinished anywhere on this device.
+  bool get cleanupPendingAnywhere =>
+      deviceOffPending ||
+      _domain.accounts.values.any((account) => account.intent?.full ?? false);
+  ReadCacheSettingsSnapshot get settingsSnapshot => ReadCacheSettingsSnapshot(
+    setting: setting,
+    deviceOffPending: deviceOffPending,
+    deviceOffInFlight: _domain.deviceOffOperations > 0,
+  );
+
   ReadCacheDiskStats get stats => ReadCacheDiskStats(
     _domain.accounts.values.fold(0, (n, a) => n + a.pending.length),
     _domain.accounts.values.fold(0, (n, a) => n + a.queuedBytes),
@@ -92,6 +141,13 @@ final class ReadCacheDiskCoordinator {
       0,
       (n, a) => n + a.unindexed.length,
     ),
+    retainedBytes: _domain.accounts.values.fold(
+      0,
+      (n, a) => a.entries.values.fold(n, (m, r) => m + r.index.sizeBytes),
+    ),
+    diskUsageBytes: configured && !deviceOffPending
+        ? _domain.diskUsageBytes
+        : null,
   );
 
   void configure({
@@ -230,6 +286,9 @@ final class ReadCacheDiskCoordinator {
     bool clearingRoot = false,
     bool recoverySweep = false,
   }) async {
+    // Any file operation invalidates the previous empty-root proof. Failure
+    // cannot turn cleared in-memory indexes into a claim of zero disk usage.
+    _domain.diskUsageBytes = null;
     try {
       return await action();
     } on Object catch (error) {
@@ -321,6 +380,7 @@ final class ReadCacheDiskCoordinator {
       _domain.controlsInstalled &&
       _domain.foreground &&
       _domain.preferenceChanges == 0 &&
+      !deviceOffPending &&
       _domain.recovered &&
       _domain.setting == ReadCacheSettingsState.enabled &&
       _domain.active == binding &&
@@ -1377,6 +1437,7 @@ final class ReadCacheDiskCoordinator {
       final failure = reportCleanup(binding, state);
       onFailure?.call(failure);
     }
+
     final cancel = _schedule(barrierLimit, () {
       timeout();
       report(_none, ReadCacheCleanupCode.barrierTimedOut);
@@ -1653,11 +1714,16 @@ final class ReadCacheDiskCoordinator {
     if (!current() || setting == ReadCacheSettingsState.unavailable) {
       return false;
     }
+    _domain.setting = setting;
+    if (setting == ReadCacheSettingsState.disabled) {
+      _domain.deviceOffPending = true;
+      _domain.deviceOffConfirmed = false;
+      _domain.diskUsageBytes = null;
+    }
     final inventory = await _keys!.readInventory();
     if (!current() || inventory.status != ReadCacheStoreReadStatus.found) {
       return false;
     }
-    _domain.setting = setting;
     for (final key in {
       ...accountKeys,
       ...inventory.keys.keys,
@@ -1672,6 +1738,7 @@ final class ReadCacheDiskCoordinator {
     }
     final retained =
         !decision.signOutPending &&
+            !deviceOffPending &&
             setting == ReadCacheSettingsState.enabled &&
             accountKeys.contains(decision.resumeAccountKey)
         ? <String>{decision.resumeAccountKey!}
@@ -1755,6 +1822,12 @@ final class ReadCacheDiskCoordinator {
           pathRevision == _domain.pathRevision;
     });
     if (!success || !current()) return false;
+    if (retained.isEmpty) {
+      // This pass proved both the root and the entire inventory empty.
+      _domain.deviceOffPending = false;
+      _domain.deviceOffConfirmed = true;
+      _domain.diskUsageBytes = 0;
+    }
     _domain.recovered = true;
     final active = _domain.active;
     if (active != null) {
@@ -1775,22 +1848,94 @@ final class ReadCacheDiskCoordinator {
     ReadCacheCleanupOperation operation,
   ) => clear(binding, operation);
 
-  Future<bool> setEnabled(bool enabled) async {
-    if (!configured) return false;
+  /// Compatibility wrapper. New controls should use [setEnabledResult] to
+  /// distinguish an unproven device-off cleanup from a storage failure.
+  Future<bool> setEnabled(bool enabled) async =>
+      await setEnabledResult(enabled) == ReadCacheSettingChangeResult.complete;
+
+  /// Refuses an enable without writing the preference while device-off is
+  /// pending or in flight, even if none of its markers could be persisted.
+  Future<ReadCacheSettingChangeResult> setEnabledResult(bool enabled) {
+    if (!configured) {
+      return Future.value(ReadCacheSettingChangeResult.storageUnavailable);
+    }
+    if (enabled && deviceOffPending) {
+      return Future.value(ReadCacheSettingChangeResult.cleanupPending);
+    }
+    if (!enabled) _beginDeviceOff();
+    final future = _preferenceChange(() => _storeEnabled(enabled));
+    return enabled
+        ? future
+        : future.whenComplete(() => _domain.deviceOffOperations--);
+  }
+
+  void _beginDeviceOff() {
+    _domain.deviceOffOperations++;
+    _domain.deviceOffPending = true;
+    _domain.deviceOffConfirmed = false;
+    _domain.diskUsageBytes = null;
+  }
+
+  Future<T> _preferenceChange<T>(Future<T> Function() action) {
     _domain.preferenceChanges++;
     _domain.startupRevision++;
     _domain.recovered = false;
     _suspendAccounts();
-    try {
-      return await _storeEnabled(enabled);
-    } finally {
-      _domain.preferenceChanges--;
-      _domain.recovered = false;
-      _domain.startupRevision++;
-    }
+    final future = _domain.preferenceTail.then((_) async {
+      try {
+        return await action();
+      } finally {
+        _domain.preferenceChanges--;
+        _domain.recovered = false;
+        _domain.startupRevision++;
+      }
+    });
+    _domain.preferenceTail = future.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stack) {},
+    );
+    return future;
   }
 
-  Future<bool> _storeEnabled(bool enabled) async {
+  /// Repeats the complete device sweep, including foreign accounts/orphans
+  /// and final root/inventory confirmation. It never writes the preference.
+  /// Unavailable inventory authorizes no file or key deletion. Completion is
+  /// device-wide; markerDurable is false because there is no device marker.
+  Future<DiskClearResult> retryDeviceOff() {
+    if (!configured) return Future.value(_none);
+    _beginDeviceOff();
+    return _preferenceChange(() async {
+      if (!await _sweepDeviceOff()) return _none;
+      return const DiskClearResult(
+        keyGoneConfirmed: true,
+        directoryGoneConfirmed: true,
+        markerDurable: false,
+        complete: true,
+      );
+    }).whenComplete(() => _domain.deviceOffOperations--);
+  }
+
+  Future<ReadCacheSettingChangeResult> _storeEnabled(bool enabled) async {
+    // An off requested after this call was queued takes precedence. Also
+    // inspect a fresh process's preference before its first enable write:
+    // stored 0 is durable evidence that a device sweep must be proven first.
+    if (enabled) {
+      if (deviceOffPending) return ReadCacheSettingChangeResult.cleanupPending;
+      if (!_domain.deviceOffConfirmed &&
+          _domain.setting != ReadCacheSettingsState.enabled) {
+        _domain.setting = await _settings!.read();
+        if (deviceOffPending) {
+          return ReadCacheSettingChangeResult.cleanupPending;
+        }
+        if (_domain.setting == ReadCacheSettingsState.disabled) {
+          _domain.deviceOffPending = true;
+          return ReadCacheSettingChangeResult.cleanupPending;
+        }
+        if (_domain.setting == ReadCacheSettingsState.unavailable) {
+          return ReadCacheSettingChangeResult.storageUnavailable;
+        }
+      }
+    }
     final stored = await _settings!.writeEnabled(enabled);
     if (!stored) _domain.setting = ReadCacheSettingsState.unavailable;
     if (stored) {
@@ -1798,110 +1943,126 @@ final class ReadCacheDiskCoordinator {
           ? ReadCacheSettingsState.enabled
           : ReadCacheSettingsState.disabled;
     }
-    if (!enabled) {
-      // Include accounts whose first key write is not in secure inventory yet.
-      // Fence/persist before drain; inventory and the final proof share the I/O
-      // section with that late write, so no success can race its completion.
-      final intents = <String, _Intent>{};
-      final markers = <String, Future<bool>>{};
-      for (final account in _domain.accounts.values) {
-        final intent = _fullIntent(account, ReadCacheClearReason.accountClear);
-        intents[account.key] = intent;
-        if (account.work > 0 || _domain.work > 0) {
-          markers[account.key] = _persist(account, intent);
-        }
-      }
-      final cleared = await _serial<bool>(null, () async {
-        final inventory = await _keys!.readInventory();
-        if (inventory.status != ReadCacheStoreReadStatus.found) return false;
-        for (final key in {...inventory.keys.keys, ...inventory.markers.keys}) {
-          _account(key);
-        }
-        try {
-          if (inventory.malformedNames.isNotEmpty) {
-            await _file(() => _files!.clearRoot(), clearingRoot: true);
-            if ((await _file(
-              () => _files!.accountDirectoryNames(),
-            )).isNotEmpty) {
-              return false;
-            }
-            for (final name in inventory.malformedNames) {
-              await _keys!.deleteInventoryName(name);
-            }
-          }
-          for (final key in {
-            ...intents.keys,
-            ...inventory.keys.keys,
-            ...inventory.markers.keys,
-          }) {
-            final account = _account(key);
-            final intent = intents[key] ??= _fullIntent(
-              account,
-              ReadCacheClearReason.accountClear,
-            );
-            final result = await _clearNow(
-              account,
-              intent,
-              hadWork: markers.containsKey(key),
-              markerReady: markers[key],
-            );
-            if (!result.complete &&
-                !(account.intent == null && account.clearComplete)) {
-              return false;
-            }
-            // Recovery's activate compares the verified binding with this fence.
-            account.cleanup = account.sessionFence != null;
-          }
-          await _file(() => _files!.clearAccountDirectoriesExcept({}));
-          final confirmed = await _keys!.readInventory();
-          if (confirmed.status != ReadCacheStoreReadStatus.found ||
-              confirmed.keys.isNotEmpty ||
-              confirmed.markers.isNotEmpty ||
-              confirmed.malformedNames.isNotEmpty ||
-              (await _file(() => _files!.accountDirectoryNames())).isNotEmpty) {
-            return false;
-          }
-          for (final account in _domain.accounts.values) {
-            account.state = stored
-                ? ReadCacheDiskState.disabled
-                : ReadCacheDiskState.unavailable;
-          }
-          return true;
-        } on Object {
-          return false;
-        }
-      });
-      if (!cleared) {
-        for (final key in intents.keys) {
-          final account = _account(key);
-          final pending = account.intent;
-          if (pending != null && pending.full && pending.valid) {
-            await _persist(account, pending);
-          }
-          final active = _domain.active;
-          final binding = active?.accountKey == key
-              ? active!
-              : account.sessionFence ??
-                    DiskBinding(accountKey: key, generation: 0);
-          reportCleanup(
-            binding,
-            _cleanup(
-              ReadCacheCleanupOperation.settingsClear,
-              DiskClearResult(
-                keyGoneConfirmed: false,
-                directoryGoneConfirmed: false,
-                markerDurable: pending?.durable ?? false,
-                complete: false,
-              ),
-              ReadCacheCleanupCode.cleanupFailed,
-            ),
-          );
-        }
-        return false;
-      }
+    if (!enabled && !await _sweepDeviceOff()) {
+      return ReadCacheSettingChangeResult.cleanupPending;
     }
     // Re-enabling still requires a fresh startup decision and verified binding.
-    return stored;
+    return stored
+        ? ReadCacheSettingChangeResult.complete
+        : ReadCacheSettingChangeResult.storageUnavailable;
+  }
+
+  Future<bool> _sweepDeviceOff() async {
+    _domain.deviceOffPending = true;
+    _domain.deviceOffConfirmed = false;
+    // Include accounts whose first key write is not in secure inventory yet.
+    // Fence/persist before drain; inventory and the final proof share the I/O
+    // section with that late write, so no success can race its completion.
+    final intents = <String, _Intent>{};
+    final markers = <String, Future<bool>>{};
+    for (final account in _domain.accounts.values) {
+      final intent = _fullIntent(account, ReadCacheClearReason.accountClear);
+      intents[account.key] = intent;
+      if (account.work > 0 || _domain.work > 0) {
+        markers[account.key] = _persist(account, intent);
+      }
+    }
+    final cleared = await _serial<bool>(null, () async {
+      final inventory = await _keys!.readInventory();
+      if (inventory.status != ReadCacheStoreReadStatus.found) return false;
+      for (final key in {...inventory.keys.keys, ...inventory.markers.keys}) {
+        _account(key);
+      }
+      try {
+        if (inventory.malformedNames.isNotEmpty) {
+          await _file(() => _files!.clearRoot(), clearingRoot: true);
+          if ((await _file(() => _files!.accountDirectoryNames())).isNotEmpty) {
+            return false;
+          }
+          for (final name in inventory.malformedNames) {
+            await _keys!.deleteInventoryName(name);
+          }
+        }
+        for (final key in {
+          ...intents.keys,
+          ...inventory.keys.keys,
+          ...inventory.markers.keys,
+        }) {
+          final account = _account(key);
+          final intent = intents[key] ??= _fullIntent(
+            account,
+            ReadCacheClearReason.accountClear,
+          );
+          final result = await _clearNow(
+            account,
+            intent,
+            hadWork: markers.containsKey(key),
+            markerReady: markers[key],
+          );
+          if (!result.complete &&
+              !(account.intent == null && account.clearComplete)) {
+            return false;
+          }
+          // Recovery's activate compares the verified binding with this fence.
+          account.cleanup = account.sessionFence != null;
+        }
+        await _file(() => _files!.clearAccountDirectoriesExcept({}));
+        final confirmed = await _keys!.readInventory();
+        if (confirmed.status != ReadCacheStoreReadStatus.found ||
+            confirmed.keys.isNotEmpty ||
+            confirmed.markers.isNotEmpty ||
+            confirmed.malformedNames.isNotEmpty ||
+            (await _file(() => _files!.accountDirectoryNames())).isNotEmpty) {
+          return false;
+        }
+        for (final account in _domain.accounts.values) {
+          account.state = _domain.setting == ReadCacheSettingsState.disabled
+              ? ReadCacheDiskState.disabled
+              : ReadCacheDiskState.unavailable;
+        }
+        _domain.deviceOffPending = false;
+        _domain.deviceOffConfirmed = true;
+        _domain.diskUsageBytes = 0;
+        return true;
+      } on Object {
+        return false;
+      }
+    });
+    if (!cleared) {
+      for (final key in intents.keys) {
+        final account = _account(key);
+        final pending = account.intent;
+        if (pending != null && pending.full && pending.valid) {
+          await _persist(account, pending);
+        }
+        final active = _domain.active;
+        final binding = active?.accountKey == key
+            ? active!
+            : account.sessionFence ??
+                  DiskBinding(accountKey: key, generation: 0);
+        reportCleanup(
+          binding,
+          _cleanup(
+            ReadCacheCleanupOperation.settingsClear,
+            DiskClearResult(
+              keyGoneConfirmed: false,
+              directoryGoneConfirmed: false,
+              markerDurable: pending?.durable ?? false,
+              complete: false,
+            ),
+            ReadCacheCleanupCode.cleanupFailed,
+          ),
+        );
+      }
+      return false;
+    }
+    for (final binding in List.of(_notices.keys)) {
+      if (_notices[binding]?.failure.cleanup?.operation ==
+          ReadCacheCleanupOperation.settingsClear) {
+        supersedeNotice(binding);
+      }
+    }
+    return true;
   }
 }
 
@@ -1980,7 +2141,11 @@ final class _Domain {
   final subscribers = <ReadCacheNoticeSink>{};
   final accounts = <String, _Account>{};
   Future<void> tail = Future.value();
+  Future<void> preferenceTail = Future.value();
   bool recovered = false, controlsInstalled = false, foreground = true;
+  bool deviceOffPending = false, deviceOffConfirmed = false;
+  int deviceOffOperations = 0;
+  int? diskUsageBytes;
   ReadCacheSettingsState setting = ReadCacheSettingsState.unavailable;
   DiskBinding? active;
   DiskBinding? latestVerified;

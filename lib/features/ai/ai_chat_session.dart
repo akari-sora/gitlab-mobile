@@ -6,8 +6,10 @@ import '../../core/ai/ai_display.dart';
 import '../../core/ai/ai_failure.dart';
 import '../../core/ai/ai_provider.dart';
 import '../../core/ai/runner.dart';
+import '../../core/ai/execution_gate.dart';
 import '../../core/ai/tools/write_coordinator.dart';
 import 'ai_attachment_session.dart';
+import 'ai_background_execution.dart';
 import '../../core/failure.dart';
 import '../../core/group_work_item_identity.dart';
 import '../../core/models.dart';
@@ -451,6 +453,31 @@ abstract interface class AiExecutionChatSession {
   int get serviceWorkCount;
   int get backProtectedCount;
   AiChatExecutionStatus get executionStatus;
+}
+
+enum AiRunResumeWarning { possibleDuplicate, possibleRebilling }
+
+/// Optional continuation capability. Resuming is a visible user action and
+/// never appends another user message or resets the logical run's budgets.
+abstract interface class AiRunContinuationSession {
+  AiExecutionPause? get executionPause;
+  AiBackgroundStartResult? get serviceStartResult;
+  AiBackgroundCleanupConfirmation get cleanupConfirmation;
+  bool get canResumeRun;
+  Set<AiRunResumeWarning> get resumeWarnings;
+  Future<void> resumeRun();
+}
+
+extension AiRunContinuationAccess on AiChatSession {
+  bool get canResumeRun => switch (this) {
+    AiRunContinuationSession session => session.canResumeRun,
+    _ => false,
+  };
+
+  Future<void> resumeRun() => switch (this) {
+    AiRunContinuationSession session => session.resumeRun(),
+    _ => Future<void>.value(),
+  };
 }
 
 /// Optional capability keeps existing read-only registries source-compatible.
