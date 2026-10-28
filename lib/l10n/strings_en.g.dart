@@ -3018,4 +3018,8 @@ const _messagesEn = <String>[
   'The AI reads work item #{iid} of group {path}. The items you added (listed above the message box) are also in this conversation\'s scope; the group\'s other work items and its projects are not.',
   'The AI reads this group work item. The items you added (listed above the message box) are also in this conversation\'s scope; the group\'s other work items and its projects are not.',
   'The dates were not sent: they may already match the current dates, and for a group work item that case cannot be confirmed without an extra request. Read the current dates again and retry.',
+  'Switching accounts deletes all offline projects of @{username} on this device; how many cannot be confirmed right now.',
+  'Signing out deletes all offline projects of @{username} on this device; how many cannot be confirmed right now.',
+  'Removing the account deletes all offline projects of @{username} on this device; how many cannot be confirmed right now.',
+  'The automatic cache and all offline projects of this account are deleted (how many cannot be confirmed right now). This cannot be undone.',
 ];

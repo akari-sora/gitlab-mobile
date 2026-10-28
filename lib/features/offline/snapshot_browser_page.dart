@@ -97,6 +97,24 @@ final class SnapshotRouteArguments {
   final int projectId;
 }
 
+/// Calls [onRevoked] once the reader's permit no longer holds (an access
+/// fence for the project, an account fence, the account leaving). The pages
+/// then drop every decrypted value they show (GLM r1 #1).
+StreamSubscription<DiskBinding> watchSnapshotFence(
+  OfflineRepositoryCoordinator coordinator,
+  SnapshotRepositoryReader reader,
+  void Function(Object error) onRevoked,
+) => coordinator.changes.listen((_) {
+  // Events can arrive synchronously inside storage work; act after it.
+  scheduleMicrotask(() {
+    try {
+      reader.checkCurrent();
+    } on Object catch (error) {
+      onRevoked(error);
+    }
+  });
+});
+
 /// Opens the offline version [record]. Failures go to the shared surface.
 Future<void> openSnapshot(
   BuildContext context, {
@@ -111,6 +129,11 @@ Future<void> openSnapshot(
   } on Object catch (error) {
     showSnapshotFailure(context, error);
     return;
+  }
+  // §3.14: opening a snapshot online checks its project (budget-limited,
+  // single-flight); a refusal fences it and this view drops its content.
+  if (snapshotOnline(context, repositories)) {
+    unawaited(repositories.probe(projectId: record.projectId));
   }
   await Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -175,6 +198,7 @@ class _SnapshotBrowserPageState extends State<SnapshotBrowserPage> {
   String? _readmePath;
   bool _readmeExpanded = true;
   int _epoch = 0;
+  StreamSubscription<DiskBinding>? _fence;
 
   SnapshotRecord get _record => widget.record;
   String get _root => _record.subPath;
@@ -192,12 +216,32 @@ class _SnapshotBrowserPageState extends State<SnapshotBrowserPage> {
   @override
   void initState() {
     super.initState();
+    _fence = watchSnapshotFence(
+      widget.repositories.coordinator,
+      widget.reader,
+      _revoked,
+    );
     unawaited(_load());
+  }
+
+  /// The permit is gone: nothing decrypted stays on screen, and a read still
+  /// in flight can no longer commit (its epoch is stale).
+  void _revoked(Object error) {
+    if (!mounted) return;
+    _epoch++;
+    setState(() {
+      _entries = null;
+      _readme = null;
+      _readmePath = null;
+      _attributesHint = false;
+      _error = error;
+    });
   }
 
   @override
   void dispose() {
     _epoch++;
+    unawaited(_fence?.cancel());
     _filter.dispose();
     super.dispose();
   }
@@ -220,6 +264,8 @@ class _SnapshotBrowserPageState extends State<SnapshotBrowserPage> {
         hint = false;
       }
       if (!mounted || epoch != _epoch) return;
+      // The hint swallows its own failures: re-check ownership last.
+      widget.reader.checkCurrent();
       setState(() {
         _entries = entries;
         _attributesHint = hint;
@@ -247,6 +293,7 @@ class _SnapshotBrowserPageState extends State<SnapshotBrowserPage> {
     try {
       final text = await widget.reader.text(path);
       if (utf8.encode(text).length > _readmeLimit) return;
+      widget.reader.checkCurrent();
       if (mounted && epoch == _epoch) {
         setState(() {
           _readme = text;
@@ -417,6 +464,7 @@ class _SnapshotBrowserPageState extends State<SnapshotBrowserPage> {
         protected: false,
       ),
       folder: _record.subPath,
+      repair: true,
     );
   }
 
@@ -920,17 +968,43 @@ class _SnapshotFilePageState extends State<SnapshotFilePage> {
   late bool _preview = _markdown;
   int? _selectedLine;
   Timer? _searchTimer;
+  int _epoch = 0;
+  StreamSubscription<DiskBinding>? _fence;
 
   String get _path => widget.entry.path;
 
   @override
   void initState() {
     super.initState();
+    _fence = watchSnapshotFence(
+      widget.repositories.coordinator,
+      widget.reader,
+      _revoked,
+    );
     unawaited(_load());
+  }
+
+  /// See [_SnapshotBrowserPageState._revoked]: drop the text and image.
+  void _revoked(Object error) {
+    if (!mounted) return;
+    _epoch++;
+    _searchTimer?.cancel();
+    _syntaxSpans.clear();
+    setState(() {
+      _text = null;
+      _image = null;
+      _index = CodeTextIndex.empty;
+      _visible = const [];
+      _preview = false;
+      _loading = false;
+      _error = error;
+    });
   }
 
   @override
   void dispose() {
+    _epoch++;
+    unawaited(_fence?.cancel());
     _searchTimer?.cancel();
     _vertical.dispose();
     _horizontal.dispose();
@@ -940,6 +1014,7 @@ class _SnapshotFilePageState extends State<SnapshotFilePage> {
   }
 
   Future<void> _load() async {
+    final epoch = ++_epoch;
     setState(() {
       _loading = true;
       _error = null;
@@ -949,7 +1024,7 @@ class _SnapshotFilePageState extends State<SnapshotFilePage> {
         final bytes = await widget.reader.bytes(_path);
         final svg = await sanitizeMarkdownSvg(bytes);
         widget.reader.checkCurrent();
-        if (!mounted) return;
+        if (!mounted || epoch != _epoch) return;
         setState(() {
           _image = svg ?? bytes;
           _svg = svg != null;
@@ -958,7 +1033,8 @@ class _SnapshotFilePageState extends State<SnapshotFilePage> {
         return;
       }
       final text = await widget.reader.text(_path);
-      if (!mounted) return;
+      widget.reader.checkCurrent();
+      if (!mounted || epoch != _epoch) return;
       setState(() {
         _text = text;
         _index = CodeTextIndex(text);
@@ -966,7 +1042,7 @@ class _SnapshotFilePageState extends State<SnapshotFilePage> {
         _loading = false;
       });
     } on Object catch (error) {
-      if (mounted) {
+      if (mounted && epoch == _epoch) {
         setState(() {
           _error = error;
           _loading = false;

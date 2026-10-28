@@ -13081,5 +13081,40 @@
   "@aiRefusedGroupDatesNotSent": {
     "description": "Why a date change on a group work item was not sent: the requested dates may equal the current ones, and the app does not send an extra request to prove group ownership for that case.",
     "placeholders": {}
+  },
+  "offlineLossSwitchUnknown": "切換帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。",
+  "@offlineLossSwitchUnknown": {
+    "description": "Confirmation detail when the offline project inventory is not loaded or failed; never taken for zero",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineLossSignOutUnknown": "登出會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。",
+  "@offlineLossSignOutUnknown": {
+    "description": "Confirmation detail when the inventory is unknown",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineLossRemoveUnknown": "移除帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。",
+  "@offlineLossRemoveUnknown": {
+    "description": "Confirmation detail when the inventory is unknown",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "octocat"
+      }
+    }
+  },
+  "offlineCacheClearUnknownProjects": "會刪除自動快取與這個帳號的所有離線專案（目前無法確認有幾個），這個動作無法復原。",
+  "@offlineCacheClearUnknownProjects": {
+    "description": "Clear-cache and turn-off confirmation when the offline project inventory is unknown",
+    "placeholders": {}
   }
 }

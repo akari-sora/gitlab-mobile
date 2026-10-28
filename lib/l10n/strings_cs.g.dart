@@ -3018,4 +3018,8 @@ const _messagesCs = <String>[
   'AI čte pracovní položku #{iid} skupiny {path}. Položky, které jste přidali (nad polem zprávy), do této konverzace také patří; ostatní pracovní položky skupiny a její projekty ne.',
   'AI čte tuto pracovní položku skupiny. Položky, které jste přidali (nad polem zprávy), do této konverzace také patří; ostatní pracovní položky skupiny a její projekty ne.',
   'Data nebyla odeslána: možná se už shodují s aktuálními a u pracovní položky skupiny to nelze ověřit bez dalšího požadavku. Načtěte aktuální data znovu a zkuste to znovu.',
+  'Přepnutím účtu se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.',
+  'Odhlášením se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.',
+  'Odebráním účtu se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.',
+  'Automatická mezipaměť a všechny offline projekty tohoto účtu se smažou (jejich počet teď nelze ověřit). Tuto akci nelze vrátit zpět.',
 ];

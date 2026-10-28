@@ -3018,4 +3018,8 @@ const _messagesSv = <String>[
   'AI läser arbetsobjekt #{iid} i gruppen {path}. Objekten du har lagt till (ovanför meddelanderutan) ingår också i konversationen; gruppens andra arbetsobjekt och dess projekt gör det inte.',
   'AI läser det här arbetsobjektet i gruppen. Objekten du har lagt till (ovanför meddelanderutan) ingår också i konversationen; gruppens andra arbetsobjekt och dess projekt gör det inte.',
   'Datumen skickades inte: de kan redan stämma med de nuvarande, och för en grupps arbetsobjekt kan det inte bekräftas utan en extra begäran. Läs de nuvarande datumen igen och försök på nytt.',
+  'Om du byter konto raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.',
+  'Om du loggar ut raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.',
+  'Om du tar bort kontot raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.',
+  'Den automatiska cachen och alla offlineprojekt för det här kontot raderas (det går inte att bekräfta hur många just nu). Det går inte att ångra.',
 ];

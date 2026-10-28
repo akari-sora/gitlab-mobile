@@ -9141,4 +9141,16 @@ final class AppStrings {
 
   /// 日期沒有送出：要求的日期可能和目前相同，而群組工作項目在這種情況下無法不多送一次請求就確認歸屬。請重新讀取目前的日期後再試。
   String get aiRefusedGroupDatesNotSent => language._messages[3015];
+
+  /// 切換帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
+  String offlineLossSwitchUnknown(Object? username) => _format(language, language._messages[3016], {'username': username});
+
+  /// 登出會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
+  String offlineLossSignOutUnknown(Object? username) => _format(language, language._messages[3017], {'username': username});
+
+  /// 移除帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
+  String offlineLossRemoveUnknown(Object? username) => _format(language, language._messages[3018], {'username': username});
+
+  /// 會刪除自動快取與這個帳號的所有離線專案（目前無法確認有幾個），這個動作無法復原。
+  String get offlineCacheClearUnknownProjects => language._messages[3019];
 }

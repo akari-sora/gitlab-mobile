@@ -3015,5 +3015,9 @@
   "aiRemovedGroupWorkItem": "Usunięto {path} #{iid} z rozmowy; AI nie może go już zmieniać",
   "aiChatEmptyGroupAdded": "AI odczytuje element roboczy #{iid} grupy {path}. Dodane przez Ciebie elementy (nad polem wiadomości) też należą do tej rozmowy; inne elementy robocze grupy i jej projekty nie.",
   "aiChatEmptyGroupItemAdded": "AI odczytuje ten element roboczy grupy. Dodane przez Ciebie elementy (nad polem wiadomości) też należą do tej rozmowy; inne elementy robocze grupy i jej projekty nie.",
-  "aiRefusedGroupDatesNotSent": "Daty nie zostały wysłane: mogą już być takie same jak obecne, a dla elementu roboczego grupy nie da się tego potwierdzić bez dodatkowego żądania. Odczytaj ponownie bieżące daty i spróbuj jeszcze raz."
+  "aiRefusedGroupDatesNotSent": "Daty nie zostały wysłane: mogą już być takie same jak obecne, a dla elementu roboczego grupy nie da się tego potwierdzić bez dodatkowego żądania. Odczytaj ponownie bieżące daty i spróbuj jeszcze raz.",
+  "offlineLossSwitchUnknown": "Zmiana konta usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.",
+  "offlineLossSignOutUnknown": "Wylogowanie usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.",
+  "offlineLossRemoveUnknown": "Usunięcie konta usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.",
+  "offlineCacheClearUnknownProjects": "Automatyczna pamięć podręczna i wszystkie projekty offline tego konta zostaną usunięte (teraz nie można potwierdzić ich liczby). Tej operacji nie można cofnąć."
 }

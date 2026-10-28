@@ -3018,4 +3018,8 @@ const _messagesDe = <String>[
   'Die KI liest das Arbeitselement #{iid} der Gruppe {path}. Die Elemente, die Sie hinzugefügt haben (über dem Nachrichtenfeld), gehören ebenfalls zu dieser Unterhaltung; andere Arbeitselemente der Gruppe und ihre Projekte nicht.',
   'Die KI liest dieses Arbeitselement der Gruppe. Die Elemente, die Sie hinzugefügt haben (über dem Nachrichtenfeld), gehören ebenfalls zu dieser Unterhaltung; andere Arbeitselemente der Gruppe und ihre Projekte nicht.',
   'Die Daten wurden nicht gesendet: Sie stimmen möglicherweise schon mit den aktuellen überein, und bei einem Arbeitselement der Gruppe lässt sich das nicht ohne zusätzliche Anfrage bestätigen. Lesen Sie die aktuellen Daten erneut und versuchen Sie es noch einmal.',
+  'Beim Kontowechsel werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.',
+  'Beim Abmelden werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.',
+  'Beim Entfernen des Kontos werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.',
+  'Der automatische Cache und alle Offline-Projekte dieses Kontos werden gelöscht (wie viele es sind, lässt sich gerade nicht feststellen). Das kann nicht rückgängig gemacht werden.',
 ];

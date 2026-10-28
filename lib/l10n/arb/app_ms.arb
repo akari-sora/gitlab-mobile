@@ -3015,5 +3015,9 @@
   "aiRemovedGroupWorkItem": "{path} #{iid} dialih keluar daripada perbualan; AI tidak boleh mengubahnya lagi",
   "aiChatEmptyGroupAdded": "AI membaca item kerja #{iid} milik kumpulan {path}. Item yang anda tambah (di atas kotak mesej) juga termasuk dalam perbualan ini; item kerja lain dalam kumpulan dan projeknya tidak.",
   "aiChatEmptyGroupItemAdded": "AI membaca item kerja kumpulan ini. Item yang anda tambah (di atas kotak mesej) juga termasuk dalam perbualan ini; item kerja lain dalam kumpulan dan projeknya tidak.",
-  "aiRefusedGroupDatesNotSent": "Tarikh tidak dihantar: tarikh itu mungkin sudah sama dengan tarikh semasa, dan bagi item kerja kumpulan perkara ini tidak dapat disahkan tanpa permintaan tambahan. Baca semula tarikh semasa dan cuba lagi."
+  "aiRefusedGroupDatesNotSent": "Tarikh tidak dihantar: tarikh itu mungkin sudah sama dengan tarikh semasa, dan bagi item kerja kumpulan perkara ini tidak dapat disahkan tanpa permintaan tambahan. Baca semula tarikh semasa dan cuba lagi.",
+  "offlineLossSwitchUnknown": "Menukar account akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.",
+  "offlineLossSignOutUnknown": "Log keluar akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.",
+  "offlineLossRemoveUnknown": "Membuang account akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.",
+  "offlineCacheClearUnknownProjects": "Cache automatik dan semua project luar talian account ini akan dipadam (bilangannya tidak dapat disahkan sekarang). Tindakan ini tidak boleh dibatalkan."
 }

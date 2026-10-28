@@ -3015,5 +3015,9 @@
   "aiRemovedGroupWorkItem": "{path} #{iid} a fost eliminat din conversație; AI nu-l mai poate modifica",
   "aiChatEmptyGroupAdded": "AI citește elementul de lucru #{iid} al grupului {path}. Elementele pe care le-ai adăugat (deasupra casetei de mesaj) fac și ele parte din această conversație; celelalte elemente de lucru ale grupului și proiectele lui nu.",
   "aiChatEmptyGroupItemAdded": "AI citește acest element de lucru al grupului. Elementele pe care le-ai adăugat (deasupra casetei de mesaj) fac și ele parte din această conversație; celelalte elemente de lucru ale grupului și proiectele lui nu.",
-  "aiRefusedGroupDatesNotSent": "Datele nu au fost trimise: s-ar putea să coincidă deja cu cele actuale, iar pentru un element de lucru al grupului acest caz nu poate fi confirmat fără o cerere suplimentară. Citește din nou datele actuale și încearcă iar."
+  "aiRefusedGroupDatesNotSent": "Datele nu au fost trimise: s-ar putea să coincidă deja cu cele actuale, iar pentru un element de lucru al grupului acest caz nu poate fi confirmat fără o cerere suplimentară. Citește din nou datele actuale și încearcă iar.",
+  "offlineLossSwitchUnknown": "Schimbarea contului șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.",
+  "offlineLossSignOutUnknown": "Deconectarea șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.",
+  "offlineLossRemoveUnknown": "Eliminarea contului șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.",
+  "offlineCacheClearUnknownProjects": "Se șterg cache-ul automat și toate proiectele offline ale acestui cont (acum nu se poate confirma câte sunt). Acțiunea nu poate fi anulată."
 }

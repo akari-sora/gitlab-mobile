@@ -3018,4 +3018,8 @@ const _messagesNl = <String>[
   'De AI leest werkitem #{iid} van de groep {path}. De items die je hebt toegevoegd (boven het berichtvak) horen ook bij dit gesprek; de andere werkitems van de groep en de projecten ervan niet.',
   'De AI leest dit werkitem van de groep. De items die je hebt toegevoegd (boven het berichtvak) horen ook bij dit gesprek; de andere werkitems van de groep en de projecten ervan niet.',
   'De datums zijn niet verzonden: ze komen mogelijk al overeen met de huidige, en bij een werkitem van de groep kan dat niet worden bevestigd zonder extra verzoek. Lees de huidige datums opnieuw en probeer het nog eens.',
+  'Als je van account wisselt, worden alle offlineprojecten van @{username} op dit apparaat verwijderd; hoeveel het er zijn, kan nu niet worden vastgesteld.',
+  'Als je uitlogt, worden alle offlineprojecten van @{username} op dit apparaat verwijderd; hoeveel het er zijn, kan nu niet worden vastgesteld.',
+  'Als je het account verwijdert, worden alle offlineprojecten van @{username} op dit apparaat verwijderd; hoeveel het er zijn, kan nu niet worden vastgesteld.',
+  'De automatische cache en alle offlineprojecten van dit account worden verwijderd (hoeveel het er zijn, kan nu niet worden vastgesteld). Dit kan niet ongedaan worden gemaakt.',
 ];

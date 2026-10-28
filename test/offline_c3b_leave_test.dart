@@ -243,6 +243,19 @@ void main() {
     await _frames(tester);
     expect(fake.stops, 0);
     expect(session.active, isNotNull);
+
+    // Confirmed both times: the session really ends.
+    await tester.tap(button(l10n.addOrReconnectAccount));
+    await _frames(tester);
+    await tester.tap(find.text('繼續並刪除'));
+    await _frames(tester);
+    await tester.tap(find.text(l10n.aiSwitchNow));
+    await _frames(tester);
+    expect(fake.stops, greaterThanOrEqualTo(1));
+    expect(session.active, isNull);
+    await pumpUntilComplete(tester, session.readCache.quiesced);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('the account sheet asks too', (tester) async {

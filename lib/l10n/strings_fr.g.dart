@@ -3018,4 +3018,8 @@ const _messagesFr = <String>[
   'L’IA lit l’élément de travail #{iid} du groupe {path}. Les éléments que vous avez ajoutés (au-dessus de la zone de message) font aussi partie de cette conversation ; les autres éléments de travail du groupe et ses projets, non.',
   'L’IA lit cet élément de travail du groupe. Les éléments que vous avez ajoutés (au-dessus de la zone de message) font aussi partie de cette conversation ; les autres éléments de travail du groupe et ses projets, non.',
   'Les dates n’ont pas été envoyées : elles correspondent peut-être déjà aux dates actuelles et, pour un élément de travail du groupe, ce cas ne peut pas être confirmé sans requête supplémentaire. Relisez les dates actuelles puis réessayez.',
+  'Changer de compte supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.',
+  'Se déconnecter supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.',
+  'Retirer le compte supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.',
+  'Le cache automatique et tous les projets hors ligne de ce compte seront supprimés (leur nombre ne peut pas être confirmé pour l’instant). Cette action est irréversible.',
 ];

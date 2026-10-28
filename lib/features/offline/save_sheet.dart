@@ -44,6 +44,7 @@ Future<void> openOfflineSaveSheet(
   RepositoryRef? ref,
   String folder = '',
   void Function(SnapshotRecord record)? onOpen,
+  bool repair = false,
 }) async {
   var consent = repositories.consentAt ?? _pendingConsent[repositories];
   final hasSnapshots = repositories.snapshots.isNotEmpty;
@@ -70,8 +71,35 @@ Future<void> openOfflineSaveSheet(
       cacheSwitchedOff: switchedOff,
       onOpen: onOpen,
       messenger: ScaffoldMessenger.maybeOf(context),
+      repair: repair,
     ),
   );
+}
+
+/// The end of a save started from a sheet or the offline projects list,
+/// told where the user is now (the starting surface may be gone): already
+/// up to date, or why it failed. Asynchronous failures are never silent.
+Future<void> reportSaveJob(
+  SnapshotSaveJob job,
+  ScaffoldMessengerState? messenger,
+) async {
+  await job.completion;
+  if (messenger == null || !messenger.mounted) return;
+  switch (job.phase) {
+    case SnapshotJobPhase.alreadyCurrent:
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.saveSheetAlreadyCurrent)),
+      );
+    case SnapshotJobPhase.failed:
+      final failure = SnapshotUiFailure(
+        job.failure ?? SnapshotFailure.storageError,
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text('${failure.title}: ${failure.detail}')),
+      );
+    default:
+      break;
+  }
 }
 
 /// What the sheet's primary action does.
@@ -90,6 +118,7 @@ class OfflineSaveSheet extends StatefulWidget {
     this.onOpen,
     this.messenger,
     this.now,
+    this.repair = false,
   });
 
   final OfflineRepositories repositories;
@@ -103,6 +132,11 @@ class OfflineSaveSheet extends StatefulWidget {
   final ScaffoldMessengerState? messenger;
   final DateTime Function()? now;
 
+  /// Opened from a damaged offline version (重新保存): saving the same commit
+  /// again is the repair, so "already up to date" never blocks it. The core
+  /// re-reads the stored copy and rebuilds what it cannot read.
+  final bool repair;
+
   @override
   State<OfflineSaveSheet> createState() => _OfflineSaveSheetState();
 }
@@ -110,8 +144,40 @@ class OfflineSaveSheet extends StatefulWidget {
 class _OfflineSaveSheetState extends State<OfflineSaveSheet> {
   late bool _folderScope = widget.folder.isNotEmpty;
   bool _starting = false;
+  StreamSubscription<Object?>? _rates, _runs;
+  bool _budgetRebuild = false;
 
   OfflineRepositories get _repos => widget.repositories;
+
+  @override
+  void initState() {
+    super.initState();
+    // The rate-limit and request-budget blockers come from the API's budgets,
+    // which the adapter does not forward: follow them while the sheet is open.
+    final api = _repos.api;
+    if (api != null) {
+      _rates = api.rateBudget.stream.listen((_) => _budgetChanged());
+      _runs = api.runBudget.changes.listen((_) => _budgetChanged());
+    }
+  }
+
+  /// Reading a budget during build can publish synchronously; rebuild once,
+  /// after the current frame's work.
+  void _budgetChanged() {
+    if (_budgetRebuild) return;
+    _budgetRebuild = true;
+    scheduleMicrotask(() {
+      _budgetRebuild = false;
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_rates?.cancel());
+    unawaited(_runs?.cancel());
+    super.dispose();
+  }
 
   String get _subPath => _folderScope ? widget.folder : '';
 
@@ -159,6 +225,7 @@ class _OfflineSaveSheetState extends State<OfflineSaveSheet> {
     if (existing == null || existing.status != SnapshotStatus.complete) {
       return _SaveAction.save;
     }
+    if (widget.repair) return _SaveAction.update;
     final sha = _knownSha.isNotEmpty ? _knownSha : existing.headSha;
     if (sha != null && sha.isNotEmpty && sha == existing.sha) {
       return _SaveAction.current;
@@ -225,35 +292,11 @@ class _OfflineSaveSheetState extends State<OfflineSaveSheet> {
       final job = _repos.save(request, resume: resume ? existing : null);
       messenger?.showSnackBar(SnackBar(content: Text(l10n.saveSheetStarted)));
       if (mounted) Navigator.of(context).pop();
-      unawaited(_report(job, messenger));
+      unawaited(reportSaveJob(job, messenger));
     } on Object catch (error) {
       if (!mounted) return;
       setState(() => _starting = false);
       showSnapshotFailure(context, error);
-    }
-  }
-
-  /// The end of a save, told where the user is now (the sheet is gone).
-  static Future<void> _report(
-    SnapshotSaveJob job,
-    ScaffoldMessengerState? messenger,
-  ) async {
-    await job.completion;
-    if (messenger == null || !messenger.mounted) return;
-    switch (job.phase) {
-      case SnapshotJobPhase.alreadyCurrent:
-        messenger.showSnackBar(
-          SnackBar(content: Text(l10n.saveSheetAlreadyCurrent)),
-        );
-      case SnapshotJobPhase.failed:
-        final failure = SnapshotUiFailure(
-          job.failure ?? SnapshotFailure.storageError,
-        );
-        messenger.showSnackBar(
-          SnackBar(content: Text('${failure.title}: ${failure.detail}')),
-        );
-      default:
-        break;
     }
   }
 
@@ -568,9 +611,11 @@ class _OfflineSaveSheetState extends State<OfflineSaveSheet> {
               : Icons.download_for_offline_outlined,
         ),
         label: Text(
-          action == _SaveAction.update
-              ? l10n.saveSheetUpdate
-              : l10n.saveSheetStart,
+          action != _SaveAction.update
+              ? l10n.saveSheetStart
+              : widget.repair
+              ? l10n.snapshotResave
+              : l10n.saveSheetUpdate,
         ),
       ),
     };

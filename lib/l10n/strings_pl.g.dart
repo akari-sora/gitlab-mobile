@@ -3018,4 +3018,8 @@ const _messagesPl = <String>[
   'AI odczytuje element roboczy #{iid} grupy {path}. Dodane przez Ciebie elementy (nad polem wiadomości) też należą do tej rozmowy; inne elementy robocze grupy i jej projekty nie.',
   'AI odczytuje ten element roboczy grupy. Dodane przez Ciebie elementy (nad polem wiadomości) też należą do tej rozmowy; inne elementy robocze grupy i jej projekty nie.',
   'Daty nie zostały wysłane: mogą już być takie same jak obecne, a dla elementu roboczego grupy nie da się tego potwierdzić bez dodatkowego żądania. Odczytaj ponownie bieżące daty i spróbuj jeszcze raz.',
+  'Zmiana konta usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.',
+  'Wylogowanie usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.',
+  'Usunięcie konta usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.',
+  'Automatyczna pamięć podręczna i wszystkie projekty offline tego konta zostaną usunięte (teraz nie można potwierdzić ich liczby). Tej operacji nie można cofnąć.',
 ];

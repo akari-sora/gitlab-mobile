@@ -3018,4 +3018,8 @@ const _messagesMs = <String>[
   'AI membaca item kerja #{iid} milik kumpulan {path}. Item yang anda tambah (di atas kotak mesej) juga termasuk dalam perbualan ini; item kerja lain dalam kumpulan dan projeknya tidak.',
   'AI membaca item kerja kumpulan ini. Item yang anda tambah (di atas kotak mesej) juga termasuk dalam perbualan ini; item kerja lain dalam kumpulan dan projeknya tidak.',
   'Tarikh tidak dihantar: tarikh itu mungkin sudah sama dengan tarikh semasa, dan bagi item kerja kumpulan perkara ini tidak dapat disahkan tanpa permintaan tambahan. Baca semula tarikh semasa dan cuba lagi.',
+  'Menukar account akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.',
+  'Log keluar akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.',
+  'Membuang account akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.',
+  'Cache automatik dan semua project luar talian account ini akan dipadam (bilangannya tidak dapat disahkan sekarang). Tindakan ini tidak boleh dibatalkan.',
 ];

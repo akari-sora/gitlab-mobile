@@ -3018,4 +3018,8 @@ const _messagesTr = <String>[
   'AI, {path} grubunun #{iid} iş öğesini okur. Eklediğin öğeler (mesaj kutusunun üstünde) de bu konuşmanın kapsamındadır; grubun diğer iş öğeleri ve projeleri değildir.',
   'AI bu grup iş öğesini okur. Eklediğin öğeler (mesaj kutusunun üstünde) de bu konuşmanın kapsamındadır; grubun diğer iş öğeleri ve projeleri değildir.',
   'Tarihler gönderilmedi: zaten mevcut tarihlerle aynı olabilirler ve bir grup iş öğesinde bu durum ek bir istek olmadan doğrulanamaz. Mevcut tarihleri yeniden okuyup tekrar dene.',
+  'Hesap değiştirmek, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.',
+  'Oturumu kapatmak, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.',
+  'Hesabı kaldırmak, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.',
+  'Otomatik önbellek ve bu hesabın tüm çevrimdışı projeleri silinir (kaç tane olduğu şu anda doğrulanamıyor). Bu işlem geri alınamaz.',
 ];

@@ -2,6 +2,7 @@
 // snapshot media policy, the AI regression of MarkdownView(offline: true),
 // every state of the sheet, chip and explainer, the offline projects page,
 // the .gitattributes hint and the layouts (320 dp, 2x, de, ar, keyboard).
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -656,11 +657,21 @@ void main() {
           ),
         ),
       );
-      for (final status in statuses.take(8)) {
-        final (_, label) = snapshotStatusLabel(status);
-        expect(find.text(label), findsOneWidget);
+      // Independent expected texts: the chip must not be checked against the
+      // same function that renders it.
+      for (final label in const [
+        '已保存',
+        '已保存 · 3 個未保存',
+        '保存中 42%',
+        '排隊中',
+        '等待額度',
+        '等待限流解除',
+        '已暫停',
+        '已中斷',
+        '有新版本',
+      ]) {
+        expect(find.text(label), findsOneWidget, reason: label);
       }
-      expect(find.text('已保存 · 3 個未保存'), findsOneWidget);
       expect(find.text('保存中 42%'), findsOneWidget);
       expect(
         find.text(
@@ -1059,7 +1070,9 @@ void main() {
       expect(repositories.snapshots, hasLength(3));
     });
 
-    testWidgets('empty state at 320 dp and 2x in ar', (tester) async {
+    testWidgets('a non-empty list at 320 dp and 2x in ar has no overflow', (
+      tester,
+    ) async {
       useLanguage(languageForTag('ar')!);
       tester.view.physicalSize = const Size(320, 640);
       tester.view.devicePixelRatio = 1;
@@ -1096,7 +1109,162 @@ void main() {
     });
   });
 
+  testWidgets('no offline projects shows the empty state', (tester) async {
+    final owner = OfflineRepositoryCoordinator()
+      ..configure(
+        keys: fixture.MemoryKeys()..value = null,
+        supportRoot: () async => Directory.systemTemp,
+        deleteDirectory: (_) async {},
+      );
+    late OfflineRepositories repositories;
+    await tester.runAsync(() async {
+      owner.open(_binding, readOnly: true);
+      repositories = OfflineRepositories(binding: _binding, coordinator: owner);
+      await repositories.refresh();
+    });
+    addTearDown(repositories.dispose);
+    await tester.pumpWidget(
+      _app(
+        OfflineProjectsPage(repositories: repositories, account: _account),
+        repositories: repositories,
+      ),
+    );
+    await tester.pump();
+    expect(repositories.snapshots, isEmpty);
+    expect(find.text('還沒有離線專案'), findsOneWidget);
+    expect(find.byKey(const ValueKey('offline-delete-all')), findsNothing);
+  });
+
   group('leaving the session', () {
+    // FIX1 P1-2: an inventory that is loading or failed is never zero.
+    Future<bool? Function()> leaveButton(
+      WidgetTester tester,
+      OfflineRepositories repositories,
+    ) async {
+      bool? answer;
+      var done = false;
+      await tester.pumpWidget(
+          _app(
+            Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  onPressed: () async {
+                    answer = await confirmOfflineLoss(
+                      context,
+                      repositories: repositories,
+                      account: _account,
+                      kind: LeaveKind.switchAccount,
+                    );
+                    done = true;
+                  },
+                  child: const Text('leave'),
+                ),
+              ),
+            ),
+            repositories: repositories,
+            mode: NetworkBoundaryMode.online,
+          ),
+      );
+      return () => done ? answer : null;
+    }
+
+    testWidgets('an inventory still loading is awaited, then counted', (
+      tester,
+    ) async {
+      final snap = await tester.runAsync(_Snap.create);
+      addTearDown(snap!.dispose);
+      late OfflineRepositories repositories;
+      await tester.runAsync(() async {
+        // Completers made on the real loop resolve there, not on the widget
+        // clock that runAsync does not pump.
+        snap.keys
+          ..readGate = Completer<void>()
+          ..readStarted = Completer<void>();
+        repositories = OfflineRepositories(
+          binding: _binding,
+          coordinator: snap.owner,
+        );
+        // The inventory is held in the middle of reading the key.
+        await snap.keys.readStarted!.future;
+      });
+      addTearDown(repositories.dispose);
+      expect(repositories.loading, isTrue);
+      expect(repositories.snapshots, isEmpty, reason: 'not loaded is not zero');
+      final result = await leaveButton(tester, repositories);
+      await tester.tap(find.text('leave'));
+      await tester.pump();
+      expect(find.text('要刪除離線專案嗎？'), findsNothing, reason: 'waits for the count');
+      expect(result(), isNull, reason: 'nothing decided yet');
+      await tester.runAsync(() async {
+        snap.keys.readGate!.complete();
+        while (repositories.loading) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      });
+      await _until(
+        tester,
+        find.textContaining('切換帳號會刪除 @coder 的 1 個離線專案（'),
+      );
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(result(), isFalse);
+    });
+
+    testWidgets('an inventory that does not finish in time asks with an unknown count', (
+      tester,
+    ) async {
+      final snap = await tester.runAsync(_Snap.create);
+      addTearDown(snap!.dispose);
+      late Completer<void> gate;
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+      late OfflineRepositories repositories;
+      await tester.runAsync(() async {
+        gate = Completer<void>();
+        snap.keys
+          ..readGate = gate
+          ..readStarted = Completer<void>();
+        repositories = OfflineRepositories(
+          binding: _binding,
+          coordinator: snap.owner,
+        );
+        await snap.keys.readStarted!.future;
+      });
+      addTearDown(repositories.dispose);
+      final result = await leaveButton(tester, repositories);
+      await tester.tap(find.text('leave'));
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('切換帳號會刪除 @coder 在這台裝置上的所有離線專案；目前無法確認有幾個。'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('繼續並刪除'));
+      await tester.pumpAndSettle();
+      expect(result(), isTrue);
+    });
+
+    testWidgets('a failed inventory asks with an unknown count', (tester) async {
+      final snap = await tester.runAsync(_Snap.create);
+      addTearDown(snap!.dispose);
+      snap.keys.unavailable = true;
+      final repositories = await _adapter(tester, snap);
+      expect(repositories.state, OfflineRepositoryState.unavailable);
+      expect(repositories.failure, isNotNull);
+      expect(repositories.snapshots, isEmpty);
+      final result = await leaveButton(tester, repositories);
+      await tester.tap(find.text('leave'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('切換帳號會刪除 @coder 在這台裝置上的所有離線專案；目前無法確認有幾個。'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(result(), isFalse);
+    });
+
     testWidgets('lists the count and size; none means no question', (
       tester,
     ) async {

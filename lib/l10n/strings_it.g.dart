@@ -3018,4 +3018,8 @@ const _messagesIt = <String>[
   'L’IA legge l’elemento di lavoro #{iid} del gruppo {path}. Anche gli elementi che hai aggiunto (sopra la casella del messaggio) fanno parte di questa conversazione; gli altri elementi di lavoro del gruppo e i suoi progetti no.',
   'L’IA legge questo elemento di lavoro del gruppo. Anche gli elementi che hai aggiunto (sopra la casella del messaggio) fanno parte di questa conversazione; gli altri elementi di lavoro del gruppo e i suoi progetti no.',
   'Le date non sono state inviate: potrebbero già coincidere con quelle attuali e, per un elemento di lavoro del gruppo, questo caso non si può confermare senza una richiesta aggiuntiva. Rileggi le date attuali e riprova.',
+  'Cambiando account vengono eliminati tutti i progetti offline di @{username} su questo dispositivo; al momento non è possibile confermare quanti sono.',
+  'Uscendo vengono eliminati tutti i progetti offline di @{username} su questo dispositivo; al momento non è possibile confermare quanti sono.',
+  'Rimuovendo l\'account vengono eliminati tutti i progetti offline di @{username} su questo dispositivo; al momento non è possibile confermare quanti sono.',
+  'La cache automatica e tutti i progetti offline di questo account vengono eliminati (al momento non è possibile confermare quanti sono). L\'operazione non può essere annullata.',
 ];

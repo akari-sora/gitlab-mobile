@@ -3015,5 +3015,9 @@
   "aiRemovedGroupWorkItem": "{path} #{iid} dihapus dari percakapan; AI tidak dapat mengubahnya lagi",
   "aiChatEmptyGroupAdded": "AI membaca item kerja #{iid} milik grup {path}. Item yang Anda tambahkan (di atas kotak pesan) juga termasuk dalam percakapan ini; item kerja lain di grup dan proyek di dalamnya tidak.",
   "aiChatEmptyGroupItemAdded": "AI membaca item kerja grup ini. Item yang Anda tambahkan (di atas kotak pesan) juga termasuk dalam percakapan ini; item kerja lain di grup dan proyek di dalamnya tidak.",
-  "aiRefusedGroupDatesNotSent": "Tanggal tidak dikirim: tanggalnya mungkin sudah sama dengan yang sekarang, dan untuk item kerja grup hal ini tidak dapat dipastikan tanpa permintaan tambahan. Baca ulang tanggal saat ini lalu coba lagi."
+  "aiRefusedGroupDatesNotSent": "Tanggal tidak dikirim: tanggalnya mungkin sudah sama dengan yang sekarang, dan untuk item kerja grup hal ini tidak dapat dipastikan tanpa permintaan tambahan. Baca ulang tanggal saat ini lalu coba lagi.",
+  "offlineLossSwitchUnknown": "Berganti account akan menghapus semua project offline milik @{username} di perangkat ini; jumlahnya belum dapat dipastikan saat ini.",
+  "offlineLossSignOutUnknown": "Keluar akan menghapus semua project offline milik @{username} di perangkat ini; jumlahnya belum dapat dipastikan saat ini.",
+  "offlineLossRemoveUnknown": "Menghapus account akan menghapus semua project offline milik @{username} di perangkat ini; jumlahnya belum dapat dipastikan saat ini.",
+  "offlineCacheClearUnknownProjects": "Cache otomatis dan semua project offline account ini akan dihapus (jumlahnya belum dapat dipastikan saat ini). Tindakan ini tidak dapat dibatalkan."
 }

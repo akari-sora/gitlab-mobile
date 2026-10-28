@@ -3018,4 +3018,8 @@ const _messagesVi = <String>[
   'AI đọc mục công việc #{iid} của nhóm {path}. Các mục bạn đã thêm (phía trên ô tin nhắn) cũng thuộc cuộc trò chuyện này; các mục công việc khác của nhóm và các dự án của nhóm thì không.',
   'AI đọc mục công việc này của nhóm. Các mục bạn đã thêm (phía trên ô tin nhắn) cũng thuộc cuộc trò chuyện này; các mục công việc khác của nhóm và các dự án của nhóm thì không.',
   'Chưa gửi ngày: ngày được yêu cầu có thể đã trùng với ngày hiện tại, và với mục công việc của nhóm thì không thể xác nhận trường hợp này nếu không gửi thêm một yêu cầu. Hãy đọc lại ngày hiện tại rồi thử lại.',
+  'Chuyển account sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.',
+  'Đăng xuất sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.',
+  'Gỡ account sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.',
+  'Bộ nhớ đệm tự động và tất cả project ngoại tuyến của account này sẽ bị xóa (hiện chưa thể xác nhận có bao nhiêu). Không thể hoàn tác.',
 ];

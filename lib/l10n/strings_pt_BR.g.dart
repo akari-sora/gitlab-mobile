@@ -3018,4 +3018,8 @@ const _messagesPtBr = <String>[
   'A IA lê o item de trabalho #{iid} do grupo {path}. Os itens que você adicionou (acima da caixa de mensagem) também fazem parte desta conversa; os outros itens de trabalho do grupo e os projetos dele, não.',
   'A IA lê este item de trabalho do grupo. Os itens que você adicionou (acima da caixa de mensagem) também fazem parte desta conversa; os outros itens de trabalho do grupo e os projetos dele, não.',
   'As datas não foram enviadas: elas podem já ser iguais às atuais e, em um item de trabalho do grupo, esse caso não pode ser confirmado sem uma solicitação extra. Leia as datas atuais de novo e tente outra vez.',
+  'Alternar de conta exclui todos os projetos offline de @{username} neste dispositivo; agora não é possível confirmar quantos são.',
+  'Sair exclui todos os projetos offline de @{username} neste dispositivo; agora não é possível confirmar quantos são.',
+  'Remover a conta exclui todos os projetos offline de @{username} neste dispositivo; agora não é possível confirmar quantos são.',
+  'O cache automático e todos os projetos offline desta conta serão excluídos (agora não é possível confirmar quantos são). Isso não pode ser desfeito.',
 ];

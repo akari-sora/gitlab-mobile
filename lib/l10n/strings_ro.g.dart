@@ -3018,4 +3018,8 @@ const _messagesRo = <String>[
   'AI citește elementul de lucru #{iid} al grupului {path}. Elementele pe care le-ai adăugat (deasupra casetei de mesaj) fac și ele parte din această conversație; celelalte elemente de lucru ale grupului și proiectele lui nu.',
   'AI citește acest element de lucru al grupului. Elementele pe care le-ai adăugat (deasupra casetei de mesaj) fac și ele parte din această conversație; celelalte elemente de lucru ale grupului și proiectele lui nu.',
   'Datele nu au fost trimise: s-ar putea să coincidă deja cu cele actuale, iar pentru un element de lucru al grupului acest caz nu poate fi confirmat fără o cerere suplimentară. Citește din nou datele actuale și încearcă iar.',
+  'Schimbarea contului șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.',
+  'Deconectarea șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.',
+  'Eliminarea contului șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.',
+  'Se șterg cache-ul automat și toate proiectele offline ale acestui cont (acum nu se poate confirma câte sunt). Acțiunea nu poate fi anulată.',
 ];
