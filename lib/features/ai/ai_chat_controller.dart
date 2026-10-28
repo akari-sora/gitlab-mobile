@@ -2327,7 +2327,7 @@ class AiChatController extends ChangeNotifier
     final group = await _api.group(groupId);
     if (!isCurrent()) throw const AiJournalException('accountChanged');
     if (group['id'] != groupId || group['full_path'] != path) {
-      throw const AiJournalException('accountChanged');
+      throw const AiJournalException('targetChanged');
     }
     final metadata = sourceGroupMetadata ?? _context?.groupMetadata;
     final sourceRank = _sourceVisibilityRank(metadata);

@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "El cambio no surtió efecto: el campo sigue con su valor anterior. Vuelve a leer y prueba de nuevo.",
   "aiRefusedDiscussionLocked": "Esta discusión está bloqueada, así que no se envió el comentario ni la respuesta.",
   "aiRefusedNotOwnNote": "Esta acción solo puede eliminar comentarios escritos por tu propia cuenta, así que no se hizo nada.",
-  "aiRefusedTodoForeign": "Este pendiente pertenece a otra cuenta, así que no se hizo nada.",
+  "aiRefusedTodoForeign": "No se pudo confirmar que este pendiente pertenezca a esta cuenta y esté dentro del alcance de esta conversación, así que no se hizo nada.",
   "aiRefusedProtectedBranch": "Esta rama está protegida; la IA no puede eliminarla ni reescribirla, así que no se hizo nada.",
   "aiRefusedDefaultBranch": "La rama predeterminada no se puede eliminar, así que no se hizo nada.",
   "aiRefusedMergeChecking": "GitLab aún está comprobando si se puede fusionar, así que no se hizo nada. Inténtalo de nuevo en un momento.",
@@ -2971,5 +2971,18 @@
   "offlineCacheClearWithProjects": "Se eliminan la caché automática y {count} proyectos sin conexión ({size} en total). No se puede deshacer.",
   "offlineCacheClearUnknownProjects": "Se eliminan la caché automática y todos los proyectos sin conexión de esta cuenta (ahora no se puede confirmar cuántos hay). No se puede deshacer.",
   "offlineCacheTurnOffTitle": "¿Desactivar la caché sin conexión?",
-  "offlineCacheClearButton": "Borrar"
+  "offlineCacheClearButton": "Borrar",
+  "aiProposalGroupTarget": "Elemento de trabajo #{iid}, que pertenece directamente al grupo {path}",
+  "aiProposalOwnTodo": "Solo cambia tu propia lista de pendientes (@{username}); el elemento de trabajo no cambia.",
+  "aiProposalDeleteOwnNote": "Solo elimina este comentario, que escribiste tú; antes de enviarlo, se vuelve a comprobar en GitLab que eres su autor.",
+  "aiRefusedGroupUnsupported": "GitLab no ofrece esto para este elemento de trabajo del grupo (puede que su versión o el tipo de elemento no lo admitan), así que no se envió nada.",
+  "aiRefusedGroupUnverifiable": "No se pudo confirmar que este elemento de trabajo siga perteneciendo directamente a su grupo (puede que el grupo se haya renombrado o movido), así que no se envió nada. Vuelve a abrirlo o añadirlo.",
+  "aiConsentWritesGroupScope": "Elementos de trabajo de un grupo: la IA solo puede cambiar aquel con el que se abrió esta conversación o los que añadas tú; el permiso nunca se extiende a todo el grupo, sus subgrupos ni sus proyectos.",
+  "aiChatEmptyGroup": "La IA lee el elemento de trabajo #{iid} del grupo {path}. Los demás elementos de trabajo del grupo y sus proyectos quedan fuera de esta conversación.",
+  "aiChatEmptyGroupItem": "La IA lee este elemento de trabajo del grupo. Los demás elementos de trabajo del grupo y sus proyectos quedan fuera de esta conversación.",
+  "aiSuggestWorkItemSummary": "Resume este elemento de trabajo",
+  "aiRemovedGroupWorkItem": "Se quitó {path} #{iid} de la conversación; la IA ya no puede cambiarlo",
+  "aiChatEmptyGroupAdded": "La IA lee el elemento de trabajo #{iid} del grupo {path}. Los elementos que añadiste (sobre el cuadro de mensaje) también forman parte de esta conversación; los demás elementos de trabajo del grupo y sus proyectos no.",
+  "aiChatEmptyGroupItemAdded": "La IA lee este elemento de trabajo del grupo. Los elementos que añadiste (sobre el cuadro de mensaje) también forman parte de esta conversación; los demás elementos de trabajo del grupo y sus proyectos no.",
+  "aiRefusedGroupDatesNotSent": "Las fechas no se enviaron: puede que ya coincidan con las actuales y, en un elemento de trabajo del grupo, ese caso no se puede confirmar sin una solicitud adicional. Vuelve a leer las fechas actuales e inténtalo de nuevo."
 }

@@ -368,6 +368,7 @@ G15正式整合再跑 `fvm flutter test --no-pub`、`PYTHONDONTWRITEBYTECODE=1 p
 | source group visibility／WI confidential 證據不完整 | G0c保存已驗metadata／unknown，G0d接最嚴source rank及污染；現有WI固定query未提供confidential，不能憑模型或缺欄推定false。若目標schema需新增欄位才能證實，先由G0b owner交付有測試的core follow-up、維持固定文件／同次read並驗一般UI相容性；未完成前相關自動路徑保持確認，live五等級可達性仍NOT_RUN。 |
 | 先增加15 operation aliases會漏intent/text/inventory判斷 | G0e列封閉mapping、graphWriteBack兩輪接線；G14/G15要求每個alias的schema/label/tier/cap/method/site覆蓋，不符合保持hidden。 |
 | group read tool不能提供完整活動note provenance | 最小工具只保證WI description；note無可證token則拒還原，普通安全body可編輯。擴活動read tool留另案，不放寬同欄規則。G0d/G-P10e。 |
+| group upload placeholder 的長數字 token | 保留 G0a 每個 conversation 的 128-bit namespace；G15 的真實模型驗收必須證明模型逐字複製完整 token 並可同欄還原，不能以 synthetic round-trip 代替。此真實模型案例 NOT_RUN（#32 Opus M4）。 |
 | stale PLAN_STATUS／未來main版本已移動 | 每包開始重核HEAD、citations、已交付tests與版本；G14才在其MR更新狀態頁／父計畫相關項，不拿舊Building當缺實作。 |
 | API無原子CAS、跨裝置外部寫入 | 保留revision/fence/readback及uncertain隔離，揭露最終preflight→mutation競態，不能聲稱原子保護。各家族＋Claude。 |
 | group todo有身份但資源scope不是該群組／accountGlobal誤擴權 | exact Group+iid不符拒；accountGlobal僅own Todo，不衍生WI grant；其餘project-null目標仍unsupported。G-P13/G15。 |

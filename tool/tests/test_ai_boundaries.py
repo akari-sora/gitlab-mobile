@@ -496,6 +496,12 @@ class AiBoundaryTest(unittest.TestCase):
                 self.assertEqual(self._read_port_violations(
                     self._read_port_fixture(extra=addition)), [])
 
+    def test_read_port_ignores_unknown_class_comment_and_raw_string_api_bait(self):
+        for addition in ("// _api.namespaceWorkItem\n", "String bait = r'_api.namespaceWorkItem';"):
+            with self.subTest(addition=addition):
+                self.assertEqual(self._read_port_violations(
+                    self._read_port_fixture(extra="class Unknown { " + addition + " }")), [])
+
     def test_read_port_snapshot_rejects_opus_smuggling_with_normal_members(self):
         ns = ("namespaceWorkItem('a/b', 1, expectedNamespaceId: 'gid://gitlab/Group/1', "
               "strictIdentity: true)")
@@ -967,6 +973,32 @@ class AiBoundaryTest(unittest.TestCase):
             ["part declares GitLabApi", "part uses _api without member access"],
         )
 
+    def test_write_port_guard_rejects_chained_api_cascades_in_main_and_parts(self):
+        for is_part in (False, True):
+            for receiver in ("_api", "alias", "second", "typed", "assigned"):
+                for operator in ("..", "?.."):
+                    for wrapped in (receiver, f"(({receiver}))"):
+                        source = ("final alias = _api; final second = alias; "
+                                  "final GitLabApi typed = (_api); GitLabApi assigned; assigned = typed; "
+                                  f"({wrapped}{operator}instance.. /* gap */ deleteProject(7)).instance;")
+                        with self.subTest(is_part=is_part, receiver=wrapped, operator=operator):
+                            self.assertIn("API cascade in write port",
+                                          self._write_port_violations(source, is_part=is_part))
+        self.assertEqual(self._api_cascade_violations(
+            "// _api..instance..deleteProject(7)\n"
+            "const bait = r'_api..instance..deleteProject(7)'; "
+            "final value = other..instance..deleteProject(7);"), [])
+        self.assertNotIn("base", self._api_receivers("final base = (_api).instance;"))
+        for is_part in (False, True):
+            for expression in ("_api as GitLabApi", "(_api) as dynamic", "_api!"):
+                for source in (
+                    f"({expression})..instance..deleteProject(7);",
+                    f"final alias = {expression}; alias..instance..deleteProject(7);",
+                ):
+                    with self.subTest(is_part=is_part, source=source):
+                        self.assertIn("API receiver assertion in write port",
+                                      self._write_port_violations(source, is_part=is_part))
+
     def test_write_port_guard_catches_api_passed_as_argument(self):
         for source in (
             "helper(_api);",
@@ -1098,8 +1130,19 @@ class AiBoundaryTest(unittest.TestCase):
     @classmethod
     def _api_members(cls, source):
         source = cls._code_only(source)
+        members = set()
+        for receiver in cls._api_receivers(source):
+            members.update(
+                re.findall(rf"\b{re.escape(receiver)}\s*(?:\?\.\.|\.\.|\?\.|\.)\s*(\w+)\b", source)
+            )
+        return members
+
+    @staticmethod
+    def _api_receivers(source):
         receivers = {"_api"}
-        aliases = re.compile(r"\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b(?!\s*(?:[.(]|\?\.))")
+        # Track assignments independently of optional declaration types. The
+        # terminator excludes member access such as `final base = _api.instance`.
+        aliases = re.compile(r"\b(\w+)\s*=\s*(?:\(\s*)*(\w+)\b(?:\s*\))*(?=\s*[;,])")
         changed = True
         while changed:
             changed = False
@@ -1107,12 +1150,21 @@ class AiBoundaryTest(unittest.TestCase):
                 if target in receivers and alias not in receivers:
                     receivers.add(alias)
                     changed = True
-        members = set()
-        for receiver in receivers:
-            members.update(
-                re.findall(rf"\b{re.escape(receiver)}\s*(?:\?\.\.|\.\.|\?\.|\.)\s*(\w+)\b", source)
-            )
-        return members
+        return receivers
+
+    @classmethod
+    def _api_cascade_violations(cls, source):
+        code = cls._code_only(source)
+        # A member whitelist cannot establish later cascade receivers. Refuse
+        # API cascades and receiver assertions that could hide their aliases.
+        violations = []
+        for receiver in cls._api_receivers(code):
+            prefix = rf"\b{re.escape(receiver)}\b(?:\s*\))*\s*"
+            if re.search(prefix + r"(?:\?\.\.|\.\.)", code):
+                violations.append("API cascade in write port")
+            if re.search(prefix + r"(?:as\b|!(?!=))", code):
+                violations.append("API receiver assertion in write port")
+        return violations
 
     @staticmethod
     def _code_only(source):
@@ -1240,7 +1292,7 @@ class AiBoundaryTest(unittest.TestCase):
             if not argument or token.start() + argument.start(1) not in owner_offsets:
                 violations.append("unexpected apiOwner occurrence in read port")
         for name, start, end in classes:
-            if name not in expected and (cls._api_members(source[start:end]) or
+            if name not in expected and (cls._api_members(code[start:end]) or
                                          re.search(r"\b(?:GitLabApi|_api)\b", code[start:end])):
                 violations.append(f"API access in unknown class {name}")
         outside = list(code)
@@ -1640,9 +1692,9 @@ class AiBoundaryTest(unittest.TestCase):
             sources.append((path, source, True))
         return sources
 
-    @staticmethod
-    def _write_port_violations(source, *, is_part):
-        violations = []
+    @classmethod
+    def _write_port_violations(cls, source, *, is_part):
+        violations = cls._api_cascade_violations(source)
         for channel in sorted(GENERIC_CHANNELS):
             if re.search(rf"\b{re.escape(channel)}\b", source):
                 violations.append(f"uses generic channel {channel}")

@@ -43,7 +43,12 @@ void main() {
   });
   tearDown(() => root.deleteSync(recursive: true));
 
-  Future<String> write(AiJournalState terminal, {String name = '!12'}) async {
+  Future<String> write(
+    AiJournalState terminal, {
+    String name = '!12',
+    String operationId = 'createNote',
+    List<String>? keyParts,
+  }) async {
     final id = 'execution-${serial++}';
     await journal.prepare(
       draft: AiJournalDraft(
@@ -51,9 +56,11 @@ void main() {
         accountKey: account.key,
         conversationId: 'conversation-$id',
         runId: 'run-$id',
-        operationId: 'createNote',
+        operationId: operationId,
         writeKeys: {
-          AiConflictKey([account.key, 'project:42', 'mergeRequest', id]),
+          AiConflictKey(
+            keyParts ?? [account.key, 'project:42', 'mergeRequest', id],
+          ),
         },
         dependencyKeys: const {},
         payloadSha256: 'a' * 64,
@@ -187,6 +194,86 @@ void main() {
     );
     // Let the confirmation snack bar time out.
     await tester.pump(const Duration(seconds: 5));
+  });
+
+  // MR6b-3g full UI (§3.1, §6.1): a group work item is released by its
+  // group path and #iid, a to-do snooze by @username; the log shows the group
+  // path and number as two pieces and invents no GitLab link for a group.
+  testWidgets('a group item is released by its full name, a to-do by '
+      '@username', (tester) async {
+    late String group;
+    late String todo;
+    await tester.runAsync(() async {
+      await journal.recoverAfterAccountsLoaded([account.key]);
+      await journal.ensureInitialized(account.key);
+      group = await write(
+        AiJournalState.writeUncertain,
+        name: 'team/sub#5',
+        operationId: 'updateGroupWorkItemState',
+        keyParts: [account.key, 'group:7', 'workItem', '5'],
+      );
+      todo = await write(
+        AiJournalState.writeUncertain,
+        name: '@developer',
+        operationId: 'snoozeTodo',
+        keyParts: [account.key, 'todos', '31'],
+      );
+    });
+    await open(tester);
+    final groupRow = find.byKey(ValueKey('ai-write-log-interrupted-$group'));
+    expect(
+      find.descendant(
+        of: groupRow,
+        matching: find.textContaining('team/sub #5'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('team/sub#5'), findsNothing);
+    expect(find.byKey(ValueKey('ai-write-log-open-$group')), findsNothing);
+    expect(find.byKey(ValueKey('ai-write-log-open-$todo')), findsNothing);
+
+    Future<void> release(String id, List<String> wrong, String name) async {
+      final button = find.byKey(ValueKey('ai-write-log-release-$id'));
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      final confirm = find.widgetWithText(FilledButton, l10n.confirmAction);
+      for (final text in wrong) {
+        await tester.enterText(find.byType(TextField).last, text);
+        await tester.pump();
+        expect(
+          tester.widget<FilledButton>(confirm).onPressed,
+          isNull,
+          reason: text,
+        );
+      }
+      await tester.enterText(find.byType(TextField).last, name);
+      await tester.pump();
+      await tester.tap(confirm);
+      await settleIo(tester);
+      await tester.pump(const Duration(seconds: 5));
+    }
+
+    // The number alone, the path alone, the shown form with a space or
+    // another group never release a group item.
+    await release(group, const [
+      '#5',
+      'team/sub',
+      'team/sub #5',
+      'team/other#5',
+    ], 'team/sub#5');
+    await release(todo, const ['developer', '@other'], '@developer');
+    for (final id in [group, todo]) {
+      expect(
+        journal
+            .entries(account.key)
+            .firstWhere((e) => e.executionId == id)
+            .state,
+        AiJournalState.resolvedByUser,
+        reason: id,
+      );
+    }
   });
 
   testWidgets('a reset needs the @username', (tester) async {

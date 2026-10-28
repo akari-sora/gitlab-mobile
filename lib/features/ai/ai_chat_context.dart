@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../../core/ai/ai_transcript.dart' show AiContextBlock;
+import '../../core/ai/ai_failure.dart';
 import '../../core/ai/app_text.dart';
 import '../../core/ai/context_builders.dart';
 import '../../core/ai/redaction.dart';
@@ -18,6 +19,10 @@ import 'ai_chat_session.dart';
 
 /// The redacted starting context plus immutable revisions used to bind tools.
 final class AiChatContext {
+  // App-owned loaders select one origin branch: project loaders omit
+  // groupScope, the group loader sets scope:null, and wrappers copy both from
+  // that same context. This assert diagnoses programming errors; untrusted
+  // server/model data cannot choose or combine these constructor arguments.
   const AiChatContext({
     required this.built,
     required this.scope,
@@ -262,6 +267,8 @@ Future<AiChatContext> loadAiChatContext({
 }
 
 const _aiContextMaxAge = Duration(seconds: 60);
+const _groupContextReadAllowance = 2;
+const _groupContextHttpLimit = 2 * _groupContextReadAllowance;
 
 Future<AiChatContext> _loadGroupWorkItem(
   AiGroupWorkItemOrigin origin,
@@ -277,12 +284,13 @@ Future<AiChatContext> _loadGroupWorkItem(
   final startingRequests = meter.count;
   return meter.runAsync(() async {
     void beforeRead() {
-      // Initial preparation has no run lease yet. Bound that path here too;
-      // an outer context meter/admission remains authoritative when present.
-      if (meter.count - startingRequests + 2 > 4) {
-        throw const ApiFailure(FailureKind.rateLimited);
+      // Both limits apply: initial preparation has no outer run lease, while
+      // a caller's admission may impose a stricter conversation allowance.
+      if (meter.count - startingRequests + _groupContextReadAllowance >
+          _groupContextHttpLimit) {
+        throw const AiFailure(AiFailureKind.rateLimited, gitLabBudget: true);
       }
-      reads.beforeRead?.call(2);
+      reads.beforeRead?.call(_groupContextReadAllowance);
     }
 
     final groupId = origin.groupId;
@@ -386,6 +394,7 @@ Future<AiChatContext> _loadGroupWorkItem(
         blockedSensitivePaths: built.blockedSensitivePaths,
         redactions: built.redactions,
         withheldPrivateKeyContext: built.withheldPrivateKeyContext,
+        readInternal: built.readInternal,
       ),
       scope: null,
       groupScope: AiGroupResourceScope(

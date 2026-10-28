@@ -14,7 +14,11 @@ const List<AiCapability> aiGraphqlAssigneesRows = <AiCapability>[
     arguments: {
       'projectId': _projectId,
       'iid': _iid,
-      'assigneeUsernames': AiArgSpec(AiArgType.stringList, required: true),
+      'assigneeUsernames': AiArgSpec(
+        AiArgType.stringList,
+        required: true,
+        allowIdentifierMentions: true,
+      ),
     },
   ),
 ];

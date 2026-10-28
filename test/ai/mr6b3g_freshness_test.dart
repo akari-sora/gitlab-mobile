@@ -445,7 +445,13 @@ void main() {
           _request(h),
           capabilityLedger: const _Rows(),
         ),
-        throwsA(isA<AiJournalException>()),
+        throwsA(
+          isA<AiJournalException>().having(
+            (error) => error.reason,
+            'reason',
+            'targetChanged',
+          ),
+        ),
       );
       _assertGroupFreshRead(_since(h, before));
     });

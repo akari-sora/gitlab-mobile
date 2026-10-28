@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "De wijziging heeft geen effect gehad: het veld heeft nog de oude waarde. Lees opnieuw en probeer het nog eens.",
   "aiRefusedDiscussionLocked": "Deze discussie is vergrendeld, dus de opmerking of reactie is niet verstuurd.",
   "aiRefusedNotOwnNote": "Deze actie mag alleen opmerkingen verwijderen die door je eigen account zijn geschreven, dus er is niets gedaan.",
-  "aiRefusedTodoForeign": "Dit te doen hoort bij een ander account, dus er is niets gedaan.",
+  "aiRefusedTodoForeign": "Er kon niet worden bevestigd dat dit te doen bij dit account hoort en binnen dit gesprek valt, dus er is niets gedaan.",
   "aiRefusedProtectedBranch": "Dit is een beschermde branch; de AI kan hem niet verwijderen of herschrijven, dus er is niets gedaan.",
   "aiRefusedDefaultBranch": "De standaardbranch kan niet worden verwijderd, dus er is niets gedaan.",
   "aiRefusedMergeChecking": "GitLab controleert nog of dit gemerged kan worden, dus er is niets gedaan. Probeer het zo opnieuw.",
@@ -2971,5 +2971,18 @@
   "offlineCacheClearWithProjects": "De automatische cache en {count} offlineprojecten ({size} in totaal) worden verwijderd. Dit kan niet ongedaan worden gemaakt.",
   "offlineCacheClearUnknownProjects": "De automatische cache en alle offlineprojecten van dit account worden verwijderd (hoeveel het er zijn, kan nu niet worden vastgesteld). Dit kan niet ongedaan worden gemaakt.",
   "offlineCacheTurnOffTitle": "Offlinecache uitschakelen?",
-  "offlineCacheClearButton": "Wissen"
+  "offlineCacheClearButton": "Wissen",
+  "aiProposalGroupTarget": "Werkitem #{iid}, dat rechtstreeks bij de groep {path} hoort",
+  "aiProposalOwnTodo": "Wijzigt alleen je eigen takenlijst (@{username}); het werkitem zelf verandert niet.",
+  "aiProposalDeleteOwnNote": "Verwijdert alleen deze opmerking, die jij hebt geschreven; vóór het verzenden controleert de app opnieuw bij GitLab dat jij de auteur bent.",
+  "aiRefusedGroupUnsupported": "GitLab biedt dit niet aan voor dit werkitem van de groep (de versie of het type werkitem ondersteunt het mogelijk niet), dus er is niets verzonden.",
+  "aiRefusedGroupUnverifiable": "Er kon niet worden bevestigd dat dit werkitem nog rechtstreeks bij zijn groep hoort (de groep is mogelijk hernoemd of verplaatst), dus er is niets verzonden. Open het opnieuw of voeg het opnieuw toe.",
+  "aiConsentWritesGroupScope": "Werkitems van een groep: de AI mag alleen het item wijzigen waarvoor dit gesprek is geopend, of items die je zelf toevoegt; de toestemming geldt nooit voor de hele groep, de subgroepen of de projecten ervan.",
+  "aiChatEmptyGroup": "De AI leest werkitem #{iid} van de groep {path}. De andere werkitems van de groep en de projecten ervan vallen buiten dit gesprek.",
+  "aiChatEmptyGroupItem": "De AI leest dit werkitem van de groep. De andere werkitems van de groep en de projecten ervan vallen buiten dit gesprek.",
+  "aiSuggestWorkItemSummary": "Dit werkitem samenvatten",
+  "aiRemovedGroupWorkItem": "{path} #{iid} uit het gesprek verwijderd; de AI kan het niet meer wijzigen",
+  "aiChatEmptyGroupAdded": "De AI leest werkitem #{iid} van de groep {path}. De items die je hebt toegevoegd (boven het berichtvak) horen ook bij dit gesprek; de andere werkitems van de groep en de projecten ervan niet.",
+  "aiChatEmptyGroupItemAdded": "De AI leest dit werkitem van de groep. De items die je hebt toegevoegd (boven het berichtvak) horen ook bij dit gesprek; de andere werkitems van de groep en de projecten ervan niet.",
+  "aiRefusedGroupDatesNotSent": "De datums zijn niet verzonden: ze komen mogelijk al overeen met de huidige, en bij een werkitem van de groep kan dat niet worden bevestigd zonder extra verzoek. Lees de huidige datums opnieuw en probeer het nog eens."
 }

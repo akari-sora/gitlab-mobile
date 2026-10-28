@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "Perubahan tidak berkuat kuasa: medan masih bernilai lama. Baca semula dan cuba lagi.",
   "aiRefusedDiscussionLocked": "Perbincangan ini dikunci, jadi komen atau balasan tidak dihantar.",
   "aiRefusedNotOwnNote": "Tindakan ini hanya boleh memadam komen yang ditulis oleh akaun anda sendiri, jadi tiada apa-apa yang dilakukan.",
-  "aiRefusedTodoForeign": "Tugasan ini milik akaun lain, jadi tiada apa-apa yang dilakukan.",
+  "aiRefusedTodoForeign": "Tidak dapat disahkan bahawa tugasan ini milik akaun ini dan berada dalam skop perbualan ini, jadi tiada apa-apa yang dilakukan.",
   "aiRefusedProtectedBranch": "Ini branch yang dilindungi; AI tidak boleh memadam atau menulis semulanya, jadi tiada apa-apa yang dilakukan.",
   "aiRefusedDefaultBranch": "Branch lalai tidak boleh dipadam, jadi tiada apa-apa yang dilakukan.",
   "aiRefusedMergeChecking": "GitLab masih menyemak sama ada ini boleh digabungkan, jadi tiada apa-apa yang dilakukan. Cuba lagi sebentar nanti.",
@@ -2971,5 +2971,18 @@
   "offlineCacheClearWithProjects": "Cache automatik dan {count} project luar talian (jumlah {size}) akan dipadam. Tindakan ini tidak boleh dibatalkan.",
   "offlineCacheClearUnknownProjects": "Cache automatik dan semua project luar talian account ini akan dipadam (bilangannya tidak dapat disahkan sekarang). Tindakan ini tidak boleh dibatalkan.",
   "offlineCacheTurnOffTitle": "Matikan cache luar talian?",
-  "offlineCacheClearButton": "Kosongkan"
+  "offlineCacheClearButton": "Kosongkan",
+  "aiProposalGroupTarget": "Item kerja #{iid}, yang dimiliki terus oleh kumpulan {path}",
+  "aiProposalOwnTodo": "Hanya mengubah senarai tugasan anda sendiri (@{username}); item kerja itu sendiri tidak berubah.",
+  "aiProposalDeleteOwnNote": "Hanya memadam komen ini, yang anda tulis; sebelum dihantar, aplikasi menyemak semula dalam GitLab bahawa anda penulisnya.",
+  "aiRefusedGroupUnsupported": "GitLab tidak menyediakan ciri ini untuk item kerja kumpulan ini (versi atau jenis item mungkin tidak menyokongnya), jadi tiada apa-apa yang dihantar.",
+  "aiRefusedGroupUnverifiable": "Tidak dapat disahkan bahawa item kerja ini masih dimiliki terus oleh kumpulannya (kumpulan mungkin dinamakan semula atau dipindahkan), jadi tiada apa-apa yang dihantar. Buka atau tambahkannya semula.",
+  "aiConsentWritesGroupScope": "Item kerja milik kumpulan: AI hanya boleh menukar item tempat perbualan ini dibuka, atau item yang anda tambah sendiri; kebenaran tidak pernah meliputi seluruh kumpulan, subkumpulannya atau projek di dalamnya.",
+  "aiChatEmptyGroup": "AI membaca item kerja #{iid} milik kumpulan {path}. Item kerja lain dalam kumpulan dan projeknya berada di luar perbualan ini.",
+  "aiChatEmptyGroupItem": "AI membaca item kerja kumpulan ini. Item kerja lain dalam kumpulan dan projeknya berada di luar perbualan ini.",
+  "aiSuggestWorkItemSummary": "Ringkaskan item kerja ini",
+  "aiRemovedGroupWorkItem": "{path} #{iid} dialih keluar daripada perbualan; AI tidak boleh mengubahnya lagi",
+  "aiChatEmptyGroupAdded": "AI membaca item kerja #{iid} milik kumpulan {path}. Item yang anda tambah (di atas kotak mesej) juga termasuk dalam perbualan ini; item kerja lain dalam kumpulan dan projeknya tidak.",
+  "aiChatEmptyGroupItemAdded": "AI membaca item kerja kumpulan ini. Item yang anda tambah (di atas kotak mesej) juga termasuk dalam perbualan ini; item kerja lain dalam kumpulan dan projeknya tidak.",
+  "aiRefusedGroupDatesNotSent": "Tarikh tidak dihantar: tarikh itu mungkin sudah sama dengan tarikh semasa, dan bagi item kerja kumpulan perkara ini tidak dapat disahkan tanpa permintaan tambahan. Baca semula tarikh semasa dan cuba lagi."
 }
