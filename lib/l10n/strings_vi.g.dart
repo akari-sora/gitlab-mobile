@@ -2122,6 +2122,7 @@ const _messagesVi = <String>[
   'Tác vụ AI chạy nền',
   'Trợ lý AI đang làm việc',
   'Bạn có thể rời ứng dụng; công việc vẫn tiếp tục.',
+  'Dừng tất cả',
   'Chưa cấu hình',
   'Nhà cung cấp',
   'Thêm nhà cung cấp',

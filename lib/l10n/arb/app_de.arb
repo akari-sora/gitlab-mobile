@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "KI-Arbeit im Hintergrund",
   "aiRunServiceTitle": "KI-Assistent arbeitet",
   "aiRunServiceText": "Sie können die App verlassen, die Arbeit läuft weiter.",
+  "aiRunServiceStopAll": "Alle stoppen",
   "aiNotConfigured": "Nicht konfiguriert",
   "aiProvidersHeading": "Anbieter",
   "aiAddProvider": "Anbieter hinzufügen",

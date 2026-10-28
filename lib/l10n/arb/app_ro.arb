@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "Activitate AI în fundal",
   "aiRunServiceTitle": "Asistentul AI lucrează",
   "aiRunServiceText": "Poți ieși din aplicație; lucrul continuă.",
+  "aiRunServiceStopAll": "Oprește tot",
   "aiNotConfigured": "Neconfigurat",
   "aiProvidersHeading": "Furnizori",
   "aiAddProvider": "Adaugă furnizor",

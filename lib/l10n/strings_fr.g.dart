@@ -2122,6 +2122,7 @@ const _messagesFr = <String>[
   'Travail IA en arrière-plan',
   'L’assistant IA travaille',
   'Vous pouvez quitter l’app ; le travail continue.',
+  'Tout arrêter',
   'Non configuré',
   'Fournisseurs',
   'Ajouter un fournisseur',
