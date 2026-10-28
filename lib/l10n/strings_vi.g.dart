@@ -2809,5 +2809,7 @@ const _messagesVi = <String>[
   'Lần này hệ thống không cho phép chạy nền.',
   'Tác vụ chạy nền không khởi động kịp thời.',
   'Hiện không thể chạy nền.',
-  'Lần ghi này chưa được thực hiện và đề xuất vẫn còn hiệu lực. Hãy giữ ứng dụng mở và phê duyệt lại sau ít phút.',
+  'Lần ghi này chưa được thực hiện: không thể khởi động tác vụ chạy nền.',
+  'Đã tạm dừng công việc: chưa xác nhận được tác vụ chạy nền đã kết thúc, và chưa thể tiếp tục cho đến khi xác nhận.',
+  'Việc này sẽ được kiểm tra lại vào lần tới bạn quay lại ứng dụng; sau đó bạn có thể gửi tin nhắn mới.',
 ];

@@ -2807,5 +2807,7 @@
   "aiRunStartDenied": "Das System hat Arbeit im Hintergrund diesmal nicht erlaubt.",
   "aiRunStartTimeout": "Die Arbeit im Hintergrund wurde nicht rechtzeitig gestartet.",
   "aiRunStartUnavailable": "Arbeit im Hintergrund ist gerade nicht verfügbar.",
-  "aiProposalApproveInForeground": "Dieser Schreibvorgang wurde nicht ausgeführt, der Vorschlag gilt weiterhin. Lassen Sie die App geöffnet und genehmigen Sie etwas später erneut."
+  "aiProposalBackgroundUnavailable": "Dieser Schreibvorgang wurde nicht ausgeführt: Die Arbeit im Hintergrund konnte nicht starten.",
+  "aiRunCleanupPending": "Arbeit pausiert: Es ist noch nicht bestätigt, dass die Arbeit im Hintergrund beendet ist; bis dahin kann nichts fortgesetzt werden.",
+  "aiRunCleanupRetry": "Das wird erneut geprüft, wenn Sie das nächste Mal zur App zurückkehren; danach können Sie eine neue Nachricht senden."
 }

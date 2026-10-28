@@ -2809,5 +2809,7 @@ const _messagesPl = <String>[
   'Tym razem system nie zezwolił na pracę w tle.',
   'Praca w tle nie uruchomiła się na czas.',
   'Praca w tle jest teraz niedostępna.',
-  'Ten zapis nie został wykonany, a propozycja jest nadal ważna. Nie zamykaj aplikacji i zatwierdź ponownie nieco później.',
+  'Ten zapis nie został wykonany: nie udało się uruchomić pracy w tle.',
+  'Praca wstrzymana: nie potwierdzono jeszcze, że praca w tle się zakończyła, i do tego czasu nie można kontynuować.',
+  'Zostanie to sprawdzone ponownie, gdy następnym razem wrócisz do aplikacji; potem możesz wysłać nową wiadomość.',
 ];

@@ -2809,5 +2809,7 @@ const _messagesEn = <String>[
   'The system did not allow background work this time.',
   'Background work did not start in time.',
   'Background work is unavailable right now.',
-  'This write was not made, and the proposal is still valid. Keep the app open and approve again a little later.',
+  'This write was not made: background work could not start.',
+  'Work paused: it is not yet confirmed that the background work has ended, and nothing can continue until it is.',
+  'This is checked again the next time you return to the app; after that you can send a new message.',
 ];

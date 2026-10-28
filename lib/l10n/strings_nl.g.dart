@@ -2809,5 +2809,7 @@ const _messagesNl = <String>[
   'Het systeem stond werk op de achtergrond deze keer niet toe.',
   'Het werk op de achtergrond is niet op tijd gestart.',
   'Werk op de achtergrond is nu niet beschikbaar.',
-  'Deze schrijfactie is niet uitgevoerd en het voorstel is nog geldig. Houd de app open en keur iets later opnieuw goed.',
+  'Deze schrijfactie is niet uitgevoerd: het werk op de achtergrond kon niet starten.',
+  'Werk gepauzeerd: het is nog niet bevestigd dat het werk op de achtergrond is beëindigd, en tot die tijd kan niets doorgaan.',
+  'Dit wordt opnieuw gecontroleerd wanneer je de volgende keer naar de app terugkeert; daarna kun je een nieuw bericht sturen.',
 ];

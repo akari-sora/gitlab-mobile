@@ -2807,5 +2807,7 @@
   "aiRunStartDenied": "今回はシステムがバックグラウンドでの処理を許可しませんでした。",
   "aiRunStartTimeout": "バックグラウンドの処理が時間内に開始しませんでした。",
   "aiRunStartUnavailable": "バックグラウンドの処理は現在利用できません。",
-  "aiProposalApproveInForeground": "この書き込みはまだ実行されておらず、提案は引き続き有効です。アプリを開いたままにして、少し後でもう一度承認してください。"
+  "aiProposalBackgroundUnavailable": "この書き込みは実行されませんでした。バックグラウンドの処理を開始できませんでした。",
+  "aiRunCleanupPending": "作業を一時停止しました。バックグラウンドの処理が終了したことをまだ確認できていないため、それまでは続行できません。",
+  "aiRunCleanupRetry": "次にアプリに戻ったときに再確認します。確認できたら新しいメッセージを送信できます。"
 }

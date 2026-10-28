@@ -980,6 +980,10 @@ class _AiChatPageState extends State<AiChatPage> {
         _session.blocker == AiChatBlocker.none;
     final canResume = continuation?.canResumeRun ?? false;
     final pause = continuation?.executionPause;
+    final start = continuation?.serviceStartResult;
+    // Unconfirmed cleanup forbids all execution, even in the foreground.
+    final cleanupPending =
+        start?.disposition == AiBackgroundStartDisposition.unavailable;
     final runPaused = idle && (pause != null || canResume)
         ? _RunPausedCard(
             pause: pause,
@@ -988,7 +992,8 @@ class _AiChatPageState extends State<AiChatPage> {
                 execution.executionStatus,
               _ => null,
             },
-            onResume: canResume ? _resume : null,
+            start: start,
+            onResume: canResume && !cleanupPending ? _resume : null,
           )
         : null;
     // Only while work is under way or waiting to continue: the result stays
@@ -997,7 +1002,7 @@ class _AiChatPageState extends State<AiChatPage> {
         runPaused != null ||
             _session.phase == AiChatPhase.running ||
             _session.phase == AiChatPhase.awaitingApproval
-        ? _ForegroundOnlyRow.reasonFor(continuation?.serviceStartResult)
+        ? _ForegroundOnlyRow.reasonFor(start)
         : null;
     // A card that just appeared sits by the composer; scroll it into view.
     if (notice != null && !_showedNotice) {
@@ -2243,35 +2248,60 @@ class _RunPausedCard extends StatelessWidget {
   const _RunPausedCard({
     required this.pause,
     required this.status,
+    required this.start,
     required this.onResume,
   });
 
   final AiExecutionPause? pause;
   final AiChatExecutionStatus? status;
+
+  /// The last service start; a refused start that invalidated the run says
+  /// why, and unconfirmed cleanup replaces the whole message.
+  final AiBackgroundStartResult? start;
   final VoidCallback? onResume;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final startReason =
+        start?.disposition == AiBackgroundStartDisposition.invalidated
+        ? _startFailureText(start?.failure)
+        : null;
     // Ticket and nonce details are internal: they all read as one pause.
-    final (icon, text) = switch (pause?.reason) {
+    final (icon, text, detail) = switch (pause?.reason) {
+      _ when start?.disposition == AiBackgroundStartDisposition.unavailable => (
+        Icons.sync_problem,
+        l10n.aiRunCleanupPending,
+        l10n.aiRunCleanupRetry,
+      ),
+      null ||
+      AiExecutionPauseReason.foregroundRequired ||
+      AiExecutionPauseReason.permitInactive when startReason != null => (
+        Icons.pause_circle_outline,
+        l10n.aiRunPaused,
+        startReason,
+      ),
       null when status == AiChatExecutionStatus.invalidated => (
         Icons.pause_circle_outline,
         l10n.aiRunPausedForeground,
+        null,
       ),
-      null => (Icons.play_circle_outline, l10n.aiRunCanResume),
+      null => (Icons.play_circle_outline, l10n.aiRunCanResume, null),
       AiExecutionPauseReason.foregroundRequired ||
       AiExecutionPauseReason.permitInactive => (
         Icons.pause_circle_outline,
         l10n.aiRunPausedForeground,
+        null,
       ),
       AiExecutionPauseReason.timeout => (
         Icons.timer_off_outlined,
         l10n.aiRunPausedTimeout,
+        null,
       ),
       AiExecutionPauseReason.runLimit => (
         Icons.hourglass_top,
         l10n.aiChatTooManyRunning('${AiRunRegistry.maxRunning}'),
+        null,
       ),
       AiExecutionPauseReason.unavailable ||
       AiExecutionPauseReason.ticketExpired ||
@@ -2281,6 +2311,7 @@ class _RunPausedCard extends StatelessWidget {
       AiExecutionPauseReason.nonceCapacity => (
         Icons.pause_circle_outline,
         l10n.aiRunPaused,
+        null,
       ),
     };
     return Card(
@@ -2298,7 +2329,21 @@ class _RunPausedCard extends StatelessWidget {
                 children: [
                   Icon(icon, size: 20),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(text)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(text),
+                        if (detail != null)
+                          Text(
+                            detail,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -2330,27 +2375,13 @@ class _ForegroundOnlyRow extends StatelessWidget {
   final String reason;
 
   /// The reason line for a start that fell back to the foreground, or null.
-  /// A platform without the service, a start asked for from the background
-  /// and a run that changed meanwhile are not refusals worth explaining.
-  static String? reasonFor(AiBackgroundStartResult? result) {
-    if (result == null ||
-        (result.disposition != AiBackgroundStartDisposition.foregroundOnly &&
-            result.disposition != AiBackgroundStartDisposition.unavailable)) {
-      return null;
-    }
-    return switch (result.failure) {
-      AiBackgroundStartFailure.startDenied ||
-      AiBackgroundStartFailure.securityException => l10n.aiRunStartDenied,
-      AiBackgroundStartFailure.timeout => l10n.aiRunStartTimeout,
-      AiBackgroundStartFailure.channelRefused ||
-      AiBackgroundStartFailure.channelUnavailable ||
-      AiBackgroundStartFailure.cleanupFailed => l10n.aiRunStartUnavailable,
-      AiBackgroundStartFailure.unsupported ||
-      AiBackgroundStartFailure.foregroundRequired ||
-      AiBackgroundStartFailure.runChanged ||
-      null => null,
-    };
-  }
+  /// Only a foreground fallback continues while the app is open: an
+  /// invalidated start pauses the run and unconfirmed cleanup forbids it, so
+  /// the pause card explains those.
+  static String? reasonFor(AiBackgroundStartResult? result) =>
+      result?.disposition == AiBackgroundStartDisposition.foregroundOnly
+      ? _startFailureText(result?.failure)
+      : null;
 
   @override
   Widget build(BuildContext context) {
@@ -2378,6 +2409,24 @@ class _ForegroundOnlyRow extends StatelessWidget {
     );
   }
 }
+
+/// The kind of a refused service start, never the platform's own message.
+/// A platform without the service, a start asked for from the background, a
+/// run that changed meanwhile and unconfirmed cleanup (explained on its own)
+/// return null.
+String? _startFailureText(AiBackgroundStartFailure? failure) =>
+    switch (failure) {
+      AiBackgroundStartFailure.startDenied ||
+      AiBackgroundStartFailure.securityException => l10n.aiRunStartDenied,
+      AiBackgroundStartFailure.timeout => l10n.aiRunStartTimeout,
+      AiBackgroundStartFailure.channelRefused ||
+      AiBackgroundStartFailure.channelUnavailable => l10n.aiRunStartUnavailable,
+      AiBackgroundStartFailure.unsupported ||
+      AiBackgroundStartFailure.foregroundRequired ||
+      AiBackgroundStartFailure.runChanged ||
+      AiBackgroundStartFailure.cleanupFailed ||
+      null => null,
+    };
 
 /// Says why the send button is off while the account's GitLab request budget
 /// pauses sending, and when that ends. It updates as the minutes pass and

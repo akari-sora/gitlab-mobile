@@ -2809,5 +2809,7 @@ const _messagesEs = <String>[
   'Esta vez el sistema no permitió el trabajo en segundo plano.',
   'El trabajo en segundo plano no se inició a tiempo.',
   'El trabajo en segundo plano no está disponible ahora.',
-  'Esta escritura no se realizó y la propuesta sigue vigente. Mantén la app abierta y vuelve a aprobarla un poco más tarde.',
+  'Esta escritura no se realizó: el trabajo en segundo plano no pudo iniciarse.',
+  'Trabajo en pausa: aún no se ha confirmado que el trabajo en segundo plano terminó, y no se puede continuar hasta entonces.',
+  'Se comprobará de nuevo la próxima vez que vuelvas a la app; después podrás enviar un mensaje nuevo.',
 ];

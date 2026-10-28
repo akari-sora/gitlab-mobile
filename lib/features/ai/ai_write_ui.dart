@@ -700,8 +700,10 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
         'typedNameMismatch' => l10n.aiProposalNameMismatch,
         'tooManyRunning' => l10n.aiProposalTooManyRunning,
         // The background work could not start for this approval: nothing
-        // was sent and the proposal still waits.
-        'executionPaused' => l10n.aiProposalApproveInForeground,
+        // was sent. Usually the run pauses and withdraws the proposal (the
+        // chat's pause card offers Continue); if it was not running, the
+        // proposal stays. The text holds in both cases.
+        'executionPaused' => l10n.aiProposalBackgroundUnavailable,
         // A pause is shown once, by the card's status line, when the
         // coordinator has marked the proposal paused; a background pause is
         // never shown.
@@ -724,7 +726,7 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
           l10n.aiProposalEditRefused,
         final code => aiRefusalText(code) ?? l10n.aiProposalNotRun,
       };
-      // Nothing went wrong: the proposal still waits for approval.
+      // Not the user's error and nothing was sent.
       if (outcome.reasonCode == 'executionPaused') _messageIsError = false;
     });
   }

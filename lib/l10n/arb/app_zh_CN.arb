@@ -2807,5 +2807,7 @@
   "aiRunStartDenied": "系统这次不允许在后台运行。",
   "aiRunStartTimeout": "后台运行没有及时启动。",
   "aiRunStartUnavailable": "后台运行目前不可用。",
-  "aiProposalApproveInForeground": "这笔写入还没有执行，提议仍然有效。请保持应用打开，稍后再批准。"
+  "aiProposalBackgroundUnavailable": "这笔写入没有执行：后台运行无法启动。",
+  "aiRunCleanupPending": "工作已暂停：还无法确认后台工作已经结束，在此之前不能继续。",
+  "aiRunCleanupRetry": "下次回到应用时会再次确认；确认后可以发送新消息。"
 }

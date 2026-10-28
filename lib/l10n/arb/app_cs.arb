@@ -2807,5 +2807,7 @@
   "aiRunStartDenied": "Systém tentokrát nepovolil práci na pozadí.",
   "aiRunStartTimeout": "Práce na pozadí se nespustila včas.",
   "aiRunStartUnavailable": "Práce na pozadí teď není k dispozici.",
-  "aiProposalApproveInForeground": "Tento zápis nebyl proveden a návrh stále platí. Nechte aplikaci otevřenou a schvalte ho znovu o něco později."
+  "aiProposalBackgroundUnavailable": "Tento zápis nebyl proveden: práci na pozadí se nepodařilo spustit.",
+  "aiRunCleanupPending": "Práce pozastavena: zatím není potvrzeno, že práce na pozadí skončila, a do té doby nelze pokračovat.",
+  "aiRunCleanupRetry": "Znovu se to ověří, až se příště vrátíte do aplikace; potom můžete poslat novou zprávu."
 }

@@ -8515,6 +8515,12 @@ final class AppStrings {
   /// 背景執行目前無法使用。
   String get aiRunStartUnavailable => language._messages[2806];
 
-  /// 這筆寫入還沒執行，提議仍然有效。請保持應用程式開啟，稍後再核准。
-  String get aiProposalApproveInForeground => language._messages[2807];
+  /// 這筆寫入沒有執行：背景執行無法啟動。
+  String get aiProposalBackgroundUnavailable => language._messages[2807];
+
+  /// 工作已暫停：還無法確認背景工作已經結束，在那之前不能繼續。
+  String get aiRunCleanupPending => language._messages[2808];
+
+  /// 下次回到應用程式時會再確認；確認後可以傳送新訊息。
+  String get aiRunCleanupRetry => language._messages[2809];
 }

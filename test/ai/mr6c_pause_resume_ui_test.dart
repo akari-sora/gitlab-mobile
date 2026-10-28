@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
@@ -355,6 +356,86 @@ void main() {
     await tester.pump(const Duration(minutes: 13));
   });
 
+  testWidgets('a slow real service start shows the timeout reason '
+      '(Codex 2, channel to controller to page)', (tester) async {
+    final h = (await tester.runAsync(fx.StackHarness.create))!;
+    const channel = MethodChannel('io.gitlabmobile/c5_ui_slow_start');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    var starts = 0;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      switch (call.method) {
+        case 'startRuns':
+          starts++;
+          // Longer than the bridge's one-second start allowance.
+          await Future<void>.delayed(const Duration(milliseconds: 1300));
+          return {'version': 1, 'status': 'rejected', 'reason': 'start_denied'};
+        case 'releaseRuns':
+          return {'version': 1, 'status': 'released', 'didRelease': false};
+        case 'stopAll':
+          return {'version': 1, 'status': 'stopped'};
+        case 'acquireContinuation':
+          return {
+            'version': 1,
+            'status': 'rejected',
+            'reason': 'permit_inactive',
+          };
+      }
+      // moveTaskToBack: the handshake that seeds the operation sequence.
+      return {
+        'version': 1,
+        'status': 'unsupported',
+        'reason': 'not_implemented',
+      };
+    });
+    final owner = AiBackgroundExecution(
+      accountKey: h.account,
+      generation: h.session.generation,
+      ownerApi: h.session.api!,
+      isCurrent: () => !h.controller.isDisposed,
+      appInForeground: () => h.foreground,
+      channel: channel,
+    );
+    var disposed = false;
+    void cleanUp() {
+      if (disposed) return;
+      disposed = true;
+      owner.dispose();
+      h.dispose();
+      messenger.setMockMethodCallHandler(channel, null);
+    }
+
+    addTearDown(cleanUp);
+    h.controller.bindBackgroundExecution(owner);
+    await tester.runAsync(() async {
+      await h.controller.send('inspect the file');
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    });
+    expect(starts, 1);
+    expect(
+      h.controller.serviceStartResult?.disposition,
+      AiBackgroundStartDisposition.invalidated,
+    );
+    expect(
+      h.controller.serviceStartResult?.failure,
+      AiBackgroundStartFailure.timeout,
+    );
+    expect(h.controller.executionPause, isNotNull);
+    expect(h.provider.bodies, isEmpty);
+    await tester.pumpWidget(_host(AiChatPage(session: h.controller)));
+    await tester.pump();
+    final card = find.byKey(_card);
+    expect(
+      find.descendant(of: card, matching: find.text(l10n.aiRunStartTimeout)),
+      findsOneWidget,
+    );
+    expect(find.text(l10n.aiRunPausedForeground), findsNothing);
+    expect(find.byKey(_foregroundOnly), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    cleanUp();
+    await tester.pump(const Duration(minutes: 13));
+  });
+
   group('paused and invalidated states', () {
     for (final (reason, text, icon) in [
       (
@@ -505,16 +586,75 @@ void main() {
       });
     }
 
-    testWidgets('unconfirmed cleanup reads as unavailable', (tester) async {
+    testWidgets('unconfirmed cleanup forbids continuing, even in the '
+        'foreground (Codex 3)', (tester) async {
       final session = _Session()
-        ..phase = AiChatPhase.awaitingApproval
+        ..resumable = true
+        ..executionPause = const AiExecutionPause(
+          AiExecutionPauseReason.permitInactive,
+        )
         ..serviceStartResult = const AiBackgroundStartResult(
           AiBackgroundStartDisposition.unavailable,
           failure: AiBackgroundStartFailure.cleanupFailed,
         );
       await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      final card = find.byKey(_card);
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.text(l10n.aiRunCleanupPending),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text(l10n.aiRunCleanupRetry)),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.sync_problem), findsOneWidget);
+      // No foreground-continuation wording and nothing to tap.
+      expect(find.byKey(_resume), findsNothing);
+      expect(find.byKey(_foregroundOnly), findsNothing);
+      expect(find.text(l10n.aiRunForegroundOnly), findsNothing);
+      expect(find.text(l10n.aiRunPausedForeground), findsNothing);
+      expect(session.resumes, 0);
+      // While a run still winds down there is no foreground-only row either.
+      session.update(() => session.phase = AiChatPhase.awaitingApproval);
       await tester.pump();
-      expect(find.text(l10n.aiRunStartUnavailable), findsOneWidget);
+      expect(find.byKey(_foregroundOnly), findsNothing);
+      expect(find.text(l10n.aiRunForegroundOnly), findsNothing);
+    });
+
+    testWidgets('an invalidated start names its reason on the pause card '
+        '(Codex 2)', (tester) async {
+      final session = _Session()
+        ..executionPause = const AiExecutionPause(
+          AiExecutionPauseReason.permitInactive,
+        )
+        ..serviceStartResult = const AiBackgroundStartResult(
+          AiBackgroundStartDisposition.invalidated,
+          failure: AiBackgroundStartFailure.timeout,
+        );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      final card = find.byKey(_card);
+      expect(
+        find.descendant(of: card, matching: find.text(l10n.aiRunPaused)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text(l10n.aiRunStartTimeout)),
+        findsOneWidget,
+      );
+      expect(find.text(l10n.aiRunPausedForeground), findsNothing);
+      // Paused, not a foreground fallback.
+      expect(find.byKey(_foregroundOnly), findsNothing);
+      expect(find.byKey(_resume), findsNothing);
+      // Continuing stays explicit when the controller allows it.
+      session.update(() => session.resumable = true);
+      await tester.pump();
+      expect(find.byKey(_resume), findsOneWidget);
+      expect(find.text(l10n.aiRunStartTimeout), findsOneWidget);
     });
 
     testWidgets('after the run, sending still works in the foreground', (

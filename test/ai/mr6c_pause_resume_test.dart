@@ -401,6 +401,256 @@ void main() {
     },
   );
 
+  for (final scenario in [
+    (boundary: 'secrets', service: false),
+    (boundary: 'issue', service: false),
+    (boundary: 'notes', service: false),
+    (boundary: 'failure', service: false),
+    (boundary: 'issue', service: true),
+  ]) {
+    final (:boundary, :service) = scenario;
+    test(
+      boundary == 'failure'
+          ? 'background read failure preserves the context blocker'
+          : service
+          ? 'permitted context refresh continues after $boundary in background'
+          : 'serviceless context refresh pauses after $boundary until explicit resume',
+      () async {
+        var offset = Duration.zero;
+        var holdSecrets = false;
+        final entered = Completer<void>();
+        final response = Completer<void>();
+        addTearDown(() {
+          if (!response.isCompleted) response.complete();
+        });
+        final h = await fx.StackHarness.create(
+          now: () => DateTime.now().add(offset),
+          refreshSecrets: () async {
+            if (holdSecrets) {
+              if (!entered.isCompleted) entered.complete();
+              await response.future;
+            }
+          },
+          configure: (server) {
+            server.workspace.issues[1] = server.workspace.issue(
+              1,
+              'Synthetic issue',
+            );
+            server.overrides['GET projects/42/issues/1/notes'] = (_) =>
+                jsonResponse([]);
+          },
+          origin: AiWorkItemOrigin(
+            project: WorkspaceFixture().project,
+            kind: AiWorkItemKind.issue,
+            iid: 1,
+            title: 'Synthetic issue',
+          ),
+        );
+        addTearDown(h.dispose);
+        final native = _Native(denied: !service)..install();
+        addTearDown(native.uninstall);
+        final owner = _owner(h);
+        addTearDown(owner.dispose);
+        h.controller.bindBackgroundExecution(owner);
+        final context = h.controller.contextForTesting;
+        final id = h.controller.id;
+        h.server.overrides['GET projects/42/issues/1'] = (request) async {
+          // The controller sees an expired snapshot, while the fresh response
+          // uses the transport's real clock.
+          offset = Duration.zero;
+          if (boundary == 'issue' || boundary == 'failure') {
+            if (!entered.isCompleted) entered.complete();
+            await response.future;
+          }
+          if (boundary == 'failure') return jsonResponse({}, status: 403);
+          return h.server.workspace.respond(request);
+        };
+        if (boundary == 'notes') {
+          h.server.overrides['GET projects/42/issues/1/notes'] = (_) async {
+            if (!entered.isCompleted) entered.complete();
+            await response.future;
+            return jsonResponse([]);
+          };
+        }
+        holdSecrets = boundary == 'secrets';
+        offset = const Duration(minutes: 2);
+        h.session.api!.clearReadCache();
+        final requestsBefore = h.server.adapter.requests.length;
+        final sending = h.controller.send('inspect the issue');
+        await entered.future;
+        final requestsAtBoundary = h.server.adapter.requests.length;
+        expect(
+          requestsAtBoundary - requestsBefore,
+          boundary == 'secrets' ? 0 : boundary == 'notes' ? 2 : 1,
+        );
+        h.foreground = false;
+        owner.didChangeAppLifecycleState(AppLifecycleState.hidden);
+        holdSecrets = false;
+        response.complete();
+        await sending;
+        if (service) {
+          expect(h.controller.lastEnd, AiRunEnd.done);
+          expect(h.controller.executionPause, isNull);
+          expect(h.server.adapter.requests, hasLength(requestsBefore + 4));
+          expect(h.provider.bodies, hasLength(1));
+          expect(native.starts, 1);
+          expect(h.server.mutations, isEmpty);
+          return;
+        }
+        expect(
+          h.server.adapter.requests,
+          hasLength(requestsAtBoundary),
+          reason: 'settling a read must not dispatch the next context read',
+        );
+        expect(h.provider.bodies, isEmpty);
+        if (boundary == 'failure') {
+          expect(h.controller.executionPause, isNull);
+          expect(h.controller.lastEnd, AiRunEnd.failed);
+          expect(h.controller.blocker, AiChatBlocker.contextUnavailable);
+          h.foreground = true;
+          await owner.onForeground();
+          expect(h.controller.canResumeRun, isFalse);
+          return;
+        }
+        expect(
+          h.controller.executionPause?.reason,
+          AiExecutionPauseReason.foregroundRequired,
+        );
+        expect(h.controller.blocker, AiChatBlocker.none);
+        expect(h.controller.contextForTesting, same(context));
+        expect(h.controller.canResumeRun, isFalse);
+        await h.controller.resumeRun();
+        expect(h.server.adapter.requests, hasLength(requestsAtBoundary));
+        h.foreground = true;
+        owner.didChangeAppLifecycleState(AppLifecycleState.resumed);
+        await owner.onForeground();
+        await fx.waitFor(() => h.controller.canResumeRun);
+        expect(native.starts, 1);
+        expect(h.server.adapter.requests, hasLength(requestsAtBoundary));
+        expect(h.provider.bodies, isEmpty);
+
+        // Force one complete refresh after the explicit foreground action.
+        offset = const Duration(minutes: 2);
+        h.session.api!.clearReadCache();
+        await h.controller.resumeRun();
+        expect(h.controller.id, id);
+        expect(h.controller.lastEnd, AiRunEnd.done);
+        expect(h.controller.executionPause, isNull);
+        expect(native.starts, 2);
+        expect(h.provider.bodies, hasLength(1));
+        expect(h.provider.bodies.single, contains('inspect the issue'));
+        expect(h.controller.items.whereType<AiUserItem>(), hasLength(1));
+        expect(h.server.mutations, isEmpty);
+        expect(
+          h.server.adapter.requests.skip(requestsAtBoundary).map(
+            (request) => request.uri.path.split('/api/v4/').last,
+          ),
+          [
+            'projects/42/issues/1',
+            'projects/42/issues/1/notes',
+            'projects/42',
+            'projects/42/repository/branches/main',
+          ],
+        );
+        await h.controller.resumeRun();
+        expect(h.server.adapter.requests, hasLength(requestsAtBoundary + 4));
+        expect(h.provider.bodies, hasLength(1));
+        expect(h.controller.budgetAllocator.activeLeases, 0);
+      },
+    );
+  }
+
+  test(
+    'pre-run pause carries spent preparation time into the resumed runner',
+    () async {
+      var clock = DateTime.now();
+      final h = await fx.StackHarness.create(now: () => clock);
+      addTearDown(h.dispose);
+      final native = _Native(
+        denied: true,
+        onStart: (count) {
+          clock = clock.add(Duration(seconds: count == 1 ? 660 : 30));
+          if (count == 1) h.foreground = false;
+        },
+      )..install();
+      addTearDown(native.uninstall);
+      final owner = _owner(h);
+      addTearDown(owner.dispose);
+      h.controller.bindBackgroundExecution(owner);
+      await h.controller.send('inspect the file');
+      expect(
+        h.controller.executionPause?.reason,
+        AiExecutionPauseReason.foregroundRequired,
+      );
+      expect(h.provider.bodies, isEmpty);
+      clock = clock.add(const Duration(hours: 1));
+      h.foreground = true;
+      await fx.waitFor(() => h.controller.canResumeRun);
+      expect(native.starts, 1);
+      h.provider.script.add((_) {
+        clock = clock.add(const Duration(seconds: 30));
+        return fx.toolTurn('read_file', {
+          'path': 'README.md',
+          'revision': 'head',
+        });
+      });
+      await h.controller.resumeRun();
+      expect(h.controller.lastEnd, AiRunEnd.failed);
+      expect(h.controller.canResumeRun, isFalse);
+      expect(native.starts, 2);
+      expect(h.provider.bodies, hasLength(1));
+      expect(h.controller.items.whereType<AiUserItem>(), hasLength(1));
+      expect(h.server.mutations, isEmpty);
+    },
+  );
+
+  test(
+    'failed pre-run continuation cannot revive an older paused runner',
+    () async {
+      var clock = DateTime.now();
+      final h = await fx.StackHarness.create(now: () => clock);
+      addTearDown(h.dispose);
+      final native = _Native(
+        denied: true,
+        onStart: (count) {
+          if (count == 2) {
+            clock = clock.add(const Duration(minutes: 11));
+            h.foreground = false;
+          } else if (count == 3) {
+            clock = clock.add(const Duration(minutes: 1));
+          }
+        },
+      )..install();
+      addTearDown(native.uninstall);
+      final owner = _owner(h);
+      addTearDown(owner.dispose);
+      h.controller.bindBackgroundExecution(owner);
+      h.provider.script.add((_) {
+        h.foreground = false;
+        return fx.toolTurn('read_file', {
+          'path': 'README.md',
+          'revision': 'head',
+        });
+      });
+      await h.controller.send('older paused run');
+      h.foreground = true;
+      await fx.waitFor(() => h.controller.canResumeRun);
+      await h.controller.send('new pending turn');
+      expect(h.provider.bodies, hasLength(1));
+      expect(h.controller.executionPause, isNotNull);
+      h.foreground = true;
+      await fx.waitFor(() => h.controller.canResumeRun);
+      await h.controller.resumeRun();
+      expect(h.controller.lastEnd, AiRunEnd.failed);
+      expect(h.controller.canResumeRun, isFalse);
+      expect(native.starts, 3);
+      expect(h.controller.backProtectedCount, 0);
+      expect(h.provider.bodies, hasLength(1));
+      expect(h.controller.items.whereType<AiUserItem>(), hasLength(2));
+      expect(h.server.mutations, isEmpty);
+    },
+  );
+
   test(
     'observed permit loss in foreground needs explicit resume, no lifecycle retry',
     () async {

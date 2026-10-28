@@ -2809,5 +2809,7 @@ const _messagesMs = <String>[
   'Kali ini sistem tidak membenarkan kerja latar belakang.',
   'Kerja latar belakang tidak bermula tepat pada masanya.',
   'Kerja latar belakang tidak tersedia sekarang.',
-  'Penulisan ini belum dibuat dan cadangan masih sah. Biarkan apl terbuka dan luluskan semula sebentar lagi.',
+  'Penulisan ini tidak dibuat: kerja latar belakang tidak dapat dimulakan.',
+  'Kerja dijeda: belum disahkan bahawa kerja latar belakang telah tamat, dan tiada apa yang boleh diteruskan sebelum itu.',
+  'Ini akan disemak semula apabila anda kembali ke apl kali seterusnya; selepas itu anda boleh menghantar mesej baharu.',
 ];

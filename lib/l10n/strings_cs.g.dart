@@ -2809,5 +2809,7 @@ const _messagesCs = <String>[
   'Systém tentokrát nepovolil práci na pozadí.',
   'Práce na pozadí se nespustila včas.',
   'Práce na pozadí teď není k dispozici.',
-  'Tento zápis nebyl proveden a návrh stále platí. Nechte aplikaci otevřenou a schvalte ho znovu o něco později.',
+  'Tento zápis nebyl proveden: práci na pozadí se nepodařilo spustit.',
+  'Práce pozastavena: zatím není potvrzeno, že práce na pozadí skončila, a do té doby nelze pokračovat.',
+  'Znovu se to ověří, až se příště vrátíte do aplikace; potom můžete poslat novou zprávu.',
 ];

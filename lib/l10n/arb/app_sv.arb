@@ -2807,5 +2807,7 @@
   "aiRunStartDenied": "Systemet tillät inte arbete i bakgrunden den här gången.",
   "aiRunStartTimeout": "Arbetet i bakgrunden startade inte i tid.",
   "aiRunStartUnavailable": "Arbete i bakgrunden är inte tillgängligt just nu.",
-  "aiProposalApproveInForeground": "Den här skrivningen gjordes inte och förslaget gäller fortfarande. Håll appen öppen och godkänn igen lite senare."
+  "aiProposalBackgroundUnavailable": "Den här skrivningen gjordes inte: arbetet i bakgrunden kunde inte starta.",
+  "aiRunCleanupPending": "Arbetet pausat: det är ännu inte bekräftat att arbetet i bakgrunden har avslutats, och inget kan fortsätta innan dess.",
+  "aiRunCleanupRetry": "Det kontrolleras igen nästa gång du återvänder till appen; därefter kan du skicka ett nytt meddelande."
 }

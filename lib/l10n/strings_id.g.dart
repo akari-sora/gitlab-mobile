@@ -2809,5 +2809,7 @@ const _messagesId = <String>[
   'Kali ini sistem tidak mengizinkan pekerjaan latar belakang.',
   'Pekerjaan latar belakang tidak dimulai tepat waktu.',
   'Pekerjaan latar belakang tidak tersedia saat ini.',
-  'Penulisan ini belum dilakukan dan proposal masih berlaku. Biarkan aplikasi terbuka dan setujui lagi sebentar lagi.',
+  'Penulisan ini tidak dilakukan: pekerjaan latar belakang tidak dapat dimulai.',
+  'Pekerjaan dijeda: belum dipastikan bahwa pekerjaan latar belakang telah berakhir, dan tidak ada yang dapat dilanjutkan sebelum itu.',
+  'Ini akan diperiksa lagi saat Anda kembali ke aplikasi berikutnya; setelah itu Anda dapat mengirim pesan baru.',
 ];

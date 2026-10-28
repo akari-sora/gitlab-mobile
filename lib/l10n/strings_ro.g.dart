@@ -2809,5 +2809,7 @@ const _messagesRo = <String>[
   'De data aceasta sistemul nu a permis lucrul în fundal.',
   'Lucrul în fundal nu a pornit la timp.',
   'Lucrul în fundal nu este disponibil acum.',
-  'Această scriere nu a fost făcută, iar propunerea este încă valabilă. Ține aplicația deschisă și aprobă din nou puțin mai târziu.',
+  'Această scriere nu a fost făcută: lucrul în fundal nu a putut porni.',
+  'Lucru întrerupt temporar: încă nu s-a confirmat că lucrul în fundal s-a încheiat, iar până atunci nu se poate continua.',
+  'Se va verifica din nou data viitoare când revii în aplicație; apoi poți trimite un mesaj nou.',
 ];

@@ -11760,12 +11760,22 @@
   },
   "aiRunStartUnavailable": "背景執行目前無法使用。",
   "@aiRunStartUnavailable": {
-    "description": "Chat row reason: background work cannot be used right now (channel refused or unavailable, cleanup unconfirmed).",
+    "description": "Chat row reason: background work cannot be used right now (channel refused or unavailable).",
     "placeholders": {}
   },
-  "aiProposalApproveInForeground": "這筆寫入還沒執行，提議仍然有效。請保持應用程式開啟，稍後再核准。",
-  "@aiProposalApproveInForeground": {
-    "description": "Proposal card after Approve: background work could not start for this approval, nothing was sent and the proposal still waits.",
+  "aiProposalBackgroundUnavailable": "這筆寫入沒有執行：背景執行無法啟動。",
+  "@aiProposalBackgroundUnavailable": {
+    "description": "Proposal card after Approve: background work could not start for this approval and nothing was sent. Usually the run then pauses and the chat offers Continue.",
+    "placeholders": {}
+  },
+  "aiRunCleanupPending": "工作已暫停：還無法確認背景工作已經結束，在那之前不能繼續。",
+  "@aiRunCleanupPending": {
+    "description": "Chat card: the end of earlier background work is not confirmed (cleanup unconfirmed), so no AI work may continue, even in the foreground. No Continue button.",
+    "placeholders": {}
+  },
+  "aiRunCleanupRetry": "下次回到應用程式時會再確認；確認後可以傳送新訊息。",
+  "@aiRunCleanupRetry": {
+    "description": "Chat card detail: the cleanup is checked again the next time the app returns to the foreground; then a new message can be sent.",
     "placeholders": {}
   }
 }

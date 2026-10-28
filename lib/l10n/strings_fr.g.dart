@@ -2809,5 +2809,7 @@ const _messagesFr = <String>[
   'Le système n’a pas autorisé le travail en arrière-plan cette fois.',
   'Le travail en arrière-plan n’a pas démarré à temps.',
   'Le travail en arrière-plan est indisponible pour le moment.',
-  'Cette écriture n’a pas été effectuée et la proposition reste valable. Gardez l’app ouverte et approuvez de nouveau un peu plus tard.',
+  'Cette écriture n’a pas été effectuée : le travail en arrière-plan n’a pas pu démarrer.',
+  'Travail en pause : la fin du travail en arrière-plan n’est pas encore confirmée, et rien ne peut continuer d’ici là.',
+  'Cela sera vérifié de nouveau la prochaine fois que vous reviendrez dans l’app ; vous pourrez ensuite envoyer un nouveau message.',
 ];

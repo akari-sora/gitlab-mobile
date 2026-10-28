@@ -2807,5 +2807,7 @@
   "aiRunStartDenied": "Le système n’a pas autorisé le travail en arrière-plan cette fois.",
   "aiRunStartTimeout": "Le travail en arrière-plan n’a pas démarré à temps.",
   "aiRunStartUnavailable": "Le travail en arrière-plan est indisponible pour le moment.",
-  "aiProposalApproveInForeground": "Cette écriture n’a pas été effectuée et la proposition reste valable. Gardez l’app ouverte et approuvez de nouveau un peu plus tard."
+  "aiProposalBackgroundUnavailable": "Cette écriture n’a pas été effectuée : le travail en arrière-plan n’a pas pu démarrer.",
+  "aiRunCleanupPending": "Travail en pause : la fin du travail en arrière-plan n’est pas encore confirmée, et rien ne peut continuer d’ici là.",
+  "aiRunCleanupRetry": "Cela sera vérifié de nouveau la prochaine fois que vous reviendrez dans l’app ; vous pourrez ensuite envoyer un nouveau message."
 }

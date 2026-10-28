@@ -2809,5 +2809,7 @@ const _messagesPtBr = <String>[
   'Desta vez o sistema não permitiu o trabalho em segundo plano.',
   'O trabalho em segundo plano não começou a tempo.',
   'O trabalho em segundo plano não está disponível agora.',
-  'Esta escrita não foi feita e a proposta continua válida. Mantenha o app aberto e aprove de novo daqui a pouco.',
+  'Esta escrita não foi feita: o trabalho em segundo plano não pôde começar.',
+  'Trabalho pausado: ainda não foi confirmado que o trabalho em segundo plano terminou, e nada pode continuar até lá.',
+  'Isso será verificado de novo na próxima vez que você voltar ao app; depois você poderá enviar uma nova mensagem.',
 ];

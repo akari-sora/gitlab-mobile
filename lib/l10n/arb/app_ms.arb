@@ -2807,5 +2807,7 @@
   "aiRunStartDenied": "Kali ini sistem tidak membenarkan kerja latar belakang.",
   "aiRunStartTimeout": "Kerja latar belakang tidak bermula tepat pada masanya.",
   "aiRunStartUnavailable": "Kerja latar belakang tidak tersedia sekarang.",
-  "aiProposalApproveInForeground": "Penulisan ini belum dibuat dan cadangan masih sah. Biarkan apl terbuka dan luluskan semula sebentar lagi."
+  "aiProposalBackgroundUnavailable": "Penulisan ini tidak dibuat: kerja latar belakang tidak dapat dimulakan.",
+  "aiRunCleanupPending": "Kerja dijeda: belum disahkan bahawa kerja latar belakang telah tamat, dan tiada apa yang boleh diteruskan sebelum itu.",
+  "aiRunCleanupRetry": "Ini akan disemak semula apabila anda kembali ke apl kali seterusnya; selepas itu anda boleh menghantar mesej baharu."
 }

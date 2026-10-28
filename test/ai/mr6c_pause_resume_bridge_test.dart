@@ -1,10 +1,29 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/execution_gate.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/instance.dart';
+import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
+
+import '../support/fake_adapter.dart';
+
+Future<T> _guardedRead<T>(
+  AiBackgroundRunGate gate,
+  Future<T> Function() read,
+) => CachedRead.run(read, mayStart: () {
+  if (!gate.executionEligible) {
+    throw const AiExecutionPaused(AiExecutionPause(
+      AiExecutionPauseReason.foregroundRequired,
+    ));
+  }
+  return true;
+});
 
 final class _Peer {
   _Peer(this.channel);
@@ -141,6 +160,136 @@ void main() {
       messenger.setMockMethodCallHandler(channel, null);
     });
     return (owner, gate, peer);
+  }
+
+  test(
+    'serviceless context admission gates raw GET after a settled file HEAD',
+    () async {
+      var foreground = true;
+      final (owner, gate, peer) = await setup(() => foreground);
+      peer.rejection = 'start_denied';
+      await gate.beginRun(runId: 'logical-run');
+      final entered = Completer<void>();
+      final response = Completer<void>();
+      addTearDown(() {
+        if (!response.isCompleted) response.complete();
+      });
+      final adapter = FakeAdapter((request) async {
+        if (request.method == 'HEAD') {
+          if (!entered.isCompleted) entered.complete();
+          await response.future;
+          return ResponseBody.fromString('', 200);
+        }
+        return ResponseBody.fromString('synthetic file', 200);
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      Future<String> read() => _guardedRead(
+        gate,
+        () => api.textFile(42, 'main', 'README.md', refresh: true),
+      );
+      final reading = read();
+      await entered.future;
+      foreground = false;
+      owner.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      final paused = expectLater(reading, throwsA(isA<AiExecutionPaused>()));
+      response.complete();
+      await paused;
+      expect(adapter.requests.map((request) => request.method), ['HEAD']);
+      foreground = true;
+      owner.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await owner.onForeground();
+      expect(gate.executionEligible, isFalse);
+      expect(adapter.requests, hasLength(1));
+      await gate.resumeRun();
+      expect(await read(), 'synthetic file');
+      expect(adapter.requests.map((request) => request.method), [
+        'HEAD', 'HEAD', 'GET',
+      ]);
+      expect(gate.binding.runId, 'logical-run');
+      expect(peer.starts, 2);
+    },
+  );
+
+  for (final boundary in ['unauthorized response', 'token response']) {
+    test(
+      'serviceless context admission pauses OAuth after $boundary',
+      () async {
+        var foreground = true;
+        final (owner, gate, peer) = await setup(() => foreground);
+        peer.rejection = 'start_denied';
+        await gate.beginRun(runId: 'logical-run');
+        final entered = Completer<void>();
+        final response = Completer<void>();
+        addTearDown(() {
+          if (!response.isCompleted) response.complete();
+        });
+        final adapter = FakeAdapter((request) async {
+          if (request.headers['Authorization'] == 'Bearer old-access') {
+            if (boundary == 'unauthorized response') {
+              if (!entered.isCompleted) entered.complete();
+              await response.future;
+            }
+            return jsonResponse({}, status: 401);
+          }
+          return jsonResponse({'id': 1, 'title': 'Synthetic issue'});
+        });
+        final tokens = FakeAdapter((_) async {
+          if (boundary == 'token response') {
+            if (!entered.isCompleted) entered.complete();
+            await response.future;
+          }
+          return jsonResponse({
+            'access_token': 'new-access',
+            'refresh_token': 'new-refresh',
+            'token_type': 'bearer',
+          });
+        });
+        final instance = GitLabInstance.parse('https://example.com/gitlab');
+        final api = GitLabApi(
+          instance: instance,
+          credential: const OAuthCredential(
+            accessToken: 'old-access',
+            refreshToken: 'old-refresh',
+            clientId: 'synthetic-client',
+          ),
+          dio: Dio()..httpClientAdapter = adapter,
+          oauth: OAuthTokenClient(
+            instance: instance,
+            clientId: 'synthetic-client',
+            dio: Dio()..httpClientAdapter = tokens,
+          ),
+        );
+        addTearDown(api.close);
+        Future<CachedRead<Json>> read() => _guardedRead(
+          gate,
+          () => api.cachedRecord(['projects', '42', 'issues', '1']),
+        );
+        final reading = read();
+        await entered.future;
+        foreground = false;
+        owner.didChangeAppLifecycleState(AppLifecycleState.hidden);
+        final paused = expectLater(reading, throwsA(isA<AiExecutionPaused>()));
+        response.complete();
+        await paused;
+        expect(adapter.requests, hasLength(1));
+        expect(tokens.requests, hasLength(boundary == 'token response' ? 1 : 0));
+        foreground = true;
+        owner.didChangeAppLifecycleState(AppLifecycleState.resumed);
+        await owner.onForeground();
+        expect(gate.executionEligible, isFalse);
+        expect(adapter.requests, hasLength(1));
+        await gate.resumeRun();
+        expect((await read()).value['title'], 'Synthetic issue');
+        expect(
+          adapter.requests,
+          hasLength(boundary == 'token response' ? 2 : 3),
+        );
+        expect(tokens.requests, hasLength(1));
+        expect(gate.binding.runId, 'logical-run');
+        expect(peer.starts, 2);
+      },
+    );
   }
 
   test(
