@@ -272,6 +272,7 @@ final class ReadCacheDiskCoordinator {
       // Delete may have succeeded before readback failed. Keep treating the
       // marker as present until a later verified removal succeeds.
       account.offlineRefusalPending = true;
+      account.offlineRefusalFailures++;
       account.epoch++;
       _dropQueue(account);
       (_domain.namespace ?? _domain.pendingOfflineNamespace)?.fence(accountKey);
@@ -1802,7 +1803,7 @@ final class ReadCacheDiskCoordinator {
     // Revoked callers can have abandoned an already dispatched native marker
     // write. Drain that lane before taking the inventory used to prove empty.
     await account.markerTail;
-    final emptyEpoch = account.epoch;
+    final emptyRefusalFailures = account.offlineRefusalFailures;
     final inventory = await _keys!.readInventory();
     try {
       if (await _empty(
@@ -1815,7 +1816,8 @@ final class ReadCacheDiskCoordinator {
         account.intent = null;
         account.clearComplete = true;
         intent.completed = true;
-        if (intent.accountWide && account.epoch == emptyEpoch) {
+        if (intent.accountWide &&
+            account.offlineRefusalFailures == emptyRefusalFailures) {
           account.offlineRefusalPending = false;
         }
         return const DiskClearResult(
@@ -1870,7 +1872,7 @@ final class ReadCacheDiskCoordinator {
     }
     final offlineDirectoryGone =
         !intent.accountWide || await _deleteOfflineDirectory(account.key);
-    final refusalEpoch = account.epoch;
+    final refusalFailures = account.offlineRefusalFailures;
     final offlineMarkersGone =
         !intent.accountWide ||
         (offlineKeyGone &&
@@ -1909,7 +1911,8 @@ final class ReadCacheDiskCoordinator {
         account.invalidations.clear();
         account.clearComplete = true;
         intent.completed = true;
-        if (intent.accountWide && account.epoch == refusalEpoch) {
+        if (intent.accountWide &&
+            account.offlineRefusalFailures == refusalFailures) {
           account.offlineRefusalPending = false;
         }
         // Retained selection belongs to the current session/startup owner.
@@ -2898,6 +2901,8 @@ final class _Account {
   bool clearComplete = false;
   bool offlineRefusalPending = false;
   int offlineRefusalDeletes = 0;
+  // Lifecycle epochs do not invalidate confirmed refusal-marker cleanup.
+  int offlineRefusalFailures = 0;
   void Function()? offlineRefusalSettled;
   bool get offlineRefusalBlocked =>
       offlineRefusalPending || offlineRefusalDeletes > 0;

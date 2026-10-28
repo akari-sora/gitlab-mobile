@@ -635,74 +635,98 @@ void main() {
   }
 
   for (final proof in ['inventory', 'completion']) {
-    testWidgets(
-      'settings clear preserves a refusal failure during $proof proof',
-      (tester) async {
-        offlineModeShellReadyForTesting = null;
-        final h = _Harness(_onlineProject);
-        addTearDown(() => pumpUntilComplete(tester, h.dispose()));
-        final session = await _refusalFailureSession(
-          tester,
-          h,
-          'readback',
-          seedCache: proof == 'completion',
-        );
-        final binding = DiskBinding(
-          accountKey: h.account.key,
-          generation: session.generation,
-        );
-        final heldDelete = Completer<void>();
-        final deleteStarted = Completer<void>();
-        h.storage.holdRefusalDelete = heldDelete;
-        h.storage.refusalDeleteStarted = deleteStarted;
-        final failed = expectLater(
-          h.cache.deleteOfflineRefused(h.account.key),
-          throwsA(isA<ReadCacheStoreException>()),
-        );
-        await pumpUntilComplete(tester, deleteStarted.future);
-        final heldProof = Completer<void>();
-        final proofStarted = Completer<void>();
-        if (proof == 'inventory') {
-          h.storage.holdInventory = heldProof;
-          h.storage.inventoryStarted = proofStarted;
-        } else {
-          h.storage.holdMarkerDelete = heldProof;
-          h.storage.markerDeleteStarted = proofStarted;
-        }
-        await tester.pumpWidget(
-          MaterialApp(
-            home: ReadCacheSettingsPage(cache: h.cache, binding: binding),
-          ),
-        );
-        await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('確認'));
-        await pumpUntilComplete(tester, proofStarted.future);
+    for (final newerFailure in [false, true]) {
+      testWidgets(
+        'settings clear across background during $proof proof; newer refusal failure=$newerFailure',
+        (tester) async {
+          offlineModeShellReadyForTesting = null;
+          final h = _Harness(_onlineProject);
+          addTearDown(() => pumpUntilComplete(tester, h.dispose()));
+          final session = await _refusalFailureSession(
+            tester,
+            h,
+            'readback',
+            seedCache: proof == 'completion',
+          );
+          final binding = DiskBinding(
+            accountKey: h.account.key,
+            generation: session.generation,
+          );
+          final heldDelete = Completer<void>();
+          Future<void>? failed;
+          if (newerFailure) {
+            final deleteStarted = Completer<void>();
+            h.storage.holdRefusalDelete = heldDelete;
+            h.storage.refusalDeleteStarted = deleteStarted;
+            failed = expectLater(
+              h.cache.deleteOfflineRefused(h.account.key),
+              throwsA(isA<ReadCacheStoreException>()),
+            );
+            await pumpUntilComplete(tester, deleteStarted.future);
+          }
+          final heldProof = Completer<void>();
+          final proofStarted = Completer<void>();
+          if (proof == 'inventory') {
+            h.storage.holdInventory = heldProof;
+            h.storage.inventoryStarted = proofStarted;
+          } else {
+            h.storage.holdMarkerDelete = heldProof;
+            h.storage.markerDeleteStarted = proofStarted;
+          }
+          await tester.pumpWidget(
+            MaterialApp(
+              home: ReadCacheSettingsPage(cache: h.cache, binding: binding),
+            ),
+          );
+          await tester.tap(find.byKey(const ValueKey('read-cache-clear')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('確認'));
+          await pumpUntilComplete(tester, proofStarted.future);
 
-        h.storage.failRefusalRead = true;
-        heldDelete.complete();
-        await pumpUntilComplete(tester, failed);
-        h.storage.failRefusalRead = false;
-        heldProof.complete();
-        await pumpUntil(
-          tester,
-          () => find.text('已清除離線快取').evaluate().isNotEmpty,
-        );
-        await pumpUntilComplete(tester, h.cache.quiesced);
-        expect(h.cache.state(h.account.key), ReadCacheDiskState.unavailable);
-        expect(await h.cache.readOfflineRefused(h.account.key), isTrue);
+          h.cache.background();
+          if (failed != null) {
+            h.storage.failRefusalRead = true;
+            heldDelete.complete();
+            await pumpUntilComplete(tester, failed);
+            h.storage.failRefusalRead = false;
+          }
+          heldProof.complete();
+          await pumpUntil(
+            tester,
+            () => find.text('已清除離線快取').evaluate().isNotEmpty,
+          );
+          await pumpUntilComplete(tester, h.cache.quiesced);
+          expectSync(session.active?.key, h.account.key);
+          expectSync(session.generation, binding.generation);
+          await pumpUntilComplete(tester, () async {
+            expectSync(await h.cache.resume(binding), !newerFailure);
+            expectSync(
+              await h.cache.readOfflineRefused(h.account.key),
+              newerFailure,
+            );
+            if (newerFailure) {
+              expectSync(
+                h.cache.state(h.account.key),
+                ReadCacheDiskState.unavailable,
+              );
+              await session.api!.project('1', refresh: true);
+              await h.cache.flush(binding);
+              expectSync(h.cache.stats.retainedEntries, 0);
+            }
+          }());
 
-        await _clearFromSettings(tester, h, binding);
-        await pumpUntil(
-          tester,
-          () => h.cache.state(h.account.key) == ReadCacheDiskState.ready,
-        );
-        await pumpUntilComplete(
-          tester,
-          _expectProjectReadWritesCache(h, session),
-        );
-      },
-    );
+          if (newerFailure) await _clearFromSettings(tester, h, binding);
+          await pumpUntil(
+            tester,
+            () => h.cache.state(h.account.key) == ReadCacheDiskState.ready,
+          );
+          await pumpUntilComplete(
+            tester,
+            _expectProjectReadWritesCache(h, session),
+          );
+        },
+      );
+    }
   }
 
   testWidgets(
