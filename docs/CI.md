@@ -8,9 +8,11 @@ New projects require explicit runner registration and dispatcher onboarding on e
 
 1. `python_checks`: report-converter, local-smoke runner, package-installer and native-bootstrap regressions, Python compilation, shell syntax.
 2. `flutter_checks`: dependency-lock enforcement, Flutter analysis, 68 Flutter unit/widget/smoke tests in the initial CI baseline, JUnit and LCOV. The current test count is read from the job report, not inferred from this document.
-3. `native_templates`: generate/review Android and iOS runner configuration from the pinned SDK. Linux generation is not an iOS build or device test.
-4. `android_debug`: needs all three checks, reuses their dependency lock and native templates, and builds the `gitlab`-flavor Android APK: a release build on protected refs (`main`, `v*` tags), a debug build everywhere else (the job keeps its historical name).
-5. `publish_preview`: main/default branch only, verifies checksums and uploads APK/metadata/checksums to the same project's Generic Package Registry.
+3. `flutter_ai_checks`: the same analysis and complete test suite; tests run with `MERGELINE_AI_ASSISTANT=true` and `MERGELINE_AI_BACKGROUND=false`. It inherits the same rules, runner tags and retry policy as `flutter_checks`, with separate `ci-output-ai/` and `coverage-ai/` artifacts. Both check jobs have a 25-minute timeout; each test process has a 22-minute deadline and 15-second TERM-to-KILL grace period.
+4. `native_templates`: generate/review Android and iOS runner configuration from the pinned SDK. Linux generation is not an iOS build or device test.
+5. `android_debug`: needs the Python checks, both Flutter checks and native templates, reuses the default check's dependency lock and native templates, and builds the `gitlab`-flavor Android APK: a release build on protected refs (`main`, `v*` tags), a debug build everywhere else (the job keeps its historical name).
+6. `publish_preview`: AI-off delivery on this project's protected `main` branch, excluding merge-request pipelines and special smoke/sync pipelines. It verifies checksums and uploads APK/metadata/checksums to the same project's Generic Package Registry.
+7. `mr7_release_attestation` and `publish_preview_ai`: separate manual jobs for this project's protected `main` branch and the `mr7-release` environment, excluding merge-request and special pipelines. AI-on delivery requires the external attestation described below.
 
 `public_api_smoke` is not part of push, merge-request or tag pipelines; see [Public API smoke](#public-api-smoke).
 
@@ -45,7 +47,17 @@ Flutter jobs append `--no-same-owner` to `TAR_OPTIONS`, keeping extracted SDK fi
 
 JUnit, raw test JSON, analyzer output and LCOV remain attached to the check job even after failure where available. Android APKs, `SHA256SUMS` and `build-metadata.json` are retained as job artifacts for 14 days. Default-branch delivery creates a registry version named after the full commit SHA, not a mutable `latest` label.
 
-Delivery uses `CI_JOB_TOKEN`, not a personal token. No credentials are committed, printed deliberately, embedded into the APK or sent in URL query strings. CI fixtures contain only synthetic API identities. The pipeline does not enable CI job-token repository pushes.
+Registry delivery uses `CI_JOB_TOKEN`. The AI-on attestation and delivery jobs additionally require a protected, `mr7-release`-scoped `read_api` file token, supplied as `MR7_GITLAB_READ_TOKEN_FILE`; `CI_JOB_TOKEN` alone cannot read the single-job API. This variable was not configured by this change. No credentials are committed, printed deliberately, embedded into the APK or sent in URL query strings. CI fixtures contain only synthetic API identities. The pipeline does not enable CI job-token repository pushes.
+
+### MR7 release flags and attestation
+
+`ci/build_android.sh` accepts explicit `--ai-assistant` and `--ai-background` boolean values and records the effective flags in `build-metadata.json`; absent flags are false. CI currently passes both as literal `false`. `MR7_RELEASE_AI` defaults to `false` and only routes delivery jobs: setting it does not change the compiled flags. A future 7R release must explicitly change the build configuration and route after collecting the required evidence. The Play flavor rejects AI-on flags and stays off.
+
+The manual attestation job takes numeric `MR7_RECEIPTS_JOB_ID` for a successful `mr7_release_receipts` job on protected `main` at the exact release SHA. Its `mr7-receipts/index.json` identifies the five required regular check jobs and each receipt's job ID, job URL, fixed path and SHA-256. The required receipt files are `mr7-receipts/live/{public_api_smoke,provider_smoke,production_operations,events_isolation}.json` and `mr7-receipts/emulator/production_smoke.json`. Each receipt must say `schema: 1`, `status: PASS`, its kind/name, release SHA, source digests, production policy, GitLab release flavor, AI-on/background-off flags and timezone-aware creation time. Receipts and attestation must be no more than 24 hours old. The receipt job and real live/emulator evidence are future 7R work: **NOT_RUN** here.
+
+`RELEASE_REQUIREMENTS` in `ci/mr7_attestation.py` remains pending. 7R must commit the capability digest, complete operation/target/variant list and emulator rows; every required detail needs its own hashed receipt with independent readback/isolation or device result. Aggregate PASS receipts cannot authorize delivery. This commit cannot produce an eligible AI-on attestation. Both delivery modes authenticate their actual job with `CI_JOB_TOKEN` and verify current branch protection through GitLab; overridden predefined variables do not provide identity. AI jobs independently inspect the APK using pinned Android tools and reject tracked source changes.
+
+AI-on delivery accepts a numeric `MR7_ATTESTATION_JOB_ID`, not an arbitrary attestation path or URL. It authenticates the current job, checks the attestation job's project, success, protected ref and pipeline SHA, then downloads the fixed job artifact and checks its bytes against `SHA256SUMS` and the successful job trace's digest. The provider ID must match that selected artifact job. The validator also checks the exact source, required checks and receipt digests, APK and metadata hashes, flavor, release build, package and stable CI certificate. Missing, stale or mismatched evidence stops delivery. The [Jobs API](https://docs.gitlab.com/api/jobs/) does not document an independent immutable artifact SHA-256 or historical ref protection; these properties, trace/artifact binding and token permissions require real protected pipeline evidence. No pipeline, variable, tag or release was created by this change.
 
 ## Public API smoke
 
