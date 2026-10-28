@@ -28,6 +28,12 @@ Future<void> pumpUntil(
 
 /// Native I/O can finish on the real loop while its caller's continuation is
 /// queued on the widget clock. Keep both moving until this work acknowledges.
+///
+/// [work] is one future, captured before pumping starts. In particular,
+/// `session.readCache.quiesced` snapshots the current queue tail: work enqueued
+/// by a rebuild during this wait can chain after that tail and is not covered.
+/// Call after the final assertions and expected requests; this is not a drain
+/// of all work that widgets might enqueue later.
 Future<void> pumpUntilComplete(WidgetTester tester, Future<void> work) async {
   var completed = false;
   final tracked = work.whenComplete(() => completed = true);

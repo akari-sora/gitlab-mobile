@@ -2811,5 +2811,5 @@ const _messagesSv = <String>[
   'Arbete i bakgrunden är inte tillgängligt just nu.',
   'Den här skrivningen gjordes inte: arbetet i bakgrunden kunde inte starta.',
   'Arbetet pausat: det är ännu inte bekräftat att arbetet i bakgrunden har avslutats, och inget kan fortsätta innan dess.',
-  'Det kontrolleras igen nästa gång du återvänder till appen; därefter kan du skicka ett nytt meddelande.',
+  'Rensningen görs om varje gång du återvänder till appen; arbetet kan fortsätta först när rensningen har bekräftats.',
 ];

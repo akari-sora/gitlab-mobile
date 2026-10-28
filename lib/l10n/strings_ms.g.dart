@@ -2811,5 +2811,5 @@ const _messagesMs = <String>[
   'Kerja latar belakang tidak tersedia sekarang.',
   'Penulisan ini tidak dibuat: kerja latar belakang tidak dapat dimulakan.',
   'Kerja dijeda: belum disahkan bahawa kerja latar belakang telah tamat, dan tiada apa yang boleh diteruskan sebelum itu.',
-  'Ini akan disemak semula apabila anda kembali ke apl kali seterusnya; selepas itu anda boleh menghantar mesej baharu.',
+  'Pembersihan dicuba semula setiap kali anda kembali ke apl; kerja hanya boleh diteruskan selepas pembersihan disahkan.',
 ];

@@ -2809,5 +2809,5 @@
   "aiRunStartUnavailable": "Arka plan çalışması şu anda kullanılamıyor.",
   "aiProposalBackgroundUnavailable": "Bu yazma yapılmadı: arka plan çalışması başlatılamadı.",
   "aiRunCleanupPending": "Çalışma duraklatıldı: arka plan çalışmasının bittiği henüz doğrulanmadı ve o zamana kadar devam edilemez.",
-  "aiRunCleanupRetry": "Uygulamaya bir sonraki dönüşünüzde yeniden denetlenir; ardından yeni bir mesaj gönderebilirsiniz."
+  "aiRunCleanupRetry": "Temizlik, uygulamaya her döndüğünüzde yeniden denenir; çalışma ancak temizlik doğrulandıktan sonra devam edebilir."
 }

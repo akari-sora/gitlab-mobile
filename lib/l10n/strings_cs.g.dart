@@ -2811,5 +2811,5 @@ const _messagesCs = <String>[
   'Práce na pozadí teď není k dispozici.',
   'Tento zápis nebyl proveden: práci na pozadí se nepodařilo spustit.',
   'Práce pozastavena: zatím není potvrzeno, že práce na pozadí skončila, a do té doby nelze pokračovat.',
-  'Znovu se to ověří, až se příště vrátíte do aplikace; potom můžete poslat novou zprávu.',
+  'Úklid se zkusí znovu pokaždé, když se vrátíte do aplikace; v práci lze pokračovat až po potvrzení úklidu.',
 ];

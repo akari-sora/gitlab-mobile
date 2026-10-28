@@ -138,7 +138,199 @@ void _corruptTodo(Map<String, Object?> todo, String problem) {
   }
 }
 
+Future<VerifiedGroupTodo?> _selectedTodo(
+  GitLabApi api, {
+  required bool snoozed,
+  ({int groupId, int parentIid})? exactGroup = (groupId: 7, parentIid: 3),
+  bool Function()? isCurrent,
+}) async {
+  final context = api.captureGroupReadEpoch();
+  final result = await (snoozed
+      ? api.selectedTodoForUnsnooze(19, expectedUserId: 7,
+          generation: 17, readEpoch: context.readEpoch,
+          isCurrent: isCurrent ?? context.isCurrent, exactGroup: exactGroup)
+      : api.selectedTodoForSnooze(19, expectedUserId: 7,
+          generation: 17, readEpoch: context.readEpoch,
+          isCurrent: isCurrent ?? context.isCurrent, exactGroup: exactGroup));
+  return result.selectedGroupTodo;
+}
+
+Object _todoPage(List<Object?> nodes, {int page = 1, bool more = false,
+  String actor = 'gid://gitlab/User/7'}) => {
+  'data': {'currentUser': {'id': actor, 'todos': {
+    'nodes': nodes,
+    'pageInfo': {'hasNextPage': more, 'endCursor': more ? 'page$page' : null},
+  }}},
+};
+
 void main() {
+  for (final snoozed in [false, true]) {
+    final direction = snoozed ? 'unsnooze' : 'snooze';
+    for (final foundPage in [1, 4, null]) {
+      test('selected $direction todo found on page $foundPage completes four pages', () async {
+        var page = 0;
+        final adapter = FakeAdapter((_) {
+          page++;
+          return jsonResponse(_todoPage([
+            if (page == foundPage) _groupTodo(snoozed: snoozed),
+          ], page: page, more: page < 4));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final result = await _selectedTodo(api, snoozed: snoozed);
+        if (foundPage == null) {
+          expect(result, isNull, reason: 'absence requires a complete set');
+        } else {
+          expect(result!.todoId, 19);
+          expect(result.owner.groupId, 7);
+          expect(result.owner.groupGid, _group);
+          expect(result.owner.fullPath, _path);
+          expect(result.owner.iid, 3);
+          expect(result.owner.workItemGid, _item);
+          expect(result.owner.isCurrent(accountKey: '${api.instance.key}#7',
+            apiOwner: api, generation: 17,
+            readEpoch: api.captureGroupReadEpoch().readEpoch), isTrue);
+          expect(result.snoozedUntil, snoozed ? DateTime.utc(2030) : null);
+        }
+        expect(adapter.requests, hasLength(4));
+        for (var i = 0; i < 4; i++) {
+          final data = adapter.requests[i].data as Map;
+          expect(data['query'], contains('isSnoozed: $snoozed'));
+          expect(data['variables'], {'first': 100, 'after': i == 0 ? null : 'page$i'});
+        }
+      });
+    }
+
+    for (final found in [false, true]) {
+      test('selected $direction incomplete bound refuses even with found=$found', () async {
+        var page = 0;
+        final adapter = FakeAdapter((_) {
+          page++;
+          return jsonResponse(_todoPage([
+            if (found && page == 1) _groupTodo(snoozed: snoozed),
+          ], page: page, more: true));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        await expectLater(_selectedTodo(api, snoozed: snoozed), _invalid);
+        expect(adapter.requests, hasLength(4));
+      });
+    }
+
+    for (final exact in [true, false]) {
+      for (final problem in ['exact', 'missingOuterProject', 'missingProject',
+        'project', 'missingNamespace', 'issueAlias', 'conflictingNamespace',
+        'forgedGroup', 'forgedItem', 'missingSnooze', 'invalidSnooze']) {
+        test('selected $direction ${exact ? 'exact group' : 'accountGlobal'} raw $problem', () async {
+          final todo = _groupTodo(snoozed: snoozed);
+          _corruptTodo(todo, problem);
+          final target = todo['targetEntity']! as Map<String, Object?>;
+          switch (problem) {
+            case 'conflictingNamespace':
+              target['namespace'] = {'id': 'gid://gitlab/Group/8', 'fullPath': _path};
+            case 'forgedGroup':
+              target['namespace'] = {'id': 'gid://gitlab/Group/07', 'fullPath': _path};
+              todo['group'] = target['namespace'];
+            case 'forgedItem':
+              target['workItemId'] = 'gid://gitlab/WorkItem/091';
+            case 'missingSnooze':
+              todo.remove('snoozedUntil');
+            case 'invalidSnooze':
+              todo['snoozedUntil'] = 'invalid';
+          }
+          final adapter = FakeAdapter((_) => jsonResponse(_todoPage([todo])));
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final future = _selectedTodo(api, snoozed: snoozed,
+            exactGroup: exact ? (groupId: 7, parentIid: 3) : null);
+          if (problem == 'exact') {
+            expect((await future)!.owner.workItemGid, _item);
+          } else if (problem == 'issueAlias') {
+            expect(await future, isNull, reason: 'raw Issue remains unsupported');
+          } else {
+            await expectLater(future, _invalid);
+          }
+          expect(adapter.requests, hasLength(1));
+        });
+      }
+    }
+
+    for (final groupId in [7, 8]) {
+      for (final iid in [3, 4]) {
+        test('selected $direction exact group tuple $groupId/$iid', () async {
+          final adapter = FakeAdapter((_) => jsonResponse(_todoPage([_groupTodo(snoozed: snoozed)])));
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final future = _selectedTodo(api, snoozed: snoozed,
+            exactGroup: (groupId: groupId, parentIid: iid));
+          if (groupId == 7 && iid == 3) {
+            expect((await future)!.owner.groupId, 7);
+          } else {
+            await expectLater(future, _invalid);
+          }
+          expect(adapter.requests, hasLength(1));
+        });
+      }
+    }
+
+    test('selected $direction accountGlobal admits another real group without a grant', () async {
+      final todo = _groupTodo(snoozed: snoozed);
+      _corruptTodo(todo, 'namespace');
+      final adapter = FakeAdapter((_) => jsonResponse(_todoPage([todo])));
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final result = await _selectedTodo(api, snoozed: snoozed, exactGroup: null);
+      expect(result!.owner.groupId, 8);
+      expect(result.todoId, 19);
+      expect(adapter.requests, hasLength(1));
+    });
+
+    for (final actorPage in [1, 2]) {
+      test('selected $direction rejects another user on page $actorPage', () async {
+        var page = 0;
+        final adapter = FakeAdapter((_) {
+          page++;
+          return jsonResponse(_todoPage([if (page == 1) _groupTodo(snoozed: snoozed)],
+            page: page, more: page == 1,
+            actor: page == actorPage ? 'gid://gitlab/User/8' : 'gid://gitlab/User/7'));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        await expectLater(_selectedTodo(api, snoozed: snoozed), _invalid);
+        expect(adapter.requests, hasLength(actorPage));
+      });
+    }
+
+    for (final revokedPage in [0, 1, 2, 4]) {
+      test('selected $direction currentness revoked during page $revokedPage', () async {
+        var current = revokedPage != 0;
+        var page = 0;
+        final adapter = FakeAdapter((_) {
+          page++;
+          if (page == revokedPage) current = false;
+          return jsonResponse(_todoPage([
+            if (page == revokedPage) _groupTodo(snoozed: snoozed),
+          ], page: page, more: page < revokedPage));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        await expectLater(_selectedTodo(api, snoozed: snoozed, isCurrent: () => current),
+          throwsA(isA<ApiFailure>().having((f) => f.kind, 'kind', FailureKind.cancelled)));
+        expect(adapter.requests, hasLength(revokedPage));
+      });
+    }
+
+    test('selected $direction rechecks currentness before the next page', () async {
+      var checks = 0;
+      final adapter = FakeAdapter((_) => jsonResponse(_todoPage([], more: true)));
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      await expectLater(_selectedTodo(api, snoozed: snoozed, isCurrent: () => ++checks < 3),
+        throwsA(isA<ApiFailure>().having((f) => f.kind, 'kind', FailureKind.cancelled)));
+      expect(adapter.requests, hasLength(1));
+    });
+  }
+
   final openers = <String, Future<Object?> Function(GitLabApi, WorkItemGraphSummary)>{
     'state': (api, summary) => api.workItemState(summary),
     'attribute': (api, summary) => api.workItemAttribute(summary, WorkItemAttributeKind.health),

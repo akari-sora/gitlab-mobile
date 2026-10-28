@@ -462,6 +462,7 @@ enum AiRunResumeWarning { possibleDuplicate, possibleRebilling }
 abstract interface class AiRunContinuationSession {
   AiExecutionPause? get executionPause;
   AiBackgroundStartResult? get serviceStartResult;
+  AiBackgroundCleanupConfirmation get cleanupConfirmation;
   bool get canResumeRun;
   Set<AiRunResumeWarning> get resumeWarnings;
   Future<void> resumeRun();

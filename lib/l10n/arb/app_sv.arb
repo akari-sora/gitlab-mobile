@@ -2809,5 +2809,5 @@
   "aiRunStartUnavailable": "Arbete i bakgrunden är inte tillgängligt just nu.",
   "aiProposalBackgroundUnavailable": "Den här skrivningen gjordes inte: arbetet i bakgrunden kunde inte starta.",
   "aiRunCleanupPending": "Arbetet pausat: det är ännu inte bekräftat att arbetet i bakgrunden har avslutats, och inget kan fortsätta innan dess.",
-  "aiRunCleanupRetry": "Det kontrolleras igen nästa gång du återvänder till appen; därefter kan du skicka ett nytt meddelande."
+  "aiRunCleanupRetry": "Rensningen görs om varje gång du återvänder till appen; arbetet kan fortsätta först när rensningen har bekräftats."
 }

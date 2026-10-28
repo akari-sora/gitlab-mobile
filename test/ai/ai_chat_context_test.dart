@@ -2,9 +2,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
+import 'package:gitlab_mobile/core/ai/runner.dart' show buildAiProjectionData;
 import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
+import 'package:gitlab_mobile/core/ai/write_text.dart';
 import 'package:gitlab_mobile/core/failure.dart';
+import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/request_meter.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
@@ -90,6 +93,91 @@ FakeAdapter _groupAdapter({
 });
 
 void main() {
+  for (final group in [false, true]) {
+    test(
+      '${group ? 'group' : 'project'} page title tracks redacted whole and projected cut',
+      () async {
+        final rawTitle =
+            '\x1b[31mTitle\x1b[0m ${'segment ' * 160}'
+            'glpat-ABCDEFGHIJKLMNOPQRST';
+        final context = group
+            ? await _load(
+                _groupOrigin,
+                _groupAdapter(node: _groupNode()..['title'] = rawTitle),
+              )
+            : await _load(
+                const AiWorkItemOrigin(
+                  project: _project,
+                  kind: AiWorkItemKind.issue,
+                  iid: 3,
+                  title: 'Untrusted title',
+                ),
+                FakeAdapter((request) {
+                  final path = request.uri.path;
+                  if (path.endsWith('/issues/3/notes')) {
+                    return jsonResponse(<Object?>[]);
+                  }
+                  if (path.endsWith('/issues/3')) {
+                    return jsonResponse({
+                      'title': rawTitle,
+                      'description': 'Description',
+                      'state': 'opened',
+                    });
+                  }
+                  expect(path, endsWith('/projects/42'));
+                  return jsonResponse({'id': 42, 'default_branch': null});
+                }),
+              );
+        final title = context.titleField!;
+        expect(title.provenance.fieldName, 'title');
+        expect(
+          title.provenance.resourceKey.canonical,
+          group
+              ? '(https://example.com/gitlab#7, group:7, workItem, 3)'
+              : 'project:42/issue:3',
+        );
+        expect(title.sent, isNot(contains('\x1b')));
+        expect(title.sent, isNot(contains('glpat-ABCDEFGHIJKLMNOPQRST')));
+        final table = UploadPlaceholderTable(
+          instance: GitLabInstance.parse('https://example.com/gitlab'),
+          accountKey: 'https://example.com/gitlab#7',
+          conversationId: 'context-title',
+        );
+        context.recordDelivery(table, context.built.blocks);
+        expect(table.seenOnlyCut(title.provenance), isFalse);
+        final summary = buildAiProjectionData(
+          context: context.built.blocks,
+          entries: const [],
+          budget: 1200,
+          redact: (value) => value,
+        );
+        context.recordDelivery(table, [
+          AiContextBlock.fromData(
+            source: 'conversation_summary',
+            data: summary,
+          ),
+        ]);
+        expect(table.seenOnlyCut(title.provenance), isTrue);
+        expect(
+          prepareWriteText(
+            textClass: AiTextClass.plainContent,
+            modelText: 'Replacement',
+            field: title.provenance,
+            placeholders: table,
+            knownSecrets: const {},
+            aiAttribution: false,
+            visibility: const AiVisibilityContext(),
+          ).blockedReasonCode,
+          AiTextBlockCode.fieldTooLong,
+        );
+        context.recordDelivery(table, const []);
+        expect(table.seenOnlyCut(title.provenance), isTrue);
+        context.recordDelivery(table, context.built.blocks);
+        expect(table.seenOnlyCut(title.provenance), isFalse);
+        expect(table.length, 0);
+      },
+    );
+  }
   group('user-added group item', _uiAddedContext);
 
   test(

@@ -2811,5 +2811,5 @@ const _messagesDe = <String>[
   'Arbeit im Hintergrund ist gerade nicht verfügbar.',
   'Dieser Schreibvorgang wurde nicht ausgeführt: Die Arbeit im Hintergrund konnte nicht starten.',
   'Arbeit pausiert: Es ist noch nicht bestätigt, dass die Arbeit im Hintergrund beendet ist; bis dahin kann nichts fortgesetzt werden.',
-  'Das wird erneut geprüft, wenn Sie das nächste Mal zur App zurückkehren; danach können Sie eine neue Nachricht senden.',
+  'Die Bereinigung wird bei jeder Rückkehr zur App erneut versucht; erst wenn sie bestätigt ist, kann die Arbeit fortgesetzt werden.',
 ];

@@ -2811,5 +2811,5 @@ const _messagesFr = <String>[
   'Le travail en arrière-plan est indisponible pour le moment.',
   'Cette écriture n’a pas été effectuée : le travail en arrière-plan n’a pas pu démarrer.',
   'Travail en pause : la fin du travail en arrière-plan n’est pas encore confirmée, et rien ne peut continuer d’ici là.',
-  'Cela sera vérifié de nouveau la prochaine fois que vous reviendrez dans l’app ; vous pourrez ensuite envoyer un nouveau message.',
+  'Le nettoyage est réessayé chaque fois que vous revenez dans l’app ; le travail ne peut continuer qu’une fois le nettoyage confirmé.',
 ];

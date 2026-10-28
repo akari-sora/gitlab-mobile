@@ -2811,5 +2811,5 @@ const _messagesRo = <String>[
   'Lucrul în fundal nu este disponibil acum.',
   'Această scriere nu a fost făcută: lucrul în fundal nu a putut porni.',
   'Lucru întrerupt temporar: încă nu s-a confirmat că lucrul în fundal s-a încheiat, iar până atunci nu se poate continua.',
-  'Se va verifica din nou data viitoare când revii în aplicație; apoi poți trimite un mesaj nou.',
+  'Curățarea se reîncearcă de fiecare dată când revii în aplicație; lucrul poate continua doar după ce curățarea este confirmată.',
 ];

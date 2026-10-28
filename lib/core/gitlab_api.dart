@@ -362,12 +362,6 @@ final class GitLabApi {
         }
       }
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
-      // Cached loaders retain this fence across admission, HEAD and retries.
-      if (!writing &&
-          (Zone.current[#cachedReadMayStart] as bool Function()?)?.call() ==
-              false) {
-        throw const ApiFailure(FailureKind.cancelled);
-      }
       onSendStarted?.call();
       if (graphMutation) {
         (Zone.current[#graphMutationSendStarted] as void Function()?)?.call();
@@ -1083,10 +1077,6 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           (_credential as OAuthCredential).accessToken != current.accessToken;
     }
     final gate = () async {
-      if ((Zone.current[#cachedReadMayStart] as bool Function()?)?.call() ==
-          false) {
-        throw const ApiFailure(FailureKind.cancelled);
-      }
       final rotated = await oauth.refresh(current);
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
       _cache.clear(revoke: false);

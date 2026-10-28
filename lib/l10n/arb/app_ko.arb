@@ -2809,5 +2809,5 @@
   "aiRunStartUnavailable": "지금은 백그라운드 작업을 사용할 수 없습니다.",
   "aiProposalBackgroundUnavailable": "이 쓰기는 실행되지 않았습니다. 백그라운드 작업을 시작할 수 없었습니다.",
   "aiRunCleanupPending": "작업이 일시 중지됨: 백그라운드 작업이 끝났는지 아직 확인되지 않아 그때까지 계속할 수 없습니다.",
-  "aiRunCleanupRetry": "다음에 앱으로 돌아오면 다시 확인합니다. 확인된 뒤에는 새 메시지를 보낼 수 있습니다."
+  "aiRunCleanupRetry": "앱으로 돌아올 때마다 정리를 다시 시도합니다. 정리가 완료된 것이 확인된 후에만 작업을 계속할 수 있습니다."
 }

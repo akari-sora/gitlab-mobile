@@ -11773,9 +11773,9 @@
     "description": "Chat card: the end of earlier background work is not confirmed (cleanup unconfirmed), so no AI work may continue, even in the foreground. No Continue button.",
     "placeholders": {}
   },
-  "aiRunCleanupRetry": "下次回到應用程式時會再確認；確認後可以傳送新訊息。",
+  "aiRunCleanupRetry": "每次回到應用程式時都會再嘗試清理；要等清理確認完成，工作才能繼續。",
   "@aiRunCleanupRetry": {
-    "description": "Chat card detail: the cleanup is checked again the next time the app returns to the foreground; then a new message can be sent.",
+    "description": "Chat card detail: the cleanup is retried each time the app returns to the foreground; work can continue only after a cleanup is confirmed (a failed retry keeps it blocked).",
     "placeholders": {}
   }
 }
