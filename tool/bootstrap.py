@@ -387,6 +387,11 @@ MAIN_ACTIVITY = FRAGMENT_MAIN_ACTIVITY.replace(
         AgentRunsChannel.activityDestroyed(this)
         super.onDestroy()
     }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        AgentRunsChannel.activityDestroyed(this)
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
 }
 ''')
 
@@ -424,6 +429,7 @@ import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -432,6 +438,7 @@ import android.os.IBinder
 import android.os.Looper
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.BinaryMessenger
 import java.util.UUID
 
 class AgentRunService : Service() {
@@ -442,14 +449,21 @@ class AgentRunService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A stale-only getService instance can stop immediately. A separately
+        // queued foreground start must discharge its obligation in its own callback.
+        if (intent?.action == ACTION_STOP_ALL) {
+            AgentRunsChannel.notificationStop(this)
+            return START_NOT_STICKY
+        }
         // Every start must discharge startForegroundService's obligation FIRST, even
         // after release/cancellation or for a stale/null intent. STARTING stops only
         // revoke authority; they never call stopService/stopSelf. After promotion,
         // stop only if no current permit exists: a stale intent must not stop a
         // newer pending start sharing this service. Bind only a matching start,
         // once per instance; onCreate/old onDestroy cannot adopt a newer permit.
+        AgentRunsChannel.startCommandReceived(intent?.getStringExtra(EXTRA_PERMIT_ID))
         val failure = try {
-            promote(RunProgress(1, 0, null, null))
+            promote(AgentRunsChannel.startProgress(intent?.getStringExtra(EXTRA_PERMIT_ID)))
             null
         } catch (_: SecurityException) {
             "security_exception"
@@ -491,12 +505,18 @@ class AgentRunService : Service() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(progress))
     }
 
-    internal fun stopNative() {
-        if (!foregroundStarted) return
+    internal fun removeForeground() {
         try {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            if (foregroundStarted) stopForeground(STOP_FOREGROUND_REMOVE)
         } finally {
             foregroundStarted = false
+        }
+    }
+
+    internal fun stopNative() {
+        try {
+            removeForeground()
+        } finally {
             stopSelf()
         }
     }
@@ -517,23 +537,43 @@ class AgentRunService : Service() {
         val publicVersion = builder().setSmallIcon(R.drawable.ic_ai_runs)
             .setContentTitle(getString(R.string.ai_run_service_title))
             .setContentText(getString(R.string.ai_run_service_text))
-            .setVisibility(Notification.VISIBILITY_PUBLIC).build()
-        return builder().setSmallIcon(R.drawable.ic_ai_runs)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+        val ongoing = builder().setSmallIcon(R.drawable.ic_ai_runs)
             .setContentTitle(progress.title ?: getString(R.string.ai_run_service_title))
             .setContentText(progress.text ?: getString(R.string.ai_run_service_text))
-            .setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(publicVersion)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false)
-            .setCategory(Notification.CATEGORY_SERVICE).build()
+            .setCategory(Notification.CATEGORY_SERVICE)
+        progress.stopAllLabel?.let { label ->
+            val stopIntent = Intent(this, AgentRunService::class.java).setAction(ACTION_STOP_ALL)
+            val stop = PendingIntent.getService(this, STOP_REQUEST_CODE, stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val action = Notification.Action.Builder(null, label, stop)
+            if (Build.VERSION.SDK_INT >= 31) action.setAuthenticationRequired(false)
+            val stopAction = action.build()
+            publicVersion.addAction(stopAction)
+            ongoing.addAction(stopAction)
+        }
+        return ongoing.setPublicVersion(publicVersion.build()).build()
     }
 
     companion object {
         const val NOTIFICATION_ID = 6100
         const val NOTIFICATION_CHANNEL = "ai_runs_v1"
         internal const val EXTRA_PERMIT_ID = "permitId"
+        internal const val ACTION_STOP_ALL = "io.gitlabmobile.agent_runs.STOP_ALL"
+        private const val STOP_REQUEST_CODE = 6101
     }
 }
 
-internal data class RunProgress(val workCount: Int, val step: Int, val title: String?, val text: String?)
+internal data class RunProgress(val workCount: Int, val step: Int, val title: String?, val text: String?, val stopAllLabel: String?)
+
+// Only a separately registered debug source-set adapter implements these hooks.
+internal interface AgentRunTestEvents : java.io.Closeable {
+    fun wrap(result: MethodChannel.Result): MethodChannel.Result
+    fun invalidated(deliver: () -> Unit)
+    fun taskBackInvoked()
+}
 
 internal object AgentRunsChannel {
     private const val CHANNEL = "io.gitlabmobile/agent_runs"
@@ -547,6 +587,7 @@ internal object AgentRunsChannel {
     private class Permit(val createdRequestId: String, val createdOpSeq: Long, var progress: RunProgress) {
         val id: String = UUID.randomUUID().toString()
         var latestStartSeq: Long = createdOpSeq
+        var latestStartRequestId: String = createdRequestId
         var state = State.STARTING
         val nonces = HashSet<String>()
         val pending = mutableListOf<PendingStart>()
@@ -554,10 +595,13 @@ internal object AgentRunsChannel {
     private data class PendingStart(val requestId: String, val opSeq: Long, val result: MethodChannel.Result)
     private var current: Permit? = null
     private var service: AgentRunService? = null
+    private val pendingForegroundStarts = HashSet<String>()
+    private var deferredStop: AgentRunService? = null
     private var channel: MethodChannel? = null
     private var owner: Activity? = null
     private var visible: Activity? = null
     private var registration: Any? = null
+    private var testEvents: AgentRunTestEvents? = null
     private var lastOpSeq = 0L
     private var cleanupFailed = false
 
@@ -577,12 +621,12 @@ internal object AgentRunsChannel {
     private fun progress(args: Map<*, *>): RunProgress? {
         val count = number(args, "workCount", 1, 3)?.toInt() ?: return null
         val step = number(args, "step", 0, 1000000)?.toInt() ?: return null
-        for ((key, limit) in listOf("title" to MAX_TITLE_LENGTH, "text" to MAX_TEXT_LENGTH)) {
+        for ((key, limit) in listOf("title" to MAX_TITLE_LENGTH, "text" to MAX_TEXT_LENGTH, "stopAllLabel" to MAX_TITLE_LENGTH)) {
             val value = args[key]
             if (value != null && (value !is String || value.isBlank() || value.length > limit ||
                     value.any { it < ' ' || it == '\u007f' })) return null
         }
-        return RunProgress(count, step, args["title"] as? String, args["text"] as? String)
+        return RunProgress(count, step, args["title"] as? String, args["text"] as? String, args["stopAllLabel"] as? String)
     }
     private fun sequence(args: Map<*, *>, result: MethodChannel.Result): Long? {
         val seq = number(args, "opSeq", 1, MAX_OP_SEQ)
@@ -603,12 +647,23 @@ internal object AgentRunsChannel {
             visible = null
         }
         channel?.setMethodCallHandler(null)
+        testEvents?.close()
+        // The optional debug class installs an inert registration channel. Only
+        // C8's explicit Dart QA entry activates it; release has no QA handler.
+        testEvents = try {
+            Class.forName("io.gitlabmobile.gitlab_mobile.AgentRunQaAdapter")
+                .getDeclaredConstructor(BinaryMessenger::class.java)
+                .newInstance(engine.dartExecutor.binaryMessenger) as AgentRunTestEvents
+        } catch (_: ClassNotFoundException) {
+            null
+        }
         val binding = Any()
         registration = binding
         owner = activity
         channel = MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL).also { bridge ->
-            bridge.setMethodCallHandler { call, result ->
+            bridge.setMethodCallHandler { call, rawResult ->
                 mainThread()
+                val result = testEvents?.wrap(rawResult) ?: rawResult
                 if (owner !== activity || registration !== binding) {
                     reject(result, "unavailable")
                 } else {
@@ -622,9 +677,7 @@ internal object AgentRunsChannel {
                             result.success(if (reason == null) reply("stopped") else reply("rejected", "reason" to reason))
                         }
                         "acquireContinuation" -> acquire(args, result)
-                        "moveTaskToBack" -> if (validKeys(args, setOf("opSeq"), result) && sequence(args, result) != null) {
-                            result.success(reply("unsupported", "reason" to "not_implemented"))
-                        }
+                        "moveTaskToBack" -> moveBack(activity, args, result)
                         else -> result.notImplemented()
                     }
                 }
@@ -635,6 +688,22 @@ internal object AgentRunsChannel {
     private fun validKeys(args: Map<*, *>, allowed: Set<String>, result: MethodChannel.Result): Boolean {
         if (args.keys.any { it !in allowed }) { reject(result, "invalid_arguments"); return false }
         return true
+    }
+    private fun moveBack(activity: Activity, args: Map<*, *>, result: MethodChannel.Result) {
+        if (!validKeys(args, setOf("opSeq"), result)) return
+        sequence(args, result) ?: return
+        if (visible !== activity || activity.isFinishing || activity.isDestroyed) {
+            reject(result, "foreground_required"); return
+        }
+        val moved = try {
+            testEvents?.taskBackInvoked()
+            activity.moveTaskToBack(true)
+        } catch (_: SecurityException) {
+            reject(result, "security_exception"); return
+        } catch (_: RuntimeException) {
+            reject(result, "move_failed"); return
+        }
+        result.success(reply(if (moved) "moved" else "not_moved"))
     }
     fun resumed(activity: Activity) { mainThread(); if (owner === activity) visible = activity }
     fun paused(activity: Activity) { mainThread(); if (visible === activity) visible = null }
@@ -647,10 +716,12 @@ internal object AgentRunsChannel {
         registration = null
         channel?.setMethodCallHandler(null)
         channel = null
+        testEvents?.close()
+        testEvents = null
     }
 
     private fun start(activity: Activity, args: Map<*, *>, result: MethodChannel.Result) {
-        if (!validKeys(args, setOf("opSeq", "startRequestId", "workCount", "step", "title", "text"), result)) return
+        if (!validKeys(args, setOf("opSeq", "startRequestId", "workCount", "step", "title", "text", "stopAllLabel"), result)) return
         val requestId = id(args, "startRequestId")
         val progress = progress(args)
         if (requestId == null || progress == null) { reject(result, "invalid_arguments"); return }
@@ -662,6 +733,7 @@ internal object AgentRunsChannel {
         var permit = current
         if (permit != null) {
             permit.latestStartSeq = seq
+            permit.latestStartRequestId = requestId
             permit.progress = progress
             if (permit.state == State.ACTIVE) {
                 try {
@@ -682,15 +754,22 @@ internal object AgentRunsChannel {
         permit.pending.add(PendingStart(requestId, seq, result))
         current = permit
         val intent = Intent(activity, AgentRunService::class.java).putExtra(AgentRunService.EXTRA_PERMIT_ID, permit.id)
+        pendingForegroundStarts.add(permit.id)
         try {
             val component = if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent) else activity.startService(intent)
-            if (component == null) stop("start_failed")
+            if (component == null) {
+                pendingForegroundStarts.remove(permit.id)
+                stop("start_failed")
+            }
         } catch (_: SecurityException) {
+            pendingForegroundStarts.remove(permit.id)
             stop("security_exception")
         } catch (_: IllegalStateException) {
             // Includes ForegroundServiceStartNotAllowedException on API 31+.
+            pendingForegroundStarts.remove(permit.id)
             stop("start_denied")
         } catch (_: RuntimeException) {
+            pendingForegroundStarts.remove(permit.id)
             stop("start_failed")
         }
     }
@@ -699,22 +778,39 @@ internal object AgentRunsChannel {
         result.success(reply("active", "permitId" to permit.id, "startRequestId" to requestId, "opSeq" to seq))
     }
 
+    internal fun startProgress(expectedId: String?): RunProgress =
+        current?.takeIf { it.id == expectedId }?.progress ?: RunProgress(1, 0, null, null, null)
+
+    internal fun serviceForTestEvents(): AgentRunService? = service
+
+    fun startCommandReceived(expectedId: String?) {
+        mainThread()
+        expectedId?.let { pendingForegroundStarts.remove(it) }
+    }
+
+    fun notificationStop(instance: AgentRunService) {
+        mainThread()
+        stop("user_stop", instance)
+    }
+
     fun serviceStartFailed(instance: AgentRunService, expectedId: String?, reason: String) {
         mainThread()
-        val permit = current ?: return
-        if (permit.id == expectedId && (instance.permitId == null || instance.permitId == permit.id)) stop(reason)
+        val permit = current
+        if (permit == null) { stopNative(instance); return }
+        if (permit.id == expectedId && (instance.permitId == null || instance.permitId == permit.id)) stop(reason, instance)
     }
 
     fun serviceStarted(instance: AgentRunService, expectedId: String?) {
         mainThread()
         val permit = current
         if (permit == null) {
-            try { instance.stopNative() } catch (_: RuntimeException) { cleanupFailed = true }
+            stopNative(instance)
             return
         }
         // An obsolete intent must neither revive its permit nor stop a newer one.
         if (permit.id != expectedId) return
         if (!instance.bindPermit(permit.id)) return
+        deferredStop = null
         service = instance
         try {
             instance.update(permit.progress)
@@ -733,7 +829,7 @@ internal object AgentRunsChannel {
     }
 
     private fun update(args: Map<*, *>, result: MethodChannel.Result) {
-        if (!validKeys(args, setOf("opSeq", "permitId", "workCount", "step", "title", "text"), result)) return
+        if (!validKeys(args, setOf("opSeq", "permitId", "workCount", "step", "title", "text", "stopAllLabel"), result)) return
         val permitId = id(args, "permitId")
         val progress = progress(args)
         if (permitId == null || progress == null) { reject(result, "invalid_arguments"); return }
@@ -807,12 +903,18 @@ internal object AgentRunsChannel {
         current = null
         return permit
     }
-    private fun stopNative(): Boolean {
-        val running = service
+    private fun stopNative(instance: AgentRunService? = null): Boolean {
+        val running = service ?: instance ?: deferredStop
         service = null
+        // Revocation does not erase a foreground-start dispatch already accepted
+        // by Android. Its normal callback promotes before completing this stop.
+        if (pendingForegroundStarts.isNotEmpty()) {
+            deferredStop = running
+            try { running?.removeForeground() } catch (_: RuntimeException) { cleanupFailed = true }
+            return !cleanupFailed
+        }
+        deferredStop = null
         return try {
-            // No instance is registered until its onStartCommand has promoted.
-            // A missing instance is STARTING: its callback performs any deferred stop.
             running?.stopNative()
             !cleanupFailed
         } catch (_: RuntimeException) {
@@ -828,13 +930,19 @@ internal object AgentRunsChannel {
     private fun notifyInvalidated(permit: Permit?, reason: String) {
         if (permit == null) return
         finishPending(permit, reason)
-        try {
-            channel?.invokeMethod("permitInvalidated", mapOf("version" to 1, "permitId" to permit.id, "reason" to reason))
-        } catch (_: RuntimeException) { /* Best effort only; native authority is already gone. */ }
+        val deliver = {
+            try {
+                channel?.invokeMethod("permitInvalidated", mapOf("version" to 1, "permitId" to permit.id,
+                    "reason" to reason, "startRequestId" to permit.latestStartRequestId))
+            } catch (_: RuntimeException) { /* Best effort only; native authority is already gone. */ }
+            Unit
+        }
+        val events = testEvents
+        if (events == null) deliver() else events.invalidated(deliver)
     }
-    private fun stop(reason: String): Boolean {
+    private fun stop(reason: String, instance: AgentRunService? = null): Boolean {
         val permit = invalidate()
-        val stopped = stopNative()
+        val stopped = stopNative(instance)
         notifyInvalidated(permit, reason)
         return stopped
     }
@@ -843,15 +951,105 @@ internal object AgentRunsChannel {
         // A delayed destroy from an old service cannot invalidate a newer permit.
         val permit = if (current?.id == instance.permitId) invalidate() else null
         if (service === instance) service = null
+        if (deferredStop === instance) deferredStop = null
+        try { instance.stopNative() } catch (_: RuntimeException) { cleanupFailed = true }
         notifyInvalidated(permit, reason)
     }
 
     fun serviceTimedOut(instance: AgentRunService) {
-        mainThread()
-        val permit = if (current?.id == instance.permitId) invalidate() else null
-        if (service === instance) service = null
-        try { instance.stopNative() } catch (_: RuntimeException) { cleanupFailed = true }
-        notifyInvalidated(permit, "timeout")
+        serviceEnded(instance, "timeout")
+    }
+}
+'''
+
+
+AGENT_RUN_QA_ADAPTER = r'''package io.gitlabmobile.gitlab_mobile
+
+// Generated debug-only fault adapter. Registered by C8's explicit QA Dart entry;
+// no Activity, exported intent, storage, account or network access.
+import android.os.Handler
+import android.os.Looper
+import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.MethodChannel
+
+internal class AgentRunQaAdapter(messenger: BinaryMessenger) : AgentRunTestEvents {
+    private val handler = Handler(Looper.getMainLooper())
+    private val channel = MethodChannel(messenger, "io.gitlabmobile/agent_runs_qa")
+    private var dropCallback = false
+    private var replyDelayMs = 0L
+    private var registered = false
+    private var closed = false
+    private var taskBackCallCount = 0L
+
+    init {
+        channel.setMethodCallHandler { call, result ->
+            val args = call.arguments as? Map<*, *>
+            if (closed || args == null) {
+                result.error("invalid_arguments", null, null)
+            } else if (call.method == "register" && args.isEmpty()) {
+                registered = true
+                result.success(mapOf("version" to 1, "status" to "ready"))
+            } else if (!registered) {
+                result.error("not_registered", null, null)
+            } else when (call.method) {
+                "configure" -> {
+                    val drop = args["dropCallback"]
+                    val delay = args["replyDelayMs"]
+                    if (args.keys.toSet() != setOf("dropCallback", "replyDelayMs") || drop !is Boolean ||
+                            (delay !is Int && delay !is Long) || (delay as Number).toLong() !in 0L..5000L) {
+                        result.error("invalid_arguments", null, null)
+                    } else {
+                        dropCallback = drop
+                        replyDelayMs = delay.toLong()
+                        result.success(mapOf("version" to 1, "status" to "configured"))
+                    }
+                }
+                "syntheticTimeout" -> if (args.isEmpty()) {
+                    val instance = AgentRunsChannel.serviceForTestEvents()
+                    if (instance != null) AgentRunsChannel.serviceEnded(instance, "synthetic_timeout")
+                    result.success(mapOf("version" to 1, "event" to "synthetic_timeout", "didStop" to (instance != null)))
+                } else result.error("invalid_arguments", null, null)
+                "taskBackCalls" -> if (args.isEmpty()) {
+                    result.success(mapOf("version" to 1, "count" to taskBackCallCount))
+                } else result.error("invalid_arguments", null, null)
+                "reset" -> if (args.isEmpty()) {
+                    dropCallback = false
+                    replyDelayMs = 0L
+                    taskBackCallCount = 0L
+                    result.success(mapOf("version" to 1, "status" to "reset"))
+                } else result.error("invalid_arguments", null, null)
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    override fun invalidated(deliver: () -> Unit) {
+        if (!closed && (!registered || !dropCallback)) deliver()
+    }
+
+    override fun taskBackInvoked() {
+        if (!closed && registered) taskBackCallCount++
+    }
+
+    override fun wrap(result: MethodChannel.Result): MethodChannel.Result {
+        if (!registered) return result
+        return object : MethodChannel.Result {
+            private fun deliver(reply: () -> Unit): Unit {
+                if (closed) return
+                val delay = replyDelayMs
+                if (delay == 0L) reply()
+                else handler.postDelayed({ if (!closed) reply() }, delay)
+            }
+            override fun success(value: Any?) = deliver { result.success(value) }
+            override fun error(code: String, message: String?, details: Any?) = deliver { result.error(code, message, details) }
+            override fun notImplemented() = deliver { result.notImplemented() }
+        }
+    }
+
+    override fun close() {
+        closed = true
+        channel.setMethodCallHandler(null)
+        handler.removeCallbacksAndMessages(null)
     }
 }
 '''
@@ -870,6 +1068,7 @@ def agent_run_files() -> dict[str, str]:
     _, catalogs = l10n.load()
     files = {
         f'src/main/kotlin/{KOTLIN_PACKAGE}/AgentRunService.kt': AGENT_RUN_SERVICE,
+        f'src/debug/kotlin/{KOTLIN_PACKAGE}/AgentRunQaAdapter.kt': AGENT_RUN_QA_ADAPTER,
         'src/main/res/drawable/ic_ai_runs.xml': AGENT_ICON,
     }
     for tag, _, _, language, _, country in l10n.LANGUAGES:

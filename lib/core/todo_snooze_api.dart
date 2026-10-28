@@ -103,13 +103,29 @@ const _todoTargetTypes = {'ISSUE': 'Issue', 'MERGEREQUEST': 'MergeRequest', 'COM
 final _todoGid = RegExp(r'^gid://gitlab/Todo/([1-9][0-9]*)$');
 final _projectGid = RegExp(r'^gid://gitlab/Project/([1-9][0-9]*)$');
 
+/// Ownership evidence for this user's selected Todo only, not a Work Item grant.
+typedef VerifiedGroupTodo = ({
+  int todoId,
+  VerifiedGroupWorkItemIdentity owner,
+  DateTime? snoozedUntil,
+});
+
+/// One complete ownership pass, preserving project items and exposing group
+/// evidence only for the selected Todo. Unsupported group targets stay closed.
+typedef SelectedTodoOwnership = ({
+  String actorId,
+  List<Json> items,
+  Set<int> unsupportedIds,
+  VerifiedGroupTodo? selectedGroupTodo,
+});
+
 /// Snoozing hides a pending todo until a time (GitLab 17.9+). REST
 /// `GET /todos` leaves snoozed todos out, so the snoozed list and both writes
 /// go through GraphQL. Writes are never retried.
 ///
 /// Group-write callers must bind the verified owner and Todo ID on the strict
-/// ownership reader before sending: [pendingTodosForSnooze] for snooze and
-/// [snoozedTodosForUnsnooze] for unsnooze. The preflight must prove that the
+/// selected ownership reader before sending: [selectedTodoForSnooze] for snooze
+/// and [selectedTodoForUnsnooze] for unsnooze. The preflight must prove that the
 /// exact Todo belongs to the expected actor and group work item. The
 /// mutation acknowledgement must return the same Todo ID and expected time
 /// (null for unsnooze); a missing or mismatched acknowledgement is uncertain.
@@ -181,12 +197,106 @@ extension TodoSnoozeApi on GitLabApi {
   }) => _todosForSnoozeOwnership(_snoozedTodosForUnsnoozeQuery, maxPages, allowGroupTargets,
     strictGroupOwner: strictGroupOwner, strictGroupTodoId: strictGroupTodoId);
 
+  /// Discovers the selected pending Todo's raw group owner in the existing
+  /// complete project ownership pass. An ID absent from all result fields is
+  /// not found; a bound hit with more pages or invalid evidence fails closed.
+  /// [exactGroup] binds a group scope; omit it only for accountGlobal admission.
+  /// Without [exactGroup], the owner is self-consistent server evidence from
+  /// this actor's selected Todo, not proof against an independent group grant.
+  /// The full path is the server's own echo even with [exactGroup]; group-scoped
+  /// callers must compare the returned owner's full path with the canonical
+  /// grant path. This evidence never grants general Work Item write access.
+  /// Context values and [isCurrent] must come from the captured app context.
+  Future<SelectedTodoOwnership> selectedTodoForSnooze(int todoId, {
+    required int expectedUserId,
+    required int generation,
+    required int readEpoch,
+    required bool Function() isCurrent,
+    ({int groupId, int parentIid})? exactGroup,
+    int maxPages = 4,
+  }) => _selectedTodoOwnership(_pendingTodosForSnoozeQuery, todoId,
+    actorUserId: expectedUserId, generation: generation, readEpoch: readEpoch,
+    isCurrent: isCurrent, exactGroup: exactGroup, maxPages: maxPages);
+
+  /// The same strict discovery for currently snoozed pending Todos, including
+  /// the evidence and grant-path requirements of [selectedTodoForSnooze].
+  Future<SelectedTodoOwnership> selectedTodoForUnsnooze(int todoId, {
+    required int expectedUserId,
+    required int generation,
+    required int readEpoch,
+    required bool Function() isCurrent,
+    ({int groupId, int parentIid})? exactGroup,
+    int maxPages = 4,
+  }) => _selectedTodoOwnership(_snoozedTodosForUnsnoozeQuery, todoId,
+    actorUserId: expectedUserId, generation: generation, readEpoch: readEpoch,
+    isCurrent: isCurrent, exactGroup: exactGroup, maxPages: maxPages);
+
+  Future<SelectedTodoOwnership> _selectedTodoOwnership(String query, int todoId, {
+    required int actorUserId,
+    required int generation,
+    required int readEpoch,
+    required bool Function() isCurrent,
+    required ({int groupId, int parentIid})? exactGroup,
+    required int maxPages,
+  }) async {
+    if (todoId <= 0 || actorUserId <= 0 || generation < 0 || readEpoch < 0 ||
+        (exactGroup != null && (exactGroup.groupId <= 0 || exactGroup.parentIid <= 0))) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    VerifiedGroupTodo? selected;
+    final owned = await _todosForSnoozeOwnership(query, maxPages, false,
+      expectedActorId: 'gid://gitlab/User/$actorUserId',
+      isCurrent: isCurrent,
+      inspectRawTodo: (node) {
+        if (node['id'] != 'gid://gitlab/Todo/$todoId') return;
+        // Project targets retain their existing parsing and scope checks.
+        if (node['project'] != null || node['targetEntity'] == null) return;
+        final entity = objectJson(node['targetEntity']);
+        if (node['targetType'] != 'WORKITEM' || entity['__typename'] != 'WorkItem') {
+          return; // In particular, a raw Issue alias cannot prove a group owner.
+        }
+        final namespace = objectJson(entity['namespace']);
+        final groupId = groupKeyNumericId(requiredString(namespace, 'id'));
+        final path = requiredString(namespace, 'fullPath');
+        final iid = _positiveWorkItemInt(entity['iid']);
+        if (groupId == null || !_validStrictGroupPath(path)) {
+          throw const FormatException('Invalid selected todo owner');
+        }
+        final owner = VerifiedGroupWorkItemIdentity.fromServerEvidence(
+          instance: instance, expectedUserId: actorUserId, actorUserId: actorUserId,
+          expectedGroupId: exactGroup?.groupId ?? groupId,
+          expectedFullPath: path, expectedIid: exactGroup?.parentIid ?? iid,
+          namespace: {...namespace, 'workItem': {
+            'id': entity['workItemId'], 'iid': entity['iid'],
+            if (entity.containsKey('workItemProject')) 'project': entity['workItemProject'],
+            'namespace': namespace,
+          }},
+          apiOwner: this, generation: generation, readEpoch: readEpoch,
+        );
+        if (owner == null) throw const FormatException('Unproven selected todo owner');
+        _requireStrictGroupTodoOwner(node, owner);
+        final until = node['snoozedUntil'];
+        selected = (todoId: todoId, owner: owner,
+          snoozedUntil: until == null ? null : DateTime.tryParse('$until'));
+      });
+    return (
+      actorId: owned.actorId,
+      items: owned.items,
+      unsupportedIds: selected == null ? owned.unsupportedIds : Set<int>.unmodifiable(
+        owned.unsupportedIds.where((id) => id != todoId)),
+      selectedGroupTodo: selected,
+    );
+  }
+
   Future<({String actorId, List<Json> items, Set<int> unsupportedIds})> _todosForSnoozeOwnership(
     String query,
     int maxPages,
     bool allowGroupTargets, {
     VerifiedGroupWorkItemIdentity? strictGroupOwner,
     int? strictGroupTodoId,
+    String? expectedActorId,
+    bool Function()? isCurrent,
+    void Function(Json)? inspectRawTodo,
   }) async {
     _requireStrictGroupOwnerApi(this, strictGroupOwner);
     if (maxPages < 1 || maxPages > 4) throw const ApiFailure(FailureKind.validation);
@@ -201,16 +311,23 @@ extension TodoSnoozeApi on GitLabApi {
     final items = <Json>[];
     final unsupportedIds = <int>{};
     for (var page = 0; page < maxPages; page++) {
+      if (isCurrent != null && (!isCurrent() || isClosed)) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
       final response = await _read(instance.graphQL, method: 'POST', graphQuery: true, data: {
         'query': query,
         'variables': {'first': todoSnoozedLimit, 'after': after},
       });
+      if (isCurrent != null && (!isCurrent() || isClosed)) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
       final data = _todoGraphData(response.bytes);
       if (data['currentUser'] == null) throw const ApiFailure(FailureKind.unauthenticated);
       try {
         final user = objectJson(data['currentUser']);
         final currentActor = requiredString(user, 'id');
         if (!RegExp(r'^gid://gitlab/User/[1-9][0-9]*$').hasMatch(currentActor) ||
+            (expectedActorId != null && currentActor != expectedActorId) ||
             (actorId != null && actorId != currentActor)) {
           throw const FormatException('Changed todo actor');
         }
@@ -222,6 +339,7 @@ extension TodoSnoozeApi on GitLabApi {
         }
         for (final raw in nodes) {
           final node = objectJson(raw);
+          inspectRawTodo?.call(node);
           final todo = _snoozeOwnershipTodo(node, allowGroupTargets: allowGroupTargets);
           if (strictGroupOwner != null && todo.id == strictGroupTodoId) {
             _requireStrictGroupTodoOwner(node, strictGroupOwner);

@@ -13,8 +13,9 @@ final class RequestMeter {
   /// Transports await it only when present, then count synchronously at send.
   final Future<void> Function()? beforeRequest;
 
-  /// Settles admission synchronously at the physical send, after cancellation
-  /// and pacing checks. A rejected admission must not consume a reservation.
+  /// Checks an optional execution fence and settles admission synchronously at
+  /// the physical send, after cancellation and pacing checks. A rejected send
+  /// must not consume a reservation or increment the count.
   final void Function()? onRequest;
   final bool includeOAuthTokens;
   int _count = 0;

@@ -10,6 +10,75 @@ const _otherSecret = 'fedcba9876543210fedcba9876543210';
 const _token = 'glpat-abcdefghijklmnopqrst';
 
 void main() {
+  for (final groupOwned in [false, true]) {
+    group('G0j ${groupOwned ? 'group' : 'project'} title guard', () {
+      AiFieldProvenance title({bool complete = true}) {
+        final source = groupOwned
+            ? _groupField(_groupIdentity())
+            : _field(AiWritableField.issueDescription);
+        return AiFieldProvenance(
+          resourceKey: source.resourceKey,
+          fieldName: 'title',
+          completeValue: complete,
+          resourceWeb: source.resourceWeb,
+          accountKey: source.accountKey,
+          projectId: source.projectId,
+          projectFullPath: source.projectFullPath,
+          groupId: source.groupId,
+          groupFullPath: source.groupFullPath,
+        );
+      }
+
+      UploadPlaceholderTable table() =>
+          groupOwned ? _groupTable(_groupIdentity()) : _table();
+
+      test('whole titles edit; excerpts and later cuts refuse', () {
+        final placeholders = table();
+        final field = title();
+        AiTextOutcome prepare(AiFieldProvenance provenance) => _prepare(
+          textClass: AiTextClass.plainContent,
+          modelText: 'Changed title',
+          field: provenance,
+          placeholders: placeholders,
+        );
+        expect(prepare(field).finalText, 'Changed title');
+        expect(
+          prepare(title(complete: false)).blockedReasonCode,
+          AiTextBlockCode.fieldTooLong,
+        );
+        placeholders.recordFieldDelivery(field, whole: true);
+        placeholders.markWholeFieldsCut();
+        expect(prepare(field).blockedReasonCode, AiTextBlockCode.fieldTooLong);
+      });
+
+      test('title uploads never mint or restore tokens', () {
+        final placeholders = table();
+        final field = title();
+        const original = '[file](/uploads/$_secret/a.txt)';
+        final outgoing = placeholders.redactOutgoing(original, field: field);
+        expect(outgoing, isNot(contains('[[upload:')));
+        expect(outgoing, isNot(contains(_secret)));
+        expect(placeholders.length, 0);
+        final description = groupOwned
+            ? _groupField(_groupIdentity())
+            : _field(AiWritableField.issueDescription);
+        final masked = placeholders.redactOutgoing(
+          original,
+          field: description,
+        );
+        expect(masked, contains('[[upload:'));
+        final result = _prepare(
+          textClass: AiTextClass.plainContent,
+          modelText: masked,
+          field: field,
+          placeholders: placeholders,
+        );
+        expect(result.blockedReasonCode, AiTextBlockCode.rereadField);
+        expect(result.finalText, isNull);
+      });
+    });
+  }
+
   group('G0a group field provenance', () {
     test(
       'description uses the numeric identity and current installation URL',

@@ -149,6 +149,14 @@ Future<void> _until(WidgetTester tester, bool Function() condition, String what)
 
 bool _shown(Finder finder) => finder.evaluate().isNotEmpty;
 
+Future<void> _untilJobLoadFinishes(WidgetTester tester) async {
+  final progress = find.byType(LinearProgressIndicator, skipOffstage: false);
+  expect(progress, findsOneWidget, reason: 'the held log load is still pending');
+  // A 403 reaches the page only after real disk invalidation finishes. Fixed
+  // pump counts cannot prove it was handled before visibility changes again.
+  await _until(tester, () => !_shown(progress), 'hidden job log load finished');
+}
+
 Json _version() => {
   'id': 9,
   'created_at': '2026-10-27T10:00:00Z',
@@ -535,8 +543,10 @@ void main() {
           unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('cover')))));
         }
         await tester.pumpAndSettle();
+        final pageContext = tester.element(find.byType(JobLogPage, skipOffstage: false));
+        expect(TickerMode.getValuesNotifier(pageContext).value.enabled, isFalse);
         hold.complete();
-        await settleNetworkWidgets(tester);
+        await _untilJobLoadFinishes(tester);
         expect(adapter.requests.where((r) => _isTrace(r, 7)), isEmpty, reason: 'no tail read starts while hidden');
         expect(find.text(_line(0), skipOffstage: false), findsNothing, reason: 'nothing is shown while hidden');
         if (hide == 'ticker') {
@@ -576,8 +586,9 @@ void main() {
       await _until(tester, () => chunkCalls == 1, 'fallback chunk requested');
       visible.value = false;
       await tester.pump();
+      expect(TickerMode.getValuesNotifier(tester.element(find.byType(JobLogPage))).value.enabled, isFalse);
       hold.complete();
-      await settleNetworkWidgets(tester);
+      await _untilJobLoadFinishes(tester);
       expect(find.text('fallback output', skipOffstage: false), findsNothing,
         reason: 'a fallback chunk finished while hidden is not shown');
       visible.value = true;
@@ -617,8 +628,9 @@ void main() {
         await _until(tester, () => failing == 'metadata' ? metadataCalls == 1 : traceCalls == 1, 'request held');
         visible.value = false;
         await tester.pump();
+        expect(TickerMode.getValuesNotifier(tester.element(find.byType(JobLogPage))).value.enabled, isFalse);
         hold.complete();
-        await settleNetworkWidgets(tester);
+        await _untilJobLoadFinishes(tester);
         expect(find.text('沒有操作權限', skipOffstage: false), findsNothing,
           reason: 'a failure that lands while hidden is not shown');
         expect(find.byType(FailureNotice, skipOffstage: false), findsNothing);
@@ -655,22 +667,31 @@ void main() {
       final api = await _run(tester, () => h.client(adapter));
       await tester.pumpWidget(_jobPage(api));
       await _until(tester, () => traceCalls == 1, 'tail held');
+      final jobRoute = ModalRoute.of(tester.element(find.byType(JobLogPage)))!;
       // The job menu works while the log is still loading.
       await tester.tap(find.byTooltip('工作操作'));
-      for (var i = 0; i < 6; i++) { await tester.pump(const Duration(milliseconds: 100)); }
+      await _until(tester, () => _shown(find.text('重試工作')), 'job menu opened');
+      final menuRoute = ModalRoute.of(tester.element(find.text('重試工作')))!;
+      await _until(tester, () => menuRoute.animation!.isCompleted, 'job menu transition finished');
       await tester.tap(find.text('重試工作'));
-      for (var i = 0; i < 6; i++) { await tester.pump(const Duration(milliseconds: 100)); }
+      await _until(tester, () => _shown(find.text('確認')), 'job confirmation opened');
+      final confirmationRoute = ModalRoute.of(tester.element(find.text('確認')))!;
+      await _until(tester, () => confirmationRoute.animation!.isCompleted, 'job confirmation transition finished');
       expect(find.text('確認'), findsOneWidget, reason: 'the confirmation covers the log page');
+      expect(jobRoute.isCurrent, isFalse, reason: 'the page observes the covering route before the failure');
       // The held tail fails while the dialog covers the page: deferred.
       tailHold.complete();
-      await settleNetworkWidgets(tester);
+      await _untilJobLoadFinishes(tester);
       expect(find.text('沒有操作權限', skipOffstage: false), findsNothing);
+      expect(find.byType(FailureNotice, skipOffstage: false), findsNothing);
       await tester.tap(find.text('確認'));
       // The action stays pending through every route-transition frame.
-      for (var i = 0; i < 20; i++) { await tester.pump(const Duration(milliseconds: 100)); }
-      await settleNetworkWidgets(tester);
+      await _until(tester, () => adapter.requests.any((r) => r.uri.path.endsWith('/jobs/7/retry')), 'job action requested');
+      await _run(tester, () => confirmationRoute.completed);
+      expect(jobRoute.isCurrent, isTrue, reason: 'the page is visible while the action is still held');
       expect(adapter.requests.where((r) => r.uri.path.endsWith('/jobs/7/retry')), hasLength(1));
       expect(find.text(_line(3)), findsNothing, reason: 'still blocked by the running action');
+      expect(traceCalls, 1, reason: 'no deferred trace starts before the action ends');
       actionHold.complete();
       await _until(tester, () => _shown(find.text(_line(3))), 'deferred log load ran after the action');
       expect(traceCalls, 2);
@@ -699,8 +720,9 @@ void main() {
       await _until(tester, () => traceCalls == 1, 'tail requested');
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       await tester.pump();
+      expect(tester.binding.lifecycleState, AppLifecycleState.inactive);
       hold.complete();
-      await settleNetworkWidgets(tester);
+      await _untilJobLoadFinishes(tester);
       expect(find.text(_line(1), skipOffstage: false), findsNothing, reason: 'a tail finished in the background is not shown');
       final metadataBefore = adapter.requests.where((r) => r.uri.path.endsWith('/jobs/7')).length;
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
