@@ -4,8 +4,8 @@ import 'package:gitlab_mobile/core/ai/redaction.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
+import 'package:gitlab_mobile/core/group_work_item_identity.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
-import 'package:gitlab_mobile/features/ai/ai_chat_context.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
@@ -558,12 +558,74 @@ void main() {
         expect(masked, contains('[[upload:'));
         final partial = h.placeholders.restoreIntoSameField(masked, excerpt);
         expect(partial.blockedReasonCode, text.AiTextBlockCode.fieldTooLong);
+        expect(
+          h.placeholders.restoreIntoSameField(masked, complete).finalText,
+          original,
+        );
+        final otherIdentity = VerifiedGroupWorkItemIdentity.fromServerEvidence(
+          instance: h.placeholders.instance,
+          expectedUserId: 8,
+          actorUserId: 8,
+          expectedGroupId: 7,
+          expectedFullPath: g0ePath,
+          expectedIid: 5,
+          namespace: {
+            'id': 'gid://gitlab/Group/7',
+            'fullPath': g0ePath,
+            'workItem': {
+              'id': 'gid://gitlab/WorkItem/91',
+              'iid': '5',
+              'project': null,
+              'namespace': {'id': 'gid://gitlab/Group/7', 'fullPath': g0ePath},
+            },
+          },
+          apiOwner: h.api,
+          generation: 7,
+          readEpoch: 1,
+        )!;
+        final otherField = text.AiFieldProvenance.groupWorkItem(
+          identity: otherIdentity,
+          completeValue: true,
+        );
         final otherAccount = text.UploadPlaceholderTable(
           instance: h.placeholders.instance,
-          accountKey: 'https://example.com/gitlab#8',
+          accountKey: otherIdentity.accountKey,
           conversationId: 'g0e-seams',
         );
-        final foreign = otherAccount.restoreIntoSameField(masked, complete);
+        final otherMasked = otherAccount.redactOutgoing(
+          original,
+          field: otherField,
+        );
+        expect(otherMasked, contains('[[upload:'));
+        expect(otherAccount.length, 1);
+        expect(otherField.groupId, complete.groupId);
+        expect(otherField.fieldName, complete.fieldName);
+        expect(otherField.resourceWeb, complete.resourceWeb);
+        expect(otherField.accountKey, isNot(complete.accountKey));
+        expect(
+          otherAccount.restoreIntoSameField(otherMasked, otherField).finalText,
+          original,
+        );
+        // With no placeholder, stored-entry guards cannot mask a missing
+        // table-account admission check.
+        expect(
+          otherAccount
+              .restoreIntoSameField('Plain field', otherField)
+              .finalText,
+          'Plain field',
+        );
+        expect(
+          otherAccount
+              .restoreIntoSameField('Plain field', complete)
+              .blockedReasonCode,
+          text.AiTextBlockCode.rereadField,
+        );
+        // This exact token is registered and restores in B. Reusing it for
+        // A's same group/item/field must fail the account binding.
+        final foreign = otherAccount.restoreIntoSameField(
+          otherMasked,
+          complete,
+        );
         expect(foreign.blockedReasonCode, text.AiTextBlockCode.rereadField);
         expect(h.graph.mutations, 0);
       },
@@ -596,7 +658,7 @@ void main() {
     }
 
     test(
-      'group source rank reaches public project freshness and text guard',
+      'loaded group context reaches public project coordinator text guard',
       () async {
         final h = await StackHarness.create(
           configure: (server) {
@@ -643,6 +705,12 @@ void main() {
           ),
         );
         addTearDown(h.dispose);
+        await h.controller.send('Read this private group item');
+        expect(
+          h.controller.contextForTesting!.groupMetadata!.visibility,
+          'private',
+        );
+        expect(h.controller.contextForTesting!.groupScope!.groupId, 7);
         h.server.overrides['GET projects/43'] = (_) => jsonResponse({
           'id': 43,
           'path_with_namespace': 'studio/target',
@@ -654,55 +722,82 @@ void main() {
           'project_id': 43,
           'confidential': false,
         });
-        final request = port.AiWriteRequest(
-          operationId: 'updateIssue',
-          executionId: 'g15-contamination',
-          scope: AiWriteScope(
-            accountKey: h.account,
-            grants: const [
-              AiScopeGrant(
-                kind: AiScopeKind.groupWorkItem,
-                groupId: 7,
-                groupFullPath: g0ePath,
-                iid: 5,
-              ),
-            ],
+        final api = h.session.api!;
+        final budget = AiToolBudget();
+        final freshness = <AiWriteFreshness>[];
+        // The loaded controller owns the source facts. An independently
+        // granted project target exercises their real coordinator/text seam.
+        final coordinator = PolicyAiWriteCoordinator(
+          snapshot: () => AiWritePolicySnapshot(
+            scope: AiWriteScope(
+              accountKey: h.account,
+              instance: api.instance,
+              grants: const [
+                AiScopeGrant(
+                  kind: AiScopeKind.project,
+                  projectId: 43,
+                  projectPath: 'studio/target',
+                ),
+              ],
+            ),
+            level: AiAutonomyLevel.conversationGrant,
+            ceiling: AiAutonomyLevel.bypass,
+            consentHash: 'g15-loaded-group-context',
+            writePolicyRevision: 1,
+            sessionGeneration: h.session.generation,
+            ownerApi: api,
+            appInForeground: true,
           ),
-          arguments: const {
-            'projectId': 43,
-            'iid': 6,
-            'fields': {'title': 'Updated'},
+          createPort: () => port.GitLabAiWritePort(api, accountKey: h.account),
+          journal: h.journal,
+          conversationId: 'g15-loaded-group-context',
+          budget: () => budget,
+          readFreshness: (request) async {
+            final fresh = await h.controller.readWriteFreshnessForTesting(
+              request,
+            );
+            freshness.add(fresh);
+            return fresh;
           },
+          placeholders: text.UploadPlaceholderTable(
+            instance: api.instance,
+            accountKey: h.account,
+            conversationId: 'g15-loaded-group-context',
+          ),
+          knownSecrets: () => const {},
+          safeDisplay: (value) => value,
         );
-        final fresh = await h.controller.readWriteFreshnessForTesting(
-          request,
-          sourceGroupMetadata: const AiGroupContextMetadata(
-            visibility: 'private',
-            confidential: false,
+        addTearDown(coordinator.stop);
+        coordinator.beginRun('Update studio/target#6 with the group summary');
+        coordinator.beginTurn();
+        final proposal = await coordinator.propose(
+          AiToolCall(
+            id: 'g15-contamination',
+            name: 'updateIssue',
+            arguments: {
+              'projectId': 43,
+              'iid': 6,
+              'fields': {'title': 'Synthetic private group summary'},
+              'reason': 'The user requested the update.',
+            },
           ),
         );
-        expect(fresh.targetVisibility, 'public');
-        expect(fresh.sourceVisibilityUnreadable, isFalse);
-        expect(fresh.polluted, isTrue);
-        final table = text.UploadPlaceholderTable(
-          instance: h.server.workspace.api.instance,
-        );
-        final result = text.prepareWriteText(
-          textClass: text.AiTextClass.quickActionMarkdown,
-          field: null,
-          modelText: 'Synthetic private group summary',
-          placeholders: table,
-          knownSecrets: const {},
-          aiAttribution: false,
-          visibility: text.AiVisibilityContext(
-            polluted: fresh.polluted,
-            visibilityUnreadable: fresh.visibilityUnreadable,
-            targetProjectPath: 'studio/target',
-          ),
-        );
+        expect(freshness, hasLength(1));
+        expect(freshness.single.targetVisibility, 'public');
+        // The production context cannot prove group confidentiality; retain
+        // that unknown independently of the known private visibility rank.
+        expect(freshness.single.sourceVisibilityUnreadable, isTrue);
+        expect(freshness.single.polluted, isTrue);
+        expect(proposal, isNotNull);
+        expect(proposal!.tier.decision, AiGateDecision.requireApproval);
         expect(
-          result.levelConfirmReasons,
-          contains(text.AiLevelConfirmReason.visibilityPollution),
+          proposal.tier.reasons,
+          contains(AiFixedConfirmReason.confidentialOrVisibilityMix),
+        );
+        await coordinator.reject(proposal);
+        expect(
+          h.server.adapter.requests.where((r) => r.method == 'PUT'),
+          isEmpty,
         );
       },
     );

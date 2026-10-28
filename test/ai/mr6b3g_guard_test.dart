@@ -139,21 +139,20 @@ void main() {
       final offers = toolsForScope(
         g0eScope,
       ).map((row) => row.operationId).toSet();
-      expect(offers, containsAll(_aliases.keys));
-      expect(offers, containsAll(['snoozeTodo', 'unsnoozeTodo']));
-      expect(offers, isNot(contains('markTodoDone')));
-      expect(offers, isNot(contains('setIncidentStatus')));
-      expect(offers, isNot(contains('updateWorkItemState')));
+      expect(offers, {..._aliases.keys, 'snoozeTodo', 'unsnoozeTodo'});
     },
   );
 
-  test('explicit gate-off suppresses all group aliases', () {
+  test('explicit gate-off suppresses all seventeen group-scope offers', () {
     aiGroupWorkItemWritesEnabledForTesting = false;
     addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
     final offers = toolsForScope(
       g0eScope,
     ).map((row) => row.operationId).toSet();
-    expect(offers.intersection(_aliases.keys.toSet()), isEmpty);
+    expect(
+      offers.intersection({..._aliases.keys, 'snoozeTodo', 'unsnoozeTodo'}),
+      isEmpty,
+    );
   });
 
   test(
