@@ -376,11 +376,61 @@ final class ReadCacheFileStore {
   Future<void> clearRoot() =>
       _runKeyless('', (files) => files.clear(all: true));
 
-  Future<T> _runKeyless<T>(String accountKey, T Function(_Files) action) async {
+  /// Offline snapshots have a separate root and quota. These keyless methods
+  /// only inspect or remove that root; C2's encrypted readers and writers
+  /// continue to use read_cache and its existing format and accounting.
+  Future<List<String>> offlineAccountDirectoryNames() =>
+      _runKeyless('', (files) => files.accountDirectoryNames(), offline: true);
+
+  Future<ReadCacheDirectoryState> offlineAccountDirectoryState(
+    String accountKey,
+  ) => _runKeyless(
+    accountKey,
+    (files) => files.accountDirectoryState(allowDirectories: true),
+    offline: true,
+  );
+
+  Future<void> clearOfflineAccountDirectoriesExcept(
+    Set<String> retainedAccountKeys,
+  ) {
+    final retainedNames = retainedAccountKeys
+        .map(ReadCacheCipher.accountDirectoryName)
+        .toSet();
+    return _runKeyless(
+      '',
+      (files) => files.clearAccountDirectoriesExcept(retainedNames),
+      offline: true,
+    );
+  }
+
+  Future<void> clearOfflineAccount(String accountKey) => _runKeyless(
+    accountKey,
+    (files) => files.clear(all: false),
+    offline: true,
+  );
+
+  Future<void> clearOfflineRoot() =>
+      _runKeyless('', (files) => files.clear(all: true), offline: true);
+
+  Future<T> _runKeyless<T>(
+    String accountKey,
+    T Function(_Files) action, {
+    bool offline = false,
+  }) async {
     final path = await _resolveRoot();
     final now = _clock().toUtc();
     return Isolate.run(
-      () => _guard(() async => action(_Files(path, accountKey, now, null))),
+      () => _guard(
+        () async => action(
+          _Files(
+            path,
+            accountKey,
+            now,
+            null,
+            namespace: offline ? 'offline_repo' : 'read_cache',
+          ),
+        ),
+      ),
     );
   }
 }
@@ -516,13 +566,14 @@ final class _Files {
     this.now,
     this.checkpoint, {
     String? accountName,
+    this.namespace = 'read_cache',
   }) : accountName =
            accountName ?? ReadCacheCipher.accountDirectoryName(accountKey);
-  final String root, accountKey;
+  final String root, accountKey, namespace;
   final String accountName;
   final DateTime now;
   final void Function(ReadCacheFileCheckpoint)? checkpoint;
-  String get base => '$root/read_cache';
+  String get base => '$root/$namespace';
   String get account => '$base/$accountName';
 
   FileSystemEntityType type(String path) =>
@@ -855,11 +906,18 @@ final class _Files {
     return names;
   }
 
-  ReadCacheDirectoryState accountDirectoryState() {
+  ReadCacheDirectoryState accountDirectoryState({
+    bool allowDirectories = false,
+  }) {
     if (!directories()) return ReadCacheDirectoryState.absent;
     var hasFiles = false;
     for (final entity in Directory(account).listSync(followLinks: false)) {
-      requireFile(entity.path);
+      if (allowDirectories &&
+          type(entity.path) == FileSystemEntityType.directory) {
+        requireDirectory(entity.path);
+      } else {
+        requireFile(entity.path);
+      }
       hasFiles = true;
     }
     return hasFiles

@@ -13,6 +13,7 @@ import '../../shared/resume_target.dart';
 import '../../shared/artifact_storage.dart';
 
 import '../../l10n/l10n.dart';
+
 typedef ApiFactory =
     GitLabApi Function(
       GitLabInstance instance,
@@ -138,24 +139,32 @@ final class SessionController extends ChangeNotifier {
 
   void _clearKnownCandidate(Account account) {
     if (_accountForKey(account.key) == null) return;
-    unawaited(_clearReadCache(
-      DiskBinding(accountKey: account.key, generation: generation),
-      ReadCacheCleanupOperation.signOut,
-    ));
+    if (readCache.diskRetainedAccountKey == account.key) {
+      readCache.retainDiskAccount(null, sessionOwner: this);
+    }
+    unawaited(
+      _clearReadCache(
+        DiskBinding(accountKey: account.key, generation: generation),
+        ReadCacheCleanupOperation.signOut,
+      ),
+    );
   }
 
   Future<void> _activateReadCache(DiskBinding binding) async {
     // The bounded clear result is not an I/O acknowledgement. A replacement
     // session waits for the old serialized work, and still checks ownership.
     await _readCacheClears[binding.accountKey];
+    await readCache.quiesced;
     if (_disposed ||
         !readCache.ownsStartupSession(this) ||
         active?.key != binding.accountKey ||
-        generation != binding.generation || api == null) {
+        generation != binding.generation ||
+        api == null) {
       return;
     }
     await readCache.activate(binding);
   }
+
   ResumeTarget? _pendingResumeTarget;
   ResumeTarget? get pendingResumeTarget => _pendingResumeTarget;
 
@@ -181,12 +190,16 @@ final class SessionController extends ChangeNotifier {
   bool _accountsIdle = true;
   Future<void> _accountsTail = Future<void>.value();
 
-  bool _current(int operation) => !_disposed && operation == _operation;
+  bool _current(int operation) =>
+      !_disposed &&
+      readCache.ownsStartupSession(this) &&
+      operation == _operation;
   void _emit() {
     if (!_disposed) notifyListeners();
   }
 
   Future<void> initialize() async {
+    if (_disposed || !readCache.ownsStartupSession(this)) return;
     final ticket = ++_operation;
     _invalidateReadCacheDecision();
     _accountsReadable = false;
@@ -318,7 +331,13 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<void> connect(String instanceText, String rawToken) async {
-    if (busy || initializing || resuming || _disposed) return;
+    if (busy ||
+        initializing ||
+        resuming ||
+        _disposed ||
+        !readCache.ownsStartupSession(this)) {
+      return;
+    }
     final ticket = ++_operation;
     _invalidateReadCacheDecision();
     busy = true;
@@ -355,8 +374,7 @@ final class SessionController extends ChangeNotifier {
       candidate = null;
     } on FormatException catch (error) {
       if (_current(ticket)) {
-        message =
-            error is InputFormatException
+        message = error is InputFormatException
             ? error.message
             : l10n.responseUnrecognizedNotEnabled;
       }
@@ -374,7 +392,28 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<void> select(Account saved) async {
-    if (initializing || resuming || _disposed) return;
+    if (initializing ||
+        resuming ||
+        _disposed ||
+        !readCache.ownsStartupSession(this)) {
+      return;
+    }
+    // The current startup decision can still be waiting for its disk scan.
+    // Preserve its selected account as well as a fully recovered one.
+    final decision = _readCacheStartupDecision;
+    final retainedKey =
+        readCache.diskRetainedAccountKey ??
+        (decision != null && decision.readable && !decision.signOutPending
+            ? decision.resumeAccountKey
+            : null);
+    final retryRetained =
+        active == null &&
+        saved.key == retainedKey &&
+        _accountForKey(saved.key) != null &&
+        decision != null &&
+        decision.readable &&
+        !decision.signOutPending &&
+        !pendingSignOutCleanup;
     final ticket = ++_operation;
     _invalidateReadCacheDecision();
     busy = true;
@@ -382,14 +421,17 @@ final class SessionController extends ChangeNotifier {
     _emit();
     GitLabApi? candidate;
     try {
-      final cleared = await _commitSignOut(
-        resumeAccountKey: _accountForKey(saved.key)?.key,
-      );
-      if (!_current(ticket)) return;
-      if (!cleared) {
-        message = l10n.cannotClearAutoSignIn;
-        _emit();
-        return;
+      if (!retryRetained) {
+        final cleared = await _commitSignOut(
+          resumeAccountKey: _accountForKey(saved.key)?.key,
+          retainedAccountKey: retainedKey,
+        );
+        if (!_current(ticket)) return;
+        if (!cleared) {
+          message = l10n.cannotClearAutoSignIn;
+          _emit();
+          return;
+        }
       }
       candidate = _client(saved.instance, saved.credential, account: saved);
       _pending = candidate;
@@ -408,19 +450,38 @@ final class SessionController extends ChangeNotifier {
       if (_current(ticket)) {
         if (error.kind == FailureKind.unauthenticated) {
           _clearKnownCandidate(saved);
+          if (retryRetained) {
+            try {
+              await _enqueueLastActive(null);
+            } catch (_) {}
+            if (!_current(ticket)) return;
+          }
         }
-        _publishReadCacheDecision(null);
+        _publishReadCacheDecision(
+          retryRetained && error.kind != FailureKind.unauthenticated
+              ? saved.key
+              : null,
+        );
         message = l10n.titleThenDetail(error.title, error.detail);
       }
     } catch (_) {
-      if (_current(ticket)) message = l10n.accountReverifyNoSwitch;
+      if (_current(ticket)) {
+        if (retryRetained) _publishReadCacheDecision(saved.key);
+        message = l10n.accountReverifyNoSwitch;
+      }
     } finally {
       _releaseCandidate(candidate, ticket);
     }
   }
 
   Future<void> connectOAuth(String instanceText) async {
-    if (busy || initializing || resuming || _disposed) return;
+    if (busy ||
+        initializing ||
+        resuming ||
+        _disposed ||
+        !readCache.ownsStartupSession(this)) {
+      return;
+    }
     final ticket = ++_operation;
     _invalidateReadCacheDecision();
     busy = true;
@@ -481,8 +542,7 @@ final class SessionController extends ChangeNotifier {
       candidate = null;
     } on FormatException catch (error) {
       if (_current(ticket)) {
-        message =
-            error is InputFormatException
+        message = error is InputFormatException
             ? error.message
             : l10n.authResponseUnrecognized;
       }
@@ -628,23 +688,38 @@ final class SessionController extends ChangeNotifier {
   }
 
   void _activate(Account account, GitLabApi client) {
+    // A new session for an already active account still follows C2's D1
+    // departure rule. B8 applies only when there is no active session.
     final previous = active;
-    if (previous != null) {
-      unawaited(_clearReadCache(
-        DiskBinding(accountKey: previous.key, generation: generation),
-        ReadCacheCleanupOperation.signOut,
-      ));
+    if (previous?.key == account.key) {
+      unawaited(
+        _clearReadCache(
+          DiskBinding(accountKey: previous!.key, generation: generation),
+          ReadCacheCleanupOperation.signOut,
+        ),
+      );
     }
+    // Fence every known other account before the new client is bound. The
+    // coordinator drains and deletes those accounts asynchronously.
+    final nextGeneration = ++_issuedGeneration;
+    final binding = DiskBinding(
+      accountKey: account.key,
+      generation: nextGeneration,
+    );
+    readCache.fenceOtherAccounts(
+      binding,
+      sessionOwner: this,
+      accountKeys: _accounts.map((account) => account.key).toSet(),
+    );
+    readCache.retainDiskAccount(account.key, sessionOwner: this);
     api?.close();
     active = account;
     api = client;
-    _advanceGeneration();
+    generation = nextGeneration;
     client.bindReadCache(account.key, generation);
-    final binding = DiskBinding(accountKey: account.key, generation: generation);
-    client.attachReadCacheDiskBackend(CoordinatedReadCacheDiskBackend(
-      coordinator: readCache,
-      binding: binding,
-    ));
+    client.attachReadCacheDiskBackend(
+      CoordinatedReadCacheDiskBackend(coordinator: readCache, binding: binding),
+    );
     _publishReadCacheDecision(account.key, signOutPending: false);
     unawaited(_activateReadCache(binding));
     unawaited(
@@ -751,16 +826,32 @@ final class SessionController extends ChangeNotifier {
   /// Drops the in-memory session and waits for the sign-out storage sequence.
   /// Does not take a new operation ticket; callers that must stay current
   /// reserve one before awaiting this.
-  Future<bool> _commitSignOut({String? resumeAccountKey}) async {
+  Future<bool> _commitSignOut({
+    String? resumeAccountKey,
+    String? retainedAccountKey,
+  }) async {
     final ticket = _operation;
+    final decision = _readCacheStartupDecision;
+    final pendingResumeKey =
+        decision != null && decision.readable && !decision.signOutPending
+        ? decision.resumeAccountKey
+        : null;
     _invalidateReadCacheDecision();
-    final previous = active ?? resumingAccount;
-    if (previous != null) {
-      unawaited(_clearReadCache(
-        DiskBinding(accountKey: previous.key, generation: generation),
-        ReadCacheCleanupOperation.signOut,
-      ));
+    final previousKey =
+        active?.key ??
+        resumingAccount?.key ??
+        readCache.diskRetainedAccountKey ??
+        retainedAccountKey ??
+        pendingResumeKey;
+    if (previousKey != null) {
+      unawaited(
+        _clearReadCache(
+          DiskBinding(accountKey: previousKey, generation: generation),
+          ReadCacheCleanupOperation.signOut,
+        ),
+      );
     }
+    readCache.retainDiskAccount(null, sessionOwner: this);
     _pending?.close();
     _pending = null;
     api?.close();
@@ -807,7 +898,7 @@ final class SessionController extends ChangeNotifier {
     if (!switching) {
       _pendingResumeTarget = null;
     }
-    if (_disposed) return;
+    if (_disposed || !readCache.ownsStartupSession(this)) return;
     final ticket = ++_operation;
     busy = false;
     final cleared = await _commitSignOut();
@@ -817,7 +908,11 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<({bool removed, ApiFailure? failure})> remove(Account account) async {
-    if (busy || initializing || resuming || _disposed) {
+    if (busy ||
+        initializing ||
+        resuming ||
+        _disposed ||
+        !readCache.ownsStartupSession(this)) {
       return (removed: false, failure: null);
     }
     final ticket = ++_operation;
@@ -834,7 +929,25 @@ final class SessionController extends ChangeNotifier {
       // Cleanup again inside the commit fence: a retained card may have started
       // after the shell's earlier file cleanup while other stores were cleared.
       await clearAccountArtifacts(account);
-      final binding = DiskBinding(accountKey: account.key, generation: generation);
+      if (!_current(ticket)) {
+        if (identical(_accounts, staged)) {
+          final decision = _readCacheStartupDecision;
+          final restoreDecision =
+              decision != null && isReadCacheDecisionCurrent(decision);
+          _setAccounts(previous);
+          if (restoreDecision) {
+            _publishReadCacheDecision(
+              decision.resumeAccountKey,
+              signOutPending: decision.signOutPending,
+            );
+          }
+        }
+        return (removed: false, failure: null);
+      }
+      final binding = DiskBinding(
+        accountKey: account.key,
+        generation: generation,
+      );
       ApiFailure? cacheFailure;
       final cacheClear = await _clearReadCache(
         binding,
@@ -859,6 +972,10 @@ final class SessionController extends ChangeNotifier {
             removalCommitted = true;
             markMarkdownMediaAccountRemoved(account);
             readCache.finishAccountRemoval(account.key, removed: true);
+            if (_current(ticket) &&
+                readCache.diskRetainedAccountKey == account.key) {
+              readCache.retainDiskAccount(null, sessionOwner: this);
+            }
           }
         },
       );

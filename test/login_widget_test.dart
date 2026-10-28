@@ -4,6 +4,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
+import 'package:gitlab_mobile/features/cache/read_cache_disk_coordinator.dart';
 import 'package:gitlab_mobile/features/auth/login_screen.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
@@ -168,5 +170,79 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('oauthButton')), findsOneWidget);
     expect(find.text('透過 GitLab 授權登入'), findsOneWidget);
+  });
+
+  group('C2e signed-out read-cache cleanup', () {
+    const pending = ReadCacheCleanupState(
+      operation: ReadCacheCleanupOperation.signOut,
+      disposition: ReadCacheCleanupDisposition.signedOutCleanupPending,
+      code: ReadCacheCleanupCode.cleanupFailed,
+      clearResult: DiskClearResult(
+        keyGoneConfirmed: false,
+        directoryGoneConfirmed: false,
+        markerDurable: false,
+        complete: false,
+      ),
+    );
+
+    testWidgets('a failure raised with no subscriber shows, merges, retries cleanup only', (tester) async {
+      final store = MemoryAccountStore();
+      final session = SessionController(store, readCache: store.readCache);
+      addTearDown(session.dispose);
+      await session.initialize();
+      final cache = store.readCache;
+      // Raised while nothing listens (between the shell and this screen).
+      cache.reportCleanup(const DiskBinding(accountKey: 'synthetic#1', generation: 3), pending);
+      cache.reportCleanup(const DiskBinding(accountKey: 'synthetic#2', generation: 4), pending);
+      await tester.pumpWidget(MaterialApp(home: LoginScreen(session: session)));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('signed-out-cache-notice')), findsOneWidget,
+        reason: 'pending signed-out notices merge into one');
+      expect(find.text('離線快取尚未清除'), findsOneWidget);
+      expect(find.text('已登出，但這台裝置上的離線快取還沒清除完成。可以重試清除。'), findsOneWidget);
+      expect(find.text('切換帳號'), findsNothing);
+      expect(cache.controlsInstalled, isFalse, reason: 'only the authenticated shell opens the controls gate');
+
+      await tester.ensureVisible(find.text('重試清除'));
+      await tester.tap(find.text('重試清除'));
+      await pumpUntil(tester, () => cache.signedOutSnapshot.isEmpty,
+        description: 'both signed-out clears complete');
+      await pumpUntil(tester, () => find.text('已清除離線快取').evaluate().isNotEmpty);
+      expect(find.byKey(const ValueKey('signed-out-cache-notice')), findsNothing);
+      expect(session.active, isNull, reason: 'a signed-out retry never reopens a session');
+      expect(cache.state('synthetic#1'), isNot(ReadCacheDiskState.ready));
+      expect(cache.controlsInstalled, isFalse);
+    });
+
+    testWidgets('a notice raised while the screen is open appears; other notices do not', (tester) async {
+      final store = MemoryAccountStore();
+      final session = SessionController(store, readCache: store.readCache);
+      addTearDown(session.dispose);
+      await session.initialize();
+      await tester.pumpWidget(MaterialApp(home: LoginScreen(session: session)));
+      expect(find.byKey(const ValueKey('signed-out-cache-notice')), findsNothing);
+      store.readCache.reportCleanup(
+        const DiskBinding(accountKey: 'synthetic#1', generation: 3),
+        const ReadCacheCleanupState(
+          operation: ReadCacheCleanupOperation.mutation,
+          disposition: ReadCacheCleanupDisposition.originalOutcomePreserved,
+          code: ReadCacheCleanupCode.cleanupFailed,
+          clearResult: DiskClearResult(
+            keyGoneConfirmed: false,
+            directoryGoneConfirmed: false,
+            markerDurable: false,
+            complete: false,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('signed-out-cache-notice')), findsNothing,
+        reason: 'a signed-in notice never reaches the sign-in screen');
+      store.readCache.reportCleanup(const DiskBinding(accountKey: 'synthetic#1', generation: 3), pending);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('signed-out-cache-notice')), findsOneWidget);
+    });
   });
 }

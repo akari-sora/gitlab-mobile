@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/read_cache_disk_contract.dart';
 import '../../shared/adaptive_breakpoints.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/in_app_links.dart';
@@ -14,8 +16,10 @@ import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
+import '../cache/read_cache_settings_page.dart';
 import '../ai/ai_account_removal.dart';
 import '../ai/ai_chat_page.dart' show openAiChatSession;
+import '../ai/ai_background_execution.dart';
 import '../ai/ai_chat_session.dart';
 import '../ai/ai_run_notification_ui.dart';
 import '../ai/ai_run_registry.dart';
@@ -59,6 +63,7 @@ class AuthenticatedApp extends StatefulWidget {
     this.ai,
     this.aiSessionFactory,
     this.runNotifications,
+    this.aiRunsChannel,
   });
   final SessionController session;
   final AppearanceController appearance;
@@ -85,6 +90,11 @@ class AuthenticatedApp extends StatefulWidget {
   /// Tapped AI run notifications, held for the whole process; null where AI
   /// or its notifications are absent. Used only together with [ai].
   final AiRunNotificationGate? runNotifications;
+
+  /// The native AI run channel, for synthetic shell tests; null uses the
+  /// platform's.
+  @visibleForTesting
+  final MethodChannel? aiRunsChannel;
   final LauncherShortcuts shortcuts;
   final ColorScheme? dynamicLight;
   final ColorScheme? dynamicDark;
@@ -225,10 +235,22 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
     if (existing != null && existing.ownsCurrentSession) return existing;
     existing?.dispose();
     final activity = AiAccountActivity();
-    final registry = AccountAiRunRegistry(
+    final channel = widget.aiRunsChannel;
+    late final AccountAiRunRegistry registry;
+    registry = AccountAiRunRegistry(
       session: widget.session,
       settings: ai.settings,
       sessionFactory: activity.track(widget.aiSessionFactory),
+      backgroundExecution: channel == null
+          ? null
+          : AiBackgroundExecution(
+              accountKey: widget.session.active!.key,
+              generation: widget.session.generation,
+              ownerApi: widget.session.api!,
+              isCurrent: () => registry.ownsCurrentSession,
+              appInForeground: aiAppInForeground,
+              channel: channel,
+            ),
     );
     activity.attach(registry);
     _aiActivity = activity;
@@ -401,6 +423,11 @@ class _MobileShellState extends State<_MobileShell> {
   final Set<int> _visited = {_home};
 
   static const _home = 0, _inbox = 1, _explore = 2, _me = 3;
+  /// Cancels this shell's read-cache notice subscription.
+  void Function()? _cancelReadCacheNotices;
+
+  /// The last cleanup notice shown as a snack bar, so repeats merge (§4.6).
+  String? _shownReadCacheNotice;
   ApiFailure? _recentFailure;
   Account? _recentAccount;
   int? _recentProjectId;
@@ -415,6 +442,8 @@ class _MobileShellState extends State<_MobileShell> {
     widget.session.addListener(_onSession);
     widget.shortcuts.addListener(_onShortcut);
     widget.pops.addListener(_chrome.show);
+    widget.pops.addListener(_syncReadCacheNoticeMerge);
+    offlineCacheCleanupResolved.addListener(_syncReadCacheNoticeMerge);
     widget.updates?.addListener(_onUpdates);
     widget.incoming?.addListener(_onIncoming);
     widget.runNotifications?.addListener(_onRunNotification);
@@ -423,9 +452,16 @@ class _MobileShellState extends State<_MobileShell> {
     if (account != null) {
       unawaited(widget.shortcuts.publish(account.key));
     }
+    _installReadCacheControls();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _showLeftRemovalResults();
+        // A notice raised before this shell existed, e.g. during start-up.
+        if (widget.session.active case final active?) {
+          _presentReadCacheNotice(
+            widget.session.readCache.notice(_readCacheBinding(active)),
+          );
+        }
         unawaited(_consumeResumeTarget());
         unawaited(_consumeShortcut());
         // A link may have arrived before sign-in or while the tree was rebuilt.
@@ -445,10 +481,13 @@ class _MobileShellState extends State<_MobileShell> {
     if (oldWidget.session != widget.session) {
       oldWidget.session.removeListener(_onSession);
       widget.session.addListener(_onSession);
+      _installReadCacheControls();
     }
     if (oldWidget.pops != widget.pops) {
       oldWidget.pops.removeListener(_chrome.show);
+      oldWidget.pops.removeListener(_syncReadCacheNoticeMerge);
       widget.pops.addListener(_chrome.show);
+      widget.pops.addListener(_syncReadCacheNoticeMerge);
     }
     if (oldWidget.updates != widget.updates) {
       oldWidget.updates?.removeListener(_onUpdates);
@@ -491,8 +530,94 @@ class _MobileShellState extends State<_MobileShell> {
     }
   }
 
+  /// The settings entry, the central failure renderer, these notices and the
+  /// typed diff/log screens all exist once this shell is built, so the
+  /// coordinator's user-controls gate opens here (C2e). The gate is not
+  /// identity evidence: start-up recovery and this session's verified
+  /// activation still decide whether the disk opens.
+  void _installReadCacheControls() {
+    final session = widget.session;
+    final cache = session.readCache;
+    _cancelReadCacheNotices?.call();
+    _cancelReadCacheNotices = cache.subscribe(_onReadCacheNotice);
+    cache.installUserControls();
+    final active = session.active;
+    if (active != null && session.api != null) {
+      // Recovery may have finished before this shell existed. Re-deliver the
+      // session's own verified binding, as an app resume does; the coordinator
+      // rejects it unless every other gate is open.
+      unawaited(cache.activate(_readCacheBinding(active)));
+    }
+  }
+
+  DiskBinding _readCacheBinding(Account account) =>
+      DiskBinding(accountKey: account.key, generation: widget.session.generation);
+
+  /// Runs inside the coordinator; only the snapshot for this account and
+  /// generation may reach this shell, never an earlier generation's notice.
+  void _onReadCacheNotice(ReadCacheNotice notice) {
+    final account = widget.session.active;
+    if (!mounted || account == null) return;
+    final binding = _readCacheBinding(account);
+    if (!identical(widget.session.readCache.notice(binding), notice)) return;
+    // The notice can arrive while the app is idle: ask for the frame too.
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) => _presentReadCacheNotice(notice))
+      ..ensureVisualUpdate();
+  }
+
+  /// Repeats merge only while the shown notice is still pending. A completed
+  /// clear from Settings or a notice retry signals at once
+  /// (`offlineCacheCleanupResolved`), even while Settings is still open; a
+  /// route pop re-checks too. The next independent failure of the same kind is
+  /// then shown again.
+  void _syncReadCacheNoticeMerge() {
+    final account = widget.session.active;
+    if (_shownReadCacheNotice == null || account == null) return;
+    if (widget.session.readCache.notice(_readCacheBinding(account)) == null) {
+      _shownReadCacheNotice = null;
+    }
+  }
+
+  void _presentReadCacheNotice(ReadCacheNotice? notice) {
+    final account = widget.session.active;
+    if (!mounted || notice == null || account == null) return;
+    final cache = widget.session.readCache;
+    final binding = _readCacheBinding(account);
+    if (!identical(cache.notice(binding), notice)) return;
+    final state = notice.failure.cleanup!;
+    // The failed operation, the removal flow, the sign-in screen and the
+    // settings page present these themselves; the 我的 row keeps the status.
+    if (state.operation == ReadCacheCleanupOperation.settingsClear) return;
+    switch (state.disposition) {
+      case ReadCacheCleanupDisposition.requestBlockedBeforeSend:
+      case ReadCacheCleanupDisposition.accountRetained:
+      case ReadCacheCleanupDisposition.signedOutCleanupPending:
+        return;
+      case ReadCacheCleanupDisposition.originalOutcomePreserved:
+      case ReadCacheCleanupDisposition.legalNetworkValueReturned:
+      case ReadCacheCleanupDisposition.diskClosed:
+        break;
+    }
+    final key = '${state.operation.name}/${state.disposition.name}';
+    if (key == _shownReadCacheNotice) return;
+    _shownReadCacheNotice = key;
+    showFailure(
+      context,
+      notice.failure,
+      onRetryCleanup: () => unawaited(retryOfflineCacheCleanup(
+        context,
+        cache,
+        binding,
+        onDone: _syncReadCacheNoticeMerge,
+      )),
+    );
+  }
+
   @override
   void dispose() {
+    _cancelReadCacheNotices?.call();
+    _cancelReadCacheNotices = null;
     AiAccountRemoval.changes.removeListener(_onRemovalChanged);
     // Before the final confirmation this stops the job; after it, the job
     // runs to its end without a page.
@@ -501,6 +626,8 @@ class _MobileShellState extends State<_MobileShell> {
     _ownDialogs?.close();
     if (!_gone.isCompleted) _gone.complete();
     widget.pops.removeListener(_chrome.show);
+    widget.pops.removeListener(_syncReadCacheNoticeMerge);
+    offlineCacheCleanupResolved.removeListener(_syncReadCacheNoticeMerge);
     _backDispatcher.dispose();
     _chrome.dispose();
     _meScroll.dispose();
@@ -1336,6 +1463,15 @@ class _MobileShellState extends State<_MobileShell> {
               ),
             if (widget.updates case final updates? when updates.enabled)
               UpdateSection(controller: updates),
+            HubSection(
+              title: l10n.storageAndCacheLabel,
+              children: [
+                ReadCacheSettingsEntry(
+                  cache: session.readCache,
+                  binding: _readCacheBinding(account),
+                ),
+              ],
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1363,6 +1499,60 @@ class _MobileShellState extends State<_MobileShell> {
     );
   }
 
+  bool get _keyboardVisible =>
+      (MediaQuery.maybeViewInsetsOf(context)?.bottom ?? 0) > 0;
+
+  /// Whether root back may move the task to the background right now. The
+  /// bridge calls it again just before the native call, so it reads live
+  /// state only: this shell still mounted and owning [registry], the lock
+  /// open, nothing above the root page (dialog, sheet, pushed page), no
+  /// keyboard, no detail, Home selected and AI work still protected.
+  bool _rootBackEligible(AccountAiRunRegistry registry) {
+    if (!mounted) return false;
+    final lock = widget.lock;
+    return (lock == null || !lock.covering) &&
+        registry.ownsCurrentSession &&
+        identical(
+          context.getInheritedWidgetOfExactType<AiRunRegistryScope>()?.registry,
+          registry,
+        ) &&
+        !Navigator.of(context).canPop() &&
+        !_keyboardVisible &&
+        !_backDispatcher.canHandleBack &&
+        _selected == _home &&
+        registry.backProtectedCount > 0;
+  }
+
+  var _movingBack = false;
+
+  /// Root back with protected AI work: the task goes to the background
+  /// instead of the Activity finishing, so the work keeps its process. One
+  /// call per back press; a press while one is under way is ignored. This
+  /// never starts or stops a run.
+  Future<void> _moveTaskToBack(AccountAiRunRegistry registry) async {
+    if (_movingBack) return;
+    _movingBack = true;
+    try {
+      final result = await registry.backgroundExecution.moveTaskToBack(
+        isBackEligible: () => _rootBackEligible(registry),
+      );
+      switch (result) {
+        case AiTaskBackResult.moved || AiTaskBackResult.notMoved:
+          break;
+        // Whatever went wrong, the app stays open on the root page; it is
+        // never finished while work is protected. Back can be pressed again.
+        case AiTaskBackResult.notEligible ||
+            AiTaskBackResult.unsupported ||
+            AiTaskBackResult.foregroundRequired ||
+            AiTaskBackResult.unavailable ||
+            AiTaskBackResult.failed:
+          break;
+      }
+    } finally {
+      _movingBack = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
@@ -1370,22 +1560,41 @@ class _MobileShellState extends State<_MobileShell> {
     if (account == null || session.api == null) {
       return const Scaffold(body: SizedBox());
     }
+    final aiRuns = switch (AiRunRegistry.maybeOf(context)) {
+      final AccountAiRunRegistry registry => registry,
+      _ => null,
+    };
     return DetailBackScope(
       dispatcher: _backDispatcher,
       depth: 0,
       child: ListenableBuilder(
-        listenable: _backDispatcher,
+        listenable: Listenable.merge([_backDispatcher, ?aiRuns]),
         builder: (context, _) {
+          // D11: AI work that is running, waiting for approval or paused
+          // keeps the root page from closing the app.
+          final protected = (aiRuns?.backProtectedCount ?? 0) > 0;
           return PopScope<Object?>(
-            canPop: _selected == _home && !_backDispatcher.canHandleBack,
+            canPop:
+                _selected == _home &&
+                !_backDispatcher.canHandleBack &&
+                !protected,
             onPopInvokedWithResult: (didPop, _) {
               if (didPop) return;
+              // An open detail, then a tab other than Home, take back first.
               if (_backDispatcher.handleBack()) {
                 return;
               }
               if (_selected != _home) {
                 _chrome.show();
                 setState(() => _selected = _home);
+                return;
+              }
+              if (aiRuns != null && protected) {
+                if (_keyboardVisible) {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  return;
+                }
+                unawaited(_moveTaskToBack(aiRuns));
               }
             },
             child: LayoutBuilder(

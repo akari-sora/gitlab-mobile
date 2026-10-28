@@ -384,11 +384,24 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
     if (matches.isEmpty) {
       throw const ApiFailure(FailureKind.conflict);
     }
-    final version = await widget.api.record([
-      ...path,
-      'versions',
-      '${requiredInt(matches.first, 'id')}',
-    ]);
+    // Discovery stays on the network; the selected version is immutable, so
+    // its detail may come from the pinned offline cache (C2 §4.5).
+    final id = requiredInt(matches.first, 'id');
+    Json version;
+    try {
+      final read = await widget.api.cachedMergeRequestVersion(
+        widget.project.id,
+        widget.iid,
+        id,
+      );
+      if (read.dropped) throw const ApiFailure(FailureKind.cancelled);
+      version = read.value;
+    } on ApiFailure catch (failure) {
+      // A version the pinned schema cannot hold (no SHAs yet, say) is read
+      // the original network way and never stored.
+      if (failure.kind != FailureKind.invalidResponse) rethrow;
+      version = await widget.api.record([...path, 'versions', '$id']);
+    }
     if (version['head_commit_sha'] != widget.expectedSha) {
       throw const ApiFailure(FailureKind.conflict);
     }
