@@ -2118,6 +2118,7 @@
   "aiRunChannelName": "AI-arbete i bakgrunden",
   "aiRunServiceTitle": "AI-assistenten arbetar",
   "aiRunServiceText": "Du kan lämna appen; arbetet fortsätter.",
+  "aiRunServiceStopAll": "Stoppa alla",
   "aiNotConfigured": "Inte konfigurerad",
   "aiProvidersHeading": "Leverantörer",
   "aiAddProvider": "Lägg till leverantör",

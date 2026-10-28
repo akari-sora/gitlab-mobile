@@ -2122,6 +2122,7 @@ const _messagesRo = <String>[
   'Activitate AI în fundal',
   'Asistentul AI lucrează',
   'Poți ieși din aplicație; lucrul continuă.',
+  'Oprește tot',
   'Neconfigurat',
   'Furnizori',
   'Adaugă furnizor',
