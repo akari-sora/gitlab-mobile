@@ -51,8 +51,14 @@ final class _Native {
         .setMockMethodCallHandler(_channel, null);
   }
 
-  List<MethodCall> named(String method) =>
-      calls.where((call) => call.method == method).toList();
+  List<MethodCall> named(String method) => calls
+      .where(
+        (call) =>
+            call.method == method &&
+            !(method == 'updateProgress' &&
+                args(call)['permitId'] == 'sequence-probe'),
+      )
+      .toList();
 
   Map<Object?, Object?> args(MethodCall call) =>
       call.arguments as Map<Object?, Object?>;
@@ -75,7 +81,9 @@ final class _Native {
         delayedRequestRelease != null) {
       return delayedRequestRelease!.future;
     }
-    if (call.method == 'updateProgress' && delayedProgress != null) {
+    if (call.method == 'updateProgress' &&
+        a['permitId'] != 'sequence-probe' &&
+        delayedProgress != null) {
       return delayedProgress!.future;
     }
     if (call.method == 'stopAll' && delayedStop != null) {
@@ -94,12 +102,6 @@ final class _Native {
     }
     floor = seq;
     switch (call.method) {
-      case 'moveTaskToBack':
-        return {
-          'version': 1,
-          'status': 'unsupported',
-          'reason': 'not_implemented',
-        };
       case 'startRuns':
         if (rejectStart) {
           return {
@@ -125,7 +127,7 @@ final class _Native {
         active = false;
         return {'version': 1, 'status': 'stopped'};
       case 'updateProgress':
-        if (!active) return _inactive();
+        if (!active || a['permitId'] != permit) return _inactive();
         return {'version': 1, 'status': 'updated', 'permitId': permit};
       case 'acquireContinuation':
         if (!active || (denyMutation && a['kind'] == 'mutation')) {

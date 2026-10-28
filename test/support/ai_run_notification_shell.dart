@@ -371,6 +371,7 @@ final class NotificationShell {
     required FakeNotificationPlatform platform,
     AppLockController? lock,
     bool initializeBeforeShell = true,
+    MethodChannel? aiRunsChannel,
   }) async {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     final fixture = WorkspaceFixture();
@@ -427,6 +428,7 @@ final class NotificationShell {
             AiChatWireClientFactory? wireClientFactory,
           }) => (session: chat, capacityChanged: () {}, dispose: () {}),
       runNotifications: gate,
+      aiRunsChannel: aiRunsChannel,
     );
     await tester.pumpWidget(app());
     await settleNetworkWidgets(tester);

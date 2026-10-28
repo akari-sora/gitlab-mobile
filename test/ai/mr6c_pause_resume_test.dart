@@ -961,12 +961,6 @@ final class _Native {
       .setMockMethodCallHandler(_channel, (call) async {
         final a = call.arguments as Map<Object?, Object?>;
         switch (call.method) {
-          case 'moveTaskToBack':
-            return {
-              'version': 1,
-              'status': 'unsupported',
-              'reason': 'not_implemented',
-            };
           case 'startRuns':
             starts++;
             onStart?.call(starts);
@@ -990,6 +984,13 @@ final class _Native {
             active = false;
             return {'version': 1, 'status': 'released', 'didRelease': released};
           case 'updateProgress':
+            if (!active || a['permitId'] != permit) {
+              return {
+                'version': 1,
+                'status': 'rejected',
+                'reason': 'permit_inactive',
+              };
+            }
             return {'version': 1, 'status': 'updated', 'permitId': permit};
           case 'acquireContinuation':
             if (!active) {

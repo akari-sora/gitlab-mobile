@@ -46,12 +46,6 @@ final class _Service {
     if (closed) throw MissingPluginException();
     final args = call.arguments as Map<Object?, Object?>;
     switch (call.method) {
-      case 'moveTaskToBack':
-        return {
-          'version': 1,
-          'status': 'unsupported',
-          'reason': 'not_implemented',
-        };
       case 'startRuns':
         if (!active) permit = 'synthetic-permit-${++starts}';
         active = true;
@@ -92,7 +86,7 @@ final class _Service {
         if (holdStopReply case final hold?) await hold.future;
         return {'version': 1, 'status': 'stopped'};
       case 'updateProgress':
-        return active
+        return active && args['permitId'] == permit
             ? {'version': 1, 'status': 'updated', 'permitId': permit}
             : {'version': 1, 'status': 'rejected', 'reason': 'permit_inactive'};
       case 'acquireContinuation':
