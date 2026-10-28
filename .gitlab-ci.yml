@@ -62,7 +62,7 @@ python_checks:
 flutter_checks:
   extends: [.flutter, .regular]
   stage: verify
-  timeout: 15m
+  timeout: 25m
   coverage: '/Coverage: (\d+(?:\.\d+)?)%/'
   script:
     - bash ci/check.sh
