@@ -79,11 +79,25 @@ final class _AnchoredSetextHeaderSyntax extends md.SetextHeaderSyntax {
   md.Node? parse(md.BlockParser parser) => _withHeadingAnchor(super.parse(parser));
 }
 
-/// Tried before the standard heading syntaxes, which they replace.
-const _anchoredBlockSyntaxes = <md.BlockSyntax>[
-  _AnchoredHeaderSyntax(),
-  _AnchoredSetextHeaderSyntax(),
-];
+/// GitHub-flavoured Markdown as the renderer parses it, with the heading
+/// syntaxes replaced *in their own place*. markdown 7.3.1 tries custom block
+/// syntaxes, then the extension set's, then `BlockParser.standardBlockSyntaxes`
+/// (empty line, HTML block, setext heading, ATX heading, …). The anchored
+/// headings therefore sit after every GFM extension syntax (so a table whose
+/// first header cell starts with `#` stays a table) and after the standard
+/// empty-line and HTML-block syntaxes, in the standard setext-then-ATX
+/// order. Every block keeps its precedence; headings only gain the marker.
+/// The later standard copies are never reached for a heading.
+final _anchoredExtensionSet = md.ExtensionSet(
+  List<md.BlockSyntax>.unmodifiable(<md.BlockSyntax>[
+    ...md.ExtensionSet.gitHubFlavored.blockSyntaxes,
+    const md.EmptyBlockSyntax(),
+    const md.HtmlBlockSyntax(),
+    const _AnchoredSetextHeaderSyntax(),
+    const _AnchoredHeaderSyntax(),
+  ]),
+  md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
+);
 
 final class _HeadingAnchorBuilder extends MarkdownElementBuilder {
   @override
@@ -584,7 +598,7 @@ class _MarkdownViewState extends State<MarkdownView> {
   ///
   /// Identity is structural, not textual: in a snapshot view every heading
   /// is parsed with a zero-size [_HeadingAnchor] as its first child (see
-  /// [_anchoredBlockSyntaxes]), so the n-th rendered anchor *is* the n-th
+  /// [_anchoredExtensionSet]), so the n-th rendered anchor *is* the n-th
   /// heading. The anchor's slug and occurrence (`-1`, `-2`) select n from
   /// the same parse, and the view scrolls to that anchor's context. Linked
   /// headings, TOC links with the same label and repeated headings need no
@@ -598,9 +612,9 @@ class _MarkdownViewState extends State<MarkdownView> {
     }
     if (id.startsWith('user-content-')) id = id.substring(13);
     final document = md.Document(
-      blockSyntaxes: _blockSyntaxes(anchored: true),
+      blockSyntaxes: _blockSyntaxes(),
       inlineSyntaxes: _inlineSyntaxes(),
-      extensionSet: md.ExtensionSet.gitHubFlavored,
+      extensionSet: _anchoredExtensionSet,
       encodeHtml: false,
     );
     final headings = <md.Element>[];
@@ -651,10 +665,7 @@ class _MarkdownViewState extends State<MarkdownView> {
     );
   }
 
-  List<md.BlockSyntax> _blockSyntaxes({required bool anchored}) => [
-    MarkdownMediaBlockSyntax(),
-    if (anchored) ..._anchoredBlockSyntaxes,
-  ];
+  List<md.BlockSyntax> _blockSyntaxes() => [MarkdownMediaBlockSyntax()];
 
   List<md.InlineSyntax> _inlineSyntaxes() => [
     MarkdownMediaImageSyntax(),
@@ -931,8 +942,11 @@ class _MarkdownViewState extends State<MarkdownView> {
       selectable: false,
       // Only a snapshot view resolves in-page anchors, so only it marks its
       // headings; every other view renders exactly as before.
-      blockSyntaxes: _blockSyntaxes(anchored: widget.snapshot != null),
+      blockSyntaxes: _blockSyntaxes(),
       inlineSyntaxes: _inlineSyntaxes(),
+      // Null keeps the renderer's default (GitHub-flavoured) for every other
+      // view; the anchor re-parse uses this same set.
+      extensionSet: widget.snapshot != null ? _anchoredExtensionSet : null,
       builders: {
         markdownMediaElement: _MarkdownMediaElementBuilder(
           buildMedia: buildMedia,

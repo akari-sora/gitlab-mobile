@@ -153,8 +153,30 @@ bool _isHeading(InlineSpan span, String text) {
 double _top(WidgetTester tester, Element element) =>
     tester.getTopLeft(find.byWidget(element.widget)).dy;
 
+const _hashTable = '# | Package | Version\n--- | --- | ---\n1 | example | 1.0\n';
+
+/// [_hashTable] rendered as a table with three columns, not as a heading.
+void _expectHashTable(WidgetTester tester) {
+  final table = tester.widget<Table>(find.byType(Table));
+  expect(table.children, hasLength(2));
+  expect(table.children.first.children, hasLength(3));
+  expect(find.text('Package', findRichText: true), findsOneWidget);
+  expect(find.text('example', findRichText: true), findsOneWidget);
+  expect(find.textContaining('| Package', findRichText: true), findsNothing);
+}
+
 void main() {
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  testWidgets('online, the same table is a table (unchanged)', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MarkdownView(_hashTable, account: _account)),
+      ),
+    );
+    await tester.pump();
+    _expectHashTable(tester);
+  });
 
   // FIX2 #1: no Pause while listing; the Pause that is offered really keeps a
   // row that resumes.
@@ -465,6 +487,25 @@ void main() {
         '[jump](#install-guide)\n\n'
         '${paragraphs(60, 'a')}\n## Install Guide\n\nEnd.\n',
       );
+      final heading = _headings('Install Guide').single;
+      expect(_top(tester, heading), greaterThan(600));
+      await tester.tap(find.text('jump', findRichText: true));
+      await tester.pumpAndSettle();
+      expect(_top(tester, heading), inInclusiveRange(0, 600));
+    });
+
+    // FIX4: marking headings keeps GFM table precedence. A table whose first
+    // header cell starts with `#` stays a three-column table, online and in
+    // a snapshot, and anchors after it still land.
+    testWidgets('a table with a leading # header cell stays a table, and anchors after it land', (
+      tester,
+    ) async {
+      await pumpMarkdown(
+        tester,
+        '[jump](#install-guide)\n\n$_hashTable\n'
+        '${paragraphs(60, 'a')}\n## Install Guide\n\nEnd.\n',
+      );
+      _expectHashTable(tester);
       final heading = _headings('Install Guide').single;
       expect(_top(tester, heading), greaterThan(600));
       await tester.tap(find.text('jump', findRichText: true));
