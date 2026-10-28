@@ -275,7 +275,13 @@ final class _Server {
     }
     expect(
       request.uri,
-      request.method == 'GET' ? request.uri : api.instance.graphQL,
+      request.method == 'GET'
+          ? Uri.parse(
+              operation == 'user'
+                  ? 'https://example.com/gitlab/api/v4/user'
+                  : 'https://example.com/gitlab/api/v4/groups/7?with_projects=false',
+            )
+          : api.instance.graphQL,
     );
     final count = reads.update(
       operation,

@@ -197,8 +197,17 @@ Future<void> _add(AiChatController controller, [String link = _link]) async {
 }
 
 Future<void> _untilPhase(AiChatController controller, AiChatPhase phase) async {
-  for (var i = 0; i < 1000 && controller.phase != phase; i++) {
-    await Future<void>.delayed(Duration.zero);
+  final reached = Completer<void>();
+  void onChanged() {
+    if (controller.phase == phase && !reached.isCompleted) reached.complete();
+  }
+
+  controller.addListener(onChanged);
+  try {
+    onChanged();
+    await reached.future.timeout(const Duration(seconds: 10));
+  } finally {
+    controller.removeListener(onChanged);
   }
   expect(controller.phase, phase);
 }
