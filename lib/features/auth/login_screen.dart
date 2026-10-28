@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../core/failure.dart';
 import '../../core/instance.dart';
 import '../../core/models.dart';
+import '../../core/read_cache_disk_contract.dart';
 import '../../shared/workspace_ui.dart';
 import '../ai/ai_account_removal.dart';
 import '../ai/ai_write_journal.dart';
@@ -32,11 +34,25 @@ class _LoginScreenState extends State<LoginScreen> {
   AiAccountDialogs? _ownDialogs;
   AiAccountDialogs get _dialogs => _ownDialogs ??= AiAccountDialogs(context);
 
+  /// Cancels the read-cache notice subscription.
+  void Function()? _cancelReadCacheNotices;
+  bool _retryingCleanup = false;
+
   @override
   void initState() {
     super.initState();
     _instance.addListener(() {
       if (mounted) setState(() {});
+    });
+    // A sign-out cleanup can fail while no page is listening; the snapshot
+    // read in build still shows it, and later notices rebuild this page.
+    _cancelReadCacheNotices = widget.session.readCache.subscribe((_) {
+      // The notice can arrive while the app is idle: ask for the frame too.
+      WidgetsBinding.instance
+        ..addPostFrameCallback((_) {
+          if (mounted) setState(() {});
+        })
+        ..ensureVisualUpdate();
     });
     AiAccountRemoval.changes.addListener(_onRemovalChanged);
     WidgetsBinding.instance.addPostFrameCallback(
@@ -46,6 +62,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _cancelReadCacheNotices?.call();
+    _cancelReadCacheNotices = null;
     AiAccountRemoval.changes.removeListener(_onRemovalChanged);
     // Signing in replaces this page and its Navigator. Before the final
     // confirmation that stops the job; after it, the job runs to its end.
@@ -106,6 +124,41 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     final result = AiAccountRemoval.takeResult(account.key);
     if (result != null) presentAiRemovalResult(context, result);
+  }
+
+  /// Retries only the signed-out cleanups. A signed-out retry never activates
+  /// a session or reopens the disk, whatever its result.
+  Future<void> _retrySignedOutCleanup() async {
+    if (_retryingCleanup) return;
+    final cache = widget.session.readCache;
+    final pending = cache.signedOutSnapshot.keys.toList();
+    if (pending.isEmpty) return;
+    setState(() => _retryingCleanup = true);
+    ApiFailure? failure;
+    var complete = true;
+    for (final binding in pending) {
+      final result = await cache.retryCleanup(
+        binding,
+        ReadCacheCleanupOperation.signOut,
+      );
+      if (!result.complete) {
+        complete = false;
+        failure = cache.signedOutSnapshot[binding]?.failure ?? failure;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _retryingCleanup = false);
+    if (complete) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.offlineCacheCleared)),
+      );
+    } else if (failure != null) {
+      showFailure(
+        context,
+        failure,
+        onRetryCleanup: () => unawaited(_retrySignedOutCleanup()),
+      );
+    }
   }
 
   String? get _oauthApplicationId {
@@ -193,6 +246,19 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
+                        // Pending signed-out cleanups merge into one notice.
+                        if (session.readCache.signedOutSnapshot.values
+                            case Iterable<ReadCacheNotice>(isNotEmpty: true, :final last))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 20),
+                            child: FailureNotice(
+                              key: const ValueKey('signed-out-cache-notice'),
+                              last.failure,
+                              onRetryCleanup: _retryingCleanup
+                                  ? null
+                                  : () => unawaited(_retrySignedOutCleanup()),
+                            ),
+                          ),
                         if (session.accounts.isNotEmpty) ...[
                           const SizedBox(height: 28),
                           Text(l10n.continueUsing, style: theme.textTheme.titleSmall),
