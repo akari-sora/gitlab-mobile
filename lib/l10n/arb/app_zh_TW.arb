@@ -11467,7 +11467,7 @@
   "aiRefusedNotApplied": "這次變更沒有生效，欄位仍是原本的值。請重新讀取後再試一次。",
   "aiRefusedDiscussionLocked": "這個討論已鎖定，不能新增留言或回覆，所以沒有執行。",
   "aiRefusedNotOwnNote": "這個寫入只能刪除你自己帳號寫的留言，所以沒有執行。",
-  "aiRefusedTodoForeign": "這個待辦事項不屬於目前的帳號，所以沒有執行。",
+  "aiRefusedTodoForeign": "無法確認這個待辦事項屬於目前的帳號，且在這個對話可處理的範圍內，所以沒有執行。",
   "aiRefusedProtectedBranch": "這是受保護的分支，AI 不能刪除或改寫它，所以沒有執行。",
   "aiRefusedDefaultBranch": "不能刪除預設分支，所以沒有執行。",
   "aiRefusedMergeChecking": "GitLab 還在檢查能不能合併，所以沒有執行。請稍後再試。",
@@ -11962,5 +11962,80 @@
   "@aiRunCleanupRetry": {
     "description": "Chat card detail: the cleanup is retried each time the app returns to the foreground; work can continue only after a cleanup is confirmed (a failed retry keeps it blocked).",
     "placeholders": {}
+  },
+  "aiProposalGroupTarget": "直接屬於群組 {path} 的工作項目 #{iid}",
+  "@aiProposalGroupTarget": {
+    "description": "AI write card: the line naming the group that owns the work item the write changes. {path} is the group full path, {iid} the work item number (written after #).",
+    "placeholders": {
+      "path": {
+        "example": "team/sub"
+      },
+      "iid": {
+        "example": "5"
+      }
+    }
+  },
+  "aiProposalOwnTodo": "只會變更你（@{username}）自己的待辦清單，不會改動工作項目本身。",
+  "@aiProposalOwnTodo": {
+    "description": "AI write card for snoozing or unsnoozing a to-do: only the signed-in user's own to-do list changes. {username} is the GitLab username, written after @.",
+    "placeholders": {
+      "username": {
+        "example": "alice"
+      }
+    }
+  },
+  "aiProposalDeleteOwnNote": "只會刪除你自己寫的這則留言；送出前會再向 GitLab 確認作者是你。",
+  "@aiProposalDeleteOwnNote": {
+    "description": "AI write card for deleting a comment: only the user's own comment is deleted, and authorship is checked again before sending.",
+    "placeholders": {}
+  },
+  "aiRefusedGroupUnsupported": "GitLab 沒有為這個群組工作項目提供這項功能（可能是版本或工作項目類型不支援），所以沒有送出。",
+  "@aiRefusedGroupUnsupported": {
+    "description": "Why a write to a group work item was not sent: GitLab does not offer that field or action for this work item (version or type).",
+    "placeholders": {}
+  },
+  "aiRefusedGroupUnverifiable": "無法確認這個工作項目仍直接屬於它的群組（群組可能已改名或移動），所以沒有送出。請重新開啟或加入它。",
+  "@aiRefusedGroupUnverifiable": {
+    "description": "Why a write to a group work item was not sent: the app could not prove again that the item still belongs directly to its group.",
+    "placeholders": {}
+  },
+  "aiConsentWritesGroupScope": "群組擁有的工作項目：AI 只能修改這個對話開啟的那一項，或你自己加入對話的項目；授權不會擴及整個群組、子群組或群組裡的專案。",
+  "@aiConsentWritesGroupScope": {
+    "description": "AI consent dialog, writes section, shown when the agreed write policy includes writes to work items a group owns: the scope of those writes.",
+    "placeholders": {}
+  },
+  "aiChatEmptyGroup": "AI 會讀取群組 {path} 的工作項目 #{iid}。群組的其他工作項目和群組裡的專案不在這個對話的範圍內。",
+  "@aiChatEmptyGroup": {
+    "description": "Empty AI conversation opened on a group work item: what it reads and what is outside its scope. {path} is the group full path, {iid} the work item number (written after #).",
+    "placeholders": {
+      "path": {
+        "example": "team/sub"
+      },
+      "iid": {
+        "example": "5"
+      }
+    }
+  },
+  "aiChatEmptyGroupItem": "AI 會讀取這個群組工作項目。群組的其他工作項目和群組裡的專案不在這個對話的範圍內。",
+  "@aiChatEmptyGroupItem": {
+    "description": "Empty AI conversation opened on a group work item whose path cannot be shown: what it reads and what is outside its scope.",
+    "placeholders": {}
+  },
+  "aiSuggestWorkItemSummary": "摘要這個工作項目",
+  "@aiSuggestWorkItemSummary": {
+    "description": "Suggested first message in an AI conversation opened on a work item from a group page.",
+    "placeholders": {}
+  },
+  "aiRemovedGroupWorkItem": "已從對話移除 {path} #{iid}，AI 不能再修改它",
+  "@aiRemovedGroupWorkItem": {
+    "description": "Snack bar after removing a user-added group work item from the AI conversation. {path} is the group full path, {iid} the work item number (written after #).",
+    "placeholders": {
+      "path": {
+        "example": "team/sub"
+      },
+      "iid": {
+        "example": "5"
+      }
+    }
   }
 }

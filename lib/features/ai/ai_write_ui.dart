@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/ai/ai_display.dart';
 import '../../core/failure.dart';
+import '../../core/ai/tools/target_binding.dart' show isValidAiGroupPath;
 import '../../core/ai/tools/write_coordinator.dart';
 import '../../core/ai/tools/write_ledger.dart';
 import '../../core/ai/tools/write_preview.dart'
@@ -31,6 +32,56 @@ import 'ai_write_settings.dart';
 /// user never does.
 /// Whether [name] is one of the app's write tools rather than a read.
 bool aiIsWriteTool(String name) => productionAiLedger.find(name) != null;
+
+/// The group work item a group alias writes to, read back from the release
+/// name its port builds, `<group full path>#<iid>` (breakdown §3.1). Null for
+/// every other write, and for a name without that exact shape (one the
+/// redaction changed, say): the caller then shows the name as it is.
+({String path, int iid})? aiGroupWriteTarget(
+  String operationId,
+  String releaseName,
+) {
+  if (productionAiLedger.find(operationId)?.scopeClass !=
+      AiScopeClass.groupWorkItem) {
+    return null;
+  }
+  // A group path never holds `#`, so the last one starts the number.
+  final hash = releaseName.lastIndexOf('#');
+  if (hash < 1) return null;
+  final path = releaseName.substring(0, hash);
+  final number = releaseName.substring(hash + 1);
+  final iid = int.tryParse(number);
+  if (iid == null || iid < 1 || '$iid' != number) return null;
+  if (!isValidAiGroupPath(path)) return null;
+  return (path: path, iid: iid);
+}
+
+/// A write's target as the card, its row and the change log show it. A
+/// group work item shows its group path and `#iid` as two isolated values,
+/// so `team/sub` and `#5` each keep their direction in Arabic; anything else
+/// is one isolated value.
+String aiWriteTargetText(String operationId, String releaseName) =>
+    switch (aiGroupWriteTarget(operationId, releaseName)) {
+      (:final path, :final iid) => '${isolated(path)} ${isolated('#$iid')}',
+      null => isolated(releaseName),
+    };
+
+/// The account a to-do snooze changes, without its `@`: the release name the
+/// snooze port builds is `@username` (breakdown §3.1). Null for any other
+/// write or name.
+String? aiOwnTodoUsername(String operationId, String releaseName) =>
+    (operationId == 'snoozeTodo' || operationId == 'unsnoozeTodo') &&
+        releaseName.length > 1 &&
+        releaseName.startsWith('@') &&
+        !releaseName.contains(RegExp(r'\s'))
+    ? releaseName.substring(1)
+    : null;
+
+/// Deleting a comment is limited to the account's own comments, in a
+/// project and in a group work item alike (§3, note delete).
+bool _deletesOwnNote(String operationId) =>
+    operationId == 'deleteWorkItemActivityNote' ||
+    operationId == 'deleteGroupWorkItemActivityNote';
 
 String aiOperationLabel(String operationId) => switch (operationId) {
   'addAwardEmoji' => l10n.aiOpAddAwardEmoji,
@@ -265,21 +316,28 @@ String aiFieldValue(String key, String value) => switch ((key, value)) {
   ('status', 'TRIGGERED') => l10n.incidentTriggered,
   ('status', 'ACKNOWLEDGED') => l10n.incidentAcknowledged,
   ('status', 'RESOLVED') => l10n.resolvedLabel,
-  // The port hands the assignee set over as a JSON array; the editors show
-  // a plain list of names.
-  ('assigneeUsernames', _) => () {
-    try {
-      final names = (jsonDecode(value) as List<dynamic>? ?? const [])
-          .whereType<String>()
-          .toList();
-      return names.isEmpty ? value : names.join(', ');
-    } on FormatException {
-      return value;
-    }
-  }(),
+  // The port hands the assignee and label sets over as JSON arrays; the
+  // editors show a plain list of names, each isolated so a list of Latin
+  // names keeps its order in Arabic.
+  ('assigneeUsernames' || 'labels', _) => _nameList(value) ?? value,
   ('variables', _) => _variableLines(value) ?? value,
   _ => value,
 };
+
+/// A JSON array of names as `a, b`, or null when [json] is not one. An empty
+/// array keeps its raw form: it means "clear all", which the card must not
+/// hide behind a blank line.
+String? _nameList(String json) {
+  try {
+    final decoded = jsonDecode(json);
+    if (decoded is! List) return null;
+    final names = decoded.whereType<String>().toList();
+    if (names.isEmpty || names.length != decoded.length) return null;
+    return names.map(isolated).join(', ');
+  } on FormatException {
+    return null;
+  }
+}
 
 /// Pipeline variables as `KEY = value` lines, so the user sees every value
 /// the AI would send. The value was already display-redacted.
@@ -428,7 +486,26 @@ const _proposalStateCodes = {
 /// come from the write port and the coordinator; an unknown code is null so
 /// the card falls back to "not made". A missing target is ambiguous (it may
 /// be hidden from you), never "deleted".
-String? aiRefusalText(String code) => switch (code) {
+///
+/// With [operationId] a group alias gets its own words where the shared
+/// sentence would mislead: a missing widget is the group work item's lack
+/// of the feature, not a refusal, and an unverifiable item is one whose
+/// group ownership (path, number, work item) could not be proven again.
+String? aiRefusalText(String code, {String? operationId}) {
+  if (operationId != null &&
+      productionAiLedger.find(operationId)?.scopeClass ==
+          AiScopeClass.groupWorkItem) {
+    switch (code) {
+      case 'unsupported' || 'healthUnsupported':
+        return l10n.aiRefusedGroupUnsupported;
+      case 'workItemUnverifiable':
+        return l10n.aiRefusedGroupUnverifiable;
+    }
+  }
+  return _refusalText(code);
+}
+
+String? _refusalText(String code) => switch (code) {
   'quickAction' => l10n.aiRefusedQuickAction,
   // The proposal lapsed, its run ended or was replaced, or the settings or
   // account changed under it; no write was sent.
@@ -724,7 +801,9 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
             when _proposal.editedText != null &&
                 widget.session.proposals.contains(_proposal) =>
           l10n.aiProposalEditRefused,
-        final code => aiRefusalText(code) ?? l10n.aiProposalNotRun,
+        final code =>
+          aiRefusalText(code, operationId: _proposal.operationId) ??
+              l10n.aiProposalNotRun,
       };
       // Not the user's error and nothing was sent.
       if (outcome.reasonCode == 'executionPaused') _messageIsError = false;
@@ -819,6 +898,17 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
     };
     final editable = _editableField;
     final preview = proposal.preview;
+    // A group work item names its owning group and number on a line of its
+    // own: `team/sub#5` would otherwise read like a project path, and a
+    // same-numbered item in another group must not look the same.
+    final groupTarget = aiGroupWriteTarget(
+      proposal.operationId,
+      proposal.releaseName,
+    );
+    final ownTodo = aiOwnTodoUsername(
+      proposal.operationId,
+      proposal.releaseName,
+    );
     // A structured preview already shows the squash option, the stored
     // variables and the issues a merge closes; the card does not repeat them.
     final warnings = [
@@ -857,8 +947,10 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                         style: theme.textTheme.titleSmall,
                       ),
                       Text(
-                        '${aiTierLabel(tier.tier)} · '
-                        '${isolated(proposal.releaseName)}',
+                        groupTarget != null
+                            ? aiTierLabel(tier.tier)
+                            : '${aiTierLabel(tier.tier)} · '
+                                  '${aiWriteTargetText(proposal.operationId, proposal.releaseName)}',
                         style: muted,
                       ),
                     ],
@@ -866,6 +958,33 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                 ),
               ],
             ),
+            if (groupTarget case (:final path, :final iid)) ...[
+              const SizedBox(height: 8),
+              _CardLine(
+                icon: Icons.workspaces_outline,
+                color: scheme.primary,
+                text: l10n.aiProposalGroupTarget(isolated(path), iid),
+                textKey: const ValueKey('ai-proposal-group-target'),
+              ),
+            ],
+            if (ownTodo != null) ...[
+              const SizedBox(height: 8),
+              _CardLine(
+                icon: Icons.person_outline,
+                color: scheme.onSurfaceVariant,
+                text: l10n.aiProposalOwnTodo(ownTodo),
+                textKey: const ValueKey('ai-proposal-own-todo'),
+              ),
+            ],
+            if (_deletesOwnNote(proposal.operationId)) ...[
+              const SizedBox(height: 8),
+              _CardLine(
+                icon: Icons.person_outline,
+                color: HubColors.orange,
+                text: l10n.aiProposalDeleteOwnNote,
+                textKey: const ValueKey('ai-proposal-own-note'),
+              ),
+            ],
             if (proposal.modelReason.trim().isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
@@ -1037,6 +1156,37 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
   }
 }
 
+/// One icon-and-text line of a proposal card: status is never colour alone.
+class _CardLine extends StatelessWidget {
+  const _CardLine({
+    required this.icon,
+    required this.color,
+    required this.text,
+    required this.textKey,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String text;
+  final Key textKey;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 16, color: color),
+      const SizedBox(width: 6),
+      Expanded(
+        child: Text(
+          text,
+          key: textKey,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+    ],
+  );
+}
+
 /// A card whose text the user edited, kept until a readback confirms the
 /// write (§7.2): rejected, failed, unknown, expired, or written without a
 /// readback. The status says which; the edit can be copied, so the user's
@@ -1108,7 +1258,8 @@ class AiSettledEditCard extends StatelessWidget {
                         style: theme.textTheme.titleSmall,
                       ),
                       Text(
-                        '$status · ${isolated(proposal.releaseName)}',
+                        '$status · '
+                        '${aiWriteTargetText(proposal.operationId, proposal.releaseName)}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),

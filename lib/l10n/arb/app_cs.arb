@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "Změna se neprojevila: pole má stále původní hodnotu. Přečtěte znovu a zkuste to znovu.",
   "aiRefusedDiscussionLocked": "Tato diskuse je uzamčena, proto nebyl komentář ani odpověď odeslán.",
   "aiRefusedNotOwnNote": "Tato operace může mazat pouze komentáře napsané vlastním účtem, takže nebylo nic provedeno.",
-  "aiRefusedTodoForeign": "Tento úkol patří jinému účtu, takže nebylo nic provedeno.",
+  "aiRefusedTodoForeign": "Nepodařilo se ověřit, že tento úkol patří tomuto účtu a spadá do této konverzace, takže nebylo nic provedeno.",
   "aiRefusedProtectedBranch": "Toto je chráněná větev; AI ji nemůže smazat ani přepsat, takže nebylo nic provedeno.",
   "aiRefusedDefaultBranch": "Výchozí větev nelze smazat, takže nebylo nic provedeno.",
   "aiRefusedMergeChecking": "GitLab stále kontroluje, zda lze sloučit, takže nebylo nic provedeno. Zkuste to za chvíli znovu.",
@@ -2844,5 +2844,15 @@
   "aiRunStartUnavailable": "Práce na pozadí teď není k dispozici.",
   "aiProposalBackgroundUnavailable": "Tento zápis nebyl proveden: práci na pozadí se nepodařilo spustit.",
   "aiRunCleanupPending": "Práce pozastavena: zatím není potvrzeno, že práce na pozadí skončila, a do té doby nelze pokračovat.",
-  "aiRunCleanupRetry": "Úklid se zkusí znovu pokaždé, když se vrátíte do aplikace; v práci lze pokračovat až po potvrzení úklidu."
+  "aiRunCleanupRetry": "Úklid se zkusí znovu pokaždé, když se vrátíte do aplikace; v práci lze pokračovat až po potvrzení úklidu.",
+  "aiProposalGroupTarget": "Pracovní položka #{iid}, která patří přímo skupině {path}",
+  "aiProposalOwnTodo": "Mění se jen váš vlastní seznam úkolů (@{username}); samotná pracovní položka se nemění.",
+  "aiProposalDeleteOwnNote": "Smaže jen tento komentář, který jste napsali; před odesláním aplikace v GitLabu znovu ověří, že jste jeho autorem.",
+  "aiRefusedGroupUnsupported": "GitLab tuto funkci pro tuto pracovní položku skupiny nenabízí (verze nebo typ položky ji nemusí podporovat), takže nebylo nic odesláno.",
+  "aiRefusedGroupUnverifiable": "Nepodařilo se ověřit, že tato pracovní položka stále patří přímo své skupině (skupina mohla být přejmenována nebo přesunuta), takže nebylo nic odesláno. Otevřete ji nebo ji přidejte znovu.",
+  "aiConsentWritesGroupScope": "Pracovní položky skupiny: AI smí měnit jen tu, pro kterou byla tato konverzace otevřena, nebo ty, které přidáte sami; oprávnění se nikdy nevztahuje na celou skupinu, její podskupiny ani projekty.",
+  "aiChatEmptyGroup": "AI čte pracovní položku #{iid} skupiny {path}. Ostatní pracovní položky skupiny a její projekty do této konverzace nepatří.",
+  "aiChatEmptyGroupItem": "AI čte tuto pracovní položku skupiny. Ostatní pracovní položky skupiny a její projekty do této konverzace nepatří.",
+  "aiSuggestWorkItemSummary": "Shrň tuto pracovní položku",
+  "aiRemovedGroupWorkItem": "{path} #{iid} odebráno z konverzace; AI ji už nemůže měnit"
 }

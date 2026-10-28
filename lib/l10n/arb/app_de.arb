@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "Die Änderung wurde nicht wirksam: Das Feld hat noch den alten Wert. Neu lesen und erneut versuchen.",
   "aiRefusedDiscussionLocked": "Diese Diskussion ist gesperrt, daher wurde der Kommentar bzw. die Antwort nicht gesendet.",
   "aiRefusedNotOwnNote": "Dieser Vorgang darf nur Kommentare löschen, die von Ihrem eigenen Konto geschrieben wurden, daher wurde nichts ausgeführt.",
-  "aiRefusedTodoForeign": "Dieses To-do gehört zu einem anderen Konto, daher wurde nichts ausgeführt.",
+  "aiRefusedTodoForeign": "Es ließ sich nicht bestätigen, dass dieses To-do zu diesem Konto gehört und zu dieser Unterhaltung passt, daher wurde nichts ausgeführt.",
   "aiRefusedProtectedBranch": "Dies ist ein geschützter Branch; die KI darf ihn nicht löschen oder überschreiben. Es wurde nichts ausgeführt.",
   "aiRefusedDefaultBranch": "Der Standard-Branch kann nicht gelöscht werden. Es wurde nichts ausgeführt.",
   "aiRefusedMergeChecking": "GitLab prüft noch, ob sich dies mergen lässt. Es wurde nichts ausgeführt. Versuchen Sie es gleich noch einmal.",
@@ -2844,5 +2844,15 @@
   "aiRunStartUnavailable": "Arbeit im Hintergrund ist gerade nicht verfügbar.",
   "aiProposalBackgroundUnavailable": "Dieser Schreibvorgang wurde nicht ausgeführt: Die Arbeit im Hintergrund konnte nicht starten.",
   "aiRunCleanupPending": "Arbeit pausiert: Es ist noch nicht bestätigt, dass die Arbeit im Hintergrund beendet ist; bis dahin kann nichts fortgesetzt werden.",
-  "aiRunCleanupRetry": "Die Bereinigung wird bei jeder Rückkehr zur App erneut versucht; erst wenn sie bestätigt ist, kann die Arbeit fortgesetzt werden."
+  "aiRunCleanupRetry": "Die Bereinigung wird bei jeder Rückkehr zur App erneut versucht; erst wenn sie bestätigt ist, kann die Arbeit fortgesetzt werden.",
+  "aiProposalGroupTarget": "Arbeitselement #{iid}, das direkt zur Gruppe {path} gehört",
+  "aiProposalOwnTodo": "Ändert nur Ihre eigene To-do-Liste (@{username}); das Arbeitselement selbst bleibt unverändert.",
+  "aiProposalDeleteOwnNote": "Löscht nur diesen Kommentar, den Sie geschrieben haben; vor dem Senden prüft die App bei GitLab erneut, dass Sie der Autor sind.",
+  "aiRefusedGroupUnsupported": "GitLab bietet dies für dieses Arbeitselement der Gruppe nicht an (die Version oder der Elementtyp unterstützt es möglicherweise nicht). Es wurde nichts gesendet.",
+  "aiRefusedGroupUnverifiable": "Es ließ sich nicht bestätigen, dass dieses Arbeitselement noch direkt zu seiner Gruppe gehört (die Gruppe wurde womöglich umbenannt oder verschoben). Es wurde nichts gesendet. Öffnen Sie es erneut oder fügen Sie es erneut hinzu.",
+  "aiConsentWritesGroupScope": "Arbeitselemente einer Gruppe: Die KI darf nur das Element ändern, für das diese Unterhaltung geöffnet wurde, oder Elemente, die Sie selbst hinzufügen; die Berechtigung gilt nie für die ganze Gruppe, ihre Untergruppen oder ihre Projekte.",
+  "aiChatEmptyGroup": "Die KI liest das Arbeitselement #{iid} der Gruppe {path}. Andere Arbeitselemente der Gruppe und ihre Projekte gehören nicht zu dieser Unterhaltung.",
+  "aiChatEmptyGroupItem": "Die KI liest dieses Arbeitselement der Gruppe. Andere Arbeitselemente der Gruppe und ihre Projekte gehören nicht zu dieser Unterhaltung.",
+  "aiSuggestWorkItemSummary": "Dieses Arbeitselement zusammenfassen",
+  "aiRemovedGroupWorkItem": "{path} #{iid} aus der Unterhaltung entfernt; die KI kann es nicht mehr ändern"
 }

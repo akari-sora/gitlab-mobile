@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart'
+    show AiScopeClass, productionAiLedger;
+import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart'
+    show aiProductionWritePolicy;
 import 'package:gitlab_mobile/features/ai/ai_consent_dialog.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_scope.dart';
@@ -315,6 +319,145 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    // MR6b-3g full UI: the writes section names the group scope exactly
+    // when the agreed policy lists a write to a group's own work item.
+    group('group work-item scope', () {
+      AiWritePolicy policy(Set<String> operationIds) => AiWritePolicy(
+        policyVersion: 9,
+        agreedCeiling: AiAutonomyLevel.confirmEach,
+        catalogueVersion: 9,
+        operationIds: operationIds,
+        hardLineOperationIds: const {},
+        fixedConfirmOperationIds: const {},
+        resetConfirmWindow: const Duration(minutes: 10),
+      );
+
+      Future<void> openRecord(
+        WidgetTester tester,
+        AiWritePolicy? writePolicy, {
+        TextDirection direction = TextDirection.ltr,
+      }) async {
+        final record = AiConsentRecord(
+          hash: 'saved-hash',
+          summary: aiConsentSummary(_contract(writePolicy: writePolicy)),
+          grantedAt: DateTime.utc(2026, 10, 28, 1, 2),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: appTheme(Brightness.light),
+            locale: const Locale('zh', 'TW'),
+            supportedLocales: const [Locale('zh', 'TW')],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
+            builder: (context, child) =>
+                Directionality(textDirection: direction, child: child!),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  onPressed: () => showAiConsentRecordDialog(context, record),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+      }
+
+      Finder groupScope() => find.text(l10n.aiConsentWritesGroupScope);
+
+      Future<void> showWrites(WidgetTester tester) => tester.dragUntilVisible(
+        find.byKey(const ValueKey('ai-consent-writes')),
+        find.byType(ListView),
+        const Offset(0, -180),
+      );
+
+      testWidgets('a policy with a group alias names the group scope', (
+        tester,
+      ) async {
+        await openRecord(
+          tester,
+          policy({'createNote', 'updateGroupWorkItemState'}),
+        );
+        await showWrites(tester);
+        await tester.dragUntilVisible(
+          groupScope(),
+          find.byType(ListView),
+          const Offset(0, -120),
+        );
+        expect(groupScope(), findsOneWidget);
+      });
+
+      testWidgets('a project-only policy does not', (tester) async {
+        await openRecord(tester, policy({'createNote', 'snoozeTodo'}));
+        await showWrites(tester);
+        await tester.drag(find.byType(ListView), const Offset(0, -400));
+        await tester.pumpAndSettle();
+        expect(groupScope(), findsNothing);
+      });
+
+      testWidgets('a read-only consent has no writes section at all', (
+        tester,
+      ) async {
+        await openRecord(tester, null);
+        expect(find.byKey(const ValueKey('ai-consent-writes')), findsNothing);
+        expect(groupScope(), findsNothing);
+      });
+
+      testWidgets('the production policy names it exactly when it offers a '
+          'group write', (tester) async {
+        final production = aiProductionWritePolicy(AiAutonomyLevel.confirmEach);
+        // Today the group rows stay hidden until G14 opens them; the
+        // sentence follows the policy, not a flag of its own.
+        final offersGroup = production.operationIds.any(
+          (id) =>
+              productionAiLedger.find(id)?.scopeClass ==
+              AiScopeClass.groupWorkItem,
+        );
+        await openRecord(tester, production);
+        await showWrites(tester);
+        await tester.drag(find.byType(ListView), const Offset(0, -400));
+        await tester.pumpAndSettle();
+        expect(groupScope(), offersGroup ? findsOneWidget : findsNothing);
+      });
+
+      test('the sentence is read from the agreed policy, so a consent '
+          'without group writes never covers them', () {
+        final project = _contract(writePolicy: policy({'createNote'}));
+        final group = _contract(
+          writePolicy: policy({'createNote', 'updateGroupWorkItemState'}),
+        );
+        // Adding a group write changes the hash: the user agrees again and
+        // sees the sentence then. The sentence itself adds nothing to the
+        // saved summary.
+        expect(group.hash, isNot(project.hash));
+        expect(
+          aiConsentSummary(group).keys,
+          unorderedEquals(aiConsentSummary(project).keys),
+        );
+      });
+
+      testWidgets('it fits 320dp, 2x text and RTL', (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(320, 640);
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await openRecord(
+          tester,
+          policy({'updateGroupWorkItemState'}),
+          direction: TextDirection.rtl,
+        );
+        await tester.dragUntilVisible(
+          groupScope(),
+          find.byType(ListView),
+          const Offset(0, -120),
+        );
+        expect(groupScope(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    });
+
     test('model-sensitive fields and data use invalidate the hash', () {
       final original = _contract();
       expect(
@@ -403,8 +546,10 @@ AiConsentContract _contract({
     'tool_reads',
   },
   bool toolsEnabled = true,
+  AiWritePolicy? writePolicy,
 }) => AiConsentContract(
   providerId: 'provider',
+  writePolicy: writePolicy,
   origin: 'http://127.0.0.1:11434/v1',
   format: AiFormat.responses,
   cleartext: true,

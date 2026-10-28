@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "Perubahan tidak diterapkan: kolom masih bernilai lama. Baca ulang lalu coba lagi.",
   "aiRefusedDiscussionLocked": "Diskusi ini terkunci, jadi komentar atau balasan tidak dikirim.",
   "aiRefusedNotOwnNote": "Tindakan ini hanya dapat menghapus komentar yang ditulis oleh akun Anda sendiri, jadi tidak ada yang dilakukan.",
-  "aiRefusedTodoForeign": "Tugas ini milik akun lain, jadi tidak ada yang dilakukan.",
+  "aiRefusedTodoForeign": "Tidak dapat dipastikan bahwa tugas ini milik akun ini dan berada dalam cakupan percakapan ini, jadi tidak ada yang dilakukan.",
   "aiRefusedProtectedBranch": "Ini branch yang dilindungi; AI tidak dapat menghapus atau menulis ulang branch ini, jadi tidak ada yang dilakukan.",
   "aiRefusedDefaultBranch": "Branch default tidak dapat dihapus, jadi tidak ada yang dilakukan.",
   "aiRefusedMergeChecking": "GitLab masih memeriksa apakah ini dapat digabung, jadi tidak ada yang dilakukan. Coba lagi sebentar lagi.",
@@ -2844,5 +2844,15 @@
   "aiRunStartUnavailable": "Pekerjaan latar belakang tidak tersedia saat ini.",
   "aiProposalBackgroundUnavailable": "Penulisan ini tidak dilakukan: pekerjaan latar belakang tidak dapat dimulai.",
   "aiRunCleanupPending": "Pekerjaan dijeda: belum dipastikan bahwa pekerjaan latar belakang telah berakhir, dan tidak ada yang dapat dilanjutkan sebelum itu.",
-  "aiRunCleanupRetry": "Pembersihan dicoba lagi setiap kali Anda kembali ke aplikasi; pekerjaan baru dapat dilanjutkan setelah pembersihan dipastikan."
+  "aiRunCleanupRetry": "Pembersihan dicoba lagi setiap kali Anda kembali ke aplikasi; pekerjaan baru dapat dilanjutkan setelah pembersihan dipastikan.",
+  "aiProposalGroupTarget": "Item kerja #{iid}, yang langsung dimiliki grup {path}",
+  "aiProposalOwnTodo": "Hanya mengubah daftar tugas Anda sendiri (@{username}); item kerjanya sendiri tidak berubah.",
+  "aiProposalDeleteOwnNote": "Hanya menghapus komentar ini, yang Anda tulis; sebelum dikirim, aplikasi memeriksa ulang di GitLab bahwa Anda penulisnya.",
+  "aiRefusedGroupUnsupported": "GitLab tidak menyediakan fitur ini untuk item kerja grup ini (versi atau jenis item mungkin tidak mendukungnya), jadi tidak ada yang dikirim.",
+  "aiRefusedGroupUnverifiable": "Tidak dapat dipastikan bahwa item kerja ini masih langsung dimiliki grupnya (grup mungkin diganti nama atau dipindahkan), jadi tidak ada yang dikirim. Buka atau tambahkan lagi.",
+  "aiConsentWritesGroupScope": "Item kerja milik grup: AI hanya boleh mengubah item tempat percakapan ini dibuka, atau item yang Anda tambahkan sendiri; izin tidak pernah meluas ke seluruh grup, subgrupnya, atau proyek di dalamnya.",
+  "aiChatEmptyGroup": "AI membaca item kerja #{iid} milik grup {path}. Item kerja lain di grup dan proyek di dalamnya berada di luar percakapan ini.",
+  "aiChatEmptyGroupItem": "AI membaca item kerja grup ini. Item kerja lain di grup dan proyek di dalamnya berada di luar percakapan ini.",
+  "aiSuggestWorkItemSummary": "Ringkas item kerja ini",
+  "aiRemovedGroupWorkItem": "{path} #{iid} dihapus dari percakapan; AI tidak dapat mengubahnya lagi"
 }

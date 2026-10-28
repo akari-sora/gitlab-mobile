@@ -9,6 +9,8 @@ import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/work_item_graph_models.dart'
+    show GraphResourceRef;
 import 'package:gitlab_mobile/core/brand.dart';
 import 'package:gitlab_mobile/features/ai/ai_report_sender.dart';
 import 'package:gitlab_mobile/features/shell/build_info.dart';
@@ -16,6 +18,7 @@ import 'package:gitlab_mobile/features/workspace/attachment_picker.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_attachment_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
+import 'package:gitlab_mobile/features/ai/ai_scope_add.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
@@ -241,6 +244,60 @@ final class _AuditWriteSession extends _FakeWriteSession
 
   @override
   AiWriteRow? writeRowFor(AiChatItem item) => rows[item];
+}
+
+const _groupItem = AiGroupWorkItemOrigin(
+  group: GraphResourceRef(id: 'gid://gitlab/Group/7', fullPath: 'team/sub'),
+  iid: 5,
+  title: 'Plan the synthetic launch',
+);
+
+/// Cleans like the controller but cannot check one value: [unchecked].
+final class _UncheckedSession extends _FakeSession {
+  _UncheckedSession({super.origin, required this.unchecked});
+
+  final String unchecked;
+
+  @override
+  String displaySafe(String text) =>
+      text == unchecked ? '' : super.displaySafe(text);
+}
+
+/// A conversation holding one user-added group work item.
+final class _ScopeAddSession extends _FakeSession implements AiScopeAddSession {
+  _ScopeAddSession() : super(origin: _mergeRequest);
+
+  @override
+  bool get offersGroupWorkItemAdd => true;
+  @override
+  String get scopeAddInstance => 'https://example.com/gitlab';
+  @override
+  bool get canAddGroupWorkItem => phase == AiChatPhase.idle;
+  @override
+  List<AiAddedGroupWorkItem> addedGroupWorkItems = const [
+    AiAddedGroupWorkItem(
+      key: 'group:7:5',
+      fullPath: 'team/sub',
+      iid: 5,
+      title: 'Plan the synthetic launch',
+    ),
+  ];
+  final removed = <AiAddedGroupWorkItem>[];
+  @override
+  Future<AiGroupWorkItemCheck> checkGroupWorkItem(String link) async =>
+      const AiGroupWorkItemRefused(AiGroupWorkItemRefusal.unavailable);
+  @override
+  Future<AiGroupWorkItemRefusal?> addGroupWorkItem(
+    AiGroupWorkItemCandidate candidate,
+  ) async => AiGroupWorkItemRefusal.unavailable;
+  @override
+  void removeGroupWorkItem(AiAddedGroupWorkItem item) => update(() {
+    removed.add(item);
+    addedGroupWorkItems = [
+      for (final added in addedGroupWorkItems)
+        if (added.key != item.key) added,
+    ];
+  });
 }
 
 AiWriteProposal _writeProposal() => AiWriteProposal(
@@ -2695,6 +2752,242 @@ void main() {
           _host(AiChatPage(session: empty), tag: tag, scale: 2),
         );
         await tester.pump();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
+
+  // MR6b-3g full UI (§6.1): a group entry's title and scope sentence, the
+  // group write rows (target, ack versus readback, why one was not sent) and
+  // the notice when a user-added item leaves the conversation.
+  group('group work items', () {
+    testWidgets('a group entry names its group and says what is out of '
+        'scope', (tester) async {
+      final session = _FakeSession(origin: _groupItem);
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pump();
+      expect(
+        find.text('team/sub #5 Plan the synthetic launch'),
+        findsOneWidget,
+      );
+      final scope = find.byKey(const ValueKey('ai-chat-empty-scope'));
+      expect(
+        tester.widget<Text>(scope).data,
+        l10n.aiChatEmptyGroup('team/sub', 5),
+      );
+      // Never the project sentence: there is no project around the item.
+      expect(find.text(l10n.aiChatEmpty), findsNothing);
+      expect(find.text(l10n.aiSuggestWorkItemSummary), findsOneWidget);
+      expect(find.text(l10n.aiSuggestIssueNext), findsOneWidget);
+      expect(find.text(l10n.aiSuggestIssueSummary), findsNothing);
+      await tester.tap(find.text(l10n.aiSuggestWorkItemSummary));
+      await tester.pump();
+      expect(session.sent, [l10n.aiSuggestWorkItemSummary]);
+    });
+
+    testWidgets('a group path that cannot be checked is left out', (
+      tester,
+    ) async {
+      final session = _UncheckedSession(
+        origin: _groupItem,
+        unchecked: 'team/sub',
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pump();
+      expect(find.text(l10n.aiAssistantLabel), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('ai-chat-empty-scope')))
+            .data,
+        l10n.aiChatEmptyGroupItem,
+      );
+      expect(find.textContaining('team/sub'), findsNothing);
+    });
+
+    testWidgets('a project item from a group page names its project', (
+      tester,
+    ) async {
+      final session = _FakeSession(
+        origin: AiProjectWorkItemFromGroupPageOrigin(
+          viewGroupId: 7,
+          project: _project,
+          iid: 9,
+          title: 'Fix the synthetic crash',
+        ),
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pump();
+      expect(
+        find.text('team/example #9 Fix the synthetic crash'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('ai-chat-empty-scope')))
+            .data,
+        l10n.aiChatEmpty,
+      );
+      expect(find.text(l10n.aiSuggestWorkItemSummary), findsOneWidget);
+    });
+
+    testWidgets('group write rows: target, ack versus readback, and why one '
+        'was not sent', (tester) async {
+      AiToolRunItem row(String name, String target, AiWriteResultStatus s) =>
+          AiToolRunItem(
+            name: name,
+            argsPreview: target,
+            status: AiToolRunStatus.completed,
+            sizeChars: 0,
+            provenance: '',
+            writeStatus: s,
+          );
+      final confirmed = row(
+        'updateGroupWorkItemState',
+        'team/sub#5',
+        AiWriteResultStatus.readbackConfirmed,
+      );
+      final snoozed = row(
+        'snoozeTodo',
+        '@alice',
+        AiWriteResultStatus.succeeded,
+      );
+      final missing = row(
+        'updateGroupWorkItemHealthStatus',
+        'team/sub#6',
+        AiWriteResultStatus.notExecuted,
+      );
+      final lost = row(
+        'updateGroupWorkItemWeight',
+        'team/sub#7',
+        AiWriteResultStatus.notExecuted,
+      );
+      final rejected = row(
+        'setGroupWorkItemNotifications',
+        'team/sub#8',
+        AiWriteResultStatus.notExecuted,
+      );
+      final uncertain = row(
+        'createGroupWorkItemActivityComment',
+        'team/sub#9',
+        AiWriteResultStatus.writeUncertain,
+      );
+      final session = _AuditWriteSession(
+        items: [confirmed, snoozed, missing, lost, rejected, uncertain],
+      );
+      AiWriteRow audit(String operationId, AiJournalState state, String code) =>
+          AiWriteRow(
+            operationId: operationId,
+            outcome: AiWriteOutcome(state: state, reasonCode: code),
+          );
+      session.rows
+        ..[confirmed] = audit(
+          'updateGroupWorkItemState',
+          AiJournalState.succeeded,
+          'succeeded',
+        )
+        ..[snoozed] = audit('snoozeTodo', AiJournalState.succeeded, 'succeeded')
+        ..[missing] = audit(
+          'updateGroupWorkItemHealthStatus',
+          AiJournalState.notExecuted,
+          'healthUnsupported',
+        )
+        ..[lost] = audit(
+          'updateGroupWorkItemWeight',
+          AiJournalState.notExecuted,
+          'workItemUnverifiable',
+        )
+        ..[rejected] = audit(
+          'setGroupWorkItemNotifications',
+          AiJournalState.notExecuted,
+          'userRejected',
+        )
+        ..[uncertain] = audit(
+          'createGroupWorkItemActivityComment',
+          AiJournalState.writeUncertain,
+          'writeUncertain',
+        );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      // The group path and `#5` are two pieces, never `team/sub#5`.
+      expect(
+        find.text(
+          '${aiOperationLabel('updateGroupWorkItemState')} · team/sub #5',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('team/sub#'), findsNothing);
+      // Readback-confirmed and acknowledged-only stay distinct: the snooze
+      // has no readback (D30), so it never claims one.
+      expect(find.text(l10n.aiWriteStatusConfirmed), findsOneWidget);
+      expect(find.text(l10n.aiWriteStatusSucceeded), findsOneWidget);
+      expect(
+        find.text('${aiOperationLabel('snoozeTodo')} · @alice'),
+        findsOneWidget,
+      );
+      // Not sent: a missing feature and a lost ownership proof each say why;
+      // a card the user rejected has nothing to add.
+      expect(find.text(l10n.aiWriteStatusNotExecuted), findsNWidgets(3));
+      final reasons = find.byKey(const ValueKey('ai-write-row-reason'));
+      expect(reasons, findsNWidgets(2));
+      expect(find.text(l10n.aiRefusedGroupUnsupported), findsOneWidget);
+      expect(find.text(l10n.aiRefusedGroupUnverifiable), findsOneWidget);
+      // An uncertain comment is never shown as failed or as not sent.
+      expect(find.text(l10n.aiWriteStatusUncertain), findsOneWidget);
+      expect(find.text(l10n.aiWriteStatusFailed), findsNothing);
+    });
+
+    testWidgets('removing a user-added item says the AI can no longer '
+        'change it', (tester) async {
+      final session = _ScopeAddSession();
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pump();
+      final chip = find.byKey(const ValueKey('ai-added-group-item-group:7:5'));
+      expect(chip, findsOneWidget);
+      await tester.tap(
+        find.descendant(
+          of: chip,
+          matching: find.byTooltip(l10n.aiRemoveGroupWorkItem),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(session.removed.single.key, 'group:7:5');
+      expect(chip, findsNothing);
+      expect(
+        find.text(l10n.aiRemovedGroupWorkItem('team/sub', 5)),
+        findsOneWidget,
+      );
+    });
+
+    for (final tag in const ['zh-TW', 'ar']) {
+      testWidgets('a group entry fits 320dp at 2x in $tag', (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(320, 640);
+        addTearDown(tester.view.reset);
+        useLanguage(languageForTag(tag)!);
+        const long = AiGroupWorkItemOrigin(
+          group: GraphResourceRef(
+            id: 'gid://gitlab/Group/7',
+            fullPath:
+                'synthetic-organisation/platform-division/mobile-applications',
+          ),
+          iid: 4242,
+          title: 'A long synthetic plan for the next mobile release',
+        );
+        final session = _FakeSession(origin: long);
+        await tester.pumpWidget(
+          _host(AiChatPage(session: session), tag: tag, scale: 2),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        final scope = find.byKey(const ValueKey('ai-chat-empty-scope'));
+        await tester.ensureVisible(scope);
+        if (tag == 'ar') {
+          expect(Directionality.of(tester.element(scope)), TextDirection.rtl);
+          expect(
+            tester.widget<Text>(scope).data,
+            contains('\u2068#4242\u2069'),
+          );
+        }
         expect(tester.takeException(), isNull);
       });
     }

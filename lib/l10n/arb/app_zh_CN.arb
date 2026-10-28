@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "这次变更没有生效，字段仍是原来的值。请重新读取后再试一次。",
   "aiRefusedDiscussionLocked": "这个讨论已锁定，不能添加评论或回复，所以没有执行。",
   "aiRefusedNotOwnNote": "这个写入只能删除你自己账号写的评论，所以没有执行。",
-  "aiRefusedTodoForeign": "这个待办事项不属于当前的账号，所以没有执行。",
+  "aiRefusedTodoForeign": "无法确认这个待办事项属于当前的账号，且在这个对话可处理的范围内，所以没有执行。",
   "aiRefusedProtectedBranch": "这是受保护的分支，AI 不能删除或改写它，所以没有执行。",
   "aiRefusedDefaultBranch": "不能删除默认分支，所以没有执行。",
   "aiRefusedMergeChecking": "GitLab 还在检查能否合并，所以没有执行。请稍后再试。",
@@ -2844,5 +2844,15 @@
   "aiRunStartUnavailable": "后台运行目前不可用。",
   "aiProposalBackgroundUnavailable": "这笔写入没有执行：后台运行无法启动。",
   "aiRunCleanupPending": "工作已暂停：还无法确认后台工作已经结束，在此之前不能继续。",
-  "aiRunCleanupRetry": "每次回到应用时都会再次尝试清理；只有清理确认完成后，工作才能继续。"
+  "aiRunCleanupRetry": "每次回到应用时都会再次尝试清理；只有清理确认完成后，工作才能继续。",
+  "aiProposalGroupTarget": "直接属于群组 {path} 的工作项 #{iid}",
+  "aiProposalOwnTodo": "只会更改你（@{username}）自己的待办列表，不会改动工作项本身。",
+  "aiProposalDeleteOwnNote": "只会删除你自己写的这条评论；发送前会再向 GitLab 确认作者是你。",
+  "aiRefusedGroupUnsupported": "GitLab 没有为这个群组工作项提供这项功能（可能是版本或工作项类型不支持），所以没有发送。",
+  "aiRefusedGroupUnverifiable": "无法确认这个工作项仍直接属于它的群组（群组可能已改名或移动），所以没有发送。请重新打开或添加它。",
+  "aiConsentWritesGroupScope": "群组拥有的工作项：AI 只能修改这个对话打开的那一项，或你自己添加到对话的项；授权不会扩展到整个群组、子群组或群组里的项目。",
+  "aiChatEmptyGroup": "AI 会读取群组 {path} 的工作项 #{iid}。群组的其他工作项和群组里的项目不在这个对话的范围内。",
+  "aiChatEmptyGroupItem": "AI 会读取这个群组工作项。群组的其他工作项和群组里的项目不在这个对话的范围内。",
+  "aiSuggestWorkItemSummary": "总结此工作项",
+  "aiRemovedGroupWorkItem": "已从对话移除 {path} #{iid}，AI 不能再修改它"
 }

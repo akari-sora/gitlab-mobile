@@ -2714,7 +2714,7 @@
   "aiRefusedNotApplied": "Ändringen fick ingen effekt: fältet har fortfarande det gamla värdet. Läs om och försök igen.",
   "aiRefusedDiscussionLocked": "Den här diskussionen är låst, så kommentaren eller svaret skickades inte.",
   "aiRefusedNotOwnNote": "Denna åtgärd får bara ta bort kommentarer som skrivits av ditt eget konto, så ingenting gjordes.",
-  "aiRefusedTodoForeign": "Denna att-göra tillhör ett annat konto, så ingenting gjordes.",
+  "aiRefusedTodoForeign": "Det gick inte att bekräfta att denna att-göra tillhör det här kontot och ingår i den här konversationen, så ingenting gjordes.",
   "aiRefusedProtectedBranch": "Det här är en skyddad gren; AI kan inte ta bort eller skriva om den, så ingenting gjordes.",
   "aiRefusedDefaultBranch": "Standardgrenen kan inte tas bort, så ingenting gjordes.",
   "aiRefusedMergeChecking": "GitLab kontrollerar fortfarande om detta kan slås samman, så ingenting gjordes. Försök igen om en stund.",
@@ -2844,5 +2844,15 @@
   "aiRunStartUnavailable": "Arbete i bakgrunden är inte tillgängligt just nu.",
   "aiProposalBackgroundUnavailable": "Den här skrivningen gjordes inte: arbetet i bakgrunden kunde inte starta.",
   "aiRunCleanupPending": "Arbetet pausat: det är ännu inte bekräftat att arbetet i bakgrunden har avslutats, och inget kan fortsätta innan dess.",
-  "aiRunCleanupRetry": "Rensningen görs om varje gång du återvänder till appen; arbetet kan fortsätta först när rensningen har bekräftats."
+  "aiRunCleanupRetry": "Rensningen görs om varje gång du återvänder till appen; arbetet kan fortsätta först när rensningen har bekräftats.",
+  "aiProposalGroupTarget": "Arbetsobjekt #{iid}, som hör direkt till gruppen {path}",
+  "aiProposalOwnTodo": "Ändrar bara din egen att-göra-lista (@{username}); själva arbetsobjektet ändras inte.",
+  "aiProposalDeleteOwnNote": "Tar bara bort den här kommentaren, som du har skrivit; innan den skickas kontrollerar appen igen i GitLab att du är författaren.",
+  "aiRefusedGroupUnsupported": "GitLab erbjuder inte detta för gruppens arbetsobjekt (versionen eller objekttypen kanske inte stöder det), så ingenting skickades.",
+  "aiRefusedGroupUnverifiable": "Det gick inte att bekräfta att arbetsobjektet fortfarande hör direkt till sin grupp (gruppen kan ha bytt namn eller flyttats), så ingenting skickades. Öppna eller lägg till det igen.",
+  "aiConsentWritesGroupScope": "Arbetsobjekt som en grupp äger: AI får bara ändra det som den här konversationen öppnades för, eller sådana du själv lägger till; behörigheten gäller aldrig hela gruppen, dess undergrupper eller dess projekt.",
+  "aiChatEmptyGroup": "AI läser arbetsobjekt #{iid} i gruppen {path}. Gruppens andra arbetsobjekt och dess projekt ingår inte i den här konversationen.",
+  "aiChatEmptyGroupItem": "AI läser det här arbetsobjektet i gruppen. Gruppens andra arbetsobjekt och dess projekt ingår inte i den här konversationen.",
+  "aiSuggestWorkItemSummary": "Sammanfatta arbetsobjektet",
+  "aiRemovedGroupWorkItem": "{path} #{iid} har tagits bort från konversationen; AI kan inte längre ändra det"
 }

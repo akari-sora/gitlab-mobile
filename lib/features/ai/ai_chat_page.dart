@@ -106,24 +106,37 @@ String aiOriginTitle(
 }) {
   final value = switch (origin) {
     AiInboxOrigin() => l10n.aiInboxChatTitle,
-    AiGeneralOrigin() ||
-    AiGroupWorkItemOrigin() ||
-    AiProjectWorkItemFromGroupPageOrigin() => null,
+    AiGeneralOrigin() => null,
     AiJobOrigin(:final jobName) => safe(jobName),
-    AiWorkItemOrigin(:final title) => safe(title),
+    AiWorkItemOrigin(:final title) ||
+    AiGroupWorkItemOrigin(:final title) ||
+    AiProjectWorkItemFromGroupPageOrigin(:final title) => safe(title),
     AiFileOrigin(:final path) => safe(path.split('/').last),
   };
+  // The owner a group page names: the group that owns its own work item, or
+  // the project that owns one listed on the group page. Without it `#5`
+  // could be any group's or project's item.
+  final owner = switch (origin) {
+    AiGroupWorkItemOrigin(:final group) => safe(group.fullPath),
+    AiProjectWorkItemFromGroupPageOrigin(:final project) => safe(project.path),
+    _ => null,
+  };
   // An empty value is one that could not be checked against the secrets.
-  if (value == null || value.isEmpty) return l10n.aiAssistantLabel;
+  if (value == null || value.isEmpty || owner?.isEmpty == true) {
+    return l10n.aiAssistantLabel;
+  }
   return switch (origin) {
     AiInboxOrigin() => l10n.aiInboxChatTitle,
-    AiGeneralOrigin() ||
-    AiGroupWorkItemOrigin() ||
-    AiProjectWorkItemFromGroupPageOrigin() => l10n.aiAssistantLabel,
+    AiGeneralOrigin() => l10n.aiAssistantLabel,
     AiJobOrigin() => l10n.aiChatJobTitle(value),
     AiWorkItemOrigin(:final kind, :final iid) =>
       '${isolated(kind == AiWorkItemKind.mergeRequest ? '!$iid' : '#$iid')} '
           '${isolated(value)}',
+    // Each piece isolated on its own: path, `#iid`, then the title.
+    AiGroupWorkItemOrigin(:final iid) ||
+    AiProjectWorkItemFromGroupPageOrigin(
+      :final iid,
+    ) => '${isolated(owner!)} ${isolated('#$iid')} ${isolated(value)}',
     AiFileOrigin() => isolated(value),
   };
 }
@@ -131,15 +144,19 @@ String aiOriginTitle(
 List<String> _suggestions(AiChatOrigin origin) => switch (origin) {
   // The Inbox conversation can only mark to-dos done; it cannot read them.
   AiInboxOrigin() => [l10n.aiSuggestInboxMarkAll],
-  AiGeneralOrigin() ||
-  AiGroupWorkItemOrigin() ||
-  AiProjectWorkItemFromGroupPageOrigin() => const [],
+  AiGeneralOrigin() => const [],
   AiJobOrigin() => [l10n.aiSuggestJobWhy, l10n.aiSuggestJobFix],
   AiWorkItemOrigin(kind: AiWorkItemKind.mergeRequest) => [
     l10n.aiSuggestMrSummary,
     l10n.aiSuggestMrRisks,
   ],
   AiWorkItemOrigin() => [l10n.aiSuggestIssueSummary, l10n.aiSuggestIssueNext],
+  // A group page lists work items of any type (an epic, an objective, a
+  // task), so the suggestion names a work item rather than an issue.
+  AiGroupWorkItemOrigin() || AiProjectWorkItemFromGroupPageOrigin() => [
+    l10n.aiSuggestWorkItemSummary,
+    l10n.aiSuggestIssueNext,
+  ],
   AiFileOrigin() => [l10n.aiSuggestFileExplain, l10n.aiSuggestFileReview],
 };
 
@@ -477,6 +494,15 @@ class _AiChatPageState extends State<AiChatPage> {
         final below = _pageBody.currentContext;
         if (below != null && below.mounted) showFailure(below, error);
     }
+  }
+
+  /// Takes a user-added item out of the conversation and says what that
+  /// means: the AI can no longer change it. Offered only while idle, so no
+  /// card for it is waiting.
+  void _removeGroupWorkItem(AiScopeAddSession adds, AiAddedGroupWorkItem item) {
+    adds.removeGroupWorkItem(item);
+    // `#{iid}` is isolated with its sigil by the generated message.
+    _notice(l10n.aiRemovedGroupWorkItem(isolated(item.fullPath), item.iid));
   }
 
   /// The page body, below [_messenger]: failure snack bars land here.
@@ -898,7 +924,8 @@ class _AiChatPageState extends State<AiChatPage> {
                                     // Like attachments: changed only while
                                     // nothing runs.
                                     onRemove: _session.phase == AiChatPhase.idle
-                                        ? adds.removeGroupWorkItem
+                                        ? (item) =>
+                                              _removeGroupWorkItem(adds, item)
                                         : null,
                                   ),
                                 _ => null,
@@ -1018,6 +1045,7 @@ class _AiChatPageState extends State<AiChatPage> {
     if (items.isEmpty) {
       return _EmptyConversation(
         origin: _session.origin,
+        safe: _session.displaySafe,
         enabled: _session.canSend,
         onSuggestion: _send,
         notice: notice,
@@ -1237,6 +1265,7 @@ class _BlockerCard extends StatelessWidget {
 class _EmptyConversation extends StatelessWidget {
   const _EmptyConversation({
     required this.origin,
+    required this.safe,
     required this.enabled,
     required this.onSuggestion,
     this.notice,
@@ -1244,6 +1273,9 @@ class _EmptyConversation extends StatelessWidget {
   });
 
   final AiChatOrigin origin;
+
+  /// Cleans a GitLab value (the group path) before it is shown.
+  final String Function(String text) safe;
   final bool enabled;
   final ValueChanged<String> onSuggestion;
   final Widget? notice;
@@ -1264,9 +1296,20 @@ class _EmptyConversation extends StatelessWidget {
         Icon(Icons.auto_awesome, size: 40, color: theme.colorScheme.primary),
         const SizedBox(height: 12),
         Text(
-          origin is AiGeneralOrigin
-              ? l10n.aiChatEmptyGeneral
-              : l10n.aiChatEmpty,
+          switch (origin) {
+            AiGeneralOrigin() => l10n.aiChatEmptyGeneral,
+            // A group's own work item has no project to read around it: the
+            // conversation covers this item, not the group's other items or
+            // its projects. A path that cannot be checked is left out.
+            AiGroupWorkItemOrigin(:final group, :final iid) => switch (safe(
+              group.fullPath,
+            )) {
+              '' => l10n.aiChatEmptyGroupItem,
+              final path => l10n.aiChatEmptyGroup(isolated(path), iid),
+            },
+            _ => l10n.aiChatEmpty,
+          },
+          key: const ValueKey('ai-chat-empty-scope'),
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
@@ -1872,6 +1915,17 @@ class _ToolRow extends StatelessWidget {
       null => null,
     };
     final excerpt = item.resultExcerpt.trim();
+    // A write that was not made, or that GitLab refused, says why: a missing
+    // capability, a lost check or a refusal read differently, and the card
+    // that showed it is gone once the write settles (or never appeared for
+    // an automatic write). A rejected card has nothing more to say.
+    final reasonCode = audit?.outcome?.reasonCode;
+    final reason =
+        reasonCode != null &&
+            (write == AiWriteResultStatus.notExecuted ||
+                write == AiWriteResultStatus.failedCertain)
+        ? aiRefusalText(reasonCode, operationId: item.name)
+        : null;
     // What was read on the first line, how it went on the second.
     final header = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1893,7 +1947,7 @@ class _ToolRow extends StatelessWidget {
               Text(
                 item.argsPreview.isEmpty
                     ? label
-                    : '$label · ${isolated(item.argsPreview)}',
+                    : '$label · ${aiWriteTargetText(item.name, item.argsPreview)}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -1908,6 +1962,24 @@ class _ToolRow extends StatelessWidget {
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              if (reason != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 14, color: muted),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          reason,
+                          key: const ValueKey('ai-write-row-reason'),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               // An automatic rerun or play may reuse stored variables; the
               // card that would have said so never appeared (§0 item 12).
               if (audit?.outcome?.auditNotice == 'storedVariablesMayApply')
