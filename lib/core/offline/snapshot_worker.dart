@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import '../gitlab_api.dart' show OfflineRequestFailure;
 import 'git_object_id.dart';
 import 'snapshot_schema.dart';
 import 'snapshot_store.dart';
@@ -714,6 +715,9 @@ final class SnapshotWorker {
       throw const SnapshotWorkerException(SnapshotFailure.network);
     } on SnapshotWorkerException {
       if (!_result.isCompleted) await stop();
+      rethrow;
+    } on OfflineRequestFailure {
+      await stop();
       rethrow;
     } catch (_) {
       await stop();

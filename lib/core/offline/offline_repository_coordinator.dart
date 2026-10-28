@@ -115,7 +115,9 @@ final class OfflineRepositoryCoordinator {
 
   void bindApi(GitLabApi api, DiskBinding binding) {
     checkOfflineApiBinding(api, binding);
-    _account(binding.accountKey).api = api;
+    final a = _account(binding.accountKey);
+    a.api = api;
+    a.apiBinding = binding;
     api.bindOfflineAccess(
       binding: binding,
       onAccessLoss: accessLost,
@@ -137,17 +139,37 @@ final class OfflineRepositoryCoordinator {
   void open(DiskBinding binding, {bool readOnly = false}) {
     final a = _account(binding.accountKey);
     if (a.localCleanupPending) return;
-    a.epoch++;
-    a.binding = binding;
-    a.state = readOnly
+    final state = readOnly
         ? OfflineRepositoryState.offlineReadOnly
         : OfflineRepositoryState.ready;
+    // C2 reopens the same namespace after foreground resume. Its workers and
+    // project-removal barriers still own these epochs and must keep them.
+    if (a.binding == binding && a.state == state) return;
+    a.epoch++;
+    a.binding = binding;
+    a.state = state;
     a.store = null;
     a.storeKey = null;
-    a.revoked.clear();
     a.validationTicket = null;
+    final pending = <int>{...a.revoked, ...a.pendingRevocations};
+    // Install every early fence before synchronous observers can capture a
+    // reader. Binding the HTTP sinks alone does not start storage I/O.
+    a.revoked.addAll(pending);
     _emit(binding);
-    if (!readOnly) unawaited(_activate(binding));
+    if (!readOnly) {
+      a.pendingRevocations.removeAll(pending);
+      for (final projectId in pending) {
+        accessLost(
+          OfflineAccessLoss(
+            binding: binding,
+            projectId: projectId,
+            scope: OfflineAccessScope.project,
+            status: 403,
+          ),
+        );
+      }
+      unawaited(_activate(binding));
+    }
   }
 
   Future<void> _activate(DiskBinding binding) async {
@@ -388,12 +410,7 @@ final class OfflineRepositoryCoordinator {
     var key = await _keys!.read(p.binding.accountKey);
     p.check();
     if (key.status == OfflineKeyStatus.unavailable) {
-      a.state = OfflineRepositoryState.unavailable;
-      a.epoch++;
-      a.store = null;
-      a.storeKey = null;
-      _emit(p.binding);
-      throw const SnapshotOperationException(SnapshotFailure.keyUnavailable);
+      _keyUnavailable(p);
     }
     if (a.store != null) {
       if (key.status == OfflineKeyStatus.found &&
@@ -402,12 +419,7 @@ final class OfflineRepositoryCoordinator {
           _sameBytes(a.storeKey!, key.bytes!)) {
         return a.store;
       }
-      a.state = OfflineRepositoryState.unavailable;
-      a.epoch++;
-      a.store = null;
-      a.storeKey = null;
-      _emit(p.binding);
-      throw const SnapshotOperationException(SnapshotFailure.keyUnavailable);
+      _keyUnavailable(p);
     }
     if (key.status == OfflineKeyStatus.absent && !create) return null;
     final root = await _root!();
@@ -419,7 +431,7 @@ final class OfflineRepositoryCoordinator {
         rootKey: Uint8List(32),
       );
       if (probe.usage() != 0) {
-        throw const SnapshotOperationException(SnapshotFailure.keyUnavailable);
+        _keyUnavailable(p);
       }
       final random = Random.secure();
       final bytes = Uint8List.fromList(
@@ -433,15 +445,13 @@ final class OfflineRepositoryCoordinator {
       if (key.status != OfflineKeyStatus.found ||
           key.bytes == null ||
           !_sameBytes(bytes, key.bytes!)) {
-        a.state = OfflineRepositoryState.unavailable;
-        throw const SnapshotOperationException(SnapshotFailure.keyUnavailable);
+        _keyUnavailable(p);
       }
     }
     if (key.status != OfflineKeyStatus.found ||
         key.bytes == null ||
         key.bytes!.length != 32) {
-      a.state = OfflineRepositoryState.unavailable;
-      throw const SnapshotOperationException(SnapshotFailure.keyUnavailable);
+      _keyUnavailable(p);
     }
     final store = SnapshotStore(
       supportRoot: root,
@@ -457,6 +467,16 @@ final class OfflineRepositoryCoordinator {
     a.store = store;
     a.storeKey = Uint8List.fromList(key.bytes!);
     return store;
+  }
+
+  Never _keyUnavailable(SnapshotPermit p) {
+    final a = _account(p.binding.accountKey);
+    a.state = OfflineRepositoryState.unavailable;
+    a.epoch++;
+    a.store = null;
+    a.storeKey = null;
+    _emit(p.binding);
+    throw const SnapshotOperationException(SnapshotFailure.keyUnavailable);
   }
 
   Future<List<SnapshotRecord>> snapshots(DiskBinding binding) async {
@@ -517,8 +537,19 @@ final class OfflineRepositoryCoordinator {
     }
   }
 
-  Future<void> deleteDirectory(String key) =>
-      _locked(_account(key), () => _deleteDirectory!(key));
+  Future<void> deleteDirectory(String key) {
+    final a = _account(key);
+    final epoch = a.epoch;
+    return _locked(a, () async {
+      await _deleteDirectory!(key);
+      if (a.epoch == epoch && a.state == OfflineRepositoryState.cleaning) {
+        // C2 can complete an account-wide clear without calling clearAll.
+        // Retire its old fences; denials queued during cleanup stay pending.
+        a.revoked.clear();
+      }
+    });
+  }
+
   void _emit(DiskBinding binding) => _changes.add(binding);
   static String newId() {
     final random = Random.secure();
@@ -530,7 +561,11 @@ final class OfflineRepositoryCoordinator {
 
   void accessLost(OfflineAccessLoss event) {
     final a = _account(event.binding.accountKey);
+    if (a.apiBinding != null && a.apiBinding != event.binding) return;
     if (a.binding != event.binding || a.state != OfflineRepositoryState.ready) {
+      if (a.apiBinding == event.binding) {
+        a.pendingRevocations.add(event.projectId);
+      }
       return;
     }
     a.projectEpochs.update(event.projectId, (v) => v + 1, ifAbsent: () => 1);
@@ -747,12 +782,10 @@ final class OfflineRepositoryCoordinator {
           throw const SnapshotOperationException(SnapshotFailure.sessionEnded);
         }
         a.localCleanupPending = false;
-        a.epoch++;
-        a.state = readOnly
-            ? OfflineRepositoryState.offlineReadOnly
-            : OfflineRepositoryState.ready;
         a.revoked.clear();
-        _emit(binding);
+        // Reuse admission so denials received during cleanup are fenced and
+        // replayed before readers can observe the reopened account.
+        open(binding, readOnly: readOnly);
         return;
       }
       throw const SnapshotOperationException(SnapshotFailure.storageError);
@@ -774,12 +807,14 @@ bool _sameBytes(List<int> a, List<int> b) {
 final class _OfflineAccount {
   OfflineRepositoryState state = OfflineRepositoryState.closed;
   DiskBinding? binding;
+  DiskBinding? apiBinding;
   GitLabApi? api;
   SnapshotStore? store;
   Uint8List? storeKey;
   int epoch = 0;
   final projectEpochs = <int, int>{};
   final revoked = <int>{};
+  final pendingRevocations = <int>{};
   final jobs = <String, _OfflineJob>{};
   Future<void> tail = Future<void>.value();
   final removals = <int, Future<void>>{};

@@ -424,10 +424,30 @@ final class SnapshotStore {
       throw const SnapshotStoreException(SnapshotStoreError.corrupt);
     }
     final plain = index.encode();
-    // A complete index entry may only reference a readable final tree and
+    // Only newly published or materially changed complete entries need their
+    // entire tree checked. Existing entries may have lost a blob since their
+    // publication; that damage must not prevent unrelated metadata, removal,
+    // or a replacement save from being committed. Probe metadata does not
+    // change the published snapshot identity or contents.
+    final previous = await readIndex();
+    final completed = <String, SnapshotRecord>{
+      for (final record in previous?.snapshots ?? const <SnapshotRecord>[])
+        if (record.status == SnapshotStatus.complete) record.id: record,
+    };
+    String publication(SnapshotRecord record) {
+      final fields = record.toJson()
+        ..remove('headSha')
+        ..remove('probe')
+        ..remove('probedAt');
+      return jsonEncode(fields);
+    }
+
+    // New complete entries may only reference a readable final tree and
     // present regular blob files. Hash and AEAD are rechecked when blobs open.
     for (final record in index.snapshots) {
       if (record.status != SnapshotStatus.complete) continue;
+      final prior = completed[record.id];
+      if (prior != null && publication(prior) == publication(record)) continue;
       final tree = await readTree(record);
       if (tree == null) {
         throw const SnapshotStoreException(SnapshotStoreError.corrupt);
@@ -485,6 +505,35 @@ final class SnapshotStore {
       subPath: record.subPath,
       complete: record.status == SnapshotStatus.complete,
     );
+  }
+
+  /// Check a completed snapshot before deciding a same-version save is a
+  /// no-op. Missing or corrupt content is repairable; untrusted paths and
+  /// unavailable storage remain errors and must not be treated as absence.
+  Future<bool> hasReadableSnapshot(SnapshotRecord record) async {
+    try {
+      final tree = await readTree(record);
+      if (tree == null) return false;
+      for (final entry in tree.entries) {
+        if (entry.type != SnapshotEntryType.blob ||
+            entry.state != SnapshotEntryState.saved) {
+          continue;
+        }
+        final bytes = await readBlob(record.objectFormat, entry.id);
+        if (bytes == null || bytes.length != entry.size) return false;
+      }
+      return true;
+    } on SnapshotStoreException catch (error) {
+      if (error.code == SnapshotStoreError.corrupt ||
+          error.code == SnapshotStoreError.authenticationFailed ||
+          error.code == SnapshotStoreError.tooLarge) {
+        return false;
+      }
+      rethrow;
+    } on SnapshotSchemaException catch (error) {
+      if (error.code == SnapshotSchemaError.newerSchema) rethrow;
+      return false;
+    }
   }
 
   Future<void> writeTree(

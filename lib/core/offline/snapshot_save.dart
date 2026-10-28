@@ -129,6 +129,8 @@ final class SnapshotSaveQueue {
       );
     }
     if (_pending.length >= 5) {
+      // C3a uses storageFull for both queue admission and disk capacity. C3b
+      // must distinguish this pre-enqueue refusal from a failed save job.
       throw const SnapshotOperationException(SnapshotFailure.storageFull);
     }
     if (request.projectId <= 0 ||
@@ -528,7 +530,9 @@ final class SnapshotSaveQueue {
                 SnapshotFailure.invalidTree,
               );
             }
-            if (replaced?.sha == record!.sha) {
+            if (replaced != null &&
+                replaced.sha == record!.sha &&
+                await store.hasReadableSnapshot(replaced)) {
               sameVersion = true;
               return;
             }
