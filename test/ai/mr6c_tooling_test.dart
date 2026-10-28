@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:crypto/crypto.dart';
+import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
@@ -338,6 +339,47 @@ Future<void> main() async {
     },
   );
 
+  test('C6 invalid sequence probe never starts a native permit', () async {
+    TestWidgetsFlutterBinding.ensureInitialized()
+        .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    const channel = MethodChannel('mr6c-invalid-probe-mock');
+    final nativeCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          nativeCalls.add(call);
+          // Reproduce the pre-C6 host mock's incorrect probe acknowledgement.
+          return {
+            'version': 1,
+            'status': 'updated',
+            'permitId': 'host-test-permit',
+          };
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final owner = AiBackgroundExecution(
+      accountKey: 'synthetic-account',
+      generation: 1,
+      ownerApi: Object(),
+      isCurrent: () => true,
+      appInForeground: () => true,
+      channel: channel,
+    );
+    addTearDown(owner.dispose);
+    final gate = owner.createGate(
+      conversationId: () => 'synthetic-conversation',
+      isCurrent: () => true,
+    );
+    addTearDown(gate.dispose);
+    final start = await gate.beginRun(runId: 'synthetic-run');
+    expect(start.disposition, AiBackgroundStartDisposition.foregroundOnly);
+    expect(start.failure, AiBackgroundStartFailure.channelUnavailable);
+    expect(owner.status, AiBackgroundExecutionStatus.foregroundOnly);
+    expect(gate.binding.permitId, isNull);
+    expect(nativeCalls.map((call) => call.method), ['updateProgress']);
+  });
+
   test(
     'V9 prepare reaches a held production journal dispatch on a host mock channel',
     () async {
@@ -349,17 +391,15 @@ Future<void> main() async {
           .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       const channel = MethodChannel('mr6c-host-native-mock');
       var ticket = 0;
+      var nativeActive = false;
+      final nativeCalls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
+            nativeCalls.add(call);
             final args = call.arguments as Map<Object?, Object?>;
             switch (call.method) {
-              case 'moveTaskToBack':
-                return {
-                  'version': 1,
-                  'status': 'unsupported',
-                  'reason': 'not_implemented',
-                };
               case 'startRuns':
+                nativeActive = true;
                 return {
                   'version': 1,
                   'status': 'active',
@@ -368,6 +408,13 @@ Future<void> main() async {
                   'opSeq': args['opSeq'],
                 };
               case 'acquireContinuation':
+                if (!nativeActive || args['permitId'] != 'host-test-permit') {
+                  return {
+                    'version': 1,
+                    'status': 'rejected',
+                    'reason': 'permit_inactive',
+                  };
+                }
                 return {
                   'version': 1,
                   'status': 'ticket',
@@ -378,15 +425,29 @@ Future<void> main() async {
                       '00000000-0000-4000-8000-${(++ticket).toString().padLeft(12, '0')}',
                 };
               case 'updateProgress':
+                if (!nativeActive || args['permitId'] != 'host-test-permit') {
+                  return {
+                    'version': 1,
+                    'status': 'rejected',
+                    'reason': 'permit_inactive',
+                  };
+                }
                 return {
                   'version': 1,
                   'status': 'updated',
                   'permitId': 'host-test-permit',
                 };
               case 'stopAll':
+                nativeActive = false;
                 return {'version': 1, 'status': 'stopped'};
               case 'releaseRuns':
-                return {'version': 1, 'status': 'released', 'didRelease': true};
+                final didRelease = nativeActive;
+                nativeActive = false;
+                return {
+                  'version': 1,
+                  'status': 'released',
+                  'didRelease': didRelease,
+                };
             }
             throw StateError('unexpected native method');
           });
@@ -403,13 +464,44 @@ Future<void> main() async {
         'variant': 'task_manager_stop',
       });
       final fixture = QaV9Fixture(sandbox, command, testChannel: channel);
+      addTearDown(() {
+        fixture.registry.dispose();
+        fixture.settings.dispose();
+        fixture.session.dispose();
+      });
       final barrier = await fixture.prepare().timeout(
         const Duration(seconds: 20),
       );
       expect(barrier.dispatchAccepted, isTrue);
       expect(barrier.journalFlushed, isTrue);
+      expect(barrier.nativeServiceActive, isTrue);
       expect(barrier.mutationCalls, 1);
       expect(barrier.modelCalls, greaterThan(0));
+      expect(nativeActive, isTrue);
+      expect(
+        fixture.registry.backgroundExecution.status,
+        AiBackgroundExecutionStatus.active,
+      );
+      expect(fixture.registry.backgroundExecution.serviceWorkCount, 1);
+      expect(nativeCalls.first.method, 'updateProgress');
+      expect(
+        nativeCalls.first.arguments,
+        containsPair('permitId', 'sequence-probe'),
+      );
+      expect(
+        nativeCalls.where((call) => call.method == 'startRuns'),
+        hasLength(1),
+      );
+      expect(
+        nativeCalls
+            .where((call) => call.method == 'acquireContinuation')
+            .map((call) => (call.arguments as Map)['kind']),
+        containsAll(['model', 'mutation']),
+      );
+      expect(
+        nativeCalls.where((call) => call.method == 'moveTaskToBack'),
+        isEmpty,
+      );
       expect(
         fixture.journal.entries(sandbox.account.key).single.state,
         AiJournalState.dispatching,
@@ -427,9 +519,6 @@ Future<void> main() async {
         (await sandbox.verifyRecovery(recoverCommand))['execution_digest'],
         barrier.executionDigest,
       );
-      fixture.registry.dispose();
-      fixture.settings.dispose();
-      fixture.session.dispose();
     },
   );
 }

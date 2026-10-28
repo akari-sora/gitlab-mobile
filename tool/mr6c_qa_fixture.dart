@@ -494,6 +494,8 @@ final class QaV9Fixture {
           entries.single.state == AiJournalState.dispatching &&
           registry.backgroundExecution.status ==
               AiBackgroundExecutionStatus.active &&
+          controller.executionStatus == AiChatExecutionStatus.active &&
+          registry.backgroundExecution.serviceWorkCount == 1 &&
           _providerAdapter.calls > 0 &&
           _gitlab.mutations == 1,
     );
