@@ -128,6 +128,75 @@ void _assertOwnershipRead(RequestOptions request, bool snoozed) {
 
 void main() {
   for (final snoozed in [false, true]) {
+    test('selected group and project ownership use the same P=5 for snoozed=$snoozed', () async {
+      for (final selectedGroup in [false, true]) {
+        var ownershipReads = 0;
+        final adapter = FakeAdapter((request) {
+          if (request.uri.path == '/gitlab/api/v4/user') {
+            return jsonResponse({'id': 3, 'username': 'synthetic', 'name': 'Synthetic'});
+          }
+          _assertOwnershipRead(request, snoozed);
+          ownershipReads++;
+          final node = selectedGroup ? _groupOwnershipTodo(19) : _issueOwnershipTodo(19);
+          if (snoozed) node['snoozedUntil'] = '2030-01-01T00:00:00Z';
+          return jsonResponse(_ownershipPage([
+            if (ownershipReads == 1) _groupIssueOwnershipTodo(20),
+            if (ownershipReads == 4) node,
+          ], more: ownershipReads < 4, cursor: ownershipReads < 4 ? 'page$ownershipReads' : null));
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final context = api.captureGroupReadEpoch();
+        final user = await api.currentUser();
+        final owned = await (snoozed
+            ? api.selectedTodoForUnsnooze(19, expectedUserId: user.id,
+                generation: 1, readEpoch: context.readEpoch, isCurrent: context.isCurrent)
+            : api.selectedTodoForSnooze(19, expectedUserId: user.id,
+                generation: 1, readEpoch: context.readEpoch, isCurrent: context.isCurrent));
+        expect(owned.actorId, 'gid://gitlab/User/3');
+        expect(owned.unsupportedIds, {20}, reason: 'unrelated raw Issue aliases remain unsupported');
+        if (selectedGroup) {
+          final selected = owned.selectedGroupTodo;
+          expect(selected!.owner.groupId, 2);
+          expect(selected.todoId, 19);
+          expect(selected.snoozedUntil, snoozed ? DateTime.utc(2030) : null);
+          expect(owned.items, isEmpty, reason: 'group proof is typed, never a normalized map');
+        } else {
+          expect(owned.selectedGroupTodo, isNull);
+          expect(owned.items.single, {
+            'id': 19, 'target_type': 'Issue',
+            'snoozed_until': snoozed ? '2030-01-01T00:00:00Z' : null,
+            'project': {'id': 10, 'path_with_namespace': 'team/core'},
+            'target': {'id': 'gid://gitlab/Issue/91', 'iid': 7},
+          });
+        }
+        expect(ownershipReads, 4);
+        expect(adapter.requests, hasLength(5), reason: 'P=currentUser1+ownership4; no discovery pass');
+        expect(adapter.requests.first.method, 'GET');
+        for (var page = 0; page < 4; page++) {
+          final request = adapter.requests[page + 1];
+          expect(_body(request)['query'], snoozed ? _snoozedOwnershipQuery : _pendingOwnershipQuery);
+          expect(_variables(request), {'first': 100, 'after': page == 0 ? null : 'page$page'});
+        }
+      }
+    });
+
+    test('selected raw Issue alias stays unsupported for snoozed=$snoozed', () async {
+      final adapter = FakeAdapter((_) => jsonResponse(_ownershipPage([_groupIssueOwnershipTodo(19)])));
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final context = api.captureGroupReadEpoch();
+      final owned = await (snoozed
+          ? api.selectedTodoForUnsnooze(19, expectedUserId: 3,
+              generation: 1, readEpoch: context.readEpoch, isCurrent: context.isCurrent)
+          : api.selectedTodoForSnooze(19, expectedUserId: 3,
+              generation: 1, readEpoch: context.readEpoch, isCurrent: context.isCurrent));
+      expect(owned.items, isEmpty);
+      expect(owned.unsupportedIds, {19});
+      expect(owned.selectedGroupTodo, isNull);
+      expect(adapter.requests, hasLength(1));
+    });
+
     test('fixed ownership document for snoozed=$snoozed', () async {
       final adapter = FakeAdapter((_) => jsonResponse(_ownershipPage([])));
       final api = testApi(adapter);

@@ -11,11 +11,14 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/request_meter.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
+import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_context.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
+import 'package:gitlab_mobile/features/ai/ai_scope_add.dart';
 
 import '../support/fake_adapter.dart';
 import '../support/namespace_work_item_query.dart';
+import 'fx_coord_support.dart';
 
 const _head = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _base = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -175,6 +178,7 @@ void main() {
       },
     );
   }
+  group('user-added group item', _uiAddedContext);
 
   test(
     'group unavailable description is explicitly marked as unread',
@@ -1097,6 +1101,109 @@ void main() {
       ),
     );
     expect(adapter.requests, hasLength(1));
+  });
+}
+
+/// U-add regressions: the context loader is the strict read a user-added
+/// group item goes through, and the added item never becomes page context.
+void _uiAddedContext() {
+  test(
+    'a user-added check reserves each context read through the caller budget',
+    () async {
+      final reserved = <int>[];
+      final adapter = _groupAdapter();
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      await loadAiChatContext(
+        origin: _groupOrigin,
+        api: api,
+        redactor: Redactor(secrets: const _Secrets()),
+        accountKey: 'https://example.com/gitlab#7',
+        refreshSecrets: () async {},
+        isCurrent: () => true,
+        beforeRead: reserved.add,
+      );
+      // The numeric owner lookup and the strict read, each with one replay.
+      expect(reserved, [2, 2]);
+
+      final refused = _groupAdapter();
+      final refusedApi = testApi(refused);
+      addTearDown(refusedApi.close);
+      await expectLater(
+        loadAiChatContext(
+          origin: _groupOrigin,
+          api: refusedApi,
+          redactor: Redactor(secrets: const _Secrets()),
+          accountKey: 'https://example.com/gitlab#7',
+          refreshSecrets: () async {},
+          isCurrent: () => true,
+          beforeRead: (maximum) {
+            if (refused.requests.isNotEmpty) {
+              throw const AiFailure(
+                AiFailureKind.rateLimited,
+                notSent: true,
+                gitLabBudget: true,
+              );
+            }
+          },
+        ),
+        throwsA(isA<AiFailure>()),
+      );
+      // The exhausted budget stops the strict read before it is sent.
+      expect(refused.requests.map((r) => r.method), ['GET']);
+    },
+  );
+
+  test('a user-added group item never becomes the page context', () async {
+    final h = await StackHarness.create(
+      configure: (server) {
+        server.overrides['GET groups/team/sub'] = (_) => jsonResponse({
+          'id': 7,
+          'name': 'Sub',
+          'full_path': 'team/sub',
+          'visibility': 'private',
+        });
+        server.overrides['GET groups/7'] = (_) => jsonResponse({
+          'id': 7,
+          'full_path': 'team/sub',
+          'visibility': 'private',
+        });
+        server.overrides['POST '] = (request) {
+          expect(
+            (request.data! as Map<String, Object?>)['query'],
+            namespaceWorkItemQuery,
+          );
+          final node = _groupNode()
+            ..['iid'] = '5'
+            ..['title'] = 'Added group title'
+            ..['description'] = 'Added group description';
+          return jsonResponse(_groupEnvelope(node));
+        };
+      },
+    );
+    addTearDown(h.dispose);
+    await h.controller.send('First question');
+    final before = h.controller.contextForTesting!;
+    expect(before.scope?.projectId, 42);
+    expect(before.groupScope, isNull);
+
+    final check = await h.controller.checkGroupWorkItem(
+      'https://example.com/gitlab/groups/team/sub/-/work_items/5',
+    );
+    expect(
+      await h.controller.addGroupWorkItem(check as AiGroupWorkItemCandidate),
+      isNull,
+    );
+    expect(identical(h.controller.contextForTesting, before), isTrue);
+    await h.controller.send('Second question');
+    final after = h.controller.contextForTesting!;
+    expect(after.scope?.projectId, 42);
+    expect(after.groupScope, isNull);
+    expect(after.groupMetadata, isNull);
+    for (final body in h.provider.bodies) {
+      expect(body, isNot(contains('Added group description')));
+      expect(body, isNot(contains('Added group title')));
+    }
   });
 }
 

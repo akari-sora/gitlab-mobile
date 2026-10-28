@@ -10625,6 +10625,11 @@
   "aiRunChannelName": "AI 背景工作",
   "aiRunServiceTitle": "AI 助理正在工作",
   "aiRunServiceText": "可以離開應用程式，工作會繼續進行。",
+  "aiRunServiceStopAll": "全部停止",
+  "@aiRunServiceStopAll": {
+    "description": "Action button on the ongoing background-work notification; stops every AI run and pending approval.",
+    "placeholders": {}
+  },
   "aiNotConfigured": "尚未設定",
   "aiProvidersHeading": "供應商",
   "aiAddProvider": "新增供應商",
@@ -11583,5 +11588,119 @@
     "description": "Shown in the chat when notifications are not allowed; the 30-minute proposal expiry is fixed.",
     "placeholders": {}
   },
-  "aiRunNoticeFinishEditFirst": "請先完成或關閉目前的編輯，再開啟通知"
+  "aiRunNoticeFinishEditFirst": "請先完成或關閉目前的編輯，再開啟通知",
+  "aiAddGroupWorkItem": "加入群組工作項目",
+  "@aiAddGroupWorkItem": {
+    "description": "Chat menu item and sheet title: add one group work item to this AI conversation (U-add).",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemIntro": "貼上 {instance} 上直接屬於群組的工作項目連結。此次新增的授權只涵蓋這個工作項目及其留言，不包含群組的其他工作項目或其中的專案；對話原有的範圍不變。",
+  "@aiAddGroupWorkItemIntro": {
+    "description": "Sheet explanation before the link field. {instance} is the account's GitLab instance URL. The scope is that one item and its comments only.",
+    "placeholders": {
+      "instance": {
+        "example": "https://gitlab.example.com"
+      }
+    }
+  },
+  "aiAddGroupWorkItemLink": "工作項目連結",
+  "@aiAddGroupWorkItemLink": {
+    "description": "Label of the link field in the add sheet.",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemCheck": "檢查",
+  "@aiAddGroupWorkItemCheck": {
+    "description": "Button that checks the pasted link with GitLab; nothing is added yet.",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemChecking": "檢查中…",
+  "@aiAddGroupWorkItemChecking": {
+    "description": "Status shown with a progress indicator while the link is checked.",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemConfirmDetail": "AI 對它提出的修改，仍依這個對話的寫入方式確認或執行。你可以隨時在輸入框上方移除它。",
+  "@aiAddGroupWorkItemConfirmDetail": {
+    "description": "Shown under the verified item before the user confirms the add.",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemGrantEnds": "加入後，這個對話的「{level}」會結束；需要時請重新選擇。",
+  "@aiAddGroupWorkItemGrantEnds": {
+    "description": "Shown before confirming when the conversation uses the conversation grant level. {level} is that level's name (aiLevelConversationGrant).",
+    "placeholders": {
+      "level": {
+        "example": "aiLevelConversationGrant"
+      }
+    }
+  },
+  "aiAddGroupWorkItemConfirm": "加入對話",
+  "@aiAddGroupWorkItemConfirm": {
+    "description": "Confirms adding the verified work item to the conversation scope.",
+    "placeholders": {}
+  },
+  "aiAddedGroupWorkItem": "已加入 {path} #{iid}",
+  "@aiAddedGroupWorkItem": {
+    "description": "Snack bar after adding. {path} is the group full path, {iid} the work item number.",
+    "placeholders": {
+      "path": {
+        "example": "team/sub"
+      },
+      "iid": {
+        "example": "5"
+      }
+    }
+  },
+  "aiAddedGroupWorkItemHint": "已加入；新增的授權只涵蓋此項及其留言",
+  "@aiAddedGroupWorkItemHint": {
+    "description": "Tooltip of an added work item chip above the message box.",
+    "placeholders": {}
+  },
+  "aiRemoveGroupWorkItem": "從對話中移除",
+  "@aiRemoveGroupWorkItem": {
+    "description": "Tooltip of the remove button on an added work item chip.",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemMalformed": "這不是完整的群組工作項目連結。請在 GitLab 開啟該工作項目，複製頁面網址後再貼上。沒有加入任何項目。",
+  "@aiAddGroupWorkItemMalformed": {
+    "description": "Refusal before any request: not a complete group work item link.",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemOtherInstance": "這個連結不在 {instance} 上，只能加入目前帳號所在 GitLab 的工作項目。沒有加入任何項目。",
+  "@aiAddGroupWorkItemOtherInstance": {
+    "description": "Refusal before any request: the link is on another instance or installation path. {instance} is the account's instance.",
+    "placeholders": {
+      "instance": {
+        "example": "https://gitlab.example.com"
+      }
+    }
+  },
+  "aiAddGroupWorkItemProjectLink": "這個連結屬於專案。這裡只能加入直接屬於群組的工作項目。沒有加入任何項目。",
+  "@aiAddGroupWorkItemProjectLink": {
+    "description": "Refusal before any request: the link is a project resource.",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemNotWorkItem": "這個群組連結沒有指向單一工作項目。沒有加入任何項目。",
+  "@aiAddGroupWorkItemNotWorkItem": {
+    "description": "Refusal before any request: a group link that is not one work item (list, epic, page).",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemAlreadyAdded": "這個工作項目已在這個對話中。",
+  "@aiAddGroupWorkItemAlreadyAdded": {
+    "description": "The verified item is already in this conversation scope.",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemNotGroupOwned": "GitLab 沒有確認這個工作項目直接屬於連結中的群組，或檢查期間它有變動。沒有加入任何項目。",
+  "@aiAddGroupWorkItemNotGroupOwned": {
+    "description": "GitLab did not prove direct group ownership, or the identity changed between reads.",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemUnavailable": "AI 正在工作或有寫入等你處理時不能加入。沒有加入任何項目。",
+  "@aiAddGroupWorkItemUnavailable": {
+    "description": "Adding is possible only while the conversation is idle with no pending write.",
+    "placeholders": {}
+  },
+  "aiAddGroupWorkItemStale": "檢查結果已過期，沒有加入任何項目。請重新檢查連結。",
+  "@aiAddGroupWorkItemStale": {
+    "description": "The confirmed check is out of date (newer check, new conversation or account change).",
+    "placeholders": {}
+  }
 }
