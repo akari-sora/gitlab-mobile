@@ -1,4 +1,4 @@
-import 'mr6c_v9_test_support.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,10 +9,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:crypto/crypto.dart';
 import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
+import 'package:gitlab_mobile/features/ai/ai_journal_fence.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import '../../tool/mr6c_qa_fixture.dart';
 import '../../tool/mr6c_qa_protocol.dart';
+import 'release_policy_support.dart';
 
 Map<String, Object> _command({
   int sequence = 1,
@@ -26,6 +28,53 @@ Map<String, Object> _command({
   'sequence': sequence,
 };
 
+final class _HeldJournalFence implements AiJournalAccountFence {
+  final _delegate = AiHistoryJournalFence();
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  bool hold = false;
+
+  @override
+  bool isCleaning(String accountKey) => _delegate.isCleaning(accountKey);
+
+  @override
+  Future<T> run<T>(String accountKey, Future<T> Function() action) async {
+    if (hold) {
+      if (!entered.isCompleted) entered.complete();
+      await release.future;
+    }
+    return _delegate.run(accountKey, action);
+  }
+}
+
+final class _HeldStorage extends FlutterSecureStorage {
+  final entered = Completer<void>();
+  final release = Completer<Map<String, String>>();
+
+  @override
+  Future<Map<String, String>> readAll({
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    if (!entered.isCompleted) {
+      entered.complete();
+      return release.future;
+    }
+    return super.readAll(
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+}
+
 Future<void> main() async {
   TestWidgetsFlutterBinding.ensureInitialized();
   test('QA must be explicitly enabled and Android', () {
@@ -33,6 +82,56 @@ Future<void> main() async {
     expect(qaMayStart(enabled: false, android: true), isFalse);
     expect(qaMayStart(enabled: true, android: false), isFalse);
     expect(qaMayStart(enabled: true, android: true), isTrue);
+  });
+
+  test('deadline and real file I/O publish distinct FAIL reasons', () async {
+    final dir = await Directory.systemTemp.createTemp('mr6c-failure-');
+    addTearDown(() => dir.delete(recursive: true));
+    final mailbox = QaMailbox(dir);
+    Future<Object> failure(Future<void> operation) async {
+      try {
+        await operation;
+      } on Object catch (error) {
+        return error;
+      }
+      throw StateError('expected a failure');
+    }
+
+    final timeout = await failure(
+      Completer<void>().future.timeout(Duration.zero),
+    );
+    final io = await failure(
+      File('${dir.path}/private-missing-file').readAsString().then((_) {}),
+    );
+    for (final phase in ['prepare', 'recover']) {
+      final command = QaCommand.parse({..._command(), 'phase': phase});
+      for (final (error, reason) in [
+        (timeout, 'deadline'),
+        (io, 'io_error'),
+        (TimeoutException('termination'), 'deadline'),
+        (TimeoutException('barrier'), 'deadline'),
+        (StateError('private failure'), 'unexpected_error'),
+        (const FormatException('private content'), 'unexpected_error'),
+        (const QaSandboxUnavailable(), 'unexpected_error'),
+        (PlatformException(code: 'private-code'), 'unexpected_error'),
+      ]) {
+        await mailbox.publish(qaFailureEvent(command, error));
+        final encoded = await File('${dir.path}/event.json').readAsString();
+        final event = jsonDecode(encoded) as Map<String, dynamic>;
+        expect(event['phase'], phase);
+        expect(event['event'], 'error');
+        expect(event['outcome'], 'FAIL');
+        expect(event['evidence'], {'reason': reason});
+        expect(encoded, isNot(contains('private')));
+        expect(encoded, isNot(contains(dir.path)));
+        final rejected = qaPreflightRejected(command, error).toJson();
+        final refused = phase == 'prepare' && error is QaSandboxUnavailable;
+        expect(rejected['outcome'], refused ? 'NOT_RUN' : 'FAIL');
+        expect(rejected['evidence'], {
+          'reason': refused ? 'fixture_unavailable' : reason,
+        });
+      }
+    }
   });
 
   test('strict command schema rejects malformed, extra and private fields', () {
@@ -211,6 +310,48 @@ Future<void> main() async {
   );
 
   test(
+    'sandbox accepts only the exact regular ProfileVerifier marker',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('mr6c-profile-marker-');
+      addTearDown(() => dir.delete(recursive: true));
+      FlutterSecureStorage.setMockInitialValues({});
+      const storage = FlutterSecureStorage();
+      final sandbox = QaSandbox(support: dir, storage: storage);
+      await File('${dir.path}/profileInstalled').create();
+      await sandbox.verifyEmpty();
+      await File('${dir.path}/profileInstalled.tmp').create();
+      await expectLater(
+        sandbox.verifyEmpty(),
+        throwsA(isA<QaSandboxUnavailable>()),
+      );
+      expect(await storage.readAll(), isEmpty);
+    },
+  );
+
+  for (final kind in ['directory', 'link', 'dangling link']) {
+    test('sandbox rejects a ProfileVerifier marker that is a $kind', () async {
+      final root = await Directory.systemTemp.createTemp('mr6c-profile-type-');
+      addTearDown(() => root.delete(recursive: true));
+      final dir = await Directory('${root.path}/support').create();
+      final marker = '${dir.path}/profileInstalled';
+      if (kind == 'directory') {
+        await Directory(marker).create();
+      } else {
+        final target = File('${root.path}/target');
+        if (kind == 'link') await target.create();
+        await Link(marker).create(target.path);
+      }
+      FlutterSecureStorage.setMockInitialValues({});
+      const storage = FlutterSecureStorage();
+      await expectLater(
+        QaSandbox(support: dir, storage: storage).seed(),
+        throwsA(isA<QaSandboxUnavailable>()),
+      );
+      expect(await storage.readAll(), isEmpty);
+    });
+  }
+
+  test(
     'recovery preflight binds the exact encrypted journal before recovery',
     () async {
       final dir = await Directory.systemTemp.createTemp('mr6c-journal-');
@@ -221,6 +362,7 @@ Future<void> main() async {
         storage: const FlutterSecureStorage(),
       );
       await Directory('${dir.path}/mr6c_qa').create();
+      await File('${dir.path}/profileInstalled').create();
       await sandbox.seed();
       final journal = AiWriteJournal(
         keys: sandbox.keys,
@@ -381,6 +523,42 @@ Future<void> main() async {
     expect(nativeCalls.map((call) => call.method), ['updateProgress']);
   });
 
+  test('V9 teardown joins preparation after its caller times out', () async {
+    final dir = await Directory.systemTemp.createTemp('mr6c-v9-startup-');
+    addTearDown(() => dir.delete(recursive: true));
+    FlutterSecureStorage.setMockInitialValues({});
+    final storage = _HeldStorage();
+    final fixture = QaV9Fixture(
+      QaSandbox(support: dir, storage: storage),
+      QaCommand.parse({..._command(), 'variant': 'task_manager_stop'}),
+    );
+    addTearDown(fixture.dispose);
+    addTearDown(() {
+      if (!storage.release.isCompleted) storage.release.complete({});
+    });
+    final preparation = fixture.prepare();
+    final cancelled = expectLater(
+      preparation,
+      throwsA(isA<QaSandboxUnavailable>()),
+    );
+    await storage.entered.future.timeout(const Duration(seconds: 5));
+    await expectLater(
+      preparation.timeout(Duration.zero),
+      throwsA(isA<TimeoutException>()),
+    );
+    var disposed = false;
+    final disposal = fixture.dispose().then((_) => disposed = true);
+    try {
+      await Future<void>.delayed(Duration.zero);
+      expect(disposed, isFalse);
+    } finally {
+      storage.release.complete({});
+    }
+    await cancelled;
+    await disposal.timeout(const Duration(seconds: 5));
+    expect(dir.listSync(), isEmpty);
+  });
+
   test(
     'V9 prepare reaches a held production journal dispatch on a host mock channel',
     () async {
@@ -393,6 +571,7 @@ Future<void> main() async {
       const channel = MethodChannel('mr6c-host-native-mock');
       var ticket = 0;
       var nativeActive = false;
+      final nativeReleased = Completer<void>();
       final nativeCalls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
@@ -444,6 +623,7 @@ Future<void> main() async {
               case 'releaseRuns':
                 final didRelease = nativeActive;
                 nativeActive = false;
+                if (!nativeReleased.isCompleted) nativeReleased.complete();
                 return {
                   'version': 1,
                   'status': 'released',
@@ -464,11 +644,17 @@ Future<void> main() async {
         ..._command(),
         'variant': 'task_manager_stop',
       });
-      final fixture = TestV9Fixture(sandbox, command, testChannel: channel);
+      final journalFence = _HeldJournalFence();
+      final fixture = QaV9Fixture(
+        sandbox,
+        command,
+        testChannel: channel,
+        testJournalFence: journalFence,
+        releasePolicy: fixtureReleasePolicy,
+      );
+      addTearDown(fixture.dispose);
       addTearDown(() {
-        fixture.registry.dispose();
-        fixture.settings.dispose();
-        fixture.session.dispose();
+        if (!journalFence.release.isCompleted) journalFence.release.complete();
       });
       final barrier = await fixture.prepare().timeout(
         const Duration(seconds: 20),
@@ -520,6 +706,39 @@ Future<void> main() async {
         (await sandbox.verifyRecovery(recoverCommand))['execution_digest'],
         barrier.executionDigest,
       );
+
+      // Hold the real terminal journal transaction, rather than relying on
+      // filesystem timing to catch teardown returning before accepted writes.
+      final writes = fixture.registry.inFlightWrites;
+      expect(writes, hasLength(1));
+      journalFence.hold = true;
+      var disposed = false;
+      final disposal = fixture.dispose().then((_) => disposed = true);
+      try {
+        await journalFence.entered.future.timeout(const Duration(seconds: 5));
+        await nativeReleased.future.timeout(const Duration(seconds: 5));
+        await Future<void>.delayed(Duration.zero);
+        expect(disposed, isFalse);
+        expect(fixture.session.isDisposed, isTrue);
+        expect(
+          fixture.journal.entries(sandbox.account.key).single.state,
+          AiJournalState.dispatching,
+        );
+      } finally {
+        journalFence.release.complete();
+        await Future.wait(writes);
+      }
+      await disposal.timeout(const Duration(seconds: 5));
+      expect(fixture.registry.inFlightWrites, isEmpty);
+      expect(nativeActive, isFalse);
+      final key = (await sandbox.keys.readKey(sandbox.account.key)).value!;
+      final settled = await AiHistoryCipher.decryptJson(
+        (await sandbox.files.read(sandbox.account.key))!,
+        key,
+        sandbox.account.key,
+        AiJournalFiles.fileName,
+      );
+      expect((settled['entries'] as List).single['state'], 'writeUncertain');
     },
   );
 }

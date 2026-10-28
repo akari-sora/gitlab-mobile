@@ -281,7 +281,8 @@ def validate_event(event, cmd, expected):
                     'case completion has no verified case driver')
     elif expected == 'error':
         require(event['outcome'] == 'FAIL' and set(event['evidence']) == {'reason'} and
-                event['evidence']['reason'] in ('deadline', 'invalid_command', 'io_error'), 'invalid error marker')
+                event['evidence']['reason'] in ('deadline', 'invalid_command', 'io_error', 'unexpected_error'),
+                'invalid error marker')
     return event
 
 

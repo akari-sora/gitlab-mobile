@@ -2,6 +2,7 @@
 // No account data, permits, tickets, approval values, or exception text belong
 // in this mailbox. Device case drivers must supply independently verified
 // evidence before emitting any successful result.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -17,6 +18,11 @@ bool qaMayStart({required bool enabled, required bool android}) =>
 final class QaProtocolException implements Exception {
   const QaProtocolException(this.code);
   final String code;
+}
+
+/// A content-free refusal of an unproved synthetic sandbox.
+final class QaSandboxUnavailable implements Exception {
+  const QaSandboxUnavailable();
 }
 
 Map<String, Object?> _object(Object? value, Set<String> keys) {
@@ -96,7 +102,13 @@ enum QaEventKind { ready, barrier, done, error }
 
 enum QaOutcome { running, pass, fail, notRun }
 
-enum QaReason { fixtureUnavailable, deadline, invalidCommand, ioError }
+enum QaReason {
+  fixtureUnavailable,
+  deadline,
+  invalidCommand,
+  ioError,
+  unexpectedError,
+}
 
 final _digest = RegExp(r'^[0-9a-f]{64}$');
 
@@ -223,6 +235,7 @@ extension on QaReason {
     QaReason.deadline => 'deadline',
     QaReason.invalidCommand => 'invalid_command',
     QaReason.ioError => 'io_error',
+    QaReason.unexpectedError => 'unexpected_error',
   };
 }
 
@@ -277,21 +290,29 @@ final class QaEvent {
   }
 }
 
+/// Classify by type, never exception text. Unknown failures must not claim I/O.
+QaEvent qaFailureEvent(QaCommand command, Object error) => QaEvent(
+  command,
+  QaEventKind.error,
+  QaOutcome.fail,
+  reason: switch (error) {
+    TimeoutException() => QaReason.deadline,
+    IOException() => QaReason.ioError,
+    _ => QaReason.unexpectedError,
+  },
+);
+
 /// Refusal before prepare is NOT_RUN; losing recovery evidence after an
 /// accepted prepare/termination is a failure of an attempted case.
-QaEvent qaPreflightRejected(QaCommand command) => command.phase == 'prepare'
+QaEvent qaPreflightRejected(QaCommand command, Object error) =>
+    command.phase == 'prepare' && error is QaSandboxUnavailable
     ? QaEvent(
         command,
         QaEventKind.done,
         QaOutcome.notRun,
         reason: QaReason.fixtureUnavailable,
       )
-    : QaEvent(
-        command,
-        QaEventKind.error,
-        QaOutcome.fail,
-        reason: QaReason.ioError,
-      );
+    : qaFailureEvent(command, error);
 
 /// State contains only session/sequence and the case-variant-phase identifiers.
 /// Switching session requires scoped removal of the old QA mailbox after the
