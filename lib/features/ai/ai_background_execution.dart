@@ -80,7 +80,11 @@ final class _ExecutionChannelListeners {
       startRequestId: startRequest,
     );
     for (final owner in owners.toList(growable: false)) {
-      owner._handleInvalidation(permit, startRequest);
+      owner._handleInvalidation(
+        permit,
+        startRequest,
+        args['reason']! as String,
+      );
     }
     if (args['reason'] == 'user_stop' && stoppedOwner != null) {
       emitStop(stoppedOwner);
@@ -123,6 +127,34 @@ enum AiBackgroundExecutionStatus {
   released,
   invalidated,
   unavailable,
+}
+
+/// The result of one user-initiated service-start attempt. It contains no
+/// platform exception text or native identifiers.
+enum AiBackgroundStartDisposition {
+  active,
+  foregroundOnly,
+  invalidated,
+  unavailable,
+}
+
+enum AiBackgroundStartFailure {
+  unsupported,
+  foregroundRequired,
+  startDenied,
+  securityException,
+  channelRefused,
+  channelUnavailable,
+  cleanupFailed,
+  timeout,
+  runChanged,
+}
+
+final class AiBackgroundStartResult {
+  const AiBackgroundStartResult(this.disposition, {this.failure});
+
+  final AiBackgroundStartDisposition disposition;
+  final AiBackgroundStartFailure? failure;
 }
 
 /// One native service owner for an account, API and session generation.
@@ -318,10 +350,14 @@ final class AiBackgroundExecution extends ChangeNotifier
   }
 
   bool _attach() {
-    if (!_nativeSupported) return false;
-    if (_widgetsBinding != null) return true;
     try {
-      final binding = WidgetsBinding.instance;
+      if (_widgetsBinding == null) {
+        final binding = WidgetsBinding.instance;
+        _widgetsBinding = binding;
+        binding.addObserver(this);
+      }
+      if (!_nativeSupported) return false;
+      if (_shared != null) return true;
       final messenger = _channel.binaryMessenger;
       final channels = _listeners.putIfAbsent(messenger, () => {});
       var listeners = channels[_channel.name];
@@ -339,8 +375,6 @@ final class AiBackgroundExecution extends ChangeNotifier
       listeners.owners.add(this);
       _shared = listeners;
       _attachedMessenger = messenger;
-      _widgetsBinding = binding;
-      binding.addObserver(this);
       return true;
     } on Object {
       // A plain Dart fixture may not have a Flutter binding. It retains the
@@ -381,27 +415,71 @@ final class AiBackgroundExecution extends ChangeNotifier
     notifyListeners();
   }
 
-  Future<void> startRuns(AiBackgroundRunGate gate) =>
+  Future<AiBackgroundStartResult> startRuns(AiBackgroundRunGate gate) =>
       gate.beginRun(runId: _newId());
 
+  Future<(Map<Object?, Object?>?, AiBackgroundStartFailure?)> _invokeStart(
+    Map<String, Object> args,
+  ) async {
+    try {
+      final result = await _channel
+          .invokeMethod<Object?>('startRuns', args)
+          .timeout(_interval);
+      final reply = _reply(result);
+      return (
+        reply,
+        reply == null ? AiBackgroundStartFailure.channelUnavailable : null,
+      );
+    } on TimeoutException {
+      return (null, AiBackgroundStartFailure.timeout);
+    } on PlatformException catch (error) {
+      final code = error.code.toLowerCase();
+      if (code.contains('security')) {
+        return (null, AiBackgroundStartFailure.securityException);
+      }
+      if (code.contains('startnotallowed') || code.contains('start_denied')) {
+        return (null, AiBackgroundStartFailure.startDenied);
+      }
+      return (null, AiBackgroundStartFailure.channelUnavailable);
+    } on Object {
+      return (null, AiBackgroundStartFailure.channelUnavailable);
+    }
+  }
+
   Future<void> _start(AiBackgroundRunGate gate, int revision) {
-    if (!_attach()) return Future<void>.value();
+    if (!_attach()) {
+      gate._startFailure = AiBackgroundStartFailure.unsupported;
+      return Future<void>.value();
+    }
     final shared = _shared!;
     if (shared.leaseOwner != null &&
         !identical(shared.leaseOwner, this) &&
         shared.releasePending == 0) {
+      gate._startFailure = AiBackgroundStartFailure.channelUnavailable;
       return Future<void>.value();
     }
     shared.leaseOwner ??= this;
     return _serial(() async {
       try {
         if (!gate._stillStarting(revision) || !_current) return;
-        if (_orphan || !gate._appInForeground()) return;
-        if (!await _seed() || !gate._stillStarting(revision) || !_current) {
+        if (_orphan || !gate._appInForeground()) {
+          gate._startFailure = _orphan
+              ? AiBackgroundStartFailure.cleanupFailed
+              : AiBackgroundStartFailure.foregroundRequired;
           return;
         }
-        if (_orphan || !gate._appInForeground()) return;
+        if (!await _seed() || !gate._stillStarting(revision) || !_current) {
+          gate._startFailure = AiBackgroundStartFailure.channelUnavailable;
+          return;
+        }
+        if (_orphan || !gate._appInForeground()) {
+          gate._startFailure = _orphan
+              ? AiBackgroundStartFailure.cleanupFailed
+              : AiBackgroundStartFailure.foregroundRequired;
+          return;
+        }
         if (shared.leaseOwner != null && !identical(shared.leaseOwner, this)) {
+          gate._startFailure = AiBackgroundStartFailure.channelUnavailable;
           return;
         }
         shared.leaseOwner = this;
@@ -422,7 +500,7 @@ final class AiBackgroundExecution extends ChangeNotifier
         _setStatus(AiBackgroundExecutionStatus.starting);
         final sequence = _nextSequence();
         final progress = _progress();
-        final reply = await _invoke('startRuns', {
+        final (reply, invokeFailure) = await _invokeStart({
           'opSeq': sequence,
           'startRequestId': request,
           'workCount': progress.$1,
@@ -452,7 +530,13 @@ final class AiBackgroundExecution extends ChangeNotifier
         }
         gate._requestId = null;
         if (reply == null) {
-          await gate._cleanupRequest(request);
+          gate._startFailure = invokeFailure;
+          await gate._cleanupRequest(
+            request,
+            confirmedRejected:
+                invokeFailure == AiBackgroundStartFailure.securityException ||
+                invokeFailure == AiBackgroundStartFailure.startDenied,
+          );
           if (!_orphan) _setStatus(AiBackgroundExecutionStatus.foregroundOnly);
           return;
         }
@@ -492,11 +576,22 @@ final class AiBackgroundExecution extends ChangeNotifier
             'service_destroyed',
             'activity_destroyed',
             'released',
-            'notification_failed',
           }.contains(reason)) {
             gate._invalidated = true;
             _setStatus(AiBackgroundExecutionStatus.invalidated);
           } else {
+            gate._startFailure = switch (reason) {
+              'foreground_required' =>
+                AiBackgroundStartFailure.foregroundRequired,
+              'start_denied' => AiBackgroundStartFailure.startDenied,
+              'security_exception' =>
+                AiBackgroundStartFailure.securityException,
+              _ => AiBackgroundStartFailure.channelRefused,
+            };
+            // A rejected start has no live permit, but a newer scoped release
+            // also reveals sticky native cleanup failure before degrading.
+            await gate._cleanupRequest(request, confirmedRejected: true);
+            if (_orphan) return;
             _setStatus(AiBackgroundExecutionStatus.foregroundOnly);
           }
           return;
@@ -517,7 +612,10 @@ final class AiBackgroundExecution extends ChangeNotifier
     });
   }
 
-  Future<void> _cleanupRequest(String request) async {
+  Future<void> _cleanupRequest(
+    String request, {
+    bool confirmedRejected = false,
+  }) async {
     final shared = _shared;
     final stopRevision = _stopRevision;
     if (shared != null) {
@@ -530,7 +628,9 @@ final class AiBackgroundExecution extends ChangeNotifier
         'startRequestId': request,
       });
       if (stopRevision != _stopRevision) return;
-      if (reply?['status'] != 'released' || reply?['didRelease'] != true) {
+      if (reply?['status'] != 'released' ||
+          (reply?['didRelease'] != true &&
+              !(confirmedRejected && reply?['didRelease'] == false))) {
         _orphan = true;
         _setStatus(AiBackgroundExecutionStatus.unavailable);
       } else {
@@ -779,10 +879,26 @@ final class AiBackgroundExecution extends ChangeNotifier
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(onForeground());
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      var changed = false;
+      for (final gate in _gates) {
+        if (gate._current &&
+            gate._active &&
+            gate.binding.permitId == null &&
+            !gate._needsExplicitResume) {
+          gate._needsExplicitResume = true;
+          changed = true;
+        }
+      }
+      if (changed && !_disposed) notifyListeners();
+    } else if (state == AppLifecycleState.resumed) {
+      unawaited(onForeground());
+    }
   }
 
-  void _handleInvalidation(String permit, String? startRequest) {
+  void _handleInvalidation(String permit, String? startRequest, String reason) {
     if (!_current) return;
     final shared = _shared;
     final pendingStart =
@@ -797,7 +913,13 @@ final class AiBackgroundExecution extends ChangeNotifier
               !gate._invalidated &&
               gate._requestId == startRequest,
         );
-    if (pendingStart) {
+    final refusedStart = const {
+      'start_failed',
+      'security_exception',
+      'start_denied',
+      'notification_failed',
+    }.contains(reason);
+    if (pendingStart && !refusedStart) {
       _stopRevision++;
       for (final gate in _gates) {
         if (gate._starting && gate._requestId == startRequest) {
@@ -908,6 +1030,13 @@ final class AiBackgroundRunGate implements AiExecutionGate {
   Future<void>? _cleanup;
   String? _cleaningRequest;
   Future<void>? _normalRelease;
+  bool _approvalRestart = false;
+  bool _needsExplicitResume = false;
+  AiBackgroundStartFailure? _startFailure;
+  AiBackgroundStartResult? _lastStartResult;
+
+  AiBackgroundStartResult? get lastStartResult => _lastStartResult;
+  bool get requiresExplicitResume => _needsExplicitResume || _invalidated;
 
   /// Approval keeps its waiting state until the bridge confirms release.
   /// Completion is not authorization; the coordinator still checks all gates.
@@ -952,13 +1081,74 @@ final class AiBackgroundRunGate implements AiExecutionGate {
   bool get executionEligible =>
       _current &&
       !_invalidated &&
+      !_needsExplicitResume &&
+      !_owner._orphan &&
       (_binding.permitId == null
           ? _appInForeground()
           : _owner._permit == _binding.permitId &&
                 _owner.status == AiBackgroundExecutionStatus.active);
 
-  Future<void> beginRun({required String runId}) async {
-    if (!_owner._current || _disposed || !_isCurrent()) return;
+  Future<AiBackgroundStartResult> beginRun({required String runId}) =>
+      _beginRun(runId: runId, preserveBinding: false);
+
+  /// A user-requested continuation retains the logical run identifier. It
+  /// creates a new binding so tickets from the previous permit stay invalid.
+  Future<AiBackgroundStartResult> resumeRun() {
+    if (!_current || _binding.runId.isEmpty || !_appInForeground()) {
+      return Future.value(
+        _recordStart(
+          AiBackgroundStartResult(
+            AiBackgroundStartDisposition.invalidated,
+            failure: !_appInForeground()
+                ? AiBackgroundStartFailure.foregroundRequired
+                : AiBackgroundStartFailure.runChanged,
+          ),
+        ),
+      );
+    }
+    return _beginRun(runId: _binding.runId, preserveBinding: false);
+  }
+
+  /// Only a visible approval action can start the service after a normal
+  /// approval-wait release. Its run binding stays identical for the proposal.
+  Future<AiBackgroundStartResult> restartForApproval() async {
+    final release = _normalRelease;
+    if (release != null) await release;
+    if (!_current ||
+        _invalidated ||
+        _needsExplicitResume ||
+        !_awaitingApproval ||
+        _binding.runId.isEmpty ||
+        !_appInForeground()) {
+      return _recordStart(
+        AiBackgroundStartResult(
+          AiBackgroundStartDisposition.invalidated,
+          failure: !_appInForeground()
+              ? AiBackgroundStartFailure.foregroundRequired
+              : AiBackgroundStartFailure.runChanged,
+        ),
+      );
+    }
+    return _beginRun(runId: _binding.runId, preserveBinding: true);
+  }
+
+  AiBackgroundStartResult _recordStart(AiBackgroundStartResult result) {
+    _lastStartResult = result;
+    return result;
+  }
+
+  Future<AiBackgroundStartResult> _beginRun({
+    required String runId,
+    required bool preserveBinding,
+  }) async {
+    if (!_owner._current || _disposed || !_isCurrent() || _starting) {
+      return _recordStart(
+        const AiBackgroundStartResult(
+          AiBackgroundStartDisposition.invalidated,
+          failure: AiBackgroundStartFailure.runChanged,
+        ),
+      );
+    }
     if (_owner._stopsInFlight != 0) {
       throw const AiExecutionPaused(
         AiExecutionPause(AiExecutionPauseReason.unavailable),
@@ -970,10 +1160,13 @@ final class AiBackgroundRunGate implements AiExecutionGate {
       );
     }
     final revision = ++_revision;
+    _startFailure = null;
     _invalidated = false;
+    _needsExplicitResume = false;
     _released = false;
     _awaitingApproval = false;
-    _binding = _newBinding(runId);
+    if (!preserveBinding) _binding = _newBinding(runId);
+    _approvalRestart = preserveBinding;
     _active = true;
     _backProtected = true;
     _starting = true;
@@ -984,7 +1177,10 @@ final class AiBackgroundRunGate implements AiExecutionGate {
           .timeout(
             AiBackgroundExecution._interval,
             onTimeout: () {
-              if (_revision == revision) cancelStart();
+              if (_revision == revision) {
+                _startFailure = AiBackgroundStartFailure.timeout;
+                cancelStart();
+              }
             },
           );
     } finally {
@@ -993,6 +1189,23 @@ final class AiBackgroundRunGate implements AiExecutionGate {
         _owner._workChanged();
       }
     }
+    final result = _invalidated
+        ? AiBackgroundStartResult(
+            AiBackgroundStartDisposition.invalidated,
+            failure: _startFailure,
+          )
+        : _owner._orphan
+        ? const AiBackgroundStartResult(
+            AiBackgroundStartDisposition.unavailable,
+            failure: AiBackgroundStartFailure.cleanupFailed,
+          )
+        : _binding.permitId != null && executionEligible
+        ? const AiBackgroundStartResult(AiBackgroundStartDisposition.active)
+        : AiBackgroundStartResult(
+            AiBackgroundStartDisposition.foregroundOnly,
+            failure: _startFailure,
+          );
+    return _recordStart(result);
   }
 
   bool _stillStarting(int revision) =>
@@ -1001,13 +1214,28 @@ final class AiBackgroundRunGate implements AiExecutionGate {
   void _bind(String permit, int revision) {
     if (!_stillStarting(revision)) return;
     _released = false;
-    _binding = _newBinding(_binding.runId, permit);
+    if (_approvalRestart) {
+      if (!_binding.rebindForExplicitContinuation(
+        runId: _binding.runId,
+        permitId: permit,
+      )) {
+        _invalidated = true;
+      }
+    } else {
+      _binding = _newBinding(_binding.runId, permit);
+    }
   }
 
-  Future<void> _cleanupRequest(String request) {
+  Future<void> _cleanupRequest(
+    String request, {
+    bool confirmedRejected = false,
+  }) {
     if (_cleaningRequest == request) return _cleanup!;
     _cleaningRequest = request;
-    return _cleanup = _owner._cleanupRequest(request);
+    return _cleanup = _owner._cleanupRequest(
+      request,
+      confirmedRejected: confirmedRejected,
+    );
   }
 
   /// Updates lifetime counts from the controller, including accepted writes

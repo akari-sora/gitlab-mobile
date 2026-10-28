@@ -2794,5 +2794,18 @@
   "aiAddGroupWorkItemAlreadyAdded": "このワークアイテムはすでにこの会話に含まれています。",
   "aiAddGroupWorkItemNotGroupOwned": "このワークアイテムがリンクのグループに直接属することを GitLab で確認できなかったか、確認中に変更されました。何も追加されていません。",
   "aiAddGroupWorkItemUnavailable": "AI が作業中、または書き込みがあなたの対応を待っている間は追加できません。何も追加されていません。",
-  "aiAddGroupWorkItemStale": "確認結果が古くなったため、何も追加されていません。リンクをもう一度確認してください。"
+  "aiAddGroupWorkItemStale": "確認結果が古くなったため、何も追加されていません。リンクをもう一度確認してください。",
+  "aiRunPaused": "作業を一時停止しました",
+  "aiRunPausedForeground": "作業を一時停止しました。続けるにはアプリを開いたままにしてください",
+  "aiRunPausedTimeout": "作業を一時停止しました。続行前の確認がタイムアウトしました",
+  "aiRunCanResume": "この作業は中断したところから続けられます",
+  "aiRunResume": "続行",
+  "aiRunResumeTitle": "作業を続行しますか？",
+  "aiRunResumeDuplicate": "この作業での書き込みはすでに完了している可能性があります。続行後に AI が同じ変更をもう一度提案した場合は、先に確認を求めます。",
+  "aiRunResumeRebilling": "続行すると AI プロバイダーに再度リクエストを送るため、再度課金される場合があります。",
+  "aiRunForegroundOnly": "バックグラウンドの処理を開始できませんでした。作業はアプリを開いている間だけ続きます。",
+  "aiRunStartDenied": "今回はシステムがバックグラウンドでの処理を許可しませんでした。",
+  "aiRunStartTimeout": "バックグラウンドの処理が時間内に開始しませんでした。",
+  "aiRunStartUnavailable": "バックグラウンドの処理は現在利用できません。",
+  "aiProposalApproveInForeground": "この書き込みはまだ実行されておらず、提案は引き続き有効です。アプリを開いたままにして、少し後でもう一度承認してください。"
 }

@@ -381,6 +381,7 @@ final class StackHarness {
     List<PickedAttachment?> picks = const [],
     void Function(StackServer server)? configure,
     Future<void> Function(SessionController session, StackServer server)? prepareSession,
+    DateTime Function()? now,
   }) async {
     final server = StackServer();
     configure?.call(server);
@@ -450,6 +451,7 @@ final class StackHarness {
       clientMayStart: () => true,
       writeJournal: journal,
       attachmentPicker: picker,
+      now: now,
       writeScope: writeScope == null ? null : () => writeScope(server),
       wireClientFactory:
           ({required config, required apiKey, required conversationId}) =>

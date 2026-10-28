@@ -2800,5 +2800,18 @@
   "aiAddGroupWorkItemAlreadyAdded": "This work item is already in this conversation.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab did not confirm that this work item belongs directly to the group in the link, or it changed during the check. Nothing was added.",
   "aiAddGroupWorkItemUnavailable": "You can add a work item only while the AI is not working and no write is waiting for you. Nothing was added.",
-  "aiAddGroupWorkItemStale": "This check is out of date, so nothing was added. Check the link again."
+  "aiAddGroupWorkItemStale": "This check is out of date, so nothing was added. Check the link again.",
+  "aiRunPaused": "Work paused",
+  "aiRunPausedForeground": "Work paused: keep the app open to continue",
+  "aiRunPausedTimeout": "Work paused: the check before continuing timed out",
+  "aiRunCanResume": "You can continue this work from where it stopped",
+  "aiRunResume": "Continue",
+  "aiRunResumeTitle": "Continue the work?",
+  "aiRunResumeDuplicate": "A write in this work may already have been made. If the AI proposes the same change again after you continue, you will be asked to confirm it first.",
+  "aiRunResumeRebilling": "Continuing sends requests to the AI provider again, which may be billed again.",
+  "aiRunForegroundOnly": "Background work did not start; the work continues only while the app is open.",
+  "aiRunStartDenied": "The system did not allow background work this time.",
+  "aiRunStartTimeout": "Background work did not start in time.",
+  "aiRunStartUnavailable": "Background work is unavailable right now.",
+  "aiProposalApproveInForeground": "This write was not made, and the proposal is still valid. Keep the app open and approve again a little later."
 }

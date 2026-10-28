@@ -993,6 +993,33 @@ void main() {
     expect(find.text(l10n.aiProposalTooManyRunning), findsOneWidget);
   });
 
+  testWidgets('an approval refused for background work keeps the proposal', (
+    tester,
+  ) async {
+    final proposal = _proposal();
+    final writes = _Writes([proposal])
+      ..answer = (_) => const AiWriteOutcome(
+        state: AiJournalState.notExecuted,
+        reasonCode: 'executionPaused',
+      );
+    await tester.pumpWidget(
+      _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+    );
+    await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiProposalApproveInForeground), findsOneWidget);
+    expect(find.text(l10n.aiProposalNotRun), findsNothing);
+    // Calm, not an error: the proposal is still valid.
+    final message = tester.widget<Text>(
+      find.text(l10n.aiProposalApproveInForeground),
+    );
+    final scheme = Theme.of(
+      tester.element(find.byType(AiWriteProposalCard)),
+    ).colorScheme;
+    expect(message.style?.color, isNot(scheme.error));
+    expect(find.byKey(const ValueKey('ai-proposal-approve')), findsOneWidget);
+  });
+
   for (final (code, text) in [
     ('alreadyMerged', () => l10n.aiRefusedAlreadyMerged),
     ('headMoved', () => l10n.aiRefusedChanged),

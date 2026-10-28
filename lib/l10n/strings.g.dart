@@ -8478,4 +8478,43 @@ final class AppStrings {
 
   /// 檢查結果已過期，沒有加入任何項目。請重新檢查連結。
   String get aiAddGroupWorkItemStale => language._messages[2794];
+
+  /// 工作已暫停
+  String get aiRunPaused => language._messages[2795];
+
+  /// 工作已暫停：要開著應用程式才能繼續
+  String get aiRunPausedForeground => language._messages[2796];
+
+  /// 工作已暫停：繼續前的檢查逾時
+  String get aiRunPausedTimeout => language._messages[2797];
+
+  /// 可以從中斷的地方繼續這項工作
+  String get aiRunCanResume => language._messages[2798];
+
+  /// 繼續執行
+  String get aiRunResume => language._messages[2799];
+
+  /// 要繼續執行嗎？
+  String get aiRunResumeTitle => language._messages[2800];
+
+  /// 這項工作的寫入可能已經完成。繼續後若 AI 再提出相同的變更，會先請你確認。
+  String get aiRunResumeDuplicate => language._messages[2801];
+
+  /// 繼續會再向 AI 供應商送出請求，可能會再次計費。
+  String get aiRunResumeRebilling => language._messages[2802];
+
+  /// 背景執行沒有啟動，工作只會在應用程式開啟時繼續。
+  String get aiRunForegroundOnly => language._messages[2803];
+
+  /// 系統這次不允許在背景執行。
+  String get aiRunStartDenied => language._messages[2804];
+
+  /// 背景執行沒有及時啟動。
+  String get aiRunStartTimeout => language._messages[2805];
+
+  /// 背景執行目前無法使用。
+  String get aiRunStartUnavailable => language._messages[2806];
+
+  /// 這筆寫入還沒執行，提議仍然有效。請保持應用程式開啟，稍後再核准。
+  String get aiProposalApproveInForeground => language._messages[2807];
 }

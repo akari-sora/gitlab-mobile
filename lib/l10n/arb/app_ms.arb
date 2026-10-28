@@ -2794,5 +2794,18 @@
   "aiAddGroupWorkItemAlreadyAdded": "Item kerja ini sudah ada dalam perbualan ini.",
   "aiAddGroupWorkItemNotGroupOwned": "GitLab tidak mengesahkan bahawa item kerja ini dimiliki terus oleh kumpulan dalam pautan, atau item itu berubah semasa semakan. Tiada apa-apa ditambah.",
   "aiAddGroupWorkItemUnavailable": "Item kerja hanya boleh ditambah apabila AI tidak bekerja dan tiada penulisan yang menunggu anda. Tiada apa-apa ditambah.",
-  "aiAddGroupWorkItemStale": "Hasil semakan sudah lapuk, jadi tiada apa-apa ditambah. Semak pautan sekali lagi."
+  "aiAddGroupWorkItemStale": "Hasil semakan sudah lapuk, jadi tiada apa-apa ditambah. Semak pautan sekali lagi.",
+  "aiRunPaused": "Kerja dijeda",
+  "aiRunPausedForeground": "Kerja dijeda: biarkan apl terbuka untuk meneruskan",
+  "aiRunPausedTimeout": "Kerja dijeda: semakan sebelum meneruskan melebihi had masa",
+  "aiRunCanResume": "Anda boleh meneruskan kerja ini dari tempat ia berhenti",
+  "aiRunResume": "Teruskan",
+  "aiRunResumeTitle": "Teruskan kerja?",
+  "aiRunResumeDuplicate": "Penulisan dalam kerja ini mungkin sudah dibuat. Jika AI mencadangkan perubahan yang sama sekali lagi selepas anda meneruskan, anda akan diminta mengesahkannya dahulu.",
+  "aiRunResumeRebilling": "Meneruskan akan menghantar permintaan kepada penyedia AI sekali lagi, yang mungkin dicaj sekali lagi.",
+  "aiRunForegroundOnly": "Kerja latar belakang tidak bermula; kerja hanya diteruskan selagi apl dibuka.",
+  "aiRunStartDenied": "Kali ini sistem tidak membenarkan kerja latar belakang.",
+  "aiRunStartTimeout": "Kerja latar belakang tidak bermula tepat pada masanya.",
+  "aiRunStartUnavailable": "Kerja latar belakang tidak tersedia sekarang.",
+  "aiProposalApproveInForeground": "Penulisan ini belum dibuat dan cadangan masih sah. Biarkan apl terbuka dan luluskan semula sebentar lagi."
 }

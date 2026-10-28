@@ -246,6 +246,12 @@ abstract interface class AiWriteCoordinator {
   void checkNow();
 }
 
+/// An explicit continuation keeps the process-local run and its recorded
+/// outcomes. It does not restore approvals or replay pending operations.
+abstract interface class AiWriteRunContinuation {
+  void resumeRun();
+}
+
 /// Optional snapshot surface for interruption pairing; it never starts work.
 abstract interface class AiWriteStateSource {
   AiWriteOutcome? recordedOutcomeFor(String callId);
@@ -510,7 +516,8 @@ typedef AiWriteFragmentCheckerWithCount =
 /// REST write orchestration. Waiting approvals stay in memory. The only disk
 /// writes are to the existing journal, after confirmation and before dispatch.
 final class PolicyAiWriteCoordinator
-    implements AiWriteCoordinator, AiWriteStateSource, AiWriteSettlementSource {
+    implements AiWriteCoordinator, AiWriteStateSource, AiWriteSettlementSource,
+        AiWriteRunContinuation {
   PolicyAiWriteCoordinator({
     required this.snapshot,
     required this.createPort,
@@ -575,7 +582,8 @@ final class PolicyAiWriteCoordinator
   final Map<String, _PendingWrite> _pending = {};
   final Map<String, AiWriteOutcome> _results = {};
   final List<AiWriteProposal> _settledEdits = [];
-  final Map<Future<AiWriteOutcome>, String> _activeOperations = {};
+  final Map<Future<AiWriteOutcome>, ({String runId, String callId})>
+      _activeOperations = {};
 
   /// Attachments uploaded in the current batch of tool calls. §3.1: an
   /// upload and a write quoting it cannot be proposed in the same batch.
@@ -586,7 +594,9 @@ final class PolicyAiWriteCoordinator
   AiExecutionRunBinding? _runBinding;
   AiWritePolicySnapshot? _runPolicy;
   int? _runProposalEpoch;
-  final Set<String> _usedPermitRunIds = {};
+  final Set<String> _usedRunIds = {};
+  final Set<String> _continuedCallIds = {};
+  int _operationEpoch = 0;
 
   /// The current process-local logical run, for binding a continuation gate.
   String get logicalRunId => _runId;
@@ -604,9 +614,13 @@ final class PolicyAiWriteCoordinator
         (expected == null ||
             (journal.proposalEpoch(expected.scope.accountKey) == _runProposalEpoch &&
                 current.sessionGeneration == expected.sessionGeneration &&
+                identical(current.ownerApi, expected.ownerApi) &&
                 current.writePolicyRevision == expected.writePolicyRevision &&
                 current.scopeRevision == expected.scopeRevision &&
                 current.consentHash == expected.consentHash &&
+                current.currentJobId == expected.currentJobId &&
+                _originIdentity(current.currentResource) ==
+                    _originIdentity(expected.currentResource) &&
                 _scopeDigest(current.scope) == _scopeDigest(expected.scope)));
   }
   String? _stopped;
@@ -646,7 +660,9 @@ final class PolicyAiWriteCoordinator
     for (final pending in _pending.values)
       if (!pending.done.isCompleted &&
           pending.flight != null &&
-          !_activeOperations.containsValue(pending.call.id)) pending.flight!,
+          !_activeOperations.containsValue((
+            runId: pending.runId, callId: pending.call.id,
+          ))) pending.flight!,
   ]);
 
   @override
@@ -773,11 +789,12 @@ final class PolicyAiWriteCoordinator
     _runBinding = binding;
     _runPolicy = snapshot();
     _runProposalEpoch = journal.proposalEpoch(_runPolicy!.scope.accountKey);
-    _runId = binding.permitId == null ? _nonce() : binding.runId;
+    _runId = binding.runId.isEmpty ? _nonce() : binding.runId;
     _userUtterance = userUtterance;
     _stopped = null;
-    if (binding.permitId != null &&
-        (binding.runId.isEmpty || !_usedPermitRunIds.add(binding.runId))) {
+    _continuedCallIds.clear();
+    if ((binding.permitId != null && binding.runId.isEmpty) ||
+        (binding.runId.isNotEmpty && !_usedRunIds.add(binding.runId))) {
       _stopped = 'runChanged';
     }
     _previousIncomplete = false;
@@ -787,8 +804,64 @@ final class PolicyAiWriteCoordinator
   /// Explicit continuation of this process-local run. New user sends and
   /// history/projection rebuilds use [beginRun] instead. Recorded call ids stay
   /// paired with their original outcomes; pending approvals are never revived.
+  @override
   void resumeRun() {
+    // Include work still in preparation, before it has a pending proposal.
+    // Its original async operation must not become live again after stop.
+    _continuedCallIds.addAll(_results.keys);
+    _continuedCallIds.addAll(_activeOperations.values
+        .where((operation) => operation.runId == _runId)
+        .map((operation) => operation.callId));
+    _continuedCallIds.addAll(
+      _pending.values.where((p) => p.runId == _runId).map((p) => p.call.id),
+    );
     stop('superseded');
+    final previous = _runBinding;
+    final expected = _runPolicy;
+    final current = snapshot();
+    final binding = executionGate.binding;
+    final sameBinding = previous != null &&
+        (binding.runId.isEmpty
+            ? identical(previous, binding)
+            : binding.runId == _runId &&
+                binding.accountKey == current.scope.accountKey &&
+                binding.generation == current.sessionGeneration &&
+                binding.conversationId == conversationId &&
+                current.ownerApi != null &&
+                identical(binding.ownerApi, current.ownerApi) &&
+                identical(binding.ownerApi, previous.ownerApi) &&
+                binding.accountKey == previous.accountKey &&
+                binding.generation == previous.generation &&
+                binding.conversationId == previous.conversationId);
+    if (expected == null ||
+        !sameBinding ||
+        !current.alive ||
+        !current.consentValid ||
+        !current.appInForeground ||
+        !current.executionEligible ||
+        !executionGate.executionEligible ||
+        journal.tombstoneFlag(current.scope.accountKey) ||
+        journal.removalHeld(current.scope.accountKey) ||
+        journal.proposalEpoch(expected.scope.accountKey) != _runProposalEpoch ||
+        current.scope.accountKey != expected.scope.accountKey ||
+        current.sessionGeneration != expected.sessionGeneration ||
+        !identical(current.ownerApi, expected.ownerApi) ||
+        current.writePolicyRevision != expected.writePolicyRevision ||
+        current.scopeRevision != expected.scopeRevision ||
+        current.consentHash != expected.consentHash ||
+        current.toolsEnabled != expected.toolsEnabled ||
+        current.level != expected.level ||
+        current.ceiling != expected.ceiling ||
+        current.aiAttribution != expected.aiAttribution ||
+        current.currentJobId != expected.currentJobId ||
+        _originIdentity(current.currentResource) !=
+            _originIdentity(expected.currentResource) ||
+        _scopeDigest(current.scope) != _scopeDigest(expected.scope)) {
+      throw const AiExecutionPaused(AiExecutionPause(
+        AiExecutionPauseReason.runChanged,
+      ));
+    }
+    _runBinding = binding;
     _stopped = null;
     _previousIncomplete = false;
     _uploadedThisBatch.clear();
@@ -831,17 +904,38 @@ final class PolicyAiWriteCoordinator
     AiToolCall call, {
     void Function(bool)? onAwaitingApproval,
   }) async {
+    if (_continuedCallIds.contains(call.id)) {
+      final recorded = recordedOutcomeFor(call.id);
+      if (recorded == null) return _notExecuted(call, 'notAccepted');
+      return AiWriteOutcome(
+        state: recorded.state,
+        reasonCode: 'alreadyRecorded',
+        noChange: recorded.noChange,
+        readbackConfirmed: recorded.readbackConfirmed,
+        executionId: recorded.executionId,
+        operationId: recorded.operationId,
+        target: recorded.target,
+        resultSummary: recorded.resultSummary,
+        targetName: recorded.targetName,
+        webLink: recorded.webLink,
+      );
+    }
     final proposal = await _propose(call);
-    if (proposal == null) return _results[call.id]!;
+    if (proposal == null) {
+      return _results[call.id] ?? _notExecuted(call, 'superseded');
+    }
     final pending = _pending[proposal.executionId]!;
+    if (pending.done.isCompleted) return pending.done.future;
+    if (pending.flight != null) return pending.flight!;
     if (proposal.tier.decision == AiGateDecision.execute) {
       return _perform(pending, confirmed: false);
     }
-    onAwaitingApproval?.call(true);
+    pending.setAwaitingApproval(true);
+    pending.addApprovalObserver(onAwaitingApproval);
     try {
       return await pending.done.future;
     } finally {
-      onAwaitingApproval?.call(false);
+      pending.removeApprovalObserver(onAwaitingApproval);
     }
   }
 
@@ -850,6 +944,7 @@ final class PolicyAiWriteCoordinator
       _registerOperation(call, () => _propose(call));
 
   Future<AiWriteProposal?> _propose(AiToolCall call) async {
+    if (_continuedCallIds.contains(call.id)) return null;
     final existing = _results[call.id];
     if (existing != null) {
       if (!existing.successful) _previousIncomplete = true;
@@ -864,6 +959,7 @@ final class PolicyAiWriteCoordinator
     }
     final policy = snapshot();
     final runId = _runId;
+    final operationEpoch = _operationEpoch;
     final segmentGeneration = _segmentGeneration;
     final proposalEpoch = journal.proposalEpoch(policy.scope.accountKey);
     final initialFailure = _previousIncomplete
@@ -917,7 +1013,7 @@ final class PolicyAiWriteCoordinator
         ),
       );
       if (hold == null) throw const _WriteBlocked('writeBudgetExceeded');
-      _requirePolicy(policy, runId: runId);
+      _requirePolicy(policy, runId: runId, operationEpoch: operationEpoch);
       final id = _nonce();
       final attachment = _attachment(call.name, arguments);
       var request = _request(call.name, id, policy, arguments, attachment);
@@ -925,14 +1021,14 @@ final class PolicyAiWriteCoordinator
       // The allowance remains charged once the first pre-read can start.
       reserved = false;
       var fresh = await readFreshness(request);
-      _requirePolicy(policy, runId: runId);
+      _requirePolicy(policy, runId: runId, operationEpoch: operationEpoch);
       // Whole-field GraphQL writes open their target before the shared text
       // policy, so even bypass sees the current field's hidden spans. Reuse
       // that capability after sanitizing; do not add a second opening read.
       final opened = aiGraphWriteBackOperations.contains(request.operationId)
           ? await (_port ??= createPort()).prepare(request)
           : null;
-      _requirePolicy(policy, runId: runId);
+      _requirePolicy(policy, runId: runId, operationEpoch: operationEpoch);
       if (opened != null &&
           capability.scopeClass == AiScopeClass.groupWorkItem &&
           !_preparedGroupIdentityMatches(opened, policy)) {
@@ -943,7 +1039,7 @@ final class PolicyAiWriteCoordinator
       request = preparedText.request;
       final prepared = opened ?? await (_port ??= createPort()).prepare(request);
       if (opened != null) prepared.bindPreparedText(request);
-      _requirePolicy(policy, runId: runId);
+      _requirePolicy(policy, runId: runId, operationEpoch: operationEpoch);
       if (capability.scopeClass == AiScopeClass.groupWorkItem &&
           !_preparedGroupIdentityMatches(prepared, policy)) {
         throw const _WriteBlocked('workItemUnverifiable');
@@ -1014,7 +1110,7 @@ final class PolicyAiWriteCoordinator
           ),
         );
         if (hold == null) throw const _WriteBlocked('writeBudgetExceeded');
-        _requirePolicy(policy, runId: runId);
+        _requirePolicy(policy, runId: runId, operationEpoch: operationEpoch);
       }
       final proposal = AiWriteProposal(
         executionId: id,
@@ -1085,7 +1181,7 @@ final class PolicyAiWriteCoordinator
   ) {
     final done = Completer<AiWriteOutcome>();
     final settlement = done.future;
-    _activeOperations[settlement] = call.id;
+    _activeOperations[settlement] = (runId: _runId, callId: call.id);
     final result = Future<T>.sync(operation);
     unawaited(result.then<void>((_) {
       if (!done.isCompleted) {
@@ -1114,7 +1210,9 @@ final class PolicyAiWriteCoordinator
     String? editedText,
   }) {
     final pending = _pending[proposal.executionId];
-    if (pending != null && _activeOperations.containsValue(pending.call.id)) {
+    if (pending != null && _activeOperations.containsValue((
+      runId: pending.runId, callId: pending.call.id,
+    ))) {
       return _approve(proposal, typedName: typedName, editedText: editedText);
     }
     final call = pending?.call ?? AiToolCall(
@@ -1174,6 +1272,9 @@ final class PolicyAiWriteCoordinator
               'approvalRequired',
         );
       }
+      // Editing is active preparation. The edited proposal still needs a
+      // second explicit approval after this synchronous validation completes.
+      pending.setAwaitingApproval(false);
       proposal.editedText = editedText;
       try {
         _requirePending(pending);
@@ -1225,6 +1326,10 @@ final class PolicyAiWriteCoordinator
         pending.editBlocked = _reason(error);
         _changed();
         return _notExecuted(pending.call, pending.editBlocked!);
+      } finally {
+        if (!pending.done.isCompleted && pending.flight == null) {
+          pending.setAwaitingApproval(true);
+        }
       }
     }
     if (pending.editBlocked != null) {
@@ -1234,6 +1339,9 @@ final class PolicyAiWriteCoordinator
         typedName != proposal.tier.typedName) {
       return _notExecuted(pending.call, 'typedNameMismatch');
     }
+    // The user has approved. Journal flush, rereads and dispatch consume the
+    // active run deadline; only the preceding approval wait was excluded.
+    pending.setAwaitingApproval(false);
     return _perform(pending, confirmed: true);
   }
 
@@ -1756,6 +1864,7 @@ final class PolicyAiWriteCoordinator
       return;
     }
     proposal.invalidate();
+    pending.setAwaitingApproval(false);
     await journal.refund(pending.hold);
     _complete(
       pending,
@@ -1776,6 +1885,7 @@ final class PolicyAiWriteCoordinator
 
   @override
   void stop([String reason = 'stopped']) {
+    _operationEpoch++;
     _stopped = reason;
     checkNow();
   }
@@ -1863,7 +1973,9 @@ final class PolicyAiWriteCoordinator
 
   bool _executionBindingMatches(AiWritePolicySnapshot policy) {
     final binding = executionGate.binding;
-    if (binding.permitId == null) return identical(binding, _runBinding);
+    if (binding.runId.isEmpty && binding.permitId == null) {
+      return identical(binding, _runBinding);
+    }
     return identical(binding, _runBinding) &&
         binding.accountKey == policy.scope.accountKey &&
         binding.generation == policy.sessionGeneration &&
@@ -1899,9 +2011,11 @@ final class PolicyAiWriteCoordinator
   void _requirePolicy(
     AiWritePolicySnapshot expected, {
     String? runId,
+    int? operationEpoch,
     bool pauses = true,
   }) {
-    if (runId != null && runId != _runId) {
+    if ((runId != null && runId != _runId) ||
+        (operationEpoch != null && operationEpoch != _operationEpoch)) {
       throw const _WriteBlocked('superseded');
     }
     final current = snapshot();
@@ -1909,6 +2023,7 @@ final class PolicyAiWriteCoordinator
     if (failure != null) throw _WriteBlocked(failure);
     if (current.scope.accountKey != expected.scope.accountKey ||
         current.sessionGeneration != expected.sessionGeneration ||
+        !identical(current.ownerApi, expected.ownerApi) ||
         current.writePolicyRevision != expected.writePolicyRevision ||
         current.scopeRevision != expected.scopeRevision ||
         current.currentJobId != expected.currentJobId ||
@@ -1954,6 +2069,7 @@ final class PolicyAiWriteCoordinator
     Map<String, Object?> projection = const {},
   }) {
     if (pending.done.isCompleted) return pending.outcome!;
+    pending.setAwaitingApproval(false);
     final outcome = AiWriteOutcome(
       state: result.state,
       reasonCode: result.reasonCode,
@@ -2478,6 +2594,39 @@ final class _PendingWrite {
   final List<AiFixedConfirmReason> fixedReasons;
   final String? attachmentId;
   final Completer<AiWriteOutcome> done = Completer();
+  final Set<void Function(bool)> _approvalObservers = {};
+  bool _awaitingApproval = false;
+
+  void addApprovalObserver(void Function(bool)? observer) {
+    if (observer != null && _approvalObservers.add(observer) &&
+        _awaitingApproval) {
+      _notifyApprovalObserver(observer, true);
+    }
+  }
+
+  void removeApprovalObserver(void Function(bool)? observer) {
+    if (observer != null && _approvalObservers.remove(observer) &&
+        _awaitingApproval) {
+      _notifyApprovalObserver(observer, false);
+    }
+  }
+
+  void setAwaitingApproval(bool value) {
+    if (_awaitingApproval == value) return;
+    _awaitingApproval = value;
+    for (final observer in _approvalObservers.toList()) {
+      _notifyApprovalObserver(observer, value);
+    }
+  }
+
+  void _notifyApprovalObserver(void Function(bool) observer, bool value) {
+    try {
+      observer(value);
+    } on Object {
+      // Observers cannot interrupt approval or journal settlement.
+    }
+  }
+
   AiWriteOutcome? outcome;
   String? editBlocked;
   String? invalidationReason;

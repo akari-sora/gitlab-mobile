@@ -699,6 +699,9 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
       _message = switch (outcome.reasonCode) {
         'typedNameMismatch' => l10n.aiProposalNameMismatch,
         'tooManyRunning' => l10n.aiProposalTooManyRunning,
+        // The background work could not start for this approval: nothing
+        // was sent and the proposal still waits.
+        'executionPaused' => l10n.aiProposalApproveInForeground,
         // A pause is shown once, by the card's status line, when the
         // coordinator has marked the proposal paused; a background pause is
         // never shown.
@@ -721,6 +724,8 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
           l10n.aiProposalEditRefused,
         final code => aiRefusalText(code) ?? l10n.aiProposalNotRun,
       };
+      // Nothing went wrong: the proposal still waits for approval.
+      if (outcome.reasonCode == 'executionPaused') _messageIsError = false;
     });
   }
 
