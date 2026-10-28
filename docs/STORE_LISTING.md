@@ -56,6 +56,20 @@ Mergeline is an independent third-party client. It is not affiliated with or
 endorsed by GitLab Inc. GITLAB is a trademark of GitLab Inc. in the United
 States and other countries and regions.
 
+## Read-cache data safety
+
+The encrypted read cache stays on the device; it adds no off-device collection
+or sharing. C2 leaves the Play Data safety declarations/table unchanged
+([cache plan](plans/cache-plan-v3.md), line 360). Cache controls are Me ›
+Storage & cache › Offline cache (toggle, aggregate size and clear). Turning it off fences disk
+use before saving the preference and clearing cached data; a storage failure
+keeps disk use closed and requires retry if cleanup is incomplete. Public text,
+source, diffs and terminal-job logs may themselves quote secrets; encryption
+does not redact that content. Sign-out, account switching, removal and terminal
+401 clear the affected account's cache under the cleanup contract in
+`CLAUDE.md`. This documentation packet has no Android/iOS device or store
+submission evidence (`NOT_RUN`).
+
 ## Rules for the listing
 
 - Use no GitLab logo (the tanuki) or GitLab colours as branding, in the icon,
