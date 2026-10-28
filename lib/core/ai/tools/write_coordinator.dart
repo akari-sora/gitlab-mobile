@@ -406,7 +406,7 @@ AiWriteFreshness _withPreparedFields(
       : fresh.provenance,
 );
 
-/// Only the strict opening can make a complete group field restorable. A
+/// Only the strict opening can prove a complete group field. A
 /// prior read tool's identity is not evidence for a new opening or another IID.
 Map<String, text.AiFieldProvenance> _groupPreparedProvenance(
   port.AiWritePrepared prepared,
@@ -424,7 +424,8 @@ Map<String, text.AiFieldProvenance> _groupPreparedProvenance(
   text.AiFieldProvenance plain(String field) => text.AiFieldProvenance(
     resourceKey: description.resourceKey,
     fieldName: field,
-    completeValue: false,
+    completeValue:
+        field == 'title' && prepared.currentFields.containsKey(field),
     resourceWeb: description.resourceWeb,
     accountKey: description.accountKey,
     groupId: identity.groupId,
@@ -434,7 +435,9 @@ Map<String, text.AiFieldProvenance> _groupPreparedProvenance(
     'updateGroupWorkItemContent' => {
       if (prepared.currentFields.containsKey('description'))
         'description': description,
-      if (prepared.currentFields.containsKey('title')) 'title': plain('title'),
+      // currentFields contains whole opening values. Keep an absent title
+      // incomplete; the text policy separately rejects cut provider deliveries.
+      'title': plain('title'),
     },
     'editGroupWorkItemActivityNote'
         when args['noteId'] is int && (args['noteId']! as int) > 0 =>
