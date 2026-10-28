@@ -53,10 +53,8 @@ final class G15Ledger implements AiCapabilityLedger {
   AiCapability? find(String operationId) {
     final row = productionAiLedger.find(operationId);
     if (row == null || !g15LogicalReads.containsKey(operationId)) return row;
-    // Production group rows stay hidden until G14. Passing that flag through
-    // would make propose return unknownOperation, so this copy is explicitly
-    // visible. Snooze rows are already visible; forcing true leaves them
-    // unchanged. Guard and matrix tests pin the production flag separately.
+    // This fixture isolates the group and snooze rows. Guard and matrix tests
+    // independently pin their production visibility.
     return AiCapability(
       operationId: row.operationId,
       namedMethod: row.namedMethod,
@@ -731,12 +729,10 @@ void main() {
       final productionVisible = productionAiLedger
           .find(entry.key)!
           .modelVisible;
-      // Group rows are hidden until G14. Snooze rows are already visible;
-      // the copy forces visible so hidden rows can be driven, and must not
-      // hide a row production already exposes.
+      // G14 exposes all fifteen group aliases and the two snooze rows.
       expect(
         productionVisible,
-        entry.key.endsWith('Todo') ? isTrue : isFalse,
+        isTrue,
         reason: entry.key,
       );
       expect(

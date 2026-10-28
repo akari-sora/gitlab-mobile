@@ -27,6 +27,26 @@ import 'fx_coord_support.dart';
 import 'mr6b3g_support.dart';
 import 'p17_controller_support.dart' show p17ToolNames;
 
+const _groupWriteOffers = {
+  'snoozeTodo',
+  'unsnoozeTodo',
+  'updateGroupWorkItemState',
+  'updateGroupWorkItemStatus',
+  'updateGroupWorkItemDates',
+  'updateGroupWorkItemHealthStatus',
+  'updateGroupWorkItemAssignees',
+  'updateGroupWorkItemMilestone',
+  'updateGroupWorkItemWeight',
+  'createGroupWorkItemActivityComment',
+  'createGroupWorkItemActivityReply',
+  'deleteGroupWorkItemActivityNote',
+  'setGroupWorkItemActivityNoteReaction',
+  'setGroupWorkItemNotifications',
+  'updateGroupWorkItemContent',
+  'editGroupWorkItemActivityNote',
+  'updateGroupWorkItemLabels',
+};
+
 const _group = GraphResourceRef(
   id: 'gid://gitlab/Group/7',
   fullPath: 'team/sub',
@@ -934,7 +954,7 @@ void main() {
             .map((row) => row.operationId)
             .toSet();
         if (origin is AiGroupWorkItemOrigin) {
-          expect(names.intersection(writes), isEmpty);
+          expect(names.intersection(writes), _groupWriteOffers);
         } else {
           expect(names, contains('createNote'));
           expect(names, isNot(contains('setStar')));

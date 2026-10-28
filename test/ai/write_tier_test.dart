@@ -504,9 +504,9 @@ void main() {
   });
 
   group('group production gate and numeric scope', () {
-    test('production gate defaults to false without an override', () {
+    test('production gate defaults to true without an override', () {
       expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
-      expect(aiGroupWorkItemWritesAreEnabled, isFalse);
+      expect(aiGroupWorkItemWritesAreEnabled, isTrue);
     });
 
     test('gate and exact group identity constrain synthetic group rows', () {
@@ -771,11 +771,9 @@ void main() {
     });
 
     test('project, merge request and todo scopes offer different tools', () {
-      aiGroupWorkItemWritesEnabledForTesting = false;
-      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
       expect(
         toolsForScope(_projectScope),
-        hasLength(productionAiLedger.modelVisible.length - 1),
+        hasLength(productionAiLedger.modelVisible.length - _groupOperations.length - 1),
       );
       final Set<String> projectTools = toolsForScope(
         _projectScope,
@@ -785,6 +783,12 @@ void main() {
         containsAll(<String>['createProject', 'forkProject']),
       );
       expect(projectTools, isNot(contains('markAllTodosDone')));
+      expect(projectTools.intersection(_groupOperations), isEmpty);
+      expect(
+        projectTools,
+        {..._mr6b1Operations, ..._mr6b2Operations, ..._mr6b3Operations}
+          ..remove('markAllTodosDone'),
+      );
       final AiWriteScope merge = AiWriteScope(
         accountKey: _account,
         grants: <AiScopeGrant>[
@@ -837,7 +841,43 @@ void main() {
           ),
         ],
       );
-      expect(offersWriteTools(groupOnly), isFalse);
+      expect(offersWriteTools(groupOnly), isFalse); // Missing numeric group ID.
+    });
+
+    test('production group scope offers only group aliases and snoozes', () {
+      expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
+      const scope = AiWriteScope(
+        accountKey: _account,
+        grants: [
+          AiScopeGrant(
+            kind: AiScopeKind.groupWorkItem,
+            groupId: 4,
+            groupFullPath: 'acme',
+            iid: 1,
+          ),
+        ],
+      );
+      final offered = toolsForScope(scope).map((row) => row.operationId).toSet();
+      expect(offered, {..._groupOperations, 'snoozeTodo', 'unsnoozeTodo'});
+      expect(offered, isNot(contains('markTodoDone')));
+    });
+
+    test('gate-off override refuses a valid group-only scope', () {
+      aiGroupWorkItemWritesEnabledForTesting = false;
+      addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
+      const scope = AiWriteScope(
+        accountKey: _account,
+        grants: [
+          AiScopeGrant(
+            kind: AiScopeKind.groupWorkItem,
+            groupId: 4,
+            groupFullPath: 'acme',
+            iid: 1,
+          ),
+        ],
+      );
+      expect(offersWriteTools(scope), isFalse);
+      expect(toolsForScope(scope), isEmpty);
     });
   });
 
@@ -1687,10 +1727,29 @@ const Set<String> _mr6b2Operations = <String>{
   'forkProject',
 };
 
+const _groupOperations = <String>{
+  'updateGroupWorkItemState',
+  'updateGroupWorkItemStatus',
+  'updateGroupWorkItemDates',
+  'updateGroupWorkItemHealthStatus',
+  'updateGroupWorkItemAssignees',
+  'updateGroupWorkItemMilestone',
+  'updateGroupWorkItemWeight',
+  'createGroupWorkItemActivityComment',
+  'createGroupWorkItemActivityReply',
+  'deleteGroupWorkItemActivityNote',
+  'setGroupWorkItemActivityNoteReaction',
+  'setGroupWorkItemNotifications',
+  'updateGroupWorkItemContent',
+  'editGroupWorkItemActivityNote',
+  'updateGroupWorkItemLabels',
+};
+
 const Set<String> _productionOperations = <String>{
   ..._mr6b1Operations,
   ..._mr6b2Operations,
   ..._mr6b3Operations,
+  ..._groupOperations,
 };
 
 // MR6b-3 graph writes, visible since catalogue 4 (P14).

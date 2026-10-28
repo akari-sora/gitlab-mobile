@@ -567,16 +567,16 @@ void main() {
     addTearDown(() => aiGroupWorkItemWritesEnabledForTesting = null);
   });
   test(
-    'GP10 row is hidden graph T4 with exact numeric arguments and fixed cap',
+    'GP10 row is visible graph T4 with exact numeric arguments and fixed cap',
     () {
       final row = productionAiLedger.find(_operation)!;
       expect(row.baseTier, AiWriteTier.t4);
       expect(row.scopeClass, AiScopeClass.groupWorkItem);
       expect(row.boundary, AiWriteBoundary.graph);
       expect(row.namedMethod, 'deleteWorkItemActivityNote');
-      expect(row.modelVisible, isFalse);
+      expect(row.modelVisible, isTrue);
       expect(row.readback, isTrue);
-      expect(productionAiLedger.modelVisible, isNot(contains(row)));
+      expect(productionAiLedger.modelVisible, contains(row));
       expect(groupActivityDeleteStageOperations, {_operation});
       expect(row.arguments.keys, unorderedEquals(_args.keys));
       for (final argument in row.arguments.values) {

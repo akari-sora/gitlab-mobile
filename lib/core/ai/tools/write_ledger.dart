@@ -46,7 +46,7 @@ part 'ledger/rows_snippets.dart';
 part 'ledger/rows_t12.dart';
 
 /// G14 changes this only together with the consent/catalogue upgrade.
-const bool aiGroupWorkItemWritesEnabled = false;
+const bool aiGroupWorkItemWritesEnabled = true;
 
 @visibleForTesting
 bool? aiGroupWorkItemWritesEnabledForTesting;

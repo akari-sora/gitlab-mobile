@@ -682,9 +682,9 @@ void main() {
         hasLength(1),
       );
       expect(h.provider.bodies.last, contains('conversation_summary'));
-      // Group rows stay hidden until G14: the new segment offers none.
+      // The new segment offers aliases for the verified, added group item.
       for (final id in G0eLedger.ids) {
-        expect(h.provider.bodies.last, isNot(contains('"$id"')));
+        expect(h.provider.bodies.last, contains('"$id"'));
       }
 
       // Without a valid consent for the provider nothing is added and the

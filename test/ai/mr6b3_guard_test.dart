@@ -1414,7 +1414,7 @@ void main() {
   });
 
   group('§15 row 21 P14 inventory cross-check and §7t delivery', () {
-    test('fixed original rows and staged group alias inventory', () {
+    test('fixed 33 graph rows retain the original methods and group alias mapping', () {
       final graphRows = ProductionAiLedger.rows
           .where((r) => r.boundary == AiWriteBoundary.graph)
           .toList();
@@ -1422,16 +1422,13 @@ void main() {
       for (final family in _groupFamilies.keys) {
         final stage = _groupStages[family]!;
         final complete = _groupFamilies[family]!.$1;
-        expect(
-          stage.isEmpty ||
-              (stage.length == complete.length && stage.containsAll(complete)),
-          isTrue,
-          reason: family,
-        );
+        expect(stage, complete, reason: family);
         expect(stageOperations.intersection(stage), isEmpty, reason: family);
         stageOperations.addAll(stage);
       }
+      expect(_groupFamilies, hasLength(12));
       expect(_groupAliases, hasLength(15));
+      expect(stageOperations, _groupAliases.keys.toSet());
       expect(
         _groupAliases.values.toSet().contains('setIncidentStatus'),
         isFalse,
@@ -1442,7 +1439,9 @@ void main() {
         ...originals,
         ...stageOperations,
       });
-      expect(graphRows, hasLength(18 + stageOperations.length));
+      expect(graphRows, hasLength(33));
+      expect(graphRows.map((row) => row.namedMethod).toSet(), originals);
+      expect(graphRows.map((row) => row.namedMethod).toSet(), hasLength(18));
       for (final row in graphRows) {
         if (originals.contains(row.operationId)) {
           expect(row.namedMethod, row.operationId);
@@ -1450,7 +1449,7 @@ void main() {
         } else {
           expect(row.namedMethod, _groupAliases[row.operationId]);
           expect(row.scopeClass, AiScopeClass.groupWorkItem);
-          expect(row.modelVisible, isFalse);
+          expect(row.modelVisible, isTrue);
         }
       }
     });

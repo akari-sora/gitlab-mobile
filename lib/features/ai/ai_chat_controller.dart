@@ -3902,7 +3902,7 @@ String _writeId(Map<String, Object?> args, String key) {
 /// this same policy when requesting a new write grant.
 AiWritePolicy aiProductionWritePolicy(AiAutonomyLevel agreedCeiling) =>
     AiWritePolicy(
-      policyVersion: 3,
+      policyVersion: 4,
       agreedCeiling: agreedCeiling,
       catalogueVersion: aiToolCatalogueVersion,
       operationIds: {
@@ -3920,7 +3920,7 @@ AiWritePolicy aiProductionWritePolicy(AiAutonomyLevel agreedCeiling) =>
     );
 
 /// Compatibility for earlier packet fixtures; production uses the canonical
-/// v2 policy above, including all current operations and escalation rules.
+/// policy above, including all current operations and escalation rules.
 AiWritePolicy aiMr6b1WritePolicy(AiAutonomyLevel agreedCeiling) =>
     aiProductionWritePolicy(agreedCeiling);
 
