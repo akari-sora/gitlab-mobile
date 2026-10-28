@@ -35,6 +35,8 @@ properties both `0600`, and `python3 tool/android_signing.py verify` passed.
 | QA / benchmark options | No `MR6C_QA`, `EMULATOR_UI_QA`, `EMULATOR_PERF_QA` or `PERF_DIAGNOSTICS` define supplied; normal production entrypoint |
 | Distribution | All four APKs `local-only`; no pipeline/job or public download URL created |
 
+> **Evidence location.** The APKs and receipts linked below are local, untracked artifacts kept outside the repository (relative links resolve only from the 7C working directory). Their SHA-256 values in this table are the stable reference; to re-obtain them, rebuild from the recorded source SHA with the recorded defines and compare hashes.
+
 | Flavor / variant | Application ID | Bytes | SHA-256 | Debuggable | Retained APK |
 |---|---|---:|---|---|---|
 | gitlab-debug | `io.gitlabmobile.gitlab_mobile` | 192912275 | `77a6283c601d31ff412727c74c92e7e7d1bc6ee58e99d06e12388ecc33f8ed90` | true | [app-gitlab-debug.apk](../../evidence/apks/app-gitlab-debug.apk) |
@@ -156,6 +158,7 @@ is false. No approval or video is claimed.
 | Declaration field | Technical answer / evidence |
 |---|---|
 | Type / permission | Candidate `dataSync`; `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_DATA_SYNC` are present in both flavors. Type applicability and Play acceptance remain unapproved. |
+| Use case (Console) | Candidate: **Network transfer: Upload or download** (data fetch / server-side processing while the user briefly leaves). Lead to confirm against the Console's current options; not an approval. |
 | Feature | If enabled after its gates, one user-started AI/GitLab network run: selected-provider inference, allowed GitLab reads and separately authorized writes/uploads while the user briefly leaves the app. No scheduled or boot-initiated always-running agent. |
 | User trigger | User starts a run in the app with the current account, recipient consent and allowed scope; show that exact sequence in the recording. The default-off APKs in this receipt cannot serve as an enabled-feature demonstration. |
 | Why immediate work | The user is waiting for the requested result. Deferral delays that result and dependent reads/confirmations; it does not establish urgency such as medical or emergency processing. |
