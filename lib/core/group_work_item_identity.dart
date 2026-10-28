@@ -27,11 +27,8 @@ int? _positiveId(Object? value) {
 }
 
 bool _validFullPath(String path) =>
-    path.isNotEmpty &&
-    !RegExp(r'[\s\x00-\x20\x7f\\%?#]').hasMatch(path) &&
-    path
-        .split('/')
-        .every((part) => part.isNotEmpty && part != '.' && part != '..');
+    RegExp(r'^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(path) &&
+    path.split('/').every((part) => part != '.' && part != '..' && part != '-');
 
 /// Immutable evidence of one directly Group-owned Work Item.
 ///

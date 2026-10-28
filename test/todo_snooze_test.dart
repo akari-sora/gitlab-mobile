@@ -712,9 +712,14 @@ void main() {
               },
             };
           }
+          final positive = <String, Object?>{
+            ...node,
+            'id': _issueOwnershipTodo(2)['id'],
+            'group': null,
+          };
           final adapter = FakeAdapter((request) {
             _assertOwnershipRead(request, snoozed);
-            return jsonResponse(_ownershipPage([node, _issueOwnershipTodo(2)]));
+            return jsonResponse(_ownershipPage([node, positive]));
           });
           final api = testApi(adapter);
           addTearDown(api.close);

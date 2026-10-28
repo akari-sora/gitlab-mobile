@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_context.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
@@ -139,6 +140,62 @@ void main() {
     expect(keys, hasLength(5));
     expect(projectForAiChatOrigin(_groupOrigin), isNull);
     expect(projectForAiChatOrigin(_projectOrigin), same(_project));
+  });
+
+  test('invalid group origins never create a registry session', () async {
+    final h = await StackHarness.create();
+    addTearDown(h.dispose);
+    var created = 0;
+    final registry = AccountAiRunRegistry(
+      session: h.session,
+      settings: h.settings,
+      sessionFactory:
+          ({
+            required origin,
+            required session,
+            required settings,
+            required runningCount,
+            wireClientFactory,
+          }) {
+            created++;
+            throw StateError('Unexpected session construction');
+          },
+    );
+    addTearDown(registry.dispose);
+    final origins = <AiChatOrigin>[
+      for (final gid in [
+        'gid://gitlab/Project/7',
+        'gid://gitlab/Namespaces::ProjectNamespace/7',
+        'gid://gitlab/Group/07',
+        'gid://gitlab/Group/0',
+      ])
+        AiGroupWorkItemOrigin(
+          group: GraphResourceRef(id: gid, fullPath: 'team/sub'),
+          iid: 5,
+          title: 'Invalid owner',
+        ),
+      for (final coordinates in [(0, 5), (-1, 5), (7, 0), (7, -1)])
+        AiProjectWorkItemFromGroupPageOrigin(
+          viewGroupId: coordinates.$1,
+          project: _project,
+          iid: coordinates.$2,
+          title: 'Invalid entry',
+        ),
+    ];
+    for (final origin in origins) {
+      expect(
+        () => origin.key,
+        throwsA(
+          isA<ApiFailure>().having(
+            (failure) => failure.kind,
+            'kind',
+            FailureKind.validation,
+          ),
+        ),
+      );
+      expect(() => registry.open(origin), throwsStateError);
+      expect(created, 0);
+    }
   });
 
   test(
@@ -354,6 +411,8 @@ void main() {
     await controller.send('First look');
     expect(controller.contextForTesting?.groupScope?.iid, 5);
     expect(controller.contextForTesting?.groupMetadata?.visibility, 'private');
+    final firstScope = controller.contextForTesting!.groupScope;
+    expect(firstScope, isNotNull);
 
     // Visibility is metadata only, so the delivered text stays the same and
     // the controller takes the unchanged branch.
@@ -364,6 +423,7 @@ void main() {
     final context = controller.contextForTesting!;
     expect(context.scope, isNull);
     expect(context.groupScope?.iid, 5);
+    expect(context.groupScope, isNot(same(firstScope)));
     expect(context.groupMetadata?.visibility, 'public');
   });
 
