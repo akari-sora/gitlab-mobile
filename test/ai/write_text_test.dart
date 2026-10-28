@@ -10,6 +10,40 @@ const _otherSecret = 'fedcba9876543210fedcba9876543210';
 const _token = 'glpat-abcdefghijklmnopqrst';
 
 void main() {
+  test('upload IDs never alias leading zero or over-long spellings', () {
+    final table = _table();
+    final field = _field(AiWritableField.issueDescription);
+    const original = '![a](/uploads/$_secret/a.png)';
+    final outgoing = table.redactOutgoing(original, field: field);
+    expect(outgoing, '![a]([[upload:u-1]])');
+    expect(table.restoreIntoSameField(outgoing, field).finalText, original);
+    expect(
+      _prepare(
+        modelText: outgoing,
+        field: field,
+        placeholders: table,
+      ).finalText,
+      original,
+    );
+    for (final id in ['01', '001', '9' * 200]) {
+      final alias = '![a]([[upload:u-$id]])';
+      expect(
+        table.restoreIntoSameField(alias, field).blockedReasonCode,
+        AiTextBlockCode.rereadField,
+        reason: id,
+      );
+      expect(
+        _prepare(
+          modelText: alias,
+          field: field,
+          placeholders: table,
+        ).blockedReasonCode,
+        AiTextBlockCode.rereadField,
+        reason: id,
+      );
+    }
+  });
+
   for (final groupOwned in [false, true]) {
     group('G0j ${groupOwned ? 'group' : 'project'} title guard', () {
       AiFieldProvenance title({bool complete = true}) {
@@ -80,6 +114,50 @@ void main() {
   }
 
   group('G0a group field provenance', () {
+    test('public provenance cannot mint or restore a verified group token', () {
+      final identity = _groupIdentity();
+      final field = _groupField(identity);
+      const original = '![a](/uploads/$_secret/a.png)';
+      final table = _groupTable(identity);
+      final outgoing = table.redactOutgoing(original, field: field);
+      expect(table.restoreIntoSameField(outgoing, field).finalText, original);
+      for (final groupId in [field.groupId, null]) {
+        for (final path in [field.groupFullPath, null]) {
+          for (final account in [field.accountKey, null]) {
+            final forged = AiFieldProvenance(
+              resourceKey: field.resourceKey,
+              fieldName: field.fieldName,
+              completeValue: true,
+              resourceWeb: field.resourceWeb,
+              groupId: groupId,
+              groupFullPath: path,
+              accountKey: account,
+            );
+            if (groupId != null || path != null || account != null) {
+              final emptyTable = _groupTable(identity);
+              expect(
+                emptyTable.redactOutgoing(original, field: forged),
+                isNot(contains('[[upload:')),
+              );
+              expect(emptyTable.length, 0);
+            }
+            expect(
+              table.restoreIntoSameField(outgoing, forged).blockedReasonCode,
+              AiTextBlockCode.rereadField,
+            );
+            expect(
+              _prepare(
+                modelText: outgoing,
+                field: forged,
+                placeholders: table,
+              ).blockedReasonCode,
+              AiTextBlockCode.rereadField,
+            );
+          }
+        }
+      }
+    });
+
     test(
       'description uses the numeric identity and current installation URL',
       () {

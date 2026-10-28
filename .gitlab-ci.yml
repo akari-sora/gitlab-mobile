@@ -53,7 +53,7 @@ python_checks:
   stage: verify
   timeout: 5m
   before_script:
-    - python3 ci/install_packages.py git
+    - python3 ci/install_packages.py git openssl
   script:
     - python3 -m unittest discover -s ci/tests -p '*_test.py' -v
     - python3 -m unittest discover -s tool/tests -p 'test_*.py' -v

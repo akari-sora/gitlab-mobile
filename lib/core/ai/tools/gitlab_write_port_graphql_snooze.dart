@@ -41,9 +41,17 @@ extension _GraphqlSnoozePrepare on GitLabAiWritePort {
     })
     owned;
     try {
+      // A global Todo may belong to a project. Until its owner is known,
+      // retain the captured session fence without imposing the group epoch on
+      // project discovery. Group owners still require that epoch below.
+      final readIsCurrent = context == null
+          ? null
+          : global
+          ? context.isSessionCurrent
+          : context.isCurrent;
       user = context == null
           ? await _api.currentUser()
-          : await _readGroupActor(isCurrent: context.isCurrent);
+          : await _readGroupActor(isCurrent: readIsCurrent!);
       if ('${_api.instance.key}#${user.id}' != accountKey) {
         throw const AiWriteRefused('todoForeign');
       }
@@ -52,13 +60,14 @@ extension _GraphqlSnoozePrepare on GitLabAiWritePort {
             ? await _api.pendingTodosForSnooze(maxPages: 4)
             : await _api.snoozedTodosForUnsnooze(maxPages: 4);
       } else {
+        final selectedReadIsCurrent = readIsCurrent!;
         final selected = snooze
             ? await _api.selectedTodoForSnooze(
                 id,
                 expectedUserId: user.id,
                 generation: context.generation,
                 readEpoch: context.readEpoch,
-                isCurrent: context.isCurrent,
+                isCurrent: selectedReadIsCurrent,
                 exactGroup: exactGroup,
                 maxPages: 4,
               )
@@ -67,11 +76,11 @@ extension _GraphqlSnoozePrepare on GitLabAiWritePort {
                 expectedUserId: user.id,
                 generation: context.generation,
                 readEpoch: context.readEpoch,
-                isCurrent: context.isCurrent,
+                isCurrent: selectedReadIsCurrent,
                 exactGroup: exactGroup,
                 maxPages: 4,
               );
-        if (!context.isCurrent()) {
+        if (!selectedReadIsCurrent()) {
           throw const AiWriteRefused('todoUnverifiable');
         }
         selectedGroupTodo = selected.selectedGroupTodo;
@@ -103,6 +112,9 @@ extension _GraphqlSnoozePrepare on GitLabAiWritePort {
       throw const AiWriteRefused('todoUnsupportedTarget');
     }
     if (selectedGroupTodo != null) {
+      if (!context!.isCurrent()) {
+        throw const AiWriteRefused('todoUnverifiable');
+      }
       // Discovery binds the numeric tuple; also prove the grant's exact path.
       if (exactGroup != null &&
           selectedGroupTodo.owner.fullPath != groups.single.groupFullPath) {
@@ -111,7 +123,7 @@ extension _GraphqlSnoozePrepare on GitLabAiWritePort {
       return _prepareGroupTodoSnooze(
         request,
         selected: selectedGroupTodo,
-        context: context!,
+        context: context,
         user: user,
         until: until,
       );

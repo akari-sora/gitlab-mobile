@@ -42,6 +42,7 @@ class AiWritePreviewView extends StatelessWidget {
     final AiDeletePreview delete => _DeletePreview(
       delete: delete,
       todos: operationId == 'markAllTodosDone',
+      group: operationId == 'deleteGroupWorkItemActivityNote',
       delayed:
           operationId == 'deleteProject' ||
           operationId == 'deleteContainerRepository',
@@ -453,10 +454,15 @@ class _DeletePreview extends StatelessWidget {
   const _DeletePreview({
     required this.delete,
     required this.todos,
+    this.group = false,
     this.delayed = false,
   });
 
   final AiDeletePreview delete;
+
+  /// A comment on a group's work item: the path is the owning group's, and
+  /// the parent `team/sub#5` shows as the group path and `#5`, each isolated.
+  final bool group;
 
   /// Marking every to-do done: the target is the account and the count is
   /// to-dos. GitLab can restore a done to-do, so this is not "can't be undone".
@@ -464,6 +470,14 @@ class _DeletePreview extends StatelessWidget {
 
   /// A project or container repository delete that GitLab may only schedule.
   final bool delayed;
+
+  String _parentText(String parent) {
+    final path = delete.path;
+    if (group && path != null && parent.startsWith('$path#')) {
+      return '${isolated(path)} ${isolated(parent.substring(path.length))}';
+    }
+    return isolated(parent);
+  }
 
   @override
   Widget build(BuildContext context) => Column(
@@ -476,14 +490,14 @@ class _DeletePreview extends StatelessWidget {
           isolated(delete.targetName),
         ),
       if (delete.parentName case final parent?)
-        _Fact(l10n.aiPreviewParent, isolated(parent)),
+        _Fact(l10n.aiPreviewParent, _parentText(parent)),
       if (delete.author case final author?)
         _Fact(l10n.author, isolated(author)),
       if (delete.excerpt case final excerpt? when excerpt.trim().isNotEmpty)
         _Quote(excerpt),
       // A branch or tag delete names the same thing twice; show it once.
       if (delete.path case final path? when path != delete.targetName)
-        _Fact(l10n.aiPreviewPath, isolated(path)),
+        _Fact(group ? l10n.groupLabel : l10n.aiPreviewPath, isolated(path)),
       if (delete.ref case final ref? when ref != delete.targetName)
         _Fact(l10n.aiPreviewRef, isolated(ref)),
       if (delete.count case final count?)
