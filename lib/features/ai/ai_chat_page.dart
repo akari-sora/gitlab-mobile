@@ -501,8 +501,8 @@ class _AiChatPageState extends State<AiChatPage> {
   /// card for it is waiting.
   void _removeGroupWorkItem(AiScopeAddSession adds, AiAddedGroupWorkItem item) {
     adds.removeGroupWorkItem(item);
-    // `#{iid}` is isolated with its sigil by the generated message.
-    _notice(l10n.aiRemovedGroupWorkItem(isolated(item.fullPath), item.iid));
+    // The generated message isolates the path, and `#{iid}` with its sigil.
+    _notice(l10n.aiRemovedGroupWorkItem(item.fullPath, item.iid));
   }
 
   /// The page body, below [_messenger]: failure snack bars land here.
@@ -1046,6 +1046,12 @@ class _AiChatPageState extends State<AiChatPage> {
       return _EmptyConversation(
         origin: _session.origin,
         safe: _session.displaySafe,
+        // Items the user added are in scope too; the sentence must not call
+        // them out of scope while their chips sit above the message box.
+        addedGroupItems: switch (_session) {
+          final AiScopeAddSession adds => adds.addedGroupWorkItems.isNotEmpty,
+          _ => false,
+        },
         enabled: _session.canSend,
         onSuggestion: _send,
         notice: notice,
@@ -1266,6 +1272,7 @@ class _EmptyConversation extends StatelessWidget {
   const _EmptyConversation({
     required this.origin,
     required this.safe,
+    this.addedGroupItems = false,
     required this.enabled,
     required this.onSuggestion,
     this.notice,
@@ -1276,6 +1283,9 @@ class _EmptyConversation extends StatelessWidget {
 
   /// Cleans a GitLab value (the group path) before it is shown.
   final String Function(String text) safe;
+
+  /// Whether the user added group work items to this conversation.
+  final bool addedGroupItems;
   final bool enabled;
   final ValueChanged<String> onSuggestion;
   final Widget? notice;
@@ -1301,11 +1311,16 @@ class _EmptyConversation extends StatelessWidget {
             // A group's own work item has no project to read around it: the
             // conversation covers this item, not the group's other items or
             // its projects. A path that cannot be checked is left out.
-            AiGroupWorkItemOrigin(:final group, :final iid) => switch (safe(
-              group.fullPath,
+            // With user-added items the sentence names them as in scope and
+            // keeps out only the group's items that were not added.
+            AiGroupWorkItemOrigin(:final group, :final iid) => switch ((
+              safe(group.fullPath),
+              addedGroupItems,
             )) {
-              '' => l10n.aiChatEmptyGroupItem,
-              final path => l10n.aiChatEmptyGroup(isolated(path), iid),
+              ('', false) => l10n.aiChatEmptyGroupItem,
+              ('', true) => l10n.aiChatEmptyGroupItemAdded,
+              (final path, false) => l10n.aiChatEmptyGroup(path, iid),
+              (final path, true) => l10n.aiChatEmptyGroupAdded(path, iid),
             },
             _ => l10n.aiChatEmpty,
           },

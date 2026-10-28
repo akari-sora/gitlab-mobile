@@ -2857,4 +2857,7 @@ const _messagesEn = <String>[
   'The AI reads this group work item. The group\'s other work items and its projects are outside this conversation.',
   'Summarize this work item',
   'Removed {path} #{iid} from the conversation; the AI can no longer change it',
+  'The AI reads work item #{iid} of group {path}. The items you added (listed above the message box) are also in this conversation\'s scope; the group\'s other work items and its projects are not.',
+  'The AI reads this group work item. The items you added (listed above the message box) are also in this conversation\'s scope; the group\'s other work items and its projects are not.',
+  'The dates were not sent: they may already match the current dates, and for a group work item that case cannot be confirmed without an extra request. Read the current dates again and retry.',
 ];

@@ -2857,4 +2857,7 @@ const _messagesIt = <String>[
   'L’IA legge questo elemento di lavoro del gruppo. Gli altri elementi di lavoro del gruppo e i suoi progetti sono esclusi da questa conversazione.',
   'Riassumi questo elemento di lavoro',
   '{path} #{iid} rimosso dalla conversazione; l’IA non può più modificarlo',
+  'L’IA legge l’elemento di lavoro #{iid} del gruppo {path}. Anche gli elementi che hai aggiunto (sopra la casella del messaggio) fanno parte di questa conversazione; gli altri elementi di lavoro del gruppo e i suoi progetti no.',
+  'L’IA legge questo elemento di lavoro del gruppo. Anche gli elementi che hai aggiunto (sopra la casella del messaggio) fanno parte di questa conversazione; gli altri elementi di lavoro del gruppo e i suoi progetti no.',
+  'Le date non sono state inviate: potrebbero già coincidere con quelle attuali e, per un elemento di lavoro del gruppo, questo caso non si può confermare senza una richiesta aggiuntiva. Rileggi le date attuali e riprova.',
 ];

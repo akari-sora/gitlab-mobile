@@ -265,7 +265,14 @@ final class _UncheckedSession extends _FakeSession {
 
 /// A conversation holding one user-added group work item.
 final class _ScopeAddSession extends _FakeSession implements AiScopeAddSession {
-  _ScopeAddSession() : super(origin: _mergeRequest);
+  _ScopeAddSession({super.origin, this.unchecked});
+
+  /// A value [displaySafe] cannot check, like [_UncheckedSession].
+  final String? unchecked;
+
+  @override
+  String displaySafe(String text) =>
+      text == unchecked ? '' : super.displaySafe(text);
 
   @override
   bool get offersGroupWorkItemAdd => true;
@@ -2956,6 +2963,85 @@ void main() {
         find.text(l10n.aiRemovedGroupWorkItem('team/sub', 5)),
         findsOneWidget,
       );
+    });
+
+    // FIX1 R1: an item the user added from the same group is in scope; the
+    // empty conversation says so while its chip is shown, and returns to the
+    // strict sentence once it is removed.
+    for (final unchecked in const [false, true]) {
+      testWidgets('an added item from the same group is never called out of '
+          'scope${unchecked ? ' (path not shown)' : ''}', (tester) async {
+        final session =
+            _ScopeAddSession(
+                origin: _groupItem,
+                unchecked: unchecked ? 'team/sub' : null,
+              )
+              ..addedGroupWorkItems = const [
+                AiAddedGroupWorkItem(
+                  key: 'group:7:6',
+                  fullPath: 'team/sub',
+                  iid: 6,
+                  title: 'A sibling synthetic item',
+                ),
+              ];
+        await tester.pumpWidget(_host(AiChatPage(session: session)));
+        await tester.pump();
+        final chip = find.byKey(
+          const ValueKey('ai-added-group-item-group:7:6'),
+        );
+        expect(chip, findsOneWidget);
+        final scope = find.byKey(const ValueKey('ai-chat-empty-scope'));
+        expect(
+          tester.widget<Text>(scope).data,
+          unchecked
+              ? l10n.aiChatEmptyGroupItemAdded
+              : l10n.aiChatEmptyGroupAdded('team/sub', 5),
+        );
+        await tester.tap(
+          find.descendant(
+            of: chip,
+            matching: find.byTooltip(l10n.aiRemoveGroupWorkItem),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(chip, findsNothing);
+        expect(
+          tester.widget<Text>(scope).data,
+          unchecked
+              ? l10n.aiChatEmptyGroupItem
+              : l10n.aiChatEmptyGroup('team/sub', 5),
+        );
+      });
+    }
+
+    testWidgets('a group dates no-op row says the dates may already match', (
+      tester,
+    ) async {
+      const row = AiToolRunItem(
+        name: 'updateGroupWorkItemDates',
+        argsPreview: 'team/sub#5',
+        status: AiToolRunStatus.completed,
+        sizeChars: 0,
+        provenance: '',
+        writeStatus: AiWriteResultStatus.notExecuted,
+      );
+      final session = _AuditWriteSession(items: const [row]);
+      session.rows[row] = const AiWriteRow(
+        operationId: 'updateGroupWorkItemDates',
+        outcome: AiWriteOutcome(
+          state: AiJournalState.notExecuted,
+          reasonCode: 'unsupported',
+        ),
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('ai-write-row-reason')))
+            .data,
+        l10n.aiRefusedGroupDatesNotSent,
+      );
+      expect(find.text(l10n.aiRefusedGroupUnsupported), findsNothing);
     });
 
     for (final tag in const ['zh-TW', 'ar']) {

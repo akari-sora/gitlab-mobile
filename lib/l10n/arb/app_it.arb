@@ -2854,5 +2854,8 @@
   "aiChatEmptyGroup": "L’IA legge l’elemento di lavoro #{iid} del gruppo {path}. Gli altri elementi di lavoro del gruppo e i suoi progetti sono esclusi da questa conversazione.",
   "aiChatEmptyGroupItem": "L’IA legge questo elemento di lavoro del gruppo. Gli altri elementi di lavoro del gruppo e i suoi progetti sono esclusi da questa conversazione.",
   "aiSuggestWorkItemSummary": "Riassumi questo elemento di lavoro",
-  "aiRemovedGroupWorkItem": "{path} #{iid} rimosso dalla conversazione; l’IA non può più modificarlo"
+  "aiRemovedGroupWorkItem": "{path} #{iid} rimosso dalla conversazione; l’IA non può più modificarlo",
+  "aiChatEmptyGroupAdded": "L’IA legge l’elemento di lavoro #{iid} del gruppo {path}. Anche gli elementi che hai aggiunto (sopra la casella del messaggio) fanno parte di questa conversazione; gli altri elementi di lavoro del gruppo e i suoi progetti no.",
+  "aiChatEmptyGroupItemAdded": "L’IA legge questo elemento di lavoro del gruppo. Anche gli elementi che hai aggiunto (sopra la casella del messaggio) fanno parte di questa conversazione; gli altri elementi di lavoro del gruppo e i suoi progetti no.",
+  "aiRefusedGroupDatesNotSent": "Le date non sono state inviate: potrebbero già coincidere con quelle attuali e, per un elemento di lavoro del gruppo, questo caso non si può confermare senza una richiesta aggiuntiva. Rileggi le date attuali e riprova."
 }

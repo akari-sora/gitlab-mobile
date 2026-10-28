@@ -2857,4 +2857,7 @@ const _messagesCs = <String>[
   'AI čte tuto pracovní položku skupiny. Ostatní pracovní položky skupiny a její projekty do této konverzace nepatří.',
   'Shrň tuto pracovní položku',
   '{path} #{iid} odebráno z konverzace; AI ji už nemůže měnit',
+  'AI čte pracovní položku #{iid} skupiny {path}. Položky, které jste přidali (nad polem zprávy), do této konverzace také patří; ostatní pracovní položky skupiny a její projekty ne.',
+  'AI čte tuto pracovní položku skupiny. Položky, které jste přidali (nad polem zprávy), do této konverzace také patří; ostatní pracovní položky skupiny a její projekty ne.',
+  'Data nebyla odeslána: možná se už shodují s aktuálními a u pracovní položky skupiny to nelze ověřit bez dalšího požadavku. Načtěte aktuální data znovu a zkuste to znovu.',
 ];

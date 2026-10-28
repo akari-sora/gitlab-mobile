@@ -1890,9 +1890,13 @@ void main() {
     test('a missing feature and a lost ownership proof have their own words '
         'on a group alias only', () {
       for (final alias in _groupAliases.keys) {
+        // The dates row's `unsupported` is D29's strict no-op refusal, not a
+        // missing feature (FIX1 R2).
         expect(
           aiRefusalText('unsupported', operationId: alias),
-          l10n.aiRefusedGroupUnsupported,
+          alias == 'updateGroupWorkItemDates'
+              ? l10n.aiRefusedGroupDatesNotSent
+              : l10n.aiRefusedGroupUnsupported,
           reason: alias,
         );
         expect(
@@ -1931,6 +1935,39 @@ void main() {
         );
       }
       expect(l10n.aiRefusedGroupUnsupported, isNot(l10n.aiRefusedNotAllowed));
+      // The project dates row keeps the shared sentence.
+      expect(
+        aiRefusalText('unsupported', operationId: 'updateWorkItemDates'),
+        l10n.aiRefusedNotAllowed,
+      );
+    });
+
+    // FIX1 R2: the group dates port passes the core's strict no-op refusal on
+    // as `unsupported` (pinned by mr6b3g_dates_test "strict noop has journal
+    // notExecuted, no write charge, and fail-stop": notExecuted, reason
+    // `unsupported`, zero mutations). The card says the dates were not sent
+    // and may already match, never that GitLab lacks the feature.
+    testWidgets('a group dates no-op refusal says the dates may already '
+        'match, not that the feature is missing', (tester) async {
+      final proposal = _proposal(
+        operationId: 'updateGroupWorkItemDates',
+        fields: const {'mode': 'manual', 'startDate': '2026-10-05'},
+        editableField: null,
+        releaseName: 'team/sub#5',
+      );
+      final writes = _Writes([proposal])
+        ..answer = (_) => const AiWriteOutcome(
+          state: AiJournalState.notExecuted,
+          reasonCode: 'unsupported',
+        );
+      await tester.pumpWidget(
+        _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiRefusedGroupDatesNotSent), findsOneWidget);
+      expect(find.text(l10n.aiRefusedGroupUnsupported), findsNothing);
+      expect(find.text(l10n.aiRefusedNotAllowed), findsNothing);
     });
 
     testWidgets('a refused group approval says the feature is missing', (
@@ -2028,7 +2065,7 @@ void main() {
         final line = find.byKey(const ValueKey('ai-proposal-group-target'));
         expect(line, findsOneWidget);
         final text = tester.widget<Text>(line).data!;
-        expect(text, l10n.aiProposalGroupTarget(isolated(path), 4242));
+        expect(text, l10n.aiProposalGroupTarget(path, 4242));
         if (tag == 'ar') {
           expect(Directionality.of(tester.element(line)), TextDirection.rtl);
           // Path and `#4242` are separate isolates, never one `path#4242`.
@@ -2092,6 +2129,30 @@ void main() {
         expect(
           l10n.aiRefusedGroupUnverifiable,
           isNot(l10n.aiRefusedUnverifiable),
+          reason: reason,
+        );
+        // FIX1: the dates no-op sentence and the added-items scope lines.
+        expect(
+          {
+            l10n.aiRefusedGroupDatesNotSent,
+            l10n.aiRefusedGroupUnsupported,
+            l10n.aiRefusedNotAllowed,
+          },
+          hasLength(3),
+          reason: reason,
+        );
+        expect(
+          l10n.aiChatEmptyGroupAdded('team/sub', 5),
+          allOf(
+            contains('team/sub'),
+            contains(language.rtl ? '$ltrIsolate#5$popIsolate' : '#5'),
+            isNot(l10n.aiChatEmptyGroup('team/sub', 5)),
+          ),
+          reason: reason,
+        );
+        expect(
+          l10n.aiChatEmptyGroupItemAdded,
+          isNot(l10n.aiChatEmptyGroupItem),
           reason: reason,
         );
         expect(

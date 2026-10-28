@@ -2857,4 +2857,7 @@ const _messagesSv = <String>[
   'AI läser det här arbetsobjektet i gruppen. Gruppens andra arbetsobjekt och dess projekt ingår inte i den här konversationen.',
   'Sammanfatta arbetsobjektet',
   '{path} #{iid} har tagits bort från konversationen; AI kan inte längre ändra det',
+  'AI läser arbetsobjekt #{iid} i gruppen {path}. Objekten du har lagt till (ovanför meddelanderutan) ingår också i konversationen; gruppens andra arbetsobjekt och dess projekt gör det inte.',
+  'AI läser det här arbetsobjektet i gruppen. Objekten du har lagt till (ovanför meddelanderutan) ingår också i konversationen; gruppens andra arbetsobjekt och dess projekt gör det inte.',
+  'Datumen skickades inte: de kan redan stämma med de nuvarande, och för en grupps arbetsobjekt kan det inte bekräftas utan en extra begäran. Läs de nuvarande datumen igen och försök på nytt.',
 ];

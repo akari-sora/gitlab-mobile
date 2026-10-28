@@ -2857,4 +2857,7 @@ const _messagesFr = <String>[
   'L’IA lit cet élément de travail du groupe. Les autres éléments de travail du groupe et ses projets sont hors de cette conversation.',
   'Résume cet élément de travail',
   '{path} #{iid} retiré de la conversation ; l’IA ne peut plus le modifier',
+  'L’IA lit l’élément de travail #{iid} du groupe {path}. Les éléments que vous avez ajoutés (au-dessus de la zone de message) font aussi partie de cette conversation ; les autres éléments de travail du groupe et ses projets, non.',
+  'L’IA lit cet élément de travail du groupe. Les éléments que vous avez ajoutés (au-dessus de la zone de message) font aussi partie de cette conversation ; les autres éléments de travail du groupe et ses projets, non.',
+  'Les dates n’ont pas été envoyées : elles correspondent peut-être déjà aux dates actuelles et, pour un élément de travail du groupe, ce cas ne peut pas être confirmé sans requête supplémentaire. Relisez les dates actuelles puis réessayez.',
 ];

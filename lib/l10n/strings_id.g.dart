@@ -2857,4 +2857,7 @@ const _messagesId = <String>[
   'AI membaca item kerja grup ini. Item kerja lain di grup dan proyek di dalamnya berada di luar percakapan ini.',
   'Ringkas item kerja ini',
   '{path} #{iid} dihapus dari percakapan; AI tidak dapat mengubahnya lagi',
+  'AI membaca item kerja #{iid} milik grup {path}. Item yang Anda tambahkan (di atas kotak pesan) juga termasuk dalam percakapan ini; item kerja lain di grup dan proyek di dalamnya tidak.',
+  'AI membaca item kerja grup ini. Item yang Anda tambahkan (di atas kotak pesan) juga termasuk dalam percakapan ini; item kerja lain di grup dan proyek di dalamnya tidak.',
+  'Tanggal tidak dikirim: tanggalnya mungkin sudah sama dengan yang sekarang, dan untuk item kerja grup hal ini tidak dapat dipastikan tanpa permintaan tambahan. Baca ulang tanggal saat ini lalu coba lagi.',
 ];

@@ -2857,4 +2857,7 @@ const _messagesPtBr = <String>[
   'A IA lê este item de trabalho do grupo. Os outros itens de trabalho do grupo e os projetos dele ficam fora desta conversa.',
   'Resuma este item de trabalho',
   '{path} #{iid} foi removido da conversa; a IA não pode mais alterá-lo',
+  'A IA lê o item de trabalho #{iid} do grupo {path}. Os itens que você adicionou (acima da caixa de mensagem) também fazem parte desta conversa; os outros itens de trabalho do grupo e os projetos dele, não.',
+  'A IA lê este item de trabalho do grupo. Os itens que você adicionou (acima da caixa de mensagem) também fazem parte desta conversa; os outros itens de trabalho do grupo e os projetos dele, não.',
+  'As datas não foram enviadas: elas podem já ser iguais às atuais e, em um item de trabalho do grupo, esse caso não pode ser confirmado sem uma solicitação extra. Leia as datas atuais de novo e tente outra vez.',
 ];

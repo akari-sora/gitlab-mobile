@@ -2857,4 +2857,7 @@ const _messagesTr = <String>[
   'AI bu grup iş öğesini okur. Grubun diğer iş öğeleri ve projeleri bu konuşmanın dışındadır.',
   'Bu iş öğesini özetle',
   '{path} #{iid} konuşmadan kaldırıldı; AI artık bunu değiştiremez',
+  'AI, {path} grubunun #{iid} iş öğesini okur. Eklediğin öğeler (mesaj kutusunun üstünde) de bu konuşmanın kapsamındadır; grubun diğer iş öğeleri ve projeleri değildir.',
+  'AI bu grup iş öğesini okur. Eklediğin öğeler (mesaj kutusunun üstünde) de bu konuşmanın kapsamındadır; grubun diğer iş öğeleri ve projeleri değildir.',
+  'Tarihler gönderilmedi: zaten mevcut tarihlerle aynı olabilirler ve bir grup iş öğesinde bu durum ek bir istek olmadan doğrulanamaz. Mevcut tarihleri yeniden okuyup tekrar dene.',
 ];

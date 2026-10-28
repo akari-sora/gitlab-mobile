@@ -2854,5 +2854,8 @@
   "aiChatEmptyGroup": "AI läser arbetsobjekt #{iid} i gruppen {path}. Gruppens andra arbetsobjekt och dess projekt ingår inte i den här konversationen.",
   "aiChatEmptyGroupItem": "AI läser det här arbetsobjektet i gruppen. Gruppens andra arbetsobjekt och dess projekt ingår inte i den här konversationen.",
   "aiSuggestWorkItemSummary": "Sammanfatta arbetsobjektet",
-  "aiRemovedGroupWorkItem": "{path} #{iid} har tagits bort från konversationen; AI kan inte längre ändra det"
+  "aiRemovedGroupWorkItem": "{path} #{iid} har tagits bort från konversationen; AI kan inte längre ändra det",
+  "aiChatEmptyGroupAdded": "AI läser arbetsobjekt #{iid} i gruppen {path}. Objekten du har lagt till (ovanför meddelanderutan) ingår också i konversationen; gruppens andra arbetsobjekt och dess projekt gör det inte.",
+  "aiChatEmptyGroupItemAdded": "AI läser det här arbetsobjektet i gruppen. Objekten du har lagt till (ovanför meddelanderutan) ingår också i konversationen; gruppens andra arbetsobjekt och dess projekt gör det inte.",
+  "aiRefusedGroupDatesNotSent": "Datumen skickades inte: de kan redan stämma med de nuvarande, och för en grupps arbetsobjekt kan det inte bekräftas utan en extra begäran. Läs de nuvarande datumen igen och försök på nytt."
 }

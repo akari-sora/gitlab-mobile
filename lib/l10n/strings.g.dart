@@ -8658,4 +8658,13 @@ final class AppStrings {
 
   /// 已從對話移除 {path} #{iid}，AI 不能再修改它
   String aiRemovedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[2854], {'path': path, 'iid': iid});
+
+  /// AI 會讀取群組 {path} 的工作項目 #{iid}。你加入對話的項目（列在輸入框上方）也在這個對話的範圍內；群組其他未加入的工作項目和群組裡的專案則不在範圍內。
+  String aiChatEmptyGroupAdded(Object? path, Object? iid) => _format(language, language._messages[2855], {'path': path, 'iid': iid});
+
+  /// AI 會讀取這個群組工作項目。你加入對話的項目（列在輸入框上方）也在這個對話的範圍內；群組其他未加入的工作項目和群組裡的專案則不在範圍內。
+  String get aiChatEmptyGroupItemAdded => language._messages[2856];
+
+  /// 日期沒有送出：要求的日期可能和目前相同，而群組工作項目在這種情況下無法不多送一次請求就確認歸屬。請重新讀取目前的日期後再試。
+  String get aiRefusedGroupDatesNotSent => language._messages[2857];
 }

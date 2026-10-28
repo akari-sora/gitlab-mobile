@@ -491,11 +491,20 @@ const _proposalStateCodes = {
 /// sentence would mislead: a missing widget is the group work item's lack
 /// of the feature, not a refusal, and an unverifiable item is one whose
 /// group ownership (path, number, work item) could not be proven again.
+///
+/// The group dates row is the exception for `unsupported`: there the code
+/// comes from the strict no-op refusal (D29; `WorkItemDatesApi` refuses a
+/// request equal to the current dates because it cannot prove ownership
+/// without another read), not from a missing feature, so it gets a sentence
+/// that claims only what is certain: nothing was sent, the dates may already
+/// match.
 String? aiRefusalText(String code, {String? operationId}) {
   if (operationId != null &&
       productionAiLedger.find(operationId)?.scopeClass ==
           AiScopeClass.groupWorkItem) {
     switch (code) {
+      case 'unsupported' when operationId == 'updateGroupWorkItemDates':
+        return l10n.aiRefusedGroupDatesNotSent;
       case 'unsupported' || 'healthUnsupported':
         return l10n.aiRefusedGroupUnsupported;
       case 'workItemUnverifiable':
@@ -963,7 +972,8 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
               _CardLine(
                 icon: Icons.workspaces_outline,
                 color: scheme.primary,
-                text: l10n.aiProposalGroupTarget(isolated(path), iid),
+                // The generated message isolates each value in Arabic.
+                text: l10n.aiProposalGroupTarget(path, iid),
                 textKey: const ValueKey('ai-proposal-group-target'),
               ),
             ],

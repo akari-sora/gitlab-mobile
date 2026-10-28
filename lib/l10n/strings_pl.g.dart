@@ -2857,4 +2857,7 @@ const _messagesPl = <String>[
   'AI odczytuje ten element roboczy grupy. Inne elementy robocze grupy i jej projekty są poza tą rozmową.',
   'Podsumuj ten element roboczy',
   'Usunięto {path} #{iid} z rozmowy; AI nie może go już zmieniać',
+  'AI odczytuje element roboczy #{iid} grupy {path}. Dodane przez Ciebie elementy (nad polem wiadomości) też należą do tej rozmowy; inne elementy robocze grupy i jej projekty nie.',
+  'AI odczytuje ten element roboczy grupy. Dodane przez Ciebie elementy (nad polem wiadomości) też należą do tej rozmowy; inne elementy robocze grupy i jej projekty nie.',
+  'Daty nie zostały wysłane: mogą już być takie same jak obecne, a dla elementu roboczego grupy nie da się tego potwierdzić bez dodatkowego żądania. Odczytaj ponownie bieżące daty i spróbuj jeszcze raz.',
 ];

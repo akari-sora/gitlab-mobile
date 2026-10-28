@@ -2857,4 +2857,7 @@ const _messagesRo = <String>[
   'AI citește acest element de lucru al grupului. Celelalte elemente de lucru ale grupului și proiectele lui nu fac parte din această conversație.',
   'Rezumă acest element de lucru',
   '{path} #{iid} a fost eliminat din conversație; AI nu-l mai poate modifica',
+  'AI citește elementul de lucru #{iid} al grupului {path}. Elementele pe care le-ai adăugat (deasupra casetei de mesaj) fac și ele parte din această conversație; celelalte elemente de lucru ale grupului și proiectele lui nu.',
+  'AI citește acest element de lucru al grupului. Elementele pe care le-ai adăugat (deasupra casetei de mesaj) fac și ele parte din această conversație; celelalte elemente de lucru ale grupului și proiectele lui nu.',
+  'Datele nu au fost trimise: s-ar putea să coincidă deja cu cele actuale, iar pentru un element de lucru al grupului acest caz nu poate fi confirmat fără o cerere suplimentară. Citește din nou datele actuale și încearcă iar.',
 ];

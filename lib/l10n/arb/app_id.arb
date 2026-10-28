@@ -2854,5 +2854,8 @@
   "aiChatEmptyGroup": "AI membaca item kerja #{iid} milik grup {path}. Item kerja lain di grup dan proyek di dalamnya berada di luar percakapan ini.",
   "aiChatEmptyGroupItem": "AI membaca item kerja grup ini. Item kerja lain di grup dan proyek di dalamnya berada di luar percakapan ini.",
   "aiSuggestWorkItemSummary": "Ringkas item kerja ini",
-  "aiRemovedGroupWorkItem": "{path} #{iid} dihapus dari percakapan; AI tidak dapat mengubahnya lagi"
+  "aiRemovedGroupWorkItem": "{path} #{iid} dihapus dari percakapan; AI tidak dapat mengubahnya lagi",
+  "aiChatEmptyGroupAdded": "AI membaca item kerja #{iid} milik grup {path}. Item yang Anda tambahkan (di atas kotak pesan) juga termasuk dalam percakapan ini; item kerja lain di grup dan proyek di dalamnya tidak.",
+  "aiChatEmptyGroupItemAdded": "AI membaca item kerja grup ini. Item yang Anda tambahkan (di atas kotak pesan) juga termasuk dalam percakapan ini; item kerja lain di grup dan proyek di dalamnya tidak.",
+  "aiRefusedGroupDatesNotSent": "Tanggal tidak dikirim: tanggalnya mungkin sudah sama dengan yang sekarang, dan untuk item kerja grup hal ini tidak dapat dipastikan tanpa permintaan tambahan. Baca ulang tanggal saat ini lalu coba lagi."
 }

@@ -2857,4 +2857,7 @@ const _messagesNl = <String>[
   'De AI leest dit werkitem van de groep. De andere werkitems van de groep en de projecten ervan vallen buiten dit gesprek.',
   'Dit werkitem samenvatten',
   '{path} #{iid} uit het gesprek verwijderd; de AI kan het niet meer wijzigen',
+  'De AI leest werkitem #{iid} van de groep {path}. De items die je hebt toegevoegd (boven het berichtvak) horen ook bij dit gesprek; de andere werkitems van de groep en de projecten ervan niet.',
+  'De AI leest dit werkitem van de groep. De items die je hebt toegevoegd (boven het berichtvak) horen ook bij dit gesprek; de andere werkitems van de groep en de projecten ervan niet.',
+  'De datums zijn niet verzonden: ze komen mogelijk al overeen met de huidige, en bij een werkitem van de groep kan dat niet worden bevestigd zonder extra verzoek. Lees de huidige datums opnieuw en probeer het nog eens.',
 ];

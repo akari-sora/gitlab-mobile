@@ -2854,5 +2854,8 @@
   "aiChatEmptyGroup": "AI čte pracovní položku #{iid} skupiny {path}. Ostatní pracovní položky skupiny a její projekty do této konverzace nepatří.",
   "aiChatEmptyGroupItem": "AI čte tuto pracovní položku skupiny. Ostatní pracovní položky skupiny a její projekty do této konverzace nepatří.",
   "aiSuggestWorkItemSummary": "Shrň tuto pracovní položku",
-  "aiRemovedGroupWorkItem": "{path} #{iid} odebráno z konverzace; AI ji už nemůže měnit"
+  "aiRemovedGroupWorkItem": "{path} #{iid} odebráno z konverzace; AI ji už nemůže měnit",
+  "aiChatEmptyGroupAdded": "AI čte pracovní položku #{iid} skupiny {path}. Položky, které jste přidali (nad polem zprávy), do této konverzace také patří; ostatní pracovní položky skupiny a její projekty ne.",
+  "aiChatEmptyGroupItemAdded": "AI čte tuto pracovní položku skupiny. Položky, které jste přidali (nad polem zprávy), do této konverzace také patří; ostatní pracovní položky skupiny a její projekty ne.",
+  "aiRefusedGroupDatesNotSent": "Data nebyla odeslána: možná se už shodují s aktuálními a u pracovní položky skupiny to nelze ověřit bez dalšího požadavku. Načtěte aktuální data znovu a zkuste to znovu."
 }

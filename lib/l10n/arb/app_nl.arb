@@ -2854,5 +2854,8 @@
   "aiChatEmptyGroup": "De AI leest werkitem #{iid} van de groep {path}. De andere werkitems van de groep en de projecten ervan vallen buiten dit gesprek.",
   "aiChatEmptyGroupItem": "De AI leest dit werkitem van de groep. De andere werkitems van de groep en de projecten ervan vallen buiten dit gesprek.",
   "aiSuggestWorkItemSummary": "Dit werkitem samenvatten",
-  "aiRemovedGroupWorkItem": "{path} #{iid} uit het gesprek verwijderd; de AI kan het niet meer wijzigen"
+  "aiRemovedGroupWorkItem": "{path} #{iid} uit het gesprek verwijderd; de AI kan het niet meer wijzigen",
+  "aiChatEmptyGroupAdded": "De AI leest werkitem #{iid} van de groep {path}. De items die je hebt toegevoegd (boven het berichtvak) horen ook bij dit gesprek; de andere werkitems van de groep en de projecten ervan niet.",
+  "aiChatEmptyGroupItemAdded": "De AI leest dit werkitem van de groep. De items die je hebt toegevoegd (boven het berichtvak) horen ook bij dit gesprek; de andere werkitems van de groep en de projecten ervan niet.",
+  "aiRefusedGroupDatesNotSent": "De datums zijn niet verzonden: ze komen mogelijk al overeen met de huidige, en bij een werkitem van de groep kan dat niet worden bevestigd zonder extra verzoek. Lees de huidige datums opnieuw en probeer het nog eens."
 }

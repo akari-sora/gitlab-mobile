@@ -2857,4 +2857,7 @@ const _messagesDe = <String>[
   'Die KI liest dieses Arbeitselement der Gruppe. Andere Arbeitselemente der Gruppe und ihre Projekte gehören nicht zu dieser Unterhaltung.',
   'Dieses Arbeitselement zusammenfassen',
   '{path} #{iid} aus der Unterhaltung entfernt; die KI kann es nicht mehr ändern',
+  'Die KI liest das Arbeitselement #{iid} der Gruppe {path}. Die Elemente, die Sie hinzugefügt haben (über dem Nachrichtenfeld), gehören ebenfalls zu dieser Unterhaltung; andere Arbeitselemente der Gruppe und ihre Projekte nicht.',
+  'Die KI liest dieses Arbeitselement der Gruppe. Die Elemente, die Sie hinzugefügt haben (über dem Nachrichtenfeld), gehören ebenfalls zu dieser Unterhaltung; andere Arbeitselemente der Gruppe und ihre Projekte nicht.',
+  'Die Daten wurden nicht gesendet: Sie stimmen möglicherweise schon mit den aktuellen überein, und bei einem Arbeitselement der Gruppe lässt sich das nicht ohne zusätzliche Anfrage bestätigen. Lesen Sie die aktuellen Daten erneut und versuchen Sie es noch einmal.',
 ];

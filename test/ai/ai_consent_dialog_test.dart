@@ -335,8 +335,15 @@ void main() {
       Future<void> openRecord(
         WidgetTester tester,
         AiWritePolicy? writePolicy, {
-        TextDirection direction = TextDirection.ltr,
+        String tag = 'zh-TW',
       }) async {
+        // The app's strings and the Material locale switch together, so an
+        // Arabic run lays out the real Arabic sentences right to left.
+        useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        final locale = tag == 'ar'
+            ? const Locale('ar')
+            : const Locale('zh', 'TW');
         final record = AiConsentRecord(
           hash: 'saved-hash',
           summary: aiConsentSummary(_contract(writePolicy: writePolicy)),
@@ -345,11 +352,9 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: appTheme(Brightness.light),
-            locale: const Locale('zh', 'TW'),
-            supportedLocales: const [Locale('zh', 'TW')],
+            locale: locale,
+            supportedLocales: const [Locale('zh', 'TW'), Locale('ar')],
             localizationsDelegates: GlobalMaterialLocalizations.delegates,
-            builder: (context, child) =>
-                Directionality(textDirection: direction, child: child!),
             home: Builder(
               builder: (context) => Scaffold(
                 body: TextButton(
@@ -437,7 +442,7 @@ void main() {
         );
       });
 
-      testWidgets('it fits 320dp, 2x text and RTL', (tester) async {
+      testWidgets('it fits 320dp and 2x text in Arabic', (tester) async {
         tester.view.devicePixelRatio = 1;
         tester.view.physicalSize = const Size(320, 640);
         tester.platformDispatcher.textScaleFactorTestValue = 2;
@@ -446,14 +451,20 @@ void main() {
         await openRecord(
           tester,
           policy({'updateGroupWorkItemState'}),
-          direction: TextDirection.rtl,
+          tag: 'ar',
         );
+        // groupScope() reads the Arabic sentence now that Arabic is in use.
+        expect(l10n.aiConsentWritesGroupScope, contains('عناصر العمل'));
         await tester.dragUntilVisible(
           groupScope(),
           find.byType(ListView),
           const Offset(0, -120),
         );
         expect(groupScope(), findsOneWidget);
+        expect(
+          Directionality.of(tester.element(groupScope())),
+          TextDirection.rtl,
+        );
         expect(tester.takeException(), isNull);
       });
     });

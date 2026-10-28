@@ -2857,4 +2857,7 @@ const _messagesMs = <String>[
   'AI membaca item kerja kumpulan ini. Item kerja lain dalam kumpulan dan projeknya berada di luar perbualan ini.',
   'Ringkaskan item kerja ini',
   '{path} #{iid} dialih keluar daripada perbualan; AI tidak boleh mengubahnya lagi',
+  'AI membaca item kerja #{iid} milik kumpulan {path}. Item yang anda tambah (di atas kotak mesej) juga termasuk dalam perbualan ini; item kerja lain dalam kumpulan dan projeknya tidak.',
+  'AI membaca item kerja kumpulan ini. Item yang anda tambah (di atas kotak mesej) juga termasuk dalam perbualan ini; item kerja lain dalam kumpulan dan projeknya tidak.',
+  'Tarikh tidak dihantar: tarikh itu mungkin sudah sama dengan tarikh semasa, dan bagi item kerja kumpulan perkara ini tidak dapat disahkan tanpa permintaan tambahan. Baca semula tarikh semasa dan cuba lagi.',
 ];

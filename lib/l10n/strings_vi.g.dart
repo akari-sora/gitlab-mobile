@@ -2857,4 +2857,7 @@ const _messagesVi = <String>[
   'AI đọc mục công việc này của nhóm. Các mục công việc khác của nhóm và các dự án của nhóm nằm ngoài cuộc trò chuyện này.',
   'Tóm tắt mục công việc này',
   'Đã gỡ {path} #{iid} khỏi cuộc trò chuyện; AI không thể thay đổi mục này nữa',
+  'AI đọc mục công việc #{iid} của nhóm {path}. Các mục bạn đã thêm (phía trên ô tin nhắn) cũng thuộc cuộc trò chuyện này; các mục công việc khác của nhóm và các dự án của nhóm thì không.',
+  'AI đọc mục công việc này của nhóm. Các mục bạn đã thêm (phía trên ô tin nhắn) cũng thuộc cuộc trò chuyện này; các mục công việc khác của nhóm và các dự án của nhóm thì không.',
+  'Chưa gửi ngày: ngày được yêu cầu có thể đã trùng với ngày hiện tại, và với mục công việc của nhóm thì không thể xác nhận trường hợp này nếu không gửi thêm một yêu cầu. Hãy đọc lại ngày hiện tại rồi thử lại.',
 ];
