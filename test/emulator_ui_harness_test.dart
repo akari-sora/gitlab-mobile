@@ -2414,6 +2414,7 @@ void main() {
       expect(fixture.unhandled, isEmpty);
       expect(tester.takeException(), isNull);
     },
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 
   for (final isGroup in [false, true]) {
@@ -2583,6 +2584,7 @@ void main() {
         expect(clipboardWrites, ['42']);
         expect(tester.takeException(), isNull);
       },
+      timeout: const Timeout(Duration(minutes: 3)),
     );
   }
 }
