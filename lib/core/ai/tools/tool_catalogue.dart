@@ -377,7 +377,7 @@ final class AiToolCatalogue {
     required AiToolBudget budget,
     bool reread = false,
   }) async {
-    final fallback = _live('bound project');
+    final fallback = _live(_groupScope?.workItemGid ?? 'bound project');
     if (!reread) {
       _fetchedAt[call] = null;
       _deliveryRecords[call] = null;

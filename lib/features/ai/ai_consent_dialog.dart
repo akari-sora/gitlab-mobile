@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/ai/ai_provider.dart';
+import '../../core/ai/tools/write_ledger.dart'
+    show AiScopeClass, productionAiLedger;
 import '../../l10n/l10n.dart';
 import '../../shared/external_link.dart';
 import 'ai_scope.dart';
@@ -301,6 +303,8 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                         Text(aiLevelHint(ceiling)),
                         for (final line in [
                           l10n.aiConsentWritesLimits,
+                          if (details.groupWrites)
+                            l10n.aiConsentWritesGroupScope,
                           l10n.aiConsentWritesNoUndo,
                           l10n.aiConsentWritesUncertain(l10n.aiWriteLogTitle),
                           if (ceiling.index >=
@@ -586,6 +590,7 @@ final class _ConsentDetails {
     this.policyUri,
     this.grantedAt,
     this.writeCeiling,
+    this.groupWrites = false,
   });
 
   factory _ConsentDetails.fromSummary(
@@ -624,6 +629,15 @@ final class _ConsentDetails {
           AiAutonomyLevel.values.asNameMap()[name],
         _ => null,
       },
+      groupWrites: switch (summary['writePolicy']) {
+        {'operationIds': final List<Object?> ids} => ids.any(
+          (id) =>
+              id is String &&
+              productionAiLedger.find(id)?.scopeClass ==
+                  AiScopeClass.groupWorkItem,
+        ),
+        _ => false,
+      },
     );
   }
 
@@ -641,6 +655,12 @@ final class _ConsentDetails {
 
   /// The highest level the AI may write at; null for a read-only consent.
   final AiAutonomyLevel? writeCeiling;
+
+  /// Whether the agreed policy lists a write to a group's own work item.
+  /// Read from the saved policy itself, so the scope sentence appears with
+  /// the first policy that offers those writes and a saved record shows
+  /// exactly what was agreed; the hash is untouched.
+  final bool groupWrites;
 }
 
 String _formatLabel(AiFormat format) => switch (format) {

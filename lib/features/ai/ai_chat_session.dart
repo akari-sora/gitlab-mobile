@@ -133,8 +133,12 @@ final class AiProjectWorkItemFromGroupPageOrigin extends AiChatOrigin {
   final String title;
 
   @override
-  String get key =>
-      'group-page:$viewGroupId:project:${project.id}:workItem:$iid';
+  String get key {
+    if (viewGroupId <= 0 || iid <= 0) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    return 'group-page:$viewGroupId:project:${project.id}:workItem:$iid';
+  }
 }
 
 /// One text file at a commit.

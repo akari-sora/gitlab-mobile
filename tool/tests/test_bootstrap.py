@@ -499,6 +499,7 @@ class BootstrapTests(unittest.TestCase):
     def prepare_ios(self, count):
         (self.root / 'Runner.xcodeproj').mkdir()
         (self.root / 'Runner').mkdir()
+        (self.root / 'Runner/AppDelegate.swift').write_text(bootstrap.IOS_APP_DELEGATE_TEMPLATE)
         path = self.root / 'Runner.xcodeproj/project.pbxproj'
         path.write_text(('buildSettings = {\nINFOPLIST_FILE = Runner/Info.plist;\n};\n') * count)
         return path
@@ -508,6 +509,29 @@ class BootstrapTests(unittest.TestCase):
         bootstrap.configure_ios(self.root)
         self.assertEqual(path.read_text().count('CODE_SIGN_ENTITLEMENTS'), 3)
         self.assertTrue((self.root / 'Runner/Runner.entitlements').is_file())
+
+    def test_ios_generated_delegate_registers_backup_exclusion(self):
+        self.prepare_ios(3)
+        bootstrap.configure_ios(self.root)
+        delegate = (self.root / 'Runner/AppDelegate.swift').read_text()
+        self.assertIn('name: "mergeline/backup"', delegate)
+        self.assertIn('engineBridge.applicationRegistrar.messenger()', delegate)
+        self.assertIn('call.method == "excludeFromBackup"', delegate)
+        self.assertIn('arguments["path"] as? String', delegate)
+        self.assertIn('values.isExcludedFromBackup = true', delegate)
+        self.assertIn('try url.setResourceValues(values)', delegate)
+        self.assertIn('FlutterError(code: "backupExclusionFailed"', delegate)
+        _, repeated = bootstrap.ios_backup_app_delegate(self.root)
+        self.assertEqual(delegate, repeated)
+
+    def test_ios_delegate_drift_fails_before_project_mutation(self):
+        project = self.prepare_ios(3)
+        delegate = self.root / 'Runner/AppDelegate.swift'
+        delegate.write_text(delegate.read_text() + '// changed\n')
+        original = project.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, 'AppDelegate'):
+            bootstrap.configure_ios(self.root)
+        self.assertEqual(project.read_bytes(), original)
 
     def test_ios_template_drift_does_not_silently_patch(self):
         path = self.prepare_ios(2)

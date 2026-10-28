@@ -8,12 +8,15 @@ import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_context.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_page.dart' show aiOriginTitle;
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_run_registry.dart';
 import 'package:gitlab_mobile/features/ai/ai_scope_add.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 
 import '../support/fake_adapter.dart';
 import '../support/namespace_work_item_query.dart';
@@ -89,6 +92,70 @@ void _configureGroup(
 void main() {
   group('user-added group item', _uiAddedOrigins);
 
+  // MR6b-3g full UI (§6.1): the conversation's title names the owner a group
+  // page entry belongs to, one isolated piece at a time.
+  group('UI scope', () {
+    String plain(String text) => text;
+
+    test('a group entry names its group, number and title; a project item '
+        'from a group page names its project', () {
+      expect(
+        aiOriginTitle(_groupOrigin, safe: plain),
+        'team/sub #5 Group item',
+      );
+      expect(
+        aiOriginTitle(_projectOrigin, safe: plain),
+        'studio/mobile-workspace #5 Project descendant',
+      );
+      // The same number in another group is another title, and the project
+      // item never reads as the group's.
+      const other = AiGroupWorkItemOrigin(
+        group: GraphResourceRef(
+          id: 'gid://gitlab/Group/9',
+          fullPath: 'team/other',
+        ),
+        iid: 5,
+        title: 'Group item',
+      );
+      expect(
+        aiOriginTitle(other, safe: plain),
+        isNot(aiOriginTitle(_groupOrigin, safe: plain)),
+      );
+      expect(
+        aiOriginTitle(_projectOrigin, safe: plain),
+        isNot(contains(_group.fullPath)),
+      );
+    });
+
+    test('a piece that cannot be checked hides the whole title', () {
+      for (final origin in <AiChatOrigin>[_groupOrigin, _projectOrigin]) {
+        for (final safe in <String Function(String)>[
+          (_) => '',
+          (text) => text.contains('/') ? '' : text,
+          (text) => text.contains('/') ? text : '',
+        ]) {
+          expect(aiOriginTitle(origin, safe: safe), l10n.aiAssistantLabel);
+        }
+      }
+      expect(
+        aiOriginTitle(
+          _groupOrigin,
+          safe: (text) => text.replaceAll('Group', '[REDACTED]'),
+        ),
+        'team/sub #5 [REDACTED] item',
+      );
+    });
+
+    test('in Arabic the path, #iid and title are separate isolates', () {
+      useLanguage(languageForTag('ar')!);
+      addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+      expect(
+        aiOriginTitle(_groupOrigin, safe: plain),
+        '\u2068team/sub\u2069 \u2068#5\u2069 \u2068Group item\u2069',
+      );
+    });
+  });
+
   test('origins use numeric owner and entry keys, never paths or titles', () {
     expect(_groupOrigin.key, 'group-item:7:5');
     expect(_projectOrigin.key, 'group-page:7:project:42:workItem:5');
@@ -139,6 +206,62 @@ void main() {
     expect(keys, hasLength(5));
     expect(projectForAiChatOrigin(_groupOrigin), isNull);
     expect(projectForAiChatOrigin(_projectOrigin), same(_project));
+  });
+
+  test('invalid group origins never create a registry session', () async {
+    final h = await StackHarness.create();
+    addTearDown(h.dispose);
+    var created = 0;
+    final registry = AccountAiRunRegistry(
+      session: h.session,
+      settings: h.settings,
+      sessionFactory:
+          ({
+            required origin,
+            required session,
+            required settings,
+            required runningCount,
+            wireClientFactory,
+          }) {
+            created++;
+            throw StateError('Unexpected session construction');
+          },
+    );
+    addTearDown(registry.dispose);
+    final origins = <AiChatOrigin>[
+      for (final gid in [
+        'gid://gitlab/Project/7',
+        'gid://gitlab/Namespaces::ProjectNamespace/7',
+        'gid://gitlab/Group/07',
+        'gid://gitlab/Group/0',
+      ])
+        AiGroupWorkItemOrigin(
+          group: GraphResourceRef(id: gid, fullPath: 'team/sub'),
+          iid: 5,
+          title: 'Invalid owner',
+        ),
+      for (final coordinates in [(0, 5), (-1, 5), (7, 0), (7, -1)])
+        AiProjectWorkItemFromGroupPageOrigin(
+          viewGroupId: coordinates.$1,
+          project: _project,
+          iid: coordinates.$2,
+          title: 'Invalid entry',
+        ),
+    ];
+    for (final origin in origins) {
+      expect(
+        () => origin.key,
+        throwsA(
+          isA<ApiFailure>().having(
+            (failure) => failure.kind,
+            'kind',
+            FailureKind.validation,
+          ),
+        ),
+      );
+      expect(() => registry.open(origin), throwsStateError);
+      expect(created, 0);
+    }
   });
 
   test(
@@ -354,6 +477,8 @@ void main() {
     await controller.send('First look');
     expect(controller.contextForTesting?.groupScope?.iid, 5);
     expect(controller.contextForTesting?.groupMetadata?.visibility, 'private');
+    final firstScope = controller.contextForTesting!.groupScope;
+    expect(firstScope, isNotNull);
 
     // Visibility is metadata only, so the delivered text stays the same and
     // the controller takes the unchanged branch.
@@ -364,6 +489,7 @@ void main() {
     final context = controller.contextForTesting!;
     expect(context.scope, isNull);
     expect(context.groupScope?.iid, 5);
+    expect(context.groupScope, isNot(same(firstScope)));
     expect(context.groupMetadata?.visibility, 'public');
   });
 

@@ -717,6 +717,7 @@ final class SessionController extends ChangeNotifier {
     api = client;
     generation = nextGeneration;
     client.bindReadCache(account.key, generation);
+    readCache.bindOfflineRepository(client, binding);
     client.attachReadCacheDiskBackend(
       CoordinatedReadCacheDiskBackend(coordinator: readCache, binding: binding),
     );
