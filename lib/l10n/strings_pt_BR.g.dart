@@ -2966,8 +2966,12 @@ const _messagesPtBr = <String>[
   'Alternar de conta exclui os {count} projetos offline de @{username} ({size}).',
   'Sair exclui os {count} projetos offline de @{username} ({size}).',
   'Remover a conta exclui os {count} projetos offline de @{username} ({size}).',
+  'Alternar de conta exclui todos os projetos offline de @{username} neste dispositivo; agora não é possível confirmar quantos são.',
+  'Sair exclui todos os projetos offline de @{username} neste dispositivo; agora não é possível confirmar quantos são.',
+  'Remover a conta exclui todos os projetos offline de @{username} neste dispositivo; agora não é possível confirmar quantos são.',
   'Continuar e excluir',
   'O cache automático e {count} projetos offline ({size} no total) serão excluídos. Isso não pode ser desfeito.',
+  'O cache automático e todos os projetos offline desta conta serão excluídos (agora não é possível confirmar quantos são). Isso não pode ser desfeito.',
   'Desativar o cache offline?',
   'Limpar',
 ];

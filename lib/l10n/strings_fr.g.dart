@@ -2966,8 +2966,12 @@ const _messagesFr = <String>[
   'Changer de compte supprime les {count} projets hors ligne de @{username} ({size}).',
   'Se déconnecter supprime les {count} projets hors ligne de @{username} ({size}).',
   'Retirer le compte supprime les {count} projets hors ligne de @{username} ({size}).',
+  'Changer de compte supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.',
+  'Se déconnecter supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.',
+  'Retirer le compte supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.',
   'Continuer et supprimer',
   'Le cache automatique et {count} projets hors ligne ({size} au total) seront supprimés. Cette action est irréversible.',
+  'Le cache automatique et tous les projets hors ligne de ce compte seront supprimés (leur nombre ne peut pas être confirmé pour l’instant). Cette action est irréversible.',
   'Désactiver le cache hors ligne ?',
   'Vider',
 ];

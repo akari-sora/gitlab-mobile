@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Om du byter konto raderas de {count} offlineprojekten för @{username} ({size}).",
   "offlineLossSignOut": "Om du loggar ut raderas de {count} offlineprojekten för @{username} ({size}).",
   "offlineLossRemove": "Om du tar bort kontot raderas de {count} offlineprojekten för @{username} ({size}).",
+  "offlineLossSwitchUnknown": "Om du byter konto raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.",
+  "offlineLossSignOutUnknown": "Om du loggar ut raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.",
+  "offlineLossRemoveUnknown": "Om du tar bort kontot raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.",
   "offlineLossProceed": "Fortsätt och ta bort",
   "offlineCacheClearWithProjects": "Den automatiska cachen och {count} offlineprojekt ({size} totalt) raderas. Det går inte att ångra.",
+  "offlineCacheClearUnknownProjects": "Den automatiska cachen och alla offlineprojekt för det här kontot raderas (det går inte att bekräfta hur många just nu). Det går inte att ångra.",
   "offlineCacheTurnOffTitle": "Stänga av offlinecachen?",
   "offlineCacheClearButton": "Rensa"
 }

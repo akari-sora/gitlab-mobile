@@ -43,6 +43,15 @@ final _strongOrStrike = RegExp(r'\*\*|~~');
 final _underscoreStrong = RegExp(r'(?<![A-Za-z0-9_])__(?=[^\s_])((?:[^_]|_(?!_))*[^\s_])__(?![A-Za-z0-9_])');
 final _escaped = RegExp(r'\\([!-/:-@\[-`{-~])');
 
+/// GitLab's heading anchor for [text]: lower case, non-word characters
+/// removed, spaces turned into hyphens and repeated hyphens collapsed.
+String markdownHeadingSlug(String text) => text
+    .trim()
+    .toLowerCase()
+    .replaceAll(RegExp(r'[^\p{L}\p{N}\p{M}_\- ]', unicode: true), '')
+    .replaceAll(' ', '-')
+    .replaceAll(RegExp(r'-{2,}'), '-');
+
 /// Markdown read from an offline repository snapshot (§5.8, §6.6). Repository
 /// images come only from the snapshot, through the reader and its media
 /// policy; links that resolve to the same snapshot open locally. Outside the
@@ -456,8 +465,11 @@ class _MarkdownViewState extends State<MarkdownView> {
     final parsed = Uri.tryParse(href);
     if (parsed == null) return;
     final snapshot = widget.snapshot;
-    // An in-page anchor stays on the page; nothing is opened.
-    if (snapshot != null && href.trimLeft().startsWith('#')) return;
+    // An in-page anchor scrolls to its heading; nothing is opened (§5.8).
+    if (snapshot != null && href.trimLeft().startsWith('#')) {
+      _scrollToAnchor(href.trim().substring(1));
+      return;
+    }
     final base = widget.base;
     final uri = parsed.hasScheme ? parsed : base?.resolveUri(parsed);
     if (snapshot != null) {
@@ -514,6 +526,68 @@ class _MarkdownViewState extends State<MarkdownView> {
       return;
     }
     await openExternal(context, uri);
+  }
+
+  /// Scrolls to the heading whose GitLab anchor is [fragment]; an unknown
+  /// anchor does nothing.
+  void _scrollToAnchor(String fragment) {
+    String id;
+    try {
+      id = Uri.decodeComponent(fragment).toLowerCase();
+    } on ArgumentError {
+      return;
+    }
+    if (id.startsWith('user-content-')) id = id.substring(13);
+    final headings = <String>[];
+    void walk(List<md.Node> nodes) {
+      for (final node in nodes) {
+        if (node is! md.Element) continue;
+        if (RegExp(r'^h[1-6]$').hasMatch(node.tag)) {
+          headings.add(node.textContent);
+        } else {
+          walk(node.children ?? const []);
+        }
+      }
+    }
+
+    walk(
+      md.Document(
+        extensionSet: md.ExtensionSet.gitHubFlavored,
+      ).parseLines(widget.text.split('\n')),
+    );
+    final seen = <String, int>{};
+    String? target;
+    for (final heading in headings) {
+      final slug = markdownHeadingSlug(heading);
+      final count = seen[slug] ?? 0;
+      seen[slug] = count + 1;
+      if ((count == 0 ? slug : '$slug-$count') == id) {
+        target = heading.trim();
+        break;
+      }
+    }
+    if (target == null || !mounted) return;
+    Element? found;
+    void visit(Element element) {
+      if (found != null) return;
+      final widget = element.widget;
+      if (widget is RichText && widget.text.toPlainText().trim() == target) {
+        found = element;
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    context.visitChildElements(visit);
+    if (found case final element?) {
+      unawaited(
+        Scrollable.ensureVisible(
+          element,
+          duration: const Duration(milliseconds: 250),
+          alignment: 0.05,
+        ),
+      );
+    }
   }
 
   /// The repository path [uri] points to inside this snapshot, or null. A

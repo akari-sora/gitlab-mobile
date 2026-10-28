@@ -2966,8 +2966,12 @@ const _messagesIt = <String>[
   'Cambiando account vengono eliminati i {count} progetti offline di @{username} ({size}).',
   'Uscendo vengono eliminati i {count} progetti offline di @{username} ({size}).',
   'Rimuovendo l\'account vengono eliminati i {count} progetti offline di @{username} ({size}).',
+  'Cambiando account vengono eliminati tutti i progetti offline di @{username} su questo dispositivo; al momento non è possibile confermare quanti sono.',
+  'Uscendo vengono eliminati tutti i progetti offline di @{username} su questo dispositivo; al momento non è possibile confermare quanti sono.',
+  'Rimuovendo l\'account vengono eliminati tutti i progetti offline di @{username} su questo dispositivo; al momento non è possibile confermare quanti sono.',
   'Continua ed elimina',
   'La cache automatica e {count} progetti offline ({size} in totale) vengono eliminati. L\'operazione non può essere annullata.',
+  'La cache automatica e tutti i progetti offline di questo account vengono eliminati (al momento non è possibile confermare quanti sono). L\'operazione non può essere annullata.',
   'Disattivare la cache offline?',
   'Svuota',
 ];

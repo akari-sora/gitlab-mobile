@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Changer de compte supprime les {count} projets hors ligne de @{username} ({size}).",
   "offlineLossSignOut": "Se déconnecter supprime les {count} projets hors ligne de @{username} ({size}).",
   "offlineLossRemove": "Retirer le compte supprime les {count} projets hors ligne de @{username} ({size}).",
+  "offlineLossSwitchUnknown": "Changer de compte supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.",
+  "offlineLossSignOutUnknown": "Se déconnecter supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.",
+  "offlineLossRemoveUnknown": "Retirer le compte supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.",
   "offlineLossProceed": "Continuer et supprimer",
   "offlineCacheClearWithProjects": "Le cache automatique et {count} projets hors ligne ({size} au total) seront supprimés. Cette action est irréversible.",
+  "offlineCacheClearUnknownProjects": "Le cache automatique et tous les projets hors ligne de ce compte seront supprimés (leur nombre ne peut pas être confirmé pour l’instant). Cette action est irréversible.",
   "offlineCacheTurnOffTitle": "Désactiver le cache hors ligne ?",
   "offlineCacheClearButton": "Vider"
 }

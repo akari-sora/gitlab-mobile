@@ -2966,8 +2966,12 @@ const _messagesId = <String>[
   'Berganti account akan menghapus {count} project offline milik @{username} ({size}).',
   'Keluar akan menghapus {count} project offline milik @{username} ({size}).',
   'Menghapus account akan menghapus {count} project offline milik @{username} ({size}).',
+  'Berganti account akan menghapus semua project offline milik @{username} di perangkat ini; jumlahnya belum dapat dipastikan saat ini.',
+  'Keluar akan menghapus semua project offline milik @{username} di perangkat ini; jumlahnya belum dapat dipastikan saat ini.',
+  'Menghapus account akan menghapus semua project offline milik @{username} di perangkat ini; jumlahnya belum dapat dipastikan saat ini.',
   'Lanjutkan dan hapus',
   'Cache otomatis dan {count} project offline (total {size}) akan dihapus. Tindakan ini tidak dapat dibatalkan.',
+  'Cache otomatis dan semua project offline account ini akan dihapus (jumlahnya belum dapat dipastikan saat ini). Tindakan ini tidak dapat dibatalkan.',
   'Nonaktifkan cache offline?',
   'Hapus',
 ];

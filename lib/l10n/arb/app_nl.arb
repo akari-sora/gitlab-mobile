@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Als je van account wisselt, worden de {count} offlineprojecten van @{username} ({size}) verwijderd.",
   "offlineLossSignOut": "Als je uitlogt, worden de {count} offlineprojecten van @{username} ({size}) verwijderd.",
   "offlineLossRemove": "Als je het account verwijdert, worden de {count} offlineprojecten van @{username} ({size}) verwijderd.",
+  "offlineLossSwitchUnknown": "Als je van account wisselt, worden alle offlineprojecten van @{username} op dit apparaat verwijderd; hoeveel het er zijn, kan nu niet worden vastgesteld.",
+  "offlineLossSignOutUnknown": "Als je uitlogt, worden alle offlineprojecten van @{username} op dit apparaat verwijderd; hoeveel het er zijn, kan nu niet worden vastgesteld.",
+  "offlineLossRemoveUnknown": "Als je het account verwijdert, worden alle offlineprojecten van @{username} op dit apparaat verwijderd; hoeveel het er zijn, kan nu niet worden vastgesteld.",
   "offlineLossProceed": "Doorgaan en verwijderen",
   "offlineCacheClearWithProjects": "De automatische cache en {count} offlineprojecten ({size} in totaal) worden verwijderd. Dit kan niet ongedaan worden gemaakt.",
+  "offlineCacheClearUnknownProjects": "De automatische cache en alle offlineprojecten van dit account worden verwijderd (hoeveel het er zijn, kan nu niet worden vastgesteld). Dit kan niet ongedaan worden gemaakt.",
   "offlineCacheTurnOffTitle": "Offlinecache uitschakelen?",
   "offlineCacheClearButton": "Wissen"
 }

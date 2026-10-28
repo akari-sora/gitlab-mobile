@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "切换账号会删除 @{username} 的 {count} 个离线项目（{size}）。",
   "offlineLossSignOut": "退出登录会删除 @{username} 的 {count} 个离线项目（{size}）。",
   "offlineLossRemove": "移除账号会删除 @{username} 的 {count} 个离线项目（{size}）。",
+  "offlineLossSwitchUnknown": "切换账号会删除 @{username} 在这台设备上的所有离线项目；目前无法确认有几个。",
+  "offlineLossSignOutUnknown": "退出登录会删除 @{username} 在这台设备上的所有离线项目；目前无法确认有几个。",
+  "offlineLossRemoveUnknown": "移除账号会删除 @{username} 在这台设备上的所有离线项目；目前无法确认有几个。",
   "offlineLossProceed": "继续并删除",
   "offlineCacheClearWithProjects": "将删除自动缓存与 {count} 个离线项目（共 {size}），此操作无法撤销。",
+  "offlineCacheClearUnknownProjects": "将删除自动缓存与此账号的所有离线项目（目前无法确认有几个），此操作无法撤销。",
   "offlineCacheTurnOffTitle": "关闭离线缓存？",
   "offlineCacheClearButton": "清除"
 }

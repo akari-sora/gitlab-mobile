@@ -8986,15 +8986,27 @@ final class AppStrings {
   /// 移除帳號會刪除 @{username} 的 {count} 個離線專案（{size}）。
   String offlineLossRemove(Object? username, Object? count, Object? size) => _format(language, language._messages[2963], {'username': username, 'count': count, 'size': size});
 
+  /// 切換帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
+  String offlineLossSwitchUnknown(Object? username) => _format(language, language._messages[2964], {'username': username});
+
+  /// 登出會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
+  String offlineLossSignOutUnknown(Object? username) => _format(language, language._messages[2965], {'username': username});
+
+  /// 移除帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
+  String offlineLossRemoveUnknown(Object? username) => _format(language, language._messages[2966], {'username': username});
+
   /// 繼續並刪除
-  String get offlineLossProceed => language._messages[2964];
+  String get offlineLossProceed => language._messages[2967];
 
   /// 會刪除自動快取與 {count} 個離線專案（共 {size}），這個動作無法復原。
-  String offlineCacheClearWithProjects(Object? count, Object? size) => _format(language, language._messages[2965], {'count': count, 'size': size});
+  String offlineCacheClearWithProjects(Object? count, Object? size) => _format(language, language._messages[2968], {'count': count, 'size': size});
+
+  /// 會刪除自動快取與這個帳號的所有離線專案（目前無法確認有幾個），這個動作無法復原。
+  String get offlineCacheClearUnknownProjects => language._messages[2969];
 
   /// 關閉離線快取？
-  String get offlineCacheTurnOffTitle => language._messages[2966];
+  String get offlineCacheTurnOffTitle => language._messages[2970];
 
   /// 清除
-  String get offlineCacheClearButton => language._messages[2967];
+  String get offlineCacheClearButton => language._messages[2971];
 }

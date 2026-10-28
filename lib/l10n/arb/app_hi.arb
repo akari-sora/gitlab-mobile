@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "खाता बदलने पर @{username} के {count} ऑफ़लाइन प्रोजेक्ट ({size}) हट जाएँगे।",
   "offlineLossSignOut": "साइन-आउट करने पर @{username} के {count} ऑफ़लाइन प्रोजेक्ट ({size}) हट जाएँगे।",
   "offlineLossRemove": "खाता हटाने पर @{username} के {count} ऑफ़लाइन प्रोजेक्ट ({size}) हट जाएँगे।",
+  "offlineLossSwitchUnknown": "खाता बदलने पर इस डिवाइस पर @{username} के सभी ऑफ़लाइन प्रोजेक्ट हट जाएँगे; अभी उनकी संख्या की पुष्टि नहीं हो सकती।",
+  "offlineLossSignOutUnknown": "साइन-आउट करने पर इस डिवाइस पर @{username} के सभी ऑफ़लाइन प्रोजेक्ट हट जाएँगे; अभी उनकी संख्या की पुष्टि नहीं हो सकती।",
+  "offlineLossRemoveUnknown": "खाता हटाने पर इस डिवाइस पर @{username} के सभी ऑफ़लाइन प्रोजेक्ट हट जाएँगे; अभी उनकी संख्या की पुष्टि नहीं हो सकती।",
   "offlineLossProceed": "जारी रखें और हटाएँ",
   "offlineCacheClearWithProjects": "स्वचालित कैश और ऑफ़लाइन प्रोजेक्ट ({count}, कुल {size}) हटा दिए जाएँगे। इसे पूर्ववत नहीं किया जा सकता।",
+  "offlineCacheClearUnknownProjects": "स्वचालित कैश और इस खाते के सभी ऑफ़लाइन प्रोजेक्ट हटा दिए जाएँगे (अभी उनकी संख्या की पुष्टि नहीं हो सकती)। इसे पूर्ववत नहीं किया जा सकता।",
   "offlineCacheTurnOffTitle": "ऑफ़लाइन कैश बंद करें?",
   "offlineCacheClearButton": "साफ़ करें"
 }

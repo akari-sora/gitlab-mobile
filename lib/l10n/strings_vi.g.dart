@@ -2966,8 +2966,12 @@ const _messagesVi = <String>[
   'Chuyển account sẽ xóa {count} project ngoại tuyến của @{username} ({size}).',
   'Đăng xuất sẽ xóa {count} project ngoại tuyến của @{username} ({size}).',
   'Gỡ account sẽ xóa {count} project ngoại tuyến của @{username} ({size}).',
+  'Chuyển account sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.',
+  'Đăng xuất sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.',
+  'Gỡ account sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.',
   'Tiếp tục và xóa',
   'Bộ nhớ đệm tự động và {count} project ngoại tuyến (tổng cộng {size}) sẽ bị xóa. Không thể hoàn tác.',
+  'Bộ nhớ đệm tự động và tất cả project ngoại tuyến của account này sẽ bị xóa (hiện chưa thể xác nhận có bao nhiêu). Không thể hoàn tác.',
   'Tắt bộ nhớ đệm ngoại tuyến?',
   'Xóa',
 ];

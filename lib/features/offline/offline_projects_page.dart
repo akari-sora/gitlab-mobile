@@ -14,6 +14,7 @@ import '../../shared/workspace_ui.dart';
 import '../workspace/project_page.dart';
 import 'offline_repositories.dart';
 import 'offline_status.dart';
+import 'save_sheet.dart';
 import 'snapshot_browser_page.dart';
 
 /// 我的 › 儲存與快取 › 離線專案: one row that opens [OfflineProjectsPage].
@@ -120,12 +121,14 @@ class _OfflineProjectsPageState extends State<OfflineProjectsPage> {
       switch (action) {
         case _RowAction.update:
           if (record == null) return;
-          _repos.save(_request(record, replaces: record.id));
+          final job = _repos.save(_request(record, replaces: record.id));
           _say(l10n.saveSheetStarted);
+          unawaited(reportSaveJob(job, ScaffoldMessenger.maybeOf(context)));
         case _RowAction.resume:
           if (record == null) return;
-          _repos.save(_request(record), resume: record);
+          final job = _repos.save(_request(record), resume: record);
           _say(l10n.saveSheetStarted);
+          unawaited(reportSaveJob(job, ScaffoldMessenger.maybeOf(context)));
         case _RowAction.pause:
           if (job != null) _repos.pause(job);
         case _RowAction.cancel:
@@ -406,9 +409,25 @@ class _SnapshotRowTile extends StatelessWidget {
   final VoidCallback? onOpen;
   final ValueChanged<_RowAction> onAction;
 
+  /// Pausing keeps a resumable record only once the save has written one
+  /// (a resumed record, or a running save past resolving its version): the
+  /// queue drops a paused job that has none, which would vanish with no
+  /// 繼續, so such a save offers 取消保存 only (FIX1 #3).
+  bool get _pausable {
+    final job = row.job;
+    if (job == null) return false;
+    return row.record != null ||
+        job.snapshot != null ||
+        const {
+          SnapshotJobPhase.listing,
+          SnapshotJobPhase.downloading,
+          SnapshotJobPhase.finalizing,
+        }.contains(job.phase);
+  }
+
   List<_RowAction> _actions(SnapshotRowStatus status) => [
     if (online && status.complete) _RowAction.update,
-    if (status.busy && row.job != null) _RowAction.pause,
+    if (status.busy && _pausable) _RowAction.pause,
     if (online && status.resumable && row.record != null) _RowAction.resume,
     if (status.busy || status.resumable) _RowAction.cancel,
     if (row.record != null && !status.busy) _RowAction.delete,
@@ -556,4 +575,3 @@ class _SnapshotRowTile extends StatelessWidget {
     );
   }
 }
-

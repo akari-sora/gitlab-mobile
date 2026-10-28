@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Al cambiar de cuenta se eliminan los {count} proyectos sin conexión de @{username} ({size}).",
   "offlineLossSignOut": "Al cerrar sesión se eliminan los {count} proyectos sin conexión de @{username} ({size}).",
   "offlineLossRemove": "Al quitar la cuenta se eliminan los {count} proyectos sin conexión de @{username} ({size}).",
+  "offlineLossSwitchUnknown": "Al cambiar de cuenta se eliminan todos los proyectos sin conexión de @{username} en este dispositivo; ahora no se puede confirmar cuántos hay.",
+  "offlineLossSignOutUnknown": "Al cerrar sesión se eliminan todos los proyectos sin conexión de @{username} en este dispositivo; ahora no se puede confirmar cuántos hay.",
+  "offlineLossRemoveUnknown": "Al quitar la cuenta se eliminan todos los proyectos sin conexión de @{username} en este dispositivo; ahora no se puede confirmar cuántos hay.",
   "offlineLossProceed": "Continuar y eliminar",
   "offlineCacheClearWithProjects": "Se eliminan la caché automática y {count} proyectos sin conexión ({size} en total). No se puede deshacer.",
+  "offlineCacheClearUnknownProjects": "Se eliminan la caché automática y todos los proyectos sin conexión de esta cuenta (ahora no se puede confirmar cuántos hay). No se puede deshacer.",
   "offlineCacheTurnOffTitle": "¿Desactivar la caché sin conexión?",
   "offlineCacheClearButton": "Borrar"
 }

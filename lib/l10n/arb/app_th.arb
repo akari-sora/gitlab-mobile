@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "การสลับบัญชีจะลบโปรเจกต์ออฟไลน์ {count} โปรเจกต์ของ @{username} ({size})",
   "offlineLossSignOut": "การออกจากระบบจะลบโปรเจกต์ออฟไลน์ {count} โปรเจกต์ของ @{username} ({size})",
   "offlineLossRemove": "การนำบัญชีออกจะลบโปรเจกต์ออฟไลน์ {count} โปรเจกต์ของ @{username} ({size})",
+  "offlineLossSwitchUnknown": "การสลับบัญชีจะลบโปรเจกต์ออฟไลน์ทั้งหมดของ @{username} ในอุปกรณ์นี้ ขณะนี้ยังยืนยันจำนวนไม่ได้",
+  "offlineLossSignOutUnknown": "การออกจากระบบจะลบโปรเจกต์ออฟไลน์ทั้งหมดของ @{username} ในอุปกรณ์นี้ ขณะนี้ยังยืนยันจำนวนไม่ได้",
+  "offlineLossRemoveUnknown": "การนำบัญชีออกจะลบโปรเจกต์ออฟไลน์ทั้งหมดของ @{username} ในอุปกรณ์นี้ ขณะนี้ยังยืนยันจำนวนไม่ได้",
   "offlineLossProceed": "ดำเนินการต่อและลบ",
   "offlineCacheClearWithProjects": "แคชอัตโนมัติและโปรเจกต์ออฟไลน์ {count} โปรเจกต์ (รวม {size}) จะถูกลบ การดำเนินการนี้ย้อนกลับไม่ได้",
+  "offlineCacheClearUnknownProjects": "แคชอัตโนมัติและโปรเจกต์ออฟไลน์ทั้งหมดของบัญชีนี้จะถูกลบ (ขณะนี้ยังยืนยันจำนวนไม่ได้) การดำเนินการนี้ย้อนกลับไม่ได้",
   "offlineCacheTurnOffTitle": "ปิดแคชออฟไลน์ไหม",
   "offlineCacheClearButton": "ล้าง"
 }

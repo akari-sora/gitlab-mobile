@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Přepnutím účtu se smažou offline projekty uživatele @{username}: {count} ({size}).",
   "offlineLossSignOut": "Odhlášením se smažou offline projekty uživatele @{username}: {count} ({size}).",
   "offlineLossRemove": "Odebráním účtu se smažou offline projekty uživatele @{username}: {count} ({size}).",
+  "offlineLossSwitchUnknown": "Přepnutím účtu se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.",
+  "offlineLossSignOutUnknown": "Odhlášením se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.",
+  "offlineLossRemoveUnknown": "Odebráním účtu se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.",
   "offlineLossProceed": "Pokračovat a smazat",
   "offlineCacheClearWithProjects": "Automatická mezipaměť a offline projekty ({count}, celkem {size}) se smažou. Tuto akci nelze vrátit zpět.",
+  "offlineCacheClearUnknownProjects": "Automatická mezipaměť a všechny offline projekty tohoto účtu se smažou (jejich počet teď nelze ověřit). Tuto akci nelze vrátit zpět.",
   "offlineCacheTurnOffTitle": "Vypnout offline mezipaměť?",
   "offlineCacheClearButton": "Vymazat"
 }

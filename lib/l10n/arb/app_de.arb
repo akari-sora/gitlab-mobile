@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Beim Kontowechsel werden die {count} Offline-Projekte von @{username} ({size}) gelöscht.",
   "offlineLossSignOut": "Beim Abmelden werden die {count} Offline-Projekte von @{username} ({size}) gelöscht.",
   "offlineLossRemove": "Beim Entfernen des Kontos werden die {count} Offline-Projekte von @{username} ({size}) gelöscht.",
+  "offlineLossSwitchUnknown": "Beim Kontowechsel werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.",
+  "offlineLossSignOutUnknown": "Beim Abmelden werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.",
+  "offlineLossRemoveUnknown": "Beim Entfernen des Kontos werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.",
   "offlineLossProceed": "Fortfahren und löschen",
   "offlineCacheClearWithProjects": "Der automatische Cache und {count} Offline-Projekte ({size} insgesamt) werden gelöscht. Das kann nicht rückgängig gemacht werden.",
+  "offlineCacheClearUnknownProjects": "Der automatische Cache und alle Offline-Projekte dieses Kontos werden gelöscht (wie viele es sind, lässt sich gerade nicht feststellen). Das kann nicht rückgängig gemacht werden.",
   "offlineCacheTurnOffTitle": "Offline-Cache ausschalten?",
   "offlineCacheClearButton": "Leeren"
 }

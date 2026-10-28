@@ -2966,8 +2966,12 @@ const _messagesCs = <String>[
   'Přepnutím účtu se smažou offline projekty uživatele @{username}: {count} ({size}).',
   'Odhlášením se smažou offline projekty uživatele @{username}: {count} ({size}).',
   'Odebráním účtu se smažou offline projekty uživatele @{username}: {count} ({size}).',
+  'Přepnutím účtu se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.',
+  'Odhlášením se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.',
+  'Odebráním účtu se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.',
   'Pokračovat a smazat',
   'Automatická mezipaměť a offline projekty ({count}, celkem {size}) se smažou. Tuto akci nelze vrátit zpět.',
+  'Automatická mezipaměť a všechny offline projekty tohoto účtu se smažou (jejich počet teď nelze ověřit). Tuto akci nelze vrátit zpět.',
   'Vypnout offline mezipaměť?',
   'Vymazat',
 ];

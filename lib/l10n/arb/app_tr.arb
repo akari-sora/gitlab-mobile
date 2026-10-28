@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Hesap değiştirmek, @{username} hesabının {count} çevrimdışı projesini ({size}) siler.",
   "offlineLossSignOut": "Oturumu kapatmak, @{username} hesabının {count} çevrimdışı projesini ({size}) siler.",
   "offlineLossRemove": "Hesabı kaldırmak, @{username} hesabının {count} çevrimdışı projesini ({size}) siler.",
+  "offlineLossSwitchUnknown": "Hesap değiştirmek, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.",
+  "offlineLossSignOutUnknown": "Oturumu kapatmak, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.",
+  "offlineLossRemoveUnknown": "Hesabı kaldırmak, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.",
   "offlineLossProceed": "Devam et ve sil",
   "offlineCacheClearWithProjects": "Otomatik önbellek ve çevrimdışı projeler ({count}, toplam {size}) silinir. Bu işlem geri alınamaz.",
+  "offlineCacheClearUnknownProjects": "Otomatik önbellek ve bu hesabın tüm çevrimdışı projeleri silinir (kaç tane olduğu şu anda doğrulanamıyor). Bu işlem geri alınamaz.",
   "offlineCacheTurnOffTitle": "Çevrimdışı önbellek kapatılsın mı?",
   "offlineCacheClearButton": "Temizle"
 }

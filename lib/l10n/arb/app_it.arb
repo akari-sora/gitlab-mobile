@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Cambiando account vengono eliminati i {count} progetti offline di @{username} ({size}).",
   "offlineLossSignOut": "Uscendo vengono eliminati i {count} progetti offline di @{username} ({size}).",
   "offlineLossRemove": "Rimuovendo l'account vengono eliminati i {count} progetti offline di @{username} ({size}).",
+  "offlineLossSwitchUnknown": "Cambiando account vengono eliminati tutti i progetti offline di @{username} su questo dispositivo; al momento non è possibile confermare quanti sono.",
+  "offlineLossSignOutUnknown": "Uscendo vengono eliminati tutti i progetti offline di @{username} su questo dispositivo; al momento non è possibile confermare quanti sono.",
+  "offlineLossRemoveUnknown": "Rimuovendo l'account vengono eliminati tutti i progetti offline di @{username} su questo dispositivo; al momento non è possibile confermare quanti sono.",
   "offlineLossProceed": "Continua ed elimina",
   "offlineCacheClearWithProjects": "La cache automatica e {count} progetti offline ({size} in totale) vengono eliminati. L'operazione non può essere annullata.",
+  "offlineCacheClearUnknownProjects": "La cache automatica e tutti i progetti offline di questo account vengono eliminati (al momento non è possibile confermare quanti sono). L'operazione non può essere annullata.",
   "offlineCacheTurnOffTitle": "Disattivare la cache offline?",
   "offlineCacheClearButton": "Svuota"
 }

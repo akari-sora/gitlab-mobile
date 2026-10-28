@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Zmiana konta usuwa projekty offline użytkownika @{username}: {count} ({size}).",
   "offlineLossSignOut": "Wylogowanie usuwa projekty offline użytkownika @{username}: {count} ({size}).",
   "offlineLossRemove": "Usunięcie konta usuwa projekty offline użytkownika @{username}: {count} ({size}).",
+  "offlineLossSwitchUnknown": "Zmiana konta usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.",
+  "offlineLossSignOutUnknown": "Wylogowanie usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.",
+  "offlineLossRemoveUnknown": "Usunięcie konta usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.",
   "offlineLossProceed": "Kontynuuj i usuń",
   "offlineCacheClearWithProjects": "Automatyczna pamięć podręczna i projekty offline ({count}, łącznie {size}) zostaną usunięte. Tej operacji nie można cofnąć.",
+  "offlineCacheClearUnknownProjects": "Automatyczna pamięć podręczna i wszystkie projekty offline tego konta zostaną usunięte (teraz nie można potwierdzić ich liczby). Tej operacji nie można cofnąć.",
   "offlineCacheTurnOffTitle": "Wyłączyć pamięć podręczną offline?",
   "offlineCacheClearButton": "Wyczyść"
 }

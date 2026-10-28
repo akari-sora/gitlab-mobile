@@ -2966,8 +2966,12 @@ const _messagesSv = <String>[
   'Om du byter konto raderas de {count} offlineprojekten för @{username} ({size}).',
   'Om du loggar ut raderas de {count} offlineprojekten för @{username} ({size}).',
   'Om du tar bort kontot raderas de {count} offlineprojekten för @{username} ({size}).',
+  'Om du byter konto raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.',
+  'Om du loggar ut raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.',
+  'Om du tar bort kontot raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.',
   'Fortsätt och ta bort',
   'Den automatiska cachen och {count} offlineprojekt ({size} totalt) raderas. Det går inte att ångra.',
+  'Den automatiska cachen och alla offlineprojekt för det här kontot raderas (det går inte att bekräfta hur många just nu). Det går inte att ångra.',
   'Stänga av offlinecachen?',
   'Rensa',
 ];

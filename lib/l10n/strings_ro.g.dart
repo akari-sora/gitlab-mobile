@@ -2966,8 +2966,12 @@ const _messagesRo = <String>[
   'Schimbarea contului șterge proiectele offline ale lui @{username}: {count} ({size}).',
   'Deconectarea șterge proiectele offline ale lui @{username}: {count} ({size}).',
   'Eliminarea contului șterge proiectele offline ale lui @{username}: {count} ({size}).',
+  'Schimbarea contului șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.',
+  'Deconectarea șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.',
+  'Eliminarea contului șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.',
   'Continuă și șterge',
   'Se șterg cache-ul automat și proiectele offline: {count} ({size} în total). Acțiunea nu poate fi anulată.',
+  'Se șterg cache-ul automat și toate proiectele offline ale acestui cont (acum nu se poate confirma câte sunt). Acțiunea nu poate fi anulată.',
   'Dezactivezi cache-ul offline?',
   'Golește',
 ];

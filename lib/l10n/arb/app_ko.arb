@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "계정을 전환하면 @{username}의 오프라인 프로젝트 {count}개({size})가 삭제됩니다.",
   "offlineLossSignOut": "로그아웃하면 @{username}의 오프라인 프로젝트 {count}개({size})가 삭제됩니다.",
   "offlineLossRemove": "계정을 제거하면 @{username}의 오프라인 프로젝트 {count}개({size})가 삭제됩니다.",
+  "offlineLossSwitchUnknown": "계정을 전환하면 이 기기에 있는 @{username}의 오프라인 프로젝트가 모두 삭제됩니다. 지금은 개수를 확인할 수 없습니다.",
+  "offlineLossSignOutUnknown": "로그아웃하면 이 기기에 있는 @{username}의 오프라인 프로젝트가 모두 삭제됩니다. 지금은 개수를 확인할 수 없습니다.",
+  "offlineLossRemoveUnknown": "계정을 제거하면 이 기기에 있는 @{username}의 오프라인 프로젝트가 모두 삭제됩니다. 지금은 개수를 확인할 수 없습니다.",
   "offlineLossProceed": "계속하고 삭제",
   "offlineCacheClearWithProjects": "자동 캐시와 오프라인 프로젝트 {count}개(총 {size})가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+  "offlineCacheClearUnknownProjects": "자동 캐시와 이 계정의 오프라인 프로젝트가 모두 삭제됩니다(지금은 개수를 확인할 수 없음). 이 작업은 되돌릴 수 없습니다.",
   "offlineCacheTurnOffTitle": "오프라인 캐시를 끌까요?",
   "offlineCacheClearButton": "지우기"
 }

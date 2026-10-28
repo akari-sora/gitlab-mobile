@@ -2966,8 +2966,12 @@ const _messagesMs = <String>[
   'Menukar account akan memadam {count} project luar talian milik @{username} ({size}).',
   'Log keluar akan memadam {count} project luar talian milik @{username} ({size}).',
   'Membuang account akan memadam {count} project luar talian milik @{username} ({size}).',
+  'Menukar account akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.',
+  'Log keluar akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.',
+  'Membuang account akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.',
   'Teruskan dan padam',
   'Cache automatik dan {count} project luar talian (jumlah {size}) akan dipadam. Tindakan ini tidak boleh dibatalkan.',
+  'Cache automatik dan semua project luar talian account ini akan dipadam (bilangannya tidak dapat disahkan sekarang). Tindakan ini tidak boleh dibatalkan.',
   'Matikan cache luar talian?',
   'Kosongkan',
 ];

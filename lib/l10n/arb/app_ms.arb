@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Menukar account akan memadam {count} project luar talian milik @{username} ({size}).",
   "offlineLossSignOut": "Log keluar akan memadam {count} project luar talian milik @{username} ({size}).",
   "offlineLossRemove": "Membuang account akan memadam {count} project luar talian milik @{username} ({size}).",
+  "offlineLossSwitchUnknown": "Menukar account akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.",
+  "offlineLossSignOutUnknown": "Log keluar akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.",
+  "offlineLossRemoveUnknown": "Membuang account akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.",
   "offlineLossProceed": "Teruskan dan padam",
   "offlineCacheClearWithProjects": "Cache automatik dan {count} project luar talian (jumlah {size}) akan dipadam. Tindakan ini tidak boleh dibatalkan.",
+  "offlineCacheClearUnknownProjects": "Cache automatik dan semua project luar talian account ini akan dipadam (bilangannya tidak dapat disahkan sekarang). Tindakan ini tidak boleh dibatalkan.",
   "offlineCacheTurnOffTitle": "Matikan cache luar talian?",
   "offlineCacheClearButton": "Kosongkan"
 }

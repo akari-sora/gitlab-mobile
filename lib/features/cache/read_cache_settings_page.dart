@@ -260,15 +260,21 @@ class _ReadCacheSettingsPageState extends State<ReadCacheSettingsPage> {
 
   /// L1 (§6.9): clearing and turning off delete the offline projects too, so
   /// both say how many and how much before anything is written.
-  Future<bool> _confirmClear(String title) {
+  Future<bool> _confirmClear(String title) async {
     final offline = OfflineScope.maybeOf(context, listen: false);
-    final count = offline == null ? 0 : offlineProjectsAtRisk(offline);
+    // Only a confirmed zero drops the offline part; unknown says so.
+    final count = await knownOfflineProjectCount(
+      offline,
+      swept: offlineDataSwept(context),
+    );
+    if (!mounted) return false;
     return confirmAction(
       context,
       title,
-      // With no offline projects there is nothing extra to announce.
       count == 0
           ? l10n.offlineCacheClearConfirmDetail
+          : count == null
+          ? l10n.offlineCacheClearUnknownProjects
           : l10n.offlineCacheClearWithProjects(
               count,
               snapshotSize(offline!.usedBytes),

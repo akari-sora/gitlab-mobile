@@ -2966,8 +2966,12 @@ const _messagesDe = <String>[
   'Beim Kontowechsel werden die {count} Offline-Projekte von @{username} ({size}) gelöscht.',
   'Beim Abmelden werden die {count} Offline-Projekte von @{username} ({size}) gelöscht.',
   'Beim Entfernen des Kontos werden die {count} Offline-Projekte von @{username} ({size}) gelöscht.',
+  'Beim Kontowechsel werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.',
+  'Beim Abmelden werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.',
+  'Beim Entfernen des Kontos werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.',
   'Fortfahren und löschen',
   'Der automatische Cache und {count} Offline-Projekte ({size} insgesamt) werden gelöscht. Das kann nicht rückgängig gemacht werden.',
+  'Der automatische Cache und alle Offline-Projekte dieses Kontos werden gelöscht (wie viele es sind, lässt sich gerade nicht feststellen). Das kann nicht rückgängig gemacht werden.',
   'Offline-Cache ausschalten?',
   'Leeren',
 ];

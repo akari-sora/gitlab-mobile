@@ -2966,8 +2966,12 @@ const _messagesNl = <String>[
   'Als je van account wisselt, worden de {count} offlineprojecten van @{username} ({size}) verwijderd.',
   'Als je uitlogt, worden de {count} offlineprojecten van @{username} ({size}) verwijderd.',
   'Als je het account verwijdert, worden de {count} offlineprojecten van @{username} ({size}) verwijderd.',
+  'Als je van account wisselt, worden alle offlineprojecten van @{username} op dit apparaat verwijderd; hoeveel het er zijn, kan nu niet worden vastgesteld.',
+  'Als je uitlogt, worden alle offlineprojecten van @{username} op dit apparaat verwijderd; hoeveel het er zijn, kan nu niet worden vastgesteld.',
+  'Als je het account verwijdert, worden alle offlineprojecten van @{username} op dit apparaat verwijderd; hoeveel het er zijn, kan nu niet worden vastgesteld.',
   'Doorgaan en verwijderen',
   'De automatische cache en {count} offlineprojecten ({size} in totaal) worden verwijderd. Dit kan niet ongedaan worden gemaakt.',
+  'De automatische cache en alle offlineprojecten van dit account worden verwijderd (hoeveel het er zijn, kan nu niet worden vastgesteld). Dit kan niet ongedaan worden gemaakt.',
   'Offlinecache uitschakelen?',
   'Wissen',
 ];

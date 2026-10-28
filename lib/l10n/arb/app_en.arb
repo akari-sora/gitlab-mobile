@@ -2970,8 +2970,12 @@
   "offlineLossSwitch": "Switching accounts deletes the {count} offline projects of @{username} ({size}).",
   "offlineLossSignOut": "Signing out deletes the {count} offline projects of @{username} ({size}).",
   "offlineLossRemove": "Removing the account deletes the {count} offline projects of @{username} ({size}).",
+  "offlineLossSwitchUnknown": "Switching accounts deletes all offline projects of @{username} on this device; how many cannot be confirmed right now.",
+  "offlineLossSignOutUnknown": "Signing out deletes all offline projects of @{username} on this device; how many cannot be confirmed right now.",
+  "offlineLossRemoveUnknown": "Removing the account deletes all offline projects of @{username} on this device; how many cannot be confirmed right now.",
   "offlineLossProceed": "Continue and delete",
   "offlineCacheClearWithProjects": "The automatic cache and {count} offline projects ({size} in total) are deleted. This cannot be undone.",
+  "offlineCacheClearUnknownProjects": "The automatic cache and all offline projects of this account are deleted (how many cannot be confirmed right now). This cannot be undone.",
   "offlineCacheTurnOffTitle": "Turn off the offline cache?",
   "offlineCacheClearButton": "Clear"
 }

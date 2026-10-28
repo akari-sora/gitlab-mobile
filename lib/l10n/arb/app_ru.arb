@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "При смене аккаунта будут удалены офлайн-проекты @{username}: {count} ({size}).",
   "offlineLossSignOut": "При выходе будут удалены офлайн-проекты @{username}: {count} ({size}).",
   "offlineLossRemove": "При удалении аккаунта будут удалены офлайн-проекты @{username}: {count} ({size}).",
+  "offlineLossSwitchUnknown": "При смене аккаунта будут удалены все офлайн-проекты @{username} на этом устройстве; сейчас нельзя проверить, сколько их.",
+  "offlineLossSignOutUnknown": "При выходе будут удалены все офлайн-проекты @{username} на этом устройстве; сейчас нельзя проверить, сколько их.",
+  "offlineLossRemoveUnknown": "При удалении аккаунта будут удалены все офлайн-проекты @{username} на этом устройстве; сейчас нельзя проверить, сколько их.",
   "offlineLossProceed": "Продолжить и удалить",
   "offlineCacheClearWithProjects": "Будут удалены автоматический кэш и офлайн-проекты ({count}, всего {size}). Это нельзя отменить.",
+  "offlineCacheClearUnknownProjects": "Будут удалены автоматический кэш и все офлайн-проекты этого аккаунта (сейчас нельзя проверить, сколько их). Это нельзя отменить.",
   "offlineCacheTurnOffTitle": "Выключить офлайн-кэш?",
   "offlineCacheClearButton": "Очистить"
 }

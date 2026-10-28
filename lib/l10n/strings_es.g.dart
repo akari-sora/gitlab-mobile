@@ -2966,8 +2966,12 @@ const _messagesEs = <String>[
   'Al cambiar de cuenta se eliminan los {count} proyectos sin conexión de @{username} ({size}).',
   'Al cerrar sesión se eliminan los {count} proyectos sin conexión de @{username} ({size}).',
   'Al quitar la cuenta se eliminan los {count} proyectos sin conexión de @{username} ({size}).',
+  'Al cambiar de cuenta se eliminan todos los proyectos sin conexión de @{username} en este dispositivo; ahora no se puede confirmar cuántos hay.',
+  'Al cerrar sesión se eliminan todos los proyectos sin conexión de @{username} en este dispositivo; ahora no se puede confirmar cuántos hay.',
+  'Al quitar la cuenta se eliminan todos los proyectos sin conexión de @{username} en este dispositivo; ahora no se puede confirmar cuántos hay.',
   'Continuar y eliminar',
   'Se eliminan la caché automática y {count} proyectos sin conexión ({size} en total). No se puede deshacer.',
+  'Se eliminan la caché automática y todos los proyectos sin conexión de esta cuenta (ahora no se puede confirmar cuántos hay). No se puede deshacer.',
   '¿Desactivar la caché sin conexión?',
   'Borrar',
 ];

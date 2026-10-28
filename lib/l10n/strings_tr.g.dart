@@ -2966,8 +2966,12 @@ const _messagesTr = <String>[
   'Hesap değiştirmek, @{username} hesabının {count} çevrimdışı projesini ({size}) siler.',
   'Oturumu kapatmak, @{username} hesabının {count} çevrimdışı projesini ({size}) siler.',
   'Hesabı kaldırmak, @{username} hesabının {count} çevrimdışı projesini ({size}) siler.',
+  'Hesap değiştirmek, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.',
+  'Oturumu kapatmak, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.',
+  'Hesabı kaldırmak, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.',
   'Devam et ve sil',
   'Otomatik önbellek ve çevrimdışı projeler ({count}, toplam {size}) silinir. Bu işlem geri alınamaz.',
+  'Otomatik önbellek ve bu hesabın tüm çevrimdışı projeleri silinir (kaç tane olduğu şu anda doğrulanamıyor). Bu işlem geri alınamaz.',
   'Çevrimdışı önbellek kapatılsın mı?',
   'Temizle',
 ];

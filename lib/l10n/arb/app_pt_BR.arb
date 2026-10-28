@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Alternar de conta exclui os {count} projetos offline de @{username} ({size}).",
   "offlineLossSignOut": "Sair exclui os {count} projetos offline de @{username} ({size}).",
   "offlineLossRemove": "Remover a conta exclui os {count} projetos offline de @{username} ({size}).",
+  "offlineLossSwitchUnknown": "Alternar de conta exclui todos os projetos offline de @{username} neste dispositivo; agora não é possível confirmar quantos são.",
+  "offlineLossSignOutUnknown": "Sair exclui todos os projetos offline de @{username} neste dispositivo; agora não é possível confirmar quantos são.",
+  "offlineLossRemoveUnknown": "Remover a conta exclui todos os projetos offline de @{username} neste dispositivo; agora não é possível confirmar quantos são.",
   "offlineLossProceed": "Continuar e excluir",
   "offlineCacheClearWithProjects": "O cache automático e {count} projetos offline ({size} no total) serão excluídos. Isso não pode ser desfeito.",
+  "offlineCacheClearUnknownProjects": "O cache automático e todos os projetos offline desta conta serão excluídos (agora não é possível confirmar quantos são). Isso não pode ser desfeito.",
   "offlineCacheTurnOffTitle": "Desativar o cache offline?",
   "offlineCacheClearButton": "Limpar"
 }

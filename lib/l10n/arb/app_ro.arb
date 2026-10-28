@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Schimbarea contului șterge proiectele offline ale lui @{username}: {count} ({size}).",
   "offlineLossSignOut": "Deconectarea șterge proiectele offline ale lui @{username}: {count} ({size}).",
   "offlineLossRemove": "Eliminarea contului șterge proiectele offline ale lui @{username}: {count} ({size}).",
+  "offlineLossSwitchUnknown": "Schimbarea contului șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.",
+  "offlineLossSignOutUnknown": "Deconectarea șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.",
+  "offlineLossRemoveUnknown": "Eliminarea contului șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.",
   "offlineLossProceed": "Continuă și șterge",
   "offlineCacheClearWithProjects": "Se șterg cache-ul automat și proiectele offline: {count} ({size} în total). Acțiunea nu poate fi anulată.",
+  "offlineCacheClearUnknownProjects": "Se șterg cache-ul automat și toate proiectele offline ale acestui cont (acum nu se poate confirma câte sunt). Acțiunea nu poate fi anulată.",
   "offlineCacheTurnOffTitle": "Dezactivezi cache-ul offline?",
   "offlineCacheClearButton": "Golește"
 }

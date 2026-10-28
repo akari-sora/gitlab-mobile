@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "アカウントを切り替えると、@{username} のオフラインプロジェクト {count} 件（{size}）が削除されます。",
   "offlineLossSignOut": "サインアウトすると、@{username} のオフラインプロジェクト {count} 件（{size}）が削除されます。",
   "offlineLossRemove": "アカウントを削除すると、@{username} のオフラインプロジェクト {count} 件（{size}）が削除されます。",
+  "offlineLossSwitchUnknown": "アカウントを切り替えると、このデバイス上の @{username} のオフラインプロジェクトがすべて削除されます。現在、件数を確認できません。",
+  "offlineLossSignOutUnknown": "サインアウトすると、このデバイス上の @{username} のオフラインプロジェクトがすべて削除されます。現在、件数を確認できません。",
+  "offlineLossRemoveUnknown": "アカウントを削除すると、このデバイス上の @{username} のオフラインプロジェクトがすべて削除されます。現在、件数を確認できません。",
   "offlineLossProceed": "続行して削除",
   "offlineCacheClearWithProjects": "自動キャッシュとオフラインプロジェクト {count} 件（合計 {size}）が削除されます。この操作は元に戻せません。",
+  "offlineCacheClearUnknownProjects": "自動キャッシュとこのアカウントのオフラインプロジェクトがすべて削除されます（現在、件数を確認できません）。この操作は元に戻せません。",
   "offlineCacheTurnOffTitle": "オフラインキャッシュをオフにしますか？",
   "offlineCacheClearButton": "消去"
 }

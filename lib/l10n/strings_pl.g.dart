@@ -2966,8 +2966,12 @@ const _messagesPl = <String>[
   'Zmiana konta usuwa projekty offline użytkownika @{username}: {count} ({size}).',
   'Wylogowanie usuwa projekty offline użytkownika @{username}: {count} ({size}).',
   'Usunięcie konta usuwa projekty offline użytkownika @{username}: {count} ({size}).',
+  'Zmiana konta usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.',
+  'Wylogowanie usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.',
+  'Usunięcie konta usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.',
   'Kontynuuj i usuń',
   'Automatyczna pamięć podręczna i projekty offline ({count}, łącznie {size}) zostaną usunięte. Tej operacji nie można cofnąć.',
+  'Automatyczna pamięć podręczna i wszystkie projekty offline tego konta zostaną usunięte (teraz nie można potwierdzić ich liczby). Tej operacji nie można cofnąć.',
   'Wyłączyć pamięć podręczną offline?',
   'Wyczyść',
 ];

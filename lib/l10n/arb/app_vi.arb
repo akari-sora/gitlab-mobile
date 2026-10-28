@@ -2964,8 +2964,12 @@
   "offlineLossSwitch": "Chuyển account sẽ xóa {count} project ngoại tuyến của @{username} ({size}).",
   "offlineLossSignOut": "Đăng xuất sẽ xóa {count} project ngoại tuyến của @{username} ({size}).",
   "offlineLossRemove": "Gỡ account sẽ xóa {count} project ngoại tuyến của @{username} ({size}).",
+  "offlineLossSwitchUnknown": "Chuyển account sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.",
+  "offlineLossSignOutUnknown": "Đăng xuất sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.",
+  "offlineLossRemoveUnknown": "Gỡ account sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.",
   "offlineLossProceed": "Tiếp tục và xóa",
   "offlineCacheClearWithProjects": "Bộ nhớ đệm tự động và {count} project ngoại tuyến (tổng cộng {size}) sẽ bị xóa. Không thể hoàn tác.",
+  "offlineCacheClearUnknownProjects": "Bộ nhớ đệm tự động và tất cả project ngoại tuyến của account này sẽ bị xóa (hiện chưa thể xác nhận có bao nhiêu). Không thể hoàn tác.",
   "offlineCacheTurnOffTitle": "Tắt bộ nhớ đệm ngoại tuyến?",
   "offlineCacheClearButton": "Xóa"
 }

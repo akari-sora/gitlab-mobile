@@ -1,15 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/failure.dart';
 import '../../core/models.dart';
 import '../../core/offline/offline_repository_coordinator.dart';
 import '../../core/offline/snapshot_save.dart';
 import '../../core/offline/snapshot_schema.dart';
+import '../../core/providers.dart';
 import '../../core/repository_reader.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/artifact_storage.dart' show formatByteCount;
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
+import '../cache/read_cache_settings_store.dart';
 import 'offline_repositories.dart';
 
 /// The signed-in account's offline repositories, for every screen and pushed
@@ -570,9 +575,66 @@ int offlineProjectsAtRisk(OfflineRepositories repositories) {
   return count;
 }
 
+/// The offline cache is switched off and its device sweep finished: C2 then
+/// deleted every account's offline projects and nothing can save new ones,
+/// so there are none to lose.
+bool offlineDataSwept(BuildContext context) {
+  try {
+    final cache = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(sessionProvider).readCache;
+    return cache.setting == ReadCacheSettingsState.disabled &&
+        !cache.cleanupPendingAnywhere;
+  } on Object {
+    return false;
+  }
+}
+
+/// Waits for an inventory in flight on [repositories], at most [wait].
+Future<void> _inventorySettled(OfflineRepositories repositories, Duration wait) {
+  if (!repositories.loading) return Future<void>.value();
+  final done = Completer<void>();
+  void check() {
+    if (!repositories.loading && !done.isCompleted) done.complete();
+  }
+
+  repositories.addListener(check);
+  final timer = Timer(wait, () {
+    if (!done.isCompleted) done.complete();
+  });
+  return done.future.whenComplete(() {
+    timer.cancel();
+    try {
+      repositories.removeListener(check);
+    } on Object {
+      // Disposed while waiting: the count stays unknown.
+    }
+  });
+}
+
+/// How many offline projects leaving would delete, or null when that is not
+/// known: the inventory is still loading after [wait], it failed, or the
+/// storage cannot be read. Unknown is never taken for zero (fail closed).
+Future<int?> knownOfflineProjectCount(
+  OfflineRepositories? repositories, {
+  bool swept = false,
+  Duration wait = const Duration(seconds: 2),
+}) async {
+  if (repositories == null) return 0;
+  await _inventorySettled(repositories, wait);
+  if (!repositories.loading &&
+      repositories.failure == null &&
+      offlineReadable(repositories.state)) {
+    return offlineProjectsAtRisk(repositories);
+  }
+  return swept ? 0 : null;
+}
+
 /// The D1 confirmation before any way out of the session (§6.7). It comes
 /// before the AI guard and before anything stops, clears or changes the
-/// session; with no offline projects it asks nothing.
+/// session. It asks nothing only when zero offline projects is confirmed; an
+/// unknown count asks with a warning that the number cannot be shown.
 Future<bool> confirmOfflineLoss(
   BuildContext context, {
   required OfflineRepositories? repositories,
@@ -580,15 +642,25 @@ Future<bool> confirmOfflineLoss(
   required LeaveKind kind,
 }) async {
   if (repositories == null) return true;
-  final count = offlineProjectsAtRisk(repositories);
+  final count = await knownOfflineProjectCount(
+    repositories,
+    swept: offlineDataSwept(context),
+  );
+  if (!context.mounted) return false;
   if (count == 0) return true;
   final size = snapshotSize(repositories.usedBytes);
   final username = account.user.username;
-  final detail = switch (kind) {
-    LeaveKind.switchAccount => l10n.offlineLossSwitch(username, count, size),
-    LeaveKind.signOut => l10n.offlineLossSignOut(username, count, size),
-    LeaveKind.remove => l10n.offlineLossRemove(username, count, size),
-  };
+  final detail = count == null
+      ? switch (kind) {
+          LeaveKind.switchAccount => l10n.offlineLossSwitchUnknown(username),
+          LeaveKind.signOut => l10n.offlineLossSignOutUnknown(username),
+          LeaveKind.remove => l10n.offlineLossRemoveUnknown(username),
+        }
+      : switch (kind) {
+          LeaveKind.switchAccount => l10n.offlineLossSwitch(username, count, size),
+          LeaveKind.signOut => l10n.offlineLossSignOut(username, count, size),
+          LeaveKind.remove => l10n.offlineLossRemove(username, count, size),
+        };
   return confirmAction(
     context,
     l10n.offlineLossTitle,

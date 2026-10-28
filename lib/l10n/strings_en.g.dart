@@ -2966,8 +2966,12 @@ const _messagesEn = <String>[
   'Switching accounts deletes the {count} offline projects of @{username} ({size}).',
   'Signing out deletes the {count} offline projects of @{username} ({size}).',
   'Removing the account deletes the {count} offline projects of @{username} ({size}).',
+  'Switching accounts deletes all offline projects of @{username} on this device; how many cannot be confirmed right now.',
+  'Signing out deletes all offline projects of @{username} on this device; how many cannot be confirmed right now.',
+  'Removing the account deletes all offline projects of @{username} on this device; how many cannot be confirmed right now.',
   'Continue and delete',
   'The automatic cache and {count} offline projects ({size} in total) are deleted. This cannot be undone.',
+  'The automatic cache and all offline projects of this account are deleted (how many cannot be confirmed right now). This cannot be undone.',
   'Turn off the offline cache?',
   'Clear',
 ];
