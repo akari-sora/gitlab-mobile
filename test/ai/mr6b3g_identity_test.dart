@@ -195,6 +195,11 @@ void main() {
         'team#x',
         'team/ sub',
         'team/sub\n',
+        'team/sub\u200b',
+        'team/中文',
+        'team/@sub',
+        'team/sub:other',
+        'team/-/sub',
       ]) {
         expect(
           _identity(
@@ -202,6 +207,16 @@ void main() {
             namespace: _namespace(path: path),
           ),
           isNull,
+          reason: path,
+        );
+      }
+      for (final path in ['team-1/sub_group.v2', 'Team/123']) {
+        expect(
+          _identity(
+            path: path,
+            namespace: _namespace(path: path),
+          ),
+          isNotNull,
           reason: path,
         );
       }

@@ -1243,12 +1243,12 @@ void main() {
           if (realPause) {
             await tester.runAsync(() async {
               h = await CoordHarness.create();
+              addTearDown(() => tester.runAsync(h.dispose));
               h.newRun('Comment on #3 in team/example-9');
               proposal = (await h.coordinator.propose(
                 coordNoteCall('table-pause'),
               ))!;
             });
-            addTearDown(() => tester.runAsync(h.dispose));
             expect(proposal.pausedReason, isNull);
           } else {
             proposal = _proposal()..editedText = 'Edited words';
@@ -1302,12 +1302,17 @@ void main() {
               expect(proposal.pausedReason, AiWritePause.clientUnavailable);
               expect(proposal.editedText, isNull);
               expect(find.text(l10n.aiProposalPausedRateLimited), findsOneWidget);
+              final message = find.byKey(const ValueKey('ai-proposal-message'));
+              expect(message, findsOneWidget);
               expect(
-                find.descendant(
-                  of: find.byKey(const ValueKey('ai-proposal-message')),
-                  matching: find.text(l10n.aiProposalPausedRateLimited),
-                ),
-                findsNothing,
+                tester.widget<Text>(message).data,
+                l10n.aiProposalEditBlocked,
+              );
+              final status = find.byKey(const ValueKey('ai-proposal-status'));
+              expect(status, findsOneWidget);
+              expect(
+                tester.widget<Text>(status).data,
+                l10n.aiProposalPausedRateLimited,
               );
             } else {
               expect(find.text(l10n.aiProposalPausedRateLimited), findsNothing);

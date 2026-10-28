@@ -7,8 +7,10 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart';
 import 'package:gitlab_mobile/core/failure.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/core/request_meter.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
@@ -233,11 +235,17 @@ void main() {
       await expectLater(
         _load(_groupOrigin, adapter),
         throwsA(
-          isA<ApiFailure>().having(
-            (failure) => failure.kind,
-            'kind',
-            FailureKind.rateLimited,
-          ),
+          isA<AiFailure>()
+              .having(
+                (failure) => failure.kind,
+                'kind',
+                AiFailureKind.rateLimited,
+              )
+              .having(
+                (failure) => failure.gitLabBudget,
+                'gitLabBudget',
+                isTrue,
+              ),
         ),
       );
       expect(adapter.requests, hasLength(1));
@@ -547,6 +555,84 @@ void main() {
       expect(allowances, [2, 2]);
       expect(meter.count, 2);
       expect(result.groupMetadata!.visibility, 'private');
+    },
+  );
+
+  test(
+    'group context counts both OAuth replays within the same admission',
+    () async {
+      final server = _groupAdapter();
+      final attempts = <String, int>{};
+      var refreshes = 0;
+      final adapter = FakeAdapter((request) {
+        if (request.uri.path.endsWith('/oauth/token')) {
+          refreshes++;
+          return jsonResponse({
+            'access_token': 'new-token-$refreshes',
+            'refresh_token': 'new-refresh-$refreshes',
+            'token_type': 'bearer',
+            'expires_in': 7200,
+          });
+        }
+        final path = request.uri.path;
+        attempts[path] = (attempts[path] ?? 0) + 1;
+        if (attempts[path] == 1) return jsonResponse({}, status: 401);
+        return server.respond(request);
+      });
+      final instance = GitLabInstance.parse('https://example.com/gitlab');
+      final dio = Dio()..httpClientAdapter = adapter;
+      final api = GitLabApi(
+        instance: instance,
+        dio: dio,
+        credential: const OAuthCredential(
+          accessToken: 'old-token',
+          refreshToken: 'old-refresh',
+          clientId: 'app',
+        ),
+        oauth: OAuthTokenClient(instance: instance, clientId: 'app', dio: dio),
+      );
+      addTearDown(api.close);
+      final meter = RequestMeter();
+      final allowances = <int>[];
+      final counts = <int>[];
+      final result = await meter.runAsync(
+        () => loadAiChatContext(
+          origin: _groupOrigin,
+          api: api,
+          redactor: Redactor(secrets: const _Secrets()),
+          accountKey: 'https://example.com/gitlab#7',
+          refreshSecrets: () async {},
+          isCurrent: () => true,
+          beforeRead: (maximum) {
+            allowances.add(maximum);
+            counts.add(meter.count);
+          },
+        ),
+      );
+      expect(allowances, [2, 2]);
+      expect(counts, [0, 2]);
+      expect(meter.count, 4);
+      expect(refreshes, 2);
+      expect(attempts, {
+        '/gitlab/api/v4/groups/7': 2,
+        '/gitlab/api/graphql': 2,
+      });
+      final graph = adapter.requests
+          .where((r) => r.uri.path.endsWith('/api/graphql'))
+          .toList();
+      for (final request in graph) {
+        expect(request.method, 'POST');
+        expect(request.data, {
+          'query': namespaceWorkItemQuery,
+          'variables': {'path': 'team/sub', 'iid': '3'},
+        });
+      }
+      final groups = adapter.requests
+          .where((r) => r.uri.path.endsWith('/groups/7'))
+          .toList();
+      expect(groups[0].uri, groups[1].uri);
+      expect(groups[0].method, groups[1].method);
+      expect(result.groupScope!.groupId, 7);
     },
   );
 
