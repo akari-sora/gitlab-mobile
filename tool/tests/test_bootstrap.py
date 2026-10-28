@@ -1216,8 +1216,57 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('"io.gitlabmobile/agent_runs"', bootstrap.AGENT_RUN_SERVICE)
         for method in ('startRuns', 'updateProgress', 'releaseRuns', 'stopAll', 'acquireContinuation', 'moveTaskToBack'):
             self.assertIn(f'"{method}" ->', bootstrap.AGENT_RUN_SERVICE)
-        self.assertIn('reply("unsupported", "reason" to "not_implemented")', bootstrap.AGENT_RUN_SERVICE)
-        self.assertNotIn('activity.moveTaskToBack(', bootstrap.AGENT_RUN_SERVICE)
+        self.assertIn('"moveTaskToBack" -> moveBack(activity, args, result)', bootstrap.AGENT_RUN_SERVICE)
+
+    def test_task_back_validates_sequence_and_live_activity_before_one_call(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        register = self._body(source, 'fun register(')
+        self.assertLess(register.index('owner !== activity || registration !== binding'),
+                        register.index('"moveTaskToBack" ->'))
+        body = self._body(source, 'private fun moveBack(')
+        keys = 'if (!validKeys(args, setOf("opSeq"), result)) return'
+        seq = 'sequence(args, result) ?: return'
+        guard = 'if (visible !== activity || activity.isFinishing || activity.isDestroyed)'
+        call = 'activity.moveTaskToBack(true)'
+        self.assertIn(keys, body)
+        self.assertIn(seq, body)
+        self.assertIn(guard, body)
+        self.assertIn('reject(result, "foreground_required"); return', body)
+        self.assertEqual(body.count(call), 1)
+        self.assertLess(body.index(keys), body.index(seq))
+        self.assertLess(body.index(seq), body.index(guard))
+        self.assertLess(body.index(guard), body.index(call))
+        for forbidden in ('startService', 'startForegroundService', 'start(', 'stop(',
+                          'current', 'service', 'finish(', 'SystemNavigator'):
+            self.assertNotIn(forbidden, body)
+
+    def test_task_back_preserves_android_boolean_and_uses_bounded_failure_codes(self):
+        body = self._body(bootstrap.AGENT_RUN_SERVICE, 'private fun moveBack(')
+        self.assertIn('val moved = try {', body)
+        self.assertIn('reply(if (moved) "moved" else "not_moved")', body)
+        self.assertIn('catch (_: SecurityException)', body)
+        self.assertIn('reject(result, "security_exception"); return', body)
+        self.assertIn('catch (_: RuntimeException)', body)
+        self.assertIn('reject(result, "move_failed"); return', body)
+        self.assertEqual(body.count('result.success('), 1)
+        for forbidden in ('message', 'stackTrace', 'toString()', 'result.error', 'unsupported'):
+            self.assertNotIn(forbidden, body)
+
+    def test_task_back_qa_counter_counts_only_actual_calls_and_stays_debug_only(self):
+        source = bootstrap.AGENT_RUN_SERVICE
+        body = self._body(source, 'private fun moveBack(')
+        self.assertEqual(source.count('testEvents?.taskBackInvoked()'), 1)
+        self.assertIn('testEvents?.taskBackInvoked()\n            activity.moveTaskToBack(true)', body)
+        qa = bootstrap.AGENT_RUN_QA_ADAPTER
+        self.assertIn('private var taskBackCallCount = 0L', qa)
+        self.assertIn('"taskBackCalls" -> if (args.isEmpty())', qa)
+        self.assertIn('mapOf("version" to 1, "count" to taskBackCallCount)', qa)
+        self.assertEqual(self._body(qa, 'override fun taskBackInvoked').strip(),
+                         'if (!closed && registered) taskBackCallCount++')
+        reset = self._body(qa, '"reset" -> if (args.isEmpty())')
+        self.assertIn('taskBackCallCount = 0L', reset)
+        self.assertNotIn('taskBackCallCount', source)
+        self.assertNotIn('"taskBackCalls"', source)
 
     def test_agent_notification_is_private_with_safe_public_resources_and_monochrome_icon(self):
         source = bootstrap.AGENT_RUN_SERVICE

@@ -160,6 +160,17 @@ final class AiBackgroundStartResult {
   final AiBackgroundStartFailure? failure;
 }
 
+/// A task movement result, without platform exception text or run authority.
+enum AiTaskBackResult {
+  moved,
+  notMoved,
+  notEligible,
+  unsupported,
+  foregroundRequired,
+  unavailable,
+  failed,
+}
+
 /// One native service owner for an account, API and session generation.
 /// Native permits only prepare work: every continuation still obtains a ticket.
 final class AiBackgroundExecution extends ChangeNotifier
@@ -365,18 +376,29 @@ final class AiBackgroundExecution extends ChangeNotifier
     }
   }
 
-  /// The unsupported probe advances native's sequence without starting work.
-  /// A stale reply supplies the process high-water mark before the real call.
+  /// A non-UUID permit can never match a native-generated UUID. Its rejected
+  /// progress request advances the sequence without changing work or the task.
+  /// A peer that still answers this probe with the historical
+  /// `unsupported` / `not_implemented` handshake also started no work and
+  /// moved no task. Treating that reply as a missing channel skips the start,
+  /// so a timed-out or cleanup-failed run never enters scoped cleanup or
+  /// explicit continuation. A stale reply supplies the process high-water
+  /// mark before the real call.
   Future<bool> _seed() {
     if (_seeded) return Future<bool>.value(true);
     if (!_attach()) return Future<bool>.value(false);
     return _seedFuture ??= () async {
       try {
-        final reply = await _invoke('moveTaskToBack', {
+        final reply = await _invoke('updateProgress', {
           'opSeq': _nextSequence(),
+          'permitId': 'sequence-probe',
+          'workCount': 1,
+          'step': 0,
         });
-        if (reply?['status'] == 'unsupported' &&
-            reply?['reason'] == 'not_implemented') {
+        if ((reply?['status'] == 'rejected' &&
+                reply?['reason'] == 'permit_inactive') ||
+            (reply?['status'] == 'unsupported' &&
+                reply?['reason'] == 'not_implemented')) {
           _seeded = true;
           return true;
         }
@@ -476,6 +498,70 @@ final class AiBackgroundExecution extends ChangeNotifier
 
   Future<AiBackgroundStartResult> startRuns(AiBackgroundRunGate gate) =>
       gate.beginRun(runId: _newId());
+
+  /// Called after the shell has consumed detail/tab back and checked app lock.
+  /// Works without an active service, including approval and paused work.
+  Future<AiTaskBackResult> moveTaskToBack({
+    required bool Function() isBackEligible,
+  }) async {
+    if (!_nativeSupported) return AiTaskBackResult.unsupported;
+    if (!_current) return AiTaskBackResult.unavailable;
+    if (!_appInForeground()) return AiTaskBackResult.foregroundRequired;
+    if (!isBackEligible()) return AiTaskBackResult.notEligible;
+    if (!_attach()) return AiTaskBackResult.unavailable;
+    var result = AiTaskBackResult.unavailable;
+    await _serial(() async {
+      if (!_current) return;
+      if (!_appInForeground()) {
+        result = AiTaskBackResult.foregroundRequired;
+        return;
+      }
+      if (!isBackEligible()) {
+        result = AiTaskBackResult.notEligible;
+        return;
+      }
+      if (_sequence >= _maxSequence) return;
+      if (!await _seed() || !_current || _sequence >= _maxSequence) return;
+      if (!_appInForeground()) {
+        result = AiTaskBackResult.foregroundRequired;
+        return;
+      }
+      if (!isBackEligible()) {
+        result = AiTaskBackResult.notEligible;
+        return;
+      }
+      final reply = await _invoke('moveTaskToBack', {'opSeq': _nextSequence()});
+      if (!_current || reply == null) return;
+      result = switch (reply['status']) {
+        'moved' when reply.length == 2 => AiTaskBackResult.moved,
+        'not_moved' when reply.length == 2 => AiTaskBackResult.notMoved,
+        'unsupported'
+            when reply.length == 3 && reply['reason'] == 'not_implemented' =>
+          AiTaskBackResult.unsupported,
+        'rejected'
+            when reply.length == 3 &&
+                reply['reason'] == 'foreground_required' =>
+          AiTaskBackResult.foregroundRequired,
+        'rejected' when reply.length == 3 && reply['reason'] == 'unavailable' =>
+          AiTaskBackResult.unavailable,
+        'rejected'
+            when (reply.length == 3 &&
+                    const {
+                      'invalid_arguments',
+                      'security_exception',
+                      'move_failed',
+                    }.contains(reply['reason'])) ||
+                (reply.length == 4 &&
+                    reply['reason'] == 'stale_operation' &&
+                    reply['opSeqFloor'] is int &&
+                    (reply['opSeqFloor']! as int) >= 1 &&
+                    (reply['opSeqFloor']! as int) <= _maxSequence) =>
+          AiTaskBackResult.failed,
+        _ => AiTaskBackResult.unavailable,
+      };
+    });
+    return result;
+  }
 
   Future<(Map<Object?, Object?>?, AiBackgroundStartFailure?)> _invokeStart(
     Map<String, Object> args,

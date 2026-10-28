@@ -47,12 +47,6 @@ final class _Peer {
     calls.add(call);
     final args = call.arguments as Map<Object?, Object?>;
     switch (call.method) {
-      case 'moveTaskToBack':
-        return {
-          'version': 1,
-          'status': 'unsupported',
-          'reason': 'not_implemented',
-        };
       case 'startRuns':
         starts++;
         if (exceptionCode case final code?) throw PlatformException(code: code);
@@ -98,6 +92,13 @@ final class _Peer {
         if (didRelease) permit = null;
         return {'version': 1, 'status': 'released', 'didRelease': didRelease};
       case 'updateProgress':
+        if (permit == null || args['permitId'] != permit) {
+          return {
+            'version': 1,
+            'status': 'rejected',
+            'reason': 'permit_inactive',
+          };
+        }
         return {'version': 1, 'status': 'updated', 'permitId': permit};
       case 'acquireContinuation':
         return {

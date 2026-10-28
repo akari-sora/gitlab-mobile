@@ -385,13 +385,18 @@ void main() {
             'status': 'rejected',
             'reason': 'permit_inactive',
           };
+        case 'updateProgress':
+          final args = call.arguments as Map<Object?, Object?>;
+          if (args['permitId'] != 'sequence-probe') {
+            throw StateError('Unexpected progress update');
+          }
+          return {
+            'version': 1,
+            'status': 'rejected',
+            'reason': 'permit_inactive',
+          };
       }
-      // moveTaskToBack: the handshake that seeds the operation sequence.
-      return {
-        'version': 1,
-        'status': 'unsupported',
-        'reason': 'not_implemented',
-      };
+      throw StateError('Unexpected method ${call.method}');
     });
     final owner = AiBackgroundExecution(
       accountKey: h.account,
