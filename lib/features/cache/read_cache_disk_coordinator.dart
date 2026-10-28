@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/offline/offline_repository_coordinator.dart';
+import '../../core/offline/snapshot_schema.dart';
+import '../../core/offline/snapshot_store.dart';
 import '../../core/read_cache_cipher.dart';
 import '../../core/read_cache_disk_contract.dart';
 import '../../core/read_cache_files.dart';
@@ -200,6 +202,63 @@ final class ReadCacheDiskCoordinator {
 
   void installUserControls() => _domain.controlsInstalled = true;
 
+  /// The C3 owner shares this coordinator's storage and coordination scope.
+  OfflineRepositoryCoordinator? get offlineRepository {
+    if (!configured) return null;
+    final existing = _domain.namespace ?? _domain.pendingOfflineNamespace;
+    if (existing is OfflineRepositoryNamespace) return existing.coordinator;
+    if (existing != null) return null;
+    final participant = OfflineRepositoryNamespace(
+      coordinator: identical(_domain, _processDomain)
+          ? OfflineRepositoryCoordinator.instance
+          : OfflineRepositoryCoordinator(clock: _clock),
+      keys: _keys!,
+      files: _files!,
+    );
+    _domain.pendingOfflineNamespace = participant;
+    return participant.coordinator;
+  }
+
+  Future<bool> readOfflineRefused(String accountKey) async {
+    if (!configured) {
+      throw const ReadCacheStoreException(
+        ReadCacheStoreFailure(
+          ReadCacheStoreFailureKind.unavailable,
+          'readOfflineRefusal',
+        ),
+      );
+    }
+    final result = await _keys!.readOfflineRefusal(accountKey);
+    if (result.status == ReadCacheStoreReadStatus.unavailable) {
+      throw ReadCacheStoreException(result.failure!);
+    }
+    return result.status == ReadCacheStoreReadStatus.found;
+  }
+
+  Future<void> writeOfflineRefused(String accountKey, DateTime when) {
+    if (!configured) {
+      throw const ReadCacheStoreException(
+        ReadCacheStoreFailure(
+          ReadCacheStoreFailureKind.unavailable,
+          'writeOfflineRefusal',
+        ),
+      );
+    }
+    return _keys!.writeOfflineRefusal(accountKey, when);
+  }
+
+  Future<void> deleteOfflineRefused(String accountKey) {
+    if (!configured) {
+      throw const ReadCacheStoreException(
+        ReadCacheStoreFailure(
+          ReadCacheStoreFailureKind.unavailable,
+          'deleteOfflineRefusal',
+        ),
+      );
+    }
+    return _keys!.deleteOfflineRefusal(accountKey);
+  }
+
   /// Bind C3's HTTP sinks now; join B4 only when disk activation can open it.
   /// A never-opened participant has no work to drain and must not turn empty
   /// account cleanup into marker writes while storage remains closed.
@@ -345,6 +404,49 @@ final class ReadCacheDiskCoordinator {
     return current() ? key : blocked;
   }
 
+  /// Inspect an authenticated index without opening the namespace or writing.
+  Future<SnapshotIndex?> offlineEligibilityIndex(
+    String accountKey,
+  ) async {
+    final epoch = _account(accountKey).epoch;
+    final revision = _domain.startupRevision;
+    final initial = await readOfflineEligibilityKey(accountKey);
+    if (!initial.isFound || initial.value == null) return null;
+    try {
+      final store = SnapshotStore(
+        supportRoot: await _files!.offlineSupportDirectory(),
+        accountKey: accountKey,
+        rootKey: initial.value!,
+      );
+      final index = await store.readIndex();
+      if (index == null) return null;
+      var complete = false;
+      for (final record in index.snapshots) {
+        if (record.status == SnapshotStatus.complete &&
+            await store.readTree(record) != null) {
+          complete = true;
+          break;
+        }
+      }
+      if (!complete) return null;
+      final finalKey = await readOfflineEligibilityKey(accountKey);
+      final bytes = finalKey.value;
+      if (!finalKey.isFound ||
+          bytes == null ||
+          bytes.length != initial.value!.length ||
+          _account(accountKey).epoch != epoch ||
+          _domain.startupRevision != revision) {
+        return null;
+      }
+      for (var i = 0; i < bytes.length; i++) {
+        if (bytes[i] != initial.value![i]) return null;
+      }
+      return index;
+    } on Object {
+      return null;
+    }
+  }
+
   /// Reserved for the current SessionController's C3c `_enterOffline` path.
   /// This changes cache admission only; it creates no API client or UI mode.
   Future<bool> enterOfflineReadOnly(
@@ -375,6 +477,7 @@ final class ReadCacheDiskCoordinator {
         binding.generation <= _domain.highestGeneration) {
       return false;
     }
+    if (_domain.namespace == null && offlineRepository == null) return false;
     _installOfflineNamespace();
     account.epoch++;
     account.state = ReadCacheDiskState.offlineReadOnly;
@@ -397,7 +500,12 @@ final class ReadCacheDiskCoordinator {
     account.state = ReadCacheDiskState.closed;
     _domain.revokedThrough = max(_domain.revokedThrough, binding.generation);
     _domain.offlineBinding = null;
-    _domain.namespace?.fence(binding.accountKey);
+    final namespace = _domain.namespace;
+    if (namespace is OfflineRepositoryNamespace) {
+      namespace.coordinator.closeReadOnly(binding);
+    } else {
+      namespace?.fence(binding.accountKey);
+    }
   }
 
   void Function() subscribe(ReadCacheNoticeSink sink) {

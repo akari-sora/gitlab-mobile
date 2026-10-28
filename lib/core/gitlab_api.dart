@@ -2741,10 +2741,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
   bool mayStartRequestFor(List<String> path, {String method = 'POST'}) =>
       !_closed && rateBudget.mayStart(_rateClass(instance.api(path), method));
 
-  void close() {
+  void close({bool closeRateBudget = true}) {
     _closed = true;
     _cache.close();
-    rateBudget.close();
+    if (closeRateBudget) rateBudget.close();
     for (final token in _requests.toList()) {
       token.cancel('session ended');
     }
