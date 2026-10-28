@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/security/app_lock.dart';
+import 'package:gitlab_mobile/features/workspace/project_page.dart';
 
 import '../support/ai_run_notification_shell.dart';
 import '../support/shell_nav.dart';
@@ -96,12 +97,43 @@ void main() {
   Future<NotificationShell> start(
     WidgetTester tester, {
     AppLockController? lock,
+    NotificationChat? chat,
   }) => NotificationShell.start(
     tester,
     platform: platform,
     lock: lock,
     aiRunsChannel: _channel,
+    withChat: chat,
   );
+
+  final nav = find.byWidgetPredicate(
+    (w) => w is NavigationBar || w is NavigationRail,
+  );
+
+  /// The shell's own PopScope: the outermost one around its navigation.
+  bool rootCanPop(WidgetTester tester) => tester
+      .widget<PopScope<Object?>>(
+        find.ancestor(of: nav, matching: find.byType(PopScope<Object?>)).last,
+      )
+      .canPop;
+
+  void phone(WidgetTester tester) {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+  }
+
+  void wide(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+  }
+
+  /// Opens the Explore project in place (a compact detail on phones).
+  Future<void> openProjectDetail(WidgetTester tester) async {
+    await openExplore(tester);
+    await tester.tap(find.text('Mobile Workspace'));
+    await settleNetworkWidgets(tester);
+    expect(find.byType(ProjectPage), findsOneWidget);
+  }
 
   /// One system back, as Android sends it, then the bridge's replies.
   Future<bool> back(WidgetTester tester) async {
@@ -135,6 +167,7 @@ void main() {
     final shell = await start(tester);
     await protect(shell, tester);
     await tester.pump();
+    expect(rootCanPop(tester), isFalse);
     expect(await back(tester), isTrue);
     expect(native.moves, 1);
     expect(systemPops, isEmpty);
@@ -144,7 +177,9 @@ void main() {
     expect(selectedDestination(tester), 0);
   });
 
-  testWidgets('paused and running work are protected as well', (tester) async {
+  testWidgets('running and stopping work are protected as well', (
+    tester,
+  ) async {
     final shell = await start(tester);
     final chat = await protect(shell, tester);
     for (final phase in [AiChatPhase.running, AiChatPhase.stopping]) {
@@ -159,8 +194,123 @@ void main() {
     expect(systemPops, isEmpty);
   });
 
+  testWidgets('a paused run with an idle phase is protected (Codex R1)', (
+    tester,
+  ) async {
+    final chat = PausedNotificationChat();
+    final shell = await start(tester, chat: chat);
+    expect(shell.openChat(tester), same(chat));
+    await tester.pump();
+    expect(rootCanPop(tester), isTrue);
+    chat
+      ..paused = true
+      ..notifyListeners();
+    await tester.pump();
+    expect(chat.phase, AiChatPhase.idle);
+    expect(
+      (shell.registry(tester) as AiExecutionRunRegistry).backProtectedCount,
+      1,
+    );
+    expect(rootCanPop(tester), isFalse);
+    expect(await back(tester), isTrue);
+    expect(native.moves, 1);
+    expect(systemPops, isEmpty);
+    // The pause ends without a resume: back closes the app again.
+    chat
+      ..paused = false
+      ..notifyListeners();
+    await tester.pump();
+    expect(rootCanPop(tester), isTrue);
+    expect(await back(tester), isFalse);
+    expect(native.moves, 1);
+    expect(systemPops, hasLength(1));
+  });
+
+  testWidgets('an in-place detail, then the tab, take back before the task '
+      'moves (Codex R1)', (tester) async {
+    phone(tester);
+    addTearDown(tester.view.reset);
+    final shell = await start(tester);
+    await protect(shell, tester);
+    await openProjectDetail(tester);
+    expect(rootCanPop(tester), isFalse);
+    expect(await back(tester), isTrue);
+    expect(find.byType(ProjectPage), findsNothing);
+    expect(selectedDestination(tester), isNot(0));
+    expect(native.moves, 0);
+    expect(await back(tester), isTrue);
+    expect(selectedDestination(tester), 0);
+    expect(native.moves, 0);
+    expect(rootCanPop(tester), isFalse);
+    expect(await back(tester), isTrue);
+    expect(native.moves, 1);
+    expect(systemPops, isEmpty);
+  });
+
+  testWidgets('a detail left open on another tab does not take root back '
+      '(Codex R1)', (tester) async {
+    phone(tester);
+    addTearDown(tester.view.reset);
+    final shell = await start(tester);
+    await protect(shell, tester);
+    await openProjectDetail(tester);
+    await tapDestination(tester, '首頁');
+    expect(selectedDestination(tester), 0);
+    expect(find.byType(ProjectPage, skipOffstage: false), findsOneWidget);
+    expect(rootCanPop(tester), isFalse);
+    expect(await back(tester), isTrue);
+    expect(native.moves, 1);
+    // The offstage detail is still there and takes back on its own tab.
+    expect(find.byType(ProjectPage, skipOffstage: false), findsOneWidget);
+    await openExplore(tester);
+    expect(find.byType(ProjectPage), findsOneWidget);
+    expect(await back(tester), isTrue);
+    expect(find.byType(ProjectPage), findsNothing);
+    expect(native.moves, 1);
+    expect(systemPops, isEmpty);
+  });
+
+  testWidgets('narrow to wide to narrow keeps the back order (Codex R1)', (
+    tester,
+  ) async {
+    phone(tester);
+    addTearDown(tester.view.reset);
+    final shell = await start(tester);
+    await protect(shell, tester);
+    await openProjectDetail(tester);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    // Rotated: the rail, and the project beside the list (two panes, which
+    // has never vetoed back), so the tab takes back first.
+    wide(tester);
+    await settleNetworkWidgets(tester);
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(rootCanPop(tester), isFalse);
+    expect(await back(tester), isTrue);
+    expect(selectedDestination(tester), 0);
+    expect(native.moves, 0);
+    // Rotated back on the root page: now the task moves.
+    phone(tester);
+    await settleNetworkWidgets(tester);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(rootCanPop(tester), isFalse);
+    expect(await back(tester), isTrue);
+    expect(native.moves, 1);
+    // The compact detail is back on Explore and still takes back first.
+    await openExplore(tester);
+    expect(find.byType(ProjectPage), findsOneWidget);
+    expect(await back(tester), isTrue);
+    expect(find.byType(ProjectPage), findsNothing);
+    expect(await back(tester), isTrue);
+    expect(selectedDestination(tester), 0);
+    expect(native.moves, 1);
+    expect(await back(tester), isTrue);
+    expect(native.moves, 2);
+    expect(systemPops, isEmpty);
+  });
+
   testWidgets('without AI work root back behaves as before', (tester) async {
     await start(tester);
+    expect(rootCanPop(tester), isTrue);
     expect(await back(tester), isFalse);
     expect(native.moves, 0);
     expect(systemPops, hasLength(1));

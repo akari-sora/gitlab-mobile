@@ -330,6 +330,28 @@ final class NotificationChat extends ChangeNotifier
   void removeAttachment(String id) {}
 }
 
+/// A conversation whose phase is idle while its run is paused: like the
+/// controller, it reports back protection through [AiExecutionChatSession]
+/// rather than through its phase.
+final class PausedNotificationChat extends NotificationChat
+    implements AiExecutionChatSession {
+  PausedNotificationChat() {
+    phase = AiChatPhase.idle;
+  }
+
+  /// Whether a paused run keeps the conversation protected.
+  bool paused = false;
+
+  @override
+  int get backProtectedCount => paused ? 1 : 0;
+  @override
+  int get serviceWorkCount => 0;
+  @override
+  AiChatExecutionStatus get executionStatus => paused
+      ? AiChatExecutionStatus.paused
+      : AiChatExecutionStatus.foregroundOnly;
+}
+
 /// A signed-in shell with AI, its registry and the run-notification gate,
 /// built the way `main.dart` builds them.
 final class NotificationShell {
@@ -372,6 +394,7 @@ final class NotificationShell {
     AppLockController? lock,
     bool initializeBeforeShell = true,
     MethodChannel? aiRunsChannel,
+    NotificationChat? withChat,
   }) async {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     final fixture = WorkspaceFixture();
@@ -385,8 +408,9 @@ final class NotificationShell {
     );
     final notifications = AiRunNotifications(text: aiRunNotificationText);
     final gate = AiRunNotificationGate(notifications, lock: lock);
-    final chat = NotificationChat()
-      ..proposals = [notificationProposal('exec-1')];
+    final chat =
+        withChat ?? (NotificationChat()
+          ..proposals = [notificationProposal('exec-1')]);
     // Registered first, so it runs after the shell and registry are gone.
     addTearDown(chat.dispose);
     addTearDown(session.dispose);
