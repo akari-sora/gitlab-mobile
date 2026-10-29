@@ -1029,7 +1029,9 @@ void main() {
       CacheLineage.network,
     );
     expect(h.adapters.single.requests.length - before, 1);
-  });
+    // Filling the LRU takes 256 disk-backed reads: about a second on an idle
+    // host, but up to a minute on a loaded runner.
+  }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('no-store refresh removes older pinned memory and disk', () async {
     final h = _Harness();
