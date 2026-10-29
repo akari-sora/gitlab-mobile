@@ -718,6 +718,9 @@ void main() {
       'incomplete draft position',
       'multiline draft position',
       'published multiline position',
+      'all-null draft position',
+      'empty draft position',
+      'partial null draft position',
     ]) {
       final server = Mr7SyntheticGitLab();
       final session = await _session(server);
@@ -749,6 +752,29 @@ void main() {
           : scenario == 'multiline draft position'
           ? {...position, 'line_range': range}
           : position;
+      // GitLab's documented ordinary (non-diff) draft shape: a text position
+      // whose SHAs, paths, lines and range are all null.
+      final allNull = <String, Object?>{
+        'base_sha': null,
+        'start_sha': null,
+        'head_sha': null,
+        'old_path': null,
+        'new_path': null,
+        'position_type': 'text',
+        'old_line': null,
+        'new_line': null,
+        'line_range': null,
+      };
+      final unanchored = switch (scenario) {
+        'all-null draft position' => allNull,
+        'empty draft position' => <String, Object?>{},
+        'partial null draft position' => {
+          ...allNull,
+          'new_path': 'dir/file.txt',
+          'new_line': 2,
+        },
+        _ => null,
+      };
       Map<String, Object?> note(
         int id,
         String body, {
@@ -786,7 +812,7 @@ void main() {
                   'merge_request_id': 400,
                   'discussion_id': reply ? 'thread-a' : null,
                   'note': 'Same text',
-                  if (positioned) 'position': draftPosition,
+                  'position': ?(positioned ? draftPosition : unanchored),
                 },
               ],
       );
@@ -832,7 +858,8 @@ void main() {
         arguments: {'projectId': 909, 'iid': 4},
       );
       if (scenario == 'incomplete draft position' ||
-          scenario == 'multiline draft position') {
+          scenario == 'multiline draft position' ||
+          scenario == 'partial null draft position') {
         await _refused(
           session.writer.post<Object?>('$_mr/draft_notes/bulk_publish'),
           'observerDrafts',
@@ -856,12 +883,90 @@ void main() {
         parent: _parent,
         drafts: const {10: 'Same text'},
       );
-      if (scenario == 'correct reply' || scenario == 'positioned new') {
+      if (scenario == 'correct reply' ||
+          scenario == 'positioned new' ||
+          scenario == 'all-null draft position' ||
+          scenario == 'empty draft position') {
         expect(await witness.observe(observation), isTrue, reason: scenario);
       } else {
         await _refused(witness.observe(observation), 'observerPublishedNote');
       }
     }
+  });
+
+  Future<bool> publishIntoNewThread({required bool ownRoot}) async {
+    final server = Mr7SyntheticGitLab();
+    final session = await _session(server);
+    var sent = false;
+    Map<String, Object?> note(int id, String body, {int author = 7}) => {
+      'id': id,
+      'body': body,
+      'author': {'id': author},
+      'noteable_id': 400,
+      'noteable_type': 'MergeRequest',
+      'project_id': 909,
+      'system': false,
+      'internal': false,
+    };
+    final own = note(22, 'Same text');
+    final foreign = note(ownRoot ? 23 : 21, 'Unrelated', author: 8);
+    final thread = ownRoot ? [own, foreign] : [foreign, own];
+    server.routes['GET $_mr'] = (_) => mr7Json(_mrRow());
+    server.routes['GET $_mr/draft_notes'] = (r) => _page(
+      r,
+      sent
+          ? []
+          : [
+              {
+                'id': 10,
+                'author_id': 7,
+                'merge_request_id': 400,
+                'discussion_id': null,
+                'note': 'Same text',
+              },
+            ],
+    );
+    server.routes['GET $_mr/notes'] = (r) =>
+        _page(r, [note(20, 'b'), if (sent) ...thread]);
+    server.routes['GET $_mr/discussions'] = (r) => _page(r, [
+      {
+        'id': 'thread-b',
+        'individual_note': false,
+        'notes': [note(20, 'b')],
+      },
+      if (sent) {'id': 'new-thread', 'individual_note': false, 'notes': thread},
+    ]);
+    server.routes['POST $_mr/draft_notes/bulk_publish'] = (_) {
+      sent = true;
+      return mr7Json({}, status: 204);
+    };
+    final permit = _permit(
+      session,
+      'publishDraftNotes',
+      {'POST $_mr/draft_notes/bulk_publish'},
+      arguments: {'projectId': 909, 'iid': 4},
+    );
+    await session.writer.post<Object?>('$_mr/draft_notes/bulk_publish');
+    final witness = _readback(session, permit, {
+      _mr,
+      '$_mr/draft_notes',
+      '$_mr/notes',
+      '$_mr/discussions',
+    });
+    return witness.observe(
+      Mr7PublishedDraftsObservation(
+        parent: _parent,
+        drafts: const {10: 'Same text'},
+      ),
+    );
+  }
+
+  test('a new-discussion draft must be the root of its new thread', () async {
+    expect(await publishIntoNewThread(ownRoot: true), isTrue);
+    await _refused(
+      publishIntoNewThread(ownRoot: false),
+      'observerPublishedNote',
+    );
   });
 
   test('schedule play remains closed without reading stored inputs', () async {

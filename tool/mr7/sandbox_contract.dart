@@ -308,7 +308,7 @@ Future<List<Map<String, Object?>>> _publicNotes(
     stringIds: true,
   );
   final byId = <int, Map<String, Object?>>{};
-  void add(Map<String, Object?> note, String? discussion) {
+  void add(Map<String, Object?> note, String? discussion, [int? root]) {
     final id = note['id'];
     final author = note['author'];
     if (id is! int ||
@@ -320,13 +320,15 @@ Future<List<Map<String, Object?>>> _publicNotes(
         (note.containsKey('noteable_id') && note['noteable_id'] != parentId)) {
       throw const Mr7Refused('observerPublishedNote');
     }
-    final row = {...note, '_discussion': discussion};
+    final row = {...note, '_discussion': discussion, '_discussionRoot': root};
     final previous = byId[id];
     if (previous != null &&
         (previous['body'] != note['body'] ||
             mr7Digest(previous['author']) != mr7Digest(author) ||
             (previous['_discussion'] != null &&
-                previous['_discussion'] != discussion))) {
+                previous['_discussion'] != discussion) ||
+            (previous['_discussionRoot'] != null &&
+                previous['_discussionRoot'] != root))) {
       throw const Mr7Refused('observerPublishedNote');
     }
     byId[id] = row;
@@ -340,9 +342,13 @@ Future<List<Map<String, Object?>>> _publicNotes(
     if (discussion['id'] is! String ||
         children is! List ||
         children.isEmpty ||
-        children.length > 2000) {
+        children.length > 2000 ||
+        children.first is! Map ||
+        (children.first as Map)['id'] is! int) {
       throw const Mr7Refused('observerDiscussion');
     }
+    // The first note of a discussion's ordered notes is its root.
+    final root = (children.first as Map)['id'] as int;
     final seen = <int>{};
     for (final child in children) {
       if (child is! Map ||
@@ -350,13 +356,29 @@ Future<List<Map<String, Object?>>> _publicNotes(
           !seen.add(child['id'] as int)) {
         throw const Mr7Refused('observerDiscussion');
       }
-      add(Map<String, Object?>.from(child), discussion['id'] as String);
+      add(Map<String, Object?>.from(child), discussion['id'] as String, root);
     }
   }
   return byId.values.toList();
 }
 
-bool _draftPositionSupported(Object? position) {
+/// An ordinary (non-diff) draft or note carries no anchor. GitLab serializes
+/// that as `null`, `{}` or a text position whose other fields are all null;
+/// all three normalize to `null`. Any populated field keeps the position for
+/// the complete single-line check.
+Object? _draftAnchor(Object? position) {
+  if (position is Map &&
+      position.entries.every(
+        (e) =>
+            e.value == null || (e.key == 'position_type' && e.value == 'text'),
+      )) {
+    return null;
+  }
+  return position;
+}
+
+bool _draftPositionSupported(Object? anchor) {
+  final position = _draftAnchor(anchor);
   if (position == null) return true;
   if (position is! Map ||
       position['position_type'] != 'text' ||
@@ -385,7 +407,9 @@ bool _draftPositionSupported(Object? position) {
   return position['old_line'] != null || position['new_line'] != null;
 }
 
-bool _draftPositionMatches(Object? draft, Object? published) {
+bool _draftPositionMatches(Object? draftAnchor, Object? publishedAnchor) {
+  final draft = _draftAnchor(draftAnchor);
+  final published = _draftAnchor(publishedAnchor);
   if (draft == null) return published == null;
   if (draft is! Map ||
       published is! Map ||
@@ -3572,7 +3596,8 @@ final class Mr7Readback {
             r['body'] == draft['note'] &&
             r['_discussion'] is String &&
             (draft['discussion_id'] == null
-                ? !originalDiscussions.contains(r['_discussion']) &&
+                ? r['_discussionRoot'] == r['id'] &&
+                      !originalDiscussions.contains(r['_discussion']) &&
                       !newDiscussions.contains(r['_discussion'])
                 : r['_discussion'] == draft['discussion_id']) &&
             _draftPositionMatches(draft['position'], r['position']),
