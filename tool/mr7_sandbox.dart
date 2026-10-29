@@ -163,6 +163,7 @@ final class Mr7Scenario {
     this.preRead,
     this.closed,
     this.projectTodo = false,
+    this.captureEffects = false,
     this.maxMutations = 1,
     this.expectedMutations = 1,
     this.utterance,
@@ -199,6 +200,9 @@ final class Mr7Scenario {
   final List<Mr7SnapshotSpec> Function(Mr7Identity identity)? preRead;
   final Mr7ClosedRefusal? closed;
   final bool projectTodo;
+
+  /// Capture the sealed wave 3c pre-dispatch effect baseline.
+  final bool captureEffects;
   final int maxMutations;
   final int expectedMutations;
   final String Function(Mr7Identity identity)? utterance;
@@ -828,6 +832,18 @@ Future<Map<String, Object?>> runMr7Sandbox({
         });
         continue;
       }
+      if (scenario.operation == 'playPipelineSchedule') {
+        row.addAll({
+          'reason': 'scheduleParametersUnproven',
+          'classification': 'closedVariant',
+          'providerCalls': 0,
+          'refusal': const Mr7ClosedRefusal(
+            Mr7ClosureCause.observerUnavailable,
+            'scheduleParametersUnproven',
+          ).metadata,
+        });
+        continue;
+      }
       row.addAll({
         'declaredTier': scenario.tier,
         'tier': null,
@@ -1053,6 +1069,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
           ...fixtures.graphVariablesDigests,
         }),
         resultPath: scenario.resultPath,
+        captureEffects: scenario.captureEffects,
         callArguments: call.arguments,
       );
       permit.snapshot = snapshot;

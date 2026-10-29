@@ -522,7 +522,8 @@ class SandboxWrapperTest(unittest.TestCase):
         self.assertTrue(set(runner.SOURCE_FILES + runner.DEPENDENCY_FILES).issubset(current['files']))
         dart_files = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'lib').rglob('*.dart') if path.is_file()}
         self.assertTrue(dart_files.issubset(current['files']))
-        for name in ('tool/run_mr7_sandbox.py', 'tool/tests/test_mr7_sandbox_runner.py', 'pubspec.lock'):
+        for name in ('tool/run_mr7_sandbox.py', 'tool/tests/test_mr7_sandbox_runner.py',
+                     'test/ai/mr7_sandbox_wave3c_test.dart', 'pubspec.lock'):
             self.assertEqual(current['files'][name]['sha256'],
                              hashlib.sha256((ROOT / name).read_bytes()).hexdigest())
         self.assertEqual(len(current['files']['tool/run_mr7_sandbox.py']['gitStatus']), 2)
@@ -551,6 +552,7 @@ class SandboxWrapperTest(unittest.TestCase):
             ('production_add', 'lib/core/new.dart', 'add'),
             ('production_delete', 'lib/core/example.dart', 'delete'),
             ('candidate_edit', 'tool/mr7/candidate_release_policy.dart', 'edit'),
+            ('effect_tests_edit', 'test/ai/mr7_sandbox_wave3c_test.dart', 'edit'),
             ('config_edit', '.dart_tool/package_config.json', 'edit'),
         ]
         for label, relative, action in scenarios:

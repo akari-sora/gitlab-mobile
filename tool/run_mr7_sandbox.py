@@ -57,7 +57,8 @@ SOURCE_FILES = (
     'test/ai/mr7_sandbox_wave2_contract_test.dart',
     'test/ai/mr7_sandbox_wave2_runner_test.dart',
     'test/ai/mr7_sandbox_wave3_test.dart',
-    'test/ai/mr7_sandbox_wave3b_test.dart', 'docs/MR7_SANDBOX.md',
+    'test/ai/mr7_sandbox_wave3b_test.dart',
+    'test/ai/mr7_sandbox_wave3c_test.dart', 'docs/MR7_SANDBOX.md',
     'pubspec.lock',
 )
 DEPENDENCY_FILES = (
