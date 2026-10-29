@@ -1,0 +1,61 @@
+{
+  "id": 17562722700,
+  "status": "failed",
+  "stage": "deliver",
+  "name": "publish_preview",
+  "ref": "main",
+  "tag": false,
+  "coverage": null,
+  "allow_failure": false,
+  "created_at": "2026-10-29T05:13:45.836Z",
+  "started_at": "2026-10-29T05:40:08.772Z",
+  "finished_at": "2026-10-29T05:41:11.345Z",
+  "erased_at": null,
+  "duration": 62.573075,
+  "queued_duration": 1.617648,
+  "user": {
+    "id": 1,
+    "username": "synthetic-user",
+    "name": "Synthetic User",
+    "state": "active",
+    "web_url": "https://gitlab.com/synthetic-user"
+  },
+  "commit": {
+    "id": "174e1b6987307919ffcbf6b9f894a32ceba324bf",
+    "short_id": "174e1b69",
+    "title": "Merge branch 'feat/ai-mr7-b1' into 'main'",
+    "created_at": "2026-10-29T05:13:43.000+00:00",
+    "parent_ids": [
+      "6af4c56df359de6006966331e9dccf52302d471f",
+      "0e06d0c7a477ece3cc8a56f6681f65fb8b873c20"
+    ],
+    "web_url": "https://gitlab.com/aa22396584/gitlab-mobile/-/commit/174e1b6987307919ffcbf6b9f894a32ceba324bf"
+  },
+  "pipeline": {
+    "id": 3002301003,
+    "iid": 1494,
+    "project_id": 86648389,
+    "sha": "174e1b6987307919ffcbf6b9f894a32ceba324bf",
+    "ref": "main",
+    "status": "failed",
+    "source": "push",
+    "created_at": "2026-10-29T05:13:45.695Z",
+    "updated_at": "2026-10-29T05:41:13.000Z",
+    "web_url": "https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/3002301003"
+  },
+  "failure_reason": "script_failure",
+  "web_url": "https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/17562722700",
+  "project": {
+    "ci_job_token_scope_enabled": false
+  },
+  "artifacts": [],
+  "runner": null,
+  "runner_manager": null,
+  "artifacts_expire_at": null,
+  "archived": false,
+  "tag_list": [
+    "gitlab-mobile",
+    "grok-box",
+    "ondemand"
+  ]
+}

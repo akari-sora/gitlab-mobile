@@ -24,14 +24,26 @@ NOW = datetime.now(timezone.utc)
 SOURCE = {'tree': 'b' * 40, 'lock_sha256': 'c' * 64,
           'capability_sha256': 'd' * 64, 'policy_sha256': 'e' * 64}
 PID = 100
+JOB_ENTITY = json.loads((ROOT / 'ci/tests/fixtures/mr7_current_job.json').read_text())
 
 
 def job(job_id, name, status='success'):
-    return {'id': job_id, 'name': name, 'status': status, 'source': 'push', 'ref': 'main', 'tag': False,
-            'commit': {'id': SHA}, 'pipeline': {'id': PID, 'project_id': m.PROJECT,
-                                                  'ref': 'main', 'sha': SHA},
-            'web_url': f'{m.WEB}/-/jobs/{job_id}', 'user': {'id': 23},
-            'artifacts_file': {'size': 50}, 'artifacts_expire_at': None}
+    # Preserve the saved GitLab response shape; only substitute test identities
+    # and model downloadable artifacts for successful evidence jobs.
+    result = deepcopy(JOB_ENTITY)
+    result.update(id=job_id, name=name, status=status, failure_reason=None,
+                  web_url=f'{m.WEB}/-/jobs/{job_id}')
+    result['commit'].update(id=SHA, short_id=SHA[:8], web_url=f'{m.WEB}/-/commit/{SHA}')
+    result['pipeline'].update(id=PID, iid=1, sha=SHA, status='running',
+                              web_url=f'{m.WEB}/-/pipelines/{PID}')
+    result['user']['id'] = 23
+    if status == 'running':
+        result.update(finished_at=None, duration=None)
+    if status == 'success':
+        result['artifacts_file'] = {'filename': 'artifacts.zip', 'size': 50}
+        result['artifacts'] = [{'file_type': 'archive', 'size': 50,
+                                'filename': 'artifacts.zip', 'file_format': 'zip'}]
+    return result
 
 
 class FakeGitLab:
@@ -120,7 +132,7 @@ class PipelineSourcePolicyTests(unittest.TestCase):
                     api = FakeGitLab()
                     api.pipeline['source'] = source
                     current = job(50, name, 'running')
-                    current['source'] = source
+                    current['pipeline']['source'] = source
                     for validator in (
                         lambda: m.verify_current_job(current, name, SHA),
                         lambda: m.verify_job(api, current, name, SHA, status='running'),
@@ -131,6 +143,68 @@ class PipelineSourcePolicyTests(unittest.TestCase):
                             with self.assertRaises(m.GateError):
                                 validator()
 
+    def test_saved_publish_preview_push_is_accepted_while_running(self):
+        current = deepcopy(JOB_ENTITY)
+        current['status'] = 'running'
+        self.assertNotIn('source', current)
+        self.assertEqual(current['pipeline']['source'], 'push')
+        self.assertIs(m.verify_current_job(current, 'publish_preview', current['commit']['id']), current)
+
+    def test_saved_publish_preview_merge_request_is_rejected(self):
+        current = deepcopy(JOB_ENTITY)
+        current['status'] = 'running'
+        current['pipeline']['source'] = 'merge_request_event'
+        with self.assertRaises(m.GateError):
+            m.verify_current_job(current, 'publish_preview', current['commit']['id'])
+
+    def test_pipeline_source_overrides_conflicting_top_level_source(self):
+        for name in ('publish_preview', 'publish_preview_ai', 'mr7_release_attestation'):
+            for source, top_level, allowed in (('push', 'merge_request_event', True),
+                                               ('merge_request_event', 'push', False)):
+                with self.subTest(job=name, pipeline_source=source, top_level_source=top_level):
+                    current = job(50, name, 'running')
+                    current['pipeline']['source'] = source
+                    current['source'] = top_level
+                    if allowed:
+                        m.verify_current_job(current, name, SHA)
+                    else:
+                        with self.assertRaises(m.GateError):
+                            m.verify_current_job(current, name, SHA)
+
+    def test_ai_current_job_accepts_only_push_web_api_schedule(self):
+        for name in ('publish_preview_ai', 'mr7_release_attestation'):
+            for source in (*self.SOURCES, 'unknown'):
+                with self.subTest(job=name, source=source):
+                    api = FakeGitLab()
+                    api.jobs[50]['name'] = name
+                    api.jobs[50]['pipeline']['source'] = source
+                    api.pipeline['source'] = source
+                    if source in ('push', 'web', 'api', 'schedule'):
+                        self.assertEqual(m.current_identity(api, name, SHA)['id'], 50)
+                    else:
+                        with self.assertRaises(m.GateError):
+                            m.current_identity(api, name, SHA)
+
+    def test_missing_pipeline_source_is_rejected(self):
+        for name in ('publish_preview', 'publish_preview_ai', 'mr7_release_attestation'):
+            for top_level in (None, 'push'):
+                with self.subTest(job=name, top_level_source=top_level):
+                    current = job(50, name, 'running')
+                    del current['pipeline']['source']
+                    if top_level is not None:
+                        current['source'] = top_level
+                    with self.assertRaises(m.GateError):
+                        m.verify_current_job(current, name, SHA)
+
+    def test_invalid_pipeline_source_is_rejected(self):
+        for name in ('publish_preview', 'publish_preview_ai', 'mr7_release_attestation'):
+            for source in (None, '', False, 0, [], {}):
+                with self.subTest(job=name, source=source):
+                    current = job(50, name, 'running')
+                    current['pipeline']['source'] = source
+                    with self.assertRaises(m.GateError):
+                        m.verify_current_job(current, name, SHA)
+
     def test_off_trigger_and_pipeline_keep_identity_checks(self):
         for source in ('trigger', 'pipeline'):
             for path, value in ((('name',), 'other'), (('status',), 'success'),
@@ -140,7 +214,7 @@ class PipelineSourcePolicyTests(unittest.TestCase):
                                 (('web_url',), 'https://example.invalid/jobs/50')):
                 with self.subTest(source=source, path=path):
                     current = job(50, 'publish_preview', 'running')
-                    current['source'] = source
+                    current['pipeline']['source'] = source
                     target = current
                     for key in path[:-1]:
                         target = target[key]
@@ -152,6 +226,160 @@ class PipelineSourcePolicyTests(unittest.TestCase):
             api.protected = False
             with self.subTest(source=source, protected=False), self.assertRaises(m.GateError):
                 m.verify_job(api, job(50, 'publish_preview'), 'publish_preview', SHA)
+
+
+class IdentityDiagnosticTests(unittest.TestCase):
+    JOB_TOKEN = 'synthetic-secret-job-value'
+    READ_TOKEN = 'synthetic-secret-read-value'
+
+    @staticmethod
+    def change(target, path, value):
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+
+    def off_delivery(self, api, overrides=None):
+        env = {'CI_COMMIT_SHA': SHA, 'CI_PROJECT_ID': str(m.PROJECT),
+               'CI_COMMIT_REF_PROTECTED': 'true', 'CI_COMMIT_BRANCH': 'main',
+               'CI_PIPELINE_SOURCE': 'push', 'CI_JOB_TOKEN': self.JOB_TOKEN,
+               'MR7_GITLAB_READ_TOKEN_FILE': self.READ_TOKEN}
+        env.update(overrides or {})
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(m.subprocess, 'check_output', return_value=SHA + '\n'), \
+                mock.patch.object(m, 'GitLab', return_value=api), \
+                mock.patch.object(m, 'metadata_for_delivery') as metadata:
+            try:
+                m.main(['delivery', '--mode', 'off'])
+            finally:
+                metadata.assert_not_called()
+
+    def branch_protection(self, body):
+        api = m.GitLab(self.READ_TOKEN, self.JOB_TOKEN)
+        with mock.patch.object(api, 'read', return_value=m.canonical(body)):
+            return api.current_release_protected()
+
+    def refusal_cases(self, bad='wrong'):
+        identity_fields = (('name',), ('status',), ('ref',), ('tag',),
+                           ('commit', 'id'), ('pipeline', 'sha'),
+                           ('pipeline', 'ref'), ('pipeline', 'project_id'), ('web_url',))
+        for path in (*identity_fields, ('pipeline', 'source'), ('id',), ('pipeline',), ('commit',)):
+            current = job(50, 'publish_preview_ai', 'running')
+            current.update(headers={'JOB-TOKEN': self.JOB_TOKEN},
+                           user={'id': 23, 'name': bad}, body=bad)
+            self.change(current, path, bad)
+            yield 'current', '.'.join(path), lambda current=current: m.verify_current_job(
+                current, 'publish_preview_ai', SHA)
+
+        for path in (*identity_fields, ('id',), ('pipeline', 'id'), ('pipeline',), ('commit',)):
+            target = job(40, 'mr7_release_attestation')
+            target.update(headers={'PRIVATE-TOKEN': self.READ_TOKEN}, body=bad)
+            self.change(target, path, bad)
+            yield 'job', '.'.join(path), lambda target=target: m.verify_job(
+                FakeGitLab(), target, 'mr7_release_attestation', SHA, pipeline_id=PID)
+
+        target = job(40, 'mr7_release_attestation')
+        target['pipeline']['id'] = PID + 1
+        yield 'job pipeline binding', 'pipeline.id', lambda: m.verify_job(
+            FakeGitLab(), target, 'mr7_release_attestation', SHA, pipeline_id=PID)
+
+        for field in ('id', 'project_id', 'sha', 'ref', 'source', 'web_url'):
+            api = FakeGitLab()
+            api.pipeline[field] = bad
+            api.pipeline.update(headers={'JOB-TOKEN': self.JOB_TOKEN}, body=bad)
+            yield 'pipeline', 'pipeline.' + field, lambda api=api: m.verify_job(
+                api, job(40, 'mr7_release_attestation'), 'mr7_release_attestation', SHA)
+
+        api = FakeGitLab()
+        api.protected = bad
+        yield 'job protection', 'protected', lambda: m.verify_job(
+            api, job(40, 'mr7_release_attestation'), 'mr7_release_attestation', SHA)
+
+        for body, field in (({'body': bad}, 'branches'), ([], 'name=main'),
+                            ([{'name': bad, 'protected': True}], 'name=main'),
+                            ([{'name': 'main', 'protected': True}] * 2, 'name=main'),
+                            ([{'name': 'main', 'protected': bad, 'body': bad}], 'protected')):
+            yield 'branch list', field, lambda body=body: self.branch_protection(body)
+
+        for field in ('CI_COMMIT_SHA', 'CI_PROJECT_ID', 'CI_COMMIT_REF_PROTECTED',
+                      'CI_COMMIT_BRANCH', 'CI_PIPELINE_SOURCE'):
+            api = FakeGitLab()
+            api.jobs[50]['name'] = 'publish_preview'
+            value = 'merge_request_event' if field == 'CI_PIPELINE_SOURCE' else bad
+            yield 'release lane', field, lambda api=api, field=field, value=value: self.off_delivery(
+                api, {field: value})
+
+        api = FakeGitLab()
+        api.jobs[50]['name'] = 'publish_preview'
+        api.protected = False
+        yield 'off protection', 'protected', lambda: self.off_delivery(api)
+
+    def test_each_identity_release_condition_names_its_refusal(self):
+        for check, field, refuse in self.refusal_cases():
+            with self.subTest(check=check, field=field):
+                with self.assertRaises(m.GateError) as caught:
+                    refuse()
+                self.assertEqual(str(caught.exception).rsplit(': ', 1)[-1], field)
+
+    def test_multiple_failed_conditions_are_all_named(self):
+        current = job(50, 'publish_preview', 'running')
+        current['pipeline']['source'] = 'merge_request_event'
+        current['web_url'] = 'https://invalid.example/job'
+        with self.assertRaises(m.GateError) as caught:
+            m.verify_current_job(current, 'publish_preview', SHA)
+        self.assertEqual(str(caught.exception),
+                         'Untrusted current job identity: pipeline.source, web_url')
+        api = FakeGitLab()
+        api.pipeline.update(sha='f' * 40, ref='other')
+        with self.assertRaises(m.GateError) as caught:
+            m.verify_job(api, job(40, 'mr7_release_attestation'), 'mr7_release_attestation', SHA)
+        self.assertEqual(str(caught.exception),
+                         'Untrusted release pipeline: pipeline.sha, pipeline.ref')
+
+    def test_refusals_never_expose_tokens_headers_bodies_or_user_data(self):
+        poison = (f'CI_JOB_TOKEN={self.JOB_TOKEN}\nJOB-TOKEN: {self.JOB_TOKEN}\n'
+                  f'PRIVATE-TOKEN: {self.READ_TOKEN}\nprivate-response-body private-user-data')
+        for check, field, refuse in self.refusal_cases(poison):
+            with self.subTest(check=check, field=field):
+                with self.assertRaises(m.GateError) as caught:
+                    refuse()
+                message = str(caught.exception)
+                for forbidden in (self.JOB_TOKEN, self.READ_TOKEN, 'CI_JOB_TOKEN', 'JOB-TOKEN',
+                                  'PRIVATE-TOKEN', 'private-response-body', 'private-user-data'):
+                    self.assertNotIn(forbidden, message)
+
+    def test_branch_protection_requires_one_main_and_literal_true(self):
+        self.assertIs(self.branch_protection([{'name': 'other', 'protected': False},
+                                             {'name': 'main', 'protected': True}]), True)
+        for protected in (False, None, 'true', 1, [], {}):
+            with self.subTest(protected=protected), self.assertRaises(m.GateError):
+                self.branch_protection([{'name': 'main', 'protected': protected}])
+
+    def test_malformed_nested_identity_objects_are_named(self):
+        for field in ('pipeline', 'commit'):
+            for value in (None, [], 'wrong', False):
+                for current in (True, False):
+                    with self.subTest(field=field, value=value, current=current):
+                        target = job(50, 'publish_preview_ai', 'running' if current else 'success')
+                        target[field] = value
+                        with self.assertRaises(m.GateError) as caught:
+                            if current:
+                                m.verify_current_job(target, 'publish_preview_ai', SHA)
+                            else:
+                                m.verify_job(FakeGitLab(), target, 'publish_preview_ai', SHA)
+                        self.assertEqual(str(caught.exception).rsplit(': ', 1)[-1], field)
+
+    def test_cli_refusal_keeps_exit_code_and_never_echoes_credentials(self):
+        sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+        env = dict(os.environ, CI_COMMIT_SHA=sha, CI_PROJECT_ID=f'JOB-TOKEN: {self.JOB_TOKEN}',
+                   CI_COMMIT_REF_PROTECTED='true', CI_COMMIT_BRANCH='main',
+                   CI_PIPELINE_SOURCE='push', CI_JOB_TOKEN=self.JOB_TOKEN)
+        result = subprocess.run([sys.executable, str(ROOT / 'ci/mr7_attestation.py'),
+                                 'delivery', '--mode', 'off'], cwd=ROOT, env=env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, '')
+        self.assertEqual(result.stderr,
+                         'MR7 gate rejected: Not a protected project release lane: CI_PROJECT_ID\n')
 
 
 class DeliveryGateTests(unittest.TestCase):
@@ -501,7 +729,7 @@ fixture.setUp()
 if os.environ.get('FAKE_KIND') == 'mismatch':
     fixture.attestation['release_sha'] = 'f' * 40
 if os.environ.get('FAKE_KIND') == 'mr':
-    fixture.api.jobs[50]['source'] = 'merge_request_event'
+    fixture.api.jobs[50]['pipeline']['source'] = 'merge_request_event'
 if os.environ.get('FAKE_KIND') == 'unprotected':
     fixture.api.protected = False
 if '--mode' in sys.argv and sys.argv[sys.argv.index('--mode') + 1] == 'off':
