@@ -112,6 +112,35 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
             (policy is not None and actual_policy != policy) or
             (release_sha is not None and receipt['releaseSha'] != release_sha)):
         return False
+    scenarios = receipt.get('scenarios', [])
+    if not isinstance(scenarios, list):
+        return False
+    for row in scenarios:
+        if not isinstance(row, dict):
+            return False
+        count = row.get('mutationCount')
+        zero_dispatch = type(count) is int and count == 0
+        no_op_claim = (
+            ((row.get('outcome') == 'noChange' or row.get('coreNoChange') is True)
+             and not zero_dispatch) or
+            row.get('responseStatus') in (304, 409) or 'parentStateVerified' in row
+        )
+        if (no_op_claim and (row.get('status') == 'PASS' or receipt['status'] == 'PASS') and
+                row.get('classification') != 'verifiedNoOp'):
+            return False
+        if row.get('classification') == 'verifiedNoOp':
+            status = row.get('responseStatus')
+            if (type(row.get('mutationCount')) is not int or row['mutationCount'] != 1 or
+                    type(row.get('observerRequests')) is not int or row['observerRequests'] < 1 or
+                    row.get('parentStateVerified') is not True or row.get('readback') != 'PASS' or
+                    row.get('status') != 'PASS' or row.get('outcome') != 'noChange' or
+                    row.get('coreOutcome') != 'succeeded' or type(status) is not int or
+                    type(row.get('coreNoChange')) is not bool or
+                    status not in (304, 409) or
+                    (status == 304 and row.get('operation') not in ('setStar', 'setSubscribed')) or
+                    (status == 409 and (row.get('coreNoChange') is not True or
+                                        row.get('operation') != 'cancelAutoMerge'))):
+                return False
     # This implementation has no live transport; no synthetic receipt can be final.
     return not final
 
