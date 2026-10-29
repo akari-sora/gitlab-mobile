@@ -14,6 +14,7 @@ import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/ai_work_item_write_registry.dart';
+import 'package:gitlab_mobile/core/ai/exact_edit.dart' as exact;
 import 'package:gitlab_mobile/core/ai/redaction.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
@@ -801,6 +802,14 @@ Future<Map<String, Object?>> runMr7Sandbox({
         });
         continue;
       }
+      row.addAll({
+        'declaredTier': scenario.tier,
+        'tier': null,
+        'decision': null,
+        'confirmationReasons': <String>[],
+        'decisionProjection': 'unavailable',
+        'decisionUnavailable': 'proposalUnavailable',
+      });
       final target = s.identity!;
       final scenarioConversationId = conversationId ?? scenario.id;
       final placeholders = placeholderTables.putIfAbsent(
@@ -919,7 +928,8 @@ Future<Map<String, Object?>> runMr7Sandbox({
           ),
         ],
       );
-      final coordinator = PolicyAiWriteCoordinator(
+      late final PolicyAiWriteCoordinator coordinator;
+      coordinator = PolicyAiWriteCoordinator(
         releasePolicy: scenarioView,
         snapshot: () => AiWritePolicySnapshot(
           scope: writeScope,
@@ -965,6 +975,23 @@ Future<Map<String, Object?>> runMr7Sandbox({
         now: now,
         knownSecrets: () => _Secrets().current.toSet(),
         safeDisplay: (value) => value,
+        checkFragmentsWithCount: exact.checkFragments,
+        onChanged: () {
+          final observed = coordinator.proposalFor(call.id)?.tier;
+          if (observed == null) return;
+          final tier = observed.tier.name == 'hardLine'
+              ? 'hardLine'
+              : observed.tier.name.toUpperCase();
+          row.addAll({
+            'tier': tier,
+            'decision': observed.decision.name,
+            'confirmationReasons': observed.reasons.map((r) => r.name).toList()
+              ..sort(),
+            'decisionProjection': 'observed',
+          });
+          row.remove('decisionUnavailable');
+          if (tier != scenario.tier) s.stop('tierMismatch');
+        },
       );
       activeCoordinator = coordinator;
       final catalogue = AiToolCatalogue(
@@ -984,6 +1011,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
       );
       final permit = Mr7MutationPermit(
         operation: scenario.operation,
+        scenarioId: scenario.id,
         paths: scenario.paths(target),
         resourceProjectId: target.projectId,
         maxMutations: scenario.maxMutations,
@@ -1004,7 +1032,9 @@ Future<Map<String, Object?>> runMr7Sandbox({
           Mr7HostProposal(
             operation: scenario.operation,
             projectId: target.projectId,
-            tier: scenario.tier,
+            tier:
+                row['tier'] as String? ??
+                (throw const Mr7Refused('decisionUnavailable')),
             payloadDigest: product?.payloadDigest ?? mr7Digest(call.arguments),
             requiredTypedName: product?.tier.typedName,
             editableField: product?.editableField,
@@ -1152,13 +1182,48 @@ Future<Map<String, Object?>> runMr7Sandbox({
               ? 'FAIL'
               : 'PASS',
         };
-        if (outcome?.state == AiJournalState.writeUncertain ||
+        if (s.stopReason == 'tierMismatch') {
+          row['status'] = 'FAIL';
+          row['reason'] = 'tierMismatch';
+        } else if (outcome?.state == AiJournalState.writeUncertain ||
             s.stopReason == 'writeUncertain') {
           row['status'] = 'writeUncertain';
           s.stop('writeUncertain');
         } else if (outcome?.noChange == true && permit.sent == 0) {
-          row['status'] = scenario.expectedMutations == 0 ? 'PASS' : 'NOT_RUN';
           row['outcome'] = 'noChange';
+          final state = scenario.noChangeObservation?.call(target);
+          if (state == null) throw const Mr7Refused('noChangeUnverified');
+          final observer = Mr7Readback(
+            s,
+            target,
+            permit,
+            paths:
+                scenario.readbackPaths?.call(target, permit) ??
+                {'projects/${target.projectId}'},
+          );
+          final verified = await observer.observeNoChange(
+            state,
+            arguments: call.arguments,
+          );
+          row.addAll({
+            'parentStateVerified': verified,
+            'observerRequests': observer.verifiedRequests,
+            'readback': verified && observer.verifiedRequests > 0
+                ? 'PASS'
+                : 'NOT_VERIFIED',
+            'status':
+                verified &&
+                    observer.verifiedRequests > 0 &&
+                    scenario.expectedMutations == 0
+                ? 'PASS'
+                : 'NOT_VERIFIED',
+          });
+          if (row['status'] == 'PASS') {
+            row['classification'] = 'verifiedNoOp';
+          } else {
+            row['reason'] = 'noChangeUnverified';
+            s.stop('noChangeUnverified');
+          }
         } else if (outcome?.state == AiJournalState.succeeded) {
           final queries =
               scenario.observerQueries?.call(target, permit.result!) ??
@@ -1209,7 +1274,6 @@ Future<Map<String, Object?>> runMr7Sandbox({
             }
             verified = await observer.observe(state);
             row['outcome'] = 'noChange';
-            row['classification'] = 'verifiedNoOp';
             row['responseStatus'] = permit.result!.status;
             row['parentStateVerified'] = verified;
           } else {
@@ -1226,6 +1290,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
           if (row['readback'] == 'PASS' &&
               permit.sent == scenario.expectedMutations) {
             row['status'] = 'PASS';
+            if (noChangeResponse) row['classification'] = 'verifiedNoOp';
           } else {
             row['status'] = 'NOT_VERIFIED';
             s.stop('readbackUnverified');
@@ -1242,12 +1307,21 @@ Future<Map<String, Object?>> runMr7Sandbox({
           // A certain refusal ends this scenario; uncertainty fences the session above.
         }
         await s.checkIsolation();
-      } catch (_) {
-        row['status'] = s.stopReason == 'writeUncertain'
+      } catch (error) {
+        row['status'] = s.stopReason == 'tierMismatch'
+            ? 'FAIL'
+            : s.stopReason == 'writeUncertain'
             ? 'writeUncertain'
             : 'NOT_VERIFIED';
         row['mutationCount'] = permit.sent;
-        if (permit.sent > 0) row['readback'] = 'NOT_VERIFIED';
+        row['reason'] = s.stopReason == 'tierMismatch'
+            ? 'tierMismatch'
+            : error is Mr7Refused
+            ? error.code
+            : 'scenarioUnverified';
+        if (permit.sent > 0 || row['coreNoChange'] == true) {
+          row['readback'] = 'NOT_VERIFIED';
+        }
         s.stop('scenarioUnverified');
       } finally {
         s.permit = null;

@@ -202,7 +202,7 @@ cannot reopen the writer or settle an uncertain core journal result.
 | S2 | `Mr7FileObservation`, `Mr7RefObservation`, `Mr7ReleaseObservation`: bind dispatched encoded path/name and requested content, SHA and exact independent content/ref/release fields. File observations require the dispatched branch in `readbackPaths`, read its name/head before and after the immutable-SHA file read, and require both heads to match. Branch/tag creation also requires the dispatched resolved source `ref` to equal the observed SHA. |
 | S4 | `Mr7SnippetObservation`: bind the returned/dispatched project snippet, exact file set, metadata revision and per-file refs. Validate same-instance web raw URLs but fetch only constructed API raw paths; compare raw bytes exactly. Revalidate metadata after all content reads. |
 | B2-S3 | `Mr7Scenario.observerQueries(identity, result)`: register documents and every variables digest after the response. `Mr7GraphObservation` verifies currentUser, parent and project separately from returned child IDs. Child operations and every absence claim require a complete connection; parent identity alone never proves deletion. The closed operation mapping binds the dispatched parent, schema collection field (including aliases), child GID type and specific target. Created/updated children must appear; removed children must be the exact `absentIds` target. Filtered connections and an initial continuation cursor are refused. Connections require stable `totalCount`, unique nodes, terminal pageInfo and sealed continuations (at most 20 pages / 2,000 nodes); query aliases can project a supported count field as `totalCount`. Note awards require the actual Note as the bound parent plus matching `noteId` and child relationship. `bindReturnedResource` can freshly bind a returned GID through the existing closed REST mapping. Unsupported operation mappings, GID types and GraphQL syntax remain refused. |
-| N, S8 | `Mr7Scenario.noChangeObservation`: a typed parent-state witness matching the actual tool arguments is mandatory for a 304 star/subscription or core 409 `noChange`. Exactly one request must have been attempted. Auto-merge checks both supported indicators and rejects contradictory enabled state. Missing/mismatched evidence stops later scenarios and cleanup. |
+| N, S8 | `Mr7Scenario.noChangeObservation`: a typed parent-state witness matching the actual tool arguments is mandatory for a 304 star/subscription, core 409 `noChange`, or zero-dispatch core `noChange`. Response no-ops require exactly one attempted mutation; zero-dispatch no-ops require none. Auto-merge checks both supported indicators and rejects contradictory enabled state. Missing/mismatched evidence stops later scenarios and cleanup. |
 | S5 | `Mr7RebaseObservation`: bind the dispatched MR and fresh pre-send head, then poll with `include_rebase_in_progress=true`. A completed exact changed head with no merge error can verify on the first poll; observing pending first is optional. An idle unchanged head stays unverified even if pending was observed. Poll at most 20 times, with intervals at most 100 ms and a total polling deadline at most two seconds; never resend. A late read cannot verify completion or trigger additional polls. |
 
 For example, a scenario can call
@@ -230,8 +230,9 @@ Verified response no-ops record `classification=verifiedNoOp`, original
 `parentStateVerified`/observer counts. The Python wrapper rejects inconsistent
 verified-no-op receipts, including dispatched no-op claims with missing or
 renamed classifications and 409 claims outside `cancelAutoMerge`.
-Existing zero-dispatch core no-ops retain their prior
-classification. Core acknowledgements, failed-certain responses and uncertain
+Zero-dispatch core no-ops require the same sealed independent state witness,
+record zero mutations and omit `responseStatus`. Core acknowledgements,
+failed-certain responses and uncertain
 results keep their original semantics; all evidence remains synthetic and
 candidate evidence remains ineligible for final release acceptance.
 
@@ -310,3 +311,75 @@ their previous interpretation.
 Codes I/F, unbound multi-effect operations and all live/provider/device/CI/release
 acceptance remain closed or NOT_RUN. These hooks do not enable production
 operations. Candidate receipts stay CANDIDATE_ONLY and finalEligible=false.
+
+## Wave 3a seams
+
+Zero-dispatch `noChange` cannot establish its own result. The runner invokes
+only `noChangeObservation`, checks its operation, arguments, route and parent,
+and independently reads the exact state with actor/project checks on both sides.
+Issue/MR numeric parent IDs are captured from actual production preparation
+reads and must remain stable; a later object with the same iid is insufficient.
+An absent or mismatched witness produces `NOT_VERIFIED` with a refusal code,
+quarantines the session and prevents later writes and cleanup. A matching
+witness with zero expected mutations records `classification=verifiedNoOp`,
+`parentStateVerified=true`, positive observer request count and no fabricated
+HTTP response. WorkItem state observers remain unavailable.
+
+Executable rows separate `declaredTier` from the actual `tier`, `decision` and
+`confirmationReasons` captured from the production coordinator's proposal,
+including automatic execution and edited proposals. These fixed reason names
+contain no model text. `decisionProjection=observed` identifies that source.
+A tier disagreement fails with `tierMismatch` before dispatch. An early refusal
+without a proposal records null tier/decision, an empty reason list and
+`decisionProjection=unavailable`, `decisionUnavailable=proposalUnavailable`.
+Closed rows keep their inventory tier and make no observed-decision claim.
+
+The guarded writer admits bodyless file metadata `HEAD` requests only at
+`projects/<sandbox-id>/repository/files/<encoded-file-path>` with one bounded
+`ref` in the final URI query, including URI-embedded parameters. Extra
+parameters and duplicate `ref` values are refused.
+They consume the shared HTTP cap, retain account/project/path fences,
+and never consume a mutation permit or enter the mutation ledger. Request and
+response bodies, foreign projects, other HEAD endpoints and quarantined writer
+reads remain refused. The coordinator uses production
+`exact.checkFragments` through `checkFragmentsWithCount`, with the existing
+known-secret set and visibility/target fences; checker refusal codes are retained.
+
+Typed `Mr7SnapshotSpec.board`, `.milestone`, `.label` and `.draftNote` accept
+only their corresponding project paths and snapshot their closed field sets.
+Boards retain name and both system-list flags; milestones retain title,
+description, dates and state; labels retain name, color and description; drafts
+retain note text (`note`, plus presence of `body`), position, `commit_id` and
+author. Their routes bind numeric global IDs; milestone iid and optional global
+ID projections stay separate and presence-sensitive. Boards bind nested
+`project.id`; project labels bind the verified sandbox project route and label
+ID and require `is_project_label=true` to exclude inherited group labels.
+Drafts bind `author_id` to the current actor and `merge_request_id` to the
+original MR's numeric ID, independently of its route iid. These identity rules
+apply at capture, immediately before dispatch and at independent readback.
+Before dispatch all captured fields are reread. Afterwards all typed fields
+omitted from the actual dispatched payload are automatically preserved, in
+addition to `unchangedFields`; an empty declared set cannot skip preservation.
+`state_event` maps to milestone state, label `new_name` maps to `name`, and
+draft `note` maps to text. A draft's `body` value may follow a text update,
+but its presence must always match the pre-read snapshot: appearing or
+disappearing is refused, even when `note` was dispatched. Receipt
+metadata contains digests and `preserveOmittedFields=true`, never field bodies.
+Scenario write ledger entries carry `scenarioId` so repeated operations remain
+distinct. A projected `deny` must have zero mutations, no admitted request for
+that scenario, no response status and no successful write result; an unbound
+same-operation ledger entry cannot establish a zero-dispatch denial.
+
+`Mr7CreatedTodoObservation(parent:, id:)` observes only `createTodo` under an
+exact Issue/MR dispatch. The synthetic-only
+`projects/<sandbox-id>/todos/mr7-observation` inventory is completely paged
+before send and after acknowledgement (at most 20 pages of 100, counted stable
+totals and unique IDs). A selected to-do must be new, pending, and match the
+returned ID, actor, author, project, original parent ID/iid and target type.
+The parent and actor are checked again around inventory reads. Both the parent
+path and inventory path must be in `readbackPaths`. This synthetic endpoint is
+not a claim about a live GitLab API. Missing/partial/foreign observations remain
+unverified. Account-global/group paths and `markTodoDone` remain closed; the
+production acknowledgement remains ack-only and uncertain core outcomes stay
+uncertain. GraphQL WorkItem observers and secondary B3 effect witnesses are
+deferred.

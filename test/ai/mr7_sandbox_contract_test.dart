@@ -3020,6 +3020,11 @@ void main() {
         },
       ),
       paths: (p) => {'POST projects/${p.projectId}/unstar'},
+      noChangeObservation: (_) => const Mr7ParentStateObservation(
+        parent: Mr7Parent.project(),
+        state: Mr7ParentState.starred,
+        expected: false,
+      ),
       observe: (_, _) async => false,
     );
     final noOpServer = Mr7SyntheticGitLab();
@@ -3617,7 +3622,7 @@ void main() {
       suite: 'rest',
       operation: 'createIssue',
       variant: 'readback-failed',
-      tier: 'T1',
+      tier: 'T2',
       utterance: (p) => 'Create an issue in ${p.path}.',
       call: (p) => AiToolCall(
         id: 'uncertain-issue',
