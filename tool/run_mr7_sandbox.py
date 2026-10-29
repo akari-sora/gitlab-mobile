@@ -21,7 +21,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import threading
 import unicodedata
 import warnings
 from urllib.parse import quote, urlsplit
@@ -177,6 +176,10 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
                   if isinstance(row, dict) and isinstance(row.get('id'), str))
     for row in scenarios:
         if not isinstance(row, dict):
+            return False
+        if receipt['status'] == 'PASS' and any(
+                row.get(field) in ('FAIL', 'NOT_VERIFIED', 'writeUncertain')
+                for field in ('status', 'readback', 'outcome', 'coreOutcome')):
             return False
         if live and row.get('live') != ('PASS' if row.get('status') == 'PASS' else
                                         'FAIL' if row.get('status') == 'FAIL' else 'NOT_VERIFIED'):
@@ -405,13 +408,52 @@ def _publish_confirmation(path: Path, text: str) -> None:
         os.unlink(staging)
 
 
-def _hidden_input(prompt: str) -> str:
-    with warnings.catch_warnings():
-        warnings.simplefilter('error', getpass.GetPassWarning)
+def _hidden_input(prompt: str, *, cancelled=None, deadline: datetime | None = None) -> str:
+    if cancelled is None:
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', getpass.GetPassWarning)
+            try:
+                return getpass.getpass(prompt)
+            except getpass.GetPassWarning:
+                raise EOFError('hidden input unavailable') from None
+
+    # Approval runs in the parent's thread so every exit unwinds terminal state.
+    # Keep canonical line editing and signals, but never fall back to echoed input.
+    import select
+    try:
+        import termios
+    except ImportError:
+        raise EOFError('cancellable terminal input unavailable') from None
+    fd = os.open('/dev/tty', os.O_RDWR | os.O_NOCTTY)
+    try:
+        saved = termios.tcgetattr(fd)
+        hidden = saved[:]
+        hidden[3] &= ~(termios.ECHO | termios.ECHONL)
         try:
-            return getpass.getpass(prompt)
-        except getpass.GetPassWarning:
-            raise EOFError('hidden input unavailable') from None
+            termios.tcsetattr(fd, termios.TCSAFLUSH, hidden)
+            os.write(fd, prompt.encode('utf-8'))
+            answer = bytearray()
+            while True:
+                if cancelled() or (deadline is not None and datetime.now(timezone.utc) >= deadline):
+                    raise _ConfirmationCancelled()
+                if not select.select([fd], [], [], 0.05)[0]:
+                    continue
+                character = os.read(fd, 1)
+                if not character:
+                    raise EOFError('confirmation input closed')
+                if character == b'\n':
+                    # Cancellation takes precedence over a simultaneously ready answer.
+                    if cancelled() or (deadline is not None and datetime.now(timezone.utc) >= deadline):
+                        raise _ConfirmationCancelled()
+                    return answer.decode('utf-8')
+                answer.extend(character)
+                if len(answer) > 4096:
+                    raise ValueError('confirmation input too long')
+        finally:
+            termios.tcsetattr(fd, termios.TCSAFLUSH, saved)
+            os.write(fd, b'\n')
+    finally:
+        os.close(fd)
 
 
 @contextmanager
@@ -540,6 +582,10 @@ class _RunInterrupted(Exception):
 
 
 class _LiveTimedOut(Exception):
+    pass
+
+
+class _ConfirmationCancelled(Exception):
     pass
 
 
@@ -733,7 +779,8 @@ def _head_sha(*, excluded: tuple[str, ...] = ()) -> str:
                           text=True, env=env).stdout.strip()
 
 
-def _confirm_request(path: Path, response: Path, secrets: list[str]) -> None:
+def _confirm_request(path: Path, response: Path, secrets: list[str], *,
+                     cancelled=None, deadline: datetime | None = None) -> None:
     """Prompt only for a validated bounded proposal; malformed requests fail closed."""
     if not path.exists() or response.exists():
         return
@@ -768,39 +815,42 @@ def _confirm_request(path: Path, response: Path, secrets: list[str]) -> None:
     prompt += 'Type yes to approve: '
     if any(secret in prompt for secret in secrets):
         raise ValueError('unsafe confirmation')
-    approved = _hidden_input(prompt).strip() == 'yes'
+    approved = _hidden_input(prompt, cancelled=cancelled, deadline=deadline) == 'yes'
     answer = {'approved': approved}
     if 'requiredTypedName' in proposal:
-        typed = _hidden_input('Type the target name: ') if approved else None
+        typed = (_hidden_input('Type the target name: ', cancelled=cancelled, deadline=deadline)
+                 if approved else None)
         if typed is not None and (len(typed) > 256 or any(secret in typed for secret in secrets)):
             typed = None
             answer['approved'] = False
         answer['typedName'] = typed
+    if ((cancelled is not None and cancelled()) or
+            (deadline is not None and datetime.now(timezone.utc) >= deadline)):
+        raise _ConfirmationCancelled()
     _publish_confirmation(response, json.dumps(answer))
 
 
 def _wait_live_child(child: subprocess.Popen, request: Path, response: Path,
                      secrets: list[str], *, deadline: datetime | None = None) -> int:
-    prompt = None
-    errors = []
-    def confirm():
-        try:
-            _confirm_request(request, response, secrets)
-        except BaseException as error:
-            errors.append(error)
+    cancelled_request = False
     while True:
-        if errors:
-            raise errors[0]
         # The child's deadline fences writes first; allow a bounded state/receipt
         # shutdown before force-stopping a child that cannot unwind.
         if deadline is not None and datetime.now(timezone.utc) >= deadline + timedelta(seconds=30):
             raise _LiveTimedOut()
-        if prompt is not None and not prompt.is_alive():
-            prompt = None
-        if request.exists() and not response.exists() and prompt is None:
-            prompt = threading.Thread(target=confirm, daemon=True)
-            prompt.start()
-            prompt.join(timeout=0.02)
+        if not request.exists():
+            cancelled_request = False
+        elif not response.exists() and not cancelled_request:
+            confirmation_end = datetime.now(timezone.utc) + timedelta(minutes=5)
+            if deadline is not None:
+                confirmation_end = min(confirmation_end, deadline)
+            try:
+                _confirm_request(request, response, secrets,
+                                 cancelled=lambda: child.poll() is not None or not request.exists(),
+                                 deadline=confirmation_end)
+            except _ConfirmationCancelled:
+                # Leave an abandoned proposal unanswered while the child unwinds.
+                cancelled_request = True
         try:
             return child.wait(timeout=0.1)
         except subprocess.TimeoutExpired:

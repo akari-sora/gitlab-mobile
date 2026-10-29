@@ -249,6 +249,71 @@ String _providerAnswer(String format, bool tool) {
 }
 
 void main() {
+  for (final boundary in ['accepted', 'cancelled', 'expired']) {
+    test('live host confirmation response is $boundary', () async {
+      final scratch = await Directory(
+        Directory.current.parent.path,
+      ).createTemp('mr7-confirm-boundary-');
+      addTearDown(() => scratch.delete(recursive: true));
+      final patFile = File('${scratch.path}/pat')..writeAsStringSync(_pat);
+      final keyFile = File('${scratch.path}/key')..writeAsStringSync(_key);
+      expect(
+        (await Process.run('chmod', [
+          '600',
+          patFile.path,
+          keyFile.path,
+        ])).exitCode,
+        0,
+      );
+      final request = File('${scratch.path}/request');
+      final response = File('${scratch.path}/response');
+      final host = Mr7LiveHost.fromWrapper({
+        'MR7_GITLAB_PAT_FILE': patFile.path,
+        'MR7_PROVIDER_KEY_FILE': keyFile.path,
+        'MR7_CONFIRM_REQUEST_FILE': request.path,
+        'MR7_CONFIRM_RESPONSE_FILE': response.path,
+      });
+      final deadline = DateTime.now().add(const Duration(seconds: 2));
+      final confirmation = host.confirm({
+        'operation': 'setStar',
+        'tier': 'T1',
+        'projectId': 9,
+        'payloadDigest': 'a' * 64,
+        'preview': 'Synthetic sandbox only.',
+      }, deadlineAt: deadline);
+      while (!request.existsSync()) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      if (boundary == 'cancelled') host.cancel();
+      if (boundary == 'expired') {
+        // Hold the event loop until the deadline, then place the response before
+        // the pending poll resumes: availability must not bypass its deadline.
+        final remaining = deadline.difference(DateTime.now());
+        if (!remaining.isNegative) {
+          sleep(remaining + const Duration(milliseconds: 10));
+        }
+      }
+      response.writeAsStringSync(jsonEncode({'approved': true}));
+      if (boundary == 'accepted') {
+        expect(await confirmation, isTrue);
+      } else {
+        await expectLater(
+          confirmation,
+          throwsA(
+            isA<Mr7Refused>().having(
+              (error) => error.code,
+              'code',
+              'confirmationTimeout',
+            ),
+          ),
+        );
+        expect(host.typedName, isNull);
+      }
+      expect(request.existsSync(), isFalse);
+      expect(response.existsSync(), isFalse);
+    });
+  }
   test('live runner refuses a journal override before any request', () async {
     final fixture = _GitLabFixture();
     await fixture.start();

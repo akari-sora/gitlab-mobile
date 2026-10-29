@@ -150,6 +150,8 @@ class LiveWrapperTest(unittest.TestCase):
                 'payloadDigest': 'a' * 64, 'preview': 'Star the synthetic sandbox.'}))
             class Process:
                 pid = 9999999
+                def poll(self):
+                    return None
                 def wait(self, timeout=None):
                     answer = json.loads(Path(env['MR7_CONFIRM_RESPONSE_FILE']).read_text())
                     self_outer.assertEqual(answer, {'approved': True})
@@ -157,7 +159,7 @@ class LiveWrapperTest(unittest.TestCase):
             self_outer = self
             return Process()
         with mock.patch.object(runner.subprocess, 'Popen', side_effect=spawn), \
-             mock.patch.object(runner.getpass, 'getpass', return_value='yes') as prompt:
+             mock.patch.object(runner, '_hidden_input', return_value='yes') as prompt:
             code, out, err = self.invoke()
         self.assertEqual(code, 0)
         self.assertEqual(prompt.call_count, 1)
@@ -215,6 +217,31 @@ class LiveWrapperTest(unittest.TestCase):
             runner._publish_confirmation(response, json.dumps({'approved': False}))
         self.assertEqual(json.loads(response.read_text()), {'approved': True})
         self.assertFalse(list(self.directory.glob('.mr7-confirm-*')))
+
+    def test_cancellation_after_input_never_publishes_confirmation(self):
+        request = self.directory / 'request'
+        response = self.directory / 'response'
+        proposal = {'operation': 'setStar', 'tier': 'T1', 'projectId': 9,
+                    'payloadDigest': 'a' * 64, 'preview': 'Synthetic sandbox only.'}
+        for reason in ('child_exit', 'withdrawn', 'deadline'):
+            request.write_text(json.dumps(proposal))
+            response.unlink(missing_ok=True)
+            exited = False
+            def answer(*args, **kwargs):
+                nonlocal exited
+                if reason == 'child_exit':
+                    exited = True
+                if reason == 'withdrawn':
+                    request.unlink()
+                return 'yes'
+            deadline = (datetime.now(timezone.utc) - timedelta(seconds=1)
+                        if reason == 'deadline' else None)
+            with self.subTest(reason=reason), mock.patch.object(runner, '_hidden_input', side_effect=answer):
+                with self.assertRaises(runner._ConfirmationCancelled):
+                    runner._confirm_request(request, response, [],
+                                            cancelled=lambda: exited or not request.exists(),
+                                            deadline=deadline)
+                self.assertFalse(response.exists())
 
     def test_receipt_secrets_are_quarantined_including_escaped_strings(self):
         secret = 'fake-quote-"-key-123456'
@@ -312,6 +339,38 @@ class LiveWrapperTest(unittest.TestCase):
         result['events']['items'] = [{'id': 1, 'at': '2026-01-01T00:00:30Z',
                                      'action': 'created', 'projectId': 10}]
         self.assertFalse(runner.validate_receipt(result, transport='live'))
+
+    def test_overall_pass_rejects_fail_rows_in_both_transports(self):
+        for transport in ('live', 'synthetic'):
+            result = self.receipt()
+            if transport == 'synthetic':
+                result.update(transport='synthetic', evidenceClass='SYNTHETIC', live='NOT_RUN')
+                result['scenarios'][0]['live'] = 'NOT_RUN'
+            self.assertTrue(runner.validate_receipt(result, transport=transport))
+            result['scenarios'].append({'id': 'other', 'status': 'FAIL',
+                                        'live': 'FAIL' if transport == 'live' else 'NOT_RUN',
+                                        'mutationCount': 0})
+            with self.subTest(transport=transport):
+                self.assertFalse(runner.validate_receipt(result, transport=transport))
+                result.update(status='FAIL', live='FAIL' if transport == 'live' else 'NOT_RUN')
+                self.assertTrue(runner.validate_receipt(result, transport=transport))
+
+    def test_overall_pass_rejects_unverified_or_uncertain_rows_in_both_transports(self):
+        for transport in ('live', 'synthetic'):
+            for changes in ({'status': 'NOT_VERIFIED'}, {'status': 'writeUncertain'},
+                            {'readback': 'FAIL'}, {'readback': 'NOT_VERIFIED'},
+                            {'outcome': 'writeUncertain'}, {'coreOutcome': 'writeUncertain'}):
+                result = self.receipt()
+                if transport == 'synthetic':
+                    result.update(transport='synthetic', evidenceClass='SYNTHETIC', live='NOT_RUN')
+                    result['scenarios'][0]['live'] = 'NOT_RUN'
+                row = {'id': 'other', 'status': 'NOT_RUN', 'mutationCount': 0, **changes}
+                row['live'] = 'NOT_VERIFIED' if transport == 'live' else 'NOT_RUN'
+                result['scenarios'].append(row)
+                with self.subTest(transport=transport, changes=changes):
+                    self.assertFalse(runner.validate_receipt(result, transport=transport))
+                    result.update(status='FAIL', live='FAIL' if transport == 'live' else 'NOT_RUN')
+                    self.assertTrue(runner.validate_receipt(result, transport=transport))
 
     def test_overlapping_credentials_rejected_before_file_creation(self):
         for key in (PAT, 'prefix-' + PAT, PAT[:8]):

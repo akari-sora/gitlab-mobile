@@ -107,6 +107,9 @@ final class Mr7LiveHost implements KnownSecretsSource {
           (result['typedName'] != null && result['typedName'] is! String)) {
         throw const Mr7Refused('confirmationUnverified');
       }
+      if (_cancelled || !DateTime.now().isBefore(deadline)) {
+        throw const Mr7Refused('confirmationTimeout');
+      }
       typedName = result['typedName'] as String?;
       return result['approved'] as bool;
     } finally {

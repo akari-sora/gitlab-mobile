@@ -99,6 +99,32 @@ whole-run ten-minute deadline. The deadline includes network and cleanup time.
 Failure, timeout or interruption leaves quarantine state for reconciliation;
 unproven cleanup is not attempted.
 
+Answer approvals in the terminal that launched the wrapper. For example, this
+synthetic proposal displays the operation, tier, numeric project ID, payload
+digest and bounded preview:
+
+```text
+Approve sandbox write setStar tier T1 project 9 digest aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Preview: Synthetic sandbox only.
+Type yes to approve:
+```
+
+Review those values, then type lowercase `yes` and press Enter to approve.
+Input is hidden, so the letters do not appear. Any other answer, including an
+empty line, denies approval. No answer is supplied automatically. When the
+product requires a typed target, the same proposal also shows
+`Typed target required: <target name>` before the approval question. After
+`yes`, a second prompt says `Type the target name: `; type that exact displayed
+name and press Enter. The second answer is hidden too, and must be entered
+explicitly. Both questions share the same confirmation deadline.
+
+An unanswered prompt is cancelled when the child exits, withdraws its request,
+or reaches the confirmation/run deadline. Ctrl-C interrupts the run. Terminal
+settings, including echo, are restored before control returns; cancellation
+of input publishes no answer. The child also rechecks cancellation and its
+deadline before accepting a response. It retains its bounded shutdown grace
+after the run deadline to preserve quarantine state.
+
 ## Reconcile an interrupted run
 
 Find `stateDirectory` in the failed or interrupted output receipt. The private
