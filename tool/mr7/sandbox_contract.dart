@@ -164,6 +164,145 @@ final class _PageSequence {
   }
 }
 
+Future<Map<String, Object?>> _effectMap(
+  Dio dio,
+  String path, {
+  Map<String, Object?> query = const {},
+}) async {
+  final response = await dio.get<Object?>(path, queryParameters: query);
+  if (response.statusCode != 200 ||
+      response.data is! Map ||
+      utf8.encode(jsonEncode(response.data)).length > 2 * 1024 * 1024) {
+    throw const Mr7Refused('observerUnreadable');
+  }
+  return Map<String, Object?>.from(response.data! as Map);
+}
+
+Future<List<Map<String, Object?>>> _effectRows(
+  Dio dio,
+  String path, {
+  Map<String, Object?> query = const {},
+  String key = 'id',
+  bool stringIds = false,
+}) async {
+  final sequence = _PageSequence();
+  final rows = <Map<String, Object?>>[];
+  final ids = <Object>{};
+  var page = 1;
+  while (true) {
+    final response = await dio.get<Object?>(
+      path,
+      queryParameters: {...query, 'page': page, 'per_page': 100},
+    );
+    if (utf8.encode(jsonEncode(response.data)).length > 2 * 1024 * 1024) {
+      throw const Mr7Refused('observerUnreadable');
+    }
+    final next = sequence.next(response, page);
+    for (final raw in response.data! as List) {
+      final id = raw is Map ? raw[key] : null;
+      if (raw is! Map ||
+          !(stringIds ? id is String && id.isNotEmpty : id is int && id > 0) ||
+          !ids.add(id! as Object)) {
+        throw const Mr7Refused('observerList');
+      }
+      rows.add(Map<String, Object?>.from(raw));
+    }
+    if (next == null) return rows;
+    page = next;
+  }
+}
+
+Map<String, Object?> _suggestionIn(
+  Map<String, Object?> discussion,
+  String discussionId,
+  int noteId,
+  int suggestionId,
+) {
+  final notes = discussion['notes'];
+  if (discussion['id'] != discussionId || notes is! List) {
+    throw const Mr7Refused('observerDiscussion');
+  }
+  final matching = notes
+      .whereType<Map<Object?, Object?>>()
+      .where((n) => n['id'] == noteId)
+      .toList();
+  if (matching.length != 1 || matching.single['suggestions'] is! List) {
+    throw const Mr7Refused('observerDiscussion');
+  }
+  final suggestions = (matching.single['suggestions'] as List)
+      .whereType<Map<Object?, Object?>>()
+      .where((s) => s['id'] == suggestionId)
+      .toList();
+  final position = matching.single['position'];
+  if (suggestions.length != 1 ||
+      position is! Map ||
+      position['position_type'] != 'text') {
+    throw const Mr7Refused('observerDiscussion');
+  }
+  return {
+    'suggestion': Map<String, Object?>.from(suggestions.single),
+    'position': Map<String, Object?>.from(position),
+  };
+}
+
+Future<List<Map<String, Object?>>> _publicNotes(
+  Dio dio,
+  String parent,
+  int parentId,
+) async {
+  final notes = await _effectRows(dio, '$parent/notes');
+  final discussions = await _effectRows(
+    dio,
+    '$parent/discussions',
+    stringIds: true,
+  );
+  final byId = <int, Map<String, Object?>>{};
+  void add(Map<String, Object?> note, String? discussion) {
+    final id = note['id'];
+    final author = note['author'];
+    if (id is! int ||
+        id <= 0 ||
+        author is! Map ||
+        author['id'] is! int ||
+        note['body'] is! String ||
+        note['system'] is! bool ||
+        (note.containsKey('noteable_id') && note['noteable_id'] != parentId)) {
+      throw const Mr7Refused('observerPublishedNote');
+    }
+    final row = {...note, '_discussion': discussion};
+    final previous = byId[id];
+    if (previous != null &&
+        (previous['body'] != note['body'] ||
+            mr7Digest(previous['author']) != mr7Digest(author))) {
+      throw const Mr7Refused('observerPublishedNote');
+    }
+    byId[id] = row;
+  }
+
+  for (final note in notes) {
+    add(note, null);
+  }
+  for (final discussion in discussions) {
+    final children = discussion['notes'];
+    if (discussion['id'] is! String ||
+        children is! List ||
+        children.isEmpty ||
+        children.length > 2000) {
+      throw const Mr7Refused('observerDiscussion');
+    }
+    final seen = <int>{};
+    for (final child in children) {
+      if (child is! Map ||
+          child['id'] is! int ||
+          !seen.add(child['id'] as int)) {
+        throw const Mr7Refused('observerDiscussion');
+      }
+      add(Map<String, Object?>.from(child), discussion['id'] as String);
+    }
+  }
+  return byId.values.toList();
+}
+
 /// Simulated server, reached through serialized responses. Distinct writer and
 /// observer adapters prove synthetic mechanics, never live server effects.
 final class Mr7SyntheticGitLab {
@@ -818,6 +957,7 @@ final class Mr7MutationPermit {
     this.graphDocuments = const {},
     this.graphVariablesDigests = const {},
     this.resultPath = const [],
+    this.captureEffects = false,
     Object? callArguments,
   }) : callArguments = callArguments is Map
            ? _mr7FrozenJson(callArguments) as Map<String, Object?>
@@ -830,6 +970,7 @@ final class Mr7MutationPermit {
   final Set<String> graphDocuments;
   final Set<String> graphVariablesDigests;
   final List<String> resultPath;
+  final bool captureEffects;
   // The runner captures the actual tool call before preparation or dispatch.
   final Map<String, Object?>? callArguments;
   Map<String, Object?> Function()? _preparedArguments;
@@ -861,6 +1002,18 @@ final class Mr7MutationPermit {
   String? _ownedActivityNoteAtSend;
   final Map<String, int> _preparedParentIds = {};
   ({String id, String parentPath})? _preparedActivityNote;
+  final List<_Mr7Dispatch> _dispatches = [];
+  Map<String, Object?>? _effectBefore;
+  Map<String, Object?>? _emptySchedule;
+}
+
+/// Captured at the guarded transport, never supplied by a scenario observer.
+final class _Mr7Dispatch {
+  const _Mr7Dispatch(this.method, this.path, this.at, this.status);
+  final String method;
+  final String path;
+  final DateTime at;
+  final int status;
 }
 
 enum Mr7SnapshotKind { parent, board, milestone, label, draftNote, workItem }
@@ -1278,6 +1431,100 @@ final class Mr7FileObservation extends Mr7Observation<Map<String, Object?>> {
       observer._file(this);
 }
 
+final class Mr7DeletedFileObservation extends Mr7Observation<bool> {
+  const Mr7DeletedFileObservation({
+    required this.path,
+    required this.ref,
+    required this.sha,
+  });
+  final String path;
+  final String ref;
+  final String sha;
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._deletedFile(this);
+}
+
+final class Mr7SuggestionObservation extends Mr7Observation<bool> {
+  Mr7SuggestionObservation({
+    required this.parent,
+    required this.discussionId,
+    required this.noteId,
+    required this.suggestionId,
+    required this.path,
+    required this.ref,
+    required this.sha,
+    required this.blobSha,
+    required List<int> bytes,
+  }) : bytes = List.unmodifiable(bytes);
+  final Mr7Parent parent;
+  final String discussionId;
+  final int noteId;
+  final int suggestionId;
+  final String path;
+  final String ref;
+  final String sha;
+  final String blobSha;
+  final List<int> bytes;
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._suggestion(this);
+}
+
+final class Mr7DeletedBoardListObservation extends Mr7Observation<bool> {
+  const Mr7DeletedBoardListObservation({
+    required this.boardId,
+    required this.listId,
+  });
+  final int boardId;
+  final int listId;
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._deletedBoardList(this);
+}
+
+final class Mr7PublishedDraftsObservation extends Mr7Observation<bool> {
+  Mr7PublishedDraftsObservation({
+    required this.parent,
+    required Map<int, String> drafts,
+  }) : drafts = Map.unmodifiable(drafts);
+  final Mr7Parent parent;
+  final Map<int, String> drafts;
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._publishedDrafts(this);
+}
+
+final class Mr7SchedulePipelineObservation
+    extends Mr7Observation<Map<String, Object?>> {
+  const Mr7SchedulePipelineObservation({
+    required this.scheduleId,
+    required this.ref,
+    required this.pipelineId,
+    this.maxAttempts = 3,
+    this.interval = Duration.zero,
+    this.timeout = const Duration(seconds: 2),
+  });
+  final int scheduleId;
+  final String ref;
+  final int pipelineId;
+  final int maxAttempts;
+  final Duration interval;
+  final Duration timeout;
+  @override
+  Future<Map<String, Object?>> _read(Mr7Readback observer) =>
+      observer._schedulePipeline(this);
+}
+
+final class Mr7LegacyCancelObservation extends Mr7Observation<bool> {
+  const Mr7LegacyCancelObservation({required this.parent});
+  final Mr7Parent parent;
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._legacyCancel(this);
+}
+
+final class Mr7ProjectDeletionObservation extends Mr7Observation<bool> {
+  const Mr7ProjectDeletionObservation();
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._projectDeletion();
+}
+
 enum Mr7RefKind { branch, tag }
 
 final class Mr7RefObservation extends Mr7Observation<Map<String, Object?>> {
@@ -1321,9 +1568,11 @@ final class Mr7SnippetObservation
     required this.id,
     required this.revision,
     required Map<String, Mr7SnippetFile> files,
+    this.visibility = 'private',
   }) : files = Map.unmodifiable(files);
   final int id;
   final String revision;
+  final String visibility;
   final Map<String, Mr7SnippetFile> files;
   @override
   Future<Map<String, List<int>>> _read(Mr7Readback observer) =>
@@ -2125,6 +2374,38 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
         );
       }
       final path = session._restSegments(options).join('/');
+      if (options.method == 'GET' &&
+          permit?.captureEffects == true &&
+          response.statusCode == 200 &&
+          permit?.operation == 'playPipelineSchedule' &&
+          RegExp(
+            '^projects/${permit!.resourceProjectId}/pipeline_schedules/[1-9][0-9]*\$',
+          ).hasMatch(path)) {
+        final bytes = <int>[];
+        await for (final chunk in response.stream) {
+          bytes.addAll(chunk);
+          if (bytes.length > 2 * 1024 * 1024) {
+            throw const Mr7Refused('scheduleParametersUnproven');
+          }
+        }
+        final value = jsonDecode(utf8.decode(bytes));
+        // Observe only the empty/nonempty shape of the production response.
+        // No stored names or values are retained or independently requested.
+        permit._emptySchedule =
+            value is Map &&
+                value['variables'] is List &&
+                (value['variables'] as List).isEmpty &&
+                value['inputs'] is List &&
+                (value['inputs'] as List).isEmpty
+            ? {'id': value['id'], 'ref': value['ref'], 'path': path}
+            : null;
+        session.validateRead(options, allowStopped: false);
+        return ResponseBody.fromBytes(
+          bytes,
+          response.statusCode,
+          headers: response.headers,
+        );
+      }
       if (response.statusCode == 200 &&
           permit != null &&
           (_mr7WorkItemOperations.contains(permit.operation) ||
@@ -2261,7 +2542,20 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
             : null;
       }
       dispatched = true;
+      final dispatchAt = session.server.serverTime;
       final response = await session.server.respond(options);
+      if (!session._setupAuthorized &&
+          !session._cleanupAuthorized &&
+          preparedPermit != null) {
+        preparedPermit._dispatches.add(
+          _Mr7Dispatch(
+            options.method,
+            preparedPermit._sentPath!,
+            dispatchAt,
+            response.statusCode,
+          ),
+        );
+      }
       if (upload != null &&
           response.statusCode >= 200 &&
           response.statusCode < 300) {
@@ -2317,6 +2611,7 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
       }
       if (permit?.operation == 'deleteProject' && response.statusCode == 202) {
         session.terminalDeletionAccepted = true;
+        session._terminalDeleteDispatched = true;
       }
       return ResponseBody.fromBytes(
         bytes,
@@ -2352,6 +2647,10 @@ final class Mr7Readback {
   final Set<String> paths;
   final Map<String, Set<String>> graphQueries;
   int verifiedRequests = 0;
+  String? _projectDeletionState;
+
+  /// `absent` is a scoped observed absence, not proof of permanent erasure.
+  String? get projectDeletionState => _projectDeletionState;
   Mr7StateObservation? _noDispatchObservation;
 
   Mr7MutationResult get result =>
@@ -2471,6 +2770,14 @@ final class Mr7Readback {
   }
 
   Future<T> observe<T>(Mr7Observation<T> observation) async {
+    if (observation is Mr7ProjectDeletionObservation) {
+      final before = _session.observerAdapter.requests.length;
+      await _terminalActor();
+      final value = await observation._read(this);
+      await _terminalActor();
+      verifiedRequests += _session.observerAdapter.requests.length - before;
+      return value;
+    }
     await _actorAndProject();
     final before = _session.observerAdapter.requests.length;
     final value = await observation._read(this);
@@ -2958,6 +3265,398 @@ final class Mr7Readback {
     return List.unmodifiable(rows);
   }
 
+  _Mr7Dispatch _effectDispatch(String operation, String method) {
+    if (_permit.operation != operation ||
+        _permit.sent != 1 ||
+        _permit._dispatches.length != 1 ||
+        _permit._effectBefore == null) {
+      throw const Mr7Refused('observerMutationTarget');
+    }
+    final sent = _permit._dispatches.single;
+    if (sent.method != method || sent.status < 200 || sent.status >= 300) {
+      throw const Mr7Refused('observerMutationTarget');
+    }
+    return sent;
+  }
+
+  Future<List<Map<String, Object?>>> _rows(
+    String path, {
+    Map<String, Object?> query = const {},
+    String key = 'id',
+  }) async {
+    _path(path);
+    final rows = await _effectRows(
+      _session.observer,
+      path,
+      query: query,
+      key: key,
+      stringIds: key != 'id',
+    );
+    if (rows.any(
+      (r) =>
+          r.containsKey('project_id') && r['project_id'] != _identity.projectId,
+    )) {
+      throw const Mr7Refused('readbackIdentity');
+    }
+    _scope();
+    return rows;
+  }
+
+  Future<void> _branchAt(String ref, String sha) async {
+    _sha(sha);
+    final branch = await _map('$_root/repository/branches/${_name(ref)}');
+    final commit = branch['commit'];
+    if (branch['name'] != ref || commit is! Map || commit['id'] != sha) {
+      throw const Mr7Refused('observerRef');
+    }
+  }
+
+  Future<bool> _deletedFile(Mr7DeletedFileObservation spec) async {
+    _effectDispatch('deleteFile', 'DELETE');
+    _sentTo('$_root/repository/files/${_name(spec.path)}');
+    final before = _permit._effectBefore!;
+    if (before['path'] != spec.path ||
+        before['ref'] != spec.ref ||
+        before['sha'] == spec.sha) {
+      throw const Mr7Refused('observerMutationTarget');
+    }
+    await _branchAt(spec.ref, spec.sha);
+    final rows = await _rows(
+      '$_root/repository/tree',
+      query: {'ref': spec.sha, 'recursive': true},
+      key: 'path',
+    );
+    for (final row in rows) {
+      if (row['id'] is! String ||
+          row['name'] is! String ||
+          row['path'] is! String ||
+          !const {'blob', 'tree', 'commit'}.contains(row['type']) ||
+          row['mode'] is! String) {
+        throw const Mr7Refused('observerTree');
+      }
+      _sha(row['id'] as String);
+      _name(row['path'] as String);
+      if (row['path'] == spec.path) throw const Mr7Refused('observerAbsence');
+    }
+    await _branchAt(spec.ref, spec.sha);
+    return true;
+  }
+
+  Future<bool> _suggestion(Mr7SuggestionObservation spec) async {
+    _effectDispatch('applySuggestion', 'PUT');
+    _sentTo('suggestions/${spec.suggestionId}/apply');
+    final before = _permit._effectBefore!;
+    if (spec.parent.kind != Mr7ParentKind.mergeRequest ||
+        spec.parent.id != before['parentId'] ||
+        spec.discussionId != before['discussionId'] ||
+        spec.noteId != before['noteId'] ||
+        spec.suggestionId != before['suggestionId'] ||
+        spec.path != before['path'] ||
+        spec.ref != before['ref'] ||
+        spec.sha == before['sha'] ||
+        mr7Digest(spec.bytes) != before['expectedBytesDigest'] ||
+        spec.bytes.length > 2 * 1024 * 1024) {
+      throw const Mr7Refused('observerDiscussion');
+    }
+    final parent = await _parent(spec.parent);
+    if (parent.path != before['parent']) {
+      throw const Mr7Refused('observerDiscussion');
+    }
+    final discussion = await _map(
+      '${parent.path}/discussions/${_name(spec.discussionId)}',
+    );
+    final selected = _suggestionIn(
+      discussion,
+      spec.discussionId,
+      spec.noteId,
+      spec.suggestionId,
+    );
+    if ((selected['suggestion'] as Map)['applied'] != true ||
+        mr7Digest(selected['position']) != before['positionDigest']) {
+      throw const Mr7Refused('observerDiscussion');
+    }
+    await _branchAt(spec.ref, spec.sha);
+    _sha(spec.blobSha);
+    final row = await _map(
+      '$_root/repository/files/${_name(spec.path)}',
+      query: {'ref': spec.sha},
+    );
+    final bytes = row['encoding'] == 'base64' && row['content'] is String
+        ? base64Decode(row['content'] as String)
+        : null;
+    final blobBytes = [
+      ...utf8.encode('blob ${spec.bytes.length}\u0000'),
+      ...spec.bytes,
+    ];
+    final blob = (spec.blobSha.length == 40 ? sha1 : sha256)
+        .convert(blobBytes)
+        .toString();
+    if (row['file_path'] != spec.path ||
+        row['commit_id'] != spec.sha ||
+        row['blob_id'] != spec.blobSha ||
+        blob != spec.blobSha ||
+        bytes == null ||
+        mr7Digest(bytes) != mr7Digest(spec.bytes)) {
+      throw const Mr7Refused('observerContent');
+    }
+    await _branchAt(spec.ref, spec.sha);
+    await _parent(spec.parent);
+    return true;
+  }
+
+  Future<bool> _deletedBoardList(Mr7DeletedBoardListObservation spec) async {
+    _effectDispatch('deleteBoardList', 'DELETE');
+    final before = _permit._effectBefore!;
+    final boardPath = '$_root/boards/${spec.boardId}';
+    _sentTo('$boardPath/lists/${spec.listId}');
+    if (before['boardId'] != spec.boardId || before['listId'] != spec.listId) {
+      throw const Mr7Refused('observerMutationTarget');
+    }
+    Future<void> board() async {
+      final row = await _map(boardPath);
+      if (row['id'] != spec.boardId) throw const Mr7Refused('observerParent');
+    }
+
+    await board();
+    final rows = await _rows('$boardPath/lists');
+    if (rows.any((r) => r['id'] == spec.listId)) {
+      throw const Mr7Refused('observerAbsence');
+    }
+    await board();
+    return true;
+  }
+
+  Future<bool> _publishedDrafts(Mr7PublishedDraftsObservation spec) async {
+    _effectDispatch('publishDraftNotes', 'POST');
+    final before = _permit._effectBefore!;
+    final parent = await _parent(spec.parent);
+    if (spec.parent.kind != Mr7ParentKind.mergeRequest ||
+        parent.path != before['parent'] ||
+        spec.parent.id != before['parentId']) {
+      throw const Mr7Refused('observerParent');
+    }
+    _sentTo('${parent.path}/draft_notes/bulk_publish');
+    final drafts = (before['drafts'] as List).cast<Map<Object?, Object?>>();
+    if (spec.drafts.length != drafts.length ||
+        drafts.any((r) => spec.drafts[r['id']] != r['note'])) {
+      throw const Mr7Refused('observerDrafts');
+    }
+    for (final suffix in ['notes', 'discussions', 'draft_notes']) {
+      _path('${parent.path}/$suffix');
+    }
+    final notes = await _publicNotes(
+      _session.observer,
+      parent.path,
+      spec.parent.id!,
+    );
+    final fresh = notes
+        .where(
+          (r) =>
+              !(before['notes'] as List).contains(r['id']) &&
+              r['system'] == false &&
+              r['internal'] == false &&
+              (r['author'] as Map)['id'] == _identity.userId,
+        )
+        .toList();
+    if (fresh.length != drafts.length) {
+      throw const Mr7Refused('observerPublishedNote');
+    }
+    for (final draft in drafts) {
+      final index = fresh.indexWhere(
+        (r) =>
+            r['body'] == draft['note'] &&
+            (draft['discussion_id'] == null ||
+                r['_discussion'] == draft['discussion_id']),
+      );
+      if (index < 0) throw const Mr7Refused('observerPublishedNote');
+      fresh.removeAt(index);
+    }
+    final remaining = await _rows('${parent.path}/draft_notes');
+    if (remaining.isNotEmpty) throw const Mr7Refused('observerDrafts');
+    await _parent(spec.parent);
+    return true;
+  }
+
+  Future<Map<String, Object?>> _schedulePipeline(
+    Mr7SchedulePipelineObservation spec,
+  ) async {
+    final sent = _effectDispatch('playPipelineSchedule', 'POST');
+    final before = _permit._effectBefore!;
+    _sentTo('$_root/pipeline_schedules/${spec.scheduleId}/play');
+    if (before['scheduleId'] != spec.scheduleId ||
+        before['ref'] != spec.ref ||
+        !spec.ref.startsWith('refs/heads/') ||
+        spec.pipelineId <= 0 ||
+        (before['pipelines'] as List).contains(spec.pipelineId) ||
+        spec.maxAttempts < 1 ||
+        spec.maxAttempts > 20 ||
+        spec.interval.isNegative ||
+        spec.interval > const Duration(milliseconds: 100) ||
+        spec.timeout <= Duration.zero ||
+        spec.timeout > const Duration(seconds: 2)) {
+      throw const Mr7Refused('observerSchedule');
+    }
+    final watch = Stopwatch()..start();
+    bool expired() =>
+        watch.elapsed > spec.timeout ||
+        _session.server.serverTime.difference(sent.at) > spec.timeout;
+    Future<void> schedule() async {
+      final schedules = await _rows('$_root/pipeline_schedules');
+      final matching = schedules
+          .where((r) => r['id'] == spec.scheduleId)
+          .toList();
+      if (matching.length != 1 ||
+          matching.single['ref'] != spec.ref ||
+          matching.single['active'] != false ||
+          matching.single['owner'] is! Map ||
+          (matching.single['owner'] as Map)['id'] != _identity.userId) {
+        throw const Mr7Refused('observerSchedule');
+      }
+    }
+
+    await schedule();
+    for (var attempt = 0; attempt < spec.maxAttempts; attempt++) {
+      if (expired()) throw const Mr7Refused('observerScheduleTimeout');
+      final pipelines = await _rows(
+        '$_root/pipeline_schedules/${spec.scheduleId}/pipelines',
+      );
+      final matching = pipelines
+          .where(
+            (r) =>
+                !(before['pipelines'] as List).contains(r['id']) &&
+                r['project_id'] == _identity.projectId &&
+                r['ref'] == spec.ref.substring('refs/heads/'.length) &&
+                r['source'] == 'schedule' &&
+                r['created_at'] is String &&
+                DateTime.tryParse(r['created_at'] as String) != null &&
+                DateTime.parse(r['created_at'] as String).isAfter(sent.at) &&
+                !DateTime.parse(
+                  r['created_at'] as String,
+                ).isAfter(_session.server.serverTime) &&
+                DateTime.parse(r['created_at'] as String).difference(sent.at) <=
+                    spec.timeout,
+          )
+          .toList();
+      if (matching.length > 1) {
+        throw const Mr7Refused('observerScheduleAmbiguous');
+      }
+      if (matching.length == 1 && matching.single['id'] == spec.pipelineId) {
+        await schedule();
+        if (expired()) throw const Mr7Refused('observerScheduleTimeout');
+        return Map.unmodifiable(matching.single);
+      }
+      if (attempt + 1 < spec.maxAttempts) {
+        await Future<void>.delayed(spec.interval);
+      }
+    }
+    throw const Mr7Refused('observerSchedulePending');
+  }
+
+  Future<bool> _legacyCancel(Mr7LegacyCancelObservation spec) async {
+    final before = _permit._effectBefore;
+    if (_permit.operation != 'cancelAutoMerge' ||
+        _permit.sent != 2 ||
+        _permit._dispatches.length != 2 ||
+        before?['enabled'] != true ||
+        spec.parent.kind != Mr7ParentKind.mergeRequest ||
+        spec.parent.id != before?['parentId']) {
+      throw const Mr7Refused('observerLegacyCancel');
+    }
+    final parent = await _parent(spec.parent);
+    final first = _permit._dispatches[0];
+    final last = _permit._dispatches[1];
+    if (parent.path != before!['parent'] ||
+        first.method != 'POST' ||
+        last.method != 'POST' ||
+        first.path != '${parent.path}/cancel_auto_merge' ||
+        !const {404, 405}.contains(first.status) ||
+        last.path != '${parent.path}/cancel_merge_when_pipeline_succeeds' ||
+        last.status < 200 ||
+        last.status >= 300 ||
+        last.at.isBefore(first.at)) {
+      throw const Mr7Refused('observerLegacyCancel');
+    }
+    final row = parent.row;
+    if (row['merge_when_pipeline_succeeds'] != false ||
+        (row.containsKey('auto_merge_enabled') &&
+            row['auto_merge_enabled'] != false)) {
+      throw const Mr7Refused('observerState');
+    }
+    return true;
+  }
+
+  Future<void> _terminalActor() async {
+    _scope();
+    final sent = _effectDispatch('deleteProject', 'DELETE');
+    if (sent.path != _root ||
+        sent.status != 202 ||
+        !_session.terminalDeletionAccepted ||
+        _session._finalizing ||
+        _session._finished ||
+        _permit._effectBefore?['projectId'] != _identity.projectId) {
+      throw const Mr7Refused('observerTerminalDeletion');
+    }
+    final actor = await _session.read('user');
+    if (actor['id'] != _identity.userId ||
+        actor['username'] != _identity.namespace) {
+      throw const Mr7Refused('observerIdentity');
+    }
+    _scope();
+  }
+
+  Future<bool> _projectDeletion() async {
+    _path(_root);
+    if (!paths.contains('users/${_identity.userId}/projects')) {
+      throw const Mr7Refused('readbackTarget');
+    }
+    final rows = await _session._projectEffectInventory();
+    final matching = rows
+        .where(
+          (r) =>
+              r['id'] == _identity.projectId ||
+              r['path_with_namespace'] == _identity.path,
+        )
+        .toList();
+    final byId = await _session.observer.get<Object?>(_root);
+    final byPath = await _session.observer.get<Object?>(
+      'projects/${Uri.encodeComponent(_identity.path)}',
+    );
+    if (matching.isEmpty &&
+        byId.statusCode == 404 &&
+        byPath.statusCode == 404) {
+      _projectDeletionState = 'absent';
+      return true;
+    }
+    bool pending(Object? raw) {
+      if (raw is! Map) return false;
+      final ns = raw['namespace'];
+      final owner = raw['owner'];
+      final date = raw['marked_for_deletion_on'];
+      return raw['id'] == _identity.projectId &&
+          raw['path_with_namespace'] == _identity.path &&
+          raw['visibility'] == 'private' &&
+          owner is Map &&
+          owner['id'] == _identity.userId &&
+          ns is Map &&
+          ns['id'] == _identity.namespaceId &&
+          ns['kind'] == 'user' &&
+          ns['full_path'] == _identity.namespace &&
+          date is String &&
+          DateTime.tryParse(date) != null;
+    }
+
+    if (matching.length == 1 &&
+        pending(matching.single) &&
+        byId.statusCode == 200 &&
+        byPath.statusCode == 200 &&
+        pending(byId.data) &&
+        pending(byPath.data)) {
+      _projectDeletionState = 'pending';
+      return true;
+    }
+    throw const Mr7Refused('observerTerminalDeletion');
+  }
+
   Future<Map<String, Object?>> _file(Mr7FileObservation spec) async {
     _sha(spec.sha);
     _sentTo('$_root/repository/files/${_name(spec.path)}');
@@ -3055,6 +3754,42 @@ final class Mr7Readback {
     }
     final path = '$_root/snippets/${spec.id}';
     _sentTo(_permit.operation == 'createSnippet' ? '$_root/snippets' : path);
+    if (_permit.operation == 'createSnippet' && spec.visibility != 'private') {
+      if (result.id != spec.id ||
+          _permit._dispatches.length != 1 ||
+          _permit._dispatches.single.method != 'POST' ||
+          _permit._dispatches.single.path != '$_root/snippets' ||
+          _permit._dispatches.single.status != 201) {
+        throw const Mr7Refused('observerSnippetCreation');
+      }
+    }
+    final body = _permit._sentBody;
+    if (!const {'private', 'internal', 'public'}.contains(spec.visibility) ||
+        ((spec.visibility != 'private' ||
+                (body is Map && body.containsKey('visibility'))) &&
+            (body is! Map || body['visibility'] != spec.visibility))) {
+      throw const Mr7Refused('observerSnippetVisibility');
+    }
+    if (_permit.operation == 'createSnippet' &&
+        (spec.visibility != 'private' ||
+            (body is Map && body.containsKey('files')))) {
+      final files = body is Map ? body['files'] : null;
+      if (files is! List || files.length != spec.files.length) {
+        throw const Mr7Refused('observerContent');
+      }
+      final seen = <String>{};
+      for (final file in files) {
+        if (file is! Map ||
+            file['file_path'] is! String ||
+            file['content'] is! String ||
+            !seen.add(file['file_path'] as String) ||
+            !spec.files.containsKey(file['file_path']) ||
+            mr7Digest(utf8.encode(file['content'] as String)) !=
+                mr7Digest(spec.files[file['file_path']]!.bytes)) {
+          throw const Mr7Refused('observerContent');
+        }
+      }
+    }
     final rawPaths = <String, String>{};
     for (final entry in spec.files.entries) {
       if (entry.value.bytes.length > 2 * 1024 * 1024) {
@@ -3069,7 +3804,7 @@ final class Mr7Readback {
       if (row['id'] != spec.id ||
           row['project_id'] != _identity.projectId ||
           row['updated_at'] != spec.revision ||
-          row['visibility'] != 'private' ||
+          row['visibility'] != spec.visibility ||
           files is! List ||
           files.length != spec.files.length) {
         throw const Mr7Refused('observerSnippet');
@@ -4445,12 +5180,14 @@ final class Mr7SandboxSession {
   bool inFlight = false;
   int pendingMutations = 0;
   bool terminalDeletionAccepted = false;
+  bool _terminalDeleteDispatched = false;
   bool quarantined = false;
   bool _setupAuthorized = false;
   bool _cleanupAuthorized = false;
   bool _started = false;
   bool _finished = false;
   bool _finalizing = false;
+  bool _effectInventoryAllowed = false;
   int _namespaceId = 0;
   int? _createdId;
   int _httpRequests = 0;
@@ -4533,6 +5270,15 @@ final class Mr7SandboxSession {
         (request.queryParameters['page'] as int) >= 1 &&
         (request.queryParameters['page'] as int) <= 20 &&
         request.queryParameters['per_page'] == 100;
+    final effectInventoryRead =
+        _effectInventoryAllowed &&
+        target != null &&
+        path == 'users/${target.userId}/projects' &&
+        request.queryParameters.length == 2 &&
+        request.queryParameters['page'] is int &&
+        (request.queryParameters['page'] as int) >= 1 &&
+        (request.queryParameters['page'] as int) <= 20 &&
+        request.queryParameters['per_page'] == 100;
     final finalQuery = request.uri.queryParametersAll;
     final fileHead =
         request.method == 'HEAD' &&
@@ -4553,7 +5299,10 @@ final class Mr7SandboxSession {
         finalQuery['ref']!.single.length <= 1024;
     if (!fileHead &&
         (request.method != 'GET' ||
-            (!setupRead && !projectRead && !parentRead))) {
+            (!setupRead &&
+                !projectRead &&
+                !parentRead &&
+                !effectInventoryRead))) {
       stop('outsideSandboxRead');
       throw const Mr7Refused('outsideSandboxRead');
     }
@@ -5418,7 +6167,354 @@ final class Mr7SandboxSession {
     if (!observationOnly) _open();
   }
 
+  Future<void> _prepareEffect(
+    Mr7MutationPermit allowed,
+    RequestOptions request,
+  ) async {
+    if (!allowed.captureEffects) return;
+    final actor = await read('user');
+    if (actor['id'] != identity!.userId ||
+        actor['username'] != identity!.namespace) {
+      stop('observerIdentity');
+      throw const Mr7Refused('observerIdentity');
+    }
+    if (allowed.sent != 0) {
+      if (allowed.operation == 'cancelAutoMerge') {
+        final first = allowed._dispatches;
+        final parent = allowed._effectBefore?['parent'];
+        if (allowed.sent != 1 ||
+            first.length != 1 ||
+            parent is! String ||
+            first.single.method != 'POST' ||
+            first.single.path != '$parent/cancel_auto_merge' ||
+            !const {404, 405}.contains(first.single.status) ||
+            request.method != 'POST' ||
+            _restSegments(request).join('/') !=
+                '$parent/cancel_merge_when_pipeline_succeeds') {
+          throw const Mr7Refused('observerLegacyCancel');
+        }
+      } else if (const {
+        'deleteFile',
+        'applySuggestion',
+        'deleteBoardList',
+        'publishDraftNotes',
+        'playPipelineSchedule',
+        'deleteProject',
+      }.contains(allowed.operation)) {
+        throw const Mr7Refused('observerMutationTarget');
+      }
+      return;
+    }
+    final root = 'projects/${identity!.projectId}';
+    final segments = _restSegments(request);
+    final path = segments.join('/');
+    final b = request.data;
+    Future<Map<String, Object?>> parent(String parentPath) async {
+      final row = await _effectMap(observer, parentPath);
+      if (row['id'] is! int ||
+          (row['id'] as int) <= 0 ||
+          row['project_id'] != identity!.projectId ||
+          row['iid'] != int.tryParse(parentPath.split('/').last)) {
+        throw const Mr7Refused('observerParent');
+      }
+      return row;
+    }
+
+    Future<String> head(String ref) async {
+      final row = await _effectMap(
+        observer,
+        '$root/repository/branches/${Uri.encodeComponent(ref)}',
+      );
+      final commit = row['commit'];
+      if (row['name'] != ref ||
+          commit is! Map ||
+          commit['id'] is! String ||
+          !RegExp(
+            r'^(?:[0-9a-f]{40}|[0-9a-f]{64})$',
+          ).hasMatch(commit['id'] as String)) {
+        throw const Mr7Refused('observerRef');
+      }
+      return commit['id'] as String;
+    }
+
+    switch (allowed.operation) {
+      case 'deleteFile':
+        if (request.method != 'DELETE' ||
+            segments.length != 5 ||
+            segments[2] != 'repository' ||
+            segments[3] != 'files' ||
+            b is! Map ||
+            b['branch'] is! String) {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        final ref = b['branch'] as String;
+        final sha = await head(ref);
+        final file = await _effectMap(
+          observer,
+          '$root/repository/files/${Uri.encodeComponent(segments[4])}',
+          query: {'ref': sha},
+        );
+        if (file['file_path'] != segments[4] ||
+            file['commit_id'] != sha ||
+            file['last_commit_id'] != b['last_commit_id']) {
+          throw const Mr7Refused('observerContent');
+        }
+        allowed._effectBefore = {'path': segments[4], 'ref': ref, 'sha': sha};
+      case 'applySuggestion':
+        final a = allowed.preparedArguments ?? allowed.callArguments;
+        if (a == null ||
+            a['projectId'] != identity!.projectId ||
+            a['iid'] is! int ||
+            a['noteId'] is! int ||
+            a['suggestionId'] is! int ||
+            a['discussionId'] is! String ||
+            !RegExp(
+              r'^[A-Za-z0-9_-]{1,128}$',
+            ).hasMatch(a['discussionId'] as String) ||
+            request.method != 'PUT' ||
+            path != 'suggestions/${a['suggestionId']}/apply') {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        final parentPath = '$root/merge_requests/${a['iid']}';
+        final mr = await parent(parentPath);
+        if (mr['source_project_id'] != identity!.projectId ||
+            mr['source_branch'] is! String) {
+          throw const Mr7Refused('observerParent');
+        }
+        final discussionPath = '$parentPath/discussions/${a['discussionId']}';
+        final discussion = await _effectMap(observer, discussionPath);
+        final selected = _suggestionIn(
+          discussion,
+          a['discussionId'] as String,
+          a['noteId'] as int,
+          a['suggestionId'] as int,
+        );
+        final suggestion = selected['suggestion'] as Map;
+        final position = selected['position'] as Map;
+        final refs = mr['diff_refs'];
+        if (suggestion['appliable'] != true ||
+            suggestion['applied'] != false ||
+            suggestion['from_content'] is! String ||
+            suggestion['to_content'] is! String ||
+            refs is! Map ||
+            mr['sha'] != refs['head_sha'] ||
+            const [
+              'base_sha',
+              'start_sha',
+              'head_sha',
+            ].any((key) => position[key] != refs[key])) {
+          throw const Mr7Refused('observerDiscussion');
+        }
+        final filePath = position['new_path'] ?? position['old_path'];
+        if (filePath is! String || filePath.isEmpty) {
+          throw const Mr7Refused('observerContent');
+        }
+        final ref = mr['source_branch'] as String;
+        final sha = await head(ref);
+        if (sha != mr['sha']) throw const Mr7Refused('observerRef');
+        final file = await _effectMap(
+          observer,
+          '$root/repository/files/${Uri.encodeComponent(filePath)}',
+          query: {'ref': sha},
+        );
+        final from = suggestion['from_line'];
+        final to = suggestion['to_line'];
+        if (file['file_path'] != filePath ||
+            file['commit_id'] != sha ||
+            file['encoding'] != 'base64' ||
+            file['content'] is! String ||
+            from is! int ||
+            to is! int ||
+            from < 1 ||
+            to < from) {
+          throw const Mr7Refused('observerSuggestionRange');
+        }
+        final text = utf8.decode(base64Decode(file['content'] as String));
+        final lines = RegExp(r'[^\n]*(?:\n|$)')
+            .allMatches(text)
+            .map((m) => m.group(0)!)
+            .where((s) => s.isNotEmpty)
+            .toList();
+        if (text.contains('\r') ||
+            to > lines.length ||
+            lines.sublist(from - 1, to).join() != suggestion['from_content']) {
+          throw const Mr7Refused('observerSuggestionRange');
+        }
+        final expected = utf8.encode(
+          lines.take(from - 1).join() +
+              (suggestion['to_content'] as String) +
+              lines.skip(to).join(),
+        );
+        if (expected.length > 2 * 1024 * 1024) {
+          throw const Mr7Refused('observerContent');
+        }
+        allowed._effectBefore = {
+          'parent': parentPath,
+          'parentId': mr['id'],
+          'discussion': discussionPath,
+          'discussionId': a['discussionId'],
+          'noteId': a['noteId'],
+          'suggestionId': a['suggestionId'],
+          'path': filePath,
+          'ref': ref,
+          'sha': sha,
+          'expectedBytesDigest': mr7Digest(expected),
+          'positionDigest': mr7Digest(position),
+        };
+      case 'deleteBoardList':
+        if (request.method != 'DELETE' ||
+            segments.length != 6 ||
+            segments[2] != 'boards' ||
+            segments[4] != 'lists') {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        final boardPath = segments.take(4).join('/');
+        final board = await _effectMap(observer, boardPath);
+        if (board['id'] != int.tryParse(segments[3])) {
+          throw const Mr7Refused('observerParent');
+        }
+        final lists = await _effectRows(observer, '$boardPath/lists');
+        final listId = int.tryParse(segments[5]);
+        if (!lists.any((r) => r['id'] == listId)) {
+          throw const Mr7Refused('observerAbsenceTarget');
+        }
+        allowed._effectBefore = {'boardId': board['id'], 'listId': listId};
+      case 'publishDraftNotes':
+        if (request.method != 'POST' ||
+            segments.length != 6 ||
+            segments[2] != 'merge_requests' ||
+            segments[4] != 'draft_notes' ||
+            segments[5] != 'bulk_publish') {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        final parentPath = segments.take(4).join('/');
+        final mr = await parent(parentPath);
+        final drafts = await _effectRows(observer, '$parentPath/draft_notes');
+        if (drafts.isEmpty ||
+            drafts.length > 20 ||
+            drafts.any(
+              (r) =>
+                  r['author_id'] != identity!.userId ||
+                  r['merge_request_id'] != mr['id'] ||
+                  r['note'] is! String ||
+                  (r['discussion_id'] != null && r['discussion_id'] is! String),
+            )) {
+          throw const Mr7Refused('observerDrafts');
+        }
+        final notes = await _publicNotes(observer, parentPath, mr['id'] as int);
+        allowed._effectBefore = {
+          'parent': parentPath,
+          'parentId': mr['id'],
+          'drafts': drafts,
+          'notes': notes.map((r) => r['id']).toList(),
+        };
+      case 'playPipelineSchedule':
+        if (request.method != 'POST' ||
+            segments.length != 5 ||
+            segments[2] != 'pipeline_schedules' ||
+            segments[4] != 'play' ||
+            b is! Map ||
+            b.isNotEmpty) {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        final scheduleId = int.tryParse(segments[3]);
+        final schedules = await _effectRows(
+          observer,
+          '$root/pipeline_schedules',
+        );
+        final matching = schedules.where((r) => r['id'] == scheduleId).toList();
+        if (matching.length != 1 ||
+            matching.single['active'] != false ||
+            matching.single['owner'] is! Map ||
+            (matching.single['owner'] as Map)['id'] != identity!.userId ||
+            matching.single['ref'] is! String ||
+            allowed._emptySchedule?['id'] != scheduleId ||
+            allowed._emptySchedule?['path'] !=
+                '$root/pipeline_schedules/$scheduleId' ||
+            allowed._emptySchedule?['ref'] != matching.single['ref']) {
+          throw const Mr7Refused('scheduleParametersUnproven');
+        }
+        final pipelines = await _effectRows(
+          observer,
+          '$root/pipeline_schedules/$scheduleId/pipelines',
+        );
+        allowed._effectBefore = {
+          'scheduleId': scheduleId,
+          'ref': matching.single['ref'],
+          'pipelines': pipelines.map((r) => r['id']).toList(),
+        };
+      case 'cancelAutoMerge':
+        if (segments.last == 'cancel_merge_when_pipeline_succeeds') {
+          throw const Mr7Refused('observerLegacyCancel');
+        }
+        if (request.method == 'POST' &&
+            segments.length == 5 &&
+            segments[2] == 'merge_requests') {
+          final parentPath = segments.take(4).join('/');
+          final mr = await parent(parentPath);
+          allowed._effectBefore = {
+            'parent': parentPath,
+            'parentId': mr['id'],
+            'enabled':
+                mr['auto_merge_enabled'] == true ||
+                mr['merge_when_pipeline_succeeds'] == true,
+          };
+        }
+      case 'deleteProject':
+        if (request.method != 'DELETE' || path != root) {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        final actor = await read('user');
+        if (actor['id'] != identity!.userId ||
+            actor['username'] != identity!.namespace) {
+          throw const Mr7Refused('observerIdentity');
+        }
+        final inventory = await _projectEffectInventory();
+        if (!inventory.any((r) => r['id'] == identity!.projectId)) {
+          throw const Mr7Refused('observerProjectInventory');
+        }
+        allowed._effectBefore = {'projectId': identity!.projectId};
+    }
+    if (allowed._effectBefore != null) {
+      allowed._effectBefore =
+          _mr7FrozenJson(allowed._effectBefore) as Map<String, Object?>;
+      await verifyIdentity();
+      _open();
+    }
+  }
+
+  Future<List<Map<String, Object?>>> _projectEffectInventory() async {
+    _effectInventoryAllowed = true;
+    try {
+      final target = identity!;
+      final rows = await _effectRows(
+        observer,
+        'users/${target.userId}/projects',
+      );
+      for (final row in rows) {
+        final ns = row['namespace'];
+        if (ns is! Map ||
+            ns['id'] != target.namespaceId ||
+            ns['kind'] != 'user' ||
+            ns['full_path'] != target.namespace ||
+            row['path_with_namespace'] is! String ||
+            !(row['path_with_namespace'] as String).startsWith(
+              '${target.namespace}/',
+            )) {
+          throw const Mr7Refused('observerProjectInventory');
+        }
+      }
+      return rows;
+    } finally {
+      _effectInventoryAllowed = false;
+    }
+  }
+
   Future<void> beforeMutation(RequestOptions request) async {
+    if (_terminalDeleteDispatched) {
+      stop('terminalScenario');
+      throw const Mr7Refused('terminalScenario');
+    }
     _open();
     final restPath = request.uri.pathSegments
         .skipWhile((s) => s != 'v4')
@@ -5446,7 +6542,15 @@ final class Mr7SandboxSession {
       await verifyIdentity();
       _open(); // Recheck after both awaited identity reads.
       final target = identity!;
+      final suggestionArgs = permit?.preparedArguments ?? permit?.callArguments;
+      final scopedSuggestion =
+          permit?.operation == 'applySuggestion' &&
+          request.method == 'PUT' &&
+          suggestionArgs?['projectId'] == target.projectId &&
+          suggestionArgs?['suggestionId'] is int &&
+          path == 'suggestions/${suggestionArgs!['suggestionId']}/apply';
       if (!graph &&
+          !scopedSuggestion &&
           !path.startsWith('projects/${target.projectId}/') &&
           path != 'projects/${target.projectId}') {
         stop('outsideSandbox');
@@ -5538,6 +6642,7 @@ final class Mr7SandboxSession {
         if (allowed.snapshot case final snapshot?) {
           await _verifySnapshotBeforeSend(snapshot, path, graph ? b : null);
         }
+        await _prepareEffect(allowed, request);
         _requireBoundValues(
           graph && b is Map ? b['variables'] : b,
           graph: graph,

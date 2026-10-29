@@ -384,7 +384,7 @@ path and inventory path must be in `readbackPaths`. This synthetic endpoint is
 not a claim about a live GitLab API. Missing/partial/foreign observations remain
 unverified. Account-global/group paths and `markTodoDone` remain closed; the
 production acknowledgement remains ack-only and uncertain core outcomes stay
-uncertain. Secondary B3 effect witnesses remain deferred.
+uncertain. Secondary B3 effect witnesses are supplied by wave 3c below; scenario wiring remains separate.
 
 
 ## Wave 3b WorkItem observers
@@ -497,3 +497,72 @@ and [pagination](https://docs.gitlab.com/api/graphql/getting_started/#pagination
 The object reference was read in bounded extracted sections because the full
 rendered page exceeds the browser reader's size limit. This documents schema
 compatibility, not a live instance/tier acceptance result.
+
+
+## Wave 3c effect witnesses
+
+Set `Mr7Scenario.captureEffects: true` (or the same property on a direct-test
+`Mr7MutationPermit`) before preparation. The guarded transport captures the
+original effect baseline through the independent observer and records actual
+dispatch method, path, time and status. This flag grants no endpoint or write
+authority. Missing baselines refuse the witness. Existing acknowledgement-only
+probes do not opt in automatically. Supply every effect path in `readbackPaths`
+and call `observer.observe` with the sealed observation below. Actor, full
+sandbox identity, original parent IDs, boundary, shared request cap and quarantine
+fences apply. Bodies and expected bytes stay private in memory, outside receipts.
+No scenario catalogue or production capability is opened.
+
+| Witness | Required independent evidence and paths |
+|---|---|
+| `Mr7DeletedFileObservation(path:, ref:, sha:)` | Bind actual DELETE path, branch and last_commit_id to the original file at the old branch commit. Require a changed commit; check the branch before/after complete recursive-tree pagination at that exact SHA. Validate id/name/type/path/mode and exact-path absence. Allow branch and repository/tree paths. A 404 or partial tree proves nothing. |
+| `Mr7SuggestionObservation(parent:, discussionId:, noteId:, suggestionId:, path:, ref:, sha:, blobSha:, bytes:)` | Bind actual arguments to the original same-project MR source branch and exact discussion/note/suggestion before admitting global PUT suggestions/:id/apply. Read the original file at its immutable commit and derive the full expected UTF-8 result from absolute inclusive from_line/to_line and exact from_content/to_content. Check original position SHAs, applied state, unchanged position, changed branch commit, exact result bytes and computed Git blob SHA. Allow MR, discussion, branch and encoded file paths. |
+| `Mr7DeletedBoardListObservation(boardId:, listId:)` | Capture original board/list membership. Recheck the exact board around complete list pagination with unique numeric IDs and require exact list absence. Allow boards/:board and boards/:board/lists. The board-specific route establishes the parent; no board_id is invented. |
+| `Mr7PublishedDraftsObservation(parent:, drafts:)` | Capture complete original draft IDs/texts/actor/MR/optional discussion and the complete public-note baseline. Completely page both notes and discussions, require one distinct new ordinary public own note per original draft with exact text/discussion, and complete draft absence afterwards. Allow MR and its draft_notes, notes and discussions. No public draft_id field is invented. |
+| `Mr7SchedulePipelineObservation(scheduleId:, ref:, pipelineId:, maxAttempts:, interval:, timeout:)` | Require an owned inactive schedule before/after play. An existing production detail response must have explicit empty variables/inputs; only emptiness is retained. The observer never requests detail or variables/inputs. Completely page schedules and this exact schedule's pipelines before/after. Require a new unambiguous pipeline ID, source=schedule, equivalent explicit branch/short ref, and created_at strictly after dispatch within the window. Allow pipeline_schedules and pipeline_schedules/:id/pipelines. At most 20 polls, 100 ms intervals and a two-second deadline; no resend. |
+| `Mr7LegacyCancelObservation(parent:)` | Require actual current POST failure (404/405), actual deprecated POST success, and original MR identity. Refuse an ineligible fallback before send. Independently require documented merge_when_pipeline_succeeds=false; optional auto_merge_enabled cannot contradict it. Allow the original MR path. |
+| `Mr7ProjectDeletionObservation()` | Require actual scenario DELETE/202 and a complete pre-delete personal inventory containing the project. Recheck actor and complete users/:actor/projects, then numeric-ID and full-path lookups. projectDeletionState is absent only with inventory absence and both 404s, or pending with the same owned project and marked_for_deletion_on in inventory and both lookups. Declare project and inventory paths; full-path lookup is internal identity checking. The finalizer never supplies evidence. Accepted terminal deletion fences every later mutation, including during retention. |
+| `Mr7SnippetObservation(..., visibility:)` | S4 binds private/internal/public visibility to actual dispatch and independent metadata. New non-private creation additionally checks the actual dispatched UTF-8 file set/bytes. Existing exact raw bytes, file set, raw refs and updated_at checks run before/after content reads. Default-private fixtures remain compatible. |
+
+Unsupported suggestion CR/encoding/range shapes stay
+`observerUnavailable/observerSuggestionRange`, rather than guessing replacement
+bytes. Published-note matching is one-to-one correlation, not a documented
+note-to-draft provenance link. Normalized text, concurrent identical notes and
+unsupported publication shapes must remain `observerUnavailable`.
+
+Schedule evidence is bounded correlation in an isolated synthetic fixture.
+Uncontrolled concurrent manual plays cannot be distinguished by GitLab's play
+response and stay `fixtureUnavailable`/`observerUnavailable`. Active schedules
+and ambiguous tag refs are refused. The schedule docs example spells source
+`scheduled`, while the CI source reference says `schedule`; the witness requires
+the latter. Stored parameters, HMAC drift and actual retry/play behavior leave
+plan §22.3 open; no parameter-reading permission is added.
+
+S4's revision is rechecked metadata updated_at plus exact per-file raw refs and
+bytes. GitLab metadata raw_url uses the mutable repository root ref. Neither
+updated_at nor that URL proves an immutable Git commit. A scenario requiring
+commit-level snippet proof stays `observerUnavailable`; do not invent a commit
+SHA in a real-shape metadata URL.
+
+These APIs can support file-delete/suggestion branch variants, owned board-list
+deletion, whole-batch draft publication (up to 20), empty-parameter inactive
+schedule play, deprecated cancellation, terminal deletion/retention and new
+non-private snippet content. Scenario owners must wire them separately. Refusal,
+drift, stored parameters, registry, external scope and unsupported revision
+variants keep typed closed dispositions through
+`Mr7ClosedRefusal(Mr7ClosureCause.observerUnavailable, code)` or
+`Mr7ClosureCause.fixtureUnavailable` with a specific reason. Candidate receipts
+remain CANDIDATE_ONLY and finalEligible=false.
+
+### Real API shapes and primary sources
+
+Positive fixtures intersect production workspace_api.dart, write-port files,
+merge and CI preparation, and snippet_models.dart with these official contracts:
+
+- [Repository tree](https://docs.gitlab.com/api/repositories/) and [pagination](https://docs.gitlab.com/api/rest/#pagination): id/name/type/path/mode, ref/recursive and complete offset headers. The [upstream tree finder](https://gitlab.com/gitlab-org/gitlab/-/blob/09044ba45e8cdeda94409a218ac268bc41be340a/app/finders/repositories/tree_finder.rb) resolves ref to a commit before reading the tree.
+- [Repository files](https://docs.gitlab.com/api/repository_files/): file_path/encoding/content/blob_id/commit_id/last_commit_id.
+- [Discussions](https://docs.gitlab.com/api/discussions/), [notes](https://docs.gitlab.com/api/notes/) and [draft notes](https://docs.gitlab.com/api/draft_notes/): nested suggestions/position, public note id/body/author/system/internal, draft id/note/author_id/merge_request_id/discussion_id. The [Suggestion model](https://gitlab.com/gitlab-org/gitlab/-/blob/09044ba45e8cdeda94409a218ac268bc41be340a/app/models/suggestion.rb) and [range extraction](https://gitlab.com/gitlab-org/gitlab/-/blob/09044ba45e8cdeda94409a218ac268bc41be340a/lib/gitlab/diff/file.rb) define absolute one-based inclusive lines.
+- [Board lists](https://docs.gitlab.com/api/boards/#list-all-board-lists-in-an-issue-board): numeric id under the board-specific collection, excluding built-in open/closed lists.
+- [Schedules](https://docs.gitlab.com/api/pipeline_schedules/), [pipelines](https://docs.gitlab.com/api/pipelines/) and [CI source](https://docs.gitlab.com/ci/jobs/job_rules/#ci_pipeline_source-predefined-variable): schedule id/ref/owner/active; pipeline id/project_id/ref/source/created_at. Play returns a message, not a pipeline selector.
+- [Merge requests](https://docs.gitlab.com/api/merge_requests/#cancel-merge-when-pipeline-succeeds-deprecated): endpoint responses and independent id/iid/project_id/merge_when_pipeline_succeeds.
+- [Projects and personal inventory](https://docs.gitlab.com/api/projects/#list-all-personal-projects-for-a-user): namespace id/kind/full_path, path_with_namespace, owner, visibility and marked_for_deletion_on. Private-profile/inaccessible-resource ambiguity means no isolated 404 establishes deletion.
+- [Project snippets](https://docs.gitlab.com/api/project_snippets/) and [snippets](https://docs.gitlab.com/api/snippets/): visibility/files/raw routes. The project-GET table omits fields confirmed by its [upstream entity](https://gitlab.com/gitlab-org/gitlab/-/blob/09044ba45e8cdeda94409a218ac268bc41be340a/lib/api/entities/snippet.rb), [inherited fields](https://gitlab.com/gitlab-org/gitlab/-/blob/09044ba45e8cdeda94409a218ac268bc41be340a/lib/api/entities/basic_snippet.rb) and [request test](https://gitlab.com/gitlab-org/gitlab/-/blob/09044ba45e8cdeda94409a218ac268bc41be340a/spec/requests/api/project_snippets_spec.rb).
