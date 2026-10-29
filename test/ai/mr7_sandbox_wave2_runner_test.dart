@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
+import 'package:gitlab_mobile/core/ai/prompts.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
@@ -1040,6 +1041,133 @@ void main() {
     },
   );
 
+  for (final sharedConversation in [false, true]) {
+    test(
+      sharedConversation
+          ? 'upload placeholders restore across scenarios sharing a conversation'
+          : 'upload placeholders cannot cross different scenario conversations',
+      () async {
+        const secret = '0123456789abcdef0123456789abcdef';
+        const link = '![shot](/uploads/$secret/screen.png)';
+        var description = 'Original $link';
+        final server = Mr7SyntheticGitLab();
+        Map<String, Object?> issue() => {
+          'id': 300,
+          'iid': 3,
+          'project_id': 909,
+          'title': 'Synthetic issue',
+          'description': description,
+          'confidential': false,
+          'state': 'opened',
+          'updated_at': '2026-10-29T00:00:00.000Z',
+        };
+        server.routes['GET projects/909/issues/3'] = (_) => mr7Json(issue());
+        server.routes['GET projects/909/issues/3/notes'] = (_) => mr7Json([]);
+        server.routes['PUT projects/909/issues/3'] = (request) {
+          description = (request.data as Map)['description'] as String;
+          server.scenarioWrites++;
+          server.addEvent(target: 909);
+          return mr7Json(issue());
+        };
+        final requests = <Map<String, Object?>>[];
+        Mr7Scenario edit(String id, {required bool readFirst}) {
+          AiToolCall call(Mr7Identity p) => AiToolCall(
+            id: id,
+            name: 'updateIssue',
+            arguments: {
+              'projectId': p.projectId,
+              'iid': 3,
+              'fields': {'description': '$id ![shot]([[upload:u-1]])'},
+              'reason': 'User requested a description edit.',
+            },
+          );
+          return Mr7Scenario(
+            id: id,
+            suite: 'rest',
+            operation: 'updateIssue',
+            variant: 'conversation-placeholder',
+            tier: 'T2',
+            targetKind: AiTargetKind.issue,
+            readNames: readFirst ? const {'get_issue'} : const {},
+            resource: (_) =>
+                const AiResourceRef(kind: AiResourceKind.issue, id: 3),
+            utterance: (p) => 'Update issue #3 description in ${p.path}.',
+            call: call,
+            paths: (p) => {'PUT projects/${p.projectId}/issues/3'},
+            readbackPaths: (p, _) => {'projects/${p.projectId}/issues/3'},
+            observe: (observer, p) async =>
+                (await observer.read(
+                  'projects/${p.projectId}/issues/3',
+                ))['description'] ==
+                '$id $link',
+            freshness: (session, _) async => AiWriteFreshness(
+              visibilityUnreadable: false,
+              sourceVisibilityUnreadable: false,
+              targetVisibility: 'private',
+              currentFields: {'description': description},
+              provenance: {
+                'description': text.AiFieldProvenance.gitLab(
+                  instance: GitLabInstance.parse(session.instance.toString()),
+                  projectId: session.identity!.projectId,
+                  projectPath: session.identity!.path,
+                  resource: 'issues',
+                  iid: 3,
+                ),
+              },
+            ),
+            fixture: (_, identity) async => Mr7ScenarioFixtures(
+              providerScript: [
+                if (readFirst)
+                  [
+                    AiToolCall(
+                      id: 'read',
+                      name: 'get_issue',
+                      arguments: {'iid': 3},
+                    ),
+                  ],
+                [call(identity)],
+              ],
+              onProviderRequest: requests.add,
+            ),
+          );
+        }
+
+        final receipt = await runMr7Sandbox(
+          policy: Mr7Policy.candidate,
+          releaseSha: _sha,
+          session: _session(server),
+          scenarios: [
+            edit('first', readFirst: true),
+            edit('second', readFirst: false),
+          ],
+          conversationId: sharedConversation ? 'shared-placeholder' : null,
+          confirm: (_) async => true,
+        );
+        final rows = _rows(receipt);
+        expect(rows.first['status'], 'PASS', reason: jsonEncode(receipt));
+        expect(rows.first['mutationCount'], 1);
+        expect(jsonEncode(requests), contains('[[upload:u-1]]'));
+        expect(jsonEncode(requests), isNot(contains(secret)));
+        if (sharedConversation) {
+          expect(rows.last['status'], 'PASS', reason: jsonEncode(receipt));
+          expect(rows.last['mutationCount'], 1);
+          expect(server.scenarioWrites, 2);
+          expect(description, 'second $link');
+        } else {
+          expect(
+            rows.last['coreOutcome'],
+            'notExecuted',
+            reason: jsonEncode(receipt),
+          );
+          expect(rows.last['reason'], text.AiTextBlockCode.rereadField);
+          expect(rows.last['mutationCount'], 0);
+          expect(server.scenarioWrites, 1);
+          expect(description, 'first $link');
+        }
+      },
+    );
+  }
+
   test(
     'provider rejects attachment bytes before accepting a request',
     () async {
@@ -1249,6 +1377,13 @@ void main() {
     expect(row['readback'], 'NOT_RUN');
     expect(row['mutationCount'], 0);
     expect(row['providerCalls'], 0);
+    expect(row['suite'], 'advanced');
+    expect(row['operation'], 'deletePackage');
+    expect(row['variant'], 'fixture');
+    expect(row['tier'], 'T4');
+    expect(row['releaseSha'], receipt['releaseSha']);
+    expect(row['live'], 'NOT_RUN');
+    expect(row['reason'], 'runCreatedPackageUnavailable');
     expect(row['refusal'], {
       'type': 'closedVariant',
       'cause': 'fixtureUnavailable',
@@ -1323,6 +1458,7 @@ void main() {
       expect(_rows(first).single['status'], 'PASS', reason: jsonEncode(first));
 
       final restarted = journal('second-process');
+      await restarted.recoverAfterAccountsLoaded([account]);
       final secondServer = Mr7SyntheticGitLab();
       final second = await runMr7Sandbox(
         policy: Mr7Policy.candidate,
@@ -1364,6 +1500,296 @@ void main() {
         confirm: (_) async => true,
       );
       expect(afterServer.scenarioWrites, 1, reason: jsonEncode(after));
+    },
+  );
+
+  test(
+    'injected journal preserves another account and uncertain entry',
+    () async {
+      final scratch = await Directory.systemTemp.createTemp(
+        'mr7-shared-accounts-',
+      );
+      addTearDown(() => scratch.delete(recursive: true));
+      final keys = MemoryAiJournalKeyStore();
+      const accountA = 'https://gitlab.invalid/install#7';
+      const accountB = 'https://gitlab.invalid/install#8';
+      AiWriteJournal makeJournal(String process) => AiWriteJournal(
+        keys: keys,
+        applicationSupport: scratch,
+        processId: process,
+      );
+      final original = makeJournal('original');
+      await original.recoverAfterAccountsLoaded([accountA, accountB]);
+      await original.ensureInitialized(accountA);
+      await original.ensureInitialized(accountB);
+      final draft = AiJournalDraft(
+        executionId: 'uncertain-b',
+        accountKey: accountB,
+        conversationId: 'b',
+        runId: 'b-run',
+        operationId: 'setStar',
+        writeKeys: {
+          AiConflictKey([accountB, 'project:909']),
+        },
+        payloadSha256: 'a' * 64,
+        releaseName: 'synthetic',
+        instance: 'https://gitlab.invalid/install',
+        confirmed: true,
+      );
+      await original.prepare(draft: draft);
+      await original.markDispatching(executionId: draft.executionId);
+      await original.finish(
+        executionId: draft.executionId,
+        terminal: AiJournalState.writeUncertain,
+      );
+      final files = AiJournalFiles(scratch);
+      final beforeFile = await File(files.pathFor(accountB)).readAsBytes();
+      final beforeKey = Uint8List.fromList(keys.keys[accountB]!);
+      final restarted = makeJournal('restarted');
+      await restarted.recoverAfterAccountsLoaded([accountA, accountB]);
+      final receipt = await runMr7Sandbox(
+        policy: Mr7Policy.candidate,
+        releaseSha: _sha,
+        session: _session(Mr7SyntheticGitLab()),
+        scenarios: [_star('account-a')],
+        journal: restarted,
+        confirm: (_) async => true,
+      );
+      expect(
+        _rows(receipt).single['status'],
+        'PASS',
+        reason: jsonEncode(receipt),
+      );
+      expect(await File(files.pathFor(accountB)).readAsBytes(), beforeFile);
+      expect(keys.keys[accountB], beforeKey);
+      final reader = makeJournal('reader');
+      await reader.recoverAfterAccountsLoaded([accountA, accountB]);
+      expect(
+        reader.entries(accountB).single.state,
+        AiJournalState.writeUncertain,
+      );
+    },
+  );
+
+  test(
+    'shared budget cannot exceed product limits including searches',
+    () async {
+      final product = AiToolBudget();
+      Future<Map<String, Object?>> run(AiToolBudget budget) => runMr7Sandbox(
+        releaseSha: _sha,
+        scenarios: [],
+        sharedBudget: budget,
+        session: _session(Mr7SyntheticGitLab()),
+        confirm: (_) async => true,
+      );
+      final dimensions =
+          <String, ({int limit, AiToolBudget Function(int) create})>{
+            'maxCallsPerTurn': (
+              limit: product.maxCallsPerTurn,
+              create: (limit) => AiToolBudget(maxCallsPerTurn: limit),
+            ),
+            'maxCallsPerRun': (
+              limit: product.maxCallsPerRun,
+              create: (limit) => AiToolBudget(maxCallsPerRun: limit),
+            ),
+            'maxOutputChars': (
+              limit: product.maxOutputChars,
+              create: (limit) => AiToolBudget(maxOutputChars: limit),
+            ),
+            'maxSingleOutputChars': (
+              limit: product.maxSingleOutputChars,
+              create: (limit) => AiToolBudget(maxSingleOutputChars: limit),
+            ),
+            'maxGitLabRequests': (
+              limit: product.maxGitLabRequests,
+              create: (limit) => AiToolBudget(maxGitLabRequests: limit),
+            ),
+            'maxSearches': (
+              limit: product.maxSearches,
+              create: (limit) => AiToolBudget(maxSearches: limit),
+            ),
+          };
+      for (final entry in dimensions.entries) {
+        final dimension = entry.value;
+        await expectLater(
+          run(dimension.create(dimension.limit + 1)),
+          throwsA(
+            isA<Mr7Refused>().having((e) => e.code, 'code', 'scenarioBound'),
+          ),
+          reason: entry.key,
+        );
+        for (final limit in [dimension.limit, dimension.limit - 1]) {
+          final receipt = await run(dimension.create(limit));
+          expect(_rows(receipt), isEmpty, reason: '${entry.key}=$limit');
+        }
+      }
+    },
+  );
+
+  test(
+    'provider rejects metadata block repeated outside the user projection',
+    () async {
+      const raw = 'distinctive-attachment-content';
+      final bytes = Uint8List.fromList(utf8.encode(raw));
+      final attachments = AiAttachmentSession(
+        accountKey: 'synthetic',
+        conversationId: 'leak',
+        fileCapBytes: 1024,
+      );
+      final stored = await attachments.reserveAndRead(
+        picker: const _MemoryPicker(),
+        uploadToolInSegment: true,
+        intake: AiAttachmentIntake(
+          filename: '$raw.txt',
+          length: bytes.length,
+          mediaType: 'text/plain',
+          open: () => Stream.value(bytes),
+        ),
+      );
+      expect(stored.status, AiAttachStatus.stored);
+      final block = attachments.metadataForModel()['block']! as String;
+      for (final sameUser in [false, true]) {
+        final provider = Mr7SyntheticProvider(
+          AiToolCall(id: 'x', name: 'get_issue', arguments: const {}),
+          attachments: [attachments.lookup('att-1')!],
+          allowedMetadata: block,
+        );
+        final input = [
+          {
+            'role': 'user',
+            'content': [
+              {
+                'type': 'input_text',
+                'text': sameUser ? '$block\n\n$block' : 'Upload.\n\n$block',
+              },
+            ],
+          },
+          if (!sameUser) {'role': 'assistant', 'content': block},
+        ];
+        await expectLater(
+          provider.fetch(
+            RequestOptions(
+              path: 'https://provider.invalid/v1/responses',
+              method: 'POST',
+              data: jsonEncode({'input': input}),
+            ),
+            null,
+            null,
+          ),
+          throwsA(isA<Mr7Refused>()),
+        );
+        expect(provider.attachmentLeakDetected, isTrue);
+        expect(provider.requests, 0);
+      }
+      attachments.discardAll();
+    },
+  );
+
+  test(
+    'short attachment text matching metadata uploads without leak refusal',
+    () async {
+      for (final raw in ['a', 'e', 'fixture']) {
+        final bytes = Uint8List.fromList(utf8.encode(raw));
+        final digest = sha256.convert(bytes).toString();
+        final bodies = <Map<String, Object?>>[];
+        var expectedUtterance = '';
+        final server = Mr7SyntheticGitLab();
+        server.routes['POST projects/909/uploads'] = (_) {
+          server.scenarioWrites++;
+          server.addEvent(target: 909);
+          return mr7Json({
+            'alt': 'fixture.txt',
+            'url': '/uploads/0123456789abcdef0123456789abcdef/fixture.txt',
+            'markdown':
+                '[fixture.txt](/uploads/0123456789abcdef0123456789abcdef/fixture.txt)',
+          }, status: 201);
+        };
+        final scenario = Mr7Scenario(
+          id: 'short-upload',
+          suite: 'rest',
+          operation: 'upload_attachment',
+          variant: 'metadata-only',
+          tier: 'T2',
+          fixture: (session, identity) async {
+            expectedUtterance =
+                'Upload the synthetic file to project ${identity.path}.';
+            final attachments = AiAttachmentSession(
+              accountKey: '${session.instance}#${session.expectedUserId}',
+              conversationId: 'short-upload',
+              fileCapBytes: 1024,
+            );
+            final stored = await attachments.reserveAndRead(
+              picker: const _MemoryPicker(),
+              uploadToolInSegment: true,
+              intake: AiAttachmentIntake(
+                filename: 'fixture.txt',
+                length: bytes.length,
+                mediaType: 'text/plain',
+                open: () => Stream.value(bytes),
+              ),
+            );
+            expect(stored.status, AiAttachStatus.stored);
+            return Mr7ScenarioFixtures(
+              attachments: attachments,
+              onProviderRequest: bodies.add,
+            );
+          },
+          utterance: (p) => 'Upload the synthetic file to project ${p.path}.',
+          call: (p) => AiToolCall(
+            id: 'short-upload',
+            name: 'upload_attachment',
+            arguments: {
+              'projectId': p.projectId,
+              'attachmentId': 'att-1',
+              'reason': 'User requested the synthetic file upload.',
+            },
+          ),
+          paths: (p) => {'POST projects/${p.projectId}/uploads'},
+          readbackPaths: (p, _) => {
+            'projects/${p.projectId}/uploads/mr7-observation',
+          },
+          observe: (observer, _) => observer.observe(
+            Mr7UploadObservation(byteCount: bytes.length, sha256: digest),
+          ),
+        );
+        final receipt = await runMr7Sandbox(
+          policy: Mr7Policy.candidate,
+          releaseSha: _sha,
+          session: _session(server),
+          scenarios: [scenario],
+          confirm: (_) async => true,
+        );
+        expect(
+          _rows(receipt).single['status'],
+          'PASS',
+          reason: jsonEncode(receipt),
+        );
+        expect(jsonEncode(receipt), isNot(contains('providerAttachmentBytes')));
+        expect(server.scenarioWrites, 1);
+        expect(bodies, isNotEmpty);
+        final input = bodies.first['input']! as List;
+        final user = input.first as Map;
+        expect(user['role'], 'user');
+        final content = (user['content']! as List).single as Map;
+        expect(content['type'], 'input_text');
+        final message = content['text']! as String;
+        final nonce = RegExp(
+          r'<gitlab_data source="attachment_metadata" nonce="([0-9a-f]{32})">',
+        ).firstMatch(message)!.group(1)!;
+        final expectedBlock = wrapUntrustedGitLabData(
+          source: 'attachment_metadata',
+          nonce: nonce,
+          text: jsonEncode([
+            {
+              'id': 'att-1',
+              'filename': 'fixture.txt',
+              'size': raw.length,
+              'mediaType': 'text/plain',
+            },
+          ]),
+        );
+        expect(message, '$expectedUtterance\n\n$expectedBlock');
+      }
     },
   );
 }

@@ -486,9 +486,10 @@ void main() {
     );
     expect(sends, 1);
     expect(session.quarantined, false);
+    expect(server.scenarioWrites, 0);
     await session.finish();
-    // The synthetic server counts every POST to /api/graphql as a scenario
-    // write. A session that was not quarantined deletes its own sandbox once.
+    // This read's custom route returns before the generic POST write counter.
+    // The admitted, unquarantined session deletes its own sandbox once.
     expect(server.cleanupWrites, 1);
   });
 

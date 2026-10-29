@@ -683,6 +683,7 @@ bool _graphSnapshotTargets(
 ) {
   final operation = _selectedGraphOperation(body);
   if (operation?.kind != 'mutation' ||
+      operation!.roots.length != 1 ||
       body is! Map ||
       body['variables'] is! Map) {
     return false;
@@ -696,18 +697,30 @@ bool _graphSnapshotTargets(
       .map((entry) => entry.key)
       .toSet();
   if (gids.isEmpty) return false;
-  bool contains(Object? value) {
-    if (value is String) return gids.contains(value);
-    if (value is List) return value.any(contains);
-    if (value is Map) return value.values.any(contains);
-    return false;
-  }
-
   try {
-    return operation!.roots.any(
-      (root) =>
-          contains(operation.resolve(root.arguments, body['variables'] as Map)),
+    final root = operation.roots.single;
+    // These selectors match the product mutation documents. Ordinary text and
+    // other arguments cannot establish which resource the mutation changes.
+    final selector = switch (root.field) {
+      'workItemUpdate' ||
+      'workItemSubscribe' ||
+      'updateNote' ||
+      'destroyNote' ||
+      'todoSnooze' ||
+      'todoUnSnooze' => 'id',
+      'createNote' => 'noteableId',
+      'awardEmojiAdd' || 'awardEmojiRemove' => 'awardableId',
+      _ => null,
+    };
+    if (selector == null) return false;
+    final arguments = operation.resolve(
+      root.arguments,
+      body['variables'] as Map,
     );
+    final input = (arguments as Map)['input'];
+    return input is Map &&
+        input[selector] is String &&
+        gids.contains(input[selector]);
   } catch (_) {
     return false;
   }
@@ -1223,13 +1236,22 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
     session.pendingMutations++;
     bool dispatched = false;
     try {
+      final preparedPermit = session.permit;
       await session.beforeMutation(options);
       session.inFlight = true;
-      final upload = session.permit?.operation == 'upload_attachment'
+      final upload = preparedPermit?.operation == 'upload_attachment'
           ? await _uploadMetadata(options, requestStream)
           : null;
+      session._open();
       if (!session._setupAuthorized && !session._cleanupAuthorized) {
-        final permit = session.permit!;
+        final permit = session.permit;
+        if (permit == null ||
+            !identical(permit, preparedPermit) ||
+            !permit.confirmed ||
+            permit.sent >= permit.maxMutations) {
+          session.stop('unconfirmedOrUnboundWrite');
+          throw const Mr7Refused('unconfirmedOrUnboundWrite');
+        }
         permit.sent++;
         permit._sentPath =
             options.uri.path == '${session.instance.path}/api/graphql'

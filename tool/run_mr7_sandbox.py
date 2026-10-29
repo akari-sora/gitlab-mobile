@@ -135,15 +135,21 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
             if (row.get('classification') != 'closedVariant' or
                     not isinstance(row.get('id'), str) or
                     not IDENTIFIER.fullmatch(row['id']) or ids[row['id']] != 1 or
+                    any(not isinstance(row.get(field), str) or not row[field].strip()
+                        for field in ('suite', 'operation', 'variant', 'tier')) or
+                    row.get('releaseSha') != receipt['releaseSha'] or
+                    row.get('live') != 'NOT_RUN' or
                     row.get('status') != 'NOT_RUN' or row.get('readback') != 'NOT_RUN' or
                     type(row.get('mutationCount')) is not int or row['mutationCount'] != 0 or
                     type(row.get('providerCalls')) is not int or row['providerCalls'] != 0 or
+                    'responseStatus' in row or row.get('coreOutcome') == 'succeeded' or
                     not isinstance(refusal, dict) or set(refusal) != {'type', 'cause', 'code'} or
                     refusal.get('type') != 'closedVariant' or
                     not isinstance(refusal.get('cause'), str) or
                     refusal['cause'] not in CLOSED_VARIANT_CAUSES or
                     not isinstance(refusal.get('code'), str) or
                     not CLOSED_VARIANT_CODE.fullmatch(refusal['code']) or
+                    row.get('reason') != refusal['code'] or
                     ('observerRequests' in row and
                      (type(row['observerRequests']) is not int or row['observerRequests'] != 0)) or
                     ('provider' in row and

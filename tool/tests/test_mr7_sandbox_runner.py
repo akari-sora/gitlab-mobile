@@ -226,6 +226,8 @@ class SandboxWrapperTest(unittest.TestCase):
 
     def test_closed_variant_requires_typed_refusal_and_zero_execution(self):
         row = {'id': 'case-1', 'classification': 'closedVariant', 'status': 'NOT_RUN',
+               'suite': 'rest', 'operation': 'upload_attachment', 'variant': 'missing',
+               'tier': 'T2', 'releaseSha': SHA, 'live': 'NOT_RUN', 'reason': 'fixtureMissing',
                'mutationCount': 0, 'readback': 'NOT_RUN', 'providerCalls': 0,
                'refusal': {'type': 'closedVariant', 'cause': 'fixtureUnavailable',
                            'code': 'fixtureMissing'}}
@@ -239,6 +241,10 @@ class SandboxWrapperTest(unittest.TestCase):
                 {'status': 'PASS'}, {'mutationCount': 1}, {'mutationCount': False},
                 {'readback': 'PASS'}, {'providerCalls': 1}, {'providerCalls': False},
                 {'observerRequests': 1}, {'provider': {'calls': 1}},
+                {'suite': ''}, {'operation': ' '}, {'variant': None}, {'tier': []},
+                {'releaseSha': 'b' * 40}, {'live': 'PASS'}, {'reason': 'other'},
+                {'responseStatus': 201}, {'responseStatus': None},
+                {'coreOutcome': 'succeeded'},
                 {'refusal': None}, {'refusal': 'fixtureMissing'},
                 {'refusal': {'type': 'closedVariant', 'cause': 'unknown', 'code': 'fixtureMissing'}},
                 {'refusal': {'type': 'closedVariant', 'cause': ['fixtureUnavailable'], 'code': 'fixtureMissing'}},
@@ -249,7 +255,9 @@ class SandboxWrapperTest(unittest.TestCase):
         ):
             with self.subTest(change=change):
                 self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[{**row, **change}])))
-        for field in ('id', 'classification', 'status', 'mutationCount', 'readback', 'providerCalls', 'refusal'):
+        for field in ('id', 'suite', 'operation', 'variant', 'tier', 'releaseSha', 'live',
+                      'reason', 'classification', 'status', 'mutationCount', 'readback',
+                      'providerCalls', 'refusal'):
             with self.subTest(missing=field):
                 incomplete = {key: value for key, value in row.items() if key != field}
                 self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[incomplete])))
@@ -262,6 +270,8 @@ class SandboxWrapperTest(unittest.TestCase):
     def test_forged_closed_variant_child_receipt_quarantines(self):
         forged = receipt('candidate', scenarios=[{
             'id': 'case-1', 'classification': 'closedVariant', 'status': 'NOT_RUN',
+            'suite': 'rest', 'operation': 'upload_attachment', 'variant': 'missing',
+            'tier': 'T2', 'releaseSha': SHA, 'live': 'NOT_RUN', 'reason': 'closed',
             'mutationCount': 1, 'readback': 'NOT_RUN', 'providerCalls': 0,
             'refusal': {'type': 'closedVariant', 'cause': 'scopeExcluded', 'code': 'closed'},
         }])

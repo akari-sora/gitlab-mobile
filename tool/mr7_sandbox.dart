@@ -236,6 +236,7 @@ final class Mr7SyntheticProvider implements HttpClientAdapter {
     this.call, {
     List<List<AiToolCall>>? script,
     this.onRequest,
+    this.allowedMetadata,
     Iterable<AiStoredAttachment> attachments = const [],
   }) : script = List.unmodifiable([
          for (final batch
@@ -258,6 +259,7 @@ final class Mr7SyntheticProvider implements HttpClientAdapter {
   final List<List<AiToolCall>> script;
   final List<AiStoredAttachment> attachments;
   final void Function(Map<String, Object?> request)? onRequest;
+  final String? allowedMetadata;
   int requests = 0;
   bool leakDetected = false;
   bool attachmentLeakDetected = false;
@@ -280,31 +282,72 @@ final class Mr7SyntheticProvider implements HttpClientAdapter {
       leakDetected = true;
       throw const Mr7Refused('providerSecretLeak');
     }
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, Object?>) {
+      throw const Mr7Refused('providerRequest');
+    }
+    // The sole exemption is the host-appended suffix in the first Responses
+    // user input. Other appearances, including repeated blocks, remain scanned.
+    Object? scanBody = decoded;
+    if (allowedMetadata != null) {
+      final copy = jsonDecode(body) as Map<String, Object?>;
+      final input = copy['input'];
+      if (input is List && input.isNotEmpty && input.first is Map) {
+        final user = input.first as Map;
+        final content = user['content'];
+        if (user['role'] == 'user' &&
+            content is List &&
+            content.length == 1 &&
+            content.single is Map) {
+          final part = content.single as Map;
+          final text = part['text'];
+          final suffix = '\n\n$allowedMetadata';
+          if (part['type'] == 'input_text' &&
+              text is String &&
+              text.endsWith(suffix)) {
+            part['text'] = text.substring(0, text.length - suffix.length);
+          }
+        }
+      }
+      scanBody = copy;
+    }
     for (final attachment in attachments) {
       final bytes = attachment.bytes;
+      if (bytes.isEmpty) continue;
       final encoded = base64Encode(bytes);
+      final array = jsonEncode(bytes);
       String? plain;
       try {
         plain = utf8.decode(bytes);
       } on FormatException {
         /* Binary bytes have no text projection. */
       }
-      if (bytes.isNotEmpty &&
-          (body.contains(jsonEncode(bytes)) ||
-              body.contains(encoded) ||
-              (plain != null &&
-                  body.contains(
-                    jsonEncode(
-                      plain,
-                    ).substring(1, jsonEncode(plain).length - 1),
-                  )))) {
+      bool leaks(Object? value) {
+        if (value is String) {
+          final text = value;
+          bool matches(String needle) =>
+              text == needle || (needle.length >= 8 && text.contains(needle));
+          return matches(encoded) ||
+              text.contains(array) ||
+              (plain != null && matches(plain));
+        }
+        if (value is List) {
+          if (value.length == bytes.length &&
+              Iterable<int>.generate(
+                bytes.length,
+              ).every((i) => value[i] == bytes[i])) {
+            return true;
+          }
+          return value.any(leaks);
+        }
+        if (value is Map) return value.values.any(leaks);
+        return false;
+      }
+
+      if (leaks(scanBody)) {
         attachmentLeakDetected = true;
         throw const Mr7Refused('providerAttachmentBytes');
       }
-    }
-    final decoded = jsonDecode(body);
-    if (decoded is! Map<String, Object?>) {
-      throw const Mr7Refused('providerRequest');
     }
     onRequest?.call(Map.unmodifiable(decoded));
     final index = requests++;
@@ -396,6 +439,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
   if (ids.toSet().length != ids.length) {
     throw const Mr7Refused('duplicateScenario');
   }
+  final productBudget = AiToolBudget();
   if (cases.any(
         (s) =>
             !s.allowedTargetKinds.contains(s.targetKind) ||
@@ -408,11 +452,19 @@ Future<Map<String, Object?>> runMr7Sandbox({
           !RegExp(r'^[A-Za-z0-9_.-]{1,128}$').hasMatch(conversationId)) ||
       (sharedBudget != null &&
           (sharedBudget.maxGitLabRequests < 1 ||
-              sharedBudget.maxGitLabRequests > 40 ||
+              sharedBudget.maxGitLabRequests >
+                  productBudget.maxGitLabRequests ||
               sharedBudget.maxCallsPerRun < 1 ||
-              sharedBudget.maxCallsPerRun > 12 ||
+              sharedBudget.maxCallsPerRun > productBudget.maxCallsPerRun ||
               sharedBudget.maxCallsPerTurn < 1 ||
-              sharedBudget.maxCallsPerTurn > 4))) {
+              sharedBudget.maxCallsPerTurn > productBudget.maxCallsPerTurn ||
+              sharedBudget.maxSearches < 0 ||
+              sharedBudget.maxSearches > productBudget.maxSearches ||
+              sharedBudget.maxOutputChars < 0 ||
+              sharedBudget.maxOutputChars > productBudget.maxOutputChars ||
+              sharedBudget.maxSingleOutputChars < 0 ||
+              sharedBudget.maxSingleOutputChars >
+                  productBudget.maxSingleOutputChars))) {
     throw const Mr7Refused('scenarioBound');
   }
   final view = mr7SandboxPolicy(
@@ -474,12 +526,14 @@ Future<Map<String, Object?>> runMr7Sandbox({
       );
   if (now != null) journalStore.now = now;
   final attachmentSessions = <AiAttachmentSession>{};
-  final placeholders = UploadPlaceholderTable(
-    instance: GitLabInstance.parse(s.instance.toString()),
-  );
+  final placeholderTables = <String, UploadPlaceholderTable>{};
   try {
     await s.initialize();
-    await journalStore.recoverAfterAccountsLoaded([account]);
+    if (journal == null) {
+      await journalStore.recoverAfterAccountsLoaded([account]);
+    } else if (!journalStore.recovered(account)) {
+      throw const Mr7Refused('journalRecoveryRequired');
+    }
     final keyStatus = await journalStore.keyStatus(account);
     if (keyStatus == AiJournalKeyStatus.uninitialized) {
       await journalStore.ensureInitialized(account);
@@ -540,6 +594,15 @@ Future<Map<String, Object?>> runMr7Sandbox({
         continue;
       }
       final target = s.identity!;
+      final scenarioConversationId = conversationId ?? scenario.id;
+      final placeholders = placeholderTables.putIfAbsent(
+        scenarioConversationId,
+        () => UploadPlaceholderTable(
+          instance: GitLabInstance.parse(s.instance.toString()),
+          accountKey: account,
+          conversationId: scenarioConversationId,
+        ),
+      );
       final fixtures =
           await scenario.fixture?.call(s, target) ??
           const Mr7ScenarioFixtures();
@@ -550,7 +613,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
       if (attachments != null) {
         attachmentSessions.add(attachments);
         if (attachments.accountKey != account ||
-            attachments.conversationId != (conversationId ?? scenario.id) ||
+            attachments.conversationId != scenarioConversationId ||
             attachments.fileCapBytes > GitLabApi.maxUploadBytes) {
           throw const Mr7Refused('attachmentSessionIdentity');
         }
@@ -610,11 +673,13 @@ Future<Map<String, Object?>> runMr7Sandbox({
                   ))) {
         throw const Mr7Refused('providerScriptOperation');
       }
+      final metadata = attachments?.metadataForModel()['block'];
       final provider = Mr7SyntheticProvider(
         call,
         script: script,
         onRequest: fixtures.onProviderRequest,
         attachments: attachments?.items ?? const [],
+        allowedMetadata: metadata is String ? metadata : null,
       );
       final transport = AiTransport(
         endpoint: AiEndpoint.parse(_provider.baseUrl, allowLanCleartext: false),
@@ -660,7 +725,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
           isCurrent: () => !s.quarantined && s.boundaryValid(),
         ),
         journal: journalStore,
-        conversationId: conversationId ?? scenario.id,
+        conversationId: scenarioConversationId,
         budget: () => budget,
         readFreshness: (request) async {
           await s.verifyIdentity();
@@ -841,7 +906,6 @@ Future<Map<String, Object?>> runMr7Sandbox({
         final utterance =
             scenario.utterance?.call(target) ??
             'Perform ${scenario.operation} on the synthetic project ${target.path}.';
-        final metadata = attachments?.metadataForModel()['block'];
         final result = await runner.run(
           metadata is String ? '$utterance\n\n$metadata' : utterance,
           bindingUtterance: utterance,

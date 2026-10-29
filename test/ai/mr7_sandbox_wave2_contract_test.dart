@@ -157,96 +157,136 @@ void main() {
     },
   );
 
-  test(
-    'GraphQL snapshot requires the bound target in mutation arguments',
-    () async {
-      const first = 'gid://gitlab/WorkItem/300';
-      const second = 'gid://gitlab/WorkItem/400';
-      const doc =
-          r'mutation Edit($id: ID!, $unused: ID!) { workItemUpdate(input: {id: $id}) { workItem { id } } }';
-      for (final mode in ['bound', 'different', 'unused']) {
-        final server = Mr7SyntheticGitLab();
-        final session = _session(server);
-        await session.initialize();
-        server.routes['GET projects/909/issues/3'] = (_) => mr7Json({
-          'id': 300,
-          'iid': 3,
-          'project_id': 909,
-          'description': 'preserved',
-        });
-        server.routes['GET projects/909/issues/4'] = (_) => mr7Json({
-          'id': 400,
-          'iid': 4,
-          'project_id': 909,
-          'description': 'other',
-        });
-        await session.bindWorkItemGraphResource(
-          first,
+  test('GraphQL snapshot binds only the supported mutation target selector', () async {
+    const first = 'gid://gitlab/WorkItem/300';
+    const second = 'gid://gitlab/WorkItem/400';
+    for (final mode in [
+      'bound',
+      'boundInput',
+      'different',
+      'unused',
+      'title',
+      'body',
+      'descriptionInput',
+      'argument',
+      'multiple',
+      'unsupported',
+      'list',
+    ]) {
+      final doc = switch (mode) {
+        'boundInput' || 'descriptionInput' =>
+          r'mutation Edit($input: WorkItemUpdateInput!) { workItemUpdate(input: $input) { workItem { id } } }',
+        'title' =>
+          r'mutation Edit($id: ID!, $unused: String!) { workItemUpdate(input: {id: $id, title: $unused}) { workItem { id } } }',
+        'body' =>
+          r'mutation Edit($id: ID!, $unused: String!) { workItemUpdate(input: {id: $id, descriptionWidget: {description: $unused}}) { workItem { id } } }',
+        'argument' =>
+          r'mutation Edit($id: ID!, $unused: String!) { workItemUpdate(input: {id: $id}, context: $unused) { workItem { id } } }',
+        'multiple' =>
+          r'mutation Edit($id: ID!, $unused: ID!) { a: workItemUpdate(input: {id: $id}) { workItem { id } } b: workItemUpdate(input: {id: $unused}) { workItem { id } } }',
+        'unsupported' =>
+          r'mutation Edit($id: ID!, $unused: String!) { unknownUpdate(input: {id: $id, title: $unused}) { workItem { id } } }',
+        'list' =>
+          r'mutation Edit($id: ID!, $unused: ID!) { workItemUpdate(input: {id: [$id, $unused]}) { workItem { id } } }',
+        _ =>
+          r'mutation Edit($id: ID!, $unused: ID!) { workItemUpdate(input: {id: $id}) { workItem { id } } }',
+      };
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      server.routes['GET projects/909/issues/3'] = (_) => mr7Json({
+        'id': 300,
+        'iid': 3,
+        'project_id': 909,
+        'description': 'preserved',
+      });
+      server.routes['GET projects/909/issues/4'] = (_) => mr7Json({
+        'id': 400,
+        'iid': 4,
+        'project_id': 909,
+        'description': 'other',
+      });
+      await session.bindWorkItemGraphResource(
+        first,
+        path: 'projects/909/issues/3',
+      );
+      await session.bindWorkItemGraphResource(
+        second,
+        path: 'projects/909/issues/4',
+      );
+      final saved = await session.captureSnapshot([
+        Mr7SnapshotSpec(
           path: 'projects/909/issues/3',
-        );
-        await session.bindWorkItemGraphResource(
-          second,
-          path: 'projects/909/issues/4',
-        );
-        final saved = await session.captureSnapshot([
-          Mr7SnapshotSpec(
-            path: 'projects/909/issues/3',
-            fields: {'description'},
-            unchangedFields: {'description'},
-          ),
-        ]);
-        final vars = {
-          'id': mode == 'bound' ? first : second,
-          'unused': mode == 'unused' ? first : second,
-        };
-        final permit =
-            Mr7MutationPermit(
-                operation: 'updateWorkItemContent',
-                paths: {'POST graphql'},
-                resourceProjectId: 909,
-                graphDocuments: {doc},
-                graphVariablesDigests: {mr7Digest(vars)},
-                resultPath: ['data', 'workItemUpdate', 'workItem'],
-              )
-              ..confirmed = true
-              ..snapshot = saved;
-        session.permit = permit;
-        var sends = 0;
-        server.routes['POST /install/api/graphql'] = (_) {
-          sends++;
-          server.scenarioWrites++;
-          server.addEvent(target: 909);
-          return mr7Json({
-            'data': {
-              'workItemUpdate': {
-                'workItem': {'id': first},
+          fields: {'description'},
+          unchangedFields: {'description'},
+        ),
+      ]);
+      final vars = mode == 'boundInput'
+          ? {
+              'input': {'id': first, 'title': second},
+            }
+          : mode == 'descriptionInput'
+          ? {
+              'input': {
+                'id': second,
+                'descriptionWidget': {'description': first},
               },
+            }
+          : {
+              'id': const {'bound', 'multiple'}.contains(mode) ? first : second,
+              'unused': const {'bound', 'different', 'multiple'}.contains(mode)
+                  ? second
+                  : first,
+            };
+      final permit =
+          Mr7MutationPermit(
+              operation: 'updateWorkItemContent',
+              paths: {'POST graphql'},
+              resourceProjectId: 909,
+              graphDocuments: {doc},
+              graphVariablesDigests: {mr7Digest(vars)},
+              resultPath: ['data', 'workItemUpdate', 'workItem'],
+            )
+            ..confirmed = true
+            ..snapshot = saved;
+      session.permit = permit;
+      var sends = 0;
+      server.routes['POST /install/api/graphql'] = (_) {
+        sends++;
+        server.scenarioWrites++;
+        server.addEvent(target: 909);
+        return mr7Json({
+          'data': {
+            'workItemUpdate': {
+              'workItem': {'id': first},
             },
-          });
-        };
-        final request = session.writer.post<Object?>(
-          '${session.instance}/api/graphql',
-          data: {'query': doc, 'variables': vars},
+          },
+        });
+      };
+      final request = session.writer.post<Object?>(
+        '${session.instance}/api/graphql',
+        data: {'query': doc, 'variables': vars},
+      );
+      if (mode == 'bound' || mode == 'boundInput') {
+        await request;
+        final observer = Mr7Readback(
+          session,
+          session.identity!,
+          permit,
+          paths: {'projects/909/issues/3'},
         );
-        if (mode == 'bound') {
-          await request;
-          final observer = Mr7Readback(
-            session,
-            session.identity!,
-            permit,
-            paths: {'projects/909/issues/3'},
-          );
-          expect(await observer.verifySnapshot(), isTrue);
-          expect(sends, 1);
-        } else {
-          await expectLater(request, throwsA(anything));
-          expect(sends, 0, reason: mode);
-          expect(session.quarantined, isTrue);
-        }
-        await session.finish();
+        expect(await observer.verifySnapshot(), isTrue);
+        expect(sends, 1);
+      } else {
+        await expectLater(request, throwsA(anything));
+        expect(sends, 0, reason: mode);
+        expect(server.scenarioWrites, 0, reason: mode);
+        expect(session.stopReason, 'snapshotDrift', reason: mode);
+        expect(session.quarantined, isTrue);
       }
-    },
-  );
+      await session.finish();
+    }
+  });
 
   test('snapshot binds original MR numeric id and iid', () async {
     final server = Mr7SyntheticGitLab();
@@ -566,6 +606,85 @@ void main() {
       }
     },
   );
+
+  test('upload refuses boundary or permit changes before dispatch', () async {
+    for (final mode in ['boundary', 'permit', 'confirmation', 'preflight']) {
+      final server = Mr7SyntheticGitLab();
+      var current = true;
+      final session = Mr7SandboxSession(
+        server: server,
+        nonce: 'testnonce123',
+        boundaryValid: () => current,
+        eventDelay: () async {},
+      );
+      await session.initialize();
+      final permit = Mr7MutationPermit(
+        operation: 'upload_attachment',
+        paths: {'POST projects/909/uploads'},
+        resourceProjectId: 909,
+      )..confirmed = true;
+      session.permit = permit;
+      if (mode == 'preflight') {
+        permit
+          ..confirmed = false
+          ..confirmBeforeSend = () async {
+            session.permit = Mr7MutationPermit(
+              operation: 'upload_attachment',
+              paths: {'POST projects/909/uploads'},
+              resourceProjectId: 909,
+            )..confirmed = true;
+            return true;
+          };
+      }
+      var sends = 0;
+      server.routes['POST projects/909/uploads'] = (_) {
+        sends++;
+        server.scenarioWrites++;
+        return mr7Json({'markdown': 'synthetic-placeholder'}, status: 201);
+      };
+      Stream<List<int>> payload() async* {
+        yield [1];
+        if (mode == 'boundary') {
+          current = false;
+        } else if (mode == 'permit') {
+          session.permit = Mr7MutationPermit(
+            operation: 'upload_attachment',
+            paths: {'POST projects/909/uploads'},
+            resourceProjectId: 909,
+          )..confirmed = true;
+        } else if (mode == 'confirmation') {
+          permit.confirmed = false;
+        }
+        yield [2];
+      }
+
+      await expectLater(
+        session.writer.post<Object?>(
+          'projects/909/uploads',
+          data: FormData.fromMap({
+            'file': MultipartFile.fromStream(
+              payload,
+              2,
+              filename: 'fixture.bin',
+            ),
+          }),
+        ),
+        throwsA(anything),
+      );
+      expect(sends, 0, reason: mode);
+      expect(server.scenarioWrites, 0, reason: mode);
+      expect(server.requests, isNot(contains('POST projects/909/uploads')));
+      expect(permit.sent, 0, reason: mode);
+      expect(
+        session.stopReason,
+        mode == 'boundary' ? 'accountBoundary' : 'unconfirmedOrUnboundWrite',
+      );
+      expect(session.inFlight, isFalse);
+      expect(session.pendingMutations, 0);
+      await session.finish();
+      expect(server.cleanupWrites, 0, reason: mode);
+    }
+  });
 
   test(
     'upload observer hashes bounded actual multipart bytes independently',
