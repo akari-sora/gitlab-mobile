@@ -195,13 +195,13 @@ cannot reopen the writer or settle an uncertain core journal result.
 |---|---|
 | D | `Mr7DiscussionObservation`: use the returned opaque discussion ID for creation, the dispatched parent/thread for updates, the complete exact note-ID set and each note's resolution and parent. |
 | M | `Mr7MilestoneObservation(id: ..., iid: ...)`: route by global ID and compare both identifiers. Legacy numeric `read` also routes milestones by ID. |
-| P | `Mr7ApprovalObservation`: reread the dispatched MR and `/approvals`; validate the full `approved_by` user set against the fresh actor. |
-| A, S3 | `Mr7ListObservation`: choose a typed parent and closed collection, supply the exact complete ID/name set, and read every counted page (maximum 20 pages of 100). Recheck the parent afterwards. For removal, derive the removed selector from the dispatched route and require its absence even if the supplied expected set includes it. A 404, truncated page, duplicate or changed total proves nothing. Awards additionally validate user and awardable relationships. |
-| S2 | `Mr7FileObservation`, `Mr7RefObservation`, `Mr7ReleaseObservation`: bind dispatched encoded path/name and requested content, SHA and exact independent content/ref/release fields. File reads use the expected immutable SHA. |
+| P | `Mr7ApprovalObservation`: reread the dispatched MR and `/approvals`; validate the full `approved_by` user set against the fresh actor. Approve requires that actor present and `approved: true`; unapprove requires absence and `approved: false`. Unknown operations and opposite specifications are refused. |
+| A, S3 | `Mr7ListObservation`: choose a typed parent and closed collection, supply the exact complete global-ID/name set, and read every counted page (maximum 20 pages of 100). Recheck the parent afterwards. For removal, derive the removed selector from the dispatched route and require its absence even if the supplied expected set includes it. Issue/MR removal compares the route iid with validated unique row iids, independently of global IDs. A 404, truncated page, duplicate or changed total proves nothing. Awards additionally validate user and awardable relationships. |
+| S2 | `Mr7FileObservation`, `Mr7RefObservation`, `Mr7ReleaseObservation`: bind dispatched encoded path/name and requested content, SHA and exact independent content/ref/release fields. File observations require the dispatched branch in `readbackPaths`, read its name/head before and after the immutable-SHA file read, and require both heads to match. Branch/tag creation also requires the dispatched resolved source `ref` to equal the observed SHA. |
 | S4 | `Mr7SnippetObservation`: bind the returned/dispatched project snippet, exact file set, metadata revision and per-file refs. Validate same-instance web raw URLs but fetch only constructed API raw paths; compare raw bytes exactly. Revalidate metadata after all content reads. |
-| B2-S3 | `Mr7Scenario.observerQueries(identity, result)`: register documents and every variables digest after the response. `Mr7GraphObservation` verifies currentUser, parent and project separately from returned child IDs. Connections require stable `totalCount`, unique nodes, terminal pageInfo and sealed continuations (at most 20 pages / 2,000 nodes); query aliases can project a supported count field as `totalCount`. Exact removal requires `absentIds` bound to dispatched/returned selectors. `noteId` validates AwardEmoji-to-Note relationships. `bindReturnedResource` can freshly bind a returned GID through the existing closed REST mapping. Unsupported GID types and GraphQL syntax remain refused. |
+| B2-S3 | `Mr7Scenario.observerQueries(identity, result)`: register documents and every variables digest after the response. `Mr7GraphObservation` verifies currentUser, parent and project separately from returned child IDs. Child operations and every absence claim require a complete connection; parent identity alone never proves deletion. The closed operation mapping binds the dispatched parent, schema collection field (including aliases), child GID type and specific target. Created/updated children must appear; removed children must be the exact `absentIds` target. Filtered connections and an initial continuation cursor are refused. Connections require stable `totalCount`, unique nodes, terminal pageInfo and sealed continuations (at most 20 pages / 2,000 nodes); query aliases can project a supported count field as `totalCount`. Note awards require the actual Note as the bound parent plus matching `noteId` and child relationship. `bindReturnedResource` can freshly bind a returned GID through the existing closed REST mapping. Unsupported operation mappings, GID types and GraphQL syntax remain refused. |
 | N, S8 | `Mr7Scenario.noChangeObservation`: a typed parent-state witness matching the actual tool arguments is mandatory for a 304 star/subscription or core 409 `noChange`. Exactly one request must have been attempted. Auto-merge checks both supported indicators and rejects contradictory enabled state. Missing/mismatched evidence stops later scenarios and cleanup. |
-| S5 | `Mr7RebaseObservation`: bind the dispatched MR and fresh pre-send head, then observe pending-to-complete or a changed exact head with no merge error. An immediately idle unchanged head is unverified. Poll at most 20 times, with intervals at most 100 ms and a total polling deadline at most two seconds; never resend. A late read cannot verify completion or trigger additional polls. |
+| S5 | `Mr7RebaseObservation`: bind the dispatched MR and fresh pre-send head, then poll with `include_rebase_in_progress=true`. A completed exact changed head with no merge error can verify on the first poll; observing pending first is optional. An idle unchanged head stays unverified even if pending was observed. Poll at most 20 times, with intervals at most 100 ms and a total polling deadline at most two seconds; never resend. A late read cannot verify completion or trigger additional polls. |
 
 For example, a scenario can call
 `observer.observe(Mr7MilestoneObservation(id: observer.result.id!, iid: observer.result.iid!))`
@@ -210,10 +210,25 @@ in `readbackPaths`; never substitute iid for the global route ID. List and
 GraphQL observers likewise return independently checked records so scenario
 code can verify operation-specific fields.
 
+Existing Issue/MR GraphQL collection targets require an independently bound
+global GID for the exact dispatched iid route, captured before dispatch;
+conflicting response selectors are refused. Note bindings also recheck their
+owning issue/MR and `noteable_id`. Parent-only GraphQL observations are limited
+to the closed star, subscription and auto-merge state operations. Unsupported
+child operations and GraphQL reaction removal without a specific prebound child
+remain unverified.
+
+These synthetic GraphQL fixtures do not validate a live schema. In particular,
+the synthetic AwardEmoji GID and `note { id }` relationship are host-test
+projections; the production reaction API uses name/user selectors. Live schema
+compatibility and scenario integration remain `NOT_RUN`.
+
 Verified response no-ops record `classification=verifiedNoOp`, original
 `coreOutcome`/`coreNoChange`, `responseStatus`, one attempted mutation and fresh
 `parentStateVerified`/observer counts. The Python wrapper rejects inconsistent
-verified-no-op receipts. Existing zero-dispatch core no-ops retain their prior
+verified-no-op receipts, including dispatched no-op claims with missing or
+renamed classifications and 409 claims outside `cancelAutoMerge`.
+Existing zero-dispatch core no-ops retain their prior
 classification. Core acknowledgements, failed-certain responses and uncertain
 results keep their original semantics; all evidence remains synthetic and
 candidate evidence remains ineligible for final release acceptance.

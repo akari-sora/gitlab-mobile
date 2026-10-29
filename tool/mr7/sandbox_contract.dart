@@ -291,6 +291,8 @@ final class _GraphOperation {
   final Set<String> variables = {};
   final Set<String> fields = {};
   final List<Map<String, Object?>> arguments = [];
+  final Map<String, ({String field, Map<String, Object?> arguments})>
+  selections = {};
   final List<
     ({String field, Map<String, Object?> arguments, bool identityProjection})
   >
@@ -408,13 +410,14 @@ final class _GraphParser {
     return values;
   }
 
-  bool _selection(_GraphOperation operation, int depth) {
+  bool _selection(_GraphOperation operation, int depth, [String path = '']) {
     if (depth > 32) throw const Mr7Refused('graphDocument');
     _expect('{');
     var count = 0;
     var identityOnly = true;
     while (!_take('}')) {
       var field = _name();
+      final responseKey = field;
       if (_take(':')) field = _name();
       operation.fields.add(field);
       var arguments = <String, Object?>{};
@@ -423,8 +426,16 @@ final class _GraphParser {
         if (arguments.isEmpty) throw const Mr7Refused('graphDocument');
         operation.arguments.add(arguments);
       }
+      final selectionPath = path.isEmpty ? responseKey : '$path/$responseKey';
+      if (operation.selections.containsKey(selectionPath)) {
+        throw const Mr7Refused('graphDocument');
+      }
+      operation.selections[selectionPath] = (
+        field: field,
+        arguments: arguments,
+      );
       final childProjection = _peek == '{'
-          ? _selection(operation, depth + 1)
+          ? _selection(operation, depth + 1, selectionPath)
           : null;
       if (depth == 0) {
         operation.roots.add((
@@ -578,6 +589,7 @@ final class Mr7MutationPermit {
   Mr7MutationResult? result;
   String? _sentPath;
   Object? _sentBody;
+  Map<String, String> _graphResourcesAtSend = const {};
   String? _rebaseBeforeSha;
 }
 
@@ -890,10 +902,13 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
       if (!session._setupAuthorized && !session._cleanupAuthorized) {
         final permit = session.permit!;
         permit.sent++;
-        permit._sentPath = session
-            ._restSegments(options)
-            .map(Uri.encodeComponent)
-            .join('/');
+        permit._sentPath =
+            options.uri.path == '${session.instance.path}/api/graphql'
+            ? 'graphql'
+            : session._restSegments(options).map(Uri.encodeComponent).join('/');
+        permit._graphResourcesAtSend = Map.unmodifiable(
+          session._graphResources,
+        );
         permit._sentBody = options.data is Map
             ? jsonDecode(jsonEncode(options.data))
             : null;
@@ -1076,8 +1091,9 @@ final class Mr7Readback {
   }
 
   Future<({String path, Map<String, Object?> row})> _parent(
-    Mr7Parent parent,
-  ) async {
+    Mr7Parent parent, {
+    Map<String, Object?> query = const {},
+  }) async {
     if (parent.kind == Mr7ParentKind.project) {
       final row = await _map(_root);
       if (row['id'] != _identity.projectId) {
@@ -1096,7 +1112,7 @@ final class Mr7Readback {
       Mr7ParentKind.issueNote,
     }.contains(parent.kind);
     var path = '$_root/${issue ? 'issues' : 'merge_requests'}/${parent.iid}';
-    var row = await _map(path);
+    var row = await _map(path, query: query);
     if (row['id'] != parent.id ||
         row['iid'] != parent.iid ||
         row['project_id'] != _identity.projectId) {
@@ -1203,13 +1219,19 @@ final class Mr7Readback {
   }
 
   Future<bool> _approval(Mr7ApprovalObservation spec) async {
+    final expected = switch (_permit.operation) {
+      'approveMergeRequest' => true,
+      'unapproveMergeRequest' => false,
+      _ => throw const Mr7Refused('observerApprovalOperation'),
+    };
+    if (spec.approved != expected) {
+      throw const Mr7Refused('observerState');
+    }
     if (spec.parent.kind != Mr7ParentKind.mergeRequest) {
       throw const Mr7Refused('observerParent');
     }
     final parent = await _parent(spec.parent);
-    _sentTo(
-      '${parent.path}/${_permit.operation == 'unapproveMergeRequest' ? 'unapprove' : 'approve'}',
-    );
+    _sentTo('${parent.path}/${expected ? 'approve' : 'unapprove'}');
     final row = await _map('${parent.path}/approvals');
     final approved = row['approved_by'];
     if (row['id'] != spec.parent.id ||
@@ -1228,7 +1250,7 @@ final class Mr7Readback {
         throw const Mr7Refused('observerApprovals');
       }
     }
-    if (ids.contains(_identity.userId) != spec.approved) {
+    if (ids.contains(_identity.userId) != expected) {
       throw const Mr7Refused('observerState');
     }
     return true;
@@ -1304,6 +1326,7 @@ final class Mr7Readback {
     }
     final rows = <Map<String, Object?>>[];
     final ids = <Object>{};
+    final iids = <int>{};
     final pagination = _PageSequence();
     var page = 1;
     while (true) {
@@ -1334,6 +1357,15 @@ final class Mr7Readback {
                 raw['noteable_id'] != spec.parent.id)) {
           throw const Mr7Refused('observerList');
         }
+        if (const {
+          Mr7ListKind.issues,
+          Mr7ListKind.mergeRequests,
+        }.contains(spec.kind)) {
+          final iid = raw['iid'];
+          if (iid is! int || iid <= 0 || !iids.add(iid)) {
+            throw const Mr7Refused('observerList');
+          }
+        }
         if (spec.kind == Mr7ListKind.awards) {
           final user = raw['user'];
           final note = spec.parent.noteId;
@@ -1362,7 +1394,13 @@ final class Mr7Readback {
     await _parent(spec.parent);
     if (ids.length != spec.expectedIds.length ||
         !ids.containsAll(spec.expectedIds) ||
-        (removal && ids.contains(removedId))) {
+        (removal &&
+            (const {
+                  Mr7ListKind.issues,
+                  Mr7ListKind.mergeRequests,
+                }.contains(spec.kind)
+                ? iids.contains(removedId)
+                : ids.contains(removedId)))) {
       throw const Mr7Refused('observerAbsence');
     }
     return List.unmodifiable(rows);
@@ -1373,6 +1411,7 @@ final class Mr7Readback {
     _sentTo('$_root/repository/files/${_name(spec.path)}');
     final body = _permit._sentBody;
     if (body is! Map ||
+        body['branch'] is! String ||
         body['content'] is! String ||
         (body['encoding'] == 'base64'
                 ? utf8.decode(base64Decode(body['content'] as String))
@@ -1380,6 +1419,16 @@ final class Mr7Readback {
             spec.content) {
       throw const Mr7Refused('observerContent');
     }
+    final branch = body['branch'] as String;
+    Future<void> verifyBranch() async {
+      final row = await _map('$_root/repository/branches/${_name(branch)}');
+      final commit = row['commit'];
+      if (row['name'] != branch || commit is! Map || commit['id'] != spec.sha) {
+        throw const Mr7Refused('observerRef');
+      }
+    }
+
+    await verifyBranch();
     final row = await _map(
       '$_root/repository/files/${_name(spec.path)}',
       query: {'ref': spec.sha},
@@ -1391,6 +1440,7 @@ final class Mr7Readback {
         utf8.decode(base64Decode(row['content']! as String)) != spec.content) {
       throw const Mr7Refused('observerContent');
     }
+    await verifyBranch();
     return row;
   }
 
@@ -1401,6 +1451,7 @@ final class Mr7Readback {
     final body = _permit._sentBody;
     _sentTo(collection);
     if (body is! Map ||
+        body['ref'] != spec.sha ||
         body[spec.kind == Mr7RefKind.branch ? 'branch' : 'tag_name'] !=
             spec.name) {
       throw const Mr7Refused('observerMutationTarget');
@@ -1552,21 +1603,21 @@ final class Mr7Readback {
       throw const Mr7Refused('observerRebase');
     }
     var expired = false;
-    var observedPending = false;
     Future<Map<String, Object?>> poll() async {
       for (var attempt = 0; attempt < spec.maxAttempts; attempt++) {
         if (expired) throw const Mr7Refused('observerRebaseTimeout');
-        final parent = await _parent(spec.parent);
+        final parent = await _parent(
+          spec.parent,
+          query: {'include_rebase_in_progress': true},
+        );
         _sentTo('${parent.path}/rebase');
         if (expired) throw const Mr7Refused('observerRebaseTimeout');
-        observedPending |= parent.row['rebase_in_progress'] == true;
         if (parent.row['rebase_in_progress'] == false &&
             parent.row.containsKey('merge_error') &&
             parent.row['merge_error'] == null &&
             parent.row['sha'] == spec.sha &&
             _permit._rebaseBeforeSha != null &&
-            (observedPending ||
-                parent.row['sha'] != _permit._rebaseBeforeSha)) {
+            parent.row['sha'] != _permit._rebaseBeforeSha) {
           return parent.row;
         }
         if (attempt + 1 < spec.maxAttempts) {
@@ -1596,12 +1647,206 @@ final class Mr7Readback {
     _scope();
   }
 
+  ({String rest, String field, String type, bool create})?
+  get _graphCollectionKind => switch (_permit.operation) {
+    'createNote' => (rest: 'notes', field: 'notes', type: 'Note', create: true),
+    'updateNote' || 'deleteNote' => (
+      rest: 'notes',
+      field: 'notes',
+      type: 'Note',
+      create: false,
+    ),
+    'addAwardEmoji' => (
+      rest: 'award_emoji',
+      field: 'awardEmoji',
+      type: 'AwardEmoji',
+      create: true,
+    ),
+    'removeAwardEmoji' => (
+      rest: 'award_emoji',
+      field: 'awardEmoji',
+      type: 'AwardEmoji',
+      create: false,
+    ),
+    'createIssue' => (
+      rest: 'issues',
+      field: 'issues',
+      type: 'Issue',
+      create: true,
+    ),
+    'updateIssue' || 'deleteIssue' => (
+      rest: 'issues',
+      field: 'issues',
+      type: 'Issue',
+      create: false,
+    ),
+    'createMergeRequest' => (
+      rest: 'merge_requests',
+      field: 'mergeRequests',
+      type: 'MergeRequest',
+      create: true,
+    ),
+    'updateMergeRequest' || 'deleteMergeRequest' => (
+      rest: 'merge_requests',
+      field: 'mergeRequests',
+      type: 'MergeRequest',
+      create: false,
+    ),
+    'createLabel' => (
+      rest: 'labels',
+      field: 'labels',
+      type: 'Label',
+      create: true,
+    ),
+    'updateLabel' || 'deleteLabel' => (
+      rest: 'labels',
+      field: 'labels',
+      type: 'Label',
+      create: false,
+    ),
+    'createMilestone' => (
+      rest: 'milestones',
+      field: 'milestones',
+      type: 'Milestone',
+      create: true,
+    ),
+    'updateMilestone' || 'deleteMilestone' => (
+      rest: 'milestones',
+      field: 'milestones',
+      type: 'Milestone',
+      create: false,
+    ),
+    _ => null,
+  };
+
+  ({String field, String type, String target, String? noteId}) _graphCollection(
+    Mr7GraphObservation spec,
+    String parentPath,
+  ) {
+    final kind = _graphCollectionKind;
+    if (kind == null || _permit.sent != 1) {
+      throw const Mr7Refused('observerMutationTarget');
+    }
+    final parentPattern = kind.type == 'Note'
+        ? '^$_root/(?:issues|merge_requests)/[1-9][0-9]*\$'
+        : kind.type == 'AwardEmoji'
+        ? '^$_root/(?:issues|merge_requests)/[1-9][0-9]*(?:/notes/[1-9][0-9]*)?\$'
+        : '^$_root\$';
+    if (!RegExp(parentPattern).hasMatch(parentPath)) {
+      throw const Mr7Refused('observerParent');
+    }
+    String returned() {
+      final gid = result.stringId ?? 'gid://gitlab/${kind.type}/${result.id}';
+      if (!RegExp('^gid://gitlab/${kind.type}/[1-9][0-9]*\$').hasMatch(gid)) {
+        throw const Mr7Refused('readbackReturnedId');
+      }
+      return gid;
+    }
+
+    final sentPath = _permit._sentPath;
+    late String target;
+    if (sentPath == 'graphql') {
+      final body = _permit._sentBody;
+      final operation = _selectedGraphOperation(body);
+      final field = switch (_permit.operation) {
+        'createNote' => 'createNote',
+        'updateNote' => 'updateNote',
+        'deleteNote' => 'destroyNote',
+        'addAwardEmoji' => 'awardEmojiAdd',
+        _ => null,
+      };
+      if (body is! Map ||
+          operation == null ||
+          operation.kind != 'mutation' ||
+          operation.roots.length != 1 ||
+          field == null ||
+          operation.roots.single.field != field) {
+        throw const Mr7Refused('observerMutationTarget');
+      }
+      final arguments = operation.resolve(
+        operation.roots.single.arguments,
+        body['variables'] as Map? ?? const {},
+      );
+      final input = arguments is Map ? arguments['input'] : null;
+      if (input is! Map) throw const Mr7Refused('observerMutationTarget');
+      if (_permit.operation == 'createNote') {
+        if (input['noteableId'] != spec.parentId) {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        target = returned();
+      } else if (kind.type == 'Note') {
+        final gid = input['id'];
+        final path = _permit._graphResourcesAtSend[gid];
+        if (gid is! String ||
+            path == null ||
+            !RegExp('^$parentPath/notes/[1-9][0-9]*\$').hasMatch(path)) {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        target = gid;
+      } else {
+        if (input['awardableId'] != spec.parentId) {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        target = returned();
+      }
+    } else {
+      final collection = '$parentPath/${kind.rest}';
+      if (kind.create) {
+        _sentTo(collection);
+        target = returned();
+      } else {
+        if (sentPath == null ||
+            !RegExp('^$collection/[1-9][0-9]*\$').hasMatch(sentPath)) {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        final selector = int.parse(sentPath.split('/').last);
+        if (kind.type == 'Issue' || kind.type == 'MergeRequest') {
+          final bound = _permit._graphResourcesAtSend.entries.where(
+            (entry) =>
+                entry.value == sentPath &&
+                entry.key.startsWith('gid://gitlab/${kind.type}/'),
+          );
+          target = bound.length == 1
+              ? bound.single.key
+              : throw const Mr7Refused('observerMutationTarget');
+        } else {
+          target = 'gid://gitlab/${kind.type}/$selector';
+        }
+      }
+    }
+    if ((result.stringId != null || result.id != null) &&
+        returned() != target) {
+      throw const Mr7Refused('readbackReturnedId');
+    }
+    final note = kind.type == 'AwardEmoji'
+        ? RegExp(r'/notes/([1-9][0-9]*)$').firstMatch(parentPath)
+        : null;
+    final noteId = note == null ? null : 'gid://gitlab/Note/${note[1]}';
+    if (spec.noteId != noteId) {
+      throw const Mr7Refused('observerRelationship');
+    }
+    return (field: kind.field, type: kind.type, target: target, noteId: noteId);
+  }
+
   Future<Map<String, Object?>> _graph(Mr7GraphObservation spec) async {
     if (spec.parentId != 'gid://gitlab/Project/${_identity.projectId}' &&
         !_session._graphResources.containsKey(spec.parentId)) {
       throw const Mr7Refused('observerParent');
     }
     if ((spec.connectionPath == null) != (spec.expectedIds == null)) {
+      throw const Mr7Refused('observerConnection');
+    }
+    final removal =
+        _permit.operation.startsWith('delete') ||
+        _permit.operation.startsWith('remove');
+    if (spec.connectionPath == null &&
+        (removal ||
+            spec.absentIds.isNotEmpty ||
+            !const {
+              'setStar',
+              'setSubscribed',
+              'cancelAutoMerge',
+            }.contains(_permit.operation))) {
       throw const Mr7Refused('observerConnection');
     }
     final parentPath =
@@ -1614,31 +1859,61 @@ final class Mr7Readback {
         .map((m) => m[0]!)
         .toSet();
     final sentPath = _permit._sentPath;
+    if (sentPath == 'graphql' &&
+        parentPath != _root &&
+        _permit._graphResourcesAtSend[spec.parentId] != parentPath) {
+      throw const Mr7Refused('observerMutationTarget');
+    }
     if (sentPath != null && sentPath.startsWith('projects/')) {
       if (sentPath != parentPath && !sentPath.startsWith('$parentPath/')) {
         throw const Mr7Refused('observerMutationTarget');
       }
     } else if (!requested.any((gid) {
-      final path = _session._graphResources[gid];
+      final path = _permit._graphResourcesAtSend[gid];
       return path != null &&
           (path == parentPath || path.startsWith('$parentPath/'));
     })) {
       throw const Mr7Refused('observerMutationTarget');
     }
-    final knownIds = {
-      ...requested,
-      if (result.stringId != null) result.stringId!,
-    };
-    if (sentPath != null) {
-      final note = RegExp(r'/notes/([1-9][0-9]*)$').firstMatch(sentPath);
-      if (note != null) knownIds.add('gid://gitlab/Note/${note[1]}');
-    }
-    final removal =
-        _permit.operation.startsWith('delete') ||
-        _permit.operation.startsWith('remove');
-    if ((removal && spec.absentIds.isEmpty) ||
-        !knownIds.containsAll(spec.absentIds)) {
-      throw const Mr7Refused('observerAbsenceTarget');
+    final binding = spec.connectionPath == null
+        ? null
+        : _graphCollection(spec, parentPath);
+    final operation = _selectedGraphOperation({'query': spec.document});
+    if (binding != null) {
+      final selection =
+          operation?.selections[[
+            ...spec.recordPath.skip(1),
+            ...spec.connectionPath!,
+          ].join('/')];
+      if (spec.recordPath.isEmpty ||
+          spec.recordPath.first != 'data' ||
+          spec.connectionPath!.length != 1 ||
+          selection == null ||
+          selection.field != binding.field ||
+          selection.arguments.keys.any(
+            (key) => !const {'first', 'after'}.contains(key),
+          )) {
+        throw const Mr7Refused('observerConnection');
+      }
+      final first = selection.arguments['first'];
+      if (first != null) {
+        final size = operation!.resolve(first, spec.variables);
+        if (size is! int || size <= 0 || size > 100) {
+          throw const Mr7Refused('observerConnection');
+        }
+      }
+      final after = selection.arguments['after'];
+      if ((after != null &&
+              (after is! _GraphVariable ||
+                  after.name != spec.cursorVariable)) ||
+          (after != null &&
+              operation!.resolve(after, spec.variables) != null) ||
+          (removal
+              ? spec.absentIds.length != 1 ||
+                    !spec.absentIds.contains(binding.target)
+              : spec.absentIds.isNotEmpty)) {
+        throw const Mr7Refused('observerAbsenceTarget');
+      }
     }
     final variables = Map<String, Object?>.from(spec.variables);
     final ids = <String>{};
@@ -1697,10 +1972,12 @@ final class Mr7Readback {
         final note = node is Map ? node['note'] : null;
         if (node is! Map ||
             id is! String ||
-            !RegExp(r'^gid://gitlab/[A-Za-z]+/[1-9][0-9]*$').hasMatch(id) ||
+            !RegExp(
+              '^gid://gitlab/${binding!.type}/[1-9][0-9]*\$',
+            ).hasMatch(id) ||
             !ids.add(id) ||
-            (spec.noteId != null &&
-                (note is! Map || note['id'] != spec.noteId))) {
+            (binding.noteId != null &&
+                (note is! Map || note['id'] != binding.noteId))) {
           throw const Mr7Refused('observerRelationship');
         }
       }
@@ -1708,13 +1985,22 @@ final class Mr7Readback {
         if (ids.length != total ||
             ids.length != spec.expectedIds!.length ||
             !ids.containsAll(spec.expectedIds!) ||
+            (!removal && !ids.contains(binding!.target)) ||
             ids.any(spec.absentIds.contains)) {
           throw const Mr7Refused('observerAbsence');
         }
         return Map<String, Object?>.from(record);
       }
       final cursor = info['endCursor'];
-      if (nodes.isEmpty ||
+      if (binding == null ||
+          operation!
+                  .selections[[
+                    ...spec.recordPath.skip(1),
+                    ...spec.connectionPath!,
+                  ].join('/')]!
+                  .arguments['after']
+              is! _GraphVariable ||
+          nodes.isEmpty ||
           cursor is! String ||
           cursor.isEmpty ||
           cursor.length > 1024 ||
@@ -1965,6 +2251,18 @@ final class Mr7SandboxSession {
       stop('foreignResource');
       throw const Mr7Refused('foreignResource');
     }
+    if (match[1] == 'Note') {
+      final segments = path.split('/');
+      final parent = await read(segments.take(4).join('/'));
+      if (parent['id'] is! int ||
+          (parent['id'] as int) <= 0 ||
+          parent['iid'] != int.parse(segments[3]) ||
+          parent['project_id'] != target.projectId ||
+          row['noteable_id'] != parent['id']) {
+        stop('foreignResource');
+        throw const Mr7Refused('foreignResource');
+      }
+    }
     _open();
     _graphResources[gid] = path;
   }
@@ -2004,6 +2302,8 @@ final class Mr7SandboxSession {
                     'workitemids',
                     'targetid',
                     'targetids',
+                    'noteableid',
+                    'awardableid',
                     'projectid',
                     'projectids',
                     'targetprojectid',
@@ -2080,7 +2380,13 @@ final class Mr7SandboxSession {
             return false;
           }
           if (graph &&
-              (key == 'id' || key == 'workitemid' || key == 'targetid') &&
+              const {
+                'id',
+                'workitemid',
+                'targetid',
+                'noteableid',
+                'awardableid',
+              }.contains(key) &&
               (entry.value is! String ||
                   !RegExp(
                     r'^gid://gitlab/[A-Za-z]+/[1-9][0-9]*$',
@@ -2104,7 +2410,7 @@ final class Mr7SandboxSession {
         // Target arguments in a sealed document must come from checked
         // variables; do not admit inline literal target identifiers.
         if (RegExp(
-          r'\b(?:id|projectId|groupId|fullPath|projectPath)\s*:\s*["0-9]',
+          r'\b(?:id|projectId|groupId|fullPath|projectPath|noteableId|awardableId)\s*:\s*["0-9]',
         ).hasMatch(node)) {
           return false;
         }

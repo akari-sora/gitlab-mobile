@@ -90,9 +90,11 @@ Future<({Mr7SandboxSession session, Mr7Readback observer})> _observationFixture(
   String mutationPath = 'projects/909/issues/3/notes',
   String method = 'POST',
   Object? body,
+  Future<void> Function(Mr7SandboxSession)? beforeSend,
 }) async {
   final session = _session(server, eventDelay: () async {});
   await session.initialize();
+  if (beforeSend != null) await beforeSend(session);
   final permit = Mr7MutationPermit(
     operation: operation,
     resourceProjectId: 909,
@@ -168,6 +170,842 @@ sandbox.Mr7Scenario _starNoChange({
 );
 
 void main() {
+  test(
+    'sealed Graph reaction removal cannot trust a returned child alone',
+    () async {
+      const mutation =
+          r'mutation Remove($input: AwardEmojiRemoveInput!) { awardEmojiRemove(input: $input) { awardEmoji { id } errors } }';
+      const document =
+          r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } awardEmoji { nodes { id note { id } } totalCount pageInfo { hasNextPage endCursor } } } }';
+      const note = 'gid://gitlab/Note/71';
+      final input = <String, Object?>{
+        'input': {'awardableId': note, 'name': 'thumbsup'},
+      };
+      final variables = {'id': note};
+      final queries = {
+        document: {mr7Digest(variables)},
+      };
+      final server = Mr7SyntheticGitLab();
+      server.routes['GET projects/909/issues/3'] = (_) => mr7Json(_issueRow());
+      server.routes['GET projects/909/issues/3/notes/71'] = (_) =>
+          mr7Json({'id': 71, 'project_id': 909, 'noteable_id': 300});
+      final session = _session(server, eventDelay: () async {});
+      await session.initialize();
+      await session.bindGraphResource(
+        note,
+        path: 'projects/909/issues/3/notes/71',
+      );
+      server.routes['POST /install/api/graphql'] = (request) {
+        if ((request.data as Map)['query'] == mutation) {
+          server.scenarioWrites++;
+          server.addEvent(target: 909);
+          return mr7Json({
+            'data': {
+              'awardEmojiRemove': {
+                'awardEmoji': {'id': 'gid://gitlab/AwardEmoji/90'},
+                'errors': <Object?>[],
+              },
+            },
+          });
+        }
+        return mr7Json({
+          'data': {
+            'currentUser': {
+              'id': 'gid://gitlab/User/7',
+              'username': 'synthetic-owner',
+            },
+            'node': {
+              'id': note,
+              'project': {
+                'id': 'gid://gitlab/Project/909',
+                'fullPath': 'synthetic-owner/mr7-testnonce123',
+              },
+              'awardEmoji': {
+                'nodes': <Map<String, Object?>>[],
+                'totalCount': 0,
+                'pageInfo': {'hasNextPage': false, 'endCursor': null},
+              },
+            },
+          },
+        });
+      };
+      final permit = Mr7MutationPermit(
+        operation: 'removeAwardEmoji',
+        resourceProjectId: 909,
+        paths: {'POST graphql'},
+        graphDocuments: {mutation},
+        graphVariablesDigests: {mr7Digest(input)},
+        resultPath: ['data', 'awardEmojiRemove', 'awardEmoji'],
+      )..confirmed = true;
+      session.permit = permit;
+      await session.writer.post<Object?>(
+        '${session.instance}/api/graphql',
+        data: {'query': mutation, 'variables': input},
+      );
+      expect(permit.sent, 1);
+      session.observerAdapter.graphReadDocuments = queries;
+      final observer = Mr7Readback(
+        session,
+        session.identity!,
+        permit,
+        paths: {'projects/909/issues/3/notes/71'},
+        graphQueries: queries,
+      );
+      expect(observer.result.stringId, 'gid://gitlab/AwardEmoji/90');
+      await expectLater(
+        observer.observe(
+          Mr7GraphObservation(
+            document: document,
+            variables: variables,
+            parentId: note,
+            recordPath: ['data', 'node'],
+            connectionPath: ['awardEmoji'],
+            expectedIds: {},
+            absentIds: {'gid://gitlab/AwardEmoji/90'},
+            noteId: note,
+          ),
+        ),
+        throwsA(anything),
+      );
+      expect(observer.verifiedRequests, 0);
+      session.stop('testObservationFailed');
+      session.permit = null;
+      await session.finish();
+      expect(server.scenarioWrites, 1);
+      expect(server.cleanupWrites, 0);
+    },
+  );
+  test('unmapped Graph child operation cannot use parent-only witness', () async {
+    const document =
+        r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } } }';
+    const gid = 'gid://gitlab/Issue/300';
+    final variables = {'id': gid};
+    final queries = {
+      document: {mr7Digest(variables)},
+    };
+    final server = Mr7SyntheticGitLab();
+    server.routes['GET projects/909/issues/3'] = (_) => mr7Json(_issueRow());
+    server.routes['POST /install/api/graphql'] = (_) => mr7Json({
+      'data': {
+        'currentUser': {
+          'id': 'gid://gitlab/User/7',
+          'username': 'synthetic-owner',
+        },
+        'node': {
+          'id': gid,
+          'project': {
+            'id': 'gid://gitlab/Project/909',
+            'fullPath': 'synthetic-owner/mr7-testnonce123',
+          },
+        },
+      },
+    });
+    final fixture = await _observationFixture(
+      server,
+      operation: 'createDiscussion',
+      status: 201,
+      response: {'id': 'discussion-1'},
+      mutationPath: 'projects/909/issues/3/discussions',
+      paths: {'projects/909/issues/3'},
+      queries: queries,
+      beforeSend: (session) =>
+          session.bindGraphResource(gid, path: 'projects/909/issues/3'),
+    );
+    await expectLater(
+      fixture.observer.observe(
+        Mr7GraphObservation(
+          document: document,
+          variables: variables,
+          recordPath: ['data', 'node'],
+          parentId: gid,
+        ),
+      ),
+      throwsA(anything),
+    );
+    expect(fixture.observer.verifiedRequests, 0);
+    fixture.session.stop('testObservationFailed');
+    await fixture.session.finish();
+    expect(server.cleanupWrites, 0);
+  });
+
+  test(
+    'sealed Graph note creation binds input parent and returned child',
+    () async {
+      const mutation =
+          r'mutation Create($input: CreateNoteInput!) { createNote(input: $input) { note { id } errors } }';
+      const document =
+          r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } notes { nodes { id } totalCount pageInfo { hasNextPage endCursor } } } }';
+      const parent = 'gid://gitlab/Issue/300';
+      for (final variant in ['matching', 'differentParent', 'reboundParent']) {
+        final inputParent = variant == 'differentParent'
+            ? 'gid://gitlab/Issue/301'
+            : parent;
+        final input = <String, Object?>{
+          'input': {'noteableId': inputParent, 'body': 'synthetic'},
+        };
+        final variables = {'id': parent};
+        final queries = {
+          document: {mr7Digest(variables)},
+        };
+        final server = Mr7SyntheticGitLab();
+        server.routes['GET projects/909/issues/3'] = (_) =>
+            mr7Json(_issueRow());
+        server.routes['GET projects/909/issues/4'] = (_) =>
+            mr7Json({'id': 301, 'iid': 4, 'project_id': 909});
+        final session = _session(server, eventDelay: () async {});
+        await session.initialize();
+        await session.bindGraphResource(parent, path: 'projects/909/issues/3');
+        await session.bindGraphResource(
+          'gid://gitlab/Issue/301',
+          path: 'projects/909/issues/4',
+        );
+        server.routes['POST /install/api/graphql'] = (request) {
+          final body = request.data as Map;
+          if (body['query'] == mutation) {
+            server.scenarioWrites++;
+            server.addEvent(target: 909);
+            return mr7Json({
+              'data': {
+                'createNote': {
+                  'note': {'id': 'gid://gitlab/Note/71'},
+                  'errors': <Object?>[],
+                },
+              },
+            });
+          }
+          return mr7Json({
+            'data': {
+              'currentUser': {
+                'id': 'gid://gitlab/User/7',
+                'username': 'synthetic-owner',
+              },
+              'node': {
+                'id': parent,
+                'project': {
+                  'id': 'gid://gitlab/Project/909',
+                  'fullPath': 'synthetic-owner/mr7-testnonce123',
+                },
+                'notes': {
+                  'nodes': [
+                    {'id': 'gid://gitlab/Note/71'},
+                  ],
+                  'totalCount': 1,
+                  'pageInfo': {'hasNextPage': false, 'endCursor': null},
+                },
+              },
+            },
+          });
+        };
+        final permit = Mr7MutationPermit(
+          operation: 'createNote',
+          resourceProjectId: 909,
+          paths: {'POST graphql'},
+          graphDocuments: {mutation},
+          graphVariablesDigests: {mr7Digest(input)},
+          resultPath: ['data', 'createNote', 'note'],
+        )..confirmed = true;
+        session.permit = permit;
+        await session.writer.post<Object?>(
+          '${session.instance}/api/graphql',
+          data: {'query': mutation, 'variables': input},
+        );
+        expect(permit.sent, 1);
+        expect(server.scenarioWrites, 1);
+        if (variant == 'reboundParent') {
+          server.routes['GET projects/909/issues/4'] = (_) =>
+              mr7Json({'id': 300, 'iid': 4, 'project_id': 909});
+          await session.bindGraphResource(
+            parent,
+            path: 'projects/909/issues/4',
+          );
+        }
+        session.observerAdapter.graphReadDocuments = queries;
+        final observer = Mr7Readback(
+          session,
+          session.identity!,
+          permit,
+          paths: {'projects/909/issues/3'},
+          graphQueries: queries,
+        );
+        expect(observer.result.stringId, 'gid://gitlab/Note/71');
+        final observing = observer.observe(
+          Mr7GraphObservation(
+            document: document,
+            variables: variables,
+            parentId: parent,
+            recordPath: ['data', 'node'],
+            connectionPath: ['notes'],
+            expectedIds: {'gid://gitlab/Note/71'},
+          ),
+        );
+        if (variant == 'matching') {
+          await observing;
+          expect(observer.verifiedRequests, greaterThan(0));
+        } else {
+          await expectLater(observing, throwsA(anything));
+          expect(observer.verifiedRequests, 0);
+          session.stop('testObservationFailed');
+        }
+        session.permit = null;
+        await session.finish();
+        if (variant != 'matching') expect(server.cleanupWrites, 0);
+      }
+    },
+  );
+
+  test(
+    'Graph deletion trusts dispatch binding instead of returned iid and ID',
+    () async {
+      for (final resource in ['issues', 'merge_requests']) {
+        final issue = resource == 'issues';
+        final iid = issue ? 3 : 4;
+        final type = issue ? 'Issue' : 'MergeRequest';
+        final realId = issue ? 300 : 400;
+        final target = 'gid://gitlab/$type/$realId';
+        final field = issue ? 'issues' : 'mergeRequests';
+        final document =
+            'query Observe(\$id: ID!) { currentUser { id username } node(id: \$id) { id fullPath items: $field { nodes { id } totalCount pageInfo { hasNextPage endCursor } } } }';
+        final variables = {'id': 'gid://gitlab/Project/909'};
+        final queries = {
+          document: {mr7Digest(variables)},
+        };
+        for (final variant in [
+          'absent',
+          'conflictingResponse',
+          'missingBinding',
+        ]) {
+          final server = Mr7SyntheticGitLab();
+          server.routes['GET projects/909/$resource/$iid'] = (_) =>
+              mr7Json(issue ? _issueRow() : _mrRow());
+          server.routes['POST /install/api/graphql'] = (_) => mr7Json({
+            'data': {
+              'currentUser': {
+                'id': 'gid://gitlab/User/7',
+                'username': 'synthetic-owner',
+              },
+              'node': {
+                'id': 'gid://gitlab/Project/909',
+                'fullPath': 'synthetic-owner/mr7-testnonce123',
+                'items': {
+                  'nodes': [
+                    if (variant == 'conflictingResponse') {'id': target},
+                  ],
+                  'totalCount': variant == 'conflictingResponse' ? 1 : 0,
+                  'pageInfo': {'hasNextPage': false, 'endCursor': null},
+                },
+              },
+            },
+          });
+          final fixture = await _observationFixture(
+            server,
+            operation: issue ? 'deleteIssue' : 'deleteMergeRequest',
+            method: 'DELETE',
+            mutationPath: 'projects/909/$resource/$iid',
+            response: variant == 'conflictingResponse'
+                ? {'id': 999, 'iid': iid}
+                : {},
+            paths: {'projects/909'},
+            queries: queries,
+            beforeSend: variant == 'missingBinding'
+                ? null
+                : (session) => session.bindGraphResource(
+                    target,
+                    path: 'projects/909/$resource/$iid',
+                  ),
+          );
+          if (variant == 'conflictingResponse') {
+            expect(fixture.observer.result.id, 999);
+            expect(fixture.observer.result.iid, iid);
+          }
+          final observing = fixture.observer.observe(
+            Mr7GraphObservation(
+              document: document,
+              variables: variables,
+              parentId: 'gid://gitlab/Project/909',
+              recordPath: ['data', 'node'],
+              connectionPath: ['items'],
+              expectedIds: variant == 'conflictingResponse' ? {target} : {},
+              absentIds: {
+                variant == 'conflictingResponse'
+                    ? 'gid://gitlab/$type/999'
+                    : target,
+              },
+            ),
+          );
+          if (variant == 'absent') {
+            await observing;
+            expect(fixture.observer.verifiedRequests, greaterThan(0));
+          } else {
+            await expectLater(
+              observing,
+              throwsA(anything),
+              reason: '$resource/$variant',
+            );
+            expect(fixture.observer.verifiedRequests, 0);
+            fixture.session.stop('testObservationFailed');
+          }
+          await fixture.session.finish();
+          if (variant != 'absent') expect(server.cleanupWrites, 0);
+        }
+      }
+    },
+  );
+
+  test('Note GID binding rejects a different same-project noteable', () async {
+    final server = Mr7SyntheticGitLab();
+    final session = _session(server, eventDelay: () async {});
+    await session.initialize();
+    server.routes['GET projects/909/issues/3'] = (_) => mr7Json(_issueRow());
+    server.routes['GET projects/909/issues/3/notes/71'] = (_) =>
+        mr7Json({'id': 71, 'project_id': 909, 'noteable_id': 301});
+    await expectLater(
+      session.bindGraphResource(
+        'gid://gitlab/Note/71',
+        path: 'projects/909/issues/3/notes/71',
+      ),
+      throwsA(isA<Mr7Refused>()),
+    );
+    await session.finish();
+    expect(session.quarantined, isTrue);
+    expect(server.cleanupWrites, 0);
+  });
+
+  test(
+    'issue and MR deletion compare route iid with complete list iid',
+    () async {
+      for (final resource in ['issues', 'merge_requests']) {
+        for (final variant in [
+          'absent',
+          'retained',
+          'missingIid',
+          'duplicateIid',
+        ]) {
+          final issue = resource == 'issues';
+          final iid = issue ? 3 : 4;
+          final globalId = issue ? 300 : 400;
+          final server = Mr7SyntheticGitLab();
+          final rows = <Map<String, Object?>>[
+            if (variant == 'retained')
+              {'id': globalId, 'iid': iid, 'project_id': 909},
+            if (variant == 'missingIid') {'id': 501, 'project_id': 909},
+            if (variant == 'duplicateIid') ...[
+              {'id': 501, 'iid': 99, 'project_id': 909},
+              {'id': 502, 'iid': 99, 'project_id': 909},
+            ],
+          ];
+          server.routes['GET projects/909/$resource'] = (_) => mr7Json(
+            rows,
+            headers: _pageHeaders(page: 1, total: rows.length, perPage: 100),
+          );
+          final fixture = await _observationFixture(
+            server,
+            operation: issue ? 'deleteIssue' : 'deleteMergeRequest',
+            method: 'DELETE',
+            mutationPath: 'projects/909/$resource/$iid',
+            paths: {'projects/909', 'projects/909/$resource'},
+          );
+          final observed = fixture.observer.observe(
+            Mr7ListObservation(
+              parent: const Mr7Parent.project(),
+              kind: issue ? Mr7ListKind.issues : Mr7ListKind.mergeRequests,
+              expectedIds: rows.map((r) => r['id']!).toSet(),
+            ),
+          );
+          if (variant == 'absent') {
+            expect(await observed, isEmpty);
+          } else {
+            await expectLater(
+              observed,
+              throwsA(anything),
+              reason: '$resource/$variant',
+            );
+            expect(fixture.observer.verifiedRequests, 0);
+            fixture.session.stop('testObservationFailed');
+          }
+          await fixture.session.finish();
+          if (variant != 'absent') expect(server.cleanupWrites, 0);
+        }
+      }
+    },
+  );
+
+  test(
+    'Graph deletion requires a complete bound connection and created child',
+    () async {
+      for (final variant in [
+        'absent',
+        'noConnection',
+        'wrongCollection',
+        'filtered',
+        'retained',
+        'created',
+        'createdOther',
+        'createdWithoutSelector',
+        'wrongType',
+      ]) {
+        final create = variant.startsWith('created') || variant == 'wrongType';
+        final document = variant == 'noConnection'
+            ? r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } } }'
+            : variant == 'wrongCollection'
+            ? r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } items: discussions { nodes { id } totalCount pageInfo { hasNextPage endCursor } } } }'
+            : variant == 'filtered'
+            ? r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } items: notes(type: "DISCUSSION") { nodes { id } totalCount pageInfo { hasNextPage endCursor } } } }'
+            : r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } items: notes { nodes { id } totalCount pageInfo { hasNextPage endCursor } } } }';
+        final variables = {'id': 'gid://gitlab/Issue/300'};
+        final queries = {
+          document: {mr7Digest(variables)},
+        };
+        final nodes = <Map<String, Object?>>[
+          if (variant == 'retained' ||
+              variant == 'created' ||
+              variant == 'createdWithoutSelector')
+            {'id': 'gid://gitlab/Note/71'},
+          if (variant == 'createdOther') {'id': 'gid://gitlab/Note/72'},
+          if (variant == 'wrongType') {'id': 'gid://gitlab/Label/71'},
+        ];
+        final server = Mr7SyntheticGitLab();
+        server.routes['GET projects/909/issues/3'] = (_) =>
+            mr7Json(_issueRow());
+        server.routes['POST /install/api/graphql'] = (_) => mr7Json({
+          'data': {
+            'currentUser': {
+              'id': 'gid://gitlab/User/7',
+              'username': 'synthetic-owner',
+            },
+            'node': {
+              'id': 'gid://gitlab/Issue/300',
+              'project': {
+                'id': 'gid://gitlab/Project/909',
+                'fullPath': 'synthetic-owner/mr7-testnonce123',
+              },
+              'items': {
+                'nodes': nodes,
+                'totalCount': nodes.length,
+                'pageInfo': {'hasNextPage': false, 'endCursor': null},
+              },
+            },
+          },
+        });
+        final fixture = await _observationFixture(
+          server,
+          operation: create ? 'createNote' : 'deleteNote',
+          mutationPath: create
+              ? 'projects/909/issues/3/notes'
+              : 'projects/909/issues/3/notes/71',
+          method: create ? 'POST' : 'DELETE',
+          response: create && variant != 'createdWithoutSelector'
+              ? {'id': 'gid://gitlab/Note/71'}
+              : {},
+          status: create ? 201 : 204,
+          paths: {'projects/909/issues/3'},
+          queries: queries,
+        );
+        await fixture.session.bindGraphResource(
+          'gid://gitlab/Issue/300',
+          path: 'projects/909/issues/3',
+        );
+        final observing = fixture.observer.observe(
+          Mr7GraphObservation(
+            document: document,
+            variables: variables,
+            parentId: 'gid://gitlab/Issue/300',
+            recordPath: ['data', 'node'],
+            connectionPath: variant == 'noConnection' ? null : ['items'],
+            expectedIds: variant == 'noConnection'
+                ? null
+                : nodes.map((n) => n['id']! as String).toSet(),
+            absentIds: create ? {} : {'gid://gitlab/Note/71'},
+          ),
+        );
+        if (variant == 'absent' || variant == 'created') {
+          await observing;
+        } else {
+          await expectLater(observing, throwsA(anything), reason: variant);
+          expect(fixture.observer.verifiedRequests, 0);
+          fixture.session.stop('testObservationFailed');
+        }
+        await fixture.session.finish();
+        if (variant != 'absent' && variant != 'created') {
+          expect(server.cleanupWrites, 0);
+        }
+      }
+    },
+  );
+
+  test('unverified Graph deletion stops later scenarios and cleanup', () async {
+    const document =
+        r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } } }';
+    final variables = {'id': 'gid://gitlab/Issue/300'};
+    final server = Mr7SyntheticGitLab();
+    server.routes['GET projects/909/issues/3'] = (_) => mr7Json(_issueRow());
+    server.routes['GET projects/909/issues/3/notes/71'] = (_) => mr7Json({
+      'id': 71,
+      'project_id': 909,
+      'noteable_id': 300,
+      'body': 'Retained synthetic note',
+      'author': {'username': 'synthetic-owner'},
+    });
+    server.routes['DELETE projects/909/issues/3/notes/71'] = (_) {
+      server.scenarioWrites++;
+      server.addEvent(target: 909);
+      return mr7Json({}, status: 204);
+    };
+    server.routes['POST /install/api/graphql'] = (_) => mr7Json({
+      'data': {
+        'currentUser': {
+          'id': 'gid://gitlab/User/7',
+          'username': 'synthetic-owner',
+        },
+        'node': {
+          'id': 'gid://gitlab/Issue/300',
+          'project': {
+            'id': 'gid://gitlab/Project/909',
+            'fullPath': 'synthetic-owner/mr7-testnonce123',
+          },
+        },
+      },
+    });
+    final session = _session(server, eventDelay: () async {});
+    final deletion = sandbox.Mr7Scenario(
+      id: 'delete-retained-note',
+      suite: 'rest',
+      operation: 'deleteNote',
+      variant: 'missing-connection',
+      tier: 'T4',
+      targetKind: AiTargetKind.note,
+      utterance: (p) => 'Delete #note_71 from issue #3 in ${p.path}.',
+      resource: (_) => const AiResourceRef(kind: AiResourceKind.issue, id: 3),
+      call: (p) => AiToolCall(
+        id: 'delete-retained-note',
+        name: 'deleteNote',
+        arguments: {
+          'projectId': p.projectId,
+          'resource': 'issues',
+          'iid': 3,
+          'noteId': 71,
+          'reason': 'The user explicitly requested deletion.',
+        },
+      ),
+      paths: (p) => {'DELETE projects/${p.projectId}/issues/3/notes/71'},
+      readbackPaths: (p, _) => {'projects/${p.projectId}/issues/3'},
+      observerQueries: (_, _) => {
+        document: {mr7Digest(variables)},
+      },
+      observe: (observer, _) async {
+        await session.bindGraphResource(
+          'gid://gitlab/Issue/300',
+          path: 'projects/909/issues/3',
+        );
+        await observer.observe(
+          Mr7GraphObservation(
+            document: document,
+            variables: variables,
+            recordPath: ['data', 'node'],
+            parentId: 'gid://gitlab/Issue/300',
+            absentIds: {'gid://gitlab/Note/71'},
+          ),
+        );
+        return true;
+      },
+    );
+    final receipt = await sandbox.runMr7Sandbox(
+      policy: Mr7Policy.candidate,
+      releaseSha: _sha,
+      session: session,
+      // The real coordinator requires both the owning issue and the prepared
+      // child note target to be released. The second scenario supplies the
+      // owner kind to the candidate view and must never execute.
+      scenarios: [
+        deletion,
+        sandbox.Mr7Scenario(
+          id: 'delete-owner-sentinel',
+          suite: 'rest',
+          operation: 'deleteNote',
+          variant: 'owner-release',
+          tier: 'T4',
+          targetKind: AiTargetKind.issue,
+          call: deletion.call,
+          paths: deletion.paths,
+          observe: deletion.observe,
+        ),
+        _star('after-unverified-delete'),
+      ],
+      confirm: (_) async => true,
+      typedConfirm: (proposal) async => proposal.requiredTypedName,
+    );
+    expect(
+      _rows(receipt).first['mutationCount'],
+      1,
+      reason: jsonEncode(receipt),
+    );
+    expect(
+      _rows(receipt).first['status'],
+      'NOT_VERIFIED',
+      reason: jsonEncode(receipt),
+    );
+    expect(_rows(receipt).first['readback'], 'NOT_VERIFIED');
+    expect(_rows(receipt)[1]['status'], 'NOT_RUN');
+    expect(_rows(receipt).last['status'], 'NOT_RUN');
+    expect(server.scenarioWrites, 1);
+    expect(server.cleanupWrites, 0);
+  });
+
+  test('approval direction is fixed by the dispatched operation', () async {
+    for (final variant in [
+      'approvePresent',
+      'approveAbsent',
+      'approveOppositeSpec',
+      'unapproveAbsent',
+      'unapprovePresent',
+      'unapproveOppositeSpec',
+      'unsupported',
+    ]) {
+      final unapprove = variant.startsWith('unapprove');
+      final present =
+          variant == 'approvePresent' ||
+          variant == 'unapprovePresent' ||
+          variant == 'unsupported';
+      final specApproved = variant == 'approveOppositeSpec'
+          ? false
+          : variant == 'unapproveOppositeSpec'
+          ? true
+          : !unapprove;
+      final server = Mr7SyntheticGitLab();
+      server.routes['GET projects/909/merge_requests/4'] = (_) =>
+          mr7Json(_mrRow());
+      server.routes['GET projects/909/merge_requests/4/approvals'] = (_) =>
+          mr7Json({
+            'id': 400,
+            'iid': 4,
+            'approved_by': [
+              if (present)
+                {
+                  'user': {'id': 7},
+                },
+            ],
+          });
+      final fixture = await _observationFixture(
+        server,
+        operation: variant == 'unsupported'
+            ? 'unknownApproval'
+            : unapprove
+            ? 'unapproveMergeRequest'
+            : 'approveMergeRequest',
+        mutationPath:
+            'projects/909/merge_requests/4/${unapprove ? 'unapprove' : 'approve'}',
+        paths: {
+          'projects/909/merge_requests/4',
+          'projects/909/merge_requests/4/approvals',
+        },
+      );
+      final observing = fixture.observer.observe(
+        Mr7ApprovalObservation(parent: _mrParent, approved: specApproved),
+      );
+      if (variant == 'approvePresent' || variant == 'unapproveAbsent') {
+        expect(await observing, isTrue);
+      } else {
+        await expectLater(observing, throwsA(anything), reason: variant);
+        fixture.session.stop('testObservationFailed');
+      }
+      await fixture.session.finish();
+      if (variant != 'approvePresent' && variant != 'unapproveAbsent') {
+        expect(server.cleanupWrites, 0);
+      }
+    }
+  });
+
+  test(
+    'repository witnesses bind the dispatched branch and source ref',
+    () async {
+      for (final variant in [
+        'correctBranch',
+        'wrongBranch',
+        'missingBranch',
+        'branchDrift',
+      ]) {
+        final server = Mr7SyntheticGitLab();
+        var branchReads = 0;
+        server.routes['GET projects/909/repository/branches/target'] = (_) {
+          branchReads++;
+          return mr7Json({
+            'name': 'target',
+            'commit': {
+              'id':
+                  variant == 'wrongBranch' ||
+                      (variant == 'branchDrift' && branchReads > 1)
+                  ? 'b' * 40
+                  : _sha,
+            },
+          });
+        };
+        server.routes['GET projects/909/repository/files/a.txt'] = (request) {
+          expect(request.queryParameters['ref'], _sha);
+          return mr7Json({
+            'file_path': 'a.txt',
+            'commit_id': _sha,
+            'encoding': 'base64',
+            'content': base64Encode(utf8.encode('contents')),
+          });
+        };
+        final fixture = await _observationFixture(
+          server,
+          operation: 'createFile',
+          mutationPath: 'projects/909/repository/files/a.txt',
+          body: {
+            if (variant != 'missingBranch') 'branch': 'target',
+            'content': 'contents',
+          },
+          paths: {
+            'projects/909/repository/files/a.txt',
+            'projects/909/repository/branches/target',
+          },
+        );
+        final observing = fixture.observer.observe(
+          const Mr7FileObservation(
+            path: 'a.txt',
+            sha: _sha,
+            content: 'contents',
+          ),
+        );
+        if (variant == 'correctBranch') {
+          await observing;
+          expect(branchReads, 2);
+        } else {
+          await expectLater(observing, throwsA(anything), reason: variant);
+          fixture.session.stop('testObservationFailed');
+        }
+        await fixture.session.finish();
+      }
+      for (final kind in Mr7RefKind.values) {
+        final branch = kind == Mr7RefKind.branch;
+        final collection = branch ? 'branches' : 'tags';
+        final server = Mr7SyntheticGitLab();
+        server.routes['GET projects/909/repository/$collection/target'] = (_) =>
+            mr7Json({
+              'name': 'target',
+              'commit': {'id': _sha},
+            });
+        final fixture = await _observationFixture(
+          server,
+          operation: branch ? 'createBranch' : 'createTag',
+          mutationPath: 'projects/909/repository/$collection',
+          body: {branch ? 'branch' : 'tag_name': 'target', 'ref': 'b' * 40},
+          paths: {'projects/909/repository/$collection/target'},
+        );
+        await expectLater(
+          fixture.observer.observe(
+            Mr7RefObservation(kind: kind, name: 'target', sha: _sha),
+          ),
+          throwsA(anything),
+          reason: kind.name,
+        );
+        fixture.session.stop('testObservationFailed');
+        await fixture.session.finish();
+        expect(server.cleanupWrites, 0);
+      }
+    },
+  );
+
   test(
     'absence cannot bless a retained target or a different same-project parent',
     () async {
@@ -331,14 +1169,29 @@ void main() {
   test(
     'Graph exact absence checks the removed note and AwardEmoji note relationship',
     () async {
-      const document =
-          r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } items { nodes { id note { id } } totalCount pageInfo { hasNextPage endCursor } } } }';
-      for (final variant in ['absent', 'present', 'award', 'wrongNote']) {
+      for (final variant in [
+        'absent',
+        'present',
+        'award',
+        'wrongNote',
+        'wrongSpec',
+      ]) {
         final server = Mr7SyntheticGitLab();
         server.routes['GET projects/909/issues/3'] = (_) =>
             mr7Json(_issueRow());
-        final award = variant == 'award' || variant == 'wrongNote';
-        final variables = {'id': 'gid://gitlab/Issue/300'};
+        server.routes['GET projects/909/issues/3/notes/71'] = (_) =>
+            mr7Json({'id': 71, 'noteable_id': 300, 'project_id': 909});
+        final award =
+            variant == 'award' ||
+            variant == 'wrongNote' ||
+            variant == 'wrongSpec';
+        final document = award
+            ? r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } items: awardEmoji { nodes { id note { id } } totalCount pageInfo { hasNextPage endCursor } } } }'
+            : r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } items: notes { nodes { id } totalCount pageInfo { hasNextPage endCursor } } } }';
+        final parentId = award
+            ? 'gid://gitlab/Note/71'
+            : 'gid://gitlab/Issue/300';
+        final variables = {'id': parentId};
         final queries = {
           document: {mr7Digest(variables)},
         };
@@ -349,7 +1202,7 @@ void main() {
               'username': 'synthetic-owner',
             },
             'node': {
-              'id': 'gid://gitlab/Issue/300',
+              'id': parentId,
               'project': {
                 'id': 'gid://gitlab/Project/909',
                 'fullPath': 'synthetic-owner/mr7-testnonce123',
@@ -363,7 +1216,7 @@ void main() {
                           : 'gid://gitlab/Note/71',
                       if (award)
                         'note': {
-                          'id': variant == 'wrongNote'
+                          'id': variant == 'wrongNote' || variant == 'wrongSpec'
                               ? 'gid://gitlab/Note/72'
                               : 'gid://gitlab/Note/71',
                         },
@@ -384,18 +1237,20 @@ void main() {
           method: award ? 'POST' : 'DELETE',
           response: award ? {'id': 'gid://gitlab/AwardEmoji/90'} : {},
           status: award ? 201 : 204,
-          paths: {'projects/909/issues/3'},
+          paths: {'projects/909/issues/3', 'projects/909/issues/3/notes/71'},
           queries: queries,
         );
         await fixture.session.bindGraphResource(
-          'gid://gitlab/Issue/300',
-          path: 'projects/909/issues/3',
+          parentId,
+          path: award
+              ? 'projects/909/issues/3/notes/71'
+              : 'projects/909/issues/3',
         );
         final observing = fixture.observer.observe(
           Mr7GraphObservation(
             document: document,
             variables: variables,
-            parentId: 'gid://gitlab/Issue/300',
+            parentId: parentId,
             recordPath: ['data', 'node'],
             connectionPath: ['items'],
             expectedIds: variant == 'absent'
@@ -406,7 +1261,9 @@ void main() {
                         : 'gid://gitlab/Note/71',
                   },
             absentIds: award ? {} : {'gid://gitlab/Note/71'},
-            noteId: award ? 'gid://gitlab/Note/71' : null,
+            noteId: award
+                ? 'gid://gitlab/Note/${variant == 'wrongSpec' ? 72 : 71}'
+                : null,
           ),
         );
         if (variant == 'absent' || variant == 'award') {
@@ -638,7 +1495,7 @@ void main() {
         server,
         operation: 'createFile',
         mutationPath: 'projects/909/repository/files/dir%2Fa%20b.txt',
-        body: {'content': 'exact\n bytes '},
+        body: {'branch': 'fixture/branch', 'content': 'exact\n bytes '},
         paths: {
           'projects/909/repository/files/dir%2Fa%20b.txt',
           'projects/909/repository/branches/fixture%2Fbranch',
@@ -813,6 +1670,8 @@ void main() {
     () async {
       for (final variant in [
         'complete',
+        'immediate',
+        'pendingUnchanged',
         'pending',
         'error',
         'late',
@@ -821,22 +1680,27 @@ void main() {
       ]) {
         final server = Mr7SyntheticGitLab();
         var polls = 0;
-        server.routes['GET projects/909/merge_requests/4'] = (_) async {
+        server.routes['GET projects/909/merge_requests/4'] = (request) async {
           if (server.scenarioWrites == 0) {
             return mr7Json({
               ..._mrRow(),
-              'rebase_in_progress': false,
+              'sha': variant == 'immediate' || variant == 'complete'
+                  ? 'a' * 40
+                  : _sha,
               'merge_error': null,
             });
           }
           polls++;
+          expect(request.queryParameters['include_rebase_in_progress'], true);
           if (variant == 'late') {
             await Future<void>.delayed(const Duration(milliseconds: 40));
           }
           return mr7Json({
             ..._mrRow(),
-            'rebase_in_progress':
-                variant == 'pending' || (polls == 1 && variant != 'idle'),
+            if (request.queryParameters['include_rebase_in_progress'] == true)
+              'rebase_in_progress':
+                  variant == 'pending' ||
+                  (polls == 1 && variant != 'idle' && variant != 'immediate'),
             'merge_error': variant == 'error' ? 'synthetic error' : null,
             'sha': variant == 'wrongSha' ? 'b' * 40 : _sha,
           });
@@ -858,9 +1722,9 @@ void main() {
             timeout: Duration(milliseconds: variant == 'late' ? 5 : 500),
           ),
         );
-        if (variant == 'complete') {
+        if (variant == 'complete' || variant == 'immediate') {
           expect((await observing)['rebase_in_progress'], isFalse);
-          expect(polls, 2);
+          expect(polls, variant == 'complete' ? 2 : 1);
         } else {
           await expectLater(observing, throwsA(anything), reason: variant);
           fixture.session.stop('testObservationFailed');
@@ -872,7 +1736,9 @@ void main() {
         }
         expect(server.scenarioWrites, 1);
         await fixture.session.finish();
-        if (variant != 'complete') expect(server.cleanupWrites, 0);
+        if (variant != 'complete' && variant != 'immediate') {
+          expect(server.cleanupWrites, 0);
+        }
       }
     },
   );
@@ -1271,8 +2137,8 @@ void main() {
           mr7Json(approvals);
       final fixture = await _observationFixture(
         server,
-        operation: 'unapproveMergeRequest',
-        mutationPath: 'projects/909/merge_requests/4/unapprove',
+        operation: 'approveMergeRequest',
+        mutationPath: 'projects/909/merge_requests/4/approve',
         paths: {
           'projects/909/merge_requests/4',
           'projects/909/merge_requests/4/approvals',
@@ -1291,11 +2157,11 @@ void main() {
         throwsA(anything),
       );
       approvals['approved_by'] = [];
-      expect(
-        await fixture.observer.observe(
+      await expectLater(
+        fixture.observer.observe(
           const Mr7ApprovalObservation(parent: _mrParent, approved: false),
         ),
-        isTrue,
+        throwsA(anything),
       );
       await fixture.session.finish();
     },
@@ -1671,11 +2537,25 @@ void main() {
         'foreignId',
         'group',
         'nested',
+        'numericNoteable',
+        'invalidNoteable',
+        'numericAwardable',
+        'invalidAwardable',
+        'literalNoteable',
+        'literalAwardable',
       ]) {
         final field = variant == 'group' ? 'group' : 'synthetic';
         final argument = switch (variant) {
           'foreignId' => r'projectId: $destination',
           'nested' => r'input: {projectId: $destination}',
+          'numericNoteable' ||
+          'invalidNoteable' => r'input: {noteableId: $destination}',
+          'numericAwardable' ||
+          'invalidAwardable' => r'input: {awardableId: $destination}',
+          'literalNoteable' =>
+            'input: {noteableId: "gid://gitlab/Project/909"}',
+          'literalAwardable' =>
+            'input: {awardableId: "gid://gitlab/Project/909"}',
           _ => r'fullPath: $destination',
         };
         final document =
@@ -1683,6 +2563,9 @@ void main() {
         final vars = {
           'destination': switch (variant) {
             'foreignId' || 'nested' => 777,
+            'numericNoteable' || 'numericAwardable' => 42,
+            'literalNoteable' ||
+            'literalAwardable' => 'gid://gitlab/Project/909',
             'owned' => 'synthetic-owner/mr7-testnonce123',
             _ => 'foreign/project',
           },
@@ -1811,8 +2694,12 @@ void main() {
     }.entries) {
       final gid = 'gid://gitlab/${entry.key}/44';
       final path = 'projects/909/${entry.value}';
-      server.routes['GET $path'] = (_) =>
-          mr7Json({'id': 44, 'project_id': 909});
+      server.routes['GET $path'] = (_) => mr7Json({
+        'id': 44,
+        'project_id': 909,
+        if (entry.key == 'Issue' || entry.key == 'MergeRequest') 'iid': 4,
+        if (entry.key == 'Note') 'noteable_id': 44,
+      });
       await session.bindGraphResource(gid, path: path);
       final vars = {'id': gid};
       session.observerAdapter.graphReadDocuments = {
