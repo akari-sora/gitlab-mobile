@@ -669,6 +669,9 @@ void main() {
       }
       expect(observed, executable.map((c) => c.id).toSet());
     },
+    // A rolling-hour window of 60 encrypted journal writes: seconds on an idle
+    // host, more than a minute on a loaded runner.
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 
   for (final variant in ['issue', 'issue-note', 'mr', 'mr-note']) {
