@@ -499,6 +499,35 @@ rendered page exceeds the browser reader's size limit. This documents schema
 compatibility, not a live instance/tier acceptance result.
 
 
+## Wave 3d production request compatibility
+
+The WorkItem state witness compares the tool's lowercase `close`/`reopen`
+argument with the production `CLOSE`/`REOPEN` dispatch enum and separately checks
+the resulting lifecycle. Label witnesses interpret an omitted delta side as an
+empty list. Explicit nulls and malformed lists remain refused; complete label
+sets, disjoint deltas, exact dispatch and snapshot preservation remain required.
+
+Only the three sealed production project milestone documents (current read,
+project picker and milestone mutation response) may select the nullable
+`group { id fullPath }` owner projection. Both writer and independent observer
+validate returned owners: null, or exactly the sandbox namespace ID and path.
+Changed documents, other group fields, group selectors and group writes remain
+closed. Changing a production document requires updating its seal and running
+the production-request regressions in `mr7_sandbox_wave3d_test.dart`.
+
+After a successful comment/reply dispatch, the guard captures only its exact
+returned Note GID and freshly reads that Note and its already bound WorkItem
+parent before returning the acknowledgement to core. The author must be the
+actor, the parent and project must match the dispatched WorkItem, and the Note
+must be ordinary and public. The binding rechecks session identity and the
+current permit after those reads. A previously bound Note, another returned GID,
+missing ownership evidence or a changed account/permit cannot authorize core
+readback. The later independent activity witness still verifies content and
+opaque discussion/reply relationships.
+
+These repairs supply the four 7B2j seams; scenario closure removal and inventory
+wiring remain the scenario owner's work. All evidence remains synthetic.
+
 ## Wave 3c effect witnesses
 
 Set `Mr7Scenario.captureEffects: true` (or the same property on a direct-test
