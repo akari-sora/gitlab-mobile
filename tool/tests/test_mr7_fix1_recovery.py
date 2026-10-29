@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -23,6 +24,9 @@ PAT = 'synthetic-pat-for-local-gitlab'
 KEY = 'synthetic-key-for-local-provider'
 
 
+# The wrapper starts the Dart host with fvm; python_checks runs in an image
+# without Flutter, so these cross-process tests run only where fvm exists.
+@unittest.skipUnless(shutil.which('fvm'), 'needs the fvm Flutter toolchain')
 class ProcessRecoveryTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='mr7-fix1-process-', dir=ROOT.parent)

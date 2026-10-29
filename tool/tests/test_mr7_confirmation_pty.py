@@ -1,4 +1,5 @@
 """Exercise the real approval reader on an isolated controlling terminal."""
+import errno
 import json
 import os
 from pathlib import Path
@@ -128,19 +129,30 @@ class ConfirmationPtyTest(unittest.TestCase):
                 pass
             self.wait(5)
 
+    def _read(self):
+        # Once the terminal's last process has exited, Linux reports EIO on the
+        # master where Darwin reports end of file; both mean no more output.
+        try:
+            self.transcript += os.read(self.master, 4096)
+            return True
+        except OSError as error:
+            if error.errno != errno.EIO:
+                raise
+            return False
+
     def read_until(self, marker):
         end = time.monotonic() + 10
         while marker not in self.transcript and time.monotonic() < end:
-            if select.select([self.master], [], [], 0.05)[0]:
-                self.transcript += os.read(self.master, 4096)
+            if select.select([self.master], [], [], 0.05)[0] and not self._read():
+                time.sleep(0.05)
         self.assertIn(marker, self.transcript)
 
     def finish(self, result, *, timeout=10):
         result_path = self.directory / 'result'
         end = time.monotonic() + timeout
         while not result_path.exists() and time.monotonic() < end:
-            if select.select([self.master], [], [], 0.05)[0]:
-                self.transcript += os.read(self.master, 4096)
+            if select.select([self.master], [], [], 0.05)[0] and not self._read():
+                time.sleep(0.05)
         self.assertTrue(result_path.exists(), 'approval wrapper did not return before the test deadline')
         self.assertEqual(result_path.read_text(), result)
         # Inspect before closing the controlling terminal: closing it can release
