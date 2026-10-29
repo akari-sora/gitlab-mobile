@@ -47,6 +47,12 @@ def require(condition, message):
         raise GateError(message)
 
 
+def require_fields(conditions, message):
+    # Callers supply fixed field names, never response values or credentials.
+    failed = [field for field, passed in conditions.items() if not passed]
+    require(not failed, f"{message}: {', '.join(failed)}")
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
@@ -73,9 +79,9 @@ def json_bytes(data, *, object_only=True):
     return value
 
 
-def numeric_id(value):
+def numeric_id(value, *, field=None):
     require(not isinstance(value, bool) and re.fullmatch(r"[1-9][0-9]*", str(value)),
-            "Expected a numeric job ID")
+            "Expected a numeric job ID" + (f": {field}" if field else ""))
     return int(value)
 
 
@@ -157,10 +163,12 @@ class GitLab:
         data = self.read(f"{API}/projects/{PROJECT}/repository/branches?search=%5Emain%24&per_page=100",
                          job_token=True)
         branches = json_bytes(data, object_only=False)
-        require(isinstance(branches, list), "Missing authenticated branch list")
+        require(isinstance(branches, list), "Missing authenticated branch list: branches")
         matches = [branch for branch in branches if isinstance(branch, dict)
                    and branch.get("name") == RELEASE_REF]
-        return len(matches) == 1 and matches[0].get("protected") is True
+        require(len(matches) == 1, "Release branch is not protected: name=main")
+        require(matches[0].get("protected") is True, "Release branch is not protected: protected")
+        return True
 
     def artifact(self, job_id, path):
         parsed = PurePosixPath(path)
@@ -183,38 +191,54 @@ def pipeline_source_allowed(name, source):
 
 
 def verify_job(api, job, name, sha, *, status="success", pipeline_id=None):
-    job_id = numeric_id(job.get("id"))
+    job_id = numeric_id(job.get("id"), field="id")
     pipeline = job.get("pipeline", {})
-    require(job.get("name") == name and job.get("status") == status, "Wrong job name or status")
-    require(job.get("ref") == RELEASE_REF and job.get("tag") is False,
-            "Job is not on the protected release branch")
-    require(job.get("commit", {}).get("id") == sha and pipeline.get("sha") == sha, "Job SHA mismatch")
-    require(pipeline.get("project_id") == PROJECT and pipeline.get("ref") == RELEASE_REF,
-            "Job project or pipeline ref mismatch")
-    pid = numeric_id(pipeline.get("id"))
-    require(pipeline_id is None or pid == pipeline_id, "Wrong release pipeline")
-    require(job.get("web_url") == f"{WEB}/-/jobs/{job_id}", "Wrong job URL")
+    require(isinstance(pipeline, dict), "Job project or pipeline ref mismatch: pipeline")
+    commit = job.get("commit", {})
+    require(isinstance(commit, dict), "Job SHA mismatch: commit")
+    require_fields({"name": job.get("name") == name, "status": job.get("status") == status},
+                   "Wrong job name or status")
+    require_fields({"ref": job.get("ref") == RELEASE_REF, "tag": job.get("tag") is False},
+                   "Job is not on the protected release branch")
+    require_fields({"commit.id": commit.get("id") == sha,
+                    "pipeline.sha": pipeline.get("sha") == sha}, "Job SHA mismatch")
+    require_fields({"pipeline.project_id": pipeline.get("project_id") == PROJECT,
+                    "pipeline.ref": pipeline.get("ref") == RELEASE_REF},
+                   "Job project or pipeline ref mismatch")
+    pid = numeric_id(pipeline.get("id"), field="pipeline.id")
+    require(pipeline_id is None or pid == pipeline_id, "Wrong release pipeline: pipeline.id")
+    require(job.get("web_url") == f"{WEB}/-/jobs/{job_id}", "Wrong job URL: web_url")
     actual = api.get(f"pipelines/{pid}")
-    require(actual.get("id") == pid and actual.get("project_id") == PROJECT
-            and actual.get("sha") == sha and actual.get("ref") == RELEASE_REF
-            and pipeline_source_allowed(name, actual.get("source"))
-            and actual.get("web_url") == f"{WEB}/-/pipelines/{pid}", "Untrusted release pipeline")
+    require_fields({"pipeline.id": actual.get("id") == pid,
+                    "pipeline.project_id": actual.get("project_id") == PROJECT,
+                    "pipeline.sha": actual.get("sha") == sha,
+                    "pipeline.ref": actual.get("ref") == RELEASE_REF,
+                    "pipeline.source": pipeline_source_allowed(name, actual.get("source")),
+                    "pipeline.web_url": actual.get("web_url") == f"{WEB}/-/pipelines/{pid}"},
+                   "Untrusted release pipeline")
     require(api.get(f"repository/branches/{RELEASE_REF}").get("protected") is True,
-            "Release branch is not protected")
+            "Release branch is not protected: protected")
     return {"id": job_id, "name": name, "status": status, "release_sha": sha,
             "pipeline_id": pid, "pipeline_url": actual["web_url"], "job_url": job["web_url"]}
 
 
 def verify_current_job(job, name, sha):
     pipeline = job.get("pipeline", {})
-    require(job.get("name") == name and job.get("status") == "running"
-            and pipeline_source_allowed(name, job.get("source"))
-            and job.get("ref") == RELEASE_REF and job.get("tag") is False
-            and job.get("commit", {}).get("id") == sha
-            and pipeline.get("sha") == sha and pipeline.get("ref") == RELEASE_REF
-            and pipeline.get("project_id") == PROJECT
-            and job.get("web_url") == f"{WEB}/-/jobs/{numeric_id(job.get('id'))}",
-            "Untrusted current job identity")
+    require(isinstance(pipeline, dict), "Untrusted current job identity: pipeline")
+    commit = job.get("commit", {})
+    require(isinstance(commit, dict), "Untrusted current job identity: commit")
+    job_id = numeric_id(job.get("id"), field="id")
+    require_fields({"name": job.get("name") == name,
+                    "status": job.get("status") == "running",
+                    "pipeline.source": pipeline_source_allowed(name, pipeline.get("source")),
+                    "ref": job.get("ref") == RELEASE_REF,
+                    "tag": job.get("tag") is False,
+                    "commit.id": commit.get("id") == sha,
+                    "pipeline.sha": pipeline.get("sha") == sha,
+                    "pipeline.ref": pipeline.get("ref") == RELEASE_REF,
+                    "pipeline.project_id": pipeline.get("project_id") == PROJECT,
+                    "web_url": job.get("web_url") == f"{WEB}/-/jobs/{job_id}"},
+                   "Untrusted current job identity")
     return job
 
 
@@ -457,16 +481,16 @@ def main(argv=None):
     parser.add_argument("--receipts-job-id")
     args = parser.parse_args(argv)
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    require(os.environ.get("CI_COMMIT_SHA") == sha, "Checkout and CI SHA differ")
-    require(os.environ.get("CI_PROJECT_ID") == str(PROJECT)
-            and os.environ.get("CI_COMMIT_REF_PROTECTED") == "true"
-            and os.environ.get("CI_COMMIT_BRANCH") == RELEASE_REF
-            and os.environ.get("CI_PIPELINE_SOURCE") != "merge_request_event",
-            "Not a protected project release lane")
+    require(os.environ.get("CI_COMMIT_SHA") == sha, "Checkout and CI SHA differ: CI_COMMIT_SHA")
+    require_fields({"CI_PROJECT_ID": os.environ.get("CI_PROJECT_ID") == str(PROJECT),
+                    "CI_COMMIT_REF_PROTECTED": os.environ.get("CI_COMMIT_REF_PROTECTED") == "true",
+                    "CI_COMMIT_BRANCH": os.environ.get("CI_COMMIT_BRANCH") == RELEASE_REF,
+                    "CI_PIPELINE_SOURCE": os.environ.get("CI_PIPELINE_SOURCE") != "merge_request_event"},
+                   "Not a protected project release lane")
     if args.action == "delivery" and args.mode == "off":
         api = GitLab(None, os.environ.get("CI_JOB_TOKEN", ""))
         verify_current_job(api.current_job(), "publish_preview", sha)
-        require(api.current_release_protected(), "Release branch is not protected")
+        require(api.current_release_protected(), "Release branch is not protected: protected")
         metadata_for_delivery(Path("."), sha, "off")
         print("MR7 AI-off delivery metadata verified")
         return
