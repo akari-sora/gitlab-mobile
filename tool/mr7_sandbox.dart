@@ -197,8 +197,7 @@ final class Mr7Scenario {
     Mr7MutationResult result,
   )?
   observerQueries;
-  final Mr7ParentStateObservation Function(Mr7Identity identity)?
-  noChangeObservation;
+  final Mr7StateObservation Function(Mr7Identity identity)? noChangeObservation;
 }
 
 List<Mr7Scenario> mr7ContractScenarios() => [
@@ -1024,6 +1023,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
           ...fixtures.graphVariablesDigests,
         }),
         resultPath: scenario.resultPath,
+        callArguments: call.arguments,
       );
       permit.snapshot = snapshot;
       s.permit = permit;
