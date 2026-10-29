@@ -4,6 +4,12 @@ workflow:
     - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"'
       when: never
     - if: '$CI_COMMIT_TAG'
+    # A new commit cancels the superseded pipeline of the same ref. On main the
+    # cancel is conservative: a pending pipeline is cancelled, but one whose
+    # non-interruptible main_run_to_completion job has started runs to the end.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      auto_cancel:
+        on_new_commit: conservative
     - if: '$CI_COMMIT_BRANCH'
 stages: [verify, build, deliver]
 variables:
@@ -50,6 +56,18 @@ resolve_lock:
   artifacts:
     expire_in: 1 day
     paths: [pubspec.lock]
+main_run_to_completion:
+  # Starts first on main and cannot be interrupted, so a later push no longer
+  # cancels a main pipeline that is already running (see workflow above).
+  stage: verify
+  timeout: 5m
+  interruptible: false
+  rules:
+    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1" || $GH2GL_SYNC == "1"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  script:
+    - echo "main pipeline $CI_PIPELINE_ID runs to completion"
 python_checks:
   extends: .regular
   stage: verify
