@@ -69,6 +69,70 @@ ResponseBody mr7Json(
   },
 );
 
+Map<String, List<String>> _pageHeaders(int page, int size, int total) => {
+  'x-page': ['$page'],
+  'x-per-page': ['$size'],
+  'x-total': ['$total'],
+  'x-total-pages': ['${total == 0 ? 1 : (total + size - 1) ~/ size}'],
+  'x-next-page': [page * size < total ? '${page + 1}' : ''],
+};
+
+/// Completeness requires contiguous offset pages and stable, counted totals.
+/// Missing metadata, cursor pagination and truncated pages cannot prove absence.
+final class _PageSequence {
+  int? _total;
+  int? _size;
+  int? _pages;
+
+  int? next(Response<Object?> response, int page) {
+    String header(String key) {
+      final values = response.headers[key];
+      if (values == null || values.length != 1) {
+        throw const Mr7Refused('paginationIncomplete');
+      }
+      return values.single;
+    }
+
+    int number(String key) {
+      final value = header(key);
+      if (!RegExp(r'^(0|[1-9][0-9]*)$').hasMatch(value)) {
+        throw const Mr7Refused('paginationMalformed');
+      }
+      return int.parse(value);
+    }
+
+    if (response.statusCode != 200 || response.data is! List) {
+      throw const Mr7Refused('paginationUnreadable');
+    }
+    final total = number('x-total');
+    final size = number('x-per-page');
+    final pages = number('x-total-pages');
+    if (number('x-page') != page ||
+        size < 1 ||
+        size > 100 ||
+        page > 20 ||
+        (total == 0
+            ? pages != 0 && pages != 1
+            : pages != (total + size - 1) ~/ size) ||
+        pages > 20 ||
+        (pages > 0 && page > pages) ||
+        (_total != null &&
+            (_total != total || _size != size || _pages != pages))) {
+      throw const Mr7Refused('paginationInconsistent');
+    }
+    _total = total;
+    _size = size;
+    _pages = pages;
+    final expectedCount = page < pages ? size : total - (page - 1) * size;
+    final next = header('x-next-page');
+    if ((response.data! as List).length != expectedCount ||
+        next != (page < pages ? '${page + 1}' : '')) {
+      throw const Mr7Refused('paginationIncomplete');
+    }
+    return next.isEmpty ? null : int.parse(next);
+  }
+}
+
 /// Simulated server, reached through serialized responses. Distinct writer and
 /// observer adapters prove synthetic mechanics, never live server effects.
 final class Mr7SyntheticGitLab {
@@ -133,10 +197,8 @@ final class Mr7SyntheticGitLab {
       return mr7Json(
         events.skip(start).take(eventPageSize).toList(),
         headers: {
-          if (!incompleteEvents)
-            'x-next-page': [
-              start + eventPageSize < events.length ? '${page + 1}' : '',
-            ],
+          ..._pageHeaders(page, eventPageSize, events.length),
+          if (incompleteEvents) 'x-next-page': [],
         },
       );
     }
@@ -165,7 +227,9 @@ final class Mr7SyntheticGitLab {
       return mr7Json(project, status: 201);
     }
     if (request.method == 'GET' && path == 'projects') {
-      return mr7Json([if (project != null) project]);
+      return mr7Json([
+        if (project != null) project,
+      ], headers: _pageHeaders(1, 100, project == null ? 0 : 1));
     }
     if (request.method == 'GET' &&
         (path == 'projects/$projectId' ||
@@ -207,10 +271,229 @@ void _checkUri(RequestOptions options, Uri instance) {
       uri.port != instance.port ||
       uri.userInfo.isNotEmpty ||
       uri.hasFragment ||
+      (uri.path == '${instance.path}/api/graphql' && uri.hasQuery) ||
       (!uri.path.startsWith('${instance.path}/api/v4/') &&
           uri.path != '${instance.path}/api/graphql') ||
       options.followRedirects) {
     throw const Mr7Refused('instanceOrRedirect');
+  }
+}
+
+final class _GraphVariable {
+  const _GraphVariable(this.name);
+  final String name;
+}
+
+final class _GraphOperation {
+  _GraphOperation(this.kind, this.name);
+  final String kind;
+  final String? name;
+  final Set<String> variables = {};
+  final Set<String> fields = {};
+  final List<Map<String, Object?>> arguments = [];
+  final List<
+    ({String field, Map<String, Object?> arguments, bool identityProjection})
+  >
+  roots = [];
+
+  Object? resolve(Object? value, Map<Object?, Object?> variables) {
+    if (value is _GraphVariable) {
+      if (!this.variables.contains(value.name) ||
+          !variables.containsKey(value.name)) {
+        throw const Mr7Refused('graphVariable');
+      }
+      return variables[value.name];
+    }
+    if (value is Map<String, Object?>) {
+      return value.map((key, item) => MapEntry(key, resolve(item, variables)));
+    }
+    if (value is List) {
+      return value.map((item) => resolve(item, variables)).toList();
+    }
+    return value;
+  }
+}
+
+/// A deliberately closed executable-document subset, not a schema validator.
+/// Fragments, directives, defaults and block strings are refused rather than
+/// skipped: hidden argument usage must never bypass the sandbox scope checks.
+final class _GraphParser {
+  _GraphParser(String source) {
+    if (source.length > 65536) throw const Mr7Refused('graphDocument');
+    final token = RegExp(
+      r'[A-Za-z_][A-Za-z_0-9]*|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|"(?:\\.|[^"\\\r\n])*"|[!$():{}\[\]]',
+    );
+    final ignored = RegExp(r'[\s,\uFEFF]+|#[^\r\n]*');
+    var offset = 0;
+    while (offset < source.length) {
+      final skip = ignored.matchAsPrefix(source, offset);
+      if (skip != null) {
+        offset = skip.end;
+        continue;
+      }
+      final match = token.matchAsPrefix(source, offset);
+      if (match == null) throw const Mr7Refused('graphDocument');
+      _tokens.add(match[0]!);
+      offset = match.end;
+    }
+  }
+
+  final List<String> _tokens = [];
+  int _index = 0;
+  String? get _peek => _index < _tokens.length ? _tokens[_index] : null;
+  bool _take(String token) {
+    if (_peek != token) return false;
+    _index++;
+    return true;
+  }
+
+  void _expect(String token) {
+    if (!_take(token)) throw const Mr7Refused('graphDocument');
+  }
+
+  String _name() {
+    final value = _peek;
+    if (value == null || !RegExp(r'^[A-Za-z_][A-Za-z_0-9]*$').hasMatch(value)) {
+      throw const Mr7Refused('graphDocument');
+    }
+    _index++;
+    return value;
+  }
+
+  void _type(int depth) {
+    if (depth > 32) throw const Mr7Refused('graphDocument');
+    if (_take('[')) {
+      _type(depth + 1);
+      _expect(']');
+    } else {
+      _name();
+    }
+    _take('!');
+  }
+
+  Object? _value(int depth) {
+    if (depth > 32) throw const Mr7Refused('graphDocument');
+    if (_take(r'$')) return _GraphVariable(_name());
+    if (_take('{')) return _pairs('}', depth + 1);
+    if (_take('[')) {
+      final values = <Object?>[];
+      while (!_take(']')) {
+        values.add(_value(depth + 1));
+      }
+      return values;
+    }
+    final value = _peek;
+    if (value == null) throw const Mr7Refused('graphDocument');
+    if (value.startsWith('"') || RegExp(r'^-?[0-9]').hasMatch(value)) {
+      _index++;
+      return jsonDecode(value);
+    }
+    final name = _name();
+    return switch (name) {
+      'true' => true,
+      'false' => false,
+      'null' => null,
+      _ => name,
+    };
+  }
+
+  Map<String, Object?> _pairs(String end, int depth) {
+    final values = <String, Object?>{};
+    while (!_take(end)) {
+      final name = _name();
+      if (values.containsKey(name)) throw const Mr7Refused('graphDocument');
+      _expect(':');
+      values[name] = _value(depth);
+    }
+    return values;
+  }
+
+  bool _selection(_GraphOperation operation, int depth) {
+    if (depth > 32) throw const Mr7Refused('graphDocument');
+    _expect('{');
+    var count = 0;
+    var identityOnly = true;
+    while (!_take('}')) {
+      var field = _name();
+      if (_take(':')) field = _name();
+      operation.fields.add(field);
+      var arguments = <String, Object?>{};
+      if (_take('(')) {
+        arguments = _pairs(')', 0);
+        if (arguments.isEmpty) throw const Mr7Refused('graphDocument');
+        operation.arguments.add(arguments);
+      }
+      final childProjection = _peek == '{'
+          ? _selection(operation, depth + 1)
+          : null;
+      if (depth == 0) {
+        operation.roots.add((
+          field: field,
+          arguments: arguments,
+          identityProjection: childProjection == true,
+        ));
+      }
+      identityOnly =
+          identityOnly &&
+          const {'id', 'username'}.contains(field) &&
+          arguments.isEmpty &&
+          childProjection == null;
+      count++;
+    }
+    if (count == 0) throw const Mr7Refused('graphDocument');
+    return identityOnly;
+  }
+
+  _GraphOperation select(Object? operationName) {
+    final operations = <_GraphOperation>[];
+    final names = <String>{};
+    while (_peek != null) {
+      final kind = _peek == '{' ? 'query' : _name();
+      if (!const {'query', 'mutation', 'subscription'}.contains(kind)) {
+        throw const Mr7Refused('graphDocument');
+      }
+      final name = _peek != '(' && _peek != '{' ? _name() : null;
+      if (name != null && !names.add(name)) {
+        throw const Mr7Refused('graphDocument');
+      }
+      final operation = _GraphOperation(kind, name);
+      if (_take('(')) {
+        do {
+          _expect(r'$');
+          if (!operation.variables.add(_name())) {
+            throw const Mr7Refused('graphDocument');
+          }
+          _expect(':');
+          _type(0);
+        } while (_peek != ')');
+        _expect(')');
+      }
+      _selection(operation, 0);
+      operations.add(operation);
+    }
+    if (operations.isEmpty ||
+        (operations.length > 1 && operations.any((op) => op.name == null)) ||
+        (operationName != null && operationName is! String)) {
+      throw const Mr7Refused('graphOperation');
+    }
+    return operationName == null
+        ? operations.single
+        : operations.singleWhere((op) => op.name == operationName);
+  }
+}
+
+_GraphOperation? _selectedGraphOperation(Object? body) {
+  if (body is! Map ||
+      body['query'] is! String ||
+      body.keys.any(
+        (key) => !const {'query', 'variables', 'operationName'}.contains(key),
+      )) {
+    return null;
+  }
+  try {
+    return _GraphParser(body['query'] as String).select(body['operationName']);
+  } catch (_) {
+    return null;
   }
 }
 
@@ -223,7 +506,7 @@ bool _sealedGraphRead(
       request.uri.path.endsWith('/api/graphql') &&
       body is Map &&
       body['query'] is String &&
-      RegExp(r'^\s*query(?:\s|\()').hasMatch(body['query'] as String) &&
+      _selectedGraphOperation(body)?.kind == 'query' &&
       (documents[body['query']]?.contains(mr7Digest(body['variables'])) ??
           false);
 }
@@ -561,8 +844,7 @@ final class Mr7SandboxSession {
     final target = identity;
     if (_sealedGraphRead(request, observerAdapter.graphReadDocuments)) {
       if (target == null) throw const Mr7Refused('unboundRead');
-      _requireBoundValues((request.data as Map)['variables'], graph: true);
-      _requireBoundValues((request.data as Map)['query'], graph: true);
+      _requireGraphTargets(request.data);
       return;
     }
     final segments = _restSegments(request);
@@ -581,8 +863,12 @@ final class Mr7SandboxSession {
         _finalizing &&
         target != null &&
         path == 'projects' &&
-        request.queryParameters.length == 1 &&
-        request.queryParameters['namespace_id'] == target.namespaceId;
+        request.queryParameters.length == 3 &&
+        request.queryParameters['namespace_id'] == target.namespaceId &&
+        request.queryParameters['page'] is int &&
+        (request.queryParameters['page'] as int) >= 1 &&
+        (request.queryParameters['page'] as int) <= 20 &&
+        request.queryParameters['per_page'] == 100;
     if (request.method != 'GET' ||
         (!setupRead && !projectRead && !parentRead)) {
       stop('outsideSandboxRead');
@@ -603,8 +889,20 @@ final class Mr7SandboxSession {
       throw const Mr7Refused('graphResource');
     }
     final root = 'projects/${target.projectId}';
-    if (path != root && !path.startsWith('$root/')) {
-      throw const Mr7Refused('graphResource');
+    const resourcePaths = {
+      'Issue': r'issues/[1-9][0-9]*',
+      'MergeRequest': r'merge_requests/[1-9][0-9]*',
+      'Note': r'(?:issues|merge_requests)/[1-9][0-9]*/notes/[1-9][0-9]*',
+      'Label': r'labels/[1-9][0-9]*',
+      'Milestone': r'milestones/[1-9][0-9]*',
+    };
+    final pattern = resourcePaths[match[1]];
+    final typedPath = match[1] == 'Project'
+        ? path == root
+        : pattern != null && RegExp('^$root/$pattern\$').hasMatch(path);
+    if (!typedPath) {
+      stop('foreignResource');
+      throw const Mr7Refused('foreignResource');
     }
     final row = await read(path);
     if (row['id'] != int.parse(match[2]!) ||
@@ -616,6 +914,76 @@ final class Mr7SandboxSession {
     }
     _open();
     _graphResources[gid] = path;
+  }
+
+  void _requireGraphTargets(Object? body) {
+    final operation = _selectedGraphOperation(body);
+    if (operation == null ||
+        body is! Map ||
+        (body['variables'] != null && body['variables'] is! Map)) {
+      stop('unsealedGraph');
+      throw const Mr7Refused('unsealedGraph');
+    }
+    try {
+      if (operation.fields.any(
+        const {'group', 'groups', 'namespace', 'namespaces'}.contains,
+      )) {
+        throw const Mr7Refused('foreignResource');
+      }
+      // Retain the closed variables/literal checks, and additionally resolve
+      // every argument under its actual schema name, independent of variable aliases.
+      _requireBoundValues(body['variables'], graph: true);
+      _requireBoundValues(body['query'], graph: true);
+      for (final arguments in operation.arguments) {
+        _requireBoundValues(
+          operation.resolve(arguments, body['variables'] as Map? ?? const {}),
+          graph: true,
+        );
+      }
+      bool hasSelector(Object? value) {
+        if (value is! Map) return false;
+        return value.entries.any((entry) {
+          final key = '${entry.key}'.replaceAll('_', '').toLowerCase();
+          return (const {
+                    'id',
+                    'ids',
+                    'workitemid',
+                    'workitemids',
+                    'targetid',
+                    'targetids',
+                    'projectid',
+                    'projectids',
+                    'targetprojectid',
+                    'sourceprojectid',
+                    'fullpath',
+                    'projectpath',
+                  }.contains(key) &&
+                  entry.value != null &&
+                  (entry.value is! List || (entry.value as List).isNotEmpty)) ||
+              hasSelector(entry.value);
+        });
+      }
+
+      for (final root in operation.roots) {
+        if (operation.kind == 'query' &&
+            root.field == 'currentUser' &&
+            root.arguments.isEmpty &&
+            root.identityProjection) {
+          continue; // Bound to the already verified current account.
+        }
+        if (!hasSelector(
+          operation.resolve(
+            root.arguments,
+            body['variables'] as Map? ?? const {},
+          ),
+        )) {
+          throw const Mr7Refused('unboundGraphRoot');
+        }
+      }
+    } catch (_) {
+      stop('foreignResource');
+      rethrow;
+    }
   }
 
   void _requireBoundValues(Object? value, {bool graph = false}) {
@@ -644,6 +1012,18 @@ final class Mr7SandboxSession {
           }
           if ((key == 'projectpath' || key == 'fullpath') &&
               entry.value != target?.path) {
+            return false;
+          }
+          if (graph &&
+              key.endsWith('ids') &&
+              (entry.value is! List ||
+                  !(entry.value as List).every(
+                    (item) =>
+                        item is String &&
+                        RegExp(
+                          r'^gid://gitlab/[A-Za-z]+/[1-9][0-9]*$',
+                        ).hasMatch(item),
+                  ))) {
             return false;
           }
           if (graph &&
@@ -881,6 +1261,7 @@ final class Mr7SandboxSession {
         if (graph &&
             (b is! Map ||
                 b['query'] is! String ||
+                _selectedGraphOperation(b)?.kind != 'mutation' ||
                 !allowed.graphDocuments.contains(b['query']) ||
                 !allowed.graphVariablesDigests.contains(
                   mr7Digest(b['variables']),
@@ -903,7 +1284,7 @@ final class Mr7SandboxSession {
           graph: graph,
         );
         if (graph && b is Map) {
-          _requireBoundValues(b['query'], graph: true);
+          _requireGraphTargets(b);
           await _refreshGraphResources(b['variables']);
           await verifyIdentity();
           _open();
@@ -932,6 +1313,8 @@ final class Mr7SandboxSession {
         }
         var page = 1;
         final seen = <int>{};
+        final eventIds = <int>{};
+        final pagination = _PageSequence();
         while (true) {
           if (!seen.add(page) || seen.length > 20) {
             throw const Mr7Refused('eventsPagination');
@@ -949,16 +1332,12 @@ final class Mr7SandboxSession {
             },
           );
           totalPages++;
-          final nextHeader = r.headers['x-next-page'];
-          if (r.statusCode != 200 ||
-              r.data is! List ||
-              nextHeader == null ||
-              nextHeader.length != 1) {
-            throw const Mr7Refused('eventsUnreadable');
-          }
+          final next = pagination.next(r, page);
           for (final raw in r.data! as List) {
             if (raw is! Map ||
                 raw['id'] is! int ||
+                (raw['id'] as int) <= 0 ||
+                !eventIds.add(raw['id'] as int) ||
                 raw['created_at'] is! String ||
                 raw['action_name'] is! String ||
                 !RegExp(
@@ -995,13 +1374,8 @@ final class Mr7SandboxSession {
               throw const Mr7Refused('eventsOutsideSandbox');
             }
           }
-          final next = nextHeader.single;
-          if (next.isEmpty) break;
-          final number = int.tryParse(next);
-          if (number == null || number <= page) {
-            throw const Mr7Refused('eventsPagination');
-          }
-          page = number;
+          if (next == null) break;
+          page = next;
         }
       }
       observedEvents
@@ -1022,6 +1396,44 @@ final class Mr7SandboxSession {
     }
   }
 
+  Future<bool> _parentContainsProject(Mr7Identity target) async {
+    final pagination = _PageSequence();
+    final ids = <int>{};
+    final projectPath = RegExp(
+      '^${RegExp.escape(target.namespace)}/[A-Za-z0-9_][A-Za-z0-9_.-]*\$',
+    );
+    var page = 1;
+    while (true) {
+      final response = await observer.get<Object?>(
+        'projects',
+        queryParameters: {
+          'namespace_id': target.namespaceId,
+          'page': page,
+          'per_page': 100,
+        },
+      );
+      final next = pagination.next(response, page);
+      for (final raw in response.data! as List) {
+        if (raw is! Map ||
+            raw['id'] is! int ||
+            (raw['id'] as int) <= 0 ||
+            !ids.add(raw['id'] as int) ||
+            raw['namespace'] is! Map ||
+            (raw['namespace'] as Map)['id'] is! int ||
+            (raw['namespace'] as Map)['id'] != target.namespaceId ||
+            raw['path_with_namespace'] is! String ||
+            !projectPath.hasMatch(raw['path_with_namespace'] as String) ||
+            (raw.containsKey('path') &&
+                raw['path'] !=
+                    (raw['path_with_namespace'] as String).split('/').last)) {
+          throw const Mr7Refused('cleanupMalformed');
+        }
+      }
+      if (next == null) return ids.contains(target.projectId);
+      page = next;
+    }
+  }
+
   Future<void> finish({bool keep = false}) async {
     if (_finalizing) return;
     _finalizing = true;
@@ -1039,28 +1451,19 @@ final class Mr7SandboxSession {
         _cleanupAuthorized = false;
         cleanup['accepted'] = r.statusCode == 202;
         final user = await read('user');
-        final list = await observer.get<Object?>(
-          'projects',
-          queryParameters: {'namespace_id': target.namespaceId},
-        );
+        final present = await _parentContainsProject(target);
         final lookup = await observer.get<Object?>(
           'projects/${target.projectId}',
         );
-        final absent =
-            list.statusCode == 200 &&
-            list.data is List &&
-            !(list.data! as List).whereType<Map<Object?, Object?>>().any(
-              (p) => p['id'] == target.projectId,
-            );
         final deleted =
             cleanup['accepted'] == true &&
             user['id'] == expectedUserId &&
-            absent &&
+            !present &&
             lookup.statusCode == 404;
         cleanup.addAll({
           'status': deleted ? 'PASS' : 'PENDING',
           'deletionVerified': deleted,
-          'parentChecked': list.statusCode == 200,
+          'parentChecked': true,
           'identityChecked': user['id'] == expectedUserId,
         });
         if (!deleted) quarantined = true;

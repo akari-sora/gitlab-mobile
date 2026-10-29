@@ -54,7 +54,559 @@ sandbox.Mr7Scenario _star(String id) => sandbox.Mr7Scenario(
       (await s.read('projects/${p.projectId}'))['starred'] == true,
 );
 
+Map<String, List<String>> _pageHeaders({
+  required int page,
+  required int total,
+  int perPage = 1,
+}) => {
+  'x-page': ['$page'],
+  'x-per-page': ['$perPage'],
+  'x-total': ['$total'],
+  'x-total-pages': ['${total == 0 ? 1 : (total + perPage - 1) ~/ perPage}'],
+  'x-next-page': [page * perPage < total ? '${page + 1}' : ''],
+};
+
+void _hideDeletedLookup(Mr7SyntheticGitLab server) {
+  server.routes['GET projects/909'] = (_) => server.cleanupWrites > 0
+      ? mr7Json({}, status: 404)
+      : mr7Json(server.project);
+}
+
+Map<String, Object?> _otherProject() => {
+  'id': 1000,
+  'path_with_namespace': 'synthetic-owner/another',
+  'namespace': {'id': 70},
+};
+
 void main() {
+  test('cleanup checks every parent page before confirming deletion', () async {
+    final server = Mr7SyntheticGitLab()..delayedDeletion = true;
+    final session = _session(server);
+    await session.initialize();
+    _hideDeletedLookup(server);
+    final pages = <int>[];
+    server.routes['GET projects'] = (request) {
+      final page = request.queryParameters['page'] as int? ?? 1;
+      pages.add(page);
+      return mr7Json([
+        page == 1 ? _otherProject() : server.project,
+      ], headers: _pageHeaders(page: page, total: 2));
+    };
+    await session.finish();
+    expect(pages, [1, 2]);
+    expect(session.cleanup['accepted'], isTrue);
+    expect(session.cleanup['deletionVerified'], isFalse);
+    expect(session.cleanup['status'], 'PENDING');
+    expect(session.quarantined, isTrue);
+  });
+
+  test('cleanup refuses malformed or truncated parent pages', () async {
+    for (final variant in [
+      'nonMap',
+      'missingId',
+      'stringId',
+      'missingNamespace',
+      'emptyPath',
+      'nestedPath',
+      'namespaceType',
+      'pathMismatch',
+      'missingHeader',
+      'skippedPage',
+      'changedTotal',
+      'shortPage',
+      'duplicateId',
+      'truncated',
+    ]) {
+      final server = Mr7SyntheticGitLab()..delayedDeletion = true;
+      final session = _session(server);
+      await session.initialize();
+      _hideDeletedLookup(server);
+      server.routes['GET projects'] = (request) {
+        final page = request.queryParameters['page'] as int? ?? 1;
+        Object? row = {..._otherProject(), 'id': 1000 + page};
+        final headers = _pageHeaders(page: page, total: 2);
+        switch (variant) {
+          case 'nonMap':
+            row = 'broken';
+          case 'missingId':
+            row = {
+              'namespace': {'id': 70},
+            };
+          case 'stringId':
+            row = {..._otherProject(), 'id': '1000'};
+          case 'missingNamespace':
+            row = {'id': 1000};
+          case 'emptyPath':
+            row = {
+              ..._otherProject(),
+              'path_with_namespace': 'synthetic-owner/',
+            };
+          case 'nestedPath':
+            row = {
+              ..._otherProject(),
+              'path_with_namespace': 'synthetic-owner/a/b',
+            };
+          case 'namespaceType':
+            row = {
+              ..._otherProject(),
+              'namespace': {'id': 70.0},
+            };
+          case 'pathMismatch':
+            row = {..._otherProject(), 'path': 'different'};
+          case 'missingHeader':
+            headers.remove('x-next-page');
+          case 'skippedPage':
+            headers['x-next-page'] = ['3'];
+          case 'changedTotal':
+            if (page > 1) headers.addAll(_pageHeaders(page: page, total: 3));
+          case 'duplicateId':
+            row = _otherProject();
+          case 'truncated':
+            headers['x-next-page'] = [''];
+        }
+        return mr7Json(variant == 'shortPage' ? [] : [row], headers: headers);
+      };
+      await session.finish();
+      expect(session.cleanup['accepted'], isTrue, reason: variant);
+      expect(session.cleanup['deletionVerified'], isFalse, reason: variant);
+      expect(session.cleanup['status'], 'NOT_VERIFIED', reason: variant);
+      expect(session.quarantined, isTrue, reason: variant);
+    }
+  });
+
+  test('cleanup verifies absence across complete parent pagination', () async {
+    final server = Mr7SyntheticGitLab();
+    final session = _session(server);
+    await session.initialize();
+    final pages = <int>[];
+    server.routes['GET projects'] = (request) {
+      final page = request.queryParameters['page'] as int? ?? 1;
+      pages.add(page);
+      return mr7Json([
+        {..._otherProject(), 'id': 1000 + page},
+      ], headers: _pageHeaders(page: page, total: 2));
+    };
+    await session.finish();
+    expect(pages, [1, 2]);
+    expect(session.cleanup['status'], 'PASS');
+    expect(session.cleanup['deletionVerified'], isTrue);
+    expect(session.cleanup['parentChecked'], isTrue);
+  });
+
+  test('events reject skipped pages and inconsistent totals', () async {
+    for (final variant in [
+      'skippedPage',
+      'changedTotal',
+      'wrongPage',
+      'truncated',
+    ]) {
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      server.addEvent(target: 777);
+      server.addEvent(target: 909);
+      server.routes['GET users/7/events'] = (request) {
+        final page = request.queryParameters['page'] as int;
+        final headers = _pageHeaders(page: page, total: 3);
+        if (variant == 'skippedPage' && page == 1) {
+          headers['x-next-page'] = ['3'];
+        } else if (variant == 'changedTotal' && page > 1) {
+          headers.addAll(_pageHeaders(page: page, total: 2));
+        } else if (variant == 'wrongPage') {
+          headers['x-page'] = ['${page + 1}'];
+        } else if (variant == 'truncated') {
+          headers['x-next-page'] = [''];
+        }
+        return mr7Json([
+          variant == 'changedTotal'
+              ? server.events.first
+              : server.events[page - 1],
+        ], headers: headers);
+      };
+      await expectLater(
+        session.checkIsolation(),
+        throwsA(anything),
+        reason: variant,
+      );
+      await session.finish();
+      expect(session.isolation['status'], 'NOT_VERIFIED', reason: variant);
+      expect(session.isolation['complete'], isFalse, reason: variant);
+      expect(session.quarantined, isTrue, reason: variant);
+      expect(server.cleanupWrites, 0, reason: variant);
+    }
+  });
+
+  test(
+    'events reject duplicate IDs within a complete pagination pass',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      server.addEvent(target: 777);
+      server.routes['GET users/7/events'] = (request) => mr7Json(
+        [server.events.first],
+        headers: _pageHeaders(
+          page: request.queryParameters['page'] as int,
+          total: 2,
+        ),
+      );
+      await expectLater(session.checkIsolation(), throwsA(anything));
+      await session.finish();
+      expect(session.isolation['status'], 'NOT_VERIFIED');
+      expect(session.isolation['complete'], isFalse);
+      expect(server.cleanupWrites, 0);
+    },
+  );
+
+  test('GraphQL refuses unscoped roots and numeric target lists', () async {
+    for (final document in [
+      'query X { projects { nodes { id } } }',
+      'query X { issues { nodes { id } } }',
+      'query X { currentUser { starredProjects { nodes { id } } } }',
+      r'query X($items: [ID!]!) { nodes(ids: $items) { id } }',
+      r'query X($items: [ID!]!) { synthetic(input: {targetIds: $items}) { id } }',
+      r'query X($path: ID!) { project(fullPath: $missing) { id } }',
+    ]) {
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      final vars = {
+        'items': [44],
+        'path': 'synthetic-owner/mr7-testnonce123',
+      };
+      session.observerAdapter.graphReadDocuments = {
+        document: {mr7Digest(vars)},
+      };
+      await expectLater(
+        session.observer.post<Object?>(
+          '${session.instance}/api/graphql',
+          data: {'query': document, 'variables': vars},
+        ),
+        throwsA(anything),
+      );
+      expect(server.requests, isNot(contains('POST /install/api/graphql')));
+      await session.finish();
+      expect(server.cleanupWrites, 0);
+    }
+  });
+
+  test('GraphQL selection has no secondary request override', () async {
+    const document = 'query Read { currentUser { id } }';
+    for (final variant in ['url', 'extension']) {
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      session.observerAdapter.graphReadDocuments = {
+        document: {mr7Digest(null)},
+      };
+      await expectLater(
+        session.observer.post<Object?>(
+          '${session.instance}/api/graphql${variant == 'url' ? '?operationName=Write' : ''}',
+          data: {
+            'query': document,
+            if (variant == 'extension')
+              'extensions': {'operationName': 'Write'},
+          },
+        ),
+        throwsA(anything),
+      );
+      expect(server.requests, isNot(contains('POST /install/api/graphql')));
+      await session.finish();
+    }
+  });
+
+  test(
+    'GraphQL parser preserves single queries and skips quoted keywords',
+    () async {
+      for (final document in [
+        '{ currentUser { id } }',
+        'query { currentUser { id } }',
+        'query Read { currentUser { id } }',
+        '# mutation ignored in comment\nquery Read(\$id: ID!) { alias: synthetic(id: \$id, text: "mutation { }") { id } }',
+      ]) {
+        for (final client in ['observer', 'writer']) {
+          final server = Mr7SyntheticGitLab();
+          final session = _session(server);
+          await session.initialize();
+          var sends = 0;
+          server.routes['POST /install/api/graphql'] = (_) {
+            sends++;
+            return mr7Json({'id': 909});
+          };
+          final vars = document.contains(r'$id')
+              ? {'id': 'gid://gitlab/Project/909'}
+              : null;
+          session.observerAdapter.graphReadDocuments = {
+            document: {mr7Digest(vars)},
+          };
+          await (client == 'observer' ? session.observer : session.writer)
+              .post<Object?>(
+                '${session.instance}/api/graphql',
+                data: {'query': document, 'variables': vars},
+              );
+          expect(sends, 1);
+          expect(
+            session.requestLedger.where(
+              (r) => r['operation'] != 'harnessSetup',
+            ),
+            isEmpty,
+          );
+          await session.finish();
+        }
+      }
+    },
+  );
+
+  test('GraphQL read classification follows the selected operation', () async {
+    const mixed =
+        r'query Read($id: ID!) { synthetic(id: $id) { id } } '
+        r'mutation Write($id: ID!) { synthetic(id: $id) { id } }';
+    const vars = {'id': 'gid://gitlab/Project/909'};
+    for (final client in ['observer', 'writer']) {
+      for (final operationName in <String?>[null, 'Write', 'Missing', 'Read']) {
+        final server = Mr7SyntheticGitLab();
+        final session = _session(server);
+        await session.initialize();
+        var sends = 0;
+        server.routes['POST /install/api/graphql'] = (_) {
+          sends++;
+          return mr7Json({'id': 909});
+        };
+        session.observerAdapter.graphReadDocuments = {
+          mixed: {mr7Digest(vars)},
+        };
+        final request =
+            (client == 'observer' ? session.observer : session.writer)
+                .post<Object?>(
+                  '${session.instance}/api/graphql',
+                  data: {
+                    'query': mixed,
+                    'variables': vars,
+                    'operationName': ?operationName,
+                  },
+                );
+        if (operationName == 'Read') {
+          await request;
+          expect(sends, 1);
+        } else {
+          await expectLater(request, throwsA(anything));
+          expect(sends, 0, reason: '$client/$operationName');
+        }
+        expect(server.scenarioWrites, 0);
+        expect(
+          session.requestLedger.where((r) => r['operation'] != 'harnessSetup'),
+          isEmpty,
+        );
+        await session.finish();
+      }
+    }
+  });
+
+  test(
+    'GraphQL operation parsing refuses ambiguity and unsupported syntax',
+    () async {
+      for (final document in [
+        'query Same { currentUser { id } } query Same { currentUser { id } }',
+        'query { currentUser { id } } query Other { currentUser { id } }',
+        'query Read { currentUser { id } } trailing',
+        'query Read { currentUser { id } } fragment F on User { id }',
+        'query Read { currentUser @skip(if: false) { id } }',
+        'query Read(\$id: ID = "unused") { currentUser { id } }',
+        'query Read { currentUser(text: """block""") { id } }',
+      ]) {
+        final server = Mr7SyntheticGitLab();
+        final session = _session(server);
+        await session.initialize();
+        final vars = <String, Object?>{};
+        session.observerAdapter.graphReadDocuments = {
+          document: {mr7Digest(vars)},
+        };
+        await expectLater(
+          session.observer.post<Object?>(
+            '${session.instance}/api/graphql',
+            data: {
+              'query': document,
+              'variables': vars,
+              'operationName': document.contains('query Same')
+                  ? 'Same'
+                  : document.contains('query Other')
+                  ? 'Other'
+                  : 'Read',
+            },
+          ),
+          throwsA(anything),
+        );
+        expect(server.requests, isNot(contains('POST /install/api/graphql')));
+        await session.finish();
+      }
+    },
+  );
+
+  test('GraphQL target arguments resolve aliases before dispatch', () async {
+    for (final kind in ['query', 'mutation']) {
+      for (final variant in [
+        'owned',
+        'foreignPath',
+        'foreignId',
+        'group',
+        'nested',
+      ]) {
+        final field = variant == 'group' ? 'group' : 'synthetic';
+        final argument = switch (variant) {
+          'foreignId' => r'projectId: $destination',
+          'nested' => r'input: {projectId: $destination}',
+          _ => r'fullPath: $destination',
+        };
+        final document =
+            '$kind X(\$destination: ID!) { $field($argument) { id } }';
+        final vars = {
+          'destination': switch (variant) {
+            'foreignId' || 'nested' => 777,
+            'owned' => 'synthetic-owner/mr7-testnonce123',
+            _ => 'foreign/project',
+          },
+        };
+        final server = Mr7SyntheticGitLab();
+        final session = _session(server);
+        await session.initialize();
+        var sends = 0;
+        server.routes['POST /install/api/graphql'] = (_) {
+          sends++;
+          return mr7Json({'id': 909});
+        };
+        if (kind == 'query') {
+          session.observerAdapter.graphReadDocuments = {
+            document: {mr7Digest(vars)},
+          };
+        } else {
+          session.permit = Mr7MutationPermit(
+            operation: 'updateWorkItemState',
+            paths: {'POST graphql'},
+            resourceProjectId: 909,
+            graphDocuments: {document},
+            graphVariablesDigests: {mr7Digest(vars)},
+          )..confirmed = true;
+        }
+        final request = (kind == 'query' ? session.observer : session.writer)
+            .post<Object?>(
+              '${session.instance}/api/graphql',
+              data: {'query': document, 'variables': vars},
+            );
+        if (variant == 'owned') {
+          await request;
+          expect(sends, 1);
+        } else {
+          await expectLater(request, throwsA(anything));
+          expect(sends, 0, reason: '$kind/$variant');
+          expect(session.quarantined, isTrue);
+        }
+        await session.finish();
+      }
+    }
+  });
+
+  test(
+    'GID binding rejects a different resource type with the same ID',
+    () async {
+      for (final entry in {
+        'Issue': 'merge_requests/44',
+        'MergeRequest': 'issues/44',
+        'WorkItem': 'issues/44',
+        'Note': 'issues/44',
+        'Project': 'issues/44',
+      }.entries) {
+        final server = Mr7SyntheticGitLab();
+        final session = _session(server);
+        await session.initialize();
+        final path = 'projects/909/${entry.value}';
+        server.routes['GET $path'] = (_) =>
+            mr7Json({'id': 44, 'project_id': 909});
+        await expectLater(
+          session.bindGraphResource('gid://gitlab/${entry.key}/44', path: path),
+          throwsA(isA<Mr7Refused>()),
+        );
+        expect(server.requests, isNot(contains('GET $path')));
+        await session.finish();
+        expect(server.cleanupWrites, 0);
+        expect(session.quarantined, isTrue);
+      }
+    },
+  );
+
+  test(
+    'selected GraphQL mutation requires and charges a write permit',
+    () async {
+      const document =
+          r'query Read($id: ID!) { synthetic(id: $id) { id } } '
+          r'mutation Write($id: ID!) { synthetic(id: $id) { id } }';
+      const vars = {'id': 'gid://gitlab/Project/909'};
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      server.routes['POST /install/api/graphql'] = (_) {
+        server.scenarioWrites++;
+        server.addEvent(target: 909);
+        return mr7Json({'id': 909});
+      };
+      session.observerAdapter.graphReadDocuments = {
+        document: {mr7Digest(vars)},
+      };
+      final permit = Mr7MutationPermit(
+        operation: 'updateWorkItemState',
+        paths: {'POST graphql'},
+        resourceProjectId: 909,
+        graphDocuments: {document},
+        graphVariablesDigests: {mr7Digest(vars)},
+      )..confirmed = true;
+      session.permit = permit;
+      await session.writer.post<Object?>(
+        '${session.instance}/api/graphql',
+        data: {'query': document, 'variables': vars, 'operationName': 'Write'},
+      );
+      expect(permit.sent, 1);
+      expect(server.scenarioWrites, 1);
+      expect(session.requestLedger.last['operation'], 'updateWorkItemState');
+      session.permit = null;
+      await session.finish();
+    },
+  );
+
+  test('typed GID bindings retain their exact REST resource type', () async {
+    const document = r'query X($id: ID!) { node(id: $id) { id } }';
+    final server = Mr7SyntheticGitLab();
+    final session = _session(server);
+    await session.initialize();
+    var sends = 0;
+    server.routes['POST /install/api/graphql'] = (_) {
+      sends++;
+      return mr7Json({'id': 44});
+    };
+    for (final entry in {
+      'Issue': 'issues/4',
+      'MergeRequest': 'merge_requests/4',
+      'Note': 'issues/4/notes/44',
+      'Label': 'labels/44',
+      'Milestone': 'milestones/44',
+    }.entries) {
+      final gid = 'gid://gitlab/${entry.key}/44';
+      final path = 'projects/909/${entry.value}';
+      server.routes['GET $path'] = (_) =>
+          mr7Json({'id': 44, 'project_id': 909});
+      await session.bindGraphResource(gid, path: path);
+      final vars = {'id': gid};
+      session.observerAdapter.graphReadDocuments = {
+        document: {mr7Digest(vars)},
+      };
+      await session.observer.post<Object?>(
+        '${session.instance}/api/graphql',
+        data: {'query': document, 'variables': vars},
+      );
+    }
+    expect(sends, 5);
+    await session.finish();
+    expect(session.cleanup['deletionVerified'], isTrue);
+  });
+
   test(
     'registered graph digest cannot authorize foreign nested scope',
     () async {
@@ -850,6 +1402,66 @@ void main() {
     expect(confirmations, 1, reason: jsonEncode(receipt));
     expect(server.scenarioWrites, 1);
     expect(_rows(receipt).single['status'], 'PASS');
+  });
+
+  test('journal uncertainty alone stops later scenarios and cleanup', () async {
+    final server = Mr7SyntheticGitLab();
+    final session = _session(server);
+    var acknowledged = 0;
+    var readbacks = 0;
+    String? stopAtReadback;
+    server.routes['POST projects/909/issues'] = (_) {
+      acknowledged++;
+      server.scenarioWrites++;
+      server.addEvent(target: 909);
+      return mr7Json({'id': 44, 'iid': 4, 'project_id': 909}, status: 201);
+    };
+    server.routes['GET projects/909/issues/4'] = (_) {
+      readbacks++;
+      stopAtReadback = session.stopReason;
+      return mr7Json({'message': 'not found'}, status: 404);
+    };
+    final issue = sandbox.Mr7Scenario(
+      id: 'uncertain-issue',
+      suite: 'rest',
+      operation: 'createIssue',
+      variant: 'readback-failed',
+      tier: 'T1',
+      utterance: (p) => 'Create an issue in ${p.path}.',
+      call: (p) => AiToolCall(
+        id: 'uncertain-issue',
+        name: 'createIssue',
+        arguments: {
+          'projectId': p.projectId,
+          'fields': {'title': 'synthetic issue'},
+          'reason': 'The user requested this issue.',
+        },
+      ),
+      paths: (p) => {'POST projects/${p.projectId}/issues'},
+      observe: (_, _) async => false,
+    );
+    final receipt = await sandbox.runMr7Sandbox(
+      policy: Mr7Policy.candidate,
+      releaseSha: _sha,
+      session: session,
+      scenarios: [issue, _star('after-journal-uncertainty')],
+      confirm: (_) async => true,
+    );
+    final rows = _rows(receipt);
+    expect(acknowledged, 1, reason: jsonEncode(receipt));
+    expect(readbacks, 1, reason: jsonEncode(receipt));
+    expect(stopAtReadback, isNull);
+    expect(
+      rows.first['outcome'],
+      'writeUncertain',
+      reason: jsonEncode(receipt),
+    );
+    expect(rows.first['status'], 'writeUncertain');
+    expect(rows.last['status'], 'NOT_RUN');
+    expect(rows.last['mutationCount'], 0);
+    expect(server.scenarioWrites, 1);
+    expect(server.cleanupWrites, 0);
+    expect(receipt['quarantined'], isTrue);
   });
 
   test('writeUncertain stops remaining scenarios', () async {

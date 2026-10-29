@@ -105,6 +105,7 @@ Events are read in complete bounded pagination with a second delayed pass
 (10 ms in the synthetic fixture, with a one-second wait ceiling),
 date coarse filters and precise UTC timestamps/event IDs. The final window
 includes setup and the last cleanup mutation. Foreign project, missing project,
+duplicate event IDs within a pass, noncontiguous pages, changing totals,
 unreadable/malformed/incomplete pages or 429 makes isolation `NOT_VERIFIED` and
 fences new writes. Later successful reads cannot erase that failure. The
 request ledger and observer complement events; events are not a complete audit
@@ -115,6 +116,10 @@ projects for deletion or deletes a namespace. Pending/uncertain writes,
 interruption, owner retention and identity/boundary failure prevent cleanup.
 Accepted DELETE and verified deletion are separate: verification also checks
 owner identity and the parent project inventory; 404 alone proves nothing.
+The inventory requires every well-formed row and every contiguous page, with
+stable `x-total`, `x-total-pages`, `x-per-page`, matching `x-page`/`x-next-page`
+and exact row counts (at most 20 pages). Missing metadata, malformed rows or
+duplicate IDs leave deletion unverified and the session quarantined.
 Retention can produce `PENDING`. A terminal AI project deletion is not deleted
 again by the finalizer. Post-cleanup event failure invalidates isolation even
 if deletion was independently verified. Failed receipts remain preserved. A
@@ -132,7 +137,16 @@ the production write port, final guarded transport or production coordinator.
 GraphQL resource GIDs require `bindGraphResource` with a fresh project-bound
 REST read; nested foreign project/group variables are refused even when their
 digest was registered. GraphQL resource targets require typed GIDs; numeric
-target IDs cannot reuse a binding by numeric suffix. Writer reads and observer
+target IDs cannot reuse a binding by numeric suffix. Bindings use a closed
+Project/Issue/MergeRequest/Note/Label/Milestone-to-REST mapping; unsupported
+resource types are refused. Read-only classification selects exactly one query
+using `operationName` (required with multiple operations). Target checks resolve
+that operation's actual argument usage, including aliases and nested inputs;
+every root needs a bound selector, except `currentUser { id username }` identity
+projections of the current account.
+The executable-document subset rejects fragments, directives, defaults, block
+strings and secondary request overrides rather than skipping their semantics.
+Writer reads and observer
 reads share target and account
 fences; quarantine permits only bounded observation. No generic live
 REST/GraphQL executor is exposed.
