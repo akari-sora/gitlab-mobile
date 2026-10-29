@@ -1,3 +1,4 @@
+from collections import namedtuple
 from pathlib import Path
 import json
 import os
@@ -19,6 +20,8 @@ PIPELINE_SOURCES = ('api', 'chat', 'external', 'external_pull_request_event',
                     'security_orchestration_policy', 'trigger', 'web', 'webide')
 # The MR7 tests both Flutter lanes run: they test the app's release and background gates.
 GATE_TESTS = ('test/ai/mr7_release_gate_test.dart', 'test/ai/mr7_background_gate_test.dart')
+# A renamed file in a merge request's changes.
+Rename = namedtuple('Rename', 'old new')
 
 
 def yaml_scalar(text):
@@ -133,12 +136,22 @@ class PipelineModel:
     @staticmethod
     def changed(changes, paths):
         """rules:changes with a Ruby regexp: true when any changed path matches it
-        (https://docs.gitlab.com/ci/yaml/#ruleschangesregexp)."""
-        if set(changes) != {'compare_to', 'regexp'}:
+        (https://docs.gitlab.com/ci/yaml/#ruleschangesregexp). Without compare_to
+        a merge-request pipeline reads the merge request's changed paths with
+        rename detection off, so a Rename counts as its old path (deleted) and
+        its new path (added). With compare_to GitLab reads diff stats, which keep
+        only the new path."""
+        if set(changes) - {'compare_to'} != {'regexp'}:
             raise AssertionError(f'unsupported changes clause: {changes}')
+        listed = []
+        for path in paths:
+            if isinstance(path, Rename):
+                listed += [path.new] if 'compare_to' in changes else [path.old, path.new]
+            else:
+                listed.append(path)
         # Ruby's \z (end of string) is Python's \Z.
         pattern = re.compile(re.sub(r'(?<!\\)\\z', r'\\Z', changes['regexp']))
-        return any(pattern.search(path) for path in paths)
+        return any(pattern.search(path) for path in listed)
 
     def included(self, name, variables, changed):
         rules = self.rules(name)
@@ -228,7 +241,7 @@ class CiPipelineConfigTests(unittest.TestCase):
             self.assertIsNotNone(match, name)
             jobs[name] = match.group(1)
             self.assertIn('extends: [.flutter, .app_regular]', jobs[name])
-            self.assertIn('timeout: 25m', jobs[name])
+            self.assertIn('timeout: 35m', jobs[name])
             self.assertNotRegex(jobs[name], re.compile(r'^  (rules|tags|retry):', re.MULTILINE))
         self.assertIn('- bash ci/check.sh\n', jobs['flutter_checks'])
         self.assertIn('junit: ci-output/junit.xml', jobs['flutter_checks'])
@@ -302,27 +315,38 @@ class CiPipelineConfigTests(unittest.TestCase):
 
 
 class DocsOnlyMergeRequestTests(unittest.TestCase):
-    """A merge request that changes only docs/ and root *.md files skips the
-    Flutter, native and Android jobs; every other pipeline runs them."""
+    """A merge request that changes only Markdown and image files under docs/
+    and root *.md files skips the Flutter, native and Android jobs; every other
+    pipeline runs them."""
 
+    # flutter analyze reads every other file under docs/ (Dart, pubspec.yaml,
+    # analysis_options.yaml), so only these file types count as documentation.
+    DOC_SUFFIXES = ('.md', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp')
     DOCS_ONLY = (['docs/PLAN_STATUS.md'],
                  ['docs/CI.md', 'README.md', 'docs/images/shot.png', 'docs/plans/a/b.md'],
-                 ['AGENTS.md', '.md', 'docs/ANDROID_RELEASE_INVENTORY.json', 'docs/receipts/run.json'])
+                 ['AGENTS.md', '.md', 'docs/.md', 'docs/a.jpg', 'docs/b/c.jpeg', 'docs/d.gif',
+                  'docs/e.svg', 'docs/f.webp'])
     OTHER_FILES = ('lib/main.dart', 'test/app_test.dart', 'tool/l10n.py', 'tool/mr7/README.md',
                    'ci/check.sh', 'integration_test/mr6c_background_test.dart', 'pubspec.yaml',
                    'pubspec.lock', 'android/app/build.gradle', 'ios/Runner/Info.plist',
                    '.gitlab-ci.yml', '.fvmrc', 'analysis_options.yaml', 'assets/icon/icon.png',
                    'LICENSE', 'docs', 'doc/notes.md', 'documentation/notes.md', 'assets/notes.md',
                    'lib/README.md', 'test/README.md', 'x/docs/y.md', 'README.MD', 'README.markdown',
-                   'notes.md.txt', '.github/README.md')
+                   'notes.md.txt', '.github/README.md',
+                   'docs/examples/x.dart', 'docs/x/pubspec.yaml', 'docs/x/analysis_options.yaml',
+                   'docs/x.yaml', 'docs/x.json', 'docs/ANDROID_RELEASE_INVENTORY.json',
+                   'docs/receipts/run.json', 'docs/x.txt', 'docs/noext', 'docs/x.md.dart',
+                   'docs/shot.PNG', 'docs/notes.MD', 'docs/x.png/y.dart')
 
     def setUp(self):
         self.content = (ROOT / '.gitlab-ci.yml').read_text(encoding='utf-8')
         self.model = PipelineModel(self.content)
 
-    @staticmethod
-    def docs_only(path):
-        return path.startswith('docs/') or ('/' not in path and path.endswith('.md'))
+    @classmethod
+    def docs_only(cls, path):
+        if '/' not in path:
+            return path.endswith('.md')
+        return path.startswith('docs/') and path.endswith(cls.DOC_SUFFIXES)
 
     def other_pipelines(self):
         for source in PIPELINE_SOURCES:
@@ -339,12 +363,14 @@ class DocsOnlyMergeRequestTests(unittest.TestCase):
             self.assertIn('  extends: [.flutter, .app_regular]\n', block, job)
             self.assertIsNone(self.model.section(job, 'rules'), job)
         self.assertEqual(self.content.count('changes:'), 1, 'only .app_regular reads changed files')
+        self.assertIsNone(re.search(r'^\s*(?:- )?compare_to\s*:', self.content, re.MULTILINE),
+                          'compare_to keeps only the new path of a renamed file')
         rules = self.model.rules('.app_regular')
         self.assertEqual(rules[0], self.model.rules('.regular')[0], 'special pipelines skip both templates')
         self.assertEqual(rules[-1], {'when': 'on_success'})
         merge_request = '$CI_PIPELINE_SOURCE == "merge_request_event"'
         self.assertEqual(rules[1:-1], [
-            {'if': merge_request, 'changes': {'compare_to': 'refs/heads/main', 'regexp': rules[1]['changes']['regexp']}},
+            {'if': merge_request, 'changes': {'regexp': rules[1]['changes']['regexp']}},
             {'if': merge_request, 'when': 'never'},
         ])
         self.assertFalse([job for job, optional in self.model.needs('android_debug') if optional],
@@ -369,6 +395,23 @@ class DocsOnlyMergeRequestTests(unittest.TestCase):
             for changed in ([path], ['docs/CI.md', 'README.md', path]):
                 with self.subTest(changed=changed):
                     self.assertTrue(APP_JOBS <= self.model.pipeline(merge_request, changed))
+
+    def test_merge_request_renaming_a_file_into_documentation_runs_the_app_jobs(self):
+        merge_request = pipeline_variables('merge_request_event')
+        changes = self.model.rules('.app_regular')[1]['changes']
+        for old, new in (('lib/x.dart', 'docs/x.md'), ('test/fixtures/run.json', 'docs/receipts/run.md'),
+                         ('tool/notes.txt', 'docs/notes.md'), ('assets/icon/icon.png', 'docs/icon.png'),
+                         ('CHANGELOG', 'CHANGELOG.md'), ('lib/README.md', 'README.md')):
+            with self.subTest(old=old, new=new):
+                self.assertFalse(self.docs_only(old))
+                self.assertTrue(self.docs_only(new))
+                # GitLab lists the old path as deleted and the new path as added.
+                self.assertTrue(APP_JOBS <= self.model.pipeline(merge_request, [old, new]))
+                self.assertTrue(APP_JOBS <= self.model.pipeline(merge_request, [Rename(old, new)]))
+                self.assertFalse(self.model.changed(dict(changes, compare_to='refs/heads/main'), [Rename(old, new)]),
+                                 'with compare_to only the new path is seen and the jobs are skipped')
+        within_docs = self.model.pipeline(merge_request, [Rename('docs/a.md', 'docs/b/a.md'), 'README.md'])
+        self.assertFalse(APP_JOBS & within_docs)
 
     def test_main_tag_schedule_api_and_other_pipelines_run_the_app_jobs_whatever_changed(self):
         for label, variables in self.other_pipelines():
@@ -436,7 +479,7 @@ class CheckScriptTests(unittest.TestCase):
         tests = self.SHARED_TESTS + (self.SANDBOX_TESTS if mode == 'ai' else ())
         return sorted(tests)
 
-    def run_check(self, *args, test_exit='0', tree=SANDBOX_TESTS + SHARED_TESTS + HELPERS):
+    def run_check(self, *args, test_exit='0', tree=SANDBOX_TESTS + SHARED_TESTS + HELPERS, links=()):
         root = Path(__file__).resolve().parents[2]
         scratch = root / 'ci-output'
         scratch.mkdir(exist_ok=True)
@@ -450,6 +493,8 @@ class CheckScriptTests(unittest.TestCase):
             for name in tree:
                 (work / name).parent.mkdir(parents=True, exist_ok=True)
                 (work / name).write_text('void main() {}\n')
+            for name, target in links:
+                os.symlink(target, work / name)
             flutter = work / 'bin' / 'flutter'
             flutter.write_text(textwrap.dedent('''\
                 #!/usr/bin/env python3
@@ -487,7 +532,8 @@ class CheckScriptTests(unittest.TestCase):
                 if (work / 'commands.jsonl').exists() else []
             timeout_args = json.loads((work / 'timeout.json').read_text()) \
                 if (work / 'timeout.json').exists() else []
-            files = {str(path.relative_to(work)) for path in work.rglob('*') if path.is_file()} - set(tree)
+            files = {str(path.relative_to(work)) for path in work.rglob('*') if path.is_file()} - set(tree) \
+                - {name for name, _ in links}
             return result, commands, timeout_args, files
 
     def test_default_and_ai_modes_run_their_lane_with_correct_defines(self):
@@ -495,7 +541,7 @@ class CheckScriptTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 result, commands, timeout_args, files = self.run_check(*(() if mode == 'default' else (mode,)))
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-                self.assertEqual(timeout_args, ['--signal=TERM', '--kill-after=15s', '22m'])
+                self.assertEqual(timeout_args, ['--signal=TERM', '--kill-after=15s', '30m'])
                 self.assertEqual(commands[:2], [['pub', 'get', '--enforce-lockfile'], ['analyze', '--no-pub']])
                 expected_args = ['test', '--no-pub', '--coverage', '--timeout=60s', '--machine']
                 if mode == 'ai':
@@ -544,6 +590,25 @@ class CheckScriptTests(unittest.TestCase):
         self.assertEqual(set(lanes['default']) - set(lanes['ai']), set())
         for helper in self.HELPERS:
             self.assertNotIn(helper, lanes['ai'])
+
+    def test_symlinked_test_files_are_listed_as_flutter_test_finds_them(self):
+        # flutter_tools _findTests: listSync(recursive: true, followLinks: false), then
+        # every *_test.dart entry that is a file once a link is followed.
+        links = (('test/linked_test.dart', 'app_test.dart'),
+                 ('test/ai/mr7_sandbox_linked_test.dart', 'mr7_release_gate_test.dart'),
+                 ('test/dangling_test.dart', 'missing.dart'),
+                 ('test/directory_test.dart', 'offline'),
+                 ('test/linked_directory', 'offline'))
+        found = len(self.SANDBOX_TESTS + self.SHARED_TESTS) + 2
+        for mode in ('default', 'ai'):
+            with self.subTest(mode=mode):
+                result, commands, _, _ = self.run_check(mode, '--list-tests', links=links)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                expected = sorted(self.lane(mode) + ['test/linked_test.dart']
+                                  + (['test/ai/mr7_sandbox_linked_test.dart'] if mode == 'ai' else []))
+                self.assertEqual(result.stdout.splitlines(), expected)
+                self.assertIn(f'{mode} lane runs {len(expected)} of {found} test files', result.stderr)
+                self.assertEqual(commands, [])
 
     def test_no_test_files_fails_before_invoking_flutter(self):
         result, commands, _, _ = self.run_check(tree=self.HELPERS)

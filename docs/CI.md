@@ -8,7 +8,7 @@ New projects require explicit runner registration and dispatcher onboarding on e
 
 1. `python_checks`: report-converter, local-smoke runner, package-installer and native-bootstrap regressions, Python compilation, shell syntax.
 2. `flutter_checks`: dependency-lock enforcement, Flutter analysis, 68 Flutter unit/widget/smoke tests in the initial CI baseline, JUnit and LCOV. It runs every test file except the MR7 sandbox tool tests (see [Test lanes](#test-lanes)). The current test count is read from the job report, not inferred from this document.
-3. `flutter_ai_checks`: the same analysis and the complete test suite, including the MR7 sandbox tool tests; tests run with `MERGELINE_AI_ASSISTANT=true` and `MERGELINE_AI_BACKGROUND=false`. It inherits the same rules, runner tags and retry policy as `flutter_checks`, with separate `ci-output-ai/` and `coverage-ai/` artifacts. Both check jobs have a 25-minute timeout; each test process has a 22-minute deadline and 15-second TERM-to-KILL grace period.
+3. `flutter_ai_checks`: the same analysis and the complete test suite, including the MR7 sandbox tool tests; tests run with `MERGELINE_AI_ASSISTANT=true` and `MERGELINE_AI_BACKGROUND=false`. It inherits the same rules, runner tags and retry policy as `flutter_checks`, with separate `ci-output-ai/` and `coverage-ai/` artifacts. Both check jobs have a 35-minute timeout; each test process has a 30-minute deadline and 15-second TERM-to-KILL grace period (see [Timeouts](#timeouts)).
 4. `native_templates`: generate/review Android and iOS runner configuration from the pinned SDK. Linux generation is not an iOS build or device test.
 5. `android_debug`: needs the Python checks, both Flutter checks and native templates, reuses the default check's dependency lock and native templates, and builds the `gitlab`-flavor Android APK: a release build on protected refs (`main`, `v*` tags), a debug build everywhere else (the job keeps its historical name).
 6. `publish_preview`: automatic AI-off delivery on this project's protected `main` branch for every non-MR source admitted by the workflow, including `trigger` and `pipeline`; special smoke/sync pipelines are excluded. Runtime verification preserves that source policy and the project/job/protected-main identity checks. It verifies checksums and uploads APK/metadata/checksums to the same project's Generic Package Registry.
@@ -33,18 +33,20 @@ No tests or analyzer failures are ignored. A missing/unsuccessful Flutter comple
 
 The runner `r9700x-docker` is shared with another project. On 2026-10-29, with 8–9 merge requests open, 61 jobs were queued, and a merge request that changed only `docs/PLAN_STATUS.md` (!245) still ran `flutter_checks` and `flutter_ai_checks`, each the whole Flutter suite (about 21–25 minutes).
 
-`flutter_checks`, `flutter_ai_checks`, `native_templates` and `android_debug` therefore extend `.app_regular` instead of `.regular`. In a merge-request pipeline they are added only when at least one changed file is outside `docs/` and is not a Markdown file in the repository root:
+`flutter_checks`, `flutter_ai_checks`, `native_templates` and `android_debug` therefore extend `.app_regular` instead of `.regular`. In a merge-request pipeline they are added only when at least one changed file is neither a Markdown or image file under `docs/` nor a Markdown file in the repository root:
 
 ```yaml
 - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   changes:
-    compare_to: refs/heads/main
-    regexp: '\A(?!docs/)(?![^/]*\.md\z)'
+    regexp: '\A(?!docs/.*\.(?:md|png|jpg|jpeg|gif|svg|webp)\z)(?![^/]*\.md\z)'
 - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   when: never
 ```
 
-- **Docs-only** means every changed file is under `docs/` or is a root `*.md` file (`README.md`, `AGENTS.md`, `CLAUDE.md` and so on). Any other file runs all four jobs: `lib/`, `test/`, `tool/`, `ci/`, `integration_test/`, `android/`, `ios/`, `assets/`, `pubspec.*`, `.gitlab-ci.yml`, `analysis_options.yaml`, `.fvmrc`, a Markdown file below the root such as `lib/README.md`, or a new top-level file or directory. The pattern names what is documentation rather than what is code, so a path nobody listed runs the jobs. A merge request with no changed files skips them too.
+- **Docs-only** means every changed file is a `*.md`, `*.png`, `*.jpg`, `*.jpeg`, `*.gif`, `*.svg` or `*.webp` file under `docs/` (lower-case extensions), or a root `*.md` file (`README.md`, `AGENTS.md`, `CLAUDE.md` and so on). Any other file runs all four jobs: `lib/`, `test/`, `tool/`, `ci/`, `integration_test/`, `android/`, `ios/`, `assets/`, `pubspec.*`, `.gitlab-ci.yml`, `analysis_options.yaml`, `.fvmrc`, a Markdown file below the root such as `lib/README.md`, a new top-level file or directory, and every other file under `docs/`. The pattern names what is documentation rather than what is code, so a path nobody listed runs the jobs.
+- Only those file types count because `flutter analyze` reads the whole package, and `analysis_options.yaml` does not exclude `docs/`: a `docs/**/*.dart`, `docs/**/pubspec.yaml` or `docs/**/analysis_options.yaml` file is analysed, and a broken one would turn `main` red after a merge request that skipped the analyzer. JSON, YAML, text and other non-Markdown files under `docs/`, such as `docs/ANDROID_RELEASE_INVENTORY.json` and the JSON receipts in `docs/receipts/`, therefore run the full jobs.
+- A renamed or moved file counts with both paths. Without `compare_to`, a merge-request pipeline takes the merge request's changed paths, where a rename is the old path deleted and the new path added, so moving `lib/x.dart` to `docs/x.md` (or a root file to `X.md`) runs the jobs because of the old path.
+- A merge request with no changed files skips the four jobs. So does one whose changed paths GitLab cannot work out (for example after a Gitaly error): `rules:changes` then sees an empty list and does not match. The pipeline still has `python_checks`, and `main` runs everything after the merge.
 - `python_checks` keeps running, so the pipeline is never empty. It carries the checks that read documentation, translations and boundaries: `tool/tests/test_l10n.py`, `test_ai_boundaries.py`, `test_offline_boundaries.py` and `test_ai_runner_contract.py` (which reads `docs/V0_6_AI_VERIFICATION.md`), plus the pipeline tests in `ci/tests/`. No Flutter test reads a file under `docs/`.
 - **Main, tag, schedule, API, web and plain branch pipelines run everything.** The `changes` rule applies only when `CI_PIPELINE_SOURCE` is `merge_request_event`; the publishing and attestation jobs, which need `android_debug`, run only on `main`.
 - The four jobs share one rule set, so `android_debug` and the jobs it needs are always added or skipped together. The needs are deliberately not [`optional`](https://docs.gitlab.com/ci/yaml/#needsoptional): a missing needed job stays a pipeline error instead of a silently skipped dependency.
@@ -52,17 +54,17 @@ The runner `r9700x-docker` is shared with another project. On 2026-10-29, with 8
 
 GitLab details, from [`rules:changes`](https://docs.gitlab.com/ci/yaml/#ruleschanges), [`rules:changes:compare_to`](https://docs.gitlab.com/ci/yaml/#ruleschangescompare_to) and [`rules:changes:regexp`](https://docs.gitlab.com/ci/yaml/#ruleschangesregexp):
 
-- `regexp` needs GitLab 19.2 or later, and gitlab.com accepts it. It is a Ruby regular expression, matched against each changed path; the rule holds when any path matches. It is anchored with `\A` and `\z` because a Git path can contain a newline. Glob `paths` have no exclusion, so they would have to list every code path, and a forgotten one would skip the jobs.
-- `compare_to: refs/heads/main` compares the changes with `main`, also for a merge request that targets another branch. GitLab warns that `compare_to` can give unexpected results in merged results pipelines and in forks.
+- `regexp` needs GitLab 19.2 or later, and gitlab.com accepts it. It is a Ruby regular expression, matched against each changed path; the rule holds when any path matches. It is anchored with `\A` and `\z` because a Git path can contain a newline; `.` does not match a newline, so a path under `docs/` with a newline in its name runs the jobs. Glob `paths` have no exclusion, so they would have to list every code path, and a forgotten one would skip the jobs.
+- In a merge-request pipeline, changes are compared with the merge request's target branch. The rule deliberately has no `compare_to`: with it, GitLab reads the changed paths from diff statistics with rename detection on and keeps only the new path of a renamed file, so `git mv lib/x.dart docs/x.md` would look docs-only.
 - When more than 50,000 files changed, GitLab treats the rule as matched and runs the jobs.
 
-`DocsOnlyMergeRequestTests` in `ci/tests/ci_pipeline_config_test.py` models these rules for every pipeline source, checks that every needed job is present, and checks the pattern against the docs-only definition for every tracked file.
+`DocsOnlyMergeRequestTests` in `ci/tests/ci_pipeline_config_test.py` models these rules for every pipeline source, checks that every needed job is present, checks renames and that the rule has no `compare_to`, and checks the pattern against the docs-only definition for every tracked file.
 
 ## Test lanes
 
-`flutter_checks` (AI gate off) and `flutter_ai_checks` (gate on) each ran every test file. The MR7 sandbox tool tests, `test/ai/mr7_sandbox_*_test.dart` (several hundred tests added on 2026-10-29), exercise the host sandbox runner in `tool/mr7/` rather than the app's AI gate, so running them in both lanes only doubled their time. Under that load two check jobs hit the 25-minute job timeout and several tests the 60-second per-test timeout (issue #52).
+`flutter_checks` (AI gate off) and `flutter_ai_checks` (gate on) each ran every test file. The MR7 sandbox tool tests, `test/ai/mr7_sandbox_*_test.dart` (several hundred tests added on 2026-10-29), exercise the host sandbox runner in `tool/mr7/` rather than the app's AI gate, so running them in both lanes only doubled their time. Under that load two check jobs hit what was then a 25-minute job timeout, and several tests the 60-second per-test timeout (issue #52).
 
-`ci/check.sh` now passes `flutter test` an explicit, sorted list of every `*_test.dart` file under `test/`, which is what `flutter test` finds on its own:
+`ci/check.sh` now passes `flutter test` an explicit, sorted list of every `*_test.dart` file under `test/`, which is what `flutter test` finds on its own. That includes a `*_test.dart` symlink that leads to a file; like `flutter test`, the listing does not follow links into directories and drops a dangling link.
 
 - the default lane (`ci/check.sh`, gate off) leaves out `test/ai/mr7_sandbox_*_test.dart` and any `test/ai/mr7_live_*_test.dart` directly in `test/ai/`;
 - the `ai` lane (`ci/check.sh ai`, gate on) runs every file;
@@ -75,7 +77,13 @@ bash ci/check.sh default --list-tests   # one path per line; the count goes to s
 bash ci/check.sh ai --list-tests
 ```
 
-The script stops before Flutter when it finds no test file, because `flutter test` without file arguments would run the whole `test/` directory. `CheckScriptTests` in `ci/tests/ci_pipeline_config_test.py` checks both lanes on a synthetic tree and on this repository's `test/`.
+The script stops before Flutter when it finds no test file, because `flutter test` without file arguments would run the whole `test/` directory. `CheckScriptTests` in `ci/tests/ci_pipeline_config_test.py` checks both lanes on a synthetic tree (with symlinked test files) and on this repository's `test/`.
+
+## Timeouts
+
+`ci/check.sh` stops the test process after 30 minutes (`timeout --signal=TERM --kill-after=15s 30m flutter test`), and `flutter_checks` and `flutter_ai_checks` have `timeout: 35m`. The 5 minutes between them cover the rest of the job: before the tests, the Flutter SDK setup, `pub get` and `flutter analyze`; after them, the JUnit report, coverage and the screenshot evidence.
+
+The limits were 22 and 25 minutes. On the shared runner `r9700x-docker`, with both lanes running in parallel next to the other project's jobs, the whole-suite jobs finished at 24–25 minutes and kept hitting the job timeout on 2026-10-29: !247 `flutter_checks` at 1527 s (terminated mid-suite), !251 both lanes at 1531 s and 1526 s, and !245 `flutter_ai_checks` at 1510 s, killed in the post-test steps after analysis, tests and report had all exited 0. The higher limits are a stopgap next to the cuts in duplicated work above (docs-only merge requests and the MR7 sandbox tool tests in one lane), not a replacement for them. `native_templates`, `android_debug` and the delivery jobs keep their timeouts. `CiPipelineConfigTests` and `CheckScriptTests` in `ci/tests/ci_pipeline_config_test.py` pin both values.
 
 ## Toolchains and reproducibility
 

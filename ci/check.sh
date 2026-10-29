@@ -28,9 +28,12 @@ esac
 # the app's AI gate. The gate tests (mr7_release_gate_test.dart,
 # mr7_background_gate_test.dart) run in both lanes. See docs/CI.md "Test lanes".
 # --list-tests prints the selection and stops before Flutter is touched.
+# Like flutter test (flutter_tools _findTests), the listing does not follow
+# links into directories but keeps a *_test.dart symlink that leads to a file.
 test_files=()
 found=0
 while IFS= read -r file; do
+  [ -f "$file" ] || continue # a dangling link or a link to a directory
   found=$((found + 1))
   case "$file" in
     test/ai/*/*) ;; # deeper paths are not sandbox tool tests
@@ -38,7 +41,7 @@ while IFS= read -r file; do
       [ "$mode" = ai ] || continue ;;
   esac
   test_files+=("$file")
-done < <(find test -name '*_test.dart' -type f | LC_ALL=C sort)
+done < <(find test -name '*_test.dart' \( -type f -o -type l \) | LC_ALL=C sort)
 if [ "${#test_files[@]}" -eq 0 ]; then
   echo 'ci/check.sh: no test files found under test/' >&2
   exit 1
@@ -57,7 +60,7 @@ cp pubspec.lock "$output_dir/pubspec.lock"
 set +e
 flutter analyze --no-pub 2>&1 | tee "$output_dir/analyze.txt"
 analysis_status=${PIPESTATUS[0]}
-timeout --signal=TERM --kill-after=15s 22m flutter test --no-pub --coverage --timeout=60s --machine ${test_options[@]+"${test_options[@]}"} "${test_files[@]}" 2>"$output_dir/test-stderr.txt" | tee "$output_dir/tests.jsonl" | python3 -u ci/test_progress.py
+timeout --signal=TERM --kill-after=15s 30m flutter test --no-pub --coverage --timeout=60s --machine ${test_options[@]+"${test_options[@]}"} "${test_files[@]}" 2>"$output_dir/test-stderr.txt" | tee "$output_dir/tests.jsonl" | python3 -u ci/test_progress.py
 test_status=${PIPESTATUS[0]}
 cat "$output_dir/test-stderr.txt"
 python3 ci/test_report.py "$output_dir/tests.jsonl" "$output_dir/junit.xml"
