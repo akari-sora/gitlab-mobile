@@ -21,6 +21,58 @@ Map<String, Object?> _part(Map<String, Object?> receipt, String name) =>
 Mr7AdvancedCase _case(String op, String variant) =>
     _cases.singleWhere((c) => c.operation == op && c.variant == variant);
 
+// Negative probes keep exercising production refusal/stop behavior while the
+// catalog's project edits are closed. Their observer cannot claim success.
+Mr7Scenario _projectRefusalProbe(String variant) => Mr7Scenario(
+  id: 'b3-editProject-refusal-$variant',
+  suite: 'advanced',
+  operation: 'editProject',
+  variant: 'refusal-$variant',
+  tier: 'hardLine',
+  utterance: (p) => 'Edit only the synthetic project ${p.path}.',
+  call: (p) => AiToolCall(
+    id: 'b3-editProject-refusal-$variant',
+    name: 'editProject',
+    arguments: {
+      'projectId': p.projectId,
+      if (variant == 'name')
+        'name': 'Synthetic renamed display'
+      else
+        'description': 'Synthetic project description',
+    },
+  ),
+  paths: (p) => {'PUT projects/${p.projectId}'},
+  observe: (_, _) async => false,
+);
+
+// These deliberately unverified probes test the production confirmation and
+// quarantine mechanics. They do not reopen a closed catalog variant.
+Mr7Scenario _mrRefusalProbe(String operation) => Mr7Scenario(
+  id: 'b3-$operation-refusal',
+  suite: 'advanced',
+  operation: operation,
+  variant: 'refusal',
+  tier: operation == 'approveMergeRequest' ? 'T4' : 'T3',
+  targetKind: AiTargetKind.mergeRequest,
+  utterance: (p) => 'Perform $operation only on synthetic !3 in ${p.path}.',
+  resource: (_) =>
+      const AiResourceRef(kind: AiResourceKind.mergeRequest, id: 3),
+  call: (p) => AiToolCall(
+    id: 'b3-$operation-refusal',
+    name: operation,
+    arguments: {'projectId': p.projectId, 'iid': 3},
+  ),
+  paths: (p) => {
+    'POST projects/${p.projectId}/merge_requests/3/'
+        '${operation == 'approveMergeRequest' ? 'approve' : 'cancel_auto_merge'}',
+  },
+  readbackPaths: (p, _) => {'projects/${p.projectId}/merge_requests/3'},
+  observe: (observer, p) async {
+    await observer.read('projects/${p.projectId}/merge_requests/3');
+    return false;
+  },
+);
+
 Mr7Scenario _variant(
   Mr7Scenario base,
   String suffix, {
@@ -378,7 +430,7 @@ void main() {
     },
   );
 
-  test('enumerates every advanced production ledger row and exclusion', () {
+  test('enumerates the seven 7B3 ledger families and exclusions', () {
     final expected = {
       for (final row in [
         ...aiFileRows,
@@ -543,6 +595,65 @@ void main() {
     },
   );
 
+  test('closed candidate refuses before provider creation', () async {
+    final server = Mr7SyntheticGitLab();
+    final fixture = Mr7AdvancedFixture(server);
+    var confirmations = 0;
+    final receipt = await _run(
+      [_case('createBranch', 'ordinary-ref').closedReceiptScenario],
+      server: server,
+      confirm: (_) async {
+        confirmations++;
+        return true;
+      },
+    );
+    final row = _rows(receipt).single;
+    expect(row['status'], 'NOT_RUN');
+    expect(row['mutationCount'], 0);
+    expect(row.containsKey('provider'), isFalse);
+    expect(row.containsKey('fixtureDigest'), isFalse);
+    expect(confirmations, 0);
+    expect(fixture.mutations, isEmpty);
+    expect(server.scenarioWrites, 0);
+    expect(server.cleanupWrites, 0);
+    expect(receipt['quarantined'], isTrue);
+    expect(receipt['stopReason'], 'runUnverified');
+  });
+
+  for (final variant in ['name', 'description']) {
+    for (final level in AiAutonomyLevel.values) {
+      test(
+        'editProject $variant stays NOT_RUN at ${level.name} without a snapshot seam',
+        () async {
+          final c = _case('editProject', variant);
+          expect(c.scenario, isNull);
+          expect(c.closedReason, contains('pre-write name/description'));
+          expect(c.closedReason, contains('preread receipt metadata'));
+          final server = Mr7SyntheticGitLab();
+          final fixture = Mr7AdvancedFixture(server);
+          var confirmations = 0;
+          final receipt = await _run(
+            [c.closedReceiptScenario],
+            server: server,
+            level: level,
+            confirm: (_) async {
+              confirmations++;
+              return true;
+            },
+          );
+          expect(_rows(receipt).single['status'], 'NOT_RUN');
+          expect(_rows(receipt).single['mutationCount'], 0);
+          expect(_rows(receipt).single.containsKey('provider'), isFalse);
+          expect(confirmations, 0);
+          expect(fixture.mutations, isEmpty);
+          expect(server.scenarioWrites, 0);
+          expect(server.cleanupWrites, 0);
+          expect(receipt['quarantined'], isTrue);
+        },
+      );
+    }
+  }
+
   for (final c in _cases.where((c) => c.scenario != null)) {
     test(
       '${c.id} proves API confirm write independent readback receipt',
@@ -633,34 +744,115 @@ void main() {
     });
   }
 
-  test('supported advanced cases share one sandbox and one cleanup', () async {
-    final server = Mr7SyntheticGitLab();
-    final fixture = Mr7AdvancedFixture(server);
-    final receipt = await _run([
-      _case('approveMergeRequest', 'sha-bound').scenario!,
-      _case('cancelAutoMerge', 'current-endpoint').scenario!,
-      _case('editProject', 'description').scenario!,
-      // Observe the description retained from the preceding successful case.
-      _variant(
-        _case('editProject', 'name').scenario!,
-        'name-after-description',
-        observe: (observer, p) async {
-          final row = await observer.read('projects/${p.projectId}');
-          return row['name'] == 'Synthetic renamed display' &&
-              row['description'] == 'Synthetic project description';
-        },
-      ),
-    ], server: server);
-    expect(_rows(receipt), hasLength(4));
-    expect(
-      _rows(receipt).every((r) => r['status'] == 'PASS'),
-      isTrue,
-      reason: jsonEncode(receipt),
-    );
-    expect(fixture.mutations, hasLength(4));
-    expect(server.cleanupWrites, 1);
-    _expectBoundary(receipt);
-  });
+  test(
+    'exported advanced list stays closed instead of passing an empty suite',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      final fixture = Mr7AdvancedFixture(server);
+      final scenarios = mr7AdvancedScenarios();
+      expect(scenarios, isEmpty);
+      final receipt = await _run(scenarios, server: server);
+      expect(_rows(receipt), isEmpty);
+      expect(receipt['status'], 'FAIL');
+      expect(receipt['reason'], 'noScenarios');
+      expect(_part(receipt, 'coverage')['advanced'], 'NOT_RUN');
+      expect(fixture.mutations, isEmpty);
+      expect(server.scenarioWrites, 0);
+    },
+  );
+
+  for (final pair in [
+    ('approveMergeRequest', 'sha-bound'),
+    ('cancelAutoMerge', 'current-endpoint'),
+  ]) {
+    for (final fault in [
+      'iid',
+      'missing-iid',
+      'project_id',
+      'original-id',
+      'permission',
+      'pre-existing-approval',
+      'actor',
+    ]) {
+      test('${pair.$1} stays NOT_RUN for unproved $fault', () async {
+        final server = Mr7SyntheticGitLab(userId: fault == 'actor' ? 8 : 7);
+        final fixture = Mr7AdvancedFixture(server);
+        if (fault == 'permission') {
+          fixture.mr['user'] = {'can_merge': false};
+        }
+        if (fault == 'pre-existing-approval') {
+          fixture.mr['approved_by'] = [
+            {
+              'user': {'id': 7},
+            },
+          ];
+        }
+        server.routes['GET projects/909/merge_requests/3'] = (_) {
+          final row = {...fixture.mr};
+          if (fault == 'original-id' && fixture.mutations.isEmpty) {
+            row['id'] = 34;
+          }
+          if (fixture.mutations.isNotEmpty) {
+            if (fault == 'iid') row['iid'] = 4;
+            if (fault == 'missing-iid') row.remove('iid');
+            if (fault == 'project_id') row['project_id'] = 777;
+          }
+          return mr7Json(row);
+        };
+        final c = _case(pair.$1, pair.$2);
+        expect(c.scenario, isNull);
+        expect(c.closedReason, contains('original pre-read MR numeric ID'));
+        expect(c.closedReason, contains('preread receipt metadata'));
+        var confirmations = 0;
+        final receipt = await runMr7Sandbox(
+          releaseSha: _sha,
+          policy: Mr7Policy.candidate,
+          suite: 'advanced',
+          scenarios: [c.scenario ?? c.closedReceiptScenario],
+          session: Mr7SandboxSession(
+            server: server,
+            expectedUserId: server.userId,
+            nonce: 'advancednonce',
+            requestCap: 400,
+            eventDelay: () async {},
+          ),
+          confirm: (_) async {
+            confirmations++;
+            return true;
+          },
+          typedConfirm: (p) async => p.requiredTypedName,
+        );
+        expect(_rows(receipt).single['status'], 'NOT_RUN');
+        expect(_rows(receipt).single['mutationCount'], 0);
+        expect(_rows(receipt).single.containsKey('provider'), isFalse);
+        expect(confirmations, 0);
+        expect(fixture.mutations, isEmpty);
+        expect(server.scenarioWrites, 0);
+        expect(server.cleanupWrites, 0);
+      });
+    }
+  }
+
+  test(
+    'negative MR probe reads independently and never reports operation PASS',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      final fixture = Mr7AdvancedFixture(server);
+      final receipt = await _run([
+        _mrRefusalProbe('cancelAutoMerge'),
+      ], server: server);
+      final row = _rows(receipt).single;
+      expect(row['outcome'], 'succeeded');
+      expect(row['status'], 'NOT_VERIFIED');
+      expect(row['readback'], 'NOT_VERIFIED');
+      expect(row['observerRequests'], 1);
+      expect(row['preread'], isA<Map<String, Object?>>());
+      expect(fixture.mutations, hasLength(1));
+      expect(server.cleanupWrites, 0);
+      expect(receipt['quarantined'], isTrue);
+      _expectBoundary(receipt, cleanup: false);
+    },
+  );
 
   test(
     '409 no-change stays closed when independent observation is unavailable',
@@ -670,8 +862,8 @@ void main() {
       const path = 'POST projects/909/merge_requests/3/cancel_auto_merge';
       server.routes[path] = (_) => mr7Json(const {}, status: 409);
       final receipt = await _run([
-        _case('cancelAutoMerge', 'current-endpoint').scenario!,
-        _case('approveMergeRequest', 'sha-bound').scenario!,
+        _mrRefusalProbe('cancelAutoMerge'),
+        _mrRefusalProbe('approveMergeRequest'),
       ], server: server);
       expect(_rows(receipt).first['outcome'], 'succeeded');
       expect(_rows(receipt).first['status'], 'NOT_VERIFIED');
@@ -688,17 +880,16 @@ void main() {
     for (final pair in [
       ('approveMergeRequest', 'sha-bound'),
       ('cancelAutoMerge', 'current-endpoint'),
-      ('editProject', 'description'),
     ]) {
       test(
-        'autonomy ${level.name} ${pair.$1}/${pair.$2} keeps product confirmation',
+        'negative probe autonomy ${level.name} ${pair.$1} keeps product confirmation',
         () async {
           final c = _case(pair.$1, pair.$2);
           final server = Mr7SyntheticGitLab();
           final fixture = Mr7AdvancedFixture(server);
           final proposals = <Mr7HostProposal>[];
           final receipt = await _run(
-            [c.scenario!],
+            [_mrRefusalProbe(c.operation)],
             server: server,
             level: level,
             confirm: (p) async {
@@ -712,7 +903,7 @@ void main() {
             expect(row['mutationCount'], 0);
             expect(proposals, isEmpty);
           } else {
-            expect(row['status'], 'PASS', reason: jsonEncode(receipt));
+            expect(row['status'], 'NOT_VERIFIED', reason: jsonEncode(receipt));
             expect(row['mutationCount'], 1);
             expect(proposals, hasLength(1));
             final productTyped =
@@ -724,7 +915,7 @@ void main() {
             expect(proposals.single.requiredTypedName != null, productTyped);
             expect(fixture.mutations, hasLength(1));
           }
-          _expectBoundary(receipt);
+          _expectBoundary(receipt, cleanup: level == AiAutonomyLevel.readOnly);
         },
       );
     }
@@ -734,7 +925,7 @@ void main() {
     final server = Mr7SyntheticGitLab();
     final fixture = Mr7AdvancedFixture(server);
     final receipt = await _run(
-      [_case('cancelAutoMerge', 'current-endpoint').scenario!],
+      [_mrRefusalProbe('cancelAutoMerge')],
       server: server,
       level: AiAutonomyLevel.bypass,
       confirm: (_) async => false,
@@ -756,11 +947,11 @@ void main() {
       final fixture = Mr7AdvancedFixture(server);
       final receipt = await _run([
         _variant(
-          _case('cancelAutoMerge', 'current-endpoint').scenario!,
+          _mrRefusalProbe('cancelAutoMerge'),
           'empty-observer',
           observe: (_, _) async => true,
         ),
-        _case('editProject', 'description').scenario!,
+        _projectRefusalProbe('description'),
       ], server: server);
       expect(_rows(receipt).first['status'], 'NOT_VERIFIED');
       expect(_rows(receipt).first['observerRequests'], 0);
@@ -777,10 +968,9 @@ void main() {
       final fixture = Mr7AdvancedFixture(server);
       final receipt = await _run(
         [
-          (drift == 'approval-head'
-                  ? _case('approveMergeRequest', 'sha-bound')
-                  : _case('editProject', 'description'))
-              .scenario!,
+          drift == 'approval-head'
+              ? _mrRefusalProbe('approveMergeRequest')
+              : _projectRefusalProbe('description'),
         ],
         server: server,
         confirm: (_) async {
@@ -888,7 +1078,7 @@ void main() {
     final server = Mr7SyntheticGitLab();
     final fixture = Mr7AdvancedFixture(server);
     final receipt = await _run(
-      [_case('editProject', 'description').scenario!],
+      [_projectRefusalProbe('description')],
       server: server,
       typedConfirm: (_) async => 'wrong-project',
     );
@@ -904,8 +1094,8 @@ void main() {
       final server = Mr7SyntheticGitLab();
       final fixture = Mr7AdvancedFixture(server)..loseReply = true;
       final receipt = await _run([
-        _case('cancelAutoMerge', 'current-endpoint').scenario!,
-        _case('editProject', 'description').scenario!,
+        _mrRefusalProbe('cancelAutoMerge'),
+        _projectRefusalProbe('description'),
       ], server: server);
       expect(_rows(receipt).first['status'], 'writeUncertain');
       expect(_rows(receipt).last['status'], 'NOT_RUN');
@@ -921,7 +1111,7 @@ void main() {
   );
 
   test(
-    'independent observer mismatch stops subsequent writes without retry',
+    'unverified independent observer stops subsequent writes without retry',
     () async {
       final server = Mr7SyntheticGitLab();
       final fixture = Mr7AdvancedFixture(server);
@@ -933,8 +1123,8 @@ void main() {
         return mr7Json(fixture.mr);
       };
       final receipt = await _run([
-        _case('cancelAutoMerge', 'current-endpoint').scenario!,
-        _case('editProject', 'name').scenario!,
+        _mrRefusalProbe('cancelAutoMerge'),
+        _projectRefusalProbe('name'),
       ], server: server);
       expect(_rows(receipt).first['status'], 'NOT_VERIFIED');
       expect(_rows(receipt).first['readback'], 'NOT_VERIFIED');
@@ -958,8 +1148,8 @@ void main() {
         return reply;
       };
       final receipt = await _run([
-        _case('cancelAutoMerge', 'current-endpoint').scenario!,
-        _case('editProject', 'name').scenario!,
+        _mrRefusalProbe('cancelAutoMerge'),
+        _projectRefusalProbe('name'),
       ], server: server);
       expect(receipt['status'], 'FAIL');
       expect(_part(receipt, 'events')['status'], 'NOT_VERIFIED');
@@ -1007,11 +1197,11 @@ void main() {
       final fixture = Mr7AdvancedFixture(server);
       final receipt = await _run([
         _variant(
-          _case('editProject', 'description').scenario!,
+          _projectRefusalProbe('description'),
           'foreign-permit',
           paths: (_) => {'PUT projects/777'},
         ),
-        _case('approveMergeRequest', 'sha-bound').scenario!,
+        _mrRefusalProbe('approveMergeRequest'),
       ], server: server);
       expect(_rows(receipt).first['status'], isNot('PASS'));
       expect(_rows(receipt).first['mutationCount'], 0);
@@ -1032,7 +1222,7 @@ void main() {
         final receipt = await _run(
           [
             _variant(
-              _case('editProject', 'description').scenario!,
+              _projectRefusalProbe('description'),
               'forbidden-$field',
               call: (p) => AiToolCall(
                 id: 'forbidden-$field',

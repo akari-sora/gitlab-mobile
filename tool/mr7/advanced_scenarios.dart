@@ -27,6 +27,18 @@ const _absenceSeam =
 const _contentSeam =
     'NOT_RUN/closed: 7B0 observer cannot independently read raw snippet bytes '
     'at the pinned file revision; metadata alone does not prove content.';
+const _projectFieldsSeam =
+    'NOT_RUN/closed: 7B0 does not expose the pre-write name/description '
+    'snapshot to the observer. Its custom freshness hook also omits required '
+    'preread receipt metadata. A snapshot/readback hook that retains that '
+    'metadata is needed to prove exact preservation of the omitted field; '
+    'initial fixture values and null-to-empty normalization are not evidence.';
+const _mergeIdentitySeam =
+    'NOT_RUN/closed: 7B0 does not expose the original pre-read MR numeric ID '
+    'and operation preconditions to its observer; acknowledgement identity or '
+    'fixture constants cannot substitute for that snapshot. A snapshot/readback '
+    'hook must retain required preread receipt metadata and bind original ID, '
+    'iid, sandbox project, actor and operation-specific before/after state.';
 const _live =
     'Live NOT_RUN without owner credentials and instance feature/version checks. '
     'Missing fixture, unsupported feature, forbidden/unknown scope, uncertain '
@@ -294,25 +306,19 @@ List<Mr7AdvancedCase> mr7AdvancedCases() => [
         'returned ID, so secondary source-ref/issue effects need a scoped seam; '
         'fork/foreign issue mutations are outside project authorization.',
   ),
-  _runnable(
+  ..._closed(
     'approveMergeRequest',
-    'sha-bound',
     'T4',
+    ['sha-bound'],
     preread:
         'GET same-project opened MR and exact head SHA; instance must allow '
         'owner approval without adding members.',
     write: 'approveMergeRequest with pinned SHA, typed !3.',
     readback:
         'Independent returned MR identity and approved_by owner numeric ID.',
-    targetKind: AiTargetKind.mergeRequest,
-    arguments: {'iid': 3},
-    mutation: 'POST projects/{project}/merge_requests/3/approve',
-    observation: 'projects/{project}/merge_requests/3',
-    check: (r) =>
-        r['sha'] == mr7AdvancedHead &&
-        (r['approved_by'] as List).any(
-          (a) => a is Map && a['user'] is Map && (a['user'] as Map)['id'] == 7,
-        ),
+    reason:
+        '$_mergeIdentitySeam Prove readable prior approvals and a newly added '
+        'approval by the validated owner, not a pre-existing or different actor.',
   ),
   ..._closed(
     'approveMergeRequest',
@@ -327,18 +333,16 @@ List<Mr7AdvancedCase> mr7AdvancedCases() => [
         'NOT_RUN/closed: feature/permission and protected approval fixture '
         'must exist without another member; drift is a zero-write negative case.',
   ),
-  _runnable(
+  ..._closed(
     'cancelAutoMerge',
-    'current-endpoint',
     'T3',
+    ['current-endpoint'],
     preread: 'GET opened same-project MR, auto-merge enabled and can_merge.',
     write: 'POST cancel_auto_merge with empty body, once.',
     readback: 'Independent exact MR, readable auto-merge flag now false.',
-    targetKind: AiTargetKind.mergeRequest,
-    arguments: {'iid': 3},
-    mutation: 'POST projects/{project}/merge_requests/3/cancel_auto_merge',
-    observation: 'projects/{project}/merge_requests/3',
-    check: (r) => r['auto_merge_enabled'] == false && r['state'] == 'opened',
+    reason:
+        '$_mergeIdentitySeam Prove auto-merge was enabled and can_merge was '
+        'true; production only records the latter for its preview.',
   ),
   ..._closed(
     'cancelAutoMerge',
@@ -661,33 +665,18 @@ List<Mr7AdvancedCase> mr7AdvancedCases() => [
           '$_absenceSeam No safe registry fixture creation seam; container '
           'port uses registry/repositories/:id, refused by project-only read guard.',
     ),
-  for (final variant in ['name', 'description'])
-    _runnable(
-      'editProject',
-      variant,
-      'hardLine',
-      preread:
-          'GET sandbox ID/path/owner/private status and both current name/'
-          'description; omitted-field CAS must stay bound.',
-      write:
-          'editProject PUT resends only name/description; typed full project path.',
-      readback: 'Independent exact sandbox identity and both final fields.',
-      targetKind: AiTargetKind.project,
-      arguments: {
-        if (variant == 'name')
-          'name': 'Synthetic renamed display'
-        else
-          'description': 'Synthetic project description',
-      },
-      mutation: 'PUT projects/{project}',
-      observation: 'projects/{project}',
-      check: (r) => variant == 'name'
-          ? r['name'] == 'Synthetic renamed display' &&
-                (r['description'] ?? '') == ''
-          : r['description'] == 'Synthetic project description',
-      identityCheck: (r, p) =>
-          variant != 'description' || r['name'] == 'mr7-${p.nonce}',
-    ),
+  ..._closed(
+    'editProject',
+    'hardLine',
+    ['name', 'description'],
+    preread:
+        'GET sandbox ID/path/owner/private status and both current name/'
+        'description; omitted-field CAS must stay bound.',
+    write:
+        'editProject PUT resends only name/description; typed full project path.',
+    readback: 'Independent exact sandbox identity and both final fields.',
+    reason: _projectFieldsSeam,
+  ),
   ..._closed(
     'editProject',
     'hardLine',
