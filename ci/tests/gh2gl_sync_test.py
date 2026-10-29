@@ -199,10 +199,10 @@ class Gh2GlPipelineTests(unittest.TestCase):
         self.assertIn('name: gh2gl-sync', block)
 
     def test_other_jobs_are_skipped_in_the_sync_pipeline(self):
-        # .regular (python_checks, flutter_checks, native_templates, android_debug), publish_preview and
-        # public_api_smoke end their "never" condition with the GH2GL_SYNC check.
-        self.assertEqual(self.content.count('|| $GH2GL_SYNC == "1"\''), 3)
-        for job in ('publish_preview', 'public_api_smoke'):
+        # .regular (python_checks, flutter_checks, native_templates, android_debug), main_run_to_completion,
+        # publish_preview and public_api_smoke end their "never" condition with the GH2GL_SYNC check.
+        self.assertEqual(self.content.count('|| $GH2GL_SYNC == "1"\''), 4)
+        for job in ('main_run_to_completion', 'publish_preview', 'public_api_smoke'):
             block = re.search(rf'^{job}:\n(.*?)(?=\n\S|\Z)', self.content, re.MULTILINE | re.DOTALL).group(1)
             self.assertIn('$GH2GL_SYNC == "1"', block, job)
 

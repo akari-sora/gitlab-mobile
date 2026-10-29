@@ -18,6 +18,29 @@ class CiPipelineConfigTests(unittest.TestCase):
         self.assertIn('retry:', self.content)
         self.assertIn('when: [runner_system_failure, stuck_or_timeout_failure]', self.content)
 
+    def test_started_main_pipelines_run_to_completion(self):
+        workflow = re.search(r'^workflow:\n(.*?)(?=\n\S|\Z)', self.content,
+                             re.MULTILINE | re.DOTALL).group(1)
+        main_rule = ("    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'\n"
+                     "      auto_cancel:\n"
+                     "        on_new_commit: conservative\n")
+        self.assertIn(main_rule, workflow)
+        self.assertLess(workflow.index(main_rule), workflow.index("    - if: '$CI_COMMIT_BRANCH'"),
+                        'the main rule must match before the generic branch rule')
+        match = re.search(r'^main_run_to_completion:\n(.*?)(?=\n\S|\Z)', self.content,
+                          re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(match, 'main_run_to_completion job must be present in .gitlab-ci.yml')
+        guard = match.group(1)
+        self.assertIn('  stage: verify\n', guard)
+        self.assertIn('  interruptible: false\n', guard)
+        self.assertNotIn('needs:', guard, 'the guard must start with the first stage')
+        self.assertNotIn('extends:', guard)
+        rules = re.search(r'^  rules:\n(.*?)(?=\n  \S)', guard, re.MULTILINE | re.DOTALL).group(1)
+        self.assertIn('\'$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1" || $GH2GL_SYNC == "1"\'\n'
+                      '      when: never', rules)
+        self.assertIn("- if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'", rules)
+        self.assertNotIn('on_success', rules, 'the guard runs only on main')
+
     def test_public_api_smoke_does_not_override_retry_with_zero(self):
         # Extract public_api_smoke job block
         match = re.search(r'^public_api_smoke:\n(.*?)(?=\n\S|\Z)', self.content, re.MULTILINE | re.DOTALL)
