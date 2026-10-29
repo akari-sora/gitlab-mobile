@@ -5,7 +5,12 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
+import 'package:gitlab_mobile/core/ai/wire/anthropic_messages.dart';
+import 'package:gitlab_mobile/core/ai/wire/chat_completions.dart';
+import 'package:gitlab_mobile/core/ai/wire/responses.dart';
+import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 import 'package:gitlab_mobile/core/ai/prompts.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
 import 'package:gitlab_mobile/core/instance.dart';
@@ -24,6 +29,13 @@ import '../../tool/mr7/sandbox_contract.dart';
 import '../../tool/mr7_sandbox.dart';
 
 const _sha = '0123456789abcdef0123456789abcdef01234567';
+const _attachmentHostText = [
+  'Synthetic system.',
+  'Upload a synthetic file.',
+  'Acknowledged.',
+  'Uploaded.',
+  'The user asked for an upload.',
+];
 
 Mr7SandboxSession _session(Mr7SyntheticGitLab server) => Mr7SandboxSession(
   server: server,
@@ -34,6 +46,89 @@ Mr7SandboxSession _session(Mr7SyntheticGitLab server) => Mr7SandboxSession(
 
 List<Map<String, Object?>> _rows(Map<String, Object?> receipt) =>
     (receipt['scenarios']! as List).cast<Map<String, Object?>>();
+
+Map<String, Object?> _attachmentWireBody(
+  WireFormatBase wire,
+  String projection, {
+  Object? arguments = const <String, Object?>{},
+  String result = 'Uploaded.',
+}) {
+  final segment = AiSegment(
+    providerId: 'synthetic',
+    recipientRevision: 1,
+    format: wire.format,
+    model: 'synthetic-model',
+    secretSetAtStart: SecretSetId.fromSecrets([]),
+  )..setTail(AppUserEntry(text: projection));
+  final caps = AiCaps(
+    tokenLimitField: AiTokenLimitField.maxTokens,
+    toolChoice: true,
+  );
+  final plan = AiRequestPlan(
+    model: 'synthetic-model',
+    system: 'Synthetic system.',
+    segment: segment,
+    tools: [
+      AiToolSpec(
+        name: 'upload_attachment',
+        description: 'Upload a synthetic file.',
+        parameters: {
+          'type': 'object',
+          'properties': {
+            'role': {
+              'type': 'string',
+              'enum': ['user', 'assistant', 'input_text', 'upload_attachment'],
+            },
+          },
+          'required': ['role'],
+        },
+      ),
+    ],
+  );
+  wire.encode(plan, caps);
+  final call = AiToolCall(
+    id: 'assistant',
+    name: 'upload_attachment',
+    arguments: arguments,
+  );
+  final function = {'name': call.name, 'arguments': jsonEncode(arguments)};
+  final raw = switch (wire.format) {
+    AiFormat.responses => [
+      {
+        'type': 'function_call',
+        'id': 'user',
+        'call_id': call.id,
+        ...function,
+        'status': 'completed',
+      },
+    ],
+    AiFormat.chatCompletions => {
+      'role': 'assistant',
+      'content': 'Acknowledged.',
+      'tool_calls': [
+        {'id': call.id, 'type': 'function', 'function': function},
+      ],
+    },
+    AiFormat.anthropicMessages => [
+      {
+        'type': 'tool_use',
+        'id': call.id,
+        'name': call.name,
+        'input': arguments,
+      },
+    ],
+  };
+  segment.freezeWith(
+    ProviderOutputEntry(wire.format, raw, toolCalls: [call]),
+    (entry) => wire.encodeEntry(entry, caps),
+  );
+  segment.setTail(
+    AppToolResultsEntry([
+      AiToolResult(callId: call.id, name: call.name, content: result),
+    ]),
+  );
+  return wire.encode(plan, caps);
+}
 
 Mr7Scenario _star(
   String id, {
@@ -527,13 +622,24 @@ void main() {
           final provider = Mr7SyntheticProvider(
             AiToolCall(id: 'tiny', name: 'get_issue', arguments: const {}),
             attachments: [session.lookup('att-1')!],
+            allowedUserText: 'Upload.',
           );
           await expectLater(
             provider.fetch(
               RequestOptions(
                 path: 'https://provider.invalid/v1/responses',
                 method: 'POST',
-                data: jsonEncode({'input': leak}),
+                data: jsonEncode({
+                  'input': [
+                    {
+                      'role': 'user',
+                      'content': [
+                        {'type': 'input_text', 'text': 'Upload.'},
+                      ],
+                    },
+                  ],
+                  'extension': leak,
+                }),
               ),
               null,
               null,
@@ -1289,7 +1395,7 @@ void main() {
               filename: 'fixture.txt',
               length: bytes.length,
               mediaType: 'text/plain',
-              open: () => Stream.value(bytes),
+              open: () => Stream.value(Uint8List.fromList(bytes)),
             ),
           );
           expect(stored.status, AiAttachStatus.stored);
@@ -1686,9 +1792,18 @@ void main() {
   );
 
   test(
-    'short attachment text matching metadata uploads without leak refusal',
+    'protocol-valued attachments upload with only the host-built metadata projection',
     () async {
-      for (final raw in ['a', 'e', 'fixture']) {
+      for (final raw in [
+        'a',
+        'e',
+        'fixture',
+        'user',
+        'assistant',
+        'input_text',
+        'synthetic-model',
+        'get_issue',
+      ]) {
         final bytes = Uint8List.fromList(utf8.encode(raw));
         final digest = sha256.convert(bytes).toString();
         final bodies = <Map<String, Object?>>[];
@@ -1725,7 +1840,7 @@ void main() {
                 filename: 'fixture.txt',
                 length: bytes.length,
                 mediaType: 'text/plain',
-                open: () => Stream.value(bytes),
+                open: () => Stream.value(Uint8List.fromList(bytes)),
               ),
             );
             expect(stored.status, AiAttachStatus.stored);
@@ -1792,4 +1907,343 @@ void main() {
       }
     },
   );
+
+  for (final wire in <WireFormatBase>[
+    const ResponsesFormat(),
+    const ChatCompletionsFormat(),
+    const AnthropicMessagesFormat(),
+  ]) {
+    test(
+      '${wire.format.name} wire protocol values are not attachment payloads',
+      () async {
+        for (final raw in [
+          'user',
+          'assistant',
+          'input_text',
+          'synthetic-model',
+          'upload_attachment',
+          'function',
+          'object',
+          'string',
+          'auto',
+        ]) {
+          final bytes = Uint8List.fromList(utf8.encode(raw));
+          final session = AiAttachmentSession(
+            accountKey: 'synthetic',
+            conversationId: 'wire',
+            fileCapBytes: 1024,
+          );
+          await session.reserveAndRead(
+            picker: const _MemoryPicker(),
+            uploadToolInSegment: true,
+            intake: AiAttachmentIntake(
+              filename: 'fixture.txt',
+              length: bytes.length,
+              mediaType: 'text/plain',
+              open: () => Stream.value(Uint8List.fromList(bytes)),
+            ),
+          );
+          final block = session.metadataForModel()['block']! as String;
+          final projection = 'Upload.\n\n$block';
+          final provider = Mr7SyntheticProvider(
+            AiToolCall(id: 'x', name: 'get_issue', arguments: const {}),
+            attachments: session.items,
+            allowedMetadata: block,
+            allowedUserText: projection,
+            hostText: _attachmentHostText,
+          );
+          await provider.fetch(
+            RequestOptions(
+              path: 'https://provider.invalid/v1/responses',
+              method: 'POST',
+              data: jsonEncode(
+                _attachmentWireBody(
+                  wire,
+                  projection,
+                  result: 'The user asked for an upload.',
+                ),
+              ),
+            ),
+            null,
+            null,
+          );
+          expect(provider.attachmentLeakDetected, isFalse, reason: raw);
+          expect(provider.requests, 1, reason: raw);
+          session.discardAll();
+        }
+      },
+    );
+
+    test(
+      '${wire.format.name} free text rejects raw base64 and numeric leaks',
+      () async {
+        for (final raw in [
+          'user',
+          '123456789012345',
+          '1234567890123456',
+          'distinctive-attachment-content',
+        ]) {
+          final bytes = Uint8List.fromList(utf8.encode(raw));
+          final session = AiAttachmentSession(
+            accountKey: 'synthetic',
+            conversationId: 'wire',
+            fileCapBytes: 1024,
+          );
+          await session.reserveAndRead(
+            picker: const _MemoryPicker(),
+            uploadToolInSegment: true,
+            intake: AiAttachmentIntake(
+              filename: 'fixture.txt',
+              length: bytes.length,
+              mediaType: 'text/plain',
+              open: () => Stream.value(Uint8List.fromList(bytes)),
+            ),
+          );
+          final block = session.metadataForModel()['block']! as String;
+          final projection = 'Upload.\n\n$block';
+          for (final leak in [
+            raw,
+            base64Encode(bytes),
+            bytes.toList(),
+            jsonEncode(bytes),
+            'prefix:$raw:suffix',
+            'prefix:${base64Encode(bytes)}:suffix',
+            'prefix:${jsonEncode(bytes)}:suffix',
+          ]) {
+            final plain = _attachmentWireBody(wire, projection);
+            final described = _attachmentWireBody(wire, projection);
+            final tools = described['tools']! as List;
+            final tool = tools.single as Map<String, Object?>;
+            final declaration = wire.format == AiFormat.chatCompletions
+                ? tool['function']! as Map<String, Object?>
+                : tool;
+            final bodies = {
+              // Unknown payload objects must not inherit protocol exemptions.
+              'unknown': {
+                ...plain,
+                'extension': {'role': leak},
+              },
+              'instructions': {
+                ...plain,
+                if (wire.format == AiFormat.responses)
+                  'instructions': leak
+                else
+                  'system': leak,
+              },
+              'arguments': _attachmentWireBody(
+                wire,
+                projection,
+                arguments: {'type': leak},
+              ),
+              'result': _attachmentWireBody(
+                wire,
+                projection,
+                result: leak is String ? leak : jsonEncode(leak),
+              ),
+              'description': described,
+            };
+            declaration['description'] = leak;
+            final schemaOnly =
+                jsonDecode(jsonEncode(described)) as Map<String, Object?>;
+            final schemaTools = schemaOnly['tools']! as List;
+            final schemaTool = schemaTools.single as Map<String, Object?>;
+            final schemaDeclaration = wire.format == AiFormat.chatCompletions
+                ? schemaTool['function']! as Map<String, Object?>
+                : schemaTool;
+            schemaDeclaration['description'] = 'Upload a synthetic file.';
+            final schema =
+                schemaDeclaration[wire.format == AiFormat.anthropicMessages
+                        ? 'input_schema'
+                        : 'parameters']!
+                    as Map<String, Object?>;
+            schema['description'] = leak;
+            bodies['schema description'] = schemaOnly;
+            for (final list in [false, true]) {
+              final nestedResult =
+                  jsonDecode(jsonEncode(plain)) as Map<String, Object?>;
+              final messages =
+                  (nestedResult['input'] ?? nestedResult['messages'])! as List;
+              final last = messages.last as Map<String, Object?>;
+              final nested = list
+                  ? [
+                      {'type': leak},
+                    ]
+                  : {'type': leak};
+              if (wire.format == AiFormat.responses) {
+                last['output'] = nested;
+              } else if (wire.format == AiFormat.chatCompletions) {
+                last['content'] = nested;
+              } else {
+                final part =
+                    (last['content']! as List).single as Map<String, Object?>;
+                part['content'] = nested;
+              }
+              bodies['tool content list=$list'] = nestedResult;
+            }
+            for (final entry in bodies.entries) {
+              final provider = Mr7SyntheticProvider(
+                AiToolCall(id: 'x', name: 'get_issue', arguments: const {}),
+                script: entry.key == 'arguments'
+                    ? [
+                        [
+                          AiToolCall(
+                            id: 'assistant',
+                            name: 'upload_attachment',
+                            arguments: {'type': leak},
+                          ),
+                        ],
+                      ]
+                    : null,
+                attachments: session.items,
+                allowedMetadata: block,
+                allowedUserText: projection,
+                hostText: _attachmentHostText,
+              );
+              await expectLater(
+                provider.fetch(
+                  RequestOptions(
+                    path: 'https://provider.invalid/v1/responses',
+                    method: 'POST',
+                    data: jsonEncode(entry.value),
+                  ),
+                  null,
+                  null,
+                ),
+                throwsA(isA<Mr7Refused>()),
+                reason: '$raw ${entry.key}: $leak',
+              );
+              expect(provider.attachmentLeakDetected, isTrue);
+              expect(provider.requests, 0);
+            }
+          }
+          session.discardAll();
+        }
+      },
+    );
+  }
+
+  test(
+    'short attachment refuses attachment-derived read result before writing',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      server.routes['GET projects/909/issues/3'] = (_) => mr7Json({
+        'id': 300,
+        'iid': 3,
+        'project_id': 909,
+        'title': 'prefix:user:suffix',
+        'description': 'Synthetic data',
+        'confidential': false,
+        'state': 'opened',
+      });
+      server.routes['GET projects/909/issues/3/notes'] = (_) => mr7Json([]);
+      final base = _star('short-result');
+      final receipt = await runMr7Sandbox(
+        policy: Mr7Policy.candidate,
+        releaseSha: _sha,
+        session: _session(server),
+        scenarios: [
+          Mr7Scenario(
+            id: base.id,
+            suite: base.suite,
+            operation: base.operation,
+            variant: base.variant,
+            tier: base.tier,
+            readNames: const {'get_issue'},
+            resource: (_) =>
+                const AiResourceRef(kind: AiResourceKind.issue, id: 3),
+            utterance: (p) => 'Read issue #3 then star project ${p.path}.',
+            call: base.call,
+            paths: base.paths,
+            observe: base.observe,
+            fixture: (session, identity) async {
+              final attachments = AiAttachmentSession(
+                accountKey: '${session.instance}#${session.expectedUserId}',
+                conversationId: base.id,
+                fileCapBytes: 1024,
+              );
+              await attachments.reserveAndRead(
+                picker: const _MemoryPicker(),
+                uploadToolInSegment: true,
+                intake: AiAttachmentIntake(
+                  filename: 'fixture.txt',
+                  length: 4,
+                  mediaType: 'text/plain',
+                  open: () => Stream.value(utf8.encode('user')),
+                ),
+              );
+              return Mr7ScenarioFixtures(
+                attachments: attachments,
+                providerScript: [
+                  [
+                    AiToolCall(
+                      id: 'read',
+                      name: 'get_issue',
+                      arguments: {'iid': 3},
+                    ),
+                  ],
+                  [base.call(identity)],
+                ],
+              );
+            },
+          ),
+        ],
+        confirm: (_) async => true,
+      );
+      final row = _rows(receipt).single;
+      expect(
+        (row['provider']! as Map)['attachmentLeakScan'],
+        'FAIL',
+        reason: jsonEncode(receipt),
+      );
+      expect((row['provider']! as Map)['calls'], 1);
+      expect(server.scenarioWrites, 0);
+      expect(row['status'], isNot('PASS'));
+    },
+  );
+
+  test('short attachment user text must equal the host projection', () async {
+    final session = AiAttachmentSession(
+      accountKey: 'synthetic',
+      conversationId: 'projection',
+      fileCapBytes: 1024,
+    );
+    await session.reserveAndRead(
+      picker: const _MemoryPicker(),
+      uploadToolInSegment: true,
+      intake: AiAttachmentIntake(
+        filename: 'fixture.txt',
+        length: 4,
+        mediaType: 'text/plain',
+        open: () => Stream.value(Uint8List.fromList(utf8.encode('user'))),
+      ),
+    );
+    final block = session.metadataForModel()['block']! as String;
+    final provider = Mr7SyntheticProvider(
+      AiToolCall(id: 'x', name: 'get_issue', arguments: const {}),
+      attachments: session.items,
+      allowedMetadata: block,
+      allowedUserText: 'Upload.\n\n$block',
+      hostText: _attachmentHostText,
+    );
+    await expectLater(
+      provider.fetch(
+        RequestOptions(
+          path: 'https://provider.invalid/v1/responses',
+          method: 'POST',
+          data: jsonEncode(
+            _attachmentWireBody(
+              const ResponsesFormat(),
+              'Upload user.\n\n$block',
+            ),
+          ),
+        ),
+        null,
+        null,
+      ),
+      throwsA(isA<Mr7Refused>()),
+    );
+    expect(provider.attachmentLeakDetected, isTrue);
+    expect(provider.requests, 0);
+    session.discardAll();
+  });
 }

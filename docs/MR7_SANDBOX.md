@@ -250,6 +250,63 @@ candidate evidence remains ineligible for final release acceptance.
 | S7 | closedVariants takes Mr7ClosedVariant; an executable definition can set closed:Mr7ClosedRefusal. Typed causes: releasePolicy, fixtureUnavailable, unsupportedServer, ownershipUnproven, observerUnavailable, scopeExcluded. Explicit candidate rows are NOT_RUN, zero provider calls/mutations. The wrapper rejects forged/malformed closed rows. |
 | S6 | Registry fixtures stay fixtureUnavailable: no honest package publish/container push/ownership/inventory lifecycle is modeled. Owner packages and global registry paths cannot substitute for run-created fixtures. |
 
+### Attachment payload scan
+
+The scanner follows the request encoders in `lib/core/ai/wire/`. It examines
+provider-visible free text, not every JSON value. The recognised payload fields
+are:
+
+| Encoder | Free-text payload fields |
+|---|---|
+| Responses (`responses.dart`) | `instructions`; `input[].content` strings and text parts (`text`); replayed message/refusal/reasoning text and summary parts; `input[].arguments` (function-call JSON strings); `input[].output` (tool results); `tools[].description` and schema descriptions. |
+| Chat Completions (`chat_completions.dart`) | `messages[].content` (system/user/assistant/tool text and content text parts), `refusal` and replay extras; `messages[].tool_calls[].function.arguments` and legacy `function_call.arguments`; `tools[].function.description` and schema descriptions. |
+| Anthropic Messages (`anthropic_messages.dart`) | `system`; `messages[].content[].text`, tool-result `content`, replayed thinking text and other replay payloads; tool-use `input` values; `tools[].description` and `input_schema` descriptions. |
+
+At the corresponding wire positions, JSON keys, `role`, `type`, `model`,
+tool/function `name`, IDs (`id`, `call_id`, `tool_call_id`, `tool_use_id`),
+`status`/`index`, token/stream/store controls, Responses `include`, tool-choice
+enums, cache-control type, and schema `type`/`enum`/`const`/`required`/`format`/
+`nullable`/`$schema`/`$ref` are protocol/schema values and are excluded. Schema
+properties/items/combinators remain traversed so their descriptions are scanned.
+Unrecognised fields default to payload, including unknown replay fields. Once
+inside a payload object or decoded argument/result JSON, all values are scanned;
+an argument key named `role` or `type` does not gain a protocol exemption.
+
+For attachments of **16 bytes or more**, the scanner searches free-text values
+for raw UTF-8, base64 and JSON numeric-array encodings, including substrings.
+Actual numeric/byte arrays and JSON-encoded nested objects/arrays are checked as
+well. The exact host-appended `\n\nmetadataForModel` suffix is exempt only in the
+first user message's single text value; repeated blocks elsewhere are scanned.
+
+For attachments of **1–15 bytes**, common words and identifiers are too easy to
+collide with ordinary prose, so no attachment substring scan is performed.
+Instead the first user turn must have exactly the host-built text (the utterance
+plus its exact metadata block), with one text value in the encoder's user-message
+shape. Missing, extra or changed user text refuses before accepting the request.
+That verified projection is excluded from short-content comparisons; every other
+free-text value must match a source projection registered by the host before
+wire encoding: the system/tool definitions, the host-selected scenario write's
+arguments, numeric-only scripted arguments, or the closed successful-upload
+summary reconstructed independently from project/attachment IDs, filename,
+SHA-256 and fixed outcome enums. Fixture-script text that differs from the
+host-selected arguments, dynamic read/result text, and decoded request values
+are never used to expand this set; unproven content stays closed for short
+attachments.
+The registered values are also checked for exact raw/base64/numeric encodings,
+including values inside JSON argument/result strings. An added
+`prefix:user:suffix` field therefore refuses without searching for the short
+substring, while independently supplied ordinary host prose can contain `user`.
+Tool-result content remains payload even in nested objects/lists whose keys
+look like protocol fields. Thus a short attachment copied into another
+free-text field refuses, while protocol values such as `user` and the configured
+model/tool name remain valid. Sixteen bytes is a conservative
+distinctiveness cutoff, not an entropy estimate. These synthetic checks do not
+prove absence of arbitrary transformed or partial attachment content.
+
+Typed closed rows accept each of `outcome` and `coreOutcome` only when absent or
+exactly `notExecuted`; both present therefore agree. Legacy schema-1 rows retain
+their previous interpretation.
+
 Codes I/F, unbound multi-effect operations and all live/provider/device/CI/release
 acceptance remain closed or NOT_RUN. These hooks do not enable production
 operations. Candidate receipts stay CANDIDATE_ONLY and finalEligible=false.

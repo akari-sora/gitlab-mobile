@@ -25,6 +25,7 @@ import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
+import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
@@ -237,6 +238,8 @@ final class Mr7SyntheticProvider implements HttpClientAdapter {
     List<List<AiToolCall>>? script,
     this.onRequest,
     this.allowedMetadata,
+    this.allowedUserText,
+    Iterable<String> hostText = const [],
     Iterable<AiStoredAttachment> attachments = const [],
   }) : script = List.unmodifiable([
          for (final batch
@@ -254,15 +257,210 @@ final class Mr7SyntheticProvider implements HttpClientAdapter {
         calls.map((c) => c.id).toSet().length != calls.length) {
       throw const Mr7Refused('providerScriptBound');
     }
+    trustHostText(hostText);
+    for (final next in calls) {
+      final payloads = _freeText(next.arguments, 'payload').toList();
+      // The host-selected write is an independent source, like its utterance.
+      // Fixture scripts may add reads, but their arbitrary text is unproven.
+      if (mr7Digest(next.arguments) == mr7Digest(call.arguments) ||
+          !payloads.any((value) => value is String)) {
+        trustHostText([jsonEncode(next.arguments)]);
+        _hostPayloads.addAll(payloads.map(jsonEncode));
+      }
+      final args = next.arguments;
+      if (next.id == call.id &&
+          next.name == call.name &&
+          mr7Digest(next.arguments) == mr7Digest(call.arguments) &&
+          next.name == 'upload_attachment' &&
+          args is Map &&
+          args['projectId'] is int) {
+        for (final attachment in this.attachments.where(
+          (a) => a.id == args['attachmentId'],
+        )) {
+          // Independently reconstruct this closed result from metadata and
+          // fixed outcome enums. Never trust arbitrary delivered result text.
+          for (final referable in [false, true]) {
+            trustHostText([
+              AiWriteOutcome(
+                state: AiJournalState.succeeded,
+                reasonCode: 'succeeded',
+                operationId: next.name,
+                target:
+                    'project:${args['projectId']}/upload/${attachment.sha256} (${attachment.filename})',
+                resultSummary:
+                    'attachment=${attachment.id}, referable=$referable',
+              ).summary,
+            ]);
+          }
+        }
+      }
+    }
   }
   final AiToolCall call;
   final List<List<AiToolCall>> script;
   final List<AiStoredAttachment> attachments;
   final void Function(Map<String, Object?> request)? onRequest;
   final String? allowedMetadata;
+  final String? allowedUserText;
+  final Set<String> _hostPayloads = {};
+
+  // Register source projections before wire encoding, never from the decoded
+  // provider request. Short payloads outside this closed set fail closed.
+  void trustHostText(Iterable<String> text) {
+    _hostPayloads.addAll(text.map(jsonEncode));
+  }
+
+  void trustHostTools(Iterable<AiToolSpec> tools) {
+    _hostPayloads.addAll(
+      _freeText({
+        'tools': [
+          for (final tool in tools)
+            {
+              'name': tool.name,
+              'description': tool.description,
+              'parameters': tool.parameters,
+            },
+        ],
+      }).map(jsonEncode),
+    );
+  }
+
   int requests = 0;
   bool leakDetected = false;
   bool attachmentLeakDetected = false;
+
+  // Shapes follow lib/core/ai/wire/{responses,chat_completions,
+  // anthropic_messages}.dart. Exemptions apply only at those wire positions;
+  // unrecognised fields and function-argument objects are all payload.
+  static Iterable<Object?> _freeText(
+    Object? value, [
+    String shape = 'request',
+  ]) sync* {
+    if (value is String) {
+      yield value;
+    } else if (value is List) {
+      if (value.isNotEmpty && value.every((item) => item is num)) {
+        yield value;
+      } else {
+        for (final item in value) {
+          yield* _freeText(item, shape);
+        }
+      }
+    } else if (value is Map) {
+      final protocol = switch (shape) {
+        'request' => const {
+          'model',
+          'stream',
+          'store',
+          'max_tokens',
+          'max_completion_tokens',
+          'max_output_tokens',
+          'include',
+        },
+        'message' => const {
+          'role',
+          'type',
+          'id',
+          'call_id',
+          'tool_call_id',
+          'status',
+        },
+        'part' => const {'type', 'id', 'tool_use_id', 'status'},
+        'tool' || 'function' => const {'name', 'type'},
+        'toolCall' => const {'id', 'type', 'index'},
+        'choice' => const {'type', 'name'},
+        'cache' => const {'type'},
+        'schema' => const {
+          'type',
+          'enum',
+          'const',
+          'required',
+          r'$schema',
+          r'$ref',
+          'format',
+          'nullable',
+        },
+        _ => const <String>{},
+      };
+      for (final entry in value.entries) {
+        if (protocol.contains(entry.key) ||
+            (entry.key == 'name' &&
+                ((shape == 'message' && value['type'] == 'function_call') ||
+                    (shape == 'part' &&
+                        const {
+                          'tool_use',
+                          'server_tool_use',
+                        }.contains(value['type']))))) {
+          continue;
+        }
+        final child = switch ((shape, entry.key)) {
+          ('request', 'input' || 'messages') => 'message',
+          ('request', 'tools') => 'tool',
+          ('request', 'tool_choice') => 'choice',
+          ('message', 'content' || 'summary') =>
+            value['role'] != 'tool' && entry.value is List ? 'part' : 'payload',
+          ('message', 'tool_calls') => 'toolCall',
+          ('message', 'function_call') ||
+          ('toolCall' || 'tool', 'function') => 'function',
+          ('tool' || 'function', 'parameters' || 'input_schema') => 'schema',
+          ('part', 'cache_control') => 'cache',
+          (
+            'schema',
+            'properties' || r'$defs' || 'definitions' || 'patternProperties',
+          ) =>
+            'properties',
+          (
+            'schema',
+            'items' ||
+                'anyOf' ||
+                'allOf' ||
+                'oneOf' ||
+                'not' ||
+                'additionalProperties',
+          ) ||
+          ('properties', _) => 'schema',
+          _ => 'payload',
+        };
+        // A string tool choice is itself an enum; unknown object members scan.
+        if (child == 'choice' && entry.value is String) continue;
+        yield* _freeText(entry.value, child);
+      }
+    }
+  }
+
+  static ({Map<String, Object?> owner, String key})? _userText(
+    Map<String, Object?> body,
+  ) {
+    final messages = body['input'] ?? body['messages'];
+    if (messages is! List) return null;
+    // Responses and Anthropic start with the host user entry. Chat prepends
+    // exactly one system message. Never grant an exemption to a later user.
+    final index =
+        body.containsKey('messages') &&
+            messages.isNotEmpty &&
+            messages.first is Map &&
+            (messages.first as Map)['role'] == 'system'
+        ? 1
+        : 0;
+    if (messages.length > index) {
+      final message = messages[index];
+      if (message is! Map<String, Object?> || message['role'] != 'user') {
+        return null;
+      }
+      final content = message['content'];
+      if (content is String) return (owner: message, key: 'content');
+      if (content is List && content.length == 1) {
+        final part = content.single;
+        if (part is Map<String, Object?> &&
+            const {'input_text', 'text'}.contains(part['type']) &&
+            part['text'] is String) {
+          return (owner: part, key: 'text');
+        }
+      }
+    }
+    return null;
+  }
+
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -286,34 +484,27 @@ final class Mr7SyntheticProvider implements HttpClientAdapter {
     if (decoded is! Map<String, Object?>) {
       throw const Mr7Refused('providerRequest');
     }
-    // The sole exemption is the host-appended suffix in the first Responses
-    // user input. Other appearances, including repeated blocks, remain scanned.
-    Object? scanBody = decoded;
-    if (allowedMetadata != null) {
-      final copy = jsonDecode(body) as Map<String, Object?>;
-      final input = copy['input'];
-      if (input is List && input.isNotEmpty && input.first is Map) {
-        final user = input.first as Map;
-        final content = user['content'];
-        if (user['role'] == 'user' &&
-            content is List &&
-            content.length == 1 &&
-            content.single is Map) {
-          final part = content.single as Map;
-          final text = part['text'];
-          final suffix = '\n\n$allowedMetadata';
-          if (part['type'] == 'input_text' &&
-              text is String &&
-              text.endsWith(suffix)) {
-            part['text'] = text.substring(0, text.length - suffix.length);
-          }
-        }
-      }
-      scanBody = copy;
-    }
+    final scanBody = jsonDecode(body) as Map<String, Object?>;
+    final user = _userText(scanBody);
+    final userText = user == null ? null : user.owner[user.key] as String;
     for (final attachment in attachments) {
       final bytes = attachment.bytes;
       if (bytes.isEmpty) continue;
+      // Below 16 bytes, common words/identifiers are not distinctive. Bind the
+      // entire user text to the host projection instead of substring-scanning it.
+      final short = bytes.length < 16;
+      if (short && (allowedUserText == null || userText != allowedUserText)) {
+        attachmentLeakDetected = true;
+        throw const Mr7Refused('providerAttachmentBytes');
+      }
+      if (user != null) {
+        final suffix = '\n\n$allowedMetadata';
+        user.owner[user.key] = short
+            ? null
+            : allowedMetadata != null && userText!.endsWith(suffix)
+            ? userText.substring(0, userText.length - suffix.length)
+            : userText;
+      }
       final encoded = base64Encode(bytes);
       final array = jsonEncode(bytes);
       String? plain;
@@ -326,10 +517,21 @@ final class Mr7SyntheticProvider implements HttpClientAdapter {
         if (value is String) {
           final text = value;
           bool matches(String needle) =>
-              text == needle || (needle.length >= 8 && text.contains(needle));
-          return matches(encoded) ||
-              text.contains(array) ||
-              (plain != null && matches(plain));
+              short ? text == needle : text.contains(needle);
+          if (matches(encoded) ||
+              matches(array) ||
+              (plain != null && matches(plain))) {
+            return true;
+          }
+          // Argument strings and tool results can contain encoded JSON values,
+          // including spaced byte arrays and keys that resemble protocol fields.
+          try {
+            final nested = jsonDecode(text);
+            if (nested is List || nested is Map) return leaks(nested);
+          } on FormatException {
+            /* Ordinary free text is not JSON. */
+          }
+          return false;
         }
         if (value is List) {
           if (value.length == bytes.length &&
@@ -344,7 +546,13 @@ final class Mr7SyntheticProvider implements HttpClientAdapter {
         return false;
       }
 
-      if (leaks(scanBody)) {
+      final leaked = _freeText(scanBody).any(
+        (value) =>
+            leaks(value) ||
+            (short && !_hostPayloads.contains(jsonEncode(value))),
+      );
+      if (user != null) user.owner[user.key] = userText;
+      if (leaked) {
         attachmentLeakDetected = true;
         throw const Mr7Refused('providerAttachmentBytes');
       }
@@ -674,12 +882,19 @@ Future<Map<String, Object?>> runMr7Sandbox({
         throw const Mr7Refused('providerScriptOperation');
       }
       final metadata = attachments?.metadataForModel()['block'];
+      final utterance =
+          scenario.utterance?.call(target) ??
+          'Perform ${scenario.operation} on the synthetic project ${target.path}.';
+      final userText = metadata is String
+          ? '$utterance\n\n$metadata'
+          : utterance;
       final provider = Mr7SyntheticProvider(
         call,
         script: script,
         onRequest: fixtures.onProviderRequest,
         attachments: attachments?.items ?? const [],
         allowedMetadata: metadata is String ? metadata : null,
+        allowedUserText: userText,
       );
       final transport = AiTransport(
         endpoint: AiEndpoint.parse(_provider.baseUrl, allowLanCleartext: false),
@@ -815,6 +1030,10 @@ Future<Map<String, Object?>> runMr7Sandbox({
       }
 
       permit.confirmBeforeSend = () => confirmHost();
+      const system = 'Use only the requested synthetic sandbox fixture.';
+      final tools = [...catalogue.specs, ...coordinator.specs];
+      provider.trustHostText([system]);
+      provider.trustHostTools(tools);
       final runner = AiRunner(
         config: _provider,
         wire: const ResponsesFormat(),
@@ -829,7 +1048,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
           recipientRevision: () => 1,
           consentValid: () => s.boundaryValid(),
         ),
-        tools: [...catalogue.specs, ...coordinator.specs],
+        tools: tools,
         writeCoordinator: coordinator,
         executeTool: (call) async =>
             (await catalogue.execute(call, budget: budget)).result,
@@ -897,19 +1116,13 @@ Future<Map<String, Object?>> runMr7Sandbox({
                 coordinator.stop('confirmationFailed');
               });
         },
-        system: 'Use only the requested synthetic sandbox fixture.',
+        system: system,
         close: transport.close,
         cancelActive: transport.cancelActive,
       );
       activeRunner = runner;
       try {
-        final utterance =
-            scenario.utterance?.call(target) ??
-            'Perform ${scenario.operation} on the synthetic project ${target.path}.';
-        final result = await runner.run(
-          metadata is String ? '$utterance\n\n$metadata' : utterance,
-          bindingUtterance: utterance,
-        );
+        final result = await runner.run(userText, bindingUtterance: utterance);
         if (approving != null) await approving;
         final outcome = coordinator.recordedOutcomeFor(call.id);
         row['outcome'] = outcome?.state.name ?? 'notExecuted';

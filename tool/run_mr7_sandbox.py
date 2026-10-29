@@ -142,7 +142,9 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
                     row.get('status') != 'NOT_RUN' or row.get('readback') != 'NOT_RUN' or
                     type(row.get('mutationCount')) is not int or row['mutationCount'] != 0 or
                     type(row.get('providerCalls')) is not int or row['providerCalls'] != 0 or
-                    'responseStatus' in row or row.get('coreOutcome') == 'succeeded' or
+                    'responseStatus' in row or
+                    any(field in row and row[field] != 'notExecuted'
+                        for field in ('outcome', 'coreOutcome')) or
                     not isinstance(refusal, dict) or set(refusal) != {'type', 'cause', 'code'} or
                     refusal.get('type') != 'closedVariant' or
                     not isinstance(refusal.get('cause'), str) or

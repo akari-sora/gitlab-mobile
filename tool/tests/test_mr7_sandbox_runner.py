@@ -267,6 +267,28 @@ class SandboxWrapperTest(unittest.TestCase):
         # Schema 1 predates explicit closed rows; existing legacy rows remain valid.
         self.assertTrue(runner.validate_receipt(receipt(scenarios=[{'status': 'NOT_RUN'}])))
 
+    def test_closed_variant_outcome_aliases_must_be_not_executed(self):
+        row = {'id': 'case-1', 'classification': 'closedVariant', 'status': 'NOT_RUN',
+               'suite': 'rest', 'operation': 'upload_attachment', 'variant': 'missing',
+               'tier': 'T2', 'releaseSha': SHA, 'live': 'NOT_RUN', 'reason': 'fixtureMissing',
+               'mutationCount': 0, 'readback': 'NOT_RUN', 'providerCalls': 0,
+               'refusal': {'type': 'closedVariant', 'cause': 'fixtureUnavailable',
+                           'code': 'fixtureMissing'}}
+        for outcomes in ({}, {'outcome': 'notExecuted'}, {'coreOutcome': 'notExecuted'},
+                         {'outcome': 'notExecuted', 'coreOutcome': 'notExecuted'}):
+            with self.subTest(valid=outcomes):
+                self.assertTrue(runner.validate_receipt(receipt('candidate', scenarios=[{**row, **outcomes}])))
+        for outcomes in ({'outcome': 'succeeded'},
+                         {'outcome': 'succeeded', 'coreOutcome': 'notExecuted'},
+                         {'outcome': 'writeUncertain', 'coreOutcome': 'writeUncertain'},
+                         {'outcome': 'notExecuted', 'coreOutcome': 'writeUncertain'},
+                         {'outcome': None}, {'coreOutcome': None}, {'coreOutcome': 'succeeded'}):
+            with self.subTest(invalid=outcomes):
+                self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[{**row, **outcomes}])))
+        # Legacy, non-closed schema-1 rows retain their existing interpretation.
+        legacy = {'status': 'NOT_RUN', 'outcome': 'succeeded', 'coreOutcome': 'writeUncertain'}
+        self.assertTrue(runner.validate_receipt(receipt(scenarios=[legacy])))
+
     def test_forged_closed_variant_child_receipt_quarantines(self):
         forged = receipt('candidate', scenarios=[{
             'id': 'case-1', 'classification': 'closedVariant', 'status': 'NOT_RUN',
