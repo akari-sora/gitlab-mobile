@@ -11,11 +11,21 @@ import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'candidate_release_policy.dart';
 
 const mr7ProtectedProjectId = 86648389;
+// Exact fixed ownership documents and mutations in the production Todo API.
+const _todoPendingDocument =
+    'f22f62567f47f099a08b71a3a4421170e061d1a024b3e86424ae5091af740a3f';
+const _todoSnoozedDocument =
+    'dfbf11e337a766c288cf3a2d53df90090682f3e79fe20971761c347bbce47ccb';
+const _todoSnoozeDocument =
+    '701de6e86afdaeeeabf384ee19086320683dc782be8ee9f7fd54a8c810a965c0';
+const _todoUnsnoozeDocument =
+    'b4daf82ea099dfc04752acd1aa93ed005dff928a76d248549a3822582023ce48';
 const mr7ExcludedOperations = {
   'createProject',
   'forkProject',
   'markAllTodosDone',
   'batchApplySuggestions',
+  'markTodoDone',
   'snoozeTodo',
   'unsnoozeTodo',
 };
@@ -54,6 +64,27 @@ final class Mr7Identity {
   final int namespaceId;
   final String namespace;
   final String nonce;
+}
+
+final class _Mr7TodoFixture {
+  _Mr7TodoFixture({
+    required this.id,
+    required this.actorId,
+    required this.projectId,
+    required this.parentPath,
+    required this.parentId,
+    required this.iid,
+    required this.mergeRequest,
+    this.snoozedUntil,
+  });
+  final int id;
+  final int actorId;
+  final int projectId;
+  final String parentPath;
+  final int parentId;
+  final int iid;
+  final bool mergeRequest;
+  String? snoozedUntil;
 }
 
 ResponseBody mr7Json(
@@ -157,6 +188,8 @@ final class Mr7SyntheticGitLab {
   int setupWrites = 0;
   int scenarioWrites = 0;
   int cleanupWrites = 0;
+  Map<String, Object?>? _lastUpload;
+  final Map<int, _Mr7TodoFixture> _todos = {};
   DateTime get serverTime => clock;
 
   void addEvent({int? target, String action = 'updated', DateTime? at}) =>
@@ -176,6 +209,130 @@ final class Mr7SyntheticGitLab {
         : segments.skip(marker + 1).join('/');
     final key = '${request.method} $path';
     requests.add(key);
+    if (key == 'GET projects/$projectId/uploads/mr7-observation') {
+      return _lastUpload == null
+          ? mr7Json({}, status: 404)
+          : mr7Json(_lastUpload);
+    }
+    final todoRead = RegExp(
+      '^GET projects/$projectId/todos/([1-9][0-9]*)/mr7-observation\$',
+    ).firstMatch(key);
+    if (todoRead != null) {
+      final todo = _todos[int.parse(todoRead[1]!)];
+      if (todo == null ||
+          todo.projectId != projectId ||
+          todo.actorId != userId) {
+        return mr7Json({}, status: 404);
+      }
+      return mr7Json({
+        'id': todo.id,
+        'actor_id': todo.actorId,
+        'project_id': todo.projectId,
+        'parent_path': todo.parentPath,
+        'parent_id': todo.parentId,
+        'parent_iid': todo.iid,
+        'snoozed_until': todo.snoozedUntil,
+      });
+    }
+    if (request.method == 'POST' &&
+        request.uri.path.endsWith('/api/graphql') &&
+        request.data is Map) {
+      final body = request.data as Map;
+      final query = body['query'];
+      final vars = body['variables'];
+      if (query is String && vars is Map) {
+        final digest = mr7Digest(query);
+        if (const {
+          _todoPendingDocument,
+          _todoSnoozedDocument,
+        }.contains(digest)) {
+          if (vars.length != 2 ||
+              vars['first'] != 100 ||
+              vars['after'] != null ||
+              project == null ||
+              _todos.length > 20) {
+            throw const Mr7Refused('todoFixtureRead');
+          }
+          final snoozed = digest == _todoSnoozedDocument;
+          final path = project!['path_with_namespace'];
+          final nodes = [
+            for (final todo in _todos.values)
+              if ((todo.snoozedUntil != null) == snoozed)
+                {
+                  'id': 'gid://gitlab/Todo/${todo.id}',
+                  'targetType': todo.mergeRequest ? 'MERGEREQUEST' : 'ISSUE',
+                  'snoozedUntil': todo.snoozedUntil,
+                  'project': {
+                    'id': 'gid://gitlab/Project/${todo.projectId}',
+                    'fullPath': path,
+                  },
+                  'group': null,
+                  'targetEntity': {
+                    '__typename': todo.mergeRequest ? 'MergeRequest' : 'Issue',
+                    if (todo.mergeRequest) ...{
+                      'mergeRequestId':
+                          'gid://gitlab/MergeRequest/${todo.parentId}',
+                      'mergeRequestProject': {
+                        'id': 'gid://gitlab/Project/${todo.projectId}',
+                        'fullPath': path,
+                      },
+                    } else ...{
+                      'issueId': 'gid://gitlab/Issue/${todo.parentId}',
+                      'projectId': todo.projectId,
+                    },
+                    'iid': todo.iid,
+                  },
+                },
+          ];
+          return mr7Json({
+            'data': {
+              'currentUser': {
+                'id': 'gid://gitlab/User/$userId',
+                'todos': {
+                  'nodes': nodes,
+                  'pageInfo': {'hasNextPage': false, 'endCursor': null},
+                },
+              },
+            },
+          });
+        }
+        if (const {
+          _todoSnoozeDocument,
+          _todoUnsnoozeDocument,
+        }.contains(digest)) {
+          final match = RegExp(
+            r'^gid://gitlab/Todo/([1-9][0-9]*)$',
+          ).firstMatch('${vars['id']}');
+          final todo = match == null ? null : _todos[int.parse(match[1]!)];
+          final snooze = digest == _todoSnoozeDocument;
+          final until = vars['until'];
+          if (todo == null ||
+              todo.actorId != userId ||
+              todo.projectId != projectId ||
+              (snooze &&
+                  (until is! String || DateTime.tryParse(until) == null)) ||
+              (!snooze && vars.length != 1)) {
+            throw const Mr7Refused('todoFixtureWrite');
+          }
+          todo.snoozedUntil = snooze ? until as String : null;
+          scenarioWrites++;
+          addEvent(target: projectId);
+          if (lostWriteReply) throw const Mr7Refused('replyLostAfterSend');
+          final operation = snooze ? 'todoSnooze' : 'todoUnSnooze';
+          return mr7Json({
+            'data': {
+              operation: {
+                'todo': {
+                  'id': 'gid://gitlab/Todo/${todo.id}',
+                  'snoozedUntil': todo.snoozedUntil,
+                },
+                'errors': <String>[],
+              },
+            },
+          });
+        }
+      }
+    }
     if (routes[key] case final route?) return await route(request);
     if (key == 'GET user') {
       return mr7Json({'id': userId, 'username': namespace});
@@ -317,13 +474,13 @@ final class _GraphOperation {
 }
 
 /// A deliberately closed executable-document subset, not a schema validator.
-/// Fragments, directives, defaults and block strings are refused rather than
-/// skipped: hidden argument usage must never bypass the sandbox scope checks.
+/// Named fragments, directives, defaults and block strings are refused rather
+/// than skipped: hidden argument usage must not bypass sandbox scope checks.
 final class _GraphParser {
   _GraphParser(String source) {
     if (source.length > 65536) throw const Mr7Refused('graphDocument');
     final token = RegExp(
-      r'[A-Za-z_][A-Za-z_0-9]*|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|"(?:\\.|[^"\\\r\n])*"|[!$():{}\[\]]',
+      r'\.\.\.|[A-Za-z_][A-Za-z_0-9]*|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|"(?:\\.|[^"\\\r\n])*"|[!$():{}\[\]]',
     );
     final ignored = RegExp(r'[\s,\uFEFF]+|#[^\r\n]*');
     var offset = 0;
@@ -416,6 +573,13 @@ final class _GraphParser {
     var count = 0;
     var identityOnly = true;
     while (!_take('}')) {
+      if (_take('...')) {
+        _expect('on');
+        _name(); // Inline type condition; all enclosed fields remain checked.
+        identityOnly = _selection(operation, depth + 1, path) && identityOnly;
+        count++;
+        continue;
+      }
       var field = _name();
       final responseKey = field;
       if (_take(':')) field = _name();
@@ -427,7 +591,11 @@ final class _GraphParser {
         operation.arguments.add(arguments);
       }
       final selectionPath = path.isEmpty ? responseKey : '$path/$responseKey';
-      if (operation.selections.containsKey(selectionPath)) {
+      final previous = operation.selections[selectionPath];
+      if (previous != null &&
+          (previous.field != field ||
+              previous.arguments.isNotEmpty ||
+              arguments.isNotEmpty)) {
         throw const Mr7Refused('graphDocument');
       }
       operation.selections[selectionPath] = (
@@ -437,7 +605,7 @@ final class _GraphParser {
       final childProjection = _peek == '{'
           ? _selection(operation, depth + 1, selectionPath)
           : null;
-      if (depth == 0) {
+      if (path.isEmpty) {
         operation.roots.add((
           field: field,
           arguments: arguments,
@@ -505,6 +673,43 @@ _GraphOperation? _selectedGraphOperation(Object? body) {
     return _GraphParser(body['query'] as String).select(body['operationName']);
   } catch (_) {
     return null;
+  }
+}
+
+bool _graphSnapshotTargets(
+  Object? body,
+  Map<String, String> bindings,
+  String path,
+) {
+  final operation = _selectedGraphOperation(body);
+  if (operation?.kind != 'mutation' ||
+      body is! Map ||
+      body['variables'] is! Map) {
+    return false;
+  }
+  final gids = bindings.entries
+      .where(
+        (entry) =>
+            entry.value == path &&
+            RegExp(r'^gid://gitlab/[A-Za-z]+/[1-9][0-9]*$').hasMatch(entry.key),
+      )
+      .map((entry) => entry.key)
+      .toSet();
+  if (gids.isEmpty) return false;
+  bool contains(Object? value) {
+    if (value is String) return gids.contains(value);
+    if (value is List) return value.any(contains);
+    if (value is Map) return value.values.any(contains);
+    return false;
+  }
+
+  try {
+    return operation!.roots.any(
+      (root) =>
+          contains(operation.resolve(root.arguments, body['variables'] as Map)),
+    );
+  } catch (_) {
+    return false;
   }
 }
 
@@ -587,11 +792,63 @@ final class Mr7MutationPermit {
   int? returnedProjectId;
   String? returnedGlobalId;
   Mr7MutationResult? result;
+  Mr7PreReadSnapshot? snapshot;
+  Map<String, Object?>? upload;
   String? _sentPath;
   Object? _sentBody;
   Map<String, String> _graphResourcesAtSend = const {};
   String? _rebaseBeforeSha;
 }
+
+/// Fields are represented by digests in receipts; field presence is bound too.
+final class Mr7SnapshotSpec {
+  Mr7SnapshotSpec({
+    required this.path,
+    required Set<String> fields,
+    Set<String> unchangedFields = const {},
+  }) : fields = Set.unmodifiable(fields),
+       unchangedFields = Set.unmodifiable(unchangedFields);
+  final String path;
+  final Set<String> fields;
+  final Set<String> unchangedFields;
+}
+
+final class _Mr7SnapshotRow {
+  _Mr7SnapshotRow({
+    required this.spec,
+    required this.id,
+    required this.iid,
+    required this.digests,
+  });
+  final Mr7SnapshotSpec spec;
+  final int id;
+  final int? iid;
+  final Map<String, String> digests;
+}
+
+final class Mr7PreReadSnapshot {
+  Mr7PreReadSnapshot._(this.actorId, this.projectId, this._rows);
+  final int actorId;
+  final int projectId;
+  final List<_Mr7SnapshotRow> _rows;
+  Map<String, Object?> get metadata => {
+    'actorId': actorId,
+    'projectId': projectId,
+    'resources': [
+      for (final row in _rows)
+        {
+          'path': row.spec.path,
+          'id': row.id,
+          if (row.iid != null) 'iid': row.iid,
+          'fieldDigests': row.digests,
+          'unchangedFields': row.spec.unchangedFields.toList()..sort(),
+        },
+    ],
+  };
+}
+
+String _snapshotFieldDigest(Map<String, Object?> row, String field) =>
+    mr7Digest({'present': row.containsKey(field), 'value': row[field]});
 
 /// Identifiers select subsequent reads; they are never evidence of effects.
 final class Mr7MutationResult {
@@ -837,6 +1094,75 @@ final class Mr7RebaseObservation extends Mr7Observation<Map<String, Object?>> {
       observer._rebase(this);
 }
 
+/// Synthetic server-side upload metadata, fetched independently after send.
+final class Mr7UploadObservation extends Mr7Observation<bool> {
+  const Mr7UploadObservation({required this.byteCount, required this.sha256});
+  final int byteCount;
+  final String sha256;
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._upload(this);
+}
+
+/// Read synthetic fixture state after a project-owned Todo snooze operation.
+final class Mr7TodoObservation extends Mr7Observation<bool> {
+  const Mr7TodoObservation({required this.id, required this.snoozedUntil});
+  final int id;
+  final String? snoozedUntil;
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._todo(this);
+}
+
+Future<Map<String, Object?>> _uploadMetadata(
+  RequestOptions options,
+  Stream<Uint8List>? stream,
+) async {
+  final data = options.data;
+  if (data is! FormData ||
+      stream == null ||
+      data.fields.isNotEmpty ||
+      data.files.length != 1 ||
+      data.files.single.key != 'file' ||
+      data.files.single.value.length > 25 * 1024 * 1024 ||
+      data.length > 25 * 1024 * 1024 + 8192) {
+    throw const Mr7Refused('uploadShape');
+  }
+  final collected = BytesBuilder(copy: false);
+  var length = 0;
+  await for (final chunk in stream) {
+    length += chunk.length;
+    if (length > data.length || length > 25 * 1024 * 1024 + 8192) {
+      throw const Mr7Refused('uploadSize');
+    }
+    collected.add(chunk);
+  }
+  final bytes = collected.takeBytes();
+  final start = utf8.encode('--${data.boundary}\r\n');
+  final end = utf8.encode('\r\n--${data.boundary}--\r\n');
+  final fileLength = data.files.single.value.length;
+  final payloadEnd = bytes.length - end.length;
+  final payloadStart = payloadEnd - fileLength;
+  bool matches(int offset, List<int> expected) =>
+      offset >= 0 &&
+      offset + expected.length <= bytes.length &&
+      Iterable<int>.generate(
+        expected.length,
+      ).every((i) => bytes[offset + i] == expected[i]);
+  if (length != data.length ||
+      payloadStart < start.length + 4 ||
+      payloadStart > 8192 ||
+      !matches(0, start) ||
+      !matches(payloadEnd, end) ||
+      !matches(payloadStart - 4, const [13, 10, 13, 10])) {
+    throw const Mr7Refused('uploadShape');
+  }
+  return Map.unmodifiable({
+    'byteCount': fileLength,
+    'sha256': sha256
+        .convert(Uint8List.sublistView(bytes, payloadStart, payloadEnd))
+        .toString(),
+  });
+}
+
 /// Query seals are installed after the response. Parent and child IDs remain
 /// independent: for example AwardEmoji -> Note -> WorkItem.
 final class Mr7GraphObservation extends Mr7Observation<Map<String, Object?>> {
@@ -899,6 +1225,9 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
     try {
       await session.beforeMutation(options);
       session.inFlight = true;
+      final upload = session.permit?.operation == 'upload_attachment'
+          ? await _uploadMetadata(options, requestStream)
+          : null;
       if (!session._setupAuthorized && !session._cleanupAuthorized) {
         final permit = session.permit!;
         permit.sent++;
@@ -915,6 +1244,12 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
       }
       dispatched = true;
       final response = await session.server.respond(options);
+      if (upload != null &&
+          response.statusCode >= 200 &&
+          response.statusCode < 300) {
+        session.server._lastUpload = upload;
+        session.permit?.upload = upload;
+      }
       final parentStateCandidate =
           response.statusCode == 304 &&
           const {
@@ -1002,6 +1337,7 @@ final class Mr7Readback {
 
   Mr7MutationResult get result =>
       _permit.result ?? (throw const Mr7Refused('observerBeforeResponse'));
+  Mr7PreReadSnapshot? get snapshot => _permit.snapshot;
   String get _root => 'projects/${_identity.projectId}';
 
   void _scope() {
@@ -1025,6 +1361,53 @@ final class Mr7Readback {
     _scope();
   }
 
+  Future<bool> _upload(Mr7UploadObservation spec) async {
+    if (_permit.operation != 'upload_attachment' ||
+        spec.byteCount < 0 ||
+        spec.byteCount > 25 * 1024 * 1024 ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(spec.sha256)) {
+      throw const Mr7Refused('observerUpload');
+    }
+    _sentTo('$_root/uploads');
+    final row = await _map('$_root/uploads/mr7-observation');
+    return row.length == 2 &&
+        row['byteCount'] == spec.byteCount &&
+        row['sha256'] == spec.sha256;
+  }
+
+  Future<bool> _todo(Mr7TodoObservation spec) async {
+    if (spec.id <= 0 ||
+        !const {'snoozeTodo', 'unsnoozeTodo'}.contains(_permit.operation)) {
+      throw const Mr7Refused('observerTodo');
+    }
+    _sentTo('graphql');
+    final body = _permit._sentBody;
+    final vars = body is Map ? body['variables'] : null;
+    final gid = 'gid://gitlab/Todo/${spec.id}';
+    final parentPath = _permit._graphResourcesAtSend[gid];
+    if (vars is! Map ||
+        vars['id'] != gid ||
+        parentPath == null ||
+        (_permit.operation == 'snoozeTodo'
+            ? vars['until'] != spec.snoozedUntil || spec.snoozedUntil == null
+            : spec.snoozedUntil != null)) {
+      throw const Mr7Refused('observerTodo');
+    }
+    final todo = await _map('$_root/todos/${spec.id}/mr7-observation');
+    final parent = await _map(parentPath);
+    if (todo['id'] != spec.id ||
+        todo['actor_id'] != _identity.userId ||
+        todo['project_id'] != _identity.projectId ||
+        todo['parent_path'] != parentPath ||
+        parent['id'] != todo['parent_id'] ||
+        parent['iid'] != todo['parent_iid'] ||
+        parent['project_id'] != _identity.projectId) {
+      throw const Mr7Refused('observerTodo');
+    }
+    return todo.containsKey('snoozed_until') &&
+        todo['snoozed_until'] == spec.snoozedUntil;
+  }
+
   void _sentTo(String path) {
     if (_permit.sent != 1 || _permit._sentPath != path) {
       throw const Mr7Refused('observerMutationTarget');
@@ -1039,6 +1422,48 @@ final class Mr7Readback {
     _scope();
     verifiedRequests += _session.observerAdapter.requests.length - before;
     return value;
+  }
+
+  /// Re-read the original resource and preserved fields through the observer.
+  Future<bool> verifySnapshot() async {
+    final saved = snapshot;
+    if (saved == null ||
+        saved.actorId != _identity.userId ||
+        saved.projectId != _identity.projectId ||
+        _permit.sent != 1 ||
+        _permit._sentPath == null) {
+      throw const Mr7Refused('snapshotMissing');
+    }
+    await _actorAndProject();
+    final before = _session.observerAdapter.requests.length;
+    for (final original in saved._rows) {
+      final path = original.spec.path;
+      final sentPath = _permit._sentPath!;
+      if (path != _root &&
+          sentPath != path &&
+          !sentPath.startsWith('$path/') &&
+          !(sentPath == 'graphql' &&
+              _graphSnapshotTargets(
+                _permit._sentBody,
+                _permit._graphResourcesAtSend,
+                path,
+              ))) {
+        throw const Mr7Refused('snapshotTarget');
+      }
+      final current = await _map(path);
+      if (current['id'] != original.id ||
+          (original.iid != null && current['iid'] != original.iid) ||
+          (path != _root && current['project_id'] != _identity.projectId) ||
+          original.spec.unchangedFields.any(
+            (field) =>
+                _snapshotFieldDigest(current, field) != original.digests[field],
+          )) {
+        return false;
+      }
+    }
+    await _actorAndProject();
+    verifiedRequests += _session.observerAdapter.requests.length - before;
+    return true;
   }
 
   String _name(String name) {
@@ -2219,6 +2644,100 @@ final class Mr7SandboxSession {
   /// Closed GraphQL documents still require independently proven ownership of
   /// resource GIDs; registering a variables digest alone grants no scope.
   Future<void> bindGraphResource(String gid, {required String path}) async {
+    await _bindGraphResource(gid, path: path, workItem: false);
+  }
+
+  /// WorkItem is a separate GraphQL type, even when its REST owner is an issue.
+  Future<void> bindWorkItemGraphResource(
+    String gid, {
+    required String path,
+  }) async {
+    await _bindGraphResource(gid, path: path, workItem: true);
+  }
+
+  /// Seed a Todo only in the synthetic server and bind its fresh project owner.
+  Future<void> bindProjectTodo({
+    required int todoId,
+    required String parentPath,
+    String? snoozedUntil,
+  }) async {
+    _open();
+    final target = identity;
+    if (target == null ||
+        todoId <= 0 ||
+        server._todos.length >= 20 ||
+        server._todos.containsKey(todoId) ||
+        (snoozedUntil != null && DateTime.tryParse(snoozedUntil) == null)) {
+      throw const Mr7Refused('todoFixture');
+    }
+    final root = 'projects/${target.projectId}';
+    if (!RegExp(
+      '^$root/(issues|merge_requests)/[1-9][0-9]*\$',
+    ).hasMatch(parentPath)) {
+      throw const Mr7Refused('todoFixture');
+    }
+    await verifyIdentity();
+    final actor = await read('user');
+    final parent = await read(parentPath);
+    final iid = int.parse(parentPath.split('/').last);
+    if (actor['id'] != target.userId ||
+        actor['username'] != target.namespace ||
+        parent['id'] is! int ||
+        (parent['id'] as int) <= 0 ||
+        parent['iid'] != iid ||
+        parent['project_id'] != target.projectId) {
+      stop('todoForeign');
+      throw const Mr7Refused('todoForeign');
+    }
+    server._todos[todoId] = _Mr7TodoFixture(
+      id: todoId,
+      actorId: target.userId,
+      projectId: target.projectId,
+      parentPath: parentPath,
+      parentId: parent['id'] as int,
+      iid: iid,
+      mergeRequest: parentPath.contains('/merge_requests/'),
+      snoozedUntil: snoozedUntil,
+    );
+    _graphResources['gid://gitlab/Todo/$todoId'] = parentPath;
+    await verifyIdentity();
+    _open();
+  }
+
+  bool allowsTodoFixture(String operation) =>
+      const {'snoozeTodo', 'unsnoozeTodo'}.contains(operation) &&
+      server._todos.isNotEmpty &&
+      !quarantined;
+
+  Future<void> _refreshTodo(String gid) async {
+    final match = RegExp(r'^gid://gitlab/Todo/([1-9][0-9]*)$').firstMatch(gid);
+    final target = identity;
+    final todo = match == null ? null : server._todos[int.parse(match[1]!)];
+    if (target == null ||
+        todo == null ||
+        todo.actorId != target.userId ||
+        todo.projectId != target.projectId ||
+        _graphResources[gid] != todo.parentPath) {
+      stop('todoForeign');
+      throw const Mr7Refused('todoForeign');
+    }
+    final actor = await read('user');
+    final parent = await read(todo.parentPath);
+    if (actor['id'] != target.userId ||
+        actor['username'] != target.namespace ||
+        parent['id'] != todo.parentId ||
+        parent['iid'] != todo.iid ||
+        parent['project_id'] != target.projectId) {
+      stop('todoForeign');
+      throw const Mr7Refused('todoForeign');
+    }
+  }
+
+  Future<void> _bindGraphResource(
+    String gid, {
+    required String path,
+    required bool workItem,
+  }) async {
     _open();
     final match = RegExp(
       r'^gid://gitlab/([A-Za-z]+)/([1-9][0-9]*)$',
@@ -2227,9 +2746,14 @@ final class Mr7SandboxSession {
     if (match == null || target == null || match[1] == 'Group') {
       throw const Mr7Refused('graphResource');
     }
+    if (workItem != (match[1] == 'WorkItem')) {
+      stop('foreignResource');
+      throw const Mr7Refused('foreignResource');
+    }
     final root = 'projects/${target.projectId}';
     const resourcePaths = {
       'Issue': r'issues/[1-9][0-9]*',
+      'WorkItem': r'issues/[1-9][0-9]*',
       'MergeRequest': r'merge_requests/[1-9][0-9]*',
       'Note': r'(?:issues|merge_requests)/[1-9][0-9]*/notes/[1-9][0-9]*',
       'Label': r'labels/[1-9][0-9]*',
@@ -2251,7 +2775,9 @@ final class Mr7SandboxSession {
       stop('foreignResource');
       throw const Mr7Refused('foreignResource');
     }
-    if (match[1] == 'Issue' || match[1] == 'MergeRequest') {
+    if (match[1] == 'Issue' ||
+        match[1] == 'MergeRequest' ||
+        match[1] == 'WorkItem') {
       final iid = row['iid'];
       if (iid is! int || iid <= 0 || iid != int.parse(path.split('/').last)) {
         stop('foreignResource');
@@ -2283,10 +2809,38 @@ final class Mr7SandboxSession {
       throw const Mr7Refused('unsealedGraph');
     }
     try {
-      if (operation.fields.any(
-        const {'group', 'groups', 'namespace', 'namespaces'}.contains,
-      )) {
+      final todoRead =
+          body['query'] is String &&
+          const {
+            _todoPendingDocument,
+            _todoSnoozedDocument,
+          }.contains(mr7Digest(body['query'])) &&
+          operation.kind == 'query' &&
+          server._todos.isNotEmpty;
+      if (!todoRead &&
+          operation.fields.any(
+            const {'group', 'groups', 'namespaces'}.contains,
+          )) {
         throw const Mr7Refused('foreignResource');
+      }
+      for (final entry in operation.selections.entries.where(
+        (entry) => entry.value.field == 'namespace',
+      )) {
+        final prefix = '${entry.key}/';
+        final children = operation.selections.entries
+            .where((child) => child.key.startsWith(prefix))
+            .toList();
+        if (!entry.key.contains('/') ||
+            entry.value.arguments.isNotEmpty ||
+            children.isEmpty ||
+            children.any(
+              (child) =>
+                  child.key.substring(prefix.length).contains('/') ||
+                  !const {'id', 'fullPath'}.contains(child.value.field) ||
+                  child.value.arguments.isNotEmpty,
+            )) {
+          throw const Mr7Refused('foreignResource');
+        }
       }
       // Retain the closed variables/literal checks, and additionally resolve
       // every argument under its actual schema name, independent of variable aliases.
@@ -2325,6 +2879,9 @@ final class Mr7SandboxSession {
       }
 
       for (final root in operation.roots) {
+        if (todoRead && root.field == 'currentUser' && root.arguments.isEmpty) {
+          continue;
+        }
         if (operation.kind == 'query' &&
             root.field == 'currentUser' &&
             root.arguments.isEmpty &&
@@ -2435,7 +2992,13 @@ final class Mr7SandboxSession {
     final encoded = jsonEncode(variables);
     for (final entry in _graphResources.entries.toList()) {
       if (encoded.contains(entry.key)) {
-        await bindGraphResource(entry.key, path: entry.value);
+        if (entry.key.startsWith('gid://gitlab/Todo/')) {
+          await _refreshTodo(entry.key);
+        } else if (entry.key.startsWith('gid://gitlab/WorkItem/')) {
+          await bindWorkItemGraphResource(entry.key, path: entry.value);
+        } else {
+          await bindGraphResource(entry.key, path: entry.value);
+        }
       }
     }
   }
@@ -2446,6 +3009,123 @@ final class Mr7SandboxSession {
       throw const Mr7Refused('unreadableIdentity');
     }
     return Map<String, Object?>.from(r.data! as Map);
+  }
+
+  /// Capture only bounded, freshly read project/resource metadata before send.
+  Future<Mr7PreReadSnapshot> captureSnapshot(
+    List<Mr7SnapshotSpec> specs,
+  ) async {
+    _open();
+    final target = identity;
+    if (target == null ||
+        specs.isEmpty ||
+        specs.length > 8 ||
+        inFlight ||
+        pendingMutations != 0 ||
+        permit?.sent != null && permit!.sent > 0) {
+      throw const Mr7Refused('snapshotConfiguration');
+    }
+    await verifyIdentity();
+    final actor = await read('user');
+    if (actor['id'] != target.userId || actor['username'] != target.namespace) {
+      stop('snapshotActor');
+      throw const Mr7Refused('snapshotActor');
+    }
+    final root = 'projects/${target.projectId}';
+    final paths = <String>{};
+    final rows = <_Mr7SnapshotRow>[];
+    for (final spec in specs) {
+      if (!paths.add(spec.path) ||
+          !(spec.path == root ||
+              RegExp(
+                '^$root/(issues|merge_requests)/[1-9][0-9]*\$',
+              ).hasMatch(spec.path)) ||
+          spec.fields.length > 32 ||
+          !spec.fields.containsAll(spec.unchangedFields) ||
+          spec.fields.any(
+            (field) =>
+                !RegExp(r'^[a-zA-Z_][a-zA-Z0-9_]{0,63}$').hasMatch(field),
+          )) {
+        throw const Mr7Refused('snapshotConfiguration');
+      }
+      final row = await read(spec.path);
+      final id = row['id'];
+      final iid = row['iid'];
+      if (jsonEncode(row).length > 2 * 1024 * 1024 ||
+          id is! int ||
+          id <= 0 ||
+          (spec.path == root
+              ? id != target.projectId
+              : row['project_id'] != target.projectId ||
+                    iid is! int ||
+                    iid <= 0 ||
+                    iid != int.parse(spec.path.split('/').last))) {
+        throw const Mr7Refused('snapshotIdentity');
+      }
+      rows.add(
+        _Mr7SnapshotRow(
+          spec: spec,
+          id: id,
+          iid: spec.path == root ? null : iid as int,
+          digests: Map.unmodifiable({
+            for (final field in spec.fields)
+              field: _snapshotFieldDigest(row, field),
+          }),
+        ),
+      );
+    }
+    await verifyIdentity();
+    _open();
+    return Mr7PreReadSnapshot._(
+      target.userId,
+      target.projectId,
+      List.unmodifiable(rows),
+    );
+  }
+
+  Future<void> _verifySnapshotBeforeSend(
+    Mr7PreReadSnapshot snapshot,
+    String path,
+    Object? graphBody,
+  ) async {
+    final target = identity!;
+    final root = 'projects/${target.projectId}';
+    final actor = await read('user');
+    if (snapshot.actorId != target.userId ||
+        snapshot.projectId != target.projectId ||
+        actor['id'] != target.userId ||
+        actor['username'] != target.namespace) {
+      stop('snapshotDrift');
+      throw const Mr7Refused('snapshotDrift');
+    }
+    for (final saved in snapshot._rows) {
+      final originalPath = saved.spec.path;
+      if (originalPath != root &&
+          path != originalPath &&
+          !path.startsWith('$originalPath/') &&
+          !(path == 'graphql' &&
+              _graphSnapshotTargets(
+                graphBody,
+                _graphResources,
+                originalPath,
+              ))) {
+        stop('snapshotDrift');
+        throw const Mr7Refused('snapshotDrift');
+      }
+      final current = await read(originalPath);
+      if (current['id'] != saved.id ||
+          (saved.iid != null && current['iid'] != saved.iid) ||
+          (originalPath != root && current['project_id'] != target.projectId) ||
+          saved.spec.fields.any(
+            (field) =>
+                _snapshotFieldDigest(current, field) != saved.digests[field],
+          )) {
+        stop('snapshotDrift');
+        throw const Mr7Refused('snapshotDrift');
+      }
+    }
+    await verifyIdentity();
+    _open();
   }
 
   Future<void> initialize() async {
@@ -2610,7 +3290,8 @@ final class Mr7SandboxSession {
         }
         if (allowed == null ||
             !allowed.confirmed ||
-            mr7ExcludedOperations.contains(allowed.operation) ||
+            (mr7ExcludedOperations.contains(allowed.operation) &&
+                !allowsTodoFixture(allowed.operation)) ||
             allowed.operation.toLowerCase().contains('group') ||
             allowed.resourceProjectId != target.projectId ||
             !allowed.paths.contains('${request.method} $path') ||
@@ -2635,6 +3316,19 @@ final class Mr7SandboxSession {
           stop('unsealedGraph');
           throw const Mr7Refused('unsealedGraph');
         }
+        if (const {'snoozeTodo', 'unsnoozeTodo'}.contains(allowed.operation) &&
+            (!graph ||
+                b is! Map ||
+                mr7Digest(b['query']) !=
+                    (allowed.operation == 'snoozeTodo'
+                        ? _todoSnoozeDocument
+                        : _todoUnsnoozeDocument) ||
+                b['variables'] is! Map ||
+                (b['variables'] as Map)['id'] is! String ||
+                !_graphResources.containsKey((b['variables'] as Map)['id']))) {
+          stop('todoForeign');
+          throw const Mr7Refused('todoForeign');
+        }
         if (path.endsWith('/fork') ||
             path.contains('/transfer') ||
             (allowed.operation == 'editProject' &&
@@ -2644,6 +3338,15 @@ final class Mr7SandboxSession {
                     )))) {
           stop('externalSideEffect');
           throw const Mr7Refused('externalSideEffect');
+        }
+        if (allowed.operation == 'upload_attachment' &&
+            (request.method != 'POST' ||
+                path != 'projects/${target.projectId}/uploads')) {
+          stop('uploadScope');
+          throw const Mr7Refused('uploadScope');
+        }
+        if (allowed.snapshot case final snapshot?) {
+          await _verifySnapshotBeforeSend(snapshot, path, graph ? b : null);
         }
         _requireBoundValues(
           graph && b is Map ? b['variables'] : b,
@@ -2669,6 +3372,30 @@ final class Mr7SandboxSession {
             throw const Mr7Refused('observerRebaseTarget');
           }
           allowed._rebaseBeforeSha = parent['sha'] as String;
+          await verifyIdentity();
+          _open();
+        }
+        if (allowed.operation == 'createTodo') {
+          final segments = _restSegments(request);
+          if (request.method != 'POST' ||
+              segments.length != 5 ||
+              !const {'issues', 'merge_requests'}.contains(segments[2]) ||
+              segments[4] != 'todo' ||
+              !RegExp(r'^[1-9][0-9]*$').hasMatch(segments[3])) {
+            stop('todoForeign');
+            throw const Mr7Refused('todoForeign');
+          }
+          final actor = await read('user');
+          final parent = await read(segments.take(4).join('/'));
+          if (actor['id'] != target.userId ||
+              actor['username'] != target.namespace ||
+              parent['id'] is! int ||
+              (parent['id'] as int) <= 0 ||
+              parent['project_id'] != target.projectId ||
+              parent['iid'] != int.parse(segments[3])) {
+            stop('todoForeign');
+            throw const Mr7Refused('todoForeign');
+          }
           await verifyIdentity();
           _open();
         }

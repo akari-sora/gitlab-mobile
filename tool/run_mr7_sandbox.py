@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from contextlib import contextmanager
 import getpass
 import hashlib
@@ -26,10 +27,17 @@ SAFE_ENV = (
 SHA = re.compile(r'^[0-9a-f]{40}$')
 ENV_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 IDENTIFIER = re.compile(r'^[A-Za-z0-9_.:/-]{1,256}$')
+CLOSED_VARIANT_CODE = re.compile(r'^[A-Za-z][A-Za-z0-9]{0,63}$')
+CLOSED_VARIANT_CAUSES = frozenset({
+    'releasePolicy', 'fixtureUnavailable', 'unsupportedServer',
+    'ownershipUnproven', 'observerUnavailable', 'scopeExcluded',
+})
 SOURCE_FILES = (
     'tool/run_mr7_sandbox.py', 'tool/mr7_sandbox.dart',
     'tool/mr7/sandbox_contract.dart', 'tool/tests/test_mr7_sandbox_runner.py',
-    'test/ai/mr7_sandbox_contract_test.dart', 'docs/MR7_SANDBOX.md',
+    'test/ai/mr7_sandbox_contract_test.dart',
+    'test/ai/mr7_sandbox_wave2_contract_test.dart',
+    'test/ai/mr7_sandbox_wave2_runner_test.dart', 'docs/MR7_SANDBOX.md',
     'pubspec.lock',
 )
 DEPENDENCY_FILES = (
@@ -115,9 +123,34 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
     scenarios = receipt.get('scenarios', [])
     if not isinstance(scenarios, list):
         return False
+    # A closed row cannot share its identity with a runnable or another closed
+    # row. Ordinary schema-1 rows remain backwards compatible.
+    ids = Counter(row['id'] for row in scenarios
+                  if isinstance(row, dict) and isinstance(row.get('id'), str))
     for row in scenarios:
         if not isinstance(row, dict):
             return False
+        refusal = row.get('refusal')
+        if row.get('classification') == 'closedVariant' or refusal is not None:
+            if (row.get('classification') != 'closedVariant' or
+                    not isinstance(row.get('id'), str) or
+                    not IDENTIFIER.fullmatch(row['id']) or ids[row['id']] != 1 or
+                    row.get('status') != 'NOT_RUN' or row.get('readback') != 'NOT_RUN' or
+                    type(row.get('mutationCount')) is not int or row['mutationCount'] != 0 or
+                    type(row.get('providerCalls')) is not int or row['providerCalls'] != 0 or
+                    not isinstance(refusal, dict) or set(refusal) != {'type', 'cause', 'code'} or
+                    refusal.get('type') != 'closedVariant' or
+                    not isinstance(refusal.get('cause'), str) or
+                    refusal['cause'] not in CLOSED_VARIANT_CAUSES or
+                    not isinstance(refusal.get('code'), str) or
+                    not CLOSED_VARIANT_CODE.fullmatch(refusal['code']) or
+                    ('observerRequests' in row and
+                     (type(row['observerRequests']) is not int or row['observerRequests'] != 0)) or
+                    ('provider' in row and
+                     (not isinstance(row['provider'], dict) or
+                      type(row['provider'].get('calls')) is not int or
+                      row['provider']['calls'] != 0))):
+                return False
         count = row.get('mutationCount')
         zero_dispatch = type(count) is int and count == 0
         no_op_claim = (

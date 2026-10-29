@@ -144,8 +144,10 @@ using `operationName` (required with multiple operations). Target checks resolve
 that operation's actual argument usage, including aliases and nested inputs;
 every root needs a bound selector, except `currentUser { id username }` identity
 projections of the current account.
-The executable-document subset rejects fragments, directives, defaults, block
-strings and secondary request overrides rather than skipping their semantics.
+Inline type fragments are traversed with all argument and target checks. Named
+fragments, directives, defaults, block strings and secondary request overrides
+stay closed. Nested namespace identity selects only id/fullPath; foreign roots
+remain refused.
 Writer reads and observer
 reads share target and account
 fences; quarantine permits only bounded observation. No generic live
@@ -233,9 +235,21 @@ classification. Core acknowledgements, failed-certain responses and uncertain
 results keep their original semantics; all evidence remains synthetic and
 candidate evidence remains ineligible for final release acceptance.
 
-Wave 2 still owns scenario integration, WorkItem binding and inline fragments,
-fixture hooks, target-kind sets, account-todo/registry/terminal-project and
-secondary-effect observations, editable confirmation, uploads/provenance,
-shared budgets/journals and detailed closed-variant receipts. This vocabulary
-does not widen those paths or enable any production operation. Suggestion and
-multi-effect writes without a directly bound file target remain unverified.
+## Wave 2 seams
+
+| Code | API and scenario use |
+|---|---|
+| S1 | `Mr7Scenario.targetKinds` declares the full owning/prepared-child set, such as project/pipeline or mergeRequest/merge. Each coordinator/catalogue receives only that immutable scenario view. Other scenarios cannot widen it. Omission means the original singleton targetKind. |
+| B2-S1/S2 | `fixture(session, identity)` runs after initialization, before provider creation. Return `Mr7ScenarioFixtures` with exact read documents/variable digests, mutation seals and optional scripted calls. `bindWorkItemGraphResource(gid, path:)` freshly binds the WorkItem to its project-owned issue ID/iid, retaining its type. Seals never bypass argument or foreign-scope validation. |
+| FIX1 | `preRead(identity)` returns bounded `Mr7SnapshotSpec(path:, fields:, unchangedFields:)`. Capture name/description for a name edit and preserve description. Receipt preread retains original actor/project/resource ID/iid and presence-sensitive field digests, without bodies. Final send rechecks all fields; the independent observer automatically verifies original identities and unchanged fields. `observer.snapshot` exposes the immutable witness. Custom freshness cannot overwrite it; absence/null/empty remain distinct. |
+| E | `editConfirm` returns text for the product proposal's editable field. The runner confirms the original, calls production approve(editedText:), then reconfirms the updated digest/preview before send. Rejecting that edit sends nothing. Receipts retain digests/decisions only. |
+| U | Fixture attachments use a real memory-only AiAttachmentSession with matching account/conversation. Catalogue/coordinator share the UploadPlaceholderTable and production delivery provenance. Only metadataForModel enters the provider turn; bindingUtterance is the user's text. The byte leak scan is an additional check, not proof against arbitrary transformed partial content. Sessions are discarded after completion/refusal. Mr7UploadObservation(byteCount:, sha256:) independently observes the actual bounded multipart stream at the synthetic-only projects/id/uploads/mr7-observation endpoint. No bytes enter receipts. |
+| U script | providerScript allows 12 batches, four calls per batch and 12 calls total, unique IDs, one declared write and declared reads. Later scenarios reuse attachments/placeholders in one explicit conversation; provider transcripts stay per scenario. onProviderRequest observes bounded in-memory metadata, never persisted bodies. |
+| Row 19 | Inject sharedBudget, journal, conversationId and now for 39/40/41, account-window and restart cases. Tool request/turn/run caps cannot exceed 40/4/12. Injected journals retain files/keys and are never reset/deleted. Restart with the same caller-owned temporary directory and memory key store, then clean that synthetic directory. Missing/unreadable/uncertain state stays closed. Defaults keep per-scenario tool budgets; the session physical HTTP cap covers every request. |
+| T | createTodo freshly verifies the final project issue/MR. markTodoDone stays wholly closed. Snooze/unsnooze require projectTodo:true and bindProjectTodo(todoId:, parentPath:, snoozedUntil:), exact production read/mutation seals and final actor/project/parent ID/iid/Todo proof. Mr7TodoObservation independently reads the synthetic-only projects/id/todos/todoId/mr7-observation endpoint. Group/account-global/foreign targets remain closed; core results remain ack-only and uncertainty stays uncertain. |
+| S7 | closedVariants takes Mr7ClosedVariant; an executable definition can set closed:Mr7ClosedRefusal. Typed causes: releasePolicy, fixtureUnavailable, unsupportedServer, ownershipUnproven, observerUnavailable, scopeExcluded. Explicit candidate rows are NOT_RUN, zero provider calls/mutations. The wrapper rejects forged/malformed closed rows. |
+| S6 | Registry fixtures stay fixtureUnavailable: no honest package publish/container push/ownership/inventory lifecycle is modeled. Owner packages and global registry paths cannot substitute for run-created fixtures. |
+
+Codes I/F, unbound multi-effect operations and all live/provider/device/CI/release
+acceptance remain closed or NOT_RUN. These hooks do not enable production
+operations. Candidate receipts stay CANDIDATE_ONLY and finalEligible=false.
