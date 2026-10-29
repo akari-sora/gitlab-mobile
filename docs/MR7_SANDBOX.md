@@ -506,7 +506,9 @@ Set `Mr7Scenario.captureEffects: true` (or the same property on a direct-test
 original effect baseline through the independent observer and records actual
 dispatch method, path, time and status. This flag grants no endpoint or write
 authority. Missing baselines refuse the witness. Existing acknowledgement-only
-probes do not opt in automatically. Supply every effect path in `readbackPaths`
+probes do not opt in automatically. Global suggestion PUTs always require the
+independent MR → discussion → note → suggestion ownership check, including when
+`captureEffects` is false. Supply every effect path in `readbackPaths`
 and call `observer.observe` with the sealed observation below. Actor, full
 sandbox identity, original parent IDs, boundary, shared request cap and quarantine
 fences apply. Bodies and expected bytes stay private in memory, outside receipts.
@@ -517,8 +519,8 @@ No scenario catalogue or production capability is opened.
 | `Mr7DeletedFileObservation(path:, ref:, sha:)` | Bind actual DELETE path, branch and last_commit_id to the original file at the old branch commit. Require a changed commit; check the branch before/after complete recursive-tree pagination at that exact SHA. Validate id/name/type/path/mode and exact-path absence. Allow branch and repository/tree paths. A 404 or partial tree proves nothing. |
 | `Mr7SuggestionObservation(parent:, discussionId:, noteId:, suggestionId:, path:, ref:, sha:, blobSha:, bytes:)` | Bind actual arguments to the original same-project MR source branch and exact discussion/note/suggestion before admitting global PUT suggestions/:id/apply. Read the original file at its immutable commit and derive the full expected UTF-8 result from absolute inclusive from_line/to_line and exact from_content/to_content. Check original position SHAs, applied state, unchanged position, changed branch commit, exact result bytes and computed Git blob SHA. Allow MR, discussion, branch and encoded file paths. |
 | `Mr7DeletedBoardListObservation(boardId:, listId:)` | Capture original board/list membership. Recheck the exact board around complete list pagination with unique numeric IDs and require exact list absence. Allow boards/:board and boards/:board/lists. The board-specific route establishes the parent; no board_id is invented. |
-| `Mr7PublishedDraftsObservation(parent:, drafts:)` | Capture complete original draft IDs/texts/actor/MR/optional discussion and the complete public-note baseline. Completely page both notes and discussions, require one distinct new ordinary public own note per original draft with exact text/discussion, and complete draft absence afterwards. Allow MR and its draft_notes, notes and discussions. No public draft_id field is invented. |
-| `Mr7SchedulePipelineObservation(scheduleId:, ref:, pipelineId:, maxAttempts:, interval:, timeout:)` | Require an owned inactive schedule before/after play. An existing production detail response must have explicit empty variables/inputs; only emptiness is retained. The observer never requests detail or variables/inputs. Completely page schedules and this exact schedule's pipelines before/after. Require a new unambiguous pipeline ID, source=schedule, equivalent explicit branch/short ref, and created_at strictly after dispatch within the window. Allow pipeline_schedules and pipeline_schedules/:id/pipelines. At most 20 polls, 100 ms intervals and a two-second deadline; no resend. |
+| `Mr7PublishedDraftsObservation(parent:, drafts:)` | Capture complete original draft IDs/texts/actor/MR/discussion/position and existing discussion IDs. Completely page both notes and discussions, require one distinct new ordinary public own note per original draft with exact text and position shape. New-discussion drafts must land in distinct new discussions absent from the baseline; replies must land in their named existing thread. Both individual notes and new non-individual discussions are supported. Require complete draft absence afterwards. Allow MR and its draft_notes, notes and discussions. No public draft_id field is invented. |
+| `Mr7SchedulePipelineObservation(scheduleId:, ref:, pipelineId:, maxAttempts:, interval:, timeout:)` | Closed as `observerUnavailable/scheduleParametersUnproven`. A production-prepared empty detail can become stale; the schedule-pipelines metadata cannot attest current stored inputs. Refuse before effect reads or play dispatch, for either `captureEffects` value. The sealed observation also refuses; no schedule collection, detail or parameter read is issued by the observer. |
 | `Mr7LegacyCancelObservation(parent:)` | Require actual current POST failure (404/405), actual deprecated POST success, and original MR identity. Refuse an ineligible fallback before send. Independently require documented merge_when_pipeline_succeeds=false; optional auto_merge_enabled cannot contradict it. Allow the original MR path. |
 | `Mr7ProjectDeletionObservation()` | Require actual scenario DELETE/202 and a complete pre-delete personal inventory containing the project. Recheck actor and complete users/:actor/projects, then numeric-ID and full-path lookups. projectDeletionState is absent only with inventory absence and both 404s, or pending with the same owned project and marked_for_deletion_on in inventory and both lookups. Declare project and inventory paths; full-path lookup is internal identity checking. The finalizer never supplies evidence. Accepted terminal deletion fences every later mutation, including during retention. |
 | `Mr7SnippetObservation(..., visibility:)` | S4 binds private/internal/public visibility to actual dispatch and independent metadata. New non-private creation additionally checks the actual dispatched UTF-8 file set/bytes. Existing exact raw bytes, file set, raw refs and updated_at checks run before/after content reads. Default-private fixtures remain compatible. |
@@ -527,15 +529,27 @@ Unsupported suggestion CR/encoding/range shapes stay
 `observerUnavailable/observerSuggestionRange`, rather than guessing replacement
 bytes. Published-note matching is one-to-one correlation, not a documented
 note-to-draft provenance link. Normalized text, concurrent identical notes and
-unsupported publication shapes must remain `observerUnavailable`.
+unsupported publication shapes must remain `observerUnavailable`. Positioned drafts
+require complete single-line text coordinates and revision SHAs. Multiline
+`line_range`, image and incomplete positions stay closed before dispatch; a
+published range cannot silently stand in for a single-line draft.
 
-Schedule evidence is bounded correlation in an isolated synthetic fixture.
-Uncontrolled concurrent manual plays cannot be distinguished by GitLab's play
-response and stay `fixtureUnavailable`/`observerUnavailable`. Active schedules
-and ambiguous tag refs are refused. The schedule docs example spells source
-`scheduled`, while the CI source reference says `schedule`; the witness requires
-the latter. Stored parameters, HMAC drift and actual retry/play behavior leave
-plan §22.3 open; no parameter-reading permission is added.
+GitLab's [schedule collection](https://docs.gitlab.com/api/pipeline_schedules/#list-all-pipeline-schedules)
+returns stored input names and values for owners and privileged users, including
+other schedules. The [schedule-pipelines response](https://docs.gitlab.com/api/pipeline_schedules/#list-all-pipelines-triggered-by-a-pipeline-schedule)
+documents pipeline metadata, but cannot attest current schedule parameters.
+Inputs can [change after preparation](https://docs.gitlab.com/api/pipeline_schedules/#update-a-pipeline-schedule).
+Consequently, empty-parameters schedule play stays closed with the explicit
+reason `scheduleParametersUnproven`; discarding returned values would still read
+them. Plan §22.3 remains open. These docs were checked on 2026-10-29.
+
+`Mr7Readback(timeout: ...)` optionally bounds an entire observation, including
+its initial/final identity checks, each request, response-body read and pagination
+page. The limit must be positive and at most two seconds. Each request inherits
+the remaining receive timeout and one cancellation token; expiry returns
+`observerTimeout`, cancels the outstanding request and fences later reads. The
+removed schedule poll has no remaining requests or waits. Delayed, never-ending
+and later-page regressions exercise this deadline on reachable board-list reads.
 
 S4's revision is rechecked metadata updated_at plus exact per-file raw refs and
 bytes. GitLab metadata raw_url uses the mutable repository root ref. Neither
@@ -544,8 +558,7 @@ commit-level snippet proof stays `observerUnavailable`; do not invent a commit
 SHA in a real-shape metadata URL.
 
 These APIs can support file-delete/suggestion branch variants, owned board-list
-deletion, whole-batch draft publication (up to 20), empty-parameter inactive
-schedule play, deprecated cancellation, terminal deletion/retention and new
+deletion, whole-batch draft publication (up to 20), deprecated cancellation, terminal deletion/retention and new
 non-private snippet content. Scenario owners must wire them separately. Refusal,
 drift, stored parameters, registry, external scope and unsupported revision
 variants keep typed closed dispositions through

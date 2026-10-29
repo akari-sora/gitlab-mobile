@@ -832,6 +832,18 @@ Future<Map<String, Object?>> runMr7Sandbox({
         });
         continue;
       }
+      if (scenario.operation == 'playPipelineSchedule') {
+        row.addAll({
+          'reason': 'scheduleParametersUnproven',
+          'classification': 'closedVariant',
+          'providerCalls': 0,
+          'refusal': const Mr7ClosedRefusal(
+            Mr7ClosureCause.observerUnavailable,
+            'scheduleParametersUnproven',
+          ).metadata,
+        });
+        continue;
+      }
       row.addAll({
         'declaredTier': scenario.tier,
         'tier': null,

@@ -49,6 +49,57 @@ final class Mr7Refused implements Exception {
   String toString() => 'Mr7Refused($code)';
 }
 
+const _observerDeadlineKey = #mr7ObserverDeadline;
+
+/// One budget covers identity checks, response bodies and every pagination page.
+/// A zone keeps concurrent observations' cancellation tokens independent.
+final class _Mr7ObserverDeadline {
+  _Mr7ObserverDeadline(this.timeout);
+  final Duration timeout;
+  final token = CancelToken();
+  final watch = Stopwatch()..start();
+  bool active = true;
+  bool expired = false;
+
+  Duration get remaining => timeout - watch.elapsed;
+
+  void check() {
+    if (!active || expired || remaining <= Duration.zero) {
+      throw const Mr7Refused('observerTimeout');
+    }
+  }
+
+  Future<T> run<T>(Future<T> Function() action) async {
+    final expiry = Completer<T>();
+    final timer = Timer(remaining, () {
+      expired = true;
+      token.cancel('observerTimeout');
+      expiry.completeError(const Mr7Refused('observerTimeout'));
+    });
+    try {
+      final value = await Future.any([
+        runZoned(action, zoneValues: {_observerDeadlineKey: this}),
+        expiry.future,
+      ]);
+      check();
+      return value;
+    } catch (error) {
+      if (expired ||
+          remaining <= Duration.zero ||
+          (error is DioException &&
+              error.type == DioExceptionType.receiveTimeout)) {
+        expired = true;
+        token.cancel('observerTimeout');
+        throw const Mr7Refused('observerTimeout');
+      }
+      rethrow;
+    } finally {
+      active = false;
+      timer.cancel();
+    }
+  }
+}
+
 final class Mr7Identity {
   const Mr7Identity({
     required this.projectId,
@@ -273,7 +324,9 @@ Future<List<Map<String, Object?>>> _publicNotes(
     final previous = byId[id];
     if (previous != null &&
         (previous['body'] != note['body'] ||
-            mr7Digest(previous['author']) != mr7Digest(author))) {
+            mr7Digest(previous['author']) != mr7Digest(author) ||
+            (previous['_discussion'] != null &&
+                previous['_discussion'] != discussion))) {
       throw const Mr7Refused('observerPublishedNote');
     }
     byId[id] = row;
@@ -301,6 +354,55 @@ Future<List<Map<String, Object?>>> _publicNotes(
     }
   }
   return byId.values.toList();
+}
+
+bool _draftPositionSupported(Object? position) {
+  if (position == null) return true;
+  if (position is! Map ||
+      position['position_type'] != 'text' ||
+      position['line_range'] != null) {
+    return false;
+  }
+  for (final key in ['base_sha', 'start_sha', 'head_sha']) {
+    if (position[key] is! String ||
+        !RegExp(
+          r'^(?:[0-9a-f]{40}|[0-9a-f]{64})$',
+        ).hasMatch(position[key] as String)) {
+      return false;
+    }
+  }
+  for (final key in ['old_path', 'new_path']) {
+    if (position[key] is! String || (position[key] as String).isEmpty) {
+      return false;
+    }
+  }
+  for (final key in ['old_line', 'new_line']) {
+    if (position[key] != null &&
+        (position[key] is! int || (position[key] as int) <= 0)) {
+      return false;
+    }
+  }
+  return position['old_line'] != null || position['new_line'] != null;
+}
+
+bool _draftPositionMatches(Object? draft, Object? published) {
+  if (draft == null) return published == null;
+  if (draft is! Map ||
+      published is! Map ||
+      !_draftPositionSupported(draft) ||
+      !_draftPositionSupported(published)) {
+    return false;
+  }
+  return const [
+    'position_type',
+    'base_sha',
+    'start_sha',
+    'head_sha',
+    'old_path',
+    'new_path',
+    'old_line',
+    'new_line',
+  ].every((key) => draft[key] == published[key]);
 }
 
 /// Simulated server, reached through serialized responses. Distinct writer and
@@ -935,9 +1037,30 @@ final class Mr7ObserverAdapter implements HttpClientAdapter {
       throw const Mr7Refused('observerReadOnly');
     }
     validateRequest?.call(options);
+    final deadline =
+        Zone.current[_observerDeadlineKey] as _Mr7ObserverDeadline?;
+    deadline?.check();
     beforeRequest?.call();
     requests.add(options.uri.path);
-    final response = await server.respond(options);
+    Future<ResponseBody> respond() async {
+      final response = await server.respond(options);
+      if (options.cancelToken?.isCancelled == true) {
+        await response.stream.listen(null).cancel();
+        throw options.cancelToken!.cancelError!;
+      }
+      deadline?.check();
+      return response;
+    }
+
+    final response = await Future.any([
+      respond(),
+      if (cancelFuture != null)
+        cancelFuture.then<ResponseBody>(
+          (_) =>
+              throw options.cancelToken?.cancelError ??
+                  const Mr7Refused('observerCancelled'),
+        ),
+    ]);
     validateRequest?.call(options);
     return response;
   }
@@ -1004,7 +1127,6 @@ final class Mr7MutationPermit {
   ({String id, String parentPath})? _preparedActivityNote;
   final List<_Mr7Dispatch> _dispatches = [];
   Map<String, Object?>? _effectBefore;
-  Map<String, Object?>? _emptySchedule;
 }
 
 /// Captured at the guarded transport, never supplied by a scenario observer.
@@ -2374,38 +2496,6 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
         );
       }
       final path = session._restSegments(options).join('/');
-      if (options.method == 'GET' &&
-          permit?.captureEffects == true &&
-          response.statusCode == 200 &&
-          permit?.operation == 'playPipelineSchedule' &&
-          RegExp(
-            '^projects/${permit!.resourceProjectId}/pipeline_schedules/[1-9][0-9]*\$',
-          ).hasMatch(path)) {
-        final bytes = <int>[];
-        await for (final chunk in response.stream) {
-          bytes.addAll(chunk);
-          if (bytes.length > 2 * 1024 * 1024) {
-            throw const Mr7Refused('scheduleParametersUnproven');
-          }
-        }
-        final value = jsonDecode(utf8.decode(bytes));
-        // Observe only the empty/nonempty shape of the production response.
-        // No stored names or values are retained or independently requested.
-        permit._emptySchedule =
-            value is Map &&
-                value['variables'] is List &&
-                (value['variables'] as List).isEmpty &&
-                value['inputs'] is List &&
-                (value['inputs'] as List).isEmpty
-            ? {'id': value['id'], 'ref': value['ref'], 'path': path}
-            : null;
-        session.validateRead(options, allowStopped: false);
-        return ResponseBody.fromBytes(
-          bytes,
-          response.statusCode,
-          headers: response.headers,
-        );
-      }
       if (response.statusCode == 200 &&
           permit != null &&
           (_mr7WorkItemOperations.contains(permit.operation) ||
@@ -2640,12 +2730,14 @@ final class Mr7Readback {
     this._permit, {
     this.paths = const {},
     this.graphQueries = const {},
+    this.timeout,
   });
   final Mr7SandboxSession _session;
   final Mr7Identity _identity;
   final Mr7MutationPermit _permit;
   final Set<String> paths;
   final Map<String, Set<String>> graphQueries;
+  final Duration? timeout;
   int verifiedRequests = 0;
   String? _projectDeletionState;
 
@@ -2770,6 +2862,17 @@ final class Mr7Readback {
   }
 
   Future<T> observe<T>(Mr7Observation<T> observation) async {
+    final limit = observation is Mr7SchedulePipelineObservation
+        ? (observation as Mr7SchedulePipelineObservation).timeout
+        : timeout;
+    if (limit == null) return _observe(observation);
+    if (limit <= Duration.zero || limit > const Duration(seconds: 2)) {
+      throw const Mr7Refused('observerTimeoutConfiguration');
+    }
+    return _Mr7ObserverDeadline(limit).run(() => _observe(observation));
+  }
+
+  Future<T> _observe<T>(Mr7Observation<T> observation) async {
     if (observation is Mr7ProjectDeletionObservation) {
       final before = _session.observerAdapter.requests.length;
       await _terminalActor();
@@ -3461,14 +3564,23 @@ final class Mr7Readback {
     if (fresh.length != drafts.length) {
       throw const Mr7Refused('observerPublishedNote');
     }
+    final originalDiscussions = (before['discussions'] as List).cast<String>();
+    final newDiscussions = <String>{};
     for (final draft in drafts) {
       final index = fresh.indexWhere(
         (r) =>
             r['body'] == draft['note'] &&
-            (draft['discussion_id'] == null ||
-                r['_discussion'] == draft['discussion_id']),
+            r['_discussion'] is String &&
+            (draft['discussion_id'] == null
+                ? !originalDiscussions.contains(r['_discussion']) &&
+                      !newDiscussions.contains(r['_discussion'])
+                : r['_discussion'] == draft['discussion_id']) &&
+            _draftPositionMatches(draft['position'], r['position']),
       );
       if (index < 0) throw const Mr7Refused('observerPublishedNote');
+      if (draft['discussion_id'] == null) {
+        newDiscussions.add(fresh[index]['_discussion'] as String);
+      }
       fresh.removeAt(index);
     }
     final remaining = await _rows('${parent.path}/draft_notes');
@@ -3480,76 +3592,9 @@ final class Mr7Readback {
   Future<Map<String, Object?>> _schedulePipeline(
     Mr7SchedulePipelineObservation spec,
   ) async {
-    final sent = _effectDispatch('playPipelineSchedule', 'POST');
-    final before = _permit._effectBefore!;
-    _sentTo('$_root/pipeline_schedules/${spec.scheduleId}/play');
-    if (before['scheduleId'] != spec.scheduleId ||
-        before['ref'] != spec.ref ||
-        !spec.ref.startsWith('refs/heads/') ||
-        spec.pipelineId <= 0 ||
-        (before['pipelines'] as List).contains(spec.pipelineId) ||
-        spec.maxAttempts < 1 ||
-        spec.maxAttempts > 20 ||
-        spec.interval.isNegative ||
-        spec.interval > const Duration(milliseconds: 100) ||
-        spec.timeout <= Duration.zero ||
-        spec.timeout > const Duration(seconds: 2)) {
-      throw const Mr7Refused('observerSchedule');
-    }
-    final watch = Stopwatch()..start();
-    bool expired() =>
-        watch.elapsed > spec.timeout ||
-        _session.server.serverTime.difference(sent.at) > spec.timeout;
-    Future<void> schedule() async {
-      final schedules = await _rows('$_root/pipeline_schedules');
-      final matching = schedules
-          .where((r) => r['id'] == spec.scheduleId)
-          .toList();
-      if (matching.length != 1 ||
-          matching.single['ref'] != spec.ref ||
-          matching.single['active'] != false ||
-          matching.single['owner'] is! Map ||
-          (matching.single['owner'] as Map)['id'] != _identity.userId) {
-        throw const Mr7Refused('observerSchedule');
-      }
-    }
-
-    await schedule();
-    for (var attempt = 0; attempt < spec.maxAttempts; attempt++) {
-      if (expired()) throw const Mr7Refused('observerScheduleTimeout');
-      final pipelines = await _rows(
-        '$_root/pipeline_schedules/${spec.scheduleId}/pipelines',
-      );
-      final matching = pipelines
-          .where(
-            (r) =>
-                !(before['pipelines'] as List).contains(r['id']) &&
-                r['project_id'] == _identity.projectId &&
-                r['ref'] == spec.ref.substring('refs/heads/'.length) &&
-                r['source'] == 'schedule' &&
-                r['created_at'] is String &&
-                DateTime.tryParse(r['created_at'] as String) != null &&
-                DateTime.parse(r['created_at'] as String).isAfter(sent.at) &&
-                !DateTime.parse(
-                  r['created_at'] as String,
-                ).isAfter(_session.server.serverTime) &&
-                DateTime.parse(r['created_at'] as String).difference(sent.at) <=
-                    spec.timeout,
-          )
-          .toList();
-      if (matching.length > 1) {
-        throw const Mr7Refused('observerScheduleAmbiguous');
-      }
-      if (matching.length == 1 && matching.single['id'] == spec.pipelineId) {
-        await schedule();
-        if (expired()) throw const Mr7Refused('observerScheduleTimeout');
-        return Map.unmodifiable(matching.single);
-      }
-      if (attempt + 1 < spec.maxAttempts) {
-        await Future<void>.delayed(spec.interval);
-      }
-    }
-    throw const Mr7Refused('observerSchedulePending');
+    // The documented pipelines response cannot attest current schedule inputs.
+    // Reading schedules/detail would fetch stored values, so this stays closed.
+    throw const Mr7Refused('scheduleParametersUnproven');
   }
 
   Future<bool> _legacyCancel(Mr7LegacyCancelObservation spec) async {
@@ -5150,14 +5195,37 @@ final class Mr7SandboxSession {
     observerAdapter.beforeRequest = chargeRequest;
     observerAdapter.validateRequest = (request) =>
         validateRead(request, allowStopped: true);
-    observer = Dio(
-      BaseOptions(
-        baseUrl: '${this.instance}/api/v4/',
-        followRedirects: false,
-        headers: {'cache-control': 'no-cache, no-store'},
-        validateStatus: (s) => s != null && s < 500,
-      ),
-    )..httpClientAdapter = observerAdapter;
+    observer =
+        Dio(
+            BaseOptions(
+              baseUrl: '${this.instance}/api/v4/',
+              followRedirects: false,
+              headers: {'cache-control': 'no-cache, no-store'},
+              validateStatus: (s) => s != null && s < 500,
+            ),
+          )
+          ..httpClientAdapter = observerAdapter
+          ..interceptors.add(
+            InterceptorsWrapper(
+              onRequest: (options, handler) {
+                final deadline =
+                    Zone.current[_observerDeadlineKey] as _Mr7ObserverDeadline?;
+                if (deadline != null) {
+                  try {
+                    deadline.check();
+                  } on Mr7Refused catch (error) {
+                    handler.reject(
+                      DioException(requestOptions: options, error: error),
+                    );
+                    return;
+                  }
+                  options.cancelToken = deadline.token;
+                  options.receiveTimeout = deadline.remaining;
+                }
+                handler.next(options);
+              },
+            ),
+          );
     writerAdapter = Mr7GuardedAdapter(this);
     writer = Dio(
       BaseOptions(baseUrl: '${this.instance}/api/v4/', followRedirects: false),
@@ -6171,7 +6239,14 @@ final class Mr7SandboxSession {
     Mr7MutationPermit allowed,
     RequestOptions request,
   ) async {
-    if (!allowed.captureEffects) return;
+    if (allowed.operation == 'playPipelineSchedule') {
+      throw const Mr7Refused('scheduleParametersUnproven');
+    }
+    // Global suggestion routes require independent ownership even without an
+    // effect witness. The flag controls baseline capture, never write authority.
+    if (!allowed.captureEffects && allowed.operation != 'applySuggestion') {
+      return;
+    }
     final actor = await read('user');
     if (actor['id'] != identity!.userId ||
         actor['username'] != identity!.namespace) {
@@ -6265,8 +6340,11 @@ final class Mr7SandboxSession {
         if (a == null ||
             a['projectId'] != identity!.projectId ||
             a['iid'] is! int ||
+            (a['iid'] as int) <= 0 ||
             a['noteId'] is! int ||
+            (a['noteId'] as int) <= 0 ||
             a['suggestionId'] is! int ||
+            (a['suggestionId'] as int) <= 0 ||
             a['discussionId'] is! String ||
             !RegExp(
               r'^[A-Za-z0-9_-]{1,128}$',
@@ -6305,6 +6383,7 @@ final class Mr7SandboxSession {
             ].any((key) => position[key] != refs[key])) {
           throw const Mr7Refused('observerDiscussion');
         }
+        if (!allowed.captureEffects) return;
         final filePath = position['new_path'] ?? position['old_path'];
         if (filePath is! String || filePath.isEmpty) {
           throw const Mr7Refused('observerContent');
@@ -6397,51 +6476,31 @@ final class Mr7SandboxSession {
                   r['author_id'] != identity!.userId ||
                   r['merge_request_id'] != mr['id'] ||
                   r['note'] is! String ||
-                  (r['discussion_id'] != null && r['discussion_id'] is! String),
+                  (r['discussion_id'] != null &&
+                      (r['discussion_id'] is! String ||
+                          (r['discussion_id'] as String).isEmpty)) ||
+                  !_draftPositionSupported(r['position']),
             )) {
           throw const Mr7Refused('observerDrafts');
         }
         final notes = await _publicNotes(observer, parentPath, mr['id'] as int);
+        final discussions = notes
+            .map((r) => r['_discussion'])
+            .whereType<String>()
+            .toSet();
+        if (drafts.any(
+          (draft) =>
+              draft['discussion_id'] != null &&
+              !discussions.contains(draft['discussion_id']),
+        )) {
+          throw const Mr7Refused('observerDrafts');
+        }
         allowed._effectBefore = {
           'parent': parentPath,
           'parentId': mr['id'],
           'drafts': drafts,
           'notes': notes.map((r) => r['id']).toList(),
-        };
-      case 'playPipelineSchedule':
-        if (request.method != 'POST' ||
-            segments.length != 5 ||
-            segments[2] != 'pipeline_schedules' ||
-            segments[4] != 'play' ||
-            b is! Map ||
-            b.isNotEmpty) {
-          throw const Mr7Refused('observerMutationTarget');
-        }
-        final scheduleId = int.tryParse(segments[3]);
-        final schedules = await _effectRows(
-          observer,
-          '$root/pipeline_schedules',
-        );
-        final matching = schedules.where((r) => r['id'] == scheduleId).toList();
-        if (matching.length != 1 ||
-            matching.single['active'] != false ||
-            matching.single['owner'] is! Map ||
-            (matching.single['owner'] as Map)['id'] != identity!.userId ||
-            matching.single['ref'] is! String ||
-            allowed._emptySchedule?['id'] != scheduleId ||
-            allowed._emptySchedule?['path'] !=
-                '$root/pipeline_schedules/$scheduleId' ||
-            allowed._emptySchedule?['ref'] != matching.single['ref']) {
-          throw const Mr7Refused('scheduleParametersUnproven');
-        }
-        final pipelines = await _effectRows(
-          observer,
-          '$root/pipeline_schedules/$scheduleId/pipelines',
-        );
-        allowed._effectBefore = {
-          'scheduleId': scheduleId,
-          'ref': matching.single['ref'],
-          'pipelines': pipelines.map((r) => r['id']).toList(),
+          'discussions': discussions.toList(),
         };
       case 'cancelAutoMerge':
         if (segments.last == 'cancel_merge_when_pipeline_succeeds') {
