@@ -247,6 +247,9 @@ final class Mr7LiveGitLab implements Mr7SessionTransport {
       ),
       zoneValues: _loopback == null ? const {} : {#flutter.io.allow_http: true},
     );
+    // A 429 carries no data and is classified by the session even when a rate
+    // limiter omits Date; it never advances the verified server time.
+    if (response.statusCode == 429) return response;
     final date = response.headers['date'];
     if (date == null || date.length != 1) {
       throw const Mr7Refused('serverTimeUnverified');
@@ -294,6 +297,7 @@ final class Mr7LiveGitLab implements Mr7SessionTransport {
         cancellation,
         observation: true,
       );
+      if (response.statusCode == 429) throw Mr7RateLimited(response.headers);
       final decoded = jsonDecode(utf8.decode(await _bytes(response)));
       String header(String key) {
         final value = response.headers[key];

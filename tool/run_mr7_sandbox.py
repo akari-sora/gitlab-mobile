@@ -308,6 +308,22 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
     return not final
 
 
+def _cleanup_terminal(cleanup: dict) -> bool:
+    """Verified deletion (404) or GitLab.com's verified 30-day scheduled deletion."""
+    if cleanup.get('status') == 'PASS':
+        return cleanup.get('deletionVerified') is True and 'markedForDeletionOn' not in cleanup
+    if cleanup.get('status') != 'scheduledForDeletion' or cleanup.get('deletionVerified') is not False:
+        return False
+    date = cleanup.get('markedForDeletionOn')
+    if not isinstance(date, str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', date):
+        return False
+    try:
+        datetime.strptime(date, '%Y-%m-%d')
+    except ValueError:
+        return False
+    return True
+
+
 def _live_pass_evidence(receipt: dict, scenarios: list) -> bool:
     identity = receipt.get('identity')
     if (not isinstance(identity, dict) or
@@ -324,8 +340,8 @@ def _live_pass_evidence(receipt: dict, scenarios: list) -> bool:
             type(events.get('pages')) is not int or events['pages'] < 2 or
             not isinstance(events.get('start'), str) or not isinstance(events.get('end'), str) or
             not isinstance(events.get('items'), list) or
-            not isinstance(cleanup, dict) or cleanup.get('status') != 'PASS' or
-            cleanup.get('accepted') is not True or cleanup.get('deletionVerified') is not True or
+            not isinstance(cleanup, dict) or not _cleanup_terminal(cleanup) or
+            cleanup.get('accepted') is not True or
             cleanup.get('parentChecked') is not True or cleanup.get('identityChecked') is not True or
             receipt.get('quarantined') is not False or receipt.get('secretLeakScan') != 'PASS'):
         return False

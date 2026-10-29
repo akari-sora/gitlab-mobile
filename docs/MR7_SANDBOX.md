@@ -4,6 +4,8 @@ The default transport uses synthetic GitLab and provider fixtures. The explicit
 `--transport live` mode contacts GitLab.com and the configured AI provider: it
 creates one private project in the verified personal namespace, runs the selected
 bounded scenarios, and attempts to delete that project after a verified run.
+GitLab.com never deletes it at once: each run's project stays pending deletion
+for 30 days (see [GitLab.com deletion and rate limits](#gitlabcom-deletion-and-rate-limits)).
 An interruption or uncertain result retains the project and quarantine state for
 manual reconciliation. Live receipts are candidates, not final 7R evidence;
 device, OAuth, release, billing and publication acceptance remain separate.
@@ -155,12 +157,29 @@ path. It does not enumerate or delete projects. A 404 may mean inaccessible or
 absent; inspect the result and reconcile uncertain writes manually before any
 separate cleanup. Do not infer permission to touch other `mr7-*` projects.
 
+A passed run with `cleanup.status: scheduledForDeletion` needs no
+reconciliation: the wrapper removes its state directory, and the receipt's
+`identity.projectId` and `cleanup.markedForDeletionOn` identify the project,
+which is in the account's projects pending deletion in the GitLab web UI for
+30 days. A quarantined run whose DELETE was accepted but whose cleanup stayed
+`PENDING` keeps its state. GitLab.com has renamed that project to
+`<path>-deletion_scheduled-<id>`, so `--lookup-project` on the saved path
+reports `NOT_VISIBLE`, or `Reconciliation failed; quarantine preserved.` if the
+old path redirects; treat both as unverified and check the recorded project ID
+in the web UI. For an interrupted run whose cleanup never ran, the project is
+still under the saved path; delete it by hand only after the journal shows no
+uncertain write, then expect the same 30-day retention.
+
 ## Isolation and stop contract
 
 Setup first validates `/user` and personal namespace ownership, then collects
 an events baseline **before** its one administrative project creation. Setup
 is not AI `createProject` evidence. Existing fixtures, protected project
-86648389, group namespaces, forks, mirrors and imports are refused.
+86648389, group namespaces, forks, mirrors and imports are refused. GitLab.com
+Free omits `mirror` and `forked_from_project` from a personal project: an
+absent or null `mirror`, `forked_from_project` or `import_url` means none,
+while `mirror` with any value other than `false`, any fork link and any import
+URL refuse the sandbox.
 
 Each mutation re-reads the sandbox by numeric ID and URL-encoded full path.
 Both must match the recorded numeric ID, full path, owner, namespace, nonce,
@@ -204,10 +223,48 @@ The inventory requires every well-formed row and every contiguous page, with
 stable `x-total`, `x-total-pages`, `x-per-page`, matching `x-page`/`x-next-page`
 and exact row counts (at most 20 pages). Missing metadata, malformed rows or
 duplicate IDs leave deletion unverified and the session quarantined.
-Retention can produce `PENDING`. A terminal AI project deletion is not deleted
-again by the finalizer. Post-cleanup event failure invalidates isolation even
-if deletion was independently verified. Failed receipts remain preserved. A
-durable provisional quarantine receipt survives an abrupt parent termination.
+After an accepted DELETE there are two verified terminal states. A 404 for the
+numeric ID with the ID absent from the inventory is `PASS` with
+`deletionVerified: true` (instances that delete immediately). GitLab.com's
+retention is `scheduledForDeletion` with `deletionVerified: false` and
+`markedForDeletionOn`: the same numeric ID must answer with the same owner,
+creator and personal namespace, private visibility, a `marked_for_deletion_on`
+(or deprecated `marked_for_deletion_at`) date and the full path
+`<original path>-deletion_scheduled-<id>`; the inventory may list it only
+under that renamed path, and the original path must return 404. Any other
+retention, including a missing date, another ID, owner or suffix, or an
+original path that still answers or redirects, is `PENDING` and quarantined.
+The harness never requests `permanently_remove`. A terminal AI project deletion
+is not deleted again by the finalizer. Post-cleanup event failure invalidates
+isolation even if deletion was independently verified. Failed receipts remain
+preserved. A durable provisional quarantine receipt survives an abrupt parent
+termination.
+
+## GitLab.com deletion and rate limits
+
+`DELETE /projects/:id` on GitLab.com answers `202 Accepted` and only marks the
+project for deletion. GitLab keeps it for 30 days, renames its `path`, `name`
+and `path_with_namespace` to `<path>-deletion_scheduled-<id>`, and sets
+`marked_for_deletion_on` to the date; permanent removal is disabled on
+GitLab.com. Every live run therefore leaves one private, renamed project in
+the personal namespace for 30 days, and a passing live receipt records
+`cleanup.status: scheduledForDeletion` rather than a deletion. Do not restore
+it; GitLab removes it when the retention ends.
+
+GitLab.com Free accounts share one per-user API burst limit
+(`RateLimit-Name: burst_traffic_per_user_free_plan`, currently
+`RateLimit-Limit: 100`) between every API client of that user. A live run
+spends tens of requests on setup, observation and cleanup, so pause other
+clients of the same account first: watchers, CLI polling, CI scripts that use
+the same token, and other sandbox runs. Any 429 the harness sees, on a setup,
+identity, observer, scenario or cleanup request, read or write, stops the
+session with `stopReason: rateLimited` and quarantines it. It is never reported
+as an identity failure, and no request is retried, writes included. The receipt's
+`rateLimit` keeps only the numeric `Retry-After`, `RateLimit-Limit`,
+`RateLimit-Observed`, `RateLimit-Remaining` and `RateLimit-Reset` values;
+names, dates and paths are dropped. Reconcile a rate-limited run like any other
+quarantined run (above); wait at least `retryAfter` seconds, and until other
+clients are paused, before a new run with a new nonce.
 
 ## Scenario interface and receipt schema 1
 

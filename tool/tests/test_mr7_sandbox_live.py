@@ -340,6 +340,46 @@ class LiveWrapperTest(unittest.TestCase):
                                      'action': 'created', 'projectId': 10}]
         self.assertFalse(runner.validate_receipt(result, transport='live'))
 
+    def test_scheduled_deletion_is_terminal_live_cleanup(self):
+        # gitlab.com keeps a deleted project for 30 days under a renamed path.
+        scheduled = {'status': 'scheduledForDeletion', 'accepted': True, 'deletionVerified': False,
+                     'markedForDeletionOn': '2026-10-29', 'parentChecked': True,
+                     'identityChecked': True}
+        result = self.receipt()
+        result['cleanup'] = dict(scheduled)
+        self.assertTrue(runner.validate_receipt(result, transport='live'))
+        for changes in ({'deletionVerified': True}, {'markedForDeletionOn': None},
+                        {'markedForDeletionOn': ''}, {'markedForDeletionOn': '2026-13-40'},
+                        {'markedForDeletionOn': '2026-10-29T00:00:00Z'},
+                        {'markedForDeletionOn': 20261029}, {'accepted': False},
+                        {'status': 'PENDING'}, {'status': 'NOT_VERIFIED'},
+                        {'parentChecked': False}, {'identityChecked': False}):
+            result = self.receipt()
+            result['cleanup'] = {**scheduled, **changes}
+            with self.subTest(changes=changes):
+                self.assertFalse(runner.validate_receipt(result, transport='live'))
+        result = self.receipt()
+        result['cleanup'] = {key: value for key, value in scheduled.items()
+                             if key != 'markedForDeletionOn'}
+        self.assertFalse(runner.validate_receipt(result, transport='live'))
+        # A hard delete must not also claim a scheduled date.
+        result = self.receipt()
+        result['cleanup']['markedForDeletionOn'] = '2026-10-29'
+        self.assertFalse(runner.validate_receipt(result, transport='live'))
+        result = self.receipt()
+        result['cleanup']['deletionVerified'] = False
+        self.assertFalse(runner.validate_receipt(result, transport='live'))
+
+    def test_rate_limited_live_receipt_is_a_valid_failure(self):
+        result = self.receipt()
+        result.update(status='FAIL', live='FAIL', quarantined=True, stopReason='rateLimited',
+                      rateLimit={'status': 429, 'retryAfter': 60, 'limit': 100})
+        result['cleanup'] = {'status': 'NOT_RUN', 'accepted': False, 'deletionVerified': False}
+        result['scenarios'][0].update(status='NOT_RUN', live='NOT_VERIFIED')
+        self.assertTrue(runner.validate_receipt(result, transport='live'))
+        result.update(status='PASS', live='PASS')
+        self.assertFalse(runner.validate_receipt(result, transport='live'))
+
     def test_overall_pass_rejects_fail_rows_in_both_transports(self):
         for transport in ('live', 'synthetic'):
             result = self.receipt()

@@ -37,6 +37,9 @@ final class _GitLabFixture {
   final errors = <Object>[];
   final setupBodies = <Map<String, dynamic>>[];
   bool incompleteStarrers = false;
+
+  /// Paths answered like gitlab.com's burst limiter: 429, plain text, no Date.
+  final rateLimitedPaths = <String>{};
   Future<void> Function(HttpRequest)? before;
   Uri get origin => Uri.parse('http://127.0.0.1:${http.port}');
 
@@ -50,6 +53,15 @@ final class _GitLabFixture {
         clientPorts.add(request.connectionInfo!.remotePort);
         await before?.call(request);
         final body = await utf8.decoder.bind(request).join();
+        if (rateLimitedPaths.contains(request.uri.path)) {
+          request.response.statusCode = 429;
+          for (final MapEntry(:key, :value) in _rateLimitHeaders.entries) {
+            request.response.headers.set(key, value);
+          }
+          request.response.write('Retry later\n');
+          await request.response.close();
+          return;
+        }
         if (request.method == 'POST' &&
             request.uri.path == '/api/v4/projects') {
           setupBodies.add(jsonDecode(body) as Map<String, dynamic>);
@@ -178,6 +190,41 @@ Map<String, dynamic> _config(String format) => {
   'priceOutputPerMTok': 2.0,
 };
 String _data(Map<String, Object?> value) => 'data: ${jsonEncode(value)}\n\n';
+
+const _rateLimitHeaders = {
+  'RateLimit-Name': 'burst_traffic_per_user_free_plan',
+  'RateLimit-Limit': '100',
+  'RateLimit-Observed': '101',
+  'RateLimit-Remaining': '0',
+  'RateLimit-Reset': '1761740000',
+  'RateLimit-ResetTime': 'Thu, 29 Oct 2026 12:13:20 GMT',
+  'Retry-After': '60',
+};
+
+/// The sanitised real gitlab.com entity (after deletion scheduling), bound to
+/// this fixture's nonce.
+Map<String, Object?> _scheduledEntity() =>
+    jsonDecode(
+          File(
+            'test/ai/fixtures/mr7/gitlab_com_project_scheduled_for_deletion.json',
+          ).readAsStringSync().replaceAll('testnonce123', 'livefixture123'),
+        )
+        as Map<String, Object?>;
+
+/// The same real entity before DELETE: original path, no deletion date.
+Map<String, Object?> _liveEntity() {
+  final row = _scheduledEntity()
+    ..remove('marked_for_deletion_on')
+    ..remove('marked_for_deletion_at');
+  return {
+    ...row,
+    'name': 'mr7-livefixture123',
+    'path': 'mr7-livefixture123',
+    'path_with_namespace': 'synthetic-owner/mr7-livefixture123',
+  };
+}
+
+const _originalPathKey = 'GET projects/synthetic-owner/mr7-livefixture123';
 
 String _providerAnswer(String format, bool tool) {
   const arguments = {
@@ -515,12 +562,17 @@ void main() {
     },
   );
   for (final format in ['chat_completions', 'anthropic_messages']) {
-    for (final pendingCleanup in [false, true]) {
+    for (final (pendingCleanup, scheduled) in [
+      (false, false),
+      (true, false),
+      (false, true),
+    ]) {
       test(
-        'live $format full production runner keeps credentials isolated${pendingCleanup ? " with pending cleanup" : ""}',
+        'live $format full production runner keeps credentials isolated${pendingCleanup ? " with pending cleanup" : ""}${scheduled ? " with scheduled deletion" : ""}',
         () async {
           final fixture = _GitLabFixture();
           fixture.model.delayedDeletion = pendingCleanup;
+          fixture.model.scheduledDeletion = scheduled;
           await fixture.start();
           addTearDown(fixture.close);
           final providerHttp = await HttpServer.bind(
@@ -594,7 +646,19 @@ void main() {
           expect(receipt['quarantined'], pendingCleanup);
           expect(
             (receipt['cleanup'] as Map)['status'],
-            pendingCleanup ? 'PENDING' : 'PASS',
+            pendingCleanup
+                ? 'PENDING'
+                : scheduled
+                ? 'scheduledForDeletion'
+                : 'PASS',
+          );
+          expect(
+            (receipt['cleanup'] as Map)['deletionVerified'],
+            !pendingCleanup && !scheduled,
+          );
+          expect(
+            (receipt['cleanup'] as Map)['markedForDeletionOn'],
+            scheduled ? '2026-10-29' : isNull,
           );
           expect(receipt['releaseSha'], _sha);
           final row = (receipt['scenarios'] as List).single as Map;
@@ -615,5 +679,81 @@ void main() {
         },
       );
     }
+  }
+  test(
+    'live identity and scheduled cleanup accept the real gitlab.com shape',
+    () async {
+      final fixture = _GitLabFixture();
+      fixture.model.scheduledDeletion = true;
+      fixture.model.routes['GET projects/909'] = (_) => mr7Json(
+        fixture.model.cleanupWrites == 0 ? _liveEntity() : _scheduledEntity(),
+      );
+      fixture.model.routes[_originalPathKey] = (_) =>
+          fixture.model.cleanupWrites == 0
+          ? mr7Json(_liveEntity())
+          : mr7Json({}, status: 404);
+      await fixture.start();
+      addTearDown(fixture.close);
+      final session = fixture.session();
+      await session.initialize();
+      expect(session.stopReason, isNull, reason: '${fixture.errors}');
+      await session.finish();
+      expect(session.stopReason, isNull, reason: '${fixture.errors}');
+      expect(session.quarantined, isFalse);
+      expect(session.cleanup['status'], 'scheduledForDeletion');
+      expect(session.cleanup['deletionVerified'], isFalse);
+      expect(session.cleanup['markedForDeletionOn'], '2026-10-29');
+      final deleteAt = fixture.requests.indexOf('DELETE /api/v4/projects/909');
+      expect(deleteAt, greaterThan(0));
+      expect(
+        fixture.requests.skip(deleteAt),
+        containsAll([
+          'GET /api/v4/users/7/projects',
+          'GET /api/v4/projects/909',
+          'GET /api/v4/projects/synthetic-owner%2Fmr7-livefixture123',
+        ]),
+      );
+      expect(
+        fixture.requests.where((r) => r.startsWith('DELETE ')),
+        hasLength(1),
+      );
+      expect(fixture.errors, isEmpty);
+    },
+  );
+  for (final path in [
+    '/api/v4/projects/909',
+    '/api/v4/projects/909/starrers',
+  ]) {
+    test('live 429 on $path stops as rateLimited without Date', () async {
+      final fixture = _GitLabFixture()..rateLimitedPaths.add(path);
+      await fixture.start();
+      addTearDown(fixture.close);
+      final session = fixture.session();
+      await expectLater(session.initialize(), throwsA(anything));
+      await session.finish();
+      expect(session.stopReason, 'rateLimited');
+      expect(session.quarantined, isTrue);
+      expect(session.rateLimit, {
+        'status': 429,
+        'retryAfter': 60,
+        'limit': 100,
+        'observed': 101,
+        'remaining': 0,
+        'reset': 1761740000,
+      });
+      expect(
+        fixture.requests.where((r) => r == 'POST /api/v4/projects'),
+        hasLength(1),
+      );
+      expect(fixture.requests.where((r) => r.startsWith('DELETE ')), isEmpty);
+      final receipt = session.receipt(
+        policy: Mr7Policy.candidate,
+        releaseSha: _sha,
+        scenarios: const [],
+        releasePolicy: mr7SandboxPolicy(Mr7Policy.candidate),
+      );
+      expect(jsonEncode(receipt), isNot(contains('burst_traffic')));
+      expect(jsonEncode(receipt), isNot(contains(_pat)));
+    });
   }
 }

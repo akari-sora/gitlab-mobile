@@ -90,6 +90,9 @@ class ConfirmationPtyTest(unittest.TestCase):
         (self.directory / 'request.json').write_text(json.dumps(proposal))
         self.pid, self.master = pty.fork()
         if self.pid == 0:
+            # A suite started as a background job inherits SIGINT ignored, and
+            # Python then never raises KeyboardInterrupt; restore the default.
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
             os.execve(sys.executable,
                       [sys.executable, '-c', HOST, str(ROOT), str(self.directory), mode],
                       {'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1'})

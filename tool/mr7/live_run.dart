@@ -128,8 +128,13 @@ final class Mr7LiveRun {
 
   void finishReceipt(Map<String, Object?> receipt) {
     final rows = (receipt['scenarios'] as List).cast<Map<String, Object?>>();
+    // GitLab.com retains a deleted project for 30 days; a verified scheduled
+    // deletion is a terminal cleanup state, not a deleted one.
     if (session.quarantined ||
-        session.cleanup['status'] != 'PASS' ||
+        !const {
+          'PASS',
+          'scheduledForDeletion',
+        }.contains(session.cleanup['status']) ||
         !rows.any((row) => row['status'] == 'PASS')) {
       receipt['status'] = 'FAIL';
     }
