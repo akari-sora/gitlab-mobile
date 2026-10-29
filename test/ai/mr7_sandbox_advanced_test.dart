@@ -572,6 +572,17 @@ void main() {
       }
       if (typed) expect(row['typedInputMatches'], isTrue);
       expect(fixture!.mutations, hasLength(1));
+      if (c.operation == 'mergeRequest') {
+        expect(
+          (fixture!.mutations.single.data! as Map)['squash'],
+          c.variant == 'squash',
+        );
+        if (c.variant == 'squash') {
+          expect(fixture!.mr['merge_commit_sha'], mr7AdvancedMergeCommit);
+          expect(fixture!.mr['squash_commit_sha'], mr7AdvancedSquashCommit);
+          expect(mr7AdvancedSquashCommit, isNot(mr7AdvancedMergeCommit));
+        }
+      }
       if (['pipelineAction', 'jobAction'].contains(c.operation)) {
         expect(fixture!.mutations.single.data, isEmpty);
       }
@@ -615,6 +626,238 @@ void main() {
       expect(_rows(receipt).single['mutationCount'], 1);
     });
   }
+
+  for (final c in _executable.where((c) => c.operation == 'mergeRequest')) {
+    for (final field
+        in c.variant == 'auto-merge'
+            ? ['auto_merge_enabled']
+            : [
+                'state',
+                'merge_commit_sha',
+                if (c.variant == 'squash') 'squash_commit_sha',
+              ]) {
+      test(
+        '${c.id} rejects incorrect $field with original identity and head',
+        () async {
+          var effectReads = 0;
+          final receipt = await _run(
+            [c.scenario!],
+            configure: (s, f) {
+              s.observer.interceptors.add(
+                InterceptorsWrapper(
+                  onResponse: (r, h) {
+                    if (_afterWrite(r, f) &&
+                        r.requestOptions.uri.path.endsWith(
+                          '/merge_requests/3',
+                        )) {
+                      final original = r.data! as Map;
+                      expect(original['project_id'], 909);
+                      expect(original['id'], 33);
+                      expect(original['iid'], 3);
+                      expect(original['sha'], mr7AdvancedHead);
+                      r.data = {
+                        ...original,
+                        field: field == 'state'
+                            ? 'opened'
+                            : field == 'auto_merge_enabled'
+                            ? false
+                            : mr7AdvancedNextHead,
+                      };
+                      effectReads++;
+                    }
+                    h.next(r);
+                  },
+                ),
+              );
+            },
+          );
+          final row = _rows(receipt).single;
+          expect(effectReads, greaterThan(0));
+          expect(row['coreOutcome'], 'succeeded');
+          expect(row['mutationCount'], 1);
+          expect(row['status'], 'NOT_VERIFIED');
+          _notVerified(receipt);
+        },
+      );
+    }
+  }
+
+  test(
+    'auto-merge proves a readable false to true transition after dispatch',
+    () async {
+      late Mr7SandboxSession session;
+      late Mr7AdvancedFixture fixture;
+      var preWriteReads = 0;
+      final receipt = await _run(
+        [_scenario('mergeRequest', 'auto-merge')],
+        configure: (s, f) {
+          session = s;
+          fixture = f;
+        },
+        confirm: (_) async {
+          expect(fixture.mutations, isEmpty);
+          final before = await session.read('projects/909/merge_requests/3');
+          expect(before['id'], 33);
+          expect(before['iid'], 3);
+          expect(before['project_id'], 909);
+          expect(before['sha'], mr7AdvancedHead);
+          expect(before['state'], 'opened');
+          expect(before['auto_merge_enabled'], isFalse);
+          preWriteReads++;
+          return true;
+        },
+      );
+      expect(preWriteReads, 1);
+      expect(fixture.mutations, hasLength(1));
+      expect((fixture.mutations.single.data! as Map)['auto_merge'], isTrue);
+      expect(fixture.mr['auto_merge_enabled'], isTrue);
+      expect(fixture.mr['state'], 'opened');
+      final row = _rows(receipt).single;
+      final saved = (_part(row, 'preread')['resources'] as List).single as Map;
+      expect(
+        (saved['fieldDigests'] as Map)['auto_merge_enabled'],
+        mr7Digest({'present': true, 'value': false}),
+      );
+      expect(row['status'], 'PASS');
+      _boundary(receipt);
+    },
+  );
+
+  for (final initial in [true, null, 'false']) {
+    test(
+      'auto-merge refuses unreadable or already enabled precondition $initial',
+      () async {
+        var confirms = 0;
+        final receipt = await _run(
+          [_scenario('mergeRequest', 'auto-merge')],
+          configure: (_, f) => f.mr['auto_merge_enabled'] = initial,
+          confirm: (_) async {
+            confirms++;
+            return true;
+          },
+        );
+        expect(confirms, 0);
+        expect(_rows(receipt).single['mutationCount'], 0);
+        expect(_rows(receipt).single.containsKey('provider'), isFalse);
+        expect(receipt['stopReason'], 'runUnverified');
+        _notVerified(receipt);
+      },
+    );
+  }
+
+  for (final enabledBeforeSnapshot in [false, true]) {
+    test(
+      enabledBeforeSnapshot
+          ? 'auto-merge enabled between fixture and snapshot cannot prove a new effect'
+          : 'auto-merge accepted without scheduling remains NOT_VERIFIED',
+      () async {
+        late Mr7AdvancedFixture fixture;
+        final receipt = await _run(
+          [_scenario('mergeRequest', 'auto-merge')],
+          configure: (_, f) {
+            fixture = f;
+            if (enabledBeforeSnapshot) {
+              final path = 'GET projects/909/merge_requests/3';
+              final original = f.server.routes[path]!;
+              var reads = 0;
+              f.server.routes[path] = (r) async {
+                if (++reads == 2) f.mr['auto_merge_enabled'] = true;
+                return original(r);
+              };
+            }
+            final route = 'PUT projects/909/merge_requests/3/merge';
+            f.server.routes[route] = (r) {
+              expect((r.data! as Map)['auto_merge'], isTrue);
+              expect(f.mr['auto_merge_enabled'], enabledBeforeSnapshot);
+              f.mutations.add(r);
+              f.server.scenarioWrites++;
+              f.server.addEvent(target: f.server.projectId);
+              return mr7Json(f.mr);
+            };
+          },
+        );
+        expect(fixture.mutations, hasLength(1));
+        expect(fixture.mr['auto_merge_enabled'], enabledBeforeSnapshot);
+        final row = _rows(receipt).single;
+        final saved =
+            (_part(row, 'preread')['resources'] as List).single as Map;
+        expect(
+          (saved['fieldDigests'] as Map)['auto_merge_enabled'],
+          mr7Digest({'present': true, 'value': enabledBeforeSnapshot}),
+        );
+        expect(row['coreOutcome'], 'succeeded');
+        expect(row['status'], 'NOT_VERIFIED');
+        _notVerified(receipt);
+        _boundary(receipt, cleanup: false);
+      },
+    );
+  }
+
+  for (final squash in [null, false]) {
+    test(
+      'squash rejects HTTP dispatch with ${squash == null ? 'omitted' : 'false'} squash',
+      () async {
+        late Mr7AdvancedFixture fixture;
+        var changedDispatches = 0;
+        final receipt = await _run(
+          [_scenario('mergeRequest', 'squash')],
+          configure: (s, f) {
+            fixture = f;
+            s.writer.interceptors.add(
+              InterceptorsWrapper(
+                onRequest: (r, h) {
+                  if (r.method == 'PUT' &&
+                      r.uri.path.endsWith('/merge_requests/3/merge')) {
+                    final body = Map<String, Object?>.from(r.data! as Map);
+                    expect(body['squash'], isTrue);
+                    if (squash == null) {
+                      body.remove('squash');
+                    } else {
+                      body['squash'] = squash;
+                    }
+                    r.data = body;
+                    changedDispatches++;
+                  }
+                  h.next(r);
+                },
+              ),
+            );
+          },
+        );
+        expect(changedDispatches, 1);
+        expect(fixture.mutations, hasLength(1));
+        final sent = fixture.mutations.single.data! as Map;
+        expect(sent['squash'], squash);
+        expect(sent.containsKey('squash'), squash != null);
+        expect(fixture.mr['state'], 'merged');
+        expect(fixture.mr['sha'], mr7AdvancedHead);
+        expect(fixture.mr['merge_commit_sha'], mr7AdvancedMergeCommit);
+        expect(fixture.mr['squash_commit_sha'], isNull);
+        expect(_rows(receipt).single['coreOutcome'], 'succeeded');
+        expect(_rows(receipt).single['status'], 'NOT_VERIFIED');
+        _notVerified(receipt);
+      },
+    );
+  }
+
+  test(
+    'observer returning true without an independent GET cannot pass',
+    () async {
+      final receipt = await _run([
+        _copy(
+          _scenario('createBranch', 'ordinary-ref'),
+          observe: (_, _) async => true,
+        ),
+        _scenario('editProject', 'description'),
+      ]);
+      expect(_rows(receipt).first['status'], 'NOT_VERIFIED');
+      expect(_rows(receipt).first['mutationCount'], 1);
+      expect(_rows(receipt).first['observerRequests'], 0);
+      expect(_rows(receipt).last['reason'], 'sessionStopped');
+      _notVerified(receipt);
+      _boundary(receipt, cleanup: false);
+    },
+  );
 
   test('candidate receipt contains every typed closed variant', () async {
     final receipt = await _run([

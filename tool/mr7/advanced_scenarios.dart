@@ -11,6 +11,8 @@ import 'sandbox_contract.dart';
 const mr7AdvancedOwnedRows = {8, 9, 18, 20, 26, 30, 31, 32};
 const mr7AdvancedHead = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const mr7AdvancedNextHead = 'dddddddddddddddddddddddddddddddddddddddd';
+const mr7AdvancedMergeCommit = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+const mr7AdvancedSquashCommit = 'ffffffffffffffffffffffffffffffffffffffff';
 const mr7AdvancedEditedText = 'Reviewed synthetic text';
 const _isolation =
     'Complete two-pass owner events window includes setup, scenario and cleanup; '
@@ -125,6 +127,14 @@ Mr7AdvancedCase _runnable(
   final owningKind = aiWriteProposalTargetKind(
     productionAiLedger.find(operation)!,
   );
+  final effect =
+      observe ??
+      (Mr7Readback observer, Mr7Identity p) async {
+        final row = await observer.read(
+          observation.replaceAll('{project}', '${p.projectId}'),
+        );
+        return check(row) && (identityCheck?.call(row, p) ?? true);
+      };
   final definition = Mr7Scenario(
     id: id,
     suite: 'advanced',
@@ -154,6 +164,19 @@ Mr7AdvancedCase _runnable(
         'description',
         () => 'Original description',
       );
+      if (operation == 'mergeRequest' && variant == 'auto-merge') {
+        final before = await session.read(
+          'projects/${p.projectId}/merge_requests/3',
+        );
+        if (before['id'] != 33 ||
+            before['iid'] != 3 ||
+            before['project_id'] != p.projectId ||
+            before['sha'] != mr7AdvancedHead ||
+            before['state'] != 'opened' ||
+            before['auto_merge_enabled'] != false) {
+          throw const Mr7Refused('advancedPrecondition');
+        }
+      }
       if (operation == 'approveMergeRequest' ||
           operation == 'cancelAutoMerge') {
         final before = await session.read(
@@ -212,14 +235,22 @@ Mr7AdvancedCase _runnable(
     readbackPaths: (p, _) =>
         observerPaths?.call(p) ??
         {observation.replaceAll('{project}', '${p.projectId}')},
-    observe:
-        observe ??
-        (observer, p) async {
-          final row = await observer.read(
-            observation.replaceAll('{project}', '${p.projectId}'),
-          );
-          return check(row) && (identityCheck?.call(row, p) ?? true);
-        },
+    observe: (observer, p) async {
+      if (operation == 'mergeRequest' && variant == 'auto-merge') {
+        final rows = observer.snapshot?.metadata['resources'] as List?;
+        if (rows == null ||
+            rows.length != 1 ||
+            ((rows.single as Map)['fieldDigests']
+                    as Map)['auto_merge_enabled'] !=
+                mr7Digest({'present': true, 'value': false})) {
+          return false;
+        }
+      }
+      final before = observer.verifiedRequests;
+      final verified = await effect(observer, p);
+      // The runner's later identity/snapshot reads cannot supply effect evidence.
+      return verified && observer.verifiedRequests > before;
+    },
   );
   return Mr7AdvancedCase(
     operation: operation,
@@ -329,8 +360,9 @@ List<Mr7AdvancedCase> _listedAdvancedCases() => [
       write:
           'mergeRequest with pinned SHA, explicit squash/auto/source-removal flags.',
       readback:
-          'Independent returned MR ID/iid/project, SHA and merged state or '
-          'auto-merge scheduled flag; scheduling is not completed merge.',
+          'Independent returned MR ID/iid/project, pinned head and merge commit '
+          'SHA, distinct squash commit for squash, or newly enabled auto-merge '
+          'flag; scheduling is not completed merge.',
       targetKind: AiTargetKind.merge,
       arguments: {
         'iid': 3,
@@ -344,7 +376,10 @@ List<Mr7AdvancedCase> _listedAdvancedCases() => [
           r['sha'] == mr7AdvancedHead &&
           (variant == 'auto-merge'
               ? r['state'] == 'opened' && r['auto_merge_enabled'] == true
-              : r['state'] == 'merged'),
+              : r['state'] == 'merged' &&
+                    r['merge_commit_sha'] == mr7AdvancedMergeCommit &&
+                    (variant != 'squash' ||
+                        r['squash_commit_sha'] == mr7AdvancedSquashCommit)),
     ),
   ..._closed(
     'mergeRequest',
@@ -1318,7 +1353,9 @@ final class Mr7AdvancedFixture {
         'base_sha': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         'start_sha': 'cccccccccccccccccccccccccccccccccccccccc',
       },
-      'auto_merge_enabled': true,
+      'auto_merge_enabled': operation == 'cancelAutoMerge',
+      'merge_commit_sha': null,
+      'squash_commit_sha': null,
       'author': {'id': 7},
       'user': {'can_merge': true},
       'approved_by': <Object?>[],
@@ -1406,6 +1443,13 @@ final class Mr7AdvancedFixture {
       final body = r.data! as Map;
       mr['state'] = body['auto_merge'] == true ? 'opened' : 'merged';
       mr['auto_merge_enabled'] = body['auto_merge'] == true;
+      mr['merge_commit_sha'] = body['auto_merge'] == true
+          ? null
+          : mr7AdvancedMergeCommit;
+      mr['squash_commit_sha'] =
+          body['auto_merge'] != true && body['squash'] == true
+          ? mr7AdvancedSquashCommit
+          : null;
       return _changed(r, mr);
     };
     routes['POST projects/$p/merge_requests/3/approve'] = (r) {
