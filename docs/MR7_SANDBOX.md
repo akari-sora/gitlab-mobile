@@ -144,8 +144,10 @@ using `operationName` (required with multiple operations). Target checks resolve
 that operation's actual argument usage, including aliases and nested inputs;
 every root needs a bound selector, except `currentUser { id username }` identity
 projections of the current account.
-The executable-document subset rejects fragments, directives, defaults, block
-strings and secondary request overrides rather than skipping their semantics.
+Inline type fragments are traversed with all argument and target checks. Named
+fragments, directives, defaults, block strings and secondary request overrides
+stay closed. Nested namespace identity selects only id/fullPath; foreign roots
+remain refused.
 Writer reads and observer
 reads share target and account
 fences; quarantine permits only bounded observation. No generic live
@@ -233,9 +235,78 @@ classification. Core acknowledgements, failed-certain responses and uncertain
 results keep their original semantics; all evidence remains synthetic and
 candidate evidence remains ineligible for final release acceptance.
 
-Wave 2 still owns scenario integration, WorkItem binding and inline fragments,
-fixture hooks, target-kind sets, account-todo/registry/terminal-project and
-secondary-effect observations, editable confirmation, uploads/provenance,
-shared budgets/journals and detailed closed-variant receipts. This vocabulary
-does not widen those paths or enable any production operation. Suggestion and
-multi-effect writes without a directly bound file target remain unverified.
+## Wave 2 seams
+
+| Code | API and scenario use |
+|---|---|
+| S1 | `Mr7Scenario.targetKinds` declares the full owning/prepared-child set, such as project/pipeline or mergeRequest/merge. Each coordinator/catalogue receives only that immutable scenario view. Other scenarios cannot widen it. Omission means the original singleton targetKind. |
+| B2-S1/S2 | `fixture(session, identity)` runs after initialization, before provider creation. Return `Mr7ScenarioFixtures` with exact read documents/variable digests, mutation seals and optional scripted calls. `bindWorkItemGraphResource(gid, path:)` freshly binds the WorkItem to its project-owned issue ID/iid, retaining its type. Seals never bypass argument or foreign-scope validation. |
+| FIX1 | `preRead(identity)` returns bounded `Mr7SnapshotSpec(path:, fields:, unchangedFields:)`. Capture name/description for a name edit and preserve description. Receipt preread retains original actor/project/resource ID/iid and presence-sensitive field digests, without bodies. Final send rechecks all fields; the independent observer automatically verifies original identities and unchanged fields. `observer.snapshot` exposes the immutable witness. Custom freshness cannot overwrite it; absence/null/empty remain distinct. |
+| E | `editConfirm` returns text for the product proposal's editable field. The runner confirms the original, calls production approve(editedText:), then reconfirms the updated digest/preview before send. Rejecting that edit sends nothing. Receipts retain digests/decisions only. |
+| U | Fixture attachments use a real memory-only AiAttachmentSession with matching account/conversation. Catalogue/coordinator share the UploadPlaceholderTable and production delivery provenance. Only metadataForModel enters the provider turn; bindingUtterance is the user's text. The byte leak scan is an additional check, not proof against arbitrary transformed partial content. Sessions are discarded after completion/refusal. Mr7UploadObservation(byteCount:, sha256:) independently observes the actual bounded multipart stream at the synthetic-only projects/id/uploads/mr7-observation endpoint. No bytes enter receipts. |
+| U script | providerScript allows 12 batches, four calls per batch and 12 calls total, unique IDs, one declared write and declared reads. Later scenarios reuse attachments/placeholders in one explicit conversation; provider transcripts stay per scenario. onProviderRequest observes bounded in-memory metadata, never persisted bodies. |
+| Row 19 | Inject sharedBudget, journal, conversationId and now for 39/40/41, account-window and restart cases. All injected budget limits cannot exceed the corresponding product defaults. The caller must recover an injected journal with the complete successfully loaded account set before running; the runner does not perform inventory recovery for it. An owned temporary journal is recovered for the current synthetic account. Injected journals retain files/keys and are never reset/deleted. Restart with the same caller-owned temporary directory and memory key store, recover the complete account set, then clean that synthetic directory. Missing/unreadable/uncertain state stays closed. Defaults keep per-scenario tool budgets; the session physical HTTP cap covers every request. |
+| T | createTodo freshly verifies the final project issue/MR. markTodoDone stays wholly closed. Snooze/unsnooze require projectTodo:true and bindProjectTodo(todoId:, parentPath:, snoozedUntil:), exact production read/mutation seals and final actor/project/parent ID/iid/Todo proof. Mr7TodoObservation independently reads the synthetic-only projects/id/todos/todoId/mr7-observation endpoint. Group/account-global/foreign targets remain closed; core results remain ack-only and uncertainty stays uncertain. |
+| S7 | closedVariants takes Mr7ClosedVariant; an executable definition can set closed:Mr7ClosedRefusal. Typed causes: releasePolicy, fixtureUnavailable, unsupportedServer, ownershipUnproven, observerUnavailable, scopeExcluded. Explicit candidate rows are NOT_RUN, zero provider calls/mutations. The wrapper rejects forged/malformed closed rows. |
+| S6 | Registry fixtures stay fixtureUnavailable: no honest package publish/container push/ownership/inventory lifecycle is modeled. Owner packages and global registry paths cannot substitute for run-created fixtures. |
+
+### Attachment payload scan
+
+The scanner follows the request encoders in `lib/core/ai/wire/`. It examines
+provider-visible free text, not every JSON value. The recognised payload fields
+are:
+
+| Encoder | Free-text payload fields |
+|---|---|
+| Responses (`responses.dart`) | `instructions`; `input[].content` strings and text parts (`text`); replayed message/refusal/reasoning text and summary parts; `input[].arguments` (function-call JSON strings); `input[].output` (tool results); `tools[].description` and schema descriptions. |
+| Chat Completions (`chat_completions.dart`) | `messages[].content` (system/user/assistant/tool text and content text parts), `refusal` and replay extras; `messages[].tool_calls[].function.arguments` and legacy `function_call.arguments`; `tools[].function.description` and schema descriptions. |
+| Anthropic Messages (`anthropic_messages.dart`) | `system`; `messages[].content[].text`, tool-result `content`, replayed thinking text and other replay payloads; tool-use `input` values; `tools[].description` and `input_schema` descriptions. |
+
+At the corresponding wire positions, JSON keys, `role`, `type`, `model`,
+tool/function `name`, IDs (`id`, `call_id`, `tool_call_id`, `tool_use_id`),
+`status`/`index`, token/stream/store controls, Responses `include`, tool-choice
+enums, cache-control type, and schema `type`/`enum`/`const`/`required`/`format`/
+`nullable`/`$schema`/`$ref` are protocol/schema values and are excluded. Schema
+properties/items/combinators remain traversed so their descriptions are scanned.
+Unrecognised fields default to payload, including unknown replay fields. Once
+inside a payload object or decoded argument/result JSON, all values are scanned;
+an argument key named `role` or `type` does not gain a protocol exemption.
+
+For attachments of **16 bytes or more**, the scanner searches free-text values
+for raw UTF-8, base64 and JSON numeric-array encodings, including substrings.
+Actual numeric/byte arrays and JSON-encoded nested objects/arrays are checked as
+well. The exact host-appended `\n\nmetadataForModel` suffix is exempt only in the
+first user message's single text value; repeated blocks elsewhere are scanned.
+
+For attachments of **1–15 bytes**, common words and identifiers are too easy to
+collide with ordinary prose, so no attachment substring scan is performed.
+Instead the first user turn must have exactly the host-built text (the utterance
+plus its exact metadata block), with one text value in the encoder's user-message
+shape. Missing, extra or changed user text refuses before accepting the request.
+That verified projection is excluded from short-content comparisons; every other
+free-text value must match a source projection registered by the host before
+wire encoding: the system/tool definitions, the host-selected scenario write's
+arguments, numeric-only scripted arguments, or the closed successful-upload
+summary reconstructed independently from project/attachment IDs, filename,
+SHA-256 and fixed outcome enums. Fixture-script text that differs from the
+host-selected arguments, dynamic read/result text, and decoded request values
+are never used to expand this set; unproven content stays closed for short
+attachments.
+The registered values are also checked for exact raw/base64/numeric encodings,
+including values inside JSON argument/result strings. An added
+`prefix:user:suffix` field therefore refuses without searching for the short
+substring, while independently supplied ordinary host prose can contain `user`.
+Tool-result content remains payload even in nested objects/lists whose keys
+look like protocol fields. Thus a short attachment copied into another
+free-text field refuses, while protocol values such as `user` and the configured
+model/tool name remain valid. Sixteen bytes is a conservative
+distinctiveness cutoff, not an entropy estimate. These synthetic checks do not
+prove absence of arbitrary transformed or partial attachment content.
+
+Typed closed rows accept each of `outcome` and `coreOutcome` only when absent or
+exactly `notExecuted`; both present therefore agree. Legacy schema-1 rows retain
+their previous interpretation.
+
+Codes I/F, unbound multi-effect operations and all live/provider/device/CI/release
+acceptance remain closed or NOT_RUN. These hooks do not enable production
+operations. Candidate receipts stay CANDIDATE_ONLY and finalEligible=false.

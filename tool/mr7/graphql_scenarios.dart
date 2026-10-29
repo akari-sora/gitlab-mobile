@@ -7,38 +7,52 @@ import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import '../mr7_sandbox.dart';
 import 'sandbox_contract.dart';
 
-/// Inventory and fail-closed definitions for breakdown §5.2 / §9 rows
+/// Inventory and typed closed definitions for breakdown §5.2 / §9 rows
 /// 10, 16, 24, 25 and 29. These are synthetic candidates, never live evidence.
 ///
-/// Positive chains are deliberately NOT_RUN until the 7B0 owner supplies the
-/// seams below. In particular, do not retype WorkItem GIDs as Issue GIDs, strip
-/// production inline fragments, or replace the production port/registry.
+/// B2-S1/S2/S3 are installed. The sealed observer's closed operation mapping
+/// still excludes the project WorkItem operations below. Neither a legacy
+/// query nor a preservation snapshot substitutes for a sealed effect observer.
 const mr7GraphqlSeamRequests = <String, String>{
-  'B2-S1':
-      'A post-initialize, pre-provider fixture hook must bind fresh '
-      'project-owned WorkItem GIDs and register the exact production read '
-      'documents and variable digests. bindGraphResource currently has no '
-      'WorkItem mapping; Mr7Scenario has no session preparation hook.',
-  'B2-S2':
-      'The closed GraphQL parser must understand the inline type '
-      'fragments in MobileProjectWorkItem and widget reads while retaining '
-      'root/argument/foreign-scope checks. Registering a digest alone does '
-      'not make these production documents readable.',
-  'B2-S3':
-      'Independent observers need exact mutation-returned GIDs and '
-      'post-response sealed query registration. Support complete connection '
-      'and exact-note-absence observations without requiring the observed '
-      'parent/Note ID to equal an AwardEmoji or deleted Note response ID. '
-      'Do not turn ack-only todo outcomes into core readback success.',
+  'B2-O1':
+      'Add a sealed WorkItem parent observer for updateWorkItemState, '
+      'Status, Dates, Assignees, Milestone, Content, Labels, '
+      'setWorkItemNotifications and setIncidentStatus. Bind the actual '
+      'workItemUpdate/workItemSubscribe/issueSetEscalationStatus selector, '
+      'fresh actor and exact project-owned WorkItem/Issue. Verify requested '
+      'fields and complete assignee/label sets independently; preserve omitted '
+      'fields with the existing input.id-bound snapshot for WorkItems. '
+      'Incident input uses projectPath+iid: add exact selector fencing and '
+      'snapshot binding for that currently unsupported mutation root. The current '
+      'parent-only graph observer allows only setStar/setSubscribed/'
+      'cancelAutoMerge, and no collection mapping admits these operations.',
+  'B2-O2':
+      'Add sealed mappings for createWorkItemActivityComment/Reply, '
+      'editWorkItemActivityNote, deleteWorkItemActivityNote and '
+      'setWorkItemActivityNoteReaction. Bind the actual mutation selector, '
+      'WorkItem, opaque discussion/replyId, exact Note and actor/project; '
+      'traverse complete widget/discussion/note/reaction connections. '
+      'Deletion must prove exact-note absence. Reaction removal uses '
+      'note/name/user selectors, not a manufactured returned AwardEmoji ID. '
+      'Generic createNote/updateNote/deleteNote/addAwardEmoji mappings do '
+      'not admit these production operation IDs.',
+  'B2-O3':
+      'Observe zero-dispatch WorkItem no-ops through a sealed parent-state '
+      'witness bound to the prepared production target and exact arguments '
+      'before reporting PASS. The runner currently returns PASS from core '
+      'noChange before constructing any observer; Mr7ParentStateObservation '
+      'supports only star, REST subscription and auto-merge. Applies to '
+      'state/status/dates/milestone/content/labels/note-edit/reaction/'
+      'notifications/incident no-ops; paid weight remains unsupported.',
 };
 
 const _workItemSeams =
-    'NOT_RUN/closed: B2-S1, B2-S2, B2-S3; no positive '
-    'GraphQL chain has independent readback on the 7B0 transport.';
+    'NOT_RUN/closed: B2-O1/O2/O3; the installed sealed observers '
+    'do not support these production WorkItem operation IDs or their no-ops.';
 const _todoClosed =
-    'NOT_RUN/closed: 7-D4/7-D5/7-D7; accountTodo is shared '
-    'with group/account-global targets, the harness excludes both operations, '
-    'and acknowledgement alone is not independent result/scope evidence.';
+    'NOT_RUN/closed: 7-D4/7-D5/7-D7; the project-only todo seam '
+    'does not prove shared group/account-global scopes, and acknowledgement '
+    'alone is not independent result/scope evidence.';
 
 final class Mr7GraphqlVariant {
   const Mr7GraphqlVariant(
@@ -113,6 +127,55 @@ final class Mr7GraphqlOperation {
   String scenarioId(Mr7GraphqlVariant variant) =>
       'b2-$operation-${variant.name}';
 
+  Mr7ClosedRefusal refusal(Mr7GraphqlVariant variant) {
+    if (operation.endsWith('Todo')) {
+      return const Mr7ClosedRefusal(
+        Mr7ClosureCause.scopeExcluded,
+        'sharedTodoScopesUnproven',
+      );
+    }
+    if (operation == 'updateWorkItemAssignees' && variant.name == 'multiple') {
+      return const Mr7ClosedRefusal(
+        Mr7ClosureCause.scopeExcluded,
+        'otherMembersExcluded',
+      );
+    }
+    if (operation == 'updateWorkItemHealthStatus' ||
+        operation == 'updateWorkItemWeight') {
+      return Mr7ClosedRefusal(
+        Mr7ClosureCause.unsupportedServer,
+        operation == 'updateWorkItemHealthStatus'
+            ? 'healthWidgetNotModeled'
+            : 'weightWidgetNotModeled',
+      );
+    }
+    if (variant.noChange) {
+      return const Mr7ClosedRefusal(
+        Mr7ClosureCause.observerUnavailable,
+        'workItemNoOpObserverUnavailable',
+      );
+    }
+    return Mr7ClosedRefusal(
+      Mr7ClosureCause.observerUnavailable,
+      operation.contains('Activity')
+          ? 'workItemActivityObserverUnavailable'
+          : 'workItemParentObserverUnavailable',
+    );
+  }
+
+  String closureDetail(Mr7GraphqlVariant variant) => switch (refusal(
+    variant,
+  ).code) {
+    'sharedTodoScopesUnproven' => _todoClosed,
+    'otherMembersExcluded' => variant.closedReason!,
+    'healthWidgetNotModeled' || 'weightWidgetNotModeled' =>
+      'NOT_RUN/closed: this synthetic server does not honestly model the '
+          'paid/tier widget and its own-versus-rolled-up result.',
+    'workItemNoOpObserverUnavailable' => mr7GraphqlSeamRequests['B2-O3']!,
+    'workItemActivityObserverUnavailable' => mr7GraphqlSeamRequests['B2-O2']!,
+    _ => mr7GraphqlSeamRequests['B2-O1']!,
+  };
+
   Mr7Scenario scenario(Mr7GraphqlVariant variant) {
     // The coordinator reads freshness before creating its port/registry.
     // Retain that exact run identity and boundary, never an account constant.
@@ -123,6 +186,7 @@ final class Mr7GraphqlOperation {
       operation: operation,
       variant: variant.name,
       tier: tier,
+      closed: refusal(variant),
       targetKind: operation.endsWith('Todo')
           ? AiTargetKind.todo
           : AiTargetKind.issue,
@@ -148,8 +212,8 @@ final class Mr7GraphqlOperation {
       ),
       resource: (_) => const AiResourceRef(kind: AiResourceKind.issue, id: 3),
       paths: (_) => const {'POST graphql'},
-      // Empty seals are intentional. No substitute mutation or general executor
-      // may turn the unavailable positive chain into a synthetic success.
+      // Closed definitions never enter fixture/provider execution. Install exact
+      // production seals only when the complete operation-bound observer exists.
       freshness: (session, _) async {
         final p = session.identity!;
         final fixture = await session.read('projects/${p.projectId}/issues/3');
@@ -195,14 +259,13 @@ final class Mr7GraphqlOperation {
   }
 }
 
-// The current contract cannot prove these observations. Never return true
-// from identity-only, mutation-response, event-only, or ack-only evidence.
+// Defense in depth if a caller drops the typed closure. Never return true from
+// identity-only, mutation-response, preservation-only, event-only or ack evidence.
 Future<bool> _observeUnavailable(Mr7Readback observer, Mr7Identity p) async {
   throw const Mr7Refused('graphqlIndependentReadbackUnavailable');
 }
 
-/// Only synthetic prerequisite REST reads are installed. There is deliberately
-/// no catch-all GraphQL response or permissive mutation route.
+/// Synthetic prerequisite for the delivered WorkItem-binding seam regressions.
 void configureMr7GraphqlFixtures(Mr7SyntheticGitLab server) {
   server.routes['GET projects/${server.projectId}/issues/3'] = (_) => mr7Json({
     'id': 31,
@@ -214,9 +277,29 @@ void configureMr7GraphqlFixtures(Mr7SyntheticGitLab server) {
   });
 }
 
+/// Definitions for inventory and refusal probes. All are currently closed;
+/// compose receipts with mr7GraphqlClosedVariants(), not this scenarios list.
 List<Mr7Scenario> mr7GraphqlScenarios() => [
   for (final operation in mr7GraphqlOperations)
     for (final variant in operation.variants) operation.scenario(variant),
+];
+
+/// Feed these to the runner's existing closedVariants parameter. Unlike its
+/// executable-definition rows, these do not hardcode a project scope for the
+/// excluded group/account-global targets. No provider or call is executed.
+List<Mr7ClosedVariant> mr7GraphqlClosedVariants() => [
+  for (final scenario in [
+    ...mr7GraphqlScenarios(),
+    ...mr7GraphqlGroupRefusals(),
+  ])
+    Mr7ClosedVariant(
+      id: scenario.id,
+      suite: scenario.suite,
+      operation: scenario.operation,
+      variant: scenario.variant,
+      tier: scenario.tier,
+      refusal: scenario.closed!,
+    ),
 ];
 
 /// Dispositions accompany, rather than rewrite, the runner's raw receipt.
@@ -232,7 +315,9 @@ List<Map<String, Object?>> mr7GraphqlCoverage() => [
         'scope': row.operation.endsWith('Todo') ? variant.name : 'project',
         'status': 'NOT_RUN',
         'capability': 'closed',
-        'reason': variant.closedReason ?? row.closedReason,
+        'closureCause': row.refusal(variant).cause.name,
+        'reason': row.refusal(variant).code,
+        'closureDetail': row.closureDetail(variant),
         'preconditions': [
           row.preconditions,
           if (variant.precondition.isNotEmpty) variant.precondition,
@@ -738,7 +823,8 @@ const mr7GraphqlOperations = <Mr7GraphqlOperation>[
   ),
 ];
 
-/// Group aliases are refusal-only. No group is created, resolved or written.
+/// Group aliases are refusal-only definitions; use mr7GraphqlClosedVariants()
+/// for receipts. No group is created, resolved or written.
 List<Mr7Scenario> mr7GraphqlGroupRefusals() => [
   for (final operation in mr7GraphqlOperations.where(
     (row) =>
@@ -751,6 +837,10 @@ List<Mr7Scenario> mr7GraphqlGroupRefusals() => [
         operation: _groupAlias(operation.operation),
         variant: variant,
         tier: operation.tier,
+        closed: const Mr7ClosedRefusal(
+          Mr7ClosureCause.scopeExcluded,
+          'groupAliasesExcluded',
+        ),
         targetKind: AiTargetKind.groupWorkItem,
         expectedMutations: 0,
         call: (_) => AiToolCall(

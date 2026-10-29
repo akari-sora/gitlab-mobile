@@ -25,10 +25,12 @@ import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
+import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 import 'package:gitlab_mobile/core/ai/write_text.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/features/ai/ai_journal_key_store.dart';
+import 'package:gitlab_mobile/features/ai/ai_attachment_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import 'mr7/sandbox_contract.dart';
@@ -40,16 +42,80 @@ final class Mr7HostProposal {
     required this.tier,
     required this.payloadDigest,
     this.requiredTypedName,
+    this.editableField,
+    this.previewText,
   });
   final String operation;
   final int projectId;
   final String tier;
   final String payloadDigest;
   final String? requiredTypedName;
+  final String? editableField;
+  final String? previewText;
 }
 
 typedef Mr7Confirm = Future<bool> Function(Mr7HostProposal proposal);
 typedef Mr7TypedConfirm = Future<String?> Function(Mr7HostProposal proposal);
+typedef Mr7Edit = Future<String?> Function(Mr7HostProposal proposal);
+
+enum Mr7ClosureCause {
+  releasePolicy,
+  fixtureUnavailable,
+  unsupportedServer,
+  ownershipUnproven,
+  observerUnavailable,
+  scopeExcluded,
+}
+
+final class Mr7ClosedRefusal {
+  const Mr7ClosedRefusal(this.cause, this.code);
+  final Mr7ClosureCause cause;
+  final String code;
+  Map<String, Object?> get metadata {
+    if (!RegExp(r'^[A-Za-z][A-Za-z0-9]{0,63}$').hasMatch(code)) {
+      throw const Mr7Refused('closureCode');
+    }
+    return {'type': 'closedVariant', 'cause': cause.name, 'code': code};
+  }
+}
+
+/// A disposition has no executable call or provider. Missing fixtures stay
+/// explicit in candidate receipts instead of disappearing from the inventory.
+final class Mr7ClosedVariant {
+  const Mr7ClosedVariant({
+    required this.id,
+    required this.suite,
+    required this.operation,
+    required this.variant,
+    required this.tier,
+    required this.refusal,
+  });
+  final String id;
+  final String suite;
+  final String operation;
+  final String variant;
+  final String tier;
+  final Mr7ClosedRefusal refusal;
+}
+
+/// Returned only after the new sandbox has been initialized. Documents and
+/// variable digests may therefore bind its fresh project ID and path.
+final class Mr7ScenarioFixtures {
+  const Mr7ScenarioFixtures({
+    this.graphReadDocuments = const {},
+    this.graphDocuments = const {},
+    this.graphVariablesDigests = const {},
+    this.attachments,
+    this.providerScript,
+    this.onProviderRequest,
+  });
+  final Map<String, Set<String>> graphReadDocuments;
+  final Set<String> graphDocuments;
+  final Set<String> graphVariablesDigests;
+  final AiAttachmentSession? attachments;
+  final List<List<AiToolCall>>? providerScript;
+  final void Function(Map<String, Object?> request)? onProviderRequest;
+}
 
 /// 7B1–7B3 export lists of these definitions and pass them to runMr7Sandbox;
 /// they do not implement another runner or alter its safety checks.
@@ -64,6 +130,11 @@ final class Mr7Scenario {
     required this.paths,
     required this.observe,
     this.targetKind = AiTargetKind.project,
+    this.targetKinds,
+    this.fixture,
+    this.preRead,
+    this.closed,
+    this.projectTodo = false,
     this.maxMutations = 1,
     this.expectedMutations = 1,
     this.utterance,
@@ -89,6 +160,17 @@ final class Mr7Scenario {
   final Future<bool> Function(Mr7Readback observer, Mr7Identity identity)
   observe;
   final AiTargetKind targetKind;
+  final Set<AiTargetKind>? targetKinds;
+  Set<AiTargetKind> get allowedTargetKinds =>
+      Set.unmodifiable(targetKinds ?? {targetKind});
+  final Future<Mr7ScenarioFixtures> Function(
+    Mr7SandboxSession session,
+    Mr7Identity identity,
+  )?
+  fixture;
+  final List<Mr7SnapshotSpec> Function(Mr7Identity identity)? preRead;
+  final Mr7ClosedRefusal? closed;
+  final bool projectTodo;
   final int maxMutations;
   final int expectedMutations;
   final String Function(Mr7Identity identity)? utterance;
@@ -151,10 +233,234 @@ final class _Secrets implements KnownSecretsSource {
 
 /// Scripted wire transport, not a mocked coordinator or write port.
 final class Mr7SyntheticProvider implements HttpClientAdapter {
-  Mr7SyntheticProvider(this.call);
+  Mr7SyntheticProvider(
+    this.call, {
+    List<List<AiToolCall>>? script,
+    this.onRequest,
+    this.allowedMetadata,
+    this.allowedUserText,
+    Iterable<String> hostText = const [],
+    Iterable<AiStoredAttachment> attachments = const [],
+  }) : script = List.unmodifiable([
+         for (final batch
+             in script ??
+                 [
+                   [call],
+                 ])
+           List<AiToolCall>.unmodifiable(batch),
+       ]),
+       attachments = List.unmodifiable(attachments) {
+    final calls = this.script.expand((batch) => batch).toList();
+    if (this.script.length > 12 ||
+        this.script.any((batch) => batch.isEmpty || batch.length > 4) ||
+        calls.length > 12 ||
+        calls.map((c) => c.id).toSet().length != calls.length) {
+      throw const Mr7Refused('providerScriptBound');
+    }
+    trustHostText(hostText);
+    for (final next in calls) {
+      final payloads = _freeText(next.arguments, 'payload').toList();
+      // The host-selected write is an independent source, like its utterance.
+      // Fixture scripts may add reads, but their arbitrary text is unproven.
+      if (mr7Digest(next.arguments) == mr7Digest(call.arguments) ||
+          !payloads.any((value) => value is String)) {
+        trustHostText([jsonEncode(next.arguments)]);
+        _hostPayloads.addAll(payloads.map(jsonEncode));
+      }
+      final args = next.arguments;
+      if (next.id == call.id &&
+          next.name == call.name &&
+          mr7Digest(next.arguments) == mr7Digest(call.arguments) &&
+          next.name == 'upload_attachment' &&
+          args is Map &&
+          args['projectId'] is int) {
+        for (final attachment in this.attachments.where(
+          (a) => a.id == args['attachmentId'],
+        )) {
+          // Independently reconstruct this closed result from metadata and
+          // fixed outcome enums. Never trust arbitrary delivered result text.
+          for (final referable in [false, true]) {
+            trustHostText([
+              AiWriteOutcome(
+                state: AiJournalState.succeeded,
+                reasonCode: 'succeeded',
+                operationId: next.name,
+                target:
+                    'project:${args['projectId']}/upload/${attachment.sha256} (${attachment.filename})',
+                resultSummary:
+                    'attachment=${attachment.id}, referable=$referable',
+              ).summary,
+            ]);
+          }
+        }
+      }
+    }
+  }
   final AiToolCall call;
+  final List<List<AiToolCall>> script;
+  final List<AiStoredAttachment> attachments;
+  final void Function(Map<String, Object?> request)? onRequest;
+  final String? allowedMetadata;
+  final String? allowedUserText;
+  final Set<String> _hostPayloads = {};
+
+  // Register source projections before wire encoding, never from the decoded
+  // provider request. Short payloads outside this closed set fail closed.
+  void trustHostText(Iterable<String> text) {
+    _hostPayloads.addAll(text.map(jsonEncode));
+  }
+
+  void trustHostTools(Iterable<AiToolSpec> tools) {
+    _hostPayloads.addAll(
+      _freeText({
+        'tools': [
+          for (final tool in tools)
+            {
+              'name': tool.name,
+              'description': tool.description,
+              'parameters': tool.parameters,
+            },
+        ],
+      }).map(jsonEncode),
+    );
+  }
+
   int requests = 0;
   bool leakDetected = false;
+  bool attachmentLeakDetected = false;
+
+  // Shapes follow lib/core/ai/wire/{responses,chat_completions,
+  // anthropic_messages}.dart. Exemptions apply only at those wire positions;
+  // unrecognised fields and function-argument objects are all payload.
+  static Iterable<Object?> _freeText(
+    Object? value, [
+    String shape = 'request',
+  ]) sync* {
+    if (value is String) {
+      yield value;
+    } else if (value is List) {
+      if (value.isNotEmpty && value.every((item) => item is num)) {
+        yield value;
+      } else {
+        for (final item in value) {
+          yield* _freeText(item, shape);
+        }
+      }
+    } else if (value is Map) {
+      final protocol = switch (shape) {
+        'request' => const {
+          'model',
+          'stream',
+          'store',
+          'max_tokens',
+          'max_completion_tokens',
+          'max_output_tokens',
+          'include',
+        },
+        'message' => const {
+          'role',
+          'type',
+          'id',
+          'call_id',
+          'tool_call_id',
+          'status',
+        },
+        'part' => const {'type', 'id', 'tool_use_id', 'status'},
+        'tool' || 'function' => const {'name', 'type'},
+        'toolCall' => const {'id', 'type', 'index'},
+        'choice' => const {'type', 'name'},
+        'cache' => const {'type'},
+        'schema' => const {
+          'type',
+          'enum',
+          'const',
+          'required',
+          r'$schema',
+          r'$ref',
+          'format',
+          'nullable',
+        },
+        _ => const <String>{},
+      };
+      for (final entry in value.entries) {
+        if (protocol.contains(entry.key) ||
+            (entry.key == 'name' &&
+                ((shape == 'message' && value['type'] == 'function_call') ||
+                    (shape == 'part' &&
+                        const {
+                          'tool_use',
+                          'server_tool_use',
+                        }.contains(value['type']))))) {
+          continue;
+        }
+        final child = switch ((shape, entry.key)) {
+          ('request', 'input' || 'messages') => 'message',
+          ('request', 'tools') => 'tool',
+          ('request', 'tool_choice') => 'choice',
+          ('message', 'content' || 'summary') =>
+            value['role'] != 'tool' && entry.value is List ? 'part' : 'payload',
+          ('message', 'tool_calls') => 'toolCall',
+          ('message', 'function_call') ||
+          ('toolCall' || 'tool', 'function') => 'function',
+          ('tool' || 'function', 'parameters' || 'input_schema') => 'schema',
+          ('part', 'cache_control') => 'cache',
+          (
+            'schema',
+            'properties' || r'$defs' || 'definitions' || 'patternProperties',
+          ) =>
+            'properties',
+          (
+            'schema',
+            'items' ||
+                'anyOf' ||
+                'allOf' ||
+                'oneOf' ||
+                'not' ||
+                'additionalProperties',
+          ) ||
+          ('properties', _) => 'schema',
+          _ => 'payload',
+        };
+        // A string tool choice is itself an enum; unknown object members scan.
+        if (child == 'choice' && entry.value is String) continue;
+        yield* _freeText(entry.value, child);
+      }
+    }
+  }
+
+  static ({Map<String, Object?> owner, String key})? _userText(
+    Map<String, Object?> body,
+  ) {
+    final messages = body['input'] ?? body['messages'];
+    if (messages is! List) return null;
+    // Responses and Anthropic start with the host user entry. Chat prepends
+    // exactly one system message. Never grant an exemption to a later user.
+    final index =
+        body.containsKey('messages') &&
+            messages.isNotEmpty &&
+            messages.first is Map &&
+            (messages.first as Map)['role'] == 'system'
+        ? 1
+        : 0;
+    if (messages.length > index) {
+      final message = messages[index];
+      if (message is! Map<String, Object?> || message['role'] != 'user') {
+        return null;
+      }
+      final content = message['content'];
+      if (content is String) return (owner: message, key: 'content');
+      if (content is List && content.length == 1) {
+        final part = content.single;
+        if (part is Map<String, Object?> &&
+            const {'input_text', 'text'}.contains(part['type']) &&
+            part['text'] is String) {
+          return (owner: part, key: 'text');
+        }
+      }
+    }
+    return null;
+  }
+
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -167,19 +473,102 @@ final class Mr7SyntheticProvider implements HttpClientAdapter {
     final body = options.data is String
         ? options.data! as String
         : jsonEncode(options.data);
+    if (body.length > 128000 || requests > 12) {
+      throw const Mr7Refused('providerRequestBound');
+    }
     if (body.contains('synthetic-gitlab-pat')) {
       leakDetected = true;
       throw const Mr7Refused('providerSecretLeak');
     }
-    final output = requests++ == 0
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, Object?>) {
+      throw const Mr7Refused('providerRequest');
+    }
+    final scanBody = jsonDecode(body) as Map<String, Object?>;
+    final user = _userText(scanBody);
+    final userText = user == null ? null : user.owner[user.key] as String;
+    for (final attachment in attachments) {
+      final bytes = attachment.bytes;
+      if (bytes.isEmpty) continue;
+      // Below 16 bytes, common words/identifiers are not distinctive. Bind the
+      // entire user text to the host projection instead of substring-scanning it.
+      final short = bytes.length < 16;
+      if (short && (allowedUserText == null || userText != allowedUserText)) {
+        attachmentLeakDetected = true;
+        throw const Mr7Refused('providerAttachmentBytes');
+      }
+      if (user != null) {
+        final suffix = '\n\n$allowedMetadata';
+        user.owner[user.key] = short
+            ? null
+            : allowedMetadata != null && userText!.endsWith(suffix)
+            ? userText.substring(0, userText.length - suffix.length)
+            : userText;
+      }
+      final encoded = base64Encode(bytes);
+      final array = jsonEncode(bytes);
+      String? plain;
+      try {
+        plain = utf8.decode(bytes);
+      } on FormatException {
+        /* Binary bytes have no text projection. */
+      }
+      bool leaks(Object? value) {
+        if (value is String) {
+          final text = value;
+          bool matches(String needle) =>
+              short ? text == needle : text.contains(needle);
+          if (matches(encoded) ||
+              matches(array) ||
+              (plain != null && matches(plain))) {
+            return true;
+          }
+          // Argument strings and tool results can contain encoded JSON values,
+          // including spaced byte arrays and keys that resemble protocol fields.
+          try {
+            final nested = jsonDecode(text);
+            if (nested is List || nested is Map) return leaks(nested);
+          } on FormatException {
+            /* Ordinary free text is not JSON. */
+          }
+          return false;
+        }
+        if (value is List) {
+          if (value.length == bytes.length &&
+              Iterable<int>.generate(
+                bytes.length,
+              ).every((i) => value[i] == bytes[i])) {
+            return true;
+          }
+          return value.any(leaks);
+        }
+        if (value is Map) return value.values.any(leaks);
+        return false;
+      }
+
+      final leaked = _freeText(scanBody).any(
+        (value) =>
+            leaks(value) ||
+            (short && !_hostPayloads.contains(jsonEncode(value))),
+      );
+      if (user != null) user.owner[user.key] = userText;
+      if (leaked) {
+        attachmentLeakDetected = true;
+        throw const Mr7Refused('providerAttachmentBytes');
+      }
+    }
+    onRequest?.call(Map.unmodifiable(decoded));
+    final index = requests++;
+    final output = index < script.length
         ? [
-            {
-              'type': 'function_call',
-              'call_id': call.id,
-              'name': call.name,
-              'arguments': jsonEncode(call.arguments),
-              'status': 'completed',
-            },
+            for (final next in script[index])
+              {
+                'type': 'function_call',
+                'call_id': next.id,
+                'name': next.name,
+                'arguments': jsonEncode(next.arguments),
+                'status': 'completed',
+              },
           ]
         : [
             {
@@ -229,7 +618,9 @@ Future<Map<String, Object?>> runMr7Sandbox({
   required String releaseSha,
   required Mr7Confirm confirm,
   Mr7TypedConfirm? typedConfirm,
+  Mr7Edit? editConfirm,
   List<Mr7Scenario>? scenarios,
+  List<Mr7ClosedVariant> closedVariants = const [],
   Mr7SandboxSession? session,
   Mr7SyntheticGitLab? server,
   String suite = 'all',
@@ -237,6 +628,10 @@ Future<Map<String, Object?>> runMr7Sandbox({
   String namespace = 'synthetic-owner',
   AiAutonomyLevel level = AiAutonomyLevel.confirmEach,
   bool Function()? boundaryValid,
+  AiToolBudget? sharedBudget,
+  AiWriteJournal? journal,
+  String? conversationId,
+  DateTime Function()? now,
 }) async {
   if (!RegExp(r'^[0-9a-f]{40}$').hasMatch(releaseSha) ||
       !const {'all', 'rest', 'graphql', 'advanced'}.contains(suite)) {
@@ -245,8 +640,40 @@ Future<Map<String, Object?>> runMr7Sandbox({
   final cases = (scenarios ?? mr7ContractScenarios())
       .where((s) => suite == 'all' || suite == s.suite)
       .toList();
-  if (cases.map((s) => s.id).toSet().length != cases.length) {
+  final closed = closedVariants
+      .where((v) => suite == 'all' || suite == v.suite)
+      .toList();
+  final ids = [...cases.map((s) => s.id), ...closed.map((v) => v.id)];
+  if (ids.toSet().length != ids.length) {
     throw const Mr7Refused('duplicateScenario');
+  }
+  final productBudget = AiToolBudget();
+  if (cases.any(
+        (s) =>
+            !s.allowedTargetKinds.contains(s.targetKind) ||
+            s.maxMutations < 1 ||
+            s.maxMutations > 8 ||
+            s.expectedMutations < 0 ||
+            s.expectedMutations > s.maxMutations,
+      ) ||
+      (conversationId != null &&
+          !RegExp(r'^[A-Za-z0-9_.-]{1,128}$').hasMatch(conversationId)) ||
+      (sharedBudget != null &&
+          (sharedBudget.maxGitLabRequests < 1 ||
+              sharedBudget.maxGitLabRequests >
+                  productBudget.maxGitLabRequests ||
+              sharedBudget.maxCallsPerRun < 1 ||
+              sharedBudget.maxCallsPerRun > productBudget.maxCallsPerRun ||
+              sharedBudget.maxCallsPerTurn < 1 ||
+              sharedBudget.maxCallsPerTurn > productBudget.maxCallsPerTurn ||
+              sharedBudget.maxSearches < 0 ||
+              sharedBudget.maxSearches > productBudget.maxSearches ||
+              sharedBudget.maxOutputChars < 0 ||
+              sharedBudget.maxOutputChars > productBudget.maxOutputChars ||
+              sharedBudget.maxSingleOutputChars < 0 ||
+              sharedBudget.maxSingleOutputChars >
+                  productBudget.maxSingleOutputChars))) {
+    throw const Mr7Refused('scenarioBound');
   }
   final view = mr7SandboxPolicy(
     policy,
@@ -255,7 +682,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
       for (final s in cases)
         s.operation: {
           for (final other in cases.where((c) => c.operation == s.operation))
-            other.targetKind,
+            ...other.allowedTargetKinds,
         },
     },
   );
@@ -273,21 +700,60 @@ Future<Map<String, Object?>> runMr7Sandbox({
           (_) => Random.secure().nextInt(16).toRadixString(16),
         ).join(),
       );
-  final rows = <Map<String, Object?>>[];
-  final root = await Directory.systemTemp.createTemp('mr7-journal-');
+  final rows = <Map<String, Object?>>[
+    for (final v in closed)
+      {
+        'id': v.id,
+        'suite': v.suite,
+        'operation': v.operation,
+        'variant': v.variant,
+        'tier': v.tier,
+        'status': 'NOT_RUN',
+        'classification': 'closedVariant',
+        'refusal': v.refusal.metadata,
+        'reason': v.refusal.code,
+        'mutationCount': 0,
+        'readback': 'NOT_RUN',
+        'providerCalls': 0,
+        'live': 'NOT_RUN',
+        'releaseSha': releaseSha,
+      },
+  ];
+  final root = journal == null
+      ? await Directory.systemTemp.createTemp('mr7-journal-')
+      : null;
   PolicyAiWriteCoordinator? activeCoordinator;
   AiRunner? activeRunner;
   final account = '${s.instance}#${s.expectedUserId}';
-  final journal = AiWriteJournal(
-    keys: MemoryAiJournalKeyStore(),
-    applicationSupport: root,
-    processId: 'mr7-synthetic-host',
-  );
+  final journalStore =
+      journal ??
+      AiWriteJournal(
+        keys: MemoryAiJournalKeyStore(),
+        applicationSupport: root!,
+        processId: 'mr7-synthetic-host',
+      );
+  if (now != null) journalStore.now = now;
+  final attachmentSessions = <AiAttachmentSession>{};
+  final placeholderTables = <String, UploadPlaceholderTable>{};
   try {
     await s.initialize();
-    await journal.recoverAfterAccountsLoaded([account]);
-    await journal.ensureInitialized(account);
+    if (journal == null) {
+      await journalStore.recoverAfterAccountsLoaded([account]);
+    } else if (!journalStore.recovered(account)) {
+      throw const Mr7Refused('journalRecoveryRequired');
+    }
+    final keyStatus = await journalStore.keyStatus(account);
+    if (keyStatus == AiJournalKeyStatus.uninitialized) {
+      await journalStore.ensureInitialized(account);
+    } else if (keyStatus != AiJournalKeyStatus.found) {
+      throw const Mr7Refused('journalUnavailable');
+    }
     for (final scenario in cases) {
+      final scenarioView = mr7SandboxPolicy(
+        policy,
+        reads: Set.unmodifiable(scenario.readNames),
+        writes: {scenario.operation: scenario.allowedTargetKinds},
+      );
       final row = <String, Object?>{
         'id': scenario.id,
         'suite': scenario.suite,
@@ -300,36 +766,136 @@ Future<Map<String, Object?>> runMr7Sandbox({
         'readback': 'NOT_RUN',
         'live': 'NOT_RUN',
         'releaseSha': releaseSha,
+        'targetKinds': scenario.allowedTargetKinds.map((k) => k.name).toList()
+          ..sort(),
       };
       rows.add(row);
+      if (scenario.closed case final refusal?) {
+        row.addAll({
+          'classification': 'closedVariant',
+          'refusal': refusal.metadata,
+          'reason': refusal.code,
+          'providerCalls': 0,
+        });
+        continue;
+      }
       if (s.quarantined) {
         row['reason'] = 'sessionStopped';
         continue;
       }
-      if (mr7ExcludedOperations.contains(scenario.operation) ||
+      final projectTodo =
+          scenario.projectTodo &&
+          const {'snoozeTodo', 'unsnoozeTodo'}.contains(scenario.operation);
+      if ((mr7ExcludedOperations.contains(scenario.operation) &&
+              !projectTodo) ||
           scenario.operation.toLowerCase().contains('group') ||
-          !view.allowsWrite(scenario.operation, scenario.targetKind)) {
-        row['reason'] = 'releaseClosed';
+          !scenarioView.allowsWrite(scenario.operation, scenario.targetKind)) {
+        row.addAll({
+          'reason': 'releaseClosed',
+          'classification': 'closedVariant',
+          'providerCalls': 0,
+          'refusal': const Mr7ClosedRefusal(
+            Mr7ClosureCause.releasePolicy,
+            'releaseClosed',
+          ).metadata,
+        });
         continue;
       }
       final target = s.identity!;
+      final scenarioConversationId = conversationId ?? scenario.id;
+      final placeholders = placeholderTables.putIfAbsent(
+        scenarioConversationId,
+        () => UploadPlaceholderTable(
+          instance: GitLabInstance.parse(s.instance.toString()),
+          accountKey: account,
+          conversationId: scenarioConversationId,
+        ),
+      );
+      final fixtures =
+          await scenario.fixture?.call(s, target) ??
+          const Mr7ScenarioFixtures();
+      if (projectTodo && !s.allowsTodoFixture(scenario.operation)) {
+        throw const Mr7Refused('todoFixtureUnproven');
+      }
+      final attachments = fixtures.attachments;
+      if (attachments != null) {
+        attachmentSessions.add(attachments);
+        if (attachments.accountKey != account ||
+            attachments.conversationId != scenarioConversationId ||
+            attachments.fileCapBytes > GitLabApi.maxUploadBytes) {
+          throw const Mr7Refused('attachmentSessionIdentity');
+        }
+      }
+      await s.verifyIdentity();
       s.observerAdapter.graphReadDocuments = Map.unmodifiable({
-        for (final entry in scenario.graphReadDocuments.entries)
-          entry.key: Set<String>.unmodifiable(entry.value),
+        for (final key in {
+          ...scenario.graphReadDocuments.keys,
+          ...fixtures.graphReadDocuments.keys,
+        })
+          key: Set<String>.unmodifiable({
+            ...?scenario.graphReadDocuments[key],
+            ...?fixtures.graphReadDocuments[key],
+          }),
       });
       final call = scenario.call(target);
       row['fixtureDigest'] = mr7Digest(call.arguments);
       if (call.name != scenario.operation) {
         throw const Mr7Refused('scenarioOperation');
       }
-      final budget = AiToolBudget();
+      final snapshotSpecs =
+          scenario.preRead?.call(target) ?? const <Mr7SnapshotSpec>[];
+      final snapshot = snapshotSpecs.isEmpty
+          ? null
+          : await s.captureSnapshot(snapshotSpecs);
+      if (snapshot != null) row['preread'] = snapshot.metadata;
+      final budget = sharedBudget ?? AiToolBudget();
       final api = GitLabApi(
         instance: GitLabInstance.parse(s.instance.toString()),
         token: 'synthetic-gitlab-pat',
         dio: s.writer,
         cdnAdapter: s.writerAdapter,
       );
-      final provider = Mr7SyntheticProvider(call);
+      final script = fixtures.providerScript;
+      if (script != null &&
+          (script
+                      .expand((batch) => batch)
+                      .where((c) => c.name == scenario.operation)
+                      .length !=
+                  1 ||
+              script
+                      .expand((batch) => batch)
+                      .where(
+                        (c) =>
+                            c.id == call.id &&
+                            c.name == call.name &&
+                            mr7Digest(c.arguments) == mr7Digest(call.arguments),
+                      )
+                      .length !=
+                  1 ||
+              script
+                  .expand((batch) => batch)
+                  .any(
+                    (c) =>
+                        c.name != scenario.operation &&
+                        !scenario.readNames.contains(c.name),
+                  ))) {
+        throw const Mr7Refused('providerScriptOperation');
+      }
+      final metadata = attachments?.metadataForModel()['block'];
+      final utterance =
+          scenario.utterance?.call(target) ??
+          'Perform ${scenario.operation} on the synthetic project ${target.path}.';
+      final userText = metadata is String
+          ? '$utterance\n\n$metadata'
+          : utterance;
+      final provider = Mr7SyntheticProvider(
+        call,
+        script: script,
+        onRequest: fixtures.onProviderRequest,
+        attachments: attachments?.items ?? const [],
+        allowedMetadata: metadata is String ? metadata : null,
+        allowedUserText: userText,
+      );
       final transport = AiTransport(
         endpoint: AiEndpoint.parse(_provider.baseUrl, allowLanCleartext: false),
         apiKey: 'synthetic-provider-key',
@@ -354,12 +920,12 @@ Future<Map<String, Object?>> runMr7Sandbox({
         ],
       );
       final coordinator = PolicyAiWriteCoordinator(
-        releasePolicy: view,
+        releasePolicy: scenarioView,
         snapshot: () => AiWritePolicySnapshot(
           scope: writeScope,
           level: level,
           ceiling: AiAutonomyLevel.bypass,
-          consentHash: mr7Digest(view.canonicalIdentity),
+          consentHash: mr7Digest(scenarioView.canonicalIdentity),
           writePolicyRevision: 1,
           scopeRevision: 1,
           sessionGeneration: 1,
@@ -373,8 +939,8 @@ Future<Map<String, Object?>> runMr7Sandbox({
           sessionGeneration: 1,
           isCurrent: () => !s.quarantined && s.boundaryValid(),
         ),
-        journal: journal,
-        conversationId: scenario.id,
+        journal: journalStore,
+        conversationId: scenarioConversationId,
         budget: () => budget,
         readFreshness: (request) async {
           await s.verifyIdentity();
@@ -382,17 +948,21 @@ Future<Map<String, Object?>> runMr7Sandbox({
             return scenario.freshness!(s, request);
           }
           final value = await s.read('projects/${target.projectId}');
-          row['preread'] = {
-            'projectId': value['id'],
-            'versionDigest': mr7Digest(value),
-          };
+          row.putIfAbsent(
+            'preread',
+            () => {'projectId': value['id'], 'versionDigest': mr7Digest(value)},
+          );
           return const AiWriteFreshness(
             visibilityUnreadable: false,
             sourceVisibilityUnreadable: false,
             targetVisibility: 'private',
           );
         },
-        placeholders: UploadPlaceholderTable(instance: api.instance),
+        placeholders: placeholders,
+        attachments: attachments,
+        attachmentSubstitution: (project) =>
+            attachments?.substitutionFor(project),
+        now: now,
         knownSecrets: () => _Secrets().current.toSet(),
         safeDisplay: (value) => value,
       );
@@ -409,17 +979,25 @@ Future<Map<String, Object?>> runMr7Sandbox({
               const AiResourceRef(kind: AiResourceKind.file, id: 1),
         ),
         redactor: Redactor(secrets: _Secrets()),
-        releasePolicy: view,
+        releasePolicy: scenarioView,
+        placeholders: placeholders,
       );
       final permit = Mr7MutationPermit(
         operation: scenario.operation,
         paths: scenario.paths(target),
         resourceProjectId: target.projectId,
         maxMutations: scenario.maxMutations,
-        graphDocuments: scenario.graphDocuments,
-        graphVariablesDigests: scenario.graphVariablesDigests,
+        graphDocuments: Set.unmodifiable({
+          ...scenario.graphDocuments,
+          ...fixtures.graphDocuments,
+        }),
+        graphVariablesDigests: Set.unmodifiable({
+          ...scenario.graphVariablesDigests,
+          ...fixtures.graphVariablesDigests,
+        }),
         resultPath: scenario.resultPath,
       );
+      permit.snapshot = snapshot;
       s.permit = permit;
       Future<void>? approving;
       Mr7HostProposal hostProposal({AiWriteProposal? product}) =>
@@ -429,12 +1007,21 @@ Future<Map<String, Object?>> runMr7Sandbox({
             tier: scenario.tier,
             payloadDigest: product?.payloadDigest ?? mr7Digest(call.arguments),
             requiredTypedName: product?.tier.typedName,
+            editableField: product?.editableField,
+            previewText: product?.previewText,
           );
       Future<bool> confirmHost({AiWriteProposal? product}) async {
         row['proposalAt'] = DateTime.now().toUtc().toIso8601String();
         final host = hostProposal(product: product);
         row['payloadDigest'] = host.payloadDigest;
+        final confirmations =
+            row.putIfAbsent('confirmations', () => <Map<String, Object?>>[])!
+                as List<Map<String, Object?>>;
         final accepted = await confirm(host);
+        confirmations.add({
+          'payloadDigest': host.payloadDigest,
+          'accepted': accepted,
+        });
         row['confirmAt'] = DateTime.now().toUtc().toIso8601String();
         row['confirmation'] = accepted
             ? 'explicitSyntheticTestHook'
@@ -443,6 +1030,10 @@ Future<Map<String, Object?>> runMr7Sandbox({
       }
 
       permit.confirmBeforeSend = () => confirmHost();
+      const system = 'Use only the requested synthetic sandbox fixture.';
+      final tools = [...catalogue.specs, ...coordinator.specs];
+      provider.trustHostText([system]);
+      provider.trustHostTools(tools);
       final runner = AiRunner(
         config: _provider,
         wire: const ResponsesFormat(),
@@ -457,16 +1048,49 @@ Future<Map<String, Object?>> runMr7Sandbox({
           recipientRevision: () => 1,
           consentValid: () => s.boundaryValid(),
         ),
-        tools: [...catalogue.specs, ...coordinator.specs],
+        tools: tools,
         writeCoordinator: coordinator,
         executeTool: (call) async =>
             (await catalogue.execute(call, budget: budget)).result,
+        prepareToolResults: (calls, results, beforeDelivery) =>
+            catalogue.prepareDelivery(
+              calls,
+              results,
+              budget: budget,
+              beforeDelivery: beforeDelivery,
+            ),
+        beginToolTurn: budget.beginTurn,
+        toolBudgetExhausted: () => budget.exhausted,
         onAwaitingApproval: (awaiting) {
           if (!awaiting || approving != null) return;
           approving =
               Future<void>(() async {
                 final proposal = coordinator.proposals.single;
-                final accepted = await confirmHost(product: proposal);
+                var accepted = await confirmHost(product: proposal);
+                if (accepted &&
+                    editConfirm != null &&
+                    proposal.editableField != null) {
+                  final editedText = await editConfirm(
+                    hostProposal(product: proposal),
+                  );
+                  if (editedText != null) {
+                    final before = proposal.payloadDigest;
+                    final edited = await coordinator.approve(
+                      proposal,
+                      editedText: editedText,
+                    );
+                    row['edit'] = {
+                      'beforeDigest': before,
+                      'afterDigest': proposal.payloadDigest,
+                      'state': edited.state.name,
+                      'reason': edited.reasonCode,
+                    };
+                    accepted =
+                        edited.state == AiJournalState.notExecuted &&
+                        edited.reasonCode == 'approvalRequired' &&
+                        await confirmHost(product: proposal);
+                  }
+                }
                 if (accepted) {
                   final host = hostProposal(product: proposal);
                   final typed = host.requiredTypedName == null
@@ -492,22 +1116,26 @@ Future<Map<String, Object?>> runMr7Sandbox({
                 coordinator.stop('confirmationFailed');
               });
         },
-        system: 'Use only the requested synthetic sandbox fixture.',
+        system: system,
         close: transport.close,
         cancelActive: transport.cancelActive,
       );
       activeRunner = runner;
       try {
-        final result = await runner.run(
-          scenario.utterance?.call(target) ??
-              'Perform ${scenario.operation} on the synthetic project ${target.path}.',
-        );
+        final result = await runner.run(userText, bindingUtterance: utterance);
         if (approving != null) await approving;
         final outcome = coordinator.recordedOutcomeFor(call.id);
         row['outcome'] = outcome?.state.name ?? 'notExecuted';
         row['coreOutcome'] = outcome?.state.name ?? 'notExecuted';
         row['coreNoChange'] = outcome?.noChange ?? false;
         row['mutationCount'] = permit.sent;
+        row['budget'] = {
+          'gitLabRequests': budget.gitLabRequests,
+          'calls': budget.calls,
+          'shared': sharedBudget != null,
+          'journalInjected': journal != null,
+        };
+        if (permit.upload != null) row['upload'] = permit.upload;
         row['provider'] = {
           'protocol': 'responses',
           'model': _provider.model,
@@ -520,6 +1148,9 @@ Future<Map<String, Object?>> runMr7Sandbox({
             'maxRequestChars': _provider.caps.maxRequestChars,
           }),
           'secretLeakScan': provider.leakDetected ? 'FAIL' : 'PASS',
+          'attachmentLeakScan': provider.attachmentLeakDetected
+              ? 'FAIL'
+              : 'PASS',
         };
         if (outcome?.state == AiJournalState.writeUncertain ||
             s.stopReason == 'writeUncertain') {
@@ -584,6 +1215,10 @@ Future<Map<String, Object?>> runMr7Sandbox({
           } else {
             verified = await scenario.observe(observer, target);
           }
+          if (snapshot != null) {
+            verified = await observer.verifySnapshot() && verified;
+            row['snapshotVerified'] = verified;
+          }
           row['observerRequests'] = observer.verifiedRequests;
           row['readback'] = verified && (row['observerRequests']! as int) > 0
               ? 'PASS'
@@ -628,7 +1263,10 @@ Future<Map<String, Object?>> runMr7Sandbox({
     activeCoordinator?.stop('runFinished');
     // No reset, retry or removal of the production journal's uncertain entries.
     await s.finish();
-    if (root.existsSync()) {
+    for (final attachments in attachmentSessions) {
+      attachments.discardAll();
+    }
+    if (root != null && root.existsSync()) {
       await root.delete(recursive: true); // Synthetic scratch only.
     }
   }
@@ -656,7 +1294,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
           ? 'SYNTHETIC'
           : 'NOT_RUN',
   };
-  if (cases.isEmpty) {
+  if (cases.isEmpty && closed.isEmpty) {
     receipt['status'] = 'FAIL';
     receipt['reason'] = 'noScenarios';
   }

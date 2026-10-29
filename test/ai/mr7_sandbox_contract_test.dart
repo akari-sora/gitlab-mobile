@@ -12,6 +12,8 @@ import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 
 import '../../tool/mr7/sandbox_contract.dart';
 import '../../tool/mr7_sandbox.dart' as sandbox;
+import 'mr7_sandbox_wave2_contract_test.dart' as wave2_contract;
+import 'mr7_sandbox_wave2_runner_test.dart' as wave2_runner;
 
 const _sha = '0123456789abcdef0123456789abcdef01234567';
 
@@ -170,6 +172,8 @@ sandbox.Mr7Scenario _starNoChange({
 );
 
 void main() {
+  wave2_contract.main();
+  wave2_runner.main();
   test(
     'sealed Graph reaction removal cannot trust a returned child alone',
     () async {
@@ -851,6 +855,7 @@ void main() {
       variant: 'missing-connection',
       tier: 'T4',
       targetKind: AiTargetKind.note,
+      targetKinds: {AiTargetKind.note, AiTargetKind.issue},
       utterance: (p) => 'Delete #note_71 from issue #3 in ${p.path}.',
       resource: (_) => const AiResourceRef(kind: AiResourceKind.issue, id: 3),
       call: (p) => AiToolCall(
@@ -891,8 +896,8 @@ void main() {
       releaseSha: _sha,
       session: session,
       // The real coordinator requires both the owning issue and the prepared
-      // child note target to be released. The second scenario supplies the
-      // owner kind to the candidate view and must never execute.
+      // child note target to be released by this scenario's own declaration.
+      // The second scenario must never widen it or execute after quarantine.
       scenarios: [
         deletion,
         sandbox.Mr7Scenario(

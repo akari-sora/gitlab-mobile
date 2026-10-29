@@ -224,6 +224,86 @@ class SandboxWrapperTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(self.output.read_text())['reason'], 'invalid_or_missing_receipt')
 
+    def test_closed_variant_requires_typed_refusal_and_zero_execution(self):
+        row = {'id': 'case-1', 'classification': 'closedVariant', 'status': 'NOT_RUN',
+               'suite': 'rest', 'operation': 'upload_attachment', 'variant': 'missing',
+               'tier': 'T2', 'releaseSha': SHA, 'live': 'NOT_RUN', 'reason': 'fixtureMissing',
+               'mutationCount': 0, 'readback': 'NOT_RUN', 'providerCalls': 0,
+               'refusal': {'type': 'closedVariant', 'cause': 'fixtureUnavailable',
+                           'code': 'fixtureMissing'}}
+        for cause in runner.CLOSED_VARIANT_CAUSES:
+            with self.subTest(valid_cause=cause):
+                candidate = {**row, 'refusal': {**row['refusal'], 'cause': cause}}
+                self.assertTrue(runner.validate_receipt(receipt('candidate', scenarios=[candidate])))
+                self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[candidate]), final=True))
+        for change in (
+                {'id': ''}, {'id': ['bad']}, {'classification': 'other'},
+                {'status': 'PASS'}, {'mutationCount': 1}, {'mutationCount': False},
+                {'readback': 'PASS'}, {'providerCalls': 1}, {'providerCalls': False},
+                {'observerRequests': 1}, {'provider': {'calls': 1}},
+                {'suite': ''}, {'operation': ' '}, {'variant': None}, {'tier': []},
+                {'releaseSha': 'b' * 40}, {'live': 'PASS'}, {'reason': 'other'},
+                {'responseStatus': 201}, {'responseStatus': None},
+                {'coreOutcome': 'succeeded'},
+                {'refusal': None}, {'refusal': 'fixtureMissing'},
+                {'refusal': {'type': 'closedVariant', 'cause': 'unknown', 'code': 'fixtureMissing'}},
+                {'refusal': {'type': 'closedVariant', 'cause': ['fixtureUnavailable'], 'code': 'fixtureMissing'}},
+                {'refusal': {'type': 'closedVariant', 'cause': 'fixtureUnavailable', 'code': ''}},
+                {'refusal': {'type': 'closedVariant', 'cause': 'fixtureUnavailable', 'code': 'a' * 65}},
+                {'refusal': {'type': 'closedVariant', 'cause': 'fixtureUnavailable', 'code': 'bad-code'}},
+                {'refusal': {**row['refusal'], 'detail': 'unbounded'}},
+        ):
+            with self.subTest(change=change):
+                self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[{**row, **change}])))
+        for field in ('id', 'suite', 'operation', 'variant', 'tier', 'releaseSha', 'live',
+                      'reason', 'classification', 'status', 'mutationCount', 'readback',
+                      'providerCalls', 'refusal'):
+            with self.subTest(missing=field):
+                incomplete = {key: value for key, value in row.items() if key != field}
+                self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[incomplete])))
+
+        self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[row, row])))
+        self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[row, {'id': row['id']}])))
+        # Schema 1 predates explicit closed rows; existing legacy rows remain valid.
+        self.assertTrue(runner.validate_receipt(receipt(scenarios=[{'status': 'NOT_RUN'}])))
+
+    def test_closed_variant_outcome_aliases_must_be_not_executed(self):
+        row = {'id': 'case-1', 'classification': 'closedVariant', 'status': 'NOT_RUN',
+               'suite': 'rest', 'operation': 'upload_attachment', 'variant': 'missing',
+               'tier': 'T2', 'releaseSha': SHA, 'live': 'NOT_RUN', 'reason': 'fixtureMissing',
+               'mutationCount': 0, 'readback': 'NOT_RUN', 'providerCalls': 0,
+               'refusal': {'type': 'closedVariant', 'cause': 'fixtureUnavailable',
+                           'code': 'fixtureMissing'}}
+        for outcomes in ({}, {'outcome': 'notExecuted'}, {'coreOutcome': 'notExecuted'},
+                         {'outcome': 'notExecuted', 'coreOutcome': 'notExecuted'}):
+            with self.subTest(valid=outcomes):
+                self.assertTrue(runner.validate_receipt(receipt('candidate', scenarios=[{**row, **outcomes}])))
+        for outcomes in ({'outcome': 'succeeded'},
+                         {'outcome': 'succeeded', 'coreOutcome': 'notExecuted'},
+                         {'outcome': 'writeUncertain', 'coreOutcome': 'writeUncertain'},
+                         {'outcome': 'notExecuted', 'coreOutcome': 'writeUncertain'},
+                         {'outcome': None}, {'coreOutcome': None}, {'coreOutcome': 'succeeded'}):
+            with self.subTest(invalid=outcomes):
+                self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[{**row, **outcomes}])))
+        # Legacy, non-closed schema-1 rows retain their existing interpretation.
+        legacy = {'status': 'NOT_RUN', 'outcome': 'succeeded', 'coreOutcome': 'writeUncertain'}
+        self.assertTrue(runner.validate_receipt(receipt(scenarios=[legacy])))
+
+    def test_forged_closed_variant_child_receipt_quarantines(self):
+        forged = receipt('candidate', scenarios=[{
+            'id': 'case-1', 'classification': 'closedVariant', 'status': 'NOT_RUN',
+            'suite': 'rest', 'operation': 'upload_attachment', 'variant': 'missing',
+            'tier': 'T2', 'releaseSha': SHA, 'live': 'NOT_RUN', 'reason': 'closed',
+            'mutationCount': 1, 'readback': 'NOT_RUN', 'providerCalls': 0,
+            'refusal': {'type': 'closedVariant', 'cause': 'scopeExcluded', 'code': 'closed'},
+        }])
+        with mock.patch.object(runner.subprocess, 'Popen', side_effect=self.child(returned=forged)):
+            code, _, _ = self.invoke(self.args + ['--policy', 'candidate'])
+        self.assertEqual(code, 1)
+        result = json.loads(self.output.read_text())
+        self.assertEqual(result['reason'], 'invalid_or_missing_receipt')
+        self.assertEqual(result['sandbox'], 'quarantined')
+
     def test_rejected_secret_argument_is_not_echoed(self):
         code, out, err = self.invoke(self.args + ['--token', SECRET])
         self.assertEqual(code, 2)
