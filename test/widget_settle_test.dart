@@ -20,9 +20,22 @@ void main() {
     final work = _slowNativeWork(const Duration(seconds: 2));
     final tracked = work.whenComplete(() => done = true);
     final start = tester.binding.clock.now();
-    await pumpUntil(tester, () => done, step: _step, maxCycles: 2);
+    var falseAtBudget = false;
+    bool finished() {
+      if (!done && tester.binding.clock.now().difference(start) == _step * 3) {
+        falseAtBudget = true;
+      }
+      return done;
+    }
+
+    await pumpUntil(tester, finished, step: _step, maxCycles: 2);
     await tracked;
     expect(done, isTrue);
+    expect(
+      falseAtBudget,
+      isTrue,
+      reason: 'still pending after the last pump(step): the grace waited',
+    );
     // The cycle loop and its final pump are the whole widget-clock budget.
     expect(tester.binding.clock.now().difference(start), _step * 3);
   });
@@ -46,7 +59,10 @@ void main() {
     }
     expect(
       timedOut?.message,
-      contains('pumpUntil timed out after 2 cycles: never'),
+      allOf(
+        contains('pumpUntil timed out after 2 cycles and '),
+        contains(' ms of real-time grace: never'),
+      ),
     );
     expect(tester.binding.clock.now().difference(start), _step * 3);
   });

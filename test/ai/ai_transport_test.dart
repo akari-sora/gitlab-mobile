@@ -252,8 +252,9 @@ void main() {
       responses,
       wallTimeout: const Duration(seconds: 2),
     );
+    // Without the wall timer the stalled stream never ends: fail fast instead.
     await expectLater(
-      response.stream.toList(),
+      response.stream.toList().timeout(const Duration(seconds: 20)),
       throwsA(_failure(AiFailureKind.timeout)),
     );
     await source.close();
