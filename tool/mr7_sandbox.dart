@@ -76,6 +76,8 @@ final class Mr7Scenario {
     this.graphReadDocuments = const {},
     this.resultPath = const [],
     this.readbackPaths,
+    this.observerQueries,
+    this.noChangeObservation,
   });
   final String id;
   final String suite;
@@ -104,6 +106,16 @@ final class Mr7Scenario {
   final List<String> resultPath;
   final Set<String> Function(Mr7Identity identity, Mr7MutationPermit result)?
   readbackPaths;
+
+  /// Installed after the response, so selectors may use returned IDs. Every
+  /// document and every continuation variables digest remains closed.
+  final Map<String, Set<String>> Function(
+    Mr7Identity identity,
+    Mr7MutationResult result,
+  )?
+  observerQueries;
+  final Mr7ParentStateObservation Function(Mr7Identity identity)?
+  noChangeObservation;
 }
 
 List<Mr7Scenario> mr7ContractScenarios() => [
@@ -493,6 +505,8 @@ Future<Map<String, Object?>> runMr7Sandbox({
         if (approving != null) await approving;
         final outcome = coordinator.recordedOutcomeFor(call.id);
         row['outcome'] = outcome?.state.name ?? 'notExecuted';
+        row['coreOutcome'] = outcome?.state.name ?? 'notExecuted';
+        row['coreNoChange'] = outcome?.noChange ?? false;
         row['mutationCount'] = permit.sent;
         row['provider'] = {
           'protocol': 'responses',
@@ -515,6 +529,21 @@ Future<Map<String, Object?>> runMr7Sandbox({
           row['status'] = scenario.expectedMutations == 0 ? 'PASS' : 'NOT_RUN';
           row['outcome'] = 'noChange';
         } else if (outcome?.state == AiJournalState.succeeded) {
+          final queries =
+              scenario.observerQueries?.call(target, permit.result!) ??
+              const <String, Set<String>>{};
+          final sealedQueries = Map<String, Set<String>>.unmodifiable({
+            for (final entry in queries.entries)
+              entry.key: Set<String>.unmodifiable(entry.value),
+          });
+          s.observerAdapter.graphReadDocuments = Map.unmodifiable({
+            ...s.observerAdapter.graphReadDocuments,
+            for (final entry in sealedQueries.entries)
+              entry.key: Set<String>.unmodifiable({
+                ...?s.observerAdapter.graphReadDocuments[entry.key],
+                ...entry.value,
+              }),
+          });
           final observer = Mr7Readback(
             s,
             target,
@@ -522,8 +551,39 @@ Future<Map<String, Object?>> runMr7Sandbox({
             paths:
                 scenario.readbackPaths?.call(target, permit) ??
                 {'projects/${target.projectId}'},
+            graphQueries: sealedQueries,
           );
-          final verified = await scenario.observe(observer, target);
+          final noChangeResponse =
+              permit.result?.status == 304 || outcome?.noChange == true;
+          bool verified;
+          if (noChangeResponse) {
+            final state = scenario.noChangeObservation?.call(target);
+            final recognized =
+                permit.sent == 1 &&
+                ((permit.result?.status == 304 &&
+                        const {
+                          'setStar',
+                          'setSubscribed',
+                        }.contains(scenario.operation)) ||
+                    (permit.result?.status == 409 &&
+                        outcome?.noChange == true));
+            if (!recognized ||
+                state == null ||
+                !state.matchesCall(
+                  scenario.operation,
+                  call.arguments,
+                  target.projectId,
+                )) {
+              throw const Mr7Refused('noChangeUnverified');
+            }
+            verified = await observer.observe(state);
+            row['outcome'] = 'noChange';
+            row['classification'] = 'verifiedNoOp';
+            row['responseStatus'] = permit.result!.status;
+            row['parentStateVerified'] = verified;
+          } else {
+            verified = await scenario.observe(observer, target);
+          }
           row['observerRequests'] = observer.verifiedRequests;
           row['readback'] = verified && (row['observerRequests']! as int) > 0
               ? 'PASS'

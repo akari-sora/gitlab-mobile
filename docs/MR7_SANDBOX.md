@@ -178,3 +178,49 @@ An aggregate synthetic `PASS` proves the harness completed its stated checks;
 only per-scenario `PASS` proves that synthetic variant, and it never authorizes
 production capabilities. Keep private locators and receipts outside public
 source; this document contains no live identities or paths.
+
+## Wave 1 observation seams
+
+`Mr7Readback.result` exposes immutable response selectors (status, numeric ID,
+iid, project ID and opaque/string ID). They do not establish an effect.
+`observe(Mr7Observation<T>)` accepts only the sealed observation vocabulary in
+the contract. Every observation runs after dispatch, uses the separate uncached
+read-only adapter, revalidates actor and the full sandbox identity before and
+after reading, consumes the shared HTTP cap, and requires exact allowlisted
+`readbackPaths`. Resource selectors are checked against the actual dispatched
+route, rather than another resource in the same project. Quarantine observation
+cannot reopen the writer or settle an uncertain core journal result.
+
+| Seam | Scenario API and required evidence |
+|---|---|
+| D | `Mr7DiscussionObservation`: use the returned opaque discussion ID for creation, the dispatched parent/thread for updates, the complete exact note-ID set and each note's resolution and parent. |
+| M | `Mr7MilestoneObservation(id: ..., iid: ...)`: route by global ID and compare both identifiers. Legacy numeric `read` also routes milestones by ID. |
+| P | `Mr7ApprovalObservation`: reread the dispatched MR and `/approvals`; validate the full `approved_by` user set against the fresh actor. |
+| A, S3 | `Mr7ListObservation`: choose a typed parent and closed collection, supply the exact complete ID/name set, and read every counted page (maximum 20 pages of 100). Recheck the parent afterwards. For removal, derive the removed selector from the dispatched route and require its absence even if the supplied expected set includes it. A 404, truncated page, duplicate or changed total proves nothing. Awards additionally validate user and awardable relationships. |
+| S2 | `Mr7FileObservation`, `Mr7RefObservation`, `Mr7ReleaseObservation`: bind dispatched encoded path/name and requested content, SHA and exact independent content/ref/release fields. File reads use the expected immutable SHA. |
+| S4 | `Mr7SnippetObservation`: bind the returned/dispatched project snippet, exact file set, metadata revision and per-file refs. Validate same-instance web raw URLs but fetch only constructed API raw paths; compare raw bytes exactly. Revalidate metadata after all content reads. |
+| B2-S3 | `Mr7Scenario.observerQueries(identity, result)`: register documents and every variables digest after the response. `Mr7GraphObservation` verifies currentUser, parent and project separately from returned child IDs. Connections require stable `totalCount`, unique nodes, terminal pageInfo and sealed continuations (at most 20 pages / 2,000 nodes); query aliases can project a supported count field as `totalCount`. Exact removal requires `absentIds` bound to dispatched/returned selectors. `noteId` validates AwardEmoji-to-Note relationships. `bindReturnedResource` can freshly bind a returned GID through the existing closed REST mapping. Unsupported GID types and GraphQL syntax remain refused. |
+| N, S8 | `Mr7Scenario.noChangeObservation`: a typed parent-state witness matching the actual tool arguments is mandatory for a 304 star/subscription or core 409 `noChange`. Exactly one request must have been attempted. Auto-merge checks both supported indicators and rejects contradictory enabled state. Missing/mismatched evidence stops later scenarios and cleanup. |
+| S5 | `Mr7RebaseObservation`: bind the dispatched MR and fresh pre-send head, then observe pending-to-complete or a changed exact head with no merge error. An immediately idle unchanged head is unverified. Poll at most 20 times, with intervals at most 100 ms and a total polling deadline at most two seconds; never resend. A late read cannot verify completion or trigger additional polls. |
+
+For example, a scenario can call
+`observer.observe(Mr7MilestoneObservation(id: observer.result.id!, iid: observer.result.iid!))`
+and inspect the returned fields. Include `projects/<sandbox>/milestones/<id>`
+in `readbackPaths`; never substitute iid for the global route ID. List and
+GraphQL observers likewise return independently checked records so scenario
+code can verify operation-specific fields.
+
+Verified response no-ops record `classification=verifiedNoOp`, original
+`coreOutcome`/`coreNoChange`, `responseStatus`, one attempted mutation and fresh
+`parentStateVerified`/observer counts. The Python wrapper rejects inconsistent
+verified-no-op receipts. Existing zero-dispatch core no-ops retain their prior
+classification. Core acknowledgements, failed-certain responses and uncertain
+results keep their original semantics; all evidence remains synthetic and
+candidate evidence remains ineligible for final release acceptance.
+
+Wave 2 still owns scenario integration, WorkItem binding and inline fragments,
+fixture hooks, target-kind sets, account-todo/registry/terminal-project and
+secondary-effect observations, editable confirmation, uploads/provenance,
+shared budgets/journals and detailed closed-variant receipts. This vocabulary
+does not widen those paths or enable any production operation. Suggestion and
+multi-effect writes without a directly bound file target remain unverified.

@@ -134,6 +134,30 @@ class SandboxWrapperTest(unittest.TestCase):
         prompt.assert_not_called()
         self.assertFalse(self.output.exists())
 
+    def test_verified_noop_requires_independent_parent_state_evidence(self):
+        row = {'classification': 'verifiedNoOp', 'operation': 'setStar',
+               'mutationCount': 1, 'observerRequests': 3, 'parentStateVerified': True,
+               'readback': 'PASS', 'status': 'PASS', 'outcome': 'noChange',
+               'coreOutcome': 'succeeded', 'coreNoChange': False, 'responseStatus': 304}
+        self.assertTrue(runner.validate_receipt(receipt(scenarios=[row])))
+        for changes in ({'parentStateVerified': False}, {'observerRequests': 0},
+                        {'mutationCount': 0}, {'mutationCount': 2}, {'mutationCount': True},
+                        {'responseStatus': 302}, {'operation': 'createIssue'},
+                        {'coreOutcome': 'writeUncertain'}, {'readback': 'NOT_VERIFIED'}):
+            with self.subTest(changes=changes):
+                self.assertFalse(runner.validate_receipt(receipt(scenarios=[{**row, **changes}])))
+        conflict = {**row, 'operation': 'cancelAutoMerge', 'responseStatus': 409, 'coreNoChange': True}
+        self.assertTrue(runner.validate_receipt(receipt(scenarios=[conflict])))
+        self.assertFalse(runner.validate_receipt(receipt(scenarios=[{**conflict, 'coreNoChange': False}])))
+        self.assertFalse(runner.validate_receipt(receipt(scenarios=[conflict]), final=True))
+
+    def test_forged_verified_noop_child_receipt_quarantines(self):
+        forged = receipt(scenarios=[{'classification': 'verifiedNoOp', 'responseStatus': 304}])
+        with mock.patch.object(runner.subprocess, 'Popen', side_effect=self.child(returned=forged)):
+            code, _, _ = self.invoke()
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(self.output.read_text())['reason'], 'invalid_or_missing_receipt')
+
     def test_rejected_secret_argument_is_not_echoed(self):
         code, out, err = self.invoke(self.args + ['--token', SECRET])
         self.assertEqual(code, 2)

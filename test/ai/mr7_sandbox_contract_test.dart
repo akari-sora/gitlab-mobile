@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/release_policy.dart';
+import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
+import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 
 import '../../tool/mr7/sandbox_contract.dart';
@@ -78,7 +80,1226 @@ Map<String, Object?> _otherProject() => {
   'namespace': {'id': 70},
 };
 
+Future<({Mr7SandboxSession session, Mr7Readback observer})> _observationFixture(
+  Mr7SyntheticGitLab server, {
+  Object? response = const {},
+  int status = 204,
+  String operation = 'createNote',
+  required Set<String> paths,
+  Map<String, Set<String>> queries = const {},
+  String mutationPath = 'projects/909/issues/3/notes',
+  String method = 'POST',
+  Object? body,
+}) async {
+  final session = _session(server, eventDelay: () async {});
+  await session.initialize();
+  final permit = Mr7MutationPermit(
+    operation: operation,
+    resourceProjectId: 909,
+    paths: {'$method ${Uri.decodeComponent(mutationPath)}'},
+  )..confirmed = true;
+  session.permit = permit;
+  server.routes['$method ${Uri.decodeComponent(mutationPath)}'] = (_) {
+    server.scenarioWrites++;
+    server.addEvent(target: 909);
+    return mr7Json(response, status: status);
+  };
+  await session.writer.request<Object?>(
+    mutationPath,
+    data: body,
+    options: Options(method: method),
+  );
+  session.observerAdapter.graphReadDocuments = queries;
+  return (
+    session: session,
+    observer: Mr7Readback(
+      session,
+      session.identity!,
+      permit,
+      paths: paths,
+      graphQueries: queries,
+    ),
+  );
+}
+
+const _issueParent = Mr7Parent.issue(id: 300, iid: 3);
+const _mrParent = Mr7Parent.mergeRequest(id: 400, iid: 4);
+Map<String, Object?> _issueRow() => {'id': 300, 'iid': 3, 'project_id': 909};
+Map<String, Object?> _mrRow() => {
+  'id': 400,
+  'iid': 4,
+  'project_id': 909,
+  'state': 'opened',
+  'sha': _sha,
+  'source_branch': 'fixture',
+  'target_branch': 'main',
+  'merge_when_pipeline_succeeds': true,
+  'author': {'id': 7},
+  'user': {'can_merge': true},
+};
+
+sandbox.Mr7Scenario _starNoChange({
+  bool includeObserver = true,
+  bool wrongState = false,
+}) => sandbox.Mr7Scenario(
+  id: 'already-unstarred',
+  suite: 'rest',
+  operation: 'setStar',
+  variant: '304',
+  tier: 'T1',
+  call: (p) => AiToolCall(
+    id: 'already-unstarred',
+    name: 'setStar',
+    arguments: {
+      'projectId': p.projectId,
+      'starred': false,
+      'reason': 'Keep synthetic project unstarred.',
+    },
+  ),
+  paths: (p) => {'POST projects/${p.projectId}/unstar'},
+  noChangeObservation: includeObserver
+      ? (_) => Mr7ParentStateObservation(
+          parent: const Mr7Parent.project(),
+          state: Mr7ParentState.starred,
+          expected: wrongState,
+        )
+      : null,
+  observe: (_, _) async => true,
+);
+
 void main() {
+  test(
+    'absence cannot bless a retained target or a different same-project parent',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      server.routes['GET projects/909/issues/3'] = (_) => mr7Json(_issueRow());
+      server.routes['GET projects/909/issues/4'] = (_) =>
+          mr7Json({'id': 401, 'iid': 4, 'project_id': 909});
+      server.routes['GET projects/909/issues/3/award_emoji'] = (_) => mr7Json([
+        {
+          'id': 55,
+          'awardable_id': 300,
+          'awardable_type': 'Issue',
+          'user': {'id': 7},
+        },
+      ], headers: _pageHeaders(page: 1, total: 1));
+      final fixture = await _observationFixture(
+        server,
+        operation: 'removeAwardEmoji',
+        method: 'DELETE',
+        mutationPath: 'projects/909/issues/3/award_emoji/55',
+        paths: {
+          'projects/909/issues/3',
+          'projects/909/issues/4',
+          'projects/909/issues/3/award_emoji',
+          'projects/909/issues/4/award_emoji',
+        },
+      );
+      await expectLater(
+        fixture.observer.observe(
+          Mr7ListObservation(
+            parent: _issueParent,
+            kind: Mr7ListKind.awards,
+            expectedIds: {55},
+          ),
+        ),
+        throwsA(anything),
+      );
+      await expectLater(
+        fixture.observer.observe(
+          Mr7ListObservation(
+            parent: const Mr7Parent.issue(id: 401, iid: 4),
+            kind: Mr7ListKind.awards,
+            expectedIds: {},
+          ),
+        ),
+        throwsA(anything),
+      );
+      expect(
+        server.requests,
+        isNot(contains('GET projects/909/issues/4/award_emoji')),
+      );
+      expect(fixture.observer.verifiedRequests, 0);
+      fixture.session.stop('testObservationFailed');
+      await fixture.session.finish();
+    },
+  );
+
+  test(
+    'created discussion cannot substitute an existing thread for a missing response ID',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      server.routes['GET projects/909/issues/3'] = (_) => mr7Json(_issueRow());
+      final fixture = await _observationFixture(
+        server,
+        operation: 'createDiscussion',
+        mutationPath: 'projects/909/issues/3/discussions',
+        status: 201,
+        response: {},
+        paths: {
+          'projects/909/issues/3',
+          'projects/909/issues/3/discussions/existing',
+        },
+      );
+      await expectLater(
+        fixture.observer.observe(
+          Mr7DiscussionObservation(
+            parent: _issueParent,
+            discussionId: 'existing',
+            noteIds: {71},
+            resolved: true,
+          ),
+        ),
+        throwsA(anything),
+      );
+      expect(
+        server.requests,
+        isNot(contains('GET projects/909/issues/3/discussions/existing')),
+      );
+      fixture.session.stop('testObservationFailed');
+      await fixture.session.finish();
+    },
+  );
+  test(
+    'runner seals observer queries after the response and retains returned selectors',
+    () async {
+      const document =
+          r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id fullPath starred } }';
+      final server = Mr7SyntheticGitLab();
+      server.routes['POST /install/api/graphql'] = (_) => mr7Json({
+        'data': {
+          'currentUser': {
+            'id': 'gid://gitlab/User/7',
+            'username': 'synthetic-owner',
+          },
+          'node': {
+            'id': 'gid://gitlab/Project/909',
+            'fullPath': server.project!['path_with_namespace'],
+            'starred': server.project!['starred'],
+          },
+        },
+      });
+      var sealed = false;
+      final base = _star('post-response-query');
+      final scenario = sandbox.Mr7Scenario(
+        id: base.id,
+        suite: base.suite,
+        operation: base.operation,
+        variant: base.variant,
+        tier: base.tier,
+        call: base.call,
+        paths: base.paths,
+        observerQueries: (_, result) {
+          expect(server.scenarioWrites, 1);
+          expect(result.id, 909);
+          sealed = true;
+          return {
+            document: {
+              mr7Digest({'id': 'gid://gitlab/Project/${result.id}'}),
+            },
+          };
+        },
+        observe: (observer, _) async {
+          expect(sealed, isTrue);
+          final row = await observer.observe(
+            Mr7GraphObservation(
+              document: document,
+              variables: {'id': 'gid://gitlab/Project/${observer.result.id}'},
+              recordPath: ['data', 'node'],
+              parentId: 'gid://gitlab/Project/909',
+            ),
+          );
+          return row['starred'] == true;
+        },
+      );
+      final receipt = await sandbox.runMr7Sandbox(
+        policy: Mr7Policy.candidate,
+        releaseSha: _sha,
+        session: _session(server),
+        scenarios: [scenario],
+        confirm: (_) async => true,
+      );
+      expect(
+        _rows(receipt).single['status'],
+        'PASS',
+        reason: jsonEncode(receipt),
+      );
+      expect(_rows(receipt).single['observerRequests'], greaterThan(0));
+    },
+  );
+
+  test(
+    'Graph exact absence checks the removed note and AwardEmoji note relationship',
+    () async {
+      const document =
+          r'query Observe($id: ID!) { currentUser { id username } node(id: $id) { id project { id fullPath } items { nodes { id note { id } } totalCount pageInfo { hasNextPage endCursor } } } }';
+      for (final variant in ['absent', 'present', 'award', 'wrongNote']) {
+        final server = Mr7SyntheticGitLab();
+        server.routes['GET projects/909/issues/3'] = (_) =>
+            mr7Json(_issueRow());
+        final award = variant == 'award' || variant == 'wrongNote';
+        final variables = {'id': 'gid://gitlab/Issue/300'};
+        final queries = {
+          document: {mr7Digest(variables)},
+        };
+        server.routes['POST /install/api/graphql'] = (_) => mr7Json({
+          'data': {
+            'currentUser': {
+              'id': 'gid://gitlab/User/7',
+              'username': 'synthetic-owner',
+            },
+            'node': {
+              'id': 'gid://gitlab/Issue/300',
+              'project': {
+                'id': 'gid://gitlab/Project/909',
+                'fullPath': 'synthetic-owner/mr7-testnonce123',
+              },
+              'items': {
+                'nodes': [
+                  if (variant != 'absent')
+                    {
+                      'id': award
+                          ? 'gid://gitlab/AwardEmoji/90'
+                          : 'gid://gitlab/Note/71',
+                      if (award)
+                        'note': {
+                          'id': variant == 'wrongNote'
+                              ? 'gid://gitlab/Note/72'
+                              : 'gid://gitlab/Note/71',
+                        },
+                    },
+                ],
+                'totalCount': variant == 'absent' ? 0 : 1,
+                'pageInfo': {'hasNextPage': false, 'endCursor': null},
+              },
+            },
+          },
+        });
+        final fixture = await _observationFixture(
+          server,
+          operation: award ? 'addAwardEmoji' : 'deleteNote',
+          mutationPath: award
+              ? 'projects/909/issues/3/notes/71/award_emoji'
+              : 'projects/909/issues/3/notes/71',
+          method: award ? 'POST' : 'DELETE',
+          response: award ? {'id': 'gid://gitlab/AwardEmoji/90'} : {},
+          status: award ? 201 : 204,
+          paths: {'projects/909/issues/3'},
+          queries: queries,
+        );
+        await fixture.session.bindGraphResource(
+          'gid://gitlab/Issue/300',
+          path: 'projects/909/issues/3',
+        );
+        final observing = fixture.observer.observe(
+          Mr7GraphObservation(
+            document: document,
+            variables: variables,
+            parentId: 'gid://gitlab/Issue/300',
+            recordPath: ['data', 'node'],
+            connectionPath: ['items'],
+            expectedIds: variant == 'absent'
+                ? {}
+                : {
+                    award
+                        ? 'gid://gitlab/AwardEmoji/90'
+                        : 'gid://gitlab/Note/71',
+                  },
+            absentIds: award ? {} : {'gid://gitlab/Note/71'},
+            noteId: award ? 'gid://gitlab/Note/71' : null,
+          ),
+        );
+        if (variant == 'absent' || variant == 'award') {
+          await observing;
+        } else {
+          await expectLater(observing, throwsA(anything));
+          fixture.session.stop('testObservationFailed');
+        }
+        await fixture.session.finish();
+      }
+    },
+  );
+
+  test(
+    'observer identity reuses import and path fences after the response',
+    () async {
+      for (final variant in ['import', 'path']) {
+        final server = Mr7SyntheticGitLab();
+        final fixture = await _observationFixture(
+          server,
+          operation: 'setStar',
+          mutationPath: 'projects/909/unstar',
+          paths: {'projects/909'},
+        );
+        if (variant == 'import') {
+          server.project!['import_url'] = 'https://outside.invalid/repo';
+        } else {
+          server.byPathOverride = {...server.project!, 'id': 1000};
+        }
+        await expectLater(
+          fixture.observer.observe(
+            const Mr7ParentStateObservation(
+              parent: Mr7Parent.project(),
+              state: Mr7ParentState.starred,
+              expected: false,
+            ),
+          ),
+          throwsA(anything),
+        );
+        expect(fixture.observer.verifiedRequests, 0);
+        await fixture.session.finish();
+        expect(server.cleanupWrites, 0);
+      }
+    },
+  );
+  test(
+    '409 core noChange needs one attempt and complete auto-merge state',
+    () async {
+      for (final variant in [
+        'verified',
+        'enabled',
+        'contradictory',
+        'missing',
+      ]) {
+        final server = Mr7SyntheticGitLab();
+        var sent = false;
+        server.routes['GET projects/909/merge_requests/4'] = (_) => mr7Json({
+          ..._mrRow(),
+          'merge_when_pipeline_succeeds': !sent || variant == 'enabled',
+          'auto_merge_enabled':
+              !sent || variant == 'enabled' || variant == 'contradictory',
+        });
+        server.routes['POST projects/909/merge_requests/4/cancel_auto_merge'] =
+            (_) {
+              sent = true;
+              server.scenarioWrites++;
+              return mr7Json({'message': 'already canceled'}, status: 409);
+            };
+        final scenario = sandbox.Mr7Scenario(
+          id: 'cancel-409',
+          suite: 'advanced',
+          operation: 'cancelAutoMerge',
+          variant: variant,
+          tier: 'T3',
+          targetKind: AiTargetKind.mergeRequest,
+          resource: (_) =>
+              const AiResourceRef(kind: AiResourceKind.mergeRequest, id: 4),
+          call: (p) => AiToolCall(
+            id: 'cancel-409',
+            name: 'cancelAutoMerge',
+            arguments: {'projectId': p.projectId, 'iid': 4},
+          ),
+          paths: (p) => {
+            'POST projects/${p.projectId}/merge_requests/4/cancel_auto_merge',
+          },
+          readbackPaths: (p, _) => {'projects/${p.projectId}/merge_requests/4'},
+          noChangeObservation: variant == 'missing'
+              ? null
+              : (_) => const Mr7ParentStateObservation(
+                  parent: _mrParent,
+                  state: Mr7ParentState.autoMerge,
+                  expected: false,
+                ),
+          observe: (_, _) async => true,
+        );
+        final receipt = await sandbox.runMr7Sandbox(
+          policy: Mr7Policy.candidate,
+          releaseSha: _sha,
+          session: _session(server),
+          confirm: (_) async => true,
+          scenarios: [scenario, _star('after-409')],
+        );
+        final row = _rows(receipt).first;
+        expect(row['mutationCount'], 1, reason: jsonEncode(receipt));
+        expect(row['coreOutcome'], 'succeeded');
+        expect(row['coreNoChange'], isTrue);
+        expect(
+          server.requests
+              .where(
+                (r) =>
+                    r == 'POST projects/909/merge_requests/4/cancel_auto_merge',
+              )
+              .length,
+          1,
+        );
+        if (variant == 'verified') {
+          expect(
+            row['classification'],
+            'verifiedNoOp',
+            reason: jsonEncode(receipt),
+          );
+          expect(row['status'], 'PASS');
+          expect(_rows(receipt).last['status'], 'PASS');
+        } else {
+          expect(row['status'], 'NOT_VERIFIED');
+          expect(_rows(receipt).last['status'], 'NOT_RUN');
+          expect(receipt['quarantined'], isTrue);
+          expect(server.cleanupWrites, 0);
+        }
+      }
+    },
+  );
+
+  test(
+    'subscription 304 requires the exact parent and requested state',
+    () async {
+      for (final resource in ['issues', 'merge_requests']) {
+        final issue = resource == 'issues';
+        final parent = issue ? _issueParent : _mrParent;
+        final iid = issue ? 3 : 4;
+        final server = Mr7SyntheticGitLab();
+        server.routes['GET projects/909/$resource/$iid'] = (_) =>
+            mr7Json({...(issue ? _issueRow() : _mrRow()), 'subscribed': true});
+        server.routes['POST projects/909/$resource/$iid/subscribe'] = (_) {
+          server.scenarioWrites++;
+          return mr7Json({}, status: 304);
+        };
+        final scenario = sandbox.Mr7Scenario(
+          id: 'subscription-304',
+          suite: 'rest',
+          operation: 'setSubscribed',
+          variant: resource,
+          tier: 'T1',
+          targetKind: issue ? AiTargetKind.issue : AiTargetKind.mergeRequest,
+          resource: (_) => AiResourceRef(
+            kind: issue ? AiResourceKind.issue : AiResourceKind.mergeRequest,
+            id: iid,
+          ),
+          call: (p) => AiToolCall(
+            id: 'subscription-304',
+            name: 'setSubscribed',
+            arguments: {
+              'projectId': p.projectId,
+              'resource': resource,
+              'iid': iid,
+              'subscribed': true,
+              'reason': 'Keep synthetic subscription enabled.',
+            },
+          ),
+          paths: (p) => {
+            'POST projects/${p.projectId}/$resource/$iid/subscribe',
+          },
+          readbackPaths: (p, _) => {'projects/${p.projectId}/$resource/$iid'},
+          noChangeObservation: (_) => Mr7ParentStateObservation(
+            parent: parent,
+            state: Mr7ParentState.subscribed,
+            expected: true,
+          ),
+          observe: (_, _) async => true,
+        );
+        final receipt = await sandbox.runMr7Sandbox(
+          policy: Mr7Policy.candidate,
+          releaseSha: _sha,
+          session: _session(server),
+          confirm: (_) async => true,
+          scenarios: [scenario, _star('after-subscription')],
+        );
+        expect(
+          _rows(receipt).first['classification'],
+          'verifiedNoOp',
+          reason: jsonEncode(receipt),
+        );
+        expect(_rows(receipt).first['mutationCount'], 1);
+        expect(_rows(receipt).last['status'], 'PASS');
+      }
+    },
+  );
+  test(
+    'file ref and release observers bind exact names SHAs and content',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      final file = <String, Object?>{
+        'file_path': 'dir/a b.txt',
+        'commit_id': _sha,
+        'encoding': 'base64',
+        'content': base64Encode(utf8.encode('exact\n bytes ')),
+      };
+      server.routes['GET projects/909/repository/files/dir/a b.txt'] =
+          (request) {
+            expect(request.queryParameters['ref'], _sha);
+            return mr7Json(file);
+          };
+      server.routes['GET projects/909/repository/branches/fixture/branch'] =
+          (_) => mr7Json({
+            'name': 'fixture/branch',
+            'commit': {'id': _sha},
+          });
+      server.routes['GET projects/909/repository/tags/v-test'] = (_) =>
+          mr7Json({
+            'name': 'v-test',
+            'commit': {'id': _sha},
+          });
+      server.routes['GET projects/909/releases/v-test'] = (_) => mr7Json({
+        'tag_name': 'v-test',
+        'name': 'Synthetic release',
+        'commit': {'id': _sha},
+      });
+      final fixture = await _observationFixture(
+        server,
+        operation: 'createFile',
+        mutationPath: 'projects/909/repository/files/dir%2Fa%20b.txt',
+        body: {'content': 'exact\n bytes '},
+        paths: {
+          'projects/909/repository/files/dir%2Fa%20b.txt',
+          'projects/909/repository/branches/fixture%2Fbranch',
+          'projects/909/repository/tags/v-test',
+          'projects/909/releases/v-test',
+        },
+      );
+      await fixture.observer.observe(
+        const Mr7FileObservation(
+          path: 'dir/a b.txt',
+          sha: _sha,
+          content: 'exact\n bytes ',
+        ),
+      );
+      final branch = await _observationFixture(
+        Mr7SyntheticGitLab()
+          ..routes['GET projects/909/repository/branches/fixture/branch'] = server
+              .routes['GET projects/909/repository/branches/fixture/branch']!,
+        operation: 'createBranch',
+        mutationPath: 'projects/909/repository/branches',
+        body: {'branch': 'fixture/branch', 'ref': _sha},
+        paths: {'projects/909/repository/branches/fixture%2Fbranch'},
+      );
+      await branch.observer.observe(
+        const Mr7RefObservation(
+          kind: Mr7RefKind.branch,
+          name: 'fixture/branch',
+          sha: _sha,
+        ),
+      );
+      final tag = await _observationFixture(
+        Mr7SyntheticGitLab()
+          ..routes['GET projects/909/repository/tags/v-test'] =
+              server.routes['GET projects/909/repository/tags/v-test']!,
+        operation: 'createTag',
+        mutationPath: 'projects/909/repository/tags',
+        body: {'tag_name': 'v-test', 'ref': _sha},
+        paths: {'projects/909/repository/tags/v-test'},
+      );
+      await tag.observer.observe(
+        const Mr7RefObservation(
+          kind: Mr7RefKind.tag,
+          name: 'v-test',
+          sha: _sha,
+        ),
+      );
+      final release = await _observationFixture(
+        Mr7SyntheticGitLab()
+          ..routes['GET projects/909/releases/v-test'] =
+              server.routes['GET projects/909/releases/v-test']!,
+        operation: 'createRelease',
+        mutationPath: 'projects/909/releases',
+        body: {'tag_name': 'v-test', 'name': 'Synthetic release'},
+        paths: {'projects/909/releases/v-test'},
+      );
+      await release.observer.observe(
+        const Mr7ReleaseObservation(
+          tag: 'v-test',
+          name: 'Synthetic release',
+          sha: _sha,
+        ),
+      );
+      for (final bad in [
+        const Mr7FileObservation(
+          path: 'dir/a b.txt',
+          sha: _sha,
+          content: 'exact\n bytes',
+        ),
+        Mr7FileObservation(
+          path: 'dir/a b.txt',
+          sha: 'b' * 40,
+          content: 'exact\n bytes ',
+        ),
+        const Mr7FileObservation(path: '../elsewhere', sha: _sha, content: ''),
+        const Mr7RefObservation(kind: Mr7RefKind.tag, name: 'other', sha: _sha),
+        const Mr7ReleaseObservation(
+          tag: 'v-test',
+          name: 'wrong name',
+          sha: _sha,
+        ),
+      ]) {
+        await expectLater(fixture.observer.observe(bad), throwsA(anything));
+      }
+      await fixture.session.finish();
+      await branch.session.finish();
+      await tag.session.finish();
+      await release.session.finish();
+    },
+  );
+
+  test(
+    'snippet raw bytes require exact project file set and revision before and after',
+    () async {
+      for (final variant in [
+        'exact',
+        'wrongBytes',
+        'wrongRevision',
+        'foreignProject',
+        'extraFile',
+        'foreignUrl',
+        'lateRevision',
+      ]) {
+        final server = Mr7SyntheticGitLab();
+        var metadataReads = 0;
+        server.routes['GET projects/909/snippets/60'] = (_) {
+          metadataReads++;
+          return mr7Json({
+            'id': 60,
+            'project_id': variant == 'foreignProject' ? 1000 : 909,
+            'visibility': 'private',
+            'updated_at':
+                variant == 'wrongRevision' ||
+                    (variant == 'lateRevision' && metadataReads > 1)
+                ? 'later'
+                : 'revision-one',
+            'files': [
+              {
+                'path': 'dir/raw.bin',
+                'raw_url': variant == 'foreignUrl'
+                    ? 'https://outside.invalid/raw'
+                    : 'https://gitlab.invalid/install/synthetic-owner/mr7-testnonce123/-/snippets/60/raw/ref-one/dir/raw.bin',
+              },
+              if (variant == 'extraFile')
+                {'path': 'extra', 'raw_url': 'unused'},
+            ],
+          });
+        };
+        server.routes['GET projects/909/snippets/60/files/ref-one/dir/raw.bin/raw'] =
+            (_) => ResponseBody.fromBytes(
+              variant == 'wrongBytes' ? [0, 255, 2] : [0, 255, 1],
+              200,
+            );
+        final fixture = await _observationFixture(
+          server,
+          operation: 'createSnippet',
+          mutationPath: 'projects/909/snippets',
+          response: {'id': 60, 'project_id': 909},
+          status: 201,
+          paths: {
+            'projects/909/snippets/60',
+            'projects/909/snippets/60/files/ref-one/dir%2Fraw.bin/raw',
+          },
+        );
+        final observing = fixture.observer.observe(
+          Mr7SnippetObservation(
+            id: 60,
+            revision: 'revision-one',
+            files: {
+              'dir/raw.bin': Mr7SnippetFile(ref: 'ref-one', bytes: [0, 255, 1]),
+            },
+          ),
+        );
+        if (variant == 'exact') {
+          expect((await observing)['dir/raw.bin'], [0, 255, 1]);
+          expect(metadataReads, 2);
+        } else {
+          await expectLater(observing, throwsA(anything), reason: variant);
+          expect(fixture.observer.verifiedRequests, 0);
+          fixture.session.stop('testObservationFailed');
+        }
+        expect(
+          server.requests.any((r) => r.contains('outside.invalid')),
+          isFalse,
+        );
+        await fixture.session.finish();
+      }
+    },
+  );
+
+  test(
+    'rebase observes bounded completion after acknowledgement without resend',
+    () async {
+      for (final variant in [
+        'complete',
+        'pending',
+        'error',
+        'late',
+        'wrongSha',
+        'idle',
+      ]) {
+        final server = Mr7SyntheticGitLab();
+        var polls = 0;
+        server.routes['GET projects/909/merge_requests/4'] = (_) async {
+          if (server.scenarioWrites == 0) {
+            return mr7Json({
+              ..._mrRow(),
+              'rebase_in_progress': false,
+              'merge_error': null,
+            });
+          }
+          polls++;
+          if (variant == 'late') {
+            await Future<void>.delayed(const Duration(milliseconds: 40));
+          }
+          return mr7Json({
+            ..._mrRow(),
+            'rebase_in_progress':
+                variant == 'pending' || (polls == 1 && variant != 'idle'),
+            'merge_error': variant == 'error' ? 'synthetic error' : null,
+            'sha': variant == 'wrongSha' ? 'b' * 40 : _sha,
+          });
+        };
+        final fixture = await _observationFixture(
+          server,
+          operation: 'rebaseMergeRequest',
+          mutationPath: 'projects/909/merge_requests/4/rebase',
+          method: 'PUT',
+          status: 202,
+          paths: {'projects/909/merge_requests/4'},
+        );
+        final observing = fixture.observer.observe(
+          Mr7RebaseObservation(
+            parent: _mrParent,
+            sha: _sha,
+            maxAttempts: 3,
+            interval: Duration.zero,
+            timeout: Duration(milliseconds: variant == 'late' ? 5 : 500),
+          ),
+        );
+        if (variant == 'complete') {
+          expect((await observing)['rebase_in_progress'], isFalse);
+          expect(polls, 2);
+        } else {
+          await expectLater(observing, throwsA(anything), reason: variant);
+          fixture.session.stop('testObservationFailed');
+          if (variant == 'late') {
+            await Future<void>.delayed(const Duration(milliseconds: 60));
+          }
+          expect(polls, variant == 'late' ? 1 : 3);
+          expect(fixture.observer.verifiedRequests, 0);
+        }
+        expect(server.scenarioWrites, 1);
+        await fixture.session.finish();
+        if (variant != 'complete') expect(server.cleanupWrites, 0);
+      }
+    },
+  );
+
+  test(
+    'typed observers cannot escape sandbox even with an allowlisted foreign path',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      final fixture = await _observationFixture(
+        server,
+        response: {'id': 20},
+        paths: {'projects/1000', 'projects/1000/milestones/20'},
+      );
+      await expectLater(
+        fixture.observer.read('projects/1000'),
+        throwsA(anything),
+      );
+      await expectLater(
+        fixture.session.observer.get<Object?>('projects/1000'),
+        throwsA(anything),
+      );
+      expect(server.requests, isNot(contains('GET projects/1000')));
+      expect(fixture.session.quarantined, isTrue);
+      await fixture.session.finish();
+      expect(server.cleanupWrites, 0);
+    },
+  );
+
+  test(
+    'Graph observer uses response IDs separately from its complete parent connection',
+    () async {
+      const doc =
+          r'query Observe($id: ID!, $after: String) { currentUser { id username } node(id: $id) { id project { id fullPath } notes(after: $after) { nodes { id } totalCount pageInfo { hasNextPage endCursor } } } }';
+      const gid = 'gid://gitlab/Issue/300';
+      for (final variant in [
+        'complete',
+        '404',
+        'errors',
+        'foreignParent',
+        'foreignActor',
+        'missingSeal',
+        'truncated',
+        'duplicate',
+        'presentInsteadOfAbsent',
+      ]) {
+        final server = Mr7SyntheticGitLab();
+        server.routes['GET projects/909/issues/3'] = (_) =>
+            mr7Json(_issueRow());
+        server.routes['POST /install/api/graphql'] = (request) {
+          final variables = (request.data as Map)['variables'] as Map;
+          final second = variables['after'] == 'cursor-one';
+          return mr7Json({
+            'data': {
+              'currentUser': {
+                'id': variant == 'foreignActor'
+                    ? 'gid://gitlab/User/8'
+                    : 'gid://gitlab/User/7',
+                'username': 'synthetic-owner',
+              },
+              'node': {
+                'id': gid,
+                'project': {
+                  'id':
+                      'gid://gitlab/Project/${variant == 'foreignParent' ? 1000 : 909}',
+                  'fullPath': 'synthetic-owner/mr7-testnonce123',
+                },
+                'notes': {
+                  'nodes': [
+                    {
+                      'id':
+                          'gid://gitlab/Note/${second && variant != 'duplicate' ? 72 : 71}',
+                    },
+                  ],
+                  'totalCount': 2,
+                  'pageInfo': {
+                    'hasNextPage': !second && variant != 'truncated',
+                    'endCursor': second ? 'cursor-two' : 'cursor-one',
+                  },
+                },
+              },
+            },
+            if (variant == 'errors')
+              'errors': [
+                {'message': 'incomplete'},
+              ],
+          }, status: variant == '404' ? 404 : 200);
+        };
+        final variables = <String, Object?>{'id': gid, 'after': null};
+        final queries = {
+          doc: {
+            mr7Digest(variables),
+            if (variant != 'missingSeal')
+              mr7Digest({...variables, 'after': 'cursor-one'}),
+          },
+        };
+        final fixture = await _observationFixture(
+          server,
+          response: {'id': 'gid://gitlab/Note/71'},
+          status: 201,
+          paths: {'projects/909/issues/3'},
+          queries: queries,
+        );
+        expect(fixture.observer.result.stringId, 'gid://gitlab/Note/71');
+        await fixture.session.bindGraphResource(
+          gid,
+          path: 'projects/909/issues/3',
+        );
+        final observing = fixture.observer.observe(
+          Mr7GraphObservation(
+            document: doc,
+            variables: variables,
+            parentId: gid,
+            recordPath: ['data', 'node'],
+            connectionPath: ['notes'],
+            expectedIds: variant == 'presentInsteadOfAbsent'
+                ? {}
+                : {'gid://gitlab/Note/71', 'gid://gitlab/Note/72'},
+          ),
+        );
+        if (variant == 'complete') {
+          await observing;
+          expect(
+            server.requests
+                .where((r) => r == 'POST /install/api/graphql')
+                .length,
+            2,
+          );
+          expect(fixture.observer.verifiedRequests, greaterThan(0));
+        } else {
+          await expectLater(observing, throwsA(anything), reason: variant);
+          expect(fixture.observer.verifiedRequests, 0);
+          fixture.session.stop('testObservationFailed');
+        }
+        await fixture.session.finish();
+      }
+    },
+  );
+  test(
+    '304 no-op requires bound parent-state observer before continuing',
+    () async {
+      for (final variant in ['verified', 'missing', 'wrongState', 'mismatch']) {
+        final server = Mr7SyntheticGitLab();
+        server.routes['POST projects/909/unstar'] = (_) {
+          server.scenarioWrites++;
+          if (variant == 'mismatch') server.project!['starred'] = true;
+          return mr7Json({}, status: 304);
+        };
+        final receipt = await sandbox.runMr7Sandbox(
+          policy: Mr7Policy.candidate,
+          releaseSha: _sha,
+          session: _session(server),
+          confirm: (_) async => true,
+          scenarios: [
+            _starNoChange(
+              includeObserver: variant != 'missing',
+              wrongState: variant == 'wrongState',
+            ),
+            _star('after-304'),
+          ],
+        );
+        final first = _rows(receipt).first;
+        expect(first['mutationCount'], 1);
+        expect(first['coreOutcome'], 'succeeded');
+        if (variant == 'verified') {
+          expect(first['status'], 'PASS', reason: jsonEncode(receipt));
+          expect(first['classification'], 'verifiedNoOp');
+          expect(first['parentStateVerified'], isTrue);
+          expect(first['observerRequests'], greaterThan(0));
+          expect(_rows(receipt).last['status'], 'PASS');
+          expect(server.cleanupWrites, 1);
+        } else {
+          expect(first['status'], 'NOT_VERIFIED', reason: variant);
+          expect(_rows(receipt).last['status'], 'NOT_RUN');
+          expect(server.scenarioWrites, 1);
+          expect(server.cleanupWrites, 0);
+          expect(receipt['quarantined'], isTrue);
+        }
+      }
+    },
+  );
+
+  test(
+    'complete absence refuses a lone 404 and truncated or foreign pages',
+    () async {
+      for (final variant in [
+        'empty',
+        '404',
+        'truncated',
+        'present',
+        'foreignActor',
+        'foreignParent',
+        'foreignAward',
+      ]) {
+        final server = Mr7SyntheticGitLab();
+        server.routes['GET projects/909/issues/3'] = (_) =>
+            mr7Json(_issueRow());
+        server.routes['GET projects/909/issues/3/award_emoji'] = (_) =>
+            variant == '404'
+            ? mr7Json({}, status: 404)
+            : mr7Json(
+                [
+                  if (variant == 'present' || variant == 'foreignAward')
+                    {
+                      'id': 55,
+                      'awardable_id': variant == 'foreignAward' ? 301 : 300,
+                      'awardable_type': 'Issue',
+                      'user': {'id': 7},
+                    },
+                ],
+                headers: variant == 'truncated'
+                    ? {}
+                    : _pageHeaders(
+                        page: 1,
+                        total: variant == 'present' || variant == 'foreignAward'
+                            ? 1
+                            : 0,
+                      ),
+              );
+        final fixture = await _observationFixture(
+          server,
+          operation: 'removeAwardEmoji',
+          mutationPath: 'projects/909/issues/3/award_emoji/55',
+          method: 'DELETE',
+          paths: {'projects/909/issues/3', 'projects/909/issues/3/award_emoji'},
+        );
+        if (variant == 'foreignActor') {
+          server.routes['GET user'] = (_) =>
+              mr7Json({'id': 8, 'username': 'other'});
+        }
+        if (variant == 'foreignParent') {
+          server.routes['GET projects/909/issues/3'] = (_) =>
+              mr7Json({..._issueRow(), 'project_id': 1000});
+        }
+        final observing = fixture.observer.observe(
+          Mr7ListObservation(
+            parent: _issueParent,
+            kind: Mr7ListKind.awards,
+            expectedIds: {},
+          ),
+        );
+        if (variant == 'empty') {
+          expect(await observing, isEmpty);
+          expect(fixture.observer.verifiedRequests, greaterThan(0));
+        } else {
+          await expectLater(observing, throwsA(anything), reason: variant);
+          expect(fixture.observer.verifiedRequests, 0);
+          fixture.session.stop('testObservationFailed');
+        }
+        await fixture.session.finish();
+      }
+    },
+  );
+
+  test('complete list checks every page and exact note membership', () async {
+    final server = Mr7SyntheticGitLab();
+    final pages = <int>[];
+    server.routes['GET projects/909/issues/3'] = (_) => mr7Json(_issueRow());
+    server.routes['GET projects/909/issues/3/notes'] = (request) {
+      final page = request.queryParameters['page'] as int;
+      pages.add(page);
+      return mr7Json([
+        {'id': page + 70, 'noteable_id': 300},
+      ], headers: _pageHeaders(page: page, total: 2));
+    };
+    final fixture = await _observationFixture(
+      server,
+      paths: {'projects/909/issues/3', 'projects/909/issues/3/notes'},
+    );
+    await fixture.observer.observe(
+      Mr7ListObservation(
+        parent: _issueParent,
+        kind: Mr7ListKind.notes,
+        expectedIds: {71, 72},
+      ),
+    );
+    expect(pages, [1, 2]);
+    await expectLater(
+      fixture.observer.observe(
+        Mr7ListObservation(
+          parent: _issueParent,
+          kind: Mr7ListKind.notes,
+          expectedIds: {71},
+        ),
+      ),
+      throwsA(anything),
+    );
+    await fixture.session.finish();
+  });
+
+  test(
+    'typed discussion binds string ID, parent, exact notes and resolution',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      server.routes['GET projects/909/issues/3'] = (_) => mr7Json(_issueRow());
+      final discussion = <String, Object?>{
+        'id': 'opaque-thread',
+        'notes': [
+          {'id': 71, 'noteable_id': 300, 'resolved': true},
+          {'id': 72, 'noteable_id': 300, 'resolved': true},
+        ],
+      };
+      server.routes['GET projects/909/issues/3/discussions/opaque-thread'] =
+          (_) => mr7Json(discussion);
+      final fixture = await _observationFixture(
+        server,
+        operation: 'createDiscussion',
+        mutationPath: 'projects/909/issues/3/discussions',
+        response: {'id': 'opaque-thread'},
+        status: 201,
+        paths: {
+          'projects/909/issues/3',
+          'projects/909/issues/3/discussions/opaque-thread',
+        },
+      );
+      expect(fixture.observer.result.stringId, 'opaque-thread');
+      await fixture.observer.observe(
+        Mr7DiscussionObservation(
+          parent: _issueParent,
+          discussionId: 'opaque-thread',
+          noteIds: {71, 72},
+          resolved: true,
+        ),
+      );
+      for (final spec in [
+        Mr7DiscussionObservation(
+          parent: _issueParent,
+          discussionId: 'other',
+          noteIds: {71, 72},
+          resolved: true,
+        ),
+        Mr7DiscussionObservation(
+          parent: _issueParent,
+          discussionId: 'opaque-thread',
+          noteIds: {71},
+          resolved: true,
+        ),
+        Mr7DiscussionObservation(
+          parent: _issueParent,
+          discussionId: 'opaque-thread',
+          noteIds: {71, 72},
+          resolved: false,
+        ),
+      ]) {
+        await expectLater(fixture.observer.observe(spec), throwsA(anything));
+      }
+      await fixture.session.finish();
+    },
+  );
+
+  test('milestone uses global ID while preserving a distinct iid', () async {
+    final server = Mr7SyntheticGitLab();
+    server.routes['GET projects/909/milestones/500'] = (_) =>
+        mr7Json({'id': 500, 'iid': 5, 'project_id': 909});
+    final fixture = await _observationFixture(
+      server,
+      operation: 'createMilestone',
+      mutationPath: 'projects/909/milestones',
+      response: {'id': 500, 'iid': 5, 'project_id': 909},
+      status: 201,
+      paths: {'projects/909/milestones/500', 'projects/909/milestones/5'},
+    );
+    expect(
+      (await fixture.observer.observe(
+        const Mr7MilestoneObservation(id: 500, iid: 5),
+      ))['id'],
+      500,
+    );
+    expect(
+      (await fixture.observer.read('projects/909/milestones/500'))['iid'],
+      5,
+    );
+    await expectLater(
+      fixture.observer.read('projects/909/milestones/5'),
+      throwsA(anything),
+    );
+    expect(server.requests, isNot(contains('GET projects/909/milestones/5')));
+    await fixture.session.finish();
+  });
+
+  test(
+    'approval observer verifies approved_by against the bound actor and MR',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      server.routes['GET projects/909/merge_requests/4'] = (_) =>
+          mr7Json(_mrRow());
+      final approvals = <String, Object?>{
+        'id': 400,
+        'iid': 4,
+        'approved_by': [
+          {
+            'user': {'id': 7},
+          },
+        ],
+      };
+      server.routes['GET projects/909/merge_requests/4/approvals'] = (_) =>
+          mr7Json(approvals);
+      final fixture = await _observationFixture(
+        server,
+        operation: 'unapproveMergeRequest',
+        mutationPath: 'projects/909/merge_requests/4/unapprove',
+        paths: {
+          'projects/909/merge_requests/4',
+          'projects/909/merge_requests/4/approvals',
+        },
+      );
+      expect(
+        await fixture.observer.observe(
+          const Mr7ApprovalObservation(parent: _mrParent, approved: true),
+        ),
+        isTrue,
+      );
+      await expectLater(
+        fixture.observer.observe(
+          const Mr7ApprovalObservation(parent: _mrParent, approved: false),
+        ),
+        throwsA(anything),
+      );
+      approvals['approved_by'] = [];
+      expect(
+        await fixture.observer.observe(
+          const Mr7ApprovalObservation(parent: _mrParent, approved: false),
+        ),
+        isTrue,
+      );
+      await fixture.session.finish();
+    },
+  );
   test('cleanup checks every parent page before confirming deletion', () async {
     final server = Mr7SyntheticGitLab()..delayedDeletion = true;
     final session = _session(server);
