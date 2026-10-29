@@ -16,21 +16,27 @@ import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import '../mr7_sandbox.dart';
 import 'sandbox_contract.dart';
 
-/// Synthetic production-chain candidates for breakdown §5.2 / §9.
-/// Wave-3b supplies the sealed widget, activity and no-op observers.
-const mr7GraphqlSeamRequests = <String, String>{
+/// Synthetic production-chain candidates for breakdown §5.2 / §9. Wave 3b
+/// supplies the sealed widget, activity and no-op observers. The wave-3d (!253)
+/// production request seams below opened 11 formerly closed variants in 7B2k:
+/// state close/reopen, milestone set/clear/closed-current/expired-current,
+/// labels add/remove/clear, comment and opaque reply. They are a record, not
+/// closure reasons.
+const mr7GraphqlWave3dSeams = <String, String>{
   'B2-O1-state':
-      'Production WorkItemStateEvent sends CLOSE/REOPEN, but the sealed effect observer exactInput compares lowercase tool arguments. Normalize the observer comparison to the production enum; keep lifecycle and no-op checks.',
+      'Delivered: the state witness compares the lowercase tool argument with the production CLOSE/REOPEN enum and still checks lifecycle and no-op.',
   'B2-O1-labels':
-      'Production omits an empty addLabelIds or removeLabelIds delta. The sealed observer requires both lists. Accept missing empty sides while preserving complete before/after sets, disjointness and exact dispatch binding.',
+      'Delivered: the label witness reads an omitted addLabelIds or removeLabelIds side as empty and still requires complete before/after sets, disjointness and exact dispatch binding.',
   'B2-S2-milestone':
-      'Production milestone documents select a nullable nested group owner projection. The transport guard rejects every group field before the response. Admit only that schema projection after project-bound owner validation; do not open a group selector.',
+      'Delivered: only the sealed production milestone documents may select the nullable group owner projection, and every returned owner must be null or the sandbox namespace; no group selector is open.',
   'B2-S1-created-note':
-      'Core independently rereads the mutation-returned Note before scenario observation. The new GID is still unbound and the guard rejects that production read. Bind only the exact captured returned Note to an allowed fresh REST ownership read before admitting core readback; never prebind an uncreated Note.',
+      'Delivered: the guard binds only the exact Note returned by a successful comment or reply to a fresh REST ownership read before core readback; no uncreated Note is prebound.',
 };
 const mr7GraphqlApprovedText =
     '  Approved synthetic **Markdown**\r\nsecond line  \n';
-const _workItemSeams = 'Wave-3b independent WorkItem observers installed.';
+const _workItemSeams =
+    'Wave-3b WorkItem observers and wave-3d production request seams '
+    'installed; remaining closures are typed per variant.';
 const _todoClosed =
     'NOT_RUN/closed: 7-D4/7-D5/7-D7; the project-only todo seam '
     'does not prove shared group/account-global scopes, and acknowledgement '
@@ -110,32 +116,6 @@ final class Mr7GraphqlOperation {
       'b2-$operation-${variant.name}';
 
   Mr7ClosedRefusal? refusal(Mr7GraphqlVariant variant) {
-    if (operation == 'updateWorkItemState' && !variant.noChange) {
-      return const Mr7ClosedRefusal(
-        Mr7ClosureCause.observerUnavailable,
-        'workItemStateEnumMismatch',
-      );
-    }
-    if (operation == 'updateWorkItemLabels' &&
-        const {'add', 'remove', 'clear'}.contains(variant.name)) {
-      return const Mr7ClosedRefusal(
-        Mr7ClosureCause.observerUnavailable,
-        'workItemLabelDeltaShapeMismatch',
-      );
-    }
-    if (operation == 'updateWorkItemMilestone') {
-      return const Mr7ClosedRefusal(
-        Mr7ClosureCause.ownershipUnproven,
-        'workItemMilestoneOwnerProjectionRefused',
-      );
-    }
-    if (operation == 'createWorkItemActivityComment' ||
-        operation == 'createWorkItemActivityReply') {
-      return const Mr7ClosedRefusal(
-        Mr7ClosureCause.ownershipUnproven,
-        'createdWorkItemNoteReadbackUnbound',
-      );
-    }
     if (operation.endsWith('Todo')) {
       return const Mr7ClosedRefusal(
         Mr7ClosureCause.scopeExcluded,
@@ -163,13 +143,6 @@ final class Mr7GraphqlOperation {
   String closureDetail(Mr7GraphqlVariant variant) => switch (refusal(
     variant,
   )?.code) {
-    'workItemStateEnumMismatch' => mr7GraphqlSeamRequests['B2-O1-state']!,
-    'workItemLabelDeltaShapeMismatch' =>
-      mr7GraphqlSeamRequests['B2-O1-labels']!,
-    'workItemMilestoneOwnerProjectionRefused' =>
-      mr7GraphqlSeamRequests['B2-S2-milestone']!,
-    'createdWorkItemNoteReadbackUnbound' =>
-      mr7GraphqlSeamRequests['B2-S1-created-note']!,
     'sharedTodoScopesUnproven' => _todoClosed,
     'otherMembersExcluded' => variant.closedReason!,
     'healthWidgetNotModeled' || 'weightWidgetNotModeled' =>
@@ -327,6 +300,8 @@ final class Mr7GraphqlOperation {
           'projects/${p.projectId}/issues/3/notes/51',
           'projects/${p.projectId}/issues/3/notes/52',
           'projects/${p.projectId}/issues/3/notes/53',
+          if (operation == 'createWorkItemActivityReply')
+            'projects/${p.projectId}/issues/3/notes/54',
         },
       },
       noChangeObservation: variant.noChange ? (p) => witness(p) : null,
@@ -978,6 +953,10 @@ final class Mr7GraphqlFixture {
   Map<String, Object?> _copy(Map<String, Object?> value) =>
       (jsonDecode(jsonEncode(value)) as Map).cast<String, Object?>();
   Map<String, Object?> get seed => _copy(_seed);
+  // GitLab returns a new Note ID for every create. One session can run both
+  // create variants, and the guard refuses a returned Note that is already bound.
+  String get createdNote =>
+      operation == 'createWorkItemActivityReply' ? '54' : '52';
   Map<String, Object?> get current => _copy(_state);
   String get _owner => 'gid://gitlab/User/${identity.userId}';
   Map<String, Object?> get _project => {
@@ -1138,7 +1117,7 @@ final class Mr7GraphqlFixture {
       'title': 'Synthetic milestone',
     });
     await session.bindGraphResource(_milestone, path: '$base/milestones/501');
-    for (final number in [51, 52, 53]) {
+    for (final number in [51, 52, 53, 54]) {
       server.routes['GET $base/issues/3/notes/$number'] = (_) => mr7Json({
         'id': number,
         'project_id': identity.projectId,
@@ -1464,7 +1443,7 @@ final class Mr7GraphqlFixture {
     var root = 'workItemUpdate';
     if (doc.contains('createNote(')) {
       root = 'createNote';
-      (_state['notes'] as Map)['52'] = input['body'];
+      (_state['notes'] as Map)[createdNote] = input['body'];
     } else if (doc.contains('updateNote(')) {
       root = 'updateNote';
       (_state['notes'] as Map)['51'] = input['body'];
@@ -1547,7 +1526,7 @@ final class Mr7GraphqlFixture {
             'workItem': _item(doc, vars),
           if (root == 'issueSetEscalationStatus') 'issue': _incident,
           if (root == 'createNote' || root == 'updateNote')
-            'note': _note(root == 'createNote' ? '52' : '51'),
+            'note': _note(root == 'createNote' ? createdNote : '51'),
           if (root == 'awardEmojiAdd')
             'awardEmoji': {
               'name': input['name'],

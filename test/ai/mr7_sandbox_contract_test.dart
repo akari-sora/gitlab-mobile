@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 
 import '../../tool/mr7/sandbox_contract.dart';
+import '../../tool/mr7/session_transport.dart';
 import '../../tool/mr7_sandbox.dart' as sandbox;
 import 'mr7_sandbox_wave2_contract_test.dart' as wave2_contract;
 import 'mr7_sandbox_wave2_runner_test.dart' as wave2_runner;
@@ -173,6 +175,52 @@ sandbox.Mr7Scenario _starNoChange({
       : null,
   observe: (_, _) async => true,
 );
+
+/// Synthetic stand-in for the live session transport. It answers from the
+/// synthetic server; live transport's clock throws until it has seen a Date
+/// header, so a test can withhold the clock after [readsLeft] reads.
+final class _ClockTransport implements Mr7SessionTransport {
+  _ClockTransport(this.server);
+  final Mr7SyntheticGitLab server;
+  int? readsLeft;
+
+  @override
+  String get gitLabToken => 'synthetic-gitlab-pat';
+
+  @override
+  DateTime get serverTime {
+    final left = readsLeft;
+    if (left != null) {
+      if (left <= 0) throw const Mr7Refused('serverTimeUnverified');
+      readsLeft = left - 1;
+    }
+    return server.serverTime;
+  }
+
+  @override
+  int get setupWrites => server.setupWrites;
+
+  @override
+  int get projectId => server.projectId;
+
+  @override
+  void bindSession({
+    required int userId,
+    required String namespace,
+    required void Function(RequestOptions) beforeAdditionalRead,
+  }) {}
+
+  @override
+  Future<ResponseBody> send(
+    RequestOptions request,
+    Stream<Uint8List>? body,
+    Future<void>? cancellation, {
+    required bool observation,
+  }) => server.respond(request);
+
+  @override
+  void close() {}
+}
 
 void main() {
   wave2_contract.main();
@@ -1483,6 +1531,124 @@ void main() {
     },
   );
 
+  test('304 no-op is matched against the edited prepared payload', () async {
+    // setStar, setSubscribed and cancelAutoMerge, the only operations that
+    // reach this check, have no editable field, so no real approval edit can
+    // change them. The test fakes one: at dispatch, after the last production
+    // preparation, it replaces the permit's prepared payload through
+    // capturePreparedArguments, the hook that preparation itself uses.
+    for (final edited in [false, true]) {
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      var fakedEdits = 0;
+      server.routes['GET projects/909/issues/3'] = (_) =>
+          mr7Json({..._issueRow(), 'subscribed': true});
+      server.routes['POST projects/909/issues/3/subscribe'] = (_) {
+        server.scenarioWrites++;
+        final permit = session.permit;
+        final prepared = permit?.preparedArguments;
+        if (edited && permit != null && prepared != null) {
+          fakedEdits++;
+          permit.capturePreparedArguments(
+            () => {...prepared, 'subscribed': false},
+          );
+        }
+        return mr7Json({}, status: 304);
+      };
+      final scenario = sandbox.Mr7Scenario(
+        id: 'edited-304',
+        suite: 'rest',
+        operation: 'setSubscribed',
+        variant: edited ? 'edited' : 'unedited',
+        tier: 'T1',
+        targetKind: AiTargetKind.issue,
+        resource: (_) => const AiResourceRef(kind: AiResourceKind.issue, id: 3),
+        call: (p) => AiToolCall(
+          id: 'edited-304',
+          name: 'setSubscribed',
+          arguments: {
+            'projectId': p.projectId,
+            'resource': 'issues',
+            'iid': 3,
+            'subscribed': true,
+            'reason': 'Keep synthetic subscription enabled.',
+          },
+        ),
+        paths: (p) => {'POST projects/${p.projectId}/issues/3/subscribe'},
+        readbackPaths: (p, _) => {'projects/${p.projectId}/issues/3'},
+        // Bound to the model call, which the edit no longer matches.
+        noChangeObservation: (_) => const Mr7ParentStateObservation(
+          parent: _issueParent,
+          state: Mr7ParentState.subscribed,
+          expected: true,
+        ),
+        observe: (_, _) async => true,
+      );
+      final receipt = await sandbox.runMr7Sandbox(
+        policy: Mr7Policy.candidate,
+        releaseSha: _sha,
+        session: session,
+        confirm: (_) async => true,
+        scenarios: [scenario, _star('after-edited-304')],
+      );
+      final first = _rows(receipt).first;
+      expect(first['mutationCount'], 1, reason: jsonEncode(receipt));
+      expect(first['coreOutcome'], 'succeeded');
+      expect(
+        server.requests.where(
+          (r) => r == 'POST projects/909/issues/3/subscribe',
+        ),
+        hasLength(1),
+      );
+      if (edited) {
+        expect(fakedEdits, 1);
+        expect(first['status'], 'NOT_VERIFIED', reason: jsonEncode(receipt));
+        expect(first['reason'], 'noChangeUnverified');
+        expect(first.containsKey('classification'), isFalse);
+        expect(_rows(receipt).last['status'], 'NOT_RUN');
+        expect(receipt['quarantined'], isTrue);
+        expect(server.cleanupWrites, 0);
+      } else {
+        expect(first['status'], 'PASS', reason: jsonEncode(receipt));
+        expect(first['classification'], 'verifiedNoOp');
+        expect(_rows(receipt).last['status'], 'PASS');
+        expect(server.cleanupWrites, 1);
+      }
+    }
+  });
+  test(
+    'a write whose server clock is unreadable stops before it is counted',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      final transport = _ClockTransport(server);
+      final session = Mr7SandboxSession(
+        server: server,
+        liveTransport: transport,
+        nonce: 'testnonce123',
+        eventDelay: () async {},
+      );
+      await session.initialize();
+      final permit = _starPermit(session.identity!);
+      session.permit = permit;
+      // The request-ledger read before the send still sees a clock; the
+      // dispatch read does not, as when live transport has seen no Date.
+      transport.readsLeft = 1;
+      await expectLater(
+        session.writer.post<Object?>('projects/909/star'),
+        throwsA(isA<DioException>()),
+      );
+      expect(transport.readsLeft, 0);
+      expect(server.requests, isNot(contains('POST projects/909/star')));
+      expect(server.scenarioWrites, 0);
+      expect(permit.sent, 0);
+      expect(permit.result, isNull);
+      expect(session.stopReason, 'serverTimeUnverified');
+      expect(session.quarantined, isTrue);
+      transport.readsLeft = null;
+      await session.finish();
+      expect(server.cleanupWrites, 0);
+    },
+  );
   test(
     'subscription 304 requires the exact parent and requested state',
     () async {
@@ -4324,6 +4490,49 @@ void _gitLabComShapeTests() {
         }
       }
     });
+
+    test(
+      'a 429 on a scenario write is rate-limited and never retried',
+      () async {
+        final server = Mr7SyntheticGitLab();
+        server.routes['POST projects/909/star'] = (_) {
+          server.scenarioWrites++;
+          return _tooManyRequests();
+        };
+        final session = _session(server, eventDelay: () async {});
+        final receipt = await sandbox.runMr7Sandbox(
+          policy: Mr7Policy.candidate,
+          releaseSha: _sha,
+          session: session,
+          confirm: (_) async => true,
+          scenarios: [_star('rate-limited-write'), _star('after-429')],
+        );
+        final rows = _rows(receipt);
+        // rateLimited() clears the permit, so the response is never trusted:
+        // the write stays uncertain and the session stays quarantined.
+        expect(
+          rows.first['status'],
+          'writeUncertain',
+          reason: jsonEncode(receipt),
+        );
+        expect(rows.first['coreOutcome'], 'writeUncertain');
+        expect(rows.first['mutationCount'], 1);
+        expect(rows.first['readback'], isNot('PASS'));
+        expect(rows.last['status'], 'NOT_RUN');
+        expect(receipt['status'], 'FAIL');
+        expect(receipt['stopReason'], 'rateLimited');
+        expect(receipt['quarantined'], isTrue);
+        _expectRateLimited(session);
+        expect(receipt['rateLimit'], session.rateLimit);
+        expect(jsonEncode(receipt), isNot(contains('burst_traffic')));
+        expect(
+          server.requests.where((r) => r == 'POST projects/909/star'),
+          hasLength(1),
+        );
+        expect(server.scenarioWrites, 1);
+        expect(server.cleanupWrites, 0);
+      },
+    );
 
     test(
       'a 429 on an app read through the guarded adapter is rateLimited',
