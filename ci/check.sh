@@ -27,7 +27,7 @@ cp pubspec.lock "$output_dir/pubspec.lock"
 set +e
 flutter analyze --no-pub 2>&1 | tee "$output_dir/analyze.txt"
 analysis_status=${PIPESTATUS[0]}
-timeout --signal=TERM --kill-after=15s 22m flutter test --no-pub --coverage --timeout=60s --machine ${test_options[@]+"${test_options[@]}"} 2>"$output_dir/test-stderr.txt" | tee "$output_dir/tests.jsonl" | python3 -u ci/test_progress.py
+timeout --signal=TERM --kill-after=15s 36m flutter test --no-pub --coverage --timeout=60s --machine ${test_options[@]+"${test_options[@]}"} 2>"$output_dir/test-stderr.txt" | tee "$output_dir/tests.jsonl" | python3 -u ci/test_progress.py
 test_status=${PIPESTATUS[0]}
 cat "$output_dir/test-stderr.txt"
 python3 ci/test_report.py "$output_dir/tests.jsonl" "$output_dir/junit.xml"

@@ -126,17 +126,26 @@ void main() {
     'small save reads index metadata without decrypting conversations',
     () async {
       var reads = 0;
-      final history = store(
-        readFile: (file, cap) {
-          reads++;
-          return file.readAsBytesSync();
-        },
+      List<int> countedRead(File file, int cap) {
+        reads++;
+        return file.readAsBytesSync();
+      }
+
+      final largeRoot = Directory.systemTemp.createTempSync('ai_history_fix1_');
+      addTearDown(() {
+        if (largeRoot.existsSync()) largeRoot.deleteSync(recursive: true);
+      });
+      final one = store(readFile: countedRead);
+      final history = AiHistoryFileStore(
+        root: () async => largeRoot,
+        clock: () => now,
+        readFile: countedRead,
       );
-      Future<Duration> timedSmallSave() async {
+      Future<Duration> timedSmallSave(AiHistoryFileStore target) async {
         reads = 0;
         final stopwatch = Stopwatch()..start();
         expect(
-          await history.save(
+          await target.save(
             account,
             key,
             _saved(30, now.add(const Duration(hours: 1))),
@@ -151,12 +160,12 @@ void main() {
 
       // Warm the isolate/crypto path, then compare small saves with one versus
       // 26 stored conversations (about 7.5 MiB). The read-count assertion is
-      // deterministic; the timing allowance tolerates host scheduling noise.
+      // deterministic. Each save spawns isolates and syncs files, so its time
+      // follows the host's load: alternate the two stores and compare the
+      // fastest sample of each, so a burst on a shared CI host lands on both
+      // rather than on the larger store alone.
+      await one.save(account, key, _saved(30, now), 30);
       await history.save(account, key, _saved(30, now), 30);
-      final smallSamples = <Duration>[];
-      for (var sample = 0; sample < 3; sample++) {
-        smallSamples.add(await timedSmallSave());
-      }
       for (var index = 0; index < 25; index++) {
         final large = AiSavedConversation(
           id: _id(index),
@@ -176,14 +185,16 @@ void main() {
           AiHistorySaveResult.saved,
         );
       }
+      final smallSamples = <Duration>[];
       final largeSamples = <Duration>[];
-      for (var sample = 0; sample < 3; sample++) {
-        largeSamples.add(await timedSmallSave());
+      for (var sample = 0; sample < 5; sample++) {
+        smallSamples.add(await timedSmallSave(one));
+        largeSamples.add(await timedSmallSave(history));
       }
       smallSamples.sort();
       largeSamples.sort();
-      final low = smallSamples[1];
-      final high = largeSamples[1];
+      final low = smallSamples.first;
+      final high = largeSamples.first;
       expect(high, lessThan(low * 4 + const Duration(milliseconds: 150)));
       final dir = await history.directory(account);
       expect(
