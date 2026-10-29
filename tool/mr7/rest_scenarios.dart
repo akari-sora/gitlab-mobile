@@ -276,6 +276,10 @@ List<Mr7RestCase> mr7RestCases() {
         opening: parent,
         resource: resource,
         tier: 'T1',
+        fixture:
+            'Owner has only thumbsdown on the issue/MR; notes have no awards. '
+            'Adding thumbsup is new for this actor and exact parent; duplicate '
+            'actor/parent/name POSTs return 404 without a write or event.',
       );
       closed(
         'removeAwardEmoji',
@@ -625,13 +629,17 @@ List<Mr7RestCase> mr7RestCases() {
   add(
     'createBoardList',
     'label',
-    {'boardId': 801, 'labelId': 701},
+    {'boardId': 801, 'labelId': 702},
     'POST projects/{p}/boards/801/lists',
     'projects/{p}/boards/801/lists/{id}',
     {
-      'label': {'id': 701},
+      'label': {'id': 702},
     },
     opening: 'projects/{p}/boards/801',
+    fixture:
+        'Board 801 has list 901 for label 701, retained for list moves. '
+        'Valid label 702 is unused on this board; duplicate label-list POSTs '
+        'return 400 without a write or event.',
   );
   for (final position in [0, 2]) {
     add(
@@ -808,7 +816,7 @@ void configureMr7RestFixtures(
     });
     record('$parent/award_emoji/601', {
       ...base(601),
-      'name': 'thumbsup',
+      'name': 'thumbsdown',
       'user': {'id': server.userId},
     });
   }
@@ -843,6 +851,12 @@ void configureMr7RestFixtures(
     'name': 'synthetic',
     'color': '#112233',
     'description': 'Synthetic original.',
+  });
+  record('$root/labels/702', {
+    ...base(702),
+    'name': 'synthetic-list',
+    'color': '#336699',
+    'description': 'Synthetic unused board label.',
   });
   record('$root/milestones/501', {
     ...base(501),
@@ -948,10 +962,21 @@ void configureMr7RestFixtures(
     for (final note in [false, true]) {
       final path = '$parent/${note ? 'notes/$noteId/' : ''}award_emoji';
       server.routes['POST $path'] = (request) {
+        final name = body(request)['name'];
+        if (records.entries.any(
+          (entry) =>
+              entry.key.startsWith('$path/') &&
+              _matches(entry.value, {
+                'name': name,
+                'user': {'id': server.userId},
+              }),
+        )) {
+          return mr7Json({'error': 'duplicateAwardEmoji'}, status: 404);
+        }
         final id = nextId++;
         final value = {
           ...base(id),
-          'name': body(request)['name'],
+          'name': name,
           'user': {'id': server.userId},
         };
         record('$path/$id', value);
@@ -967,11 +992,22 @@ void configureMr7RestFixtures(
   create('$root/boards');
   update('$root/boards/801');
   server.routes['POST $root/boards/801/lists'] = (request) {
+    final labelId = body(request)['label_id'];
+    if (!records.containsKey('$root/labels/$labelId') ||
+        records.entries.any(
+          (entry) =>
+              entry.key.startsWith('$root/boards/801/lists/') &&
+              _matches(entry.value, {
+                'label': {'id': labelId},
+              }),
+        )) {
+      return mr7Json({'error': 'invalidOrDuplicateBoardLabel'}, status: 400);
+    }
     final id = nextId++;
     final value = {
       ...base(id),
       'position': 2,
-      'label': {'id': body(request)['label_id']},
+      'label': {'id': labelId},
     };
     record('$root/boards/801/lists/$id', value);
     return written(value, create: true);

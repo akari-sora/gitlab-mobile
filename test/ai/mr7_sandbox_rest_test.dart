@@ -57,29 +57,32 @@ Future<Map<String, Object?>> _run(
 }
 
 /// Change one proposed input while keeping the actual runner and boundaries.
-Mr7Scenario _callWith(Mr7Scenario source, Map<String, Object?> arguments) =>
-    Mr7Scenario(
-      id: source.id,
-      suite: source.suite,
-      operation: source.operation,
-      variant: source.variant,
-      tier: source.tier,
-      call: (p) {
-        final call = source.call(p);
-        return AiToolCall(
-          id: call.id,
-          name: call.name,
-          arguments: {...call.arguments! as Map<String, Object?>, ...arguments},
-        );
-      },
-      targetKind: source.targetKind,
-      paths: source.paths,
-      observe: source.observe,
-      freshness: source.freshness,
-      utterance: source.utterance,
-      resource: source.resource,
-      readbackPaths: source.readbackPaths,
+Mr7Scenario _callWith(
+  Mr7Scenario source,
+  Map<String, Object?> arguments, {
+  String? id,
+}) => Mr7Scenario(
+  id: id ?? source.id,
+  suite: source.suite,
+  operation: source.operation,
+  variant: source.variant,
+  tier: source.tier,
+  call: (p) {
+    final call = source.call(p);
+    return AiToolCall(
+      id: id ?? call.id,
+      name: call.name,
+      arguments: {...call.arguments! as Map<String, Object?>, ...arguments},
     );
+  },
+  targetKind: source.targetKind,
+  paths: source.paths,
+  observe: source.observe,
+  freshness: source.freshness,
+  utterance: source.utterance,
+  resource: source.resource,
+  readbackPaths: source.readbackPaths,
+);
 
 void main() {
   final cases = mr7RestCases();
@@ -355,6 +358,78 @@ void main() {
       expect(receipt['requestCount'], lessThanOrEqualTo(5000));
     },
   );
+
+  for (final variant in ['issue', 'issue-note', 'mr', 'mr-note']) {
+    test('REST duplicate award $variant is rejected with 404', () async {
+      final source = _case('addAwardEmoji', variant);
+      final server = Mr7SyntheticGitLab();
+      configureMr7RestFixtures(server, scenario: source);
+      final resource = variant.startsWith('issue')
+          ? 'issues'
+          : 'merge_requests';
+      final note = variant.endsWith('-note')
+          ? 'notes/${resource == 'issues' ? 301 : 302}/'
+          : '';
+      final path = 'POST projects/909/$resource/1/${note}award_emoji';
+      final route = server.routes[path]!;
+      final statuses = <int>[];
+      server.routes[path] = (request) async {
+        final response = await route(request);
+        statuses.add(response.statusCode);
+        return response;
+      };
+      final receipt = await _run([
+        source,
+        _callWith(source, const {}, id: '${source.id}-duplicate'),
+      ], server: server);
+      final rows = _rows(receipt);
+      expect(rows.first['status'], 'PASS', reason: jsonEncode(rows.first));
+      expect(statuses, [201, 404]);
+      expect(rows.last['status'], isNot('PASS'));
+      expect(rows.last['outcome'], isNot('succeeded'));
+      expect(rows.last['readback'], 'NOT_RUN');
+      expect(server.scenarioWrites, 1);
+      expect(_part(receipt, 'events')['items'], hasLength(3));
+    });
+  }
+
+  test('REST existing board label list is rejected with 400', () async {
+    final server = Mr7SyntheticGitLab();
+    configureMr7RestFixtures(server);
+    const path = 'POST projects/909/boards/801/lists';
+    final route = server.routes[path]!;
+    final statuses = <int>[];
+    server.routes[path] = (request) async {
+      final response = await route(request);
+      statuses.add(response.statusCode);
+      return response;
+    };
+    final receipt = await _run([
+      _callWith(_case('createBoardList', 'label'), {'labelId': 701}),
+    ], server: server);
+    expect(statuses, [400]);
+    expect(_rows(receipt).single['status'], isNot('PASS'));
+    expect(_rows(receipt).single['readback'], 'NOT_RUN');
+    expect(server.scenarioWrites, 0);
+    expect(_part(receipt, 'events')['items'], hasLength(2));
+  });
+
+  test('REST duplicate newly created board label list is rejected', () async {
+    final source = _case('createBoardList', 'label');
+    final server = Mr7SyntheticGitLab();
+    configureMr7RestFixtures(server);
+    final receipt = await _run([
+      source,
+      _callWith(source, const {}, id: '${source.id}-duplicate'),
+    ], server: server);
+    final rows = _rows(receipt);
+    expect(rows.first['status'], 'PASS', reason: jsonEncode(rows.first));
+    expect(rows.last['status'], isNot('PASS'));
+    expect(rows.last['outcome'], isNot('succeeded'));
+    expect(rows.last['readback'], 'NOT_RUN');
+    expect(server.scenarioWrites, 1);
+    expect(_part(receipt, 'events')['items'], hasLength(3));
+  });
 
   test(
     'REST transition variants refuse already-matching fixture states',
