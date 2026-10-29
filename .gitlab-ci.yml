@@ -29,6 +29,25 @@ default:
     - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1" || $GH2GL_SYNC == "1"'
       when: never
     - when: on_success
+.app_regular:
+  # .regular, except that a merge request changing only documentation (Markdown
+  # and image files under docs/, Markdown files in the root) skips the Flutter,
+  # native and Android jobs that extend this. Every other pipeline (main, tags,
+  # schedules, API, web, plain branches) runs them. No compare_to: without it a
+  # merge request reports a renamed file as its old path deleted and its new
+  # path added, so moving code into docs/ still runs the jobs. See docs/CI.md
+  # "Docs-only merge requests".
+  rules:
+    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1" || $GH2GL_SYNC == "1"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        # Any changed path that is neither a Markdown or image file under docs/
+        # nor a root *.md file. flutter analyze reads other files under docs/.
+        regexp: '\A(?!docs/.*\.(?:md|png|jpg|jpeg|gif|svg|webp)\z)(?![^/]*\.md\z)'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - when: on_success
 .flutter:
   cache:
     - key: flutter-linux-3.47.2
@@ -71,6 +90,8 @@ main_run_to_completion:
 python_checks:
   extends: .regular
   stage: verify
+  # About 1.5 minutes of executor start-up before the script; under a full
+  # runner the two unittest suites alone have run past three minutes.
   timeout: 10m
   before_script:
     - python3 ci/install_packages.py git openssl
@@ -80,7 +101,7 @@ python_checks:
     - python3 -m compileall -q ci tool
     - for script in ci/*.sh; do bash -n "$script"; done
 flutter_checks:
-  extends: [.flutter, .regular]
+  extends: [.flutter, .app_regular]
   stage: verify
   timeout: 40m
   coverage: '/Coverage: (\d+(?:\.\d+)?)%/'
@@ -93,7 +114,7 @@ flutter_checks:
     reports:
       junit: ci-output/junit.xml
 flutter_ai_checks:
-  extends: [.flutter, .regular]
+  extends: [.flutter, .app_regular]
   stage: verify
   timeout: 40m
   coverage: '/Coverage: (\d+(?:\.\d+)?)%/'
@@ -106,7 +127,7 @@ flutter_ai_checks:
     reports:
       junit: ci-output-ai/junit.xml
 native_templates:
-  extends: [.flutter, .regular]
+  extends: [.flutter, .app_regular]
   stage: verify
   timeout: 15m
   script:
@@ -118,7 +139,7 @@ native_templates:
     expire_in: 14 days
     paths: [ci-output/native-templates.tar.gz]
 android_debug:
-  extends: [.flutter, .regular]
+  extends: [.flutter, .app_regular]
   stage: build
   timeout: 40m
   needs:
