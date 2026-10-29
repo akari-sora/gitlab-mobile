@@ -56,7 +56,7 @@ final class _Storage implements ReadCacheSecureStorage {
 final class _Harness {
   _Harness() {
     root = Directory.systemTemp.createTempSync('c2e-pinned-ui-');
-    files = ReadCacheFileStore(root: () async => root);
+    files = ReadCacheFileStore(root: () async => root, clock: () => now);
     keys = ReadCacheKeyStore(storage);
     coordinator = ReadCacheDiskCoordinator(
       keys: keys,
@@ -64,6 +64,7 @@ final class _Harness {
       settings: ReadCacheSettingsStore(storage),
       coordinationScope: Object(),
       controlsInstalled: true,
+      clock: () => now,
       schedule: (_, _) => () {},
     );
   }
@@ -768,7 +769,8 @@ void main() {
       final fetched = h.now;
       final read = await _run(tester, () => api.cachedRecords(['projects']));
       expect(read.lineage, CacheLineage.network);
-      await _run(tester, h.flush);
+      // Await native disk I/O directly before mounting the feed.
+      await tester.runAsync(h.flush);
       expect(h.coordinator.stats.retainedEntries, 1, reason: 'the first page is on disk');
       return (h, fetched);
     }
