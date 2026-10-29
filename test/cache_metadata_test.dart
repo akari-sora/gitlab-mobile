@@ -60,6 +60,8 @@ void main() {
       expect(api.readCacheMetadataCounts['sourceRevocations'], 0);
       expect(api.readCacheMetadataCounts['sourceWrites'], 0);
     },
+    // About 25 s on an idle host and up to 41 s on a loaded runner.
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 
   test(
