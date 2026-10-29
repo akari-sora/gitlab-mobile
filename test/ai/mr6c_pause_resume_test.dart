@@ -364,14 +364,23 @@ void main() {
     );
   }
 
-  test(
+  testWidgets(
     'approval wait releases FGS; background approval refuses; explicit approval restarts once',
-    () async {
-      final h = await fx.StackHarness.create();
+    (tester) async {
+      // Native calls run under one-second timers, and a ticket lives one
+      // second on the owner's clock. Real I/O inside either window (a late
+      // mock reply, the journal's disk writes) can expire it on a loaded host.
+      // Here both run on the widget clock, which this test never advances.
+      // The deadline paths have their own tests.
+      final epoch = tester.binding.clock.now();
+      final h = (await tester.runAsync(() => fx.StackHarness.create()))!;
       addTearDown(h.dispose);
       final native = _Native()..install();
       addTearDown(native.uninstall);
-      final owner = _owner(h);
+      final owner = _owner(
+        h,
+        clock: () => tester.binding.clock.now().difference(epoch),
+      );
       addTearDown(owner.dispose);
       h.controller.bindBackgroundExecution(owner);
       h.provider.script.add(
@@ -382,28 +391,41 @@ void main() {
         }),
       );
       final sending = h.controller.send('Create an issue');
-      await fx.waitFor(
+      await _widgetClockWait(
+        tester,
+        h,
         () => h.controller.phase == AiChatPhase.awaitingApproval,
+        'the approval wait',
       );
-      await fx.waitFor(() => !native.active);
+      await _widgetClockWait(tester, h, () => !native.active, 'FGS release');
       expect(h.controller.serviceWorkCount, 0);
       expect(h.controller.backProtectedCount, 1);
       final proposal = h.controller.proposals.single;
       final expiry = proposal.expiresAt;
       h.foreground = false;
-      final refused = await h.controller.approveWrite(proposal);
+      final refused = await _settled(
+        tester,
+        h,
+        h.controller.approveWrite(proposal),
+        'the background approval',
+      );
       expect(refused.state, AiJournalState.notExecuted);
       expect(native.starts, 1);
       expect(h.server.mutations, isEmpty);
       expect(proposal.valid, isTrue);
       h.foreground = true;
-      final accepted = await h.controller.approveWrite(proposal);
-      await sending;
+      final accepted = await _settled(
+        tester,
+        h,
+        h.controller.approveWrite(proposal),
+        'the explicit approval',
+      );
+      await _settled(tester, h, sending, 'the run');
       expect(accepted.state, AiJournalState.succeeded);
       expect(proposal.expiresAt, expiry);
       expect(native.starts, 2);
       expect(h.server.mutations, hasLength(1));
-      await fx.waitFor(() => !native.active);
+      await _widgetClockWait(tester, h, () => !native.active, 'FGS release');
     },
   );
 
@@ -1068,24 +1090,8 @@ void main() {
       ))!;
       addTearDown(h.dispose);
 
-      Future<void> waitFor(bool Function() ready, String checkpoint) async {
-        final elapsed = Stopwatch()..start();
-        while (!ready()) {
-          if (elapsed.elapsed >= const Duration(seconds: 20)) {
-            fail(
-              'Timed out waiting for $checkpoint: '
-              '${h.controller.phase} ${h.controller.failure} '
-              '${h.controller.blocker}',
-            );
-          }
-          // Drain immediate timers as well as microtasks without aging context.
-          await tester.pump(Duration.zero);
-          await tester.runAsync(
-            () => Future<void>.delayed(const Duration(milliseconds: 1)),
-          );
-        }
-        await tester.pump(Duration.zero);
-      }
+      Future<void> waitFor(bool Function() ready, String checkpoint) =>
+          _widgetClockWait(tester, h, ready, checkpoint);
 
       final originalContext = h.controller.contextForTesting;
       await tester.pump(const Duration(minutes: 2));
@@ -1145,15 +1151,59 @@ void main() {
   );
 }
 
-AiBackgroundExecution _owner(fx.StackHarness h) => AiBackgroundExecution(
-  backgroundEnabled: true,
-  accountKey: h.account,
-  generation: h.session.generation,
-  ownerApi: h.session.api!,
-  isCurrent: () => !h.controller.isDisposed,
-  appInForeground: () => h.foreground,
-  channel: _channel,
-);
+/// Lets real I/O run until [ready] holds, without moving the widget clock:
+/// microtasks and due timers are drained, and nothing timed on the widget
+/// clock ages. Fails after 20 s of real time with [checkpoint] and the
+/// controller's state.
+Future<void> _widgetClockWait(
+  WidgetTester tester,
+  fx.StackHarness h,
+  bool Function() ready,
+  String checkpoint,
+) async {
+  final elapsed = Stopwatch()..start();
+  while (!ready()) {
+    if (elapsed.elapsed >= const Duration(seconds: 20)) {
+      fail(
+        'Timed out waiting for $checkpoint: '
+        '${h.controller.phase} ${h.controller.failure} '
+        '${h.controller.blocker}',
+      );
+    }
+    // Drain immediate timers as well as microtasks without aging context.
+    await tester.pump(Duration.zero);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 1)),
+    );
+  }
+  await tester.pump(Duration.zero);
+}
+
+/// Awaits [work] in a widget test whose result depends on real I/O, by
+/// waiting on the widget clock (see [_widgetClockWait]) until it completes.
+Future<T> _settled<T>(
+  WidgetTester tester,
+  fx.StackHarness h,
+  Future<T> work,
+  String checkpoint,
+) async {
+  var done = false;
+  final tracked = work.whenComplete(() => done = true);
+  await _widgetClockWait(tester, h, () => done, checkpoint);
+  return tracked;
+}
+
+AiBackgroundExecution _owner(fx.StackHarness h, {AiExecutionClock? clock}) =>
+    AiBackgroundExecution(
+      backgroundEnabled: true,
+      accountKey: h.account,
+      generation: h.session.generation,
+      ownerApi: h.session.api!,
+      isCurrent: () => !h.controller.isDisposed,
+      appInForeground: () => h.foreground,
+      channel: _channel,
+      clock: clock,
+    );
 
 final class _SettlingWrite
     implements AiWriteCoordinator, AiWriteRunContinuation, AiWriteStateSource {
