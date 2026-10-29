@@ -458,7 +458,7 @@ void main() {
     expect(server.cleanupWrites, 0);
   });
 
-  test('a registered production-style inline fragment stays refused', () async {
+  test('a registered production-style inline fragment read is admitted (7B0 seam B2-S2)', () async {
     final server = Mr7SyntheticGitLab();
     final session = _session(server);
     await session.initialize();
@@ -473,18 +473,23 @@ void main() {
     session.observerAdapter.graphReadDocuments = {
       document: {mr7Digest(variables)},
     };
-    await expectLater(
-      session.writer.post<Object?>(
-        '${session.instance}/api/graphql',
-        data: {'query': document, 'variables': variables},
-      ),
-      throwsA(anything),
+    var sends = 0;
+    server.routes['POST /install/api/graphql'] = (_) {
+      sends++;
+      return mr7Json({'data': <String, Object?>{}});
+    };
+    // Named fragments and foreign/namespace selectors stay refused; see
+    // mr7_sandbox_wave2_contract_test.dart.
+    await session.writer.post<Object?>(
+      '${session.instance}/api/graphql',
+      data: {'query': document, 'variables': variables},
     );
-    expect(server.requests, isNot(contains('POST /install/api/graphql')));
-    expect(session.quarantined, true);
+    expect(sends, 1);
+    expect(session.quarantined, false);
     await session.finish();
-    expect(server.scenarioWrites, 0);
-    expect(server.cleanupWrites, 0);
+    // The synthetic server counts every POST to /api/graphql as a scenario
+    // write. A session that was not quarantined deletes its own sandbox once.
+    expect(server.cleanupWrites, 1);
   });
 
   test(
