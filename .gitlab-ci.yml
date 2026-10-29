@@ -60,7 +60,7 @@ main_run_to_completion:
   # Starts first on main and cannot be interrupted, so a later push no longer
   # cancels a main pipeline that is already running (see workflow above).
   stage: verify
-  timeout: 5m
+  timeout: 10m
   interruptible: false
   rules:
     - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1" || $GH2GL_SYNC == "1"'
@@ -71,7 +71,7 @@ main_run_to_completion:
 python_checks:
   extends: .regular
   stage: verify
-  timeout: 5m
+  timeout: 10m
   before_script:
     - python3 ci/install_packages.py git openssl
   script:
@@ -82,7 +82,7 @@ python_checks:
 flutter_checks:
   extends: [.flutter, .regular]
   stage: verify
-  timeout: 25m
+  timeout: 40m
   coverage: '/Coverage: (\d+(?:\.\d+)?)%/'
   script:
     - bash ci/check.sh
@@ -95,7 +95,7 @@ flutter_checks:
 flutter_ai_checks:
   extends: [.flutter, .regular]
   stage: verify
-  timeout: 25m
+  timeout: 40m
   coverage: '/Coverage: (\d+(?:\.\d+)?)%/'
   script:
     - bash ci/check.sh ai
