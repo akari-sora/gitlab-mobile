@@ -81,7 +81,7 @@ class CiPipelineConfigTests(unittest.TestCase):
             self.assertIsNotNone(match, name)
             jobs[name] = match.group(1)
             self.assertIn('extends: [.flutter, .regular]', jobs[name])
-            self.assertIn('timeout: 25m', jobs[name])
+            self.assertIn('timeout: 40m', jobs[name])
             self.assertNotRegex(jobs[name], re.compile(r'^  (rules|tags|retry):', re.MULTILINE))
         self.assertIn('- bash ci/check.sh\n', jobs['flutter_checks'])
         self.assertIn('junit: ci-output/junit.xml', jobs['flutter_checks'])
@@ -213,7 +213,7 @@ class CheckScriptTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 result, commands, timeout_args, files = self.run_check(*(() if mode == 'default' else (mode,)))
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-                self.assertEqual(timeout_args, ['--signal=TERM', '--kill-after=15s', '22m'])
+                self.assertEqual(timeout_args, ['--signal=TERM', '--kill-after=15s', '36m'])
                 self.assertEqual(commands[:2], [['pub', 'get', '--enforce-lockfile'], ['analyze', '--no-pub']])
                 expected_args = ['test', '--no-pub', '--coverage', '--timeout=60s', '--machine']
                 if mode == 'ai':

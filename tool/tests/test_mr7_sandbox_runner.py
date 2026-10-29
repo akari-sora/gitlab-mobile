@@ -226,8 +226,38 @@ class SandboxWrapperTest(unittest.TestCase):
         unverified = {'status': 'NOT_VERIFIED', 'outcome': 'noChange',
                       'coreNoChange': True, 'mutationCount': 0,
                       'readback': 'NOT_VERIFIED', 'reason': 'noChangeUnverified'}
-        self.assertTrue(runner.validate_receipt(receipt(scenarios=[unverified])))
+        self.assertFalse(runner.validate_receipt(receipt(scenarios=[unverified])))
+        self.assertTrue(runner.validate_receipt(receipt(status='FAIL', scenarios=[unverified])))
         self.assertFalse(runner.validate_receipt(receipt(scenarios=[row]), final=True))
+
+    def test_work_item_zero_dispatch_requires_witness_for_supported_operations(self):
+        row = {'classification': 'verifiedNoOp', 'mutationCount': 0,
+               'observerRequests': 1, 'parentStateVerified': True,
+               'readback': 'PASS', 'status': 'PASS', 'outcome': 'noChange',
+               'coreOutcome': 'succeeded', 'coreNoChange': True}
+        supported = (
+            'updateWorkItemState', 'updateWorkItemStatus', 'updateWorkItemDates',
+            'updateWorkItemAssignees', 'updateWorkItemMilestone',
+            'updateWorkItemContent', 'updateWorkItemLabels',
+            'setWorkItemNotifications', 'setIncidentStatus',
+            'editWorkItemActivityNote', 'setWorkItemActivityNoteReaction',
+        )
+        for operation in supported:
+            valid = {**row, 'operation': operation}
+            with self.subTest(operation=operation):
+                self.assertTrue(runner.validate_receipt(receipt(scenarios=[valid])))
+                for field in ('classification', 'parentStateVerified', 'observerRequests'):
+                    missing = {key: value for key, value in valid.items() if key != field}
+                    self.assertFalse(runner.validate_receipt(receipt(scenarios=[missing])))
+                for changes in ({'parentStateVerified': False}, {'observerRequests': 0},
+                                {'responseStatus': 304}, {'responseStatus': 409},
+                                {'coreNoChange': False}, {'coreOutcome': 'writeUncertain'}):
+                    self.assertFalse(runner.validate_receipt(
+                        receipt(scenarios=[{**valid, **changes}])))
+        for operation in ('updateWorkItemWeight', 'updateWorkItemHealthStatus'):
+            with self.subTest(unsupported=operation):
+                self.assertFalse(runner.validate_receipt(
+                    receipt(scenarios=[{**row, 'operation': operation}])))
 
     def test_decision_projection_requires_observed_consistent_tier(self):
         row = {'status': 'PASS', 'mutationCount': 1, 'declaredTier': 'T1',
@@ -392,9 +422,10 @@ class SandboxWrapperTest(unittest.TestCase):
                          {'outcome': None}, {'coreOutcome': None}, {'coreOutcome': 'succeeded'}):
             with self.subTest(invalid=outcomes):
                 self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[{**row, **outcomes}])))
-        # Legacy, non-closed schema-1 rows retain their existing interpretation.
+        # Uncertain legacy rows remain diagnostic evidence only in a FAIL receipt.
         legacy = {'status': 'NOT_RUN', 'outcome': 'succeeded', 'coreOutcome': 'writeUncertain'}
-        self.assertTrue(runner.validate_receipt(receipt(scenarios=[legacy])))
+        self.assertFalse(runner.validate_receipt(receipt(scenarios=[legacy])))
+        self.assertTrue(runner.validate_receipt(receipt(status='FAIL', scenarios=[legacy])))
 
     def test_forged_closed_variant_child_receipt_quarantines(self):
         forged = receipt('candidate', scenarios=[{
@@ -493,7 +524,8 @@ class SandboxWrapperTest(unittest.TestCase):
         self.assertTrue(set(runner.SOURCE_FILES + runner.DEPENDENCY_FILES).issubset(current['files']))
         dart_files = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'lib').rglob('*.dart') if path.is_file()}
         self.assertTrue(dart_files.issubset(current['files']))
-        for name in ('tool/run_mr7_sandbox.py', 'tool/tests/test_mr7_sandbox_runner.py', 'pubspec.lock'):
+        for name in ('tool/run_mr7_sandbox.py', 'tool/tests/test_mr7_sandbox_runner.py',
+                     'test/ai/mr7_sandbox_wave3c_test.dart', 'pubspec.lock'):
             self.assertEqual(current['files'][name]['sha256'],
                              hashlib.sha256((ROOT / name).read_bytes()).hexdigest())
         self.assertEqual(len(current['files']['tool/run_mr7_sandbox.py']['gitStatus']), 2)
@@ -522,6 +554,7 @@ class SandboxWrapperTest(unittest.TestCase):
             ('production_add', 'lib/core/new.dart', 'add'),
             ('production_delete', 'lib/core/example.dart', 'delete'),
             ('candidate_edit', 'tool/mr7/candidate_release_policy.dart', 'edit'),
+            ('effect_tests_edit', 'test/ai/mr7_sandbox_wave3c_test.dart', 'edit'),
             ('config_edit', '.dart_tool/package_config.json', 'edit'),
         ]
         for label, relative, action in scenarios:

@@ -5,12 +5,26 @@ import 'package:gitlab_mobile/shared/skeleton.dart';
 /// Bounded condition polling helper that interleaves fake clock advancement
 /// with real asynchronous event loop turns, guaranteeing clean settlement
 /// without unbounded hanging.
+///
+/// The widget clock advances by at most [maxCycles] + 1 steps. When that
+/// budget is spent, native work (file I/O, isolates) can still be catching up
+/// on a loaded host, so for up to [realGrace] of wall time the loop keeps
+/// giving the real event loop turns and flushing the widget clock without
+/// advancing it. A run that meets the condition within the cycles is
+/// unchanged; only one that would have timed out gets that extra real time.
+///
+/// The grace pumps frames but never moves the widget clock, so nothing timed
+/// on it progresses there: no timer fires and no animation advances. A popped
+/// route, for one, keeps its exit transition and stays in the tree. Wait in
+/// [condition] for a signal that needs no widget time, such as a fixture
+/// counter or a `NavigatorObserver` pop, then settle the animation afterwards.
 Future<void> pumpUntil(
   WidgetTester tester,
   bool Function() condition, {
   Duration step = const Duration(milliseconds: 50),
   Duration realDelay = const Duration(milliseconds: 15),
   int maxCycles = 100,
+  Duration realGrace = const Duration(seconds: 10),
   String? description,
 }) async {
   for (var cycle = 0; cycle < maxCycles; cycle++) {
@@ -21,8 +35,18 @@ Future<void> pumpUntil(
   if (condition()) return;
   await tester.pump(step);
   if (condition()) return;
+  const graceTurn = Duration(milliseconds: 10);
+  final turn = realDelay > graceTurn ? realDelay : graceTurn;
+  final grace = Stopwatch()..start();
+  while (grace.elapsed < realGrace) {
+    await tester.runAsync(() => Future<void>.delayed(turn));
+    await tester.pump(Duration.zero);
+    if (condition()) return;
+  }
   throw FlutterError(
-    'pumpUntil timed out after $maxCycles cycles: ${description ?? "condition was never met"}',
+    'pumpUntil timed out after $maxCycles cycles and '
+    '${grace.elapsedMilliseconds} ms of real-time grace: '
+    '${description ?? "condition was never met"}',
   );
 }
 

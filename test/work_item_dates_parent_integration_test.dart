@@ -403,16 +403,40 @@ void main() {
       await _openDates(tester);
       await _enterDates(tester, '2026-11-02', '2026-11-09');
       f.lagNextDetail = true;
+      final datesPops = h.observer.popped.length;
       await tester.tap(find.byKey(_datesSave));
-      await settleNetworkWidgets(tester);
+      await _settleUntil(
+        tester,
+        () =>
+            f.datesMutationRequests == 1 &&
+            h.observer.popped.length > datesPops &&
+            !f.lagNextDetail &&
+            _shown(find.byKey(_stale)) &&
+            _enabled(tester, _refreshButton()),
+        'the lagging Dates reload settles',
+        closing: find.byKey(_datesSave),
+      );
       expect(find.byKey(_stale), findsOneWidget, reason: 'positive control');
       expect(find.text(_oldStart), findsNothing);
 
       final details = _details(h);
       await _openStatus(tester);
       await _chooseStatus(tester, _canceled);
+      final statusPops = h.observer.popped.length;
       await tester.tap(find.byKey(_statusSave));
-      await settleNetworkWidgets(tester);
+      // The request is counted when it arrives and the choice row shows the
+      // same label, so only the editor's pop proves the write was confirmed.
+      await _settleUntil(
+        tester,
+        () =>
+            f.status.count(_statusWriteOp) == 1 &&
+            h.observer.popped.length > statusPops &&
+            _shown(find.text('不處理')) &&
+            _enabled(tester, _refreshButton()),
+        'the Status write is confirmed',
+        closing: find.byKey(_statusSave),
+      );
+      expect(find.byKey(_statusSave), findsNothing, reason: 'editor closed');
       expect(f.status.count(_statusWriteOp), 1);
       expect(find.text('不處理'), findsWidgets, reason: 'Status confirmed');
       expect(_details(h), details, reason: 'zero further detail reads');
@@ -421,7 +445,11 @@ void main() {
       expect(find.text(_newStart), findsNothing);
 
       await tester.tap(_refreshButton());
-      await settleNetworkWidgets(tester);
+      await _settleUntil(
+        tester,
+        () => _shown(find.text(_newStart)) && !_shown(find.byKey(_stale)),
+        'the manual refresh shows the new dates',
+      );
       expect(find.byKey(_stale), findsNothing);
       expect(find.text(_newStart), findsOneWidget);
       expect(f.unhandled, isEmpty);
@@ -437,8 +465,17 @@ void main() {
     final control = _controlState(tester);
     await tester.tap(find.byKey(_inheritedMode));
     await tester.pump();
+    final pops = h.observer.popped.length;
     await tester.tap(find.byKey(_datesSave));
-    await settleNetworkWidgets(tester);
+    await _settleUntil(
+      tester,
+      () =>
+          f.mutationInputs.isNotEmpty &&
+          h.observer.popped.length > pops &&
+          _shown(find.text('日期由階層彙整')),
+      'the inherited-mode write is confirmed',
+      closing: find.byKey(_datesSave),
+    );
     expect(f.mutationInputs.single['startAndDueDateWidget'], {
       'isFixed': false,
     });
@@ -509,8 +546,19 @@ void main() {
       await _enterDates(tester, '2026-11-02', '2026-11-09');
       final details = _details(h);
       f.status.failNextDetail = true;
+      final pops = h.observer.popped.length;
       await tester.tap(find.byKey(_datesSave));
-      await settleNetworkWidgets(tester);
+      await _settleUntil(
+        tester,
+        () =>
+            f.datesMutationRequests == 1 &&
+            h.observer.popped.length > pops &&
+            !f.status.failNextDetail &&
+            _shown(find.byKey(_stale)) &&
+            _enabled(tester, _refreshButton()),
+        'the failed post-SETTLE reload settles',
+        closing: find.byKey(_datesSave),
+      );
       expect(f.status.failNextDetail, isFalse, reason: 'the reload got 503');
       expect(_details(h), details + 1);
       expect(find.byKey(_datesSave), findsNothing, reason: 'confirmed, closed');
@@ -1783,4 +1831,38 @@ Future<void> _until(WidgetTester tester, bool Function() ready) async {
     realDelay: const Duration(milliseconds: 1),
   );
   await tester.pump();
+}
+
+bool _shown(Finder finder) => finder.evaluate().isNotEmpty;
+
+bool _enabled(WidgetTester tester, Finder finder) =>
+    finder.evaluate().length == 1 && _onPressed(tester, finder) != null;
+
+/// A save or reload crosses the real read-cache disk barriers as well as the
+/// widget clock, so on a loaded host the bounded settle can return before it
+/// finishes. Then wait for the settled state the test goes on to assert; a run
+/// that has already settled is unchanged.
+///
+/// [settled] must not need widget time: the wait can end in pumpUntil's
+/// real-time grace, where no animation advances. So an editor's confirmation
+/// is its route's pop, and [closing], the editor's Save button, is awaited
+/// separately once the transition can run.
+Future<void> _settleUntil(
+  WidgetTester tester,
+  bool Function() settled,
+  String what, {
+  Finder? closing,
+}) async {
+  await settleNetworkWidgets(tester);
+  if (!settled()) {
+    await pumpUntil(tester, settled, description: what);
+    await settleNetworkWidgets(tester);
+  }
+  if (closing != null) {
+    await pumpUntil(
+      tester,
+      () => !_shown(closing),
+      description: '$what: the editor route is gone',
+    );
+  }
 }
