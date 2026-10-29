@@ -163,9 +163,10 @@ reconciliation: the wrapper removes its state directory, and the receipt's
 which is in the account's projects pending deletion in the GitLab web UI for
 30 days. A quarantined run whose DELETE was accepted but whose cleanup stayed
 `PENDING` keeps its state. GitLab.com has renamed that project to
-`<path>-deletion_scheduled-<id>`, so `--lookup-project` on the saved path
-reports `NOT_VISIBLE`, or `Reconciliation failed; quarantine preserved.` if the
-old path redirects; treat both as unverified and check the recorded project ID
+`<path>-deletion_scheduled-<id>` and answers the saved path with a 301 to the
+numeric ID, which `--lookup-project` does not follow, so it reports
+`Reconciliation failed; quarantine preserved.` (`NOT_VISIBLE` on an instance
+that answers 404); treat both as unverified and check the recorded project ID
 in the web UI. For an interrupted run whose cleanup never ran, the project is
 still under the saved path; delete it by hand only after the journal shows no
 uncertain write, then expect the same 30-day retention.
@@ -231,9 +232,16 @@ retention is `scheduledForDeletion` with `deletionVerified: false` and
 creator and personal namespace, private visibility, a `marked_for_deletion_on`
 (or deprecated `marked_for_deletion_at`) date and the full path
 `<original path>-deletion_scheduled-<id>`; the inventory may list it only
-under that renamed path, and the original path must return 404. Any other
-retention, including a missing date, another ID, owner or suffix, or an
-original path that still answers or redirects, is `PENDING` and quarantined.
+under that renamed path. The date must be a real `YYYY-MM-DD` calendar date
+(`2026-02-30` is refused), and `marked_for_deletion_at` counts only when
+`marked_for_deletion_on` is absent or null. The original path must stop
+resolving: a 404, or GitLab.com's redirect (301, 302, 307 or 308, never
+followed) whose single `Location` is exactly
+`<instance>/api/v4/projects/<this run's ID>`, with the same scheme, host and
+installation path and no query or fragment. Any other retention, including a
+missing or impossible date, another ID, owner or suffix, an original path that
+still answers, or a redirect to another ID or origin, is `PENDING` and
+quarantined.
 The harness never requests `permanently_remove`. A terminal AI project deletion
 is not deleted again by the finalizer. Post-cleanup event failure invalidates
 isolation even if deletion was independently verified. Failed receipts remain
@@ -246,10 +254,12 @@ termination.
 project for deletion. GitLab keeps it for 30 days, renames its `path`, `name`
 and `path_with_namespace` to `<path>-deletion_scheduled-<id>`, and sets
 `marked_for_deletion_on` to the date; permanent removal is disabled on
-GitLab.com. Every live run therefore leaves one private, renamed project in
-the personal namespace for 30 days, and a passing live receipt records
-`cleanup.status: scheduledForDeletion` rather than a deletion. Do not restore
-it; GitLab removes it when the retention ends.
+GitLab.com. The original path keeps answering with a 301 to
+`/api/v4/projects/<id>` (verified on GitLab.com on 2026-10-29). Every live run
+therefore leaves one private, renamed project in the personal namespace for 30
+days, and a passing live receipt records `cleanup.status: scheduledForDeletion`
+rather than a deletion. Do not restore it; GitLab removes it when the
+retention ends.
 
 GitLab.com Free accounts share one per-user API burst limit
 (`RateLimit-Name: burst_traffic_per_user_free_plan`, currently
@@ -262,9 +272,12 @@ session with `stopReason: rateLimited` and quarantines it. It is never reported
 as an identity failure, and no request is retried, writes included. The receipt's
 `rateLimit` keeps only the numeric `Retry-After`, `RateLimit-Limit`,
 `RateLimit-Observed`, `RateLimit-Remaining` and `RateLimit-Reset` values;
-names, dates and paths are dropped. Reconcile a rate-limited run like any other
-quarantined run (above); wait at least `retryAfter` seconds, and until other
-clients are paused, before a new run with a new nonce.
+names, dates and paths are dropped. It appears only on a failed receipt whose
+`stopReason` is `rateLimited`: a 429 after an earlier stop keeps that reason
+and records no `rateLimit`, and the wrapper rejects any other combination.
+Reconcile a rate-limited run like any other quarantined run (above); wait at
+least `retryAfter` seconds, and until other clients are paused, before a new
+run with a new nonce.
 
 ## Scenario interface and receipt schema 1
 

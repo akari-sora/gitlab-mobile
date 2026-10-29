@@ -165,6 +165,8 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
             (policy is not None and actual_policy != policy) or
             (release_sha is not None and receipt['releaseSha'] != release_sha)):
         return False
+    if 'rateLimit' in receipt and not _rate_limit_valid(receipt):
+        return False
     scenarios = receipt.get('scenarios', [])
     if not isinstance(scenarios, list):
         return False
@@ -306,6 +308,19 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
                 return False
     # This implementation has no live transport; no synthetic receipt can be final.
     return not final
+
+
+RATE_LIMIT_FIELDS = {'status', 'retryAfter', 'limit', 'observed', 'remaining', 'reset'}
+
+
+def _rate_limit_valid(receipt: dict) -> bool:
+    """Numeric GitLab rate-limit headers, only on a failed rateLimited stop."""
+    rate_limit = receipt['rateLimit']
+    return (isinstance(rate_limit, dict) and set(rate_limit) <= RATE_LIMIT_FIELDS and
+            rate_limit.get('status') == 429 and
+            all(type(value) is int and 0 <= value <= 999_999_999_999_999
+                for value in rate_limit.values()) and
+            receipt.get('status') == 'FAIL' and receipt.get('stopReason') == 'rateLimited')
 
 
 def _cleanup_terminal(cleanup: dict) -> bool:

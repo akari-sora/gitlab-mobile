@@ -86,8 +86,9 @@ final class _GitLabFixture {
                 },
               )
             : await model.respond(
+                // The model answers as gitlab.com, e.g. in a redirect target.
                 RequestOptions(
-                  baseUrl: origin.toString(),
+                  baseUrl: 'https://gitlab.com',
                   path: personalList ? '/api/v4/projects' : request.uri.path,
                   method: request.method,
                   queryParameters: request.uri.queryParameters,
@@ -680,17 +681,26 @@ void main() {
       );
     }
   }
-  test(
-    'live identity and scheduled cleanup accept the real gitlab.com shape',
-    () async {
+  for (final redirect in [true, false]) {
+    test('live identity and scheduled cleanup accept the real gitlab.com shape'
+        '${redirect ? '' : ' with a 404 original path'}', () async {
       final fixture = _GitLabFixture();
       fixture.model.scheduledDeletion = true;
       fixture.model.routes['GET projects/909'] = (_) => mr7Json(
         fixture.model.cleanupWrites == 0 ? _liveEntity() : _scheduledEntity(),
       );
+      // gitlab.com answers the original path with a 301 to the numeric ID.
       fixture.model.routes[_originalPathKey] = (_) =>
           fixture.model.cleanupWrites == 0
           ? mr7Json(_liveEntity())
+          : redirect
+          ? mr7Json(
+              {'message': 'This resource has been moved permanently'},
+              status: 301,
+              headers: {
+                'location': ['https://gitlab.com/api/v4/projects/909'],
+              },
+            )
           : mr7Json({}, status: 404);
       await fixture.start();
       addTearDown(fixture.close);
@@ -713,11 +723,52 @@ void main() {
           'GET /api/v4/projects/synthetic-owner%2Fmr7-livefixture123',
         ]),
       );
+      // The redirect is classified, never followed.
+      expect(
+        fixture.requests
+            .skip(deleteAt)
+            .where((r) => r == 'GET /api/v4/projects/909'),
+        hasLength(1),
+      );
       expect(
         fixture.requests.where((r) => r.startsWith('DELETE ')),
         hasLength(1),
       );
       expect(fixture.errors, isEmpty);
+    });
+  }
+  test(
+    'live cleanup refuses a redirect of the original path to another project',
+    () async {
+      for (final location in [
+        'https://gitlab.com/api/v4/projects/910',
+        'https://gitlab.example/api/v4/projects/909',
+      ]) {
+        final fixture = _GitLabFixture();
+        fixture.model.scheduledDeletion = true;
+        fixture.model.routes['GET projects/909'] = (_) => mr7Json(
+          fixture.model.cleanupWrites == 0 ? _liveEntity() : _scheduledEntity(),
+        );
+        fixture.model.routes[_originalPathKey] = (_) =>
+            fixture.model.cleanupWrites == 0
+            ? mr7Json(_liveEntity())
+            : mr7Json(
+                {},
+                status: 301,
+                headers: {
+                  'location': [location],
+                },
+              );
+        await fixture.start();
+        addTearDown(fixture.close);
+        final session = fixture.session();
+        await session.initialize();
+        await session.finish();
+        expect(session.cleanup['status'], 'PENDING', reason: location);
+        expect(session.cleanup.containsKey('markedForDeletionOn'), isFalse);
+        expect(session.quarantined, isTrue, reason: location);
+        expect(fixture.errors, isEmpty, reason: location);
+      }
     },
   );
   for (final path in [

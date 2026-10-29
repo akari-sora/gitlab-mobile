@@ -195,6 +195,10 @@ final class Mr7SyntheticGitLab {
   /// GitLab.com shape: DELETE keeps the project for 30 days, renamed to
   /// `<path>-deletion_scheduled-<id>`, and the original path stops resolving.
   bool scheduledDeletion = false;
+
+  /// GitLab.com answers the original path of a scheduled project with a 301
+  /// to its numeric ID; false models an instance that answers 404 there.
+  bool originalPathRedirects = true;
   String? _scheduledFrom;
   bool lostWriteReply = false;
   bool wrongWriteReply = false;
@@ -426,7 +430,18 @@ final class Mr7SyntheticGitLab {
     if (request.method == 'GET' &&
         _scheduledFrom != null &&
         path == 'projects/$_scheduledFrom') {
-      return mr7Json({}, status: 404);
+      if (!originalPathRedirects) return mr7Json({}, status: 404);
+      final uri = request.uri;
+      final location =
+          '${uri.origin}${uri.path.substring(0, uri.path.indexOf('/api/v4/'))}'
+          '/api/v4/projects/$projectId';
+      return mr7Json(
+        {'message': 'This resource has been moved permanently to $location'},
+        status: 301,
+        headers: {
+          'location': [location],
+        },
+      );
     }
     if (request.method == 'GET' &&
         (path == 'projects/$projectId' ||
@@ -3083,7 +3098,13 @@ final class Mr7SandboxSession {
 
   /// GitLab.com's per-user burst limit is shared with every other API client of
   /// the account. Only numeric header values are kept; nothing is retried.
+  /// `rateLimit` explains a `rateLimited` stop only: a 429 after an earlier
+  /// stop keeps that reason and records nothing.
   void rateLimited(Map<String, List<String>> headers) {
+    if (stopReason != null) {
+      stop('rateLimited');
+      return;
+    }
     int? number(String name) {
       final values = [
         for (final entry in headers.entries)
@@ -4180,11 +4201,41 @@ final class Mr7SandboxSession {
         ns['kind'] != 'user' ||
         ns['full_path'] != target.namespace ||
         date is! String ||
-        !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(date) ||
-        DateTime.tryParse(date) == null) {
+        !_calendarDate(date)) {
       return null;
     }
     return date;
+  }
+
+  /// `YYYY-MM-DD` whose year, month and day round-trip exactly, as Python's
+  /// `strptime` requires. `DateTime.tryParse` normalises `2026-02-30` to
+  /// March 2 and `2026-13-40` to February 2027, so it cannot decide this.
+  static bool _calendarDate(String value) {
+    final match = RegExp(
+      r'^([0-9]{4})-([0-9]{2})-([0-9]{2})$',
+    ).firstMatch(value);
+    if (match == null) return false;
+    final year = int.parse(match[1]!);
+    final month = int.parse(match[2]!);
+    final day = int.parse(match[3]!);
+    final parsed = DateTime.utc(year, month, day);
+    return year >= 1 &&
+        parsed.year == year &&
+        parsed.month == month &&
+        parsed.day == day;
+  }
+
+  /// After the rename the original path must stop resolving: a 404, or
+  /// GitLab.com's redirect, never followed, whose single `Location` is exactly
+  /// this run's numeric ID on this instance. Any other status, ID, origin,
+  /// installation path, query or fragment leaves deletion unverified.
+  bool _originalPathGone(Mr7Identity target, Response<Object?> original) {
+    if (original.statusCode == 404) return true;
+    final location = original.headers['location'];
+    return const {301, 302, 307, 308}.contains(original.statusCode) &&
+        location != null &&
+        location.length == 1 &&
+        location.single == '$instance/api/v4/projects/${target.projectId}';
   }
 
   Future<void> finish({bool keep = false}) async {
@@ -4228,7 +4279,7 @@ final class Mr7SandboxSession {
             final original = await observer.get<Object?>(
               'projects/${Uri.encodeComponent(target.path)}',
             );
-            if (original.statusCode != 404) scheduledOn = null;
+            if (!_originalPathGone(target, original)) scheduledOn = null;
           } else {
             scheduledOn = null;
           }

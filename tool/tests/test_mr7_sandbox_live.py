@@ -380,6 +380,42 @@ class LiveWrapperTest(unittest.TestCase):
         result.update(status='PASS', live='PASS')
         self.assertFalse(runner.validate_receipt(result, transport='live'))
 
+    def test_rate_limit_is_numeric_and_only_on_a_rate_limited_stop(self):
+        def failed(**changes):
+            result = self.receipt()
+            result.update(status='FAIL', live='FAIL', quarantined=True, stopReason='rateLimited',
+                          rateLimit={'status': 429, 'retryAfter': 60, 'limit': 100, 'observed': 101,
+                                     'remaining': 0, 'reset': 1761740000})
+            result['cleanup'] = {'status': 'NOT_RUN', 'accepted': False, 'deletionVerified': False}
+            result['scenarios'][0].update(status='NOT_RUN', live='NOT_VERIFIED')
+            result.update(changes)
+            return result
+
+        self.assertTrue(runner.validate_receipt(failed(), transport='live'))
+        self.assertTrue(runner.validate_receipt(failed(rateLimit={'status': 429}), transport='live'))
+        # A complete PASS receipt is otherwise valid; a rate limit contradicts it.
+        passed = self.receipt()
+        self.assertTrue(runner.validate_receipt(passed, transport='live'))
+        passed['rateLimit'] = {'status': 429, 'retryAfter': 60}
+        self.assertFalse(runner.validate_receipt(passed, transport='live'))
+        for changes in ({'stopReason': 'sandboxIdentity'}, {'stopReason': None},
+                        {'rateLimit': None}, {'rateLimit': []}, {'rateLimit': {}},
+                        {'rateLimit': {'retryAfter': 60}},
+                        {'rateLimit': {'status': 200, 'retryAfter': 60}},
+                        {'rateLimit': {'status': '429'}},
+                        {'rateLimit': {'status': 429, 'retryAfter': '60'}},
+                        {'rateLimit': {'status': 429, 'retryAfter': 60.0}},
+                        {'rateLimit': {'status': 429, 'retryAfter': True}},
+                        {'rateLimit': {'status': 429, 'remaining': -1}},
+                        {'rateLimit': {'status': 429, 'reset': 10 ** 15}},
+                        {'rateLimit': {'status': 429, 'name': 'burst_traffic_per_user_free_plan'}},
+                        {'rateLimit': {'status': 429, 'resetTime': 'Thu, 29 Oct 2026 12:13:20 GMT'}}):
+            with self.subTest(changes=changes):
+                self.assertFalse(runner.validate_receipt(failed(**changes), transport='live'))
+        no_stop = failed()
+        del no_stop['stopReason']
+        self.assertFalse(runner.validate_receipt(no_stop, transport='live'))
+
     def test_overall_pass_rejects_fail_rows_in_both_transports(self):
         for transport in ('live', 'synthetic'):
             result = self.receipt()
