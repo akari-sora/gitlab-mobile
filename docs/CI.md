@@ -2,13 +2,13 @@
 
 ## Workflow
 
-The repository uses project-locked private runners on the two-host CI fleet, with tags `grok-box`, `ondemand`, and `gitlab-mobile`. Each host executes at most one CI job at a time; its dispatcher rotates between projects with eligible pending jobs after each job finishes. Jobs can therefore wait for a fleet turn, but do not consume GitLab-hosted runner compute quota. Pushes, merge-request events, tags and manually started branch pipelines run checks. A branch push with an open MR is suppressed to avoid duplicate branch/MR pipelines. A new commit cancels the superseded pipeline of the same ref. On `main` the cancel is conservative: a pipeline still waiting for a runner is cancelled, but once its non-interruptible `main_run_to_completion` job has started it runs to the end, so `main` is still verified (and its preview published) when pushes arrive faster than a pipeline finishes. All required jobs use `allow_failure: false` by default.
+The repository uses project-locked private runners on the two-host CI fleet, with tags `grok-box`, `ondemand`, and `gitlab-mobile`. Each host executes at most one CI job at a time; its dispatcher rotates between projects with eligible pending jobs after each job finishes. Jobs can therefore wait for a fleet turn, but do not consume GitLab-hosted runner compute quota. Pushes, merge-request events, tags and manually started branch pipelines run checks; a merge request that changes only documentation skips the Flutter, native and Android jobs (see [Docs-only merge requests](#docs-only-merge-requests)). A branch push with an open MR is suppressed to avoid duplicate branch/MR pipelines. A new commit cancels the superseded pipeline of the same ref. On `main` the cancel is conservative: a pipeline still waiting for a runner is cancelled, but once its non-interruptible `main_run_to_completion` job has started it runs to the end, so `main` is still verified (and its preview published) when pushes arrive faster than a pipeline finishes. All required jobs use `allow_failure: false` by default.
 
 New projects require explicit runner registration and dispatcher onboarding on each host; adding tags alone does not grant access. For this project, both registrations are locked to `gitlab-mobile` and reject untagged jobs. The existing `python:3.13-slim` job image, toolchain pins, checks and artifact delivery remain in use. A pipeline created before the routing change retains its old job tags; verify a new pipeline for the updated commit rather than retrying the old quota-failed jobs.
 
 1. `python_checks`: report-converter, local-smoke runner, package-installer and native-bootstrap regressions, Python compilation, shell syntax.
-2. `flutter_checks`: dependency-lock enforcement, Flutter analysis, 68 Flutter unit/widget/smoke tests in the initial CI baseline, JUnit and LCOV. The current test count is read from the job report, not inferred from this document.
-3. `flutter_ai_checks`: the same analysis and complete test suite; tests run with `MERGELINE_AI_ASSISTANT=true` and `MERGELINE_AI_BACKGROUND=false`. It inherits the same rules, runner tags and retry policy as `flutter_checks`, with separate `ci-output-ai/` and `coverage-ai/` artifacts. Both check jobs have a 25-minute timeout; each test process has a 22-minute deadline and 15-second TERM-to-KILL grace period.
+2. `flutter_checks`: dependency-lock enforcement, Flutter analysis, 68 Flutter unit/widget/smoke tests in the initial CI baseline, JUnit and LCOV. It runs every test file except the MR7 sandbox tool tests (see [Test lanes](#test-lanes)). The current test count is read from the job report, not inferred from this document.
+3. `flutter_ai_checks`: the same analysis and the complete test suite, including the MR7 sandbox tool tests; tests run with `MERGELINE_AI_ASSISTANT=true` and `MERGELINE_AI_BACKGROUND=false`. It inherits the same rules, runner tags and retry policy as `flutter_checks`, with separate `ci-output-ai/` and `coverage-ai/` artifacts. Both check jobs have a 25-minute timeout; each test process has a 22-minute deadline and 15-second TERM-to-KILL grace period.
 4. `native_templates`: generate/review Android and iOS runner configuration from the pinned SDK. Linux generation is not an iOS build or device test.
 5. `android_debug`: needs the Python checks, both Flutter checks and native templates, reuses the default check's dependency lock and native templates, and builds the `gitlab`-flavor Android APK: a release build on protected refs (`main`, `v*` tags), a debug build everywhere else (the job keeps its historical name).
 6. `publish_preview`: automatic AI-off delivery on this project's protected `main` branch for every non-MR source admitted by the workflow, including `trigger` and `pipeline`; special smoke/sync pipelines are excluded. Runtime verification preserves that source policy and the project/job/protected-main identity checks. It verifies checksums and uploads APK/metadata/checksums to the same project's Generic Package Registry.
@@ -28,6 +28,54 @@ A missing chosen font still fails that required CI check. The test does not inst
 `test/work_item_assignee_api_test.dart`, `test/work_item_assignee_ui_test.dart` and `test/emulator_work_item_assignees_fixture_test.dart` cover project/group assignee replacement. The current isolated run is 50 passed (20 API, 20 UI, 10 fixture), with zero failures, errors and skips, plus scoped analysis of those files. An earlier fixture log passed 39 cases that also include weight and milestone; that is a separate run. API and fixture review approved with zero must-fix items. UI final review is APPROVE with zero required changes (`artifacts/mobile-parity/work-item-assignees/ui-final-review.json`: 50 passed, 20 API / 20 UI / 10 fixture, zero failures, errors and skips). Full suite, archive, new commit, APK, native, private, iOS and G0 checks for assignees are **NOT_RUN**. Run these with the enforced lockfile and `--no-pub` after that resolve. Do not skip the CJK font check and do not treat the targeted run as an APK. [Pipeline 2909579097](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2909579097) was observed running on the previous HEAD. This assignee source has no new commit, so that pipeline is not its result.
 
 No tests or analyzer failures are ignored. A missing/unsuccessful Flutter completion event makes the JUnit conversion fail. Tests emit compact live progress, per-test limits and an overall test-process deadline. CI does not silently fix or reformat the source and claim the changed code was tested.
+
+## Docs-only merge requests
+
+The runner `r9700x-docker` is shared with another project. On 2026-10-29, with 8–9 merge requests open, 61 jobs were queued, and a merge request that changed only `docs/PLAN_STATUS.md` (!245) still ran `flutter_checks` and `flutter_ai_checks`, each the whole Flutter suite (about 21–25 minutes).
+
+`flutter_checks`, `flutter_ai_checks`, `native_templates` and `android_debug` therefore extend `.app_regular` instead of `.regular`. In a merge-request pipeline they are added only when at least one changed file is outside `docs/` and is not a Markdown file in the repository root:
+
+```yaml
+- if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  changes:
+    compare_to: refs/heads/main
+    regexp: '\A(?!docs/)(?![^/]*\.md\z)'
+- if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  when: never
+```
+
+- **Docs-only** means every changed file is under `docs/` or is a root `*.md` file (`README.md`, `AGENTS.md`, `CLAUDE.md` and so on). Any other file runs all four jobs: `lib/`, `test/`, `tool/`, `ci/`, `integration_test/`, `android/`, `ios/`, `assets/`, `pubspec.*`, `.gitlab-ci.yml`, `analysis_options.yaml`, `.fvmrc`, a Markdown file below the root such as `lib/README.md`, or a new top-level file or directory. The pattern names what is documentation rather than what is code, so a path nobody listed runs the jobs. A merge request with no changed files skips them too.
+- `python_checks` keeps running, so the pipeline is never empty. It carries the checks that read documentation, translations and boundaries: `tool/tests/test_l10n.py`, `test_ai_boundaries.py`, `test_offline_boundaries.py` and `test_ai_runner_contract.py` (which reads `docs/V0_6_AI_VERIFICATION.md`), plus the pipeline tests in `ci/tests/`. No Flutter test reads a file under `docs/`.
+- **Main, tag, schedule, API, web and plain branch pipelines run everything.** The `changes` rule applies only when `CI_PIPELINE_SOURCE` is `merge_request_event`; the publishing and attestation jobs, which need `android_debug`, run only on `main`.
+- The four jobs share one rule set, so `android_debug` and the jobs it needs are always added or skipped together. The needs are deliberately not [`optional`](https://docs.gitlab.com/ci/yaml/#needsoptional): a missing needed job stays a pipeline error instead of a silently skipped dependency.
+- Special pipelines (`LIVE_SMOKE`, `RESOLVE_LOCK`, `PUBLIC_SMOKE`, `GH2GL_SYNC`) skip the four jobs as before.
+
+GitLab details, from [`rules:changes`](https://docs.gitlab.com/ci/yaml/#ruleschanges), [`rules:changes:compare_to`](https://docs.gitlab.com/ci/yaml/#ruleschangescompare_to) and [`rules:changes:regexp`](https://docs.gitlab.com/ci/yaml/#ruleschangesregexp):
+
+- `regexp` needs GitLab 19.2 or later, and gitlab.com accepts it. It is a Ruby regular expression, matched against each changed path; the rule holds when any path matches. It is anchored with `\A` and `\z` because a Git path can contain a newline. Glob `paths` have no exclusion, so they would have to list every code path, and a forgotten one would skip the jobs.
+- `compare_to: refs/heads/main` compares the changes with `main`, also for a merge request that targets another branch. GitLab warns that `compare_to` can give unexpected results in merged results pipelines and in forks.
+- When more than 50,000 files changed, GitLab treats the rule as matched and runs the jobs.
+
+`DocsOnlyMergeRequestTests` in `ci/tests/ci_pipeline_config_test.py` models these rules for every pipeline source, checks that every needed job is present, and checks the pattern against the docs-only definition for every tracked file.
+
+## Test lanes
+
+`flutter_checks` (AI gate off) and `flutter_ai_checks` (gate on) each ran every test file. The MR7 sandbox tool tests, `test/ai/mr7_sandbox_*_test.dart` (several hundred tests added on 2026-10-29), exercise the host sandbox runner in `tool/mr7/` rather than the app's AI gate, so running them in both lanes only doubled their time. Under that load two check jobs hit the 25-minute job timeout and several tests the 60-second per-test timeout (issue #52).
+
+`ci/check.sh` now passes `flutter test` an explicit, sorted list of every `*_test.dart` file under `test/`, which is what `flutter test` finds on its own:
+
+- the default lane (`ci/check.sh`, gate off) leaves out `test/ai/mr7_sandbox_*_test.dart` and any `test/ai/mr7_live_*_test.dart` directly in `test/ai/`;
+- the `ai` lane (`ci/check.sh ai`, gate on) runs every file;
+- the gate tests `test/ai/mr7_release_gate_test.dart` and `test/ai/mr7_background_gate_test.dart` run in both lanes, because they test the gate itself.
+
+No test file is edited. Coverage and the JUnit report work as before, and each lane's test count still comes from its JUnit report. The default lane's coverage no longer includes code that only the sandbox tool tests reach; `flutter_ai_checks` still reports it. The job log shows the selection (`ci/check.sh: default lane runs N of M test files`). To see a lane's files without Flutter:
+
+```sh
+bash ci/check.sh default --list-tests   # one path per line; the count goes to stderr
+bash ci/check.sh ai --list-tests
+```
+
+The script stops before Flutter when it finds no test file, because `flutter test` without file arguments would run the whole `test/` directory. `CheckScriptTests` in `ci/tests/ci_pipeline_config_test.py` checks both lanes on a synthetic tree and on this repository's `test/`.
 
 ## Toolchains and reproducibility
 
