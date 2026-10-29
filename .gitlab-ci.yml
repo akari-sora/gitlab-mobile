@@ -90,7 +90,9 @@ main_run_to_completion:
 python_checks:
   extends: .regular
   stage: verify
-  timeout: 5m
+  # About 1.5 minutes of executor start-up before the script; under a full
+  # runner the two unittest suites alone have run past three minutes.
+  timeout: 10m
   before_script:
     - python3 ci/install_packages.py git openssl
   script:
