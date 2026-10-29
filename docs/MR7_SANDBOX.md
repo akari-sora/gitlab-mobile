@@ -1,9 +1,14 @@
-# MR7 sandbox: synthetic host contract (7B0)
+# MR7 sandbox: host contract (7B0)
 
-This packet supplies synthetic GitLab and Responses-provider transports. It
-does not install a live adapter or contact GitLab or an AI provider. All live,
-device, OAuth, release, billing and publication evidence is `NOT_RUN`.
-`--transport live` exits before reading credentials or launching a child.
+The default transport uses synthetic GitLab and provider fixtures. The explicit
+`--transport live` mode contacts GitLab.com and the configured AI provider: it
+creates one private project in the verified personal namespace, runs the selected
+bounded scenarios, and attempts to delete that project after a verified run.
+GitLab.com never deletes it at once: each run's project stays pending deletion
+for 30 days (see [GitLab.com deletion and rate limits](#gitlabcom-deletion-and-rate-limits)).
+An interruption or uncertain result retains the project and quarantine state for
+manual reconciliation. Live receipts are candidates, not final 7R evidence;
+device, OAuth, release, billing and publication acceptance remain separate.
 
 Run from the repository, after `fvm flutter pub get --enforce-lockfile`:
 
@@ -22,11 +27,11 @@ Its currently closed operations appear individually as `NOT_RUN/releaseClosed`.
 Candidate selection is constructed only in `tool/mr7/`; it injects the same
 view into the real catalogue and coordinator. A scripted wire provider calls
 the real `AiRunner`, `PolicyAiWriteCoordinator`, encrypted journal and
-`GitLabAiWritePort`. Candidate receipts say `CANDIDATE_ONLY`. Every receipt
-says `finalEligible: false`; neither a candidate nor a synthetic production
-receipt qualifies for 7R final evidence.
+`GitLabAiWritePort`. Synthetic candidate receipts say `CANDIDATE_ONLY`; live
+receipts say `live-candidate`. Every receipt says `finalEligible: false` and
+none qualifies as 7R final evidence.
 
-## Owner configuration and future credential delivery
+## Live configuration and credential delivery
 
 The owner supplies the expected numeric user ID and personal namespace through
 the secure session's `MR7_EXPECTED_USER_ID` and `MR7_OWNER_NAMESPACE` environment
@@ -34,49 +39,148 @@ variables. Synthetic defaults are user 7 and `synthetic-owner`; these have no
 relationship to an owner account. The nonce, new project ID and path are owned
 by this run. There are no existing-project or resume options.
 
-The optional `--provider-config` argument is a **file path**, containing exactly
-these nonsecret fields (populate the file privately from owner-supplied input or
-environment, without echoing values into shell commands):
+Live mode requires `--suite`, a `--provider-config` file, and explicit owner
+identity environment variables. `--only` optionally restricts the scenario IDs.
+For example, after setting the nonsecret owner variables and securely supplying
+the credentials through the named environment variables:
+
+```sh
+python3 tool/run_mr7_sandbox.py --transport live --policy candidate \
+  --suite rest --only b0-star --provider-config /session/scratch/provider.json \
+  --pat-env MR7_GITLAB_PAT --output /session/scratch/live.json
+```
+
+The provider config contains the following nonsecret fields. Prices shown here
+are illustrative; replace them with the provider's applicable prices before a
+run. `keyEnv` is the **name** of an environment variable, never the key itself.
 
 ```json
 {
   "endpoint": "https://provider.example/v1",
-  "format": "responses",
-  "model": "synthetic-model",
+  "format": "chat_completions",
+  "model": "example-model",
   "caps": {"tools": true, "maxTokens": 4096},
   "maxCost": 1.0,
   "maxCalls": 4,
-  "keyEnv": "MR7_PROVIDER_KEY"
+  "keyEnv": "MR7_PROVIDER_KEY",
+  "priceInputPerMTok": 1.0,
+  "priceOutputPerMTok": 2.0
 }
 ```
 
-Formats accepted as metadata are `responses`, `chat_completions` and
-`anthropic_messages`. The endpoint must use HTTPS with no user info, query or
-fragment; model and capabilities are explicit, never discovered from a private
-model list. Cost must be positive and finite, calls a positive integer. This
-metadata does not enable those live protocols. The synthetic transport uses
-fixed Responses/model fixtures and spends zero provider money. A future live
-adapter must enforce the supplied caps before sending; custom/router recipient
-and retention remain unknown until independently established.
+Live formats are `chat_completions` and `anthropic_messages`; `responses` is
+synthetic configuration metadata only. The optional `preset` is `custom`
+(default) or `opencode-go`, the latter only with `chat_completions`. The HTTPS
+endpoint cannot include user info, a query or fragment. The model is explicit;
+no private model list is discovered. `caps` must contain exactly `tools: true`
+and integer `maxTokens` from 512 to 1,000,000. Both per-million-token prices
+and `maxCost` must be positive and finite; `maxCalls` must be a positive integer.
+The shared run budget reserves the estimated worst-case cost before each
+provider request and refuses a request that would exceed either cap. Actual
+usage is settled only after successful decoding; missing or invalid usage,
+malformed streams and cancellations retain the worst-case reservation. These
+limits depend on accurate configured prices and do not establish the provider's
+actual invoice. The synthetic transport uses fixed Responses/model fixtures and
+spends zero provider money. Custom/router recipients and retention remain
+unknown until independently established.
 
-The dormant `credential_files()` helper accepts named PAT/key environment
-variables or `getpass` hidden input. It uses separate exclusive 0600 files in a
-0700 temporary directory and deletes them when the context exits. Synthetic
-runs never call it or send owner credentials. Future live wiring must obtain
-the owner PAT and provider key through that helper, send only credential-file
-paths or stdin to a shell-free child, and never send the GitLab PAT to the
-provider. There are no token/API-key command-line options. Child environments
-are allowlisted; child stdout/stderr is suppressed, parser errors do not echo
-unknown arguments, and receipts are scanned for known environment secrets.
-Disable shell tracing and HTTP dumps. Do not paste credentials into commands,
-logs, prompts, source, receipts or reports.
+Live credential delivery accepts `--pat-env` and the provider config's `keyEnv`
+as environment variable names. Omitting `--pat-env` requests the PAT through
+hidden input; a named but absent PAT variable is rejected. If `keyEnv` is not
+set, the wrapper requests the provider key through hidden input. It uses
+separate exclusive 0600 temporary
+files in a 0700 directory and removes them on exit. Synthetic runs never call
+this helper. The shell-free child receives credential-file paths; the GitLab PAT
+is not sent to the provider. Child environments are allowlisted, stdout/stderr
+is suppressed, parser errors do not echo unknown arguments, and receipts are
+scanned for known secrets. Disable shell tracing and HTTP dumps. Do not paste
+credentials into commands, logs, source, receipts or reports.
+
+Live confirmation is explicit and may wait up to five minutes, bounded by the
+whole-run ten-minute deadline. The deadline includes network and cleanup time.
+Failure, timeout or interruption leaves quarantine state for reconciliation;
+unproven cleanup is not attempted.
+
+Answer approvals in the terminal that launched the wrapper. For example, this
+synthetic proposal displays the operation, tier, numeric project ID, payload
+digest and bounded preview:
+
+```text
+Approve sandbox write setStar tier T1 project 9 digest aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Preview: Synthetic sandbox only.
+Type yes to approve:
+```
+
+Review those values, then type lowercase `yes` and press Enter to approve.
+Input is hidden, so the letters do not appear. Any other answer, including an
+empty line, denies approval. No answer is supplied automatically. When the
+product requires a typed target, the same proposal also shows
+`Typed target required: <target name>` before the approval question. After
+`yes`, a second prompt says `Type the target name: `; type that exact displayed
+name and press Enter. The second answer is hidden too, and must be entered
+explicitly. Both questions share the same confirmation deadline.
+
+An unanswered prompt is cancelled when the child exits, withdraws its request,
+or reaches the confirmation/run deadline. Ctrl-C interrupts the run. Terminal
+settings, including echo, are restored before control returns; cancellation
+of input publishes no answer. The child also rechecks cancellation and its
+deadline before accepting a response. It retains its bounded shutdown grace
+after the run deadline to preserve quarantine state.
+
+## Reconcile an interrupted run
+
+Find `stateDirectory` in the failed or interrupted output receipt. The private
+state records the run nonce and intended full project path before creation, and
+records the project ID as soon as known. It also keeps the encrypted journal and
+its key in the 0700 state directory with a 0600 key file. Keep the directory
+private and do not copy its key into a receipt, log, argument or report.
+
+Read the saved journal in a fresh process without contacting a service:
+
+```sh
+python3 tool/run_mr7_sandbox.py --reconcile /session/scratch/mr7-live-state-...
+```
+
+The read-only output contains write metadata, including operation, target IDs,
+state and timestamps, without bodies. A missing, foreign or unreadable key is
+reported; preserve the state for investigation rather than deleting or
+replacing it. To locate the exact run project when a creation response was
+lost, explicitly request a read-only GitLab lookup with the same account:
+
+```sh
+python3 tool/run_mr7_sandbox.py --reconcile /session/scratch/mr7-live-state-... \
+  --lookup-project --pat-env MR7_GITLAB_PAT
+```
+
+The lookup validates `/user` and fetches only the saved URL-encoded full project
+path. It does not enumerate or delete projects. A 404 may mean inaccessible or
+absent; inspect the result and reconcile uncertain writes manually before any
+separate cleanup. Do not infer permission to touch other `mr7-*` projects.
+
+A passed run with `cleanup.status: scheduledForDeletion` needs no
+reconciliation: the wrapper removes its state directory, and the receipt's
+`identity.projectId` and `cleanup.markedForDeletionOn` identify the project,
+which is in the account's projects pending deletion in the GitLab web UI for
+30 days. A quarantined run whose DELETE was accepted but whose cleanup stayed
+`PENDING` keeps its state. GitLab.com has renamed that project to
+`<path>-deletion_scheduled-<id>` and answers the saved path with a 301 to the
+numeric ID, which `--lookup-project` does not follow, so it reports
+`Reconciliation failed; quarantine preserved.` (`NOT_VISIBLE` on an instance
+that answers 404); treat both as unverified and check the recorded project ID
+in the web UI. For an interrupted run whose cleanup never ran, the project is
+still under the saved path; delete it by hand only after the journal shows no
+uncertain write, then expect the same 30-day retention.
 
 ## Isolation and stop contract
 
 Setup first validates `/user` and personal namespace ownership, then collects
 an events baseline **before** its one administrative project creation. Setup
 is not AI `createProject` evidence. Existing fixtures, protected project
-86648389, group namespaces, forks, mirrors and imports are refused.
+86648389, group namespaces, forks, mirrors and imports are refused. GitLab.com
+Free omits `mirror` and `forked_from_project` from a personal project: an
+absent or null `mirror`, `forked_from_project` or `import_url` means none,
+while `mirror` with any value other than `false`, any fork link and any import
+URL refuse the sandbox.
 
 Each mutation re-reads the sandbox by numeric ID and URL-encoded full path.
 Both must match the recorded numeric ID, full path, owner, namespace, nonce,
@@ -98,8 +202,8 @@ cases and leaves them `NOT_RUN`; there is no reset, unlock, retry or resume.
 Independent observation uses another uncached read-only adapter. Scenario
 readback gets a restricted target-bound observer, checks exact returned IDs and
 cannot use the mutation response as field evidence. The simulated server is
-necessarily in memory; only distinct serialized requests are proved here.
-Real independent server readback is `NOT_RUN`.
+necessarily in memory; only distinct serialized requests are proved by the
+synthetic tests. A live run must establish its own server readback.
 
 Events are read in complete bounded pagination with a second delayed pass
 (10 ms in the synthetic fixture, with a one-second wait ceiling),
@@ -120,10 +224,60 @@ The inventory requires every well-formed row and every contiguous page, with
 stable `x-total`, `x-total-pages`, `x-per-page`, matching `x-page`/`x-next-page`
 and exact row counts (at most 20 pages). Missing metadata, malformed rows or
 duplicate IDs leave deletion unverified and the session quarantined.
-Retention can produce `PENDING`. A terminal AI project deletion is not deleted
-again by the finalizer. Post-cleanup event failure invalidates isolation even
-if deletion was independently verified. Failed receipts remain preserved. A
-durable provisional quarantine receipt survives an abrupt parent termination.
+After an accepted DELETE there are two verified terminal states. A 404 for the
+numeric ID with the ID absent from the inventory is `PASS` with
+`deletionVerified: true` (instances that delete immediately). GitLab.com's
+retention is `scheduledForDeletion` with `deletionVerified: false` and
+`markedForDeletionOn`: the same numeric ID must answer with the same owner,
+creator and personal namespace, private visibility, a `marked_for_deletion_on`
+(or deprecated `marked_for_deletion_at`) date and the full path
+`<original path>-deletion_scheduled-<id>`; the inventory may list it only
+under that renamed path. The date must be a real `YYYY-MM-DD` calendar date
+(`2026-02-30` is refused), and `marked_for_deletion_at` counts only when
+`marked_for_deletion_on` is absent or null. The original path must stop
+resolving: a 404, or GitLab.com's redirect (301, 302, 307 or 308, never
+followed) whose single `Location` is exactly
+`<instance>/api/v4/projects/<this run's ID>`, with the same scheme, host and
+installation path and no query or fragment. Any other retention, including a
+missing or impossible date, another ID, owner or suffix, an original path that
+still answers, or a redirect to another ID or origin, is `PENDING` and
+quarantined.
+The harness never requests `permanently_remove`. A terminal AI project deletion
+is not deleted again by the finalizer. Post-cleanup event failure invalidates
+isolation even if deletion was independently verified. Failed receipts remain
+preserved. A durable provisional quarantine receipt survives an abrupt parent
+termination.
+
+## GitLab.com deletion and rate limits
+
+`DELETE /projects/:id` on GitLab.com answers `202 Accepted` and only marks the
+project for deletion. GitLab keeps it for 30 days, renames its `path`, `name`
+and `path_with_namespace` to `<path>-deletion_scheduled-<id>`, and sets
+`marked_for_deletion_on` to the date; permanent removal is disabled on
+GitLab.com. The original path keeps answering with a 301 to
+`/api/v4/projects/<id>` (verified on GitLab.com on 2026-10-29). Every live run
+therefore leaves one private, renamed project in the personal namespace for 30
+days, and a passing live receipt records `cleanup.status: scheduledForDeletion`
+rather than a deletion. Do not restore it; GitLab removes it when the
+retention ends.
+
+GitLab.com Free accounts share one per-user API burst limit
+(`RateLimit-Name: burst_traffic_per_user_free_plan`, currently
+`RateLimit-Limit: 100`) between every API client of that user. A live run
+spends tens of requests on setup, observation and cleanup, so pause other
+clients of the same account first: watchers, CLI polling, CI scripts that use
+the same token, and other sandbox runs. Any 429 the harness sees, on a setup,
+identity, observer, scenario or cleanup request, read or write, stops the
+session with `stopReason: rateLimited` and quarantines it. It is never reported
+as an identity failure, and no request is retried, writes included. The receipt's
+`rateLimit` keeps only the numeric `Retry-After`, `RateLimit-Limit`,
+`RateLimit-Observed`, `RateLimit-Remaining` and `RateLimit-Reset` values;
+names, dates and paths are dropped. It appears only on a failed receipt whose
+`stopReason` is `rateLimited`: a 429 after an earlier stop keeps that reason
+and records no `rateLimit`, and the wrapper rejects any other combination.
+Reconcile a rate-limited run like any other quarantined run (above); wait at
+least `retryAfter` seconds, and until other clients are paused, before a new
+run with a new nonce.
 
 ## Scenario interface and receipt schema 1
 
@@ -311,9 +465,9 @@ Typed closed rows accept each of `outcome` and `coreOutcome` only when absent or
 exactly `notExecuted`; both present therefore agree. Legacy schema-1 rows retain
 their previous interpretation.
 
-Codes I/F, unbound multi-effect operations and all live/provider/device/CI/release
-acceptance remain closed or NOT_RUN. These hooks do not enable production
-operations. Candidate receipts stay CANDIDATE_ONLY and finalEligible=false.
+Codes I/F and unbound multi-effect operations remain closed. These synthetic
+hooks do not establish live/provider/device/CI/release acceptance. Synthetic
+candidate receipts stay CANDIDATE_ONLY and all receipts have finalEligible=false.
 
 ## Wave 3a seams
 

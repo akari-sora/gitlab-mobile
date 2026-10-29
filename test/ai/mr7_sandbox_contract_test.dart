@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,8 @@ import 'package:gitlab_mobile/core/ai/tools/release_policy.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/instance.dart';
 
 import '../../tool/mr7/sandbox_contract.dart';
 import '../../tool/mr7_sandbox.dart' as sandbox;
@@ -3698,4 +3701,701 @@ void main() {
       expect(server.cleanupWrites, 0);
     },
   );
+  _gitLabComShapeTests();
+}
+
+// Sanitised real gitlab.com Free entity, captured after deletion scheduling.
+Map<String, Object?> _scheduledEntity() =>
+    jsonDecode(
+          File(
+            'test/ai/fixtures/mr7/gitlab_com_project_scheduled_for_deletion.json',
+          ).readAsStringSync(),
+        )
+        as Map<String, Object?>;
+
+/// The same real entity before DELETE: original path, no deletion date.
+Map<String, Object?> _liveEntity() {
+  final row = _scheduledEntity();
+  for (final key in ['marked_for_deletion_on', 'marked_for_deletion_at']) {
+    row.remove(key);
+  }
+  return {
+    ...row,
+    'name': 'mr7-testnonce123',
+    'path': 'mr7-testnonce123',
+    'path_with_namespace': 'synthetic-owner/mr7-testnonce123',
+  };
+}
+
+const _originalPathKey = 'GET projects/synthetic-owner/mr7-testnonce123';
+const _numericLocation = 'https://gitlab.invalid/install/api/v4/projects/909';
+
+/// GitLab.com's answer for the original path once deletion is scheduled.
+ResponseBody _moved(List<String>? location, {int status = 301}) => mr7Json(
+  {'message': 'This resource has been moved permanently'},
+  status: status,
+  headers: {'location': ?location},
+);
+
+/// Serves the real entity shape before DELETE and [after] once deleted. The
+/// original path then redirects to the numeric ID, as on gitlab.com.
+void _serveRealShape(
+  Mr7SyntheticGitLab server, {
+  Map<String, Object?> Function()? after,
+  ResponseBody Function()? originalAfter,
+  Map<String, Object?>? listed,
+}) {
+  final scheduled = after ?? _scheduledEntity;
+  server.routes['GET projects/909'] = (_) =>
+      server.cleanupWrites == 0 ? mr7Json(_liveEntity()) : mr7Json(scheduled());
+  server.routes[_originalPathKey] = (_) => server.cleanupWrites == 0
+      ? mr7Json(_liveEntity())
+      : (originalAfter?.call() ?? _moved([_numericLocation]));
+  server.routes['GET projects'] = (_) {
+    final rows = [if (server.cleanupWrites > 0 && listed != null) listed];
+    return mr7Json(rows, headers: _pageHeaders(page: 1, total: rows.length));
+  };
+}
+
+/// Requests the fake received after the harness DELETE.
+List<String> _afterDelete(Mr7SyntheticGitLab server) => server.requests
+    .skip(server.requests.indexOf('DELETE projects/909') + 1)
+    .toList();
+
+const _rateLimitHeaders = {
+  'Retry-After': ['60'],
+  'RateLimit-Name': ['burst_traffic_per_user_free_plan'],
+  'RateLimit-Limit': ['100'],
+  'RateLimit-Observed': ['101'],
+  'RateLimit-Remaining': ['0'],
+  'RateLimit-Reset': ['1761740000'],
+  'RateLimit-ResetTime': ['Thu, 29 Oct 2026 12:13:20 GMT'],
+};
+
+ResponseBody _tooManyRequests() => mr7Json(
+  {'message': 'Retry later'},
+  status: 429,
+  headers: _rateLimitHeaders,
+);
+
+void _expectRateLimited(Mr7SandboxSession session) {
+  expect(session.stopReason, 'rateLimited');
+  expect(session.quarantined, isTrue);
+  expect(session.rateLimit, {
+    'status': 429,
+    'retryAfter': 60,
+    'limit': 100,
+    'observed': 101,
+    'remaining': 0,
+    'reset': 1761740000,
+  });
+}
+
+void _gitLabComShapeTests() {
+  group('gitlab.com project shape from the first live run', () {
+    test('real entity fixture omits mirror and fork and has no import', () {
+      final row = _scheduledEntity();
+      expect(row.containsKey('mirror'), isFalse);
+      expect(row.containsKey('forked_from_project'), isFalse);
+      expect(row.containsKey('import_url'), isTrue);
+      expect(row['import_url'], isNull);
+      expect(row.containsKey('runners_token'), isFalse);
+    });
+
+    test('identity passes on the real shape without a mirror field', () async {
+      final server = Mr7SyntheticGitLab();
+      _serveRealShape(server);
+      final session = _session(server);
+      await session.initialize();
+      await session.verifyIdentity();
+      expect(session.identity?.projectId, 909);
+      expect(session.stopReason, isNull);
+      expect(session.quarantined, isFalse);
+      expect(server.requests, contains(_originalPathKey));
+    });
+
+    test('identity accepts explicit mirror false and null mirror', () async {
+      for (final mirror in [false, null]) {
+        final server = Mr7SyntheticGitLab();
+        server.routes['GET projects/909'] = (_) =>
+            mr7Json({..._liveEntity(), 'mirror': mirror});
+        server.routes[_originalPathKey] = (_) =>
+            mr7Json({..._liveEntity(), 'mirror': mirror});
+        final session = _session(server);
+        await session.initialize();
+        expect(session.stopReason, isNull, reason: '$mirror');
+      }
+    });
+
+    test('identity refuses mirrors, forks and imports', () async {
+      for (final (field, value) in <(String, Object?)>[
+        ('mirror', true),
+        ('mirror', 'false'),
+        ('mirror', 0),
+        ('forked_from_project', {'id': 1000}),
+        ('forked_from_project', <String, Object?>{}),
+        ('import_url', 'https://example.invalid/source.git'),
+        ('import_url', ''),
+      ]) {
+        final server = Mr7SyntheticGitLab();
+        server.routes['GET projects/909'] = (_) =>
+            mr7Json({..._liveEntity(), field: value});
+        server.routes[_originalPathKey] = (_) => mr7Json(_liveEntity());
+        final session = _session(server);
+        await expectLater(session.initialize(), throwsA(anything));
+        await session.finish();
+        final reason = '$field=$value';
+        expect(session.stopReason, 'sandboxIdentity', reason: reason);
+        expect(session.quarantined, isTrue, reason: reason);
+        expect(server.scenarioWrites, 0, reason: reason);
+        expect(server.cleanupWrites, 0, reason: reason);
+      }
+    });
+
+    test('cleanup reaches scheduledForDeletion on the real post-delete '
+        'shape', () async {
+      // The original path redirects to the same numeric ID on gitlab.com and
+      // answers 404 on an instance without that redirect.
+      final originals = <String, ResponseBody Function()>{
+        for (final status in [301, 302, 307, 308])
+          '$status': () => _moved([_numericLocation], status: status),
+        '404': () => mr7Json({}, status: 404),
+      };
+      for (final listed in [false, true]) {
+        for (final MapEntry(key: answer, value: original)
+            in originals.entries) {
+          final server = Mr7SyntheticGitLab();
+          _serveRealShape(
+            server,
+            listed: listed ? _scheduledEntity() : null,
+            originalAfter: original,
+          );
+          final session = _session(server);
+          await session.initialize();
+          await session.finish();
+          final reason = 'listed=$listed original=$answer';
+          expect(server.cleanupWrites, 1, reason: reason);
+          expect(session.cleanup, {
+            'status': 'scheduledForDeletion',
+            'accepted': true,
+            'deletionVerified': false,
+            'markedForDeletionOn': '2026-10-29',
+            'parentChecked': true,
+            'identityChecked': true,
+          }, reason: reason);
+          expect(session.quarantined, isFalse, reason: reason);
+          expect(session.stopReason, isNull, reason: reason);
+          // The redirect is classified, never followed.
+          expect(
+            _afterDelete(server).where((r) => r.startsWith('GET projects/')),
+            ['GET projects/909', _originalPathKey],
+            reason: reason,
+          );
+          final receipt = session.receipt(
+            policy: Mr7Policy.candidate,
+            releaseSha: _sha,
+            scenarios: const [],
+            releasePolicy: mr7SandboxPolicy(Mr7Policy.candidate),
+          );
+          expect(receipt['status'], 'PASS', reason: reason);
+          expect(receipt['quarantined'], isFalse, reason: reason);
+        }
+      }
+    });
+
+    test(
+      'the deprecated marked_for_deletion_at alone dates the deletion',
+      () async {
+        for (final absent in [true, false]) {
+          final server = Mr7SyntheticGitLab();
+          _serveRealShape(
+            server,
+            after: () {
+              final row = _scheduledEntity()
+                ..['marked_for_deletion_at'] = '2026-10-28';
+              if (absent) {
+                row.remove('marked_for_deletion_on');
+              } else {
+                row['marked_for_deletion_on'] = null;
+              }
+              return row;
+            },
+          );
+          final session = _session(server);
+          await session.initialize();
+          await session.finish();
+          final reason = 'onAbsent=$absent';
+          expect(
+            session.cleanup['status'],
+            'scheduledForDeletion',
+            reason: reason,
+          );
+          expect(
+            session.cleanup['markedForDeletionOn'],
+            '2026-10-28',
+            reason: reason,
+          );
+          expect(session.quarantined, isFalse, reason: reason);
+        }
+      },
+    );
+
+    test(
+      'synthetic scheduled deletion follows the gitlab.com rename',
+      () async {
+        for (final redirects in [true, false]) {
+          final server = Mr7SyntheticGitLab()
+            ..scheduledDeletion = true
+            ..originalPathRedirects = redirects;
+          final session = _session(server);
+          await session.initialize();
+          await session.finish();
+          final reason = 'redirects=$redirects';
+          expect(
+            server.project!['path_with_namespace'],
+            'synthetic-owner/mr7-testnonce123-deletion_scheduled-909',
+            reason: reason,
+          );
+          final original = await server.respond(
+            RequestOptions(
+              baseUrl: 'https://gitlab.invalid/install/api/v4/',
+              path: 'projects/synthetic-owner%2Fmr7-testnonce123',
+            ),
+          );
+          expect(original.statusCode, redirects ? 301 : 404, reason: reason);
+          expect(
+            original.headers['location'],
+            redirects ? [_numericLocation] : isNull,
+            reason: reason,
+          );
+          expect(
+            session.cleanup['status'],
+            'scheduledForDeletion',
+            reason: reason,
+          );
+          expect(session.cleanup['deletionVerified'], isFalse, reason: reason);
+          expect(
+            session.cleanup['markedForDeletionOn'],
+            '2026-10-29',
+            reason: reason,
+          );
+          expect(session.quarantined, isFalse, reason: reason);
+        }
+      },
+    );
+
+    test(
+      '404 after delete still verifies on immediate-delete instances',
+      () async {
+        final server = Mr7SyntheticGitLab();
+        final session = _session(server);
+        await session.initialize();
+        await session.finish();
+        expect(session.cleanup['status'], 'PASS');
+        expect(session.cleanup['deletionVerified'], isTrue);
+        expect(session.cleanup.containsKey('markedForDeletionOn'), isFalse);
+        expect(session.quarantined, isFalse);
+        expect(server.requests, contains('DELETE projects/909'));
+        expect(_afterDelete(server), isNot(contains(_originalPathKey)));
+      },
+    );
+
+    test('scheduled deletion of another shape stays unverified', () async {
+      final variants = <String, void Function(Mr7SyntheticGitLab)>{
+        'otherId': (s) =>
+            _serveRealShape(s, after: () => {..._scheduledEntity(), 'id': 910}),
+        'otherOwner': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'owner': {'id': 8},
+          },
+        ),
+        'missingOwner': (s) => _serveRealShape(
+          s,
+          after: () => _scheduledEntity()..remove('owner'),
+        ),
+        'otherCreator': (s) => _serveRealShape(
+          s,
+          after: () => {..._scheduledEntity(), 'creator_id': 8},
+        ),
+        'otherNamespace': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'namespace': {
+              'id': 71,
+              'kind': 'user',
+              'full_path': 'synthetic-owner',
+            },
+          },
+        ),
+        'otherNamespacePath': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'namespace': {'id': 70, 'kind': 'user', 'full_path': 'other-owner'},
+          },
+        ),
+        'groupNamespace': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'namespace': {
+              'id': 70,
+              'kind': 'group',
+              'full_path': 'synthetic-owner',
+            },
+          },
+        ),
+        'otherSuffix': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'path_with_namespace':
+                'synthetic-owner/mr7-testnonce123-deletion_scheduled-910',
+            'path': 'mr7-testnonce123-deletion_scheduled-910',
+          },
+        ),
+        'otherNonce': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'path_with_namespace':
+                'synthetic-owner/mr7-othernonce1-deletion_scheduled-909',
+            'path': 'mr7-othernonce1-deletion_scheduled-909',
+          },
+        ),
+        'pathMismatch': (s) => _serveRealShape(
+          s,
+          after: () => {..._scheduledEntity(), 'path': 'mr7-testnonce123'},
+        ),
+        'notRenamed': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'path_with_namespace': 'synthetic-owner/mr7-testnonce123',
+            'path': 'mr7-testnonce123',
+          },
+        ),
+        'missingDate': (s) => _serveRealShape(
+          s,
+          after: () => _scheduledEntity()
+            ..remove('marked_for_deletion_on')
+            ..remove('marked_for_deletion_at'),
+        ),
+        'nullDate': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'marked_for_deletion_on': null,
+            'marked_for_deletion_at': null,
+          },
+        ),
+        'malformedDate': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'marked_for_deletion_on': 'soon',
+            'marked_for_deletion_at': null,
+          },
+        ),
+        // Calendar-invalid dates that DateTime.tryParse would normalise.
+        for (final date in ['2026-02-30', '2026-13-40', '0000-01-01'])
+          'invalidDate $date': (s) => _serveRealShape(
+            s,
+            after: () => {
+              ..._scheduledEntity(),
+              'marked_for_deletion_on': date,
+              'marked_for_deletion_at': null,
+            },
+          ),
+        for (final date in ['2026-02-30', '2026-13-40'])
+          'invalidDeprecatedDate $date': (s) => _serveRealShape(
+            s,
+            after: () => _scheduledEntity()
+              ..remove('marked_for_deletion_on')
+              ..['marked_for_deletion_at'] = date,
+          ),
+        // The deprecated field is a fallback for an absent date only.
+        'invalidDateBesideValidDeprecated': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'marked_for_deletion_on': '2026-02-30',
+            'marked_for_deletion_at': '2026-10-29',
+          },
+        ),
+        'dateTime': (s) => _serveRealShape(
+          s,
+          after: () => {
+            ..._scheduledEntity(),
+            'marked_for_deletion_on': '2026-10-29T00:00:00Z',
+          },
+        ),
+        'public': (s) => _serveRealShape(
+          s,
+          after: () => {..._scheduledEntity(), 'visibility': 'public'},
+        ),
+        'originalStillResolves': (s) => _serveRealShape(
+          s,
+          originalAfter: () => mr7Json(_scheduledEntity()),
+        ),
+        // Only a redirect to exactly this run's numeric ID on this instance
+        // shows the original path no longer resolves.
+        for (final (name, location) in [
+          ('OtherId', 'https://gitlab.invalid/install/api/v4/projects/910'),
+          ('OtherHost', 'https://gitlab.example/install/api/v4/projects/909'),
+          ('OtherScheme', 'http://gitlab.invalid/install/api/v4/projects/909'),
+          (
+            'OtherPort',
+            'https://gitlab.invalid:8443/install/api/v4/projects/909',
+          ),
+          ('NoSubpath', 'https://gitlab.invalid/api/v4/projects/909'),
+          ('Relative', '/install/api/v4/projects/909'),
+          ('Query', '$_numericLocation?private_token=x'),
+          ('Fragment', '$_numericLocation#x'),
+          ('ExtraSegment', '$_numericLocation/starrers'),
+          ('TrailingSlash', '$_numericLocation/'),
+          (
+            'RenamedPath',
+            'https://gitlab.invalid/install/api/v4/projects/'
+                'synthetic-owner%2Fmr7-testnonce123-deletion_scheduled-909',
+          ),
+        ])
+          'originalRedirectsTo$name': (s) =>
+              _serveRealShape(s, originalAfter: () => _moved([location])),
+        'originalSeeOther': (s) => _serveRealShape(
+          s,
+          originalAfter: () => _moved([_numericLocation], status: 303),
+        ),
+        'originalRedirectWithoutLocation': (s) =>
+            _serveRealShape(s, originalAfter: () => _moved(null)),
+        'originalRedirectTwoLocations': (s) => _serveRealShape(
+          s,
+          originalAfter: () => _moved([_numericLocation, _numericLocation]),
+        ),
+        'originalForbidden': (s) =>
+            _serveRealShape(s, originalAfter: () => mr7Json({}, status: 403)),
+        'listedUnderOriginalPath': (s) =>
+            _serveRealShape(s, listed: _liveEntity()),
+        'listedUnderOtherPath': (s) => _serveRealShape(
+          s,
+          listed: {
+            ..._scheduledEntity(),
+            'path_with_namespace': 'synthetic-owner/renamed-elsewhere',
+            'path': 'renamed-elsewhere',
+          },
+        ),
+        // The scheduled shape counts only for the verified owner's token.
+        'otherUserAfterDelete': (s) {
+          _serveRealShape(s);
+          s.routes['GET user'] = (_) => mr7Json({
+            'id': s.cleanupWrites == 0 ? 7 : 8,
+            'username': 'synthetic-owner',
+          });
+        },
+        'deleteNotAccepted': (s) {
+          _serveRealShape(s);
+          s.routes['DELETE projects/909'] = (_) {
+            s.cleanupWrites++;
+            return mr7Json({}, status: 200);
+          };
+        },
+      };
+      for (final MapEntry(key: variant, value: configure) in variants.entries) {
+        final server = Mr7SyntheticGitLab();
+        configure(server);
+        final session = _session(server);
+        await session.initialize();
+        await session.finish();
+        expect(server.cleanupWrites, 1, reason: variant);
+        expect(session.cleanup['status'], 'PENDING', reason: variant);
+        expect(session.cleanup['deletionVerified'], isFalse, reason: variant);
+        expect(
+          session.cleanup.containsKey('markedForDeletionOn'),
+          isFalse,
+          reason: variant,
+        );
+        expect(session.quarantined, isTrue, reason: variant);
+        expect(
+          session.cleanup['identityChecked'],
+          variant != 'otherUserAfterDelete',
+          reason: variant,
+        );
+      }
+    });
+
+    test('a 429 on the identity read stops as rateLimited', () async {
+      final server = Mr7SyntheticGitLab();
+      server.routes['GET projects/909'] = (_) => _tooManyRequests();
+      final session = _session(server);
+      await expectLater(session.initialize(), throwsA(anything));
+      await session.finish();
+      _expectRateLimited(session);
+      expect(server.setupWrites, 1);
+      expect(server.cleanupWrites, 0);
+      expect(server.requests.where((r) => r == 'POST projects'), hasLength(1));
+      final receipt = session.receipt(
+        policy: Mr7Policy.candidate,
+        releaseSha: _sha,
+        scenarios: const [],
+        releasePolicy: mr7SandboxPolicy(Mr7Policy.candidate),
+      );
+      expect(receipt['stopReason'], 'rateLimited');
+      expect(receipt['rateLimit'], session.rateLimit);
+      expect(jsonEncode(receipt), isNot(contains('burst_traffic')));
+      expect(jsonEncode(receipt), isNot(contains('GMT')));
+    });
+
+    test(
+      'a 429 on any setup, observer or cleanup read is rateLimited',
+      () async {
+        final cases = <String, (String, bool)>{
+          'user': ('GET user', false),
+          'namespaces': ('GET namespaces', false),
+          'events': ('GET users/7/events', false),
+          'parentList': ('GET projects', true),
+          'cleanupLookup': ('GET projects/909', true),
+        };
+        for (final MapEntry(key: name, value: (route, afterDelete))
+            in cases.entries) {
+          final server = Mr7SyntheticGitLab();
+          if (!afterDelete) {
+            server.routes[route] = (_) => _tooManyRequests();
+          }
+          final session = _session(server);
+          if (afterDelete) {
+            await session.initialize();
+            server.routes[route] = (request) {
+              if (server.cleanupWrites > 0) return _tooManyRequests();
+              return route == 'GET projects'
+                  ? mr7Json([], headers: _pageHeaders(page: 1, total: 0))
+                  : mr7Json(server.project);
+            };
+            await session.finish();
+            expect(server.cleanupWrites, 1, reason: name);
+            expect(session.cleanup['status'], 'NOT_VERIFIED', reason: name);
+          } else {
+            await expectLater(session.initialize(), throwsA(anything));
+            await session.finish();
+            expect(server.setupWrites, 0, reason: name);
+            expect(server.cleanupWrites, 0, reason: name);
+          }
+          expect(session.stopReason, 'rateLimited', reason: name);
+          expect(session.quarantined, isTrue, reason: name);
+          expect(session.rateLimit?['retryAfter'], 60, reason: name);
+        }
+      },
+    );
+
+    test('rate-limited event pages stop as rateLimited before setup', () async {
+      final server = Mr7SyntheticGitLab()..unreadableEvents = true;
+      final session = _session(server);
+      await expectLater(session.initialize(), throwsA(anything));
+      await session.finish();
+      expect(session.stopReason, 'rateLimited');
+      expect(session.rateLimit, {'status': 429});
+      expect(server.setupWrites, 0);
+    });
+
+    test('a 429 on a harness write stops without a retry', () async {
+      for (final write in ['POST projects', 'DELETE projects/909']) {
+        final server = Mr7SyntheticGitLab();
+        final session = _session(server);
+        if (write == 'POST projects') {
+          server.routes[write] = (_) => _tooManyRequests();
+          await expectLater(session.initialize(), throwsA(anything));
+        } else {
+          await session.initialize();
+          server.routes[write] = (_) => _tooManyRequests();
+        }
+        await session.finish();
+        _expectRateLimited(session);
+        expect(
+          server.requests.where((r) => r == write),
+          hasLength(1),
+          reason: write,
+        );
+        expect(server.cleanupWrites, 0, reason: write);
+        if (write != 'POST projects') {
+          expect(session.cleanup['status'], 'NOT_VERIFIED');
+          expect(session.cleanup['accepted'], isNot(isTrue));
+        }
+      }
+    });
+
+    test(
+      'a 429 on an app read through the guarded adapter is rateLimited',
+      () async {
+        final reads = <String, Future<Object?> Function(Mr7SandboxSession)>{
+          'writer': (session) => session.writer.get<Object?>('projects/909'),
+          'GitLabApi': (session) => GitLabApi(
+            instance: GitLabInstance.parse(session.instance.toString()),
+            token: 'synthetic-gitlab-pat',
+            dio: session.writer,
+            cdnAdapter: session.writerAdapter,
+          ).record(['projects', '909']),
+        };
+        for (final MapEntry(key: name, value: read) in reads.entries) {
+          final server = Mr7SyntheticGitLab();
+          final session = _session(server);
+          await session.initialize();
+          final before = server.requests.length;
+          server.routes['GET projects/909'] = (_) => _tooManyRequests();
+          await expectLater(read(session), throwsA(anything), reason: name);
+          _expectRateLimited(session);
+          expect(server.requests.skip(before), [
+            'GET projects/909',
+          ], reason: name);
+          await session.finish();
+          expect(session.stopReason, 'rateLimited', reason: name);
+          expect(server.cleanupWrites, 0, reason: name);
+          expect(server.scenarioWrites, 0, reason: name);
+        }
+      },
+    );
+
+    test('a 429 after an earlier stop keeps that stop', () async {
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      session.stop('readbackUnverified');
+      server.routes['GET projects/909'] = (_) => _tooManyRequests();
+      await expectLater(
+        session.observer.get<Object?>('projects/909'),
+        throwsA(anything),
+      );
+      await session.finish();
+      expect(session.stopReason, 'readbackUnverified');
+      expect(session.quarantined, isTrue);
+      expect(session.rateLimit, isNull);
+      final receipt = session.receipt(
+        policy: Mr7Policy.candidate,
+        releaseSha: _sha,
+        scenarios: const [],
+        releasePolicy: mr7SandboxPolicy(Mr7Policy.candidate),
+      );
+      expect(receipt.containsKey('rateLimit'), isFalse);
+    });
+
+    test('non-numeric rate-limit headers are dropped', () async {
+      final server = Mr7SyntheticGitLab();
+      server.routes['GET user'] = (_) => mr7Json(
+        {},
+        status: 429,
+        headers: {
+          'retry-after': ['Thu, 29 Oct 2026 12:13:20 GMT'],
+          'ratelimit-limit': ['100', '100'],
+          'ratelimit-remaining': ['-1'],
+          'ratelimit-observed': ['101'],
+        },
+      );
+      final session = _session(server);
+      await expectLater(session.initialize(), throwsA(anything));
+      await session.finish();
+      expect(session.stopReason, 'rateLimited');
+      expect(session.rateLimit, {'status': 429, 'observed': 101});
+    });
+  });
 }

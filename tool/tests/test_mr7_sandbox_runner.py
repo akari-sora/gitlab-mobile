@@ -226,7 +226,8 @@ class SandboxWrapperTest(unittest.TestCase):
         unverified = {'status': 'NOT_VERIFIED', 'outcome': 'noChange',
                       'coreNoChange': True, 'mutationCount': 0,
                       'readback': 'NOT_VERIFIED', 'reason': 'noChangeUnverified'}
-        self.assertTrue(runner.validate_receipt(receipt(scenarios=[unverified])))
+        self.assertFalse(runner.validate_receipt(receipt(scenarios=[unverified])))
+        self.assertTrue(runner.validate_receipt(receipt(status='FAIL', scenarios=[unverified])))
         self.assertFalse(runner.validate_receipt(receipt(scenarios=[row]), final=True))
 
     def test_work_item_zero_dispatch_requires_witness_for_supported_operations(self):
@@ -421,9 +422,10 @@ class SandboxWrapperTest(unittest.TestCase):
                          {'outcome': None}, {'coreOutcome': None}, {'coreOutcome': 'succeeded'}):
             with self.subTest(invalid=outcomes):
                 self.assertFalse(runner.validate_receipt(receipt('candidate', scenarios=[{**row, **outcomes}])))
-        # Legacy, non-closed schema-1 rows retain their existing interpretation.
+        # Uncertain legacy rows remain diagnostic evidence only in a FAIL receipt.
         legacy = {'status': 'NOT_RUN', 'outcome': 'succeeded', 'coreOutcome': 'writeUncertain'}
-        self.assertTrue(runner.validate_receipt(receipt(scenarios=[legacy])))
+        self.assertFalse(runner.validate_receipt(receipt(scenarios=[legacy])))
+        self.assertTrue(runner.validate_receipt(receipt(status='FAIL', scenarios=[legacy])))
 
     def test_forged_closed_variant_child_receipt_quarantines(self):
         forged = receipt('candidate', scenarios=[{

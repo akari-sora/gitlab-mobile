@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/ai/tools/release_policy.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 
 import 'candidate_release_policy.dart';
+import 'session_transport.dart';
 
 const mr7ProtectedProjectId = 86648389;
 // Exact fixed ownership documents and mutations in the production Todo API.
@@ -109,6 +110,13 @@ final class _Mr7ObserverDeadline {
       timer.cancel();
     }
   }
+}
+
+/// A GitLab 429 met inside a transport's own read. The session keeps only the
+/// numeric rate-limit headers; the reason is never an identity verdict.
+final class Mr7RateLimited extends Mr7Refused {
+  const Mr7RateLimited(this.headers) : super('rateLimited');
+  final Map<String, List<String>> headers;
 }
 
 final class Mr7Identity {
@@ -459,6 +467,15 @@ final class Mr7SyntheticGitLab {
   bool incompleteEvents = false;
   bool unreadableEvents = false;
   bool delayedDeletion = false;
+
+  /// GitLab.com shape: DELETE keeps the project for 30 days, renamed to
+  /// `<path>-deletion_scheduled-<id>`, and the original path stops resolving.
+  bool scheduledDeletion = false;
+
+  /// GitLab.com answers the original path of a scheduled project with a 301
+  /// to its numeric ID; false models an instance that answers 404 there.
+  bool originalPathRedirects = true;
+  String? _scheduledFrom;
   bool lostWriteReply = false;
   bool wrongWriteReply = false;
   int setupWrites = 0;
@@ -666,7 +683,9 @@ final class Mr7SyntheticGitLab {
         'visibility': 'private',
         'default_branch': 'main',
         'archived': false,
-        'mirror': false,
+        // GitLab.com Free omits `mirror` and `forked_from_project`.
+        'import_url': null,
+        'creator_id': userId,
         'owner': {'id': userId},
         'namespace': {
           'id': namespaceId,
@@ -683,6 +702,22 @@ final class Mr7SyntheticGitLab {
       return mr7Json([
         if (project != null) project,
       ], headers: _pageHeaders(1, 100, project == null ? 0 : 1));
+    }
+    if (request.method == 'GET' &&
+        _scheduledFrom != null &&
+        path == 'projects/$_scheduledFrom') {
+      if (!originalPathRedirects) return mr7Json({}, status: 404);
+      final uri = request.uri;
+      final location =
+          '${uri.origin}${uri.path.substring(0, uri.path.indexOf('/api/v4/'))}'
+          '/api/v4/projects/$projectId';
+      return mr7Json(
+        {'message': 'This resource has been moved permanently to $location'},
+        status: 301,
+        headers: {
+          'location': [location],
+        },
+      );
     }
     if (request.method == 'GET' &&
         (path == 'projects/$projectId' ||
@@ -706,7 +741,18 @@ final class Mr7SyntheticGitLab {
     if (key == 'DELETE projects/$projectId') {
       cleanupWrites++;
       addEvent(target: projectId, action: 'removed');
-      if (delayedDeletion) {
+      if (scheduledDeletion) {
+        final day = clock.toIso8601String().substring(0, 10);
+        final renamed = '${project!['name']}-deletion_scheduled-$projectId';
+        _scheduledFrom = project!['path_with_namespace'] as String;
+        project!.addAll({
+          'name': renamed,
+          'path': renamed,
+          'path_with_namespace': '$namespace/$renamed',
+          'marked_for_deletion_on': day,
+          'marked_for_deletion_at': day,
+        });
+      } else if (delayedDeletion) {
         project!['marked_for_deletion_on'] = clock.toIso8601String();
       } else {
         project = null;
@@ -1061,6 +1107,8 @@ final class Mr7ObserverAdapter implements HttpClientAdapter {
   void Function(RequestOptions)? validateRequest;
   Future<ResponseBody> Function(Object?, ResponseBody)? validateResponse;
   Map<String, Set<String>> graphReadDocuments = const {};
+  Mr7SessionTransport? transport;
+  void Function(Map<String, List<String>>)? onRateLimited;
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -1081,7 +1129,20 @@ final class Mr7ObserverAdapter implements HttpClientAdapter {
     final bodyDigest = mr7Digest(body);
     requests.add(options.uri.path);
     Future<ResponseBody> respond() async {
-      final response = await server.respond(options);
+      final ResponseBody response;
+      try {
+        response = transport == null
+            ? await server.respond(options)
+            : await transport!.send(
+                options,
+                requestStream,
+                cancelFuture,
+                observation: true,
+              );
+      } on Mr7RateLimited catch (error) {
+        onRateLimited?.call(error.headers);
+        rethrow;
+      }
       if (options.cancelToken?.isCancelled == true) {
         await response.stream.listen(null).cancel();
         throw options.cancelToken!.cancelError!;
@@ -1099,6 +1160,11 @@ final class Mr7ObserverAdapter implements HttpClientAdapter {
                   const Mr7Refused('observerCancelled'),
         ),
     ]);
+    // Classified before any caller can read it as an identity or page failure.
+    if (response.statusCode == 429) {
+      onRateLimited?.call(response.headers);
+      throw const Mr7Refused('rateLimited');
+    }
     if (validateResponse case final validate?) {
       response = await validate(body, response);
     }
@@ -2535,10 +2601,12 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
       }
       session.chargeRequest();
       final permit = session.permit;
-      final response = await session._checkMilestoneResponse(
-        readBody,
-        await session.server.respond(options),
-      );
+      final sent = await session.send(options, requestStream, cancelFuture);
+      if (sent.statusCode == 429) {
+        session.rateLimited(sent.headers);
+        throw const Mr7Refused('rateLimited');
+      }
+      final response = await session._checkMilestoneResponse(readBody, sent);
       validate();
       if (options.method == 'HEAD') {
         if (await response.stream.any((chunk) => chunk.isNotEmpty)) {
@@ -2689,8 +2757,10 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
             : null;
       }
       dispatched = true;
-      final dispatchAt = session.server.serverTime;
-      final response = await session.server.respond(options);
+      final dispatchAt = session.serverTime;
+      final response = await session.send(options, requestStream, cancelFuture);
+      // Quarantined like any other stop; the write is never retried.
+      if (response.statusCode == 429) session.rateLimited(response.headers);
       if (!session._setupAuthorized &&
           !session._cleanupAuthorized &&
           preparedPermit != null) {
@@ -5265,6 +5335,7 @@ query Mr7Incident($path: ID!, $iid: String!) {
 final class Mr7SandboxSession {
   Mr7SandboxSession({
     required this.server,
+    this.liveTransport,
     this.expectedUserId = 7,
     this.namespace = 'synthetic-owner',
     required this.nonce,
@@ -5277,7 +5348,14 @@ final class Mr7SandboxSession {
        eventDelay =
            eventDelay ??
            (() => Future<void>.delayed(const Duration(milliseconds: 10))) {
+    liveTransport?.bindSession(userId: expectedUserId, namespace: namespace,
+      beforeAdditionalRead: (request) {
+        chargeRequest();
+        validateRead(request, allowStopped: true);
+      });
     observerAdapter = Mr7ObserverAdapter(server, this.instance);
+    observerAdapter.transport = liveTransport;
+    observerAdapter.onRateLimited = rateLimited;
     observerAdapter.beforeRequest = chargeRequest;
     observerAdapter.validateRequest = (request) =>
         validateRead(request, allowStopped: true);
@@ -5319,6 +5397,16 @@ final class Mr7SandboxSession {
     )..httpClientAdapter = writerAdapter;
   }
   final Mr7SyntheticGitLab server;
+  final Mr7SessionTransport? liveTransport;
+  String get gitLabToken => liveTransport?.gitLabToken ?? 'synthetic-gitlab-pat';
+  DateTime get serverTime => liveTransport?.serverTime ?? server.serverTime;
+  int get setupWrites => liveTransport?.setupWrites ?? server.setupWrites;
+  int get createdProjectId => liveTransport?.projectId ?? server.projectId;
+  Future<ResponseBody> send(
+    RequestOptions request, Stream<Uint8List>? body, Future<void>? cancellation,
+  ) => liveTransport == null
+      ? server.respond(request)
+      : liveTransport!.send(request, body, cancellation, observation: false);
   final int expectedUserId;
   final String namespace;
   final String nonce;
@@ -5349,6 +5437,8 @@ final class Mr7SandboxSession {
   bool _isolationFailed = false;
   final Map<String, String> _graphResources = {};
   String? stopReason;
+  Future<void> Function()? beforeProjectCreate;
+  Future<void> Function(int)? projectCreated;
   DateTime? windowStart;
   DateTime? windowEnd;
   final List<Map<String, Object?>> requestLedger = [];
@@ -5363,11 +5453,45 @@ final class Mr7SandboxSession {
     'accepted': false,
     'deletionVerified': false,
   };
+  Map<String, Object?>? rateLimit;
 
   void stop(String reason) {
     stopReason ??= reason;
     quarantined = true;
     permit = null;
+  }
+
+  /// GitLab.com's per-user burst limit is shared with every other API client of
+  /// the account. Only numeric header values are kept; nothing is retried.
+  /// `rateLimit` explains a `rateLimited` stop only: a 429 after an earlier
+  /// stop keeps that reason and records nothing.
+  void rateLimited(Map<String, List<String>> headers) {
+    if (stopReason != null) {
+      stop('rateLimited');
+      return;
+    }
+    int? number(String name) {
+      final values = [
+        for (final entry in headers.entries)
+          if (entry.key.toLowerCase() == name) ...entry.value,
+      ];
+      return values.length == 1 && RegExp(r'^[0-9]{1,15}$').hasMatch(values[0])
+          ? int.parse(values[0])
+          : null;
+    }
+
+    rateLimit ??= {
+      'status': 429,
+      for (final (header, key) in const [
+        ('retry-after', 'retryAfter'),
+        ('ratelimit-limit', 'limit'),
+        ('ratelimit-observed', 'observed'),
+        ('ratelimit-remaining', 'remaining'),
+        ('ratelimit-reset', 'reset'),
+      ])
+        key: ?number(header),
+    };
+    stop('rateLimited');
   }
 
   void _open() {
@@ -6368,8 +6492,9 @@ final class Mr7SandboxSession {
           );
       if (namespaces.length != 1) throw const Mr7Refused('namespaceIdentity');
       _namespaceId = namespaces.single['id'] as int;
-      windowStart = server.serverTime.subtract(const Duration(seconds: 2));
+      windowStart = serverTime.subtract(const Duration(seconds: 2));
       await checkIsolation(baseline: true); // Before POST /projects.
+      await beforeProjectCreate?.call();
       _setupAuthorized = true;
       final r = await writer.post<Object?>(
         'projects',
@@ -6385,6 +6510,7 @@ final class Mr7SandboxSession {
         throw const Mr7Refused('setupIdentity');
       }
       _createdId = (r.data! as Map)['id'] as int;
+      await projectCreated?.call(_createdId!);
       identity = Mr7Identity(
         projectId: _createdId!,
         path: '$namespace/mr7-$nonce',
@@ -6431,11 +6557,13 @@ final class Mr7SandboxSession {
     for (final row in [byId, byPath]) {
       final owner = row['owner'];
       final ns = row['namespace'];
+      // GitLab.com Free omits `mirror` and `forked_from_project`; absent or
+      // null means none. Any other mirror value than false still refuses.
       if (row['id'] != expected.projectId ||
           row['path_with_namespace'] != expected.path ||
           row['visibility'] != 'private' ||
           row['archived'] != false ||
-          row['mirror'] != false ||
+          (row['mirror'] != null && row['mirror'] != false) ||
           row['forked_from_project'] != null ||
           row['import_url'] != null ||
           owner is! Map ||
@@ -6800,7 +6928,7 @@ final class Mr7SandboxSession {
     String operation;
     if (_setupAuthorized &&
         identity == null &&
-        server.setupWrites == 0 &&
+        setupWrites == 0 &&
         request.method == 'POST' &&
         path == 'projects') {
       final b = request.data;
@@ -7050,14 +7178,14 @@ final class Mr7SandboxSession {
           !_cleanupAuthorized &&
           permit?.scenarioId != null)
         'scenarioId': permit!.scenarioId,
-      'projectId': identity?.projectId ?? server.projectId,
-      'at': server.serverTime.toIso8601String(),
+      'projectId': identity?.projectId ?? createdProjectId,
+      'at': serverTime.toIso8601String(),
     });
   }
 
   Future<void> checkIsolation({bool baseline = false}) async {
     try {
-      final end = server.serverTime.add(const Duration(seconds: 2));
+      final end = serverTime.add(const Duration(seconds: 2));
       final found = <int, Map<String, Object?>>{};
       var totalPages = 0;
       for (var pass = 0; pass < 2; pass++) {
@@ -7123,7 +7251,7 @@ final class Mr7SandboxSession {
             if (raw['project_id'] is! int ||
                 raw['project_id'] !=
                     (identity?.projectId ??
-                        (baseline ? null : server.projectId))) {
+                        (baseline ? null : createdProjectId))) {
               throw const Mr7Refused('eventsOutsideSandbox');
             }
           }
@@ -7149,9 +7277,11 @@ final class Mr7SandboxSession {
     }
   }
 
-  Future<bool> _parentContainsProject(Mr7Identity target) async {
+  /// The full path listed for this run's project ID, or null when absent.
+  Future<String?> _parentProjectPath(Mr7Identity target) async {
     final pagination = _PageSequence();
     final ids = <int>{};
+    String? listed;
     final projectPath = RegExp(
       '^${RegExp.escape(target.namespace)}/[A-Za-z0-9_][A-Za-z0-9_.-]*\$',
     );
@@ -7181,10 +7311,73 @@ final class Mr7SandboxSession {
                     (raw['path_with_namespace'] as String).split('/').last)) {
           throw const Mr7Refused('cleanupMalformed');
         }
+        if (raw['id'] == target.projectId) {
+          listed = raw['path_with_namespace'] as String;
+        }
       }
-      if (next == null) return ids.contains(target.projectId);
+      if (next == null) return listed;
       page = next;
     }
+  }
+
+  /// GitLab.com never hard-deletes: an accepted DELETE keeps the project for
+  /// 30 days, renamed to `<path>-deletion_scheduled-<id>`. Returns the
+  /// scheduled date only for exactly that shape of this run's own project.
+  String? _scheduledDeletionDate(
+    Mr7Identity target,
+    Map<Object?, Object?> row,
+  ) {
+    final owner = row['owner'];
+    final ns = row['namespace'];
+    final date = row['marked_for_deletion_on'] ?? row['marked_for_deletion_at'];
+    final renamed = '${target.path}-deletion_scheduled-${target.projectId}';
+    if (row['id'] != target.projectId ||
+        row['path_with_namespace'] != renamed ||
+        (row.containsKey('path') && row['path'] != renamed.split('/').last) ||
+        row['visibility'] != 'private' ||
+        row['creator_id'] != target.userId ||
+        owner is! Map ||
+        owner['id'] != target.userId ||
+        ns is! Map ||
+        ns['id'] != target.namespaceId ||
+        ns['kind'] != 'user' ||
+        ns['full_path'] != target.namespace ||
+        date is! String ||
+        !_calendarDate(date)) {
+      return null;
+    }
+    return date;
+  }
+
+  /// `YYYY-MM-DD` whose year, month and day round-trip exactly, as Python's
+  /// `strptime` requires. `DateTime.tryParse` normalises `2026-02-30` to
+  /// March 2 and `2026-13-40` to February 2027, so it cannot decide this.
+  static bool _calendarDate(String value) {
+    final match = RegExp(
+      r'^([0-9]{4})-([0-9]{2})-([0-9]{2})$',
+    ).firstMatch(value);
+    if (match == null) return false;
+    final year = int.parse(match[1]!);
+    final month = int.parse(match[2]!);
+    final day = int.parse(match[3]!);
+    final parsed = DateTime.utc(year, month, day);
+    return year >= 1 &&
+        parsed.year == year &&
+        parsed.month == month &&
+        parsed.day == day;
+  }
+
+  /// After the rename the original path must stop resolving: a 404, or
+  /// GitLab.com's redirect, never followed, whose single `Location` is exactly
+  /// this run's numeric ID on this instance. Any other status, ID, origin,
+  /// installation path, query or fragment leaves deletion unverified.
+  bool _originalPathGone(Mr7Identity target, Response<Object?> original) {
+    if (original.statusCode == 404) return true;
+    final location = original.headers['location'];
+    return const {301, 302, 307, 308}.contains(original.statusCode) &&
+        location != null &&
+        location.length == 1 &&
+        location.single == '$instance/api/v4/projects/${target.projectId}';
   }
 
   Future<void> finish({bool keep = false}) async {
@@ -7204,22 +7397,47 @@ final class Mr7SandboxSession {
         _cleanupAuthorized = false;
         cleanup['accepted'] = r.statusCode == 202;
         final user = await read('user');
-        final present = await _parentContainsProject(target);
+        final listed = await _parentProjectPath(target);
         final lookup = await observer.get<Object?>(
           'projects/${target.projectId}',
         );
         final deleted =
             cleanup['accepted'] == true &&
             user['id'] == expectedUserId &&
-            !present &&
+            listed == null &&
             lookup.statusCode == 404;
+        String? scheduledOn;
+        if (!deleted &&
+            cleanup['accepted'] == true &&
+            user['id'] == expectedUserId &&
+            lookup.statusCode == 200 &&
+            lookup.data is Map) {
+          scheduledOn = _scheduledDeletionDate(target, lookup.data! as Map);
+          // Listing the renamed project is allowed; the original path is not.
+          if (scheduledOn != null &&
+              (listed == null ||
+                  listed ==
+                      '${target.path}-deletion_scheduled-${target.projectId}')) {
+            final original = await observer.get<Object?>(
+              'projects/${Uri.encodeComponent(target.path)}',
+            );
+            if (!_originalPathGone(target, original)) scheduledOn = null;
+          } else {
+            scheduledOn = null;
+          }
+        }
         cleanup.addAll({
-          'status': deleted ? 'PASS' : 'PENDING',
+          'status': deleted
+              ? 'PASS'
+              : scheduledOn != null
+              ? 'scheduledForDeletion'
+              : 'PENDING',
           'deletionVerified': deleted,
+          'markedForDeletionOn': ?scheduledOn,
           'parentChecked': true,
           'identityChecked': user['id'] == expectedUserId,
         });
-        if (!deleted) quarantined = true;
+        if (!deleted && scheduledOn == null) quarantined = true;
       } catch (e) {
         cleanup['status'] = 'NOT_VERIFIED';
         stop(e is Mr7Refused ? e.code : 'cleanupUnverified');
@@ -7236,6 +7454,7 @@ final class Mr7SandboxSession {
     _finished = true;
     writer.close(force: true);
     observer.close(force: true);
+    liveTransport?.close();
   }
 
   Map<String, Object?> receipt({
@@ -7280,6 +7499,7 @@ final class Mr7SandboxSession {
     'cleanup': {...cleanup},
     'quarantined': quarantined,
     if (stopReason != null) 'stopReason': stopReason,
+    if (rateLimit != null) 'rateLimit': {...rateLimit!},
     'limitations': [
       'synthetic transport only',
       'events are not a complete audit log',
