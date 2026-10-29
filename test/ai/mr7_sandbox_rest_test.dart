@@ -1815,6 +1815,8 @@ void main() {
         reason: jsonEncode(expired),
       );
     },
+    // About a second on an idle host, but up to a minute on a loaded runner.
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 
   test(

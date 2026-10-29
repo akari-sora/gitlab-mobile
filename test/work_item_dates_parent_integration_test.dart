@@ -502,23 +502,48 @@ void main() {
       final details = _details(h);
       f.loseNextAck = true;
       await tester.tap(find.byKey(_datesSave));
-      await settleNetworkWidgets(tester);
+      // The lost ACK keeps the editor open with its feedback.
+      await _settleUntil(
+        tester,
+        () =>
+            f.datesApplied == 1 &&
+            _shown(find.byKey(_feedback)) &&
+            _details(h) >= details + 2 &&
+            _shown(_has('a', _unconfirmed)),
+        'the lost ACK is reported and both pages reload',
+      );
       expect(f.datesMutationRequests, 1);
       expect(f.datesApplied, 1);
       expect(find.byKey(_feedback), findsOneWidget);
       expect(_details(h), details + 2, reason: 'one reload per page');
       expect(_has('a', _unconfirmed), findsOneWidget);
 
+      final cancelPops = h.observer.popped.length;
       await tester.tap(find.byKey(_datesCancel));
-      await settleNetworkWidgets(tester);
+      await _settleUntil(
+        tester,
+        () => h.observer.popped.length > cancelPops,
+        'the Dates editor closes on cancel',
+        closing: find.byKey(_datesSave),
+      );
       expect(f.datesMutationRequests, 1, reason: 'never retried');
 
       await _expand(tester, page: 'b');
       await _openStatus(tester, page: 'b');
       await _chooseStatus(tester, _canceled);
       final reloads = _details(h);
+      final statusPops = h.observer.popped.length;
       await tester.tap(find.byKey(_statusSave));
-      await settleNetworkWidgets(tester);
+      await _settleUntil(
+        tester,
+        () =>
+            f.status.count(_statusWriteOp) == 1 &&
+            h.observer.popped.length > statusPops &&
+            _details(h) >= reloads + 1 &&
+            _enabled(tester, _refreshButton(page: 'a')),
+        'the Status write is confirmed and A has reloaded',
+        closing: find.byKey(_statusSave),
+      );
       expect(f.status.count(_statusWriteOp), 1);
       expect(_details(h), reloads + 1, reason: 'A reloads on Status settle');
       expect(
@@ -527,8 +552,13 @@ void main() {
         reason: 'automatic reload keeps the line',
       );
 
+      final refreshed = _details(h);
       await tester.tap(_refreshButton(page: 'a'));
-      await settleNetworkWidgets(tester);
+      await _settleUntil(
+        tester,
+        () => _details(h) > refreshed && !_shown(_has('a', _unconfirmed)),
+        'the manual refresh of A acknowledges',
+      );
       expect(_has('a', _unconfirmed), findsNothing);
       expect(_has('b', _unconfirmed), findsOneWidget, reason: 'A only');
       expect(f.datesMutationRequests, 1);
