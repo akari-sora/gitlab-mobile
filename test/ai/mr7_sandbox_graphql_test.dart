@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart' as port;
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
@@ -31,6 +32,7 @@ Mr7SandboxSession _session(
   nonce: _id.nonce,
   boundaryValid: current,
   eventDelay: () async {},
+  requestCap: 20000,
 );
 
 List<Map<String, Object?>> _rows(Map<String, Object?> receipt) =>
@@ -45,6 +47,8 @@ Future<Map<String, Object?>> _run(
   Mr7Policy policy = Mr7Policy.candidate,
   Mr7SandboxSession? session,
   sandbox.Mr7Confirm? confirm,
+  sandbox.Mr7TypedConfirm? typedConfirm,
+  sandbox.Mr7Edit? editConfirm,
   List<sandbox.Mr7ClosedVariant> closedVariants = const [],
 }) => sandbox.runMr7Sandbox(
   releaseSha: _sha,
@@ -70,7 +74,102 @@ Future<Map<String, Object?>> _run(
         ),
   ],
   confirm: confirm ?? (_) async => true,
+  typedConfirm: typedConfirm ?? (proposal) async => proposal.requiredTypedName,
+  editConfirm: editConfirm,
 );
+
+bool _containsText(Object? value, String text) {
+  if (value is String) return value == text;
+  if (value is Map) return value.values.any((v) => _containsText(v, text));
+  if (value is Iterable) return value.any((v) => _containsText(v, text));
+  return false;
+}
+
+void _expectPreWriteSeed(
+  sandbox.Mr7Scenario scenario,
+  Map<String, Object?> seed,
+) {
+  switch (scenario.operation) {
+    case 'updateWorkItemState':
+      expect(seed['state'], scenario.variant == 'close' ? 'OPEN' : 'CLOSED');
+    case 'updateWorkItemStatus':
+      expect(seed['status'], isNot('gid://gitlab/WorkItems::Status/41'));
+    case 'updateWorkItemDates':
+      switch (scenario.variant) {
+        case 'manual-ce':
+        case 'manual-ee':
+          expect(seed['startDate'], isNull);
+          expect(seed['dueDate'], isNull);
+        case 'clear-start':
+          expect(seed['startDate'], '2026-11-01');
+          expect(seed['dueDate'], '2026-11-02');
+        case 'clear-due':
+          expect(seed['startDate'], '2026-11-01');
+          expect(seed['dueDate'], '2026-11-02');
+        case 'clear-both':
+          expect(seed['startDate'], isNotNull);
+          expect(seed['dueDate'], isNotNull);
+        case 'inherited':
+          expect(seed['isFixed'], true);
+      }
+    case 'updateWorkItemAssignees':
+      expect(
+        seed['assignees'],
+        scenario.variant == 'replace-owner' ? isEmpty : isNotEmpty,
+      );
+    case 'updateWorkItemMilestone':
+      expect(seed['milestone'], scenario.variant == 'set' ? isNull : isNotNull);
+    case 'updateWorkItemContent':
+      final call = scenario.call(_id).arguments! as Map<String, Object?>;
+      if (call.containsKey('title')) {
+        expect(seed['title'], isNot(call['title']));
+      }
+      if (call.containsKey('description')) {
+        expect(seed['description'], isNot(call['description']));
+      }
+      if (scenario.variant == 'title-without-description-widget') {
+        expect(seed['descriptionPresent'], false);
+      }
+    case 'updateWorkItemLabels':
+      final labels = seed['labels']! as List;
+      switch (scenario.variant) {
+        case 'add':
+          expect(labels, isEmpty);
+        case 'remove':
+          expect(labels, hasLength(2));
+        case 'replace':
+        case 'clear':
+          expect(labels, hasLength(1));
+      }
+    case 'createWorkItemActivityComment':
+    case 'createWorkItemActivityReply':
+    case 'editWorkItemActivityNote':
+      final call = scenario.call(_id).arguments! as Map<String, Object?>;
+      expect(_containsText(seed['notes'], call['body']! as String), false);
+    case 'deleteWorkItemActivityNote':
+      expect(seed['notes'], isNotEmpty);
+    case 'setWorkItemActivityNoteReaction':
+      final awards = (seed['awards']! as List).cast<Map<String, Object?>>();
+      final ownerAward = awards.any(
+        (award) =>
+            award['name'] == 'thumbsup' &&
+            (award['user']! as Map<String, Object?>)['id'] ==
+                'gid://gitlab/User/7',
+      );
+      expect(ownerAward, scenario.variant == 'remove');
+    case 'setWorkItemNotifications':
+      expect(seed['subscribed'], scenario.variant == 'disable');
+    case 'setIncidentStatus':
+      expect(seed['escalation'], switch (scenario.variant) {
+        'TRIGGERED' => 'RESOLVED',
+        'ACKNOWLEDGED' => 'TRIGGERED',
+        'RESOLVED' => 'ACKNOWLEDGED',
+        _ => throw StateError('Unexpected incident variant'),
+      });
+    default:
+      throw StateError('Unexpected executable operation ${scenario.operation}');
+  }
+}
 
 void _syntheticOnly(Map<String, Object?> receipt) {
   expect(receipt['transport'], 'synthetic');
@@ -304,11 +403,11 @@ void main() {
       }
       expect(arguments.containsKey('groupFullPath'), false);
       expect(scenario.paths(_id), {'POST graphql'});
-      expect(scenario.closed, isNotNull, reason: scenario.id);
       expect(
         scenario.graphDocuments,
         isEmpty,
-        reason: 'No executable chain until its sealed observer is supported.',
+        reason:
+            'Dynamic fixture documents are sealed at fixture initialization.',
       );
       expect(scenario.graphVariablesDigests, isEmpty);
       expect(
@@ -330,9 +429,17 @@ void main() {
       );
       for (final row in coverage) {
         expect(row['status'], 'NOT_RUN');
-        expect(row['capability'], 'closed');
-        expect(row['closureCause'], isNotEmpty);
-        expect(row['closureDetail'], isNotEmpty);
+        final scenario = mr7GraphqlScenarios().singleWhere(
+          (s) => s.id == row['id'],
+        );
+        expect(
+          row['capability'],
+          scenario.closed == null ? 'executable' : 'closed',
+        );
+        if (scenario.closed != null) {
+          expect(row['closureCause'], isNotEmpty);
+          expect(row['closureDetail'], isNotEmpty);
+        }
         expect(row['live'], startsWith('NOT_RUN:'));
         expect(row['preconditions'], isNotEmpty);
         expect(row['closesOnlyWhen'], contains('independent-readback'));
@@ -343,16 +450,16 @@ void main() {
         )['closureDetail'],
         contains('7-D8'),
       );
-      expect(mr7GraphqlSeamRequests.keys, {'B2-O1', 'B2-O2', 'B2-O3'});
       final counts = <String, int>{};
-      for (final row in coverage) {
+      for (final row in coverage.where((r) => r['capability'] == 'closed')) {
         final code = row['reason']! as String;
         counts.update(code, (value) => value + 1, ifAbsent: () => 1);
       }
       expect(counts, {
-        'workItemParentObserverUnavailable': 26,
-        'workItemActivityObserverUnavailable': 6,
-        'workItemNoOpObserverUnavailable': 11,
+        'workItemStateEnumMismatch': 2,
+        'workItemLabelDeltaShapeMismatch': 3,
+        'workItemMilestoneOwnerProjectionRefused': 4,
+        'createdWorkItemNoteReadbackUnbound': 2,
         'healthWidgetNotModeled': 4,
         'weightWidgetNotModeled': 4,
         'otherMembersExcluded': 1,
@@ -361,78 +468,58 @@ void main() {
     },
   );
 
-  test(
-    'production receipt lists every project and todo variant as NOT_RUN',
-    () async {
-      final server = Mr7SyntheticGitLab();
-      configureMr7GraphqlFixtures(server);
-      var confirmations = 0;
-      final scenarios = mr7GraphqlScenarios();
-      final receipt = await _run(
-        server,
-        scenarios,
-        policy: Mr7Policy.production,
-        confirm: (_) async {
-          confirmations++;
-          return true;
-        },
-      );
-      _syntheticOnly(receipt);
-      expect(receipt['policy'], 'production');
-      expect(_rows(receipt), hasLength(scenarios.length));
-      for (var i = 0; i < scenarios.length; i++) {
-        final row = _rows(receipt)[i];
-        expect(row['id'], scenarios[i].id);
-        expect(row['operation'], scenarios[i].operation);
-        expect(row['variant'], scenarios[i].variant);
-        expect(row['tier'], scenarios[i].tier);
-        expect(row.containsKey('scope'), false);
-        expect(row['status'], 'NOT_RUN');
-        expect(row['reason'], scenarios[i].closed!.code);
-        expect(row['refusal'], scenarios[i].closed!.metadata);
-        expect(row['mutationCount'], 0);
-        expect(row['readback'], 'NOT_RUN');
-        expect(row['live'], 'NOT_RUN');
-        expect(row['releaseSha'], _sha);
-      }
-      expect(confirmations, 0);
-      expect(server.scenarioWrites, 0);
-      expect(server.setupWrites, 1);
-      expect(server.cleanupWrites, 1);
-      expect(_part(receipt, 'events')['complete'], true);
-      expect(_part(receipt, 'cleanup')['deletionVerified'], true);
-      expect(_part(receipt, 'coverage')['graphql'], 'NOT_RUN');
-    },
-  );
-
-  test('candidate receipt preserves all typed closed identities', () async {
+  test('production policy keeps every project variant closed', () async {
     final server = Mr7SyntheticGitLab();
+    configureMr7GraphqlFixtures(server);
     var confirmations = 0;
-    final scenarios = [...mr7GraphqlScenarios(), ...mr7GraphqlGroupRefusals()];
+    final scenarios = mr7GraphqlScenarios();
     final receipt = await _run(
       server,
-      [],
-      closedVariants: mr7GraphqlClosedVariants(),
+      scenarios,
+      policy: Mr7Policy.production,
       confirm: (_) async {
         confirmations++;
         return true;
       },
     );
     _syntheticOnly(receipt);
+    expect(receipt['policy'], 'production');
+    expect(_rows(receipt), hasLength(58));
+    for (final scenario in scenarios) {
+      final row = _rows(receipt).singleWhere((r) => r['id'] == scenario.id);
+      expect(row['status'], 'NOT_RUN');
+      expect(row['reason'], scenario.closed?.code ?? 'releaseClosed');
+      expect(row['mutationCount'], 0);
+      expect(row['readback'], 'NOT_RUN');
+      expect(row['live'], 'NOT_RUN');
+    }
+    expect(confirmations, 0);
+    expect(server.scenarioWrites, 0);
+    expect(server.cleanupWrites, 1);
+  });
+
+  test('candidate receipt preserves all typed closed identities', () async {
+    final server = Mr7SyntheticGitLab();
+    final scenarios = [
+      ...mr7GraphqlScenarios().where((scenario) => scenario.closed != null),
+      ...mr7GraphqlGroupRefusals(),
+    ];
+    final receipt = await _run(
+      server,
+      [],
+      closedVariants: mr7GraphqlClosedVariants(),
+    );
+    _syntheticOnly(receipt);
     expect(receipt['status'], 'PASS');
     expect(receipt['evidenceClass'], 'CANDIDATE_ONLY');
-    expect(_rows(receipt), hasLength(118));
-    expect(confirmations, 0);
+    expect(_rows(receipt), hasLength(86));
     expect(server.scenarioWrites, 0);
     expect(server.cleanupWrites, 1);
     expect(_part(receipt, 'events')['complete'], true);
     expect(_part(receipt, 'cleanup')['deletionVerified'], true);
     expect(_part(receipt, 'coverage')['graphql'], 'NOT_RUN');
-    for (var i = 0; i < scenarios.length; i++) {
-      final scenario = scenarios[i];
-      final row = _rows(receipt)[i];
-      expect(row['id'], scenario.id);
-      expect(row['suite'], scenario.suite);
+    for (final scenario in scenarios) {
+      final row = _rows(receipt).singleWhere((r) => r['id'] == scenario.id);
       expect(row['operation'], scenario.operation);
       expect(row['variant'], scenario.variant);
       expect(row['tier'], scenario.tier);
@@ -440,64 +527,432 @@ void main() {
       expect(row['live'], 'NOT_RUN');
       expect(row['status'], 'NOT_RUN');
       expect(row['classification'], 'closedVariant');
-      expect(row.containsKey('scope'), false);
       expect(row['reason'], scenario.closed!.code);
       expect(row['refusal'], scenario.closed!.metadata);
       expect(row['providerCalls'], 0);
       expect(row['mutationCount'], 0);
       expect(row['readback'], 'NOT_RUN');
-      expect(row.containsKey('outcome'), false);
-      expect(row.containsKey('coreOutcome'), false);
     }
-    final output = Platform.environment['MR7_B2I_RECEIPT'];
-    if (output != null) await File(output).writeAsString(jsonEncode(receipt));
   });
 
-  for (final scenario in mr7GraphqlScenarios()) {
+  final executable = mr7GraphqlScenarios()
+      .where((scenario) => scenario.closed == null)
+      .toList();
+
+  test('project inventory contains 32 opened and 26 closed variants', () {
+    expect(executable, hasLength(32));
+    expect(mr7GraphqlScenarios().where((s) => s.closed != null), hasLength(26));
+  });
+
+  for (final scenario in executable) {
     test(
-      '${scenario.id} candidate emits its typed zero-dispatch disposition',
+      '${scenario.id}: real production chain and independent observer',
       () async {
         final server = Mr7SyntheticGitLab();
-        configureMr7GraphqlFixtures(server);
+        final fixture = configureMr7GraphqlFixtures(server);
         final receipt = await _run(server, [scenario]);
         _syntheticOnly(receipt);
-        expect(receipt['evidenceClass'], 'CANDIDATE_ONLY');
         final row = _rows(receipt).single;
-        expect(row['id'], scenario.id);
-        expect(row['status'], 'NOT_RUN', reason: jsonEncode(receipt));
-        expect(row['classification'], 'closedVariant');
-        expect(row['reason'], scenario.closed!.code);
-        expect(row['refusal'], scenario.closed!.metadata);
-        expect(row['suite'], 'graphql');
-        expect(row['operation'], scenario.operation);
-        expect(row['variant'], scenario.variant);
+        expect(
+          row['status'],
+          'PASS',
+          reason: jsonEncode({
+            'receipt': receipt,
+            'seed': fixture.seed,
+            'current': fixture.current,
+            'mutations': fixture.mutations,
+          }),
+        );
+        expect(row['decisionProjection'], 'observed');
+        expect(row['declaredTier'], scenario.tier);
         expect(row['tier'], scenario.tier);
-        expect(row['releaseSha'], _sha);
-        expect(row['live'], 'NOT_RUN');
-        expect(row['mutationCount'], 0);
-        expect(row['providerCalls'], 0);
-        expect(row.containsKey('outcome'), false);
-        expect(row.containsKey('coreOutcome'), false);
-        expect(row['readback'], 'NOT_RUN');
-        expect(server.scenarioWrites, 0);
-        expect(
-          server.requests.where((r) => r.contains('/api/graphql')),
-          isEmpty,
-        );
-        expect(
-          (receipt['requestLedger']! as List).every(
-            (r) =>
-                (r as Map<Object?, Object?>)['operation'] == 'harnessSetup' ||
-                r['operation'] == 'harnessCleanup',
-          ),
-          true,
-        );
+        expect(row['decision'], isNotNull);
+        expect(row['confirmations'], isNotEmpty);
+        expect(row['readback'], 'PASS');
+        expect(row['observerRequests'], greaterThan(0));
+        expect(fixture.productionReads, greaterThan(0));
+        expect(fixture.observerReads, greaterThan(0));
+        expect(row['mutationCount'], scenario.expectedMutations);
+        expect(server.scenarioWrites, scenario.expectedMutations);
+        if (scenario.expectedMutations == 0) {
+          expect(row['classification'], 'verifiedNoOp');
+          expect(row['parentStateVerified'], true);
+          expect(row['coreNoChange'], true);
+          expect(fixture.preWrites, isEmpty);
+          expect(fixture.current, fixture.seed);
+        } else {
+          _expectPreWriteSeed(scenario, fixture.seed);
+          expect(fixture.preWrites, hasLength(1));
+          expect(
+            fixture.preWrites.single,
+            fixture.seed,
+            reason:
+                'The complete independently recorded seed precedes dispatch.',
+          );
+          expect(
+            fixture.current,
+            isNot(fixture.seed),
+            reason:
+                'A changed-field scenario must not begin at the desired state.',
+          );
+          final arguments =
+              scenario.call(_id).arguments! as Map<String, Object?>;
+          final text = arguments['description'] ?? arguments['body'];
+          if (text is String) {
+            final observed = scenario.operation == 'editWorkItemActivityNote'
+                ? (fixture.current['notes']! as Map)['51']! as String
+                : fixture.current['description']! as String;
+            expect(utf8.encode(observed), utf8.encode(text));
+          }
+        }
         expect(receipt['quarantined'], false, reason: jsonEncode(receipt));
         expect(server.cleanupWrites, 1);
-        expect(_part(receipt, 'cleanup')['deletionVerified'], true);
       },
     );
+
+    test('${scenario.id}: foreign observer actor cannot verify', () async {
+      final server = Mr7SyntheticGitLab();
+      configureMr7GraphqlFixtures(server, fault: 'foreign-actor');
+      final receipt = await _run(server, [scenario]);
+      final row = _rows(receipt).single;
+      expect(row['status'], isNot('PASS'), reason: jsonEncode(receipt));
+      expect(row['readback'], isNot('PASS'));
+      expect(receipt['quarantined'], true);
+      expect(server.scenarioWrites, scenario.expectedMutations);
+      expect(server.cleanupWrites, 0);
+    });
   }
+
+  sandbox.Mr7Scenario selected(String operation, String variant) => executable
+      .singleWhere((s) => s.operation == operation && s.variant == variant);
+
+  for (final id in [
+    ('updateWorkItemContent', 'description'),
+    ('updateWorkItemContent', 'both'),
+    ('editWorkItemActivityNote', 'edit'),
+  ]) {
+    final scenario = selected(id.$1, id.$2);
+    test('${scenario.id}: edited approval is independently observed', () async {
+      final server = Mr7SyntheticGitLab();
+      final fixture = configureMr7GraphqlFixtures(server);
+      final receipt = await _run(
+        server,
+        [scenario],
+        editConfirm: (proposal) async {
+          expect(proposal.editableField, isIn(['description', 'body']));
+          return mr7GraphqlApprovedText;
+        },
+      );
+      final row = _rows(receipt).single;
+      expect(row['status'], 'PASS', reason: jsonEncode(receipt));
+      final confirmations = (row['confirmations']! as List)
+          .cast<Map<Object?, Object?>>();
+      expect(confirmations, hasLength(2));
+      expect(confirmations.every((c) => c['accepted'] == true), true);
+      expect(
+        confirmations.first['payloadDigest'],
+        isNot(confirmations.last['payloadDigest']),
+      );
+      expect(row['payloadDigest'], confirmations.last['payloadDigest']);
+      expect(_part(row, 'edit')['reason'], 'approvalRequired');
+      // The real text policy normalizes CRLF to LF before re-confirmation.
+      const expectedText = '  Approved synthetic **Markdown**\nsecond line  \n';
+      expect(
+        _containsText(fixture.current, expectedText),
+        true,
+        reason: 'The independently observed fixture contains approved text.',
+      );
+      expect(mr7GraphqlApprovedText, contains('\r\n'));
+      expect(expectedText, endsWith('  \n'));
+      final observed = scenario.operation == 'editWorkItemActivityNote'
+          ? (fixture.current['notes']! as Map)['51']! as String
+          : fixture.current['description']! as String;
+      expect(utf8.encode(observed), utf8.encode(expectedText));
+      expect(row['observerRequests'], greaterThan(0));
+      expect(row['mutationCount'], 1);
+    });
+  }
+
+  for (final activity in [false, true]) {
+    for (final originalWitness in [false, true]) {
+      final operation = activity
+          ? 'editWorkItemActivityNote'
+          : 'updateWorkItemContent';
+      final original = selected(operation, 'no-op');
+      final description = activity ? 'body' : 'description';
+      final desired = activity
+          ? 'Synthetic original'
+          : 'Synthetic original description';
+      test(
+        '$operation: edited no-op ${originalWitness ? 'rejects model witness' : 'uses approved witness'}',
+        () async {
+          final scenario = sandbox.Mr7Scenario(
+            id: original.id,
+            suite: original.suite,
+            operation: original.operation,
+            variant: original.variant,
+            tier: original.tier,
+            call: (p) {
+              final call = original.call(p);
+              return AiToolCall(
+                id: call.id,
+                name: call.name,
+                arguments: {
+                  ...call.arguments! as Map<String, Object?>,
+                  description: 'Model different text',
+                },
+              );
+            },
+            paths: original.paths,
+            observe: original.observe,
+            targetKind: original.targetKind,
+            targetKinds: original.targetKinds,
+            fixture: original.fixture,
+            preRead: original.preRead,
+            maxMutations: original.maxMutations,
+            expectedMutations: 0,
+            utterance: original.utterance,
+            resource: original.resource,
+            freshness: original.freshness,
+            createRegistry: original.createRegistry,
+            readNames: original.readNames,
+            graphDocuments: original.graphDocuments,
+            graphVariablesDigests: original.graphVariablesDigests,
+            graphReadDocuments: original.graphReadDocuments,
+            resultPath: original.resultPath,
+            readbackPaths: original.readbackPaths,
+            observerQueries: original.observerQueries,
+            noChangeObservation: !originalWitness
+                ? original.noChangeObservation
+                : (p) => activity
+                      ? const Mr7WorkItemActivityObservation(
+                          workItemId: 'gid://gitlab/WorkItem/31',
+                          iid: 3,
+                          operation: 'editWorkItemActivityNote',
+                          noteId: 'gid://gitlab/Note/51',
+                          body: 'Model different text',
+                          discussionId: 'gid://gitlab/Discussion/opaque-thread',
+                          replyId:
+                              'gid://gitlab/IndividualNoteDiscussion/opaque-reply',
+                        )
+                      : Mr7WorkItemObservation(
+                          workItemId: 'gid://gitlab/WorkItem/31',
+                          iid: 3,
+                          operation: 'updateWorkItemContent',
+                          arguments: {
+                            'projectId': p.projectId,
+                            'iid': 3,
+                            'title': 'Synthetic Work Item',
+                            'description': 'Model different text',
+                          },
+                        ),
+          );
+          final server = Mr7SyntheticGitLab();
+          final fixture = configureMr7GraphqlFixtures(server);
+          final receipt = await _run(
+            server,
+            [scenario],
+            editConfirm: (proposal) async {
+              expect(proposal.editableField, description);
+              return desired;
+            },
+          );
+          final row = _rows(receipt).single;
+          expect(row['coreNoChange'], true, reason: jsonEncode(receipt));
+          expect(row['mutationCount'], 0);
+          final confirmations = (row['confirmations']! as List)
+              .cast<Map<Object?, Object?>>();
+          expect(confirmations, hasLength(2));
+          expect(
+            confirmations.first['payloadDigest'],
+            isNot(confirmations.last['payloadDigest']),
+          );
+          expect(row['payloadDigest'], confirmations.last['payloadDigest']);
+          expect(fixture.current, fixture.seed);
+          if (originalWitness) {
+            expect(row['status'], 'NOT_VERIFIED', reason: jsonEncode(receipt));
+            expect(row['reason'], 'noChangeUnverified');
+            expect(row['classification'], isNot('verifiedNoOp'));
+            expect(receipt['quarantined'], true);
+          } else {
+            expect(row['status'], 'PASS', reason: jsonEncode(receipt));
+            expect(row['classification'], 'verifiedNoOp');
+            expect(row['parentStateVerified'], true);
+            expect(row['observerRequests'], greaterThan(0));
+          }
+        },
+      );
+    }
+  }
+
+  for (final spec in [
+    ('updateWorkItemLabels', 'replace', 'partial-label-set'),
+    ('updateWorkItemLabels', 'replace', 'stale-page'),
+    ('deleteWorkItemActivityNote', 'delete-exact-note', 'deletion-retained'),
+  ]) {
+    final scenario = selected(spec.$1, spec.$2);
+    test('${scenario.id}: ${spec.$3} is not verified', () async {
+      final server = Mr7SyntheticGitLab();
+      final fixture = configureMr7GraphqlFixtures(server, fault: spec.$3);
+      final receipt = await _run(server, [scenario]);
+      final row = _rows(receipt).single;
+      expect(row['coreOutcome'], 'succeeded', reason: jsonEncode(receipt));
+      expect(row['mutationCount'], 1);
+      expect(row['status'], isNot('PASS'), reason: jsonEncode(receipt));
+      expect(row['readback'], isNot('PASS'));
+      expect(fixture.observerReads, greaterThan(0));
+      if (spec.$3 == 'stale-page') {
+        expect(fixture.continuationReads, greaterThan(0));
+      }
+      expect(receipt['quarantined'], true);
+      expect(server.cleanupWrites, 0);
+    });
+  }
+
+  for (final seam in [
+    (
+      'updateWorkItemState',
+      'close',
+      'workItemStateEnumMismatch',
+      'readbackUnverified',
+      1,
+    ),
+    (
+      'updateWorkItemLabels',
+      'add',
+      'workItemLabelDeltaShapeMismatch',
+      'readbackUnverified',
+      1,
+    ),
+    (
+      'updateWorkItemMilestone',
+      'set',
+      'workItemMilestoneOwnerProjectionRefused',
+      'foreignResource',
+      0,
+    ),
+    (
+      'createWorkItemActivityComment',
+      'comment',
+      'createdWorkItemNoteReadbackUnbound',
+      'foreignResource',
+      1,
+    ),
+  ]) {
+    final original = mr7GraphqlScenarios().singleWhere(
+      (s) => s.operation == seam.$1 && s.variant == seam.$2,
+    );
+    test('${original.id}: ${seam.$3} remains closed when probed', () async {
+      expect(original.closed?.code, seam.$3);
+      final probe = sandbox.Mr7Scenario(
+        id: original.id,
+        suite: original.suite,
+        operation: original.operation,
+        variant: original.variant,
+        tier: original.tier,
+        call: original.call,
+        paths: original.paths,
+        observe: original.observe,
+        targetKind: original.targetKind,
+        targetKinds: original.targetKinds,
+        fixture: original.fixture,
+        preRead: original.preRead,
+        maxMutations: original.maxMutations,
+        expectedMutations: original.expectedMutations,
+        utterance: original.utterance,
+        resource: original.resource,
+        freshness: original.freshness,
+        createRegistry: original.createRegistry,
+        readNames: original.readNames,
+        graphDocuments: original.graphDocuments,
+        graphVariablesDigests: original.graphVariablesDigests,
+        graphReadDocuments: original.graphReadDocuments,
+        resultPath: original.resultPath,
+        readbackPaths: original.readbackPaths,
+        observerQueries: original.observerQueries,
+        noChangeObservation: original.noChangeObservation,
+      );
+      final server = Mr7SyntheticGitLab();
+      configureMr7GraphqlFixtures(server);
+      final receipt = await _run(server, [probe]);
+      final row = _rows(receipt).single;
+      expect(row['status'], isNot('PASS'), reason: jsonEncode(receipt));
+      expect(receipt['stopReason'], seam.$4, reason: jsonEncode(receipt));
+      expect(row['mutationCount'], seam.$5);
+      expect(receipt['quarantined'], true);
+      expect(server.cleanupWrites, 0);
+    });
+  }
+
+  test(
+    'state no-op without its witness cannot be reported as success',
+    () async {
+      final original = selected('updateWorkItemState', 'no-op');
+      final scenario = sandbox.Mr7Scenario(
+        id: original.id,
+        suite: original.suite,
+        operation: original.operation,
+        variant: original.variant,
+        tier: original.tier,
+        call: original.call,
+        paths: original.paths,
+        observe: original.observe,
+        targetKind: original.targetKind,
+        targetKinds: original.targetKinds,
+        fixture: original.fixture,
+        preRead: original.preRead,
+        maxMutations: original.maxMutations,
+        expectedMutations: original.expectedMutations,
+        utterance: original.utterance,
+        resource: original.resource,
+        freshness: original.freshness,
+        createRegistry: original.createRegistry,
+        readNames: original.readNames,
+        graphDocuments: original.graphDocuments,
+        graphVariablesDigests: original.graphVariablesDigests,
+        graphReadDocuments: original.graphReadDocuments,
+        resultPath: original.resultPath,
+        readbackPaths: original.readbackPaths,
+        observerQueries: original.observerQueries,
+        // No noChangeObservation: the production runner must fail closed.
+      );
+      final server = Mr7SyntheticGitLab();
+      configureMr7GraphqlFixtures(server);
+      final receipt = await _run(server, [scenario]);
+      final row = _rows(receipt).single;
+      expect(row['coreNoChange'], true, reason: jsonEncode(receipt));
+      expect(row['mutationCount'], 0);
+      expect(row['reason'], 'noChangeUnverified');
+      expect(row['status'], 'NOT_VERIFIED');
+      expect(row['classification'], isNot('verifiedNoOp'));
+      expect(row['readback'], 'NOT_VERIFIED');
+      expect(receipt['quarantined'], true);
+      expect(server.cleanupWrites, 0);
+    },
+  );
+
+  test('candidate receipt composes opened and typed closed variants', () async {
+    final server = Mr7SyntheticGitLab();
+    configureMr7GraphqlFixtures(server);
+    final receipt = await _run(
+      server,
+      executable,
+      closedVariants: mr7GraphqlClosedVariants(),
+    );
+    _syntheticOnly(receipt);
+    expect(_rows(receipt), hasLength(118));
+    for (final scenario in executable) {
+      final row = _rows(receipt).singleWhere((r) => r['id'] == scenario.id);
+      expect(row['status'], 'PASS', reason: jsonEncode(row));
+    }
+    expect(
+      _rows(receipt).where((r) => r['classification'] == 'closedVariant'),
+      hasLength(86),
+    );
+    expect(receipt['status'], 'PASS', reason: jsonEncode(receipt));
+    final output = Platform.environment['MR7_B2J_RECEIPT'];
+    if (output != null) await File(output).writeAsString(jsonEncode(receipt));
+  });
 
   test(
     'all 15 group aliases and rename/foreign/descendant fixtures are refusal-only',
@@ -549,7 +1004,7 @@ void main() {
       )..returnedGlobalId = 'gid://gitlab/WorkItem/31';
       final observer = Mr7Readback(session, p, permit);
       for (final scenario in [
-        ...mr7GraphqlScenarios(),
+        ...mr7GraphqlScenarios().where((s) => s.closed != null),
         ...mr7GraphqlGroupRefusals(),
       ]) {
         await expectLater(
@@ -558,7 +1013,9 @@ void main() {
             isA<Mr7Refused>().having(
               (r) => r.code,
               'code',
-              'graphqlIndependentReadbackUnavailable',
+              scenario.targetKind == AiTargetKind.groupWorkItem
+                  ? 'graphqlIndependentReadbackUnavailable'
+                  : 'observerBeforeResponse',
             ),
           ),
           reason: scenario.id,
@@ -659,29 +1116,36 @@ void main() {
     expect(server.cleanupWrites, 1);
   });
 
-  test('sealed WorkItem parent effect observer is still unavailable', () async {
-    final probe = await _observerProbe();
-    try {
-      await expectLater(
-        probe.observer.observe(
-          Mr7GraphObservation(
-            document: _observerDocument,
-            variables: {'id': _workItem},
-            recordPath: ['data', 'node'],
-            parentId: _workItem,
+  test(
+    'generic connection observer does not stand in for a WorkItem widget observer',
+    () async {
+      final probe = await _observerProbe();
+      try {
+        await expectLater(
+          probe.observer.observe(
+            Mr7GraphObservation(
+              document: _observerDocument,
+              variables: {'id': _workItem},
+              recordPath: ['data', 'node'],
+              parentId: _workItem,
+            ),
           ),
-        ),
-        throwsA(
-          isA<Mr7Refused>().having((e) => e.code, 'code', 'observerConnection'),
-        ),
-      );
-      expect(probe.observer.verifiedRequests, 0);
-    } finally {
-      probe.session.stop('unverifiedContractProbe');
-      await probe.session.finish();
-      expect(probe.session.server.cleanupWrites, 0);
-    }
-  });
+          throwsA(
+            isA<Mr7Refused>().having(
+              (e) => e.code,
+              'code',
+              'observerConnection',
+            ),
+          ),
+        );
+        expect(probe.observer.verifiedRequests, 0);
+      } finally {
+        probe.session.stop('unverifiedContractProbe');
+        await probe.session.finish();
+        expect(probe.session.server.cleanupWrites, 0);
+      }
+    },
+  );
 
   test('sealed observer refuses an outside-sandbox WorkItem parent', () async {
     final probe = await _observerProbe();
@@ -707,35 +1171,38 @@ void main() {
     }
   });
 
-  test('activity tool ID has no sealed complete-note mapping', () async {
-    final probe = await _observerProbe(activity: true);
-    try {
-      await expectLater(
-        probe.observer.observe(
-          Mr7GraphObservation(
-            document: _observerDocument,
-            variables: {'id': _workItem},
-            recordPath: ['data', 'node'],
-            parentId: _workItem,
-            connectionPath: ['notes'],
-            expectedIds: {'gid://gitlab/Note/51'},
+  test(
+    'generic connection observer does not stand in for an activity observer',
+    () async {
+      final probe = await _observerProbe(activity: true);
+      try {
+        await expectLater(
+          probe.observer.observe(
+            Mr7GraphObservation(
+              document: _observerDocument,
+              variables: {'id': _workItem},
+              recordPath: ['data', 'node'],
+              parentId: _workItem,
+              connectionPath: ['notes'],
+              expectedIds: {'gid://gitlab/Note/51'},
+            ),
           ),
-        ),
-        throwsA(
-          isA<Mr7Refused>().having(
-            (e) => e.code,
-            'code',
-            'observerMutationTarget',
+          throwsA(
+            isA<Mr7Refused>().having(
+              (e) => e.code,
+              'code',
+              'observerMutationTarget',
+            ),
           ),
-        ),
-      );
-      expect(probe.observer.verifiedRequests, 0);
-    } finally {
-      probe.session.stop('unverifiedContractProbe');
-      await probe.session.finish();
-      expect(probe.session.server.cleanupWrites, 0);
-    }
-  });
+        );
+        expect(probe.observer.verifiedRequests, 0);
+      } finally {
+        probe.session.stop('unverifiedContractProbe');
+        await probe.session.finish();
+        expect(probe.session.server.cleanupWrites, 0);
+      }
+    },
+  );
 
   test('WorkItem no-ops cannot borrow a REST subscription witness', () {
     const witness = Mr7ParentStateObservation(
@@ -744,7 +1211,7 @@ void main() {
       expected: true,
     );
     for (final scenario in mr7GraphqlScenarios().where(
-      (s) => s.closed!.code == 'workItemNoOpObserverUnavailable',
+      (s) => s.closed == null && s.expectedMutations == 0,
     )) {
       expect(
         witness.matchesCall(
