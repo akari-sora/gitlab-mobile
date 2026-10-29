@@ -26,8 +26,8 @@ const mr7RestPlanRows = [8, 9, 14, 19, 20, 23, 32];
 /// Subrows that a one-call, foreground synthetic scenario cannot close.
 const mr7RestEvidenceGaps = <int, String>{
   8:
-      'Actual product tier/decision/fixed reasons need a receipt projection; '
-      'scenario.tier is declared metadata. Host confirmation is not app UI.',
+      'Receipts project the observed production tier/decision/fixed reasons. '
+      'Host confirmation is not app UI; device confirmation remains NOT_RUN.',
   9:
       'Edited confirmations use E and preserved fields use FIX1. REST updated_at '
       'preflight is not atomic server CAS; snippet/delete cases belong to 7B3.',
@@ -169,6 +169,35 @@ Map<String, Object?> _observedUpdates(Map<String, Object?> input) => {
     },
 };
 
+Map<String, Object?> _updateInput(
+  String operation,
+  Map<String, Object?> arguments,
+) => arguments['fields'] is Map
+    ? Map<String, Object?>.from(arguments['fields']! as Map)
+    : switch (operation) {
+        'renameBoard' => {'name': arguments['name']},
+        'setBoardSystemListHidden' => {
+          'hide_${arguments['list']}_list': arguments['hidden'],
+        },
+        'setMilestoneState' => {'state_event': arguments['stateEvent']},
+        'updateDraftNote' => {'note': arguments['body']},
+        _ => {
+          for (final field in ['body', 'position', 'resolved'])
+            if (arguments.containsKey(field)) field: arguments[field],
+        },
+      };
+
+Mr7SnapshotSpec? _childSnapshot(String operation, String path) =>
+    switch (operation) {
+      'renameBoard' ||
+      'setBoardSystemListHidden' => Mr7SnapshotSpec.board(path: path),
+      'updateMilestone' ||
+      'setMilestoneState' => Mr7SnapshotSpec.milestone(path: path),
+      'updateLabel' => Mr7SnapshotSpec.label(path: path),
+      'updateDraftNote' => Mr7SnapshotSpec.draftNote(path: path),
+      _ => null,
+    };
+
 Mr7Parent _parent(String resource, {bool note = false}) => resource == 'issues'
     ? (note
           ? const Mr7Parent.issueNote(id: 1001, iid: 1, noteId: 301)
@@ -221,7 +250,9 @@ List<Mr7RestCase> mr7RestCases() {
       tier: tier,
       fixture: setup,
       preRead: parentFields.isEmpty
-          ? null
+          ? opening == null || _childSnapshot(operation, opening) == null
+                ? null
+                : (p) => [_childSnapshot(operation, bind(opening, p))!]
           : (p) => [
               Mr7SnapshotSpec(
                 path: bind(opening!, p),
@@ -268,13 +299,7 @@ List<Mr7RestCase> mr7RestCases() {
         }
         final fields = request.arguments['fields'];
         if (mutation.startsWith('PUT ')) {
-          final input = fields is Map
-              ? Map<String, Object?>.from(fields)
-              : <String, Object?>{
-                  for (final field in ['body', 'position', 'resolved'])
-                    if (request.arguments.containsKey(field))
-                      field: request.arguments[field],
-                };
+          final input = _updateInput(operation, request.arguments);
           final requested = _observedUpdates(input);
           var originals = [current];
           if (operation == 'updateDiscussionNote' ||
@@ -331,11 +356,17 @@ List<Mr7RestCase> mr7RestCases() {
             bind(read, p)
                 .replaceAll('{id}', '${result.returnedId}')
                 .replaceAll('{iid}', '${result.returnedIid}'),
+            if (operation == 'updateDraftNote')
+              'projects/${p.projectId}/merge_requests/1',
           },
       observe:
           observe ??
           (observer, p) async {
-            final value = await observer.read(observer.paths.single);
+            final value = await observer.read(
+              bind(read, p)
+                  .replaceAll('{id}', '${observer.result.id}')
+                  .replaceAll('{iid}', '${observer.result.iid}'),
+            );
             return _matches(value, expected) &&
                 (!value.containsKey('project_id') ||
                     value['project_id'] == p.projectId);
@@ -556,14 +587,28 @@ List<Mr7RestCase> mr7RestCases() {
       opening: '$parent/notes/$noteId',
       resource: resource,
     );
-    closed(
+    add(
       'createTodo',
-      [side],
-      'T proves the final project target, but Mr7TodoObservation only supports '
-          'snooze/unsnooze. A created-Todo actor/project/parent observer is '
-          'missing; an acknowledgement cannot establish creation (7-D7).',
-      cause: Mr7ClosureCause.observerUnavailable,
-      code: 'createdTodoObserverUnavailable',
+      side,
+      {'resource': resource, 'iid': 1},
+      'POST $parent/todo',
+      '',
+      const {},
+      opening: parent,
+      resource: resource,
+      readbackPaths: (p, _) => {
+        parent.replaceAll('{p}', '${p.projectId}'),
+        'projects/${p.projectId}/todos/mr7-observation',
+      },
+      observe: (observer, _) => observer.observe(
+        Mr7CreatedTodoObservation(
+          parent: _parent(resource),
+          id: observer.result.id!,
+        ),
+      ),
+      fixture:
+          'Complete synthetic project to-do inventories before and after the '
+          'write; the selected actor/parent-bound pending ID must be new.',
     );
     for (final positioned in [false, if (resource == 'merge_requests') true]) {
       final variant = '$side-${positioned ? 'positioned' : 'unpositioned'}';
@@ -905,17 +950,6 @@ List<Mr7RestCase> mr7RestCases() {
                 'twenty-sandbox-drafts-present',
               ]
             : ['own', 'external-sandbox']) {
-      if (!create) {
-        closed(
-          operation,
-          [variant],
-          'Body-only draft edits also need independently captured position/commit_id '
-          'preservation; FIX1 does not permit draft-note snapshots.',
-          cause: Mr7ClosureCause.observerUnavailable,
-          code: 'draftNoteSnapshotUnavailable',
-        );
-        continue;
-      }
       add(
         operation,
         variant,
@@ -939,6 +973,8 @@ List<Mr7RestCase> mr7RestCases() {
             : '401'}',
         {
           'note': 'Synthetic draft.',
+          'author_id': 7,
+          'merge_request_id': 2001,
           if (variant == 'commit') 'commit_id': _head,
           if (variant == 'positioned') 'position': _position,
         },
@@ -1052,14 +1088,18 @@ List<Mr7RestCase> mr7RestCases() {
       },
     );
   }
-  closed(
-    'setMilestoneState',
-    ['close', 'activate'],
-    'M proves global ID/iid and state; FIX1 cannot snapshot milestones. '
-        'Preserving omitted title/description/dates needs a typed milestone snapshot.',
-    cause: Mr7ClosureCause.observerUnavailable,
-    code: 'milestoneSnapshotUnavailable',
-  );
+  for (final event in ['close', 'activate']) {
+    add(
+      'setMilestoneState',
+      event,
+      {'milestoneId': 501, 'stateEvent': event},
+      'PUT projects/{p}/milestones/501',
+      'projects/{p}/milestones/501',
+      {'state': event == 'close' ? 'closed' : 'active'},
+      opening: 'projects/{p}/milestones/501',
+      initialFields: {'state': event == 'close' ? 'active' : 'closed'},
+    );
+  }
   add(
     'createBoard',
     'name',
@@ -1068,22 +1108,26 @@ List<Mr7RestCase> mr7RestCases() {
     'projects/{p}/boards/{id}',
     {'name': 'Synthetic board.'},
   );
-  closed(
+  add(
     'renameBoard',
-    ['name'],
-    'Renaming must preserve both system-list flags; FIX1 cannot snapshot boards.',
-    cause: Mr7ClosureCause.observerUnavailable,
-    code: 'boardSnapshotUnavailable',
+    'name',
+    {'boardId': 801, 'name': 'Synthetic renamed board.'},
+    'PUT projects/{p}/boards/801',
+    'projects/{p}/boards/801',
+    {'name': 'Synthetic renamed board.'},
+    opening: 'projects/{p}/boards/801',
   );
   for (final list in ['backlog', 'closed']) {
     for (final hidden in [true, false]) {
-      closed(
+      add(
         'setBoardSystemListHidden',
-        ['$list-${hidden ? 'hidden' : 'shown'}'],
-        'Changing one system-list flag must preserve the name and other flag; '
-            'FIX1 cannot snapshot boards.',
-        cause: Mr7ClosureCause.observerUnavailable,
-        code: 'boardSnapshotUnavailable',
+        '$list-${hidden ? 'hidden' : 'shown'}',
+        {'boardId': 801, 'list': list, 'hidden': hidden},
+        'PUT projects/{p}/boards/801',
+        'projects/{p}/boards/801',
+        {'hide_${list}_list': hidden},
+        opening: 'projects/{p}/boards/801',
+        initialFields: {'hide_${list}_list': !hidden},
       );
     }
   }
@@ -1195,14 +1239,41 @@ List<Mr7RestCase> mr7RestCases() {
     cause: Mr7ClosureCause.observerUnavailable,
     code: 'uploadTimeoutUncertain',
   );
-  closed(
-    'upload_attachment',
-    ['same-field-roundtrip', 'crossnonce', 'restored-history', 'hiddenSpan'],
-    'The shared conversation/script seams exist; the complete provenance '
-        'roundtrip variants are pending in this pass, not plain upload successes.',
-    cause: Mr7ClosureCause.fixtureUnavailable,
-    code: 'provenanceScenarioPending',
-  );
+  for (final gap in [
+    (
+      'same-field-roundtrip',
+      'provenanceCompositeWriteUnavailable',
+      'Upload plus a same-field write needs two production operations. Scripts '
+          'admit one declared write and reads only; a plain upload is insufficient.',
+    ),
+    (
+      'crossnonce',
+      'provenanceConversationStepUnavailable',
+      'Per-conversation tables exist, but a run has one global conversation '
+          'override and one operation per row. Cross-conversation rereadField '
+          'refusal is not a successful upload provenance receipt.',
+    ),
+    (
+      'restored-history',
+      'provenanceHistoryRestoreUnavailable',
+      'The fixture cannot invoke production restoreFromDisplay or inject '
+          'restored display history. Fresh tables must not restore old tokens.',
+    ),
+    (
+      'hiddenSpan',
+      'provenanceHiddenSpanWriteUnavailable',
+      'Hidden-span removal is decided on a text-field write, not multipart '
+          'upload. A composite upload/text-write/confirmation observer is missing.',
+    ),
+  ]) {
+    closed(
+      'upload_attachment',
+      [gap.$1],
+      gap.$3,
+      cause: Mr7ClosureCause.fixtureUnavailable,
+      code: gap.$2,
+    );
+  }
   closed(
     'upload_attachment',
     ['picker-process-cleanup'],
@@ -1211,33 +1282,6 @@ List<Mr7RestCase> mr7RestCases() {
     code: 'devicePickerProcessEvidenceRequired',
   );
   for (final row in aiT12Rows.where((r) => r.editableField != null)) {
-    final missingSnapshot = switch (row.operationId) {
-      'updateLabel' => ('labelSnapshotUnavailable', 'label name/color'),
-      'updateMilestone' => (
-        'milestoneSnapshotUnavailable',
-        'milestone title/dates',
-      ),
-      'renameBoard' => (
-        'boardSnapshotUnavailable',
-        'board hide_backlog_list/hide_closed_list',
-      ),
-      'updateDraftNote' => (
-        'draftNoteSnapshotUnavailable',
-        'draft position/commit_id',
-      ),
-      _ => null,
-    };
-    if (missingSnapshot != null) {
-      closed(
-        row.operationId,
-        ['confirmation-edited-text'],
-        'E supports re-confirmation, but preserving omitted ${missingSnapshot.$2} '
-        'needs a typed child snapshot; FIX1 only accepts projects and issues/MRs.',
-        cause: Mr7ClosureCause.observerUnavailable,
-        code: missingSnapshot.$1,
-      );
-      continue;
-    }
     final source = cases.firstWhere(
       (c) => c.operation == row.operationId && c.scenario != null,
     );
@@ -1318,7 +1362,7 @@ Mr7Scenario _editedScenario(Mr7Scenario source, String field) {
       return const Mr7ScenarioFixtures();
     },
     preRead: (p) => originalPath(p) == null
-        ? []
+        ? source.preRead?.call(p) ?? []
         : [
             Mr7SnapshotSpec(
               path: originalPath(p)!,
@@ -1373,6 +1417,11 @@ Mr7Scenario _editedScenario(Mr7Scenario source, String field) {
             iid: observer.result.iid!,
           ),
         );
+      } else if (operation == 'updateDraftNote') {
+        value = await observer.read(
+          'projects/${p.projectId}/merge_requests/1/draft_notes/'
+          '${arguments(p)['noteId']}',
+        );
       } else {
         value = await observer.read(observer.paths.single);
       }
@@ -1389,10 +1438,11 @@ Mr7Scenario _editedScenario(Mr7Scenario source, String field) {
               : field] =
           mr7RestEditText;
       final expected = _observedUpdates(input);
-      if (operation == 'updateNote' ||
-          operation == 'createNote' ||
-          operation == 'createDraftNote') {
+      if (operation == 'updateNote' || operation == 'createNote') {
         expected['author'] = {'id': p.userId};
+      }
+      if (operation.contains('DraftNote')) {
+        expected.addAll({'author_id': p.userId, 'merge_request_id': 2001});
       }
       return _matches(value, expected);
     },
@@ -1583,21 +1633,26 @@ void configureMr7RestFixtures(
   }
   for (var n = 0; n < 20; n++) {
     record('$root/merge_requests/1/draft_notes/${401 + n}', {
-      ...base(401 + n),
+      'id': 401 + n,
+      'author_id': server.userId,
+      'merge_request_id': 2001,
       'note': n == 1
           ? 'Other synthetic client /close @synthetic-user.'
           : 'Synthetic original.',
-      'author': {'id': server.userId},
+      'position': _position,
+      'commit_id': _head,
     });
   }
   record('$root/labels/701', {
-    ...base(701),
+    'id': 701,
+    'is_project_label': true,
     'name': 'synthetic',
     'color': '#112233',
     'description': 'Synthetic original.',
   });
   record('$root/labels/702', {
-    ...base(702),
+    'id': 702,
+    'is_project_label': true,
     'name': 'synthetic-list',
     'color': '#336699',
     'description': 'Synthetic unused board label.',
@@ -1614,7 +1669,8 @@ void configureMr7RestFixtures(
         : 'active',
   });
   record('$root/boards/801', {
-    ...base(801),
+    'id': 801,
+    'project': {'id': server.projectId},
     'name': 'Synthetic original.',
     'hide_backlog_list':
         operation == 'setBoardSystemListHidden' && variant == 'backlog-shown',
@@ -1656,7 +1712,9 @@ void configureMr7RestFixtures(
           value[e.key] = e.value;
       }
     }
-    value['updated_at'] = server.serverTime.toIso8601String();
+    if (value.containsKey('updated_at')) {
+      value['updated_at'] = server.serverTime.toIso8601String();
+    }
   }
 
   ResponseBody written(Map<String, Object?> value, {bool create = false}) {
@@ -1688,8 +1746,26 @@ void configureMr7RestFixtures(
         return mr7Json({'error': 'syntheticBranchMissing'}, status: 400);
       }
       final id = nextId++;
-      final value = {...base(id), if (iid) 'iid': nextIid++};
-      if (path.endsWith('/notes') || path.endsWith('/draft_notes')) {
+      final value = <String, Object?>{
+        if (path.endsWith('/draft_notes')) ...{
+          'id': id,
+          'author_id': server.userId,
+          'merge_request_id': 2001,
+          'position': null,
+          'commit_id': null,
+        } else if (path == '$root/boards') ...{
+          'id': id,
+          'project': {'id': server.projectId},
+          'hide_backlog_list': false,
+          'hide_closed_list': false,
+        } else if (path == '$root/labels') ...{
+          'id': id,
+          'is_project_label': true,
+        } else
+          ...base(id),
+        if (iid) 'iid': nextIid++,
+      };
+      if (path.endsWith('/notes')) {
         value['author'] = {'id': server.userId};
       }
       fields(value, input);
@@ -1698,9 +1774,41 @@ void configureMr7RestFixtures(
     };
   }
 
+  final todos = <Map<String, Object?>>[];
+  server.routes['GET $root/todos/mr7-observation'] = (_) => mr7Json(
+    todos,
+    headers: {
+      'x-page': ['1'],
+      'x-next-page': [''],
+      'x-total': ['${todos.length}'],
+      'x-total-pages': ['1'],
+      'x-per-page': ['100'],
+    },
+  );
   for (final resource in ['issues', 'merge_requests']) {
     final parent = '$root/$resource/1';
     final noteId = resource == 'issues' ? 301 : 302;
+    server.routes['POST $parent/todo'] = (_) {
+      final value = <String, Object?>{
+        'id': nextId++,
+        'project_id': server.projectId,
+        'actor_id': server.userId,
+        'author': {'id': server.userId},
+        'target_type': resource == 'issues' ? 'Issue' : 'MergeRequest',
+        'target_id': records[parent]!['id'],
+        'target_iid': records[parent]!['iid'],
+        'state': 'pending',
+      };
+      todos.add(value);
+      return written({
+        'id': value['id'],
+        'project': {'id': server.projectId},
+        'author': {'id': server.userId},
+        'target_type': value['target_type'],
+        'target': {'id': value['target_id'], 'iid': value['target_iid']},
+        'state': 'pending',
+      }, create: true);
+    };
     create('$root/$resource', iid: true);
     update(parent);
     create('$parent/notes');
