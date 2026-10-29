@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/ai/tools/release_policy.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 
 import 'candidate_release_policy.dart';
+import 'session_transport.dart';
 
 const mr7ProtectedProjectId = 86648389;
 // Exact fixed ownership documents and mutations in the production Todo API.
@@ -776,6 +777,7 @@ final class Mr7ObserverAdapter implements HttpClientAdapter {
   void Function()? beforeRequest;
   void Function(RequestOptions)? validateRequest;
   Map<String, Set<String>> graphReadDocuments = const {};
+  Mr7SessionTransport? transport;
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -790,7 +792,11 @@ final class Mr7ObserverAdapter implements HttpClientAdapter {
     validateRequest?.call(options);
     beforeRequest?.call();
     requests.add(options.uri.path);
-    final response = await server.respond(options);
+    final response = transport == null
+        ? await server.respond(options)
+        : await transport!.send(
+            options, requestStream, cancelFuture, observation: true,
+          );
     validateRequest?.call(options);
     return response;
   }
@@ -1468,7 +1474,7 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
         throw const Mr7Refused('headBody');
       }
       session.chargeRequest();
-      final response = await session.server.respond(options);
+      final response = await session.send(options, requestStream, cancelFuture);
       session.validateRead(options, allowStopped: false);
       if (options.method == 'HEAD') {
         if (await response.stream.any((chunk) => chunk.isNotEmpty)) {
@@ -1583,7 +1589,7 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
             : null;
       }
       dispatched = true;
-      final response = await session.server.respond(options);
+      final response = await session.send(options, requestStream, cancelFuture);
       if (upload != null &&
           response.statusCode >= 200 &&
           response.statusCode < 300) {
@@ -2924,6 +2930,7 @@ final class Mr7Readback {
 final class Mr7SandboxSession {
   Mr7SandboxSession({
     required this.server,
+    this.liveTransport,
     this.expectedUserId = 7,
     this.namespace = 'synthetic-owner',
     required this.nonce,
@@ -2936,7 +2943,13 @@ final class Mr7SandboxSession {
        eventDelay =
            eventDelay ??
            (() => Future<void>.delayed(const Duration(milliseconds: 10))) {
+    liveTransport?.bindSession(userId: expectedUserId, namespace: namespace,
+      beforeAdditionalRead: (request) {
+        chargeRequest();
+        validateRead(request, allowStopped: true);
+      });
     observerAdapter = Mr7ObserverAdapter(server, this.instance);
+    observerAdapter.transport = liveTransport;
     observerAdapter.beforeRequest = chargeRequest;
     observerAdapter.validateRequest = (request) =>
         validateRead(request, allowStopped: true);
@@ -2954,6 +2967,16 @@ final class Mr7SandboxSession {
     )..httpClientAdapter = writerAdapter;
   }
   final Mr7SyntheticGitLab server;
+  final Mr7SessionTransport? liveTransport;
+  String get gitLabToken => liveTransport?.gitLabToken ?? 'synthetic-gitlab-pat';
+  DateTime get serverTime => liveTransport?.serverTime ?? server.serverTime;
+  int get setupWrites => liveTransport?.setupWrites ?? server.setupWrites;
+  int get createdProjectId => liveTransport?.projectId ?? server.projectId;
+  Future<ResponseBody> send(
+    RequestOptions request, Stream<Uint8List>? body, Future<void>? cancellation,
+  ) => liveTransport == null
+      ? server.respond(request)
+      : liveTransport!.send(request, body, cancellation, observation: false);
   final int expectedUserId;
   final String namespace;
   final String nonce;
@@ -3621,7 +3644,7 @@ final class Mr7SandboxSession {
           );
       if (namespaces.length != 1) throw const Mr7Refused('namespaceIdentity');
       _namespaceId = namespaces.single['id'] as int;
-      windowStart = server.serverTime.subtract(const Duration(seconds: 2));
+      windowStart = serverTime.subtract(const Duration(seconds: 2));
       await checkIsolation(baseline: true); // Before POST /projects.
       _setupAuthorized = true;
       final r = await writer.post<Object?>(
@@ -3715,7 +3738,7 @@ final class Mr7SandboxSession {
     String operation;
     if (_setupAuthorized &&
         identity == null &&
-        server.setupWrites == 0 &&
+        setupWrites == 0 &&
         request.method == 'POST' &&
         path == 'projects') {
       final b = request.data;
@@ -3906,14 +3929,14 @@ final class Mr7SandboxSession {
           !_cleanupAuthorized &&
           permit?.scenarioId != null)
         'scenarioId': permit!.scenarioId,
-      'projectId': identity?.projectId ?? server.projectId,
-      'at': server.serverTime.toIso8601String(),
+      'projectId': identity?.projectId ?? createdProjectId,
+      'at': serverTime.toIso8601String(),
     });
   }
 
   Future<void> checkIsolation({bool baseline = false}) async {
     try {
-      final end = server.serverTime.add(const Duration(seconds: 2));
+      final end = serverTime.add(const Duration(seconds: 2));
       final found = <int, Map<String, Object?>>{};
       var totalPages = 0;
       for (var pass = 0; pass < 2; pass++) {
@@ -3979,7 +4002,7 @@ final class Mr7SandboxSession {
             if (raw['project_id'] is! int ||
                 raw['project_id'] !=
                     (identity?.projectId ??
-                        (baseline ? null : server.projectId))) {
+                        (baseline ? null : createdProjectId))) {
               throw const Mr7Refused('eventsOutsideSandbox');
             }
           }
@@ -4092,6 +4115,7 @@ final class Mr7SandboxSession {
     _finished = true;
     writer.close(force: true);
     observer.close(force: true);
+    liveTransport?.close();
   }
 
   Map<String, Object?> receipt({

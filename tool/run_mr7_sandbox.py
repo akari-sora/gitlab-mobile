@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from datetime import datetime
 import getpass
 import hashlib
 import json
@@ -17,6 +18,8 @@ import stat
 import subprocess
 import sys
 import tempfile
+import unicodedata
+import warnings
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +48,7 @@ FIXED_CONFIRM_REASONS = frozenset({
 SOURCE_FILES = (
     'tool/run_mr7_sandbox.py', 'tool/mr7_sandbox.dart',
     'tool/mr7/sandbox_contract.dart', 'tool/tests/test_mr7_sandbox_runner.py',
+    'tool/tests/test_mr7_sandbox_live.py',
     'test/ai/mr7_sandbox_contract_test.dart',
     'test/ai/mr7_sandbox_wave2_contract_test.dart',
     'test/ai/mr7_sandbox_wave2_runner_test.dart',
@@ -67,22 +71,26 @@ def parser() -> argparse.ArgumentParser:
     p = SafeParser(description=__doc__, allow_abbrev=False)
     p.add_argument('--policy', choices=('production', 'candidate'), default='production')
     p.add_argument('--transport', choices=('synthetic', 'live'), default='synthetic')
-    p.add_argument('--suite', choices=('all', 'rest', 'graphql', 'advanced'), default='all')
+    p.add_argument('--suite', choices=('all', 'rest', 'graphql', 'advanced'))
     p.add_argument('--expected-user-id', type=int, default=os.environ.get('MR7_EXPECTED_USER_ID', '7'))
     p.add_argument('--namespace', default=os.environ.get('MR7_OWNER_NAMESPACE', 'synthetic-owner'))
     p.add_argument('--provider-config')
+    p.add_argument('--only')
+    p.add_argument('--pat-env')
     p.add_argument('--expect-release-sha')
     p.add_argument('--output', required=True)
     return p
 
 
-def provider_config(path: str | None) -> dict:
+def provider_config(path: str | None, *, live: bool = False) -> dict:
     if path is None:
         return {}
     with open(path, encoding='utf-8') as stream:
         data = json.load(stream)
     allowed = {'endpoint', 'format', 'model', 'caps', 'maxCost', 'maxCalls', 'keyEnv'}
-    if not isinstance(data, dict) or set(data) != allowed:
+    required = allowed | ({'priceInputPerMTok', 'priceOutputPerMTok'} if live else set())
+    optional = {'preset'} if live else set()
+    if not isinstance(data, dict) or not required <= set(data) or set(data) - required - optional:
         raise ValueError('invalid provider config')
     endpoint = data['endpoint']
     if not isinstance(endpoint, str):
@@ -92,6 +100,10 @@ def provider_config(path: str | None) -> dict:
         raise ValueError('invalid endpoint')
     if data['format'] not in ('responses', 'chat_completions', 'anthropic_messages'):
         raise ValueError('invalid format')
+    if live and (data['format'] not in ('chat_completions', 'anthropic_messages') or
+                 data.get('preset', 'custom') not in ('custom', 'opencode-go') or
+                 (data.get('preset') == 'opencode-go' and data['format'] != 'chat_completions')):
+        raise ValueError('invalid live format or preset')
     if not isinstance(data['model'], str) or not IDENTIFIER.fullmatch(data['model']):
         raise ValueError('invalid model')
     if not isinstance(data['keyEnv'], str) or not ENV_NAME.fullmatch(data['keyEnv']):
@@ -110,22 +122,33 @@ def provider_config(path: str | None) -> dict:
                 or not isinstance(value, (bool, int, float))
                 or (isinstance(value, float) and not math.isfinite(value))):
             raise ValueError('invalid capabilities')
+    if live:
+        if (set(caps) != {'tools', 'maxTokens'} or caps.get('tools') is not True or
+                type(caps.get('maxTokens')) is not int or
+                not 512 <= caps['maxTokens'] <= 1_000_000):
+            raise ValueError('invalid live capabilities')
+        for field in ('priceInputPerMTok', 'priceOutputPerMTok'):
+            price = data[field]
+            if (isinstance(price, bool) or not isinstance(price, (int, float)) or
+                    not math.isfinite(price) or price <= 0):
+                raise ValueError('invalid price')
     return data
 
 
 def validate_receipt(receipt: object, *, final: bool = False, policy: str | None = None,
-                     release_sha: str | None = None) -> bool:
+                     release_sha: str | None = None, transport: str = 'synthetic') -> bool:
     if not isinstance(receipt, dict):
         return False
     actual_policy = receipt.get('policy')
-    evidence = 'CANDIDATE_ONLY' if actual_policy == 'candidate' else 'SYNTHETIC'
+    live = transport == 'live'
+    evidence = 'live-candidate' if live else ('CANDIDATE_ONLY' if actual_policy == 'candidate' else 'SYNTHETIC')
     if (type(receipt.get('schema')) is not int or receipt['schema'] != 1 or
             receipt.get('status') not in ('PASS', 'FAIL') or
-            receipt.get('transport') != 'synthetic' or
+            receipt.get('transport') != transport or transport not in ('synthetic', 'live') or
             actual_policy not in ('production', 'candidate') or
             receipt.get('evidenceClass') != evidence or
             receipt.get('finalEligible') is not False or
-            receipt.get('live') != 'NOT_RUN' or
+            receipt.get('live') != (('PASS' if receipt.get('status') == 'PASS' else 'FAIL') if live else 'NOT_RUN') or
             not isinstance(receipt.get('releaseSha'), str) or
             not SHA.fullmatch(receipt['releaseSha']) or
             (policy is not None and actual_policy != policy) or
@@ -134,12 +157,17 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
     scenarios = receipt.get('scenarios', [])
     if not isinstance(scenarios, list):
         return False
+    if live and receipt['status'] == 'PASS' and not _live_pass_evidence(receipt, scenarios):
+        return False
     # A closed row cannot share its identity with a runnable or another closed
     # row. Ordinary schema-1 rows remain backwards compatible.
     ids = Counter(row['id'] for row in scenarios
                   if isinstance(row, dict) and isinstance(row.get('id'), str))
     for row in scenarios:
         if not isinstance(row, dict):
+            return False
+        if live and row.get('live') != ('PASS' if row.get('status') == 'PASS' else
+                                        'FAIL' if row.get('status') == 'FAIL' else 'NOT_VERIFIED'):
             return False
         refusal = row.get('refusal')
         if row.get('classification') == 'closedVariant' or refusal is not None:
@@ -149,7 +177,7 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
                     any(not isinstance(row.get(field), str) or not row[field].strip()
                         for field in ('suite', 'operation', 'variant', 'tier')) or
                     row.get('releaseSha') != receipt['releaseSha'] or
-                    row.get('live') != 'NOT_RUN' or
+                    row.get('live') != ('NOT_VERIFIED' if live else 'NOT_RUN') or
                     row.get('status') != 'NOT_RUN' or row.get('readback') != 'NOT_RUN' or
                     type(row.get('mutationCount')) is not int or row['mutationCount'] != 0 or
                     type(row.get('providerCalls')) is not int or row['providerCalls'] != 0 or
@@ -265,24 +293,130 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
     return not final
 
 
+def _live_pass_evidence(receipt: dict, scenarios: list) -> bool:
+    identity = receipt.get('identity')
+    if (not isinstance(identity, dict) or
+            any(type(identity.get(key)) is not int or identity[key] <= 0
+                for key in ('projectId', 'ownerId', 'namespaceId')) or
+            identity['projectId'] == 86648389 or
+            any(not isinstance(identity.get(key), str) or
+                not re.fullmatch(r'[0-9a-f]{64}', identity[key])
+                for key in ('pathDigest', 'instanceDigest', 'nonceDigest'))):
+        return False
+    events, cleanup = receipt.get('events'), receipt.get('cleanup')
+    if (not isinstance(events, dict) or events.get('status') != 'PASS' or
+            events.get('complete') is not True or events.get('passes') != 2 or
+            type(events.get('pages')) is not int or events['pages'] < 2 or
+            not isinstance(events.get('start'), str) or not isinstance(events.get('end'), str) or
+            not isinstance(events.get('items'), list) or
+            not isinstance(cleanup, dict) or cleanup.get('status') != 'PASS' or
+            cleanup.get('accepted') is not True or cleanup.get('deletionVerified') is not True or
+            cleanup.get('parentChecked') is not True or cleanup.get('identityChecked') is not True or
+            receipt.get('quarantined') is not False or receipt.get('secretLeakScan') != 'PASS'):
+        return False
+    try:
+        start = datetime.fromisoformat(events['start'].replace('Z', '+00:00'))
+        end = datetime.fromisoformat(events['end'].replace('Z', '+00:00'))
+        if start.tzinfo is None or end.tzinfo is None or start > end:
+            return False
+        ids = set()
+        for item in events['items']:
+            if (not isinstance(item, dict) or type(item.get('id')) is not int or item['id'] <= 0 or
+                    item['id'] in ids or item.get('projectId') != identity['projectId'] or
+                    not isinstance(item.get('at'), str) or not isinstance(item.get('action'), str)):
+                return False
+            at = datetime.fromisoformat(item['at'].replace('Z', '+00:00'))
+            if at.tzinfo is None or not start <= at <= end:
+                return False
+            ids.add(item['id'])
+    except (ValueError, TypeError, OverflowError):
+        return False
+    ledger = receipt.get('requestLedger')
+    if (not isinstance(ledger, list) or len(ledger) < 2 or
+            any(not isinstance(entry, dict) or not isinstance(entry.get('operation'), str) or
+                not isinstance(entry.get('path'), str) or not isinstance(entry.get('method'), str)
+                for entry in ledger) or
+            not any(entry['operation'] == 'harnessSetup' for entry in ledger) or
+            not any(entry['operation'] == 'harnessCleanup' and entry['method'] == 'DELETE' and
+                    entry['path'] == f"projects/{identity['projectId']}" for entry in ledger)):
+        return False
+    provider = receipt.get('provider')
+    if not isinstance(provider, dict):
+        return False
+    calls, usage, spend = provider.get('calls'), provider.get('usage'), provider.get('spend')
+    if (type(calls) is not int or calls <= 0 or not isinstance(usage, list) or len(usage) != calls or
+            isinstance(spend, bool) or not isinstance(spend, (int, float)) or
+            not math.isfinite(spend) or spend < 0):
+        return False
+    for entry in usage:
+        if (not isinstance(entry, dict) or
+                set(entry) != {'inputTokens', 'outputTokens', 'spend', 'usageEstimated'} or
+                type(entry.get('usageEstimated')) is not int or entry['usageEstimated'] not in (0, 1) or
+                any(type(entry.get(key)) is not int or entry[key] < 0
+                    for key in ('inputTokens', 'outputTokens')) or
+                isinstance(entry.get('spend'), bool) or not isinstance(entry.get('spend'), (int, float)) or
+                not math.isfinite(entry['spend']) or entry['spend'] < 0):
+            return False
+    if not math.isclose(spend, sum(item['spend'] for item in usage), rel_tol=1e-9, abs_tol=1e-12):
+        return False
+    passes = [row for row in scenarios if isinstance(row, dict) and row.get('status') == 'PASS']
+    if not passes:
+        return False
+    for row in passes:
+        count = row.get('mutationCount')
+        if type(count) is not int or count < 0:
+            return False
+        if count > 0 and (row.get('confirmation') != 'explicitOwnerConfirmation' or
+                          row.get('readback') != 'PASS' or
+                          type(row.get('observerRequests')) is not int or row['observerRequests'] <= 0):
+            return False
+    return True
+
+
 def _private_file(path: Path, text: str) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8') as stream:
         stream.write(text)
 
 
+def _publish_confirmation(path: Path, text: str) -> None:
+    """Publish only a complete private response, without replacing another file."""
+    fd, staging = tempfile.mkstemp(prefix='.mr7-confirm-', dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(staging, path)
+    finally:
+        os.unlink(staging)
+
+
+def _hidden_input(prompt: str) -> str:
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', getpass.GetPassWarning)
+        try:
+            return getpass.getpass(prompt)
+        except getpass.GetPassWarning:
+            raise EOFError('hidden input unavailable') from None
+
+
 @contextmanager
-def credential_files(*, pat_env: str | None = None, key_env: str | None = None):
-    """Future live adapter helper; this synthetic runner never invokes it."""
+def credential_files(*, pat_env: str | None = None, key_env: str | None = None,
+                     directory: str | None = None):
+    """Deliver credentials through separate owner-only temporary files."""
     for name in (pat_env, key_env):
         if name is not None and not ENV_NAME.fullmatch(name):
             raise ValueError('invalid credential environment name')
-    pat = os.environ.get(pat_env) if pat_env else getpass.getpass('GitLab PAT: ')
-    key = os.environ.get(key_env) if key_env else getpass.getpass('Provider key: ')
+    pat = os.environ.get(pat_env) if pat_env else _hidden_input('GitLab PAT: ')
+    key = os.environ.get(key_env) if key_env else _hidden_input('Provider key: ')
     if any(not value or any(c.isspace() for c in value) for value in (pat, key)):
         raise ValueError('invalid credential')
-    with tempfile.TemporaryDirectory(prefix='mr7-credentials-') as directory:
-        pat_path, key_path = Path(directory) / 'pat', Path(directory) / 'key'
+    if pat in key or key in pat:
+        raise ValueError('credentials overlap')
+    with tempfile.TemporaryDirectory(prefix='mr7-credentials-', dir=directory) as temporary:
+        pat_path, key_path = Path(temporary) / 'pat', Path(temporary) / 'key'
         _private_file(pat_path, pat)
         _private_file(key_path, key)
         yield pat_path, key_path
@@ -314,15 +448,18 @@ def _reserve_output(path: Path, receipt: dict) -> tuple[os.stat_result, bytes]:
     return identity, contents
 
 
-def _finalize_output(path: Path, identity: os.stat_result, original: bytes, receipt: dict) -> None:
+def _finalize_output(path: Path, identity: os.stat_result, original: bytes,
+                     receipt: dict) -> tuple[os.stat_result, bytes]:
     """Replace only our unchanged provisional file; never replace another file."""
     fd, temp_name = tempfile.mkstemp(prefix='.mr7-receipt-', dir=path.parent)
     try:
         os.fchmod(fd, 0o600)
+        contents = _encoded(receipt)
         with os.fdopen(fd, 'wb') as stream:
-            stream.write(_encoded(receipt))
+            stream.write(contents)
             stream.flush()
             os.fsync(stream.fileno())
+            new_identity = os.fstat(stream.fileno())
         flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
         original_fd = os.open(path, flags)
         try:
@@ -339,6 +476,7 @@ def _finalize_output(path: Path, identity: os.stat_result, original: bytes, rece
                 raise FileExistsError('output changed')
             os.replace(temp_name, path)
             _sync_directory(path.parent)
+            return new_identity, contents
         finally:
             os.close(original_fd)
     finally:
@@ -346,13 +484,13 @@ def _finalize_output(path: Path, identity: os.stat_result, original: bytes, rece
             os.unlink(temp_name)
 
 
-def _source_provenance() -> dict:
+def _source_provenance(*, excluded: tuple[str, ...] = ()) -> dict:
     """Hash the production Dart tree, host sources, and dependency configuration."""
-    env = {name: os.environ[name] for name in SAFE_ENV if name in os.environ}
+    env = {name: os.environ[name] for name in SAFE_ENV if name in os.environ and name not in excluded}
     env['GIT_OPTIONAL_LOCKS'] = '0'
     result = subprocess.run(
         ['git', 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--',
-         'lib', *SOURCE_FILES, *DEPENDENCY_FILES],
+         'lib', 'tool/mr7', *SOURCE_FILES, *DEPENDENCY_FILES],
         cwd=ROOT, env=env, check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
     )
     records = iter(result.stdout.split('\0'))
@@ -362,16 +500,18 @@ def _source_provenance() -> dict:
             continue
         name = record[3:]
         if name in SOURCE_FILES or name in DEPENDENCY_FILES or (
-                name.startswith('lib/') and name.endswith('.dart')):
+                (name.startswith('lib/') or name.startswith('tool/mr7/')) and name.endswith('.dart')):
             statuses[name] = record[:2]
         # A rename/copy has a second NUL-delimited source path.
         if 'R' in record[:2] or 'C' in record[:2]:
             next(records, None)
     dart_files = {
         path.relative_to(ROOT).as_posix()
-        for path in (ROOT / 'lib').rglob('*.dart') if path.is_file()
+        for directory in ('lib', 'tool/mr7')
+        for path in (ROOT / directory).rglob('*.dart') if path.is_file()
     }
-    reported_dart = {name for name in statuses if name.startswith('lib/') and name.endswith('.dart')}
+    reported_dart = {name for name in statuses if (name.startswith('lib/') or name.startswith('tool/mr7/'))
+                     and name.endswith('.dart')}
     names = sorted(set(SOURCE_FILES) | set(DEPENDENCY_FILES) | dart_files | reported_dart)
     files = {}
     for name in names:
@@ -410,11 +550,12 @@ def _stop_child(child: subprocess.Popen) -> None:
 
 
 def _quarantine(config: dict, reason: str) -> dict:
+    live = config.get('transport') == 'live'
     return {
-        'schema': 1, 'status': 'FAIL', 'transport': 'synthetic',
+        'schema': 1, 'status': 'FAIL', 'transport': 'live' if live else 'synthetic',
         'policy': config['policy'],
-        'evidenceClass': 'CANDIDATE_ONLY' if config['policy'] == 'candidate' else 'SYNTHETIC',
-        'finalEligible': False, 'releaseSha': config['releaseSha'], 'live': 'NOT_RUN',
+        'evidenceClass': 'live-candidate' if live else ('CANDIDATE_ONLY' if config['policy'] == 'candidate' else 'SYNTHETIC'),
+        'finalEligible': False, 'releaseSha': config['releaseSha'], 'live': 'FAIL' if live else 'NOT_RUN',
         'reason': reason, 'cleanup': 'NOT_RUN', 'sandbox': 'quarantined',
         'remaining': 'NOT_RUN',
     }
@@ -428,31 +569,129 @@ def _contains_environment_secret(content: str, key_env: str | None = None) -> bo
     return False
 
 
-def _head_sha() -> str:
+def _contains_known_secret(value: object, secrets: list[str]) -> bool:
+    if isinstance(value, str):
+        return any(secret in value for secret in secrets)
+    if isinstance(value, dict):
+        return any(_contains_known_secret(k, secrets) or _contains_known_secret(v, secrets)
+                   for k, v in value.items())
+    if isinstance(value, list):
+        return any(_contains_known_secret(item, secrets) for item in value)
+    return False
+
+
+def _head_sha(*, excluded: tuple[str, ...] = ()) -> str:
+    env = {name: os.environ[name] for name in SAFE_ENV if name in os.environ and name not in excluded}
+    env['GIT_OPTIONAL_LOCKS'] = '0'
     return subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, check=True,
                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                          text=True).stdout.strip()
+                          text=True, env=env).stdout.strip()
+
+
+def _confirm_request(path: Path, response: Path, secrets: list[str]) -> None:
+    """Prompt only for a validated bounded proposal; malformed requests fail closed."""
+    if not path.exists() or response.exists():
+        return
+    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 4096:
+            raise ValueError('invalid confirmation')
+        proposal = json.loads(stream.read(4097))
+    required = {'operation', 'tier', 'projectId', 'payloadDigest', 'preview'}
+    if (not isinstance(proposal, dict) or not required <= set(proposal) or
+            set(proposal) - required - {'requiredTypedName'} or
+            not isinstance(proposal['operation'], str) or
+            not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', proposal['operation']) or
+            proposal['tier'] not in WRITE_TIERS or
+            type(proposal['projectId']) is not int or proposal['projectId'] <= 0 or
+            not isinstance(proposal['payloadDigest'], str) or
+            not re.fullmatch(r'[0-9a-f]{64}', proposal['payloadDigest']) or
+            not isinstance(proposal['preview'], str) or len(proposal['preview']) > 2048 or
+            any(unicodedata.category(c) in ('Cc', 'Cf') and c not in '\n\t'
+                for c in proposal['preview']) or
+            ('requiredTypedName' in proposal and
+             (not isinstance(proposal['requiredTypedName'], str) or
+              not proposal['requiredTypedName'] or len(proposal['requiredTypedName']) > 256 or
+              any(unicodedata.category(c) in ('Cc', 'Cf') for c in proposal['requiredTypedName'])))):
+        raise ValueError('invalid confirmation')
+    prompt = (f"Approve sandbox write {proposal['operation']} tier {proposal['tier']} "
+              f"project {proposal['projectId']} digest {proposal['payloadDigest']}\n"
+              f"Preview: {proposal['preview']}\n")
+    if 'requiredTypedName' in proposal:
+        prompt += f"Typed target required: {proposal['requiredTypedName']}\n"
+    prompt += 'Type yes to approve: '
+    if any(secret in prompt for secret in secrets):
+        raise ValueError('unsafe confirmation')
+    approved = _hidden_input(prompt).strip() == 'yes'
+    answer = {'approved': approved}
+    if 'requiredTypedName' in proposal:
+        typed = _hidden_input('Type the target name: ') if approved else None
+        if typed is not None and (len(typed) > 256 or any(secret in typed for secret in secrets)):
+            typed = None
+            answer['approved'] = False
+        answer['typedName'] = typed
+    _publish_confirmation(response, json.dumps(answer))
+
+
+def _wait_live_child(child: subprocess.Popen, request: Path, response: Path,
+                     secrets: list[str]) -> int:
+    while True:
+        _confirm_request(request, response, secrets)
+        try:
+            return child.wait(timeout=0.1)
+        except subprocess.TimeoutExpired:
+            continue
 
 
 def run(args: argparse.Namespace) -> int:
-    if args.transport != 'synthetic':
-        print('Live transport is NOT_RUN and unavailable.', file=sys.stderr)
-        return 2
+    live = args.transport == 'live'
+    state_directory = None
     try:
+        if live:
+            if (args.provider_config is None or args.suite is None or
+                    'MR7_EXPECTED_USER_ID' not in os.environ or
+                    'MR7_OWNER_NAMESPACE' not in os.environ or
+                    str(args.expected_user_id) != os.environ['MR7_EXPECTED_USER_ID'] or
+                    args.namespace != os.environ['MR7_OWNER_NAMESPACE']):
+                print('Live transport is NOT_RUN: missing explicit configuration.', file=sys.stderr)
+                return 2
+        elif args.only is not None or args.pat_env is not None:
+            raise ValueError('live-only argument')
         if args.expected_user_id <= 0 or not IDENTIFIER.fullmatch(args.namespace):
             raise ValueError('invalid identity')
-        sha = _head_sha()
+        if args.pat_env is not None and not ENV_NAME.fullmatch(args.pat_env):
+            raise ValueError('invalid credential environment name')
+        only = None
+        if args.only is not None:
+            only = args.only.split(',')
+            if (not only or any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', item)
+                                for item in only) or len(only) != len(set(only))):
+                raise ValueError('invalid scenario selection')
+        provider = provider_config(args.provider_config, live=live)
+        excluded = tuple(name for name in (args.pat_env, provider.get('keyEnv')) if name) if live else ()
+        sha = _head_sha(excluded=excluded) if live else _head_sha()
         if not SHA.fullmatch(sha) or (args.expect_release_sha is not None and
                                       args.expect_release_sha != sha):
             raise ValueError('invalid or mismatched SHA')
         config = {'expectedUserId': args.expected_user_id, 'namespace': args.namespace,
-                  'releaseSha': sha, 'policy': args.policy, 'suite': args.suite,
-                  'provider': provider_config(args.provider_config)}
-        provenance = {'head': sha, **_source_provenance()}
+                  'releaseSha': sha, 'policy': args.policy, 'suite': args.suite or 'all',
+                  'provider': provider}
+        if live:
+            config['transport'] = 'live'
+            if only is not None:
+                config['only'] = only
+        provenance = {'head': sha, **(_source_provenance(excluded=excluded) if live else _source_provenance())}
         output = Path(args.output).absolute()
         provisional = _quarantine(config, 'in_progress')
         provisional['sourceProvenance'] = provenance
         identity, original = _reserve_output(output, provisional)
+        if live:
+            state_directory = Path(tempfile.mkdtemp(prefix='mr7-live-state-', dir=output.parent))
+            os.chmod(state_directory, 0o700)
+            config['stateDirectory'] = str(state_directory)
+            provisional['stateDirectory'] = str(state_directory)
+            identity, original = _finalize_output(output, identity, original, provisional)
     except (OSError, ValueError, UnicodeError, subprocess.SubprocessError):
         print('Sandbox setup failed.', file=sys.stderr)
         return 2
@@ -462,41 +701,77 @@ def run(args: argparse.Namespace) -> int:
     exit_code = 1
     previous_handler = signal.signal(signal.SIGTERM, _term_handler)
     try:
-        with tempfile.TemporaryDirectory(prefix='mr7-sandbox-') as directory:
+        with tempfile.TemporaryDirectory(prefix='mr7-sandbox-',
+                                         dir=output.parent if live else None) as directory:
             config_path = Path(directory) / 'config.json'
             receipt_path = Path(directory) / 'receipt.json'
             _private_file(config_path, json.dumps(config))
             _private_file(receipt_path, '')
             env = {name: os.environ[name] for name in SAFE_ENV if name in os.environ}
+            if live:
+                env.pop(args.pat_env, None)
+                env.pop(config['provider']['keyEnv'], None)
             env['MR7_SANDBOX_CONFIG_FILE'] = str(config_path)
             env['MR7_SANDBOX_RECEIPT_FILE'] = str(receipt_path)
-            child = subprocess.Popen(
-                ['fvm', 'flutter', 'test', '--no-pub', '--reporter', 'expanded',
-                 'tool/mr7_sandbox.dart'], cwd=ROOT, env=env,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-            child_exit = child.wait()
-            head_after = _head_sha()
-            provenance_after = {'head': head_after, **_source_provenance()}
-            receipt_text = receipt_path.read_text(encoding='utf-8')
-            if (len(receipt_text) > 2_000_000 or
-                    _contains_environment_secret(receipt_text, config['provider'].get('keyEnv'))):
-                raise ValueError('unsafe receipt')
-            receipt = json.loads(receipt_text)
-            if _contains_environment_secret(json.dumps(receipt, ensure_ascii=False),
-                                            config['provider'].get('keyEnv')):
-                raise ValueError('unsafe receipt')
-            if not validate_receipt(receipt, policy=args.policy, release_sha=sha):
-                raise ValueError('invalid receipt')
-            if head_after != sha or provenance_after != provenance:
-                outcome = _quarantine(config, 'source_drift')
-            elif child_exit != 0 and receipt['status'] == 'PASS':
-                outcome = _quarantine(config, 'child_failed')
-            else:
-                outcome = receipt
-                if child_exit == 0 and receipt['status'] == 'PASS':
-                    exit_code = 0
+            key_env = config['provider'].get('keyEnv')
+            credentials = (credential_files(pat_env=args.pat_env,
+                                            key_env=key_env if key_env in os.environ else None,
+                                            directory=directory) if live else nullcontext(None))
+            with credentials as paths:
+                secrets = []
+                if live:
+                    pat_path, key_path = paths
+                    secrets = [pat_path.read_text(encoding='utf-8'), key_path.read_text(encoding='utf-8')]
+                    env['MR7_GITLAB_PAT_FILE'] = str(pat_path)
+                    env['MR7_PROVIDER_KEY_FILE'] = str(key_path)
+                    request_path = Path(directory) / 'confirmation-request.json'
+                    response_path = Path(directory) / 'confirmation-response.json'
+                    env['MR7_CONFIRM_REQUEST_FILE'] = str(request_path)
+                    env['MR7_CONFIRM_RESPONSE_FILE'] = str(response_path)
+                    if (_contains_known_secret(config, secrets) or
+                            _contains_known_secret(env, secrets)):
+                        raise ValueError('unsafe child configuration')
+                child = subprocess.Popen(
+                    ['fvm', 'flutter', 'test', '--no-pub', '--reporter', 'expanded',
+                     'tool/mr7_sandbox.dart'], cwd=ROOT, env=env,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                if live:
+                    try:
+                        child_exit = _wait_live_child(child, request_path, response_path, secrets)
+                    except BaseException:
+                        # Stop the whole child group before the private credential files
+                        # and the confirmation channel are removed.
+                        _stop_child(child)
+                        child = None
+                        raise
+                else:
+                    child_exit = child.wait()
+                head_after = _head_sha(excluded=excluded) if live else _head_sha()
+                provenance_after = {'head': head_after, **(_source_provenance(excluded=excluded)
+                                                            if live else _source_provenance())}
+                receipt_text = receipt_path.read_text(encoding='utf-8')
+                if (len(receipt_text) > 2_000_000 or
+                        any(secret in receipt_text for secret in secrets) or
+                        _contains_environment_secret(receipt_text, config['provider'].get('keyEnv'))):
+                    raise ValueError('unsafe receipt')
+                receipt = json.loads(receipt_text)
+                encoded = json.dumps(receipt, ensure_ascii=False)
+                if (_contains_known_secret(receipt, secrets) or
+                        _contains_environment_secret(encoded, config['provider'].get('keyEnv'))):
+                    raise ValueError('unsafe receipt')
+                if not validate_receipt(receipt, policy=args.policy, release_sha=sha,
+                                        transport=args.transport):
+                    raise ValueError('invalid receipt')
+                if head_after != sha or provenance_after != provenance:
+                    outcome = _quarantine(config, 'source_drift')
+                elif child_exit != 0 and receipt['status'] == 'PASS':
+                    outcome = _quarantine(config, 'child_failed')
+                else:
+                    outcome = receipt
+                    if child_exit == 0 and receipt['status'] == 'PASS':
+                        exit_code = 0
     except (KeyboardInterrupt, _RunInterrupted, EOFError):
         if child is not None:
             _stop_child(child)
@@ -510,17 +785,25 @@ def run(args: argparse.Namespace) -> int:
         signal.signal(signal.SIGTERM, previous_handler)
 
     outcome['sourceProvenance'] = provenance
+    if state_directory is not None:
+        outcome['stateDirectory'] = str(state_directory)
+        if exit_code == 0:
+            try:
+                state_directory.rmdir()
+            except OSError:
+                # A nonempty journal remains available for manual investigation.
+                pass
     try:
         _finalize_output(output, identity, original, outcome)
     except OSError:
         print('Receipt output changed or could not be finalized.', file=sys.stderr)
         return 1
     if exit_code == 0:
-        print('Synthetic sandbox receipt written; live NOT_RUN.')
+        print('Live candidate receipt written.' if live else 'Synthetic sandbox receipt written; live NOT_RUN.')
     elif exit_code == 130:
-        print('Synthetic sandbox interrupted; quarantine receipt written.', file=sys.stderr)
+        print(f"{'Live' if live else 'Synthetic'} sandbox interrupted; quarantine receipt written.", file=sys.stderr)
     else:
-        print('Synthetic sandbox failed; receipt written.', file=sys.stderr)
+        print(f"{'Live' if live else 'Synthetic'} sandbox failed; receipt written.", file=sys.stderr)
     return exit_code
 
 
