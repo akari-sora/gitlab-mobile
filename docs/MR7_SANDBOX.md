@@ -693,8 +693,10 @@ a returned Note that is already bound.
 The milestone owner check and the created-note binding run only for scenario
 writes, never for the harness setup or cleanup request, so a permit still set at
 `finish()` cannot fail cleanup. The guarded writer reads the server clock before
-it counts or dispatches a write; without a clock (live transport before any
-Date header) it stops the session as `serverTimeUnverified` and sends nothing.
+it counts or dispatches a write; if the clock cannot be read it stops the
+session as `serverTimeUnverified` and sends nothing. This is defensive: live
+runs set the clock during the reads before the first write, and the request
+ledger reads it first.
 All evidence remains synthetic.
 
 ## Wave 3c effect witnesses

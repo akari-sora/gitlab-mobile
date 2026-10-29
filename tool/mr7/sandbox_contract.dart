@@ -2735,8 +2735,8 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
           throw const Mr7Refused('unsealedGraph');
         }
       }
-      // Read the clock before the write is counted or marked dispatched: live
-      // transport throws until it has seen a Date header. Nothing is sent.
+      // Read the clock before the write is counted or marked dispatched, so a
+      // clock failure sends nothing. Defensive: live runs set it earlier.
       final DateTime dispatchAt;
       try {
         dispatchAt = session.serverTime;
