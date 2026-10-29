@@ -101,7 +101,7 @@ python_checks:
 flutter_checks:
   extends: [.flutter, .app_regular]
   stage: verify
-  timeout: 35m
+  timeout: 40m
   coverage: '/Coverage: (\d+(?:\.\d+)?)%/'
   script:
     - bash ci/check.sh
@@ -114,7 +114,7 @@ flutter_checks:
 flutter_ai_checks:
   extends: [.flutter, .app_regular]
   stage: verify
-  timeout: 35m
+  timeout: 40m
   coverage: '/Coverage: (\d+(?:\.\d+)?)%/'
   script:
     - bash ci/check.sh ai

@@ -241,8 +241,16 @@ class CiPipelineConfigTests(unittest.TestCase):
             self.assertIsNotNone(match, name)
             jobs[name] = match.group(1)
             self.assertIn('extends: [.flutter, .app_regular]', jobs[name])
-            self.assertIn('timeout: 35m', jobs[name])
+            self.assertIn('timeout: 40m', jobs[name])
             self.assertNotRegex(jobs[name], re.compile(r'^  (rules|tags|retry):', re.MULTILINE))
+        # The job limit must leave room for the steps before the tests (measured
+        # up to 6.5 minutes under load) on top of ci/check.sh's test limit, so
+        # the inner limit fires first and the reports are still uploaded.
+        check = Path('ci/check.sh').read_text()
+        test_limit = int(re.search(r'--kill-after=15s (\d+)m flutter test', check).group(1))
+        for name, block in jobs.items():
+            job_limit = int(re.search(r'^  timeout: (\d+)m$', block, re.MULTILINE).group(1))
+            self.assertGreaterEqual(job_limit - test_limit, 8, name)
         self.assertIn('- bash ci/check.sh\n', jobs['flutter_checks'])
         self.assertIn('junit: ci-output/junit.xml', jobs['flutter_checks'])
         self.assertIn('- bash ci/check.sh ai\n', jobs['flutter_ai_checks'])
