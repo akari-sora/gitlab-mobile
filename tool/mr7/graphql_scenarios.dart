@@ -972,6 +972,7 @@ final class Mr7GraphqlFixture {
   int productionReads = 0;
   int observerReads = 0;
   int continuationReads = 0;
+  final observerNotePages = <Map<String, Object?>>[];
   final preWrites = <Map<String, Object?>>[];
   final mutations = <Map<String, Object?>>[];
   Map<String, Object?> _copy(Map<String, Object?> value) =>
@@ -1031,6 +1032,7 @@ final class Mr7GraphqlFixture {
     productionReads = 0;
     observerReads = 0;
     continuationReads = 0;
+    observerNotePages.clear();
     preWrites.clear();
     mutations.clear();
     _state = {
@@ -1198,21 +1200,25 @@ final class Mr7GraphqlFixture {
       'createdAt': '2026-09-01T01:02:03Z',
     },
   };
-  Map<String, Object?> _thread(Object? after, {bool retained = false}) {
+  Map<String, Object?> _thread(Object? after) {
     final notes = Map<String, Object?>.from(_state['notes'] as Map);
-    if (retained) notes['51'] = 'Synthetic original';
+    if (observing && fault == 'deletion-retained') {
+      notes['51'] = 'Synthetic original';
+    }
     final ids = notes.keys.toList();
+    final page = _connection(
+      [
+        for (final id in ids) {..._note(id), 'body': notes[id]},
+      ],
+      after,
+      page: observing && ids.length > 1,
+    );
+    if (observing) observerNotePages.add(_copy(page));
     return {
       'id': _discussion,
       'replyId': _reply,
       'createdAt': '2026-09-01T01:02:03Z',
-      'notes': _connection(
-        [
-          for (final id in ids) {..._note(id), 'body': notes[id]},
-        ],
-        after,
-        page: observing && ids.length > 1,
-      ),
+      'notes': page,
     };
   }
 
@@ -1278,9 +1284,7 @@ final class Mr7GraphqlFixture {
           widget['subscribed'] = _state['subscribed'];
         case 'NOTES':
           widget['discussionLocked'] = false;
-          widget['discussions'] = _connection([
-            _thread(null, retained: observing && fault == 'deletion-retained'),
-          ], vars['after']);
+          widget['discussions'] = _connection([_thread(null)], vars['after']);
       }
       widgets.add(widget);
     }

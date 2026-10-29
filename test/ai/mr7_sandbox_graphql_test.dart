@@ -527,6 +527,7 @@ void main() {
       expect(row['live'], 'NOT_RUN');
       expect(row['status'], 'NOT_RUN');
       expect(row['classification'], 'closedVariant');
+      expect(row.containsKey('scope'), false, reason: scenario.id);
       expect(row['reason'], scenario.closed!.code);
       expect(row['refusal'], scenario.closed!.metadata);
       expect(row['providerCalls'], 0);
@@ -612,11 +613,18 @@ void main() {
 
     test('${scenario.id}: foreign observer actor cannot verify', () async {
       final server = Mr7SyntheticGitLab();
-      configureMr7GraphqlFixtures(server, fault: 'foreign-actor');
+      final fixture = configureMr7GraphqlFixtures(
+        server,
+        fault: 'foreign-actor',
+      );
       final receipt = await _run(server, [scenario]);
       final row = _rows(receipt).single;
-      expect(row['status'], isNot('PASS'), reason: jsonEncode(receipt));
-      expect(row['readback'], isNot('PASS'));
+      expect(row['coreOutcome'], 'succeeded', reason: jsonEncode(receipt));
+      expect(row['coreNoChange'], scenario.expectedMutations == 0);
+      expect(row['status'], 'NOT_VERIFIED', reason: jsonEncode(receipt));
+      expect(row['readback'], 'NOT_VERIFIED');
+      expect(row['reason'], 'readbackIdentity');
+      expect(fixture.observerReads, greaterThan(0));
       expect(receipt['quarantined'], true);
       expect(server.scenarioWrites, scenario.expectedMutations);
       expect(server.cleanupWrites, 0);
@@ -798,11 +806,38 @@ void main() {
       final row = _rows(receipt).single;
       expect(row['coreOutcome'], 'succeeded', reason: jsonEncode(receipt));
       expect(row['mutationCount'], 1);
-      expect(row['status'], isNot('PASS'), reason: jsonEncode(receipt));
-      expect(row['readback'], isNot('PASS'));
       expect(fixture.observerReads, greaterThan(0));
+      if (spec.$3 == 'deletion-retained') {
+        expect(fixture.continuationReads, 1);
+        final pages = fixture.observerNotePages;
+        expect(pages, hasLength(2));
+        expect(
+          [
+            for (final page in pages)
+              for (final note in page['nodes']! as List) (note as Map)['id'],
+          ],
+          ['gid://gitlab/Note/53', 'gid://gitlab/Note/51'],
+          reason:
+              'The observer receives the retained target without duplicates.',
+        );
+        expect(pages.first['pageInfo'], {
+          'hasNextPage': true,
+          'endCursor': 'opaque-next',
+        });
+        expect(pages.last['pageInfo'], {
+          'hasNextPage': false,
+          'endCursor': null,
+        });
+      }
+      expect(row['status'], 'NOT_VERIFIED', reason: jsonEncode(receipt));
+      expect(row['readback'], 'NOT_VERIFIED');
       if (spec.$3 == 'stale-page') {
         expect(fixture.continuationReads, greaterThan(0));
+        expect(row['reason'], 'observerRevision');
+      } else {
+        expect(receipt['stopReason'], 'readbackUnverified');
+        expect(row.containsKey('reason'), false, reason: jsonEncode(receipt));
+        expect(row['observerRequests'], greaterThan(0));
       }
       expect(receipt['quarantined'], true);
       expect(server.cleanupWrites, 0);
