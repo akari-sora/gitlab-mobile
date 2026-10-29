@@ -456,10 +456,6 @@ void main() {
         counts.update(code, (value) => value + 1, ifAbsent: () => 1);
       }
       expect(counts, {
-        'workItemStateEnumMismatch': 2,
-        'workItemLabelDeltaShapeMismatch': 3,
-        'workItemMilestoneOwnerProjectionRefused': 4,
-        'createdWorkItemNoteReadbackUnbound': 2,
         'healthWidgetNotModeled': 4,
         'weightWidgetNotModeled': 4,
         'otherMembersExcluded': 1,
@@ -512,7 +508,7 @@ void main() {
     _syntheticOnly(receipt);
     expect(receipt['status'], 'PASS');
     expect(receipt['evidenceClass'], 'CANDIDATE_ONLY');
-    expect(_rows(receipt), hasLength(86));
+    expect(_rows(receipt), hasLength(75));
     expect(server.scenarioWrites, 0);
     expect(server.cleanupWrites, 1);
     expect(_part(receipt, 'events')['complete'], true);
@@ -540,9 +536,32 @@ void main() {
       .where((scenario) => scenario.closed == null)
       .toList();
 
-  test('project inventory contains 32 opened and 26 closed variants', () {
-    expect(executable, hasLength(32));
-    expect(mr7GraphqlScenarios().where((s) => s.closed != null), hasLength(26));
+  test('project inventory contains 43 opened and 15 closed variants', () {
+    expect(executable, hasLength(43));
+    expect(mr7GraphqlScenarios().where((s) => s.closed != null), hasLength(15));
+    // The wave-3d seams opened these 11 formerly closed variants.
+    expect(
+      executable.map((s) => s.id),
+      containsAll([
+        'b2-updateWorkItemState-close',
+        'b2-updateWorkItemState-reopen',
+        'b2-updateWorkItemMilestone-set',
+        'b2-updateWorkItemMilestone-clear',
+        'b2-updateWorkItemMilestone-closed-current',
+        'b2-updateWorkItemMilestone-expired-current',
+        'b2-updateWorkItemLabels-add',
+        'b2-updateWorkItemLabels-remove',
+        'b2-updateWorkItemLabels-clear',
+        'b2-createWorkItemActivityComment-comment',
+        'b2-createWorkItemActivityReply-opaque-reply',
+      ]),
+    );
+    expect(mr7GraphqlWave3dSeams.keys, {
+      'B2-O1-state',
+      'B2-O1-labels',
+      'B2-S2-milestone',
+      'B2-S1-created-note',
+    });
   });
 
   for (final scenario in executable) {
@@ -600,13 +619,21 @@ void main() {
               scenario.call(_id).arguments! as Map<String, Object?>;
           final text = arguments['description'] ?? arguments['body'];
           if (text is String) {
-            final observed = scenario.operation == 'editWorkItemActivityNote'
-                ? (fixture.current['notes']! as Map)['51']! as String
-                : fixture.current['description']! as String;
+            final notes = fixture.current['notes']! as Map;
+            final observed = switch (scenario.operation) {
+              'editWorkItemActivityNote' => notes['51']! as String,
+              'createWorkItemActivityComment' ||
+              'createWorkItemActivityReply' =>
+                notes[fixture.createdNote]! as String,
+              _ => fixture.current['description']! as String,
+            };
             expect(utf8.encode(observed), utf8.encode(text));
           }
+          expect(row.containsKey('classification'), false);
         }
+        expect(receipt['stopReason'], isNull, reason: jsonEncode(receipt));
         expect(receipt['quarantined'], false, reason: jsonEncode(receipt));
+        expect(_part(receipt, 'cleanup')['status'], 'PASS');
         expect(server.cleanupWrites, 1);
       },
     );
@@ -844,69 +871,6 @@ void main() {
     });
   }
 
-  // Wave 3d opened these four observer gaps. The catalogue keeps them closed
-  // until the 7B2 variants are reopened; the probe proves the seam now passes.
-  for (final seam in [
-    ('updateWorkItemState', 'close', 'workItemStateEnumMismatch'),
-    ('updateWorkItemLabels', 'add', 'workItemLabelDeltaShapeMismatch'),
-    (
-      'updateWorkItemMilestone',
-      'set',
-      'workItemMilestoneOwnerProjectionRefused',
-    ),
-    (
-      'createWorkItemActivityComment',
-      'comment',
-      'createdWorkItemNoteReadbackUnbound',
-    ),
-  ]) {
-    final original = mr7GraphqlScenarios().singleWhere(
-      (s) => s.operation == seam.$1 && s.variant == seam.$2,
-    );
-    test('${original.id}: ${seam.$3} probe passes on wave 3d', () async {
-      expect(original.closed?.code, seam.$3);
-      final probe = sandbox.Mr7Scenario(
-        id: original.id,
-        suite: original.suite,
-        operation: original.operation,
-        variant: original.variant,
-        tier: original.tier,
-        call: original.call,
-        paths: original.paths,
-        observe: original.observe,
-        targetKind: original.targetKind,
-        targetKinds: original.targetKinds,
-        fixture: original.fixture,
-        preRead: original.preRead,
-        maxMutations: original.maxMutations,
-        expectedMutations: original.expectedMutations,
-        utterance: original.utterance,
-        resource: original.resource,
-        freshness: original.freshness,
-        createRegistry: original.createRegistry,
-        readNames: original.readNames,
-        graphDocuments: original.graphDocuments,
-        graphVariablesDigests: original.graphVariablesDigests,
-        graphReadDocuments: original.graphReadDocuments,
-        resultPath: original.resultPath,
-        readbackPaths: original.readbackPaths,
-        observerQueries: original.observerQueries,
-        noChangeObservation: original.noChangeObservation,
-      );
-      final server = Mr7SyntheticGitLab();
-      configureMr7GraphqlFixtures(server);
-      final receipt = await _run(server, [probe]);
-      final row = _rows(receipt).single;
-      expect(row['status'], 'PASS', reason: jsonEncode(receipt));
-      expect(row['readback'], 'PASS');
-      expect(row['mutationCount'], 1);
-      expect(row.containsKey('classification'), false);
-      expect(receipt['stopReason'], isNull);
-      expect(receipt['quarantined'], false);
-      expect((receipt['cleanup'] as Map)['status'], 'PASS');
-    });
-  }
-
   test(
     'state no-op without its witness cannot be reported as success',
     () async {
@@ -970,7 +934,7 @@ void main() {
     }
     expect(
       _rows(receipt).where((r) => r['classification'] == 'closedVariant'),
-      hasLength(86),
+      hasLength(75),
     );
     expect(receipt['status'], 'PASS', reason: jsonEncode(receipt));
     final output = Platform.environment['MR7_B2J_RECEIPT'];

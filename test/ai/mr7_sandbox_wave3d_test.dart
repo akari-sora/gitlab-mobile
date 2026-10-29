@@ -888,4 +888,78 @@ void main() {
       }
     },
   );
+
+  test(
+    'a permit still set at finish does not judge the cleanup delete',
+    () async {
+      // Milestone owner check: the last scenario body is a production mutation.
+      final m = fixture.Mr7WorkItemFixture.create();
+      await m.initialize();
+      m.milestone = {...m.milestoneValue, 'group': null};
+      final mutation = await _milestoneMutation(m);
+      // The production clear mutation selects the milestone widget and owner.
+      m.server.routes['POST /install/api/graphql'] = (options) {
+        final doc = (options.data as Map)['query'] as String;
+        if (!doc.startsWith('mutation')) return m.graph(options);
+        m.server.scenarioWrites++;
+        m.server.addEvent(target: 909);
+        m.afterWrite = true;
+        m.onWrite?.call();
+        return mr7Json({
+          'data': {
+            'workItemUpdate': {
+              'errors': <String>[],
+              'workItem': {
+                ..._node(m.session.identity!.path),
+                'widgets': [
+                  {'type': 'MILESTONE', 'milestone': null},
+                ],
+              },
+            },
+          },
+        });
+      };
+      expect(
+        await m.effect(
+          operation: 'updateWorkItemMilestone',
+          args: {'clearMilestone': true},
+          input: const {},
+          capturedRequest: mutation,
+          mutate: () => m.milestone = null,
+        ),
+        isTrue,
+      );
+      expect(m.session.permit?.sent, 1);
+      await m.session.finish();
+      expect(m.session.stopReason, isNull);
+      expect(m.session.cleanup['status'], 'PASS');
+      expect(m.server.cleanupWrites, 1);
+
+      // Created-note binding: the last scenario was a successful comment.
+      final c = fixture.Mr7ActivityFixture.create()..bindCreatedNote = false;
+      await c.initialize();
+      final requests = await _activityRequests(c, false);
+      final comment = requests.singleWhere(
+        (r) => (r['query'] as String).startsWith('mutation'),
+      );
+      c.bodies.remove('gid://gitlab/Note/52');
+      c.session.permit = Mr7MutationPermit(
+        operation: 'createWorkItemActivityComment',
+        paths: {'POST graphql'},
+        resourceProjectId: 909,
+        graphDocuments: {comment['query'] as String},
+        graphVariablesDigests: {mr7Digest(comment['variables'])},
+        resultPath: const ['data', 'createNote', 'note'],
+      )..confirmed = true;
+      await c.session.writer.post<Object?>(
+        '${c.session.instance}/api/graphql',
+        data: comment,
+      );
+      expect(c.session.permit?.returnedGlobalId, 'gid://gitlab/Note/52');
+      await c.session.finish();
+      expect(c.session.stopReason, isNull);
+      expect(c.session.cleanup['status'], 'PASS');
+      expect(c.server.cleanupWrites, 1);
+    },
+  );
 }

@@ -359,7 +359,7 @@ projection reads. Unselected response fields still count toward the bound.
 | S2 | `Mr7FileObservation`, `Mr7RefObservation`, `Mr7ReleaseObservation`: bind dispatched encoded path/name and requested content, SHA and exact independent content/ref/release fields. File observations require the dispatched branch in `readbackPaths`, read its name/head before and after the immutable-SHA file read, and require both heads to match. Branch/tag creation also requires the dispatched resolved source `ref` to equal the observed SHA. |
 | S4 | `Mr7SnippetObservation`: bind the returned/dispatched project snippet, exact file set, metadata revision and per-file refs. Validate same-instance web raw URLs but fetch only constructed API raw paths; compare raw bytes exactly. Revalidate metadata after all content reads. |
 | B2-S3 | `Mr7Scenario.observerQueries(identity, result)`: register documents and every variables digest after the response. `Mr7GraphObservation` verifies currentUser, parent and project separately from returned child IDs. Child operations and every absence claim require a complete connection; parent identity alone never proves deletion. The closed operation mapping binds the dispatched parent, schema collection field (including aliases), child GID type and specific target. Created/updated children must appear; removed children must be the exact `absentIds` target. Filtered connections and an initial continuation cursor are refused. Connections require stable `totalCount`, unique nodes, terminal pageInfo and sealed continuations (at most 20 pages / 2,000 nodes); query aliases can project a supported count field as `totalCount`. Note awards require the actual Note as the bound parent plus matching `noteId` and child relationship. `bindReturnedResource` can freshly bind a returned GID through the existing closed REST mapping. Unsupported operation mappings, GID types and GraphQL syntax remain refused. |
-| N, S8 | `Mr7Scenario.noChangeObservation`: a typed parent-state witness matching the actual tool arguments is mandatory for a 304 star/subscription, core 409 `noChange`, or zero-dispatch core `noChange`. Response no-ops require exactly one attempted mutation; zero-dispatch no-ops require none. Auto-merge checks both supported indicators and rejects contradictory enabled state. Missing/mismatched evidence stops later scenarios and cleanup. |
+| N, S8 | `Mr7Scenario.noChangeObservation`: a typed parent-state witness matching the prepared tool arguments (approval edits included, never the original model call) is mandatory for a 304 star/subscription, core 409 `noChange`, or zero-dispatch core `noChange`. Response no-ops require exactly one attempted mutation; zero-dispatch no-ops require none. Auto-merge checks both supported indicators and rejects contradictory enabled state. Missing/mismatched evidence stops later scenarios and cleanup. |
 | S5 | `Mr7RebaseObservation`: bind the dispatched MR and fresh pre-send head, then poll with `include_rebase_in_progress=true`. A completed exact changed head with no merge error can verify on the first poll; observing pending first is optional. An idle unchanged head stays unverified even if pending was observed. Poll at most 20 times, with intervals at most 100 ms and a total polling deadline at most two seconds; never resend. A late read cannot verify completion or trigger additional polls. |
 
 For example, a scenario can call
@@ -679,8 +679,25 @@ missing ownership evidence or a changed account/permit cannot authorize core
 readback. The later independent activity witness still verifies content and
 opaque discussion/reply relationships.
 
-These repairs supply the four 7B2j seams; scenario closure removal and inventory
-wiring remain the scenario owner's work. All evidence remains synthetic.
+These repairs supplied the four 7B2j seams. 7B2k then opened the 11 variants
+they blocked: state close and reopen; milestone set, clear, closed-current and
+expired-current; labels add, remove and clear; comment; opaque reply. Each runs
+through the production runner with independent readback: nine writes and two
+verified no-ops. Project GraphQL now has 43 executable variants out of 58 and
+15 typed-closed ones (health 4, weight 4, other members 1, shared to-do scopes
+6). With the 60 group-alias refusals the candidate receipt has 118 rows, 75 of
+them closed. The fixture gives a created comment and a created reply different
+Note IDs, as GitLab does, because one session runs both and the guard refuses
+a returned Note that is already bound.
+
+The milestone owner check and the created-note binding run only for scenario
+writes, never for the harness setup or cleanup request, so a permit still set at
+`finish()` cannot fail cleanup. The guarded writer reads the server clock before
+it counts or dispatches a write; if the clock cannot be read it stops the
+session as `serverTimeUnverified` and sends nothing. This is defensive: live
+runs set the clock during the reads before the first write, and the request
+ledger reads it first.
+All evidence remains synthetic.
 
 ## Wave 3c effect witnesses
 

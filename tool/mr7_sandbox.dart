@@ -1392,7 +1392,10 @@ Future<Map<String, Object?>> runMr7Sandbox({
                 state == null ||
                 !state.matchesCall(
                   scenario.operation,
-                  liveCall?.arguments ?? call.arguments,
+                  // The prepared payload carries approval edits in both modes;
+                  // the model call does not.
+                  permit.preparedArguments ??
+                      (throw const Mr7Refused('noChangeUnverified')),
                   target.projectId,
                 )) {
               throw const Mr7Refused('noChangeUnverified');

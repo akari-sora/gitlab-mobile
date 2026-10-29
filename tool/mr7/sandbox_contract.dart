@@ -2735,6 +2735,15 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
           throw const Mr7Refused('unsealedGraph');
         }
       }
+      // Read the clock before the write is counted or marked dispatched, so a
+      // clock failure sends nothing. Defensive: live runs set it earlier.
+      final DateTime dispatchAt;
+      try {
+        dispatchAt = session.serverTime;
+      } catch (_) {
+        session.stop('serverTimeUnverified');
+        rethrow;
+      }
       if (!session._setupAuthorized && !session._cleanupAuthorized) {
         final permit = session.permit;
         if (permit == null ||
@@ -2757,7 +2766,6 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
             : null;
       }
       dispatched = true;
-      final dispatchAt = session.serverTime;
       final response = await session.send(options, requestStream, cancelFuture);
       // Quarantined like any other stop; the write is never retried.
       if (response.statusCode == 429) session.rateLimited(response.headers);
@@ -2813,7 +2821,10 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
       }
       final permit = session.permit;
       final envelope = value;
-      if (_milestoneOwnerDocument(preparedPermit?._sentBody)) {
+      // Scenario hooks only: a permit left set must not judge setup or cleanup.
+      if (!session._setupAuthorized &&
+          !session._cleanupAuthorized &&
+          _milestoneOwnerDocument(preparedPermit?._sentBody)) {
         session._validateMilestoneOwners(preparedPermit!._sentBody, envelope);
       }
       value = _selectRecord(value, permit?.resultPath ?? const []);
@@ -2836,7 +2847,9 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
           stringId: permit.returnedGlobalId,
         );
       }
-      if (permit != null &&
+      if (!session._setupAuthorized &&
+          !session._cleanupAuthorized &&
+          permit != null &&
           const {
             'createWorkItemActivityComment',
             'createWorkItemActivityReply',
