@@ -16,6 +16,14 @@ import '../../tool/mr7/sandbox_contract.dart';
 import '../../tool/mr7_sandbox.dart';
 
 const _sha = 'c33d6dee99eb97afc1c87c755708e033afe0d2ed';
+const _fixtureIdentity = Mr7Identity(
+  projectId: 909,
+  path: 'synthetic-owner/synthetic-project',
+  userId: 7,
+  namespaceId: 70,
+  namespace: 'synthetic-owner',
+  nonce: 'b1syntheticnonce123',
+);
 
 List<Map<String, Object?>> _rows(Map<String, Object?> receipt) =>
     (receipt['scenarios']! as List).cast<Map<String, Object?>>();
@@ -24,6 +32,16 @@ Map<String, Object?> _part(Map<String, Object?> receipt, String name) =>
 Mr7Scenario _case(String operation, String variant) => mr7RestCases()
     .singleWhere((c) => c.operation == operation && c.variant == variant)
     .scenario!;
+
+List<String> _updateFields(Mr7Scenario scenario) {
+  final arguments = scenario.call(_fixtureIdentity).arguments! as Map;
+  return arguments['fields'] is Map
+      ? (arguments['fields']! as Map).keys.cast<String>().toList()
+      : [
+          for (final field in ['body', 'position', 'resolved'])
+            if (arguments.containsKey(field)) field,
+        ];
+}
 
 Mr7SandboxSession _session(Mr7SyntheticGitLab server, {int requestCap = 200}) =>
     Mr7SandboxSession(
@@ -161,6 +179,9 @@ void main() {
         expect(c.scenario!.operation, c.operation);
         expect(c.scenario!.variant, c.variant);
         expect(c.scenario!.tier, c.tier);
+        if (c.scenario!.paths(_fixtureIdentity).single.startsWith('PUT ')) {
+          expect(_updateFields(c.scenario!), isNotEmpty, reason: c.id);
+        }
       }
     }
     expect(executable, hasLength(77));
@@ -795,6 +816,86 @@ void main() {
     });
   }
 
+  for (final c in executable.where(
+    (c) => c.scenario!.paths(_fixtureIdentity).single.startsWith('PUT '),
+  )) {
+    final source = c.scenario!;
+    for (final field in _updateFields(source)) {
+      test(
+        'REST ${c.id} omitted request $field stops and quarantines',
+        () async {
+          final server = Mr7SyntheticGitLab();
+          configureMr7RestFixtures(server, scenario: source);
+          final path = source.paths(_fixtureIdentity).single;
+          final update = server.routes[path]!;
+          var omitted = false;
+          server.routes[path] = (request) {
+            final input = Map<String, Object?>.from(request.data as Map);
+            final wireField = c.operation == 'updateLabel' && field == 'name'
+                ? 'new_name'
+                : field;
+            expect(input.containsKey(wireField), isTrue);
+            input.remove(wireField);
+            omitted = true;
+            request.data = input;
+            return update(request);
+          };
+          final receipt = await _run([
+            source,
+            _case('setStar', 'star'),
+          ], server: server);
+          final rows = _rows(receipt);
+          expect(omitted, isTrue);
+          expect(
+            rows.first['coreOutcome'],
+            'succeeded',
+            reason: jsonEncode(rows),
+          );
+          expect(rows.first['readback'], 'NOT_VERIFIED');
+          expect(rows.first['status'], 'NOT_VERIFIED');
+          expect(rows.first['mutationCount'], 1);
+          expect(rows.last['status'], 'NOT_RUN');
+          expect(rows.last['reason'], 'sessionStopped');
+          expect(rows.last['mutationCount'], 0);
+          expect(server.scenarioWrites, 1);
+          expect(server.cleanupWrites, 0);
+          expect(receipt['quarantined'], isTrue);
+        },
+      );
+    }
+  }
+
+  test(
+    'REST milestone update preserves omitted state or stops and quarantines',
+    () async {
+      final source = _case('updateMilestone', 'title-description-dates');
+      final server = Mr7SyntheticGitLab();
+      configureMr7RestFixtures(server, scenario: source);
+      final update = server.routes['PUT projects/909/milestones/501']!;
+      server.routes['PUT projects/909/milestones/501'] = (request) {
+        request.data = {
+          ...Map<String, Object?>.from(request.data as Map),
+          'state_event': 'close',
+        };
+        return update(request);
+      };
+      final receipt = await _run([
+        source,
+        _case('setStar', 'star'),
+      ], server: server);
+      final rows = _rows(receipt);
+      expect(rows.first['coreOutcome'], 'succeeded');
+      expect(rows.first['readback'], 'NOT_VERIFIED');
+      expect(rows.first['status'], 'NOT_VERIFIED');
+      expect(rows.last['status'], 'NOT_RUN');
+      expect(rows.last['reason'], 'sessionStopped');
+      expect(rows.last['mutationCount'], 0);
+      expect(server.scenarioWrites, 1);
+      expect(server.cleanupWrites, 0);
+      expect(receipt['quarantined'], isTrue);
+    },
+  );
+
   test(
     'REST milestone observer rejects a foreign project result and stops',
     () async {
@@ -939,7 +1040,14 @@ void main() {
     ('updateIssue', 'issues', 'title', 'Unexpected server-side change.'),
     ('updateIssue', 'issues', 'confidential', false),
     ('updateIssue', 'issues', 'severity', 'critical'),
-    ('updateMergeRequest', 'merge_requests', 'reviewers', <Object?>[]),
+    (
+      'updateMergeRequest',
+      'merge_requests',
+      'reviewers',
+      [
+        {'id': 7},
+      ],
+    ),
   ]) {
     test(
       'REST omitted ${check.$2} ${check.$3} is independently preserved',

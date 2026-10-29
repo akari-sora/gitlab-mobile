@@ -152,6 +152,23 @@ String _observedField(String input) => switch (input) {
   _ => input,
 };
 
+Map<String, Object?> _observedUpdates(Map<String, Object?> input) => {
+  for (final entry in input.entries)
+    _observedField(entry.key): switch (entry.key) {
+      'state_event' => switch (entry.value) {
+        'close' => 'closed',
+        'activate' => 'active',
+        _ => 'opened',
+      },
+      'labels' => (entry.value! as String).split(','),
+      'assignee_ids' || 'reviewer_ids' => [
+        for (final id in entry.value! as List) {'id': id},
+      ],
+      'milestone_id' => entry.value == null ? null : {'id': entry.value},
+      _ => entry.value,
+    },
+};
+
 Mr7Parent _parent(String resource, {bool note = false}) => resource == 'issues'
     ? (note
           ? const Mr7Parent.issueNote(id: 1001, iid: 1, noteId: 301)
@@ -250,6 +267,45 @@ List<Mr7RestCase> mr7RestCases() {
           throw const Mr7Refused('fixturePrecondition');
         }
         final fields = request.arguments['fields'];
+        if (mutation.startsWith('PUT ')) {
+          final input = fields is Map
+              ? Map<String, Object?>.from(fields)
+              : <String, Object?>{
+                  for (final field in ['body', 'position', 'resolved'])
+                    if (request.arguments.containsKey(field))
+                      field: request.arguments[field],
+                };
+          final requested = _observedUpdates(input);
+          var originals = [current];
+          if (operation == 'updateDiscussionNote' ||
+              operation == 'setDiscussionResolved') {
+            final thread = await session.read(
+              'projects/${p.projectId}/${request.arguments['resource']}/'
+              '${request.arguments['iid']}/discussions/'
+              '${request.arguments['discussionId']}',
+            );
+            _noteIds(thread);
+            originals = (thread['notes']! as List)
+                .map((note) => Map<String, Object?>.from(note as Map))
+                .where(
+                  (note) =>
+                      operation == 'setDiscussionResolved' ||
+                      note['id'] == request.arguments['noteId'],
+                )
+                .toList();
+          }
+          if (requested.isEmpty ||
+              originals.isEmpty ||
+              originals.any(
+                (original) => requested.entries.any(
+                  (entry) =>
+                      !original.containsKey(entry.key) ||
+                      _matches(original[entry.key], entry.value),
+                ),
+              )) {
+            throw const Mr7Refused('fixturePrecondition');
+          }
+        }
         return AiWriteFreshness(
           updatedAt: current['updated_at'] as String?,
           headSha: (current['diff_refs'] as Map?)?['head_sha'] as String?,
@@ -939,6 +995,13 @@ List<Mr7RestCase> mr7RestCases() {
     },
   );
   for (final create in [true, false]) {
+    const changedFields = {'title', 'description', 'start_date', 'due_date'};
+    Map<String, Object?> omittedFields(Map<String, Object?> value) => {
+      for (final entry in value.entries)
+        if (!changedFields.contains(entry.key) && entry.key != 'updated_at')
+          entry.key: entry.value,
+    };
+    Map<String, Object?> preserved = {};
     add(
       create ? 'createMilestone' : 'updateMilestone',
       'title-description-dates',
@@ -955,6 +1018,21 @@ List<Mr7RestCase> mr7RestCases() {
       'projects/{p}/milestones/{id}',
       const {},
       opening: create ? null : 'projects/{p}/milestones/501',
+      setup: create
+          ? null
+          : (session, p) async {
+              final before = await session.read(
+                'projects/${p.projectId}/milestones/501',
+              );
+              if (before['id'] != 501 ||
+                  before['iid'] != 3 ||
+                  before['project_id'] != p.projectId ||
+                  !const {'active', 'closed'}.contains(before['state'])) {
+                throw const Mr7Refused('fixturePrecondition');
+              }
+              preserved = omittedFields(before);
+              return const Mr7ScenarioFixtures();
+            },
       observe: (observer, _) async {
         final value = await observer.observe(
           Mr7MilestoneObservation(
@@ -962,12 +1040,15 @@ List<Mr7RestCase> mr7RestCases() {
             iid: observer.result.iid!,
           ),
         );
+        final omitted = omittedFields(value);
         return _matches(value, {
-          'title': 'Synthetic milestone.',
-          'description': 'Synthetic milestone description.',
-          'start_date': '2026-10-28',
-          'due_date': '2026-11-30',
-        });
+              'title': 'Synthetic milestone.',
+              'description': 'Synthetic milestone description.',
+              'start_date': '2026-10-28',
+              'due_date': '2026-11-30',
+            }) &&
+            (create ||
+                _matches(omitted, preserved) && _matches(preserved, omitted));
       },
     );
   }
@@ -1307,25 +1388,7 @@ Mr7Scenario _editedScenario(Mr7Scenario source, String field) {
               ? 'note'
               : field] =
           mr7RestEditText;
-      final expected = <String, Object?>{};
-      for (final entry in input.entries) {
-        switch (entry.key) {
-          case 'labels':
-            expected['labels'] = (entry.value! as String).split(',');
-          case 'assignee_ids':
-            expected['assignees'] = [
-              for (final id in entry.value! as List) {'id': id},
-            ];
-          case 'reviewer_ids':
-            expected['reviewers'] = [
-              for (final id in entry.value! as List) {'id': id},
-            ];
-          case 'milestone_id':
-            expected['milestone'] = {'id': entry.value};
-          default:
-            expected[entry.key] = entry.value;
-        }
-      }
+      final expected = _observedUpdates(input);
       if (operation == 'updateNote' ||
           operation == 'createNote' ||
           operation == 'createDraftNote') {
@@ -1446,21 +1509,17 @@ void configureMr7RestFixtures(
           : 'opened',
       'confidential': resource == 'issues',
       if (resource == 'issues') 'severity': 'low',
-      'assignees': [
-        {'id': server.userId},
-      ],
-      'milestone': {'id': 501},
+      'assignees': <Object?>[],
+      'milestone': null,
       if (resource == 'merge_requests') ...{
-        'reviewers': [
-          {'id': server.userId},
-        ],
+        'reviewers': <Object?>[],
         'source_branch': 'synthetic',
         'target_branch': 'main',
       },
       'subscribed':
           operation == 'setSubscribed' &&
           variant == '${resource == 'issues' ? 'issue' : 'mr'}-off',
-      'labels': ['synthetic'],
+      'labels': <String>[],
       if (resource == 'merge_requests')
         'diff_refs': {
           'base_sha': _position['base_sha'],
@@ -1546,7 +1605,7 @@ void configureMr7RestFixtures(
   record('$root/milestones/501', {
     ...base(501),
     'iid': 3,
-    'title': 'Synthetic milestone.',
+    'title': 'Synthetic original milestone title.',
     'description': 'Synthetic original milestone.',
     'start_date': '2026-10-01',
     'due_date': '2026-12-01',
