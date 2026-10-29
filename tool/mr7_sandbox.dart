@@ -1011,6 +1011,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
       );
       final permit = Mr7MutationPermit(
         operation: scenario.operation,
+        scenarioId: scenario.id,
         paths: scenario.paths(target),
         resourceProjectId: target.projectId,
         maxMutations: scenario.maxMutations,

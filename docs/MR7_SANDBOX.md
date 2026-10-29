@@ -336,7 +336,9 @@ Closed rows keep their inventory tier and make no observed-decision claim.
 
 The guarded writer admits bodyless file metadata `HEAD` requests only at
 `projects/<sandbox-id>/repository/files/<encoded-file-path>` with one bounded
-`ref`. They consume the shared HTTP cap, retain account/project/path fences,
+`ref` in the final URI query, including URI-embedded parameters. Extra
+parameters and duplicate `ref` values are refused.
+They consume the shared HTTP cap, retain account/project/path fences,
 and never consume a mutation permit or enter the mutation ledger. Request and
 response bodies, foreign projects, other HEAD endpoints and quarantined writer
 reads remain refused. The coordinator uses production
@@ -349,13 +351,24 @@ Boards retain name and both system-list flags; milestones retain title,
 description, dates and state; labels retain name, color and description; drafts
 retain note text (`note`, plus presence of `body`), position, `commit_id` and
 author. Their routes bind numeric global IDs; milestone iid and optional global
-ID projections stay separate and presence-sensitive. Drafts additionally bind
-the original MR's ID/iid and require the current actor as author.
+ID projections stay separate and presence-sensitive. Boards bind nested
+`project.id`; project labels bind the verified sandbox project route and label
+ID and require `is_project_label=true` to exclude inherited group labels.
+Drafts bind `author_id` to the current actor and `merge_request_id` to the
+original MR's numeric ID, independently of its route iid. These identity rules
+apply at capture, immediately before dispatch and at independent readback.
 Before dispatch all captured fields are reread. Afterwards all typed fields
 omitted from the actual dispatched payload are automatically preserved, in
 addition to `unchangedFields`; an empty declared set cannot skip preservation.
-`state_event` maps to milestone state and draft `note` maps to text. Receipt
+`state_event` maps to milestone state, label `new_name` maps to `name`, and
+draft `note` maps to text. A draft's `body` value may follow a text update,
+but its presence must always match the pre-read snapshot: appearing or
+disappearing is refused, even when `note` was dispatched. Receipt
 metadata contains digests and `preserveOmittedFields=true`, never field bodies.
+Scenario write ledger entries carry `scenarioId` so repeated operations remain
+distinct. A projected `deny` must have zero mutations, no admitted request for
+that scenario, no response status and no successful write result; an unbound
+same-operation ledger entry cannot establish a zero-dispatch denial.
 
 `Mr7CreatedTodoObservation(parent:, id:)` observes only `createTodo` under an
 exact Issue/MR dispatch. The synthetic-only

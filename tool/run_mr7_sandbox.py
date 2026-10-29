@@ -190,6 +190,35 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
                         not isinstance(decision, str) or decision not in GATE_DECISIONS or
                         'decisionUnavailable' in row):
                     return False
+                if (decision == 'deny' and
+                        (type(row.get('mutationCount')) is not int or row['mutationCount'] != 0 or
+                         'responseStatus' in row or row.get('status') == 'PASS' or
+                         row.get('outcome') == 'succeeded' or row.get('coreOutcome') == 'succeeded')):
+                    return False
+                if decision == 'deny':
+                    ledger = receipt.get('requestLedger', [])
+                    if not isinstance(ledger, list):
+                        return False
+                    for entry in ledger:
+                        if (not isinstance(entry, dict) or
+                                not isinstance(entry.get('operation'), str) or
+                                not entry['operation']):
+                            return False
+                        if 'scenarioId' not in entry:
+                            if entry['operation'] == row.get('operation'):
+                                return False
+                            continue
+                        scenario_id = entry['scenarioId']
+                        if (not isinstance(scenario_id, str) or not scenario_id or
+                                scenario_id == row.get('id') or ids[scenario_id] != 1):
+                            return False
+                        owner = next(s for s in scenarios
+                                     if isinstance(s, dict) and s.get('id') == scenario_id)
+                        if owner.get('operation') != entry['operation']:
+                            return False
+                        if (entry['operation'] == row.get('operation') and
+                                (not isinstance(row.get('id'), str) or ids[row['id']] != 1)):
+                            return False
                 if (declared != observed and
                         (row.get('status') != 'FAIL' or row.get('reason') != 'tierMismatch' or
                          type(row.get('mutationCount')) is not int or row['mutationCount'] != 0)):

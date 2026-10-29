@@ -272,6 +272,46 @@ class SandboxWrapperTest(unittest.TestCase):
                           'readback': 'PASS'}
         self.assertFalse(runner.validate_receipt(receipt(scenarios=[witnessed_noop])))
 
+    def test_denied_decision_cannot_dispatch_or_succeed(self):
+        denied = {'operation': 'createIssue', 'status': 'FAIL', 'mutationCount': 0,
+                  'declaredTier': 'T1', 'tier': 'T1', 'decision': 'deny',
+                  'confirmationReasons': [], 'decisionProjection': 'observed',
+                  'coreOutcome': 'notExecuted'}
+        self.assertTrue(runner.validate_receipt(receipt(status='FAIL', scenarios=[denied])))
+        for changes in ({'mutationCount': 1}, {'mutationCount': False},
+                        {'mutationCount': None}, {'responseStatus': 201},
+                        {'responseStatus': None}, {'status': 'PASS'},
+                        {'coreOutcome': 'succeeded'}, {'outcome': 'succeeded'}):
+            with self.subTest(changes=changes):
+                self.assertFalse(runner.validate_receipt(
+                    receipt(status='FAIL', scenarios=[{**denied, **changes}])))
+
+    def test_denied_decision_rejects_ledger_dispatch_and_ambiguous_attribution(self):
+        denied = {'id': 'denied-write', 'operation': 'createIssue', 'status': 'FAIL',
+                  'mutationCount': 0, 'declaredTier': 'T1', 'tier': 'T1',
+                  'decision': 'deny', 'confirmationReasons': [],
+                  'decisionProjection': 'observed'}
+        allowed = {'id': 'allowed-write', 'operation': 'createIssue', 'status': 'PASS',
+                   'mutationCount': 1}
+        scenarios = [denied, allowed]
+        attributed = {'operation': 'createIssue', 'scenarioId': 'allowed-write'}
+        self.assertTrue(runner.validate_receipt(receipt(
+            status='FAIL', scenarios=scenarios, requestLedger=[attributed])))
+        for ledger in (
+                None, {}, [None], [{}],
+                [{'operation': 'createIssue', 'scenarioId': 'denied-write'}],
+                [{'operation': 'other', 'scenarioId': 'denied-write'}],
+                [{'operation': 'createIssue'}],
+                [{'operation': 'createIssue', 'scenarioId': 'unknown'}],
+                [{'operation': 'createIssue', 'scenarioId': None}],
+                [{'operation': 'other', 'scenarioId': 'allowed-write'}]):
+            with self.subTest(ledger=ledger):
+                self.assertFalse(runner.validate_receipt(receipt(
+                    status='FAIL', scenarios=scenarios, requestLedger=ledger)))
+        self.assertFalse(runner.validate_receipt(receipt(
+            status='FAIL', scenarios=[*scenarios, dict(allowed)],
+            requestLedger=[attributed])))
+
     def test_unclassified_dispatched_noop_child_receipt_quarantines(self):
         forged = receipt(scenarios=[{'operation': 'setStar', 'mutationCount': 1,
                                     'responseStatus': 304, 'outcome': 'noChange',

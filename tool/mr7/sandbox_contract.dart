@@ -805,12 +805,14 @@ final class Mr7MutationPermit {
     required this.operation,
     required this.paths,
     required this.resourceProjectId,
+    this.scenarioId,
     this.maxMutations = 1,
     this.graphDocuments = const {},
     this.graphVariablesDigests = const {},
     this.resultPath = const [],
   });
   final String operation;
+  final String? scenarioId;
   final Set<String> paths;
   final int resourceProjectId;
   final int maxMutations;
@@ -883,7 +885,7 @@ final class Mr7SnapshotSpec {
   }) : this._(
          path: path,
          kind: Mr7SnapshotKind.draftNote,
-         fields: {'note', 'body', 'position', 'commit_id', 'author'},
+         fields: {'note', 'body', 'position', 'commit_id', 'author_id'},
          unchangedFields: unchangedFields,
        );
   Mr7SnapshotSpec._({
@@ -923,6 +925,7 @@ final class _Mr7SnapshotRow {
     required this.id,
     required this.iid,
     required this.digests,
+    required this.presentFields,
     required this.identityDigests,
     this.parentId,
   });
@@ -930,6 +933,7 @@ final class _Mr7SnapshotRow {
   final int id;
   final int? iid;
   final Map<String, String> digests;
+  final Set<String> presentFields;
   final Map<String, String> identityDigests;
   final int? parentId;
 }
@@ -973,6 +977,10 @@ Set<String> _snapshotPreservedFields(_Mr7SnapshotRow saved, Object? sentBody) {
       changed.contains('state_event')) {
     changed.add('state');
   }
+  if (saved.spec.kind == Mr7SnapshotKind.label &&
+      changed.contains('new_name')) {
+    changed.add('name');
+  }
   if (saved.spec.kind == Mr7SnapshotKind.draftNote &&
       changed.contains('note')) {
     changed.add('body');
@@ -983,20 +991,60 @@ Set<String> _snapshotPreservedFields(_Mr7SnapshotRow saved, Object? sentBody) {
   };
 }
 
+bool _snapshotResourceIdentityMatches(
+  Mr7SnapshotSpec spec,
+  Map<String, Object?> row,
+  Mr7Identity identity, {
+  int? parentId,
+}) {
+  final root = 'projects/${identity.projectId}';
+  final id = row['id'];
+  final iid = row['iid'];
+  final iidRoute = spec.kind == Mr7SnapshotKind.parent && spec.path != root;
+  if (!spec._allowsPath(root) ||
+      id is! int ||
+      id <= 0 ||
+      (spec.path == root
+          ? id != identity.projectId
+          : (iidRoute ? iid : id) != int.parse(spec.path.split('/').last)) ||
+      ((iidRoute ||
+              spec.kind == Mr7SnapshotKind.milestone ||
+              row.containsKey('iid')) &&
+          (iid is! int || iid <= 0)) ||
+      (row.containsKey('project_id') &&
+          row['project_id'] != identity.projectId)) {
+    return false;
+  }
+  return switch (spec.kind) {
+    Mr7SnapshotKind.parent =>
+      spec.path == root || row['project_id'] == identity.projectId,
+    Mr7SnapshotKind.milestone => row['project_id'] == identity.projectId,
+    Mr7SnapshotKind.board =>
+      row['project'] is Map &&
+          (row['project'] as Map)['id'] == identity.projectId,
+    Mr7SnapshotKind.label => row['is_project_label'] == true,
+    Mr7SnapshotKind.draftNote =>
+      row['author_id'] == identity.userId &&
+          parentId != null &&
+          row['merge_request_id'] == parentId,
+  };
+}
+
 bool _snapshotIdentityMatches(
   _Mr7SnapshotRow saved,
   Map<String, Object?> row,
   Mr7Identity identity,
 ) =>
     row['id'] == saved.id &&
-    (saved.spec.path == 'projects/${identity.projectId}' ||
-        row['project_id'] == identity.projectId) &&
+    _snapshotResourceIdentityMatches(
+      saved.spec,
+      row,
+      identity,
+      parentId: saved.parentId,
+    ) &&
     saved.identityDigests.entries.every(
       (e) => _snapshotFieldDigest(row, e.key) == e.value,
-    ) &&
-    (saved.spec.kind != Mr7SnapshotKind.draftNote ||
-        row['author'] is Map &&
-            (row['author'] as Map)['id'] == identity.userId);
+    );
 
 /// Identifiers select subsequent reads; they are never evidence of effects.
 final class Mr7MutationResult {
@@ -1815,6 +1863,9 @@ final class Mr7Readback {
         }
       }
       if (!_snapshotIdentityMatches(original, current, _identity) ||
+          (original.spec.kind == Mr7SnapshotKind.draftNote &&
+              current.containsKey('body') !=
+                  original.presentFields.contains('body')) ||
           _snapshotPreservedFields(original, _permit._sentBody).any(
             (field) =>
                 _snapshotFieldDigest(current, field) != original.digests[field],
@@ -3007,6 +3058,7 @@ final class Mr7SandboxSession {
         (request.queryParameters['page'] as int) >= 1 &&
         (request.queryParameters['page'] as int) <= 20 &&
         request.queryParameters['per_page'] == 100;
+    final finalQuery = request.uri.queryParametersAll;
     final fileHead =
         request.method == 'HEAD' &&
         projectRead &&
@@ -3020,10 +3072,10 @@ final class Mr7SandboxSession {
             .split('/')
             .any((s) => s.isEmpty || s == '.' || s == '..') &&
         request.data == null &&
-        request.queryParameters.length == 1 &&
-        request.queryParameters['ref'] is String &&
-        (request.queryParameters['ref'] as String).isNotEmpty &&
-        (request.queryParameters['ref'] as String).length <= 1024;
+        finalQuery.length == 1 &&
+        finalQuery['ref']?.length == 1 &&
+        finalQuery['ref']!.single.isNotEmpty &&
+        finalQuery['ref']!.single.length <= 1024;
     if (!fileHead &&
         (request.method != 'GET' ||
             (!setupRead && !projectRead && !parentRead))) {
@@ -3440,30 +3492,14 @@ final class Mr7SandboxSession {
       final row = await read(spec.path);
       final id = row['id'];
       final iid = row['iid'];
-      final iidRoute = spec.kind == Mr7SnapshotKind.parent && spec.path != root;
-      if (jsonEncode(row).length > 2 * 1024 * 1024 ||
-          id is! int ||
-          id <= 0 ||
-          (spec.path == root
-              ? id != target.projectId
-              : row['project_id'] != target.projectId ||
-                    (iidRoute
-                        ? iid != int.parse(spec.path.split('/').last)
-                        : id != int.parse(spec.path.split('/').last))) ||
-          ((iidRoute ||
-                  spec.kind == Mr7SnapshotKind.milestone ||
-                  row.containsKey('iid')) &&
-              (iid is! int || iid <= 0))) {
+      if (jsonEncode(row).length > 2 * 1024 * 1024) {
         throw const Mr7Refused('snapshotIdentity');
       }
       int? parentId;
       if (spec.kind == Mr7SnapshotKind.draftNote) {
-        final author = row['author'];
         final parentPath = spec.path.split('/').take(4).join('/');
         final parent = await read(parentPath);
-        if (author is! Map ||
-            author['id'] != target.userId ||
-            parent['id'] is! int ||
+        if (parent['id'] is! int ||
             (parent['id'] as int) <= 0 ||
             parent['iid'] != int.parse(parentPath.split('/').last) ||
             parent['project_id'] != target.projectId) {
@@ -3471,12 +3507,21 @@ final class Mr7SandboxSession {
         }
         parentId = parent['id'] as int;
       }
+      if (!_snapshotResourceIdentityMatches(
+        spec,
+        row,
+        target,
+        parentId: parentId,
+      )) {
+        throw const Mr7Refused('snapshotIdentity');
+      }
       rows.add(
         _Mr7SnapshotRow(
           spec: spec,
-          id: id,
+          id: id as int,
           iid: iid is int ? iid : null,
           parentId: parentId,
+          presentFields: Set.unmodifiable(spec.fields.where(row.containsKey)),
           identityDigests: Map.unmodifiable({
             for (final field in ['iid', 'global_id', 'gid'])
               field: _snapshotFieldDigest(row, field),
@@ -3857,6 +3902,10 @@ final class Mr7SandboxSession {
       'method': request.method,
       'path': path,
       'operation': operation,
+      if (!_setupAuthorized &&
+          !_cleanupAuthorized &&
+          permit?.scenarioId != null)
+        'scenarioId': permit!.scenarioId,
       'projectId': identity?.projectId ?? server.projectId,
       'at': server.serverTime.toIso8601String(),
     });

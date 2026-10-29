@@ -7,6 +7,8 @@ import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_levels.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/instance.dart';
 
 import '../../tool/mr7/sandbox_contract.dart';
 import '../../tool/mr7_sandbox.dart' as sandbox;
@@ -18,6 +20,13 @@ Mr7SandboxSession _session(Mr7SyntheticGitLab server) => Mr7SandboxSession(
   nonce: 'wave3testnonce',
   requestCap: 500,
   eventDelay: () async {},
+);
+
+GitLabApi _api(Mr7SandboxSession session) => GitLabApi(
+  instance: GitLabInstance.parse(session.instance.toString()),
+  token: 'synthetic-wave3-pat',
+  dio: session.writer,
+  cdnAdapter: session.writerAdapter,
 );
 
 List<Map<String, Object?>> _rows(Map<String, Object?> receipt) =>
@@ -311,6 +320,20 @@ void main() {
     expect(server.scenarioWrites, 1);
   });
 
+  test('mutation ledger binds repeated operations to scenario ids', () async {
+    final server = Mr7SyntheticGitLab();
+    final receipt = await _run(server, [
+      _star(id: 'first'),
+      _star(id: 'second'),
+    ]);
+    expect(_rows(receipt).map((row) => row['status']), ['PASS', 'PASS']);
+    final writes = (receipt['requestLedger']! as List)
+        .cast<Map<String, Object?>>()
+        .where((entry) => entry['operation'] == 'setStar');
+    expect(writes.map((entry) => entry['scenarioId']), ['first', 'second']);
+    expect(server.scenarioWrites, 2);
+  });
+
   test(
     'observed decision is projected and mismatched tier fails before write',
     () async {
@@ -450,14 +473,22 @@ void main() {
       final server = Mr7SyntheticGitLab();
       final session = _session(server);
       await session.initialize();
-      server.routes['HEAD projects/909/repository/files/dir/file.txt'] = (_) =>
-          ResponseBody.fromBytes(
-            [],
-            200,
-            headers: {
-              'x-gitlab-content-sha256': ['a' * 64],
-            },
-          );
+      server.routes['HEAD projects/909/repository/files/dir/file.txt'] =
+          (request) {
+            expect(request.queryParameters, isEmpty);
+            expect(request.uri.queryParametersAll, {
+              'ref': ['main'],
+            });
+            return ResponseBody.fromBytes(
+              [],
+              200,
+              headers: {
+                'x-gitlab-content-sha256': ['a' * 64],
+                'x-gitlab-last-commit-id': [_sha],
+                'x-gitlab-size': ['42'],
+              },
+            );
+          };
       final permit = Mr7MutationPermit(
         operation: 'edit_file',
         paths: {},
@@ -473,11 +504,10 @@ void main() {
               )['requestCount']!
               as int;
       final before = requestCount();
-      final response = await session.writer.head<Object?>(
-        'projects/909/repository/files/dir%2Ffile.txt',
-        queryParameters: {'ref': 'main'},
-      );
-      expect(response.statusCode, 200);
+      final metadata = await _api(
+        session,
+      ).fileMetadata(909, 'dir/file.txt', 'main');
+      expect(metadata, {'last_commit_id': _sha, 'size': 42});
       expect(requestCount(), before + 1);
       expect(permit.sent, 0);
       expect(server.scenarioWrites, 0);
@@ -500,6 +530,39 @@ void main() {
       await session.finish();
     },
   );
+
+  test('HEAD validates the final URI query and exact file route', () async {
+    for (final uri in [
+      'projects/909/repository/files/a.txt?ref=main&extra=value',
+      'projects/909/repository/files/a.txt?ref=main&ref=other',
+      'projects/909/repository/files/a.txt?ref=main&%72ef=other',
+      'projects/909/repository/files/a.txt?ref=',
+      'projects/909/repository/files/a.txt?ref=${'a' * 1025}',
+      'projects/909/repository/files/a.txt',
+      'projects/777/repository/files/a.txt?ref=main',
+      'projects/909/repository/files/a.txt/raw?ref=main',
+      'projects/909/boards/801?ref=main',
+    ]) {
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      var served = false;
+      server.routes['HEAD projects/909/repository/files/a.txt'] = (_) {
+        served = true;
+        return ResponseBody.fromBytes([], 200);
+      };
+      await expectLater(
+        session.writer.head<Object?>(uri),
+        throwsA(anything),
+        reason: uri,
+      );
+      expect(served, false, reason: uri);
+      expect(server.requests.where((r) => r.startsWith('HEAD ')), isEmpty);
+      expect(session.quarantined, true);
+      expect(server.scenarioWrites, 0);
+      await session.finish();
+    }
+  });
 
   test('HEAD charges the shared cap and refuses when exhausted', () async {
     final server = Mr7SyntheticGitLab();
@@ -571,6 +634,276 @@ void main() {
       }
       await session.finish();
     }
+  });
+
+  for (final variant in ['absent', 'present', 'appears', 'disappears']) {
+    test('draft note text update preserves body presence: $variant', () async {
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      const path = 'projects/909/merge_requests/4/draft_notes/71';
+      final row = <String, Object?>{
+        'id': 71,
+        'author_id': 7,
+        'merge_request_id': 400,
+        'note': 'Original',
+        'commit_id': null,
+        'position': null,
+        if (variant == 'present' || variant == 'disappears') 'body': 'Original',
+      };
+      server.routes['GET $path'] = (_) => mr7Json(row);
+      server.routes['GET projects/909/merge_requests/4'] = (_) =>
+          mr7Json({'id': 400, 'iid': 4, 'project_id': 909});
+      final saved = await session.captureSnapshot([
+        Mr7SnapshotSpec.draftNote(path: path),
+      ]);
+      final permit =
+          Mr7MutationPermit(
+              operation: 'updateDraftNote',
+              paths: {'PUT $path'},
+              resourceProjectId: 909,
+            )
+            ..confirmed = true
+            ..snapshot = saved;
+      session.permit = permit;
+      server.routes['PUT $path'] = (request) {
+        expect(request.data, {'note': 'Changed'});
+        row['note'] = 'Changed';
+        if (variant == 'present' || variant == 'appears') {
+          row['body'] = 'Changed';
+        }
+        if (variant == 'disappears') row.remove('body');
+        server.scenarioWrites++;
+        server.addEvent(target: 909);
+        return mr7Json(row);
+      };
+      await _api(session).updateDraftNote(909, 4, 71, 'Changed');
+      final observer = Mr7Readback(
+        session,
+        session.identity!,
+        permit,
+        paths: {path, 'projects/909/merge_requests/4'},
+      );
+      expect(
+        await observer.verifySnapshot(),
+        variant == 'absent' || variant == 'present',
+      );
+      expect(permit.sent, 1);
+      await session.finish();
+    });
+  }
+
+  for (final variant in ['nameOnly', 'colorDrift', 'descriptionDrift']) {
+    test('production label rename verifies omitted fields: $variant', () async {
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      const path = 'projects/909/labels/701';
+      final row = <String, Object?>{
+        'id': 701,
+        'is_project_label': true,
+        'name': 'Original',
+        'color': '#abcdef',
+        'description': 'Preserved',
+      };
+      server.routes['GET $path'] = (_) => mr7Json(row);
+      final saved = await session.captureSnapshot([
+        Mr7SnapshotSpec.label(path: path),
+      ]);
+      final permit =
+          Mr7MutationPermit(
+              operation: 'updateLabel',
+              paths: {'PUT $path'},
+              resourceProjectId: 909,
+            )
+            ..confirmed = true
+            ..snapshot = saved;
+      session.permit = permit;
+      server.routes['PUT $path'] = (request) {
+        expect(request.data, {'new_name': 'Renamed'});
+        row['name'] = (request.data as Map)['new_name'];
+        if (variant == 'colorDrift') row['color'] = '#123456';
+        if (variant == 'descriptionDrift') row['description'] = 'Unrequested';
+        server.scenarioWrites++;
+        server.addEvent(target: 909);
+        return mr7Json(row);
+      };
+      final updated = await _api(
+        session,
+      ).updateLabel(909, 701, {'name': 'Renamed'});
+      expect(updated['name'], 'Renamed');
+      final observer = Mr7Readback(
+        session,
+        session.identity!,
+        permit,
+        paths: {path},
+      );
+      expect(await observer.verifySnapshot(), variant == 'nameOnly');
+      expect(permit.sent, 1);
+      await session.finish();
+    });
+  }
+
+  for (final phase in ['capture', 'preSend', 'readback']) {
+    test('typed REST identity fences hold at $phase', () async {
+      for (final variant in [
+        'boardProject',
+        'labelId',
+        'labelGroup',
+        'draftAuthor',
+        'draftParent',
+        'draftParentProject',
+        'draftParentId',
+        'draftParentIid',
+      ]) {
+        final server = Mr7SyntheticGitLab();
+        final session = _session(server);
+        await session.initialize();
+        final draft = variant.startsWith('draft');
+        final board = variant.startsWith('board');
+        final path = draft
+            ? 'projects/909/merge_requests/4/draft_notes/71'
+            : board
+            ? 'projects/909/boards/801'
+            : 'projects/909/labels/701';
+        final spec = draft
+            ? Mr7SnapshotSpec.draftNote(path: path)
+            : board
+            ? Mr7SnapshotSpec.board(path: path)
+            : Mr7SnapshotSpec.label(path: path);
+        final row = <String, Object?>{
+          if (draft) ...{
+            'id': 71,
+            'author_id': 7,
+            'merge_request_id': 400,
+            'note': 'Original',
+            'commit_id': null,
+            'position': null,
+          } else if (board) ...{
+            'id': 801,
+            'project': {'id': 909},
+            'name': 'Original',
+            'hide_backlog_list': false,
+            'hide_closed_list': false,
+          } else ...{
+            'id': 701,
+            'is_project_label': true,
+            'name': 'Original',
+            'color': '#abcdef',
+            'description': 'Preserved',
+          },
+        };
+        final parent = <String, Object?>{
+          'id': 400,
+          'iid': 4,
+          'project_id': 909,
+        };
+        server.routes['GET $path'] = (_) => mr7Json(row);
+        server.routes['GET projects/909/merge_requests/4'] = (_) =>
+            mr7Json(parent);
+        void drift() {
+          switch (variant) {
+            case 'boardProject':
+              row['project'] = {'id': 777};
+            case 'labelId':
+              row['id'] = 702;
+            case 'labelGroup':
+              row['is_project_label'] = false;
+            case 'draftAuthor':
+              row['author_id'] = 8;
+            case 'draftParent':
+              row['merge_request_id'] = 401;
+            case 'draftParentProject':
+              parent['project_id'] = 777;
+            case 'draftParentId':
+              parent['id'] = 401;
+            case 'draftParentIid':
+              parent['iid'] = 5;
+          }
+        }
+
+        if (phase == 'capture') {
+          drift();
+          await expectLater(
+            session.captureSnapshot([spec]),
+            throwsA(anything),
+            reason: variant,
+          );
+          expect(server.scenarioWrites, 0);
+          await session.finish();
+          continue;
+        }
+        final saved = await session.captureSnapshot([spec]);
+        final permit =
+            Mr7MutationPermit(
+                operation: draft
+                    ? 'updateDraftNote'
+                    : board
+                    ? 'renameBoard'
+                    : 'updateLabel',
+                paths: {'PUT $path'},
+                resourceProjectId: 909,
+              )
+              ..confirmed = true
+              ..snapshot = saved;
+        session.permit = permit;
+        if (phase == 'preSend') drift();
+        server.routes['PUT $path'] = (_) {
+          row[draft ? 'note' : 'name'] = 'Changed';
+          if (phase == 'readback') drift();
+          server.scenarioWrites++;
+          server.addEvent(target: 909);
+          return mr7Json(row);
+        };
+        Future<Object?> update() => session.writer.put<Object?>(
+          path,
+          data: {draft ? 'note' : 'name': 'Changed'},
+        );
+        if (phase == 'preSend') {
+          await expectLater(update(), throwsA(anything), reason: variant);
+          expect(permit.sent, 0, reason: variant);
+          expect(server.scenarioWrites, 0, reason: variant);
+        } else {
+          await update();
+          final observer = Mr7Readback(
+            session,
+            session.identity!,
+            permit,
+            paths: {path, if (draft) 'projects/909/merge_requests/4'},
+          );
+          if (variant == 'draftParentProject') {
+            await expectLater(
+              observer.verifySnapshot(),
+              throwsA(
+                isA<Mr7Refused>().having(
+                  (e) => e.code,
+                  'code',
+                  'readbackIdentity',
+                ),
+              ),
+            );
+          } else {
+            expect(await observer.verifySnapshot(), false, reason: variant);
+          }
+          expect(permit.sent, 1, reason: variant);
+        }
+        await session.finish();
+      }
+    });
+  }
+
+  test('typed labels refuse a foreign project route', () async {
+    final server = Mr7SyntheticGitLab();
+    final session = _session(server);
+    await session.initialize();
+    const path = 'projects/777/labels/701';
+    await expectLater(
+      session.captureSnapshot([Mr7SnapshotSpec.label(path: path)]),
+      throwsA(anything),
+    );
+    expect(server.requests, isNot(contains('GET $path')));
+    expect(server.scenarioWrites, 0);
+    await session.finish();
   });
 
   test(
@@ -646,9 +979,9 @@ void main() {
         final row = <String, Object?>{
           if (draft) ...{
             'id': 71,
-            'project_id': 909,
             'note': 'before',
-            'author': {'id': 7},
+            'author_id': 7,
+            'merge_request_id': 400,
           } else ...{
             'id': 501,
             'iid': 3,
@@ -713,7 +1046,7 @@ void main() {
   );
 
   test(
-    'typed board label and draft snapshots preserve omitted fields and owner',
+    'typed REST wire shapes verify updates and protect omitted fields',
     () async {
       final fixtures = [
         (
@@ -721,10 +1054,12 @@ void main() {
           op: 'renameBoard',
           changed: 'name',
           preserved: 'hide_closed_list',
+          drift: true,
           spec: Mr7SnapshotSpec.board(path: 'projects/909/boards/801'),
           row: <String, Object?>{
             'id': 801,
-            'project_id': 909,
+            'project': {'id': 909},
+            'lists': <Object?>[],
             'name': 'Board',
             'hide_backlog_list': false,
             'hide_closed_list': false,
@@ -735,10 +1070,11 @@ void main() {
           op: 'updateLabel',
           changed: 'description',
           preserved: 'color',
+          drift: '#123456',
           spec: Mr7SnapshotSpec.label(path: 'projects/909/labels/701'),
           row: <String, Object?>{
             'id': 701,
-            'project_id': 909,
+            'is_project_label': true,
             'name': 'Label',
             'description': 'Original',
             'color': '#abcdef',
@@ -749,56 +1085,66 @@ void main() {
           op: 'updateDraftNote',
           changed: 'note',
           preserved: 'position',
+          drift: <String, Object?>{'base_sha': _sha},
           spec: Mr7SnapshotSpec.draftNote(
             path: 'projects/909/merge_requests/4/draft_notes/71',
           ),
           row: <String, Object?>{
             'id': 71,
-            'project_id': 909,
             'note': 'Original',
-            'author': {'id': 7},
+            'author_id': 7,
+            'merge_request_id': 400,
             'commit_id': null,
+            'position': null,
           },
         ),
       ];
       for (final fixture in fixtures) {
-        final server = Mr7SyntheticGitLab();
-        final session = _session(server);
-        await session.initialize();
-        server.routes['GET projects/909/merge_requests/4'] = (_) =>
-            mr7Json({'id': 400, 'iid': 4, 'project_id': 909});
-        final row = Map<String, Object?>.from(fixture.row);
-        server.routes['GET ${fixture.path}'] = (_) => mr7Json(row);
-        final saved = await session.captureSnapshot([fixture.spec]);
-        server.routes['PUT ${fixture.path}'] = (_) {
-          row[fixture.changed] = 'Changed';
-          row[fixture.preserved] =
-              null; // absent and null must not compare equal
-          server.scenarioWrites++;
-          server.addEvent(target: 909);
-          return mr7Json(row);
-        };
-        final permit =
-            Mr7MutationPermit(
-                operation: fixture.op,
-                paths: {'PUT ${fixture.path}'},
-                resourceProjectId: 909,
-              )
-              ..confirmed = true
-              ..snapshot = saved;
-        session.permit = permit;
-        await session.writer.put<Object?>(
-          fixture.path,
-          data: {fixture.changed: 'Changed'},
-        );
-        final observer = Mr7Readback(
-          session,
-          session.identity!,
-          permit,
-          paths: {fixture.path, 'projects/909/merge_requests/4'},
-        );
-        expect(await observer.verifySnapshot(), false, reason: fixture.op);
-        await session.finish();
+        for (final altered in [false, true]) {
+          final server = Mr7SyntheticGitLab();
+          final session = _session(server);
+          await session.initialize();
+          server.routes['GET projects/909/merge_requests/4'] = (_) =>
+              mr7Json({'id': 400, 'iid': 4, 'project_id': 909});
+          final row = Map<String, Object?>.from(fixture.row);
+          server.routes['GET ${fixture.path}'] = (_) => mr7Json(row);
+          final saved = await session.captureSnapshot([fixture.spec]);
+          server.routes['PUT ${fixture.path}'] = (request) {
+            expect(request.data, {fixture.changed: 'Changed'});
+            row[fixture.changed] = 'Changed';
+            if (altered) row[fixture.preserved] = fixture.drift;
+            server.scenarioWrites++;
+            server.addEvent(target: 909);
+            return mr7Json(row);
+          };
+          final permit =
+              Mr7MutationPermit(
+                  operation: fixture.op,
+                  paths: {'PUT ${fixture.path}'},
+                  resourceProjectId: 909,
+                )
+                ..confirmed = true
+                ..snapshot = saved;
+          session.permit = permit;
+          final api = _api(session);
+          switch (fixture.op) {
+            case 'renameBoard':
+              await api.renameBoard(909, 801, 'Changed');
+            case 'updateLabel':
+              await api.updateLabel(909, 701, {'description': 'Changed'});
+            case 'updateDraftNote':
+              await api.updateDraftNote(909, 4, 71, 'Changed');
+          }
+          final observer = Mr7Readback(
+            session,
+            session.identity!,
+            permit,
+            paths: {fixture.path, 'projects/909/merge_requests/4'},
+          );
+          expect(await observer.verifySnapshot(), !altered, reason: fixture.op);
+          expect(permit.sent, 1);
+          await session.finish();
+        }
       }
       final server = Mr7SyntheticGitLab();
       final session = _session(server);
@@ -806,11 +1152,7 @@ void main() {
       server.routes['GET projects/909/merge_requests/4'] = (_) =>
           mr7Json({'id': 400, 'iid': 4, 'project_id': 909});
       server.routes['GET projects/909/merge_requests/4/draft_notes/71'] = (_) =>
-          mr7Json({
-            'id': 71,
-            'project_id': 909,
-            'author': {'id': 8},
-          });
+          mr7Json({'id': 71, 'author_id': 8, 'merge_request_id': 400});
 
       await expectLater(
         session.captureSnapshot([
