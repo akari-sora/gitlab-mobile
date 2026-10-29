@@ -1,5 +1,5 @@
 // Host entrypoint uses flutter_tester because the production journal imports
-// Flutter stores. There is no app lifecycle or live adapter in this packet.
+// Flutter stores. Optional live selection delegates to mr7/live_run.dart.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -35,6 +35,8 @@ import 'package:gitlab_mobile/features/ai/ai_attachment_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import 'mr7/sandbox_contract.dart';
+import 'mr7/live_run.dart';
+import 'mr7/live_state.dart';
 
 final class Mr7HostProposal {
   const Mr7HostProposal({
@@ -58,6 +60,33 @@ final class Mr7HostProposal {
 typedef Mr7Confirm = Future<bool> Function(Mr7HostProposal proposal);
 typedef Mr7TypedConfirm = Future<String?> Function(Mr7HostProposal proposal);
 typedef Mr7Edit = Future<String?> Function(Mr7HostProposal proposal);
+
+final class _Mr7PreparedWritePort implements port.AiGitLabWritePort {
+  _Mr7PreparedWritePort(this.delegate, this.session);
+
+  final port.AiGitLabWritePort delegate;
+  final Mr7SandboxSession session;
+
+  @override
+  Future<port.AiWritePrepared> prepare(port.AiWriteRequest request) async {
+    final permit = session.permit;
+    if (permit == null || permit.operation != request.operationId) {
+      throw const Mr7Refused('noChangeUnverified');
+    }
+    final prepared = await delegate.prepare(request);
+    if (!identical(session.permit, permit)) {
+      throw const Mr7Refused('noChangeUnverified');
+    }
+    permit.capturePreparedArguments(() => prepared.request.arguments);
+    return prepared;
+  }
+
+  @override
+  Future<port.AiWriteOutcome> commit(
+    port.AiWritePrepared prepared, {
+    required bool Function() mayStart,
+  }) => delegate.commit(prepared, mayStart: mayStart);
+}
 
 enum Mr7ClosureCause {
   releasePolicy,
@@ -136,6 +165,7 @@ final class Mr7Scenario {
     this.preRead,
     this.closed,
     this.projectTodo = false,
+    this.captureEffects = false,
     this.maxMutations = 1,
     this.expectedMutations = 1,
     this.utterance,
@@ -172,6 +202,9 @@ final class Mr7Scenario {
   final List<Mr7SnapshotSpec> Function(Mr7Identity identity)? preRead;
   final Mr7ClosedRefusal? closed;
   final bool projectTodo;
+
+  /// Capture the sealed wave 3c pre-dispatch effect baseline.
+  final bool captureEffects;
   final int maxMutations;
   final int expectedMutations;
   final String Function(Mr7Identity identity)? utterance;
@@ -197,8 +230,7 @@ final class Mr7Scenario {
     Mr7MutationResult result,
   )?
   observerQueries;
-  final Mr7ParentStateObservation Function(Mr7Identity identity)?
-  noChangeObservation;
+  final Mr7StateObservation Function(Mr7Identity identity)? noChangeObservation;
 }
 
 List<Mr7Scenario> mr7ContractScenarios() => [
@@ -633,18 +665,36 @@ Future<Map<String, Object?>> runMr7Sandbox({
   AiWriteJournal? journal,
   String? conversationId,
   DateTime Function()? now,
+  Mr7LiveRun? live,
 }) async {
   if (!RegExp(r'^[0-9a-f]{40}$').hasMatch(releaseSha) ||
       !const {'all', 'rest', 'graphql', 'advanced'}.contains(suite)) {
     throw const Mr7Refused('configuration');
   }
+  if (live != null && journal != null) {
+    throw const Mr7Refused('liveJournalOverride');
+  }
   final cases = (scenarios ?? mr7ContractScenarios())
-      .where((s) => suite == 'all' || suite == s.suite)
+      .where(
+        (s) =>
+            (suite == 'all' || suite == s.suite) &&
+            (live?.includes(s.id) ?? true),
+      )
       .toList();
   final closed = closedVariants
-      .where((v) => suite == 'all' || suite == v.suite)
+      .where(
+        (v) =>
+            (suite == 'all' || suite == v.suite) &&
+            (live?.includes(v.id) ?? true),
+      )
       .toList();
   final ids = [...cases.map((s) => s.id), ...closed.map((v) => v.id)];
+  live?.validateSelection(ids);
+  if ((session?.liveTransport != null && live == null) ||
+      (session != null && live != null && !identical(session, live.session))) {
+    throw const Mr7Refused('transportSelection');
+  }
+  final secrets = live?.secrets ?? _Secrets();
   if (ids.toSet().length != ids.length) {
     throw const Mr7Refused('duplicateScenario');
   }
@@ -689,6 +739,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
   );
   final s =
       session ??
+      live?.session ??
       Mr7SandboxSession(
         server:
             server ??
@@ -720,14 +771,25 @@ Future<Map<String, Object?>> runMr7Sandbox({
         'releaseSha': releaseSha,
       },
   ];
-  final root = journal == null
-      ? await Directory.systemTemp.createTemp('mr7-journal-')
-      : null;
+  final state =
+      live?.state ??
+      (live == null
+          ? null
+          : await Mr7LiveState.create(live.scratchRoot, s, live.deadlineAt));
+  final root =
+      state?.journalRoot ??
+      (journal == null
+          ? await (live?.scratchRoot ?? Directory.systemTemp).createTemp(
+              'mr7-journal-',
+            )
+          : null);
   PolicyAiWriteCoordinator? activeCoordinator;
   AiRunner? activeRunner;
+  AiWireClient? activeClient;
   final account = '${s.instance}#${s.expectedUserId}';
   final journalStore =
       journal ??
+      state?.openJournal() ??
       AiWriteJournal(
         keys: MemoryAiJournalKeyStore(),
         applicationSupport: root!,
@@ -736,8 +798,33 @@ Future<Map<String, Object?>> runMr7Sandbox({
   if (now != null) journalStore.now = now;
   final attachmentSessions = <AiAttachmentSession>{};
   final placeholderTables = <String, UploadPlaceholderTable>{};
+  Timer? deadlineTimer;
+  if (live != null) {
+    void timedOut() {
+      s.stop('liveTimeout');
+      activeRunner?.stop();
+      activeCoordinator?.stop('liveTimeout');
+      activeClient?.transport.cancelActive();
+      live.cancel();
+      s.writer.close(force: true);
+      s.observer.close(force: true);
+      s.liveTransport?.close();
+    }
+
+    final remaining = live.deadlineAt.difference(DateTime.now());
+    if (remaining <= Duration.zero) {
+      timedOut();
+    } else {
+      deadlineTimer = Timer(remaining, timedOut);
+    }
+  }
   try {
-    await s.initialize();
+    if (state != null) {
+      state.validateIntent(s);
+      s.beforeProjectCreate = () async => state.validateIntent(s);
+      s.projectCreated = state.recordProject;
+    }
+    if (live == null) await s.initialize();
     if (journal == null) {
       await journalStore.recoverAfterAccountsLoaded([account]);
     } else if (!journalStore.recovered(account)) {
@@ -749,6 +836,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
     } else if (keyStatus != AiJournalKeyStatus.found) {
       throw const Mr7Refused('journalUnavailable');
     }
+    if (live != null) await s.initialize();
     for (final scenario in cases) {
       final scenarioView = mr7SandboxPolicy(
         policy,
@@ -798,6 +886,18 @@ Future<Map<String, Object?>> runMr7Sandbox({
           'refusal': const Mr7ClosedRefusal(
             Mr7ClosureCause.releasePolicy,
             'releaseClosed',
+          ).metadata,
+        });
+        continue;
+      }
+      if (scenario.operation == 'playPipelineSchedule') {
+        row.addAll({
+          'reason': 'scheduleParametersUnproven',
+          'classification': 'closedVariant',
+          'providerCalls': 0,
+          'refusal': const Mr7ClosedRefusal(
+            Mr7ClosureCause.observerUnavailable,
+            'scheduleParametersUnproven',
           ).metadata,
         });
         continue;
@@ -860,7 +960,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
       final budget = sharedBudget ?? AiToolBudget();
       final api = GitLabApi(
         instance: GitLabInstance.parse(s.instance.toString()),
-        token: 'synthetic-gitlab-pat',
+        token: s.gitLabToken,
         dio: s.writer,
         cdnAdapter: s.writerAdapter,
       );
@@ -905,19 +1005,32 @@ Future<Map<String, Object?>> runMr7Sandbox({
         allowedMetadata: metadata is String ? metadata : null,
         allowedUserText: userText,
       );
-      final transport = AiTransport(
-        endpoint: AiEndpoint.parse(_provider.baseUrl, allowLanCleartext: false),
-        apiKey: 'synthetic-provider-key',
-        authStyle: _provider.authStyle,
-        adapter: provider,
+      final liveCall = live?.bindCall(
+        call,
+        scenario.readNames,
+        'mr7-${mr7Digest(scenario.id).substring(0, 24)}',
       );
-      final client = AiWireClient(
-        transport: transport,
-        wire: const ResponsesFormat(),
-        config: _provider,
-        conversationId: 'mr7-${mr7Digest(scenario.id).substring(0, 24)}',
-        appVersion: 'mr7-synthetic',
-      );
+      final transport =
+          liveCall?.client.transport ??
+          AiTransport(
+            endpoint: AiEndpoint.parse(
+              _provider.baseUrl,
+              allowLanCleartext: false,
+            ),
+            apiKey: 'synthetic-provider-key',
+            authStyle: _provider.authStyle,
+            adapter: provider,
+          );
+      final client =
+          liveCall?.client ??
+          AiWireClient(
+            transport: transport,
+            wire: const ResponsesFormat(),
+            config: _provider,
+            conversationId: 'mr7-${mr7Digest(scenario.id).substring(0, 24)}',
+            appVersion: 'mr7-synthetic',
+          );
+      activeClient = client;
       final writeScope = AiWriteScope(
         accountKey: account,
         grants: [
@@ -942,12 +1055,15 @@ Future<Map<String, Object?>> runMr7Sandbox({
           appInForeground: true,
           clientMayStartPredicate: () => !s.quarantined && s.boundaryValid(),
         ),
-        createPort: () => port.GitLabAiWritePort(
-          api,
-          accountKey: account,
-          workItemWriteRegistry: scenario.createRegistry?.call(api),
-          sessionGeneration: 1,
-          isCurrent: () => !s.quarantined && s.boundaryValid(),
+        createPort: () => _Mr7PreparedWritePort(
+          port.GitLabAiWritePort(
+            api,
+            accountKey: account,
+            workItemWriteRegistry: scenario.createRegistry?.call(api),
+            sessionGeneration: 1,
+            isCurrent: () => !s.quarantined && s.boundaryValid(),
+          ),
+          s,
         ),
         journal: journalStore,
         conversationId: scenarioConversationId,
@@ -973,11 +1089,13 @@ Future<Map<String, Object?>> runMr7Sandbox({
         attachmentSubstitution: (project) =>
             attachments?.substitutionFor(project),
         now: now,
-        knownSecrets: () => _Secrets().current.toSet(),
+        knownSecrets: () => secrets.current.toSet(),
         safeDisplay: (value) => value,
         checkFragmentsWithCount: exact.checkFragments,
         onChanged: () {
-          final observed = coordinator.proposalFor(call.id)?.tier;
+          final observed = coordinator
+              .proposalFor(liveCall?.callId ?? call.id)
+              ?.tier;
           if (observed == null) return;
           final tier = observed.tier.name == 'hardLine'
               ? 'hardLine'
@@ -1005,7 +1123,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
               scenario.resource?.call(target) ??
               const AiResourceRef(kind: AiResourceKind.file, id: 1),
         ),
-        redactor: Redactor(secrets: _Secrets()),
+        redactor: Redactor(secrets: secrets),
         releasePolicy: scenarioView,
         placeholders: placeholders,
       );
@@ -1024,6 +1142,8 @@ Future<Map<String, Object?>> runMr7Sandbox({
           ...fixtures.graphVariablesDigests,
         }),
         resultPath: scenario.resultPath,
+        captureEffects: scenario.captureEffects,
+        callArguments: call.arguments,
       );
       permit.snapshot = snapshot;
       s.permit = permit;
@@ -1054,7 +1174,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
         });
         row['confirmAt'] = DateTime.now().toUtc().toIso8601String();
         row['confirmation'] = accepted
-            ? 'explicitSyntheticTestHook'
+            ? (live?.confirmationLabel ?? 'explicitSyntheticTestHook')
             : 'rejected';
         return accepted;
       }
@@ -1065,10 +1185,10 @@ Future<Map<String, Object?>> runMr7Sandbox({
       provider.trustHostText([system]);
       provider.trustHostTools(tools);
       final runner = AiRunner(
-        config: _provider,
-        wire: const ResponsesFormat(),
-        complete: client.complete,
-        secrets: _Secrets(),
+        config: live?.provider.config ?? _provider,
+        wire: live?.provider.wire ?? const ResponsesFormat(),
+        complete: liveCall?.complete ?? client.complete,
+        secrets: secrets,
         refreshSecrets: () async {},
         guard: AiRunGuard(
           expectedGeneration: 1,
@@ -1154,7 +1274,9 @@ Future<Map<String, Object?>> runMr7Sandbox({
       try {
         final result = await runner.run(userText, bindingUtterance: utterance);
         if (approving != null) await approving;
-        final outcome = coordinator.recordedOutcomeFor(call.id);
+        final outcome = coordinator.recordedOutcomeFor(
+          liveCall?.callId ?? call.id,
+        );
         row['outcome'] = outcome?.state.name ?? 'notExecuted';
         row['coreOutcome'] = outcome?.state.name ?? 'notExecuted';
         row['coreNoChange'] = outcome?.noChange ?? false;
@@ -1182,6 +1304,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
               ? 'FAIL'
               : 'PASS',
         };
+        if (live != null) row['provider'] = live.providerReceipt;
         if (s.stopReason == 'tierMismatch') {
           row['status'] = 'FAIL';
           row['reason'] = 'tierMismatch';
@@ -1203,7 +1326,9 @@ Future<Map<String, Object?>> runMr7Sandbox({
           );
           final verified = await observer.observeNoChange(
             state,
-            arguments: call.arguments,
+            arguments:
+                permit.preparedArguments ??
+                (throw const Mr7Refused('noChangeUnverified')),
           );
           row.addAll({
             'parentStateVerified': verified,
@@ -1267,7 +1392,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
                 state == null ||
                 !state.matchesCall(
                   scenario.operation,
-                  call.arguments,
+                  liveCall?.arguments ?? call.arguments,
                   target.projectId,
                 )) {
               throw const Mr7Refused('noChangeUnverified');
@@ -1337,11 +1462,21 @@ Future<Map<String, Object?>> runMr7Sandbox({
     activeCoordinator?.stop('runFinished');
     // No reset, retry or removal of the production journal's uncertain entries.
     await s.finish();
+    deadlineTimer?.cancel();
+    if (state != null && s.quarantined) {
+      await state.update({
+        'stopReason': s.stopReason ?? 'quarantined',
+        'stoppedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+    }
     for (final attachments in attachmentSessions) {
       attachments.discardAll();
     }
-    if (root != null && root.existsSync()) {
-      await root.delete(recursive: true); // Synthetic scratch only.
+    if (root != null &&
+        state == null &&
+        root.existsSync() &&
+        (live?.mayDiscardJournal ?? true)) {
+      await root.delete(recursive: true);
     }
   }
   for (final scenario in cases.where(
@@ -1374,14 +1509,19 @@ Future<Map<String, Object?>> runMr7Sandbox({
   }
   if (rows.any((r) => r['status'] == 'FAIL')) receipt['status'] = 'FAIL';
   receipt['secretLeakScan'] =
-      _Secrets().current.any((secret) => jsonEncode(receipt).contains(secret))
+      secrets.current.any((secret) => jsonEncode(receipt).contains(secret))
       ? 'FAIL'
       : 'PASS';
   if (receipt['secretLeakScan'] != 'PASS') receipt['status'] = 'FAIL';
+  live?.finishReceipt(receipt);
   return receipt;
 }
 
-void main() {
+void main() => registerMr7SandboxHost();
+
+void registerMr7SandboxHost({
+  Mr7LiveRun? Function(Map<String, dynamic>)? selectLive,
+}) {
   test('MR7 synthetic sandbox host', () async {
     final configPath = Platform.environment['MR7_SANDBOX_CONFIG_FILE'];
     final outputPath = Platform.environment['MR7_SANDBOX_RECEIPT_FILE'];
@@ -1391,17 +1531,38 @@ void main() {
     final config =
         jsonDecode(await File(configPath).readAsString())
             as Map<String, dynamic>;
+    if (config['reconcile'] == true) {
+      final report = await Mr7LiveState(
+        Directory(config['stateDirectory'] as String),
+      ).reconcile();
+      await File(
+        outputPath,
+      ).writeAsString('${jsonEncode(report)}\n', flush: true);
+      expect(report['status'], 'PASS');
+      return;
+    }
+    final live = (selectLive ?? Mr7LiveRun.select)(config);
     final receipt = await runMr7Sandbox(
       policy: Mr7Policy.values.byName(config['policy'] as String),
       releaseSha: config['releaseSha'] as String,
       suite: config['suite'] as String,
       expectedUserId: config['expectedUserId'] as int,
       namespace: config['namespace'] as String,
-      confirm: (_) async => true,
-    ); // Explicit synthetic-only hook; never a live confirmation.
+      live: live,
+      confirm: (proposal) async => live == null
+          ? true
+          : live.confirm(
+              operation: proposal.operation,
+              projectId: proposal.projectId,
+              tier: proposal.tier,
+              payloadDigest: proposal.payloadDigest,
+              requiredTypedName: proposal.requiredTypedName,
+            ),
+      typedConfirm: live == null ? null : (_) async => live.typedName,
+    );
     await File(
       outputPath,
     ).writeAsString('${jsonEncode(receipt)}\n', flush: true);
     expect(receipt['status'], 'PASS');
-  }, timeout: const Timeout(Duration(minutes: 2)));
+  }, timeout: Timeout(mr7LiveRunWindow + const Duration(minutes: 1)));
 }

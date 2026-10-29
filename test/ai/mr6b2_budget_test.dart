@@ -199,6 +199,9 @@ void main() {
       expect(reopenedOutcome.mutationCount, 1);
       expect(h.server.mutationCount(), 61);
     },
+    // A rolling-hour window of 60 encrypted journal writes: seconds on an idle
+    // host, more than a minute on a loaded runner.
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 
   test('three conversations share the account rolling-hour T4 cap', () async {
