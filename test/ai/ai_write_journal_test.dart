@@ -815,6 +815,9 @@ void main() {
         isNotNull,
       );
     },
+    // A rolling-hour window of 60 encrypted journal writes: seconds on an idle
+    // host, more than a minute on a loaded runner.
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 
   test(
@@ -844,6 +847,9 @@ void main() {
       await journal.prepare(draft: value);
       expect(journal.conversationWriteCount(account, 'persistent'), 40);
     },
+    // A rolling-hour window of 60 encrypted journal writes: seconds on an idle
+    // host, more than a minute on a loaded runner.
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 
   test(

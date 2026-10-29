@@ -4,9 +4,13 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
+import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
+import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+import 'package:gitlab_mobile/core/ai/write_text.dart' as text;
+import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/features/ai/ai_journal_key_store.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/features/ai/ai_attachment_session.dart';
@@ -37,10 +41,16 @@ List<String> _updateFields(Mr7Scenario scenario) {
   final arguments = scenario.call(_fixtureIdentity).arguments! as Map;
   return arguments['fields'] is Map
       ? (arguments['fields']! as Map).keys.cast<String>().toList()
-      : [
-          for (final field in ['body', 'position', 'resolved'])
-            if (arguments.containsKey(field)) field,
-        ];
+      : switch (scenario.operation) {
+          'renameBoard' => ['name'],
+          'setBoardSystemListHidden' => ['hide_${arguments['list']}_list'],
+          'setMilestoneState' => ['state_event'],
+          'updateDraftNote' => ['note'],
+          _ => [
+            for (final field in ['body', 'position', 'resolved'])
+              if (arguments.containsKey(field)) field,
+          ],
+        };
 }
 
 Mr7SandboxSession _session(Mr7SyntheticGitLab server, {int requestCap = 200}) =>
@@ -130,7 +140,138 @@ Mr7Scenario _callWith(
   utterance: utterance ?? source.utterance,
   resource: source.resource,
   readbackPaths: source.readbackPaths,
+  readNames: source.readNames,
 );
+
+/// Corrupt a fresh serialized read after the acknowledged synthetic write.
+/// The production request and captured pre-write snapshot remain intact.
+void _driftAfterWrite(
+  Mr7SyntheticGitLab server,
+  Mr7Scenario source,
+  String field,
+  Object? value, {
+  String? readPath,
+}) {
+  final writePath = source.paths(_fixtureIdentity).single;
+  final path = readPath ?? source.preRead!(_fixtureIdentity).single.path;
+  final write = server.routes[writePath]!;
+  final read = server.routes['GET $path']!;
+  var sent = false;
+  server.routes[writePath] = (request) async {
+    final response = await write(request);
+    sent = true;
+    return response;
+  };
+  server.routes['GET $path'] = (request) async {
+    final response = await read(request);
+    if (!sent) return response;
+    final current = jsonDecode(await utf8.decoder.bind(response.stream).join());
+    return mr7Json({...current as Map, field: value});
+  };
+}
+
+Mr7Scenario _provenanceCase(
+  String id, {
+  required String description,
+  required bool readFirst,
+  required List<Map<String, Object?>> requests,
+}) {
+  AiToolCall call(Mr7Identity p) => AiToolCall(
+    id: id,
+    name: 'updateIssue',
+    arguments: {
+      'projectId': p.projectId,
+      'iid': 1,
+      'fields': {'description': description},
+      'reason': 'Explicit synthetic same-field edit.',
+    },
+  );
+  return Mr7Scenario(
+    id: id,
+    suite: 'rest',
+    operation: 'updateIssue',
+    variant: 'provenance-supporting-evidence',
+    tier: 'T2',
+    targetKind: AiTargetKind.issue,
+    readNames: readFirst ? const {'get_issue'} : const {},
+    resource: (_) => const AiResourceRef(kind: AiResourceKind.issue, id: 1),
+    utterance: (p) => 'Read and edit issue #1 description in ${p.path}.',
+    call: call,
+    paths: (p) => {'PUT projects/${p.projectId}/issues/1'},
+    preRead: (p) => [
+      Mr7SnapshotSpec(
+        path: 'projects/${p.projectId}/issues/1',
+        fields: {'title', 'description', 'state', 'updated_at'},
+        unchangedFields: {'title', 'state'},
+      ),
+    ],
+    readbackPaths: (p, _) => {'projects/${p.projectId}/issues/1'},
+    observe: (observer, p) async =>
+        (await observer.read(
+          'projects/${p.projectId}/issues/1',
+        ))['description'] ==
+        description.replaceAll('[[upload:u-1]]', _provenanceLink),
+    freshness: (session, _) async {
+      final p = session.identity!;
+      final current = await session.read('projects/${p.projectId}/issues/1');
+      return AiWriteFreshness(
+        updatedAt: current['updated_at'] as String?,
+        visibilityUnreadable: false,
+        sourceVisibilityUnreadable: false,
+        targetVisibility: 'private',
+        currentFields: {'description': current['description']! as String},
+        provenance: {
+          'description': text.AiFieldProvenance.gitLab(
+            instance: GitLabInstance.parse(session.instance.toString()),
+            projectId: p.projectId,
+            projectPath: p.path,
+            resource: 'issues',
+            iid: 1,
+          ),
+        },
+      );
+    },
+    fixture: (_, p) async => Mr7ScenarioFixtures(
+      providerScript: [
+        if (readFirst)
+          [
+            AiToolCall(
+              id: '$id-read',
+              name: 'get_issue',
+              arguments: {'iid': 1},
+            ),
+          ],
+        [call(p)],
+      ],
+      onProviderRequest: requests.add,
+    ),
+  );
+}
+
+const _provenanceSecret = '0123456789abcdef0123456789abcdef';
+const _provenanceLink = '/uploads/$_provenanceSecret/screen.png';
+
+void _provenanceFixture(Mr7SyntheticGitLab server, String description) {
+  final issue = <String, Object?>{
+    'id': 1001,
+    'iid': 1,
+    'project_id': server.projectId,
+    'title': 'Synthetic provenance original.',
+    'description': description,
+    'confidential': false,
+    'state': 'opened',
+    'updated_at': '2026-10-29T00:00:00.000Z',
+  };
+  server.routes['GET projects/909/issues/1'] = (_) => mr7Json(issue);
+  server.routes['GET projects/909/issues/1/notes'] = (_) => mr7Json([]);
+  server.routes['PUT projects/909/issues/1'] = (request) {
+    issue['description'] = (request.data as Map)['description'];
+    issue['updated_at'] = server.serverTime.toIso8601String();
+    server.scenarioWrites++;
+    server.addEvent(target: server.projectId);
+    return mr7Json(issue);
+  };
+}
 
 void main() {
   final cases = mr7RestCases();
@@ -152,14 +293,7 @@ void main() {
           (c) =>
               c.operation == row.operationId &&
               c.variant == 'confirmation-edited-text' &&
-              (const {
-                    'updateLabel',
-                    'updateMilestone',
-                    'renameBoard',
-                    'updateDraftNote',
-                  }.contains(row.operationId)
-                  ? c.refusal?.code.endsWith('SnapshotUnavailable') == true
-                  : c.scenario != null),
+              c.scenario != null,
         ),
         isTrue,
         reason: row.operationId,
@@ -184,8 +318,8 @@ void main() {
         }
       }
     }
-    expect(executable, hasLength(77));
-    expect(mr7RestClosedVariants(), hasLength(29));
+    expect(executable, hasLength(92));
+    expect(mr7RestClosedVariants(), hasLength(14));
     for (final c in cases.where(
       (c) => const {
         'renameBoard',
@@ -193,8 +327,8 @@ void main() {
         'updateDraftNote',
       }.contains(c.operation),
     )) {
-      expect(c.scenario, isNull, reason: c.id);
-      expect(c.refusal!.code.endsWith('SnapshotUnavailable'), isTrue);
+      expect(c.scenario, isNotNull, reason: c.id);
+      expect(c.scenario!.preRead!(_fixtureIdentity), isNotEmpty);
     }
     for (final c in cases.where((c) => c.scenario == null)) {
       expect(c.refusal, isNotNull, reason: c.id);
@@ -210,8 +344,23 @@ void main() {
     expect(
       cases
           .where((c) => c.operation == 'createTodo')
-          .every((c) => c.refusal?.code == 'createdTodoObserverUnavailable'),
+          .every((c) => c.scenario != null),
       isTrue,
+    );
+    expect(
+      cases.where((c) => c.refusal?.code == 'provenanceScenarioPending'),
+      isEmpty,
+    );
+    expect(
+      cases
+          .where((c) => c.operation == 'upload_attachment' && c.refusal != null)
+          .map((c) => c.refusal!.code),
+      containsAll([
+        'provenanceCompositeWriteUnavailable',
+        'provenanceConversationStepUnavailable',
+        'provenanceHistoryRestoreUnavailable',
+        'provenanceHiddenSpanWriteUnavailable',
+      ]),
     );
     expect(
       cases
@@ -260,12 +409,7 @@ void main() {
         expect(row['observerRequests'], greaterThan(0));
         expect(row['outcome'], noOp ? 'noChange' : 'succeeded');
         expect(row['coreOutcome'], 'succeeded');
-        if (c.scenario!.preRead != null &&
-            const {
-              'updateIssue',
-              'updateMergeRequest',
-              'moveBoardCard',
-            }.contains(c.operation)) {
+        if (c.scenario!.preRead?.call(_fixtureIdentity).isNotEmpty == true) {
           expect(row['snapshotVerified'], isTrue);
         }
         if (noOp) {
@@ -288,10 +432,12 @@ void main() {
         expect(row['mutationCount'], 1);
         expect(row['operation'], c.operation);
         expect(row['variant'], c.variant);
-        expect(
-          row['tier'],
-          c.tier,
-        ); // Declared tier, not a product-tier receipt.
+        expect(row['tier'], c.tier);
+        expect(row['declaredTier'], row['tier']);
+        expect(row['decisionProjection'], 'observed');
+        expect(row['decision'], 'requireApproval');
+        expect(row['confirmationReasons'], isA<List<Object?>>());
+        expect(row.containsKey('decisionUnavailable'), isFalse);
         expect(row['fixtureDigest'], matches(r'^[0-9a-f]{64}$'));
         expect(row['payloadDigest'], matches(r'^[0-9a-f]{64}$'));
         expect(row['confirmation'], 'explicitSyntheticTestHook');
@@ -523,6 +669,9 @@ void main() {
       }
       expect(observed, executable.map((c) => c.id).toSet());
     },
+    // A rolling-hour window of 60 encrypted journal writes: seconds on an idle
+    // host, more than a minute on a loaded runner.
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 
   for (final variant in ['issue', 'issue-note', 'mr', 'mr-note']) {
@@ -865,6 +1014,178 @@ void main() {
     }
   }
 
+  final childCases = executable.where(
+    (c) => const {
+      'renameBoard',
+      'setBoardSystemListHidden',
+      'updateMilestone',
+      'setMilestoneState',
+      'updateLabel',
+      'updateDraftNote',
+    }.contains(c.operation),
+  );
+  for (final variant in ['name', 'confirmation-edited-text']) {
+    for (final flag in ['hide_backlog_list', 'hide_closed_list']) {
+      test('REST renameBoard $variant snapshot rejects $flag drift', () async {
+        final source = _case('renameBoard', variant);
+        final server = Mr7SyntheticGitLab();
+        configureMr7RestFixtures(server, scenario: source);
+        _driftAfterWrite(
+          server,
+          source,
+          flag,
+          true,
+          readPath: 'projects/909/boards/801',
+        );
+        final receipt = await _run([source], server: server);
+        final row = _rows(receipt).single;
+        expect(row['coreOutcome'], 'succeeded');
+        expect(row['status'], 'NOT_VERIFIED');
+        expect(row['readback'], 'NOT_VERIFIED');
+        expect(server.scenarioWrites, 1);
+        expect(server.cleanupWrites, 0);
+        expect(receipt['quarantined'], isTrue);
+      });
+    }
+  }
+  for (final c in childCases) {
+    final source = c.scenario!;
+    final spec = source.preRead!(_fixtureIdentity).single;
+    final changed = _updateFields(
+      source,
+    ).map((f) => f == 'state_event' ? 'state' : f).toSet();
+    final omitted = spec.fields.difference(changed);
+    final identityField = switch (spec.kind) {
+      Mr7SnapshotKind.board => 'project',
+      Mr7SnapshotKind.label => 'is_project_label',
+      Mr7SnapshotKind.draftNote => 'merge_request_id',
+      _ => 'project_id',
+    };
+    for (final field in {...omitted, identityField}) {
+      test('REST ${c.id} preserves omitted $field or quarantines', () async {
+        final server = Mr7SyntheticGitLab();
+        configureMr7RestFixtures(server, scenario: source);
+        final drift = switch (field) {
+          'hide_backlog_list' || 'hide_closed_list' => true,
+          'position' => null,
+          'commit_id' => '2' * 40,
+          'author_id' => 8,
+          'merge_request_id' => 2002,
+          'is_project_label' => false,
+          'project' => {'id': mr7ProtectedProjectId},
+          'project_id' => mr7ProtectedProjectId,
+          'state' => 'closed',
+          'start_date' || 'due_date' => '2027-01-15',
+          'color' => '#aabbcc',
+          _ => 'Unrequested synthetic drift.',
+        };
+        _driftAfterWrite(server, source, field, drift);
+        final receipt = await _run([
+          source,
+          _case('setStar', 'star'),
+        ], server: server);
+        final rows = _rows(receipt);
+        expect(
+          rows.first['coreOutcome'],
+          'succeeded',
+          reason: jsonEncode(rows),
+        );
+        expect(rows.first['readback'], 'NOT_VERIFIED');
+        expect(rows.first['status'], 'NOT_VERIFIED');
+        expect(rows.last['status'], 'NOT_RUN');
+        expect(rows.last['reason'], 'sessionStopped');
+        expect(rows.last['mutationCount'], 0);
+        expect(server.scenarioWrites, 1);
+        expect(server.cleanupWrites, 0);
+        expect(receipt['quarantined'], isTrue);
+      });
+    }
+  }
+
+  for (final side in ['issue', 'mr']) {
+    for (final fault in [
+      'reused',
+      'missing',
+      'incomplete',
+      'actor',
+      'author',
+      'parent',
+      'iid',
+      'type',
+      'done',
+    ]) {
+      test('REST createTodo $side rejects $fault observation', () async {
+        final source = _case('createTodo', side);
+        final server = Mr7SyntheticGitLab();
+        configureMr7RestFixtures(server, scenario: source);
+        final resource = side == 'issue' ? 'issues' : 'merge_requests';
+        final writePath = 'POST projects/909/$resource/1/todo';
+        final write = server.routes[writePath]!;
+        var sent = false;
+        server.routes[writePath] = (request) async {
+          final result = await write(request);
+          sent = true;
+          return result;
+        };
+        final todo = <String, Object?>{
+          'id': 10000,
+          'project_id': 909,
+          'actor_id': fault == 'actor' ? 8 : 7,
+          'author': {'id': fault == 'author' ? 8 : 7},
+          'target_type': fault == 'type'
+              ? side == 'issue'
+                    ? 'MergeRequest'
+                    : 'Issue'
+              : side == 'issue'
+              ? 'Issue'
+              : 'MergeRequest',
+          'target_id': fault == 'parent'
+              ? 999
+              : side == 'issue'
+              ? 1001
+              : 2001,
+          'target_iid': fault == 'iid' ? 2 : 1,
+          'state': fault == 'done' ? 'done' : 'pending',
+        };
+        server.routes['GET projects/909/todos/mr7-observation'] = (_) {
+          final rows = [
+            if (fault == 'reused' || sent && fault != 'missing') todo,
+          ];
+          return mr7Json(
+            rows,
+            headers: {
+              'x-page': ['1'],
+              'x-next-page': [''],
+              'x-total': [
+                sent && fault == 'incomplete' ? '2' : '${rows.length}',
+              ],
+              'x-total-pages': ['1'],
+              'x-per-page': ['100'],
+            },
+          );
+        };
+        final receipt = await _run([
+          source,
+          _case('setStar', 'star'),
+        ], server: server);
+        final rows = _rows(receipt);
+        expect(
+          rows.first['coreOutcome'],
+          'succeeded',
+          reason: jsonEncode(rows),
+        );
+        expect(rows.first['status'], 'NOT_VERIFIED');
+        expect(rows.first['mutationCount'], 1);
+        expect(rows.last['status'], 'NOT_RUN');
+        expect(rows.last['reason'], 'sessionStopped');
+        expect(rows.last['mutationCount'], 0);
+        expect(receipt['quarantined'], isTrue);
+        expect(server.scenarioWrites, 1);
+        expect(server.cleanupWrites, 0);
+      });
+    }
+  }
+
   test(
     'REST milestone update preserves omitted state or stops and quarantines',
     () async {
@@ -1140,6 +1461,140 @@ void main() {
     expect(server.scenarioWrites, 0);
   });
 
+  for (final sharedConversation in [true, false]) {
+    test(
+      sharedConversation
+          ? 'REST provenance scripted same-field roundtrip preserves the upload'
+          : 'REST provenance crossnonce refuses a token from another conversation',
+      () async {
+        final server = Mr7SyntheticGitLab();
+        _provenanceFixture(server, 'Original ![shot]($_provenanceLink)');
+        final requests = <Map<String, Object?>>[];
+        final receipt = await _run(
+          [
+            _provenanceCase(
+              'provenance-first',
+              description: 'First ![shot]([[upload:u-1]])',
+              readFirst: true,
+              requests: requests,
+            ),
+            _provenanceCase(
+              'provenance-second',
+              description: 'Second ![shot]([[upload:u-1]])',
+              readFirst: false,
+              requests: requests,
+            ),
+          ],
+          server: server,
+          conversationId: sharedConversation ? 'rest-provenance-shared' : null,
+        );
+        final rows = _rows(receipt);
+        expect(rows.first['status'], 'PASS', reason: jsonEncode(receipt));
+        expect(rows.first['readback'], 'PASS');
+        expect(rows.first['snapshotVerified'], isTrue);
+        expect(
+          rows.first['confirmationReasons'],
+          isNot(contains('wholeFieldDropsHiddenSpans')),
+        );
+        expect(requests.length, greaterThanOrEqualTo(4));
+        expect(jsonEncode(requests[1]), contains('[[upload:u-1]]'));
+        expect(jsonEncode(requests), isNot(contains(_provenanceSecret)));
+        expect(jsonEncode(receipt), isNot(contains(_provenanceSecret)));
+        if (sharedConversation) {
+          expect(rows.last['status'], 'PASS', reason: jsonEncode(receipt));
+          expect(rows.last['readback'], 'PASS');
+          expect(rows.last['snapshotVerified'], isTrue);
+          expect(server.scenarioWrites, 2);
+        } else {
+          expect(rows.last['coreOutcome'], 'notExecuted');
+          expect(rows.last['reason'], text.AiTextBlockCode.rereadField);
+          expect(rows.last['status'], 'FAIL');
+          expect(rows.last['mutationCount'], 0);
+          expect(server.scenarioWrites, 1);
+        }
+      },
+    );
+  }
+
+  test('REST restored-display token requires a fresh field read', () {
+    final instance = GitLabInstance.parse('https://gitlab.invalid/install');
+    final field = text.AiFieldProvenance.gitLab(
+      instance: instance,
+      projectId: 909,
+      projectPath: _fixtureIdentity.path,
+      resource: 'issues',
+      iid: 1,
+    );
+    final original = text.UploadPlaceholderTable(
+      instance: instance,
+      accountKey: '${instance.key}#7',
+      conversationId: 'before-history-restore',
+    );
+    final display = original.redactOutgoing(
+      'Original ![shot]($_provenanceLink)',
+      field: field,
+    );
+    expect(display, 'Original ![shot]([[upload:u-1]])');
+    final restored = text.UploadPlaceholderTable(
+      instance: instance,
+      accountKey: '${instance.key}#7',
+      conversationId: 'after-history-restore',
+    );
+    final refused = restored.restoreIntoSameField(display, field);
+    expect(refused.policyBlocked, isTrue);
+    expect(refused.blockedReasonCode, text.AiTextBlockCode.rereadField);
+    expect(restored.length, 0);
+    restored.redactOutgoing('Original ![shot]($_provenanceLink)', field: field);
+    final reread = restored.restoreIntoSameField(display, field);
+    expect(reread.policyBlocked, isFalse);
+    expect(reread.finalText, 'Original ![shot]($_provenanceLink)');
+  });
+
+  for (final accepted in [true, false]) {
+    test(
+      'REST hiddenSpan drop requires approval in bypass: $accepted',
+      () async {
+        final server = Mr7SyntheticGitLab();
+        _provenanceFixture(server, 'Original ![shot]($_provenanceLink)');
+        final requests = <Map<String, Object?>>[];
+        var confirmations = 0;
+        final receipt = await _run(
+          [
+            _provenanceCase(
+              'provenance-hidden-span',
+              description: 'Updated without the upload link.',
+              readFirst: true,
+              requests: requests,
+            ),
+          ],
+          server: server,
+          level: AiAutonomyLevel.bypass,
+          confirm: (_) async {
+            confirmations++;
+            return accepted;
+          },
+        );
+        final row = _rows(receipt).single;
+        expect(row['decisionProjection'], 'observed');
+        expect(row['declaredTier'], row['tier']);
+        expect(row['tier'], 'T2');
+        expect(row['decision'], 'requireApproval');
+        expect(
+          row['confirmationReasons'],
+          contains('wholeFieldDropsHiddenSpans'),
+        );
+        expect(confirmations, greaterThan(0));
+        expect(row['status'], accepted ? 'PASS' : 'NOT_RUN');
+        expect(row['readback'], accepted ? 'PASS' : 'NOT_RUN');
+        expect(row['mutationCount'], accepted ? 1 : 0);
+        expect(server.scenarioWrites, accepted ? 1 : 0);
+        expect(server.cleanupWrites, 1);
+        expect(jsonEncode(requests), isNot(contains(_provenanceSecret)));
+        expect(jsonEncode(receipt), isNot(contains(_provenanceSecret)));
+      },
+    );
+  }
+
   test(
     'REST upload attachment content in provider turn is structurally refused',
     () async {
@@ -1265,9 +1720,10 @@ void main() {
   test(
     'REST shared journal preserves conversation cap and account window across restart',
     () async {
-      final scratch = await Directory.systemTemp.createTemp(
-        'mr7-rest-journal-',
-      );
+      final scratchRoot = await Directory(
+        '.dart_tool/mr7-rest',
+      ).create(recursive: true);
+      final scratch = await scratchRoot.createTemp('journal-');
       addTearDown(() => scratch.delete(recursive: true));
       final keys = MemoryAiJournalKeyStore();
       var clock = DateTime.utc(2026, 10, 29, 12);
