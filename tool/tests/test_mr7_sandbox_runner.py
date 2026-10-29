@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import shutil
 import signal
 import sys
 import time
@@ -33,6 +34,25 @@ def receipt(policy='production', **changes):
     result.update(changes)
     return result
 
+
+
+def _process_state(pid):
+    """Process state letter, or '' once the process is gone; no `ps` needed on CI."""
+    stat = Path(f'/proc/{pid}/stat')
+    if stat.parent.parent.is_dir() and Path('/proc/self').exists():
+        try:
+            return stat.read_text().rsplit(')', 1)[1].split()[0]
+        except (FileNotFoundError, ProcessLookupError, IndexError):
+            return ''
+    if shutil.which('ps'):
+        return subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              text=True, check=False).stdout.strip()
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return ''
+    return '?'
 
 class SandboxWrapperTest(unittest.TestCase):
     def setUp(self):
@@ -311,9 +331,7 @@ class SandboxWrapperTest(unittest.TestCase):
             self.assertEqual(json.loads(output.read_text())['reason'], 'interrupted')
             deadline = time.monotonic() + 3
             while time.monotonic() < deadline:
-                state = subprocess.run(['ps', '-o', 'stat=', '-p', str(descendant)],
-                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                       text=True, check=False).stdout.strip()
+                state = _process_state(descendant)
                 if not state or state.startswith('Z'):
                     break
                 time.sleep(0.02)
