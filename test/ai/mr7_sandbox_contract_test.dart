@@ -453,6 +453,84 @@ void main() {
     },
   );
 
+  for (final resource in ['issues', 'merge_requests']) {
+    final issue = resource == 'issues';
+    final iid = issue ? 3 : 4;
+    final type = issue ? 'Issue' : 'MergeRequest';
+    for (final invalid in <String, Object?>{
+      'missing': null,
+      'mismatched': iid + 1,
+      'zero': 0,
+      'negative': -1,
+      'double': iid.toDouble(),
+      'string': '$iid',
+    }.entries) {
+      test(
+        'Graph $type binding rejects ${invalid.key} iid and stops later scenarios',
+        () async {
+          final server = Mr7SyntheticGitLab();
+          final path = 'projects/909/$resource/$iid';
+          final gid = 'gid://gitlab/$type/${issue ? 300 : 400}';
+          server.routes['GET $path'] = (_) => mr7Json({
+            'id': issue ? 300 : 400,
+            'project_id': 909,
+            if (invalid.value != null) 'iid': invalid.value,
+          });
+          final session = _session(server, eventDelay: () async {});
+          final star = _star('bind-graph-resource');
+          Future<void>? binding;
+          final receipt = await sandbox.runMr7Sandbox(
+            policy: Mr7Policy.candidate,
+            releaseSha: _sha,
+            session: session,
+            scenarios: [
+              sandbox.Mr7Scenario(
+                id: star.id,
+                suite: star.suite,
+                operation: star.operation,
+                variant: invalid.key,
+                tier: star.tier,
+                call: star.call,
+                paths: star.paths,
+                observe: (observer, identity) async {
+                  binding = session.bindGraphResource(gid, path: path);
+                  await binding;
+                  return (await observer.read(
+                        'projects/${identity.projectId}',
+                      ))['starred'] ==
+                      true;
+                },
+              ),
+              _star('after-rejected-binding'),
+            ],
+            confirm: (_) async => true,
+          );
+          expect(binding, isNotNull, reason: jsonEncode(receipt));
+          await expectLater(
+            binding!,
+            throwsA(
+              isA<Mr7Refused>().having(
+                (e) => e.code,
+                'code',
+                'foreignResource',
+              ),
+            ),
+          );
+          final rows = _rows(receipt);
+          expect(rows.first['mutationCount'], 1);
+          expect(rows.first['status'], 'NOT_VERIFIED');
+          expect(rows.first['readback'], 'NOT_VERIFIED');
+          expect(rows.last['status'], 'NOT_RUN');
+          expect(rows.last['mutationCount'], 0);
+          expect(session.stopReason, 'foreignResource');
+          expect(receipt['quarantined'], isTrue);
+          expect(server.scenarioWrites, 1);
+          expect(server.cleanupWrites, 0);
+        },
+      );
+    }
+  }
+
   test(
     'Graph deletion trusts dispatch binding instead of returned iid and ID',
     () async {
@@ -2783,7 +2861,7 @@ void main() {
       var sends = 0;
       server.routes['GET projects/909/issues/44'] = (_) {
         reads++;
-        return mr7Json({'id': 44, 'project_id': owner});
+        return mr7Json({'id': 44, 'iid': 44, 'project_id': owner});
       };
       server.routes['POST /install/api/graphql'] = (_) {
         sends++;
@@ -2822,7 +2900,7 @@ void main() {
       final session = _session(server);
       await session.initialize();
       server.routes['GET projects/909/issues/44'] = (_) =>
-          mr7Json({'id': 44, 'project_id': 909});
+          mr7Json({'id': 44, 'iid': 44, 'project_id': 909});
       await session.bindGraphResource(
         'gid://gitlab/Issue/44',
         path: 'projects/909/issues/44',

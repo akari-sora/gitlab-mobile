@@ -2251,6 +2251,13 @@ final class Mr7SandboxSession {
       stop('foreignResource');
       throw const Mr7Refused('foreignResource');
     }
+    if (match[1] == 'Issue' || match[1] == 'MergeRequest') {
+      final iid = row['iid'];
+      if (iid is! int || iid <= 0 || iid != int.parse(path.split('/').last)) {
+        stop('foreignResource');
+        throw const Mr7Refused('foreignResource');
+      }
+    }
     if (match[1] == 'Note') {
       final segments = path.split('/');
       final parent = await read(segments.take(4).join('/'));
