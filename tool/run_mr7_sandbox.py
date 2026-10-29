@@ -32,12 +32,23 @@ CLOSED_VARIANT_CAUSES = frozenset({
     'releasePolicy', 'fixtureUnavailable', 'unsupportedServer',
     'ownershipUnproven', 'observerUnavailable', 'scopeExcluded',
 })
+WRITE_TIERS = frozenset({'T1', 'T2', 'T3', 'T4', 'hardLine'})
+GATE_DECISIONS = frozenset({'deny', 'requireApproval', 'execute'})
+FIXED_CONFIRM_REASONS = frozenset({
+    'markAllTodosDone', 'foreignDraftsInPublish', 'massMention',
+    'externalMediaInRenderedMarkdown', 'foreignClosingOrCrossProject',
+    'duplicateOfSettledWrite', 'duplicateUpload', 'wholeFieldDropsHiddenSpans',
+    'headMovedSincePreview', 'confirmMarkAfterManualRelease',
+    'journalResetWindow', 'confidentialOrVisibilityMix', 'targetUnbound',
+    'targetNamedNotMarked', 'intentNotUnique',
+})
 SOURCE_FILES = (
     'tool/run_mr7_sandbox.py', 'tool/mr7_sandbox.dart',
     'tool/mr7/sandbox_contract.dart', 'tool/tests/test_mr7_sandbox_runner.py',
     'test/ai/mr7_sandbox_contract_test.dart',
     'test/ai/mr7_sandbox_wave2_contract_test.dart',
-    'test/ai/mr7_sandbox_wave2_runner_test.dart', 'docs/MR7_SANDBOX.md',
+    'test/ai/mr7_sandbox_wave2_runner_test.dart',
+    'test/ai/mr7_sandbox_wave3_test.dart', 'docs/MR7_SANDBOX.md',
     'pubspec.lock',
 )
 DEPENDENCY_FILES = (
@@ -159,11 +170,45 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
                       type(row['provider'].get('calls')) is not int or
                       row['provider']['calls'] != 0))):
                 return False
+        projection_fields = {'declaredTier', 'decisionProjection', 'decision',
+                             'confirmationReasons', 'decisionUnavailable'}
+        if projection_fields.intersection(row):
+            declared = row.get('declaredTier')
+            observed = row.get('tier')
+            decision = row.get('decision')
+            reasons = row.get('confirmationReasons')
+            projection = row.get('decisionProjection')
+            if (not {'declaredTier', 'tier', 'decision', 'confirmationReasons',
+                     'decisionProjection'}.issubset(row) or
+                    not isinstance(declared, str) or not declared.strip() or
+                    not isinstance(reasons, list) or
+                    any(not isinstance(reason, str) or reason not in FIXED_CONFIRM_REASONS
+                        for reason in reasons) or len(reasons) != len(set(reasons))):
+                return False
+            if projection == 'observed':
+                if (not isinstance(observed, str) or observed not in WRITE_TIERS or
+                        not isinstance(decision, str) or decision not in GATE_DECISIONS or
+                        'decisionUnavailable' in row):
+                    return False
+                if (declared != observed and
+                        (row.get('status') != 'FAIL' or row.get('reason') != 'tierMismatch' or
+                         type(row.get('mutationCount')) is not int or row['mutationCount'] != 0)):
+                    return False
+                if declared == observed and row.get('reason') == 'tierMismatch':
+                    return False
+            elif projection == 'unavailable':
+                if (observed is not None or decision is not None or reasons or
+                        row.get('decisionUnavailable') != 'proposalUnavailable' or
+                        type(row.get('mutationCount')) is not int or row['mutationCount'] != 0 or
+                        row.get('coreOutcome') == 'succeeded'):
+                    return False
+            else:
+                return False
         count = row.get('mutationCount')
         zero_dispatch = type(count) is int and count == 0
         no_op_claim = (
             ((row.get('outcome') == 'noChange' or row.get('coreNoChange') is True)
-             and not zero_dispatch) or
+             and (not zero_dispatch or row.get('status') == 'PASS')) or
             row.get('responseStatus') in (304, 409) or 'parentStateVerified' in row
         )
         if (no_op_claim and (row.get('status') == 'PASS' or receipt['status'] == 'PASS') and
@@ -171,16 +216,21 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
             return False
         if row.get('classification') == 'verifiedNoOp':
             status = row.get('responseStatus')
-            if (type(row.get('mutationCount')) is not int or row['mutationCount'] != 1 or
+            if (type(row.get('mutationCount')) is not int or row['mutationCount'] not in (0, 1) or
                     type(row.get('observerRequests')) is not int or row['observerRequests'] < 1 or
                     row.get('parentStateVerified') is not True or row.get('readback') != 'PASS' or
                     row.get('status') != 'PASS' or row.get('outcome') != 'noChange' or
-                    row.get('coreOutcome') != 'succeeded' or type(status) is not int or
-                    type(row.get('coreNoChange')) is not bool or
-                    status not in (304, 409) or
-                    (status == 304 and row.get('operation') not in ('setStar', 'setSubscribed')) or
-                    (status == 409 and (row.get('coreNoChange') is not True or
-                                        row.get('operation') != 'cancelAutoMerge'))):
+                    row.get('coreOutcome') != 'succeeded' or
+                    type(row.get('coreNoChange')) is not bool):
+                return False
+            if zero_dispatch:
+                if (row.get('coreNoChange') is not True or 'responseStatus' in row or
+                        row.get('operation') not in ('setStar', 'setSubscribed', 'cancelAutoMerge')):
+                    return False
+            elif (type(status) is not int or status not in (304, 409) or
+                  (status == 304 and row.get('operation') not in ('setStar', 'setSubscribed')) or
+                  (status == 409 and (row.get('coreNoChange') is not True or
+                                      row.get('operation') != 'cancelAutoMerge'))):
                 return False
     # This implementation has no live transport; no synthetic receipt can be final.
     return not final

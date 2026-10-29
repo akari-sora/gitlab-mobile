@@ -334,6 +334,26 @@ final class Mr7SyntheticGitLab {
       }
     }
     if (routes[key] case final route?) return await route(request);
+    if (key == 'GET projects/$projectId/todos/mr7-observation') {
+      final page = int.parse('${request.queryParameters['page'] ?? 1}');
+      final rows = [
+        for (final todo in _todos.values)
+          {
+            'id': todo.id,
+            'actor_id': todo.actorId,
+            'author': {'id': todo.actorId},
+            'project_id': todo.projectId,
+            'target_type': todo.mergeRequest ? 'MergeRequest' : 'Issue',
+            'target_id': todo.parentId,
+            'target_iid': todo.iid,
+            'state': 'pending',
+          },
+      ];
+      return mr7Json(
+        rows.skip((page - 1) * 100).take(100).toList(),
+        headers: _pageHeaders(page, 100, rows.length),
+      );
+    }
     if (key == 'GET user') {
       return mr7Json({'id': userId, 'username': namespace});
     }
@@ -811,19 +831,90 @@ final class Mr7MutationPermit {
   Object? _sentBody;
   Map<String, String> _graphResourcesAtSend = const {};
   String? _rebaseBeforeSha;
+  int? _todoParentId;
+  Set<int>? _todoIdsBefore;
+  final Map<String, int> _preparedParentIds = {};
 }
+
+enum Mr7SnapshotKind { parent, board, milestone, label, draftNote }
 
 /// Fields are represented by digests in receipts; field presence is bound too.
 final class Mr7SnapshotSpec {
   Mr7SnapshotSpec({
-    required this.path,
+    required String path,
     required Set<String> fields,
     Set<String> unchangedFields = const {},
+  }) : this._(
+         path: path,
+         fields: fields,
+         unchangedFields: unchangedFields,
+         kind: Mr7SnapshotKind.parent,
+       );
+  Mr7SnapshotSpec.board({
+    required String path,
+    Set<String> unchangedFields = const {},
+  }) : this._(
+         path: path,
+         kind: Mr7SnapshotKind.board,
+         fields: {'name', 'hide_backlog_list', 'hide_closed_list'},
+         unchangedFields: unchangedFields,
+       );
+  Mr7SnapshotSpec.milestone({
+    required String path,
+    Set<String> unchangedFields = const {},
+  }) : this._(
+         path: path,
+         kind: Mr7SnapshotKind.milestone,
+         fields: {'title', 'description', 'start_date', 'due_date', 'state'},
+         unchangedFields: unchangedFields,
+       );
+  Mr7SnapshotSpec.label({
+    required String path,
+    Set<String> unchangedFields = const {},
+  }) : this._(
+         path: path,
+         kind: Mr7SnapshotKind.label,
+         fields: {'name', 'color', 'description'},
+         unchangedFields: unchangedFields,
+       );
+  Mr7SnapshotSpec.draftNote({
+    required String path,
+    Set<String> unchangedFields = const {},
+  }) : this._(
+         path: path,
+         kind: Mr7SnapshotKind.draftNote,
+         fields: {'note', 'body', 'position', 'commit_id', 'author'},
+         unchangedFields: unchangedFields,
+       );
+  Mr7SnapshotSpec._({
+    required this.path,
+    required Set<String> fields,
+    required Set<String> unchangedFields,
+    required this.kind,
   }) : fields = Set.unmodifiable(fields),
        unchangedFields = Set.unmodifiable(unchangedFields);
   final String path;
   final Set<String> fields;
   final Set<String> unchangedFields;
+  final Mr7SnapshotKind kind;
+
+  bool _allowsPath(String root) => switch (kind) {
+    Mr7SnapshotKind.parent =>
+      path == root ||
+          RegExp('^$root/(issues|merge_requests)/[1-9][0-9]*\$').hasMatch(path),
+    Mr7SnapshotKind.board => RegExp(
+      '^$root/boards/[1-9][0-9]*\$',
+    ).hasMatch(path),
+    Mr7SnapshotKind.milestone => RegExp(
+      '^$root/milestones/[1-9][0-9]*\$',
+    ).hasMatch(path),
+    Mr7SnapshotKind.label => RegExp(
+      '^$root/labels/[1-9][0-9]*\$',
+    ).hasMatch(path),
+    Mr7SnapshotKind.draftNote => RegExp(
+      '^$root/merge_requests/[1-9][0-9]*/draft_notes/[1-9][0-9]*\$',
+    ).hasMatch(path),
+  };
 }
 
 final class _Mr7SnapshotRow {
@@ -832,11 +923,15 @@ final class _Mr7SnapshotRow {
     required this.id,
     required this.iid,
     required this.digests,
+    required this.identityDigests,
+    this.parentId,
   });
   final Mr7SnapshotSpec spec;
   final int id;
   final int? iid;
   final Map<String, String> digests;
+  final Map<String, String> identityDigests;
+  final int? parentId;
 }
 
 final class Mr7PreReadSnapshot {
@@ -851,10 +946,15 @@ final class Mr7PreReadSnapshot {
       for (final row in _rows)
         {
           'path': row.spec.path,
+          'kind': row.spec.kind.name,
           'id': row.id,
           if (row.iid != null) 'iid': row.iid,
+          if (row.parentId != null) 'parentId': row.parentId,
+          'identityDigests': row.identityDigests,
           'fieldDigests': row.digests,
           'unchangedFields': row.spec.unchangedFields.toList()..sort(),
+          if (row.spec.kind != Mr7SnapshotKind.parent)
+            'preserveOmittedFields': true,
         },
     ],
   };
@@ -862,6 +962,41 @@ final class Mr7PreReadSnapshot {
 
 String _snapshotFieldDigest(Map<String, Object?> row, String field) =>
     mr7Digest({'present': row.containsKey(field), 'value': row[field]});
+
+Set<String> _snapshotPreservedFields(_Mr7SnapshotRow saved, Object? sentBody) {
+  if (saved.spec.kind == Mr7SnapshotKind.parent) {
+    return saved.spec.unchangedFields;
+  }
+  if (sentBody is! Map) throw const Mr7Refused('snapshotTarget');
+  final changed = sentBody.keys.toSet();
+  if (saved.spec.kind == Mr7SnapshotKind.milestone &&
+      changed.contains('state_event')) {
+    changed.add('state');
+  }
+  if (saved.spec.kind == Mr7SnapshotKind.draftNote &&
+      changed.contains('note')) {
+    changed.add('body');
+  }
+  return {
+    ...saved.spec.unchangedFields,
+    ...saved.spec.fields.where((field) => !changed.contains(field)),
+  };
+}
+
+bool _snapshotIdentityMatches(
+  _Mr7SnapshotRow saved,
+  Map<String, Object?> row,
+  Mr7Identity identity,
+) =>
+    row['id'] == saved.id &&
+    (saved.spec.path == 'projects/${identity.projectId}' ||
+        row['project_id'] == identity.projectId) &&
+    saved.identityDigests.entries.every(
+      (e) => _snapshotFieldDigest(row, e.key) == e.value,
+    ) &&
+    (saved.spec.kind != Mr7SnapshotKind.draftNote ||
+        row['author'] is Map &&
+            (row['author'] as Map)['id'] == identity.userId);
 
 /// Identifiers select subsequent reads; they are never evidence of effects.
 final class Mr7MutationResult {
@@ -1125,6 +1260,60 @@ final class Mr7TodoObservation extends Mr7Observation<bool> {
   Future<bool> _read(Mr7Readback observer) => observer._todo(this);
 }
 
+/// Creation is witnessed by a complete synthetic project list, never a global
+/// account list or the mutation acknowledgement alone.
+final class Mr7CreatedTodoObservation extends Mr7Observation<bool> {
+  const Mr7CreatedTodoObservation({required this.parent, required this.id});
+  final Mr7Parent parent;
+  final int id;
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._createdTodo(this);
+}
+
+Future<List<Map<String, Object?>>> _projectTodoList(
+  Dio reader,
+  String path,
+  Mr7Identity identity,
+) async {
+  final rows = <Map<String, Object?>>[];
+  final ids = <int>{};
+  final pagination = _PageSequence();
+  var page = 1;
+  while (true) {
+    final response = await reader.get<Object?>(
+      path,
+      queryParameters: {'page': page, 'per_page': 100},
+    );
+    final next = pagination.next(response, page);
+    if (jsonEncode(response.data).length > 2 * 1024 * 1024) {
+      throw const Mr7Refused('observerTodo');
+    }
+    for (final raw in response.data! as List) {
+      final id = raw is Map ? raw['id'] : null;
+      final author = raw is Map ? raw['author'] : null;
+      if (raw is! Map ||
+          id is! int ||
+          id <= 0 ||
+          !ids.add(id) ||
+          raw['project_id'] != identity.projectId ||
+          raw['actor_id'] != identity.userId ||
+          author is! Map ||
+          author['id'] != identity.userId ||
+          !const {'Issue', 'MergeRequest'}.contains(raw['target_type']) ||
+          raw['target_id'] is! int ||
+          (raw['target_id'] as int) <= 0 ||
+          raw['target_iid'] is! int ||
+          (raw['target_iid'] as int) <= 0 ||
+          !const {'pending', 'done'}.contains(raw['state'])) {
+        throw const Mr7Refused('observerTodo');
+      }
+      rows.add(Map.unmodifiable(Map<String, Object?>.from(raw)));
+    }
+    if (next == null) return List.unmodifiable(rows);
+    page = next;
+  }
+}
+
 Future<Map<String, Object?>> _uploadMetadata(
   RequestOptions options,
   Stream<Uint8List>? stream,
@@ -1221,11 +1410,71 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
   ) async {
     _checkUri(options, session.instance);
     if (options.method == 'GET' ||
+        options.method == 'HEAD' ||
         _sealedGraphRead(options, session.observerAdapter.graphReadDocuments)) {
       session.validateRead(options, allowStopped: false);
+      if (options.method == 'HEAD' &&
+          requestStream != null &&
+          await requestStream.any((chunk) => chunk.isNotEmpty)) {
+        session.stop('headBody');
+        throw const Mr7Refused('headBody');
+      }
       session.chargeRequest();
       final response = await session.server.respond(options);
       session.validateRead(options, allowStopped: false);
+      if (options.method == 'HEAD') {
+        if (await response.stream.any((chunk) => chunk.isNotEmpty)) {
+          session.stop('headBody');
+          throw const Mr7Refused('headBody');
+        }
+        session.validateRead(options, allowStopped: false);
+        return ResponseBody.fromBytes(
+          const [],
+          response.statusCode,
+          headers: response.headers,
+        );
+      }
+      final permit = session.permit;
+      final path = session._restSegments(options).join('/');
+      if (options.method == 'GET' &&
+          response.statusCode == 200 &&
+          permit != null &&
+          const {
+            'setSubscribed',
+            'cancelAutoMerge',
+          }.contains(permit.operation) &&
+          RegExp(
+            '^projects/${permit.resourceProjectId}/(issues|merge_requests)/[1-9][0-9]*\$',
+          ).hasMatch(path)) {
+        final bytes = <int>[];
+        await for (final chunk in response.stream) {
+          bytes.addAll(chunk);
+          if (bytes.length > 2 * 1024 * 1024) {
+            throw const Mr7Refused('noChangeTargetUnbound');
+          }
+        }
+        final row = jsonDecode(utf8.decode(bytes));
+        final id = row is Map ? row['id'] : null;
+        if (row is! Map ||
+            id is! int ||
+            id <= 0 ||
+            row['project_id'] != permit.resourceProjectId ||
+            row['iid'] != int.parse(path.split('/').last)) {
+          throw const Mr7Refused('noChangeTargetUnbound');
+        }
+        if (permit._preparedParentIds.containsKey(path) &&
+            permit._preparedParentIds[path] != id) {
+          session.stop('noChangeTargetDrift');
+          throw const Mr7Refused('noChangeTargetDrift');
+        }
+        permit._preparedParentIds[path] = id;
+        session.validateRead(options, allowStopped: false);
+        return ResponseBody.fromBytes(
+          bytes,
+          response.statusCode,
+          headers: response.headers,
+        );
+      }
       return response;
     }
     if (session.pendingMutations > 0 ||
@@ -1237,12 +1486,33 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
     bool dispatched = false;
     try {
       final preparedPermit = session.permit;
+      String? graphBodyDigest;
+      if (options.uri.path == '${session.instance.path}/api/graphql') {
+        try {
+          graphBodyDigest = mr7Digest(options.data);
+        } catch (_) {
+          session.stop('unsealedGraph');
+          throw const Mr7Refused('unsealedGraph');
+        }
+      }
       await session.beforeMutation(options);
       session.inFlight = true;
       final upload = preparedPermit?.operation == 'upload_attachment'
           ? await _uploadMetadata(options, requestStream)
           : null;
       session._open();
+      if (graphBodyDigest != null) {
+        var unchanged = false;
+        try {
+          unchanged = mr7Digest(options.data) == graphBodyDigest;
+        } catch (_) {
+          // A changed non-JSON payload cannot retain the original seal.
+        }
+        if (!unchanged) {
+          session.stop('unsealedGraph');
+          throw const Mr7Refused('unsealedGraph');
+        }
+      }
       if (!session._setupAuthorized && !session._cleanupAuthorized) {
         final permit = session.permit;
         if (permit == null ||
@@ -1356,6 +1626,7 @@ final class Mr7Readback {
   final Set<String> paths;
   final Map<String, Set<String>> graphQueries;
   int verifiedRequests = 0;
+  Mr7ParentStateObservation? _noDispatchObservation;
 
   Mr7MutationResult get result =>
       _permit.result ?? (throw const Mr7Refused('observerBeforeResponse'));
@@ -1367,7 +1638,9 @@ final class Mr7Readback {
         _session.inFlight ||
         _session.pendingMutations != 0 ||
         !_session.boundaryValid() ||
-        (result.projectId != null && result.projectId != _identity.projectId)) {
+        (_permit.result == null && _noDispatchObservation == null) ||
+        (_permit.result?.projectId != null &&
+            _permit.result!.projectId != _identity.projectId)) {
       throw const Mr7Refused('readbackTarget');
     }
   }
@@ -1430,6 +1703,41 @@ final class Mr7Readback {
         todo['snoozed_until'] == spec.snoozedUntil;
   }
 
+  Future<bool> _createdTodo(Mr7CreatedTodoObservation spec) async {
+    if (_permit.operation != 'createTodo' ||
+        spec.id <= 0 ||
+        result.id != spec.id ||
+        _permit._todoIdsBefore == null ||
+        _permit._todoIdsBefore!.contains(spec.id) ||
+        !const {
+          Mr7ParentKind.issue,
+          Mr7ParentKind.mergeRequest,
+        }.contains(spec.parent.kind)) {
+      throw const Mr7Refused('observerTodo');
+    }
+    final parent = await _parent(spec.parent);
+    _sentTo('${parent.path}/todo');
+    if (parent.row['id'] != _permit._todoParentId) {
+      throw const Mr7Refused('observerTodo');
+    }
+    final path = '$_root/todos/mr7-observation';
+    _path(path);
+    final rows = await _projectTodoList(_session.observer, path, _identity);
+    final created = rows.where((row) => row['id'] == spec.id).toList();
+    final after = await _parent(spec.parent);
+    if (after.row['id'] != _permit._todoParentId || created.length != 1) {
+      throw const Mr7Refused('observerTodo');
+    }
+    final todo = created.single;
+    return todo['target_type'] ==
+            (spec.parent.kind == Mr7ParentKind.issue
+                ? 'Issue'
+                : 'MergeRequest') &&
+        todo['target_id'] == _permit._todoParentId &&
+        todo['target_iid'] == spec.parent.iid &&
+        todo['state'] == 'pending';
+  }
+
   void _sentTo(String path) {
     if (_permit.sent != 1 || _permit._sentPath != path) {
       throw const Mr7Refused('observerMutationTarget');
@@ -1444,6 +1752,30 @@ final class Mr7Readback {
     _scope();
     verifiedRequests += _session.observerAdapter.requests.length - before;
     return value;
+  }
+
+  /// A core no-op has no HTTP response. Only this sealed state vocabulary can
+  /// observe it, bound to the requested arguments and the prepared route.
+  Future<bool> observeNoChange(
+    Mr7ParentStateObservation observation, {
+    required Object? arguments,
+  }) async {
+    if (_permit.sent != 0 ||
+        _permit.result != null ||
+        _noDispatchObservation != null ||
+        !observation.matchesCall(
+          _permit.operation,
+          arguments,
+          _identity.projectId,
+        )) {
+      throw const Mr7Refused('noChangeUnverified');
+    }
+    _noDispatchObservation = observation;
+    try {
+      return await observe(observation);
+    } finally {
+      _noDispatchObservation = null;
+    }
   }
 
   /// Re-read the original resource and preserved fields through the observer.
@@ -1473,10 +1805,17 @@ final class Mr7Readback {
         throw const Mr7Refused('snapshotTarget');
       }
       final current = await _map(path);
-      if (current['id'] != original.id ||
-          (original.iid != null && current['iid'] != original.iid) ||
-          (path != _root && current['project_id'] != _identity.projectId) ||
-          original.spec.unchangedFields.any(
+      if (original.parentId != null) {
+        final parentPath = path.split('/').take(4).join('/');
+        final parent = await _map(parentPath);
+        if (parent['id'] != original.parentId ||
+            parent['iid'] != int.parse(parentPath.split('/').last) ||
+            parent['project_id'] != _identity.projectId) {
+          return false;
+        }
+      }
+      if (!_snapshotIdentityMatches(original, current, _identity) ||
+          _snapshotPreservedFields(original, _permit._sentBody).any(
             (field) =>
                 _snapshotFieldDigest(current, field) != original.digests[field],
           )) {
@@ -2008,8 +2347,21 @@ final class Mr7Readback {
 
   Future<bool> _parentState(Mr7ParentStateObservation spec) async {
     final parent = await _parent(spec.parent);
+    void boundTo(String path) {
+      if (identical(_noDispatchObservation, spec)) {
+        if (_permit.sent != 0 ||
+            !_permit.paths.contains('POST $path') ||
+            (parent.path != _root &&
+                _permit._preparedParentIds[parent.path] != parent.row['id'])) {
+          throw const Mr7Refused('noChangeUnverified');
+        }
+      } else {
+        _sentTo(path);
+      }
+    }
+
     if (spec.state == Mr7ParentState.autoMerge) {
-      _sentTo('${parent.path}/cancel_auto_merge');
+      boundTo('${parent.path}/cancel_auto_merge');
       final present = [
         'merge_when_pipeline_succeeds',
         'auto_merge_enabled',
@@ -2021,7 +2373,7 @@ final class Mr7Readback {
       }
       return true;
     }
-    _sentTo(
+    boundTo(
       '${parent.path}/${spec.state == Mr7ParentState.starred ? (spec.expected ? 'star' : 'unstar') : (spec.expected ? 'subscribe' : 'unsubscribe')}',
     );
     final field = switch (spec.state) {
@@ -2655,8 +3007,26 @@ final class Mr7SandboxSession {
         (request.queryParameters['page'] as int) >= 1 &&
         (request.queryParameters['page'] as int) <= 20 &&
         request.queryParameters['per_page'] == 100;
-    if (request.method != 'GET' ||
-        (!setupRead && !projectRead && !parentRead)) {
+    final fileHead =
+        request.method == 'HEAD' &&
+        projectRead &&
+        segments.length == 5 &&
+        segments[2] == 'repository' &&
+        segments[3] == 'files' &&
+        segments[4].isNotEmpty &&
+        segments[4].length <= 4096 &&
+        !segments[4].contains('\\') &&
+        !segments[4]
+            .split('/')
+            .any((s) => s.isEmpty || s == '.' || s == '..') &&
+        request.data == null &&
+        request.queryParameters.length == 1 &&
+        request.queryParameters['ref'] is String &&
+        (request.queryParameters['ref'] as String).isNotEmpty &&
+        (request.queryParameters['ref'] as String).length <= 1024;
+    if (!fileHead &&
+        (request.method != 'GET' ||
+            (!setupRead && !projectRead && !parentRead))) {
       stop('outsideSandboxRead');
       throw const Mr7Refused('outsideSandboxRead');
     }
@@ -3058,10 +3428,7 @@ final class Mr7SandboxSession {
     final rows = <_Mr7SnapshotRow>[];
     for (final spec in specs) {
       if (!paths.add(spec.path) ||
-          !(spec.path == root ||
-              RegExp(
-                '^$root/(issues|merge_requests)/[1-9][0-9]*\$',
-              ).hasMatch(spec.path)) ||
+          !spec._allowsPath(root) ||
           spec.fields.length > 32 ||
           !spec.fields.containsAll(spec.unchangedFields) ||
           spec.fields.any(
@@ -3073,22 +3440,47 @@ final class Mr7SandboxSession {
       final row = await read(spec.path);
       final id = row['id'];
       final iid = row['iid'];
+      final iidRoute = spec.kind == Mr7SnapshotKind.parent && spec.path != root;
       if (jsonEncode(row).length > 2 * 1024 * 1024 ||
           id is! int ||
           id <= 0 ||
           (spec.path == root
               ? id != target.projectId
               : row['project_id'] != target.projectId ||
-                    iid is! int ||
-                    iid <= 0 ||
-                    iid != int.parse(spec.path.split('/').last))) {
+                    (iidRoute
+                        ? iid != int.parse(spec.path.split('/').last)
+                        : id != int.parse(spec.path.split('/').last))) ||
+          ((iidRoute ||
+                  spec.kind == Mr7SnapshotKind.milestone ||
+                  row.containsKey('iid')) &&
+              (iid is! int || iid <= 0))) {
         throw const Mr7Refused('snapshotIdentity');
+      }
+      int? parentId;
+      if (spec.kind == Mr7SnapshotKind.draftNote) {
+        final author = row['author'];
+        final parentPath = spec.path.split('/').take(4).join('/');
+        final parent = await read(parentPath);
+        if (author is! Map ||
+            author['id'] != target.userId ||
+            parent['id'] is! int ||
+            (parent['id'] as int) <= 0 ||
+            parent['iid'] != int.parse(parentPath.split('/').last) ||
+            parent['project_id'] != target.projectId) {
+          throw const Mr7Refused('snapshotIdentity');
+        }
+        parentId = parent['id'] as int;
       }
       rows.add(
         _Mr7SnapshotRow(
           spec: spec,
           id: id,
-          iid: spec.path == root ? null : iid as int,
+          iid: iid is int ? iid : null,
+          parentId: parentId,
+          identityDigests: Map.unmodifiable({
+            for (final field in ['iid', 'global_id', 'gid'])
+              field: _snapshotFieldDigest(row, field),
+          }),
           digests: Map.unmodifiable({
             for (final field in spec.fields)
               field: _snapshotFieldDigest(row, field),
@@ -3135,9 +3527,17 @@ final class Mr7SandboxSession {
         throw const Mr7Refused('snapshotDrift');
       }
       final current = await read(originalPath);
-      if (current['id'] != saved.id ||
-          (saved.iid != null && current['iid'] != saved.iid) ||
-          (originalPath != root && current['project_id'] != target.projectId) ||
+      var parentMatches = true;
+      if (saved.parentId != null) {
+        final parentPath = originalPath.split('/').take(4).join('/');
+        final parent = await read(parentPath);
+        parentMatches =
+            parent['id'] == saved.parentId &&
+            parent['iid'] == int.parse(parentPath.split('/').last) &&
+            parent['project_id'] == target.projectId;
+      }
+      if (!parentMatches ||
+          !_snapshotIdentityMatches(saved, current, target) ||
           saved.spec.fields.any(
             (field) =>
                 _snapshotFieldDigest(current, field) != saved.digests[field],
@@ -3303,6 +3703,27 @@ final class Mr7SandboxSession {
         operation = 'harnessCleanup';
       } else {
         final allowed = permit;
+        Object? b = request.data;
+        if (graph) {
+          try {
+            b = jsonDecode(jsonEncode(b));
+          } catch (_) {
+            stop('unsealedGraph');
+            throw const Mr7Refused('unsealedGraph');
+          }
+        }
+        if (graph &&
+            allowed != null &&
+            (b is! Map ||
+                b['query'] is! String ||
+                _selectedGraphOperation(b)?.kind != 'mutation' ||
+                !allowed.graphDocuments.contains(b['query']) ||
+                !allowed.graphVariablesDigests.contains(
+                  mr7Digest(b['variables']),
+                ))) {
+          stop('unsealedGraph');
+          throw const Mr7Refused('unsealedGraph');
+        }
         if (allowed != null &&
             !allowed.confirmed &&
             allowed.confirmBeforeSend != null) {
@@ -3325,18 +3746,6 @@ final class Mr7SandboxSession {
                     request.method == 'PUT'))) {
           stop('unconfirmedOrUnboundWrite');
           throw const Mr7Refused('unconfirmedOrUnboundWrite');
-        }
-        final b = request.data;
-        if (graph &&
-            (b is! Map ||
-                b['query'] is! String ||
-                _selectedGraphOperation(b)?.kind != 'mutation' ||
-                !allowed.graphDocuments.contains(b['query']) ||
-                !allowed.graphVariablesDigests.contains(
-                  mr7Digest(b['variables']),
-                ))) {
-          stop('unsealedGraph');
-          throw const Mr7Refused('unsealedGraph');
         }
         if (const {'snoozeTodo', 'unsnoozeTodo'}.contains(allowed.operation) &&
             (!graph ||
@@ -3415,6 +3824,25 @@ final class Mr7SandboxSession {
               (parent['id'] as int) <= 0 ||
               parent['project_id'] != target.projectId ||
               parent['iid'] != int.parse(segments[3])) {
+            stop('todoForeign');
+            throw const Mr7Refused('todoForeign');
+          }
+          allowed._todoParentId = parent['id'] as int;
+          final before = await _projectTodoList(
+            observer,
+            'projects/${target.projectId}/todos/mr7-observation',
+            target,
+          );
+          allowed._todoIdsBefore = Set.unmodifiable(
+            before.map((row) => row['id']! as int),
+          );
+          final finalActor = await read('user');
+          final finalParent = await read(segments.take(4).join('/'));
+          if (finalActor['id'] != target.userId ||
+              finalActor['username'] != target.namespace ||
+              finalParent['id'] != allowed._todoParentId ||
+              finalParent['iid'] != int.parse(segments[3]) ||
+              finalParent['project_id'] != target.projectId) {
             stop('todoForeign');
             throw const Mr7Refused('todoForeign');
           }

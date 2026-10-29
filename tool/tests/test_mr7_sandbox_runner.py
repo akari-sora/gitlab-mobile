@@ -199,11 +199,78 @@ class SandboxWrapperTest(unittest.TestCase):
         self.assertFalse(runner.validate_receipt(receipt(scenarios=[only_witness])))
         zero = {'status': 'PASS', 'outcome': 'noChange', 'coreNoChange': True,
                 'mutationCount': 0}
-        self.assertTrue(runner.validate_receipt(receipt(scenarios=[zero])))
+        self.assertFalse(runner.validate_receipt(receipt(scenarios=[zero])))
         self.assertFalse(runner.validate_receipt(receipt(scenarios=[{**zero, 'mutationCount': False}])))
         uncertain = {'status': 'NOT_VERIFIED', 'outcome': 'noChange', 'mutationCount': 1,
                      'coreOutcome': 'writeUncertain', 'readback': 'NOT_VERIFIED'}
         self.assertTrue(runner.validate_receipt(receipt(status='FAIL', scenarios=[uncertain])))
+
+    def test_zero_dispatch_noop_needs_classification_and_parent_witness(self):
+        row = {'classification': 'verifiedNoOp', 'operation': 'setStar',
+               'mutationCount': 0, 'observerRequests': 1, 'parentStateVerified': True,
+               'readback': 'PASS', 'status': 'PASS', 'outcome': 'noChange',
+               'coreOutcome': 'succeeded', 'coreNoChange': True}
+        self.assertTrue(runner.validate_receipt(receipt(scenarios=[row])))
+        for field in ('classification', 'parentStateVerified', 'observerRequests',
+                      'coreOutcome', 'coreNoChange'):
+            with self.subTest(missing=field):
+                self.assertFalse(runner.validate_receipt(
+                    receipt(scenarios=[{k: v for k, v in row.items() if k != field}])))
+        for changes in ({'classification': 'other'}, {'parentStateVerified': False},
+                        {'observerRequests': 0}, {'observerRequests': True},
+                        {'readback': 'NOT_VERIFIED'}, {'coreNoChange': False},
+                        {'coreOutcome': 'writeUncertain'}, {'responseStatus': None},
+                        {'responseStatus': 304}, {'operation': 'createIssue'}):
+            with self.subTest(changes=changes):
+                self.assertFalse(runner.validate_receipt(receipt(scenarios=[{**row, **changes}])))
+        unverified = {'status': 'NOT_VERIFIED', 'outcome': 'noChange',
+                      'coreNoChange': True, 'mutationCount': 0,
+                      'readback': 'NOT_VERIFIED', 'reason': 'noChangeUnverified'}
+        self.assertTrue(runner.validate_receipt(receipt(scenarios=[unverified])))
+        self.assertFalse(runner.validate_receipt(receipt(scenarios=[row]), final=True))
+
+    def test_decision_projection_requires_observed_consistent_tier(self):
+        row = {'status': 'PASS', 'mutationCount': 1, 'declaredTier': 'T1',
+               'tier': 'T1', 'decision': 'requireApproval',
+               'confirmationReasons': ['targetUnbound'], 'decisionProjection': 'observed'}
+        self.assertTrue(runner.validate_receipt(receipt(scenarios=[row])))
+        mismatch = {**row, 'status': 'FAIL', 'mutationCount': 0,
+                    'tier': 'T2', 'reason': 'tierMismatch'}
+        self.assertTrue(runner.validate_receipt(receipt(status='FAIL', scenarios=[mismatch])))
+        for changes in ({'tier': 'T2'}, {'decision': None}, {'decision': 'invented'},
+                        {'confirmationReasons': ['invented']},
+                        {'confirmationReasons': ['targetUnbound', 'targetUnbound']},
+                        {'decisionProjection': 'unknown'}, {'declaredTier': ''},
+                        {'decisionUnavailable': 'proposalUnavailable'}):
+            with self.subTest(changes=changes):
+                self.assertFalse(runner.validate_receipt(receipt(scenarios=[{**row, **changes}])))
+        for field in ('declaredTier', 'tier', 'decision', 'confirmationReasons', 'decisionProjection'):
+            with self.subTest(missing=field):
+                self.assertFalse(runner.validate_receipt(
+                    receipt(scenarios=[{k: v for k, v in row.items() if k != field}])))
+        for changes in ({'status': 'PASS'}, {'reason': 'other'}, {'mutationCount': 1}):
+            with self.subTest(mismatch=changes):
+                self.assertFalse(runner.validate_receipt(
+                    receipt(status='FAIL', scenarios=[{**mismatch, **changes}])))
+        unavailable = {'status': 'NOT_RUN', 'mutationCount': 0, 'declaredTier': 'T1',
+                       'tier': None, 'decision': None, 'confirmationReasons': [],
+                       'decisionProjection': 'unavailable', 'decisionUnavailable': 'proposalUnavailable'}
+        self.assertTrue(runner.validate_receipt(receipt(scenarios=[unavailable])))
+        self.assertTrue(runner.validate_receipt(receipt(scenarios=[
+            {**unavailable, 'status': 'PASS', 'coreOutcome': 'notExecuted'}])))
+        for changes in ({'tier': 'T1'}, {'decision': 'execute'},
+                        {'confirmationReasons': ['targetUnbound']},
+                        {'decisionUnavailable': None}, {'mutationCount': 1},
+                        {'mutationCount': True}, {'coreOutcome': 'succeeded'},
+                        {'status': 'PASS', 'coreOutcome': 'succeeded'}):
+            with self.subTest(unavailable=changes):
+                self.assertFalse(runner.validate_receipt(receipt(scenarios=[{**unavailable, **changes}])))
+        witnessed_noop = {**unavailable, 'status': 'PASS', 'coreOutcome': 'succeeded',
+                          'operation': 'setStar', 'classification': 'verifiedNoOp',
+                          'coreNoChange': True, 'outcome': 'noChange',
+                          'parentStateVerified': True, 'observerRequests': 1,
+                          'readback': 'PASS'}
+        self.assertFalse(runner.validate_receipt(receipt(scenarios=[witnessed_noop])))
 
     def test_unclassified_dispatched_noop_child_receipt_quarantines(self):
         forged = receipt(scenarios=[{'operation': 'setStar', 'mutationCount': 1,
