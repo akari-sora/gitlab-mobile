@@ -8,8 +8,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
+import 'package:gitlab_mobile/features/ai/ai_journal_key_store.dart';
+import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import '../../tool/mr7/live_host.dart';
+import '../../tool/mr7/live_provider.dart';
 import '../../tool/mr7/live_run.dart';
 import '../../tool/mr7/live_transport.dart';
 import '../../tool/mr7/sandbox_contract.dart';
@@ -201,6 +204,9 @@ String _providerAnswer(String format, bool tool) {
           'finish_reason': tool ? 'tool_calls' : 'stop',
         },
       ],
+      'usage': null,
+    })}${_data({
+      'choices': [],
       'usage': {'prompt_tokens': 100, 'completion_tokens': 20},
     })}data: [DONE]\n\n';
   }
@@ -208,7 +214,7 @@ String _providerAnswer(String format, bool tool) {
         'type': 'message_start',
         'message': {
           'id': 'message-17',
-          'usage': {'input_tokens': 100},
+          'usage': {'input_tokens': 100, 'output_tokens': 1},
         },
       }) +
       _data({
@@ -243,6 +249,46 @@ String _providerAnswer(String format, bool tool) {
 }
 
 void main() {
+  test('live runner refuses a journal override before any request', () async {
+    final fixture = _GitLabFixture();
+    await fixture.start();
+    addTearDown(fixture.close);
+    final scratch = await Directory(
+      Directory.current.parent.path,
+    ).createTemp('mr7-journal-override-');
+    addTearDown(() => scratch.delete(recursive: true));
+    final session = fixture.session();
+    addTearDown(() => session.liveTransport!.close());
+    final provider = Mr7LiveProvider(_config('chat_completions'), _key);
+    await expectLater(
+      runner.runMr7Sandbox(
+        policy: Mr7Policy.candidate,
+        releaseSha: _sha,
+        confirm: (_) async => false,
+        journal: AiWriteJournal(
+          keys: MemoryAiJournalKeyStore(),
+          applicationSupport: scratch,
+        ),
+        live: Mr7LiveRun(
+          session: session,
+          provider: provider,
+          secrets: _Secrets(),
+          scratchRoot: scratch,
+          only: {'b0-star'},
+        ),
+      ),
+      throwsA(
+        isA<Mr7Refused>().having(
+          (error) => error.code,
+          'code',
+          'liveJournalOverride',
+        ),
+      ),
+    );
+    expect(fixture.requests, isEmpty);
+    expect(provider.calls, 0);
+    expect(scratch.listSync(), isEmpty);
+  });
   provider_tests.liveProviderTests();
   for (final mismatch in ['user', 'namespace']) {
     test('live refuses $mismatch mismatch before any write', () async {
@@ -491,6 +537,11 @@ void main() {
           expect(row['mutationCount'], 1);
           expect(row['readback'], 'PASS');
           expect(provider.calls, greaterThanOrEqualTo(2));
+          for (final usage in provider.usage) {
+            expect(usage['usageEstimated'], 0);
+            expect(usage['inputTokens'], 100);
+            expect(usage['outputTokens'], 20);
+          }
           expect(requests.join(), isNot(contains(_pat)));
           expect(jsonEncode(receipt), isNot(contains(_pat)));
           expect(jsonEncode(receipt), isNot(contains(_key)));

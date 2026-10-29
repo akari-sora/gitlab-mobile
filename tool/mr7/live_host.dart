@@ -7,6 +7,7 @@ import 'package:gitlab_mobile/core/ai/redaction.dart';
 
 import 'sandbox_contract.dart';
 import 'live_provider.dart';
+import 'live_state.dart';
 
 /// Read only the two paths delivered by credential_files(), never keychain or
 /// ambient token variables. No secret is retained in a receipt or confirmation.
@@ -51,6 +52,8 @@ final class Mr7LiveHost implements KnownSecretsSource {
   final File request;
   final File response;
   String? typedName;
+  bool _cancelled = false;
+  void cancel() => _cancelled = true;
   @override
   Iterable<String> get current => [pat, providerKey];
 
@@ -67,7 +70,10 @@ final class Mr7LiveHost implements KnownSecretsSource {
     return 'Private run-owned sandbox $projectId: starred = true';
   }
 
-  Future<bool> confirm(Map<String, Object?> proposal) async {
+  Future<bool> confirm(
+    Map<String, Object?> proposal, {
+    DateTime? deadlineAt,
+  }) async {
     typedName = null;
     final encoded = jsonEncode(proposal);
     if (current.any(encoded.contains) ||
@@ -80,9 +86,13 @@ final class Mr7LiveHost implements KnownSecretsSource {
     await staging.writeAsString(encoded, flush: true);
     await staging.rename(request.path);
     try {
-      final deadline = DateTime.now().add(const Duration(minutes: 5));
+      final confirmationEnd = DateTime.now().add(mr7LiveConfirmationWindow);
+      final deadline =
+          deadlineAt != null && deadlineAt.isBefore(confirmationEnd)
+          ? deadlineAt
+          : confirmationEnd;
       while (!response.existsSync()) {
-        if (DateTime.now().isAfter(deadline)) {
+        if (_cancelled || DateTime.now().isAfter(deadline)) {
           throw const Mr7Refused('confirmationTimeout');
         }
         await Future<void>.delayed(const Duration(milliseconds: 50));

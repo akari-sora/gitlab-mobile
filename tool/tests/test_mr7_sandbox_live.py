@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 import stat
 import subprocess
 import tempfile
@@ -133,6 +134,16 @@ class LiveWrapperTest(unittest.TestCase):
             self.assertEqual(state.parent, self.directory)
             self.assertEqual(stat.S_IMODE(state.stat().st_mode), 0o700)
             self.assertEqual(json.loads(self.output.read_text())['stateDirectory'], str(state))
+            persisted = json.loads((state / 'run.json').read_text())
+            self.assertIn('nonce', persisted)
+            self.assertIn('projectPath', persisted)
+            self.assertEqual(persisted['nonce'], config['nonce'])
+            self.assertEqual(persisted['projectPath'], config['projectPath'])
+            self.assertEqual(persisted['projectPath'], f"owner/mr7-{config['nonce']}")
+            self.assertEqual(stat.S_IMODE((state / 'run.json').stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE((state / 'journal-key.json').stat().st_mode), 0o600)
+            journal_key = json.loads((state / 'journal-key.json').read_text())['key']
+            self.assertNotIn(journal_key, str(command) + str(env) + self.output.read_text())
             Path(env['MR7_SANDBOX_RECEIPT_FILE']).write_text(json.dumps(self.receipt()))
             Path(env['MR7_CONFIRM_REQUEST_FILE']).write_text(json.dumps({
                 'operation': 'setStar', 'tier': 'T1', 'projectId': 9,
@@ -249,6 +260,23 @@ class LiveWrapperTest(unittest.TestCase):
         self.assertNotIn(result['stateDirectory'], out + err)
         self.assertNotIn(PAT, out + err + self.output.read_text())
         self.assertNotIn(KEY, out + err + self.output.read_text())
+
+    def test_parent_deadline_allows_child_stateful_stop_grace(self):
+        deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
+        child = mock.Mock()
+        child.wait.return_value = 1
+        self.assertEqual(runner._wait_live_child(
+            child, self.directory / 'request', self.directory / 'response',
+            [], deadline=deadline), 1)
+        child.wait.assert_called_once()
+
+    def test_parent_deadline_stops_stuck_child_after_grace(self):
+        deadline = datetime.now(timezone.utc) - timedelta(seconds=31)
+        child = mock.Mock()
+        with self.assertRaises(runner._LiveTimedOut):
+            runner._wait_live_child(child, self.directory / 'request',
+                                    self.directory / 'response', [], deadline=deadline)
+        child.wait.assert_not_called()
 
     def test_receipt_requires_matching_live_evidence(self):
         result = self.receipt()

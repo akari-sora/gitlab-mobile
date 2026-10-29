@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math';
 
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/ai_events.dart';
@@ -9,6 +8,7 @@ import 'package:gitlab_mobile/core/ai/redaction.dart';
 import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 
 import 'live_host.dart';
+import 'live_state.dart';
 import 'live_provider.dart';
 import 'live_transport.dart';
 import 'sandbox_contract.dart';
@@ -21,8 +21,11 @@ final class Mr7LiveRun {
     required this.secrets,
     required this.scratchRoot,
     this.only,
+    this.state,
+    DateTime? deadlineAt,
     Mr7LiveHost? host,
-  }) : _host = host {
+  }) : _host = host,
+       deadlineAt = deadlineAt ?? DateTime.now().toUtc().add(mr7LiveRunWindow) {
     if (session.liveTransport == null ||
         !secrets.current.contains(session.gitLabToken)) {
       throw const Mr7Refused('credentialBoundary');
@@ -40,10 +43,7 @@ final class Mr7LiveRun {
         instance: transport.instance,
         expectedUserId: config['expectedUserId'] as int,
         namespace: config['namespace'] as String,
-        nonce: List.generate(
-          16,
-          (_) => Random.secure().nextInt(16).toRadixString(16),
-        ).join(),
+        nonce: config['nonce'] as String,
         eventDelay: () =>
             Future<void>.delayed(const Duration(milliseconds: 250)),
       ),
@@ -52,6 +52,8 @@ final class Mr7LiveRun {
       scratchRoot: Directory(config['stateDirectory'] as String),
       only: (config['only'] as List?)?.cast<String>().toSet(),
       host: host,
+      state: Mr7LiveState(Directory(config['stateDirectory'] as String)),
+      deadlineAt: DateTime.parse(config['deadlineAt'] as String),
     );
   }
 
@@ -61,6 +63,9 @@ final class Mr7LiveRun {
   final Directory scratchRoot;
   final Set<String>? only;
   final Mr7LiveHost? _host;
+  final Mr7LiveState? state;
+  final DateTime deadlineAt;
+  void cancel() => _host?.cancel();
   bool get mayDiscardJournal => !session.quarantined;
   String get confirmationLabel => 'explicitOwnerConfirmation';
   String? get typedName => _host?.typedName;
@@ -88,7 +93,7 @@ final class Mr7LiveRun {
       'payloadDigest': payloadDigest,
       'preview': host.preview(operation, projectId),
       'requiredTypedName': ?requiredTypedName,
-    });
+    }, deadlineAt: deadlineAt);
   }
 
   Mr7LiveCall bindCall(

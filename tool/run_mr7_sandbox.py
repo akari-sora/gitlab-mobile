@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Run MR7's synthetic host sandbox. No credentials or live transport are used."""
+"""Run MR7 synthetic or configured live-candidate checks, or read-only reconciliation."""
 from __future__ import annotations
 
 import argparse
+import base64
 from collections import Counter
 from contextlib import contextmanager, nullcontext
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import getpass
 import hashlib
 import json
@@ -14,13 +15,18 @@ import os
 from pathlib import Path
 import re
 import signal
+import secrets as random_secrets
+import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import unicodedata
 import warnings
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parents[1]
 SAFE_ENV = (
@@ -49,6 +55,8 @@ SOURCE_FILES = (
     'tool/run_mr7_sandbox.py', 'tool/mr7_sandbox.dart',
     'tool/mr7/sandbox_contract.dart', 'tool/tests/test_mr7_sandbox_runner.py',
     'tool/tests/test_mr7_sandbox_live.py',
+    'tool/tests/test_mr7_fix1_recovery.py', 'test/ai/mr7_fix1_cli_fixture.dart',
+    'test/ai/mr7_sandbox_live_test.dart', 'test/ai/mr7_live_provider_cases.dart',
     'test/ai/mr7_sandbox_contract_test.dart',
     'test/ai/mr7_sandbox_wave2_contract_test.dart',
     'test/ai/mr7_sandbox_wave2_runner_test.dart',
@@ -78,7 +86,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument('--only')
     p.add_argument('--pat-env')
     p.add_argument('--expect-release-sha')
-    p.add_argument('--output', required=True)
+    p.add_argument('--output')
+    p.add_argument('--reconcile', metavar='STATE_DIRECTORY',
+                   help='Read encrypted write metadata without changing quarantine state.')
+    p.add_argument('--lookup-project', action='store_true',
+                   help='With --reconcile, verify /user and GET only the exact saved project path.')
     return p
 
 
@@ -527,6 +539,138 @@ class _RunInterrupted(Exception):
     pass
 
 
+class _LiveTimedOut(Exception):
+    pass
+
+
+def _prepare_live_state(config: dict, state_directory: Path) -> dict:
+    """Persist locator and encryption key before any child or network dispatch."""
+    nonce = random_secrets.token_hex(16)
+    journal_key = os.urandom(32)
+    deadline = config.get('deadlineAt') or (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    state = {'schema': 1, 'nonce': nonce,
+             'projectPath': f"{config['namespace']}/mr7-{nonce}",
+             'projectId': None, 'instance': 'https://gitlab.com',
+             'namespace': config['namespace'], 'expectedUserId': config['expectedUserId'],
+             'journalAccount': f"https://gitlab.com#{config['expectedUserId']}",
+             'journalDirectory': 'journal', 'deadlineAt': deadline,
+             'journalKeySha256': hashlib.sha256(journal_key).hexdigest()}
+    (state_directory / 'journal').mkdir(mode=0o700)
+    _reserve_output(state_directory / 'journal-key.json', {
+        'account': state['journalAccount'],
+        'key': base64.b64encode(journal_key).decode('ascii'),
+    })
+    _reserve_output(state_directory / 'run.json', state)
+    _sync_directory(state_directory)
+    config.update({name: state[name] for name in ('nonce', 'projectPath', 'deadlineAt')})
+    return state
+
+
+def _read_live_state(directory: Path) -> dict:
+    info = directory.lstat()
+    if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700:
+        raise ValueError('invalid recovery permissions')
+    path = directory / 'run.json'
+    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 16384:
+            raise ValueError('invalid recovery state')
+        state = json.loads(stream.read(16385))
+    if (not isinstance(state, dict) or state.get('instance') != 'https://gitlab.com' or
+            type(state.get('expectedUserId')) is not int or state['expectedUserId'] <= 0 or
+            not isinstance(state.get('namespace'), str) or
+            not re.fullmatch(r'[a-zA-Z0-9_.-]+', state['namespace']) or
+            not isinstance(state.get('nonce'), str) or
+            not re.fullmatch(r'[a-zA-Z0-9_-]{8,64}', state['nonce']) or
+            state.get('projectPath') != f"{state['namespace']}/mr7-{state['nonce']}"):
+        raise ValueError('invalid recovery state')
+    return state
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _reconcile_project(state: dict, pat: str, *, origin: str = 'https://gitlab.com') -> dict:
+    u = urlsplit(origin)
+    if origin != 'https://gitlab.com' and not (
+            u.scheme == 'http' and u.hostname == '127.0.0.1' and u.port and
+            not u.path and not u.username and not u.password and not u.query and not u.fragment):
+        raise ValueError('invalid reconciliation origin')
+    opener = build_opener(_NoRedirect)
+    def read(path):
+        request = Request(f'{origin}/api/v4/{path}', method='GET',
+                          headers={'PRIVATE-TOKEN': pat, 'Cache-Control': 'no-cache, no-store'})
+        with opener.open(request, timeout=25) as response:
+            if response.status != 200:
+                raise ValueError('unverified project lookup')
+            data = response.read(2_000_001)
+            if len(data) > 2_000_000:
+                raise ValueError('oversized project lookup')
+            return json.loads(data)
+    user = read('user')
+    if (not isinstance(user, dict) or user.get('id') != state['expectedUserId'] or
+            user.get('username') != state['namespace']):
+        raise ValueError('reconciliation identity mismatch')
+    try:
+        project = read('projects/' + quote(state['projectPath'], safe=''))
+    except HTTPError as error:
+        if error.code == 404:
+            return {'status': 'NOT_VISIBLE', 'projectPath': state['projectPath']}
+        raise
+    if (not isinstance(project, dict) or type(project.get('id')) is not int or
+            project['id'] <= 0 or project['id'] == 86648389 or
+            project.get('path_with_namespace') != state['projectPath'] or
+            (state.get('projectId') is not None and state['projectId'] != project['id']) or
+            project.get('visibility') != 'private' or
+            not isinstance(project.get('owner'), dict) or project['owner'].get('id') != user['id'] or
+            not isinstance(project.get('namespace'), dict) or
+            project['namespace'].get('kind') != 'user' or
+            project['namespace'].get('full_path') != state['namespace']):
+        raise ValueError('reconciliation project mismatch')
+    return {'status': 'FOUND', 'projectId': project['id'], 'projectPath': state['projectPath']}
+
+
+def reconcile(args: argparse.Namespace) -> int:
+    try:
+        directory = Path(args.reconcile).absolute()
+        state = _read_live_state(directory)
+        with tempfile.TemporaryDirectory(prefix='mr7-reconcile-', dir=directory.parent) as temporary:
+            config_path, report_path = Path(temporary) / 'config.json', Path(temporary) / 'report.json'
+            _private_file(config_path, json.dumps({'reconcile': True, 'stateDirectory': str(directory)}))
+            _private_file(report_path, '')
+            env = {name: os.environ[name] for name in SAFE_ENV if name in os.environ}
+            env.update(MR7_SANDBOX_CONFIG_FILE=str(config_path), MR7_SANDBOX_RECEIPT_FILE=str(report_path))
+            child = subprocess.run(['fvm', 'flutter', 'test', '--no-pub', '--reporter', 'expanded',
+                                    'tool/mr7_sandbox.dart'], cwd=ROOT, env=env,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=90)
+            if report_path.stat().st_size > 2_000_000:
+                raise ValueError('invalid reconciliation report')
+            report = json.loads(report_path.read_text())
+        if child.returncode or report.get('status') != 'PASS':
+            print(json.dumps(report))
+            return 1
+        if args.lookup_project:
+            name = args.pat_env
+            if name is not None and not ENV_NAME.fullmatch(name):
+                raise ValueError('invalid credential environment name')
+            pat = os.environ.get(name) if name else _hidden_input('GitLab PAT for read-only lookup: ')
+            if not pat or any(c.isspace() for c in pat):
+                raise ValueError('invalid credential')
+            report['projectLookup'] = _reconcile_project(state, pat)
+            if _contains_known_secret(report, [pat]):
+                raise ValueError('unsafe reconciliation report')
+        if args.output:
+            _reserve_output(Path(args.output).absolute(), report)
+        print(json.dumps(report, sort_keys=True))
+        return 0
+    except (OSError, ValueError, UnicodeError, subprocess.SubprocessError, EOFError):
+        print('Reconciliation failed; quarantine preserved.', file=sys.stderr)
+        return 1
+
+
 def _term_handler(signum: int, frame: object) -> None:
     raise _RunInterrupted()
 
@@ -558,6 +702,7 @@ def _quarantine(config: dict, reason: str) -> dict:
         'finalEligible': False, 'releaseSha': config['releaseSha'], 'live': 'FAIL' if live else 'NOT_RUN',
         'reason': reason, 'cleanup': 'NOT_RUN', 'sandbox': 'quarantined',
         'remaining': 'NOT_RUN',
+        **({name: config[name] for name in ('nonce', 'projectPath', 'deadlineAt') if name in config} if live else {}),
     }
 
 
@@ -635,9 +780,27 @@ def _confirm_request(path: Path, response: Path, secrets: list[str]) -> None:
 
 
 def _wait_live_child(child: subprocess.Popen, request: Path, response: Path,
-                     secrets: list[str]) -> int:
+                     secrets: list[str], *, deadline: datetime | None = None) -> int:
+    prompt = None
+    errors = []
+    def confirm():
+        try:
+            _confirm_request(request, response, secrets)
+        except BaseException as error:
+            errors.append(error)
     while True:
-        _confirm_request(request, response, secrets)
+        if errors:
+            raise errors[0]
+        # The child's deadline fences writes first; allow a bounded state/receipt
+        # shutdown before force-stopping a child that cannot unwind.
+        if deadline is not None and datetime.now(timezone.utc) >= deadline + timedelta(seconds=30):
+            raise _LiveTimedOut()
+        if prompt is not None and not prompt.is_alive():
+            prompt = None
+        if request.exists() and not response.exists() and prompt is None:
+            prompt = threading.Thread(target=confirm, daemon=True)
+            prompt.start()
+            prompt.join(timeout=0.02)
         try:
             return child.wait(timeout=0.1)
         except subprocess.TimeoutExpired:
@@ -648,6 +811,8 @@ def run(args: argparse.Namespace) -> int:
     live = args.transport == 'live'
     state_directory = None
     try:
+        if args.output is None or args.lookup_project:
+            raise ValueError('output required for a run')
         if live:
             if (args.provider_config is None or args.suite is None or
                     'MR7_EXPECTED_USER_ID' not in os.environ or
@@ -690,7 +855,9 @@ def run(args: argparse.Namespace) -> int:
             state_directory = Path(tempfile.mkdtemp(prefix='mr7-live-state-', dir=output.parent))
             os.chmod(state_directory, 0o700)
             config['stateDirectory'] = str(state_directory)
+            _prepare_live_state(config, state_directory)
             provisional['stateDirectory'] = str(state_directory)
+            provisional.update({name: config[name] for name in ('nonce', 'projectPath', 'deadlineAt')})
             identity, original = _finalize_output(output, identity, original, provisional)
     except (OSError, ValueError, UnicodeError, subprocess.SubprocessError):
         print('Sandbox setup failed.', file=sys.stderr)
@@ -739,7 +906,8 @@ def run(args: argparse.Namespace) -> int:
                 )
                 if live:
                     try:
-                        child_exit = _wait_live_child(child, request_path, response_path, secrets)
+                        child_exit = _wait_live_child(child, request_path, response_path, secrets,
+                                                     deadline=datetime.fromisoformat(config['deadlineAt']))
                     except BaseException:
                         # Stop the whole child group before the private credential files
                         # and the confirmation channel are removed.
@@ -772,6 +940,10 @@ def run(args: argparse.Namespace) -> int:
                     outcome = receipt
                     if child_exit == 0 and receipt['status'] == 'PASS':
                         exit_code = 0
+    except _LiveTimedOut:
+        if child is not None:
+            _stop_child(child)
+        outcome = _quarantine(config, 'liveTimeout')
     except (KeyboardInterrupt, _RunInterrupted, EOFError):
         if child is not None:
             _stop_child(child)
@@ -787,17 +959,29 @@ def run(args: argparse.Namespace) -> int:
     outcome['sourceProvenance'] = provenance
     if state_directory is not None:
         outcome['stateDirectory'] = str(state_directory)
-        if exit_code == 0:
+        if exit_code != 0:
             try:
-                state_directory.rmdir()
-            except OSError:
-                # A nonempty journal remains available for manual investigation.
+                saved = _read_live_state(state_directory)
+                saved.setdefault('stopReason', outcome.get('reason', 'runUnverified'))
+                saved['stoppedAt'] = datetime.now(timezone.utc).isoformat()
+                state_path = state_directory / 'run.json'
+                contents = state_path.read_bytes()
+                _finalize_output(state_path, state_path.stat(), contents, saved)
+            except (OSError, ValueError):
+                # Retain the last durable state even if a stop update fails.
                 pass
     try:
         _finalize_output(output, identity, original, outcome)
     except OSError:
         print('Receipt output changed or could not be finalized.', file=sys.stderr)
         return 1
+    if state_directory is not None and exit_code == 0:
+        try:
+            # Remove recovery material only after successful receipt validation,
+            # proven cleanup, source checks and final publication all succeeded.
+            shutil.rmtree(state_directory)
+        except OSError:
+            pass
     if exit_code == 0:
         print('Live candidate receipt written.' if live else 'Synthetic sandbox receipt written; live NOT_RUN.')
     elif exit_code == 130:
@@ -808,7 +992,8 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    return run(parser().parse_args(argv))
+    args = parser().parse_args(argv)
+    return reconcile(args) if args.reconcile else run(args)
 
 
 if __name__ == '__main__':

@@ -36,6 +36,7 @@ import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import 'mr7/sandbox_contract.dart';
 import 'mr7/live_run.dart';
+import 'mr7/live_state.dart';
 
 final class Mr7HostProposal {
   const Mr7HostProposal({
@@ -640,6 +641,9 @@ Future<Map<String, Object?>> runMr7Sandbox({
       !const {'all', 'rest', 'graphql', 'advanced'}.contains(suite)) {
     throw const Mr7Refused('configuration');
   }
+  if (live != null && journal != null) {
+    throw const Mr7Refused('liveJournalOverride');
+  }
   final cases = (scenarios ?? mr7ContractScenarios())
       .where(
         (s) =>
@@ -737,16 +741,25 @@ Future<Map<String, Object?>> runMr7Sandbox({
         'releaseSha': releaseSha,
       },
   ];
-  final root = journal == null
-      ? await (live?.scratchRoot ?? Directory.systemTemp).createTemp(
-          'mr7-journal-',
-        )
-      : null;
+  final state =
+      live?.state ??
+      (live == null
+          ? null
+          : await Mr7LiveState.create(live.scratchRoot, s, live.deadlineAt));
+  final root =
+      state?.journalRoot ??
+      (journal == null
+          ? await (live?.scratchRoot ?? Directory.systemTemp).createTemp(
+              'mr7-journal-',
+            )
+          : null);
   PolicyAiWriteCoordinator? activeCoordinator;
   AiRunner? activeRunner;
+  AiWireClient? activeClient;
   final account = '${s.instance}#${s.expectedUserId}';
   final journalStore =
       journal ??
+      state?.openJournal() ??
       AiWriteJournal(
         keys: MemoryAiJournalKeyStore(),
         applicationSupport: root!,
@@ -755,8 +768,33 @@ Future<Map<String, Object?>> runMr7Sandbox({
   if (now != null) journalStore.now = now;
   final attachmentSessions = <AiAttachmentSession>{};
   final placeholderTables = <String, UploadPlaceholderTable>{};
+  Timer? deadlineTimer;
+  if (live != null) {
+    void timedOut() {
+      s.stop('liveTimeout');
+      activeRunner?.stop();
+      activeCoordinator?.stop('liveTimeout');
+      activeClient?.transport.cancelActive();
+      live.cancel();
+      s.writer.close(force: true);
+      s.observer.close(force: true);
+      s.liveTransport?.close();
+    }
+
+    final remaining = live.deadlineAt.difference(DateTime.now());
+    if (remaining <= Duration.zero) {
+      timedOut();
+    } else {
+      deadlineTimer = Timer(remaining, timedOut);
+    }
+  }
   try {
-    await s.initialize();
+    if (state != null) {
+      state.validateIntent(s);
+      s.beforeProjectCreate = () async => state.validateIntent(s);
+      s.projectCreated = state.recordProject;
+    }
+    if (live == null) await s.initialize();
     if (journal == null) {
       await journalStore.recoverAfterAccountsLoaded([account]);
     } else if (!journalStore.recovered(account)) {
@@ -768,6 +806,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
     } else if (keyStatus != AiJournalKeyStatus.found) {
       throw const Mr7Refused('journalUnavailable');
     }
+    if (live != null) await s.initialize();
     for (final scenario in cases) {
       final scenarioView = mr7SandboxPolicy(
         policy,
@@ -949,6 +988,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
             conversationId: 'mr7-${mr7Digest(scenario.id).substring(0, 24)}',
             appVersion: 'mr7-synthetic',
           );
+      activeClient = client;
       final writeScope = AiWriteScope(
         accountKey: account,
         grants: [
@@ -1373,10 +1413,18 @@ Future<Map<String, Object?>> runMr7Sandbox({
     activeCoordinator?.stop('runFinished');
     // No reset, retry or removal of the production journal's uncertain entries.
     await s.finish();
+    deadlineTimer?.cancel();
+    if (state != null && s.quarantined) {
+      await state.update({
+        'stopReason': s.stopReason ?? 'quarantined',
+        'stoppedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+    }
     for (final attachments in attachmentSessions) {
       attachments.discardAll();
     }
     if (root != null &&
+        state == null &&
         root.existsSync() &&
         (live?.mayDiscardJournal ?? true)) {
       await root.delete(recursive: true);
@@ -1420,7 +1468,11 @@ Future<Map<String, Object?>> runMr7Sandbox({
   return receipt;
 }
 
-void main() {
+void main() => registerMr7SandboxHost();
+
+void registerMr7SandboxHost({
+  Mr7LiveRun? Function(Map<String, dynamic>)? selectLive,
+}) {
   test('MR7 synthetic sandbox host', () async {
     final configPath = Platform.environment['MR7_SANDBOX_CONFIG_FILE'];
     final outputPath = Platform.environment['MR7_SANDBOX_RECEIPT_FILE'];
@@ -1430,7 +1482,17 @@ void main() {
     final config =
         jsonDecode(await File(configPath).readAsString())
             as Map<String, dynamic>;
-    final live = Mr7LiveRun.select(config);
+    if (config['reconcile'] == true) {
+      final report = await Mr7LiveState(
+        Directory(config['stateDirectory'] as String),
+      ).reconcile();
+      await File(
+        outputPath,
+      ).writeAsString('${jsonEncode(report)}\n', flush: true);
+      expect(report['status'], 'PASS');
+      return;
+    }
+    final live = (selectLive ?? Mr7LiveRun.select)(config);
     final receipt = await runMr7Sandbox(
       policy: Mr7Policy.values.byName(config['policy'] as String),
       releaseSha: config['releaseSha'] as String,
@@ -1453,5 +1515,5 @@ void main() {
       outputPath,
     ).writeAsString('${jsonEncode(receipt)}\n', flush: true);
     expect(receipt['status'], 'PASS');
-  }, timeout: const Timeout(Duration(minutes: 2)));
+  }, timeout: Timeout(mr7LiveRunWindow + const Duration(minutes: 1)));
 }

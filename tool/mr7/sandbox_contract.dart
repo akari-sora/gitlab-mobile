@@ -3005,6 +3005,8 @@ final class Mr7SandboxSession {
   bool _isolationFailed = false;
   final Map<String, String> _graphResources = {};
   String? stopReason;
+  Future<void> Function()? beforeProjectCreate;
+  Future<void> Function(int)? projectCreated;
   DateTime? windowStart;
   DateTime? windowEnd;
   final List<Map<String, Object?>> requestLedger = [];
@@ -3646,6 +3648,7 @@ final class Mr7SandboxSession {
       _namespaceId = namespaces.single['id'] as int;
       windowStart = serverTime.subtract(const Duration(seconds: 2));
       await checkIsolation(baseline: true); // Before POST /projects.
+      await beforeProjectCreate?.call();
       _setupAuthorized = true;
       final r = await writer.post<Object?>(
         'projects',
@@ -3661,6 +3664,7 @@ final class Mr7SandboxSession {
         throw const Mr7Refused('setupIdentity');
       }
       _createdId = (r.data! as Map)['id'] as int;
+      await projectCreated?.call(_createdId!);
       identity = Mr7Identity(
         projectId: _createdId!,
         path: '$namespace/mr7-$nonce',
