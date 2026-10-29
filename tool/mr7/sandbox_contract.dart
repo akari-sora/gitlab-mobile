@@ -20,6 +20,17 @@ const _todoSnoozeDocument =
     '701de6e86afdaeeeabf384ee19086320683dc782be8ee9f7fd54a8c810a965c0';
 const _todoUnsnoozeDocument =
     'b4daf82ea099dfc04752acd1aa93ed005dff928a76d248549a3822582023ce48';
+// Only the production project milestone read, picker and mutation response
+// select this nullable owner projection. These seals grant no group selector.
+const _milestoneOwnerDocuments = {
+  '3256f147ccaff0105e243fafd8b3c723d98c1e17092b39e15179384314551d5c',
+  '1ece5fb95e849646cb335e272011ce9cb86fcdd9dc67c5c76f193dcd37006945',
+  '8f0fcbaaac85cba750e0c5f6bb2a65ff2a80e1a518113629b00d5497a4c9323c',
+};
+bool _milestoneOwnerDocument(Object? body) =>
+    body is Map &&
+    body['query'] is String &&
+    _milestoneOwnerDocuments.contains(mr7Digest(body['query']));
 const mr7ExcludedOperations = {
   'createProject',
   'forkProject',
@@ -1048,6 +1059,7 @@ final class Mr7ObserverAdapter implements HttpClientAdapter {
   final List<String> requests = [];
   void Function()? beforeRequest;
   void Function(RequestOptions)? validateRequest;
+  Future<ResponseBody> Function(Object?, ResponseBody)? validateResponse;
   Map<String, Set<String>> graphReadDocuments = const {};
   @override
   Future<ResponseBody> fetch(
@@ -1065,6 +1077,8 @@ final class Mr7ObserverAdapter implements HttpClientAdapter {
         Zone.current[_observerDeadlineKey] as _Mr7ObserverDeadline?;
     deadline?.check();
     beforeRequest?.call();
+    final body = _mr7FrozenJson(options.data);
+    final bodyDigest = mr7Digest(body);
     requests.add(options.uri.path);
     Future<ResponseBody> respond() async {
       final response = await server.respond(options);
@@ -1076,7 +1090,7 @@ final class Mr7ObserverAdapter implements HttpClientAdapter {
       return response;
     }
 
-    final response = await Future.any([
+    var response = await Future.any([
       respond(),
       if (cancelFuture != null)
         cancelFuture.then<ResponseBody>(
@@ -1085,6 +1099,12 @@ final class Mr7ObserverAdapter implements HttpClientAdapter {
                   const Mr7Refused('observerCancelled'),
         ),
     ]);
+    if (validateResponse case final validate?) {
+      response = await validate(body, response);
+    }
+    if (mr7Digest(options.data) != bodyDigest) {
+      throw const Mr7Refused('unsealedGraph');
+    }
     validateRequest?.call(options);
     return response;
   }
@@ -2496,7 +2516,17 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
     if (options.method == 'GET' ||
         options.method == 'HEAD' ||
         _sealedGraphRead(options, session.observerAdapter.graphReadDocuments)) {
-      session.validateRead(options, allowStopped: false);
+      final readBody = _mr7FrozenJson(options.data);
+      final readBodyDigest = mr7Digest(readBody);
+      void validate() {
+        if (mr7Digest(options.data) != readBodyDigest) {
+          session.stop('unsealedGraph');
+          throw const Mr7Refused('unsealedGraph');
+        }
+        session.validateRead(options, allowStopped: false);
+      }
+
+      validate();
       if (options.method == 'HEAD' &&
           requestStream != null &&
           await requestStream.any((chunk) => chunk.isNotEmpty)) {
@@ -2505,14 +2535,17 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
       }
       session.chargeRequest();
       final permit = session.permit;
-      final response = await session.server.respond(options);
-      session.validateRead(options, allowStopped: false);
+      final response = await session._checkMilestoneResponse(
+        readBody,
+        await session.server.respond(options),
+      );
+      validate();
       if (options.method == 'HEAD') {
         if (await response.stream.any((chunk) => chunk.isNotEmpty)) {
           session.stop('headBody');
           throw const Mr7Refused('headBody');
         }
-        session.validateRead(options, allowStopped: false);
+        validate();
         return ResponseBody.fromBytes(
           const [],
           response.statusCode,
@@ -2542,11 +2575,11 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
           throw const Mr7Refused('noChangeTargetUnbound');
         }
         session._capturePreparedWorkItem(
-          options.data,
+          readBody,
           jsonDecode(utf8.decode(bytes)),
           permit,
         );
-        session.validateRead(options, allowStopped: false);
+        validate();
         return ResponseBody.fromBytes(
           bytes,
           response.statusCode,
@@ -2589,7 +2622,7 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
           throw const Mr7Refused('noChangeTargetDrift');
         }
         permit._preparedParentIds[path] = id;
-        session.validateRead(options, allowStopped: false);
+        validate();
         return ResponseBody.fromBytes(
           bytes,
           response.statusCode,
@@ -2702,7 +2735,17 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
       } catch (_) {
         /* No response oracle. */
       }
+      if (!session._setupAuthorized &&
+          !session._cleanupAuthorized &&
+          !identical(session.permit, preparedPermit)) {
+        session.stop('writeUncertain');
+        throw const Mr7Refused('writeUncertain');
+      }
       final permit = session.permit;
+      final envelope = value;
+      if (_milestoneOwnerDocument(preparedPermit?._sentBody)) {
+        session._validateMilestoneOwners(preparedPermit!._sentBody, envelope);
+      }
       value = _selectRecord(value, permit?.resultPath ?? const []);
       if (permit != null && value is Map) {
         permit.returnedId = value['id'] is int ? value['id'] as int : null;
@@ -2722,6 +2765,17 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
           projectId: permit.returnedProjectId,
           stringId: permit.returnedGlobalId,
         );
+      }
+      if (permit != null &&
+          const {
+            'createWorkItemActivityComment',
+            'createWorkItemActivityReply',
+          }.contains(permit.operation) &&
+          response.statusCode >= 200 &&
+          response.statusCode < 300 &&
+          _mr7MutationInput(permit._sentBody, 'createNote')['internal'] ==
+              false) {
+        await session._bindCreatedActivityNote(permit, envelope);
       }
       if (permit?.operation == 'deleteProject' && response.statusCode == 202) {
         session.terminalDeletionAccepted = true;
@@ -4438,7 +4492,9 @@ query Mr7Incident($path: ID!, $iid: String!) {
         matches =
             state != null &&
             row['state'] == state &&
-            exactInput({'stateEvent': a['stateEvent']});
+            exactInput({
+              'stateEvent': (a['stateEvent'] as String).toUpperCase(),
+            });
       case 'updateWorkItemStatus':
         final status = row['status'];
         matches =
@@ -4628,13 +4684,17 @@ query Mr7Incident($path: ID!, $iid: String!) {
               widget.keys.any(
                 (k) => !const {'addLabelIds', 'removeLabelIds'}.contains(k),
               ) ||
-              widget['addLabelIds'] is! List ||
-              widget['removeLabelIds'] is! List) {
+              (widget.containsKey('addLabelIds') &&
+                  widget['addLabelIds'] is! List) ||
+              (widget.containsKey('removeLabelIds') &&
+                  widget['removeLabelIds'] is! List)) {
             matches = false;
             break;
           }
-          final adds = (widget['addLabelIds'] as List).toSet();
-          final removes = (widget['removeLabelIds'] as List).toSet();
+          final addIds = widget['addLabelIds'] as List? ?? const [];
+          final removeIds = widget['removeLabelIds'] as List? ?? const [];
+          final adds = addIds.toSet();
+          final removes = removeIds.toSet();
           final oldIds = old.map((n) => (n as Map)['id']).toSet();
           final actualIds = actual.map((n) => (n as Map)['id']).toSet();
           final expected = {...oldIds}
@@ -4642,8 +4702,9 @@ query Mr7Incident($path: ID!, $iid: String!) {
             ..addAll(adds);
           matches =
               matches &&
-              adds.length == (widget['addLabelIds'] as List).length &&
-              removes.length == (widget['removeLabelIds'] as List).length &&
+              adds.length == addIds.length &&
+              removes.length == removeIds.length &&
+              (adds.isNotEmpty || removes.isNotEmpty) &&
               adds.intersection(removes).isEmpty &&
               oldIds.containsAll(removes) &&
               oldIds.intersection(adds).isEmpty &&
@@ -5220,6 +5281,7 @@ final class Mr7SandboxSession {
     observerAdapter.beforeRequest = chargeRequest;
     observerAdapter.validateRequest = (request) =>
         validateRead(request, allowStopped: true);
+    observerAdapter.validateResponse = _checkMilestoneResponse;
     observer =
         Dio(
             BaseOptions(
@@ -5562,6 +5624,129 @@ final class Mr7SandboxSession {
     _graphResources[gid] = path;
   }
 
+  Future<ResponseBody> _checkMilestoneResponse(
+    Object? body,
+    ResponseBody response,
+  ) async {
+    if (!_milestoneOwnerDocument(body)) return response;
+    final bytes = <int>[];
+    await for (final chunk in response.stream) {
+      bytes.addAll(chunk);
+      if (bytes.length > 2 * 1024 * 1024) {
+        stop('milestoneOwner');
+        throw const Mr7Refused('milestoneOwner');
+      }
+    }
+    _validateMilestoneOwners(body, jsonDecode(utf8.decode(bytes)));
+    return ResponseBody.fromBytes(
+      bytes,
+      response.statusCode,
+      headers: response.headers,
+    );
+  }
+
+  void _validateMilestoneOwners(Object? body, Object? envelope) {
+    final target = identity;
+    final operation = _selectedGraphOperation(body);
+    if (target == null || operation == null) {
+      throw const Mr7Refused('milestoneOwner');
+    }
+    void check(Object? value, List<String> path) {
+      // A missing milestone or an empty picker connection has no owner.
+      if (value == null) return;
+      if (value is List) {
+        for (final node in value) {
+          check(node, path);
+        }
+        return;
+      }
+      if (path.isEmpty) {
+        if (value is! Map ||
+            value.length != 2 ||
+            value['id'] != 'gid://gitlab/Group/${target.namespaceId}' ||
+            value['fullPath'] != target.namespace) {
+          throw const Mr7Refused('milestoneOwner');
+        }
+        return;
+      }
+      if (value is! Map || !value.containsKey(path.first)) {
+        throw const Mr7Refused('milestoneOwner');
+      }
+      check(value[path.first], path.skip(1).toList());
+    }
+
+    try {
+      for (final entry in operation.selections.entries.where(
+        (entry) => entry.value.field == 'group',
+      )) {
+        check(envelope, ['data', ...entry.key.split('/')]);
+      }
+    } catch (_) {
+      stop('milestoneOwner');
+      rethrow;
+    }
+  }
+
+  Future<void> _bindCreatedActivityNote(
+    Mr7MutationPermit dispatched,
+    Object? envelope,
+  ) async {
+    _open();
+    final target = identity!;
+    final id = dispatched.returnedGlobalId;
+    final payload = _selectRecord(envelope, const ['data', 'createNote']);
+    final errors = envelope is Map ? envelope['errors'] : null;
+    final input = _mr7MutationInput(dispatched._sentBody, 'createNote');
+    final workItem = input['noteableId'];
+    final parentPath = dispatched._graphResourcesAtSend[workItem];
+    if (!identical(permit, dispatched) ||
+        dispatched.sent != 1 ||
+        dispatched._sentPath != 'graphql' ||
+        !_mr7SameJson(dispatched.resultPath, ['data', 'createNote', 'note']) ||
+        id == null ||
+        !RegExp(r'^gid://gitlab/Note/[1-9][0-9]*$').hasMatch(id) ||
+        dispatched._graphResourcesAtSend.containsKey(id) ||
+        (errors != null && (errors is! List || errors.isNotEmpty)) ||
+        payload is! Map ||
+        payload['errors'] is! List ||
+        (payload['errors'] as List).isNotEmpty ||
+        workItem is! String ||
+        !RegExp(r'^gid://gitlab/WorkItem/[1-9][0-9]*$').hasMatch(workItem) ||
+        parentPath == null ||
+        !RegExp(
+          '^projects/${target.projectId}/issues/[1-9][0-9]*\$',
+        ).hasMatch(parentPath) ||
+        _graphResources[workItem] != parentPath) {
+      throw const Mr7Refused('createdNoteOwnership');
+    }
+    await verifyIdentity();
+    final parent = await read(parentPath);
+    final notePath = '$parentPath/notes/${id.split('/').last}';
+    final note = await read(notePath);
+    final author = note['author'];
+    if (parent['id'] != int.parse(workItem.split('/').last) ||
+        parent['iid'] != int.parse(parentPath.split('/').last) ||
+        parent['project_id'] != target.projectId ||
+        note['id'] != int.parse(id.split('/').last) ||
+        note['project_id'] != target.projectId ||
+        note['noteable_id'] != parent['id'] ||
+        author is! Map ||
+        author['id'] != target.userId ||
+        note['system'] != false ||
+        note['internal'] != false) {
+      throw const Mr7Refused('createdNoteOwnership');
+    }
+    await verifyIdentity();
+    _open();
+    if (!identical(permit, dispatched) ||
+        !identical(identity, target) ||
+        dispatched.returnedGlobalId != id ||
+        _graphResources[workItem] != parentPath) {
+      throw const Mr7Refused('createdNoteOwnership');
+    }
+    _graphResources[id] = notePath;
+  }
+
   void _requireGraphTargets(Object? body) {
     final operation = _selectedGraphOperation(body);
     if (operation == null ||
@@ -5579,9 +5764,15 @@ final class Mr7SandboxSession {
           }.contains(mr7Digest(body['query'])) &&
           operation.kind == 'query' &&
           server._todos.isNotEmpty;
+      final milestoneOwner =
+          _milestoneOwnerDocument(body) &&
+          (operation.kind == 'query' ||
+              permit?.operation == 'updateWorkItemMilestone');
       if (!todoRead &&
           operation.fields.any(
-            const {'group', 'groups', 'namespaces'}.contains,
+            (field) =>
+                const {'groups', 'namespaces'}.contains(field) ||
+                (field == 'group' && !milestoneOwner),
           )) {
         throw const Mr7Refused('foreignResource');
       }

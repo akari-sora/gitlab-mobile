@@ -55,9 +55,10 @@ Map<String, Object?> _user(String id, String username) => {
   'username': username,
 };
 
-class _CaptureAdapter implements HttpClientAdapter {
-  _CaptureAdapter(_Fixture fixture) : respond = fixture._graph;
-  _CaptureAdapter.activity(_ActivityFixture fixture) : respond = fixture.graph;
+class Mr7CaptureAdapter implements HttpClientAdapter {
+  Mr7CaptureAdapter(Mr7WorkItemFixture fixture) : respond = fixture.graph;
+  Mr7CaptureAdapter.activity(Mr7ActivityFixture fixture)
+    : respond = fixture.graph;
   final ResponseBody Function(RequestOptions) respond;
   final requests = <Map<String, Object?>>[];
 
@@ -75,11 +76,11 @@ class _CaptureAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
-class _Fixture {
-  _Fixture._(this.server, this.session);
-  static _Fixture create() {
+class Mr7WorkItemFixture {
+  Mr7WorkItemFixture._(this.server, this.session);
+  static Mr7WorkItemFixture create() {
     final server = Mr7SyntheticGitLab();
-    return _Fixture._(
+    return Mr7WorkItemFixture._(
       server,
       Mr7SandboxSession(
         server: server,
@@ -190,7 +191,7 @@ class _Fixture {
       _milestone,
       path: 'projects/909/milestones/501',
     );
-    server.routes['POST /install/api/graphql'] = _graph;
+    server.routes['POST /install/api/graphql'] = graph;
   }
 
   bool _selected(String doc, String field) =>
@@ -222,7 +223,7 @@ class _Fixture {
     throw StateError('Unexpected cursor: $cursor');
   }
 
-  ResponseBody _graph(RequestOptions request) {
+  ResponseBody graph(RequestOptions request) {
     final body = request.data as Map;
     final doc = body['query'] as String;
     final vars = body['variables'] as Map;
@@ -450,6 +451,7 @@ class _Fixture {
     required Map<String, Object?> args,
     required Map<String, Object?> input,
     required void Function() mutate,
+    Map<String, Object?>? capturedRequest,
     bool eeDates = false,
     Set<String> fields = _snapshotFields,
     String? sentGid,
@@ -473,13 +475,16 @@ class _Fixture {
         ? 'issue'
         : 'workItem';
     final doc =
+        capturedRequest?['query'] as String? ??
         'mutation Widget(\$input: $type) { $root(input: \$input) { errors $resultField { id } } }';
-    final vars = {
-      'input': {
-        if (operation != 'setIncidentStatus') 'id': sentGid ?? _gid,
-        ...input,
-      },
-    };
+    final vars =
+        capturedRequest?['variables'] as Map<String, Object?>? ??
+        {
+          'input': {
+            if (operation != 'setIncidentStatus') 'id': sentGid ?? _gid,
+            ...input,
+          },
+        };
     final permit =
         Mr7MutationPermit(
             operation: operation,
@@ -578,8 +583,8 @@ query MobileIncidentStatus($path: ID!, $iid: String!) {
   }
 }
 
-Future<T> _fixture<T>(Future<T> Function(_Fixture f) body) async {
-  final fixture = _Fixture.create();
+Future<T> _fixture<T>(Future<T> Function(Mr7WorkItemFixture f) body) async {
+  final fixture = Mr7WorkItemFixture.create();
   await fixture.initialize();
   try {
     return await body(fixture);
@@ -599,7 +604,7 @@ void main() {
             return f.effect(
               operation: 'updateWorkItemState',
               args: {'stateEvent': close ? 'close' : 'reopen'},
-              input: {'stateEvent': close ? 'close' : 'reopen'},
+              input: {'stateEvent': close ? 'CLOSE' : 'REOPEN'},
               mutate: () => f.state = close ? 'CLOSED' : 'OPEN',
             );
           }),
@@ -1021,7 +1026,7 @@ void main() {
             f.effect(
               operation: 'updateWorkItemState',
               args: {'stateEvent': 'close'},
-              input: {'stateEvent': 'close'},
+              input: {'stateEvent': 'CLOSE'},
               sentGid: bad == 'selector' ? 'gid://gitlab/WorkItem/400' : null,
               mutate: () => f.state = 'CLOSED',
             ),
@@ -1199,7 +1204,7 @@ void main() {
     'widget no-op requires its independent witness through the real runner',
     () async {
       for (final variant in ['matching', 'missing', 'mismatched']) {
-        final f = _Fixture.create()..state = 'CLOSED';
+        final f = Mr7WorkItemFixture.create()..state = 'CLOSED';
         final scenario = sandbox.Mr7Scenario(
           id: 'state-noop-$variant',
           suite: 'graphql',
@@ -1239,7 +1244,7 @@ void main() {
           observe: (_, _) async => false,
           fixture: (session, identity) async {
             await f.installRoutesAndBindings();
-            final adapter = _CaptureAdapter(f);
+            final adapter = Mr7CaptureAdapter(f);
             final api = GitLabApi(
               instance: GitLabInstance.parse(session.instance.toString()),
               token: 'synthetic-gitlab-pat',
@@ -1288,7 +1293,7 @@ void main() {
     'different-text-approved-witness',
   ]) {
     test('content edited approval $variant through the real runner', () async {
-      final f = _Fixture.create();
+      final f = Mr7WorkItemFixture.create();
       final matching = variant == 'matching';
       final differentText = variant.startsWith('different-text');
       final approvedWitness = matching || variant.endsWith('approved-witness');
@@ -1340,7 +1345,7 @@ void main() {
         observe: (_, _) async => false,
         fixture: (session, identity) async {
           await f.installRoutesAndBindings();
-          final adapter = _CaptureAdapter(f);
+          final adapter = Mr7CaptureAdapter(f);
           final api = GitLabApi(
             instance: GitLabInstance.parse(session.instance.toString()),
             token: 'synthetic-gitlab-pat',
@@ -1583,11 +1588,11 @@ const _activityReply = 'gid://gitlab/IndividualNoteDiscussion/opaque-reply';
 Matcher _activityRefusal(String code) =>
     throwsA(isA<Mr7Refused>().having((error) => error.code, 'code', code));
 
-class _ActivityFixture {
-  _ActivityFixture._(this.server, this.session);
-  static _ActivityFixture create() {
+class Mr7ActivityFixture {
+  Mr7ActivityFixture._(this.server, this.session);
+  static Mr7ActivityFixture create() {
     final server = Mr7SyntheticGitLab();
-    return _ActivityFixture._(
+    return Mr7ActivityFixture._(
       server,
       Mr7SandboxSession(
         server: server,
@@ -1616,6 +1621,7 @@ class _ActivityFixture {
   bool removeOtherInstead = false;
   bool brokenDiscussionCursor = false;
   bool wrongReplyThread = false;
+  bool bindCreatedNote = true;
   String rawCallBody = 'Created';
   int discussionReads = 0;
   int notePageReads = 0;
@@ -1727,7 +1733,7 @@ class _ActivityFixture {
       _activityWorkItem,
       path: _activityIssuePath,
     );
-    for (final id in [_activityNote51, _activityNote52]) {
+    for (final id in [_activityNote51, if (bindCreatedNote) _activityNote52]) {
       await session.bindGraphResource(
         id,
         path: '$_activityIssuePath/notes/${id.split('/').last}',
@@ -1763,6 +1769,7 @@ class _ActivityFixture {
         return mr7Json({
           'data': {
             'createNote': {
+              'errors': <String>[],
               'note': {'id': _activityNote52},
             },
           },
@@ -1809,6 +1816,7 @@ class _ActivityFixture {
       throw StateError('Unexpected mutation');
     }
     if (doc.contains('query Mr7Note(') ||
+        doc.contains('query MobileWorkItemActivityNoteReadback(') ||
         doc.contains('query MobileWorkItemActivityEditAccess(')) {
       noteLookupReads++;
       return mr7Json({
@@ -1998,7 +2006,7 @@ class _ActivityFixture {
     String operation, {
     String noteId = _activityNote51,
   }) async {
-    final adapter = _CaptureAdapter.activity(this);
+    final adapter = Mr7CaptureAdapter.activity(this);
     final api = GitLabApi(
       instance: GitLabInstance.parse(session.instance.toString()),
       token: 'synthetic-gitlab-pat',
@@ -2100,7 +2108,7 @@ class _ActivityFixture {
 
 void _activityTests() {
   test('reply observer accepts the effective trimmed dispatch text', () async {
-    final f = _ActivityFixture.create();
+    final f = Mr7ActivityFixture.create()..bindCreatedNote = false;
     await f.initialize();
     f.rawCallBody = '  Created \n';
     await f.send('createWorkItemActivityReply');
@@ -2121,7 +2129,7 @@ void _activityTests() {
   test(
     'reply observer binds the dispatched thread to the requested anchor note',
     () async {
-      final f = _ActivityFixture.create();
+      final f = Mr7ActivityFixture.create()..bindCreatedNote = false;
       await f.initialize();
       f.wrongReplyThread = true;
       await f.send('createWorkItemActivityReply');
@@ -2142,7 +2150,7 @@ void _activityTests() {
   );
 
   test('delete guard refuses a foreign note author before dispatch', () async {
-    final f = _ActivityFixture.create();
+    final f = Mr7ActivityFixture.create();
     await f.initialize();
     f.noteAuthor = _activityOther;
     await expectLater(
@@ -2170,7 +2178,7 @@ void _activityTests() {
         'createWorkItemActivityComment',
         'createWorkItemActivityReply',
       ]) {
-        final f = _ActivityFixture.create();
+        final f = Mr7ActivityFixture.create()..bindCreatedNote = false;
         await f.initialize();
         await f.send(operation);
         expect(
@@ -2195,7 +2203,7 @@ void _activityTests() {
   test(
     'activity edit reads exact actor parent and all discussion and note pages',
     () async {
-      final f = _ActivityFixture.create();
+      final f = Mr7ActivityFixture.create();
       await f.initialize();
       f.threadNotes.insert(0, _activityNote52);
       f.bodies[_activityNote52] = 'Anchor';
@@ -2226,7 +2234,7 @@ void _activityTests() {
         'discussion',
         'reply',
       ]) {
-        final f = _ActivityFixture.create();
+        final f = Mr7ActivityFixture.create();
         await f.initialize();
         await f.send('editWorkItemActivityNote');
         if (variant == 'author') f.noteAuthor = _activityOther;
@@ -2263,7 +2271,7 @@ void _activityTests() {
   );
 
   test('deletion is not proven by one missing read', () async {
-    final f = _ActivityFixture.create();
+    final f = Mr7ActivityFixture.create();
     await f.initialize();
     f.retainDeleted = true;
     f.omitExactNoteRead = true;
@@ -2286,7 +2294,7 @@ void _activityTests() {
     'activity deletion requires complete connections and rejects incomplete page metadata',
     () async {
       for (final broken in [false, true]) {
-        final f = _ActivityFixture.create();
+        final f = Mr7ActivityFixture.create();
         await f.initialize();
         f.threadNotes.add(_activityNote52);
         f.secondNotes.add(_activityNote53);
@@ -2305,7 +2313,7 @@ void _activityTests() {
   );
 
   test('reaction removal cannot be accepted for another actor', () async {
-    final f = _ActivityFixture.create();
+    final f = Mr7ActivityFixture.create();
     await f.initialize();
     f.awards.addAll([
       f.award('thumbsup', _activityActor),
@@ -2327,7 +2335,7 @@ void _activityTests() {
     'activity reaction add and remove page the exact actor awards',
     () async {
       for (final add in [true, false]) {
-        final f = _ActivityFixture.create();
+        final f = Mr7ActivityFixture.create();
         await f.initialize();
         f.paginateAwards = true;
         f.awards.add(f.award('thumbsup', _activityOther));
@@ -2361,7 +2369,7 @@ void _activityTests() {
     'activity reaction pagination rejects repeated cursor and duplicate awards',
     () async {
       for (final variant in ['cursor', 'duplicate']) {
-        final f = _ActivityFixture.create();
+        final f = Mr7ActivityFixture.create();
         await f.initialize();
         f.paginateAwards = true;
         f.awards.addAll([
@@ -2395,7 +2403,7 @@ void _activityTests() {
         'setWorkItemActivityNoteReaction',
       ]) {
         for (final mismatch in [false, true]) {
-          final f = _ActivityFixture.create();
+          final f = Mr7ActivityFixture.create();
           await f.initialize();
           final isReaction = operation == 'setWorkItemActivityNoteReaction';
           if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
@@ -2437,7 +2445,7 @@ void _activityTests() {
         'editWorkItemActivityNote',
         'setWorkItemActivityNoteReaction',
       ]) {
-        final f = _ActivityFixture.create();
+        final f = Mr7ActivityFixture.create();
         await f.initialize();
         f.threadNotes.add(_activityNote52);
         f.bodies[_activityNote52] = 'Original';
@@ -2482,7 +2490,7 @@ void _activityTests() {
         'editWorkItemActivityNote',
         'setWorkItemActivityNoteReaction',
       ]) {
-        final f = _ActivityFixture.create();
+        final f = Mr7ActivityFixture.create();
         await f.initialize();
         final isReaction = operation == 'setWorkItemActivityNoteReaction';
         if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
@@ -2536,7 +2544,7 @@ query UnrelatedAnchor($workItemId: WorkItemID!, $noteId: NoteID!) {
   test(
     'activity no-op refuses missing prepared arguments despite matching call text',
     () async {
-      final f = _ActivityFixture.create();
+      final f = Mr7ActivityFixture.create();
       await f.initialize();
       final arguments = <String, Object?>{
         'projectId': 909,
@@ -2570,7 +2578,7 @@ query UnrelatedAnchor($workItemId: WorkItemID!, $noteId: NoteID!) {
         'editWorkItemActivityNote',
         'setWorkItemActivityNoteReaction',
       ]) {
-        final f = _ActivityFixture.create();
+        final f = Mr7ActivityFixture.create();
         await f.initialize();
         f.threadNotes.add(_activityNote52);
         f.bodies[_activityNote52] = 'Original';
@@ -2636,7 +2644,7 @@ query UnrelatedAnchor($workItemId: WorkItemID!, $noteId: NoteID!) {
       'setWorkItemActivityNoteReaction',
     ]) {
       for (final cleared in [false, true]) {
-        final f = _ActivityFixture.create();
+        final f = Mr7ActivityFixture.create();
         await f.initialize();
         final isReaction = operation == 'setWorkItemActivityNoteReaction';
         if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
@@ -2681,7 +2689,7 @@ query UnrelatedAnchor($workItemId: WorkItemID!, $noteId: NoteID!) {
       ]) {
         for (final delayedStream in [false, true]) {
           for (final hadPermit in [false, true]) {
-            final f = _ActivityFixture.create();
+            final f = Mr7ActivityFixture.create();
             await f.initialize();
             final isReaction = operation == 'setWorkItemActivityNoteReaction';
             if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
@@ -2783,7 +2791,7 @@ query UnrelatedAnchor($workItemId: WorkItemID!, $noteId: NoteID!) {
     'different-text-approved-witness',
   ]) {
     test('activity edited approval $variant through the real runner', () async {
-      final f = _ActivityFixture.create();
+      final f = Mr7ActivityFixture.create();
       final matching = variant == 'matching';
       final differentText = variant.startsWith('different-text');
       final approvedWitness = matching || variant.endsWith('approved-witness');
@@ -2894,7 +2902,7 @@ query UnrelatedAnchor($workItemId: WorkItemID!, $noteId: NoteID!) {
       ]) {
         for (final variant in ['matching', 'wrong-note', 'superseded-permit']) {
           final matching = variant == 'matching';
-          final f = _ActivityFixture.create();
+          final f = Mr7ActivityFixture.create();
           final isReaction = operation == 'setWorkItemActivityNoteReaction';
           if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
           final scenario = sandbox.Mr7Scenario(
