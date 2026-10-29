@@ -844,40 +844,26 @@ void main() {
     });
   }
 
+  // Wave 3d opened these four observer gaps. The catalogue keeps them closed
+  // until the 7B2 variants are reopened; the probe proves the seam now passes.
   for (final seam in [
-    (
-      'updateWorkItemState',
-      'close',
-      'workItemStateEnumMismatch',
-      'readbackUnverified',
-      1,
-    ),
-    (
-      'updateWorkItemLabels',
-      'add',
-      'workItemLabelDeltaShapeMismatch',
-      'readbackUnverified',
-      1,
-    ),
+    ('updateWorkItemState', 'close', 'workItemStateEnumMismatch'),
+    ('updateWorkItemLabels', 'add', 'workItemLabelDeltaShapeMismatch'),
     (
       'updateWorkItemMilestone',
       'set',
       'workItemMilestoneOwnerProjectionRefused',
-      'foreignResource',
-      0,
     ),
     (
       'createWorkItemActivityComment',
       'comment',
       'createdWorkItemNoteReadbackUnbound',
-      'foreignResource',
-      1,
     ),
   ]) {
     final original = mr7GraphqlScenarios().singleWhere(
       (s) => s.operation == seam.$1 && s.variant == seam.$2,
     );
-    test('${original.id}: ${seam.$3} remains closed when probed', () async {
+    test('${original.id}: ${seam.$3} probe passes on wave 3d', () async {
       expect(original.closed?.code, seam.$3);
       final probe = sandbox.Mr7Scenario(
         id: original.id,
@@ -911,11 +897,11 @@ void main() {
       configureMr7GraphqlFixtures(server);
       final receipt = await _run(server, [probe]);
       final row = _rows(receipt).single;
-      expect(row['status'], isNot('PASS'), reason: jsonEncode(receipt));
-      expect(receipt['stopReason'], seam.$4, reason: jsonEncode(receipt));
-      expect(row['mutationCount'], seam.$5);
-      expect(receipt['quarantined'], true);
-      expect(server.cleanupWrites, 0);
+      expect(row['status'], 'PASS', reason: jsonEncode(receipt));
+      expect(row['readback'], 'PASS');
+      expect(row['mutationCount'], 1);
+      expect(receipt['quarantined'], false);
+      expect((receipt['cleanup'] as Map)['status'], 'PASS');
     });
   }
 
