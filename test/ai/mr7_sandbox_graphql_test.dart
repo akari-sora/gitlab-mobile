@@ -900,6 +900,8 @@ void main() {
       expect(row['status'], 'PASS', reason: jsonEncode(receipt));
       expect(row['readback'], 'PASS');
       expect(row['mutationCount'], 1);
+      expect(row.containsKey('classification'), false);
+      expect(receipt['stopReason'], isNull);
       expect(receipt['quarantined'], false);
       expect((receipt['cleanup'] as Map)['status'], 'PASS');
     });
