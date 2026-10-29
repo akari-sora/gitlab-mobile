@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,13 +45,30 @@ Future<Map<String, Object?>> _run(
   Mr7Policy policy = Mr7Policy.candidate,
   Mr7SandboxSession? session,
   sandbox.Mr7Confirm? confirm,
+  List<sandbox.Mr7ClosedVariant> closedVariants = const [],
 }) => sandbox.runMr7Sandbox(
   releaseSha: _sha,
   policy: policy,
   server: server,
   session: session ?? _session(server),
   suite: 'graphql',
-  scenarios: scenarios,
+  scenarios: [
+    for (final s in scenarios)
+      if (s.closed == null) s,
+  ],
+  closedVariants: [
+    ...closedVariants,
+    for (final s in scenarios)
+      if (s.closed case final refusal?)
+        sandbox.Mr7ClosedVariant(
+          id: s.id,
+          suite: s.suite,
+          operation: s.operation,
+          variant: s.variant,
+          tier: s.tier,
+          refusal: refusal,
+        ),
+  ],
   confirm: confirm ?? (_) async => true,
 );
 
@@ -63,6 +81,99 @@ void _syntheticOnly(Map<String, Object?> receipt) {
   expect(receipt['secretLeakScan'], 'PASS');
   expect(jsonEncode(receipt), isNot(contains('synthetic-gitlab-pat')));
   expect(jsonEncode(receipt), isNot(contains('synthetic-provider-key')));
+}
+
+const _workItem = 'gid://gitlab/WorkItem/31';
+const _observerDocument = r'''
+query B2Observer($id: ID!) {
+  currentUser { id username }
+  node(id: $id) {
+    id project { id fullPath }
+    notes(first: 100) {
+      nodes { id }
+      totalCount
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
+// Contract probes exercise real guarded dispatch and sealed observer refusal.
+// They do not run a production AI chain or contribute executable coverage.
+Future<({Mr7SandboxSession session, Mr7Readback observer})> _observerProbe({
+  bool activity = false,
+}) async {
+  final server = Mr7SyntheticGitLab();
+  configureMr7GraphqlFixtures(server);
+  final session = _session(server);
+  await session.initialize();
+  await session.bindWorkItemGraphResource(
+    _workItem,
+    path: 'projects/909/issues/3',
+  );
+  const parentMutation = r'''
+mutation B2Parent($input: WorkItemUpdateInput!) {
+  workItemUpdate(input: $input) { workItem { id } errors }
+}
+''';
+  const activityMutation = r'''
+mutation B2Activity($input: CreateNoteInput!) {
+  createNote(input: $input) { note { id } errors }
+}
+''';
+  final mutation = activity ? activityMutation : parentMutation;
+  final variables = {
+    'input': activity
+        ? {'noteableId': _workItem, 'body': 'Synthetic comment'}
+        : {'id': _workItem, 'stateEvent': 'CLOSE'},
+  };
+  final resultField = activity ? 'createNote' : 'workItemUpdate';
+  final resourceField = activity ? 'note' : 'workItem';
+  server.routes['POST /install/api/graphql'] = (_) {
+    server.scenarioWrites++;
+    server.addEvent(target: server.projectId);
+    return mr7Json({
+      'data': {
+        resultField: {
+          resourceField: {'id': activity ? 'gid://gitlab/Note/51' : _workItem},
+          'errors': <Object?>[],
+        },
+      },
+    });
+  };
+  final permit = Mr7MutationPermit(
+    operation: activity
+        ? 'createWorkItemActivityComment'
+        : 'updateWorkItemState',
+    paths: {'POST graphql'},
+    resourceProjectId: 909,
+    graphDocuments: {mutation},
+    graphVariablesDigests: {mr7Digest(variables)},
+    resultPath: ['data', resultField, resourceField],
+  )..confirmed = true;
+  session.permit = permit;
+  await session.writer.post<Object?>(
+    '${session.instance}/api/graphql',
+    data: {'query': mutation, 'variables': variables},
+  );
+  expect(permit.sent, 1);
+  expect(server.scenarioWrites, 1);
+  final queries = {
+    _observerDocument: {
+      mr7Digest({'id': _workItem}),
+    },
+  };
+  session.observerAdapter.graphReadDocuments = queries;
+  return (
+    session: session,
+    observer: Mr7Readback(
+      session,
+      session.identity!,
+      permit,
+      paths: {'projects/909/issues/3'},
+      graphQueries: queries,
+    ),
+  );
 }
 
 void main() {
@@ -193,10 +304,11 @@ void main() {
       }
       expect(arguments.containsKey('groupFullPath'), false);
       expect(scenario.paths(_id), {'POST graphql'});
+      expect(scenario.closed, isNotNull, reason: scenario.id);
       expect(
         scenario.graphDocuments,
         isEmpty,
-        reason: 'Missing seals must remain closed, never guessed.',
+        reason: 'No executable chain until its sealed observer is supported.',
       );
       expect(scenario.graphVariablesDigests, isEmpty);
       expect(
@@ -219,16 +331,33 @@ void main() {
       for (final row in coverage) {
         expect(row['status'], 'NOT_RUN');
         expect(row['capability'], 'closed');
-        expect(row['reason'], startsWith('NOT_RUN/closed:'));
+        expect(row['closureCause'], isNotEmpty);
+        expect(row['closureDetail'], isNotEmpty);
         expect(row['live'], startsWith('NOT_RUN:'));
         expect(row['preconditions'], isNotEmpty);
         expect(row['closesOnlyWhen'], contains('independent-readback'));
       }
       expect(
-        coverage.singleWhere((r) => r['variant'] == 'multiple')['reason'],
+        coverage.singleWhere(
+          (r) => r['variant'] == 'multiple',
+        )['closureDetail'],
         contains('7-D8'),
       );
-      expect(mr7GraphqlSeamRequests.keys, {'B2-S1', 'B2-S2', 'B2-S3'});
+      expect(mr7GraphqlSeamRequests.keys, {'B2-O1', 'B2-O2', 'B2-O3'});
+      final counts = <String, int>{};
+      for (final row in coverage) {
+        final code = row['reason']! as String;
+        counts.update(code, (value) => value + 1, ifAbsent: () => 1);
+      }
+      expect(counts, {
+        'workItemParentObserverUnavailable': 26,
+        'workItemActivityObserverUnavailable': 6,
+        'workItemNoOpObserverUnavailable': 11,
+        'healthWidgetNotModeled': 4,
+        'weightWidgetNotModeled': 4,
+        'otherMembersExcluded': 1,
+        'sharedTodoScopesUnproven': 6,
+      });
     },
   );
 
@@ -257,9 +386,10 @@ void main() {
         expect(row['operation'], scenarios[i].operation);
         expect(row['variant'], scenarios[i].variant);
         expect(row['tier'], scenarios[i].tier);
-        expect(row['scope'], 'project');
+        expect(row.containsKey('scope'), false);
         expect(row['status'], 'NOT_RUN');
-        expect(row['reason'], 'releaseClosed');
+        expect(row['reason'], scenarios[i].closed!.code);
+        expect(row['refusal'], scenarios[i].closed!.metadata);
         expect(row['mutationCount'], 0);
         expect(row['readback'], 'NOT_RUN');
         expect(row['live'], 'NOT_RUN');
@@ -275,9 +405,57 @@ void main() {
     },
   );
 
+  test('candidate receipt preserves all typed closed identities', () async {
+    final server = Mr7SyntheticGitLab();
+    var confirmations = 0;
+    final scenarios = [...mr7GraphqlScenarios(), ...mr7GraphqlGroupRefusals()];
+    final receipt = await _run(
+      server,
+      [],
+      closedVariants: mr7GraphqlClosedVariants(),
+      confirm: (_) async {
+        confirmations++;
+        return true;
+      },
+    );
+    _syntheticOnly(receipt);
+    expect(receipt['status'], 'PASS');
+    expect(receipt['evidenceClass'], 'CANDIDATE_ONLY');
+    expect(_rows(receipt), hasLength(118));
+    expect(confirmations, 0);
+    expect(server.scenarioWrites, 0);
+    expect(server.cleanupWrites, 1);
+    expect(_part(receipt, 'events')['complete'], true);
+    expect(_part(receipt, 'cleanup')['deletionVerified'], true);
+    expect(_part(receipt, 'coverage')['graphql'], 'NOT_RUN');
+    for (var i = 0; i < scenarios.length; i++) {
+      final scenario = scenarios[i];
+      final row = _rows(receipt)[i];
+      expect(row['id'], scenario.id);
+      expect(row['suite'], scenario.suite);
+      expect(row['operation'], scenario.operation);
+      expect(row['variant'], scenario.variant);
+      expect(row['tier'], scenario.tier);
+      expect(row['releaseSha'], _sha);
+      expect(row['live'], 'NOT_RUN');
+      expect(row['status'], 'NOT_RUN');
+      expect(row['classification'], 'closedVariant');
+      expect(row.containsKey('scope'), false);
+      expect(row['reason'], scenario.closed!.code);
+      expect(row['refusal'], scenario.closed!.metadata);
+      expect(row['providerCalls'], 0);
+      expect(row['mutationCount'], 0);
+      expect(row['readback'], 'NOT_RUN');
+      expect(row.containsKey('outcome'), false);
+      expect(row.containsKey('coreOutcome'), false);
+    }
+    final output = Platform.environment['MR7_B2I_RECEIPT'];
+    if (output != null) await File(output).writeAsString(jsonEncode(receipt));
+  });
+
   for (final scenario in mr7GraphqlScenarios()) {
     test(
-      '${scenario.id} candidate never bypasses the missing GraphQL seams',
+      '${scenario.id} candidate emits its typed zero-dispatch disposition',
       () async {
         final server = Mr7SyntheticGitLab();
         configureMr7GraphqlFixtures(server);
@@ -286,8 +464,20 @@ void main() {
         expect(receipt['evidenceClass'], 'CANDIDATE_ONLY');
         final row = _rows(receipt).single;
         expect(row['id'], scenario.id);
-        expect(row['status'], isNot('PASS'), reason: jsonEncode(receipt));
+        expect(row['status'], 'NOT_RUN', reason: jsonEncode(receipt));
+        expect(row['classification'], 'closedVariant');
+        expect(row['reason'], scenario.closed!.code);
+        expect(row['refusal'], scenario.closed!.metadata);
+        expect(row['suite'], 'graphql');
+        expect(row['operation'], scenario.operation);
+        expect(row['variant'], scenario.variant);
+        expect(row['tier'], scenario.tier);
+        expect(row['releaseSha'], _sha);
+        expect(row['live'], 'NOT_RUN');
         expect(row['mutationCount'], 0);
+        expect(row['providerCalls'], 0);
+        expect(row.containsKey('outcome'), false);
+        expect(row.containsKey('coreOutcome'), false);
         expect(row['readback'], 'NOT_RUN');
         expect(server.scenarioWrites, 0);
         expect(
@@ -302,21 +492,9 @@ void main() {
           ),
           true,
         );
-        if (scenario.operation.endsWith('Todo')) {
-          expect(row['status'], 'NOT_RUN');
-          expect(row['reason'], 'releaseClosed');
-        } else {
-          // These are raw refusal receipts, not positive operation evidence.
-          expect(row['provider'], isA<Map<String, Object?>>());
-          expect(row['outcome'], 'notExecuted', reason: jsonEncode(receipt));
-          expect(
-            receipt['stopReason'],
-            'unsealedGraph',
-            reason: jsonEncode(receipt),
-          );
-          expect(receipt['quarantined'], true, reason: jsonEncode(receipt));
-          expect(server.cleanupWrites, 0);
-        }
+        expect(receipt['quarantined'], false, reason: jsonEncode(receipt));
+        expect(server.cleanupWrites, 1);
+        expect(_part(receipt, 'cleanup')['deletionVerified'], true);
       },
     );
   }
@@ -340,7 +518,15 @@ void main() {
         );
         final row = _rows(receipt).singleWhere((r) => r['id'] == scenario.id);
         expect(row['status'], 'NOT_RUN');
-        expect(row['reason'], 'releaseClosed');
+        expect(row['reason'], 'groupAliasesExcluded');
+        expect(
+          row['refusal'],
+          const sandbox.Mr7ClosedRefusal(
+            sandbox.Mr7ClosureCause.scopeExcluded,
+            'groupAliasesExcluded',
+          ).metadata,
+        );
+        expect(row['providerCalls'], 0);
         expect(row['mutationCount'], 0);
       }
       expect(server.requests.any((r) => r.contains('groups/')), false);
@@ -458,41 +644,184 @@ void main() {
     expect(server.cleanupWrites, 0);
   });
 
-  test('a registered production-style inline fragment stays refused', () async {
+  test('delivered B2-S1 binds the exact fresh WorkItem GID', () async {
     final server = Mr7SyntheticGitLab();
+    configureMr7GraphqlFixtures(server);
     final session = _session(server);
     await session.initialize();
-    const document =
-        r'''query MobileProjectWorkItem($path: ID!, $iid: String!) {
+    await session.bindWorkItemGraphResource(
+      _workItem,
+      path: 'projects/909/issues/3',
+    );
+    expect(session.quarantined, false);
+    expect(server.scenarioWrites, 0);
+    await session.finish();
+    expect(server.cleanupWrites, 1);
+  });
+
+  test('sealed WorkItem parent effect observer is still unavailable', () async {
+    final probe = await _observerProbe();
+    try {
+      await expectLater(
+        probe.observer.observe(
+          Mr7GraphObservation(
+            document: _observerDocument,
+            variables: {'id': _workItem},
+            recordPath: ['data', 'node'],
+            parentId: _workItem,
+          ),
+        ),
+        throwsA(
+          isA<Mr7Refused>().having((e) => e.code, 'code', 'observerConnection'),
+        ),
+      );
+      expect(probe.observer.verifiedRequests, 0);
+    } finally {
+      probe.session.stop('unverifiedContractProbe');
+      await probe.session.finish();
+      expect(probe.session.server.cleanupWrites, 0);
+    }
+  });
+
+  test('sealed observer refuses an outside-sandbox WorkItem parent', () async {
+    final probe = await _observerProbe();
+    try {
+      await expectLater(
+        probe.observer.observe(
+          Mr7GraphObservation(
+            document: _observerDocument,
+            variables: {'id': 'gid://gitlab/WorkItem/777'},
+            recordPath: ['data', 'node'],
+            parentId: 'gid://gitlab/WorkItem/777',
+          ),
+        ),
+        throwsA(
+          isA<Mr7Refused>().having((e) => e.code, 'code', 'observerParent'),
+        ),
+      );
+      expect(probe.observer.verifiedRequests, 0);
+    } finally {
+      probe.session.stop('unverifiedContractProbe');
+      await probe.session.finish();
+      expect(probe.session.server.cleanupWrites, 0);
+    }
+  });
+
+  test('activity tool ID has no sealed complete-note mapping', () async {
+    final probe = await _observerProbe(activity: true);
+    try {
+      await expectLater(
+        probe.observer.observe(
+          Mr7GraphObservation(
+            document: _observerDocument,
+            variables: {'id': _workItem},
+            recordPath: ['data', 'node'],
+            parentId: _workItem,
+            connectionPath: ['notes'],
+            expectedIds: {'gid://gitlab/Note/51'},
+          ),
+        ),
+        throwsA(
+          isA<Mr7Refused>().having(
+            (e) => e.code,
+            'code',
+            'observerMutationTarget',
+          ),
+        ),
+      );
+      expect(probe.observer.verifiedRequests, 0);
+    } finally {
+      probe.session.stop('unverifiedContractProbe');
+      await probe.session.finish();
+      expect(probe.session.server.cleanupWrites, 0);
+    }
+  });
+
+  test('WorkItem no-ops cannot borrow a REST subscription witness', () {
+    const witness = Mr7ParentStateObservation(
+      parent: Mr7Parent.issue(id: 31, iid: 3),
+      state: Mr7ParentState.subscribed,
+      expected: true,
+    );
+    for (final scenario in mr7GraphqlScenarios().where(
+      (s) => s.closed!.code == 'workItemNoOpObserverUnavailable',
+    )) {
+      expect(
+        witness.matchesCall(
+          scenario.operation,
+          scenario.call(_id).arguments,
+          _id.projectId,
+        ),
+        false,
+        reason: scenario.id,
+      );
+    }
+  });
+
+  test(
+    'a registered production-style inline fragment read is admitted (7B0 seam B2-S2)',
+    () async {
+      final server = Mr7SyntheticGitLab();
+      final session = _session(server);
+      await session.initialize();
+      const document =
+          r'''query MobileProjectWorkItem($path: ID!, $iid: String!) {
       project(fullPath: $path) { id fullPath workItems(first: 2, iid: $iid) {
         nodes { id widgets { type ... on WorkItemWidgetDescription { description } } }
         pageInfo { hasNextPage endCursor }
       } }
     }''';
-    final variables = {'path': session.identity!.path, 'iid': '3'};
-    session.observerAdapter.graphReadDocuments = {
-      document: {mr7Digest(variables)},
-    };
-    await expectLater(
-      session.writer.post<Object?>(
+      final variables = {'path': session.identity!.path, 'iid': '3'};
+      session.observerAdapter.graphReadDocuments = {
+        document: {mr7Digest(variables)},
+      };
+      var sends = 0;
+      server.routes['POST /install/api/graphql'] = (_) {
+        sends++;
+        return mr7Json({'data': <String, Object?>{}});
+      };
+      // Named fragments and foreign/namespace selectors stay refused; see
+      // mr7_sandbox_wave2_contract_test.dart.
+      await session.writer.post<Object?>(
         '${session.instance}/api/graphql',
         data: {'query': document, 'variables': variables},
-      ),
-      throwsA(anything),
-    );
-    expect(server.requests, isNot(contains('POST /install/api/graphql')));
-    expect(session.quarantined, true);
-    await session.finish();
-    expect(server.scenarioWrites, 0);
-    expect(server.cleanupWrites, 0);
-  });
+      );
+      expect(sends, 1);
+      expect(session.quarantined, false);
+      expect(server.scenarioWrites, 0);
+      await session.finish();
+      // This read's custom route returns before the generic POST write counter.
+      // The admitted, unquarantined session deletes its own sandbox once.
+      expect(server.cleanupWrites, 1);
+    },
+  );
 
   test(
     'unverified GraphQL scope stops subsequent scenarios and cleanup',
     () async {
       final server = Mr7SyntheticGitLab();
       configureMr7GraphqlFixtures(server);
-      final cases = mr7GraphqlScenarios();
+      // Deliberately drop the typed closure only in this refusal probe. These
+      // are never exported as executable variants or positive chain evidence.
+      final cases = mr7GraphqlScenarios()
+          .take(2)
+          .map(
+            (s) => sandbox.Mr7Scenario(
+              id: s.id,
+              suite: s.suite,
+              operation: s.operation,
+              variant: s.variant,
+              tier: s.tier,
+              targetKind: s.targetKind,
+              call: s.call,
+              paths: s.paths,
+              resource: s.resource,
+              freshness: s.freshness,
+              createRegistry: s.createRegistry,
+              observe: s.observe,
+            ),
+          )
+          .toList();
       final receipt = await _run(server, [cases[0], cases[1]]);
       final rows = _rows(receipt);
       expect(rows.first['status'], isNot('PASS'));
@@ -507,27 +836,26 @@ void main() {
   test(
     'B0 uncertainty canary stops later GraphQL scenarios with zero retries',
     () async {
-      // The scoped GraphQL chain cannot reach a send. Reuse the B0 production
-      // star fixture solely to test fail-stop propagation into these definitions.
-      // This is not a positive GraphQL operation or independent GraphQL readback.
+      // Reuse the B0 fixture solely for uncertainty propagation. Closed GraphQL
+      // rows retain their dispositions; none is attempted after uncertainty.
       final server = Mr7SyntheticGitLab()..lostWriteReply = true;
       final receipt = await sandbox.runMr7Sandbox(
         policy: Mr7Policy.candidate,
         releaseSha: _sha,
         session: _session(server),
         confirm: (_) async => true,
-        scenarios: [
-          ...sandbox.mr7ContractScenarios(),
-          ...mr7GraphqlScenarios(),
-        ],
+        scenarios: sandbox.mr7ContractScenarios(),
+        closedVariants: mr7GraphqlClosedVariants(),
       );
       _syntheticOnly(receipt);
       final rows = _rows(receipt);
-      expect(rows.first['status'], 'writeUncertain');
-      expect(rows.first['mutationCount'], 1);
-      for (final row in rows.skip(1)) {
+      final canary = rows.singleWhere((r) => r['id'] == 'b0-star');
+      expect(canary['status'], 'writeUncertain');
+      expect(canary['mutationCount'], 1);
+      for (final row in rows.where((r) => r['id'] != 'b0-star')) {
         expect(row['status'], 'NOT_RUN');
-        expect(row['reason'], 'sessionStopped');
+        expect(row['classification'], 'closedVariant');
+        expect(row['providerCalls'], 0);
         expect(row['mutationCount'], 0);
       }
       expect(server.scenarioWrites, 1);
