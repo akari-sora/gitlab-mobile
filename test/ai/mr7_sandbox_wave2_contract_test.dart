@@ -157,6 +157,132 @@ void main() {
     },
   );
 
+  for (final kind in ['parent', 'board', 'milestone', 'label', 'draftNote']) {
+    for (final violation in ['path', 'size']) {
+      test('snapshot readback enforces $violation for $kind', () async {
+        final server = Mr7SyntheticGitLab();
+        final session = _session(server);
+        await session.initialize();
+        final fixture = switch (kind) {
+          'parent' => (
+            path: 'projects/909',
+            operation: 'editProject',
+            field: 'name',
+            row: server.project!,
+          ),
+          'board' => (
+            path: 'projects/909/boards/801',
+            operation: 'renameBoard',
+            field: 'name',
+            row: <String, Object?>{
+              'id': 801,
+              'project': {'id': 909},
+              'name': 'Original',
+              'hide_backlog_list': false,
+              'hide_closed_list': false,
+            },
+          ),
+          'milestone' => (
+            path: 'projects/909/milestones/501',
+            operation: 'updateMilestone',
+            field: 'title',
+            row: <String, Object?>{
+              'id': 501,
+              'iid': 3,
+              'project_id': 909,
+              'title': 'Original',
+              'description': 'Preserved',
+              'start_date': null,
+              'due_date': null,
+              'state': 'active',
+            },
+          ),
+          'label' => (
+            path: 'projects/909/labels/701',
+            operation: 'updateLabel',
+            field: 'description',
+            row: <String, Object?>{
+              'id': 701,
+              'is_project_label': true,
+              'name': 'Original',
+              'color': '#abcdef',
+              'description': 'Original',
+            },
+          ),
+          _ => (
+            path: 'projects/909/merge_requests/4/draft_notes/71',
+            operation: 'updateDraftNote',
+            field: 'note',
+            row: <String, Object?>{
+              'id': 71,
+              'author_id': 7,
+              'merge_request_id': 400,
+              'note': 'Original',
+              'commit_id': null,
+              'position': null,
+            },
+          ),
+        };
+        final path = fixture.path;
+        final row = fixture.row;
+        if (kind != 'parent') server.routes['GET $path'] = (_) => mr7Json(row);
+        server.routes['GET projects/909/merge_requests/4'] = (_) =>
+            mr7Json({'id': 400, 'iid': 4, 'project_id': 909});
+        final spec = switch (kind) {
+          'parent' => Mr7SnapshotSpec(path: path, fields: {'name'}),
+          'board' => Mr7SnapshotSpec.board(path: path),
+          'milestone' => Mr7SnapshotSpec.milestone(path: path),
+          'label' => Mr7SnapshotSpec.label(path: path),
+          _ => Mr7SnapshotSpec.draftNote(path: path),
+        };
+        final saved = await session.captureSnapshot([spec]);
+        server.routes['PUT $path'] = (_) {
+          row[fixture.field] = 'Changed';
+          server.scenarioWrites++;
+          server.addEvent(target: 909);
+          return mr7Json(row);
+        };
+        final permit =
+            Mr7MutationPermit(
+                operation: fixture.operation,
+                paths: {'PUT $path'},
+                resourceProjectId: 909,
+              )
+              ..confirmed = true
+              ..snapshot = saved;
+        session.permit = permit;
+        await session.writer.put<Object?>(
+          path,
+          data: {fixture.field: 'Changed'},
+        );
+        expect(permit.sent, 1);
+        if (violation == 'size') {
+          // Add this only after the write, and outside the captured fields.
+          row['untracked_large_field'] = 'x' * (2 * 1024 * 1024 + 1);
+        }
+        final observer = Mr7Readback(
+          session,
+          session.identity!,
+          permit,
+          paths: violation == 'path'
+              ? <String>{}
+              : {path, 'projects/909/merge_requests/4'},
+        );
+        await expectLater(
+          observer.verifySnapshot(),
+          throwsA(
+            isA<Mr7Refused>().having(
+              (error) => error.code,
+              'code',
+              violation == 'path' ? 'readbackTarget' : 'observerUnreadable',
+            ),
+          ),
+        );
+        await session.finish();
+      });
+    }
+  }
+
   test('GraphQL snapshot binds only the supported mutation target selector', () async {
     const first = 'gid://gitlab/WorkItem/300';
     const second = 'gid://gitlab/WorkItem/400';

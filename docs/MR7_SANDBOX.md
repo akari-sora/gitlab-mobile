@@ -192,6 +192,9 @@ after reading, consumes the shared HTTP cap, and requires exact allowlisted
 `readbackPaths`. Resource selectors are checked against the actual dispatched
 route, rather than another resource in the same project. Quarantine observation
 cannot reopen the writer or settle an uncertain core journal result.
+Snapshot verification applies those exact paths and the 2 MiB JSON response
+bound to every snapshot kind, including WorkItem REST identity and GraphQL
+projection reads. Unselected response fields still count toward the bound.
 
 | Seam | Scenario API and required evidence |
 |---|---|
@@ -452,7 +455,13 @@ queries and the incident project.issues(iids: ..., types: [INCIDENT], first: 2)
 query. The latter does not need a made-up project.fullPath response or extra
 preparation REST read. Milestone witnesses can additionally require its current
 closed state or expired flag. Supported edit/reaction no-ops bind the exact
-prepared Note. Missing/mismatched proof quarantines the session; uncertain core
+prepared Note and parent selected by an exact production Note read under the
+current permit. Fixture bindings, activity connection membership, observer reads
+and earlier permits cannot establish that preparation. No-op argument matching
+uses the effective request on the production preparation recorded by that permit,
+including approval edits and shared text processing, for every write operation.
+The original model call cannot supply the approved text. Missing/mismatched proof
+quarantines the session; uncertain core
 outcomes remain uncertain. The Python receipt validator admits this closed
 operation set only with positive observer counts and parent-state proof.
 

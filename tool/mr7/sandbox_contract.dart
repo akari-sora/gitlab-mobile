@@ -832,6 +832,16 @@ final class Mr7MutationPermit {
   final List<String> resultPath;
   // The runner captures the actual tool call before preparation or dispatch.
   final Map<String, Object?>? callArguments;
+  Map<String, Object?> Function()? _preparedArguments;
+
+  // Keep the production preparation itself: approval edits rebind its request.
+  void capturePreparedArguments(Map<String, Object?> Function() arguments) =>
+      _preparedArguments = arguments;
+
+  Map<String, Object?>? get preparedArguments => _preparedArguments == null
+      ? null
+      : _mr7FrozenJson(_preparedArguments!()) as Map<String, Object?>;
+
   int sent = 0;
   bool confirmed = false;
   Future<bool> Function()? confirmBeforeSend;
@@ -850,6 +860,7 @@ final class Mr7MutationPermit {
   Set<int>? _todoIdsBefore;
   String? _ownedActivityNoteAtSend;
   final Map<String, int> _preparedParentIds = {};
+  ({String id, String parentPath})? _preparedActivityNote;
 }
 
 enum Mr7SnapshotKind { parent, board, milestone, label, draftNote, workItem }
@@ -1347,7 +1358,9 @@ final class Mr7WorkItemObservation extends Mr7StateObservation {
     required Map<String, Object?> arguments,
     this.milestoneState,
     this.milestoneExpired,
-  }) : arguments = _mr7FrozenJson(arguments) as Map<String, Object?>;
+  }) : arguments =
+           _mr7FrozenJson({...arguments}..remove('reason'))
+               as Map<String, Object?>;
   final String workItemId;
   final int iid;
   final String operation;
@@ -1362,7 +1375,11 @@ final class Mr7WorkItemObservation extends Mr7StateObservation {
       iid > 0 &&
       arguments['projectId'] == projectId &&
       arguments['iid'] == iid &&
-      _mr7SameJson(arguments, value);
+      // The coordinator excludes model justification from the port request.
+      _mr7SameJson(
+        arguments,
+        value is Map ? ({...value}..remove('reason')) : value,
+      );
 
   @override
   Future<bool> _read(Mr7Readback observer) => observer._workItemEffect(this);
@@ -1554,6 +1571,9 @@ Future<Map<String, Object?>> _mr7SealedQuery(
     data: {'query': document, 'variables': variables},
   );
   final envelope = response.data;
+  if (jsonEncode(envelope).length > 2 * 1024 * 1024) {
+    throw const Mr7Refused('observerUnreadable');
+  }
   final errors = envelope is Map ? envelope['errors'] : null;
   final data = envelope is Map ? envelope['data'] : null;
   final actor = data is Map ? data['currentUser'] : null;
@@ -2089,6 +2109,7 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
         throw const Mr7Refused('headBody');
       }
       session.chargeRequest();
+      final permit = session.permit;
       final response = await session.server.respond(options);
       session.validateRead(options, allowStopped: false);
       if (options.method == 'HEAD') {
@@ -2103,7 +2124,6 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
           headers: response.headers,
         );
       }
-      final permit = session.permit;
       final path = session._restSegments(options).join('/');
       if (response.statusCode == 200 &&
           permit != null &&
@@ -2122,6 +2142,9 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
           if (bytes.length > 2 * 1024 * 1024) {
             throw const Mr7Refused('noChangeTargetUnbound');
           }
+        }
+        if (!identical(session.permit, permit)) {
+          throw const Mr7Refused('noChangeTargetUnbound');
         }
         session._capturePreparedWorkItem(
           options.data,
@@ -2157,7 +2180,8 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
         }
         final row = jsonDecode(utf8.decode(bytes));
         final id = row is Map ? row['id'] : null;
-        if (row is! Map ||
+        if (!identical(session.permit, permit) ||
+            row is! Map ||
             id is! int ||
             id <= 0 ||
             row['project_id'] != permit.resourceProjectId ||
@@ -2462,9 +2486,28 @@ final class Mr7Readback {
     Mr7StateObservation observation, {
     required Object? arguments,
   }) async {
-    if (_permit.sent != 0 ||
+    final expectedArguments = _permit.preparedArguments;
+    final original = _permit.callArguments;
+    if (!identical(_session.permit, _permit) ||
+        _permit.sent != 0 ||
         _permit.result != null ||
         _noDispatchObservation != null ||
+        expectedArguments == null ||
+        !_mr7SameJson(expectedArguments, arguments) ||
+        (original != null &&
+            const [
+              'projectId',
+              'groupId',
+              'resource',
+              'iid',
+              'noteId',
+              'anchorNoteId',
+            ].any(
+              (key) =>
+                  original.containsKey(key) !=
+                      expectedArguments.containsKey(key) ||
+                  original[key] != expectedArguments[key],
+            )) ||
         !observation.matchesCall(
           _permit.operation,
           arguments,
@@ -2474,7 +2517,11 @@ final class Mr7Readback {
     }
     _noDispatchObservation = observation;
     try {
-      return await observe(observation);
+      final verified = await observe(observation);
+      if (!identical(_session.permit, _permit)) {
+        throw const Mr7Refused('noChangeUnverified');
+      }
+      return verified;
     } finally {
       _noDispatchObservation = null;
     }
@@ -2509,7 +2556,14 @@ final class Mr7Readback {
               ))) {
         throw const Mr7Refused('snapshotTarget');
       }
-      final current = await _session._readSnapshotRow(original.spec);
+      final current = await _session._readSnapshotRow(
+        original.spec,
+        resource: await _map(path),
+      );
+      if (original.spec.kind == Mr7SnapshotKind.workItem &&
+          jsonEncode(current).length > 2 * 1024 * 1024) {
+        throw const Mr7Refused('observerUnreadable');
+      }
       if (original.parentId != null) {
         final parentPath = path.split('/').take(4).join('/');
         final parent = await _map(parentPath);
@@ -3143,6 +3197,8 @@ final class Mr7Readback {
             'editWorkItemActivityNote',
             'setWorkItemActivityNoteReaction',
           }.contains(spec.operation) ||
+          _permit._preparedActivityNote !=
+              (id: spec.noteId, parentPath: parent) ||
           _session._graphResources[spec.noteId] != notePath) {
         throw const Mr7Refused('observerMutationTarget');
       }
@@ -4886,8 +4942,11 @@ final class Mr7SandboxSession {
     return Map<String, Object?>.from(r.data! as Map);
   }
 
-  Future<Map<String, Object?>> _readSnapshotRow(Mr7SnapshotSpec spec) async {
-    final row = await read(spec.path);
+  Future<Map<String, Object?>> _readSnapshotRow(
+    Mr7SnapshotSpec spec, {
+    Map<String, Object?>? resource,
+  }) async {
+    final row = resource ?? await read(spec.path);
     if (spec.kind != Mr7SnapshotKind.workItem) return row;
     if (spec.fields.length != _mr7WorkItemFields.length ||
         !spec.fields.containsAll(_mr7WorkItemFields)) {
@@ -5029,6 +5088,78 @@ final class Mr7SandboxSession {
         }
         bind((connection['nodes'] as List).single, null, args['iid']);
       }
+    }
+    if (!const {
+      'editWorkItemActivityNote',
+      'setWorkItemActivityNoteReaction',
+    }.contains(permit.operation)) {
+      return;
+    }
+    // Only an exact Note selection records preparation. Notes appearing in an
+    // activity connection, earlier fixture bindings and observer reads do not.
+    for (final entry in operation.selections.entries) {
+      final selection = entry.value;
+      if (entry.key.contains('/') || selection.field != 'note') continue;
+      final capability = permit.operation == 'editWorkItemActivityNote'
+          ? 'adminNote'
+          : 'awardEmoji';
+      final requiredSelections = {
+        'id': 'id',
+        'system': 'system',
+        'internal': 'internal',
+        'noteableType': 'noteableType',
+        'noteableId': 'noteableId',
+        'project/id': 'id',
+        'project/fullPath': 'fullPath',
+        'author/id': 'id',
+        'userPermissions/$capability': capability,
+      };
+      if (requiredSelections.entries.any(
+        (field) =>
+            operation.selections['${entry.key}/${field.key}']?.field !=
+            field.value,
+      )) {
+        continue;
+      }
+      final args = operation.resolve(selection.arguments, vars) as Map;
+      final note = data[entry.key];
+      final id = args['id'];
+      if (id is! String ||
+          !RegExp(r'^gid://gitlab/Note/[1-9][0-9]*$').hasMatch(id) ||
+          note is! Map ||
+          note['id'] != id) {
+        continue;
+      }
+      final notePath = _graphResources[id];
+      if (notePath == null) continue;
+      final parent = notePath.split('/').take(4).join('/');
+      final parentId = permit._preparedParentIds[parent];
+      final project = note['project'];
+      final author = note['author'];
+      final permissions = note['userPermissions'];
+      if (notePath != '$parent/notes/${id.split('/').last}' ||
+          parentId == null ||
+          _graphResources['gid://gitlab/WorkItem/$parentId'] != parent ||
+          note['noteableType'] != 'Issue' ||
+          note['noteableId'] != parentId ||
+          note['system'] != false ||
+          note['internal'] != false ||
+          project is! Map ||
+          project['id'] != 'gid://gitlab/Project/${target.projectId}' ||
+          project['fullPath'] != target.path ||
+          author is! Map ||
+          author['id'] != 'gid://gitlab/User/${target.userId}' ||
+          permissions is! Map ||
+          permissions[capability] != true) {
+        continue;
+      }
+      final prepared = (id: id, parentPath: parent);
+      if (permit._preparedActivityNote != null &&
+          permit._preparedActivityNote != prepared) {
+        stop('noChangeTargetDrift');
+        throw const Mr7Refused('noChangeTargetDrift');
+      }
+      permit._preparedActivityNote = prepared;
     }
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -6,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/tool_scope.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart'
+    show AiWriteFreshness;
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -53,8 +56,9 @@ Map<String, Object?> _user(String id, String username) => {
 };
 
 class _CaptureAdapter implements HttpClientAdapter {
-  _CaptureAdapter(this.fixture);
-  final _Fixture fixture;
+  _CaptureAdapter(_Fixture fixture) : respond = fixture._graph;
+  _CaptureAdapter.activity(_ActivityFixture fixture) : respond = fixture.graph;
+  final ResponseBody Function(RequestOptions) respond;
   final requests = <Map<String, Object?>>[];
 
   @override
@@ -64,7 +68,7 @@ class _CaptureAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     requests.add(Map<String, Object?>.from(options.data as Map));
-    return fixture._graph(options);
+    return respond(options);
   }
 
   @override
@@ -103,6 +107,7 @@ class _Fixture {
   bool subscribed = false;
   String escalation = 'TRIGGERED';
   bool afterWrite = false;
+  bool oversizedGraphReadback = false;
   bool paginateAssignees = false;
   bool paginateLabels = false;
   bool badActor = false;
@@ -362,6 +367,7 @@ class _Fixture {
       switch (type) {
         case 'DESCRIPTION':
           widget['description'] = description;
+          if (_selected(doc, 'edited')) widget['edited'] = false;
         case 'STATUS':
           widget['status'] = {'id': status};
         case 'START_AND_DUE_DATE':
@@ -405,6 +411,8 @@ class _Fixture {
       widgets.add(widget);
     }
     return mr7Json({
+      if (oversizedGraphReadback && afterWrite)
+        'untracked_large_field': 'x' * (2 * 1024 * 1024 + 1),
       'data': {
         'currentUser': current,
         'workItem': {
@@ -413,6 +421,18 @@ class _Fixture {
           'title': title,
           'state': state,
           'updatedAt': '2026-10-29T00:00:00Z',
+          if (doc.contains('query MobileWorkItemContent(')) ...{
+            'createdAt': '2026-09-01T01:02:03Z',
+            'namespace': {
+              'id': 'gid://gitlab/Namespaces::ProjectNamespace/909',
+              'fullPath': session.identity!.path,
+            },
+            'workItemType': {
+              'id': 'gid://gitlab/WorkItems::Type/99',
+              'name': 'Issue',
+            },
+            'userPermissions': {'updateWorkItem': true},
+          },
           'project': {
             'id': badProject && afterWrite
                 ? 'gid://gitlab/Project/777'
@@ -433,6 +453,7 @@ class _Fixture {
     bool eeDates = false,
     Set<String> fields = _snapshotFields,
     String? sentGid,
+    Set<String> readbackPaths = const {_path},
   }) async {
     if (operation == 'updateWorkItemDates') ceDates = !eeDates;
     final saved = await session.captureSnapshot([
@@ -480,7 +501,7 @@ class _Fixture {
       session,
       session.identity!,
       permit,
-      paths: {_path},
+      paths: readbackPaths,
     );
     return observer.observe(
       Mr7WorkItemObservation(
@@ -542,6 +563,7 @@ query MobileIncidentStatus($path: ID!, $iid: String!) {
       paths: {_path},
     );
     final arguments = <String, Object?>{'projectId': 909, 'iid': 3, ...args};
+    permit.capturePreparedArguments(() => arguments);
     return observer.observeNoChange(
       Mr7WorkItemObservation(
         workItemId: _gid,
@@ -1011,6 +1033,48 @@ void main() {
     },
   );
 
+  test('no-op refuses a changed issue or merge request selector', () async {
+    for (final originalResource in ['issues', 'merge_requests']) {
+      await _fixture((f) async {
+        final arguments = <String, Object?>{
+          'projectId': 909,
+          'resource': originalResource,
+          'iid': 3,
+          'subscribed': true,
+        };
+        final prepared = {
+          ...arguments,
+          'resource': originalResource == 'issues'
+              ? 'merge_requests'
+              : 'issues',
+        };
+        final permit = Mr7MutationPermit(
+          operation: 'setSubscribed',
+          paths: {'POST projects/909/${prepared['resource']}/3/subscribe'},
+          resourceProjectId: 909,
+          callArguments: arguments,
+        )..capturePreparedArguments(() => prepared);
+        f.session.permit = permit;
+        final before = f.session.observerAdapter.requests.length;
+        await expectLater(
+          Mr7Readback(f.session, f.session.identity!, permit).observeNoChange(
+            Mr7ParentStateObservation(
+              parent: prepared['resource'] == 'issues'
+                  ? const Mr7Parent.issue(id: 300, iid: 3)
+                  : const Mr7Parent.mergeRequest(id: 300, iid: 3),
+              state: Mr7ParentState.subscribed,
+              expected: true,
+            ),
+            arguments: prepared,
+          ),
+          _activityRefusal('noChangeUnverified'),
+        );
+        expect(f.session.observerAdapter.requests.length, before);
+        expect(f.writeCount, 0);
+      });
+    }
+  });
+
   test('widget no-op requires its independent witness', () async {
     for (final scenario in [
       'matching',
@@ -1217,6 +1281,130 @@ void main() {
     },
   );
 
+  for (final variant in [
+    'matching',
+    'original-witness',
+    'different-text',
+    'different-text-approved-witness',
+  ]) {
+    test('content edited approval $variant through the real runner', () async {
+      final f = _Fixture.create();
+      final matching = variant == 'matching';
+      final differentText = variant.startsWith('different-text');
+      final approvedWitness = matching || variant.endsWith('approved-witness');
+      final original = differentText ? f.description! : 'Model description';
+      final edited = differentText ? 'Approved replacement' : f.description!;
+      final arguments = {
+        'projectId': 909,
+        'iid': 3,
+        'title': f.title,
+        'description': original,
+        'reason': 'Set the synthetic issue description.',
+      };
+      final scenario = sandbox.Mr7Scenario(
+        id: 'content-edited-noop-$variant',
+        suite: 'graphql',
+        operation: 'updateWorkItemContent',
+        variant: 'no-op',
+        tier: 'T2',
+        expectedMutations: 0,
+        targetKind: AiTargetKind.issue,
+        targetKinds: {AiTargetKind.project, AiTargetKind.issue},
+        resource: (_) => const AiResourceRef(kind: AiResourceKind.issue, id: 3),
+        utterance: (p) => 'Set issue #3 description in ${p.path}.',
+        call: (_) => AiToolCall(
+          id: 'content-edited-noop',
+          name: 'updateWorkItemContent',
+          arguments: arguments,
+        ),
+        paths: (_) => {'POST graphql'},
+        // A stale core no-change claim must still pass the independent
+        // witness against approved text, even when model text matches.
+        freshness: differentText
+            ? (_, _) async => const AiWriteFreshness(
+                noChange: true,
+                visibilityUnreadable: false,
+                sourceVisibilityUnreadable: false,
+                targetVisibility: 'private',
+              )
+            : null,
+        noChangeObservation: (_) => Mr7WorkItemObservation(
+          workItemId: _gid,
+          iid: 3,
+          operation: 'updateWorkItemContent',
+          arguments: {
+            ...arguments,
+            'description': approvedWitness ? edited : original,
+          },
+        ),
+        observe: (_, _) async => false,
+        fixture: (session, identity) async {
+          await f.installRoutesAndBindings();
+          final adapter = _CaptureAdapter(f);
+          final api = GitLabApi(
+            instance: GitLabInstance.parse(session.instance.toString()),
+            token: 'synthetic-gitlab-pat',
+            dio: Dio()..httpClientAdapter = adapter,
+          );
+          final detail = await api.projectWorkItem(
+            Project(id: 909, name: 'Synthetic', path: identity.path),
+            3,
+          );
+          await api.workItemContent(detail, expectedUserId: 7);
+          return sandbox.Mr7ScenarioFixtures(
+            graphReadDocuments: {
+              for (final request in adapter.requests)
+                request['query']! as String: {mr7Digest(request['variables'])},
+            },
+          );
+        },
+      );
+      final receipt = await sandbox.runMr7Sandbox(
+        policy: Mr7Policy.candidate,
+        releaseSha: '0123456789abcdef0123456789abcdef01234567',
+        session: f.session,
+        scenarios: [scenario],
+        confirm: (_) async => true,
+        editConfirm: (proposal) async {
+          expect(proposal.editableField, 'description');
+          return edited;
+        },
+      );
+      final row = (receipt['scenarios']! as List).single as Map;
+      expect(
+        row['edit'],
+        isA<Map<Object?, Object?>>(),
+        reason: jsonEncode(receipt),
+      );
+      expect(row['edit'], containsPair('reason', 'approvalRequired'));
+      expect(row['confirmations'], hasLength(2));
+      expect(row['coreNoChange'], true, reason: jsonEncode(receipt));
+      expect(row['mutationCount'], 0, reason: jsonEncode(receipt));
+      expect(
+        row['status'],
+        matching ? 'PASS' : 'NOT_VERIFIED',
+        reason: jsonEncode(receipt),
+      );
+      if (matching) {
+        expect(row['classification'], 'verifiedNoOp');
+        expect(row['parentStateVerified'], true);
+        expect(row['readback'], 'PASS');
+        expect(row['observerRequests'], greaterThan(0));
+      } else {
+        expect(row['classification'], isNot('verifiedNoOp'));
+        expect(row['reason'], 'noChangeUnverified');
+        expect(row['readback'], 'NOT_VERIFIED');
+        if (approvedWitness) {
+          expect(row['parentStateVerified'], false);
+          expect(row['observerRequests'], greaterThan(0));
+        }
+      }
+      expect(f.description, 'Original description');
+      expect(f.title, 'Original title');
+      expect(f.writeCount, 0);
+    });
+  }
+
   test('work-item snapshot refuses caller-selected partial coverage', () async {
     await _fixture((f) async {
       await expectLater(
@@ -1241,6 +1429,40 @@ void main() {
       expect(f.writeCount, 0);
     });
   });
+
+  for (final violation in ['path', 'size', 'graph-size']) {
+    test('snapshot readback enforces $violation for workItem', () async {
+      await _fixture((f) async {
+        await expectLater(
+          f.effect(
+            operation: 'updateWorkItemContent',
+            args: {'title': 'Revised'},
+            input: {'title': 'Revised'},
+            readbackPaths: violation == 'path' ? {} : {_path},
+            mutate: () {
+              f.title = 'Revised';
+              if (violation == 'size') {
+                f.server.routes['GET $_path'] = (_) => mr7Json({
+                  'id': 300,
+                  'iid': 3,
+                  'project_id': 909,
+                  'untracked_large_field': 'x' * (2 * 1024 * 1024 + 1),
+                });
+              }
+              f.oversizedGraphReadback = violation == 'graph-size';
+            },
+          ),
+          throwsA(
+            isA<Mr7Refused>().having(
+              (error) => error.code,
+              'code',
+              violation == 'path' ? 'readbackTarget' : 'observerUnreadable',
+            ),
+          ),
+        );
+      });
+    });
+  }
 
   test('complete snapshot preserves omitted EE date mode', () async {
     expect(
@@ -1358,6 +1580,9 @@ const _activityOther = 'gid://gitlab/User/8';
 const _activityDiscussion = 'gid://gitlab/Discussion/opaque-thread';
 const _activityReply = 'gid://gitlab/IndividualNoteDiscussion/opaque-reply';
 
+Matcher _activityRefusal(String code) =>
+    throwsA(isA<Mr7Refused>().having((error) => error.code, 'code', code));
+
 class _ActivityFixture {
   _ActivityFixture._(this.server, this.session);
   static _ActivityFixture create() {
@@ -1406,6 +1631,17 @@ class _ActivityFixture {
   Map<String, Object?> get item => {
     'id': _activityWorkItem,
     'iid': '3',
+    'title': 'Activity issue',
+    'state': 'OPEN',
+    'createdAt': '2026-09-01T01:02:03Z',
+    'updatedAt': '2026-10-29T00:00:00Z',
+    'webUrl':
+        'https://gitlab.invalid/install/${session.identity!.path}/-/work_items/3',
+    'namespace': {
+      'id': 'gid://gitlab/Namespaces::ProjectNamespace/909',
+      'fullPath': session.identity!.path,
+    },
+    'workItemType': {'id': 'gid://gitlab/WorkItems::Type/99', 'name': 'Issue'},
     'project': wrongProject
         ? {'id': 'gid://gitlab/Project/777', 'fullPath': 'other/project'}
         : project,
@@ -1426,7 +1662,13 @@ class _ActivityFixture {
     'id': id,
     'body': bodies[id] ?? 'Other note',
     'system': false,
-    'author': {'id': id == _activityNote51 ? noteAuthor : _activityActor},
+    'createdAt': '2026-09-01T01:02:03Z',
+    'updatedAt': '2026-10-29T00:00:00Z',
+    'author': {
+      'id': id == _activityNote51 ? noteAuthor : _activityActor,
+      'name': 'Synthetic actor',
+      'username': 'synthetic-owner',
+    },
   };
   Map<String, Object?> noteDetail(String id) => {
     ...noteSummary(id),
@@ -1434,7 +1676,9 @@ class _ActivityFixture {
     'noteableType': 'Issue',
     'noteableId': wrongParent ? 301 : 300,
     'project': project,
+    'userPermissions': {'adminNote': true, 'awardEmoji': true},
     'discussion': {
+      'createdAt': '2026-09-01T01:02:03Z',
       'id': wrongReplyThread && id == _activityNote51
           ? 'gid://gitlab/Discussion/original-anchor-thread'
           : _activityDiscussion,
@@ -1453,6 +1697,7 @@ class _ActivityFixture {
     return {
       'id': _activityDiscussion,
       'replyId': _activityReply,
+      'createdAt': '2026-09-01T01:02:03Z',
       'notes': connection(
         shown.map(noteSummary).toList(),
         next: page && after == null ? 'note-cursor-1' : null,
@@ -1468,6 +1713,10 @@ class _ActivityFixture {
 
   Future<void> initialize() async {
     await session.initialize();
+    await installRoutesAndBindings();
+  }
+
+  Future<void> installRoutesAndBindings() async {
     server.routes['GET $_activityIssuePath'] = (_) =>
         mr7Json({'id': 300, 'iid': 3, 'project_id': 909});
     for (final id in [_activityNote51, _activityNote52, _activityNote53]) {
@@ -1478,10 +1727,12 @@ class _ActivityFixture {
       _activityWorkItem,
       path: _activityIssuePath,
     );
-    await session.bindGraphResource(
-      _activityNote51,
-      path: '$_activityIssuePath/notes/51',
-    );
+    for (final id in [_activityNote51, _activityNote52]) {
+      await session.bindGraphResource(
+        id,
+        path: '$_activityIssuePath/notes/${id.split('/').last}',
+      );
+    }
     server.routes['POST /install/api/graphql'] = graph;
   }
 
@@ -1489,6 +1740,18 @@ class _ActivityFixture {
     final body = request.data as Map;
     final doc = body['query'] as String;
     final vars = body['variables'] as Map;
+    if (doc.contains('query MobileProjectWorkItem(')) {
+      return mr7Json({
+        'data': {
+          'project': {
+            ...project,
+            'workItems': connection([
+              {...item, 'widgets': <Object?>[]},
+            ]),
+          },
+        },
+      });
+    }
     if (doc.startsWith('mutation')) {
       writeCount++;
       server.scenarioWrites++;
@@ -1545,7 +1808,8 @@ class _ActivityFixture {
       }
       throw StateError('Unexpected mutation');
     }
-    if (doc.contains('query Mr7Note(')) {
+    if (doc.contains('query Mr7Note(') ||
+        doc.contains('query MobileWorkItemActivityEditAccess(')) {
       noteLookupReads++;
       return mr7Json({
         'data': {
@@ -1557,7 +1821,8 @@ class _ActivityFixture {
         },
       });
     }
-    if (doc.contains('query Mr7Reactions(')) {
+    if (doc.contains('query Mr7Reactions(') ||
+        doc.contains('query MobileWorkItemActivityReactionAccess(')) {
       reactionReads++;
       final after = vars['after'];
       final paged = paginateAwards && awards.length > 1;
@@ -1578,13 +1843,17 @@ class _ActivityFixture {
           'workItem': item,
           'note': {
             ...noteDetail(vars['noteId'] as String),
-            'discussion': {'id': _activityDiscussion},
+            'discussion': {
+              'id': _activityDiscussion,
+              'createdAt': '2026-09-01T01:02:03Z',
+            },
             'awardEmoji': connection(page, next: next),
           },
         },
       });
     }
-    if (doc.contains('query Mr7Activity(')) {
+    if (doc.contains('query Mr7Activity(') ||
+        doc.contains('query MobileWorkItemActivity(')) {
       discussionReads++;
       final after = vars['after'];
       final second = secondNotes.isNotEmpty;
@@ -1699,14 +1968,94 @@ class _ActivityFixture {
     );
   }
 
-  Future<void> prepareNoop(String operation) async {
+  Future<void> readProductionNote(
+    GitLabApi api,
+    String operation,
+    String noteId,
+  ) async {
+    final detail = await api.projectWorkItem(
+      Project(id: 909, name: 'Synthetic', path: session.identity!.path),
+      3,
+    );
+    final activity = await api.workItemActivity(
+      detail.summary,
+      allowLegacyFallback: false,
+    );
+    final discussion = activity.snapshot.discussions.items.single;
+    final note = discussion.notes.items.singleWhere((n) => n.id == noteId);
+    if (operation == 'editWorkItemActivityNote') {
+      await api.workItemActivityEditAccess(detail.summary, discussion, note);
+    } else {
+      await api.workItemActivityReactionAccess(
+        detail.summary,
+        discussion,
+        note,
+      );
+    }
+  }
+
+  Future<Map<String, Set<String>>> productionReadDocuments(
+    String operation, {
+    String noteId = _activityNote51,
+  }) async {
+    final adapter = _CaptureAdapter.activity(this);
+    final api = GitLabApi(
+      instance: GitLabInstance.parse(session.instance.toString()),
+      token: 'synthetic-gitlab-pat',
+      dio: Dio()..httpClientAdapter = adapter,
+    );
+    await readProductionNote(api, operation, noteId);
+    return {
+      for (final request in adapter.requests)
+        request['query']! as String: {mr7Digest(request['variables'])},
+    };
+  }
+
+  Future<void> prepareNoop(
+    String operation, {
+    String? noteId = _activityNote51,
+    Map<String, Object?>? callArguments,
+    bool recordArguments = true,
+  }) async {
+    if (noteId != null) {
+      session.observerAdapter.graphReadDocuments =
+          await productionReadDocuments(operation, noteId: noteId);
+    }
     permit = Mr7MutationPermit(
       operation: operation,
       paths: {'POST graphql'},
       resourceProjectId: 909,
+      callArguments: callArguments,
     )..confirmed = true;
     session.permit = permit;
+    if (recordArguments) {
+      final preparedArguments = Map<String, Object?>.unmodifiable(
+        callArguments ??
+            {
+              'projectId': 909,
+              'iid': 3,
+              'noteId': 51,
+              if (operation == 'setWorkItemActivityNoteReaction') ...{
+                'name': 'thumbsup',
+                'add': true,
+              } else
+                'body': 'Original',
+            },
+      );
+      permit.capturePreparedArguments(() => preparedArguments);
+    }
     await session.writer.get<Object?>(_activityIssuePath);
+    if (noteId != null) {
+      await readProductionNote(
+        GitLabApi(
+          instance: GitLabInstance.parse(session.instance.toString()),
+          token: 'synthetic-gitlab-pat',
+          dio: session.writer,
+        ),
+        operation,
+        noteId,
+      );
+    }
   }
 
   Mr7WorkItemActivityObservation observation(
@@ -1728,37 +2077,25 @@ class _ActivityFixture {
     add: add,
   );
 
-  Future<bool> observe(Mr7WorkItemActivityObservation spec) async {
-    try {
-      return await Mr7Readback(
-        session,
-        session.identity!,
-        permit,
-        paths: {
-          _activityIssuePath,
-          for (final id in [_activityNote51, _activityNote52, _activityNote53])
-            '$_activityIssuePath/notes/${id.split('/').last}',
-        },
-      ).observe(spec);
-    } on Object {
-      return false;
-    }
-  }
+  Future<bool> observe(Mr7WorkItemActivityObservation spec) => Mr7Readback(
+    session,
+    session.identity!,
+    permit,
+    paths: {
+      _activityIssuePath,
+      for (final id in [_activityNote51, _activityNote52, _activityNote53])
+        '$_activityIssuePath/notes/${id.split('/').last}',
+    },
+  ).observe(spec);
 
   Future<bool> observeNoop(
     Mr7WorkItemActivityObservation spec,
     Map<String, Object?> args,
-  ) async {
-    try {
-      return await Mr7Readback(
-        session,
-        session.identity!,
-        permit,
-      ).observeNoChange(spec, arguments: args);
-    } on Object {
-      return false;
-    }
-  }
+  ) => Mr7Readback(
+    session,
+    session.identity!,
+    permit,
+  ).observeNoChange(spec, arguments: args);
 }
 
 void _activityTests() {
@@ -1788,8 +2125,8 @@ void _activityTests() {
       await f.initialize();
       f.wrongReplyThread = true;
       await f.send('createWorkItemActivityReply');
-      expect(
-        await f.observe(
+      await expectLater(
+        f.observe(
           f.observation(
             'createWorkItemActivityReply',
             noteId: _activityNote52,
@@ -1797,7 +2134,7 @@ void _activityTests() {
             replyId: _activityReply,
           ),
         ),
-        isFalse,
+        _activityRefusal('observerReplyAnchor'),
       );
       expect(f.noteLookupReads, 1);
       await f.session.finish();
@@ -1808,7 +2145,20 @@ void _activityTests() {
     final f = _ActivityFixture.create();
     await f.initialize();
     f.noteAuthor = _activityOther;
-    await expectLater(f.send('deleteWorkItemActivityNote'), throwsA(anything));
+    await expectLater(
+      f.send('deleteWorkItemActivityNote'),
+      throwsA(
+        isA<DioException>().having(
+          (error) => error.error,
+          'error',
+          isA<Mr7Refused>().having(
+            (error) => error.code,
+            'code',
+            'observerNoteOwnership',
+          ),
+        ),
+      ),
+    );
     expect(f.writeCount, 0);
     await f.session.finish();
   });
@@ -1882,22 +2232,31 @@ void _activityTests() {
         if (variant == 'author') f.noteAuthor = _activityOther;
         if (variant == 'parent') f.wrongParent = true;
         if (variant == 'project') f.wrongProject = true;
-        expect(
-          await f.observe(
-            f.observation(
-              'editWorkItemActivityNote',
-              body: 'Edited',
-              discussionId: variant == 'discussion'
-                  ? 'gid://gitlab/Discussion/different'
-                  : _activityDiscussion,
-              replyId: variant == 'reply'
-                  ? 'gid://gitlab/Discussion/different-reply'
-                  : null,
-            ),
+        final observed = f.observe(
+          f.observation(
+            'editWorkItemActivityNote',
+            body: 'Edited',
+            discussionId: variant == 'discussion'
+                ? 'gid://gitlab/Discussion/different'
+                : _activityDiscussion,
+            replyId: variant == 'reply'
+                ? 'gid://gitlab/Discussion/different-reply'
+                : null,
           ),
-          isFalse,
-          reason: variant,
         );
+        if (variant == 'discussion' || variant == 'reply') {
+          expect(await observed, isFalse, reason: variant);
+        } else {
+          await expectLater(
+            observed,
+            _activityRefusal(
+              variant == 'project'
+                  ? 'readbackIdentity'
+                  : 'observerNoteOwnership',
+            ),
+            reason: variant,
+          );
+        }
         await f.session.finish();
       }
     },
@@ -1911,8 +2270,12 @@ void _activityTests() {
     f.threadNotes.insert(0, _activityNote52);
     f.paginateNotes = true;
     await f.send('deleteWorkItemActivityNote');
+    // Body, author and relationship all match. Only the final presence check
+    // can reject this retained Note after the complete connection traversal.
     expect(
-      await f.observe(f.observation('deleteWorkItemActivityNote')),
+      await f.observe(
+        f.observation('deleteWorkItemActivityNote', body: 'Original'),
+      ),
       isFalse,
     );
     expect(f.notePageReads, 1);
@@ -1930,10 +2293,12 @@ void _activityTests() {
         f.paginateDiscussions = true;
         f.brokenDiscussionCursor = broken;
         await f.send('deleteWorkItemActivityNote');
-        expect(
-          await f.observe(f.observation('deleteWorkItemActivityNote')),
-          !broken,
-        );
+        final observed = f.observe(f.observation('deleteWorkItemActivityNote'));
+        if (broken) {
+          await expectLater(observed, _activityRefusal('observerConnection'));
+        } else {
+          expect(await observed, isTrue);
+        }
         await f.session.finish();
       }
     },
@@ -1959,7 +2324,7 @@ void _activityTests() {
   });
 
   test(
-    'activity reaction add and remove page exact actor awards and retain other actors',
+    'activity reaction add and remove page the exact actor awards',
     () async {
       for (final add in [true, false]) {
         final f = _ActivityFixture.create();
@@ -1985,6 +2350,7 @@ void _activityTests() {
                 award['name'] == 'thumbsup',
           ),
           isTrue,
+          reason: 'The synthetic transport retains the other actor award.',
         );
         await f.session.finish();
       }
@@ -2007,11 +2373,13 @@ void _activityTests() {
         ]);
         f.reactionCursorCycle = variant == 'cursor';
         await f.send('setWorkItemActivityNoteReaction', add: true);
-        expect(
-          await f.observe(
+        await expectLater(
+          f.observe(
             f.observation('setWorkItemActivityNoteReaction', add: true),
           ),
-          isFalse,
+          _activityRefusal(
+            variant == 'cursor' ? 'observerConnection' : 'observerRelationship',
+          ),
           reason: variant,
         );
         await f.session.finish();
@@ -2047,13 +2415,570 @@ void _activityTests() {
             body: isReaction ? null : 'Original',
             add: isReaction ? (mismatch ? false : true) : null,
           );
-          expect(
-            await f.observeNoop(spec, args),
-            !mismatch,
-            reason: '$operation/$mismatch',
-          );
+          if (mismatch) {
+            await expectLater(
+              f.observeNoop(spec, args),
+              _activityRefusal('noChangeUnverified'),
+              reason: operation,
+            );
+          } else {
+            expect(await f.observeNoop(spec, args), isTrue, reason: operation);
+          }
           expect(f.writeCount, 0);
           await f.session.finish();
+        }
+      }
+    },
+  );
+
+  for (final variant in ['unread', 'earlier permit', 'different prepared']) {
+    test('activity no-op refuses a Note with $variant preparation', () async {
+      for (final operation in [
+        'editWorkItemActivityNote',
+        'setWorkItemActivityNoteReaction',
+      ]) {
+        final f = _ActivityFixture.create();
+        await f.initialize();
+        f.threadNotes.add(_activityNote52);
+        f.bodies[_activityNote52] = 'Original';
+        final isReaction = operation == 'setWorkItemActivityNoteReaction';
+        if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
+        if (variant == 'earlier permit') await f.prepareNoop(operation);
+        await f.prepareNoop(
+          operation,
+          noteId: variant == 'different prepared' ? _activityNote52 : null,
+        );
+        await expectLater(
+          f.observeNoop(
+            f.observation(
+              operation,
+              body: isReaction ? null : 'Original',
+              add: isReaction ? true : null,
+            ),
+            {
+              'projectId': 909,
+              'iid': 3,
+              'noteId': 51,
+              if (isReaction) ...{
+                'name': 'thumbsup',
+                'add': true,
+              } else
+                'body': 'Original',
+            },
+          ),
+          _activityRefusal('observerMutationTarget'),
+          reason: operation,
+        );
+        expect(f.writeCount, 0);
+        await f.session.finish();
+      }
+    });
+  }
+
+  test(
+    'activity no-op refuses an unrelated Note read with unselected fields',
+    () async {
+      for (final operation in [
+        'editWorkItemActivityNote',
+        'setWorkItemActivityNoteReaction',
+      ]) {
+        final f = _ActivityFixture.create();
+        await f.initialize();
+        final isReaction = operation == 'setWorkItemActivityNoteReaction';
+        if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
+        await f.prepareNoop(operation, noteId: null);
+        const document = r'''
+query UnrelatedAnchor($workItemId: WorkItemID!, $noteId: NoteID!) {
+  workItem(id: $workItemId) { id iid project { id fullPath } }
+  anchor: note(id: $noteId) { id }
+}
+''';
+        final variables = {
+          'workItemId': _activityWorkItem,
+          'noteId': _activityNote51,
+        };
+        f.session.observerAdapter.graphReadDocuments = {
+          document: {mr7Digest(variables)},
+        };
+        f.server.routes['POST /install/api/graphql'] = (_) => mr7Json({
+          'data': {'workItem': f.item, 'anchor': f.noteDetail(_activityNote51)},
+        });
+        await f.session.writer.post<Object?>(
+          '${f.session.instance}/api/graphql',
+          data: {'query': document, 'variables': variables},
+        );
+        f.server.routes['POST /install/api/graphql'] = f.graph;
+        await expectLater(
+          f.observeNoop(
+            f.observation(
+              operation,
+              body: isReaction ? null : 'Original',
+              add: isReaction ? true : null,
+            ),
+            {
+              'projectId': 909,
+              'iid': 3,
+              'noteId': 51,
+              if (isReaction) ...{
+                'name': 'thumbsup',
+                'add': true,
+              } else
+                'body': 'Original',
+            },
+          ),
+          _activityRefusal('observerMutationTarget'),
+        );
+        await f.session.finish();
+      }
+    },
+  );
+
+  test(
+    'activity no-op refuses missing prepared arguments despite matching call text',
+    () async {
+      final f = _ActivityFixture.create();
+      await f.initialize();
+      final arguments = <String, Object?>{
+        'projectId': 909,
+        'iid': 3,
+        'noteId': 51,
+        'body': 'Original',
+      };
+      await f.prepareNoop(
+        'editWorkItemActivityNote',
+        callArguments: arguments,
+        recordArguments: false,
+      );
+      final before = f.session.observerAdapter.requests.length;
+      await expectLater(
+        f.observeNoop(
+          f.observation('editWorkItemActivityNote', body: 'Original'),
+          arguments,
+        ),
+        _activityRefusal('noChangeUnverified'),
+      );
+      expect(f.session.observerAdapter.requests.length, before);
+      expect(f.writeCount, 0);
+      await f.session.finish();
+    },
+  );
+
+  test(
+    'activity no-op binds frozen prepared values and original selectors independent of key order',
+    () async {
+      for (final operation in [
+        'editWorkItemActivityNote',
+        'setWorkItemActivityNoteReaction',
+      ]) {
+        final f = _ActivityFixture.create();
+        await f.initialize();
+        f.threadNotes.add(_activityNote52);
+        f.bodies[_activityNote52] = 'Original';
+        final isReaction = operation == 'setWorkItemActivityNoteReaction';
+        if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
+        final arguments = <String, Object?>{
+          'projectId': 909,
+          'iid': 3,
+          'noteId': 51,
+          if (isReaction) ...{
+            'name': 'thumbsup',
+            'add': true,
+          } else
+            'body': 'Original',
+        };
+        await f.prepareNoop(
+          operation,
+          noteId: _activityNote52,
+          callArguments: arguments,
+        );
+        f.permit.capturePreparedArguments(() => {...arguments, 'noteId': 52});
+        await expectLater(
+          f.observeNoop(
+            f.observation(
+              operation,
+              noteId: _activityNote52,
+              body: isReaction ? null : 'Original',
+              add: isReaction ? true : null,
+            ),
+            {...arguments, 'noteId': 52},
+          ),
+          _activityRefusal('noChangeUnverified'),
+        );
+        final matchingArguments = {...arguments, 'noteId': 52};
+        await f.prepareNoop(
+          operation,
+          noteId: _activityNote52,
+          callArguments: matchingArguments,
+        );
+        expect(
+          await f.observeNoop(
+            f.observation(
+              operation,
+              noteId: _activityNote52,
+              body: isReaction ? null : 'Original',
+              add: isReaction ? true : null,
+            ),
+            Map<String, Object?>.fromEntries(
+              matchingArguments.entries.toList().reversed,
+            ),
+          ),
+          isTrue,
+          reason: 'Equivalent argument maps may have different key order.',
+        );
+        await f.session.finish();
+      }
+    },
+  );
+
+  test('activity no-op rejects a retained earlier permit', () async {
+    for (final operation in [
+      'editWorkItemActivityNote',
+      'setWorkItemActivityNoteReaction',
+    ]) {
+      for (final cleared in [false, true]) {
+        final f = _ActivityFixture.create();
+        await f.initialize();
+        final isReaction = operation == 'setWorkItemActivityNoteReaction';
+        if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
+        await f.prepareNoop(operation);
+        final earlier = f.permit;
+        if (cleared) {
+          f.session.permit = null;
+        } else {
+          await f.prepareNoop(operation, noteId: null);
+        }
+        await expectLater(
+          Mr7Readback(f.session, f.session.identity!, earlier).observeNoChange(
+            f.observation(
+              operation,
+              body: isReaction ? null : 'Original',
+              add: isReaction ? true : null,
+            ),
+            arguments: {
+              'projectId': 909,
+              'iid': 3,
+              'noteId': 51,
+              if (isReaction) ...{
+                'name': 'thumbsup',
+                'add': true,
+              } else
+                'body': 'Original',
+            },
+          ),
+          _activityRefusal('noChangeUnverified'),
+        );
+        await f.session.finish();
+      }
+    }
+  });
+
+  test(
+    'activity preparation cannot cross a permit switch during a read',
+    () async {
+      for (final operation in [
+        'editWorkItemActivityNote',
+        'setWorkItemActivityNoteReaction',
+      ]) {
+        for (final delayedStream in [false, true]) {
+          for (final hadPermit in [false, true]) {
+            final f = _ActivityFixture.create();
+            await f.initialize();
+            final isReaction = operation == 'setWorkItemActivityNoteReaction';
+            if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
+            f.session.observerAdapter.graphReadDocuments = await f
+                .productionReadDocuments(operation);
+            final document = f.session.observerAdapter.graphReadDocuments.keys
+                .singleWhere(
+                  (doc) => doc.contains(
+                    isReaction
+                        ? 'query MobileWorkItemActivityReactionAccess('
+                        : 'query MobileWorkItemActivityEditAccess(',
+                  ),
+                );
+            if (hadPermit) await f.prepareNoop(operation, noteId: null);
+            final started = Completer<void>();
+            final release = Completer<void>();
+            f.server.routes['POST /install/api/graphql'] = (request) async {
+              if (!delayedStream) {
+                started.complete();
+                await release.future;
+                return f.graph(request);
+              }
+              Stream<Uint8List> bytes() async* {
+                started.complete();
+                await release.future;
+                yield* f.graph(request).stream;
+              }
+
+              return ResponseBody(
+                bytes(),
+                200,
+                headers: {
+                  Headers.contentTypeHeader: ['application/json'],
+                },
+              );
+            };
+            final pending = f.session.writer.post<Object?>(
+              '${f.session.instance}/api/graphql',
+              data: {
+                'query': document,
+                'variables': {
+                  'workItemId': _activityWorkItem,
+                  'noteId': _activityNote51,
+                  if (isReaction) 'after': null,
+                },
+              },
+            );
+            await started.future;
+            await f.prepareNoop(operation, noteId: null);
+            final completed = hadPermit
+                ? expectLater(
+                    pending,
+                    throwsA(
+                      isA<DioException>().having(
+                        (error) => error.error,
+                        'error',
+                        isA<Mr7Refused>().having(
+                          (error) => error.code,
+                          'code',
+                          'noChangeTargetUnbound',
+                        ),
+                      ),
+                    ),
+                  )
+                : pending;
+            release.complete();
+            await completed;
+            await expectLater(
+              f.observeNoop(
+                f.observation(
+                  operation,
+                  body: isReaction ? null : 'Original',
+                  add: isReaction ? true : null,
+                ),
+                {
+                  'projectId': 909,
+                  'iid': 3,
+                  'noteId': 51,
+                  if (isReaction) ...{
+                    'name': 'thumbsup',
+                    'add': true,
+                  } else
+                    'body': 'Original',
+                },
+              ),
+              _activityRefusal('observerMutationTarget'),
+            );
+            await f.session.finish();
+          }
+        }
+      }
+    },
+  );
+
+  for (final variant in [
+    'matching',
+    'original-witness',
+    'different-text',
+    'different-text-approved-witness',
+  ]) {
+    test('activity edited approval $variant through the real runner', () async {
+      final f = _ActivityFixture.create();
+      final matching = variant == 'matching';
+      final differentText = variant.startsWith('different-text');
+      final approvedWitness = matching || variant.endsWith('approved-witness');
+      final original = differentText ? 'Original' : 'Model replacement';
+      final edited = differentText ? 'Approved replacement' : 'Original';
+      final scenario = sandbox.Mr7Scenario(
+        id: 'activity-edited-noop-$variant',
+        suite: 'graphql',
+        operation: 'editWorkItemActivityNote',
+        variant: 'no-op',
+        tier: 'T2',
+        expectedMutations: 0,
+        targetKind: AiTargetKind.note,
+        targetKinds: {
+          AiTargetKind.project,
+          AiTargetKind.issue,
+          AiTargetKind.note,
+        },
+        resource: (_) => const AiResourceRef(kind: AiResourceKind.issue, id: 3),
+        utterance: (p) => 'Edit my note #51 on issue #3 in ${p.path}.',
+        call: (_) => AiToolCall(
+          id: 'activity-edited-noop',
+          name: 'editWorkItemActivityNote',
+          arguments: {
+            'projectId': 909,
+            'iid': 3,
+            'noteId': 51,
+            'body': original,
+            'reason': 'Set the synthetic note text.',
+          },
+        ),
+        paths: (_) => {'POST graphql'},
+        // Exercise rejection of a stale core no-change claim separately
+        // from the genuine method-level no-op in the matching case.
+        freshness: differentText
+            ? (_, _) async => const AiWriteFreshness(
+                noChange: true,
+                visibilityUnreadable: false,
+                sourceVisibilityUnreadable: false,
+                targetVisibility: 'private',
+              )
+            : null,
+        noChangeObservation: (_) => f.observation(
+          'editWorkItemActivityNote',
+          body: approvedWitness ? edited : original,
+        ),
+        observe: (_, _) async => false,
+        fixture: (_, _) async {
+          await f.installRoutesAndBindings();
+          return sandbox.Mr7ScenarioFixtures(
+            graphReadDocuments: await f.productionReadDocuments(
+              'editWorkItemActivityNote',
+            ),
+          );
+        },
+      );
+      final receipt = await sandbox.runMr7Sandbox(
+        policy: Mr7Policy.candidate,
+        releaseSha: '0123456789abcdef0123456789abcdef01234567',
+        session: f.session,
+        scenarios: [scenario],
+        confirm: (_) async => true,
+        editConfirm: (proposal) async {
+          expect(proposal.editableField, 'body');
+          return edited;
+        },
+      );
+      final row = (receipt['scenarios']! as List).single as Map;
+      expect(
+        row['edit'],
+        isA<Map<Object?, Object?>>(),
+        reason: jsonEncode(receipt),
+      );
+      expect(row['edit'], containsPair('reason', 'approvalRequired'));
+      expect(row['confirmations'], hasLength(2));
+      expect(row['coreNoChange'], true, reason: jsonEncode(receipt));
+      expect(row['mutationCount'], 0, reason: jsonEncode(receipt));
+      expect(
+        row['status'],
+        matching ? 'PASS' : 'NOT_VERIFIED',
+        reason: jsonEncode(receipt),
+      );
+      if (matching) {
+        expect(row['classification'], 'verifiedNoOp');
+        expect(row['parentStateVerified'], true);
+        expect(row['readback'], 'PASS');
+        expect(row['observerRequests'], greaterThan(0));
+      } else {
+        expect(row['classification'], isNot('verifiedNoOp'));
+        expect(row['reason'], 'noChangeUnverified');
+        expect(row['readback'], 'NOT_VERIFIED');
+        if (approvedWitness) {
+          expect(row['parentStateVerified'], false);
+          expect(row['observerRequests'], greaterThan(0));
+        }
+      }
+      expect(f.bodies[_activityNote51], 'Original');
+      expect(f.writeCount, 0);
+    });
+  }
+
+  test(
+    'activity no-op binds production Note preparation through the real runner',
+    () async {
+      for (final operation in [
+        'editWorkItemActivityNote',
+        'setWorkItemActivityNoteReaction',
+      ]) {
+        for (final variant in ['matching', 'wrong-note', 'superseded-permit']) {
+          final matching = variant == 'matching';
+          final f = _ActivityFixture.create();
+          final isReaction = operation == 'setWorkItemActivityNoteReaction';
+          if (isReaction) f.awards.add(f.award('thumbsup', _activityActor));
+          final scenario = sandbox.Mr7Scenario(
+            id: 'activity-noop-$operation-$variant',
+            suite: 'graphql',
+            operation: operation,
+            variant: 'no-op',
+            tier: isReaction ? 'T1' : 'T2',
+            expectedMutations: 0,
+            targetKind: AiTargetKind.note,
+            targetKinds: {
+              AiTargetKind.project,
+              AiTargetKind.issue,
+              AiTargetKind.note,
+            },
+            resource: (_) =>
+                const AiResourceRef(kind: AiResourceKind.issue, id: 3),
+            utterance: (p) =>
+                'Keep my note #51 on issue #3 in ${p.path} unchanged.',
+            call: (_) => AiToolCall(
+              id: 'activity-noop',
+              name: operation,
+              arguments: {
+                'projectId': 909,
+                'iid': 3,
+                'noteId': 51,
+                if (isReaction) ...{
+                  'name': 'thumbsup',
+                  'add': true,
+                } else
+                  'body': 'Original',
+                'reason': 'Keep the synthetic note unchanged.',
+              },
+            ),
+            paths: (_) => {'POST graphql'},
+            noChangeObservation: (_) {
+              if (variant == 'superseded-permit') {
+                f.session.permit = Mr7MutationPermit(
+                  operation: operation,
+                  paths: {'POST graphql'},
+                  resourceProjectId: 909,
+                );
+              }
+              return f.observation(
+                operation,
+                noteId: variant == 'wrong-note'
+                    ? _activityNote52
+                    : _activityNote51,
+                body: isReaction ? null : 'Original',
+                add: isReaction ? true : null,
+              );
+            },
+            observe: (_, _) async => false,
+            fixture: (_, _) async {
+              await f.installRoutesAndBindings();
+              return sandbox.Mr7ScenarioFixtures(
+                graphReadDocuments: await f.productionReadDocuments(operation),
+              );
+            },
+          );
+          final receipt = await sandbox.runMr7Sandbox(
+            policy: Mr7Policy.candidate,
+            releaseSha: '0123456789abcdef0123456789abcdef01234567',
+            session: f.session,
+            scenarios: [scenario],
+            confirm: (_) async => true,
+          );
+          final row = (receipt['scenarios']! as List).single as Map;
+          expect(row['coreNoChange'], true, reason: jsonEncode(receipt));
+          expect(row['mutationCount'], 0, reason: jsonEncode(receipt));
+          expect(
+            row['status'],
+            matching ? 'PASS' : 'NOT_VERIFIED',
+            reason: jsonEncode(receipt),
+          );
+          if (matching) {
+            expect(row['classification'], 'verifiedNoOp');
+            expect(row['parentStateVerified'], true);
+            expect(row['observerRequests'], greaterThan(0));
+          } else {
+            expect(row['reason'], 'noChangeUnverified');
+            expect(row['classification'], isNot('verifiedNoOp'));
+          }
+          expect(f.writeCount, 0);
         }
       }
     },
