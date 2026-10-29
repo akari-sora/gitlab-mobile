@@ -533,6 +533,12 @@ void main() {
         () => find.textContaining('已驗證並下載').evaluate().isNotEmpty,
         description: 'new identity success',
       );
+      // The replaced attempt's files are removed without being awaited.
+      await pumpUntil(
+        tester,
+        () => !first.existsSync(),
+        description: 'replaced attempt cleanup',
+      );
       expect(first.existsSync(), isFalse);
       expect(second.existsSync(), isTrue);
       expect(find.byType(PackageDownloadSheet), findsOneWidget);

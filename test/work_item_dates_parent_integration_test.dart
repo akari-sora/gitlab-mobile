@@ -404,7 +404,16 @@ void main() {
       await _enterDates(tester, '2026-11-02', '2026-11-09');
       f.lagNextDetail = true;
       await tester.tap(find.byKey(_datesSave));
-      await settleNetworkWidgets(tester);
+      await _settleUntil(
+        tester,
+        () =>
+            f.datesMutationRequests == 1 &&
+            !f.lagNextDetail &&
+            !_shown(find.byKey(_datesSave)) &&
+            _shown(find.byKey(_stale)) &&
+            _enabled(tester, _refreshButton()),
+        'the lagging Dates reload settles',
+      );
       expect(find.byKey(_stale), findsOneWidget, reason: 'positive control');
       expect(find.text(_oldStart), findsNothing);
 
@@ -412,7 +421,14 @@ void main() {
       await _openStatus(tester);
       await _chooseStatus(tester, _canceled);
       await tester.tap(find.byKey(_statusSave));
-      await settleNetworkWidgets(tester);
+      await _settleUntil(
+        tester,
+        () =>
+            f.status.count(_statusWriteOp) == 1 &&
+            _shown(find.text('不處理')) &&
+            _enabled(tester, _refreshButton()),
+        'the Status write settles',
+      );
       expect(f.status.count(_statusWriteOp), 1);
       expect(find.text('不處理'), findsWidgets, reason: 'Status confirmed');
       expect(_details(h), details, reason: 'zero further detail reads');
@@ -421,7 +437,11 @@ void main() {
       expect(find.text(_newStart), findsNothing);
 
       await tester.tap(_refreshButton());
-      await settleNetworkWidgets(tester);
+      await _settleUntil(
+        tester,
+        () => _shown(find.text(_newStart)),
+        'the manual refresh shows the new dates',
+      );
       expect(find.byKey(_stale), findsNothing);
       expect(find.text(_newStart), findsOneWidget);
       expect(f.unhandled, isEmpty);
@@ -438,7 +458,14 @@ void main() {
     await tester.tap(find.byKey(_inheritedMode));
     await tester.pump();
     await tester.tap(find.byKey(_datesSave));
-    await settleNetworkWidgets(tester);
+    await _settleUntil(
+      tester,
+      () =>
+          f.mutationInputs.isNotEmpty &&
+          !_shown(find.byKey(_datesSave)) &&
+          _shown(find.text('日期由階層彙整')),
+      'the inherited-mode write is confirmed',
+    );
     expect(f.mutationInputs.single['startAndDueDateWidget'], {
       'isFixed': false,
     });
@@ -510,7 +537,16 @@ void main() {
       final details = _details(h);
       f.status.failNextDetail = true;
       await tester.tap(find.byKey(_datesSave));
-      await settleNetworkWidgets(tester);
+      await _settleUntil(
+        tester,
+        () =>
+            f.datesMutationRequests == 1 &&
+            !f.status.failNextDetail &&
+            !_shown(find.byKey(_datesSave)) &&
+            _shown(find.byKey(_stale)) &&
+            _enabled(tester, _refreshButton()),
+        'the failed post-SETTLE reload settles',
+      );
       expect(f.status.failNextDetail, isFalse, reason: 'the reload got 503');
       expect(_details(h), details + 1);
       expect(find.byKey(_datesSave), findsNothing, reason: 'confirmed, closed');
@@ -1783,4 +1819,22 @@ Future<void> _until(WidgetTester tester, bool Function() ready) async {
     realDelay: const Duration(milliseconds: 1),
   );
   await tester.pump();
+}
+
+bool _shown(Finder finder) => finder.evaluate().isNotEmpty;
+
+bool _enabled(WidgetTester tester, Finder finder) =>
+    finder.evaluate().length == 1 && _onPressed(tester, finder) != null;
+
+/// A save or reload crosses the real read-cache disk barriers as well as the
+/// widget clock, so on a loaded host the bounded settle can return before it
+/// finishes. Then wait for the settled state the test goes on to assert; a run
+/// that has already settled is unchanged.
+Future<void> _settleUntil(
+  WidgetTester tester,
+  bool Function() settled,
+  String what,
+) async {
+  await settleNetworkWidgets(tester);
+  await pumpUntil(tester, settled, description: what);
 }

@@ -245,9 +245,12 @@ void main() {
       apiKey: 'key',
       adapter: adapter,
     );
+    // The body never arrives, so the wall timeout must fire on the stream.
+    // It also runs while the headers are on their way, so keep it far above
+    // their latency on a loaded host.
     final response = await transport.request(
       responses,
-      wallTimeout: const Duration(milliseconds: 10),
+      wallTimeout: const Duration(seconds: 2),
     );
     await expectLater(
       response.stream.toList(),
