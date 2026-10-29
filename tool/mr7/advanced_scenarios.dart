@@ -10,6 +10,8 @@ import 'sandbox_contract.dart';
 
 const mr7AdvancedOwnedRows = {8, 9, 18, 20, 26, 30, 31, 32};
 const mr7AdvancedHead = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const mr7AdvancedNextHead = 'dddddddddddddddddddddddddddddddddddddddd';
+const mr7AdvancedEditedText = 'Reviewed synthetic text';
 const _isolation =
     'Complete two-pass owner events window includes setup, scenario and cleanup; '
     'every event and mutation belongs to the fresh sandbox; unreadable, missing '
@@ -18,27 +20,16 @@ const _cleanup =
     'One finalizer deletes only this run project after ID/path/owner revalidation '
     'and complete parent inventory; uncertain or unverified writes retain it. '
     'No reset, unlock, retry, personal snippet or account-global cleanup.';
-const _nameSeam =
-    'NOT_RUN/closed: 7B0 observer requires numeric returned ID and numeric path; '
-    'needs a project-bound name/path/SHA observer, without invented IDs.';
+// Observation requirements for the complete inventory below. _upgrade assigns
+// the current executable definition or its specific typed disposition.
+const _nameSeam = 'Exact project-bound path/name/SHA observation is required.';
 const _absenceSeam =
-    'NOT_RUN/closed: 7B0 observer cannot verify empty acknowledgements, complete '
-    'parent lists or absence; 404 alone is ambiguous. Keep core ack semantics.';
-const _contentSeam =
-    'NOT_RUN/closed: 7B0 observer cannot independently read raw snippet bytes '
-    'at the pinned file revision; metadata alone does not prove content.';
+    'Complete independent parent inventory is required; 404 is ambiguous.';
+const _contentSeam = 'Exact revision-bound independent raw bytes are required.';
 const _projectFieldsSeam =
-    'NOT_RUN/closed: 7B0 does not expose the pre-write name/description '
-    'snapshot to the observer. Its custom freshness hook also omits required '
-    'preread receipt metadata. A snapshot/readback hook that retains that '
-    'metadata is needed to prove exact preservation of the omitted field; '
-    'initial fixture values and null-to-empty normalization are not evidence.';
+    'Presence-sensitive original field and identity snapshots are required.';
 const _mergeIdentitySeam =
-    'NOT_RUN/closed: 7B0 does not expose the original pre-read MR numeric ID '
-    'and operation preconditions to its observer; acknowledgement identity or '
-    'fixture constants cannot substitute for that snapshot. A snapshot/readback '
-    'hook must retain required preread receipt metadata and bind original ID, '
-    'iid, sandbox project, actor and operation-specific before/after state.';
+    'Original MR ID/iid/actor and state snapshots are required.';
 const _live =
     'Live NOT_RUN without owner credentials and instance feature/version checks. '
     'Missing fixture, unsupported feature, forbidden/unknown scope, uncertain '
@@ -55,8 +46,8 @@ final class Mr7AdvancedCase {
     required this.write,
     required this.readback,
     this.scenario,
-    this.blockedScenario,
     this.closedReason,
+    this.refusal,
   });
 
   final String operation;
@@ -66,8 +57,8 @@ final class Mr7AdvancedCase {
   final String write;
   final String readback;
   final Mr7Scenario? scenario;
-  final Mr7Scenario? blockedScenario;
   final String? closedReason;
+  final Mr7ClosedRefusal? refusal;
   String get id => 'b3-$operation-$variant';
   String get preconditions =>
       'Fresh private project in owner personal namespace, synthetic fixtures '
@@ -96,9 +87,19 @@ final class Mr7AdvancedCase {
     operation: operation,
     variant: variant,
     tier: tier,
+    closed: refusal,
     call: (_) => throw const Mr7Refused('advancedVariantClosed'),
     paths: (_) => const {},
     observe: (_, _) async => false,
+  );
+
+  Mr7ClosedVariant get closedVariant => Mr7ClosedVariant(
+    id: id,
+    suite: 'advanced',
+    operation: operation,
+    variant: variant,
+    tier: tier,
+    refusal: refusal!,
   );
 }
 
@@ -115,12 +116,15 @@ Mr7AdvancedCase _runnable(
   required String observation,
   required bool Function(Map<String, Object?> row) check,
   bool Function(Map<String, Object?> row, Mr7Identity identity)? identityCheck,
+  Future<bool> Function(Mr7Readback, Mr7Identity)? observe,
+  Set<String> Function(Mr7Identity)? observerPaths,
+  List<Mr7SnapshotSpec> Function(Mr7Identity)? preRead,
+  Mr7ParentStateObservation Function(Mr7Identity)? noChangeObservation,
 }) {
   final id = 'b3-$operation-$variant';
   final owningKind = aiWriteProposalTargetKind(
     productionAiLedger.find(operation)!,
   );
-  final needsTargetSet = owningKind != targetKind;
   final definition = Mr7Scenario(
     id: id,
     suite: 'advanced',
@@ -128,6 +132,71 @@ Mr7AdvancedCase _runnable(
     variant: variant,
     tier: tier,
     targetKind: targetKind,
+    targetKinds: {
+      owningKind,
+      targetKind,
+      if (operation == 'createTag') AiTargetKind.ref,
+    },
+    fixture: (session, p) async {
+      final attached = Mr7AdvancedFixture.attached(session.server);
+      final fixture = attached != null && !attached._used
+          ? attached
+          : Mr7AdvancedFixture(
+              session.server,
+              variant: variant,
+              operation: operation,
+            );
+      fixture._used = true;
+      fixture.configureProject();
+      // Project field presence is intentional fixture data, never normalized
+      // by an observer or copied from the acknowledgement.
+      session.server.project!.putIfAbsent(
+        'description',
+        () => 'Original description',
+      );
+      if (operation == 'approveMergeRequest' ||
+          operation == 'cancelAutoMerge') {
+        final before = await session.read(
+          'projects/${p.projectId}/merge_requests/3',
+        );
+        final approvals = before['approved_by'];
+        if (before['id'] is! int ||
+            before['iid'] != 3 ||
+            before['project_id'] != p.projectId ||
+            before['state'] != 'opened' ||
+            before['user'] is! Map ||
+            (before['user'] as Map)['can_merge'] != true ||
+            (operation == 'approveMergeRequest' &&
+                (approvals is! List || approvals.isNotEmpty)) ||
+            (operation == 'cancelAutoMerge' &&
+                before['auto_merge_enabled'] != true)) {
+          throw const Mr7Refused('advancedPrecondition');
+        }
+      }
+      return const Mr7ScenarioFixtures();
+    },
+    preRead:
+        preRead ??
+        (operation.contains('Merge') || operation == 'mergeRequest'
+            ? (p) => [
+                Mr7SnapshotSpec(
+                  path: 'projects/${p.projectId}/merge_requests/3',
+                  fields: {
+                    'sha',
+                    'state',
+                    'user',
+                    'approved_by',
+                    'auto_merge_enabled',
+                  },
+                  unchangedFields:
+                      operation == 'approveMergeRequest' ||
+                          operation == 'cancelAutoMerge'
+                      ? {'sha', 'state', 'user'}
+                      : {},
+                ),
+              ]
+            : null),
+    noChangeObservation: noChangeObservation,
     utterance: (p) =>
         'Perform $operation $variant only in synthetic project ${p.path}. '
         'Merge request !3, pipeline 12, job 21 and snippet #42 are fixtures.',
@@ -140,15 +209,17 @@ Mr7AdvancedCase _runnable(
       arguments: {'projectId': p.projectId, ...arguments},
     ),
     paths: (p) => {mutation.replaceAll('{project}', '${p.projectId}')},
-    readbackPaths: (p, _) => {
-      observation.replaceAll('{project}', '${p.projectId}'),
-    },
-    observe: (observer, p) async {
-      final row = await observer.read(
-        observation.replaceAll('{project}', '${p.projectId}'),
-      );
-      return check(row) && (identityCheck?.call(row, p) ?? true);
-    },
+    readbackPaths: (p, _) =>
+        observerPaths?.call(p) ??
+        {observation.replaceAll('{project}', '${p.projectId}')},
+    observe:
+        observe ??
+        (observer, p) async {
+          final row = await observer.read(
+            observation.replaceAll('{project}', '${p.projectId}'),
+          );
+          return check(row) && (identityCheck?.call(row, p) ?? true);
+        },
   );
   return Mr7AdvancedCase(
     operation: operation,
@@ -157,14 +228,7 @@ Mr7AdvancedCase _runnable(
     preread: preread,
     write: write,
     readback: readback,
-    scenario: needsTargetSet ? null : definition,
-    blockedScenario: needsTargetSet ? definition : null,
-    closedReason: needsTargetSet
-        ? 'NOT_RUN/closed: isolated 7B0 scenario permits only $targetKind; '
-              'production needs owning $owningKind and bound $targetKind. Request '
-              'an explicit per-scenario target-kind set; do not add dummy cases '
-              'to widen candidate policy. This case refuses before API preparation.'
-        : null,
+    scenario: definition,
   );
 }
 
@@ -192,7 +256,7 @@ Iterable<Mr7AdvancedCase> _closed(
 
 /// Full current production-ledger enumeration for the 7B3 families. Unsupported
 /// variants stay visible here so adding a convenient happy path cannot hide gaps.
-List<Mr7AdvancedCase> mr7AdvancedCases() => [
+List<Mr7AdvancedCase> _listedAdvancedCases() => [
   for (final op in ['edit_file', 'createFile', 'deleteFile', 'applySuggestion'])
     ..._closed(
       op,
@@ -541,7 +605,7 @@ List<Mr7AdvancedCase> mr7AdvancedCases() => [
       observation: 'projects/{project}/snippets/42',
       check: (r) =>
           r['title'] == 'Updated synthetic snippet' &&
-          r['description'] == 'Synthetic metadata' &&
+          r['description'] == mr7AdvancedEditedText &&
           r['visibility'] == (raised ? 'public' : 'private') &&
           _filePaths(r).join(',') == 'a.txt,b.txt',
     ),
@@ -732,6 +796,492 @@ List<Mr7AdvancedCase> mr7AdvancedCases() => [
     ),
 ];
 
+Mr7Parent _originalMr(Mr7Readback observer) {
+  final rows = observer.snapshot?.metadata['resources'] as List?;
+  if (rows == null || rows.length != 1) {
+    throw const Mr7Refused('advancedSnapshotMissing');
+  }
+  final row = rows.single as Map;
+  return Mr7Parent.mergeRequest(id: row['id'] as int, iid: row['iid'] as int);
+}
+
+Mr7AdvancedCase _upgrade(Mr7AdvancedCase c) {
+  Mr7AdvancedCase run({
+    required AiTargetKind kind,
+    required Map<String, Object?> args,
+    required String mutation,
+    required Set<String> Function(Mr7Identity) paths,
+    required Future<bool> Function(Mr7Readback, Mr7Identity) observe,
+    String? tier,
+    List<Mr7SnapshotSpec> Function(Mr7Identity)? preRead,
+    Mr7ParentStateObservation Function(Mr7Identity)? noChange,
+  }) => _runnable(
+    c.operation,
+    c.variant,
+    tier ?? c.tier,
+    preread: c.preread,
+    write: c.write,
+    readback: c.readback,
+    targetKind: kind,
+    arguments: args,
+    mutation: mutation,
+    observation: '',
+    check: (_) => false,
+    observe: observe,
+    observerPaths: paths,
+    preRead: preRead,
+    noChangeObservation: noChange,
+  );
+  Set<String> mrPaths(Mr7Identity p) => {
+    'projects/${p.projectId}/merge_requests/3',
+  };
+  if (c.operation == 'editProject' &&
+      ['name', 'description'].contains(c.variant)) {
+    final field = c.variant;
+    final omitted = field == 'name' ? 'description' : 'name';
+    final expected = field == 'name'
+        ? 'Synthetic renamed display'
+        : 'Synthetic project description';
+    return run(
+      kind: AiTargetKind.project,
+      args: {field: expected},
+      mutation: 'PUT projects/{project}',
+      paths: (p) => {'projects/${p.projectId}'},
+      preRead: (p) => [
+        Mr7SnapshotSpec(
+          path: 'projects/${p.projectId}',
+          fields: {'name', 'description'},
+          unchangedFields: {omitted},
+        ),
+      ],
+      observe: (o, p) async =>
+          (await o.read('projects/${p.projectId}'))[field] == expected,
+    );
+  }
+  if (c.operation == 'approveMergeRequest' && c.variant == 'sha-bound') {
+    return run(
+      kind: AiTargetKind.mergeRequest,
+      args: {'iid': 3},
+      mutation: 'POST projects/{project}/merge_requests/3/approve',
+      paths: (p) => {
+        ...mrPaths(p),
+        'projects/${p.projectId}/merge_requests/3/approvals',
+      },
+      observe: (o, _) => o.observe(
+        Mr7ApprovalObservation(parent: _originalMr(o), approved: true),
+      ),
+    );
+  }
+  if (c.operation == 'cancelAutoMerge' && c.variant == 'current-endpoint') {
+    return run(
+      kind: AiTargetKind.mergeRequest,
+      args: {'iid': 3},
+      mutation: 'POST projects/{project}/merge_requests/3/cancel_auto_merge',
+      paths: mrPaths,
+      noChange: (_) => const Mr7ParentStateObservation(
+        parent: Mr7Parent.mergeRequest(id: 33, iid: 3),
+        state: Mr7ParentState.autoMerge,
+        expected: false,
+      ),
+      observe: (o, _) => o.observe(
+        Mr7ParentStateObservation(
+          parent: _originalMr(o),
+          state: Mr7ParentState.autoMerge,
+          expected: false,
+        ),
+      ),
+    );
+  }
+  if (c.operation == 'rebaseMergeRequest' &&
+      ['accepted', 'async-completion'].contains(c.variant)) {
+    return run(
+      kind: AiTargetKind.mergeRequest,
+      args: {'iid': 3},
+      mutation: 'POST projects/{project}/merge_requests/3/rebase',
+      paths: mrPaths,
+      observe: (o, _) async {
+        final row = await o.observe(
+          Mr7RebaseObservation(
+            parent: _originalMr(o),
+            sha: mr7AdvancedNextHead,
+            interval: Duration.zero,
+          ),
+        );
+        return row['sha'] == mr7AdvancedNextHead;
+      },
+    );
+  }
+  if (c.operation == 'deleteDraftNote' &&
+      ['owned-draft', 'external-draft'].contains(c.variant)) {
+    return run(
+      kind: AiTargetKind.note,
+      args: {'iid': 3, 'noteId': 8},
+      mutation: 'DELETE projects/{project}/merge_requests/3/draft_notes/8',
+      preRead: (p) => [
+        Mr7SnapshotSpec(
+          path: 'projects/${p.projectId}/merge_requests/3',
+          fields: {'sha'},
+          unchangedFields: {'sha'},
+        ),
+      ],
+      paths: (p) => {
+        ...mrPaths(p),
+        'projects/${p.projectId}/merge_requests/3/draft_notes',
+      },
+      observe: (o, _) async {
+        await o.observe(
+          Mr7ListObservation(
+            parent: _originalMr(o),
+            kind: Mr7ListKind.draftNotes,
+            expectedIds: {},
+          ),
+        );
+        return true;
+      },
+    );
+  }
+  if (c.operation == 'deletePipeline' && c.variant == 'owned-pipeline') {
+    return run(
+      kind: AiTargetKind.pipeline,
+      args: {'pipelineId': 12},
+      mutation: 'DELETE projects/{project}/pipelines/12',
+      paths: (p) => {
+        'projects/${p.projectId}',
+        'projects/${p.projectId}/pipelines',
+      },
+      observe: (o, _) async {
+        await o.observe(
+          Mr7ListObservation(
+            parent: const Mr7Parent.project(),
+            kind: Mr7ListKind.pipelines,
+            expectedIds: {},
+          ),
+        );
+        return true;
+      },
+    );
+  }
+  if (c.variant == 'ordinary-ref' &&
+      ['createBranch', 'createTag'].contains(c.operation)) {
+    final branch = c.operation == 'createBranch';
+    final collection = branch ? 'branches' : 'tags';
+    return run(
+      kind: branch ? AiTargetKind.newBranch : AiTargetKind.tag,
+      args: {
+        if (branch) 'branch': 'mr7-new' else 'tag_name': 'mr7-new',
+        'ref': 'mr7-topic',
+      },
+      mutation: 'POST projects/{project}/repository/$collection',
+      paths: (p) => {'projects/${p.projectId}/repository/$collection/mr7-new'},
+      observe: (o, _) async {
+        await o.observe(
+          Mr7RefObservation(
+            kind: branch ? Mr7RefKind.branch : Mr7RefKind.tag,
+            name: 'mr7-new',
+            sha: mr7AdvancedHead,
+          ),
+        );
+        return true;
+      },
+    );
+  }
+  if (c.variant == 'ordinary-ref' &&
+      ['deleteBranch', 'deleteTag', 'deleteRelease'].contains(c.operation)) {
+    final branch = c.operation == 'deleteBranch';
+    final release = c.operation == 'deleteRelease';
+    final collection = release
+        ? 'releases'
+        : 'repository/${branch ? 'branches' : 'tags'}';
+    return run(
+      kind: release
+          ? AiTargetKind.release
+          : branch
+          ? AiTargetKind.branch
+          : AiTargetKind.tag,
+      args: {if (branch) 'branch': 'mr7-topic' else 'tag_name': 'mr7-tag'},
+      mutation:
+          'DELETE projects/{project}/$collection/${branch ? 'mr7-topic' : 'mr7-tag'}',
+      paths: (p) => {
+        'projects/${p.projectId}',
+        'projects/${p.projectId}/$collection',
+      },
+      observe: (o, _) async {
+        await o.observe(
+          Mr7ListObservation(
+            parent: const Mr7Parent.project(),
+            kind: release
+                ? Mr7ListKind.releases
+                : branch
+                ? Mr7ListKind.branches
+                : Mr7ListKind.tags,
+            expectedIds: branch ? {'mr7-target'} : {},
+          ),
+        );
+        return true;
+      },
+    );
+  }
+  if (c.variant == 'ordinary-ref' &&
+      ['createRelease', 'updateRelease'].contains(c.operation)) {
+    final create = c.operation == 'createRelease';
+    return run(
+      kind: create ? AiTargetKind.tag : AiTargetKind.release,
+      args: {
+        if (!create) 'tag_name': 'mr7-tag',
+        'fields': {
+          if (create) 'tag_name': 'mr7-tag',
+          'name': 'Synthetic release',
+          'description': 'Initial synthetic text',
+        },
+      },
+      mutation:
+          '${create ? 'POST' : 'PUT'} projects/{project}/releases${create ? '' : '/mr7-tag'}',
+      paths: (p) => {'projects/${p.projectId}/releases/mr7-tag'},
+      observe: (o, _) async {
+        final row = await o.observe(
+          const Mr7ReleaseObservation(
+            tag: 'mr7-tag',
+            name: 'Synthetic release',
+            sha: mr7AdvancedHead,
+          ),
+        );
+        return row['description'] == mr7AdvancedEditedText;
+      },
+    );
+  }
+  if (c.operation == 'deleteSnippet' && c.variant == 'owned-project') {
+    return run(
+      kind: AiTargetKind.snippet,
+      args: {'snippetId': 42},
+      mutation: 'DELETE projects/{project}/snippets/42',
+      paths: (p) => {
+        'projects/${p.projectId}',
+        'projects/${p.projectId}/snippets',
+      },
+      observe: (o, _) async {
+        await o.observe(
+          Mr7ListObservation(
+            parent: const Mr7Parent.project(),
+            kind: Mr7ListKind.snippets,
+            expectedIds: {},
+          ),
+        );
+        return true;
+      },
+    );
+  }
+  if (c.scenario != null &&
+      !c.operation.contains('Snippet') &&
+      c.operation != 'createPipeline') {
+    return c;
+  }
+  final (cause, code, reason) = _closedDisposition(c);
+  return Mr7AdvancedCase(
+    operation: c.operation,
+    variant: c.variant,
+    tier: c.tier,
+    preread: c.preread,
+    write: c.write,
+    readback: c.readback,
+    refusal: Mr7ClosedRefusal(cause, code),
+    closedReason: reason,
+  );
+}
+
+(Mr7ClosureCause, String, String) _closedDisposition(Mr7AdvancedCase c) {
+  if (c.operation.contains('Package') || c.operation.contains('Container')) {
+    return (
+      Mr7ClosureCause.fixtureUnavailable,
+      'registryFixtureUnavailable',
+      'No run-created registry publish/push/ownership/inventory lifecycle; owner data is excluded.',
+    );
+  }
+  if (c.variant.contains('personal') ||
+      [
+        'createProject',
+        'forkProject',
+        'markAllTodosDone',
+        'batchApplySuggestions',
+      ].contains(c.operation)) {
+    return (
+      Mr7ClosureCause.scopeExcluded,
+      'bindingScopeExcluded',
+      'Binding 7-D4/7-D5 and 5.2 exclude personal/account-global or model-hidden batch operations.',
+    );
+  }
+  if (c.variant.contains('foreign') || c.variant == 'fork-source') {
+    return (
+      Mr7ClosureCause.scopeExcluded,
+      'foreignEffectExcluded',
+      'Cross-project effects are outside sandbox authorization.',
+    );
+  }
+  if ((c.operation == 'editProject' &&
+          c.variant == 'omitted-field-cas-drift') ||
+      (c.operation == 'approveMergeRequest' && c.variant == 'head-drift') ||
+      (c.operation == 'publishDraftNotes' && c.variant.contains('drift'))) {
+    return (
+      Mr7ClosureCause.releasePolicy,
+      'casDriftRefused',
+      'Dedicated production-path probes prove zero dispatch after late CAS drift; this is refusal evidence, not successful operation coverage.',
+    );
+  }
+  if (c.variant.contains('drift')) {
+    return (
+      Mr7ClosureCause.releasePolicy,
+      'casDriftProbePending',
+      'CAS drift must refuse before dispatch; this inventory row has no complete dedicated production-path probe in this subset.',
+    );
+  }
+  if (c.variant.contains('provenance')) {
+    return (
+      Mr7ClosureCause.releasePolicy,
+      'provenanceProbePending',
+      'The exact field/source/nonce provenance refusal has no complete dedicated production-path probe in this subset.',
+    );
+  }
+  if (c.operation == 'deleteBranch' &&
+      ['default-ref', 'protected-ref'].contains(c.variant)) {
+    return (
+      Mr7ClosureCause.releasePolicy,
+      'protectedDefaultDeleteRefused',
+      'Production refuses default/protected branch deletion; separate negative tests prove zero writes, not deletion success.',
+    );
+  }
+  if (c.variant.contains('refused') ||
+      c.variant == 'unsafe-last-draft' ||
+      c.variant == 'ambiguous-404') {
+    return (
+      Mr7ClosureCause.releasePolicy,
+      'refusalOrIncompleteEvidence',
+      'Refusal or ambiguous evidence cannot establish successful operation coverage; zero-write/fail-stop probes are separate evidence.',
+    );
+  }
+  if (c.operation == 'playPipelineSchedule') {
+    if (['stored-variables', 'stored-inputs'].contains(c.variant)) {
+      return (
+        Mr7ClosureCause.scopeExcluded,
+        'scheduleParametersExcluded',
+        '7-D8 excludes schedule variables; stored-parameter reuse remains the unproved section 22.3 live gap.',
+      );
+    }
+    if (c.variant == 'schedule-unavailable') {
+      return (
+        Mr7ClosureCause.fixtureUnavailable,
+        'scheduleFixtureUnavailable',
+        'No run-created owned synthetic schedule fixture is demonstrated.',
+      );
+    }
+    if (c.variant == 'unreadable-parameters') {
+      return (
+        Mr7ClosureCause.releasePolicy,
+        'scheduleParametersUnreadable',
+        'Unreadable schedule parameters cannot establish safe echo-only execution or close section 22.3.',
+      );
+    }
+    return (
+      Mr7ClosureCause.observerUnavailable,
+      'schedulePipelineUnbound',
+      'No sealed schedule-to-new-pipeline correlation; retained parameters remain 22.3 NOT_RUN.',
+    );
+  }
+  if (c.operation == 'createPipeline' && c.variant == 'echo-only') {
+    return (
+      Mr7ClosureCause.fixtureUnavailable,
+      'echoPipelineFixtureUnbound',
+      'The new pipeline is not bound to independently observed echo-only configuration and its complete job set.',
+    );
+  }
+  if (['edit_file', 'createFile'].contains(c.operation)) {
+    return (
+      Mr7ClosureCause.releasePolicy,
+      'fileHeadReadNotSupported',
+      'The guarded writer classifies production file HEAD reads as mutations; no HEAD/read dispatch seam is wired.',
+    );
+  }
+  if (c.operation.contains('Snippet') && c.variant != 'new-nonprivate') {
+    return (
+      Mr7ClosureCause.releasePolicy,
+      'fragmentCheckerNotWired',
+      'The runner coordinator does not wire the production fragment checker required by snippet paths, metadata and file text.',
+    );
+  }
+  if (c.operation == 'deleteFile' ||
+      c.operation == 'applySuggestion' ||
+      c.operation == 'deleteBoardList') {
+    return (
+      Mr7ClosureCause.observerUnavailable,
+      'secondaryEffectObserverMissing',
+      'Need a sealed repository-tree absence/suggestion effect/board-list observer bound to the actual dispatch.',
+    );
+  }
+  if (c.operation == 'publishDraftNotes') {
+    return (
+      Mr7ClosureCause.observerUnavailable,
+      'publishedNotesUnbound',
+      'Draft absence alone does not prove corresponding published notes and exact text.',
+    );
+  }
+  if (c.operation == 'cancelAutoMerge') {
+    if (c.variant == '409-no-change') {
+      return (
+        Mr7ClosureCause.fixtureUnavailable,
+        'noChangeFixtureUnproven',
+        'S8 is available, but this subset has no honest concurrent-cancel fixture after the final snapshot fence; 409 alone leaves enabled state unverified.',
+      );
+    }
+    return (
+      Mr7ClosureCause.observerUnavailable,
+      'legacyCancelObserverMissing',
+      'Parent-state witness only binds one current-endpoint dispatch, not the legacy fallback.',
+    );
+  }
+  if (c.operation == 'deleteProject') {
+    return (
+      Mr7ClosureCause.observerUnavailable,
+      'terminalParentObserverMissing',
+      'AI terminal deletion needs separate actor and namespace inventory evidence; finalizer is not evidence.',
+    );
+  }
+  if (c.operation == 'createSnippet' && c.variant == 'new-nonprivate') {
+    return (
+      Mr7ClosureCause.observerUnavailable,
+      'nonprivateContentObserverMissing',
+      'S4 enforces private visibility; a new nonprivate snippet needs an explicitly bound content witness.',
+    );
+  }
+  if ([
+        'approval-unavailable',
+        'protected-approval-escalation',
+      ].contains(c.variant) ||
+      c.variant == 'no-runner') {
+    return (
+      Mr7ClosureCause.fixtureUnavailable,
+      'ownerOnlyFixtureUnavailable',
+      'No owner-only feature/permission/runner fixture is demonstrated; other members remain excluded by 7-D8.',
+    );
+  }
+  if (c.variant == 'late-reply') {
+    return (
+      Mr7ClosureCause.releasePolicy,
+      'lateReplyIncompleteEvidence',
+      'An accepted or late response does not prove bounded independent completion.',
+    );
+  }
+  return (
+    Mr7ClosureCause.releasePolicy,
+    'scenarioChainNotImplemented',
+    'Executable seams may exist, but this packet subset has no complete independently tested chain for this variant.',
+  );
+}
+
+List<Mr7AdvancedCase> mr7AdvancedCases() =>
+    _listedAdvancedCases().map(_upgrade).toList();
+List<Mr7ClosedVariant> mr7AdvancedClosedVariants() => [
+  for (final c in mr7AdvancedCases())
+    if (c.scenario == null) c.closedVariant,
+];
+
 List<Mr7Scenario> mr7AdvancedScenarios() => [
   for (final c in mr7AdvancedCases())
     if (c.scenario != null) c.scenario!,
@@ -744,7 +1294,12 @@ List<String> _filePaths(Map<String, Object?> row) =>
 /// In-memory server routes only. Each write records its sandbox event and uses
 /// the real guarded adapter; observations below never consult this fixture.
 final class Mr7AdvancedFixture {
-  Mr7AdvancedFixture(this.server, {this.variant = 'ordinary'}) {
+  Mr7AdvancedFixture(
+    this.server, {
+    this.variant = 'ordinary',
+    this.operation = '',
+  }) {
+    _fixtures[server] = this;
     final p = server.projectId;
     mr = {
       'id': 33,
@@ -772,13 +1327,19 @@ final class Mr7AdvancedFixture {
       'id': 12,
       'project_id': p,
       'ref': 'mr7-topic',
-      'status': 'running',
+      'status': operation == 'pipelineAction' && variant == 'retry'
+          ? 'failed'
+          : 'running',
     };
     job = {
       'id': 21,
       'project_id': p,
       'ref': 'mr7-topic',
-      'status': 'running',
+      'status': operation == 'jobAction' && variant == 'play'
+          ? 'manual'
+          : operation == 'jobAction' && variant == 'retry'
+          ? 'failed'
+          : 'running',
       'name': 'synthetic-echo',
       'stage': 'test',
       'pipeline': {'id': 12, 'project_id': p},
@@ -855,7 +1416,38 @@ final class Mr7AdvancedFixture {
       ];
       return _changed(r, mr);
     };
+    routes['GET projects/$p/merge_requests/3/approvals'] = (_) => mr7Json({
+      'id': mr['id'],
+      'iid': mr['iid'],
+      'project_id': p,
+      'approved': (mr['approved_by']! as List).isNotEmpty,
+      'approved_by': mr['approved_by'],
+    });
+    routes['POST projects/$p/merge_requests/3/rebase'] = (r) {
+      rebasePolls = variant == 'async-completion' ? 2 : 0;
+      rebasing = true;
+      return _changed(r, {'rebase_in_progress': true}, status: 202);
+    };
+    routes['GET projects/$p/merge_requests/3'] = (r) {
+      if (rebasing && r.queryParameters['include_rebase_in_progress'] == true) {
+        mr['rebase_in_progress'] = rebasePolls-- > 0;
+        mr['merge_error'] = null;
+        if (mr['rebase_in_progress'] == false) mr['sha'] = mr7AdvancedNextHead;
+      }
+      return mr7Json(mr);
+    };
+    routes['GET projects/$p/merge_requests/3/draft_notes/8'] = (_) =>
+        drafts.isEmpty ? mr7Json({}, status: 404) : mr7Json(drafts.single);
+    routes['DELETE projects/$p/merge_requests/3/draft_notes/8'] = (r) {
+      drafts.clear();
+      return _changed(r, const {}, status: 204);
+    };
+    routes['GET projects/$p/merge_requests/3/draft_notes'] = (_) =>
+        _page(drafts);
     routes['POST projects/$p/merge_requests/3/cancel_auto_merge'] = (r) {
+      if (variant == '409-no-change') {
+        return _changed(r, const {}, status: 409, event: false);
+      }
       mr['auto_merge_enabled'] = false;
       return _changed(r, mr);
     };
@@ -864,10 +1456,21 @@ final class Mr7AdvancedFixture {
       return _changed(r, pipeline, status: 201);
     };
     for (final id in [12, 13]) {
-      routes['GET projects/$p/pipelines/$id'] = (_) => mr7Json(pipeline);
+      routes['GET projects/$p/pipelines/$id'] = (_) =>
+          pipelineDeleted ? mr7Json({}, status: 404) : mr7Json(pipeline);
     }
+    routes['GET projects/$p/pipelines'] = (_) =>
+        _page(pipelineDeleted ? [] : [pipeline]);
+    routes['DELETE projects/$p/pipelines/12'] = (r) {
+      pipelineDeleted = true;
+      return _changed(r, const {}, status: 204);
+    };
     for (final action in ['cancel', 'retry']) {
       routes['POST projects/$p/pipelines/12/$action'] = (r) {
+        if (action == 'retry' &&
+            !{'failed', 'canceled'}.contains(pipeline['status'])) {
+          return mr7Json({}, status: 409);
+        }
         pipeline['status'] = action == 'cancel' ? 'canceled' : 'pending';
         return _changed(r, pipeline);
       };
@@ -877,6 +1480,11 @@ final class Mr7AdvancedFixture {
     }
     for (final action in ['cancel', 'retry', 'play']) {
       routes['POST projects/$p/jobs/21/$action'] = (r) {
+        if ((action == 'play' && job['status'] != 'manual') ||
+            (action == 'retry' &&
+                !{'failed', 'canceled'}.contains(job['status']))) {
+          return mr7Json({}, status: 409);
+        }
         job['id'] = action == 'retry' ? 22 : 21;
         job['status'] = action == 'cancel' ? 'canceled' : 'pending';
         return _changed(r, job);
@@ -886,8 +1494,16 @@ final class Mr7AdvancedFixture {
       _syncFiles();
       return mr7Json(snippet);
     };
-    routes['GET projects/$p/snippets/42/files/main/a.txt/raw'] = (_) =>
-        ResponseBody.fromString('Synthetic file a\n', 200);
+    for (final path in ['a.txt', 'b.txt']) {
+      routes['GET projects/$p/snippets/42/files/main/$path/raw'] = (_) =>
+          ResponseBody.fromString('Synthetic file ${path[0]}\n', 200);
+    }
+    routes['GET projects/$p/snippets'] = (_) =>
+        _page(snippetDeleted ? [] : [snippet]);
+    routes['DELETE projects/$p/snippets/42'] = (r) {
+      snippetDeleted = true;
+      return _changed(r, const {}, status: 204);
+    };
     routes['PUT projects/$p/snippets/42'] = (r) {
       final body = r.data! as Map;
       for (final key in ['title', 'description', 'visibility']) {
@@ -910,28 +1526,145 @@ final class Mr7AdvancedFixture {
       });
       return _changed(r, server.project!);
     };
+    _repositoryRoutes();
   }
 
   final Mr7SyntheticGitLab server;
   final String variant;
+  final String operation;
+  bool _used = false;
+  bool _projectConfigured = false;
+  static final _fixtures = Expando<Mr7AdvancedFixture>();
+  static Mr7AdvancedFixture? attached(Mr7SyntheticGitLab server) =>
+      _fixtures[server];
   late Map<String, Object?> mr;
   late Map<String, Object?> pipeline;
   late Map<String, Object?> job;
   late Map<String, Object?> snippet;
   final files = <String>{'a.txt', 'b.txt'};
   final drafts = <Map<String, Object?>>[
-    {'id': 8, 'note': 'Synthetic review text'},
+    {
+      'id': 8,
+      'note': 'Synthetic review text',
+      'author': {'id': 7, 'username': 'synthetic-owner'},
+    },
   ];
   final mutations = <RequestOptions>[];
   bool loseReply = false;
+  bool pipelineDeleted = false;
+  bool snippetDeleted = false;
+  bool rebasing = false;
+  int rebasePolls = 0;
+  bool branchDeleted = false;
+  bool tagDeleted = false;
+  bool releaseDeleted = false;
+  bool releaseExists = true;
+  Map<String, Object?>? newRef;
+  late Map<String, Object?> release;
 
   void configureProject() {
-    if (variant == 'default-target') {
-      server.project!['default_branch'] = 'mr7-target';
+    if (_projectConfigured) return;
+    _projectConfigured = true;
+    // Absence is deliberately unreadable in production and raises every path
+    // to hardLine. This fixture explicitly uses GitLab's default local config.
+    server.project!['ci_config_path'] = variant == 'ci-custom'
+        ? 'ci/echo.yml'
+        : '';
+    server.project!['default_branch'] = variant == 'default-target'
+        ? 'mr7-target'
+        : variant == 'default-ref'
+        ? 'mr7-topic'
+        : 'main';
+  }
+
+  ResponseBody _page(List<Object?> values) => mr7Json(
+    values,
+    headers: {
+      'x-page': ['1'],
+      'x-per-page': ['100'],
+      'x-total': ['${values.length}'],
+      'x-total-pages': ['1'],
+      'x-next-page': [''],
+    },
+  );
+
+  void _repositoryRoutes() {
+    final p = server.projectId;
+    final routes = server.routes;
+    Map<String, Object?> branch(String name) => {
+      'name': name,
+      'protected':
+          (name == 'mr7-target' && variant == 'protected-target') ||
+          (name == 'mr7-topic' && variant == 'protected-ref'),
+      'default':
+          (name == 'mr7-target' && variant == 'default-target') ||
+          (name == 'mr7-topic' && variant == 'default-ref'),
+      'commit': {'id': mr7AdvancedHead},
+    };
+    routes['GET projects/$p/repository/branches/mr7-topic'] = (_) =>
+        mr7Json(branch('mr7-topic'));
+    routes['GET projects/$p/repository/commits/mr7-topic'] = (_) =>
+        mr7Json({'id': mr7AdvancedHead});
+    for (final collection in ['branches', 'tags']) {
+      routes['POST projects/$p/repository/$collection'] = (r) {
+        final body = r.data! as Map;
+        newRef = {
+          'name': body[collection == 'branches' ? 'branch' : 'tag_name'],
+          'commit': {'id': body['ref']},
+          'protected': false,
+          'default': false,
+        };
+        return _changed(r, newRef!, status: 201);
+      };
+      routes['GET projects/$p/repository/$collection/mr7-new'] = (_) =>
+          mr7Json(newRef);
     }
-    if (variant == 'ci-custom') {
-      server.project!['ci_config_path'] = 'ci/echo.yml';
+    final tag = {
+      'name': 'mr7-tag',
+      'commit': {'id': mr7AdvancedHead},
+    };
+    routes['GET projects/$p/repository/tags/mr7-tag'] = (_) => mr7Json(tag);
+    routes['GET projects/$p/repository/branches'] = (_) =>
+        _page([if (!branchDeleted) branch('mr7-topic'), branch('mr7-target')]);
+    routes['GET projects/$p/repository/tags'] = (_) =>
+        _page([if (!tagDeleted) tag]);
+    routes['DELETE projects/$p/repository/branches/mr7-topic'] = (r) {
+      branchDeleted = true;
+      return _changed(r, const {}, status: 204);
+    };
+    routes['DELETE projects/$p/repository/tags/mr7-tag'] = (r) {
+      tagDeleted = true;
+      return _changed(r, const {}, status: 204);
+    };
+    release = {
+      'tag_name': 'mr7-tag',
+      'name': 'Synthetic release',
+      'description': 'Original synthetic release',
+      'commit': {'id': mr7AdvancedHead},
+    };
+    releaseExists = operation != 'createRelease';
+    routes['GET projects/$p/releases/mr7-tag'] = (_) =>
+        releaseExists && !releaseDeleted
+        ? mr7Json(release)
+        : mr7Json({}, status: 404);
+    routes['GET projects/$p/releases'] = (_) =>
+        _page([if (releaseExists && !releaseDeleted) release]);
+    for (final method in ['POST', 'PUT']) {
+      routes['$method projects/$p/releases${method == 'POST' ? '' : '/mr7-tag'}'] =
+          (r) {
+            if ((method == 'POST' && releaseExists) ||
+                (method == 'PUT' && !releaseExists)) {
+              return mr7Json({}, status: 409);
+            }
+            releaseExists = true;
+            release.addAll(Map<String, Object?>.from(r.data! as Map));
+            return _changed(r, release, status: method == 'POST' ? 201 : 200);
+          };
     }
+    routes['DELETE projects/$p/releases/mr7-tag'] = (r) {
+      releaseDeleted = true;
+      return _changed(r, const {}, status: 204);
+    };
   }
 
   void _syncFiles() {
@@ -950,10 +1683,11 @@ final class Mr7AdvancedFixture {
     RequestOptions request,
     Map<String, Object?> value, {
     int status = 200,
+    bool event = true,
   }) {
     mutations.add(request);
     server.scenarioWrites++;
-    server.addEvent(target: server.projectId);
+    if (event) server.addEvent(target: server.projectId);
     if (loseReply) throw const Mr7Refused('replyLostAfterSend');
     return mr7Json(value, status: status);
   }
