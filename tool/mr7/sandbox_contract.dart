@@ -700,6 +700,7 @@ bool _graphSnapshotTargets(
   Object? body,
   Map<String, String> bindings,
   String path,
+  String projectPath,
 ) {
   final operation = _selectedGraphOperation(body);
   if (operation?.kind != 'mutation' ||
@@ -719,6 +720,18 @@ bool _graphSnapshotTargets(
   if (gids.isEmpty) return false;
   try {
     final root = operation.roots.single;
+    final arguments = operation.resolve(
+      root.arguments,
+      body['variables'] as Map,
+    );
+    final input = (arguments as Map)['input'];
+    if (root.field == 'issueSetEscalationStatus') {
+      return input is Map &&
+          input['projectPath'] == projectPath &&
+          input['iid'] is String &&
+          RegExp(r'^[1-9][0-9]*$').hasMatch(input['iid'] as String) &&
+          path.endsWith('/issues/${input['iid']}');
+    }
     // These selectors match the product mutation documents. Ordinary text and
     // other arguments cannot establish which resource the mutation changes.
     final selector = switch (root.field) {
@@ -733,11 +746,6 @@ bool _graphSnapshotTargets(
       _ => null,
     };
     if (selector == null) return false;
-    final arguments = operation.resolve(
-      root.arguments,
-      body['variables'] as Map,
-    );
-    final input = (arguments as Map)['input'];
     return input is Map &&
         input[selector] is String &&
         gids.contains(input[selector]);
@@ -810,7 +818,10 @@ final class Mr7MutationPermit {
     this.graphDocuments = const {},
     this.graphVariablesDigests = const {},
     this.resultPath = const [],
-  });
+    Object? callArguments,
+  }) : callArguments = callArguments is Map
+           ? _mr7FrozenJson(callArguments) as Map<String, Object?>
+           : null;
   final String operation;
   final String? scenarioId;
   final Set<String> paths;
@@ -819,6 +830,18 @@ final class Mr7MutationPermit {
   final Set<String> graphDocuments;
   final Set<String> graphVariablesDigests;
   final List<String> resultPath;
+  // The runner captures the actual tool call before preparation or dispatch.
+  final Map<String, Object?>? callArguments;
+  Map<String, Object?> Function()? _preparedArguments;
+
+  // Keep the production preparation itself: approval edits rebind its request.
+  void capturePreparedArguments(Map<String, Object?> Function() arguments) =>
+      _preparedArguments = arguments;
+
+  Map<String, Object?>? get preparedArguments => _preparedArguments == null
+      ? null
+      : _mr7FrozenJson(_preparedArguments!()) as Map<String, Object?>;
+
   int sent = 0;
   bool confirmed = false;
   Future<bool> Function()? confirmBeforeSend;
@@ -835,10 +858,12 @@ final class Mr7MutationPermit {
   String? _rebaseBeforeSha;
   int? _todoParentId;
   Set<int>? _todoIdsBefore;
+  String? _ownedActivityNoteAtSend;
   final Map<String, int> _preparedParentIds = {};
+  ({String id, String parentPath})? _preparedActivityNote;
 }
 
-enum Mr7SnapshotKind { parent, board, milestone, label, draftNote }
+enum Mr7SnapshotKind { parent, board, milestone, label, draftNote, workItem }
 
 /// Fields are represented by digests in receipts; field presence is bound too.
 final class Mr7SnapshotSpec {
@@ -888,17 +913,31 @@ final class Mr7SnapshotSpec {
          fields: {'note', 'body', 'position', 'commit_id', 'author_id'},
          unchangedFields: unchangedFields,
        );
+  Mr7SnapshotSpec.workItem({
+    required String path,
+    required String workItemId,
+    Set<String> fields = _mr7WorkItemFields,
+    Set<String> unchangedFields = const {},
+  }) : this._(
+         path: path,
+         kind: Mr7SnapshotKind.workItem,
+         workItemId: workItemId,
+         fields: fields,
+         unchangedFields: unchangedFields,
+       );
   Mr7SnapshotSpec._({
     required this.path,
     required Set<String> fields,
     required Set<String> unchangedFields,
     required this.kind,
+    this.workItemId,
   }) : fields = Set.unmodifiable(fields),
        unchangedFields = Set.unmodifiable(unchangedFields);
   final String path;
   final Set<String> fields;
   final Set<String> unchangedFields;
   final Mr7SnapshotKind kind;
+  final String? workItemId;
 
   bool _allowsPath(String root) => switch (kind) {
     Mr7SnapshotKind.parent =>
@@ -916,6 +955,9 @@ final class Mr7SnapshotSpec {
     Mr7SnapshotKind.draftNote => RegExp(
       '^$root/merge_requests/[1-9][0-9]*/draft_notes/[1-9][0-9]*\$',
     ).hasMatch(path),
+    Mr7SnapshotKind.workItem => RegExp(
+      '^$root/issues/[1-9][0-9]*\$',
+    ).hasMatch(path),
   };
 }
 
@@ -928,6 +970,7 @@ final class _Mr7SnapshotRow {
     required this.presentFields,
     required this.identityDigests,
     this.parentId,
+    this.values = const {},
   });
   final Mr7SnapshotSpec spec;
   final int id;
@@ -936,6 +979,7 @@ final class _Mr7SnapshotRow {
   final Set<String> presentFields;
   final Map<String, String> identityDigests;
   final int? parentId;
+  final Map<String, Object?> values;
 }
 
 final class Mr7PreReadSnapshot {
@@ -972,6 +1016,52 @@ Set<String> _snapshotPreservedFields(_Mr7SnapshotRow saved, Object? sentBody) {
     return saved.spec.unchangedFields;
   }
   if (sentBody is! Map) throw const Mr7Refused('snapshotTarget');
+  if (saved.spec.kind == Mr7SnapshotKind.workItem) {
+    final operation = _selectedGraphOperation(sentBody);
+    if (operation == null || operation.roots.length != 1) {
+      throw const Mr7Refused('snapshotTarget');
+    }
+    final input = _mr7MutationInput(sentBody, operation.roots.single.field);
+    final changed = <String>{};
+    for (final key in input.keys) {
+      switch (key) {
+        case 'title':
+          changed.add('title');
+        case 'stateEvent':
+          changed.add('state');
+        case 'descriptionWidget':
+          changed.add('description');
+        case 'statusWidget':
+          changed.add('status');
+        case 'assigneesWidget':
+          changed.add('assignees');
+        case 'milestoneWidget':
+          changed.add('milestone');
+        case 'labelsWidget':
+          changed.add('labels');
+        case 'subscribed':
+          changed.add('subscribed');
+        case 'startAndDueDateWidget':
+          final dates = input[key];
+          if (dates is! Map) throw const Mr7Refused('snapshotTarget');
+          changed.addAll(dates.keys.cast<String>());
+          if (dates.containsKey('isFixed')) {
+            changed.addAll({
+              'startDate',
+              'dueDate',
+              'startDateSourcingWorkItem',
+              'dueDateSourcingWorkItem',
+              'startDateSourcingMilestone',
+              'dueDateSourcingMilestone',
+            });
+          }
+      }
+    }
+    return {
+      ...saved.spec.unchangedFields,
+      ...saved.spec.fields.where((f) => !changed.contains(f)),
+    };
+  }
   final changed = sentBody.keys.toSet();
   if (saved.spec.kind == Mr7SnapshotKind.milestone &&
       changed.contains('state_event')) {
@@ -1000,7 +1090,10 @@ bool _snapshotResourceIdentityMatches(
   final root = 'projects/${identity.projectId}';
   final id = row['id'];
   final iid = row['iid'];
-  final iidRoute = spec.kind == Mr7SnapshotKind.parent && spec.path != root;
+  final iidRoute =
+      (spec.kind == Mr7SnapshotKind.parent ||
+          spec.kind == Mr7SnapshotKind.workItem) &&
+      spec.path != root;
   if (!spec._allowsPath(root) ||
       id is! int ||
       id <= 0 ||
@@ -1027,6 +1120,9 @@ bool _snapshotResourceIdentityMatches(
       row['author_id'] == identity.userId &&
           parentId != null &&
           row['merge_request_id'] == parentId,
+    Mr7SnapshotKind.workItem =>
+      row['project_id'] == identity.projectId &&
+          spec.workItemId == 'gid://gitlab/WorkItem/$id',
   };
 }
 
@@ -1234,9 +1330,553 @@ final class Mr7SnippetObservation
       observer._snippet(this);
 }
 
+/// Only these sealed witnesses may prove a zero-dispatch core no-op.
+sealed class Mr7StateObservation extends Mr7Observation<bool> {
+  const Mr7StateObservation();
+  bool matchesCall(String operation, Object? arguments, int projectId);
+}
+
+const _mr7WorkItemOperations = {
+  'updateWorkItemState',
+  'updateWorkItemStatus',
+  'updateWorkItemDates',
+  'updateWorkItemAssignees',
+  'updateWorkItemMilestone',
+  'updateWorkItemContent',
+  'updateWorkItemLabels',
+  'setWorkItemNotifications',
+  'setIncidentStatus',
+};
+
+/// Arguments are the production tool arguments, including projectId/iid.
+/// Effects are also compared with the resolved input of the actual dispatch.
+final class Mr7WorkItemObservation extends Mr7StateObservation {
+  Mr7WorkItemObservation({
+    required this.workItemId,
+    required this.iid,
+    required this.operation,
+    required Map<String, Object?> arguments,
+    this.milestoneState,
+    this.milestoneExpired,
+  }) : arguments =
+           _mr7FrozenJson({...arguments}..remove('reason'))
+               as Map<String, Object?>;
+  final String workItemId;
+  final int iid;
+  final String operation;
+  final Map<String, Object?> arguments;
+  final String? milestoneState;
+  final bool? milestoneExpired;
+
+  @override
+  bool matchesCall(String op, Object? value, int projectId) =>
+      _mr7WorkItemOperations.contains(operation) &&
+      op == operation &&
+      iid > 0 &&
+      arguments['projectId'] == projectId &&
+      arguments['iid'] == iid &&
+      // The coordinator excludes model justification from the port request.
+      _mr7SameJson(
+        arguments,
+        value is Map ? ({...value}..remove('reason')) : value,
+      );
+
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._workItemEffect(this);
+}
+
+Object? _mr7FrozenJson(Object? value) => switch (value) {
+  Map() => Map<String, Object?>.unmodifiable({
+    for (final entry in value.entries)
+      entry.key as String: _mr7FrozenJson(entry.value),
+  }),
+  List() => List<Object?>.unmodifiable(value.map(_mr7FrozenJson)),
+  _ => value,
+};
+
+bool _mr7SameJson(Object? left, Object? right) {
+  if (left is Map && right is Map) {
+    return left.length == right.length &&
+        left.entries.every(
+          (e) =>
+              right.containsKey(e.key) && _mr7SameJson(e.value, right[e.key]),
+        );
+  }
+  if (left is List && right is List) {
+    return left.length == right.length &&
+        List.generate(
+          left.length,
+          (i) => i,
+        ).every((i) => _mr7SameJson(left[i], right[i]));
+  }
+  return left == right;
+}
+
+Map<String, Object?> _mr7MutationInput(Object? body, String root) {
+  final operation = _selectedGraphOperation(body);
+  if (body is! Map ||
+      operation?.kind != 'mutation' ||
+      operation!.roots.length != 1 ||
+      operation.roots.single.field != root) {
+    throw const Mr7Refused('observerMutationTarget');
+  }
+  final args = operation.resolve(
+    operation.roots.single.arguments,
+    body['variables'] as Map? ?? const {},
+  );
+  final input = args is Map ? args['input'] : null;
+  if (input is! Map) throw const Mr7Refused('observerMutationTarget');
+  return Map<String, Object?>.from(input);
+}
+
+bool _mr7Date(Object? value) {
+  if (value == null) return true;
+  if (value is! String || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
+    return false;
+  }
+  final parsed = DateTime.tryParse(value);
+  return parsed != null && parsed.toIso8601String().startsWith(value);
+}
+
+const _mr7WorkItemFields = {
+  'state',
+  'title',
+  'description',
+  'status',
+  'startDate',
+  'dueDate',
+  'rollUp',
+  'isFixed',
+  'startDateSourcingWorkItem',
+  'dueDateSourcingWorkItem',
+  'startDateSourcingMilestone',
+  'dueDateSourcingMilestone',
+  'assignees',
+  'milestone',
+  'labels',
+  'subscribed',
+};
+
+// All selections below intersect the production documents and GitLab schema.
+const _mr7WidgetSelections = {
+  'DESCRIPTION': '... on WorkItemWidgetDescription { description }',
+  'STATUS': '... on WorkItemWidgetStatus { status { id } }',
+  'ASSIGNEES': '''... on WorkItemWidgetAssignees {
+    assignees(first: 100, after: \$after) {
+      nodes { id name username } pageInfo { hasNextPage endCursor }
+    }
+  }''',
+  'MILESTONE': '''... on WorkItemWidgetMilestone {
+    milestone { id iid title state expired dueDate startDate webPath
+      project { id fullPath } }
+  }''',
+  'LABELS': '''... on WorkItemWidgetLabels {
+    labels(first: 100, after: \$after) {
+      nodes { id title color textColor } pageInfo { hasNextPage endCursor }
+    }
+  }''',
+  'NOTIFICATIONS': '... on WorkItemWidgetNotifications { subscribed }',
+};
+
+String _mr7WidgetType(String field) => switch (field) {
+  'description' => 'DESCRIPTION',
+  'status' => 'STATUS',
+  'assignees' => 'ASSIGNEES',
+  'milestone' => 'MILESTONE',
+  'labels' => 'LABELS',
+  'subscribed' => 'NOTIFICATIONS',
+  _ => 'START_AND_DUE_DATE',
+};
+
+String _mr7WorkItemPath(
+  Mr7SandboxSession session,
+  Mr7Identity identity,
+  String id,
+) {
+  final path = session._graphResources[id];
+  if (!RegExp(r'^gid://gitlab/WorkItem/[1-9][0-9]*$').hasMatch(id) ||
+      path == null ||
+      !RegExp(
+        '^projects/${identity.projectId}/issues/[1-9][0-9]*\$',
+      ).hasMatch(path)) {
+    throw const Mr7Refused('observerParent');
+  }
+  return path;
+}
+
+void _mr7WorkItemRecord(
+  Mr7SandboxSession session,
+  Mr7Identity identity,
+  String id,
+  Map<String, Object?> record,
+) {
+  final path = _mr7WorkItemPath(session, identity, id);
+  final project = record['project'];
+  if (record['id'] != id ||
+      record['iid'] != path.split('/').last ||
+      project is! Map ||
+      project['id'] != 'gid://gitlab/Project/${identity.projectId}' ||
+      project['fullPath'] != identity.path) {
+    throw const Mr7Refused('readbackIdentity');
+  }
+}
+
+const _mr7CeDateFields = {
+  'isFixed',
+  'startDateSourcingWorkItem',
+  'dueDateSourcingWorkItem',
+  'startDateSourcingMilestone',
+  'dueDateSourcingMilestone',
+};
+
+final class _Mr7CeDates implements Exception {
+  const _Mr7CeDates();
+}
+
+// The same precise CE schema signal used by production. Permission, transport,
+// partial-data and unrelated schema errors never authorize a weaker witness.
+bool _mr7PreciseCeDatesErrors(Object? errors) {
+  if (errors is! List || errors.isEmpty) return false;
+  final seen = <String>{};
+  for (final error in errors) {
+    final details = error is Map ? error['extensions'] : null;
+    if (details is! Map ||
+        details['code'] != 'undefinedField' ||
+        details['typeName'] != 'WorkItemWidgetStartAndDueDate' ||
+        !_mr7CeDateFields.contains(details['fieldName']) ||
+        !seen.add(details['fieldName'] as String)) {
+      return false;
+    }
+  }
+  return seen.contains('isFixed');
+}
+
+Future<Map<String, Object?>> _mr7SealedQuery(
+  Mr7SandboxSession session,
+  Mr7Identity identity,
+  String document,
+  Map<String, Object?> variables, {
+  bool probeDates = false,
+}) async {
+  // Only private callers supply these fixed documents and exact continuations.
+  session.observerAdapter.graphReadDocuments = Map.unmodifiable({
+    ...session.observerAdapter.graphReadDocuments,
+    document: Set<String>.unmodifiable({
+      ...?session.observerAdapter.graphReadDocuments[document],
+      mr7Digest(variables),
+    }),
+  });
+  final response = await session.observer.post<Object?>(
+    '${session.instance}/api/graphql',
+    data: {'query': document, 'variables': variables},
+  );
+  final envelope = response.data;
+  if (jsonEncode(envelope).length > 2 * 1024 * 1024) {
+    throw const Mr7Refused('observerUnreadable');
+  }
+  final errors = envelope is Map ? envelope['errors'] : null;
+  final data = envelope is Map ? envelope['data'] : null;
+  final actor = data is Map ? data['currentUser'] : null;
+  if (response.statusCode == 200 &&
+      probeDates &&
+      data == null &&
+      _mr7PreciseCeDatesErrors(errors)) {
+    throw const _Mr7CeDates();
+  }
+  if (response.statusCode != 200 ||
+      envelope is! Map ||
+      (errors != null && (errors is! List || errors.isNotEmpty)) ||
+      data is! Map ||
+      actor is! Map ||
+      actor['id'] != 'gid://gitlab/User/${identity.userId}') {
+    throw const Mr7Refused('readbackIdentity');
+  }
+  return Map<String, Object?>.from(data);
+}
+
+/// Internal projection names are real response fields; connections are stored
+/// as sorted complete node lists. No totalCount or invented widget fields.
+Future<Map<String, Object?>> _mr7ReadWorkItem(
+  Mr7SandboxSession session,
+  Mr7Identity identity,
+  String id,
+  Set<String> fields,
+) async {
+  if (fields.isEmpty || !fields.every(_mr7WorkItemFields.contains)) {
+    throw const Mr7Refused('observerWidget');
+  }
+  final groups = <String, Set<String>>{};
+  for (final field in fields.where((f) => f != 'title' && f != 'state')) {
+    groups.putIfAbsent(_mr7WidgetType(field), () => {}).add(field);
+  }
+  if (groups.isEmpty) groups[''] = {};
+  final projection = <String, Object?>{};
+  String? revision;
+  for (final group in groups.entries) {
+    final type = group.key;
+    final connected = type == 'ASSIGNEES' || type == 'LABELS';
+    final connectionField = type == 'ASSIGNEES' ? 'assignees' : 'labels';
+    final selectedFields = {...group.value};
+    String document() {
+      final selection = type == 'START_AND_DUE_DATE'
+          ? '... on WorkItemWidgetStartAndDueDate { ${((selectedFields.toList())..sort()).map((f) => f.endsWith('WorkItem') || f.endsWith('Milestone') ? '$f { id }' : f).join(' ')} }'
+          : _mr7WidgetSelections[type];
+      return 'query Mr7Widget(\$id: WorkItemID!${connected ? ', \$after: String' : ''}) { '
+          'currentUser { id } workItem(id: \$id) { '
+          'id iid title state updatedAt project { id fullPath } '
+          '${type.isEmpty ? '' : 'widgets(onlyTypes: [$type]) { type $selection }'} } }';
+    }
+
+    final cursors = <String>{};
+    final nodeIds = <String>{};
+    final nodes = <Map<String, Object?>>[];
+    String? after;
+    var complete = false;
+    for (var page = 0; page < 20; page++) {
+      final variables = <String, Object?>{
+        'id': id,
+        if (connected) 'after': after,
+      };
+      Map<String, Object?> data;
+      try {
+        data = await _mr7SealedQuery(
+          session,
+          identity,
+          document(),
+          variables,
+          probeDates:
+              type == 'START_AND_DUE_DATE' &&
+              selectedFields.contains('isFixed'),
+        );
+      } on _Mr7CeDates {
+        selectedFields.removeAll(_mr7CeDateFields);
+        data = await _mr7SealedQuery(session, identity, document(), variables);
+      }
+      final raw = data['workItem'];
+      if (raw is! Map) throw const Mr7Refused('readbackIdentity');
+      final row = Map<String, Object?>.from(raw);
+      _mr7WorkItemRecord(session, identity, id, row);
+      if (row['updatedAt'] is! String ||
+          DateTime.tryParse(row['updatedAt'] as String) == null ||
+          (revision != null && revision != row['updatedAt'])) {
+        throw const Mr7Refused('observerRevision');
+      }
+      revision = row['updatedAt'] as String;
+      for (final field in ['title', 'state']) {
+        if (fields.contains(field)) {
+          if (row[field] is! String ||
+              (projection.containsKey(field) &&
+                  projection[field] != row[field])) {
+            throw const Mr7Refused('observerRevision');
+          }
+          projection[field] = row[field];
+        }
+      }
+      if (type.isEmpty) {
+        complete = true;
+        break;
+      }
+      final widgets = row['widgets'];
+      if (widgets is! List ||
+          widgets.length > 32 ||
+          widgets.any((w) => w is! Map || w['type'] is! String)) {
+        throw const Mr7Refused('observerWidget');
+      }
+      final matches = widgets.where((w) => (w as Map)['type'] == type).toList();
+      if (matches.length > 1) throw const Mr7Refused('observerWidget');
+      // An absent widget stays absent in the snapshot, distinct from null.
+      if (matches.isEmpty) {
+        complete = true;
+        break;
+      }
+      final widget = matches.single as Map;
+      if (!connected) {
+        for (final field in selectedFields) {
+          if (!widget.containsKey(field)) {
+            throw const Mr7Refused('observerWidget');
+          }
+          projection[field] = widget[field];
+        }
+        complete = true;
+        break;
+      }
+      final connection = widget[connectionField];
+      final pageNodes = connection is Map ? connection['nodes'] : null;
+      final info = connection is Map ? connection['pageInfo'] : null;
+      if (pageNodes is! List ||
+          pageNodes.length > 100 ||
+          info is! Map ||
+          info['hasNextPage'] is! bool) {
+        throw const Mr7Refused('observerConnection');
+      }
+      for (final node in pageNodes) {
+        final gid = node is Map ? node['id'] : null;
+        final pattern = type == 'ASSIGNEES'
+            ? r'^gid://gitlab/User/[1-9][0-9]*$'
+            : r'^gid://gitlab/(Label|ProjectLabel)/[1-9][0-9]*$';
+        if (node is! Map ||
+            gid is! String ||
+            !RegExp(pattern).hasMatch(gid) ||
+            !nodeIds.add(gid) ||
+            nodes.length >= 2000 ||
+            (type == 'ASSIGNEES'
+                ? node['username'] is! String
+                : node['title'] is! String)) {
+          throw const Mr7Refused('observerRelationship');
+        }
+        nodes.add(Map<String, Object?>.from(node));
+      }
+      if (info['hasNextPage'] == false) {
+        nodes.sort((a, b) => (a['id'] as String).compareTo(b['id'] as String));
+        projection[connectionField] = nodes;
+        complete = true;
+        break;
+      }
+      final cursor = info['endCursor'];
+      if (pageNodes.isEmpty ||
+          cursor is! String ||
+          cursor.isEmpty ||
+          cursor.length > 1024 ||
+          !cursors.add(cursor)) {
+        throw const Mr7Refused('observerConnection');
+      }
+      after = cursor;
+    }
+    if (!complete) throw const Mr7Refused('observerConnectionCap');
+  }
+  return projection;
+}
+
+/// The activity observer is bound to a single project WorkItem and Note.
+/// Discussion and reply IDs are opaque server values, never constructed here.
+final class Mr7WorkItemActivityObservation extends Mr7StateObservation {
+  const Mr7WorkItemActivityObservation({
+    required this.workItemId,
+    required this.iid,
+    required this.operation,
+    required this.noteId,
+    this.discussionId,
+    this.replyId,
+    this.body,
+    this.emojiName,
+    this.add,
+  });
+
+  final String workItemId;
+  final int iid;
+  final String operation;
+  final String noteId;
+  final String? discussionId;
+  final String? replyId;
+  final String? body;
+  final String? emojiName;
+  final bool? add;
+
+  @override
+  bool matchesCall(String op, Object? arguments, int projectId) {
+    if (op != operation ||
+        arguments is! Map ||
+        arguments['projectId'] != projectId ||
+        arguments['iid'] != iid ||
+        iid <= 0) {
+      return false;
+    }
+    final noteNumber = int.tryParse(noteId.split('/').last);
+    if (noteNumber == null ||
+        noteNumber <= 0 ||
+        noteId != 'gid://gitlab/Note/$noteNumber') {
+      return false;
+    }
+    return switch (operation) {
+      'editWorkItemActivityNote' =>
+        arguments['noteId'] == noteNumber &&
+            body is String &&
+            arguments['body'] == body,
+      'setWorkItemActivityNoteReaction' =>
+        arguments['noteId'] == noteNumber &&
+            emojiName is String &&
+            arguments['name'] == emojiName &&
+            add is bool &&
+            arguments['add'] == add,
+      _ => false,
+    };
+  }
+
+  @override
+  Future<bool> _read(Mr7Readback observer) => observer._workItemActivity(this);
+}
+
+// These selections are a subset of the production activity, strict note and
+// reaction queries. No synthetic fields or AwardEmoji IDs are selected.
+const _mr7ActivityPage = r'''
+query Mr7Activity($id: WorkItemID!, $after: String) {
+  currentUser { id }
+  workItem(id: $id) {
+    id iid project { id fullPath }
+    widgets {
+      type
+      ... on WorkItemWidgetNotes {
+        discussions(first: 20, after: $after) {
+          nodes {
+            id replyId
+            notes(first: 20) {
+              nodes { id body system author { id } }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }
+}
+''';
+const _mr7ActivityNotesPage = r'''
+query Mr7DiscussionNotes($workItemId: WorkItemID!, $anchorNoteId: NoteID!, $after: String) {
+  currentUser { id }
+  workItem(id: $workItemId) { id iid project { id fullPath } }
+  anchor: note(id: $anchorNoteId) {
+    id noteableType noteableId project { id fullPath }
+    discussion {
+      id replyId
+      notes(first: 20, after: $after) {
+        nodes { id body system author { id } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}
+''';
+const _mr7ActivityNote = r'''
+query Mr7Note($workItemId: WorkItemID!, $noteId: NoteID!) {
+  currentUser { id }
+  workItem(id: $workItemId) { id iid project { id fullPath } }
+  note(id: $noteId) {
+    id body system internal noteableType noteableId
+    author { id } project { id fullPath }
+    discussion { id replyId }
+  }
+}
+''';
+const _mr7ActivityReactions = r'''
+query Mr7Reactions($workItemId: WorkItemID!, $noteId: NoteID!, $after: String) {
+  currentUser { id }
+  workItem(id: $workItemId) { id iid project { id fullPath } }
+  note(id: $noteId) {
+    id body system internal noteableType noteableId
+    author { id } project { id fullPath }
+    discussion { id }
+    awardEmoji(first: 50, after: $after) {
+      nodes { name unicode user { id } }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
 enum Mr7ParentState { starred, subscribed, autoMerge }
 
-final class Mr7ParentStateObservation extends Mr7Observation<bool> {
+final class Mr7ParentStateObservation extends Mr7StateObservation {
   const Mr7ParentStateObservation({
     required this.parent,
     required this.state,
@@ -1245,6 +1885,7 @@ final class Mr7ParentStateObservation extends Mr7Observation<bool> {
   final Mr7Parent parent;
   final Mr7ParentState state;
   final bool expected;
+  @override
   bool matchesCall(String operation, Object? arguments, int projectId) {
     if (arguments is! Map || arguments['projectId'] != projectId) return false;
     return switch (state) {
@@ -1468,6 +2109,7 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
         throw const Mr7Refused('headBody');
       }
       session.chargeRequest();
+      final permit = session.permit;
       final response = await session.server.respond(options);
       session.validateRead(options, allowStopped: false);
       if (options.method == 'HEAD') {
@@ -1482,14 +2124,49 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
           headers: response.headers,
         );
       }
-      final permit = session.permit;
       final path = session._restSegments(options).join('/');
+      if (response.statusCode == 200 &&
+          permit != null &&
+          (_mr7WorkItemOperations.contains(permit.operation) ||
+              const {
+                'editWorkItemActivityNote',
+                'setWorkItemActivityNoteReaction',
+              }.contains(permit.operation)) &&
+          _sealedGraphRead(
+            options,
+            session.observerAdapter.graphReadDocuments,
+          )) {
+        final bytes = <int>[];
+        await for (final chunk in response.stream) {
+          bytes.addAll(chunk);
+          if (bytes.length > 2 * 1024 * 1024) {
+            throw const Mr7Refused('noChangeTargetUnbound');
+          }
+        }
+        if (!identical(session.permit, permit)) {
+          throw const Mr7Refused('noChangeTargetUnbound');
+        }
+        session._capturePreparedWorkItem(
+          options.data,
+          jsonDecode(utf8.decode(bytes)),
+          permit,
+        );
+        session.validateRead(options, allowStopped: false);
+        return ResponseBody.fromBytes(
+          bytes,
+          response.statusCode,
+          headers: response.headers,
+        );
+      }
       if (options.method == 'GET' &&
           response.statusCode == 200 &&
           permit != null &&
           const {
             'setSubscribed',
             'cancelAutoMerge',
+            ..._mr7WorkItemOperations,
+            'editWorkItemActivityNote',
+            'setWorkItemActivityNoteReaction',
           }.contains(permit.operation) &&
           RegExp(
             '^projects/${permit.resourceProjectId}/(issues|merge_requests)/[1-9][0-9]*\$',
@@ -1503,7 +2180,8 @@ final class Mr7GuardedAdapter implements HttpClientAdapter {
         }
         final row = jsonDecode(utf8.decode(bytes));
         final id = row is Map ? row['id'] : null;
-        if (row is! Map ||
+        if (!identical(session.permit, permit) ||
+            row is! Map ||
             id is! int ||
             id <= 0 ||
             row['project_id'] != permit.resourceProjectId ||
@@ -1674,7 +2352,7 @@ final class Mr7Readback {
   final Set<String> paths;
   final Map<String, Set<String>> graphQueries;
   int verifiedRequests = 0;
-  Mr7ParentStateObservation? _noDispatchObservation;
+  Mr7StateObservation? _noDispatchObservation;
 
   Mr7MutationResult get result =>
       _permit.result ?? (throw const Mr7Refused('observerBeforeResponse'));
@@ -1805,12 +2483,31 @@ final class Mr7Readback {
   /// A core no-op has no HTTP response. Only this sealed state vocabulary can
   /// observe it, bound to the requested arguments and the prepared route.
   Future<bool> observeNoChange(
-    Mr7ParentStateObservation observation, {
+    Mr7StateObservation observation, {
     required Object? arguments,
   }) async {
-    if (_permit.sent != 0 ||
+    final expectedArguments = _permit.preparedArguments;
+    final original = _permit.callArguments;
+    if (!identical(_session.permit, _permit) ||
+        _permit.sent != 0 ||
         _permit.result != null ||
         _noDispatchObservation != null ||
+        expectedArguments == null ||
+        !_mr7SameJson(expectedArguments, arguments) ||
+        (original != null &&
+            const [
+              'projectId',
+              'groupId',
+              'resource',
+              'iid',
+              'noteId',
+              'anchorNoteId',
+            ].any(
+              (key) =>
+                  original.containsKey(key) !=
+                      expectedArguments.containsKey(key) ||
+                  original[key] != expectedArguments[key],
+            )) ||
         !observation.matchesCall(
           _permit.operation,
           arguments,
@@ -1820,7 +2517,11 @@ final class Mr7Readback {
     }
     _noDispatchObservation = observation;
     try {
-      return await observe(observation);
+      final verified = await observe(observation);
+      if (!identical(_session.permit, _permit)) {
+        throw const Mr7Refused('noChangeUnverified');
+      }
+      return verified;
     } finally {
       _noDispatchObservation = null;
     }
@@ -1832,27 +2533,37 @@ final class Mr7Readback {
     if (saved == null ||
         saved.actorId != _identity.userId ||
         saved.projectId != _identity.projectId ||
-        _permit.sent != 1 ||
-        _permit._sentPath == null) {
+        (_permit.sent != 1 && _noDispatchObservation == null) ||
+        (_permit._sentPath == null && _noDispatchObservation == null)) {
       throw const Mr7Refused('snapshotMissing');
     }
     await _actorAndProject();
     final before = _session.observerAdapter.requests.length;
     for (final original in saved._rows) {
       final path = original.spec.path;
-      final sentPath = _permit._sentPath!;
+      final sentPath = _permit._sentPath;
+      final noop = _noDispatchObservation != null;
       if (path != _root &&
+          !noop &&
           sentPath != path &&
-          !sentPath.startsWith('$path/') &&
+          !(sentPath?.startsWith('$path/') ?? false) &&
           !(sentPath == 'graphql' &&
               _graphSnapshotTargets(
                 _permit._sentBody,
                 _permit._graphResourcesAtSend,
                 path,
+                _identity.path,
               ))) {
         throw const Mr7Refused('snapshotTarget');
       }
-      final current = await _map(path);
+      final current = await _session._readSnapshotRow(
+        original.spec,
+        resource: await _map(path),
+      );
+      if (original.spec.kind == Mr7SnapshotKind.workItem &&
+          jsonEncode(current).length > 2 * 1024 * 1024) {
+        throw const Mr7Refused('observerUnreadable');
+      }
       if (original.parentId != null) {
         final parentPath = path.split('/').take(4).join('/');
         final parent = await _map(parentPath);
@@ -1866,10 +2577,14 @@ final class Mr7Readback {
           (original.spec.kind == Mr7SnapshotKind.draftNote &&
               current.containsKey('body') !=
                   original.presentFields.contains('body')) ||
-          _snapshotPreservedFields(original, _permit._sentBody).any(
-            (field) =>
-                _snapshotFieldDigest(current, field) != original.digests[field],
-          )) {
+          (noop
+                  ? original.spec.fields
+                  : _snapshotPreservedFields(original, _permit._sentBody))
+              .any(
+                (field) =>
+                    _snapshotFieldDigest(current, field) !=
+                    original.digests[field],
+              )) {
         return false;
       }
     }
@@ -2394,6 +3109,766 @@ final class Mr7Readback {
     }
     await metadata();
     return Map.unmodifiable(content);
+  }
+
+  ({List<dynamic> nodes, String? next}) _activityConnection(
+    Object? value,
+    int maxSize,
+    Set<String> seenCursors,
+  ) {
+    if (value is! Map ||
+        value['nodes'] is! List ||
+        (value['nodes'] as List).length > maxSize ||
+        value['pageInfo'] is! Map) {
+      throw const Mr7Refused('observerConnection');
+    }
+    final nodes = value['nodes'] as List;
+    final info = value['pageInfo'] as Map;
+    final more = info['hasNextPage'];
+    if (more is! bool) throw const Mr7Refused('observerConnection');
+    if (!more) return (nodes: nodes, next: null);
+    final cursor = info['endCursor'];
+    if (nodes.isEmpty ||
+        cursor is! String ||
+        cursor.isEmpty ||
+        cursor.length > 4096 ||
+        !seenCursors.add(cursor)) {
+      throw const Mr7Refused('observerConnection');
+    }
+    return (nodes: nodes, next: cursor);
+  }
+
+  void _activityNoteIdentity(
+    Map<Object?, Object?> note,
+    Mr7WorkItemActivityObservation spec,
+    String parent, {
+    bool requireTarget = true,
+  }) {
+    final project = note['project'];
+    final actor = note['author'];
+    final numericParent = int.tryParse(spec.workItemId.split('/').last);
+    if ((requireTarget && note['id'] != spec.noteId) ||
+        note['noteableType'] != 'Issue' ||
+        note['noteableId'] != numericParent ||
+        note['system'] != false ||
+        note['internal'] != false ||
+        actor is! Map ||
+        actor['id'] != 'gid://gitlab/User/${_identity.userId}' ||
+        project is! Map ||
+        project['id'] != 'gid://gitlab/Project/${_identity.projectId}' ||
+        project['fullPath'] != _identity.path ||
+        !_workItemPath(spec.workItemId).startsWith(parent)) {
+      throw const Mr7Refused('observerNoteOwnership');
+    }
+  }
+
+  Future<bool> _workItemActivity(Mr7WorkItemActivityObservation spec) async {
+    const operations = {
+      'createWorkItemActivityComment',
+      'createWorkItemActivityReply',
+      'editWorkItemActivityNote',
+      'deleteWorkItemActivityNote',
+      'setWorkItemActivityNoteReaction',
+    };
+    if (!operations.contains(spec.operation) ||
+        _permit.operation != spec.operation ||
+        spec.iid <= 0 ||
+        !RegExp(r'^gid://gitlab/Note/[1-9][0-9]*$').hasMatch(spec.noteId)) {
+      throw const Mr7Refused('observerMutationTarget');
+    }
+    final parent = _workItemPath(spec.workItemId);
+    if (int.tryParse(parent.split('/').last) != spec.iid) {
+      throw const Mr7Refused('observerParent');
+    }
+    final notePath = '$parent/notes/${spec.noteId.split('/').last}';
+    final creating =
+        spec.operation == 'createWorkItemActivityComment' ||
+        spec.operation == 'createWorkItemActivityReply';
+    final deleting = spec.operation == 'deleteWorkItemActivityNote';
+    final reaction = spec.operation == 'setWorkItemActivityNoteReaction';
+    if (_permit.sent == 0) {
+      final prepared = await _session.read(parent);
+      if (prepared['id'] != int.tryParse(spec.workItemId.split('/').last) ||
+          prepared['iid'] != spec.iid ||
+          prepared['project_id'] != _identity.projectId ||
+          _permit._preparedParentIds[parent] != prepared['id'] ||
+          _noDispatchObservation != spec ||
+          !const {
+            'editWorkItemActivityNote',
+            'setWorkItemActivityNoteReaction',
+          }.contains(spec.operation) ||
+          _permit._preparedActivityNote !=
+              (id: spec.noteId, parentPath: parent) ||
+          _session._graphResources[spec.noteId] != notePath) {
+        throw const Mr7Refused('observerMutationTarget');
+      }
+    } else {
+      if (_permit._graphResourcesAtSend[spec.workItemId] != parent) {
+        throw const Mr7Refused('observerMutationTarget');
+      }
+      final root = switch (spec.operation) {
+        'createWorkItemActivityComment' ||
+        'createWorkItemActivityReply' => 'createNote',
+        'editWorkItemActivityNote' => 'updateNote',
+        'deleteWorkItemActivityNote' => 'destroyNote',
+        'setWorkItemActivityNoteReaction' =>
+          spec.add == true ? 'awardEmojiAdd' : 'awardEmojiRemove',
+        _ => throw const Mr7Refused('observerMutationTarget'),
+      };
+      final input = _mutationInput(root);
+      if (creating) {
+        if (result.stringId != spec.noteId ||
+            input['noteableId'] != spec.workItemId ||
+            spec.body is! String ||
+            input['body'] != spec.body ||
+            (spec.operation == 'createWorkItemActivityReply'
+                ? (spec.replyId == null ||
+                      input['discussionId'] != spec.replyId)
+                : input.containsKey('discussionId'))) {
+          throw const Mr7Refused('observerMutationTarget');
+        }
+        if (spec.operation == 'createWorkItemActivityReply') {
+          final call = _permit.callArguments;
+          final anchorNumber = call?['anchorNoteId'];
+          if (call?['projectId'] != _identity.projectId ||
+              call?['iid'] != spec.iid ||
+              anchorNumber is! int ||
+              anchorNumber <= 0 ||
+              spec.discussionId == null ||
+              spec.replyId == null) {
+            throw const Mr7Refused('observerReplyAnchor');
+          }
+          final anchorId = 'gid://gitlab/Note/$anchorNumber';
+          if (_permit._graphResourcesAtSend[anchorId] !=
+              '$parent/notes/$anchorNumber') {
+            throw const Mr7Refused('observerReplyAnchor');
+          }
+          final data = await _sealedWorkItemQuery(_mr7ActivityNote, {
+            'workItemId': spec.workItemId,
+            'noteId': anchorId,
+          });
+          final record = data['workItem'];
+          final anchor = data['note'];
+          if (record is! Map || anchor is! Map || anchor['id'] != anchorId) {
+            throw const Mr7Refused('observerReplyAnchor');
+          }
+          _workItemRecord(spec.workItemId, Map<String, Object?>.from(record));
+          _activityNoteIdentity(anchor, spec, parent, requireTarget: false);
+          final discussion = anchor['discussion'];
+          if (discussion is! Map ||
+              discussion['id'] != spec.discussionId ||
+              discussion['replyId'] != spec.replyId ||
+              input['discussionId'] != discussion['replyId']) {
+            throw const Mr7Refused('observerReplyAnchor');
+          }
+        }
+        final returned = await _session.read(notePath);
+        final author = returned['author'];
+        if (returned['id'] != int.parse(spec.noteId.split('/').last) ||
+            returned['project_id'] != _identity.projectId ||
+            returned['noteable_id'] !=
+                int.parse(spec.workItemId.split('/').last) ||
+            author is! Map ||
+            author['id'] != _identity.userId) {
+          throw const Mr7Refused('observerNoteOwnership');
+        }
+        await bindReturnedResource(spec.noteId, path: notePath);
+      } else if (_permit._graphResourcesAtSend[spec.noteId] != notePath ||
+          (reaction
+              ? (input['awardableId'] != spec.noteId ||
+                    input['name'] != spec.emojiName ||
+                    spec.add == null)
+              : (input['id'] != spec.noteId ||
+                    (!deleting &&
+                        (spec.body == null || input['body'] != spec.body))))) {
+        throw const Mr7Refused('observerMutationTarget');
+      }
+      // Deletion loses the Note body and author. Require a fresh pre-dispatch
+      // ownership binding made by the guard for this exact Note and actor.
+      if (deleting && _permit._ownedActivityNoteAtSend != spec.noteId) {
+        throw const Mr7Refused('observerNoteOwnership');
+      }
+    }
+
+    if (reaction) {
+      if (spec.emojiName is! String ||
+          spec.emojiName!.isEmpty ||
+          spec.add == null) {
+        throw const Mr7Refused('observerReaction');
+      }
+      final cursors = <String>{};
+      final pairs = <String>{};
+      String? after;
+      var actorFound = false;
+      for (var page = 0; page < 20; page++) {
+        final data = await _sealedWorkItemQuery(_mr7ActivityReactions, {
+          'workItemId': spec.workItemId,
+          'noteId': spec.noteId,
+          'after': after,
+        });
+        final record = data['workItem'];
+        if (record is! Map) throw const Mr7Refused('readbackIdentity');
+        _workItemRecord(spec.workItemId, Map<String, Object?>.from(record));
+        final note = data['note'];
+        if (note is! Map) throw const Mr7Refused('observerNoteOwnership');
+        _activityNoteIdentity(note, spec, parent);
+        if (spec.discussionId != null &&
+            (note['discussion'] is! Map ||
+                (note['discussion'] as Map)['id'] != spec.discussionId)) {
+          throw const Mr7Refused('observerRelationship');
+        }
+        final connection = _activityConnection(note['awardEmoji'], 50, cursors);
+        for (final node in connection.nodes) {
+          final user = node is Map ? node['user'] : null;
+          if (node is! Map ||
+              node['name'] is! String ||
+              user is! Map ||
+              user['id'] is! String ||
+              !RegExp(
+                r'^gid://gitlab/User/[1-9][0-9]*$',
+              ).hasMatch(user['id'] as String)) {
+            throw const Mr7Refused('observerRelationship');
+          }
+          final pair = '${node['name']}\u0000${user['id']}';
+          if (!pairs.add(pair)) throw const Mr7Refused('observerRelationship');
+          if (node['name'] == spec.emojiName &&
+              user['id'] == 'gid://gitlab/User/${_identity.userId}') {
+            actorFound = true;
+          }
+        }
+        if (connection.next == null) return actorFound == spec.add;
+        after = connection.next;
+      }
+      throw const Mr7Refused('observerConnectionCap');
+    }
+
+    if (!deleting) {
+      final data = await _sealedWorkItemQuery(_mr7ActivityNote, {
+        'workItemId': spec.workItemId,
+        'noteId': spec.noteId,
+      });
+      final record = data['workItem'];
+      if (record is! Map) throw const Mr7Refused('readbackIdentity');
+      _workItemRecord(spec.workItemId, Map<String, Object?>.from(record));
+      final note = data['note'];
+      if (note is! Map) throw const Mr7Refused('observerNoteOwnership');
+      _activityNoteIdentity(note, spec, parent);
+      final discussion = note['discussion'];
+      if (note['body'] != spec.body ||
+          discussion is! Map ||
+          discussion['id'] is! String ||
+          (spec.discussionId != null &&
+              discussion['id'] != spec.discussionId) ||
+          (spec.replyId != null && discussion['replyId'] != spec.replyId)) {
+        return false;
+      }
+    }
+
+    // Iterate every discussion and every nested note page. A null note lookup
+    // is deliberately never consulted as deletion proof.
+    final discussionIds = <String>{};
+    final noteIds = <String>{};
+    final outerCursors = <String>{};
+    String? outerAfter;
+    for (var outer = 0; outer < 20; outer++) {
+      final data = await _sealedWorkItemQuery(_mr7ActivityPage, {
+        'id': spec.workItemId,
+        'after': outerAfter,
+      });
+      final record = data['workItem'];
+      if (record is! Map) throw const Mr7Refused('readbackIdentity');
+      _workItemRecord(spec.workItemId, Map<String, Object?>.from(record));
+      final widgets = record['widgets'];
+      if (widgets is! List) throw const Mr7Refused('observerConnection');
+      final notesWidgets = widgets
+          .where((w) => w is Map && w['type'] == 'NOTES')
+          .toList();
+      if (notesWidgets.length != 1) {
+        throw const Mr7Refused('observerConnection');
+      }
+      final discussions = _activityConnection(
+        (notesWidgets.single as Map)['discussions'],
+        20,
+        outerCursors,
+      );
+      for (final discussion in discussions.nodes) {
+        if (discussion is! Map ||
+            discussion['id'] is! String ||
+            (discussion['id'] as String).isEmpty ||
+            discussion['replyId'] is! String ||
+            (discussion['replyId'] as String).isEmpty ||
+            !discussionIds.add(discussion['id'] as String)) {
+          throw const Mr7Refused('observerRelationship');
+        }
+        final innerCursors = <String>{};
+        var notes = _activityConnection(discussion['notes'], 20, innerCursors);
+        for (var inner = 0; inner < 20; inner++) {
+          for (final note in notes.nodes) {
+            final id = note is Map ? note['id'] : null;
+            if (id is! String ||
+                !RegExp(r'^gid://gitlab/Note/[1-9][0-9]*$').hasMatch(id) ||
+                !noteIds.add(id)) {
+              throw const Mr7Refused('observerRelationship');
+            }
+            if (id == spec.noteId &&
+                (note['author'] is! Map ||
+                    (note['author'] as Map)['id'] !=
+                        'gid://gitlab/User/${_identity.userId}' ||
+                    note['system'] != false ||
+                    note['body'] != spec.body ||
+                    (spec.discussionId != null &&
+                        discussion['id'] != spec.discussionId) ||
+                    (spec.replyId != null &&
+                        discussion['replyId'] != spec.replyId))) {
+              throw const Mr7Refused('observerRelationship');
+            }
+          }
+          if (notes.next == null) break;
+          if (inner == 19 || notes.nodes.isEmpty) {
+            throw const Mr7Refused('observerConnectionCap');
+          }
+          final anchor = (notes.nodes.last as Map)['id'] as String;
+          final anchorPath = '$parent/notes/${anchor.split('/').last}';
+          if (_session._graphResources[anchor] != anchorPath) {
+            await _session.bindGraphResource(anchor, path: anchorPath);
+          }
+          final continuation =
+              await _sealedWorkItemQuery(_mr7ActivityNotesPage, {
+                'workItemId': spec.workItemId,
+                'anchorNoteId': anchor,
+                'after': notes.next,
+              });
+          final item = continuation['workItem'];
+          if (item is! Map) throw const Mr7Refused('readbackIdentity');
+          _workItemRecord(spec.workItemId, Map<String, Object?>.from(item));
+          final anchored = continuation['anchor'];
+          final anchoredDiscussion = anchored is Map
+              ? anchored['discussion']
+              : null;
+          final anchoredProject = anchored is Map ? anchored['project'] : null;
+          if (anchored is! Map ||
+              anchored['id'] != anchor ||
+              anchored['noteableType'] != 'Issue' ||
+              anchored['noteableId'] !=
+                  int.parse(spec.workItemId.split('/').last) ||
+              anchoredProject is! Map ||
+              anchoredProject['id'] !=
+                  'gid://gitlab/Project/${_identity.projectId}' ||
+              anchoredProject['fullPath'] != _identity.path ||
+              anchoredDiscussion is! Map ||
+              anchoredDiscussion['id'] != discussion['id'] ||
+              anchoredDiscussion['replyId'] != discussion['replyId']) {
+            throw const Mr7Refused('observerRelationship');
+          }
+          notes = _activityConnection(
+            anchoredDiscussion['notes'],
+            20,
+            innerCursors,
+          );
+        }
+      }
+      if (discussions.next == null) {
+        return deleting
+            ? !noteIds.contains(spec.noteId)
+            : noteIds.contains(spec.noteId);
+      }
+      outerAfter = discussions.next;
+    }
+    throw const Mr7Refused('observerConnectionCap');
+  }
+
+  String _workItemPath(String id) => _mr7WorkItemPath(_session, _identity, id);
+
+  void _workItemRecord(String id, Map<String, Object?> row) =>
+      _mr7WorkItemRecord(_session, _identity, id, row);
+
+  Future<Map<String, Object?>> _sealedWorkItemQuery(
+    String document,
+    Map<String, Object?> variables,
+  ) => _mr7SealedQuery(_session, _identity, document, variables);
+
+  Map<String, Object?> _mutationInput(String root) {
+    _sentTo('graphql');
+    return _mr7MutationInput(_permit._sentBody, root);
+  }
+
+  Future<bool> _workItemEffect(Mr7WorkItemObservation spec) async {
+    final a = spec.arguments;
+    if (!spec.matchesCall(_permit.operation, a, _identity.projectId)) {
+      throw const Mr7Refused('observerWidget');
+    }
+    final path = _workItemPath(spec.workItemId);
+    final parent = await _session.read(path);
+    final number = int.parse(spec.workItemId.split('/').last);
+    if (path != '$_root/issues/${spec.iid}' ||
+        parent['id'] != number ||
+        parent['iid'] != spec.iid ||
+        parent['project_id'] != _identity.projectId) {
+      throw const Mr7Refused('observerParent');
+    }
+    final noop = identical(_noDispatchObservation, spec);
+    if (noop &&
+        (_permit.sent != 0 ||
+            !_permit.paths.contains('POST graphql') ||
+            _permit._preparedParentIds[path] != number)) {
+      throw const Mr7Refused('noChangeUnverified');
+    }
+    final incident = spec.operation == 'setIncidentStatus';
+    final root = incident
+        ? 'issueSetEscalationStatus'
+        : spec.operation == 'setWorkItemNotifications'
+        ? 'workItemSubscribe'
+        : 'workItemUpdate';
+    final input = noop ? null : _mutationInput(root);
+    if (!noop &&
+        (_permit._graphResourcesAtSend[spec.workItemId] != path ||
+            (incident
+                ? input!['projectPath'] != _identity.path ||
+                      input['iid'] != '${spec.iid}'
+                : input!['id'] != spec.workItemId))) {
+      throw const Mr7Refused('observerMutationTarget');
+    }
+    // A typed snapshot is mandatory for changed widgets: omitted fields must
+    // survive, and label deltas need their complete independently read base.
+    final saved = snapshot?._rows
+        .where(
+          (r) =>
+              r.spec.kind == Mr7SnapshotKind.workItem &&
+              r.spec.path == path &&
+              r.spec.workItemId == spec.workItemId,
+        )
+        .toList();
+    if (!noop && (saved == null || saved.length != 1)) {
+      throw const Mr7Refused('snapshotMissing');
+    }
+    final before = saved?.length == 1
+        ? saved!.single.values
+        : <String, Object?>{};
+    if (incident) {
+      const document = r'''
+query Mr7Incident($path: ID!, $iid: String!) {
+  currentUser { id }
+  project(fullPath: $path) {
+    id
+    issues(iids: [$iid], types: [INCIDENT], first: 2) {
+      nodes { id iid projectId state severity escalationStatus updatedAt }
+      pageInfo { hasNextPage }
+    }
+  }
+}
+''';
+      if (!const {
+            'TRIGGERED',
+            'ACKNOWLEDGED',
+            'RESOLVED',
+          }.contains(a['status']) ||
+          (!noop &&
+              !_mr7SameJson(input, {
+                'projectPath': _identity.path,
+                'iid': '${spec.iid}',
+                'status': a['status'],
+              }))) {
+        throw const Mr7Refused('observerMutationTarget');
+      }
+      final data = await _sealedWorkItemQuery(document, {
+        'path': _identity.path,
+        'iid': '${spec.iid}',
+      });
+      final project = data['project'];
+      final connection = project is Map ? project['issues'] : null;
+      final nodes = connection is Map ? connection['nodes'] : null;
+      final info = connection is Map ? connection['pageInfo'] : null;
+      if (project is! Map ||
+          project['id'] != 'gid://gitlab/Project/${_identity.projectId}' ||
+          nodes is! List ||
+          nodes.length != 1 ||
+          info is! Map ||
+          info['hasNextPage'] != false) {
+        throw const Mr7Refused('observerConnection');
+      }
+      final issue = nodes.single;
+      if (issue is! Map ||
+          issue['id'] != 'gid://gitlab/Issue/$number' ||
+          issue['iid'] != '${spec.iid}' ||
+          issue['projectId'] != _identity.projectId ||
+          issue['escalationStatus'] != a['status'] ||
+          issue['updatedAt'] is! String ||
+          DateTime.tryParse(issue['updatedAt'] as String) == null) {
+        return false;
+      }
+      return await _finishWorkItemWitness(path, number, preserve: true);
+    }
+    final fields = switch (spec.operation) {
+      'updateWorkItemState' => <String>{'state'},
+      'updateWorkItemStatus' => <String>{'status'},
+      'updateWorkItemDates' => <String>{
+        'startDate',
+        'dueDate',
+        'rollUp',
+        ..._mr7CeDateFields,
+      },
+      'updateWorkItemAssignees' => <String>{'assignees'},
+      'updateWorkItemMilestone' => <String>{'milestone'},
+      'updateWorkItemContent' => <String>{'title', 'description'},
+      'updateWorkItemLabels' => <String>{'labels'},
+      'setWorkItemNotifications' => <String>{'subscribed'},
+      _ => throw const Mr7Refused('observerWidget'),
+    };
+    final row = await _mr7ReadWorkItem(
+      _session,
+      _identity,
+      spec.workItemId,
+      fields,
+    );
+    bool exactInput(Map<String, Object?> desired) =>
+        noop || _mr7SameJson(input, {'id': spec.workItemId, ...desired});
+    bool matches = false;
+    switch (spec.operation) {
+      case 'updateWorkItemState':
+        final state = switch (a['stateEvent']) {
+          'close' => 'CLOSED',
+          'reopen' => 'OPEN',
+          _ => null,
+        };
+        matches =
+            state != null &&
+            row['state'] == state &&
+            exactInput({'stateEvent': a['stateEvent']});
+      case 'updateWorkItemStatus':
+        final status = row['status'];
+        matches =
+            a['candidateId'] is String &&
+            status is Map &&
+            status['id'] == a['candidateId'] &&
+            exactInput({
+              'statusWidget': {'status': a['candidateId']},
+            });
+      case 'updateWorkItemDates':
+        final inherited = a['mode'] == 'inherited';
+        if (!inherited && a['mode'] != 'manual') break;
+        if (!row.containsKey('startDate') ||
+            !row.containsKey('dueDate') ||
+            row['rollUp'] is! bool ||
+            !_mr7Date(row['startDate']) ||
+            !_mr7Date(row['dueDate'])) {
+          break;
+        }
+        if (row.containsKey('isFixed') || inherited) {
+          if (row['isFixed'] != !inherited) break;
+          var sourcesValid = true;
+          for (final f in fields.where((f) => f.contains('Sourcing'))) {
+            final source = row[f];
+            final type = f.endsWith('Milestone') ? 'Milestone' : 'WorkItem';
+            if (!row.containsKey(f) ||
+                (source != null &&
+                    (source is! Map ||
+                        source['id'] is! String ||
+                        !RegExp(
+                          '^gid://gitlab/$type/[1-9][0-9]*\$',
+                        ).hasMatch(source['id'] as String)))) {
+              sourcesValid = false;
+            }
+          }
+          if (!sourcesValid) break;
+        }
+        if (inherited) {
+          matches = exactInput({
+            'startAndDueDateWidget': {'isFixed': false},
+          });
+        } else {
+          final widget = input?['startAndDueDateWidget'];
+          var datesMatch = true;
+          for (final f in ['startDate', 'dueDate']) {
+            final clear =
+                a[f == 'startDate' ? 'clearStart' : 'clearDue'] == true;
+            if (clear && a.containsKey(f)) datesMatch = false;
+            final expected = clear
+                ? null
+                : a.containsKey(f)
+                ? a[f]
+                : before[f];
+            if ((clear || a.containsKey(f) || before.containsKey(f)) &&
+                row[f] != expected) {
+              datesMatch = false;
+            }
+            if (!noop &&
+                (widget is! Map ||
+                    !widget.containsKey(f) ||
+                    widget[f] != row[f])) {
+              datesMatch = false;
+            }
+          }
+          final desired = {
+            'startAndDueDateWidget': {
+              if (row.containsKey('isFixed')) 'isFixed': true,
+              'startDate': row['startDate'],
+              'dueDate': row['dueDate'],
+            },
+          };
+          matches = datesMatch && exactInput(desired);
+        }
+      case 'updateWorkItemAssignees':
+        final names = a['assigneeUsernames'];
+        final actual = row['assignees'];
+        if (names is! List ||
+            names.length > 1 ||
+            names.any((n) => n != _identity.namespace) ||
+            actual is! List) {
+          break;
+        }
+        final expected = names.isEmpty
+            ? <String>{}
+            : {'gid://gitlab/User/${_identity.userId}'};
+        final ids = actual.map((n) => (n as Map)['id']).toSet();
+        matches =
+            ids.length == expected.length &&
+            ids.containsAll(expected) &&
+            actual.every(
+              (n) => (n as Map)['username'] == _identity.namespace,
+            ) &&
+            exactInput({
+              'assigneesWidget': {'assigneeIds': expected.toList()},
+            });
+      case 'updateWorkItemMilestone':
+        if (!row.containsKey('milestone')) break;
+        final milestone = row['milestone'];
+        if (a['clearMilestone'] == true) {
+          matches =
+              !a.containsKey('milestoneTitle') &&
+              milestone == null &&
+              exactInput({
+                'milestoneWidget': {'milestoneId': null},
+              });
+        } else if (a['milestoneTitle'] is String && milestone is Map) {
+          final project = milestone['project'];
+          final widget = input?['milestoneWidget'];
+          final id = milestone['id'];
+          matches =
+              id is String &&
+              RegExp(r'^gid://gitlab/Milestone/[1-9][0-9]*$').hasMatch(id) &&
+              milestone['title'] == a['milestoneTitle'] &&
+              project is Map &&
+              project['id'] == 'gid://gitlab/Project/${_identity.projectId}' &&
+              project['fullPath'] == _identity.path &&
+              (spec.milestoneState == null ||
+                  milestone['state'] == spec.milestoneState) &&
+              (spec.milestoneExpired == null ||
+                  milestone['expired'] == spec.milestoneExpired) &&
+              (noop ||
+                  (widget is Map &&
+                      widget['milestoneId'] == id &&
+                      _permit._graphResourcesAtSend[id] ==
+                          '$_root/milestones/${id.split('/').last}' &&
+                      exactInput({
+                        'milestoneWidget': {'milestoneId': id},
+                      })));
+        }
+      case 'updateWorkItemContent':
+        if (!a.containsKey('title') && !a.containsKey('description')) break;
+        matches =
+            (!a.containsKey('title') ||
+                (a['title'] is String && row['title'] == a['title'])) &&
+            (!a.containsKey('description') ||
+                (a['description'] is String &&
+                    row.containsKey('description') &&
+                    (row['description'] ?? '') == a['description']));
+        if (!noop) {
+          if (input!.keys.any(
+                (k) => !const {'id', 'title', 'descriptionWidget'}.contains(k),
+              ) ||
+              input.length < 2) {
+            matches = false;
+          }
+          if (input.containsKey('title') &&
+              (!a.containsKey('title') || input['title'] != a['title'])) {
+            matches = false;
+          }
+          if (input.containsKey('descriptionWidget') &&
+              (!a.containsKey('description') ||
+                  !_mr7SameJson(input['descriptionWidget'], {
+                    'description': a['description'],
+                  }))) {
+            matches = false;
+          }
+          if (!input.containsKey('title') &&
+              a.containsKey('title') &&
+              before['title'] != a['title']) {
+            matches = false;
+          }
+          if (!input.containsKey('descriptionWidget') &&
+              a.containsKey('description') &&
+              (before['description'] ?? '') != a['description']) {
+            matches = false;
+          }
+        }
+      case 'updateWorkItemLabels':
+        final names = a['labels'];
+        final actual = row['labels'];
+        if (names is! List ||
+            names.any((n) => n is! String) ||
+            names.toSet().length != names.length ||
+            actual is! List) {
+          break;
+        }
+        final actualNames = actual.map((n) => (n as Map)['title']).toSet();
+        matches =
+            actualNames.length == names.length &&
+            actualNames.containsAll(names) &&
+            actual.length == names.length;
+        if (!noop) {
+          final widget = input!['labelsWidget'];
+          final old = before['labels'];
+          if (widget is! Map ||
+              old is! List ||
+              widget.keys.any(
+                (k) => !const {'addLabelIds', 'removeLabelIds'}.contains(k),
+              ) ||
+              widget['addLabelIds'] is! List ||
+              widget['removeLabelIds'] is! List) {
+            matches = false;
+            break;
+          }
+          final adds = (widget['addLabelIds'] as List).toSet();
+          final removes = (widget['removeLabelIds'] as List).toSet();
+          final oldIds = old.map((n) => (n as Map)['id']).toSet();
+          final actualIds = actual.map((n) => (n as Map)['id']).toSet();
+          final expected = {...oldIds}
+            ..removeAll(removes)
+            ..addAll(adds);
+          matches =
+              matches &&
+              adds.length == (widget['addLabelIds'] as List).length &&
+              removes.length == (widget['removeLabelIds'] as List).length &&
+              adds.intersection(removes).isEmpty &&
+              oldIds.containsAll(removes) &&
+              oldIds.intersection(adds).isEmpty &&
+              actualIds.length == expected.length &&
+              actualIds.containsAll(expected) &&
+              exactInput({'labelsWidget': Map<String, Object?>.from(widget)});
+        }
+      case 'setWorkItemNotifications':
+        matches =
+            a['enabled'] is bool &&
+            row['subscribed'] is bool &&
+            row['subscribed'] == a['enabled'] &&
+            exactInput({'subscribed': a['enabled']});
+    }
+    if (!matches) return false;
+    return await _finishWorkItemWitness(path, number, preserve: true);
+  }
+
+  Future<bool> _finishWorkItemWitness(
+    String path,
+    int number, {
+    required bool preserve,
+  }) async {
+    final parent = await _session.read(path);
+    if (parent['id'] != number ||
+        parent['project_id'] != _identity.projectId ||
+        parent['iid'] != int.parse(path.split('/').last)) {
+      throw const Mr7Refused('observerParent');
+    }
+    return !preserve || snapshot == null || await verifySnapshot();
   }
 
   Future<bool> _parentState(Mr7ParentStateObservation spec) async {
@@ -3201,6 +4676,7 @@ final class Mr7SandboxSession {
       'MergeRequest': r'merge_requests/[1-9][0-9]*',
       'Note': r'(?:issues|merge_requests)/[1-9][0-9]*/notes/[1-9][0-9]*',
       'Label': r'labels/[1-9][0-9]*',
+      'ProjectLabel': r'labels/[1-9][0-9]*',
       'Milestone': r'milestones/[1-9][0-9]*',
     };
     final pattern = resourcePaths[match[1]];
@@ -3375,7 +4851,17 @@ final class Mr7SandboxSession {
               entry.value != target?.path) {
             return false;
           }
+          final incidentIids =
+              graph &&
+              key == 'iids' &&
+              permit?.operation == 'setIncidentStatus' &&
+              entry.value is List &&
+              (entry.value as List).length == 1 &&
+              (entry.value as List).every(
+                (v) => v is String && RegExp(r'^[1-9][0-9]*$').hasMatch(v),
+              );
           if (graph &&
+              !incidentIids &&
               key.endsWith('ids') &&
               (entry.value is! List ||
                   !(entry.value as List).every(
@@ -3411,6 +4897,7 @@ final class Mr7SandboxSession {
         ).allMatches(node)) {
           final gid = match[0]!;
           if (gid != 'gid://gitlab/Project/${target?.projectId}' &&
+              gid != 'gid://gitlab/User/${target?.userId}' &&
               !_graphResources.containsKey(gid)) {
             return false;
           }
@@ -3455,6 +4942,227 @@ final class Mr7SandboxSession {
     return Map<String, Object?>.from(r.data! as Map);
   }
 
+  Future<Map<String, Object?>> _readSnapshotRow(
+    Mr7SnapshotSpec spec, {
+    Map<String, Object?>? resource,
+  }) async {
+    final row = resource ?? await read(spec.path);
+    if (spec.kind != Mr7SnapshotKind.workItem) return row;
+    if (spec.fields.length != _mr7WorkItemFields.length ||
+        !spec.fields.containsAll(_mr7WorkItemFields)) {
+      throw const Mr7Refused('snapshotConfiguration');
+    }
+    final target = identity!;
+    final gid = spec.workItemId;
+    if (gid == null ||
+        _mr7WorkItemPath(this, target, gid) != spec.path ||
+        row['id'] != int.parse(gid.split('/').last) ||
+        row['iid'] != int.parse(spec.path.split('/').last) ||
+        row['project_id'] != target.projectId) {
+      throw const Mr7Refused('snapshotIdentity');
+    }
+    final fields = await _mr7ReadWorkItem(this, target, gid, spec.fields);
+    return {
+      ...row,
+      for (final f in spec.fields)
+        if (fields.containsKey(f)) f: fields[f],
+    }..removeWhere(
+      (key, _) => spec.fields.contains(key) && !fields.containsKey(key),
+    );
+  }
+
+  void _capturePreparedWorkItem(
+    Object? body,
+    Object? envelope,
+    Mr7MutationPermit permit,
+  ) {
+    final target = identity!;
+    final operation = _selectedGraphOperation(body);
+    if (body is! Map || operation?.kind != 'query' || envelope is! Map) return;
+    final errors = envelope['errors'];
+    final data = envelope['data'];
+    if (data is! Map ||
+        (errors != null && (errors is! List || errors.isNotEmpty))) {
+      return;
+    }
+    final vars = body['variables'] as Map? ?? const {};
+    void bind(Object? raw, Object? requestedId, Object? requestedIid) {
+      if (raw is! Map || raw['id'] is! String) return;
+      final id = raw['id'] as String;
+      if (requestedId != null && requestedId != id) {
+        throw const Mr7Refused('noChangeTargetUnbound');
+      }
+      final path = _graphResources[id];
+      if (path == null || !id.startsWith('gid://gitlab/WorkItem/')) return;
+      _mr7WorkItemRecord(this, target, id, Map<String, Object?>.from(raw));
+      if (requestedIid != null && requestedIid != raw['iid']) {
+        throw const Mr7Refused('noChangeTargetUnbound');
+      }
+      final number = int.parse(id.split('/').last);
+      if (permit._preparedParentIds.containsKey(path) &&
+          permit._preparedParentIds[path] != number) {
+        stop('noChangeTargetDrift');
+        throw const Mr7Refused('noChangeTargetDrift');
+      }
+      permit._preparedParentIds[path] = number;
+    }
+
+    for (final entry in operation!.selections.entries) {
+      final selection = entry.value;
+      if (!entry.key.contains('/') && selection.field == 'workItem') {
+        final args = operation.resolve(selection.arguments, vars) as Map;
+        bind(data[entry.key], args['id'], null);
+      }
+      if (selection.field == 'issues' &&
+          entry.key.split('/').length == 2 &&
+          permit.operation == 'setIncidentStatus') {
+        final ownerKey = entry.key.split('/').first;
+        final ownerSelection = operation.selections[ownerKey];
+        if (ownerSelection?.field != 'project') continue;
+        final ownerArgs =
+            operation.resolve(ownerSelection!.arguments, vars) as Map;
+        final args = operation.resolve(selection.arguments, vars) as Map;
+        final iids = args['iids'];
+        final types = args['types'];
+        final owner = data[ownerKey];
+        final connection = _selectRecord(data, entry.key.split('/'));
+        if (ownerArgs['fullPath'] != target.path ||
+            owner is! Map ||
+            owner['id'] != 'gid://gitlab/Project/${target.projectId}' ||
+            iids is! List ||
+            iids.length != 1 ||
+            iids.single is! String ||
+            !RegExp(r'^[1-9][0-9]*$').hasMatch(iids.single as String) ||
+            types is! List ||
+            types.length != 1 ||
+            types.single != 'INCIDENT' ||
+            args['first'] != 2 ||
+            connection is! Map ||
+            connection['nodes'] is! List ||
+            (connection['nodes'] as List).length != 1 ||
+            connection['pageInfo'] is! Map ||
+            (connection['pageInfo'] as Map)['hasNextPage'] != false) {
+          continue;
+        }
+        final issue = (connection['nodes'] as List).single;
+        if (issue is! Map ||
+            issue['id'] is! String ||
+            !RegExp(
+              r'^gid://gitlab/Issue/[1-9][0-9]*$',
+            ).hasMatch(issue['id'] as String) ||
+            issue['iid'] != iids.single ||
+            issue['projectId'] != target.projectId) {
+          continue;
+        }
+        final number = int.parse((issue['id'] as String).split('/').last);
+        final gid = 'gid://gitlab/WorkItem/$number';
+        final path = 'projects/${target.projectId}/issues/${iids.single}';
+        if (_graphResources[gid] != path) continue;
+        if (permit._preparedParentIds.containsKey(path) &&
+            permit._preparedParentIds[path] != number) {
+          stop('noChangeTargetDrift');
+          throw const Mr7Refused('noChangeTargetDrift');
+        }
+        permit._preparedParentIds[path] = number;
+      }
+      if (selection.field == 'workItems' && entry.key.split('/').length == 2) {
+        final ownerKey = entry.key.split('/').first;
+        final ownerSelection = operation.selections[ownerKey];
+        if (ownerSelection?.field != 'project') continue;
+        final ownerArgs =
+            operation.resolve(ownerSelection!.arguments, vars) as Map;
+        final args = operation.resolve(selection.arguments, vars) as Map;
+        final owner = data[ownerKey];
+        final connection = _selectRecord(data, entry.key.split('/'));
+        if (ownerArgs['fullPath'] != target.path ||
+            owner is! Map ||
+            owner['id'] != 'gid://gitlab/Project/${target.projectId}' ||
+            owner['fullPath'] != target.path ||
+            connection is! Map ||
+            connection['nodes'] is! List ||
+            (connection['nodes'] as List).length != 1 ||
+            connection['pageInfo'] is! Map ||
+            (connection['pageInfo'] as Map)['hasNextPage'] != false ||
+            args['iid'] is! String) {
+          continue;
+        }
+        bind((connection['nodes'] as List).single, null, args['iid']);
+      }
+    }
+    if (!const {
+      'editWorkItemActivityNote',
+      'setWorkItemActivityNoteReaction',
+    }.contains(permit.operation)) {
+      return;
+    }
+    // Only an exact Note selection records preparation. Notes appearing in an
+    // activity connection, earlier fixture bindings and observer reads do not.
+    for (final entry in operation.selections.entries) {
+      final selection = entry.value;
+      if (entry.key.contains('/') || selection.field != 'note') continue;
+      final capability = permit.operation == 'editWorkItemActivityNote'
+          ? 'adminNote'
+          : 'awardEmoji';
+      final requiredSelections = {
+        'id': 'id',
+        'system': 'system',
+        'internal': 'internal',
+        'noteableType': 'noteableType',
+        'noteableId': 'noteableId',
+        'project/id': 'id',
+        'project/fullPath': 'fullPath',
+        'author/id': 'id',
+        'userPermissions/$capability': capability,
+      };
+      if (requiredSelections.entries.any(
+        (field) =>
+            operation.selections['${entry.key}/${field.key}']?.field !=
+            field.value,
+      )) {
+        continue;
+      }
+      final args = operation.resolve(selection.arguments, vars) as Map;
+      final note = data[entry.key];
+      final id = args['id'];
+      if (id is! String ||
+          !RegExp(r'^gid://gitlab/Note/[1-9][0-9]*$').hasMatch(id) ||
+          note is! Map ||
+          note['id'] != id) {
+        continue;
+      }
+      final notePath = _graphResources[id];
+      if (notePath == null) continue;
+      final parent = notePath.split('/').take(4).join('/');
+      final parentId = permit._preparedParentIds[parent];
+      final project = note['project'];
+      final author = note['author'];
+      final permissions = note['userPermissions'];
+      if (notePath != '$parent/notes/${id.split('/').last}' ||
+          parentId == null ||
+          _graphResources['gid://gitlab/WorkItem/$parentId'] != parent ||
+          note['noteableType'] != 'Issue' ||
+          note['noteableId'] != parentId ||
+          note['system'] != false ||
+          note['internal'] != false ||
+          project is! Map ||
+          project['id'] != 'gid://gitlab/Project/${target.projectId}' ||
+          project['fullPath'] != target.path ||
+          author is! Map ||
+          author['id'] != 'gid://gitlab/User/${target.userId}' ||
+          permissions is! Map ||
+          permissions[capability] != true) {
+        continue;
+      }
+      final prepared = (id: id, parentPath: parent);
+      if (permit._preparedActivityNote != null &&
+          permit._preparedActivityNote != prepared) {
+        stop('noChangeTargetDrift');
+        throw const Mr7Refused('noChangeTargetDrift');
+      }
+      permit._preparedActivityNote = prepared;
+    }
+  }
+
   /// Capture only bounded, freshly read project/resource metadata before send.
   Future<Mr7PreReadSnapshot> captureSnapshot(
     List<Mr7SnapshotSpec> specs,
@@ -3489,7 +5197,7 @@ final class Mr7SandboxSession {
           )) {
         throw const Mr7Refused('snapshotConfiguration');
       }
-      final row = await read(spec.path);
+      final row = await _readSnapshotRow(spec);
       final id = row['id'];
       final iid = row['iid'];
       if (jsonEncode(row).length > 2 * 1024 * 1024) {
@@ -3530,6 +5238,11 @@ final class Mr7SandboxSession {
             for (final field in spec.fields)
               field: _snapshotFieldDigest(row, field),
           }),
+          values: Map.unmodifiable({
+            for (final field in spec.fields)
+              if (row.containsKey(field))
+                field: jsonDecode(jsonEncode(row[field])),
+          }),
         ),
       );
     }
@@ -3567,11 +5280,12 @@ final class Mr7SandboxSession {
                 graphBody,
                 _graphResources,
                 originalPath,
+                target.path,
               ))) {
         stop('snapshotDrift');
         throw const Mr7Refused('snapshotDrift');
       }
-      final current = await read(originalPath);
+      final current = await _readSnapshotRow(saved.spec);
       var parentMatches = true;
       if (saved.parentId != null) {
         final parentPath = originalPath.split('/').take(4).join('/');
@@ -3831,6 +5545,56 @@ final class Mr7SandboxSession {
         if (graph && b is Map) {
           _requireGraphTargets(b);
           await _refreshGraphResources(b['variables']);
+          if (allowed.operation == 'setIncidentStatus') {
+            final input = _mr7MutationInput(b, 'issueSetEscalationStatus');
+            final iid = input['iid'];
+            final parentPath = 'projects/${target.projectId}/issues/$iid';
+            final owners = _graphResources.entries.where(
+              (e) =>
+                  e.value == parentPath &&
+                  e.key.startsWith('gid://gitlab/WorkItem/'),
+            );
+            if (input['projectPath'] != target.path ||
+                iid is! String ||
+                !RegExp(r'^[1-9][0-9]*$').hasMatch(iid) ||
+                owners.length != 1) {
+              throw const Mr7Refused('incidentSelector');
+            }
+            await bindWorkItemGraphResource(
+              owners.single.key,
+              path: parentPath,
+            );
+          }
+          if (allowed.operation == 'deleteWorkItemActivityNote') {
+            final input = _mr7MutationInput(b, 'destroyNote');
+            final noteId = input['id'];
+            final notePath = _graphResources[noteId];
+            if (noteId is! String ||
+                notePath == null ||
+                !RegExp(
+                  '^projects/${target.projectId}/issues/[1-9][0-9]*/notes/[1-9][0-9]*\$',
+                ).hasMatch(notePath)) {
+              throw const Mr7Refused('observerNoteOwnership');
+            }
+            final parentPath = notePath.split('/').take(4).join('/');
+            final parent = await read(parentPath);
+            final note = await read(notePath);
+            final author = note['author'];
+            if (parent['project_id'] != target.projectId ||
+                parent['iid'] != int.parse(parentPath.split('/').last) ||
+                _graphResources['gid://gitlab/WorkItem/${parent['id']}'] !=
+                    parentPath ||
+                note['id'] != int.parse(noteId.split('/').last) ||
+                note['project_id'] != target.projectId ||
+                note['noteable_id'] != parent['id'] ||
+                author is! Map ||
+                author['id'] != target.userId ||
+                note['system'] != false ||
+                note['internal'] != false) {
+              throw const Mr7Refused('observerNoteOwnership');
+            }
+            allowed._ownedActivityNoteAtSend = noteId;
+          }
           await verifyIdentity();
           _open();
         }

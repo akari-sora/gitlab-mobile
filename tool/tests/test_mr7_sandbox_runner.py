@@ -229,6 +229,35 @@ class SandboxWrapperTest(unittest.TestCase):
         self.assertTrue(runner.validate_receipt(receipt(scenarios=[unverified])))
         self.assertFalse(runner.validate_receipt(receipt(scenarios=[row]), final=True))
 
+    def test_work_item_zero_dispatch_requires_witness_for_supported_operations(self):
+        row = {'classification': 'verifiedNoOp', 'mutationCount': 0,
+               'observerRequests': 1, 'parentStateVerified': True,
+               'readback': 'PASS', 'status': 'PASS', 'outcome': 'noChange',
+               'coreOutcome': 'succeeded', 'coreNoChange': True}
+        supported = (
+            'updateWorkItemState', 'updateWorkItemStatus', 'updateWorkItemDates',
+            'updateWorkItemAssignees', 'updateWorkItemMilestone',
+            'updateWorkItemContent', 'updateWorkItemLabels',
+            'setWorkItemNotifications', 'setIncidentStatus',
+            'editWorkItemActivityNote', 'setWorkItemActivityNoteReaction',
+        )
+        for operation in supported:
+            valid = {**row, 'operation': operation}
+            with self.subTest(operation=operation):
+                self.assertTrue(runner.validate_receipt(receipt(scenarios=[valid])))
+                for field in ('classification', 'parentStateVerified', 'observerRequests'):
+                    missing = {key: value for key, value in valid.items() if key != field}
+                    self.assertFalse(runner.validate_receipt(receipt(scenarios=[missing])))
+                for changes in ({'parentStateVerified': False}, {'observerRequests': 0},
+                                {'responseStatus': 304}, {'responseStatus': 409},
+                                {'coreNoChange': False}, {'coreOutcome': 'writeUncertain'}):
+                    self.assertFalse(runner.validate_receipt(
+                        receipt(scenarios=[{**valid, **changes}])))
+        for operation in ('updateWorkItemWeight', 'updateWorkItemHealthStatus'):
+            with self.subTest(unsupported=operation):
+                self.assertFalse(runner.validate_receipt(
+                    receipt(scenarios=[{**row, 'operation': operation}])))
+
     def test_decision_projection_requires_observed_consistent_tier(self):
         row = {'status': 'PASS', 'mutationCount': 1, 'declaredTier': 'T1',
                'tier': 'T1', 'decision': 'requireApproval',

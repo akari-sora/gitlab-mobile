@@ -192,6 +192,9 @@ after reading, consumes the shared HTTP cap, and requires exact allowlisted
 `readbackPaths`. Resource selectors are checked against the actual dispatched
 route, rather than another resource in the same project. Quarantine observation
 cannot reopen the writer or settle an uncertain core journal result.
+Snapshot verification applies those exact paths and the 2 MiB JSON response
+bound to every snapshot kind, including WorkItem REST identity and GraphQL
+projection reads. Unselected response fields still count toward the bound.
 
 | Seam | Scenario API and required evidence |
 |---|---|
@@ -323,7 +326,7 @@ An absent or mismatched witness produces `NOT_VERIFIED` with a refusal code,
 quarantines the session and prevents later writes and cleanup. A matching
 witness with zero expected mutations records `classification=verifiedNoOp`,
 `parentStateVerified=true`, positive observer request count and no fabricated
-HTTP response. WorkItem state observers remain unavailable.
+HTTP response. Wave 3b extends these witnesses to project WorkItems below.
 
 Executable rows separate `declaredTier` from the actual `tier`, `decision` and
 `confirmationReasons` captured from the production coordinator's proposal,
@@ -381,5 +384,116 @@ path and inventory path must be in `readbackPaths`. This synthetic endpoint is
 not a claim about a live GitLab API. Missing/partial/foreign observations remain
 unverified. Account-global/group paths and `markTodoDone` remain closed; the
 production acknowledgement remains ack-only and uncertain core outcomes stay
-uncertain. GraphQL WorkItem observers and secondary B3 effect witnesses are
-deferred.
+uncertain. Secondary B3 effect witnesses remain deferred.
+
+
+## Wave 3b WorkItem observers
+
+These are synthetic observer seams for B2-O1/O2/O3. Scenario definitions are
+unchanged: the scenario owner must wire the 26 widget effects, six activity
+effects and 11 zero-dispatch cases before their inventory rows can execute.
+No observer opens health/weight, other members, group aliases or shared to-do
+scopes. Candidate output remains `CANDIDATE_ONLY`, `finalEligible=false`.
+
+`Mr7WorkItemObservation(workItemId:, iid:, operation:, arguments:)` reads a
+closed, operation-specific GraphQL selection using the independent observer
+adapter. Arguments use the production tool keys, including projectId and iid.
+The actual dispatched input must match: workItemUpdate/workItemSubscribe use
+input.id; issueSetEscalationStatus uses input.projectPath plus its string iid.
+Both routes bind the WorkItem GID to the sandbox's numeric Issue ID and route
+iid. Actor, installation subpath, project ID/fullPath and parent are checked
+around readback. A mutation response supplies identity, never effect evidence.
+
+Changed widgets require `Mr7SnapshotSpec.workItem(path:, workItemId:)`. Its
+fixed field set covers state, title, description, status, all eight date fields,
+assignees, milestone, labels and subscribed. Supplying an incomplete field set
+is refused. Widget absence and explicit null remain distinct. Reads capture
+complete assignee/label node sets, with at most 20 pages of 100 nodes, unique IDs,
+nonrepeating bounded cursors and stable WorkItem updatedAt across the reads.
+The snapshot is reread immediately before send; every field omitted from the
+actual dispatched input is preserved at independent readback. This also applies
+to incident escalation's projectPath+iid selector. Only snapshot digests are
+projected into receipts; full values remain private in memory.
+
+Date witnesses independently probe isFixed and sourcing fields. They retry the
+base CE selection only for a response without data whose errors are exclusively
+precise undefinedField errors for the EE date fields, including isFixed.
+Permission, mixed, unrelated and partial-data errors are refused. Manual EE
+requires isFixed=true; inherited requires isFixed=false; manual CE has no
+isFixed field. Callers cannot declare the edition to weaken this check.
+Manual clear/preserve behavior is compared with the actual input and snapshot.
+
+`Mr7WorkItemActivityObservation` maps createWorkItemActivityComment,
+createWorkItemActivityReply, editWorkItemActivityNote,
+deleteWorkItemActivityNote and setWorkItemActivityNoteReaction. It binds the
+exact Note to its WorkItem, project and actor; requires an ordinary public note;
+and uses server-provided opaque discussion/reply identities. Created Note IDs
+must equal the returned ID and their REST paths must be in readbackPaths before
+binding. The runner copies the actual call arguments immutably into the permit.
+Replies independently read that call's bound anchorNoteId and require its
+opaque discussion/reply IDs to match both dispatch and the created note. Text
+is compared byte-for-byte with the effective dispatched body, which may have
+been normalized or approved with an edit by production preparation.
+
+Discussion connections and nested note connections are read to completion,
+with at most 20 pages of 20 per connection. Continuations use a bound anchor
+Note's discussion, never a manufactured Discussion selector. Duplicated IDs,
+missing/null connections, bad cursors and exhausted page/request caps refuse.
+Delete requires fresh own-note/parent proof before dispatch and exact-note
+absence from the complete connection. A single missing Note lookup is never
+proof. Reactions read the exact Note's awardEmoji connection (20 pages of 50),
+use unique name+user.id pairs and require the actor's matching award present
+for add or absent for remove. Awards belonging to other actors do not prove
+removal. No AwardEmoji ID or connection totalCount is invented.
+
+`Mr7StateObservation` is the sealed shared no-op vocabulary.
+`Mr7Scenario.noChangeObservation` accepts WorkItem and activity witnesses.
+The runner supplies the actual arguments to observeNoChange; the witness must
+match them and an independently read prepared parent, with zero mutations and
+no fabricated HTTP response. Preparation captures actual production WorkItem
+queries and the incident project.issues(iids: ..., types: [INCIDENT], first: 2)
+query. The latter does not need a made-up project.fullPath response or extra
+preparation REST read. Milestone witnesses can additionally require its current
+closed state or expired flag. Supported edit/reaction no-ops bind the exact
+prepared Note and parent selected by an exact production Note read under the
+current permit. Fixture bindings, activity connection membership, observer reads
+and earlier permits cannot establish that preparation. No-op argument matching
+uses the effective request on the production preparation recorded by that permit,
+including approval edits and shared text processing, for every write operation.
+The original model call cannot supply the approved text. Missing/mismatched proof
+quarantines the session; uncertain core
+outcomes remain uncertain. The Python receipt validator admits this closed
+operation set only with positive observer counts and parent-state proof.
+
+The independent selections below intersect the production documents in
+lib/core/work_item_*_api.dart and lib/core/incident_api.dart with the generated
+[GitLab GraphQL schema reference](https://docs.gitlab.com/api/graphql/reference/).
+Each observer has a positive real-shape fixture in
+`test/ai/mr7_sandbox_wave3b_test.dart`.
+
+| Observer | Selected effect fields (in addition to actor/parent identity) |
+|---|---|
+| State | WorkItem state, updatedAt. |
+| Status | WorkItemWidgetStatus.status.id. |
+| Dates | startDate, dueDate, rollUp, isFixed and startDateSourcingWorkItem, dueDateSourcingWorkItem, startDateSourcingMilestone, dueDateSourcingMilestone (each source id). |
+| Assignees | assignees.nodes(id, name, username), pageInfo(hasNextPage, endCursor). |
+| Milestone | milestone(id, iid, title, state, expired, dueDate, startDate, webPath, project(id, fullPath)). |
+| Content | WorkItem.title; WorkItemWidgetDescription.description and widget presence. |
+| Labels | labels.nodes(id, title, color, textColor), pageInfo(hasNextPage, endCursor). |
+| Notifications | WorkItemWidgetNotifications.subscribed. |
+| Incident | project.id; issues.nodes(id, iid, projectId, state, severity, escalationStatus, updatedAt), pageInfo.hasNextPage. |
+| Activity | WorkItemWidgetNotes.discussions nodes(id, replyId, notes nodes(id, body, system, author.id)); both pageInfo(hasNextPage, endCursor). Exact Note also supplies internal, noteableType, noteableId, author.id, project(id, fullPath), discussion(id, replyId). |
+| Reactions | Exact Note identity plus awardEmoji.nodes(name, unicode, user.id), pageInfo(hasNextPage, endCursor). |
+
+Schema pages read: [WorkItem and widget objects](https://docs.gitlab.com/api/graphql/reference/objects/#workitem),
+[date widget](https://docs.gitlab.com/api/graphql/reference/objects/#workitemwidgetstartandduedate),
+[Note](https://docs.gitlab.com/api/graphql/reference/objects/#note),
+[Discussion](https://docs.gitlab.com/api/graphql/reference/objects/#discussion),
+[AwardEmoji](https://docs.gitlab.com/api/graphql/reference/objects/#awardemoji),
+[Issue escalation mutation](https://docs.gitlab.com/api/graphql/reference/mutations/#issuesetescalationstatus),
+[Note interface](https://docs.gitlab.com/api/graphql/reference/interfaces/#basenoteinterface),
+[WorkItem API examples](https://docs.gitlab.com/api/graphql/epic_work_items_api_migration_guide/)
+and [pagination](https://docs.gitlab.com/api/graphql/getting_started/#pagination).
+The object reference was read in bounded extracted sections because the full
+rendered page exceeds the browser reader's size limit. This documents schema
+compatibility, not a live instance/tier acceptance result.

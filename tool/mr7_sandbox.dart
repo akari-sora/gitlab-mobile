@@ -59,6 +59,33 @@ typedef Mr7Confirm = Future<bool> Function(Mr7HostProposal proposal);
 typedef Mr7TypedConfirm = Future<String?> Function(Mr7HostProposal proposal);
 typedef Mr7Edit = Future<String?> Function(Mr7HostProposal proposal);
 
+final class _Mr7PreparedWritePort implements port.AiGitLabWritePort {
+  _Mr7PreparedWritePort(this.delegate, this.session);
+
+  final port.AiGitLabWritePort delegate;
+  final Mr7SandboxSession session;
+
+  @override
+  Future<port.AiWritePrepared> prepare(port.AiWriteRequest request) async {
+    final permit = session.permit;
+    if (permit == null || permit.operation != request.operationId) {
+      throw const Mr7Refused('noChangeUnverified');
+    }
+    final prepared = await delegate.prepare(request);
+    if (!identical(session.permit, permit)) {
+      throw const Mr7Refused('noChangeUnverified');
+    }
+    permit.capturePreparedArguments(() => prepared.request.arguments);
+    return prepared;
+  }
+
+  @override
+  Future<port.AiWriteOutcome> commit(
+    port.AiWritePrepared prepared, {
+    required bool Function() mayStart,
+  }) => delegate.commit(prepared, mayStart: mayStart);
+}
+
 enum Mr7ClosureCause {
   releasePolicy,
   fixtureUnavailable,
@@ -197,8 +224,7 @@ final class Mr7Scenario {
     Mr7MutationResult result,
   )?
   observerQueries;
-  final Mr7ParentStateObservation Function(Mr7Identity identity)?
-  noChangeObservation;
+  final Mr7StateObservation Function(Mr7Identity identity)? noChangeObservation;
 }
 
 List<Mr7Scenario> mr7ContractScenarios() => [
@@ -942,12 +968,15 @@ Future<Map<String, Object?>> runMr7Sandbox({
           appInForeground: true,
           clientMayStartPredicate: () => !s.quarantined && s.boundaryValid(),
         ),
-        createPort: () => port.GitLabAiWritePort(
-          api,
-          accountKey: account,
-          workItemWriteRegistry: scenario.createRegistry?.call(api),
-          sessionGeneration: 1,
-          isCurrent: () => !s.quarantined && s.boundaryValid(),
+        createPort: () => _Mr7PreparedWritePort(
+          port.GitLabAiWritePort(
+            api,
+            accountKey: account,
+            workItemWriteRegistry: scenario.createRegistry?.call(api),
+            sessionGeneration: 1,
+            isCurrent: () => !s.quarantined && s.boundaryValid(),
+          ),
+          s,
         ),
         journal: journalStore,
         conversationId: scenarioConversationId,
@@ -1024,6 +1053,7 @@ Future<Map<String, Object?>> runMr7Sandbox({
           ...fixtures.graphVariablesDigests,
         }),
         resultPath: scenario.resultPath,
+        callArguments: call.arguments,
       );
       permit.snapshot = snapshot;
       s.permit = permit;
@@ -1203,7 +1233,9 @@ Future<Map<String, Object?>> runMr7Sandbox({
           );
           final verified = await observer.observeNoChange(
             state,
-            arguments: call.arguments,
+            arguments:
+                permit.preparedArguments ??
+                (throw const Mr7Refused('noChangeUnverified')),
           );
           row.addAll({
             'parentStateVerified': verified,

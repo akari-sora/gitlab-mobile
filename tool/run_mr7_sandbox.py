@@ -34,6 +34,14 @@ CLOSED_VARIANT_CAUSES = frozenset({
 })
 WRITE_TIERS = frozenset({'T1', 'T2', 'T3', 'T4', 'hardLine'})
 GATE_DECISIONS = frozenset({'deny', 'requireApproval', 'execute'})
+ZERO_DISPATCH_NOOP_OPERATIONS = frozenset({
+    'setStar', 'setSubscribed', 'cancelAutoMerge',
+    'updateWorkItemState', 'updateWorkItemStatus', 'updateWorkItemDates',
+    'updateWorkItemAssignees', 'updateWorkItemMilestone',
+    'updateWorkItemContent', 'updateWorkItemLabels',
+    'setWorkItemNotifications', 'setIncidentStatus',
+    'editWorkItemActivityNote', 'setWorkItemActivityNoteReaction',
+})
 FIXED_CONFIRM_REASONS = frozenset({
     'markAllTodosDone', 'foreignDraftsInPublish', 'massMention',
     'externalMediaInRenderedMarkdown', 'foreignClosingOrCrossProject',
@@ -48,7 +56,8 @@ SOURCE_FILES = (
     'test/ai/mr7_sandbox_contract_test.dart',
     'test/ai/mr7_sandbox_wave2_contract_test.dart',
     'test/ai/mr7_sandbox_wave2_runner_test.dart',
-    'test/ai/mr7_sandbox_wave3_test.dart', 'docs/MR7_SANDBOX.md',
+    'test/ai/mr7_sandbox_wave3_test.dart',
+    'test/ai/mr7_sandbox_wave3b_test.dart', 'docs/MR7_SANDBOX.md',
     'pubspec.lock',
 )
 DEPENDENCY_FILES = (
@@ -254,7 +263,7 @@ def validate_receipt(receipt: object, *, final: bool = False, policy: str | None
                 return False
             if zero_dispatch:
                 if (row.get('coreNoChange') is not True or 'responseStatus' in row or
-                        row.get('operation') not in ('setStar', 'setSubscribed', 'cancelAutoMerge')):
+                        row.get('operation') not in ZERO_DISPATCH_NOOP_OPERATIONS):
                     return False
             elif (type(status) is not int or status not in (304, 409) or
                   (status == 304 and row.get('operation') not in ('setStar', 'setSubscribed')) or
