@@ -1,7 +1,12 @@
 # Store listing
 
-Decided on 2026-10-19. Nothing here has been submitted to a store yet
-(`NOT_RUN`).
+Decided on 2026-10-19; updated 2026-10-30. In Google Play Console (`app.mergeline`,
+CB Studio), the store listing (zh-TW), Demo-mode screenshots, App access
+instructions, Data safety, privacy policy URL and policy declarations are
+filled, and the v0.6.1 Play AAB (`c39818e5`, versionCode 7, AI assistant on,
+background runs off, upload key) is uploaded to the production track as a
+**draft**. Submitting for review awaits the owner's content rating and price
+(US$3.99) in Play Console; see [Plan and status](PLAN_STATUS.md).
 
 ## Name
 
@@ -100,8 +105,10 @@ keeps disk use closed and requires retry if cleanup is incomplete. Public text,
 source, diffs and terminal-job logs may themselves quote secrets; encryption
 does not redact that content. Sign-out, account switching, removal and terminal
 401 clear the affected account's cache under the cleanup contract in
-`CLAUDE.md`. This documentation packet has no Android/iOS device or store
-submission evidence (`NOT_RUN`).
+`CLAUDE.md`. Android emulator acceptance for the read cache and offline snapshots is
+recorded in [Plan and status](PLAN_STATUS.md) (C2 and C3); the Play Console
+Data safety form was filled on 2026-10-30, while Play review submission and
+iOS device evidence remain open.
 
 ## Rules for the listing
 

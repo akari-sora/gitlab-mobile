@@ -177,7 +177,10 @@ until a matching historical signer is available or data loss is explicitly
 accepted.
 
 Neither the local development signer nor the current CI debug-signing lane is
-Play App Signing. Play publication and production signing remain unconfigured.
+Play App Signing. Play builds are signed locally with the separate Play upload
+key (`PLAY_UPLOAD` in [Android local signing](ANDROID_SIGNING.md)) and uploaded
+outside CI (`app.mergeline` 0.6.1 is uploaded to Google Play as a production
+draft; see [Plan and status](PLAN_STATUS.md)).
 
 ### Distribution channels and versionCode
 
@@ -194,8 +197,10 @@ gitlab`. iOS has no flavors and builds as before.
 project's `CI_PIPELINE_IID`, which only grows, so each CI APK has a higher
 `versionCode` than the last (the pubspec's `+5` is used only for local builds).
 `build-metadata.json` records `channel`, `build_type`, `version_name` and
-`version_code` next to `signing`. The `play` flavor is not built in CI; its
-store signing and listing are `NOT_RUN`.
+`version_code` next to `signing`. The `play` flavor is not built in CI; it is built and signed locally with the
+Play upload key (`app.mergeline` 0.6.1 is uploaded to Google Play as a
+production draft, awaiting the owner's content rating and price before review;
+see [Plan and status](PLAN_STATUS.md)).
 
 ### In-app updates
 
@@ -206,7 +211,7 @@ store signing and listing are `NOT_RUN`.
 - **Download and install:** the APK goes to the app cache's `updates/`, and its size and SHA-256 are checked against the package file. The generated `gitlab`-flavor `AppUpdateChannel` then hands it to the system installer through `UpdateFileProvider` (cache `updates/` only, `REQUEST_INSTALL_PACKAGES`). Android asks once to allow installs from the app, and the user confirms every install.
 - **`play` builds** call Google Play's in-app update API (flexible) instead and declare no install permission.
 - **What a release needs:** publishing a gitlab-channel release requires its pipeline's release APK and metadata as package links.
-- **Verification:** device and Play verification are `NOT_RUN`.
+- **Verification:** on the emulator, an installed `gitlab`-channel v0.5.0 (versionCode 588) was offered v0.6.0 (1621), downloaded it, verified the SHA-256 and updated in place with the account kept (for v0.6.1 the anonymous release list and metadata were checked; see [Plan and status](PLAN_STATUS.md)). Physical-device and Google Play in-app update verification remain `NOT_RUN`.
 
 ## iOS and product acceptance
 
@@ -233,7 +238,7 @@ before installation or input. Do not use an unqualified `adb` command or copy
 accounts from a physical phone. For the current isolated AVD:
 
 ```sh
-.fvm/flutter_sdk/bin/flutter run --profile --flavor gitlab -d emulator-5580 \
+fvm flutter run --profile --flavor gitlab -d emulator-5580 \
   -t tool/emulator_ui.dart --dart-define=EMULATOR_UI_QA=true \
   --dart-define=PERF_LABEL=synthetic-emulator
 ```

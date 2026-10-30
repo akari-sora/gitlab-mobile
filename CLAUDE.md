@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-`AGENTS.md` is the binding development contract (identity model, ambiguous 404 handling, credential and validation rules, evidence reporting). It is loaded alongside this file; nothing from it is repeated here. Read `README.md`, `docs/CI.md`, `docs/ROADMAP.md` and `docs/PLAN_STATUS.md` (current plan, order and status; start with its **Current state** and **Next steps** sections, and keep it updated in the MR that changes a status) before working. `docs/V0_2_VERIFICATION.md`, `docs/V0_3_VERIFICATION.md` and `docs/V0_5_VERIFICATION.md` are the evidence ledgers, `docs/UI_REDESIGN.md` the UX rules, and `docs/AUDIT_REPORT.md` the defect inventory (`ISSUE-H*` / `ISSUE-M*`). The audit body is the 2026-09-21 text; the 2026-09-22 status block at the top of that file lists what has since landed. Cross-check an issue against that block and `git log` before treating it as open.
+`AGENTS.md` is the binding development contract (identity model, ambiguous 404 handling, credential and validation rules, evidence reporting). It is loaded alongside this file; nothing from it is repeated here. Read `README.md`, `docs/CI.md`, `docs/ROADMAP.md` and `docs/PLAN_STATUS.md` (current plan, order and status; start with its **Current state** and **Next steps** sections, and keep it updated in the MR that changes a status) before working. `docs/V0_2_VERIFICATION.md`, `docs/V0_3_VERIFICATION.md`, `docs/V0_5_VERIFICATION.md` and `docs/V0_6_AI_VERIFICATION.md` are the evidence ledgers, `docs/UI_REDESIGN.md` the UX rules, and `docs/AUDIT_REPORT.md` the defect inventory (`ISSUE-H*` / `ISSUE-M*`). The audit body is the 2026-09-21 text; the 2026-09-22 status block at the top of that file lists what has since landed. Cross-check an issue against that block and `git log` before treating it as open.
 
 ## Toolchain and commands
 
@@ -177,7 +177,7 @@ The app is written in Traditional Chinese and translated into the languages list
 - Commit messages follow Conventional Commits (`feat(auth):`, `fix(ui):`, `ci:`, `test:`, `docs:`, `refactor:`, `build:`); `[skip ci]` appears on intermediate commits in the history; the commit you hand off must have run the pipeline.
 - Evidence vocabulary: synthetic tests, public live reads, authenticated connector checks and physical-device runs are distinct. Anything not executed is reported as `NOT_RUN`, never inferred as passing.
 
-### AI runner (MR4; on in gitlab builds since v0.6.0)
+### AI runner (MR4; on in gitlab builds since v0.6.0 and Play builds since v0.6.1)
 
 `AiRunner` owns an in-memory conversation. It sends at most six model requests
 per user send and uses the read-only `AiGitLabReadPort`; only
@@ -267,7 +267,7 @@ and the runner remains busy until recovery finishes.
 Cleartext requests check interfaces with `includeLinkLocal: true`; missing or
 unavailable interfaces require per-send confirmation. These checks do not prove
 same-subnet reachability. `MERGELINE_AI_ASSISTANT` defaults to false; since v0.6.0
-(owner decision, 2026-10-30) CI compiles the gitlab flavour with it true. Play stays off.
+(owner decision, 2026-10-30) CI compiles the gitlab flavour with it true, and since v0.6.1 the Play build carries it too (`MERGELINE_AI_BACKGROUND` stays false).
 
 The chat (MR6a) sits on `AiChatSession` (`lib/features/ai/ai_chat_session.dart`):
 `AiChatController` owns one runner per conversation and reports display items,

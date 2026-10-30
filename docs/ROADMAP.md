@@ -37,7 +37,7 @@ readback, live private/CRUD and iOS acceptance remain separate evidence lanes.
 The 2026-10-22 Android-priority MR6a-2 slice lets a completed, display-safe AI
 answer append to the existing ordinary-comment draft without posting. It also
 adds authors to GraphQL Work Item lists and progressively loads pipeline
-executors with bounded, owner-scoped requests. Production AI remains disabled by
+executors with bounded, owner-scoped requests. In that 2026-10-22 slice production AI was still disabled by
 default. Exact source passed 5,046 Flutter tests and full analysis; the synthetic
 API 36 emulator run proved zero writes through append/reopen and one acknowledged
 write only after explicit Save. The original APK was restored with matching
@@ -47,8 +47,8 @@ not establish CI success. Real-provider and private-project integration,
 physical-device/publication and G0 acceptance stay open. iOS validation is
 deferred while Android is the current delivery priority; that deferral is not
 iOS acceptance. Evidence is in [v0.6 AI verification](V0_6_AI_VERIFICATION.md)
-and the linked APK receipt. Since v0.6.0 (2026-10-30) the gitlab build ships the
-assistant on; current state and next steps are in [PLAN_STATUS](PLAN_STATUS.md).
+and the linked APK receipt. Since v0.6.0 (2026-10-30) the GitLab-channel build ships the
+assistant on (with every read tool and every model-visible write released, background runs off, and an emulator walkthrough with `gpt-4o-mini` on a run-owned private sandbox project), and v0.6.1 adds in-app AI reporting, Demo mode and the Google Play build with the assistant on (uploaded as a production draft for review); current state and next steps are in [PLAN_STATUS](PLAN_STATUS.md).
 
 Ordinary Work Item note editing checks the server's on-demand `adminNote`
 permission instead of inferring access from note authorship. It validates the
@@ -242,3 +242,5 @@ remain separate in the parity report.
 - **LT3: Issue Boards Kanban View**: Horizontal swiping board columns for label/milestone workflows on tablets (>= 840 dp).
 - **LT4: Batch Review & Draft Notes**: Integration with server-side draft notes API for staging comments and submitting unified reviews.
 - **LT5: Suggested Changes Application**: Markdown rendering of ```suggestion blocks with one-tap commit application via GitLab suggestions API.
+
+Status (2026-10-30): group hierarchy browsing (LT1), project and group GraphQL Work Items (LT2), issue boards (LT3), server-backed MR draft notes (LT4) and single suggestion application in the AI write catalogue (LT5; `batchApplySuggestions` stays hidden) have since landed on `main`, alongside the read cache, offline repository snapshots, Demo mode and the AI assistant (v0.6.0/v0.6.1). Remaining open workflows and evidence boundaries are tracked in [Plan and status](PLAN_STATUS.md) and [the parity ledger](MOBILE_WEB_PARITY_LEDGER.md).

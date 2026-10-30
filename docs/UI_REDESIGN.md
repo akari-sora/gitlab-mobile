@@ -44,7 +44,7 @@ CI captures actual Flutter widgets with synthetic data and CJK fonts at 412 × 8
 
 ## Explicit remaining UX work
 
-Physical-device keyboard/IME and back-gesture checks, screen-reader validation, a full navigation/permission matrix, native attachments/artifact downloads, OAuth, and installed APK upgrade/signing continuity are not claimed complete. The 840-pixel layout currently remains a mobile single-column experience rather than a desktop client.
+In-app artifact downloads (!5), attachment uploads (!7), inline project uploads and media (!14, 2026-10-20), retained-state two-pane list/detail layouts at >= 840 dp (!17, `ListDetailScaffold`), local/CI signing continuity ([Android local signing](ANDROID_SIGNING.md)) and the GitLab-channel in-app updater (tested on the emulator from v0.5.0 to v0.6.0) have since landed. Physical-device keyboard/IME and back-gesture checks for later slices, full screen-reader validation, a complete navigation/permission matrix, live OAuth sign-in, and physical-device APK upgrade continuity are still not claimed complete.
 
 ## v0.6 — GitHub Mobile–style layout
 

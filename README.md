@@ -50,21 +50,21 @@ The app needs **GitLab 18.11** or later (GitLab.com or HTTPS self-managed instan
 
 ## Verification
 
-See [current mobile parity and performance](docs/MOBILE_PARITY_PERFORMANCE.md), [v0.5 verification](docs/V0_5_VERIFICATION.md), [v0.3 verification](docs/V0_3_VERIFICATION.md), [v0.2 verification](docs/V0_2_VERIFICATION.md) and [mobile UX changes](docs/UI_REDESIGN.md). CI executes the actual Dart/Flutter code. Synthetic transport tests, live server checks, emulator runs and physical-device runs stay distinct. On `9183f19`, pipeline `2869335026` reported `509` tests in its JUnit report. That is the observed count for that pipeline.
+See [Plan and status](docs/PLAN_STATUS.md), [v0.6 AI verification](docs/V0_6_AI_VERIFICATION.md), [current mobile parity and performance](docs/MOBILE_PARITY_PERFORMANCE.md), [v0.5 verification](docs/V0_5_VERIFICATION.md), [v0.3 verification](docs/V0_3_VERIFICATION.md), [v0.2 verification](docs/V0_2_VERIFICATION.md) and [mobile UX changes](docs/UI_REDESIGN.md). CI executes the actual Dart/Flutter code. Synthetic transport tests, live server checks, emulator runs and physical-device runs stay distinct. On `aa47e464` (v0.6.0), pipeline `3006901467` reported `16,424` passed tests in the AI-off lane and `17,583` in the AI-on lane (one skipped each) in its JUnit reports; current counts are read from each pipeline's report.
 
 A real GitLab `Link` header expanded omitted `false` defaults and caused the original project-list failure. The parser now validates immutable scope, preserves the caller's query, and extracts only a safe pagination cursor. Valid first-page data is no longer rejected because GitLab expanded defaults.
 
 ## Build and CI
 
-Pinned Flutter **3.47.2** / Dart **3.13.2**; committed `pubspec.lock`. Normal pipelines enforce the lock, run analysis and unit/widget tests, capture actual Flutter-rendered synthetic-data screenshots, generate/check Android/iOS templates, then build an Android debug APK. Only successful `main` pipelines publish commit-addressed preview packages using `CI_JOB_TOKEN`.
+Pinned Flutter **3.47.2** / Dart **3.13.2**; committed `pubspec.lock`. Normal pipelines enforce the lock, run analysis and unit/widget tests in both the default and AI-on lanes (`flutter_checks` and `flutter_ai_checks`), capture actual Flutter-rendered synthetic-data screenshots, generate/check Android/iOS templates, then build the `gitlab`-flavor Android APK (release on protected refs `main` and `v*` tags, debug elsewhere; docs-only merge requests skip the Flutter, native and Android jobs). Only successful `main` pipelines publish commit-addressed preview packages using `CI_JOB_TOKEN`.
 
 ```sh
-./.fvm/flutter_sdk/bin/flutter pub get --enforce-lockfile
-./.fvm/flutter_sdk/bin/flutter analyze --no-pub
-./.fvm/flutter_sdk/bin/flutter test --no-pub
-python3 tool/bootstrap.py
+fvm flutter pub get --enforce-lockfile
+fvm flutter analyze --no-pub
+fvm flutter test --no-pub
+python3 tool/bootstrap.py --flutter .fvm/flutter_sdk/bin/flutter
 python3 tool/android_signing.py configure android/app/build.gradle.kts
-./.fvm/flutter_sdk/bin/flutter build apk --debug --flavor gitlab
+fvm flutter build apk --debug --flavor gitlab
 ```
 
 Launcher icon: `assets/icon/*.png` are rendered from the vector design in `tool/render_icon.py` (`python3 tool/render_icon.py --chromium <chromium or headless_shell>`); `tool/bootstrap.py` and `ci/build_android.sh` turn them into platform icon sets with `flutter_launcher_icons`. Edit the script, not the PNGs.
@@ -77,11 +77,11 @@ Screenshots: `flutter_checks` job artifacts → `ci-output/screenshots/`. They a
 
 The `live_crud_smoke` job runs only in an explicit API-triggered pipeline with `LIVE_SMOKE=1`. The credential must be supplied through a secure mechanism approved for the execution environment. Do not bypass that boundary. The normal APK does not include a test PAT.
 
-A production-client run on 2026-09-21/22 is recorded in the [v0.3 ledger](docs/V0_3_VERIFICATION.md): **33 PASS / 1 FAIL** against an isolated private GitLab.com project. The failure is shared-runner quota (`ci_quota_exceeded`), not a client defect, and the check is still FAIL. `smoke-output/report.json` is not committed. Pipeline retry / cancel / delete did not run in that execution. The smoke was not re-run after the merges.
+A production-client run on 2026-09-21/22 is recorded in the [v0.3 ledger](docs/V0_3_VERIFICATION.md): **33 PASS / 1 FAIL** against an isolated private GitLab.com project. The failure is shared-runner quota (`ci_quota_exceeded`), not a client defect, and the check is still FAIL. `smoke-output/report.json` is not committed. Pipeline retry / cancel / delete did not run in that execution. The smoke was not re-run after the merges. For AI writes, the MR7 sandbox runner (`tool/run_mr7_sandbox.py`, [docs/MR7_SANDBOX.md](docs/MR7_SANDBOX.md)) and the v0.6.0 `gpt-4o-mini` emulator walkthrough on a run-owned private sandbox project are recorded in [Plan and status](docs/PLAN_STATUS.md).
 
 ## Historical specifications
 
-`docs/plan/` preserves the original 105-operation design and acceptance plan. It is a **target specification**, not proof that every operation has been implemented or verified. Earlier G0/R1 documents and package manifests are historical handoffs; the current Git history, CI results, and the v0.2 and v0.3 verification ledgers supersede their status statements.
+The original 105-operation design and acceptance plan was a separate historical handoff artifact (not in this checkout) and is a **target specification**, not proof that every operation has been implemented or verified. Current working design plans live in [`docs/plans/`](docs/plans/) and are tracked in [Plan and status](docs/PLAN_STATUS.md). Earlier G0/R1 documents and package manifests are historical handoffs; [Plan and status](docs/PLAN_STATUS.md), the current Git history, CI results, and the verification ledgers listed in [docs/README.md](docs/README.md) supersede their status statements.
 
 ## License
 
