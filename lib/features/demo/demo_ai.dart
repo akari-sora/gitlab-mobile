@@ -75,7 +75,7 @@ AiChatSessionFactory demoAiSessionFactory({
                   wire: const ResponsesFormat(),
                   config: config,
                   conversationId: conversationId,
-                  appVersion: 'demo',
+                  appVersion: aiClientAppVersion,
                 ),
         appInForeground: aiAppInForeground,
         clientMayStart: aiClientMayStart(session),
