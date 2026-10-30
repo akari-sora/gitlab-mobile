@@ -93,7 +93,7 @@ AiChatSessionFactory demoAiSessionFactory({
 /// page in a few sentences; a request for a comment, a new issue or closing
 /// an issue becomes one tool call, which the app turns into its usual
 /// confirmation card; after the tool result it says whether the change ran.
-/// Every answer is marked as a sample. Nothing is sent anywhere.
+/// Every answer is marked as a sample. No AI provider receives anything.
 final class DemoAiAdapter implements HttpClientAdapter {
   DemoAiAdapter(this.origin);
 

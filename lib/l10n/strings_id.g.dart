@@ -3035,7 +3035,7 @@ const _messagesId = <String>[
   'Kembali ke layar masuk. Perubahan di demo hanya ada di memori dan hilang saat Anda keluar.',
   'Demo hanya bisa membuat isu, menambah komentar, serta menutup atau membuka kembali isu; perubahan ini tidak dilakukan.',
   'Demo (offline)',
-  'Ini demo: tidak ada yang dikirim ke mana pun, dan balasan AI adalah contoh yang ditulis sebelumnya. Dengan akun Anda sendiri, AI memakai penyedia dan kunci yang Anda atur.',
+  'Ini demo: percakapan tidak dikirim ke layanan AI mana pun, dan balasan AI adalah contoh yang ditulis sebelumnya. Dengan akun Anda sendiri, AI memakai penyedia dan kunci yang Anda atur.',
   'Jawaban contoh: ini adalah {subject} di proyek demo. Dengan akun sungguhan, AI membaca halaman ini dan merangkum hal pentingnya; jawaban ini ditulis sebelumnya. Anda bisa meminta saya menambah komentar, membuat isu, atau menutup isu, dan saya akan meminta konfirmasi Anda dulu.',
   'Jawaban contoh: selesai. Perubahan ini hanya ada di memori demo dan hilang saat Anda keluar dari demo.',
   'Jawaban contoh: perubahan tidak dilakukan, jadi data demo tetap seperti semula.',

@@ -3035,7 +3035,7 @@ const _messagesEn = <String>[
   'Returns to the sign-in screen. Changes made in the demo live only in memory and are gone when you leave.',
   'The demo can only create issues, add comments and close or reopen issues; this change was not made.',
   'Demo (offline)',
-  'This is the demo: nothing is sent anywhere, and the AI replies are pre-written samples. With your own account, the AI uses the provider and key you set up.',
+  'This is the demo: the conversation goes to no AI service, and the AI replies are pre-written samples. With your own account, the AI uses the provider and key you set up.',
   'Sample answer: this is {subject} in the demo project. With a real account, the AI reads this page and sums up what matters; this reply was written in advance. You can ask me to add a comment, create an issue or close an issue, and I will ask you to confirm first.',
   'Sample answer: done. The change lives only in the demo’s memory and is gone when you leave the demo.',
   'Sample answer: the change was not made, so the demo data stays as it was.',

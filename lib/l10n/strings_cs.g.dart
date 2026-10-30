@@ -3035,7 +3035,7 @@ const _messagesCs = <String>[
   'Návrat na přihlašovací obrazovku. Změny v demu existují jen v paměti a po ukončení zmizí.',
   'V demu lze jen vytvářet problémy, přidávat komentáře a zavírat nebo znovu otevírat problémy; tato změna nebyla provedena.',
   'Demo (offline)',
-  'Toto je demo: nic se nikam neodesílá a odpovědi AI jsou předem napsané ukázky. S vlastním účtem AI používá poskytovatele a klíč, které si nastavíte.',
+  'Toto je demo: konverzace se neodesílá žádné službě AI a odpovědi AI jsou předem napsané ukázky. S vlastním účtem AI používá poskytovatele a klíč, které si nastavíte.',
   'Ukázková odpověď: toto je {subject} v ukázkovém projektu. Se skutečným účtem AI tuto stránku přečte a shrne to podstatné; tato odpověď je napsaná předem. Můžete mě požádat o přidání komentáře, vytvoření problému nebo zavření problému a já vás nejdřív požádám o potvrzení.',
   'Ukázková odpověď: hotovo. Změna existuje jen v paměti dema a po jeho ukončení zmizí.',
   'Ukázková odpověď: změna nebyla provedena, data dema zůstávají beze změny.',

@@ -3035,7 +3035,7 @@ const _messagesIt = <String>[
   'Torna alla schermata di accesso. Le modifiche fatte nella demo restano solo in memoria e spariscono quando esci.',
   'La demo consente solo di creare issue, aggiungere commenti e chiudere o riaprire issue; questa modifica non è stata applicata.',
   'Demo (offline)',
-  'Questa è la demo: non viene inviato nulla e le risposte dell’IA sono esempi scritti in anticipo. Con il tuo account, l’IA usa il fornitore e la chiave che configuri.',
+  'Questa è la demo: la conversazione non viene inviata a nessun servizio di IA e le risposte dell’IA sono esempi scritti in anticipo. Con il tuo account, l’IA usa il fornitore e la chiave che configuri.',
   'Risposta di esempio: questo è {subject} nel progetto demo. Con un account reale, l’IA legge questa pagina e ne riassume i punti chiave; questa risposta è stata scritta in anticipo. Puoi chiedermi di aggiungere un commento, creare una issue o chiudere una issue, e ti chiederò prima conferma.',
   'Risposta di esempio: fatto. La modifica esiste solo nella memoria della demo e sparisce quando esci.',
   'Risposta di esempio: la modifica non è stata applicata, quindi i dati della demo restano invariati.',

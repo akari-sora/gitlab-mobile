@@ -3033,7 +3033,7 @@
   "demoExitHint": "Kembali ke skrin log masuk. Perubahan dalam demo hanya disimpan dalam memori dan hilang apabila anda keluar.",
   "demoWriteRefused": "Demo hanya boleh mencipta isu, menambah komen, serta menutup atau membuka semula isu; perubahan ini tidak dibuat.",
   "demoProviderName": "Demo (luar talian)",
-  "demoConsentNotice": "Ini demo: tiada apa-apa dihantar ke mana-mana, dan balasan AI ialah contoh yang ditulis lebih awal. Dengan akaun anda sendiri, AI menggunakan penyedia dan kunci yang anda tetapkan.",
+  "demoConsentNotice": "Ini demo: perbualan tidak dihantar ke mana-mana perkhidmatan AI, dan balasan AI ialah contoh yang ditulis lebih awal. Dengan akaun anda sendiri, AI menggunakan penyedia dan kunci yang anda tetapkan.",
   "demoAiExplain": "Jawapan contoh: ini ialah {subject} dalam projek demo. Dengan akaun sebenar, AI membaca halaman ini dan merumuskan perkara penting; jawapan ini ditulis lebih awal. Anda boleh meminta saya menambah komen, mencipta isu atau menutup isu, dan saya akan meminta pengesahan anda dahulu.",
   "demoAiDone": "Jawapan contoh: selesai. Perubahan ini hanya wujud dalam memori demo dan hilang apabila anda keluar daripada demo.",
   "demoAiNotDone": "Jawapan contoh: perubahan tidak dibuat, jadi data demo kekal seperti asal.",

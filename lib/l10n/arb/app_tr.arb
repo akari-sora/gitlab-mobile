@@ -3033,7 +3033,7 @@
   "demoExitHint": "Giriş ekranına döner. Demoda yapılan değişiklikler yalnızca bellekte tutulur ve çıkınca kaybolur.",
   "demoWriteRefused": "Demoda yalnızca sorun oluşturabilir, yorum ekleyebilir ve sorunları kapatıp yeniden açabilirsiniz; bu değişiklik yapılmadı.",
   "demoProviderName": "Demo (çevrimdışı)",
-  "demoConsentNotice": "Bu demo: hiçbir şey hiçbir yere gönderilmez ve AI yanıtları önceden yazılmış örneklerdir. Kendi hesabınızla AI, ayarladığınız sağlayıcıyı ve anahtarı kullanır.",
+  "demoConsentNotice": "Bu demo: konuşma hiçbir AI hizmetine gönderilmez ve AI yanıtları önceden yazılmış örneklerdir. Kendi hesabınızla AI, ayarladığınız sağlayıcıyı ve anahtarı kullanır.",
   "demoAiExplain": "Örnek yanıt: bu, demo projesindeki {subject}. Gerçek bir hesapta AI bu sayfayı okur ve önemli noktaları özetler; bu yanıt önceden yazılmıştır. Benden yorum eklememi, sorun oluşturmamı veya bir sorunu kapatmamı isteyebilirsiniz; önce onayınızı alırım.",
   "demoAiDone": "Örnek yanıt: tamamlandı. Değişiklik yalnızca demonun belleğinde durur ve demodan çıkınca kaybolur.",
   "demoAiNotDone": "Örnek yanıt: değişiklik yapılmadı, demo verileri aynı kaldı.",

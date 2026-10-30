@@ -221,7 +221,7 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
                   // The demo's provider is a script on the device: the
-                  // recipient below never receives anything.
+                  // recipient below never receives the conversation.
                   if (DemoScope.maybeOf(context) != null)
                     _InfoCard(
                       key: const ValueKey('ai-consent-demo'),

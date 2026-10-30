@@ -64,23 +64,29 @@ access* form:
 1. Open the app. On the sign-in screen tap **Try the demo (sample data, no
    account needed)** (試用 Demo（範例資料，不需帳號）).
 2. The full app opens on built-in sample data, with a "Demo · sample data"
-   banner on every page. Nothing is sent to any server. 我的 (Me) › **Exit
-   demo** returns to the sign-in screen and forgets every change.
+   banner on every page. The demo makes no network request except an AI
+   content report you choose to send (step 4). 我的 (Me) › **Exit demo**
+   returns to the sign-in screen and forgets every change.
 3. AI assistant: open Pocket Planner › Files › any file › ⋮ › **Explain
    this file with AI**. Agree on the consent screen, which says that in the
-   demo nothing is sent and the answers are pre-written samples on the
-   device. Tap a suggestion for a sample answer, then ask it to add a comment
+   demo the conversation goes to no AI service and the answers are
+   pre-written samples on the device. Tap a suggestion for a sample answer, then ask it to add a comment
    (for example "Add a comment to #1") to see the confirmation card, approve
    it, and find the comment on issue #1. With a real account the AI uses the
    provider and API key the user sets up; the app has no AI service of its
    own.
+4. The **Report** (回報) action under an AI answer sends a real report in the
+   app, to the developer's Google Form, as it does with a real account; in
+   the demo it carries only sample data and what you type.
 
 The Play build carries the AI assistant (the play flavor builds with
 `--ai-assistant true`; background execution stays off), so step 3 is the Play
 reviewer's path. The demo follows the build's AI gate
 (`MERGELINE_AI_ASSISTANT`): a build without the assistant shows the demo
 without it. In the demo the browser, sharing and downloads are refused, and
-Markdown loads only the demo's own repository images. Store screenshots are
+Markdown loads only the demo's own repository images; the one network request
+the demo makes is an AI content report the user explicitly sends (to the
+developer's Google Form). Store screenshots are
 taken in the demo, so they show no real account.
 
 ## Read-cache data safety

@@ -3035,7 +3035,7 @@ const _messagesVi = <String>[
   'Quay về màn hình đăng nhập. Thay đổi trong bản demo chỉ nằm trong bộ nhớ và sẽ mất khi bạn thoát.',
   'Bản demo chỉ cho phép tạo vấn đề, thêm bình luận và đóng hoặc mở lại vấn đề; thay đổi này chưa được thực hiện.',
   'Demo (ngoại tuyến)',
-  'Đây là bản demo: không có gì được gửi đi đâu cả, và câu trả lời của AI là ví dụ viết sẵn. Với tài khoản của bạn, AI dùng nhà cung cấp và khóa do bạn thiết lập.',
+  'Đây là bản demo: cuộc trò chuyện không được gửi đến dịch vụ AI nào, và câu trả lời của AI là ví dụ viết sẵn. Với tài khoản của bạn, AI dùng nhà cung cấp và khóa do bạn thiết lập.',
   'Câu trả lời mẫu: đây là {subject} trong dự án demo. Với tài khoản thật, AI sẽ đọc trang này và tóm tắt những điểm chính; câu trả lời này được viết sẵn. Bạn có thể nhờ tôi thêm bình luận, tạo vấn đề hoặc đóng vấn đề, và tôi sẽ hỏi bạn xác nhận trước.',
   'Câu trả lời mẫu: xong rồi. Thay đổi này chỉ nằm trong bộ nhớ của bản demo và sẽ mất khi bạn thoát.',
   'Câu trả lời mẫu: thay đổi chưa được thực hiện nên dữ liệu demo vẫn giữ nguyên.',

@@ -3035,7 +3035,7 @@ const _messagesDe = <String>[
   'Zurück zur Anmeldung. Änderungen in der Demo liegen nur im Arbeitsspeicher und sind nach dem Beenden weg.',
   'In der Demo lassen sich nur Issues erstellen, Kommentare hinzufügen und Issues schließen oder wieder öffnen; diese Änderung wurde nicht ausgeführt.',
   'Demo (offline)',
-  'Das ist die Demo: Es wird nichts gesendet, und die Antworten der KI sind vorab geschriebene Beispiele. Mit Ihrem eigenen Konto nutzt die KI den Anbieter und Schlüssel, den Sie einrichten.',
+  'Das ist die Demo: Das Gespräch geht an keinen KI-Dienst, und die Antworten der KI sind vorab geschriebene Beispiele. Mit Ihrem eigenen Konto nutzt die KI den Anbieter und Schlüssel, den Sie einrichten.',
   'Beispielantwort: Das ist {subject} im Demo-Projekt. Mit einem echten Konto liest die KI diese Seite und fasst das Wichtigste zusammen; diese Antwort wurde vorab geschrieben. Sie können mich bitten, einen Kommentar hinzuzufügen, ein Issue zu erstellen oder ein Issue zu schließen – vorher frage ich Sie um Bestätigung.',
   'Beispielantwort: Erledigt. Die Änderung liegt nur im Speicher der Demo und ist nach dem Beenden weg.',
   'Beispielantwort: Die Änderung wurde nicht ausgeführt, die Demodaten bleiben unverändert.',

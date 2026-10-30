@@ -3035,7 +3035,7 @@ const _messagesPl = <String>[
   'Powrót do ekranu logowania. Zmiany w demo są tylko w pamięci i znikają po wyjściu.',
   'W demo można tylko tworzyć zgłoszenia, dodawać komentarze oraz zamykać i ponownie otwierać zgłoszenia; ta zmiana nie została wprowadzona.',
   'Demo (offline)',
-  'To jest demo: nic nie jest nigdzie wysyłane, a odpowiedzi AI to przykłady napisane wcześniej. Na własnym koncie AI korzysta z dostawcy i klucza, które skonfigurujesz.',
+  'To jest demo: rozmowa nie trafia do żadnej usługi AI, a odpowiedzi AI to przykłady napisane wcześniej. Na własnym koncie AI korzysta z dostawcy i klucza, które skonfigurujesz.',
   'Przykładowa odpowiedź: to {subject} w projekcie demo. Na prawdziwym koncie AI czyta tę stronę i streszcza najważniejsze; ta odpowiedź została napisana wcześniej. Możesz poprosić mnie o dodanie komentarza, utworzenie zgłoszenia lub zamknięcie zgłoszenia — najpierw poproszę o potwierdzenie.',
   'Przykładowa odpowiedź: gotowe. Zmiana istnieje tylko w pamięci demo i zniknie po wyjściu z niego.',
   'Przykładowa odpowiedź: zmiana nie została wprowadzona, więc dane demo się nie zmieniły.',

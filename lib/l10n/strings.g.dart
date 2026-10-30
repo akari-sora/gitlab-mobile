@@ -9193,7 +9193,7 @@ final class AppStrings {
   /// Demo（離線）
   String get demoProviderName => language._messages[3032];
 
-  /// 這是 Demo：內容不會傳送到任何地方，AI 的回覆都是預先寫好的範例。登入自己的帳號後，AI 才會使用你自己設定的服務商與金鑰。
+  /// 這是 Demo：對話不會傳送給任何 AI 服務，AI 的回覆都是預先寫好的範例。登入自己的帳號後，AI 才會使用你自己設定的服務商與金鑰。
   String get demoConsentNotice => language._messages[3033];
 
   /// 範例回答：這是 Demo 專案裡的 {subject}。登入真實帳號後，AI 會讀取這一頁的內容並整理重點；這裡顯示的是預先寫好的範例。你可以請我新增留言、建立議題或關閉議題，執行前我會先請你確認。

@@ -13170,7 +13170,7 @@
     "description": "Name of the demo AI provider, which answers on the device",
     "placeholders": {}
   },
-  "demoConsentNotice": "這是 Demo：內容不會傳送到任何地方，AI 的回覆都是預先寫好的範例。登入自己的帳號後，AI 才會使用你自己設定的服務商與金鑰。",
+  "demoConsentNotice": "這是 Demo：對話不會傳送給任何 AI 服務，AI 的回覆都是預先寫好的範例。登入自己的帳號後，AI 才會使用你自己設定的服務商與金鑰。",
   "@demoConsentNotice": {
     "description": "First card of the AI consent dialog in the demo",
     "placeholders": {}

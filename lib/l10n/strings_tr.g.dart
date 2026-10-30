@@ -3035,7 +3035,7 @@ const _messagesTr = <String>[
   'Giriş ekranına döner. Demoda yapılan değişiklikler yalnızca bellekte tutulur ve çıkınca kaybolur.',
   'Demoda yalnızca sorun oluşturabilir, yorum ekleyebilir ve sorunları kapatıp yeniden açabilirsiniz; bu değişiklik yapılmadı.',
   'Demo (çevrimdışı)',
-  'Bu demo: hiçbir şey hiçbir yere gönderilmez ve AI yanıtları önceden yazılmış örneklerdir. Kendi hesabınızla AI, ayarladığınız sağlayıcıyı ve anahtarı kullanır.',
+  'Bu demo: konuşma hiçbir AI hizmetine gönderilmez ve AI yanıtları önceden yazılmış örneklerdir. Kendi hesabınızla AI, ayarladığınız sağlayıcıyı ve anahtarı kullanır.',
   'Örnek yanıt: bu, demo projesindeki {subject}. Gerçek bir hesapta AI bu sayfayı okur ve önemli noktaları özetler; bu yanıt önceden yazılmıştır. Benden yorum eklememi, sorun oluşturmamı veya bir sorunu kapatmamı isteyebilirsiniz; önce onayınızı alırım.',
   'Örnek yanıt: tamamlandı. Değişiklik yalnızca demonun belleğinde durur ve demodan çıkınca kaybolur.',
   'Örnek yanıt: değişiklik yapılmadı, demo verileri aynı kaldı.',

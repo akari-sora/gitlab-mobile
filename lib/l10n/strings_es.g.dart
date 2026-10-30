@@ -3035,7 +3035,7 @@ const _messagesEs = <String>[
   'Vuelve a la pantalla de inicio de sesión. Los cambios hechos en la demo solo están en memoria y desaparecen al salir.',
   'La demo solo permite crear incidencias, añadir comentarios y cerrar o reabrir incidencias; este cambio no se ha hecho.',
   'Demo (sin conexión)',
-  'Esto es la demo: no se envía nada a ningún sitio y las respuestas de la IA son ejemplos escritos de antemano. Con tu propia cuenta, la IA usa el proveedor y la clave que configures.',
+  'Esto es la demo: la conversación no se envía a ningún servicio de IA y las respuestas de la IA son ejemplos escritos de antemano. Con tu propia cuenta, la IA usa el proveedor y la clave que configures.',
   'Respuesta de ejemplo: esto es {subject} del proyecto de demostración. Con una cuenta real, la IA lee esta página y resume lo importante; esta respuesta está escrita de antemano. Puedes pedirme que añada un comentario, cree una incidencia o cierre una incidencia, y te pediré confirmación antes.',
   'Respuesta de ejemplo: hecho. El cambio solo existe en la memoria de la demo y desaparece al salir de ella.',
   'Respuesta de ejemplo: el cambio no se hizo, así que los datos de la demo siguen igual.',

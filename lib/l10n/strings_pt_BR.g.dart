@@ -3035,7 +3035,7 @@ const _messagesPtBr = <String>[
   'Volta para a tela de login. As alterações feitas na demonstração ficam só na memória e somem quando você sai.',
   'A demonstração só permite criar issues, adicionar comentários e fechar ou reabrir issues; esta alteração não foi feita.',
   'Demonstração (offline)',
-  'Esta é a demonstração: nada é enviado a lugar nenhum e as respostas da IA são exemplos escritos com antecedência. Com sua própria conta, a IA usa o provedor e a chave que você configurar.',
+  'Esta é a demonstração: a conversa não é enviada a nenhum serviço de IA e as respostas da IA são exemplos escritos com antecedência. Com sua própria conta, a IA usa o provedor e a chave que você configurar.',
   'Resposta de exemplo: isto é {subject} no projeto de demonstração. Com uma conta real, a IA lê esta página e resume o que importa; esta resposta foi escrita com antecedência. Você pode me pedir para adicionar um comentário, criar uma issue ou fechar uma issue, e eu peço sua confirmação antes.',
   'Resposta de exemplo: pronto. A alteração existe só na memória da demonstração e some quando você sai dela.',
   'Resposta de exemplo: a alteração não foi feita, então os dados da demonstração continuam iguais.',

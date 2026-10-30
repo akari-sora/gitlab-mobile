@@ -3035,7 +3035,7 @@ const _messagesRo = <String>[
   'Revine la ecranul de conectare. Modificările din demo există doar în memorie și dispar când ieși.',
   'În demo poți doar să creezi probleme, să adaugi comentarii și să închizi sau să redeschizi probleme; modificarea nu a fost făcută.',
   'Demo (offline)',
-  'Acesta este demo-ul: nu se trimite nimic nicăieri, iar răspunsurile AI sunt exemple scrise dinainte. Cu propriul cont, AI folosește furnizorul și cheia pe care le configurezi.',
+  'Acesta este demo-ul: conversația nu este trimisă niciunui serviciu AI, iar răspunsurile AI sunt exemple scrise dinainte. Cu propriul cont, AI folosește furnizorul și cheia pe care le configurezi.',
   'Răspuns de exemplu: acesta este {subject} din proiectul demo. Cu un cont real, AI citește această pagină și rezumă ce contează; acest răspuns a fost scris dinainte. Îmi poți cere să adaug un comentariu, să creez o problemă sau să închid o problemă, iar eu îți voi cere mai întâi confirmarea.',
   'Răspuns de exemplu: gata. Modificarea există doar în memoria demo-ului și dispare când ieși din el.',
   'Răspuns de exemplu: modificarea nu a fost făcută, așa că datele demo-ului rămân la fel.',

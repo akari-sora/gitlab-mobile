@@ -3035,7 +3035,7 @@ const _messagesFr = <String>[
   'Revient à l’écran de connexion. Les modifications faites dans la démo restent en mémoire et disparaissent quand vous la quittez.',
   'La démo permet seulement de créer des tickets, d’ajouter des commentaires et de fermer ou rouvrir des tickets ; cette modification n’a pas été faite.',
   'Démo (hors ligne)',
-  'Ceci est la démo : rien n’est envoyé nulle part et les réponses de l’IA sont des exemples rédigés à l’avance. Avec votre propre compte, l’IA utilise le fournisseur et la clé que vous configurez.',
+  'Ceci est la démo : la conversation n’est envoyée à aucun service d’IA et les réponses de l’IA sont des exemples rédigés à l’avance. Avec votre propre compte, l’IA utilise le fournisseur et la clé que vous configurez.',
   'Réponse d’exemple : voici {subject} dans le projet de démo. Avec un vrai compte, l’IA lit cette page et en résume l’essentiel ; cette réponse a été rédigée à l’avance. Vous pouvez me demander d’ajouter un commentaire, de créer un ticket ou de fermer un ticket, et je vous demanderai de confirmer avant.',
   'Réponse d’exemple : c’est fait. La modification n’existe que dans la mémoire de la démo et disparaît quand vous la quittez.',
   'Réponse d’exemple : la modification n’a pas été faite, les données de la démo restent inchangées.',

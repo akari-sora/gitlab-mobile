@@ -1,7 +1,8 @@
 // The Play reviewer's path through the demo, end to end on the production
 // shell: Home → project → issue → MR diff → CI job log → AI chat from a file →
 // scripted answer → a comment proposed on a confirmation card → approved →
-// the comment shows on the issue. Everything is answered on the device.
+// the comment shows on the issue. Every GitLab and AI request is answered on
+// the device; this path sends no AI report (see demo_report_test.dart).
 
 import 'dart:io';
 
@@ -107,7 +108,8 @@ void main() {
     await _tap(tester, find.byTooltip('檔案操作'));
     await _tap(tester, find.text('請 AI 解釋這個檔案'));
 
-    // The consent names the offline demo provider and says nothing is sent.
+    // The consent names the offline demo provider and says no AI service
+    // receives the conversation.
     await _tap(tester, find.text('檢閱並同意'));
     expect(find.byKey(const ValueKey('ai-consent-demo')), findsOneWidget);
     expect(find.text(l10n.demoConsentNotice), findsOneWidget);
@@ -157,7 +159,11 @@ void main() {
     expect(find.text(l10n.demoAiNoteBody), findsOneWidget);
 
     expect(runtime.server.unhandled, isEmpty);
-    expect(network.attempts, 0, reason: 'no real HTTP client was opened');
+    expect(
+      network.attempts,
+      0,
+      reason: 'no real HTTP client was opened (this path sends no AI report)',
+    );
     expect(
       secure.changes,
       isEmpty,

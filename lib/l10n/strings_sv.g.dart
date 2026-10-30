@@ -3035,7 +3035,7 @@ const _messagesSv = <String>[
   'Tillbaka till inloggningen. Ändringar i demon finns bara i minnet och försvinner när du avslutar.',
   'I demon kan du bara skapa ärenden, lägga till kommentarer och stänga eller öppna ärenden igen; ändringen gjordes inte.',
   'Demo (offline)',
-  'Det här är demon: inget skickas någonstans och AI-svaren är exempel som skrivits i förväg. Med ditt eget konto använder AI den leverantör och nyckel du ställer in.',
+  'Det här är demon: samtalet skickas inte till någon AI-tjänst och AI-svaren är exempel som skrivits i förväg. Med ditt eget konto använder AI den leverantör och nyckel du ställer in.',
   'Exempelsvar: det här är {subject} i demoprojektet. Med ett riktigt konto läser AI sidan och sammanfattar det viktigaste; det här svaret är skrivet i förväg. Du kan be mig lägga till en kommentar, skapa ett ärende eller stänga ett ärende, och jag ber dig bekräfta först.',
   'Exempelsvar: klart. Ändringen finns bara i demons minne och försvinner när du avslutar demon.',
   'Exempelsvar: ändringen gjordes inte, så demodata är oförändrade.',
