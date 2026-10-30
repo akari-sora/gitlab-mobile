@@ -3026,5 +3026,21 @@
   "offlineLossSwitchUnknown": "Berganti account akan menghapus semua project offline milik @{username} di perangkat ini; jumlahnya belum dapat dipastikan saat ini.",
   "offlineLossSignOutUnknown": "Keluar akan menghapus semua project offline milik @{username} di perangkat ini; jumlahnya belum dapat dipastikan saat ini.",
   "offlineLossRemoveUnknown": "Menghapus account akan menghapus semua project offline milik @{username} di perangkat ini; jumlahnya belum dapat dipastikan saat ini.",
-  "offlineCacheClearUnknownProjects": "Cache otomatis dan semua project offline account ini akan dihapus (jumlahnya belum dapat dipastikan saat ini). Tindakan ini tidak dapat dibatalkan."
+  "offlineCacheClearUnknownProjects": "Cache otomatis dan semua project offline account ini akan dihapus (jumlahnya belum dapat dipastikan saat ini). Tindakan ini tidak dapat dibatalkan.",
+  "demoTryAction": "Coba demo (data contoh, tanpa akun)",
+  "demoBanner": "Demo · data contoh",
+  "demoExitAction": "Keluar dari demo",
+  "demoExitHint": "Kembali ke layar masuk. Perubahan di demo hanya ada di memori dan hilang saat Anda keluar.",
+  "demoWriteRefused": "Demo hanya bisa membuat isu, menambah komentar, serta menutup atau membuka kembali isu; perubahan ini tidak dilakukan.",
+  "demoProviderName": "Demo (offline)",
+  "demoConsentNotice": "Ini demo: percakapan tidak dikirim ke layanan AI mana pun, dan balasan AI adalah contoh yang ditulis sebelumnya. Dengan akun Anda sendiri, AI memakai penyedia dan kunci yang Anda atur.",
+  "demoAiExplain": "Jawaban contoh: ini adalah {subject} di proyek demo. Dengan akun sungguhan, AI membaca halaman ini dan merangkum hal pentingnya; jawaban ini ditulis sebelumnya. Anda bisa meminta saya menambah komentar, membuat isu, atau menutup isu, dan saya akan meminta konfirmasi Anda dulu.",
+  "demoAiDone": "Jawaban contoh: selesai. Perubahan ini hanya ada di memori demo dan hilang saat Anda keluar dari demo.",
+  "demoAiNotDone": "Jawaban contoh: perubahan tidak dilakukan, jadi data demo tetap seperti semula.",
+  "demoAiNoteBody": "Komentar ini adalah contoh yang ditulis AI di demo.",
+  "demoAiIssueTitle": "Isu contoh yang dibuat AI di demo",
+  "demoKeywordsComment": "komentar,komentari",
+  "demoKeywordsIssue": "buat isu,buatkan isu,isu baru",
+  "demoKeywordsClose": "tutup",
+  "demoOffline": "Tidak tersedia di demo, yang tetap offline"
 }

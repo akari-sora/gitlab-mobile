@@ -32,6 +32,7 @@ import '../ai/ai_run_notification_ui.dart';
 import '../ai/ai_run_registry.dart';
 import '../ai/ai_scope.dart';
 import '../ai/ai_settings_page.dart';
+import '../demo/demo_scope.dart';
 import '../workspace/activity_page.dart';
 import '../workspace/groups_page.dart';
 import '../workspace/project_page.dart';
@@ -108,9 +109,8 @@ class AuthenticatedApp extends StatefulWidget {
   @visibleForTesting
   final MethodChannel? aiRunsChannel;
 
-  /// The journal whose start-up recovery the shell reports; tests pass their
-  /// own, the app uses [AiWriteJournal.instance].
-  @visibleForTesting
+  /// The journal whose start-up recovery the shell reports; tests and the demo
+  /// pass their own, the app uses [AiWriteJournal.instance].
   final AiWriteJournal? writeJournal;
   final LauncherShortcuts shortcuts;
   final ColorScheme? dynamicLight;
@@ -349,7 +349,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             controller: widget.lock,
             child: InAppLinks(
               handler: _links,
-              child: applySystemBars(context, child),
+              child: applySystemBars(context, DemoBanner.wrap(context, child)),
             ),
           ),
           title: appName,
@@ -1375,6 +1375,9 @@ class _MobileShellState extends State<_MobileShell> {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
     final ai = AiScope.maybeOf(context);
+    // The demo has no saved accounts and no device settings to change: it
+    // shows a way back to the sign-in screen instead.
+    final demo = DemoScope.maybeOf(context);
     void push(Widget Function() page) =>
         Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page()));
     return Scaffold(
@@ -1448,6 +1451,22 @@ class _MobileShellState extends State<_MobileShell> {
                 ),
               ],
             ),
+            if (demo != null)
+              HubSection(
+                title: l10n.accountLabel,
+                children: [
+                  HubRow(
+                    key: const ValueKey('demo-exit-row'),
+                    leading: const IconTile(Icons.logout, color: HubColors.slate),
+                    title: l10n.demoExitAction,
+                    subtitle: l10n.demoExitHint,
+                    onTap: _accountLocked
+                        ? null
+                        : () => unawaited(_leave(demo.exit)),
+                  ),
+                ],
+              )
+            else
             HubSection(
               title: l10n.accountLabel,
               children: [
@@ -1505,7 +1524,7 @@ class _MobileShellState extends State<_MobileShell> {
                 ),
               ],
             ),
-            if (ai != null)
+            if (ai != null && demo == null)
               HubSection(
                 children: [
                   HubRow(
@@ -1555,7 +1574,7 @@ class _MobileShellState extends State<_MobileShell> {
                       ? widget.changeDynamicColor
                       : null,
                 ),
-                if (widget.language case final language?)
+                if (widget.language case final language? when demo == null)
                   ListTile(
                     key: const ValueKey('language-row'),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1569,7 +1588,7 @@ class _MobileShellState extends State<_MobileShell> {
                   ),
               ],
             ),
-            if (widget.lock case final lock?)
+            if (widget.lock case final lock? when demo == null)
               ListenableBuilder(
                 listenable: lock,
                 builder: (context, _) => HubSection(
@@ -1606,16 +1625,17 @@ class _MobileShellState extends State<_MobileShell> {
               ),
             if (widget.updates case final updates? when updates.enabled)
               UpdateSection(controller: updates),
-            HubSection(
-              title: l10n.storageAndCacheLabel,
-              children: [
-                ReadCacheSettingsEntry(
-                  cache: session.readCache,
-                  binding: _readCacheBinding(account),
-                ),
-                OfflineProjectsEntry(account: account),
-              ],
-            ),
+            if (demo == null)
+              HubSection(
+                title: l10n.storageAndCacheLabel,
+                children: [
+                  ReadCacheSettingsEntry(
+                    cache: session.readCache,
+                    binding: _readCacheBinding(account),
+                  ),
+                  OfflineProjectsEntry(account: account),
+                ],
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

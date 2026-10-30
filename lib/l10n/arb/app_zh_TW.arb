@@ -13139,5 +13139,90 @@
   "@offlineCacheClearUnknownProjects": {
     "description": "Clear-cache and turn-off confirmation when the offline project inventory is unknown",
     "placeholders": {}
+  },
+  "demoTryAction": "試用 Demo（範例資料，不需帳號）",
+  "@demoTryAction": {
+    "description": "Sign-in screen action that opens the built-in demo",
+    "placeholders": {}
+  },
+  "demoBanner": "Demo · 範例資料",
+  "@demoBanner": {
+    "description": "Marker shown above every demo page",
+    "placeholders": {}
+  },
+  "demoExitAction": "離開 Demo",
+  "@demoExitAction": {
+    "description": "Me tab row that leaves the demo",
+    "placeholders": {}
+  },
+  "demoExitHint": "回到登入畫面。Demo 裡的變更只存在記憶體中，離開後就會消失。",
+  "@demoExitHint": {
+    "description": "Subtitle of the exit-demo row",
+    "placeholders": {}
+  },
+  "demoWriteRefused": "Demo 只能新增議題、新增留言，以及關閉或重新開啟議題；這項變更沒有執行。",
+  "@demoWriteRefused": {
+    "description": "Failure detail when the demo refuses a change",
+    "placeholders": {}
+  },
+  "demoProviderName": "Demo（離線）",
+  "@demoProviderName": {
+    "description": "Name of the demo AI provider, which answers on the device",
+    "placeholders": {}
+  },
+  "demoConsentNotice": "這是 Demo：對話不會傳送給任何 AI 服務，AI 的回覆都是預先寫好的範例。登入自己的帳號後，AI 才會使用你自己設定的服務商與金鑰。",
+  "@demoConsentNotice": {
+    "description": "First card of the AI consent dialog in the demo",
+    "placeholders": {}
+  },
+  "demoAiExplain": "範例回答：這是 Demo 專案裡的 {subject}。登入真實帳號後，AI 會讀取這一頁的內容並整理重點；這裡顯示的是預先寫好的範例。你可以請我新增留言、建立議題或關閉議題，執行前我會先請你確認。",
+  "@demoAiExplain": {
+    "description": "Scripted first AI answer in the demo; {subject} is the page (a file name, an issue or a job)",
+    "placeholders": {
+      "subject": {
+        "type": "String",
+        "example": "README.md"
+      }
+    }
+  },
+  "demoAiDone": "範例回答：完成了。這項變更只存在 Demo 的記憶體中，離開 Demo 後就會消失。",
+  "@demoAiDone": {
+    "description": "Scripted AI answer after a demo change ran",
+    "placeholders": {}
+  },
+  "demoAiNotDone": "範例回答：這項變更沒有執行，Demo 的資料維持不變。",
+  "@demoAiNotDone": {
+    "description": "Scripted AI answer after a demo change was rejected or failed",
+    "placeholders": {}
+  },
+  "demoAiNoteBody": "這則留言是 AI 在 Demo 中寫的範例。",
+  "@demoAiNoteBody": {
+    "description": "Body of the comment the demo AI proposes",
+    "placeholders": {}
+  },
+  "demoAiIssueTitle": "AI 在 Demo 中建立的範例議題",
+  "@demoAiIssueTitle": {
+    "description": "Title of the issue the demo AI proposes",
+    "placeholders": {}
+  },
+  "demoKeywordsComment": "留言,評論,回覆,意見",
+  "@demoKeywordsComment": {
+    "description": "Comma-separated words that make the demo AI propose a comment (matched in lower case; whole words in Latin, Cyrillic and Greek script, anywhere in the text otherwise; never shown)",
+    "placeholders": {}
+  },
+  "demoKeywordsIssue": "建立議題,新增議題,開議題,開一個議題,開個議題",
+  "@demoKeywordsIssue": {
+    "description": "Comma-separated phrases that make the demo AI propose a new issue (matched in lower case; whole words in Latin, Cyrillic and Greek script, anywhere in the text otherwise; never shown)",
+    "placeholders": {}
+  },
+  "demoKeywordsClose": "關閉,關掉,結案",
+  "@demoKeywordsClose": {
+    "description": "Comma-separated words that make the demo AI propose closing an issue (matched in lower case; whole words in Latin, Cyrillic and Greek script, anywhere in the text otherwise; never shown)",
+    "placeholders": {}
+  },
+  "demoOffline": "Demo 不會連線，這裡無法使用",
+  "@demoOffline": {
+    "description": "Snack bar and media note when the demo refuses the browser, sharing, a download or outside media",
+    "placeholders": {}
   }
 }

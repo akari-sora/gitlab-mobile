@@ -3026,5 +3026,21 @@
   "offlineLossSwitchUnknown": "Om du byter konto raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.",
   "offlineLossSignOutUnknown": "Om du loggar ut raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.",
   "offlineLossRemoveUnknown": "Om du tar bort kontot raderas alla offlineprojekt för @{username} på den här enheten; det går inte att bekräfta hur många just nu.",
-  "offlineCacheClearUnknownProjects": "Den automatiska cachen och alla offlineprojekt för det här kontot raderas (det går inte att bekräfta hur många just nu). Det går inte att ångra."
+  "offlineCacheClearUnknownProjects": "Den automatiska cachen och alla offlineprojekt för det här kontot raderas (det går inte att bekräfta hur många just nu). Det går inte att ångra.",
+  "demoTryAction": "Prova demon (exempeldata, inget konto behövs)",
+  "demoBanner": "Demo · exempeldata",
+  "demoExitAction": "Avsluta demon",
+  "demoExitHint": "Tillbaka till inloggningen. Ändringar i demon finns bara i minnet och försvinner när du avslutar.",
+  "demoWriteRefused": "I demon kan du bara skapa ärenden, lägga till kommentarer och stänga eller öppna ärenden igen; ändringen gjordes inte.",
+  "demoProviderName": "Demo (offline)",
+  "demoConsentNotice": "Det här är demon: samtalet skickas inte till någon AI-tjänst och AI-svaren är exempel som skrivits i förväg. Med ditt eget konto använder AI den leverantör och nyckel du ställer in.",
+  "demoAiExplain": "Exempelsvar: det här är {subject} i demoprojektet. Med ett riktigt konto läser AI sidan och sammanfattar det viktigaste; det här svaret är skrivet i förväg. Du kan be mig lägga till en kommentar, skapa ett ärende eller stänga ett ärende, och jag ber dig bekräfta först.",
+  "demoAiDone": "Exempelsvar: klart. Ändringen finns bara i demons minne och försvinner när du avslutar demon.",
+  "demoAiNotDone": "Exempelsvar: ändringen gjordes inte, så demodata är oförändrade.",
+  "demoAiNoteBody": "Den här kommentaren är ett exempel som AI skrev i demon.",
+  "demoAiIssueTitle": "Exempelärende som AI skapade i demon",
+  "demoKeywordsComment": "kommentar,kommentera",
+  "demoKeywordsIssue": "skapa ett ärende,skapa ärende,nytt ärende",
+  "demoKeywordsClose": "stäng,stänga",
+  "demoOffline": "Inte tillgängligt i demon, som är offline"
 }

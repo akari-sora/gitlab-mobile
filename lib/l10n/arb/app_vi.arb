@@ -3026,5 +3026,21 @@
   "offlineLossSwitchUnknown": "Chuyển account sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.",
   "offlineLossSignOutUnknown": "Đăng xuất sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.",
   "offlineLossRemoveUnknown": "Gỡ account sẽ xóa tất cả project ngoại tuyến của @{username} trên thiết bị này; hiện chưa thể xác nhận có bao nhiêu.",
-  "offlineCacheClearUnknownProjects": "Bộ nhớ đệm tự động và tất cả project ngoại tuyến của account này sẽ bị xóa (hiện chưa thể xác nhận có bao nhiêu). Không thể hoàn tác."
+  "offlineCacheClearUnknownProjects": "Bộ nhớ đệm tự động và tất cả project ngoại tuyến của account này sẽ bị xóa (hiện chưa thể xác nhận có bao nhiêu). Không thể hoàn tác.",
+  "demoTryAction": "Dùng thử bản demo (dữ liệu mẫu, không cần tài khoản)",
+  "demoBanner": "Demo · dữ liệu mẫu",
+  "demoExitAction": "Thoát bản demo",
+  "demoExitHint": "Quay về màn hình đăng nhập. Thay đổi trong bản demo chỉ nằm trong bộ nhớ và sẽ mất khi bạn thoát.",
+  "demoWriteRefused": "Bản demo chỉ cho phép tạo vấn đề, thêm bình luận và đóng hoặc mở lại vấn đề; thay đổi này chưa được thực hiện.",
+  "demoProviderName": "Demo (ngoại tuyến)",
+  "demoConsentNotice": "Đây là bản demo: cuộc trò chuyện không được gửi đến dịch vụ AI nào, và câu trả lời của AI là ví dụ viết sẵn. Với tài khoản của bạn, AI dùng nhà cung cấp và khóa do bạn thiết lập.",
+  "demoAiExplain": "Câu trả lời mẫu: đây là {subject} trong dự án demo. Với tài khoản thật, AI sẽ đọc trang này và tóm tắt những điểm chính; câu trả lời này được viết sẵn. Bạn có thể nhờ tôi thêm bình luận, tạo vấn đề hoặc đóng vấn đề, và tôi sẽ hỏi bạn xác nhận trước.",
+  "demoAiDone": "Câu trả lời mẫu: xong rồi. Thay đổi này chỉ nằm trong bộ nhớ của bản demo và sẽ mất khi bạn thoát.",
+  "demoAiNotDone": "Câu trả lời mẫu: thay đổi chưa được thực hiện nên dữ liệu demo vẫn giữ nguyên.",
+  "demoAiNoteBody": "Bình luận này là ví dụ do AI viết trong bản demo.",
+  "demoAiIssueTitle": "Vấn đề mẫu do AI tạo trong bản demo",
+  "demoKeywordsComment": "bình luận,nhận xét",
+  "demoKeywordsIssue": "tạo vấn đề,tạo một vấn đề,vấn đề mới",
+  "demoKeywordsClose": "đóng",
+  "demoOffline": "Không dùng được trong bản demo vì bản demo chạy ngoại tuyến"
 }

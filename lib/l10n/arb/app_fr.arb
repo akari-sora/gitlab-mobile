@@ -3026,5 +3026,21 @@
   "offlineLossSwitchUnknown": "Changer de compte supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.",
   "offlineLossSignOutUnknown": "Se déconnecter supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.",
   "offlineLossRemoveUnknown": "Retirer le compte supprime tous les projets hors ligne de @{username} sur cet appareil ; leur nombre ne peut pas être confirmé pour l’instant.",
-  "offlineCacheClearUnknownProjects": "Le cache automatique et tous les projets hors ligne de ce compte seront supprimés (leur nombre ne peut pas être confirmé pour l’instant). Cette action est irréversible."
+  "offlineCacheClearUnknownProjects": "Le cache automatique et tous les projets hors ligne de ce compte seront supprimés (leur nombre ne peut pas être confirmé pour l’instant). Cette action est irréversible.",
+  "demoTryAction": "Essayer la démo (données d’exemple, sans compte)",
+  "demoBanner": "Démo · données d’exemple",
+  "demoExitAction": "Quitter la démo",
+  "demoExitHint": "Revient à l’écran de connexion. Les modifications faites dans la démo restent en mémoire et disparaissent quand vous la quittez.",
+  "demoWriteRefused": "La démo permet seulement de créer des tickets, d’ajouter des commentaires et de fermer ou rouvrir des tickets ; cette modification n’a pas été faite.",
+  "demoProviderName": "Démo (hors ligne)",
+  "demoConsentNotice": "Ceci est la démo : la conversation n’est envoyée à aucun service d’IA et les réponses de l’IA sont des exemples rédigés à l’avance. Avec votre propre compte, l’IA utilise le fournisseur et la clé que vous configurez.",
+  "demoAiExplain": "Réponse d’exemple : voici {subject} dans le projet de démo. Avec un vrai compte, l’IA lit cette page et en résume l’essentiel ; cette réponse a été rédigée à l’avance. Vous pouvez me demander d’ajouter un commentaire, de créer un ticket ou de fermer un ticket, et je vous demanderai de confirmer avant.",
+  "demoAiDone": "Réponse d’exemple : c’est fait. La modification n’existe que dans la mémoire de la démo et disparaît quand vous la quittez.",
+  "demoAiNotDone": "Réponse d’exemple : la modification n’a pas été faite, les données de la démo restent inchangées.",
+  "demoAiNoteBody": "Ce commentaire est un exemple rédigé par l’IA dans la démo.",
+  "demoAiIssueTitle": "Ticket d’exemple créé par l’IA dans la démo",
+  "demoKeywordsComment": "commentaire,commente,commenter,note",
+  "demoKeywordsIssue": "créer un ticket,crée un ticket,nouveau ticket,ouvre un ticket",
+  "demoKeywordsClose": "ferme,fermer",
+  "demoOffline": "Indisponible dans la démo, qui reste hors ligne"
 }

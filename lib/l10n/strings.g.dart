@@ -9174,4 +9174,52 @@ final class AppStrings {
 
   /// 會刪除自動快取與這個帳號的所有離線專案（目前無法確認有幾個），這個動作無法復原。
   String get offlineCacheClearUnknownProjects => language._messages[3026];
+
+  /// 試用 Demo（範例資料，不需帳號）
+  String get demoTryAction => language._messages[3027];
+
+  /// Demo · 範例資料
+  String get demoBanner => language._messages[3028];
+
+  /// 離開 Demo
+  String get demoExitAction => language._messages[3029];
+
+  /// 回到登入畫面。Demo 裡的變更只存在記憶體中，離開後就會消失。
+  String get demoExitHint => language._messages[3030];
+
+  /// Demo 只能新增議題、新增留言，以及關閉或重新開啟議題；這項變更沒有執行。
+  String get demoWriteRefused => language._messages[3031];
+
+  /// Demo（離線）
+  String get demoProviderName => language._messages[3032];
+
+  /// 這是 Demo：對話不會傳送給任何 AI 服務，AI 的回覆都是預先寫好的範例。登入自己的帳號後，AI 才會使用你自己設定的服務商與金鑰。
+  String get demoConsentNotice => language._messages[3033];
+
+  /// 範例回答：這是 Demo 專案裡的 {subject}。登入真實帳號後，AI 會讀取這一頁的內容並整理重點；這裡顯示的是預先寫好的範例。你可以請我新增留言、建立議題或關閉議題，執行前我會先請你確認。
+  String demoAiExplain(Object? subject) => _format(language, language._messages[3034], {'subject': subject});
+
+  /// 範例回答：完成了。這項變更只存在 Demo 的記憶體中，離開 Demo 後就會消失。
+  String get demoAiDone => language._messages[3035];
+
+  /// 範例回答：這項變更沒有執行，Demo 的資料維持不變。
+  String get demoAiNotDone => language._messages[3036];
+
+  /// 這則留言是 AI 在 Demo 中寫的範例。
+  String get demoAiNoteBody => language._messages[3037];
+
+  /// AI 在 Demo 中建立的範例議題
+  String get demoAiIssueTitle => language._messages[3038];
+
+  /// 留言,評論,回覆,意見
+  String get demoKeywordsComment => language._messages[3039];
+
+  /// 建立議題,新增議題,開議題,開一個議題,開個議題
+  String get demoKeywordsIssue => language._messages[3040];
+
+  /// 關閉,關掉,結案
+  String get demoKeywordsClose => language._messages[3041];
+
+  /// Demo 不會連線，這裡無法使用
+  String get demoOffline => language._messages[3042];
 }

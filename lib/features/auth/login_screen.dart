@@ -12,8 +12,12 @@ import 'session_controller.dart';
 
 import '../../l10n/l10n.dart';
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.session});
+  const LoginScreen({super.key, required this.session, this.onTryDemo});
   final SessionController session;
+
+  /// Opens the built-in demo; the action is hidden when null. A failure is
+  /// shown here like any other.
+  final Future<void> Function()? onTryDemo;
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
@@ -257,6 +261,14 @@ class _LoginScreenState extends State<LoginScreen> {
     await widget.session.connectOAuth(_instance.text);
   }
 
+  Future<void> _tryDemo() async {
+    try {
+      await widget.onTryDemo?.call();
+    } on Object catch (error) {
+      if (mounted) showFailure(context, error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -465,6 +477,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                   },
                             icon: const Icon(Icons.open_in_browser, size: 20),
                             label: Text(l10n.signInWithGitlabAuth),
+                          ),
+                        ],
+                        if (widget.onTryDemo != null) ...[
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            key: const Key('tryDemoButton'),
+                            onPressed: locked ? null : () => unawaited(_tryDemo()),
+                            icon: const Icon(Icons.science_outlined, size: 20),
+                            label: Text(l10n.demoTryAction),
                           ),
                         ],
                         const SizedBox(height: 16),

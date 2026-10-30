@@ -3026,5 +3026,21 @@
   "offlineLossSwitchUnknown": "Zmiana konta usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.",
   "offlineLossSignOutUnknown": "Wylogowanie usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.",
   "offlineLossRemoveUnknown": "Usunięcie konta usuwa wszystkie projekty offline użytkownika @{username} na tym urządzeniu; teraz nie można potwierdzić ich liczby.",
-  "offlineCacheClearUnknownProjects": "Automatyczna pamięć podręczna i wszystkie projekty offline tego konta zostaną usunięte (teraz nie można potwierdzić ich liczby). Tej operacji nie można cofnąć."
+  "offlineCacheClearUnknownProjects": "Automatyczna pamięć podręczna i wszystkie projekty offline tego konta zostaną usunięte (teraz nie można potwierdzić ich liczby). Tej operacji nie można cofnąć.",
+  "demoTryAction": "Wypróbuj demo (przykładowe dane, bez konta)",
+  "demoBanner": "Demo · przykładowe dane",
+  "demoExitAction": "Zakończ demo",
+  "demoExitHint": "Powrót do ekranu logowania. Zmiany w demo są tylko w pamięci i znikają po wyjściu.",
+  "demoWriteRefused": "W demo można tylko tworzyć zgłoszenia, dodawać komentarze oraz zamykać i ponownie otwierać zgłoszenia; ta zmiana nie została wprowadzona.",
+  "demoProviderName": "Demo (offline)",
+  "demoConsentNotice": "To jest demo: rozmowa nie trafia do żadnej usługi AI, a odpowiedzi AI to przykłady napisane wcześniej. Na własnym koncie AI korzysta z dostawcy i klucza, które skonfigurujesz.",
+  "demoAiExplain": "Przykładowa odpowiedź: to {subject} w projekcie demo. Na prawdziwym koncie AI czyta tę stronę i streszcza najważniejsze; ta odpowiedź została napisana wcześniej. Możesz poprosić mnie o dodanie komentarza, utworzenie zgłoszenia lub zamknięcie zgłoszenia — najpierw poproszę o potwierdzenie.",
+  "demoAiDone": "Przykładowa odpowiedź: gotowe. Zmiana istnieje tylko w pamięci demo i zniknie po wyjściu z niego.",
+  "demoAiNotDone": "Przykładowa odpowiedź: zmiana nie została wprowadzona, więc dane demo się nie zmieniły.",
+  "demoAiNoteBody": "Ten komentarz to przykład napisany przez AI w demo.",
+  "demoAiIssueTitle": "Przykładowe zgłoszenie utworzone przez AI w demo",
+  "demoKeywordsComment": "komentarz,komentarza,skomentuj",
+  "demoKeywordsIssue": "utwórz zgłoszenie,nowe zgłoszenie,załóż zgłoszenie",
+  "demoKeywordsClose": "zamknij,zamknąć,zamknijcie",
+  "demoOffline": "Niedostępne w demo, które działa offline"
 }
