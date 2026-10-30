@@ -18,6 +18,7 @@ import '../support/fake_adapter.dart';
 import 'fx_coord_support.dart';
 import 'mr6b3_support.dart';
 import 'mr7_release_gate_support.dart';
+import 'p10_support.dart';
 import 'p6_support.dart';
 import 'release_policy_support.dart';
 
@@ -404,6 +405,726 @@ void main() {
     });
     c.stop('done');
   });
+
+  for (final item in <({
+    String operation,
+    Map<String, Object?> extra,
+    void Function(Map<String, Object?>) verify,
+  })>[
+    (
+      operation: 'addAwardEmoji',
+      extra: {'name': 'thumbsup', 'noteId': 0},
+      verify: (args) {
+        expect(args['name'], 'thumbsup');
+        expect(args, isNot(contains('noteId')));
+      },
+    ),
+    (
+      operation: 'removeAwardEmoji',
+      extra: {'awardId': 8, 'noteId': 0},
+      verify: (args) {
+        expect(args['awardId'], 8);
+        expect(args, isNot(contains('noteId')));
+      },
+    ),
+    (
+      operation: 'updateMergeRequest',
+      extra: {
+        'fields': {
+          'title': 'synthetic',
+          'description': '',
+          'labels': '',
+          'assignee_ids': <int>[0],
+          'reviewer_ids': <int>[0],
+          'milestone_id': 0,
+        },
+      },
+      verify: (args) => expect(args['fields'], {'title': 'synthetic'}),
+    ),
+    (
+      operation: 'createDiscussion',
+      extra: {
+        'body': 'synthetic',
+        'position': {
+          'position_type': 'text',
+          'base_sha': mr7Base,
+          'start_sha': mr7Base,
+          'head_sha': mr7Head,
+          'old_path': 'README.md',
+          'new_path': 'README.md',
+          'old_line': 0,
+          'new_line': 3,
+        },
+      },
+      verify: (args) {
+        expect(args['body'], 'synthetic');
+        expect(args['position'], {
+          'position_type': 'text',
+          'base_sha': mr7Base,
+          'start_sha': mr7Base,
+          'head_sha': mr7Head,
+          'old_path': 'README.md',
+          'new_path': 'README.md',
+          'new_line': 3,
+        });
+      },
+    ),
+    (
+      operation: 'createDraftNote',
+      extra: {
+        'body': 'synthetic',
+        'commitId': '',
+        'position': {
+          'position_type': 'text',
+          'base_sha': '',
+          'start_sha': '',
+          'head_sha': '',
+          'old_path': '',
+          'new_path': '',
+          'old_line': 0,
+          'new_line': 0,
+        },
+      },
+      verify: (args) {
+        expect(args['body'], 'synthetic');
+        expect(args, isNot(contains('commitId')));
+        expect(args, isNot(contains('position')));
+      },
+    ),
+    (
+      operation: 'createLabel',
+      extra: {
+        'fields': {'name': 'synthetic', 'color': '#ffffff', 'description': ''},
+      },
+      verify: (args) =>
+          expect(args['fields'], {'name': 'synthetic', 'color': '#ffffff'}),
+    ),
+    (
+      operation: 'updateLabel',
+      extra: {
+        'fields': {'name': '', 'color': '#000000', 'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'color': '#000000'}),
+    ),
+    (
+      operation: 'createMilestone',
+      extra: {
+        'fields': {
+          'title': 'synthetic',
+          'description': '',
+          'due_date': '',
+          'start_date': '2026-10-01',
+        },
+      },
+      verify: (args) => expect(args['fields'], {
+        'title': 'synthetic',
+        'start_date': '2026-10-01',
+      }),
+    ),
+    (
+      operation: 'updateMilestone',
+      extra: {
+        'fields': {
+          'title': 'synthetic',
+          'description': '',
+          'due_date': '',
+          'start_date': '',
+        },
+      },
+      verify: (args) => expect(args['fields'], {'title': 'synthetic'}),
+    ),
+    (
+      operation: 'moveBoardCard',
+      extra: {
+        'fields': {'labels': '', 'state_event': 'close'},
+      },
+      verify: (args) => expect(args['fields'], {
+        'labels': '',
+        'state_event': 'close',
+      }),
+    ),
+    (
+      operation: 'applySuggestion',
+      extra: {'suggestionId': 5, 'commitMessage': ''},
+      verify: (args) {
+        expect(args['suggestionId'], 5);
+        expect(args, isNot(contains('commitMessage')));
+      },
+    ),
+    (
+      operation: 'updateWorkItemContent',
+      extra: {'title': 'Synthetic title', 'description': ''},
+      verify: (args) {
+        expect(args['title'], 'Synthetic title');
+        expect(args, isNot(contains('description')));
+      },
+    ),
+    (
+      operation: 'updateWorkItemDates',
+      extra: {
+        'mode': 'manual',
+        'startDate': '',
+        'dueDate': '2026-11-01',
+        'clearStart': null,
+      },
+      verify: (args) {
+        expect(args['dueDate'], '2026-11-01');
+        expect(args, isNot(contains('startDate')));
+        expect(args, isNot(contains('clearStart')));
+      },
+    ),
+    (
+      operation: 'updateWorkItemMilestone',
+      extra: {'milestoneTitle': '', 'clearMilestone': true},
+      verify: (args) {
+        expect(args['clearMilestone'], isTrue);
+        expect(args, isNot(contains('milestoneTitle')));
+      },
+    ),
+    (
+      operation: 'updateWorkItemWeight',
+      extra: {'weight': 0, 'clearWeight': null},
+      verify: (args) {
+        expect(args['weight'], 0);
+        expect(args, isNot(contains('clearWeight')));
+      },
+    ),
+    (
+      operation: 'updateGroupWorkItemDates',
+      extra: {
+        'mode': 'manual',
+        'startDate': '',
+        'dueDate': '2026-11-01',
+        'clearStart': null,
+      },
+      verify: (args) {
+        expect(args['dueDate'], '2026-11-01');
+        expect(args, isNot(contains('startDate')));
+        expect(args, isNot(contains('clearStart')));
+      },
+    ),
+    (
+      operation: 'updateGroupWorkItemMilestone',
+      extra: {'milestoneTitle': '', 'clearMilestone': true},
+      verify: (args) {
+        expect(args['clearMilestone'], isTrue);
+        expect(args, isNot(contains('milestoneTitle')));
+      },
+    ),
+    (
+      operation: 'updateGroupWorkItemWeight',
+      extra: {'weight': 0, 'clearWeight': null},
+      verify: (args) {
+        expect(args['weight'], 0);
+        expect(args, isNot(contains('clearWeight')));
+      },
+    ),
+    (
+      operation: 'updateGroupWorkItemContent',
+      extra: {'title': 'Synthetic title', 'description': ''},
+      verify: (args) {
+        expect(args['title'], 'Synthetic title');
+        expect(args, isNot(contains('description')));
+      },
+    ),
+    (
+      operation: 'createTag',
+      extra: {'tag_name': 'v2/test', 'ref': 'main', 'message': ''},
+      verify: (args) {
+        expect(args['tag_name'], 'v2/test');
+        expect(args, isNot(contains('message')));
+      },
+    ),
+    (
+      operation: 'createRelease',
+      extra: {
+        'fields': {
+          'tag_name': 'v1',
+          'name': 'Version One',
+          'description': '',
+        },
+      },
+      verify: (args) => expect(args['fields'], {
+        'tag_name': 'v1',
+        'name': 'Version One',
+      }),
+    ),
+    (
+      operation: 'updateRelease',
+      extra: {
+        'fields': {'name': 'Revised', 'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'name': 'Revised'}),
+    ),
+    (
+      operation: 'mergeRequest',
+      extra: {
+        'squash': false,
+        'autoMerge': null,
+        'removeSourceBranch': null,
+      },
+      verify: (args) {
+        expect(args['squash'], isFalse);
+        expect(args, isNot(contains('autoMerge')));
+        expect(args, isNot(contains('removeSourceBranch')));
+      },
+    ),
+    (
+      operation: 'createPipeline',
+      extra: {
+        'ref': 'feature/test',
+        'variables': <Object?>[
+          {'key': 'BUILD_TARGET', 'value': '', 'variable_type': ''},
+        ],
+      },
+      verify: (args) => expect(args['variables'], [
+        {'key': 'BUILD_TARGET', 'value': ''},
+      ]),
+    ),
+    (
+      operation: 'createSnippet',
+      extra: {'title': 'Snippet', 'description': '', 'visibility': ''},
+      verify: (args) {
+        expect(args['title'], 'Snippet');
+        expect(args, isNot(contains('description')));
+        expect(args, isNot(contains('visibility')));
+      },
+    ),
+    (
+      operation: 'updateSnippetMetadata',
+      extra: {
+        'fields': {'title': 'Revised', 'description': '', 'visibility': ''},
+      },
+      verify: (args) => expect(args['fields'], {'title': 'Revised'}),
+    ),
+    (
+      operation: 'updateSnippetFiles',
+      extra: {
+        'actions': <Object?>[
+          {
+            'action': 'create',
+            'file_path': 'b.txt',
+            'content': '',
+            'previous_path': '',
+            'edits': <Object?>[],
+          },
+        ],
+      },
+      verify: (args) => expect(args['actions'], [
+        {'action': 'create', 'file_path': 'b.txt', 'content': ''},
+      ]),
+    ),
+    (
+      operation: 'createProject',
+      extra: {
+        'name': 'New project',
+        'path': 'new-project',
+        'description': '',
+      },
+      verify: (args) {
+        expect(args['name'], 'New project');
+        expect(args, isNot(contains('description')));
+      },
+    ),
+    (
+      operation: 'editProject',
+      extra: {'name': 'Edited project', 'description': ''},
+      verify: (args) {
+        expect(args['name'], 'Edited project');
+        expect(args, isNot(contains('description')));
+      },
+    ),
+  ]) {
+    test(
+      'placeholder ${item.operation} fields count as not set (gpt-4o-mini)',
+      () async {
+        final row = productionAiLedger.find(item.operation)!;
+        final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
+        addTearDown(h.dispose);
+        final probe = Mr7WriteProbe();
+        final c = h.newCoordinator(
+          scope: mr7WriteScope(row),
+          portFactory: () => probe,
+        );
+        c.beginRun('Requested synthetic action.');
+        c.beginTurn();
+        final call = AiToolCall(
+          id: 'placeholders-${item.operation}',
+          name: item.operation,
+          arguments: {
+            ...mr7WriteArguments[item.operation]!,
+            ...item.extra,
+            'reason': 'Requested synthetic action.',
+          },
+        );
+        expect(await c.propose(call), isNull);
+        item.verify(probe.requests.single.arguments);
+        c.stop('done');
+      },
+    );
+  }
+
+  for (final item in <({
+    String label,
+    String operation,
+    Map<String, Object?> arguments,
+    void Function(Map<String, Object?>) verify,
+  })>[
+    (
+      label: 'moveBoardCard labels clear',
+      operation: 'moveBoardCard',
+      arguments: {
+        'projectId': 9,
+        'iid': 3,
+        'fields': {'labels': ''},
+      },
+      verify: (args) => expect(args['fields'], {'labels': ''}),
+    ),
+    (
+      label: 'updateWorkItemContent description clear',
+      operation: 'updateWorkItemContent',
+      arguments: {'projectId': 9, 'iid': 3, 'description': ''},
+      verify: (args) => expect(args['description'], ''),
+    ),
+    (
+      label: 'updateGroupWorkItemContent description clear',
+      operation: 'updateGroupWorkItemContent',
+      arguments: {'groupId': 7, 'iid': 5, 'description': ''},
+      verify: (args) => expect(args['description'], ''),
+    ),
+    (
+      label: 'updateMilestone due_date clear',
+      operation: 'updateMilestone',
+      arguments: {
+        'projectId': 9,
+        'milestoneId': 8,
+        'fields': {'due_date': ''},
+      },
+      verify: (args) => expect(args['fields'], {'due_date': ''}),
+    ),
+    (
+      label: 'updateMilestone start_date clear',
+      operation: 'updateMilestone',
+      arguments: {
+        'projectId': 9,
+        'milestoneId': 8,
+        'fields': {'start_date': ''},
+      },
+      verify: (args) => expect(args['fields'], {'start_date': ''}),
+    ),
+    (
+      label: 'updateMilestone description clear',
+      operation: 'updateMilestone',
+      arguments: {
+        'projectId': 9,
+        'milestoneId': 8,
+        'fields': {'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'description': ''}),
+    ),
+    (
+      label: 'updateRelease description clear',
+      operation: 'updateRelease',
+      arguments: {
+        'projectId': 9,
+        'tag_name': 'v1',
+        'fields': {'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'description': ''}),
+    ),
+    (
+      label: 'updateLabel description clear',
+      operation: 'updateLabel',
+      arguments: {
+        'projectId': 9,
+        'labelId': 8,
+        'fields': {'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'description': ''}),
+    ),
+    (
+      label: 'updateSnippetMetadata description clear',
+      operation: 'updateSnippetMetadata',
+      arguments: {
+        'projectId': 9,
+        'snippetId': 7,
+        'fields': {'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'description': ''}),
+    ),
+    (
+      label: 'editProject description clear',
+      operation: 'editProject',
+      arguments: {'projectId': 9, 'description': ''},
+      verify: (args) => expect(args['description'], ''),
+    ),
+  ]) {
+    test('single-clear ${item.label} keeps original arguments', () async {
+      final row = productionAiLedger.find(item.operation)!;
+      final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
+      addTearDown(h.dispose);
+      final probe = Mr7WriteProbe();
+      final c = h.newCoordinator(
+        scope: mr7WriteScope(row),
+        portFactory: () => probe,
+      );
+      c.beginRun('Requested synthetic action.');
+      c.beginTurn();
+      final call = AiToolCall(
+        id: 'single-clear-${item.operation}',
+        name: item.operation,
+        arguments: {
+          ...item.arguments,
+          'reason': 'Requested synthetic action.',
+        },
+      );
+      expect(await c.propose(call), isNull);
+      item.verify(probe.requests.single.arguments);
+      c.stop('done');
+    });
+  }
+
+  test('dates placeholder-only request does not become mode-only', () async {
+    for (final operation in [
+      'updateWorkItemDates',
+      'updateGroupWorkItemDates',
+    ]) {
+      final row = productionAiLedger.find(operation)!;
+      final coords = operation == 'updateWorkItemDates'
+          ? <String, Object?>{'projectId': 9, 'iid': 3}
+          : <String, Object?>{'groupId': 7, 'iid': 5};
+      final h = await CoordHarness.create(maxGitLabRequests: row.httpCap * 2);
+      addTearDown(h.dispose);
+      final probe = Mr7WriteProbe();
+      final c = h.newCoordinator(
+        scope: mr7WriteScope(row),
+        portFactory: () => probe,
+      );
+      c.beginRun('Requested synthetic action.');
+      c.beginTurn();
+      final withNull = AiToolCall(
+        id: 'dates-null-$operation',
+        name: operation,
+        arguments: {
+          ...coords,
+          'mode': 'manual',
+          'startDate': '',
+          'dueDate': '',
+          'clearStart': null,
+          'reason': 'Requested synthetic action.',
+        },
+      );
+      expect(await c.propose(withNull), isNull);
+      expect(c.recordedOutcomeFor(withNull.id)?.reasonCode, 'invalidArguments');
+      expect(probe.requests, isEmpty);
+
+      c.beginTurn();
+      final emptyDates = AiToolCall(
+        id: 'dates-empty-$operation',
+        name: operation,
+        arguments: {
+          ...coords,
+          'mode': 'manual',
+          'startDate': '',
+          'dueDate': '',
+          'reason': 'Requested synthetic action.',
+        },
+      );
+      expect(await c.propose(emptyDates), isNull);
+      expect(probe.requests.single.arguments['startDate'], '');
+      expect(probe.requests.single.arguments['dueDate'], '');
+
+      c.beginTurn();
+      final inherited = AiToolCall(
+        id: 'dates-inherited-$operation',
+        name: operation,
+        arguments: {
+          ...coords,
+          'mode': 'inherited',
+          'startDate': '',
+          'clearStart': null,
+          'reason': 'Requested synthetic action.',
+        },
+      );
+      expect(await c.propose(inherited), isNull);
+      expect(probe.requests.last.arguments['mode'], 'inherited');
+      expect(probe.requests.last.arguments, isNot(contains('startDate')));
+      expect(probe.requests.last.arguments, isNot(contains('clearStart')));
+      c.stop('done');
+    }
+  });
+
+  for (final item in <({
+    String label,
+    String operation,
+    Map<String, Object?> arguments,
+  })>[
+    (
+      label: 'updateIssue multi-placeholder',
+      operation: 'updateIssue',
+      arguments: {
+        'projectId': 9,
+        'iid': 3,
+        'fields': {
+          'description': '',
+          'labels': '',
+          'assignee_ids': <int>[],
+          'milestone_id': 0,
+        },
+      },
+    ),
+    (
+      label: 'updateMilestone multi-placeholder',
+      operation: 'updateMilestone',
+      arguments: {
+        'projectId': 9,
+        'milestoneId': 8,
+        'fields': {
+          'description': '',
+          'due_date': '',
+          'start_date': '',
+        },
+      },
+    ),
+    (
+      label: 'updateRelease multi-placeholder',
+      operation: 'updateRelease',
+      arguments: {
+        'projectId': 9,
+        'tag_name': 'v1',
+        'fields': {
+          'name': '',
+          'description': '',
+        },
+      },
+    ),
+    (
+      label: 'updateLabel multi-placeholder',
+      operation: 'updateLabel',
+      arguments: {
+        'projectId': 9,
+        'labelId': 8,
+        'fields': {
+          'name': '',
+          'color': '',
+          'description': '',
+        },
+      },
+    ),
+  ]) {
+    test(
+      '${item.label} keeps stripped empty fields and is rejected by port',
+      () async {
+        final row = productionAiLedger.find(item.operation)!;
+        final h = await CoordHarness.create(maxGitLabRequests: row.httpCap * 2);
+        addTearDown(h.dispose);
+        final probe = Mr7WriteProbe();
+        final c = h.newCoordinator(
+          scope: mr7WriteScope(row),
+          portFactory: () => probe,
+        );
+        c.beginRun('Requested synthetic action.');
+        c.beginTurn();
+        final call = AiToolCall(
+          id: 'multi-placeholder-${item.operation}',
+          name: item.operation,
+          arguments: {
+            ...item.arguments,
+            'reason': 'Requested synthetic action.',
+          },
+        );
+        expect(await c.propose(call), isNull);
+        expect(probe.requests.single.arguments['fields'], isEmpty);
+        c.stop('done');
+
+        final real = h.newCoordinator(scope: mr7WriteScope(row));
+        real.beginRun('Requested synthetic action.');
+        real.beginTurn();
+        expect(await real.propose(call), isNull);
+        expect(real.recordedOutcomeFor(call.id)?.reasonCode, 'validation');
+        expect(h.mutations, 0);
+        real.stop('done');
+      },
+    );
+  }
+
+  test(
+    'updateSnippetFiles strips placeholder content on update and move',
+    () async {
+      final row = productionAiLedger.find('updateSnippetFiles')!;
+      for (final item in <({
+        String label,
+        Map<String, Object?> rawAction,
+        Map<String, Object?> expectedAction,
+      })>[
+        (
+          label: 'update',
+          rawAction: {
+            'action': 'update',
+            'file_path': 'a.txt',
+            'content': '',
+            'previous_path': '',
+            'edits': <Object?>[
+              {'old': 'alpha', 'new': 'beta'},
+            ],
+          },
+          expectedAction: {
+            'action': 'update',
+            'file_path': 'a.txt',
+            'edits': [
+              {'old': 'alpha', 'new': 'beta'},
+            ],
+          },
+        ),
+        (
+          label: 'move',
+          rawAction: {
+            'action': 'move',
+            'file_path': 'b.txt',
+            'previous_path': 'a.txt',
+            'content': '',
+            'edits': <Object?>[],
+          },
+          expectedAction: {
+            'action': 'move',
+            'file_path': 'b.txt',
+            'previous_path': 'a.txt',
+          },
+        ),
+      ]) {
+        final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
+        addTearDown(h.dispose);
+        final probe = Mr7WriteProbe();
+        final c = h.newCoordinator(
+          scope: mr7WriteScope(row),
+          portFactory: () => probe,
+        );
+        c.beginRun('Requested synthetic action.');
+        c.beginTurn();
+        final call = AiToolCall(
+          id: 'snippet-${item.label}',
+          name: 'updateSnippetFiles',
+          arguments: {
+            'projectId': 9,
+            'snippetId': 12,
+            'actions': <Object?>[item.rawAction],
+            'reason': 'Requested synthetic action.',
+          },
+        );
+        expect(await c.propose(call), isNull);
+        final forwarded = probe.requests.single.arguments;
+        expect(forwarded['actions'], [item.expectedAction]);
+        c.stop('done');
+
+        final server = P10Server();
+        addTearDown(server.api.close);
+        final prepared = await server.writePort.prepare(
+          p10Request('updateSnippetFiles', forwarded),
+        );
+        expect(prepared.request.operationId, 'updateSnippetFiles');
+      }
+    },
+  );
 
   test(
     'internal batch has executable arguments but remains model-hidden',

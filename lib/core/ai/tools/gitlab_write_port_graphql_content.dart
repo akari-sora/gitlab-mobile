@@ -9,11 +9,14 @@ extension _GraphqlContentPrepare on GitLabAiWritePort {
     final projectId = _positive(args, 'projectId');
     final iid = _positive(args, 'iid');
     if (!args.containsKey('title') && !args.containsKey('description')) {
-      throw const AiWriteRefused('validation');
+      throw const AiWriteRefused(
+        'validation',
+        'validation: title or description is required',
+      );
     }
     for (final key in ['title', 'description']) {
       if (args.containsKey(key) && args[key] is! String) {
-        throw const AiWriteRefused('validation');
+        throw AiWriteRefused('validation', 'validation: $key must be a string');
       }
     }
     _precheckGraphqlContentText(request);
@@ -137,10 +140,14 @@ extension _GraphqlContentPrepare on GitLabAiWritePort {
 }
 
 void _precheckGraphqlContentText(AiWriteRequest request) {
-  if (!isValidWorkItemContentInput(
-    title: request.arguments['title'] as String?,
-    description: request.arguments['description'] as String?,
-  )) {
-    throw const AiWriteRefused('validation');
+  final title = request.arguments['title'] as String?;
+  final description = request.arguments['description'] as String?;
+  if (!isValidWorkItemContentInput(title: title, description: description)) {
+    throw AiWriteRefused(
+      'validation',
+      title != null && title.trim().isEmpty
+          ? 'validation: title must be a non-empty string'
+          : 'validation: title or description is invalid',
+    );
   }
 }

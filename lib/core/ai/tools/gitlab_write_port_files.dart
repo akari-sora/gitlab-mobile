@@ -336,11 +336,16 @@ String? _fileBranchHead(Map<String, dynamic> branch) {
   return id is String ? id : null;
 }
 
-Never _fileReject(String reason) => throw AiWriteRefused(reason);
+Never _fileReject(String reason, [String? detail]) =>
+    throw AiWriteRefused(reason, detail);
 
 Never _fileReadFailure(ApiFailure failure) {
-  if (failure.kind == FailureKind.tooLarge) _fileReject('fileTooLarge');
-  if (failure.kind == FailureKind.unsupported) _fileReject('binaryFile');
+  if (failure.kind == FailureKind.tooLarge) {
+    _fileReject('fileTooLarge', 'fileTooLarge: path exceeds 2 MiB or 20,000 lines');
+  }
+  if (failure.kind == FailureKind.unsupported) {
+    _fileReject('binaryFile', 'binaryFile: path contains binary content');
+  }
   throw failure;
 }
 
@@ -348,9 +353,11 @@ void _filePath(String path) {
   if (!isValidRepositoryPath(path) || path.isEmpty ||
       path.split('/').any((p) => p.isEmpty || p == '.') ||
       RegExp(r'[\x00-\x1f\x7f-\x9f]').hasMatch(path)) {
-    _fileReject('invalidPath');
+    _fileReject('invalidPath', 'invalidPath: path must be a valid relative repository path');
   }
-  if (isSensitiveRepositoryPath(path)) _fileReject('sensitivePath');
+  if (isSensitiveRepositoryPath(path)) {
+    _fileReject('sensitivePath', 'sensitivePath: path targets a protected or credential file');
+  }
 }
 
 void _fileBranch(String branch) {
@@ -358,7 +365,10 @@ void _fileBranch(String branch) {
       branch.endsWith('.lock') || branch.contains('..') || branch.contains('@{') ||
       RegExp(r'[\x00-\x20\x7f~^:?*\[\]\\]').hasMatch(branch) ||
       branch.split('/').any((p) => p.isEmpty || p.startsWith('.'))) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: branch must be a valid Git branch name',
+    );
   }
 }
 
@@ -367,18 +377,28 @@ bool _fileProtected(Map<String, dynamic> project, Map<String, dynamic> branch) =
     project['default_branch'] is! String || project['default_branch'] == branch['name'];
 
 String _fileContent(Object? content) {
-  if (content is! String) throw const ApiFailure(FailureKind.validation);
-  if (content.contains('\u0000')) _fileReject('binaryFile');
+  if (content is! String) {
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: content must be a string',
+    );
+  }
+  if (content.contains('\u0000')) {
+    _fileReject('binaryFile', 'binaryFile: content must not contain NUL bytes');
+  }
   if (utf8.encode(content).length > 2 * 1024 * 1024 ||
       '\n'.allMatches(content).length + 1 > 20000) {
-    _fileReject('fileTooLarge');
+    _fileReject('fileTooLarge', 'fileTooLarge: content exceeds 2 MiB or 20,000 lines');
   }
   return content;
 }
 
 List<AiExactEdit> _fileExactEdits(Object? value) {
   if (value is! List || value.isEmpty || value.length > 20) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: edits must be a list of 1..20 {old, new} objects',
+    );
   }
   return [for (final item in value) _fileExactEdit(item)];
 }
@@ -386,7 +406,10 @@ List<AiExactEdit> _fileExactEdits(Object? value) {
 AiExactEdit _fileExactEdit(Object? value) {
   if (value is! Map<String, Object?> || value.length != 2 ||
       value['old'] is! String || value['new'] is! String) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: each item in edits must have string fields old and new',
+    );
   }
   return AiExactEdit(value['old']! as String, value['new']! as String);
 }

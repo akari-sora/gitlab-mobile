@@ -155,7 +155,10 @@ extension _ProjectPrepare on GitLabAiWritePort {
         final name = _text(a, 'name');
         final path = _text(a, 'path');
         if (!_projectSegment(path)) {
-          throw const ApiFailure(FailureKind.validation);
+          throw const ApiFailure(
+            FailureKind.validation,
+            validationDetail: 'validation: path must be a valid project slug',
+          );
         }
         final description = _projectOptionalText(a, 'description') ?? '';
         final destination = '${user.username}/$path';
@@ -178,7 +181,10 @@ extension _ProjectPrepare on GitLabAiWritePort {
         });
       case 'editProject':
         if (!a.containsKey('name') && !a.containsKey('description')) {
-          throw const ApiFailure(FailureKind.validation);
+          throw const ApiFailure(
+            FailureKind.validation,
+            validationDetail: 'validation: name or description is required',
+          );
         }
         final name = a.containsKey('name')
             ? _text(a, 'name') : _responseText(p, 'name');

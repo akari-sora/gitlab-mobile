@@ -369,6 +369,8 @@ extension _GraphqlSnoozePrepare on GitLabAiWritePort {
 }
 
 DateTime _snoozeUntil(String value) {
+  const detail =
+      'validation: until must be a future ISO-8601 timestamp with timezone';
   final shape = RegExp(
     r'^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$',
   ).firstMatch(value);
@@ -377,14 +379,14 @@ DateTime _snoozeUntil(String value) {
       parsed == null ||
       !parsed.isUtc ||
       !parsed.isAfter(DateTime.now())) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(FailureKind.validation, validationDetail: detail);
   }
   final year = int.parse(shape.group(1)!);
   final month = int.parse(shape.group(2)!);
   final day = int.parse(shape.group(3)!);
   final date = DateTime.utc(year, month, day);
   if (date.year != year || date.month != month || date.day != day) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(FailureKind.validation, validationDetail: detail);
   }
   final utc = parsed.toUtc();
   final normalized = DateTime.utc(
@@ -396,7 +398,7 @@ DateTime _snoozeUntil(String value) {
     utc.second,
   );
   if (!normalized.isAfter(DateTime.now())) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(FailureKind.validation, validationDetail: detail);
   }
   return normalized;
 }

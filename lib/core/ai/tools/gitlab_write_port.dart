@@ -89,8 +89,9 @@ part 'gitlab_write_port_graphql_snooze.dart';
 
 /// A family preflight refusal; journal failures retain their separate type.
 final class AiWriteRefused implements Exception {
-  const AiWriteRefused(this.reason);
+  const AiWriteRefused(this.reason, [this.detail]);
   final String reason;
+  final String? detail;
 }
 
 /// The caller resolves attachment ids and applies write-text policy first.
@@ -137,8 +138,10 @@ sealed class AiWriteOutcome {
 }
 
 final class AiWriteNotSent extends AiWriteOutcome {
-  const AiWriteNotSent([this.reasonCode = 'notAccepted']) : super(0);
+  const AiWriteNotSent([this.reasonCode = 'notAccepted', this.validationDetail])
+    : super(0);
   final String reasonCode;
+  final String? validationDetail;
 }
 
 /// A method-level noop still has a prepared journal entry, never dispatching.
@@ -157,6 +160,7 @@ final class AiWriteSettled extends AiWriteOutcome {
     this.readbackVerified = false,
     Map<String, Object?> projection = const {},
     this.uploadMarkdown,
+    this.validationDetail,
   }) : writeKeys = Set.unmodifiable(writeKeys),
        dependencyKeys = Set.unmodifiable(dependencyKeys),
        projection = Map.unmodifiable(projection),
@@ -175,6 +179,9 @@ final class AiWriteSettled extends AiWriteOutcome {
   /// holds the upload's secret path, so it is never projected: the
   /// coordinator keeps it in memory for `[[attachment:att-<n>]]` (§3.1).
   final String? uploadMarkdown;
+
+  /// Optional model-facing validation/refusal detail. Never persisted.
+  final String? validationDetail;
 }
 
 /// Return null to use the ordinary REST classification. Failures distinguish
@@ -475,11 +482,18 @@ Future<AiWriteOutcome> _settleGraph(
       error != null &&
       span.blockedBeforeSend != null) {
     final proof = span.blockedBeforeSend;
-    return AiWriteNotSent(switch (proof) {
-      ApiFailure(:final kind) => kind.name,
-      AiWriteRefused(:final reason) => reason,
-      _ => 'graphContractViolation',
-    });
+    return AiWriteNotSent(
+      switch (proof) {
+        ApiFailure(:final kind) => kind.name,
+        AiWriteRefused(:final reason) => reason,
+        _ => 'graphContractViolation',
+      },
+      switch (proof) {
+        ApiFailure(:final validationDetail) => validationDetail,
+        AiWriteRefused(:final detail) => detail,
+        _ => null,
+      },
+    );
   }
   final disposition = classifyGraphWrite(
     prepared.request.operationId,
@@ -498,6 +512,15 @@ Future<AiWriteOutcome> _settleGraph(
               AiWriteRefused(:final reason) => reason,
               ApiFailure(:final kind) => kind.name,
               _ => 'notAccepted',
+            },
+      span.contractViolated ||
+              span.state == GraphWriteSpanState.hookReturned ||
+              (span.state == GraphWriteSpanState.notHooked && error == null)
+          ? null
+          : switch (error) {
+              AiWriteRefused(:final detail) => detail,
+              ApiFailure(:final validationDetail) => validationDetail,
+              _ => null,
             },
     ),
     GraphWriteDisposition.succeeded ||
@@ -981,7 +1004,11 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
         if (op == 'addAwardEmoji') {
           final name = _text(a, 'name');
           if (!RegExp(r'^[a-zA-Z0-9_+-]{1,100}$').hasMatch(name)) {
-            throw const ApiFailure(FailureKind.validation);
+            throw const ApiFailure(
+              FailureKind.validation,
+              validationDetail:
+                  'validation: name must be 1..100 characters of [a-zA-Z0-9_+-]',
+            );
           }
           mutation = () =>
               _api.addAwardEmoji(project, resource!, iid!, name, note: note);
@@ -1031,7 +1058,11 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       case 'setDiscussionResolved':
         final discussion = _text(a, 'discussionId');
         if (!RegExp(r'^[A-Za-z0-9_-]{1,128}$').hasMatch(discussion)) {
-          throw const ApiFailure(FailureKind.validation);
+          throw const ApiFailure(
+            FailureKind.validation,
+            validationDetail:
+                'validation: discussionId must be 1..128 characters of [A-Za-z0-9_-]',
+          );
         }
         final path = [...ownerPath, 'discussions', discussion];
         final value = await _api.record(path);
@@ -1170,7 +1201,11 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
         } else {
           final event = _text(a, 'stateEvent');
           if (!const {'activate', 'close'}.contains(event)) {
-            throw const ApiFailure(FailureKind.validation);
+            throw const ApiFailure(
+              FailureKind.validation,
+              validationDetail:
+                  'validation: stateEvent must be one of activate, close',
+            );
           }
           mutation = () => _api.setMilestoneState(project, id, event);
         }
@@ -1201,7 +1236,11 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
           case 'setBoardSystemListHidden':
             final list = _text(a, 'list');
             if (!const {'backlog', 'closed'}.contains(list)) {
-              throw const ApiFailure(FailureKind.validation);
+              throw const ApiFailure(
+                FailureKind.validation,
+                validationDetail:
+                    'validation: list must be one of backlog, closed',
+              );
             }
             final hidden = _boolean(a, 'hidden');
             mutation = () =>
@@ -1220,7 +1259,11 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
             await _verifyId([...path, 'lists', '$list'], list);
             final position = a['position'];
             if (position is! int || position < 0) {
-              throw const ApiFailure(FailureKind.validation);
+              throw const ApiFailure(
+                FailureKind.validation,
+                validationDetail:
+                    'validation: position must be a non-negative integer',
+              );
             }
             mutation = () => _api.moveBoardList(project, board, list, position);
         }
@@ -1288,6 +1331,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
                 AiJournalState.failedCertain,
                 mutationError.kind.name,
                 status: mutationError.status,
+                validationDetail: mutationError.validationDetail,
               );
             }
             return _resultClassifier?.call(
@@ -1434,6 +1478,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
             ? (gitLabMutation401ResultCode(failure) ?? 'sessionExpired')
             : failure.kind.name,
         status: failure.status,
+        validationDetail: failure.validationDetail,
       );
     } catch (error) {
       return classified(mutationError: error) ??
@@ -1489,6 +1534,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     Map<String, Object?> projection = const {},
     String? uploadMarkdown,
     bool readbackVerified = false,
+    String? validationDetail,
   }) => AiWriteSettled(
     state: state,
     resultCode: code,
@@ -1499,6 +1545,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     dependencyKeys: p.dependencyKeys,
     projection: projection,
     uploadMarkdown: uploadMarkdown,
+    validationDetail: validationDetail,
   );
 
   Future<void> _verifyId(List<String> path, int id) async {
@@ -1598,7 +1645,11 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
           }.contains(k),
         ) ||
         raw['position_type'] != 'text') {
-      throw const ApiFailure(FailureKind.validation);
+      throw const ApiFailure(
+        FailureKind.validation,
+        validationDetail:
+            'validation: position must be an object with position_type=text and valid diff coordinates',
+      );
     }
     final refs = parent['diff_refs'];
     if (refs is! Map ||
@@ -1611,11 +1662,18 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     }
     for (final k in const ['old_line', 'new_line']) {
       if (raw.containsKey(k) && (raw[k] is! int || (raw[k]! as int) <= 0)) {
-        throw const ApiFailure(FailureKind.validation);
+        throw ApiFailure(
+          FailureKind.validation,
+          validationDetail:
+              'validation: position.$k must be a positive integer',
+        );
       }
     }
     if (!raw.containsKey('old_line') && !raw.containsKey('new_line')) {
-      throw const ApiFailure(FailureKind.validation);
+      throw const ApiFailure(
+        FailureKind.validation,
+        validationDetail: 'validation: position requires old_line or new_line',
+      );
     }
     final changes = await _api.record([
       'projects',
@@ -1662,25 +1720,36 @@ bool _granted(
                       resource == 'merge_requests')))),
 );
 
-int _positive(Map<String, Object?> a, String key) {
+int _positive(Map<String, Object?> a, String key, {String prefix = ''}) {
   final value = a[key];
   if (value is! int || value <= 0) {
-    throw const ApiFailure(FailureKind.validation);
+    throw ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: $prefix$key must be a positive integer',
+    );
   }
   return value;
 }
 
-String _text(Map<String, Object?> a, String key) {
+String _text(Map<String, Object?> a, String key, {String prefix = ''}) {
   final value = a[key];
   if (value is! String || value.trim().isEmpty) {
-    throw const ApiFailure(FailureKind.validation);
+    throw ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: $prefix$key must be a non-empty string',
+    );
   }
   return value;
 }
 
-bool _boolean(Map<String, Object?> a, String key) {
+bool _boolean(Map<String, Object?> a, String key, {String prefix = ''}) {
   final value = a[key];
-  if (value is! bool) throw const ApiFailure(FailureKind.validation);
+  if (value is! bool) {
+    throw ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: $prefix$key must be a boolean',
+    );
+  }
   return value;
 }
 
@@ -1736,38 +1805,77 @@ Map<String, Object?> _freezeMap(Map<String, Object?> value) {
   }
 }
 
+final _safeArgumentKey = RegExp(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$');
+
 Map<String, dynamic> _fields(Map<String, Object?> a, String op) {
   final raw = a['fields'];
   final allowed = _fieldKeys(op);
-  if (raw is! Map<String, Object?> ||
-      raw.isEmpty ||
-      allowed == null ||
-      raw.keys.any((key) => !allowed.contains(key))) {
-    throw const ApiFailure(FailureKind.validation);
+  if (raw is! Map<String, Object?> || raw.isEmpty || allowed == null) {
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: fields must be a non-empty object',
+    );
+  }
+  final unknown = raw.keys.where((key) => !allowed.contains(key)).toList();
+  if (unknown.isNotEmpty) {
+    final sorted = allowed.toList()..sort();
+    final clauses = <String>[];
+    for (final k in unknown) {
+      final target = _safeArgumentKey.hasMatch(k)
+          ? 'fields.$k'
+          : 'an unexpected argument';
+      final clause = '$target is not allowed (allowed: ${sorted.join(', ')})';
+      if (clauses.length < 3 && !clauses.contains(clause)) {
+        clauses.add(clause);
+      }
+    }
+    throw ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: ${clauses.join('; ')}',
+    );
   }
   if (op == 'createIssue' &&
       raw.containsKey('issue_type') &&
       !const {'issue', 'task', 'incident'}.contains(raw['issue_type'])) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail:
+          'validation: fields.issue_type must be one of issue, task, incident',
+    );
   }
   if (raw.containsKey('state_event') &&
       !const {'close', 'reopen'}.contains(raw['state_event'])) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail:
+          'validation: fields.state_event must be one of close, reopen',
+    );
   }
   for (final key in const ['assignee_ids', 'reviewer_ids']) {
     if (raw.containsKey(key) &&
         (raw[key] is! List ||
             (raw[key]! as List).any((v) => v is! int || v <= 0))) {
-      throw const ApiFailure(FailureKind.validation);
+      throw ApiFailure(
+        FailureKind.validation,
+        validationDetail:
+            'validation: fields.$key must be a list of positive integers',
+      );
     }
   }
   if (raw.containsKey('confidential') && raw['confidential'] is! bool) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: fields.confidential must be a boolean',
+    );
   }
   if (raw.containsKey('milestone_id') &&
       raw['milestone_id'] != null &&
       (raw['milestone_id'] is! int || (raw['milestone_id']! as int) < 0)) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail:
+          'validation: fields.milestone_id must be a non-negative integer',
+    );
   }
   if (raw.containsKey('severity') &&
       !const {
@@ -1777,7 +1885,11 @@ Map<String, dynamic> _fields(Map<String, Object?> a, String op) {
         'high',
         'critical',
       }.contains(raw['severity'])) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail:
+          'validation: fields.severity must be one of unknown, low, medium, high, critical',
+    );
   }
   for (final key in allowed.difference(const {
     'assignee_ids',
@@ -1786,7 +1898,10 @@ Map<String, dynamic> _fields(Map<String, Object?> a, String op) {
     'milestone_id',
   })) {
     if (raw.containsKey(key) && raw[key] is! String) {
-      throw const ApiFailure(FailureKind.validation);
+      throw ApiFailure(
+        FailureKind.validation,
+        validationDetail: 'validation: fields.$key must be a string',
+      );
     }
   }
   if (op.startsWith('create')) {
@@ -1796,7 +1911,7 @@ Map<String, dynamic> _fields(Map<String, Object?> a, String op) {
             : op == 'createLabel'
             ? const ['name', 'color']
             : const ['title']) {
-      _text(raw, key);
+      _text(raw, key, prefix: 'fields.');
     }
   }
   return Map<String, dynamic>.from(raw);

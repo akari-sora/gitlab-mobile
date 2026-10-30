@@ -26,11 +26,16 @@ extension _SnippetsPrepare on GitLabAiWritePort {
     if (op == 'deleteSnippetFile') _snippetPath(_text(a, 'path'));
     final desiredVisibility = op == 'createSnippet'
         ? a['visibility'] ?? 'private' : fields['visibility'];
+    final allowedVisibilities = snippetVisibilitiesForHost(_api.instance.base.host);
     if (desiredVisibility != null &&
         (desiredVisibility is! String ||
-            !snippetVisibilitiesForHost(_api.instance.base.host)
-                .contains(desiredVisibility))) {
-      throw const ApiFailure(FailureKind.validation);
+            !allowedVisibilities.contains(desiredVisibility))) {
+      final visField = op == 'createSnippet' ? 'visibility' : 'fields.visibility';
+      throw ApiFailure(
+        FailureKind.validation,
+        validationDetail:
+            'validation: $visField must be one of ${allowedVisibilities.join(', ')}',
+      );
     }
     final user = await _api.currentUser();
     if ('${_api.instance.key}#${user.id}' != accountKey) {
@@ -373,7 +378,8 @@ extension _SnippetsPrepare on GitLabAiWritePort {
 
 typedef _SnippetRest = ({ProjectSnippet snippet, Map<String, String> refs, String digest});
 
-Never _snippetRefuse(String reason) => throw AiWriteRefused(reason);
+Never _snippetRefuse(String reason, [String? detail]) =>
+    throw AiWriteRefused(reason, detail);
 
 String _snippetDigest(Object? value) => sha256.convert(utf8.encode(jsonEncode(value))).toString();
 
@@ -390,7 +396,10 @@ int _snippetVisibility(String value) => switch (value) {
 
 String _snippetTitle(Object? value) {
   if (value is! String || value.trim().isEmpty) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: title must be a non-empty string',
+    );
   }
   return value.trim();
 }
@@ -398,32 +407,51 @@ String _snippetTitle(Object? value) {
 void _snippetPath(String path) {
   try {
     if (path != path.trim() || RegExp(r'[\x7f-\x9f]').hasMatch(path)) {
-      _snippetRefuse('snippetPathInvalid');
+      _snippetRefuse(
+        'snippetPathInvalid',
+        'snippetPathInvalid: path must be a valid snippet file path',
+      );
     }
     validatedSnippetPath(path);
   } on ApiFailure {
-    _snippetRefuse('snippetPathInvalid');
+    _snippetRefuse(
+      'snippetPathInvalid',
+      'snippetPathInvalid: path must be a valid snippet file path',
+    );
   }
 }
 
 String _snippetContent(Object? value) {
-  if (value is! String) throw const ApiFailure(FailureKind.validation);
-  if (value.contains('\u0000')) _snippetRefuse('snippetBinary');
+  if (value is! String) {
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: content must be a string',
+    );
+  }
+  if (value.contains('\u0000')) {
+    _snippetRefuse('snippetBinary', 'snippetBinary: content must not contain NUL bytes');
+  }
   if (utf8.encode(value).length > 2 * 1024 * 1024 ||
       '\n'.allMatches(value).length + 1 > 20000) {
-    _snippetRefuse('snippetTooLarge');
+    _snippetRefuse('snippetTooLarge', 'snippetTooLarge: content exceeds 2 MiB or 20,000 lines');
   }
   return value;
 }
 
 List<AiExactEdit> _snippetEdits(Object? value) {
   if (value is! List || value.isEmpty || value.length > 20) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: edits must be a list of 1..20 {old, new} objects',
+    );
   }
   return [for (final edit in value) () {
     if (edit is! Map<String, Object?> || edit.length != 2 ||
         edit['old'] is! String || edit['new'] is! String) {
-      throw const ApiFailure(FailureKind.validation);
+      throw const ApiFailure(
+        FailureKind.validation,
+        validationDetail: 'validation: each item in edits must have string fields old and new',
+      );
     }
     return AiExactEdit(edit['old']! as String, edit['new']! as String);
   }()];
@@ -439,34 +467,60 @@ Map<String, Object?> _snippetFields(Object? value) {
   if (value is! Map<String, Object?> || value.isEmpty ||
       value.keys.any((k) => !const {'title', 'description', 'visibility'}.contains(k)) ||
       value.values.any((v) => v is! String)) {
-    throw const ApiFailure(FailureKind.validation);
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail:
+          'validation: fields must be a non-empty object of string fields (title, description, visibility)',
+    );
   }
   if (value.containsKey('title')) _snippetTitle(value['title']);
   return value;
 }
 
 List<Map<String, Object?>> _snippetActions(Object? value) {
-  if (value is! List || value.isEmpty) throw const ApiFailure(FailureKind.validation);
-  if (value.length > 2) _snippetRefuse('snippetTooManyFiles');
+  if (value is! List || value.isEmpty) {
+    throw const ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: actions must be a non-empty list',
+    );
+  }
+  if (value.length > 2) {
+    _snippetRefuse('snippetTooManyFiles', 'snippetTooManyFiles: actions allows at most 2 items');
+  }
   return [for (final input in value) () {
     if (input is! Map<String, Object?> || input['action'] is! String ||
         input['file_path'] is! String) {
-      throw const ApiFailure(FailureKind.validation);
+      throw const ApiFailure(
+        FailureKind.validation,
+        validationDetail: 'validation: each item in actions requires string fields action and file_path',
+      );
     }
     final allowed = switch (input['action']) {
       'create' => {'action', 'file_path', 'content'},
       'update' => {'action', 'file_path', 'edits'},
       'move' => {'action', 'file_path', 'previous_path'},
-      _ => throw const ApiFailure(FailureKind.validation),
+      _ => throw const ApiFailure(
+        FailureKind.validation,
+        validationDetail: 'validation: actions[].action must be one of create, update, move',
+      ),
     };
     if (input.length != allowed.length || !input.keys.every(allowed.contains)) {
-      throw const ApiFailure(FailureKind.validation);
+      throw ApiFailure(
+        FailureKind.validation,
+        validationDetail:
+            'validation: actions[] for ${input['action']} requires fields ${(allowed.toList()..sort()).join(', ')}',
+      );
     }
     _snippetPath(input['file_path']! as String);
     if (input['action'] == 'create') _snippetContent(input['content']);
     if (input['action'] == 'update') _snippetEdits(input['edits']);
     if (input['action'] == 'move') {
-      if (input['previous_path'] is! String) throw const ApiFailure(FailureKind.validation);
+      if (input['previous_path'] is! String) {
+        throw const ApiFailure(
+          FailureKind.validation,
+          validationDetail: 'validation: actions[].previous_path must be a string',
+        );
+      }
       _snippetPath(input['previous_path']! as String);
     }
     return input;

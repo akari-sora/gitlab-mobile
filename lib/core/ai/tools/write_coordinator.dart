@@ -14,7 +14,8 @@ import '../app_text.dart';
 import '../draft_mentions.dart';
 import '../exact_edit.dart' as exact;
 import '../execution_gate.dart';
-import '../wire/wire_format.dart';
+import '../redaction.dart';
+import '../wire/wire_format.dart' show AiToolSpec;
 import '../write_text.dart' as text;
 import 'gitlab_write_port.dart' as port;
 import 'graphql_write_hooks.dart';
@@ -171,6 +172,8 @@ final class AiWriteOutcome {
     this.webLink,
     this.uploadReferable,
     this.pause,
+    this.modelDetail,
+    this.withheldPrivateKeyContext = false,
   });
 
   final AiJournalState state;
@@ -208,6 +211,11 @@ final class AiWriteOutcome {
   /// form and cannot be quoted).
   final bool? uploadReferable;
 
+  /// Model-facing diagnostic detail for a refused write, wrapped as an
+  /// untrusted, redacted block. Never persisted to history or the write journal.
+  final AiAppText? modelDetail;
+  final bool withheldPrivateKeyContext;
+
   bool get successful => state == AiJournalState.succeeded || noChange;
   String get summary => _singleLine(
     'write ${operationId ?? "operation"}'
@@ -221,8 +229,11 @@ final class AiWriteOutcome {
   AiToolResult toToolResult(AiToolCall call) => AiToolResult.fromData(
     callId: call.id,
     name: call.name,
-    data: AiAppText.plain(summary),
+    data: modelDetail == null
+        ? AiAppText.plain(summary)
+        : AiAppText.join([AiAppText.plain(summary), modelDetail!]),
     isError: !successful,
+    withheldPrivateKeyContext: withheldPrivateKeyContext,
     notExecuted: state == AiJournalState.notExecuted && !noChange,
   );
 }
@@ -1192,7 +1203,18 @@ final class PolicyAiWriteCoordinator
     } on Object catch (error) {
       if (reserved) toolBudget.refundRequests(allowance);
       if (hold != null) await journal.refund(hold);
-      _record(call, _notExecuted(call, _reason(error)), runId: runId);
+      final reason = _reason(error);
+      final detail = _errorModelDetail(call, capability, error, reason);
+      _record(
+        call,
+        _notExecuted(
+          call,
+          reason,
+          modelDetail: detail?.data,
+          withheldPrivateKeyContext: detail?.withheldPrivateKeyContext ?? false,
+        ),
+        runId: runId,
+      );
       return null;
     }
   }
@@ -1753,14 +1775,28 @@ final class PolicyAiWriteCoordinator
         }
         graphTerminalAttempted = false;
         graphTerminalCompleted = graph;
+        final pendingReason = _pendingFailure(pending);
+        final reason =
+            pendingReason ?? boundaryFailure ?? outcome.reasonCode;
+        final detail = pendingReason == null && boundaryFailure == null
+            ? _rawModelDetail(
+                pending.call,
+                ledger.find(pending.call.name),
+                outcome.validationDetail,
+                reason,
+              )
+            : null;
         return _complete(
           pending,
           _notExecuted(
             pending.call,
-            _pendingFailure(pending) ?? boundaryFailure ?? outcome.reasonCode,
+            reason,
             pause: executionPause,
             executionId: proposal.executionId,
             target: _targetSummary(pending.prepared),
+            modelDetail: detail?.data,
+            withheldPrivateKeyContext:
+                detail?.withheldPrivateKeyContext ?? false,
           ),
         );
       }
@@ -1803,6 +1839,14 @@ final class PolicyAiWriteCoordinator
       if (readbackConfirmed) {
         proposal.editedText = null;
       }
+      final settledDetail = settled.state == AiJournalState.succeeded
+          ? null
+          : _rawModelDetail(
+              pending.call,
+              capability,
+              settled.validationDetail,
+              settled.resultCode,
+            );
       return _complete(
         pending,
         AiWriteOutcome(
@@ -1823,6 +1867,9 @@ final class PolicyAiWriteCoordinator
           upload: proposal.upload,
           auditNotice: _auditNotice(proposal, confirmed: confirmed, state: settled.state,
           ),
+          modelDetail: settledDetail?.data,
+          withheldPrivateKeyContext:
+              settledDetail?.withheldPrivateKeyContext ?? false,
         ),
         projection: settled.projection,
       );
@@ -1863,13 +1910,25 @@ final class PolicyAiWriteCoordinator
           if (dispatching || accepted) state = AiJournalState.writeUncertain;
         }
       }
+      final pendingReason = _pendingFailure(pending);
+      final reason = graphJournalFailed
+          ? 'journalUnavailable'
+          : accepted
+          ? 'writeUncertain'
+          : pendingReason ?? _reason(error);
+      final detail = !graphJournalFailed && !accepted && pendingReason == null
+          ? _errorModelDetail(
+              pending.call,
+              ledger.find(pending.call.name),
+              error,
+              reason,
+            )
+          : null;
       return _complete(
         pending,
         AiWriteOutcome(
           state: state,
-          reasonCode: graphJournalFailed ? 'journalUnavailable' : accepted
-              ? 'writeUncertain'
-              : _pendingFailure(pending) ?? _reason(error),
+          reasonCode: reason,
           mutationCount: accepted ? 1 : 0,
           pause: accepted ? null : executionPause,
           executionId: proposal.executionId,
@@ -1879,6 +1938,9 @@ final class PolicyAiWriteCoordinator
           auditNotice: accepted
               ? _auditNotice(proposal, confirmed: confirmed, state: state)
               : null,
+          modelDetail: detail?.data,
+          withheldPrivateKeyContext:
+              detail?.withheldPrivateKeyContext ?? false,
         ),
       );
     } finally {
@@ -2122,6 +2184,8 @@ final class PolicyAiWriteCoordinator
       webLink: result.webLink ?? _webLink(pending, projection),
       uploadReferable: result.uploadReferable,
       pause: result.pause,
+      modelDetail: result.modelDetail,
+      withheldPrivateKeyContext: result.withheldPrivateKeyContext,
     );
     pending.outcome = outcome;
     pending.proposal._outcome = outcome;
@@ -2333,7 +2397,10 @@ final class PolicyAiWriteCoordinator
       for (final match in _attachmentPlaceholder.allMatches(value)) {
         final id = 'att-${match.group(1)}';
         if (_uploadedThisBatch.contains(id)) {
-          throw const _WriteBlocked('attachmentNotUploaded');
+          throw _WriteBlocked(
+            'attachmentNotUploaded',
+            'attachmentNotUploaded: $field references an attachment uploaded in the same batch',
+          );
         }
         final uploaded = attachments?.uploadedProjects(id) ?? const <int>{};
         if (uploaded.isNotEmpty && !uploaded.contains(project)) {
@@ -2373,11 +2440,11 @@ final class PolicyAiWriteCoordinator
       );
       if (outcome.policyBlocked || outcome.finalText == null) {
         // An id with no succeeded upload in this project.
-        throw _WriteBlocked(
-          outcome.blockedReasonCode == text.AiTextBlockCode.attachmentUnknown
-              ? 'attachmentNotUploaded'
-              : outcome.blockedReasonCode,
-        );
+        final code =
+            outcome.blockedReasonCode == text.AiTextBlockCode.attachmentUnknown
+            ? 'attachmentNotUploaded'
+            : outcome.blockedReasonCode;
+        throw _WriteBlocked(code, '$code: $field');
       }
       if (listItem) {
         final mentions = spec.allowIdentifierMentions
@@ -2387,7 +2454,7 @@ final class PolicyAiWriteCoordinator
         // These are exact server identifiers. Sanitizing one could select a
         // different label/user, so policy changes refuse the entire request.
         if (checked != value || (mentions?.mentions.isNotEmpty ?? false)) {
-          throw const _WriteBlocked('policyBlocked');
+          throw _WriteBlocked('policyBlocked', 'policyBlocked: $field');
         }
         return value;
       }
@@ -2421,7 +2488,10 @@ final class PolicyAiWriteCoordinator
           }.contains(request.operationId)) {
         final body = outcome.finalText!.trim();
         if (body.startsWith('/')) {
-          throw const _WriteBlocked(text.AiTextBlockCode.quickAction);
+          throw _WriteBlocked(
+            text.AiTextBlockCode.quickAction,
+            '${text.AiTextBlockCode.quickAction}: $field cannot start with a slash command',
+          );
         }
         return body;
       }
@@ -2632,6 +2702,68 @@ final class PolicyAiWriteCoordinator
     );
   }
 
+  ({AiAppText data, bool withheldPrivateKeyContext})? _errorModelDetail(
+    AiToolCall call,
+    AiCapability? capability,
+    Object error,
+    String reasonCode,
+  ) {
+    final raw = switch (error) {
+      _WriteBlocked(:final detail) => detail,
+      port.AiWriteRefused(:final detail) => detail,
+      ApiFailure(:final validationDetail) => validationDetail,
+      _ => null,
+    };
+    return _rawModelDetail(call, capability, raw, reasonCode);
+  }
+
+  ({AiAppText data, bool withheldPrivateKeyContext})? _rawModelDetail(
+    AiToolCall call,
+    AiCapability? capability,
+    String? rawDetail,
+    String reasonCode,
+  ) {
+    try {
+      final detail =
+          rawDetail ??
+          (capability != null &&
+                  (reasonCode == 'invalidArguments' ||
+                      reasonCode == 'validation')
+              ? _fallbackValidationDetail(call, capability)
+              : null);
+      if (detail == null || detail.trim().isEmpty) return null;
+      final redactor = Redactor(secrets: _WriteSecretSource(knownSecrets));
+      final redacted = redactor.redactSource(
+        detail.replaceAll(_writeAnsi, ''),
+      );
+      final capped = _capValidationDetail(
+        safeDisplay(redacted.text),
+      )?.redact(redactor);
+      if (capped == null || capped.plainText.trim().isEmpty) return null;
+      final sourceOp = capability?.operationId ?? 'unknown';
+      return (
+        data: AiAppText.untrusted(
+          source: 'write:$sourceOp',
+          nonce: 'write-${_nonce()}',
+          body: capped,
+        ),
+        withheldPrivateKeyContext: redacted.withheldPrivateKeyContext,
+      );
+    } on Object {
+      return null;
+    }
+  }
+}
+
+final _writeAnsi = RegExp(
+  r'\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[@-_])',
+);
+
+final class _WriteSecretSource implements KnownSecretsSource {
+  const _WriteSecretSource(this._secrets);
+  final Set<String> Function() _secrets;
+  @override
+  Iterable<String> get current => _secrets();
 }
 
 final class _PendingWrite {
@@ -2702,8 +2834,9 @@ final class _PendingWrite {
 }
 
 final class _WriteBlocked implements Exception {
-  const _WriteBlocked(this.reason);
+  const _WriteBlocked(this.reason, [this.detail]);
   final String reason;
+  final String? detail;
 }
 
 final class _WriteLease {
@@ -2736,6 +2869,8 @@ AiWriteOutcome _notExecuted(
   String? executionId,
   String? target,
   AiExecutionPause? pause,
+  AiAppText? modelDetail,
+  bool withheldPrivateKeyContext = false,
 }) => AiWriteOutcome(
   state: AiJournalState.notExecuted,
   reasonCode: reason,
@@ -2743,6 +2878,8 @@ AiWriteOutcome _notExecuted(
   operationId: call.name,
   target: target,
   pause: pause,
+  modelDetail: modelDetail,
+  withheldPrivateKeyContext: withheldPrivateKeyContext,
 );
 
 final _attachmentPlaceholder = RegExp(r'\[\[attachment:att-([0-9]+)\]\]');
@@ -3235,13 +3372,21 @@ Map<String, AiArgSpec> _argumentSpecs(AiCapability capability) =>
         : capability.arguments;
 
 Map<String, Object?> _arguments(AiToolCall call, AiCapability capability) {
-  final args = call.arguments;
+  final rawArgs = call.arguments;
   final specs = {
     for (final entry in _argumentSpecs(capability).entries)
       if (entry.value.modelVisible) entry.key: entry.value,
     'reason': const AiArgSpec(AiArgType.string),
   };
-  if (args is! Map<String, Object?> || !_validObject(args, specs) ||
+  if (rawArgs is! Map<String, Object?>) {
+    throw const _WriteBlocked('invalidArguments');
+  }
+  final args = _withoutPlaceholderFields(
+    capability.operationId,
+    rawArgs,
+    specs,
+  );
+  if (!_validObject(args, specs) ||
       (args['projectId'] != null && (args['projectId']! as int) < 1) ||
       (args['groupId'] != null && (args['groupId']! as int) < 1) ||
       (capability.scopeClass == AiScopeClass.groupWorkItem &&
@@ -3251,44 +3396,400 @@ Map<String, Object?> _arguments(AiToolCall call, AiCapability capability) {
       (capability.scopeClass != AiScopeClass.groupWorkItem &&
           args.containsKey('groupId')) ||
       (args['iid'] != null && (args['iid']! as int) < 1)) {
-    throw const _WriteBlocked('invalidArguments');
+    throw _WriteBlocked(
+      'invalidArguments',
+      _describeArgumentFailure(args, specs, capability),
+    );
   }
-  return _withoutPlaceholderFields(capability.operationId, args);
+  return args;
 }
 
-// Small models (gpt-4o-mini, 2026-10-30) fill every optional REST issue and
-// merge request field with an empty or zero placeholder; on an update that
-// would clear labels, assignees or the milestone the user never mentioned.
-// Such values count as "not set", in the preview and in the request alike.
-// Clearing goes through the dedicated label, assignee and milestone writes.
+final _safeArgumentKey = RegExp(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$');
+
+String _describeArgumentFailure(
+  Object? args,
+  Map<String, AiArgSpec> specs,
+  AiCapability capability,
+) {
+  try {
+    return _collectArgumentIssues(args, specs, capability) ??
+        'validation: arguments do not match the tool schema';
+  } on Object {
+    return 'validation: arguments do not match the tool schema';
+  }
+}
+
+String? _fallbackValidationDetail(
+  AiToolCall call,
+  AiCapability capability,
+) {
+  final specs = {
+    for (final entry in _argumentSpecs(capability).entries)
+      if (entry.value.modelVisible) entry.key: entry.value,
+    'reason': const AiArgSpec(AiArgType.string),
+  };
+  return _collectArgumentIssues(call.arguments, specs, capability);
+}
+
+String? _collectArgumentIssues(
+  Object? args,
+  Map<String, AiArgSpec> specs,
+  AiCapability capability,
+) {
+  if (args is! Map<String, Object?>) {
+    return 'validation: arguments must be an object';
+  }
+  final issues = <String>[];
+  void addIssue(String issue) {
+    if (issues.length < 3 && !issues.contains(issue)) {
+      issues.add(issue);
+    }
+  }
+
+  if (capability.scopeClass == AiScopeClass.groupWorkItem) {
+    if (args.containsKey('projectId')) {
+      addIssue(
+        'projectId is not allowed for group work item operations (use groupId)',
+      );
+    }
+    if (args['groupId'] is! int || (args['groupId']! as int) < 1) {
+      addIssue('groupId must be a positive integer');
+    }
+    if (args['iid'] is! int || (args['iid']! as int) < 1) {
+      addIssue('iid must be a positive integer');
+    }
+  } else if (args.containsKey('groupId')) {
+    addIssue('groupId is not allowed for this operation');
+  }
+  if (args['projectId'] is int && (args['projectId']! as int) < 1) {
+    addIssue('projectId must be a positive integer');
+  }
+  if (args['iid'] is int && (args['iid']! as int) < 1) {
+    addIssue('iid must be a positive integer');
+  }
+
+  _collectObjectIssues(args, specs, '', addIssue);
+  if (issues.isEmpty) return null;
+  return 'validation: ${issues.join('; ')}';
+}
+
+void _collectObjectIssues(
+  Map<String, Object?> values,
+  Map<String, AiArgSpec> specs,
+  String prefix,
+  void Function(String) addIssue,
+) {
+  final allowedKeys = specs.keys.where((k) => k != 'reason').toList()..sort();
+  for (final key in values.keys) {
+    if (!specs.containsKey(key)) {
+      final allowedHint = allowedKeys.isEmpty
+          ? ''
+          : ' (allowed: ${allowedKeys.join(', ')})';
+      final target = _safeArgumentKey.hasMatch(key)
+          ? '$prefix$key'
+          : 'an unexpected argument';
+      addIssue('$target is not allowed$allowedHint');
+    }
+  }
+  for (final entry in specs.entries) {
+    if (entry.value.required && !values.containsKey(entry.key)) {
+      addIssue(
+        '$prefix${entry.key} is required (${_expectedRule(entry.value)})',
+      );
+    }
+  }
+  for (final entry in values.entries) {
+    final spec = specs[entry.key];
+    if (spec == null) continue;
+    _collectArgIssues(entry.value, spec, '$prefix${entry.key}', addIssue);
+  }
+}
+
+void _collectArgIssues(
+  Object? value,
+  AiArgSpec spec,
+  String path,
+  void Function(String) addIssue,
+) {
+  switch (spec.type) {
+    case AiArgType.string:
+      if (spec.enumValues != null) {
+        if (value is! String || !spec.enumValues!.contains(value)) {
+          addIssue('$path must be one of ${spec.enumValues!.join(', ')}');
+        }
+      } else if (value is! String) {
+        addIssue('$path must be a string');
+      }
+    case AiArgType.integer:
+      if (value is! int) {
+        addIssue('$path must be an integer');
+      }
+    case AiArgType.boolean:
+      if (value is! bool) {
+        addIssue('$path must be a boolean');
+      }
+    case AiArgType.object:
+      if (value is! Map<String, Object?>) {
+        addIssue('$path must be an object');
+      } else {
+        _collectObjectIssues(value, _nestedProperties(spec), '$path.', addIssue);
+      }
+    case AiArgType.integerList:
+      if (value is! List<Object?> || value.any((item) => item is! int)) {
+        addIssue('$path must be a list of integers');
+      }
+    case AiArgType.stringList:
+      if (value is! List<Object?> || value.any((item) => item is! String)) {
+        addIssue('$path must be a list of strings');
+      }
+    case AiArgType.edits:
+    case AiArgType.variables:
+    case AiArgType.suggestionList:
+    case AiArgType.snippetActions:
+      if (value is! List<Object?>) {
+        addIssue('$path must be a list of objects');
+      } else {
+        if (value.length > 20) {
+          addIssue('$path allows at most 20 items');
+        }
+        final nested = _nestedProperties(spec);
+        for (var i = 0; i < value.length; i++) {
+          final item = value[i];
+          if (item is! Map<String, Object?>) {
+            addIssue('$path[$i] must be an object');
+          } else {
+            _collectObjectIssues(item, nested, '$path[$i].', addIssue);
+          }
+        }
+      }
+  }
+}
+
+String _expectedRule(AiArgSpec spec) => switch (spec.type) {
+  AiArgType.string =>
+    spec.enumValues == null
+        ? 'must be a string'
+        : 'must be one of ${spec.enumValues!.join(', ')}',
+  AiArgType.integer => 'must be an integer',
+  AiArgType.boolean => 'must be a boolean',
+  AiArgType.object => 'must be an object',
+  AiArgType.integerList => 'must be a list of integers',
+  AiArgType.stringList => 'must be a list of strings',
+  AiArgType.edits ||
+  AiArgType.variables ||
+  AiArgType.suggestionList ||
+  AiArgType.snippetActions => 'must be a list of objects',
+};
+
+AiAppText? _capValidationDetail(String text) {
+  final single = _singleLine(text).trim();
+  if (single.isEmpty) return null;
+  for (final prefix in const [
+    'validation: GitLab rejected ',
+    'validation: ',
+  ]) {
+    if (single.startsWith(prefix)) {
+      final body = single.substring(prefix.length);
+      final clauses = body
+          .split('; ')
+          .map((c) => _capValidationClause(c, 200))
+          .whereType<AiAppText>()
+          .take(3)
+          .toList();
+      if (clauses.isEmpty) return null;
+      return AiAppText.join([
+        AiAppText.plain(prefix),
+        AiAppText.join(clauses, '; '),
+      ], '');
+    }
+  }
+  final clauses = single
+      .split('; ')
+      .map((c) => _capValidationClause(c, 200))
+      .whereType<AiAppText>()
+      .take(3)
+      .toList();
+  if (clauses.isEmpty) return null;
+  return AiAppText.join(clauses, '; ');
+}
+
+AiAppText? _capValidationClause(String clause, int maxChars) {
+  final trimmed = _singleLine(clause).trim();
+  if (trimmed.isEmpty) return null;
+  final clipped = AiAppText.plain(trimmed).clipped(maxChars, escapeDepth: 1);
+  if (clipped.plainText.length < trimmed.length &&
+      trimmed.contains('allowed: ') &&
+      maxChars > 1) {
+    return AiAppText.join([
+      AiAppText.plain(trimmed).clipped(maxChars - 1, escapeDepth: 1),
+      const AiAppText.plain('…'),
+    ], '');
+  }
+  return clipped;
+}
+
+// Small models (gpt-4o-mini, 2026-10-30) fill every optional argument with an
+// empty, null or zero placeholder. On an update, that would clear or overwrite
+// fields the user never mentioned, or fail optional validation; unless the
+// call would otherwise change nothing, such values count as "not set", in the
+// preview and in the request alike. Clearing a value alongside other edits
+// goes through the dedicated write or the app's UI.
 const _placeholderFieldOperations = {
+  'addAwardEmoji',
+  'removeAwardEmoji',
   'createIssue',
   'updateIssue',
   'createMergeRequest',
   'updateMergeRequest',
+  'createDiscussion',
+  'createDraftNote',
+  'createLabel',
+  'updateLabel',
+  'createMilestone',
+  'updateMilestone',
+  'applySuggestion',
+  'updateWorkItemContent',
+  'updateWorkItemDates',
+  'updateWorkItemMilestone',
+  'updateWorkItemWeight',
+  'updateGroupWorkItemDates',
+  'updateGroupWorkItemMilestone',
+  'updateGroupWorkItemWeight',
+  'updateGroupWorkItemContent',
+  'createTag',
+  'createRelease',
+  'updateRelease',
+  'mergeRequest',
+  'createPipeline',
+  'createSnippet',
+  'updateSnippetMetadata',
+  'updateSnippetFiles',
+  'createProject',
+  'editProject',
 };
+
+const _zeroPlaceholderFields = {
+  'milestone_id',
+  'noteId',
+  'old_line',
+  'new_line',
+};
+
+const _zeroPlaceholderListFields = {
+  'assignee_ids',
+  'reviewer_ids',
+};
+
+bool _isPlaceholderValue(String key, Object? value) =>
+    value == null ||
+    (value is String && value.isEmpty) ||
+    (value is List &&
+        (value.isEmpty ||
+            (_zeroPlaceholderListFields.contains(key) &&
+                value.every((item) => item == 0)))) ||
+    (_zeroPlaceholderFields.contains(key) && value == 0);
 
 Map<String, Object?> _withoutPlaceholderFields(
   String operationId,
   Map<String, Object?> args,
+  Map<String, AiArgSpec> specs,
 ) {
-  final fields = args['fields'];
-  if (!_placeholderFieldOperations.contains(operationId) ||
-      fields is! Map<String, Object?>) {
-    return args;
+  if (!_placeholderFieldOperations.contains(operationId)) return args;
+  var removed = 0;
+  final stripped = _stripPlaceholders(
+    args,
+    specs,
+    onRemove: () => removed++,
+  );
+  if (_wouldChangeAnything(operationId, stripped)) return stripped;
+  return removed == 1 ||
+          operationId == 'updateWorkItemDates' ||
+          operationId == 'updateGroupWorkItemDates'
+      ? args
+      : stripped;
+}
+
+bool _wouldChangeAnything(String operationId, Map<String, Object?> args) =>
+    switch (operationId) {
+      'updateIssue' ||
+      'updateMergeRequest' ||
+      'updateLabel' ||
+      'updateMilestone' ||
+      'updateRelease' ||
+      'updateSnippetMetadata' =>
+        args['fields'] is Map<String, Object?> &&
+            (args['fields']! as Map<String, Object?>).isNotEmpty,
+      'updateWorkItemContent' || 'updateGroupWorkItemContent' =>
+        args.containsKey('title') || args.containsKey('description'),
+      'editProject' =>
+        args.containsKey('name') || args.containsKey('description'),
+      'updateWorkItemDates' || 'updateGroupWorkItemDates' =>
+        args['mode'] == 'inherited' ||
+            args.containsKey('startDate') ||
+            args.containsKey('dueDate') ||
+            args['clearStart'] == true ||
+            args['clearDue'] == true,
+      'updateWorkItemMilestone' || 'updateGroupWorkItemMilestone' =>
+        args.containsKey('milestoneTitle') || args['clearMilestone'] == true,
+      'updateWorkItemWeight' || 'updateGroupWorkItemWeight' =>
+        args.containsKey('weight') || args['clearWeight'] == true,
+      _ => true,
+    };
+
+Map<String, Object?> _stripPlaceholders(
+  Map<String, Object?> values,
+  Map<String, AiArgSpec> specs, {
+  void Function()? onRemove,
+}) {
+  final out = <String, Object?>{};
+  for (final entry in values.entries) {
+    final key = entry.key;
+    final value = entry.value;
+    final spec = specs[key];
+    if (spec == null) {
+      out[key] = value;
+      continue;
+    }
+    if (key != 'reason' &&
+        !(key == 'content' && values['action'] == 'create') &&
+        !spec.required &&
+        _isPlaceholderValue(key, value)) {
+      onRemove?.call();
+      continue;
+    }
+    if (spec.type == AiArgType.object && value is Map<String, Object?>) {
+      final nested = _stripPlaceholders(
+        value,
+        _nestedProperties(spec),
+        onRemove: onRemove,
+      );
+      if (!spec.required &&
+          (nested.isEmpty ||
+              (key == 'position' &&
+                  nested.entries.every(
+                    (e) =>
+                        e.key == 'position_type' ||
+                        _isPlaceholderValue(e.key, e.value),
+                  )))) {
+        continue;
+      }
+      out[key] = nested;
+    } else if ((spec.type == AiArgType.variables ||
+            spec.type == AiArgType.snippetActions) &&
+        value is List<Object?>) {
+      final nested = _nestedProperties(spec);
+      out[key] = <Object?>[
+        for (final item in value)
+          if (item is Map<String, Object?>)
+            _stripPlaceholders(item, nested, onRemove: onRemove)
+          else
+            item,
+      ];
+    } else {
+      out[key] = value;
+    }
   }
-  bool placeholder(String key, Object? value) =>
-      value == null ||
-      (value is String && value.isEmpty) ||
-      (value is List && value.isEmpty) ||
-      (key == 'milestone_id' && value == 0);
-  return {
-    ...args,
-    'fields': {
-      for (final entry in fields.entries)
-        if (!placeholder(entry.key, entry.value)) entry.key: entry.value,
-    },
-  };
+  return out;
 }
 
 bool _validObject(Map<String, Object?> values, Map<String, AiArgSpec> specs) =>

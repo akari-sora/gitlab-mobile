@@ -10,17 +10,17 @@ This page is the single place for **what we are building, in what order, and whe
 
 ## Current state (2026-10-30)
 
-- **Released:** [v0.6.0](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.6.0) on the GitLab channel (`aa47e464`, versionCode 1621).
+- **Released:** [v0.6.1](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.6.1) on the GitLab channel (`c39818e5`, versionCode 1658), after [v0.6.0](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.6.0) (`aa47e464`, 1621). v0.6.1 adds in-app AI reporting (!270), Demo mode (!272) and the Play build with the assistant (!271).
   - The AI assistant is on in gitlab-flavour builds (`MERGELINE_AI_ASSISTANT=true`; background runs off).
   - Every read tool and every model-visible write is released; `batchApplySuggestions` stays hidden.
-  - Installed GitLab-channel builds are offered the update under 我的 › 應用程式更新. The update was tested from v0.5.0 (588).
+  - Installed GitLab-channel builds are offered the update under 我的 › 應用程式更新. The update was tested from v0.5.0 (588) to v0.6.0; for v0.6.1 only the release data the updater reads was checked (anonymous release list and metadata), not a signed-in click-through.
 - **How a release is cut:**
   - Every green `main` pipeline builds the AI-on gitlab release APK, and `publish_preview` (mode `owner`) uploads it to the package registry.
   - A release is a `v*` tag on that commit plus a GitLab release linking the package's APK, `build-metadata.json` and `SHA256SUMS`.
   - Release notes are in Traditional Chinese; v0.6.0 is the template.
 - **Evidence:** both CI lanes, the synthetic sandbox suites and one emulator walkthrough with `gpt-4o-mini` on a run-owned private sandbox project (details in the MR7 row). The per-operation live matrix is NOT_RUN by owner decision.
 - **Not shipped:**
-  - Google Play: the app exists in Play Console but is not submitted yet (see Next steps). The play flavour may carry the assistant; background runs stay off.
+  - Google Play: 0.6.1 (versionCode 7, same commit `c39818e5`, AI on, background off, upload key) is uploaded to the production track as a **draft**; it goes to review after the owner's content rating and price (see Next steps).
   - iOS.
   - Background AI runs (`MERGELINE_AI_BACKGROUND=false`).
 
@@ -82,12 +82,12 @@ In priority order. Steps marked **owner** need the owner in person.
    - **Owner:** the content rating questionnaire (needs the owner's email and the IARC terms) and the price (US$3.99, all countries). Both need the owner in Play Console.
    - **Store listing graphics (2026-10-30):** icon, feature graphic and five phone screenshots (AI confirmation card, AI explanation, MR diff review, CI pipeline, Home), taken in Demo mode on the emulator with a `Demo · 範例資料` banner, saved as a draft.
    - **Code for Play:** in-app AI reporting (!270: the report posts to the developer's Google Form from inside the app; mail/share fallback), Demo mode (sample data, no account, no network except a report the user sends), the Play build guard allowing the assistant, v0.6.1.
-   - **Claude, next:**
-     - `release-preflight`, then a local Play AAB from `main` (AI on, background off, upload key, version 0.6.1+7) to the production track with zh-TW release notes, and submit for review once the owner has done the content rating and price.
+   - **Release (2026-10-30):** AAB built locally from `c39818e5` and uploaded with `gplay release --track production --status draft` (zh-TW release notes). The release APK from the same commit was walked through in Demo mode on the emulator, including a real in-app AI report that reached the Google Form with exactly the previewed fields.
+   - **Next, once the owner has done the content rating and price:** Publishing overview › Send for review (Claude can do it).
 2. **Small-model robustness.** Found in the v0.6.0 walkthrough with `gpt-4o-mini`:
    - **Unrequested changes.** The model sometimes proposes changes nobody asked for; it rewrote an issue title while reopening the issue. Consider marking changed against unchanged fields in the confirmation card.
-   - **Unexplained refusals.** A `validation` refusal reaches the model without the field name, so it retried the same call four times. Return which field failed.
-   - **Placeholder coverage.** Placeholder stripping covers REST issue and MR create/update only (`_withoutPlaceholderFields` in `write_coordinator.dart`). Check the other `fields`-style operations: labels, milestones, snippets and GraphQL work items.
+   - **Unexplained refusals: done (!273).** A refused write now tells the model which field failed and the rule (allowed values, expected type, or GitLab's own field error), redacted and capped, never in the UI, history or journal.
+   - **Placeholder coverage: done (this MR).** Every model-visible write drops optional null/""/[] placeholders (0 only for ids and 1-based lines) before validation; a request that loses exactly one field keeps it as an explicit clear; `moveBoardCard` is never stripped. Residual risk: a lone placeholder for a field the user did not mention is treated as a clear (the confirmation card shows it).
 3. **Optional live evidence.** The live matrix (MR7 breakdown §5) is optional evidence now, not a release gate.
    - Each run leaves one private sandbox project scheduled for deletion for 30 days.
    - Keep each run under the per-user burst limit of about 100 requests.
