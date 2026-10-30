@@ -3629,9 +3629,11 @@ AiAppText? _capValidationClause(String clause, int maxChars) {
 }
 
 // Small models (gpt-4o-mini, 2026-10-30) fill every optional argument with an
-// empty, null or zero placeholder; on an update that would clear or overwrite
-// existing data (or fail optional validation) for fields the user never
-// mentioned. Such values count as "not set" in the preview and request alike.
+// empty, null or zero placeholder. On an update, that would clear or overwrite
+// fields the user never mentioned, or fail optional validation; unless the
+// call would otherwise change nothing, such values count as "not set", in the
+// preview and in the request alike. Clearing a value alongside other edits
+// goes through the dedicated write or the app's UI.
 const _placeholderFieldOperations = {
   'addAwardEmoji',
   'removeAwardEmoji',
@@ -3645,7 +3647,6 @@ const _placeholderFieldOperations = {
   'updateLabel',
   'createMilestone',
   'updateMilestone',
-  'moveBoardCard',
   'applySuggestion',
   'updateWorkItemContent',
   'updateWorkItemDates',
@@ -3694,8 +3695,35 @@ Map<String, Object?> _withoutPlaceholderFields(
   Map<String, AiArgSpec> specs,
 ) {
   if (!_placeholderFieldOperations.contains(operationId)) return args;
-  return _stripPlaceholders(args, specs);
+  final stripped = _stripPlaceholders(args, specs);
+  return _wouldChangeAnything(operationId, stripped) ? stripped : args;
 }
+
+bool _wouldChangeAnything(String operationId, Map<String, Object?> args) =>
+    switch (operationId) {
+      'updateIssue' ||
+      'updateMergeRequest' ||
+      'updateLabel' ||
+      'updateMilestone' ||
+      'updateRelease' ||
+      'updateSnippetMetadata' =>
+        args['fields'] is Map<String, Object?> &&
+            (args['fields']! as Map<String, Object?>).isNotEmpty,
+      'updateWorkItemContent' || 'updateGroupWorkItemContent' =>
+        args.containsKey('title') || args.containsKey('description'),
+      'editProject' =>
+        args.containsKey('name') || args.containsKey('description'),
+      'updateWorkItemDates' || 'updateGroupWorkItemDates' =>
+        args.containsKey('startDate') ||
+            args.containsKey('dueDate') ||
+            args['clearStart'] == true ||
+            args['clearDue'] == true,
+      'updateWorkItemMilestone' || 'updateGroupWorkItemMilestone' =>
+        args.containsKey('milestoneTitle') || args['clearMilestone'] == true,
+      'updateWorkItemWeight' || 'updateGroupWorkItemWeight' =>
+        args.containsKey('weight') || args['clearWeight'] == true,
+      _ => true,
+    };
 
 Map<String, Object?> _stripPlaceholders(
   Map<String, Object?> values,
@@ -3710,7 +3738,10 @@ Map<String, Object?> _stripPlaceholders(
       out[key] = value;
       continue;
     }
-    if (key != 'reason' && !spec.required && _isPlaceholderValue(key, value)) {
+    if (key != 'reason' &&
+        key != 'content' &&
+        !spec.required &&
+        _isPlaceholderValue(key, value)) {
       continue;
     }
     if (spec.type == AiArgType.object && value is Map<String, Object?>) {

@@ -427,6 +427,20 @@ void main() {
       },
     ),
     (
+      operation: 'updateMergeRequest',
+      extra: {
+        'fields': {
+          'title': 'synthetic',
+          'description': '',
+          'labels': '',
+          'assignee_ids': <int>[0],
+          'reviewer_ids': <int>[0],
+          'milestone_id': 0,
+        },
+      },
+      verify: (args) => expect(args['fields'], {'title': 'synthetic'}),
+    ),
+    (
       operation: 'createDiscussion',
       extra: {
         'body': 'synthetic',
@@ -461,27 +475,19 @@ void main() {
         'commitId': '',
         'position': {
           'position_type': 'text',
-          'base_sha': mr7Base,
-          'start_sha': mr7Base,
-          'head_sha': mr7Head,
-          'old_path': 'README.md',
-          'new_path': 'README.md',
+          'base_sha': '',
+          'start_sha': '',
+          'head_sha': '',
+          'old_path': '',
+          'new_path': '',
           'old_line': 0,
-          'new_line': 3,
+          'new_line': 0,
         },
       },
       verify: (args) {
         expect(args['body'], 'synthetic');
         expect(args, isNot(contains('commitId')));
-        expect(args['position'], {
-          'position_type': 'text',
-          'base_sha': mr7Base,
-          'start_sha': mr7Base,
-          'head_sha': mr7Head,
-          'old_path': 'README.md',
-          'new_path': 'README.md',
-          'new_line': 3,
-        });
+        expect(args, isNot(contains('position')));
       },
     ),
     (
@@ -531,7 +537,10 @@ void main() {
       extra: {
         'fields': {'labels': '', 'state_event': 'close'},
       },
-      verify: (args) => expect(args['fields'], {'state_event': 'close'}),
+      verify: (args) => expect(args['fields'], {
+        'labels': '',
+        'state_event': 'close',
+      }),
     ),
     (
       operation: 'applySuggestion',
@@ -649,12 +658,12 @@ void main() {
     (
       operation: 'mergeRequest',
       extra: {
-        'squash': true,
+        'squash': false,
         'autoMerge': null,
         'removeSourceBranch': null,
       },
       verify: (args) {
-        expect(args['squash'], isTrue);
+        expect(args['squash'], isFalse);
         expect(args, isNot(contains('autoMerge')));
         expect(args, isNot(contains('removeSourceBranch')));
       },
@@ -664,11 +673,11 @@ void main() {
       extra: {
         'ref': 'feature/test',
         'variables': <Object?>[
-          {'key': 'BUILD_TARGET', 'value': 'debug', 'variable_type': ''},
+          {'key': 'BUILD_TARGET', 'value': '', 'variable_type': ''},
         ],
       },
       verify: (args) => expect(args['variables'], [
-        {'key': 'BUILD_TARGET', 'value': 'debug'},
+        {'key': 'BUILD_TARGET', 'value': ''},
       ]),
     ),
     (
@@ -694,14 +703,14 @@ void main() {
           {
             'action': 'create',
             'file_path': 'b.txt',
-            'content': 'second\n',
+            'content': '',
             'previous_path': '',
             'edits': <Object?>[],
           },
         ],
       },
       verify: (args) => expect(args['actions'], [
-        {'action': 'create', 'file_path': 'b.txt', 'content': 'second\n'},
+        {'action': 'create', 'file_path': 'b.txt', 'content': ''},
       ]),
     ),
     (
@@ -753,6 +762,179 @@ void main() {
       },
     );
   }
+
+  for (final item in <({
+    String label,
+    String operation,
+    Map<String, Object?> arguments,
+    void Function(Map<String, Object?>) verify,
+  })>[
+    (
+      label: 'moveBoardCard labels clear',
+      operation: 'moveBoardCard',
+      arguments: {
+        'projectId': 9,
+        'iid': 3,
+        'fields': {'labels': ''},
+      },
+      verify: (args) => expect(args['fields'], {'labels': ''}),
+    ),
+    (
+      label: 'updateWorkItemContent description clear',
+      operation: 'updateWorkItemContent',
+      arguments: {'projectId': 9, 'iid': 3, 'description': ''},
+      verify: (args) => expect(args['description'], ''),
+    ),
+    (
+      label: 'updateGroupWorkItemContent description clear',
+      operation: 'updateGroupWorkItemContent',
+      arguments: {'groupId': 7, 'iid': 5, 'description': ''},
+      verify: (args) => expect(args['description'], ''),
+    ),
+    (
+      label: 'updateMilestone due_date clear',
+      operation: 'updateMilestone',
+      arguments: {
+        'projectId': 9,
+        'milestoneId': 8,
+        'fields': {'due_date': ''},
+      },
+      verify: (args) => expect(args['fields'], {'due_date': ''}),
+    ),
+    (
+      label: 'updateMilestone start_date clear',
+      operation: 'updateMilestone',
+      arguments: {
+        'projectId': 9,
+        'milestoneId': 8,
+        'fields': {'start_date': ''},
+      },
+      verify: (args) => expect(args['fields'], {'start_date': ''}),
+    ),
+    (
+      label: 'updateMilestone description clear',
+      operation: 'updateMilestone',
+      arguments: {
+        'projectId': 9,
+        'milestoneId': 8,
+        'fields': {'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'description': ''}),
+    ),
+    (
+      label: 'updateRelease description clear',
+      operation: 'updateRelease',
+      arguments: {
+        'projectId': 9,
+        'tag_name': 'v1',
+        'fields': {'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'description': ''}),
+    ),
+    (
+      label: 'updateLabel description clear',
+      operation: 'updateLabel',
+      arguments: {
+        'projectId': 9,
+        'labelId': 8,
+        'fields': {'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'description': ''}),
+    ),
+    (
+      label: 'updateSnippetMetadata description clear',
+      operation: 'updateSnippetMetadata',
+      arguments: {
+        'projectId': 9,
+        'snippetId': 7,
+        'fields': {'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'description': ''}),
+    ),
+    (
+      label: 'editProject description clear',
+      operation: 'editProject',
+      arguments: {'projectId': 9, 'description': ''},
+      verify: (args) => expect(args['description'], ''),
+    ),
+  ]) {
+    test('single-clear ${item.label} keeps original arguments', () async {
+      final row = productionAiLedger.find(item.operation)!;
+      final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
+      addTearDown(h.dispose);
+      final probe = Mr7WriteProbe();
+      final c = h.newCoordinator(
+        scope: mr7WriteScope(row),
+        portFactory: () => probe,
+      );
+      c.beginRun('Requested synthetic action.');
+      c.beginTurn();
+      final call = AiToolCall(
+        id: 'single-clear-${item.operation}',
+        name: item.operation,
+        arguments: {
+          ...item.arguments,
+          'reason': 'Requested synthetic action.',
+        },
+      );
+      expect(await c.propose(call), isNull);
+      item.verify(probe.requests.single.arguments);
+      c.stop('done');
+    });
+  }
+
+  test('dates placeholder-only request does not become mode-only', () async {
+    for (final operation in [
+      'updateWorkItemDates',
+      'updateGroupWorkItemDates',
+    ]) {
+      final row = productionAiLedger.find(operation)!;
+      final coords = operation == 'updateWorkItemDates'
+          ? <String, Object?>{'projectId': 9, 'iid': 3}
+          : <String, Object?>{'groupId': 7, 'iid': 5};
+      final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
+      addTearDown(h.dispose);
+      final probe = Mr7WriteProbe();
+      final c = h.newCoordinator(
+        scope: mr7WriteScope(row),
+        portFactory: () => probe,
+      );
+      c.beginRun('Requested synthetic action.');
+      c.beginTurn();
+      final withNull = AiToolCall(
+        id: 'dates-null-$operation',
+        name: operation,
+        arguments: {
+          ...coords,
+          'mode': 'manual',
+          'startDate': '',
+          'dueDate': '',
+          'clearStart': null,
+          'reason': 'Requested synthetic action.',
+        },
+      );
+      expect(await c.propose(withNull), isNull);
+      expect(c.recordedOutcomeFor(withNull.id)?.reasonCode, 'invalidArguments');
+      expect(probe.requests, isEmpty);
+
+      c.beginTurn();
+      final emptyDates = AiToolCall(
+        id: 'dates-empty-$operation',
+        name: operation,
+        arguments: {
+          ...coords,
+          'mode': 'manual',
+          'startDate': '',
+          'dueDate': '',
+          'reason': 'Requested synthetic action.',
+        },
+      );
+      expect(await c.propose(emptyDates), isNull);
+      expect(probe.requests.single.arguments['startDate'], '');
+      expect(probe.requests.single.arguments['dueDate'], '');
+      c.stop('done');
+    }
+  });
 
   test(
     'internal batch has executable arguments but remains model-hidden',
