@@ -99,7 +99,11 @@ Future<Map<String, Object?>> _run(
   );
 }
 
-void _boundary(Map<String, Object?> receipt, {bool cleanup = true}) {
+void _boundary(
+  Map<String, Object?> receipt, {
+  bool cleanup = true,
+  bool terminal = false,
+}) {
   expect(receipt['transport'], 'synthetic');
   expect(receipt['policy'], 'candidate');
   expect(receipt['evidenceClass'], 'CANDIDATE_ONLY');
@@ -122,6 +126,17 @@ void _boundary(Map<String, Object?> receipt, {bool cleanup = true}) {
     isTrue,
   );
   expect(receipt['quarantined'], !cleanup);
+  if (terminal) {
+    // The AI deletion was the terminal case: the finalizer never re-deletes
+    // and never supplies deletion evidence.
+    expect(_part(receipt, 'cleanup'), {
+      'status': 'NOT_RUN',
+      'accepted': false,
+      'deletionVerified': false,
+      'reason': 'terminalScenario',
+    });
+    return;
+  }
   expect(_part(receipt, 'cleanup')['status'], cleanup ? 'PASS' : 'NOT_RUN');
   if (cleanup) {
     expect(_part(receipt, 'cleanup')['deletionVerified'], isTrue);
@@ -225,7 +240,9 @@ Future<AiTierDecision> _preparedDecision(
         allBound: true,
         intentAuthorizesLowRisk: true,
       ),
-      target: prepared.bindingTargets.single,
+      target: prepared.bindingTargets.singleWhere(
+        (t) => t.kind == c.scenario!.targetKind,
+      ),
       facts: prepared.facts,
       arguments: arguments,
       typedName: prepared.confirmName,
@@ -523,6 +540,94 @@ void main() {
     }
   });
 
+  test('wave 3c opens 15 variants: 44 executable and 141 closed', () {
+    expect(_executable, hasLength(44));
+    expect(_cases.length - _executable.length, 141);
+    final reopened = {
+      for (final variant in [
+        'ordinary-ref',
+        'default-ref',
+        'protected-ref',
+        'ci-config',
+      ]) ...{'b3-deleteFile-$variant', 'b3-applySuggestion-$variant'},
+      'b3-deleteBoardList-owned-fixture',
+      'b3-publishDraftNotes-whole-batch',
+      'b3-publishDraftNotes-external-drafts',
+      'b3-publishDraftNotes-batch-20',
+      'b3-cancelAutoMerge-deprecated-fallback',
+      'b3-deleteProject-terminal-deleted',
+      'b3-createSnippet-new-nonprivate',
+    };
+    expect(reopened, hasLength(15));
+    for (final id in reopened) {
+      final c = _cases.singleWhere((c) => c.id == id);
+      expect(c.scenario?.captureEffects, isTrue, reason: id);
+      expect(c.tier, isIn(['T3', 'T4', 'hardLine']), reason: id);
+    }
+    // Only the deprecated cancel fallback may dispatch twice.
+    for (final c in _executable) {
+      final twice = c.id == 'b3-cancelAutoMerge-deprecated-fallback';
+      expect(c.scenario!.expectedMutations, twice ? 2 : 1, reason: c.id);
+      expect(c.scenario!.maxMutations, twice ? 2 : 1, reason: c.id);
+    }
+    // Variants a wave 3c witness cannot honestly cover keep a typed reason.
+    const closed = {
+      'b3-playPipelineSchedule-empty-parameters': (
+        Mr7ClosureCause.observerUnavailable,
+        'scheduleParametersUnproven',
+      ),
+      'b3-deleteProject-retention-pending': (
+        Mr7ClosureCause.observerUnavailable,
+        'retentionRenameUnbound',
+      ),
+      'b3-applySuggestion-suggestion-version': (
+        Mr7ClosureCause.releasePolicy,
+        'suggestionVersionRefused',
+      ),
+      'b3-deleteFile-same-field-upload-roundtrip': (
+        Mr7ClosureCause.releasePolicy,
+        'uploadFieldNotApplicable',
+      ),
+      'b3-applySuggestion-same-field-upload-roundtrip': (
+        Mr7ClosureCause.releasePolicy,
+        'uploadFieldNotApplicable',
+      ),
+      'b3-cancelAutoMerge-409-no-change': (
+        Mr7ClosureCause.fixtureUnavailable,
+        'noChangeFixtureUnproven',
+      ),
+      'b3-deletePackage-owned-registry-fixture': (
+        Mr7ClosureCause.fixtureUnavailable,
+        'registryFixtureUnavailable',
+      ),
+    };
+    for (final entry in closed.entries) {
+      final c = _cases.singleWhere((c) => c.id == entry.key);
+      expect(c.scenario, isNull, reason: entry.key);
+      expect(c.refusal!.cause, entry.value.$1, reason: entry.key);
+      expect(c.refusal!.code, entry.value.$2, reason: entry.key);
+    }
+    // No closure still claims a seam that wave 3a or 3c delivered.
+    for (final c in _cases.where((c) => c.scenario == null)) {
+      expect(
+        c.refusal!.code,
+        isNot(
+          isIn([
+            'secondaryEffectObserverMissing',
+            'publishedNotesUnbound',
+            'legacyCancelObserverMissing',
+            'terminalParentObserverMissing',
+            'nonprivateContentObserverMissing',
+            'schedulePipelineUnbound',
+            'fileHeadReadNotSupported',
+            'fragmentCheckerNotWired',
+          ]),
+        ),
+        reason: c.id,
+      );
+    }
+  });
+
   for (final c in _executable) {
     test('${c.id} proves API confirm write independent readback', () async {
       final proposals = <Mr7HostProposal>[];
@@ -547,7 +652,7 @@ void main() {
         }),
       );
       expect(receipt['status'], 'PASS');
-      expect(row['mutationCount'], 1);
+      expect(row['mutationCount'], c.scenario!.expectedMutations);
       expect(row['readback'], 'PASS');
       expect(row['observerRequests'], greaterThan(0));
       expect(row['fixtureDigest'], matches(RegExp(r'^[0-9a-f]{64}$')));
@@ -571,7 +676,7 @@ void main() {
         expect(proposals.first.requiredTypedName, isNull);
       }
       if (typed) expect(row['typedInputMatches'], isTrue);
-      expect(fixture!.mutations, hasLength(1));
+      expect(fixture!.mutations, hasLength(c.scenario!.expectedMutations));
       if (c.operation == 'mergeRequest') {
         expect(
           (fixture!.mutations.single.data! as Map)['squash'],
@@ -586,6 +691,12 @@ void main() {
       if (['pipelineAction', 'jobAction'].contains(c.operation)) {
         expect(fixture!.mutations.single.data, isEmpty);
       }
+      if (c.operation == 'publishDraftNotes') {
+        // The sandbox creates no draft in the conversation segment, so every
+        // publication carries the production foreign-draft confirmation.
+        expect(row['confirmationReasons'], ['foreignDraftsInPublish']);
+        expect(fixture!.drafts, isEmpty);
+      }
       expect(row['outcome'], 'succeeded');
       expect(
         fixture!.server.requests.any(
@@ -593,7 +704,7 @@ void main() {
         ),
         isFalse,
       );
-      _boundary(receipt);
+      _boundary(receipt, terminal: c.operation == 'deleteProject');
     });
 
     test('${c.id} rejects an outside-sandbox observer', () async {
@@ -606,8 +717,12 @@ void main() {
                 final root = r.requestOptions.uri.path.endsWith(
                   '/projects/909',
                 );
-                if (_afterWrite(r, f) &&
-                    (!root || c.operation == 'editProject')) {
+                final inventory = r.requestOptions.uri.path.endsWith(
+                  '/users/7/projects',
+                );
+                if ((_afterWrite(r, f) &&
+                        (!root || c.operation == 'editProject')) ||
+                    (f.mutations.isNotEmpty && inventory)) {
                   if (r.data is Map) {
                     r.data = {...r.data as Map, 'project_id': 777};
                   } else if (r.data is List) {
@@ -623,7 +738,10 @@ void main() {
         },
       );
       _notVerified(receipt);
-      expect(_rows(receipt).single['mutationCount'], 1);
+      expect(
+        _rows(receipt).single['mutationCount'],
+        c.scenario!.expectedMutations,
+      );
     });
   }
 
@@ -1151,6 +1269,16 @@ void main() {
     _case('jobAction', 'retry'),
     _case('jobAction', 'play'),
     _case('editProject', 'description'),
+    for (final variant in [
+      'ordinary-ref',
+      'default-ref',
+      'protected-ref',
+      'ci-config',
+    ]) ...[_case('deleteFile', variant), _case('applySuggestion', variant)],
+    _case('deleteBoardList', 'owned-fixture'),
+    _case('cancelAutoMerge', 'deprecated-fallback'),
+    _case('deleteProject', 'terminal-deleted'),
+    _case('createSnippet', 'new-nonprivate'),
   ]) {
     test('${c.id} computes its tier from production prepared facts', () async {
       final server = Mr7SyntheticGitLab();
@@ -1563,4 +1691,231 @@ void main() {
       },
     );
   }
+
+  // Wave 3c family regressions: the acknowledgement and production readback
+  // succeed, but the sealed witness sees no matching effect.
+  Future<void> wrongEffect(
+    String op,
+    String variant,
+    String reason,
+    void Function(Mr7SandboxSession, Mr7AdvancedFixture) configure,
+  ) async {
+    late Mr7AdvancedFixture fixture;
+    final receipt = await _run(
+      [_scenario(op, variant)],
+      configure: (s, f) {
+        fixture = f;
+        configure(s, f);
+      },
+    );
+    final row = _rows(receipt).single;
+    expect(row['coreOutcome'], 'succeeded', reason: jsonEncode(receipt));
+    expect(row['mutationCount'], _scenario(op, variant).expectedMutations);
+    expect(row['status'], 'NOT_VERIFIED');
+    expect(row['readback'], 'NOT_VERIFIED');
+    expect(row['reason'], reason);
+    expect(fixture.mutations, isNotEmpty);
+    _notVerified(receipt);
+  }
+
+  void observed(
+    Mr7SandboxSession s,
+    Mr7AdvancedFixture f,
+    String suffix,
+    Map<String, Object?> change, {
+    int after = 1,
+  }) => s.observer.interceptors.add(
+    InterceptorsWrapper(
+      onResponse: (r, h) {
+        if (f.mutations.length >= after &&
+            r.requestOptions.uri.path.endsWith(suffix) &&
+            r.data is Map) {
+          r.data = {...r.data as Map, ...change};
+        }
+        h.next(r);
+      },
+    ),
+  );
+
+  test('deleteFile cannot pass while the tree still lists the path', () async {
+    await wrongEffect('deleteFile', 'ordinary-ref', 'observerAbsence', (_, f) {
+      f.server.routes['DELETE projects/909/repository/files/synthetic.txt'] =
+          (r) {
+            // A new topic commit that keeps the file.
+            f.repository[mr7AdvancedNextHead] = {...f.repository[f.topicHead]!};
+            f.topicHead = mr7AdvancedNextHead;
+            f.mutations.add(r);
+            f.server.addEvent(target: 909);
+            return mr7Json({}, status: 204);
+          };
+    });
+  });
+
+  test(
+    'applySuggestion cannot pass when the branch holds other bytes',
+    () async {
+      await wrongEffect('applySuggestion', 'ordinary-ref', 'observerContent', (
+        _,
+        f,
+      ) {
+        final key = 'PUT suggestions/5/apply';
+        final original = f.server.routes[key]!;
+        f.server.routes[key] = (r) async {
+          final reply = await original(r);
+          // The suggestion is marked applied, but the commit holds other text.
+          f.repository[mr7AdvancedNextHead]!['synthetic.txt'] = (
+            text: 'line one\nother\nline three\n',
+            last: mr7AdvancedNextHead,
+          );
+          return reply;
+        };
+      });
+    },
+  );
+
+  test(
+    'applySuggestion on an older MR version refuses before dispatch',
+    () async {
+      late Mr7AdvancedFixture fixture;
+      var confirms = 0;
+      final receipt = await _run(
+        [_scenario('applySuggestion', 'ordinary-ref')],
+        configure: (_, f) {
+          fixture = f;
+          // The note was written against an earlier diff head.
+          f.suggestionHead = '9999999999999999999999999999999999999999';
+        },
+        confirm: (_) async {
+          confirms++;
+          return true;
+        },
+      );
+      final row = _rows(receipt).single;
+      expect(confirms, 0);
+      expect(row['mutationCount'], 0);
+      expect(row['status'], isNot('PASS'));
+      // Defence in depth: real GitLab marks such a suggestion not appliable,
+      // which production refuses earlier; this pins the ownership refusal.
+      expect(row['reason'], 'suggestionForeign', reason: jsonEncode(receipt));
+      expect(fixture.mutations, isEmpty);
+      expect(
+        fixture.server.requests,
+        isNot(contains('PUT suggestions/5/apply')),
+      );
+      expect(fixture.suggestion['applied'], isFalse);
+    },
+  );
+
+  test('deleteBoardList cannot pass while the list remains', () async {
+    await wrongEffect('deleteBoardList', 'owned-fixture', 'observerAbsence', (
+      _,
+      f,
+    ) {
+      f.server.routes['DELETE projects/909/boards/12/lists/52'] = (r) {
+        f.mutations.add(r);
+        f.server.addEvent(target: 909);
+        return mr7Json({}, status: 204);
+      };
+    });
+  });
+
+  test(
+    'publishDraftNotes cannot pass with one draft left unpublished',
+    () async {
+      await wrongEffect(
+        'publishDraftNotes',
+        'whole-batch',
+        'observerPublishedNote',
+        (_, f) {
+          final key =
+              'POST projects/909/merge_requests/3/draft_notes/bulk_publish';
+          final original = f.server.routes[key]!;
+          f.server.routes[key] = (r) async {
+            // The positioned draft disappears without becoming a public note.
+            f.drafts.removeLast();
+            return original(r);
+          };
+        },
+      );
+    },
+  );
+
+  test(
+    'legacy cancellation cannot pass while the documented flag stays true',
+    () async {
+      await wrongEffect(
+        'cancelAutoMerge',
+        'deprecated-fallback',
+        'observerState',
+        (s, f) => observed(s, f, '/merge_requests/3', {
+          'merge_when_pipeline_succeeds': true,
+        }, after: 2),
+      );
+    },
+  );
+
+  test(
+    'createSnippet cannot pass when the snippet is stored private',
+    () async {
+      await wrongEffect(
+        'createSnippet',
+        'new-nonprivate',
+        'observerSnippet',
+        (s, f) => observed(s, f, '/snippets/60', {'visibility': 'private'}),
+      );
+    },
+  );
+
+  test(
+    'deleteProject cannot pass while the inventory still lists it',
+    () async {
+      await wrongEffect(
+        'deleteProject',
+        'terminal-deleted',
+        'observerTerminalDeletion',
+        (_, f) {
+          Map<String, Object?>? listed;
+          f.server.routes['GET users/7/projects'] = (_) {
+            listed ??= Map.of(f.server.project!);
+            return mr7Json(
+              [listed],
+              headers: {
+                'x-page': ['1'],
+                'x-per-page': ['100'],
+                'x-total': ['1'],
+                'x-total-pages': ['1'],
+                'x-next-page': [''],
+              },
+            );
+          };
+        },
+      );
+    },
+  );
+
+  test(
+    'deleteProject retention in the GitLab.com rename shape stays unproven',
+    () async {
+      late Mr7AdvancedFixture fixture;
+      final receipt = await _run(
+        [_scenario('deleteProject', 'terminal-deleted')],
+        configure: (_, f) {
+          fixture = f;
+          // The synthetic server's GitLab.com shape: DELETE renames the project
+          // to <path>-deletion_scheduled-<id>, and the original path answers 301.
+          f.server.routes.remove('DELETE projects/909');
+          f.server.scheduledDeletion = true;
+        },
+      );
+      final row = _rows(receipt).single;
+      expect(fixture.server.project!['marked_for_deletion_on'], isA<String>());
+      expect(row['mutationCount'], 1);
+      expect(row['coreOutcome'], 'succeeded');
+      expect(row['status'], 'NOT_VERIFIED');
+      expect(row['readback'], 'NOT_VERIFIED');
+      expect(row['reason'], 'observerTerminalDeletion');
+      expect(receipt['quarantined'], isTrue);
+      expect(_part(receipt, 'cleanup')['reason'], 'terminalScenario');
+    },
+  );
 }

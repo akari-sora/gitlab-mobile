@@ -712,7 +712,8 @@ independent MR → discussion → note → suggestion ownership check, including
 and call `observer.observe` with the sealed observation below. Actor, full
 sandbox identity, original parent IDs, boundary, shared request cap and quarantine
 fences apply. Bodies and expected bytes stay private in memory, outside receipts.
-No scenario catalogue or production capability is opened.
+The witnesses open no production capability; 7B3j wires them into the advanced
+catalogue (below).
 
 | Witness | Required independent evidence and paths |
 |---|---|
@@ -765,12 +766,74 @@ SHA in a real-shape metadata URL.
 
 These APIs can support file-delete/suggestion branch variants, owned board-list
 deletion, whole-batch draft publication (up to 20), deprecated cancellation, terminal deletion/retention and new
-non-private snippet content. Scenario owners must wire them separately. Refusal,
+non-private snippet content. Refusal,
 drift, stored parameters, registry, external scope and unsupported revision
 variants keep typed closed dispositions through
 `Mr7ClosedRefusal(Mr7ClosureCause.observerUnavailable, code)` or
 `Mr7ClosureCause.fixtureUnavailable` with a specific reason. Candidate receipts
 remain CANDIDATE_ONLY and finalEligible=false.
+
+### 7B3j: advanced variants on the wave 3c witnesses
+
+7B3j opened the 15 advanced variants these witnesses cover. Each sets
+`captureEffects: true`, lists its effect paths in `readbackPaths` and passes
+only if the sealed observation succeeds after the production runner's write:
+
+| Witness | Opened variants (tier) |
+|---|---|
+| Deleted file | deleteFile ordinary-ref, default-ref, protected-ref (T4), ci-config (hardLine) |
+| Suggestion | applySuggestion ordinary-ref (T3), default-ref, protected-ref (T4), ci-config (hardLine) |
+| Deleted board list | deleteBoardList owned-fixture (T4) |
+| Published drafts | publishDraftNotes whole-batch, external-drafts, batch-20 (T3) |
+| Legacy cancel | cancelAutoMerge deprecated-fallback (T3, two dispatches) |
+| Project deletion | deleteProject terminal-deleted (hardLine) |
+| Snippet visibility | createSnippet new-nonprivate (hardLine, public) |
+
+The advanced catalogue now has 44 executable variants of 185 and 141
+typed-closed ones (was 29 and 156). All 15 are writes; none is a no-op.
+
+- deleteFile runs the production file reads through the guarded writer: file
+  HEAD at the branch and at the last commit, then the raw read at that commit.
+- The legacy cancellation sends two requests (`cancel_auto_merge` answers 404,
+  then the deprecated endpoint answers `{"status":"success"}`). Snapshot
+  re-reads accept exactly one dispatch, so this variant has no pre-read
+  snapshot; the witness binds the parent ID it captured before the first
+  dispatch. Its fixture MR carries only `merge_when_pipeline_succeeds`.
+- deleteProject is the terminal case. Its receipt has cleanup `NOT_RUN` with
+  reason `terminalScenario`; the finalizer neither deletes again nor supplies
+  evidence, and the witness must report `absent`.
+- The sandbox creates no draft in the conversation segment, so every
+  publication carries the production `foreignDraftsInPublish` confirmation:
+  whole-batch and external-drafts differ in shape (a new thread, a reply in an
+  existing thread and a single-line diff draft, against one ordinary draft),
+  not in provenance. The in-segment draft path is NOT_RUN.
+- A project snippet may be public in the private sandbox project; the project's
+  visibility still bounds access ([snippets](https://docs.gitlab.com/user/snippets/),
+  checked 2026-10-30).
+
+Still closed, with typed reasons:
+
+- `playPipelineSchedule` empty-parameters: `scheduleParametersUnproven`, the
+  same code the runner records before fixture and provider.
+- deleteProject retention-pending: `retentionRenameUnbound`. GitLab.com renames
+  a project scheduled for deletion to `<path>-deletion_scheduled-<id>` and
+  answers the original path with 301; the witness accepts only an unrenamed
+  pending project, and a regression shows the renamed state is refused.
+- applySuggestion suggestion-version: `suggestionVersionRefused`. A suggestion
+  positioned on an older MR version is refused before dispatch (zero writes);
+  this is refusal evidence, not operation coverage.
+- deleteFile and applySuggestion same-field-upload-roundtrip:
+  `uploadFieldNotApplicable`; no field round-trips server-read text (the only
+  model-written text is a new commit message), so an upload placeholder has
+  nothing to restore.
+- Drift, provenance, refusal, registry, runner and owner-only variants keep
+  their earlier codes. Unsupported suggestion ranges and multiline or image
+  draft positions remain refused by the witnesses before dispatch.
+- The closure texts that named seams wave 3a delivered are reworded:
+  edit_file/createFile now `fileChainNotImplemented` and the remaining snippet
+  variants `snippetChainNotRun`; they need a chain, not a witness. createSnippet
+  private-project is `snippetVariantNotOpened`: its chain already runs through
+  new-nonprivate, and the variant is simply not opened yet.
 
 ### Real API shapes and primary sources
 
