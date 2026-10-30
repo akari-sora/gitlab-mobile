@@ -1,4 +1,7 @@
 // Synthetic 7B3 definitions. Import only from host tooling/tests, never the app.
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
@@ -14,6 +17,37 @@ const mr7AdvancedNextHead = 'dddddddddddddddddddddddddddddddddddddddd';
 const mr7AdvancedMergeCommit = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 const mr7AdvancedSquashCommit = 'ffffffffffffffffffffffffffffffffffffffff';
 const mr7AdvancedEditedText = 'Reviewed synthetic text';
+const mr7AdvancedDiscussion = '6a9c1750b37d513a43987b574953fceb50b03ce7';
+const mr7AdvancedThread = '0b2f6e3a9c1d4b5e8f7a6d5c4b3a2f1e0d9c8b7a';
+
+/// Topic-branch files at [mr7AdvancedHead]. One scenario commit produces
+/// [mr7AdvancedNextHead]; each suggestion replaces exactly line 2.
+const mr7AdvancedFiles = {
+  'synthetic.txt': 'line one\nold\nline three\n',
+  '.gitlab-ci.yml': 'synthetic-echo:\n  script: echo old\n',
+  'dir/keep.txt': 'Synthetic kept file\n',
+};
+const _suggestedLine = {
+  'synthetic.txt': 'new\n',
+  '.gitlab-ci.yml': '  script: echo synthetic\n',
+};
+// Written out independently of the fixture's apply logic.
+const _suggestedFile = {
+  'synthetic.txt': 'line one\nnew\nline three\n',
+  '.gitlab-ci.yml': 'synthetic-echo:\n  script: echo synthetic\n',
+};
+const _fileVariants = {
+  'ordinary-ref',
+  'default-ref',
+  'protected-ref',
+  'ci-config',
+};
+
+/// Git's blob object ID: SHA-1 over `blob <size>\0<bytes>`.
+String mr7GitBlob(List<int> bytes) => sha1.convert([
+  ...utf8.encode('blob ${bytes.length}\u0000'),
+  ...bytes,
+]).toString();
 const _isolation =
     'Complete two-pass owner events window includes setup, scenario and cleanup; '
     'every event and mutation belongs to the fresh sandbox; unreadable, missing '
@@ -122,6 +156,8 @@ Mr7AdvancedCase _runnable(
   Set<String> Function(Mr7Identity)? observerPaths,
   List<Mr7SnapshotSpec> Function(Mr7Identity)? preRead,
   Mr7ParentStateObservation Function(Mr7Identity)? noChangeObservation,
+  bool captureEffects = false,
+  List<String> fallbackMutations = const [],
 }) {
   final id = 'b3-$operation-$variant';
   final owningKind = aiWriteProposalTargetKind(
@@ -192,7 +228,12 @@ Mr7AdvancedCase _runnable(
             (operation == 'approveMergeRequest' &&
                 (approvals is! List || approvals.isNotEmpty)) ||
             (operation == 'cancelAutoMerge' &&
-                before['auto_merge_enabled'] != true)) {
+                (variant == 'deprecated-fallback'
+                    // An instance without cancel_auto_merge exposes only the
+                    // documented merge_when_pipeline_succeeds flag.
+                    ? before['merge_when_pipeline_succeeds'] != true ||
+                          before.containsKey('auto_merge_enabled')
+                    : before['auto_merge_enabled'] != true))) {
           throw const Mr7Refused('advancedPrecondition');
         }
       }
@@ -231,7 +272,13 @@ Mr7AdvancedCase _runnable(
       name: operation,
       arguments: {'projectId': p.projectId, ...arguments},
     ),
-    paths: (p) => {mutation.replaceAll('{project}', '${p.projectId}')},
+    paths: (p) => {
+      for (final path in [mutation, ...fallbackMutations])
+        path.replaceAll('{project}', '${p.projectId}'),
+    },
+    captureEffects: captureEffects,
+    maxMutations: 1 + fallbackMutations.length,
+    expectedMutations: 1 + fallbackMutations.length,
     readbackPaths: (p, _) =>
         observerPaths?.call(p) ??
         {observation.replaceAll('{project}', '${p.projectId}')},
@@ -451,8 +498,8 @@ List<Mr7AdvancedCase> _listedAdvancedCases() => [
     write: 'Bounded current then deprecated endpoint; 409 must not retry.',
     readback: 'Independent MR flags; no-change remains no-change.',
     reason:
-        'NOT_RUN/closed: fallback returns status without numeric resource ID; '
-        '409 no-change receipt has no independent observation in 7B0.',
+        'The deprecated fallback is bound by the wave 3c legacy cancellation '
+        'witness; a 409 no-change needs a concurrent-cancel fixture.',
   ),
   ..._closed(
     'rebaseMergeRequest',
@@ -585,9 +632,8 @@ List<Mr7AdvancedCase> _listedAdvancedCases() => [
         'Independent exact schedule and newly created pipeline within '
         'bounded window; retained parameter behavior needs actual server proof.',
     reason:
-        '$_absenceSeam Schedule response is message-only; cannot bind a '
-        'new pipeline. Schedule fixtures unavailable in sandbox stay closed; '
-        '§22.3 parameter reuse is NOT_RUN.',
+        'Stored schedule inputs cannot be attested without reading them; '
+        'schedule play stays closed and §22.3 parameter reuse is NOT_RUN.',
   ),
   ..._closed(
     'deletePipeline',
@@ -803,8 +849,8 @@ List<Mr7AdvancedCase> _listedAdvancedCases() => [
         'Independent deletion request, retention state, fresh actor and '
         'complete parent namespace inventory; 404 alone is insufficient.',
     reason:
-        '$_absenceSeam Terminal parent/actor observation is unavailable to '
-        'Mr7Readback; harness cleanup does not prove AI deleteProject.',
+        '$_absenceSeam The wave 3c terminal witness supplies actor and '
+        'personal inventory; harness cleanup never proves AI deleteProject.',
   ),
   for (final op in [
     'createProject',
@@ -850,6 +896,8 @@ Mr7AdvancedCase _upgrade(Mr7AdvancedCase c) {
     String? tier,
     List<Mr7SnapshotSpec> Function(Mr7Identity)? preRead,
     Mr7ParentStateObservation Function(Mr7Identity)? noChange,
+    bool captureEffects = false,
+    List<String> fallbackMutations = const [],
   }) => _runnable(
     c.operation,
     c.variant,
@@ -866,6 +914,8 @@ Mr7AdvancedCase _upgrade(Mr7AdvancedCase c) {
     observerPaths: paths,
     preRead: preRead,
     noChangeObservation: noChange,
+    captureEffects: captureEffects,
+    fallbackMutations: fallbackMutations,
   );
   Set<String> mrPaths(Mr7Identity p) => {
     'projects/${p.projectId}/merge_requests/3',
@@ -1084,6 +1134,199 @@ Mr7AdvancedCase _upgrade(Mr7AdvancedCase c) {
       },
     );
   }
+  // Wave 3c witnesses: each variant opts in to the dispatch-bound effect
+  // baseline, declares every effect path and calls the sealed observation.
+  if (c.operation == 'deleteFile' && _fileVariants.contains(c.variant)) {
+    final path = c.variant == 'ci-config' ? '.gitlab-ci.yml' : 'synthetic.txt';
+    return run(
+      kind: AiTargetKind.file,
+      tier: c.variant == 'ci-config' ? 'hardLine' : 'T4',
+      args: {
+        'branch': 'mr7-topic',
+        'path': path,
+        'commitMessage': 'Delete synthetic fixture file',
+      },
+      mutation: 'DELETE projects/{project}/repository/files/$path',
+      captureEffects: true,
+      paths: (p) => {
+        'projects/${p.projectId}/repository/branches/mr7-topic',
+        'projects/${p.projectId}/repository/tree',
+      },
+      observe: (o, _) => o.observe(
+        Mr7DeletedFileObservation(
+          path: path,
+          ref: 'mr7-topic',
+          sha: mr7AdvancedNextHead,
+        ),
+      ),
+    );
+  }
+  if (c.operation == 'applySuggestion' && _fileVariants.contains(c.variant)) {
+    final path = c.variant == 'ci-config' ? '.gitlab-ci.yml' : 'synthetic.txt';
+    final bytes = utf8.encode(_suggestedFile[path]!);
+    return run(
+      kind: AiTargetKind.file,
+      tier: c.variant == 'ci-config'
+          ? 'hardLine'
+          : c.variant == 'ordinary-ref'
+          ? 'T3'
+          : 'T4',
+      args: {
+        'iid': 3,
+        'discussionId': mr7AdvancedDiscussion,
+        'noteId': 77,
+        'suggestionId': 5,
+      },
+      mutation: 'PUT suggestions/5/apply',
+      captureEffects: true,
+      paths: (p) => {
+        'projects/${p.projectId}/merge_requests/3',
+        'projects/${p.projectId}/merge_requests/3/discussions/'
+            '$mr7AdvancedDiscussion',
+        'projects/${p.projectId}/repository/branches/mr7-topic',
+        'projects/${p.projectId}/repository/files/${Uri.encodeComponent(path)}',
+      },
+      observe: (o, _) => o.observe(
+        Mr7SuggestionObservation(
+          parent: const Mr7Parent.mergeRequest(id: 33, iid: 3),
+          discussionId: mr7AdvancedDiscussion,
+          noteId: 77,
+          suggestionId: 5,
+          path: path,
+          ref: 'mr7-topic',
+          sha: mr7AdvancedNextHead,
+          blobSha: mr7GitBlob(bytes),
+          bytes: bytes,
+        ),
+      ),
+    );
+  }
+  if (c.operation == 'deleteBoardList' && c.variant == 'owned-fixture') {
+    return run(
+      kind: AiTargetKind.other,
+      args: {'boardId': 12, 'listId': 52},
+      mutation: 'DELETE projects/{project}/boards/12/lists/52',
+      captureEffects: true,
+      paths: (p) => {
+        'projects/${p.projectId}/boards/12',
+        'projects/${p.projectId}/boards/12/lists',
+      },
+      observe: (o, _) => o.observe(
+        const Mr7DeletedBoardListObservation(boardId: 12, listId: 52),
+      ),
+    );
+  }
+  if (c.operation == 'publishDraftNotes' &&
+      ['whole-batch', 'external-drafts', 'batch-20'].contains(c.variant)) {
+    // The original draft IDs and texts, stated independently of the fixture.
+    final drafts = switch (c.variant) {
+      'whole-batch' => {
+        8: 'Synthetic review text',
+        9: 'Synthetic reply text',
+        10: 'Synthetic line comment',
+      },
+      'batch-20' => {
+        for (var id = 201; id <= 220; id++) id: 'Synthetic batch review $id',
+      },
+      _ => {8: 'Synthetic external review'},
+    };
+    return run(
+      kind: AiTargetKind.mergeRequest,
+      args: {'iid': 3},
+      mutation:
+          'POST projects/{project}/merge_requests/3/draft_notes/'
+          'bulk_publish',
+      captureEffects: true,
+      paths: (p) => {
+        for (final suffix in ['', '/draft_notes', '/notes', '/discussions'])
+          'projects/${p.projectId}/merge_requests/3$suffix',
+      },
+      // The witness binds this parent to the ID captured before dispatch.
+      observe: (o, _) => o.observe(
+        Mr7PublishedDraftsObservation(
+          parent: const Mr7Parent.mergeRequest(id: 33, iid: 3),
+          drafts: drafts,
+        ),
+      ),
+    );
+  }
+  if (c.operation == 'cancelAutoMerge' && c.variant == 'deprecated-fallback') {
+    return run(
+      kind: AiTargetKind.mergeRequest,
+      args: {'iid': 3},
+      mutation: 'POST projects/{project}/merge_requests/3/cancel_auto_merge',
+      fallbackMutations: [
+        'POST projects/{project}/merge_requests/3/'
+            'cancel_merge_when_pipeline_succeeds',
+      ],
+      captureEffects: true,
+      // Snapshot re-reads are bound to one dispatch; this pair is bound by the
+      // witness, whose parent ID is captured before the first dispatch.
+      preRead: (_) => const [],
+      paths: (p) => {'projects/${p.projectId}/merge_requests/3'},
+      observe: (o, _) => o.observe(
+        const Mr7LegacyCancelObservation(
+          parent: Mr7Parent.mergeRequest(id: 33, iid: 3),
+        ),
+      ),
+    );
+  }
+  if (c.operation == 'deleteProject' && c.variant == 'terminal-deleted') {
+    return run(
+      kind: AiTargetKind.project,
+      tier: 'hardLine',
+      args: const {},
+      mutation: 'DELETE projects/{project}',
+      captureEffects: true,
+      paths: (p) => {'projects/${p.projectId}', 'users/${p.userId}/projects'},
+      observe: (o, _) async =>
+          await o.observe(const Mr7ProjectDeletionObservation()) &&
+          o.projectDeletionState == 'absent',
+    );
+  }
+  if (c.operation == 'createSnippet' && c.variant == 'new-nonprivate') {
+    // Project snippet visibility may exceed the private sandbox; project
+    // visibility still bounds access (GitLab snippets docs, 2026-10-30).
+    const content = 'Synthetic public snippet text\n';
+    return run(
+      kind: AiTargetKind.snippet,
+      tier: 'hardLine',
+      args: {
+        'title': 'Synthetic public snippet',
+        'description': 'Synthetic description',
+        'visibility': 'public',
+        'path': 'synthetic.txt',
+        'content': content,
+      },
+      mutation: 'POST projects/{project}/snippets',
+      captureEffects: true,
+      paths: (p) => {
+        'projects/${p.projectId}/snippets/60',
+        'projects/${p.projectId}/snippets/60/files/main/synthetic.txt/raw',
+      },
+      observe: (o, p) async {
+        // The revision is read independently, then held stable by the witness.
+        final revision = (await o.read(
+          'projects/${p.projectId}/snippets/60',
+        ))['updated_at'];
+        if (revision is! String) return false;
+        final files = await o.observe(
+          Mr7SnippetObservation(
+            id: 60,
+            revision: revision,
+            visibility: 'public',
+            files: {
+              'synthetic.txt': Mr7SnippetFile(
+                ref: 'main',
+                bytes: utf8.encode(content),
+              ),
+            },
+          ),
+        );
+        return files.keys.single == 'synthetic.txt';
+      },
+    );
+  }
   if (c.operation == 'deleteSnippet' && c.variant == 'owned-project') {
     return run(
       kind: AiTargetKind.snippet,
@@ -1216,8 +1459,8 @@ Mr7AdvancedCase _upgrade(Mr7AdvancedCase c) {
     }
     return (
       Mr7ClosureCause.observerUnavailable,
-      'schedulePipelineUnbound',
-      'No sealed schedule-to-new-pipeline correlation; retained parameters remain 22.3 NOT_RUN.',
+      'scheduleParametersUnproven',
+      'Pipeline metadata cannot attest the schedule\'s current stored inputs and reading the schedule returns them; the runner closes schedule play before fixture and provider. Section 22.3 stays NOT_RUN.',
     );
   }
   if (c.operation == 'createPipeline' && c.variant == 'echo-only') {
@@ -1230,59 +1473,44 @@ Mr7AdvancedCase _upgrade(Mr7AdvancedCase c) {
   if (['edit_file', 'createFile'].contains(c.operation)) {
     return (
       Mr7ClosureCause.releasePolicy,
-      'fileHeadReadNotSupported',
-      'The guarded writer classifies production file HEAD reads as mutations; no HEAD/read dispatch seam is wired.',
+      'fileChainNotImplemented',
+      'File HEAD reads are admitted since wave 3a and deleteFile runs the production file reads; no edit or create chain with an exact-content witness is built or tested in this subset.',
     );
   }
   if (c.operation.contains('Snippet') && c.variant != 'new-nonprivate') {
     return (
       Mr7ClosureCause.releasePolicy,
-      'fragmentCheckerNotWired',
-      'The runner coordinator does not wire the production fragment checker required by snippet paths, metadata and file text.',
+      'snippetChainNotRun',
+      'The production fragment checker is wired since wave 3a; this snippet chain has not been run against it in this subset, and no wave 3c witness is what it lacks.',
     );
   }
-  if (c.operation == 'deleteFile' ||
-      c.operation == 'applySuggestion' ||
-      c.operation == 'deleteBoardList') {
+  if (c.variant == 'same-field-upload-roundtrip' &&
+      ['deleteFile', 'applySuggestion'].contains(c.operation)) {
     return (
-      Mr7ClosureCause.observerUnavailable,
-      'secondaryEffectObserverMissing',
-      'Need a sealed repository-tree absence/suggestion effect/board-list observer bound to the actual dispatch.',
+      Mr7ClosureCause.releasePolicy,
+      'uploadFieldNotApplicable',
+      'The operation carries no model-written content field: a deletion sends none and a suggestion applies server-held text, so an upload placeholder cannot round-trip through it.',
     );
   }
-  if (c.operation == 'publishDraftNotes') {
+  if (c.operation == 'applySuggestion' && c.variant == 'suggestion-version') {
     return (
-      Mr7ClosureCause.observerUnavailable,
-      'publishedNotesUnbound',
-      'Draft absence alone does not prove corresponding published notes and exact text.',
+      Mr7ClosureCause.releasePolicy,
+      'suggestionVersionRefused',
+      'A suggestion positioned on an older MR version is refused before dispatch; a dedicated production-path probe proves zero writes. This is refusal evidence, not successful operation coverage.',
     );
   }
-  if (c.operation == 'cancelAutoMerge') {
-    if (c.variant == '409-no-change') {
-      return (
-        Mr7ClosureCause.fixtureUnavailable,
-        'noChangeFixtureUnproven',
-        'S8 is available, but this subset has no honest concurrent-cancel fixture after the final snapshot fence; 409 alone leaves enabled state unverified.',
-      );
-    }
+  if (c.operation == 'cancelAutoMerge' && c.variant == '409-no-change') {
     return (
-      Mr7ClosureCause.observerUnavailable,
-      'legacyCancelObserverMissing',
-      'Parent-state witness only binds one current-endpoint dispatch, not the legacy fallback.',
+      Mr7ClosureCause.fixtureUnavailable,
+      'noChangeFixtureUnproven',
+      'S8 is available, but this subset has no honest concurrent-cancel fixture after the final snapshot fence; 409 alone leaves enabled state unverified.',
     );
   }
-  if (c.operation == 'deleteProject') {
+  if (c.operation == 'deleteProject' && c.variant == 'retention-pending') {
     return (
       Mr7ClosureCause.observerUnavailable,
-      'terminalParentObserverMissing',
-      'AI terminal deletion needs separate actor and namespace inventory evidence; finalizer is not evidence.',
-    );
-  }
-  if (c.operation == 'createSnippet' && c.variant == 'new-nonprivate') {
-    return (
-      Mr7ClosureCause.observerUnavailable,
-      'nonprivateContentObserverMissing',
-      'S4 enforces private visibility; a new nonprivate snippet needs an explicitly bound content witness.',
+      'retentionRenameUnbound',
+      'GitLab.com renames a project scheduled for deletion to <path>-deletion_scheduled-<id> and answers its original path with 301; the wave 3c witness accepts only an unrenamed pending project, and a probe shows the renamed state is refused.',
     );
   }
   if ([
@@ -1360,6 +1588,13 @@ final class Mr7AdvancedFixture {
       'user': {'can_merge': true},
       'approved_by': <Object?>[],
     };
+    if (_legacyCancel) {
+      // An instance without cancel_auto_merge: only the documented
+      // merge_when_pipeline_succeeds flag describes auto-merge.
+      mr
+        ..remove('auto_merge_enabled')
+        ..['merge_when_pipeline_succeeds'] = true;
+    }
     pipeline = {
       'id': 12,
       'project_id': p,
@@ -1435,10 +1670,6 @@ final class Mr7AdvancedFixture {
         mr7Json([]);
     routes['GET projects/$p/merge_requests/3/draft_notes'] = (_) =>
         mr7Json(drafts);
-    routes['POST projects/$p/merge_requests/3/draft_notes/bulk_publish'] = (r) {
-      drafts.clear();
-      return _changed(r, const {}, status: 204);
-    };
     routes['PUT projects/$p/merge_requests/3/merge'] = (r) {
       final body = r.data! as Map;
       mr['state'] = body['auto_merge'] == true ? 'opened' : 'merged';
@@ -1492,9 +1723,26 @@ final class Mr7AdvancedFixture {
       if (variant == '409-no-change') {
         return _changed(r, const {}, status: 409, event: false);
       }
+      if (_legacyCancel) {
+        // Received but unrouted: no state change and no event.
+        mutations.add(r);
+        return mr7Json({'message': '404 Not Found'}, status: 404);
+      }
       mr['auto_merge_enabled'] = false;
       return _changed(r, mr);
     };
+    // The deprecated endpoint answers with the service status hash.
+    routes['POST projects/$p/merge_requests/3/'
+        'cancel_merge_when_pipeline_succeeds'] = (r) {
+      if (mr['merge_when_pipeline_succeeds'] != true) {
+        return mr7Json({'message': '406 Not Acceptable'}, status: 406);
+      }
+      mr['merge_when_pipeline_succeeds'] = false;
+      return _changed(r, {'status': 'success'}, status: 201);
+    };
+    _reviewRoutes();
+    _boardRoutes();
+    _projectDeletionRoutes();
     routes['POST projects/$p/pipeline'] = (r) {
       pipeline = {...pipeline, 'id': 13, 'status': 'pending'};
       return _changed(r, pipeline, status: 201);
@@ -1544,6 +1792,52 @@ final class Mr7AdvancedFixture {
     }
     routes['GET projects/$p/snippets'] = (_) =>
         _page(snippetDeleted ? [] : [snippet]);
+    // Project snippet creation: the 201 entity carries the files' raw URLs on
+    // the mutable repository root ref, as GitLab's metadata does.
+    routes['POST projects/$p/snippets'] = (r) {
+      final body = r.data! as Map;
+      final files = [
+        for (final file in body['files']! as List)
+          Map<String, Object?>.from(file as Map),
+      ];
+      final at = server.serverTime.toUtc().toIso8601String();
+      final web =
+          'https://gitlab.invalid/install/${server.project?['path_with_namespace']}'
+          '/-/snippets/60';
+      created = {
+        'id': 60,
+        'title': body['title'],
+        'description': body['description'],
+        'visibility': body['visibility'],
+        'author': {'id': 7, 'username': 'synthetic-owner'},
+        'created_at': at,
+        'updated_at': at,
+        'project_id': p,
+        'web_url': web,
+        'raw_url': '$web/raw',
+        'file_name': files.first['file_path'],
+        'files': [
+          for (final file in files)
+            {
+              'path': file['file_path'],
+              'raw_url': '$web/raw/main/${file['file_path']}',
+            },
+        ],
+      };
+      createdContents = {
+        for (final file in files)
+          file['file_path']! as String: file['content']! as String,
+      };
+      return _changed(r, created!, status: 201);
+    };
+    routes['GET projects/$p/snippets/60'] = (_) =>
+        created == null ? mr7Json({}, status: 404) : mr7Json(created);
+    routes['GET projects/$p/snippets/60/files/main/synthetic.txt/raw'] = (_) {
+      final text = createdContents['synthetic.txt'];
+      return text == null
+          ? mr7Json({}, status: 404)
+          : ResponseBody.fromString(text, 200);
+    };
     routes['DELETE projects/$p/snippets/42'] = (r) {
       snippetDeleted = true;
       return _changed(r, const {}, status: 204);
@@ -1578,6 +1872,8 @@ final class Mr7AdvancedFixture {
   final String operation;
   bool _used = false;
   bool _projectConfigured = false;
+  bool get _legacyCancel =>
+      operation == 'cancelAutoMerge' && variant == 'deprecated-fallback';
   static final _fixtures = Expando<Mr7AdvancedFixture>();
   static Mr7AdvancedFixture? attached(Mr7SyntheticGitLab server) =>
       _fixtures[server];
@@ -1586,12 +1882,124 @@ final class Mr7AdvancedFixture {
   late Map<String, Object?> job;
   late Map<String, Object?> snippet;
   final files = <String>{'a.txt', 'b.txt'};
-  final drafts = <Map<String, Object?>>[
+  late final List<Map<String, Object?>> drafts =
+      operation == 'publishDraftNotes'
+      ? switch (variant) {
+          'whole-batch' => [
+            _draft(8, 'Synthetic review text'),
+            _draft(9, 'Synthetic reply text', thread: mr7AdvancedThread),
+            _draft(
+              10,
+              'Synthetic line comment',
+              position: {
+                'base_sha': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                'start_sha': 'cccccccccccccccccccccccccccccccccccccccc',
+                'head_sha': mr7AdvancedHead,
+                'old_path': 'synthetic.txt',
+                'new_path': 'synthetic.txt',
+                'position_type': 'text',
+                'old_line': 2,
+                'new_line': 2,
+                'line_range': null,
+              },
+            ),
+          ],
+          'batch-20' => [
+            for (var id = 201; id <= 220; id++)
+              _draft(id, 'Synthetic batch review $id'),
+          ],
+          _ => [_draft(8, 'Synthetic external review')],
+        }
+      : [
+          {
+            'id': 8,
+            'note': 'Synthetic review text',
+            'author': {'id': 7, 'username': 'synthetic-owner'},
+          },
+        ];
+
+  /// The documented draft note entity. An ordinary draft carries the text
+  /// position whose coordinates are all null.
+  static Map<String, Object?> _draft(
+    int id,
+    String note, {
+    String? thread,
+    Map<String, Object?>? position,
+  }) => {
+    'id': id,
+    'author_id': 7,
+    'merge_request_id': 33,
+    'resolve_discussion': false,
+    'discussion_id': thread,
+    'note': note,
+    'commit_id': null,
+    'line_code': position == null
+        ? null
+        : '${sha1.convert(utf8.encode('${position['new_path']}'))}_2_2',
+    'position':
+        position ??
+        {
+          'base_sha': null,
+          'start_sha': null,
+          'head_sha': null,
+          'old_path': null,
+          'new_path': null,
+          'position_type': 'text',
+          'old_line': null,
+          'new_line': null,
+          'line_range': null,
+        },
+  };
+
+  /// Public MR notes and discussions. One existing thread accepts replies.
+  late final List<Map<String, Object?>> discussions = [
     {
-      'id': 8,
-      'note': 'Synthetic review text',
-      'author': {'id': 7, 'username': 'synthetic-owner'},
+      'id': mr7AdvancedThread,
+      'individual_note': false,
+      'notes': [_note(90, 'Existing synthetic thread')],
     },
+  ];
+  int _nextNote = 100;
+  Map<String, Object?> _note(
+    int id,
+    String body, {
+    Map<String, Object?>? position,
+  }) => {
+    'id': id,
+    'type': position == null ? 'DiscussionNote' : 'DiffNote',
+    'body': body,
+    'author': {'id': 7, 'username': 'synthetic-owner'},
+    'created_at': server.serverTime.toIso8601String(),
+    'updated_at': server.serverTime.toIso8601String(),
+    'system': false,
+    'noteable_id': 33,
+    'noteable_type': 'MergeRequest',
+    'noteable_iid': 3,
+    'project_id': server.projectId,
+    'resolvable': true,
+    'resolved': false,
+    'confidential': false,
+    'internal': false,
+    'position': ?position,
+  };
+  final boardLists = <Map<String, Object?>>[
+    for (final (id, label, name) in [
+      (51, 61, 'Synthetic doing'),
+      (52, 62, 'Synthetic review'),
+    ])
+      {
+        'id': id,
+        'label': {
+          'id': label,
+          'name': name,
+          'color': '#F0AD4E',
+          'description': null,
+        },
+        'position': id - 51,
+        'max_issue_count': 0,
+        'max_issue_weight': 0,
+        'limit_metric': null,
+      },
   ];
   final mutations = <RequestOptions>[];
   bool loseReply = false;
@@ -1605,6 +2013,31 @@ final class Mr7AdvancedFixture {
   bool releaseExists = true;
   Map<String, Object?>? newRef;
   late Map<String, Object?> release;
+  Map<String, Object?>? created;
+  Map<String, String> createdContents = {};
+  String topicHead = mr7AdvancedHead;
+  final repository = <String, Map<String, ({String text, String last})>>{
+    mr7AdvancedHead: {
+      for (final entry in mr7AdvancedFiles.entries)
+        entry.key: (text: entry.value, last: mr7AdvancedHead),
+    },
+  };
+  late final String suggestionPath =
+      operation == 'applySuggestion' && variant == 'ci-config'
+      ? '.gitlab-ci.yml'
+      : 'synthetic.txt';
+
+  /// The note position's head SHA; the MR diff head unless a test moves it.
+  String suggestionHead = mr7AdvancedHead;
+  late final Map<String, Object?> suggestion = {
+    'id': 5,
+    'from_line': 2,
+    'to_line': 2,
+    'appliable': true,
+    'applied': false,
+    'from_content': '${mr7AdvancedFiles[suggestionPath]!.split('\n')[1]}\n',
+    'to_content': _suggestedLine[suggestionPath],
+  };
 
   void configureProject() {
     if (_projectConfigured) return;
@@ -1619,6 +2052,15 @@ final class Mr7AdvancedFixture {
         : variant == 'default-ref'
         ? 'mr7-topic'
         : 'main';
+    // The full-path lookup must keep answering once the project is gone. With
+    // scheduledDeletion the synthetic server answers in the GitLab.com
+    // retention shape (renamed project, 301 on the original path) instead.
+    if (operation == 'deleteProject' && !server.scheduledDeletion) {
+      server.routes['GET projects/${server.project!['path_with_namespace']}'] =
+          (_) => server.project == null
+          ? mr7Json({}, status: 404)
+          : mr7Json(server.project);
+    }
   }
 
   ResponseBody _page(List<Object?> values) => mr7Json(
@@ -1643,12 +2085,13 @@ final class Mr7AdvancedFixture {
       'default':
           (name == 'mr7-target' && variant == 'default-target') ||
           (name == 'mr7-topic' && variant == 'default-ref'),
-      'commit': {'id': mr7AdvancedHead},
+      'commit': {'id': name == 'mr7-topic' ? topicHead : mr7AdvancedHead},
     };
     routes['GET projects/$p/repository/branches/mr7-topic'] = (_) =>
         mr7Json(branch('mr7-topic'));
     routes['GET projects/$p/repository/commits/mr7-topic'] = (_) =>
-        mr7Json({'id': mr7AdvancedHead});
+        mr7Json({'id': topicHead});
+    _fileRoutes();
     for (final collection in ['branches', 'tags']) {
       routes['POST projects/$p/repository/$collection'] = (r) {
         final body = r.data! as Map;
@@ -1708,6 +2151,258 @@ final class Mr7AdvancedFixture {
     routes['DELETE projects/$p/releases/mr7-tag'] = (r) {
       releaseDeleted = true;
       return _changed(r, const {}, status: 204);
+    };
+  }
+
+  /// MR notes, discussions and bulk publication. Each published draft becomes
+  /// one new public note: a reply in its named thread, otherwise the root of
+  /// a new discussion, keeping a diff position when the draft had one.
+  void _reviewRoutes() {
+    final mrPath = 'projects/${server.projectId}/merge_requests/3';
+    final routes = server.routes;
+    routes['GET $mrPath/notes'] = (_) => _page([
+      for (final discussion in discussions) ...discussion['notes']! as List,
+    ]);
+    routes['GET $mrPath/discussions'] = (_) => _page(discussions);
+    routes['POST $mrPath/draft_notes/bulk_publish'] = (r) {
+      for (final draft in drafts) {
+        final position = draft['position'];
+        final note = _note(
+          _nextNote++,
+          draft['note']! as String,
+          position: position is Map && position['new_path'] != null
+              ? Map<String, Object?>.from(position)
+              : null,
+        );
+        final thread = draft['discussion_id'];
+        if (thread is String) {
+          final target = discussions.singleWhere((d) => d['id'] == thread);
+          (target['notes']! as List).add(note);
+        } else {
+          discussions.add({
+            'id': sha1
+                .convert(utf8.encode('discussion ${note['id']}'))
+                .toString(),
+            'individual_note': false,
+            'notes': [note],
+          });
+        }
+      }
+      drafts.clear();
+      return _changed(r, const {}, status: 204);
+    };
+  }
+
+  void _boardRoutes() {
+    final p = server.projectId;
+    final routes = server.routes;
+    routes['GET projects/$p/boards/12'] = (_) => mr7Json({
+      'id': 12,
+      'name': 'Synthetic board',
+      'project': {
+        'id': p,
+        'path_with_namespace': server.project?['path_with_namespace'],
+      },
+      'milestone': null,
+      'lists': boardLists,
+    });
+    routes['GET projects/$p/boards/12/lists'] = (_) => _page(boardLists);
+    for (final list in [51, 52]) {
+      routes['GET projects/$p/boards/12/lists/$list'] = (_) {
+        final rows = boardLists.where((l) => l['id'] == list).toList();
+        return rows.isEmpty ? mr7Json({}, status: 404) : mr7Json(rows.single);
+      };
+      routes['DELETE projects/$p/boards/12/lists/$list'] = (r) {
+        boardLists.removeWhere((l) => l['id'] == list);
+        return _changed(r, const {}, status: 204);
+      };
+    }
+  }
+
+  /// Only the AI deleteProject scenario replaces the finalizer's route: an
+  /// instance that removes the project, answering 202 Accepted.
+  void _projectDeletionRoutes() {
+    if (operation != 'deleteProject') return;
+    final p = server.projectId;
+    final routes = server.routes;
+    routes['DELETE projects/$p'] = (r) {
+      if (server.project == null) return mr7Json({}, status: 404);
+      server.project = null;
+      mutations.add(r);
+      server.scenarioWrites++;
+      server.addEvent(target: p, action: 'removed');
+      return mr7Json({'message': '202 Accepted'}, status: 202);
+    };
+    routes['GET users/${server.userId}/projects'] = (_) =>
+        _page([if (server.project != null) server.project]);
+  }
+
+  String? _commit(RequestOptions r) {
+    final ref = r.uri.queryParameters['ref'];
+    if (ref == 'mr7-topic') return topicHead;
+    return repository.containsKey(ref) ? ref : null;
+  }
+
+  /// Repository files, tree and suggestion routes on the documented shapes:
+  /// file metadata headers, file JSON, raw bytes, recursive tree entries and
+  /// the suggestion entity. Each topic-branch write creates one new commit.
+  void _fileRoutes() {
+    final p = server.projectId;
+    final routes = server.routes;
+    for (final path in mr7AdvancedFiles.keys) {
+      final base = 'projects/$p/repository/files/$path';
+      ({String text, String last})? entry(RequestOptions r) {
+        final commit = _commit(r);
+        return commit == null ? null : repository[commit]![path];
+      }
+
+      routes['HEAD $base'] = (r) {
+        final file = entry(r);
+        if (file == null) return ResponseBody.fromBytes(const [], 404);
+        final bytes = utf8.encode(file.text);
+        return ResponseBody.fromBytes(
+          const [],
+          200,
+          headers: {
+            'x-gitlab-blob-id': [mr7GitBlob(bytes)],
+            'x-gitlab-commit-id': [_commit(r)!],
+            'x-gitlab-content-sha256': [sha256.convert(bytes).toString()],
+            'x-gitlab-encoding': ['base64'],
+            'x-gitlab-execute-filemode': ['false'],
+            'x-gitlab-file-name': [path.split('/').last],
+            'x-gitlab-file-path': [path],
+            'x-gitlab-last-commit-id': [file.last],
+            'x-gitlab-ref': [r.uri.queryParameters['ref']!],
+            'x-gitlab-size': ['${bytes.length}'],
+          },
+        );
+      };
+      routes['GET $base'] = (r) {
+        final file = entry(r);
+        if (file == null) return mr7Json({}, status: 404);
+        final bytes = utf8.encode(file.text);
+        return mr7Json({
+          'file_name': path.split('/').last,
+          'file_path': path,
+          'size': bytes.length,
+          'encoding': 'base64',
+          'content': base64Encode(bytes),
+          'content_sha256': sha256.convert(bytes).toString(),
+          'ref': r.uri.queryParameters['ref'],
+          'blob_id': mr7GitBlob(bytes),
+          'commit_id': _commit(r),
+          'last_commit_id': file.last,
+          'execute_filemode': false,
+        });
+      };
+      routes['GET $base/raw'] = (r) {
+        final file = entry(r);
+        if (file == null) return mr7Json({}, status: 404);
+        return ResponseBody.fromBytes(
+          utf8.encode(file.text),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['text/plain; charset=utf-8'],
+          },
+        );
+      };
+      routes['DELETE $base'] = (r) {
+        final body = r.data;
+        final current = repository[topicHead]!;
+        if (body is! Map ||
+            body['branch'] != 'mr7-topic' ||
+            current[path] == null ||
+            body['last_commit_id'] != current[path]!.last) {
+          return mr7Json({'message': 'synthetic stale file'}, status: 400);
+        }
+        repository[mr7AdvancedNextHead] = {...current}..remove(path);
+        topicHead = mr7AdvancedNextHead;
+        return _changed(r, const {}, status: 204);
+      };
+    }
+    routes['GET projects/$p/repository/tree'] = (r) {
+      final commit = _commit(r);
+      if (commit == null || r.uri.queryParameters['recursive'] != 'true') {
+        return mr7Json({}, status: 404);
+      }
+      final files = repository[commit]!;
+      final trees = {
+        for (final path in files.keys)
+          if (path.contains('/')) path.substring(0, path.lastIndexOf('/')),
+      };
+      return _page([
+        for (final tree in trees)
+          {
+            'id': sha1.convert(utf8.encode('$commit:$tree')).toString(),
+            'name': tree.split('/').last,
+            'type': 'tree',
+            'path': tree,
+            'mode': '040000',
+          },
+        for (final entry in files.entries)
+          {
+            'id': mr7GitBlob(utf8.encode(entry.value.text)),
+            'name': entry.key.split('/').last,
+            'type': 'blob',
+            'path': entry.key,
+            'mode': '100644',
+          },
+      ]);
+    };
+    routes['GET projects/$p/merge_requests/3/discussions/'
+        '$mr7AdvancedDiscussion'] = (_) => mr7Json({
+      'id': mr7AdvancedDiscussion,
+      'individual_note': false,
+      'notes': [
+        {
+          'id': 77,
+          'type': 'DiffNote',
+          'body': '```suggestion:-0+0\n${suggestion['to_content']}```',
+          'author': {'id': 7, 'username': 'synthetic-owner'},
+          'system': false,
+          'noteable_id': 33,
+          'noteable_type': 'MergeRequest',
+          'noteable_iid': 3,
+          'resolvable': true,
+          'resolved': false,
+          'position': {
+            'base_sha': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            'start_sha': 'cccccccccccccccccccccccccccccccccccccccc',
+            'head_sha': suggestionHead,
+            'old_path': suggestionPath,
+            'new_path': suggestionPath,
+            'position_type': 'text',
+            'old_line': 2,
+            'new_line': 2,
+            'line_range': null,
+          },
+          'suggestions': [suggestion],
+        },
+      ],
+    });
+    routes['PUT suggestions/5/apply'] = (r) {
+      final current = repository[topicHead]!;
+      final file = current[suggestionPath];
+      if (suggestion['applied'] == true || file == null) {
+        return mr7Json({'message': 'synthetic suggestion'}, status: 400);
+      }
+      final lines = file.text.split('\n');
+      lines[(suggestion['from_line']! as int) - 1] =
+          (suggestion['to_content']! as String).replaceAll('\n', '');
+      repository[mr7AdvancedNextHead] = {
+        ...current,
+        suggestionPath: (text: lines.join('\n'), last: mr7AdvancedNextHead),
+      };
+      topicHead = mr7AdvancedNextHead;
+      mr['sha'] = mr7AdvancedNextHead;
+      mr['diff_refs'] = {
+        ...mr['diff_refs']! as Map,
+        'head_sha': mr7AdvancedNextHead,
+      };
+      suggestion
+        ..['appliable'] = false
+        ..['applied'] = true;
+      return _changed(r, suggestion);
     };
   }
 
