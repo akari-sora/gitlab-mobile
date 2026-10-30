@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -97,11 +98,12 @@ Future<void> postAiReport(
   } on AiReportPostFailure {
     rethrow;
   } on DioException catch (error) {
-    // Only a failure to connect proves the report never left the device.
+    // Only a failure to connect proves the report never left the device. A
+    // connection closed while waiting for the answer is a connectionError
+    // too, but without a socket error behind it, and the body may be out.
     switch (error.type) {
-      case DioExceptionType.connectionError:
+      case DioExceptionType.connectionError when error.error is SocketException:
       case DioExceptionType.connectionTimeout:
-      case DioExceptionType.badCertificate:
         throw const AiReportPostFailure();
       default:
         throw const AiReportPostFailure.uncertain();

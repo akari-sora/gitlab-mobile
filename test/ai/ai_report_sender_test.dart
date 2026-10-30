@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -135,6 +136,7 @@ void main() {
         (options, _) => throw DioException.connectionError(
           requestOptions: options,
           reason: 'offline',
+          error: const SocketException('offline'),
         ),
       );
 
@@ -160,6 +162,20 @@ void main() {
           adapter: adapter,
           timeout: const Duration(milliseconds: 50),
         ),
+        throwsA(_failure(null, mayHaveArrived: true)),
+      );
+    });
+
+    test('a connection closed before the answer may have delivered it', () async {
+      final adapter = _FormAdapter(
+        (options, _) => throw DioException.connectionError(
+          requestOptions: options,
+          reason: 'Connection closed before full header was received',
+        ),
+      );
+
+      await expectLater(
+        postAiReport(_fields, adapter: adapter),
         throwsA(_failure(null, mayHaveArrived: true)),
       );
     });
@@ -247,6 +263,7 @@ void main() {
         (options, _) => throw DioException.connectionError(
           requestOptions: options,
           reason: 'offline',
+          error: const SocketException('offline'),
         ),
       );
       AiReportPostFailure? offered;
