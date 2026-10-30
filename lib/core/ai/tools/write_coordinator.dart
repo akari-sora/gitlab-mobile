@@ -15,7 +15,7 @@ import '../draft_mentions.dart';
 import '../exact_edit.dart' as exact;
 import '../execution_gate.dart';
 import '../redaction.dart';
-import '../wire/wire_format.dart';
+import '../wire/wire_format.dart' show AiToolSpec;
 import '../write_text.dart' as text;
 import 'gitlab_write_port.dart' as port;
 import 'graphql_write_hooks.dart';
@@ -2723,32 +2723,35 @@ final class PolicyAiWriteCoordinator
     String? rawDetail,
     String reasonCode,
   ) {
-    final detail =
-        rawDetail ??
-        (capability != null &&
-                (reasonCode == 'invalidArguments' ||
-                    reasonCode == 'validation')
-            ? _fallbackValidationDetail(call, capability)
-            : null);
-    if (detail == null || detail.trim().isEmpty) return null;
-    final redactor = Redactor(secrets: _WriteSecretSource(knownSecrets));
-    final redacted = redactor.redactSource(detail.replaceAll(_writeAnsi, ''));
-    final String capped;
-    if (redacted.withheldPrivateKeyContext) {
-      capped = safeDisplay(redacted.text);
-    } else {
-      capped = safeDisplay(_capValidationDetail(redacted.text));
+    try {
+      final detail =
+          rawDetail ??
+          (capability != null &&
+                  (reasonCode == 'invalidArguments' ||
+                      reasonCode == 'validation')
+              ? _fallbackValidationDetail(call, capability)
+              : null);
+      if (detail == null || detail.trim().isEmpty) return null;
+      final redactor = Redactor(secrets: _WriteSecretSource(knownSecrets));
+      final redacted = redactor.redactSource(
+        detail.replaceAll(_writeAnsi, ''),
+      );
+      final capped = _capValidationDetail(
+        safeDisplay(redacted.text),
+      )?.redact(redactor);
+      if (capped == null || capped.plainText.trim().isEmpty) return null;
+      final sourceOp = capability?.operationId ?? 'unknown';
+      return (
+        data: AiAppText.untrusted(
+          source: 'write:$sourceOp',
+          nonce: 'write-${_nonce()}',
+          body: capped,
+        ),
+        withheldPrivateKeyContext: redacted.withheldPrivateKeyContext,
+      );
+    } on Object {
+      return null;
     }
-    if (capped.isEmpty) return null;
-    final sourceOp = capability?.operationId ?? 'unknown';
-    return (
-      data: AiAppText.untrusted(
-        source: 'write:$sourceOp',
-        nonce: 'write-${_nonce()}',
-        body: AiAppText.plain(capped),
-      ),
-      withheldPrivateKeyContext: redacted.withheldPrivateKeyContext,
-    );
   }
 }
 
@@ -3393,7 +3396,34 @@ Map<String, Object?> _arguments(AiToolCall call, AiCapability capability) {
   return _withoutPlaceholderFields(capability.operationId, args);
 }
 
+final _safeArgumentKey = RegExp(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$');
+
 String _describeArgumentFailure(
+  Object? args,
+  Map<String, AiArgSpec> specs,
+  AiCapability capability,
+) {
+  try {
+    return _collectArgumentIssues(args, specs, capability) ??
+        'validation: arguments do not match the tool schema';
+  } on Object {
+    return 'validation: arguments do not match the tool schema';
+  }
+}
+
+String? _fallbackValidationDetail(
+  AiToolCall call,
+  AiCapability capability,
+) {
+  final specs = {
+    for (final entry in _argumentSpecs(capability).entries)
+      if (entry.value.modelVisible) entry.key: entry.value,
+    'reason': const AiArgSpec(AiArgType.string),
+  };
+  return _collectArgumentIssues(call.arguments, specs, capability);
+}
+
+String? _collectArgumentIssues(
   Object? args,
   Map<String, AiArgSpec> specs,
   AiCapability capability,
@@ -3431,55 +3461,6 @@ String _describeArgumentFailure(
   }
 
   _collectObjectIssues(args, specs, '', addIssue);
-  if (issues.isEmpty) {
-    return 'validation: arguments do not match the tool schema';
-  }
-  return 'validation: ${issues.join('; ')}';
-}
-
-String? _fallbackValidationDetail(
-  AiToolCall call,
-  AiCapability capability,
-) {
-  final specs = {
-    for (final entry in _argumentSpecs(capability).entries)
-      if (entry.value.modelVisible) entry.key: entry.value,
-    'reason': const AiArgSpec(AiArgType.string),
-  };
-  final args = call.arguments;
-  if (args is! Map<String, Object?>) {
-    return 'validation: arguments must be an object';
-  }
-  final issues = <String>[];
-  void addIssue(String issue) {
-    if (issues.length < 3 && !issues.contains(issue)) {
-      issues.add(issue);
-    }
-  }
-
-  _collectObjectIssues(args, specs, '', addIssue);
-  for (final entry in specs.entries) {
-    if (entry.key == 'reason') continue;
-    final val = args[entry.key];
-    if (entry.value.type == AiArgType.string &&
-        val is String &&
-        val.trim().isEmpty) {
-      addIssue('${entry.key} must be a non-empty string');
-    } else if (entry.value.type == AiArgType.integer &&
-        val is int &&
-        val <= 0 &&
-        entry.key != 'position') {
-      addIssue('${entry.key} must be a positive integer');
-    } else if (entry.key == 'fields' && val is Map<String, Object?>) {
-      final cleaned = _withoutPlaceholderFields(
-        capability.operationId,
-        args,
-      )['fields'];
-      if (cleaned is Map && cleaned.isEmpty) {
-        addIssue('fields must include at least one non-empty field');
-      }
-    }
-  }
   if (issues.isEmpty) return null;
   return 'validation: ${issues.join('; ')}';
 }
@@ -3496,7 +3477,10 @@ void _collectObjectIssues(
       final allowedHint = allowedKeys.isEmpty
           ? ''
           : ' (allowed: ${allowedKeys.join(', ')})';
-      addIssue('$prefix$key is not allowed$allowedHint');
+      final target = _safeArgumentKey.hasMatch(key)
+          ? '$prefix$key'
+          : 'an unexpected argument';
+      addIssue('$target is not allowed$allowedHint');
     }
   }
   for (final entry in specs.entries) {
@@ -3589,9 +3573,9 @@ String _expectedRule(AiArgSpec spec) => switch (spec.type) {
   AiArgType.snippetActions => 'must be a list of objects',
 };
 
-String _capValidationDetail(String text) {
+AiAppText? _capValidationDetail(String text) {
   final single = _singleLine(text).trim();
-  if (single.isEmpty) return '';
+  if (single.isEmpty) return null;
   for (final prefix in const [
     'validation: GitLab rejected ',
     'validation: ',
@@ -3601,28 +3585,40 @@ String _capValidationDetail(String text) {
       final clauses = body
           .split('; ')
           .map((c) => _capValidationClause(c, 200))
-          .where((c) => c.isNotEmpty)
+          .whereType<AiAppText>()
           .take(3)
           .toList();
-      if (clauses.isEmpty) return '';
-      return '$prefix${clauses.join('; ')}';
+      if (clauses.isEmpty) return null;
+      return AiAppText.join([
+        AiAppText.plain(prefix),
+        AiAppText.join(clauses, '; '),
+      ], '');
     }
   }
   final clauses = single
       .split('; ')
       .map((c) => _capValidationClause(c, 200))
-      .where((c) => c.isNotEmpty)
+      .whereType<AiAppText>()
       .take(3)
       .toList();
-  return clauses.join('; ');
+  if (clauses.isEmpty) return null;
+  return AiAppText.join(clauses, '; ');
 }
 
-String _capValidationClause(String clause, int maxChars) =>
-    clipAiPlainForEscapedBudget(
-      _singleLine(clause).trim(),
-      maxChars,
-      escapeDepth: 1,
-    );
+AiAppText? _capValidationClause(String clause, int maxChars) {
+  final trimmed = _singleLine(clause).trim();
+  if (trimmed.isEmpty) return null;
+  final clipped = AiAppText.plain(trimmed).clipped(maxChars, escapeDepth: 1);
+  if (clipped.plainText.length < trimmed.length &&
+      trimmed.contains('allowed: ') &&
+      maxChars > 1) {
+    return AiAppText.join([
+      AiAppText.plain(trimmed).clipped(maxChars - 1, escapeDepth: 1),
+      const AiAppText.plain('…'),
+    ], '');
+  }
+  return clipped;
+}
 
 // Small models (gpt-4o-mini, 2026-10-30) fill every optional REST issue and
 // merge request field with an empty or zero placeholder; on an update that

@@ -19,7 +19,10 @@ abstract interface class UserFacingFailure {
   String get detail;
 }
 
-/// Diagnostics contain only allowlisted status information, never request data.
+/// User-facing diagnostics contain only allowlisted status information, never
+/// request data. [validationDetail] is bounded server or preflight text that
+/// may echo request data; it may flow only to redacted, untrusted model-facing
+/// tool results, never to UI, logs, history or the write journal on disk.
 final class ApiFailure implements Exception, UserFacingFailure {
   const ApiFailure(
     this.kind, {

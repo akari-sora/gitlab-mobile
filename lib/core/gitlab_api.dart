@@ -449,11 +449,15 @@ final class GitLabApi {
         String? validationDetail;
         if (!consumed && body != null) {
           if (status == 400 || status == 422) {
-            validationDetail = await _readValidationDetail(body);
+            validationDetail = await _readValidationDetail(
+              body,
+              cancelToken: cancel,
+            );
           } else {
             await body.stream.listen((_) {}).cancel();
           }
         }
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
         var refreshed = false;
         if (status == 401 && !retried) {
           try {
@@ -2804,7 +2808,10 @@ final class _ForwardingAdapter implements HttpClientAdapter {
   }
 }
 
-Future<String?> _readValidationDetail(ResponseBody body) async {
+Future<String?> _readValidationDetail(
+  ResponseBody body, {
+  CancelToken? cancelToken,
+}) async {
   final bytes = BytesBuilder(copy: false);
   StreamSubscription<Uint8List>? subscription;
   final done = Completer<void>();
@@ -2827,7 +2834,10 @@ Future<String?> _readValidationDetail(ResponseBody body) async {
       },
       cancelOnError: true,
     );
-    await done.future;
+    await Future.any([
+      done.future,
+      if (cancelToken != null) cancelToken.whenCancel.then<void>((_) {}),
+    ]);
   } on Object {
     // Ignore stream errors on a non-2xx error body.
   } finally {
@@ -2837,7 +2847,7 @@ Future<String?> _readValidationDetail(ResponseBody body) async {
       // Subscription cancellation is not the caller's failure.
     }
   }
-  if (bytes.isEmpty) return null;
+  if (cancelToken?.isCancelled == true || bytes.isEmpty) return null;
   try {
     return parseGitLabValidationDetail(
       utf8.decode(bytes.takeBytes(), allowMalformed: true),

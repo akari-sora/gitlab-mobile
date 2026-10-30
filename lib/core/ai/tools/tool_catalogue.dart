@@ -612,6 +612,7 @@ final class AiToolCatalogue {
         call,
         fallback,
         error.message,
+        reasonCode: error.reasonCode,
         budget: budget,
         gitLabRequests: completedRequests,
         countOutput: !reread,
@@ -1166,14 +1167,16 @@ final class AiToolCatalogue {
     AiToolProvenance provenance,
     String message, {
     required AiToolBudget budget,
+    String? reasonCode,
     int gitLabRequests = 0,
     bool countOutput = true,
   }) async {
     try {
       await refreshSecrets?.call();
     } on Object {
-      // Error text below is static; an unavailable refresh must not replace the
-      // original bounded failure with provider or transport detail.
+      // Error text below is bounded and redacted before encoding; an
+      // unavailable refresh must not replace the original failure with provider
+      // or transport detail.
     }
     final redactedProvenance = redactor.redactSource(provenance.label);
     final redactedMessage = redactor.redactSource(message);
@@ -1191,15 +1194,17 @@ final class AiToolCatalogue {
     final clipped = data.clipped(available);
     final content = clipped.encode();
     if (countOutput) budget.recordOutput(content.length);
+    final blocked = reasonCode == 'sensitivePath';
     return AiToolExecution(
       result: AiToolResult.fromData(
         callId: call.id,
         name: call.name,
         data: clipped,
         isError: true,
+        blockedSensitive: blocked,
       ),
       provenance: provenance,
-      blocked: message.contains('sensitive'),
+      blocked: blocked,
       truncated: content.length != completeContent.length,
       redactions: redactedProvenance.redactions + redactedMessage.redactions,
       withheldPrivateKeyContext:
@@ -1458,10 +1463,17 @@ final class _Revision {
 }
 
 final class _ToolValidation implements Exception {
-  const _ToolValidation(this.message, {this.requestCount = 0});
+  const _ToolValidation(
+    this.message, {
+    this.reasonCode,
+    this.requestCount = 0,
+  });
   final String message;
+  final String? reasonCode;
   final int requestCount;
 }
+
+final _safeArgumentKey = RegExp(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$');
 
 const _string = <String, Object?>{'type': 'string'};
 const _positiveInteger = <String, Object?>{'type': 'integer', 'minimum': 1};
@@ -1510,10 +1522,16 @@ void _exactKeys(
   if (missing.isNotEmpty || unexpected.isNotEmpty) {
     final issues = <String>[
       for (final key in missing) '$key is required',
-      for (final key in unexpected) '$key is not allowed',
     ];
+    for (final key in unexpected) {
+      final issue = _safeArgumentKey.hasMatch(key)
+          ? '$key is not allowed'
+          : 'an unexpected argument is not allowed';
+      if (!issues.contains(issue)) issues.add(issue);
+    }
     throw _ToolValidation(
       'arguments do not match the schema: ${issues.take(3).join('; ')}',
+      reasonCode: 'invalidArguments',
     );
   }
 }

@@ -1805,6 +1805,8 @@ Map<String, Object?> _freezeMap(Map<String, Object?> value) {
   }
 }
 
+final _safeArgumentKey = RegExp(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$');
+
 Map<String, dynamic> _fields(Map<String, Object?> a, String op) {
   final raw = a['fields'];
   final allowed = _fieldKeys(op);
@@ -1817,10 +1819,19 @@ Map<String, dynamic> _fields(Map<String, Object?> a, String op) {
   final unknown = raw.keys.where((key) => !allowed.contains(key)).toList();
   if (unknown.isNotEmpty) {
     final sorted = allowed.toList()..sort();
+    final clauses = <String>[];
+    for (final k in unknown) {
+      final target = _safeArgumentKey.hasMatch(k)
+          ? 'fields.$k'
+          : 'an unexpected argument';
+      final clause = '$target is not allowed (allowed: ${sorted.join(', ')})';
+      if (clauses.length < 3 && !clauses.contains(clause)) {
+        clauses.add(clause);
+      }
+    }
     throw ApiFailure(
       FailureKind.validation,
-      validationDetail:
-          'validation: ${unknown.take(3).map((k) => 'fields.$k is not allowed (allowed: ${sorted.join(', ')})').join('; ')}',
+      validationDetail: 'validation: ${clauses.join('; ')}',
     );
   }
   if (op == 'createIssue' &&
