@@ -207,11 +207,14 @@ void main() {
       }
 
       measure(1024);
+      // Each parse takes milliseconds, so one scheduler pause can dominate a
+      // sample: with three, a runner at load 30 pushed even stock Markdown to
+      // 14x. Nine samples still cost well under a second.
       var quarter = 1 << 62;
       var cap = 1 << 62;
       var mainQuarter = 1 << 62;
       var mainCap = 1 << 62;
-      for (var sample = 0; sample < 3; sample++) {
+      for (var sample = 0; sample < 9; sample++) {
         final n = measure(16384);
         final fourN = measure(65536);
         final mainN = measure(16384, media: false);
