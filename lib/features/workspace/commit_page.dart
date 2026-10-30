@@ -8,6 +8,7 @@ import '../../core/unified_diff.dart';
 import '../../shared/external_link.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 
@@ -233,7 +234,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
 
   Widget _buildBody(BuildContext context, ColorScheme scheme) {
     if (_loading && _commit == null) {
-      return const ListSkeleton();
+      return const DiffSkeleton();
     }
 
     if (_error != null && _commit == null) {
@@ -487,6 +488,9 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
             ],
           ),
           const SizedBox(height: 8),
+
+          if (_diffs.isEmpty && _loading)
+            const DiffSkeleton(padding: EdgeInsets.zero),
 
           if (_diffs.isEmpty && !_loading)
             Card(

@@ -5,6 +5,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/repository_ref.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'commit_page.dart';
@@ -141,7 +142,7 @@ class _BlamePageState extends State<BlamePage> {
         ? SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load, account: widget.account,
             resourceLabel: '${widget.project.path} · ${widget.path}'))
         : _loading
-          ? const ListSkeleton()
+          ? const CodeSkeleton(padding: CodeSkeleton.blamePadding)
           : LayoutBuilder(builder: (context, constraints) {
               final width = math.max(constraints.maxWidth, gutterWidth + 24 + _longest * 7.6);
               return Scrollbar(controller: _horizontal, child: SingleChildScrollView(
@@ -298,7 +299,7 @@ class _FindFilePageState extends State<FindFilePage> {
         ),
       ),
       body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        if (_loading && _paths.isNotEmpty) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
           resourceLabel: '${widget.project.path} · ${widget.ref.name}'),
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text([
@@ -306,7 +307,10 @@ class _FindFilePageState extends State<FindFilePage> {
           if (query.isEmpty && _paths.length > _shownWithoutQuery) l10n.fileListPreviewHint(_shownWithoutQuery),
           if (query.isNotEmpty) l10n.fileMatchCount(hits.length),
         ].join(' · '), style: theme.textTheme.bodySmall)),
-        Expanded(child: ListView.builder(
+        Expanded(
+          child: _loading && _paths.isEmpty
+              ? const RowsSkeleton()
+              : ListView.builder(
           itemCount: hits.length,
           itemBuilder: (context, index) {
             final path = hits[index];

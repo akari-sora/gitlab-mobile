@@ -7,16 +7,6 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/records_feed.dart';
 import 'package:gitlab_mobile/shared/skeleton.dart';
 
-double _opacity(WidgetTester tester) => tester
-    .widget<FadeTransition>(
-      find.descendant(
-        of: find.byType(RowsSkeleton),
-        matching: find.byType(FadeTransition),
-      ),
-    )
-    .opacity
-    .value;
-
 int _rows(WidgetTester tester) =>
     find
         .descendant(
@@ -62,15 +52,21 @@ void main() {
   );
 
   testWidgets(
-    'pulses, holds still with reduced motion and reads as one loading region',
+    'shimmers, holds still with reduced motion and reads as one loading region',
     (tester) async {
       final semantics = tester.ensureSemantics();
       await tester.pumpWidget(
         const MaterialApp(home: Scaffold(body: RowsSkeleton())),
       );
-      final start = _opacity(tester);
+      expect(
+        find.descendant(
+          of: find.byType(RowsSkeleton),
+          matching: find.byType(ShaderMask),
+        ),
+        findsOneWidget,
+      );
       await tester.pump(const Duration(milliseconds: 450));
-      expect(_opacity(tester), lessThan(start));
+      expect(tester.binding.transientCallbackCount, greaterThan(0));
       expect(find.bySemanticsLabel('正在載入'), findsOneWidget);
       semantics.dispose();
 
@@ -83,7 +79,14 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(_opacity(tester), 1);
+      expect(tester.binding.transientCallbackCount, 0);
+      expect(
+        find.descendant(
+          of: find.byType(RowsSkeleton),
+          matching: find.byType(ShaderMask),
+        ),
+        findsNothing,
+      );
     },
   );
 

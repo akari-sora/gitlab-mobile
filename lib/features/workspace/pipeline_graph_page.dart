@@ -297,7 +297,8 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
       ),
       body: gestureSafe(Column(
         children: [
-          if (_loading) const LinearProgressIndicator(minHeight: 2),
+          if (_loading && _jobs.isNotEmpty)
+            const LinearProgressIndicator(minHeight: 2),
           Expanded(child: _buildBody()),
         ],
       )),

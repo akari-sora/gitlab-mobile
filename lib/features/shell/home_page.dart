@@ -5,6 +5,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/scroll_chrome.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/recent_project.dart';
 import '../auth/session_controller.dart';
@@ -314,8 +315,7 @@ class _HomePageState extends State<HomePage> {
     final starred = _starred;
     final List<Widget> body;
     if (starred == null && _starredError == null) {
-      body = [const Padding(padding: EdgeInsets.all(20), child: Center(child: SizedBox.square(
-        dimension: 22, child: CircularProgressIndicator(strokeWidth: 2))))];
+      body = const [HomeSectionSkeleton()];
     } else if (_starredError != null && (starred == null || starred.isEmpty)) {
       body = [
         Padding(

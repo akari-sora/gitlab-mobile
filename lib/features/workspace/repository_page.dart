@@ -889,12 +889,21 @@ class RepositoryTabState extends State<RepositoryTab> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_currentRef == null || _currentRef!.sha.isEmpty) _refBar(context),
-        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        if (_loading && _currentRef != null && _currentRef!.sha.isNotEmpty)
+          const LinearProgressIndicator(minHeight: 2),
         if (_error != null) _errorNotice(context, _error!),
         Expanded(
           child: _currentRef == null || _currentRef!.sha.isEmpty
               ? (_loading
-                    ? const RowsSkeleton()
+                    ? RowsSkeleton(
+                        grouped: true,
+                        padding: EdgeInsets.fromLTRB(
+                          feedGutter(context),
+                          8,
+                          feedGutter(context),
+                          0,
+                        ),
+                      )
                     : SingleChildScrollView(
                         child: EmptyState(
                           l10n.repositoryNotInitialized,
@@ -1108,37 +1117,38 @@ class RepositoryReadmeCard extends StatelessWidget {
           ),
           ExpandSection(expanded: expanded, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             const Divider(height: 1),
-            if (loading)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (error != null)
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: FailureNotice(
-                  error!,
-                  account: account,
-                  resourceLabel: '${project.path} · $title',
-                  onRetry: onRetry,
-                  onSwitchAccount: onSwitchAccount,
-                ),
-              )
-            else if (readme != null)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: MarkdownView(
-                  readme!.markdown,
-                  base: account.instance.projectWeb(
-                    '${project.path}/-/blob/${readme!.sha}/${readme!.path}',
-                  ),
-                  api: api,
-                  projectId: project.id,
-                  projectWeb: account.instance.projectWeb(project.path),
-                  projectPath: project.path,
-                  account: account,
-                ),
-              ),
+            AnimatedSwitcher(
+              duration: motionDuration(context, Durations.short4),
+              child: loading
+                  ? const MarkdownSkeleton(padding: MarkdownSkeleton.cardPadding)
+                  : error != null
+                  ? Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: FailureNotice(
+                        error!,
+                        account: account,
+                        resourceLabel: '${project.path} · $title',
+                        onRetry: onRetry,
+                        onSwitchAccount: onSwitchAccount,
+                      ),
+                    )
+                  : readme != null
+                  ? Padding(
+                      padding: MarkdownSkeleton.cardPadding,
+                      child: MarkdownView(
+                        readme!.markdown,
+                        base: account.instance.projectWeb(
+                          '${project.path}/-/blob/${readme!.sha}/${readme!.path}',
+                        ),
+                        api: api,
+                        projectId: project.id,
+                        projectWeb: account.instance.projectWeb(project.path),
+                        projectPath: project.path,
+                        account: account,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
           ])),
         ],
       ),
@@ -2035,7 +2045,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                     ],
                   ),
                 ),
-                if (_loading || _busy)
+                if ((_loading && text != null) || _busy)
                   const LinearProgressIndicator(minHeight: 2),
                 if (_error != null)
                   FailureNotice(
@@ -2070,10 +2080,16 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                   ),
                 Expanded(
                   child: text == null
-                      ? const SizedBox()
+                      ? (_loading
+                            ? (_preview
+                                  ? const MarkdownSkeleton(
+                                      padding: MarkdownSkeleton.defaultPadding,
+                                    )
+                                  : const CodeSkeleton())
+                            : const SizedBox())
                       : _preview
                       ? SingleChildScrollView(
-                          padding: const EdgeInsets.all(20),
+                          padding: MarkdownSkeleton.defaultPadding,
                           child: MarkdownView(
                             text,
                             account: widget.account,

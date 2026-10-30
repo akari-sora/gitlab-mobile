@@ -13,6 +13,7 @@ import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/reveal_transition.dart';
 import '../../shared/scroll_chrome.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
 import '../../core/repository_ref.dart';
@@ -662,10 +663,7 @@ class _ProjectPageState extends State<ProjectPage>
               ? null
               : _toggleStarFromHeader,
           icon: _starBusy && !_starChecked
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const SkeletonBone(width: 18, height: 18, radius: 9)
               : Icon(
                   _starred == true
                       ? Icons.star

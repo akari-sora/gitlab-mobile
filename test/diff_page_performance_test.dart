@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/unified_diff.dart';
 import 'package:gitlab_mobile/features/workspace/diff_page.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import 'support/fake_adapter.dart';
@@ -374,10 +375,10 @@ void main() {
 
         // Verify that the screen immediately displays an honest loading state without blocking
         expect(parserCalls, 1);
-        expect(find.text('正在準備差異…', skipOffstage: false), findsOneWidget);
+        expect(find.byType(DiffSkeleton, skipOffstage: false), findsOneWidget);
         expect(
           find.byType(CircularProgressIndicator, skipOffstage: false),
-          findsOneWidget,
+          findsNothing,
         );
         // Verify it does NOT render fake empty state while loading
         expect(find.text('無法顯示差異'), findsNothing);
@@ -387,7 +388,7 @@ void main() {
         await settleNetworkWidgets(tester);
 
         // Loading indicator is gone, lines are rendered
-        expect(find.text('正在準備差異…'), findsNothing);
+        expect(find.byType(DiffSkeleton), findsNothing);
         expect(find.text('line1'), findsOneWidget);
       },
     );
@@ -447,14 +448,14 @@ void main() {
 
         await tester.tap(find.text('lib/production_compute.dart'));
         await tester.pump();
-        expect(find.text('正在準備差異…', skipOffstage: false), findsOneWidget);
+        expect(find.byType(DiffSkeleton, skipOffstage: false), findsOneWidget);
 
         await pumpUntil(
           tester,
           () => find.textContaining('中文差異內容-1-').evaluate().isNotEmpty,
           description: 'default production parser completion',
         );
-        expect(find.text('正在準備差異…'), findsNothing);
+        expect(find.byType(DiffSkeleton), findsNothing);
         expect(find.textContaining('中文差異內容-1-'), findsOneWidget);
       },
     );
@@ -936,7 +937,7 @@ void main() {
       await settleNetworkWidgets(tester);
       await tester.tap(find.text('lib/parser_pending.dart'));
       await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('正在準備差異…', skipOffstage: false), findsOneWidget);
+      expect(find.byType(DiffSkeleton, skipOffstage: false), findsOneWidget);
 
       await tester.pumpWidget(
         host(
@@ -1521,7 +1522,7 @@ void main() {
         await tester.tap(find.text('lib/cache_0.dart'));
         await tester.pump();
         expect(
-          find.text('正在準備差異…', skipOffstage: false),
+          find.byType(DiffSkeleton, skipOffstage: false),
           findsOneWidget,
           reason:
               'Three retained source+parsed payloads exceed the 8 MiB estimate, so the oldest must reparse.',
@@ -1686,7 +1687,7 @@ void main() {
         await tester.tap(find.text('lib/account_test.dart'));
         await tester.pump();
         expect(
-          find.text('正在準備差異…', skipOffstage: false),
+          find.byType(DiffSkeleton, skipOffstage: false),
           findsNothing,
           reason:
               'The exact same production source should be an immediate hit.',
@@ -1712,7 +1713,7 @@ void main() {
         await tester.tap(find.text('lib/account_test.dart'));
         await tester.pump();
         expect(
-          find.text('正在準備差異…', skipOffstage: false),
+          find.byType(DiffSkeleton, skipOffstage: false),
           findsOneWidget,
           reason: 'A replacement API owner must not reuse another API cache.',
         );
@@ -1820,7 +1821,7 @@ void main() {
           await tester.tap(find.text(path));
           await tester.pump();
           expect(
-            find.text('正在準備差異…', skipOffstage: false),
+            find.byType(DiffSkeleton, skipOffstage: false),
             expectLoading ? findsOneWidget : findsNothing,
           );
           await settleNetworkWidgets(tester);

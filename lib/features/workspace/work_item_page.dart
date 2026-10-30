@@ -13,6 +13,7 @@ import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
 import '../../shared/scroll_chrome.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import 'ci_page.dart';
 import 'diff_page.dart';
@@ -1879,7 +1880,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                             onSwitchAccount: endSessionFrom(context, ResumeTarget(projectId: widget.project.id, projectPath: widget.project.path, resource: widget.resource, iid: widget.iid)),
                           ),
                         )
-                      : const ListSkeleton(),
+                      : const DetailSkeleton(),
                 ),
               ],
             ),
@@ -1907,7 +1908,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                       appBar,
                       Padding(
                         // Aligned with the content below, clear of the app bar.
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                        padding: DetailSkeleton.headerPadding,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [

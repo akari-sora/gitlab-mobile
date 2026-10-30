@@ -16,6 +16,7 @@ import '../../shared/external_link.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/cache_freshness.dart';
 import '../../shared/workspace_ui.dart';
 import 'commit_page.dart';
@@ -1149,7 +1150,7 @@ class PipelinePageState extends State<PipelinePage> {
                 ),
             ])),
         ])),
-        if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
+        if ((_loading && _data != null) || _busy) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
           resourceLabel: '${widget.project.path} · Pipeline #${widget.id}',
           onSwitchAccount: endSessionFrom(context, ResumeTarget(
@@ -1167,6 +1168,18 @@ class PipelinePageState extends State<PipelinePage> {
               failure: _backgroundFailure,
               retryAt: _backgroundRetryAt,
               onRetry: () => unawaited(_load(fresh: true)),
+            ),
+          ),
+        if (_data == null && _loading)
+          Expanded(
+            child: RowsSkeleton(
+              grouped: true,
+              padding: EdgeInsets.fromLTRB(
+                feedGutter(context),
+                8,
+                feedGutter(context),
+                0,
+              ),
             ),
           ),
         if (_data != null)
@@ -2806,16 +2819,18 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             Expanded(child: Text(l10n.readCacheLogTruncated, style: Theme.of(context).textTheme.bodySmall)),
           ]),
         ),
-        if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
+        if ((_loading && !noLog) || _busy) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _load,
           account: widget.account, resourceLabel: '${widget.project.path} · Job #$_jobId',
           onSwitchAccount: endSessionFrom(context)),
-        Expanded(child: noLog && !_loading && _error == null
+        Expanded(child: noLog && _loading
+          ? const LogSkeleton()
+          : noLog && !_loading && _error == null
           ? SingleChildScrollView(child: EmptyState(l10n.noLogYet,
               detail: _job?['status'] == 'manual' ? l10n.jobNotStartedMenuHint : l10n.jobLogAppearsAfterStart,
               icon: Icons.terminal))
           : Directionality(textDirection: TextDirection.ltr, child: SelectionArea(child: ListView.builder(controller: _scroll,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: LogSkeleton.defaultPadding,
               itemCount: rows.length, itemBuilder: (context, index) {
                 final row = rows[index];
                 final section = row.section;

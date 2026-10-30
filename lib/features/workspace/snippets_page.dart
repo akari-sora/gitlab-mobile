@@ -8,6 +8,7 @@ import '../../core/models.dart';
 import '../../core/snippet_models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
@@ -1115,7 +1116,10 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
   }
 
   Widget _body() {
-    if (_loading) return const ListSkeleton();
+    if (_loading) {
+      final gutter = feedGutter(context);
+      return CodeSkeleton(padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 24));
+    }
     final error = _error;
     if (error != null) {
       return ListView(
@@ -1286,11 +1290,15 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
 
   List<Widget> _blobSlivers(double gutter) {
     if (_blobLoading) {
-      return const [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: CircularProgressIndicator()),
+      final path = _selectedPath;
+      final preview = path != null && _markdownPreview && _isMarkdown(path);
+      return [
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 24),
+          sliver: SliverToBoxAdapter(
+            child: preview
+                ? const MarkdownSkeleton(padding: EdgeInsets.zero)
+                : const CodeSkeleton(padding: EdgeInsets.zero),
           ),
         ),
       ];

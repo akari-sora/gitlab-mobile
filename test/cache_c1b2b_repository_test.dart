@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/repository_page.dart';
 import 'package:gitlab_mobile/features/workspace/records_feed.dart';
 import 'package:gitlab_mobile/shared/cache_freshness.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import 'support/fake_adapter.dart';
@@ -48,7 +49,7 @@ void main() {
     await settleWorkspace(tester);
     final card = find.byType(RepositoryReadmeCard);
     final failure = find.descendant(of: card, matching: find.byType(FailureNotice)).evaluate().length;
-    final spinner = find.descendant(of: card, matching: find.byType(CircularProgressIndicator)).evaluate().length;
+    final spinner = find.descendant(of: card, matching: find.byType(MarkdownSkeleton)).evaluate().length;
     final bbb = find.textContaining('marker-bbb', findRichText: true).evaluate().length;
     final raws = fixture.adapter.requests.where((r) => r.uri.path.endsWith('README.md/raw')).map((r) => r.uri.queryParameters['ref']!.substring(0, 1)).toList();
     final heads = fixture.adapter.requests.where((r) => r.method == 'HEAD').map((r) => r.uri.queryParameters['ref']!.substring(0, 1)).toList();
@@ -318,7 +319,7 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.textContaining('marker-aaa', findRichText: true), findsNothing, reason: 'old README never applied');
       expect(
-        find.descendant(of: find.byType(RepositoryReadmeCard), matching: find.byType(CircularProgressIndicator)),
+        find.descendant(of: find.byType(RepositoryReadmeCard), matching: find.byType(MarkdownSkeleton)),
         findsOneWidget,
         reason: 'B README still loading',
       );
@@ -434,7 +435,7 @@ void main() {
         expect(
           find.descendant(
             of: find.byType(RepositoryReadmeCard),
-            matching: find.byType(CircularProgressIndicator),
+            matching: find.byType(MarkdownSkeleton),
           ),
           findsOneWidget,
           reason: 'late tree A must not end README B loading',
@@ -509,7 +510,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byType(RepositoryReadmeCard),
-          matching: find.byType(CircularProgressIndicator),
+          matching: find.byType(MarkdownSkeleton),
         ),
         findsOneWidget,
         reason: 'README A completion must not end README B loading',
@@ -558,7 +559,7 @@ void main() {
         expect(
           find.descendant(
             of: find.byType(RepositoryReadmeCard),
-            matching: find.byType(CircularProgressIndicator),
+            matching: find.byType(MarkdownSkeleton),
           ),
           findsNothing,
           reason: 'same SHA refresh must not orphan a README completion',
@@ -653,7 +654,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byType(RepositoryReadmeCard),
-          matching: find.byType(CircularProgressIndicator),
+          matching: find.byType(MarkdownSkeleton),
         ),
         findsOneWidget,
       );

@@ -24,7 +24,7 @@ Future<void> _until(WidgetTester tester, bool Function() ready) async {
       find
           .byWidgetPredicate(
             (widget) =>
-                widget is RowsSkeleton ||
+                widget is Skeleton ||
                 widget is CircularProgressIndicator && widget.value == null ||
                 widget is LinearProgressIndicator && widget.value == null,
           )

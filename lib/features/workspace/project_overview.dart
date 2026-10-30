@@ -11,6 +11,7 @@ import '../../shared/hub_ui.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/cache_freshness.dart';
 import '../../shared/workspace_ui.dart';
@@ -775,14 +776,21 @@ class ProjectOverviewState extends State<ProjectOverview> {
     if (_emptyRepository) {
       body = Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         child: Text(l10n.repositoryNotInitializedHint, style: TextStyle(color: muted)));
-    } else if (_readmeLoading) {
-      body = const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+    } else if (_readmeLoading ||
+        (loading &&
+            readme == null &&
+            _readmeError == null &&
+            !_readmeMissing &&
+            _readmeDeniedBranch != _branch)) {
+      body = const MarkdownSkeleton(
+        padding: MarkdownSkeleton.overviewReadmePadding,
+      );
     } else if (_readmeError != null) {
       body = FailureNotice(_readmeError!, account: account, resourceLabel: '${project.path} · README',
         onRetry: () => unawaited(refresh()), onSwitchAccount: endSessionFrom(context));
     } else if (readme != null) {
       body = Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: MarkdownSkeleton.overviewReadmePadding,
         child: MarkdownView(
           readme.markdown,
           base: account.instance.projectWeb('${project.path}/-/blob/${readme.sha}/${readme.path}'),
@@ -819,7 +827,10 @@ class ProjectOverviewState extends State<ProjectOverview> {
               ),
           ]),
         ),
-        body,
+        AnimatedSwitcher(
+          duration: motionDuration(context, Durations.short4),
+          child: body,
+        ),
       ]),
     );
   }

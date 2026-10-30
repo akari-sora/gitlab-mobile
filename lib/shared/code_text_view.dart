@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/syntax_highlighter.dart';
 import '../l10n/l10n.dart';
+import 'skeleton.dart';
 import 'theme.dart';
 
 /// The lines of one text file, prepared for [CodeTextView]: lower-case copies
@@ -97,7 +98,9 @@ class CodeTextView extends StatelessWidget {
                 child: ListView.builder(
                   controller: vertical,
                   itemCount: visibleIndices.length,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: EdgeInsets.symmetric(
+                    vertical: CodeSkeleton.defaultPadding.top,
+                  ),
                   itemBuilder: (context, row) => _line(context, row),
                 ),
               ),
@@ -120,7 +123,10 @@ class CodeTextView extends StatelessWidget {
       color: isSelected
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
           : null,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+      padding: EdgeInsets.symmetric(
+        horizontal: CodeSkeleton.defaultPadding.left,
+        vertical: 1,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -137,7 +143,10 @@ class CodeTextView extends StatelessWidget {
               // Code reads line by line: rows stay at text height and the
               // number keeps the 24dp WCAG 2.5.8 minimum in a 48dp-wide column.
               child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 24),
+                constraints: const BoxConstraints(
+                  minWidth: CodeSkeleton.gutterWidth,
+                  minHeight: 24,
+                ),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(

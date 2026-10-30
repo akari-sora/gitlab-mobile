@@ -8,6 +8,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/unified_diff.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'picker_sheet.dart';
@@ -283,7 +284,6 @@ class _ComparePageState extends State<ComparePage> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: _controls(context),
           ),
-          if (_loading) const LinearProgressIndicator(minHeight: 2),
           Expanded(child: _content(context)),
         ],
       ),
@@ -372,7 +372,7 @@ class _ComparePageState extends State<ComparePage> {
 
   Widget _content(BuildContext context) {
     if (_loading) {
-      return Center(child: Text(l10n.comparingVersions));
+      return const DiffSkeleton();
     }
     if (_error != null) {
       final spec = _errorSpec;
@@ -702,16 +702,7 @@ class _CompareDiffPageState extends State<_CompareDiffPage> {
 
   Widget _body(BuildContext context) {
     if (_loading) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(strokeWidth: 2),
-            SizedBox(height: 12),
-            Text(l10n.preparingDiff),
-          ],
-        ),
-      );
+      return const DiffSkeleton();
     }
     if (_error != null) {
       return ListView(

@@ -46,7 +46,7 @@ Future<void> _settle(WidgetTester tester) async {
       () => Future<void>.delayed(const Duration(milliseconds: 15)),
     );
     final loading = find.byWidgetPredicate((widget) {
-      return widget is RowsSkeleton ||
+      return widget is Skeleton ||
           (widget is CircularProgressIndicator && widget.value == null) ||
           (widget is LinearProgressIndicator && widget.value == null);
     });

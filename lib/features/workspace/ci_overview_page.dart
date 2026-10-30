@@ -5,6 +5,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/scroll_chrome.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
@@ -699,7 +700,13 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
 
   List<Widget> _bodySlivers(double gutter, List<ProjectCiItem> displayed) {
     if (_loading && _items.isEmpty) {
-      return const [SliverFillRemaining(hasScrollBody: false, child: ListSkeleton())];
+      return [
+        SliverToBoxAdapter(
+          child: ListSkeleton(
+            padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 24),
+          ),
+        ),
+      ];
     }
     if (_error != null && _items.isEmpty) {
       return [SliverToBoxAdapter(child: FailureNotice(
@@ -804,11 +811,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                   ),
                   const SizedBox(width: 8),
                   if (item.state == ProjectCiLoadState.loading)
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                    const SkeletonBone(width: 56, height: 22, radius: 999)
                   else if (item.state == ProjectCiLoadState.unknown)
                     Icon(
                       Icons.help_outline,

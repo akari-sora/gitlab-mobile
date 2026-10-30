@@ -11,6 +11,7 @@ import '../../shared/attachment_budget.dart';
 import '../../shared/external_link.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import '../../shared/theme.dart';
@@ -618,7 +619,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const ListSkeleton();
+      return const DiffSkeleton();
     }
     if (_error != null) {
       return ListView(
@@ -1865,16 +1866,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       ),
       body: gestureSafe(
         _diffLoading
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(strokeWidth: 2),
-                    SizedBox(height: 12),
-                    Text(l10n.preparingDiff),
-                  ],
-                ),
-              )
+            ? const DiffSkeleton(padding: DiffSkeleton.filePadding)
             : _diffError != null
             ? ListView(
                 controller: _scroll,

@@ -8,6 +8,7 @@ import '../core/models.dart';
 import '../core/read_cache_disk_contract.dart';
 import '../core/providers.dart';
 import 'resume_target.dart';
+import 'skeleton.dart';
 import 'theme.dart';
 
 import '../l10n/l10n.dart';
@@ -842,17 +843,21 @@ class FailureNotice extends StatelessWidget {
   }
 }
 
-class ListSkeleton extends StatelessWidget {
-  const ListSkeleton({super.key});
+class ListSkeleton extends StatelessWidget implements Skeleton {
+  const ListSkeleton({
+    super.key,
+    this.rows = 8,
+    this.grouped = false,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final int rows;
+  final bool grouped;
+  final EdgeInsetsGeometry padding;
+
   @override
-  Widget build(BuildContext context) => Semantics(
-    label: l10n.loading2,
-    liveRegion: true,
-    child: const Padding(
-      padding: EdgeInsets.all(32),
-      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      RowsSkeleton(rows: rows, grouped: grouped, padding: padding);
 }
 
 Future<bool> confirmAction(

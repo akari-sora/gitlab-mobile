@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/compare_page.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
@@ -171,7 +172,7 @@ void main() {
       () => adapter.requests.isNotEmpty,
       description: 'compare request starts',
     );
-    expect(find.text('正在比較版本…'), findsOneWidget);
+    expect(find.byType(DiffSkeleton), findsOneWidget);
     expect(
       adapter.requests.single.uri.queryParameters['to'],
       'original-target',
@@ -179,7 +180,7 @@ void main() {
 
     await tester.enterText(find.byKey(const Key('compare-to')), 'new-target');
     await tester.pump();
-    expect(find.text('正在比較版本…'), findsNothing);
+    expect(find.byType(DiffSkeleton), findsNothing);
     expect(find.text('選擇兩個版本後執行比較'), findsOneWidget);
 
     pending.complete(jsonResponse(_response(commits: [_commit(99)])));
@@ -262,7 +263,7 @@ void main() {
     await tester.enterText(find.byKey(const Key('compare-to')), 'old-target');
     await tester.tap(find.byKey(const Key('compare-submit')));
     await tester.pump();
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(DiffSkeleton), findsOneWidget);
 
     await tester.pumpWidget(
       _host(newApi, account: _account(newApi, id: 8, username: 'new-user')),

@@ -20,6 +20,7 @@ import 'package:gitlab_mobile/features/workspace/diff_page.dart';
 import 'package:gitlab_mobile/features/workspace/records_feed.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/cache_freshness.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart' show FailureNotice;
 
 import 'support/fake_adapter.dart';
@@ -151,7 +152,7 @@ Future<void> _until(WidgetTester tester, bool Function() condition, String what)
 bool _shown(Finder finder) => finder.evaluate().isNotEmpty;
 
 Future<void> _untilJobLoadFinishes(WidgetTester tester) async {
-  final progress = find.byType(LinearProgressIndicator, skipOffstage: false);
+  final progress = find.byType(LogSkeleton, skipOffstage: false);
   expect(progress, findsOneWidget, reason: 'the held log load is still pending');
   // A 403 reaches the page only after real disk invalidation finishes. Fixed
   // pump counts cannot prove it was handled before visibility changes again.
