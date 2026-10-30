@@ -370,6 +370,41 @@ void main() {
     );
   }
 
+  test('placeholder issue fields count as not set (gpt-4o-mini)', () async {
+    final row = productionAiLedger.find('updateIssue')!;
+    final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
+    addTearDown(h.dispose);
+    final probe = Mr7WriteProbe();
+    final c = h.newCoordinator(
+      scope: mr7WriteScope(row),
+      portFactory: () => probe,
+    );
+    c.beginRun('Close issue 3.');
+    c.beginTurn();
+    final call = AiToolCall(
+      id: 'placeholders',
+      name: 'updateIssue',
+      arguments: {
+        ...mr7WriteArguments['updateIssue']!,
+        'fields': {
+          'title': 'synthetic',
+          'description': '',
+          'labels': '',
+          'assignee_ids': <int>[],
+          'milestone_id': 0,
+          'confidential': false,
+        },
+        'reason': 'Requested synthetic action.',
+      },
+    );
+    expect(await c.propose(call), isNull);
+    expect(probe.requests.single.arguments['fields'], {
+      'title': 'synthetic',
+      'confidential': false,
+    });
+    c.stop('done');
+  });
+
   test(
     'internal batch has executable arguments but remains model-hidden',
     () async {

@@ -3253,7 +3253,42 @@ Map<String, Object?> _arguments(AiToolCall call, AiCapability capability) {
       (args['iid'] != null && (args['iid']! as int) < 1)) {
     throw const _WriteBlocked('invalidArguments');
   }
-  return args;
+  return _withoutPlaceholderFields(capability.operationId, args);
+}
+
+// Small models (gpt-4o-mini, 2026-10-30) fill every optional REST issue and
+// merge request field with an empty or zero placeholder; on an update that
+// would clear labels, assignees or the milestone the user never mentioned.
+// Such values count as "not set", in the preview and in the request alike.
+// Clearing goes through the dedicated label, assignee and milestone writes.
+const _placeholderFieldOperations = {
+  'createIssue',
+  'updateIssue',
+  'createMergeRequest',
+  'updateMergeRequest',
+};
+
+Map<String, Object?> _withoutPlaceholderFields(
+  String operationId,
+  Map<String, Object?> args,
+) {
+  final fields = args['fields'];
+  if (!_placeholderFieldOperations.contains(operationId) ||
+      fields is! Map<String, Object?>) {
+    return args;
+  }
+  bool placeholder(String key, Object? value) =>
+      value == null ||
+      (value is String && value.isEmpty) ||
+      (value is List && value.isEmpty) ||
+      (key == 'milestone_id' && value == 0);
+  return {
+    ...args,
+    'fields': {
+      for (final entry in fields.entries)
+        if (!placeholder(entry.key, entry.value)) entry.key: entry.value,
+    },
+  };
 }
 
 bool _validObject(Map<String, Object?> values, Map<String, AiArgSpec> specs) =>
