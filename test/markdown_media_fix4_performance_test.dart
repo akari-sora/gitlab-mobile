@@ -12,7 +12,12 @@ import 'package:markdown/markdown.dart' as md;
 import 'support/fake_adapter.dart';
 
 void main() {
-  const defaultBaselineShapes = {'Codex code source', 'Opus Q15 footnote'};
+  const defaultBaselineShapes = {
+    'Codex code source',
+    'Opus Q1 code',
+    'Opus Q3 text and code',
+    'Opus Q15 footnote',
+  };
   const neutralised = {
     'Codex escaped source': r'<a>\<img src=x>',
     'Codex code source': '<a>`<img src=x>`',
@@ -147,9 +152,12 @@ void main() {
         'default4N=${usesDefaultBaseline ? defaultCap : 'not measured'}us',
       );
       // Linear scans grow 4x from N to 4N and quadratic ones 16x. Laying out
-      // one long unbroken line is already slightly superlinear (about 7x
-      // here, as on main), so the ratio allows 12x; the original scans took
-      // 2.8 to 66 s at the cap, far above the independent ceiling.
+      // one long unbroken line is already superlinear, so the ratio allows
+      // 12x; the original scans took 2.8 to 66 s at the cap, far above the
+      // independent ceiling. The code-span shapes cost the same as stock
+      // Markdown at the cap, but their own growth depends on the hardware
+      // (Opus Q1 code: median 8.8x and up to 13x on the x86 runner, about
+      // 11x on Apple silicon), so they compare with the stock render.
       if (usesDefaultBaseline) {
         expect(cap, lessThan(5000000), reason: '${shape.key}: cap < 5 s');
         expect(
