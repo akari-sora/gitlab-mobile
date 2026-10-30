@@ -1590,7 +1590,7 @@ final class Mr7AdvancedFixture {
     {
       'id': 8,
       'note': 'Synthetic review text',
-      'author': {'id': 7, 'username': 'synthetic-owner'},
+      'author_id': 7,
     },
   ];
   final mutations = <RequestOptions>[];
