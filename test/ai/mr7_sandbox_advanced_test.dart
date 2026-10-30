@@ -600,6 +600,10 @@ void main() {
         Mr7ClosureCause.fixtureUnavailable,
         'registryFixtureUnavailable',
       ),
+      'b3-createSnippet-private-project': (
+        Mr7ClosureCause.releasePolicy,
+        'snippetVariantNotOpened',
+      ),
     };
     for (final entry in closed.entries) {
       final c = _cases.singleWhere((c) => c.id == entry.key);
@@ -1795,7 +1799,8 @@ void main() {
       expect(row['mutationCount'], 0);
       expect(row['status'], isNot('PASS'));
       // Defence in depth: real GitLab marks such a suggestion not appliable,
-      // which production refuses earlier; this pins the ownership refusal.
+      // which production refuses earlier; this pins the diff-version binding
+      // refusal, which reuses the suggestionForeign code.
       expect(row['reason'], 'suggestionForeign', reason: jsonEncode(receipt));
       expect(fixture.mutations, isEmpty);
       expect(

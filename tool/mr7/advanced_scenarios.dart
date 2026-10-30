@@ -1496,7 +1496,7 @@ Mr7AdvancedCase _upgrade(Mr7AdvancedCase c) {
     return (
       Mr7ClosureCause.releasePolicy,
       'uploadFieldNotApplicable',
-      'No field round-trips server-read text: a deletion and an applied suggestion carry only a new model-written commit message, so an upload placeholder has nothing to restore.',
+      'No field round-trips server-read text: a deletion and an applied suggestion carry at most a new model-written commit message, so an upload placeholder has nothing to restore.',
     );
   }
   if (c.operation == 'applySuggestion' && c.variant == 'suggestion-version') {

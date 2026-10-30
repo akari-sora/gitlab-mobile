@@ -807,6 +807,14 @@ void main() {
         s.prepare('deleteDraftNote', args: {'noteId': 8}),
         throwsA(reason('draftsChanged')),
       );
+      for (final authorId in ['7', null]) {
+        s.drafts.single['author_id'] = authorId;
+        await expectLater(
+          s.prepare('deleteDraftNote', args: {'noteId': 8}),
+          throwsA(reason('draftsChanged')),
+          reason: '$authorId',
+        );
+      }
       s.drafts.single['author_id'] = 7;
       await s.prepare('deleteDraftNote', args: {'noteId': 8});
     },
