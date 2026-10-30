@@ -30,6 +30,14 @@ Accounts and tokens, provider settings and keys, drafts and preferences are kept
 - Clear AI history, the read cache or offline copies in settings at any time.
 - AI providers may keep logs under their own policies; check your provider's terms.
 
+## Delete your data
+
+Mergeline (developer: CB Studio) keeps no account database. To delete your data:
+
+1. **On the device:** in the app, open Me, choose the account and remove it from this device. This deletes that account's token, drafts, caches, offline copies, AI history, AI write log and AI settings. Uninstalling the app deletes all of its local data.
+2. **AI content reports you sent:** email aa22396584@gmail.com with the subject "Mergeline data deletion" and the approximate time of the report. The reports are deleted within 30 days; nothing is kept afterwards.
+3. **Data on GitLab or at your AI provider** is held by them; use their deletion tools.
+
 ## Children
 
 Mergeline is a developer tool and is not directed at children.
@@ -69,6 +77,14 @@ Mergeline 是 GitLab® 的獨立客戶端，與 GitLab Inc. 無關，也未經�
 - 在「我的」移除帳號：會從裝置刪除該帳號的 Token、草稿、快取、AI 紀錄與 AI 設定，但不會刪除你的 GitLab 帳號或 GitLab 上的資料。
 - 隨時可以在設定中清除 AI 紀錄、讀取快取或離線副本。
 - AI 供應商可能依其政策保留紀錄，請參考你所用供應商的條款。
+
+## 刪除你的資料
+
+Mergeline（開發者：CB Studio）沒有帳號資料庫。刪除資料的方式：
+
+1. **裝置上的資料：** 在 App 的「我的」選擇帳號並從此裝置移除，會刪除該帳號的 Token、草稿、快取、離線副本、AI 紀錄、AI 寫入紀錄與 AI 設定。解除安裝 App 會刪除它所有的本機資料。
+2. **你送出的 AI 內容檢舉：** 寄信到 aa22396584@gmail.com，主旨寫「Mergeline data deletion」並附上大約的檢舉時間。檢舉會在 30 天內刪除，之後不保留任何內容。
+3. **GitLab 或 AI 供應商上的資料** 由他們保管，請使用他們的刪除工具。
 
 ## 兒童
 
