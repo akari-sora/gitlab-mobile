@@ -455,22 +455,22 @@ final class AiRunner {
           ? (coordinator as AiWriteStateSource).recordedOutcomeFor(call.id)
           : null;
       final original = recorded?.toToolResult(call) ?? _synthetic(call, reason);
-      String safe;
+      AiAppText data;
       try {
-        safe = _redact(original.content);
+        data = original.plainData
+            .redact(_redactor, source: _redact)
+            .clipped(math.min(20000, 120000 - outputChars));
       } on Object {
         // Pairing must survive a redactor refusing even its own placeholders.
-        safe = '';
+        data = const AiAppText.plain('');
       }
-      final data = AiAppText.plain(
-        safe,
-      ).clipped(math.min(20000, 120000 - outputChars));
       outputChars += data.encode().length;
       final paired = AiToolResult.fromData(
         callId: call.id,
         name: call.name,
         data: data,
         isError: original.isError,
+        withheldPrivateKeyContext: original.withheldPrivateKeyContext,
         notExecuted: recorded == null || original.notExecuted,
       );
       if (writeCoordinator?.handles(call.name) ?? false) {

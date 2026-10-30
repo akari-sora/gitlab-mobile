@@ -19,7 +19,12 @@ extension _CiPrepare on GitLabAiWritePort {
     if (action != null &&
         !(op == 'jobAction' ? const {'cancel', 'retry', 'play'}
             : const {'cancel', 'retry'}).contains(action)) {
-      throw const ApiFailure(FailureKind.validation);
+      throw ApiFailure(
+        FailureKind.validation,
+        validationDetail: op == 'jobAction'
+            ? 'validation: action must be one of cancel, retry, play'
+            : 'validation: action must be one of cancel, retry',
+      );
     }
     final user = await _api.currentUser();
     if ('${_api.instance.key}#${user.id}' != accountKey) {

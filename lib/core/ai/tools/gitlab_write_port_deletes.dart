@@ -54,7 +54,11 @@ extension _DeletesPrepare on GitLabAiWritePort {
     final discussion = op == 'deleteDiscussionNote'
         ? _text(a, 'discussionId') : null;
     if (discussion != null && !RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(discussion)) {
-      throw const ApiFailure(FailureKind.validation);
+      throw const ApiFailure(
+        FailureKind.validation,
+        validationDetail:
+            'validation: discussionId must contain only [a-zA-Z0-9_-]',
+      );
     }
     final targetId = switch (op) {
       'deleteLabel' => _positive(a, 'labelId'),

@@ -2743,6 +2743,8 @@ class AiChatController extends ChangeNotifier
           writeStatus: writeStatus,
           sizeChars: result.notExecuted || pending < 0
               ? 0
+              : outcome != null
+              ? outcome.summary.length
               : result.content.length,
           provenance: _toolProvenance(result),
           truncated: result.truncated,
@@ -2759,7 +2761,11 @@ class AiChatController extends ChangeNotifier
               !result.isError &&
               !result.blockedSensitive &&
               result.readInternal,
-          resultExcerpt: _toolExcerpt(result.plainData.plainText),
+          resultExcerpt: _toolExcerpt(
+            outcome != null
+                ? displaySafe(outcome.summary)
+                : result.plainData.plainText,
+          ),
         );
         final int row;
         if (index == null) {

@@ -446,7 +446,14 @@ final class GitLabApi {
                 cancelToken: cancel, aliasProject: aliasProject);
         await _cache.settleDiskSafety();
         if (_closed) throw const ApiFailure(FailureKind.cancelled);
-        if (!consumed && body != null) await body.stream.listen((_) {}).cancel();
+        String? validationDetail;
+        if (!consumed && body != null) {
+          if (status == 400 || status == 422) {
+            validationDetail = await _readValidationDetail(body);
+          } else {
+            await body.stream.listen((_) {}).cancel();
+          }
+        }
         var refreshed = false;
         if (status == 401 && !retried) {
           try {
@@ -491,7 +498,11 @@ final class GitLabApi {
             detail: _forbiddenDetail(),
           );
         }
-        throw ApiFailure.fromStatus(status, retryAt: rateBudget.retryAtFor(_rateClass(uri, method)));
+        throw ApiFailure.fromStatus(
+          status,
+          retryAt: rateBudget.retryAtFor(_rateClass(uri, method)),
+          validationDetail: validationDetail,
+        );
       }
       if (method == 'HEAD' || status == 204) {
         if (body != null) await body.stream.listen((_) {}).cancel();
@@ -2792,3 +2803,126 @@ final class _ForwardingAdapter implements HttpClientAdapter {
     return _inner.fetch(options, requestStream, cancelFuture);
   }
 }
+
+Future<String?> _readValidationDetail(ResponseBody body) async {
+  final bytes = BytesBuilder(copy: false);
+  StreamSubscription<Uint8List>? subscription;
+  final done = Completer<void>();
+  try {
+    subscription = body.stream.listen(
+      (chunk) {
+        if (bytes.length + chunk.length <= 16384) {
+          bytes.add(chunk);
+        } else {
+          final remaining = 16384 - bytes.length;
+          if (remaining > 0) bytes.add(chunk.sublist(0, remaining));
+          if (!done.isCompleted) done.complete();
+        }
+      },
+      onDone: () {
+        if (!done.isCompleted) done.complete();
+      },
+      onError: (Object _) {
+        if (!done.isCompleted) done.complete();
+      },
+      cancelOnError: true,
+    );
+    await done.future;
+  } on Object {
+    // Ignore stream errors on a non-2xx error body.
+  } finally {
+    try {
+      await subscription?.cancel();
+    } on Object {
+      // Subscription cancellation is not the caller's failure.
+    }
+  }
+  if (bytes.isEmpty) return null;
+  try {
+    return parseGitLabValidationDetail(
+      utf8.decode(bytes.takeBytes(), allowMalformed: true),
+    );
+  } on Object {
+    return null;
+  }
+}
+
+String? parseGitLabValidationDetail(String rawBody) {
+  final trimmed = rawBody.trim();
+  if (trimmed.isEmpty) return null;
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(trimmed);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! Map) return null;
+  final payload =
+      decoded['message'] ??
+      decoded['errors'] ??
+      decoded['error'] ??
+      decoded['error_description'];
+  if (payload == null) return null;
+  final clauses = <String>[];
+  void addClause(String text) {
+    final normalized = _normalizeValidationText(text);
+    if (normalized.isEmpty || clauses.length >= 3) return;
+    clauses.add(
+      normalized.length <= 4096 ? normalized : normalized.substring(0, 4096),
+    );
+  }
+
+  if (payload is Map) {
+    for (final entry in payload.entries) {
+      if (clauses.length >= 3) break;
+      final field = _normalizeValidationText('${entry.key}');
+      final detail = _flattenValidationValue(entry.value);
+      if (field.isNotEmpty && detail.isNotEmpty) {
+        addClause('$field: $detail');
+      } else if (detail.isNotEmpty) {
+        addClause(detail);
+      } else if (field.isNotEmpty) {
+        addClause(field);
+      }
+    }
+  } else if (payload is List) {
+    for (final item in payload) {
+      if (clauses.length >= 3) break;
+      addClause(_flattenValidationValue(item));
+    }
+  } else if (payload is String) {
+    addClause(payload);
+  }
+  if (clauses.isEmpty) return null;
+  return 'validation: GitLab rejected ${clauses.join('; ')}';
+}
+
+String _flattenValidationValue(Object? value) {
+  if (value == null) return '';
+  if (value is String) return _normalizeValidationText(value);
+  if (value is List) {
+    return value
+        .map(_flattenValidationValue)
+        .where((part) => part.isNotEmpty)
+        .take(3)
+        .join(', ');
+  }
+  if (value is Map) {
+    final parts = <String>[];
+    for (final entry in value.entries) {
+      if (parts.length >= 3) break;
+      final key = _normalizeValidationText('${entry.key}');
+      final nested = _flattenValidationValue(entry.value);
+      if (key.isNotEmpty && nested.isNotEmpty) {
+        parts.add('$key: $nested');
+      } else if (nested.isNotEmpty) {
+        parts.add(nested);
+      }
+    }
+    return parts.join(', ');
+  }
+  return _normalizeValidationText('$value');
+}
+
+String _normalizeValidationText(String value) =>
+    value.replaceAll(RegExp(r'[\r\n\u2028\u2029\x00-\x1f\x7f]+'), ' ').trim();

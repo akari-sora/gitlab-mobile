@@ -189,7 +189,10 @@ String _refName(Map<String, Object?> values, String field) {
       RegExp(r'[\s\x00-\x20\x7f~^:?*\[\\]').hasMatch(name) ||
       name.split('/').any((part) => part.isEmpty || part.startsWith('.') ||
           part.endsWith('.') || part.endsWith('.lock'))) {
-    throw const ApiFailure(FailureKind.validation);
+    throw ApiFailure(
+      FailureKind.validation,
+      validationDetail: 'validation: $field must be a valid Git ref name',
+    );
   }
   return name;
 }
@@ -199,7 +202,11 @@ Map<String, dynamic> _refReleaseFields(Map<String, Object?> args, String op) {
   final allowed = _fieldKeys(op)!;
   if (raw is! Map<String, Object?> || raw.isEmpty ||
       raw.entries.any((entry) => !allowed.contains(entry.key) || entry.value is! String)) {
-    throw const ApiFailure(FailureKind.validation);
+    throw ApiFailure(
+      FailureKind.validation,
+      validationDetail:
+          'validation: fields must be a non-empty object of string fields (${(allowed.toList()..sort()).join(', ')})',
+    );
   }
   if (op == 'createRelease') _refName(raw, 'tag_name');
   return Map<String, dynamic>.from(raw);

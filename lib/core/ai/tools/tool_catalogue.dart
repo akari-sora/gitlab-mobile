@@ -1501,11 +1501,20 @@ void _exactKeys(
   required Set<String> required,
   Set<String> optional = const {},
 }) {
-  if (!args.keys.toSet().containsAll(required) ||
-      args.keys.any(
-        (key) => !required.contains(key) && !optional.contains(key),
-      )) {
-    throw const _ToolValidation('arguments do not match the schema');
+  final missing = required.difference(args.keys.toSet()).toList()..sort();
+  final unexpected =
+      args.keys
+          .where((key) => !required.contains(key) && !optional.contains(key))
+          .toList()
+        ..sort();
+  if (missing.isNotEmpty || unexpected.isNotEmpty) {
+    final issues = <String>[
+      for (final key in missing) '$key is required',
+      for (final key in unexpected) '$key is not allowed',
+    ];
+    throw _ToolValidation(
+      'arguments do not match the schema: ${issues.take(3).join('; ')}',
+    );
   }
 }
 
@@ -1545,7 +1554,9 @@ int _positiveInt(Object? value, String name) {
 
 String _oneOf(Object? value, Set<String> choices, String name) {
   if (value is! String || !choices.contains(value)) {
-    throw _ToolValidation('invalid $name');
+    throw _ToolValidation(
+      'invalid $name: $name must be one of ${choices.join(', ')}',
+    );
   }
   return value;
 }

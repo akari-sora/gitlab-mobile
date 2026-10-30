@@ -21,10 +21,17 @@ abstract interface class UserFacingFailure {
 
 /// Diagnostics contain only allowlisted status information, never request data.
 final class ApiFailure implements Exception, UserFacingFailure {
-  const ApiFailure(this.kind, {this.status, this.retryAt, this.cleanup, String? title, String? detail})
-      : assert((kind == FailureKind.readCacheCleanup) == (cleanup != null)),
-        _title = title,
-        _detail = detail;
+  const ApiFailure(
+    this.kind, {
+    this.status,
+    this.retryAt,
+    this.cleanup,
+    this.validationDetail,
+    String? title,
+    String? detail,
+  }) : assert((kind == FailureKind.readCacheCleanup) == (cleanup != null)),
+       _title = title,
+       _detail = detail;
   const ApiFailure.readCacheCleanup(ReadCacheCleanupState state)
       : this(FailureKind.readCacheCleanup, cleanup: state);
 
@@ -32,6 +39,7 @@ final class ApiFailure implements Exception, UserFacingFailure {
   final int? status;
   final DateTime? retryAt;
   final ReadCacheCleanupState? cleanup;
+  final String? validationDetail;
   final String? _title;
   final String? _detail;
 
@@ -55,8 +63,16 @@ final class ApiFailure implements Exception, UserFacingFailure {
     title: l10n.cannotClearArtifacts,
     detail: l10n.accountRemainsRetryRemoval,
   );
-  static ApiFailure fromStatus(int status, {DateTime? retryAt}) => switch (status) {
-    400 || 422 => ApiFailure(FailureKind.validation, status: status),
+  static ApiFailure fromStatus(
+    int status, {
+    DateTime? retryAt,
+    String? validationDetail,
+  }) => switch (status) {
+    400 || 422 => ApiFailure(
+      FailureKind.validation,
+      status: status,
+      validationDetail: validationDetail,
+    ),
     401 => const ApiFailure(FailureKind.unauthenticated, status: 401),
     403 => const ApiFailure(FailureKind.forbidden, status: 403),
     404 => const ApiFailure(FailureKind.invisible, status: 404),
