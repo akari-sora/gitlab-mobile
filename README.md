@@ -8,7 +8,7 @@
 
 - ▶️ **Demo video:** [youtube.com/watch?v=p-G6da2prmg](https://www.youtube.com/watch?v=p-G6da2prmg)
 - 📦 **Android (GitLab channel, free):** [latest release](https://gitlab.com/aa22396584/gitlab-mobile/-/releases) — installed builds update themselves under 我的 › 應用程式更新
-- 🛒 **Google Play (`app.mergeline`, US$3.99):** under review
+- 🛒 **Google Play (`app.mergeline`, US$3.99):** submitted for review on 2026-10-30
 - 🧪 **Try without an account:** tap **試用 Demo** on the sign-in screen
 
 > Canonical repository, issues and merge requests: https://gitlab.com/aa22396584/gitlab-mobile.

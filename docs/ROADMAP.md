@@ -48,7 +48,7 @@ physical-device/publication and G0 acceptance stay open. iOS validation is
 deferred while Android is the current delivery priority; that deferral is not
 iOS acceptance. Evidence is in [v0.6 AI verification](V0_6_AI_VERIFICATION.md)
 and the linked APK receipt. Since v0.6.0 (2026-10-30) the GitLab-channel build ships the
-assistant on (with every read tool and every model-visible write released, background runs off, and an emulator walkthrough with `gpt-4o-mini` on a run-owned private sandbox project), and v0.6.1 adds in-app AI reporting, Demo mode and the Google Play build with the assistant on (uploaded as a production draft for review); current state and next steps are in [PLAN_STATUS](PLAN_STATUS.md).
+assistant on (with every read tool and every model-visible write released, background runs off, and an emulator walkthrough with `gpt-4o-mini` on a run-owned private sandbox project), and v0.6.1 adds in-app AI reporting, Demo mode and the Google Play build with the assistant on (v0.6.2 submitted to Google Play for review on 2026-10-30); current state and next steps are in [PLAN_STATUS](PLAN_STATUS.md).
 
 Ordinary Work Item note editing checks the server's on-demand `adminNote`
 permission instead of inferring access from note authorship. It validates the

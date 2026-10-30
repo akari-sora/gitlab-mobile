@@ -198,8 +198,7 @@ project's `CI_PIPELINE_IID`, which only grows, so each CI APK has a higher
 `versionCode` than the last (the pubspec's `+5` is used only for local builds).
 `build-metadata.json` records `channel`, `build_type`, `version_name` and
 `version_code` next to `signing`. The `play` flavor is not built in CI; it is built and signed locally with the
-Play upload key (`app.mergeline` 0.6.1 is uploaded to Google Play as a
-production draft, awaiting the owner's content rating and price before review;
+Play upload key (`app.mergeline` 0.6.2 (versionCode 8, `c6919e52`) was submitted for Google review on 2026-10-30;
 see [Plan and status](PLAN_STATUS.md)).
 
 ### In-app updates

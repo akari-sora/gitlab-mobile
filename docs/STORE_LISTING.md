@@ -3,10 +3,10 @@
 Decided on 2026-10-19; updated 2026-10-30. In Google Play Console (`app.mergeline`,
 CB Studio), the store listing (zh-TW), Demo-mode screenshots, App access
 instructions, Data safety, privacy policy URL and policy declarations are
-filled, and the v0.6.1 Play AAB (`c39818e5`, versionCode 7, AI assistant on,
-background runs off, upload key) is uploaded to the production track as a
-**draft**. Submitting for review awaits the owner's content rating and price
-(US$3.99) in Play Console; see [Plan and status](PLAN_STATUS.md).
+filled, content rating (IARC) and price (US$3.99) are set, the promo video
+(https://www.youtube.com/watch?v=p-G6da2prmg) is attached, and the Play AAB
+0.6.2 (versionCode 8, `c6919e52`) was submitted for Google review on 2026-10-30 (AI assistant on, background runs
+off, no foreground-service declarations, upload key); see [Plan and status](PLAN_STATUS.md).
 
 ## Name
 

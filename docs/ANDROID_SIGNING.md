@@ -452,7 +452,7 @@ cannot check it):
   "gitlab-mobile - Play Upload Keystore (play-upload/gitlab-mobile.p12)" and
   "gitlab-mobile - Play Upload Signing Properties (play-upload/signing.properties)".
 
-On 2026-10-30 the v0.6.1 Play AAB (`c39818e5`, versionCode 7) was signed with this upload key and uploaded to the Google Play production track as a draft; see [Plan and status](PLAN_STATUS.md).
+On 2026-10-30 the v0.6.1 Play AAB (`c39818e5`, versionCode 7) was uploaded as a draft and replaced by v0.6.2 (`c6919e52`, versionCode 8), signed with this upload key and submitted for review; see [Plan and status](PLAN_STATUS.md).
 
 ### Build the bundle
 

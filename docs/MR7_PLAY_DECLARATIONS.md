@@ -1,6 +1,6 @@
 # MR7 Play declarations: technical answers and local artifact receipt
 
-Status: **7C technical handoff (2026-10-29); Play Console declarations filled and v0.6.1 AAB uploaded as a production draft on 2026-10-30** (awaiting the owner's content rating and price before sending for review; see [Plan and status](PLAN_STATUS.md)). Prepared on 2026-10-29 (Asia/Taipei;
+Status: **7C technical handoff (2026-10-29); Play Console declarations filled; 0.6.2 (versionCode 8) submitted for review on 2026-10-30** (see [Plan and status](PLAN_STATUS.md)). Prepared on 2026-10-29 (Asia/Taipei;
 local command receipts use 2026-10-28 UTC). This is the 7C technical handoff under
 [MR7 breakdown §6](plans/mr7-breakdown.md#6-7c-play-聲明與官方政策查閱-2026-10-28),
 decisions 7-D6/7-D10 and coverage rows 11/15/22/23/27/28; sections 1–7 below retain the 2026-10-29 `90dea7e8` artifact receipt and technical analysis.

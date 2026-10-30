@@ -2,8 +2,10 @@
 
 Release history of Mergeline (formerly "GitLab Mobile"). The newest entries come first. Current plans and status live in [docs/PLAN_STATUS.md](docs/PLAN_STATUS.md); verification evidence lives in the ledgers listed in [docs/README.md](docs/README.md).
 
-## Unreleased (on `main`)
+## 2026-10-30 — v0.6.2: Google Play submission
 
+- **The Play build drops the foreground-service declarations** (!275). The background AI runner is compiled off in the Play build, so its `FOREGROUND_SERVICE` permissions and service are removed from the Play manifest; the GitLab-channel build keeps them.
+- GitLab channel: [v0.6.2 release](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.6.2) (versionCode 1671). Google Play: 0.6.2 (versionCode 8, `c6919e52`) was submitted for Google review on 2026-10-30, with the store listing, Demo-mode screenshots, the promo video, data safety, content rating and US$3.99 price.
 - **The AI learns which field a refused write got wrong** (!273). A refused write now tells the model the field and the rule (allowed values, expected type or GitLab's own field error), so small models stop retrying the same call.
 - **Placeholder arguments never clear data** (!274). Optional `null`/`""`/`[]` placeholders (and `0` for ids) that small models send are dropped for every model-visible write; a single explicit clear still works.
 
@@ -12,7 +14,7 @@ Release history of Mergeline (formerly "GitLab Mobile"). The newest entries come
 - **Report AI answers inside the app** (!270). 回報 on an AI answer posts the report to the developer's Google Form from inside the app, after showing exactly what will be sent; mail or sharing is offered only if the post fails.
 - **Demo mode** (!272). 試用 Demo on the sign-in screen runs the whole app on built-in sample data with a scripted, offline AI — no account and no network (except an AI report you choose to send). Used by Play reviewers and for the store screenshots.
 - **The Play build carries the AI assistant** (!271); background runs stay off. The privacy policy lists every field an AI report carries.
-- GitLab channel: [v0.6.1 release](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.6.1) (versionCode 1658). Google Play: 0.6.1 uploaded, review pending.
+- GitLab channel: [v0.6.1 release](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.6.1) (versionCode 1658). Google Play: 0.6.1 uploaded as a draft and replaced by 0.6.2.
 
 ## 2026-10-30 — v0.6.0: the AI assistant
 
