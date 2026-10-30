@@ -132,12 +132,14 @@ void main() {
       await render(1024);
       final usesDefaultBaseline = defaultBaselineShapes.contains(shape.key);
       if (usesDefaultBaseline) await render(1024, defaultSyntax: true);
-      // Use the best of three to reduce JIT/GC/scheduling noise without an
-      // additive allowance that could conceal quadratic growth.
+      // Use the best of five to reduce JIT/GC/scheduling noise without an
+      // additive allowance that could conceal quadratic growth. Load only
+      // slows a sample; with three, Opus Q15 footnote reached 1.39 of its
+      // 1.5 limit.
       var quarter = 1 << 62;
       var cap = 1 << 62;
       var defaultCap = 1 << 62;
-      for (var sample = 0; sample < 3; sample++) {
+      for (var sample = 0; sample < 5; sample++) {
         final measuredQuarter = await render(16384);
         final measuredCap = await render(65536);
         if (measuredQuarter < quarter) quarter = measuredQuarter;
