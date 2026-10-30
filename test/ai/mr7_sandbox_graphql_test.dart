@@ -464,33 +464,32 @@ void main() {
     },
   );
 
-  test('production policy keeps every project variant closed', () async {
+  // v0.6.0 releases every model-visible write: the production view runs an
+  // opened variant, and closed variants keep their typed reasons.
+  test('production policy runs a released variant, closures stay typed', () async {
     final server = Mr7SyntheticGitLab();
     configureMr7GraphqlFixtures(server);
-    var confirmations = 0;
-    final scenarios = mr7GraphqlScenarios();
+    final all = mr7GraphqlScenarios();
+    final closed = all.where((s) => s.closed != null).toList();
+    final open = all.firstWhere((s) => s.closed == null);
     final receipt = await _run(
       server,
-      scenarios,
+      [...closed, open],
       policy: Mr7Policy.production,
-      confirm: (_) async {
-        confirmations++;
-        return true;
-      },
+      confirm: (_) async => true,
     );
     _syntheticOnly(receipt);
     expect(receipt['policy'], 'production');
-    expect(_rows(receipt), hasLength(58));
-    for (final scenario in scenarios) {
+    for (final scenario in closed) {
       final row = _rows(receipt).singleWhere((r) => r['id'] == scenario.id);
       expect(row['status'], 'NOT_RUN');
-      expect(row['reason'], scenario.closed?.code ?? 'releaseClosed');
+      expect(row['reason'], scenario.closed!.code);
       expect(row['mutationCount'], 0);
-      expect(row['readback'], 'NOT_RUN');
       expect(row['live'], 'NOT_RUN');
     }
-    expect(confirmations, 0);
-    expect(server.scenarioWrites, 0);
+    final row = _rows(receipt).singleWhere((r) => r['id'] == open.id);
+    expect(row['status'], 'PASS', reason: jsonEncode(receipt));
+    expect(row['readback'], 'PASS');
     expect(server.cleanupWrites, 1);
   });
 

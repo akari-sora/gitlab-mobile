@@ -16,6 +16,20 @@ const _requiredResource = AiArgSpec(
   enumValues: ['issues', 'merge_requests'],
 );
 const _string = AiArgSpec(AiArgType.string);
+// Enumerated so the model sees the values the port accepts (gpt-4o-mini sent
+// issue_type "bug" when the schema only said string).
+const _issueType = AiArgSpec(
+  AiArgType.string,
+  enumValues: ['issue', 'task', 'incident'],
+);
+const _severity = AiArgSpec(
+  AiArgType.string,
+  enumValues: ['unknown', 'low', 'medium', 'high', 'critical'],
+);
+const _issueStateEvent = AiArgSpec(
+  AiArgType.string,
+  enumValues: ['close', 'reopen'],
+);
 const _requiredBoolean = AiArgSpec(AiArgType.boolean, required: true);
 const _integerList = AiArgSpec(AiArgType.integerList);
 const _plain = AiArgSpec(AiArgType.string, text: AiTextRole.plainContent);
@@ -57,8 +71,8 @@ const _issueFields = <String, AiArgSpec>{
   'assignee_ids': _integerList,
   'milestone_id': _integer,
   'confidential': AiArgSpec(AiArgType.boolean),
-  'issue_type': _string,
-  'severity': _string,
+  'issue_type': _issueType,
+  'severity': _severity,
 };
 
 const _issueUpdateFields = <String, AiArgSpec>{
@@ -72,8 +86,8 @@ const _issueUpdateFields = <String, AiArgSpec>{
   'assignee_ids': _integerList,
   'milestone_id': _integer,
   'confidential': AiArgSpec(AiArgType.boolean),
-  'severity': _string,
-  'state_event': _string,
+  'severity': _severity,
+  'state_event': _issueStateEvent,
 };
 
 const _mergeRequestFields = <String, AiArgSpec>{
@@ -102,7 +116,7 @@ const _mergeRequestUpdateFields = <String, AiArgSpec>{
   'assignee_ids': _integerList,
   'milestone_id': _integer,
   'reviewer_ids': _integerList,
-  'state_event': _string,
+  'state_event': _issueStateEvent,
 };
 
 const _createLabelFields = <String, AiArgSpec>{

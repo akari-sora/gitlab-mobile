@@ -260,7 +260,8 @@ enabling a follow-up: recovery can wait up to `toolDeadline` for a secret refres
 and the runner remains busy until recovery finishes.
 Cleartext requests check interfaces with `includeLinkLocal: true`; missing or
 unavailable interfaces require per-send confirmation. These checks do not prove
-same-subnet reachability. `MERGELINE_AI_ASSISTANT` remains false.
+same-subnet reachability. `MERGELINE_AI_ASSISTANT` defaults to false; since v0.6.0
+(owner decision, 2026-10-30) CI compiles the gitlab flavour with it true. Play stays off.
 
 The chat (MR6a) sits on `AiChatSession` (`lib/features/ai/ai_chat_session.dart`):
 `AiChatController` owns one runner per conversation and reports display items,

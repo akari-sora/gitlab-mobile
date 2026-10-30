@@ -18,8 +18,25 @@ export 'tool_catalogue_version.dart' show aiToolCatalogueVersion;
 
 const aiSensitivePathBlocked = '[blocked by policy: sensitive file]';
 
-/// No read name is released without its own evidence (MR7 §3.1).
-const Set<String> aiReleasedReadNames = <String>{};
+/// Every read tool is released in v0.6.0. The owner accepted the synthetic
+/// sandbox suites plus one emulator walkthrough instead of the 7R live matrix
+/// (2026-10-30); sensitive-path filtering and redaction still apply per call.
+const Set<String> aiReleasedReadNames = <String>{
+  'read_file',
+  'list_directory',
+  'get_issue',
+  'get_merge_request',
+  'get_merge_request_diff',
+  'get_pipeline_jobs',
+  'get_job_log',
+  'get_commit',
+  'get_commit_diff',
+  'search_project',
+  'get_release',
+  'get_milestone',
+  'get_snippet',
+  'get_group_work_item',
+};
 
 final class AiToolBudget {
   AiToolBudget({

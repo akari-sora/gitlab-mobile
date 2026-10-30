@@ -3,7 +3,7 @@ set -euo pipefail
 : "${CI_JOB_TOKEN:?This command runs inside GitLab CI}"
 : "${CI_COMMIT_SHA:?Missing commit identity}"
 mode="${1:-off}"
-case "$mode" in off|ai) ;; *) echo 'Unknown delivery mode.' >&2; exit 1 ;; esac
+case "$mode" in off|owner|ai) ;; *) echo 'Unknown delivery mode.' >&2; exit 1 ;; esac
 if [ "$#" -gt 1 ] || [ "${CI_PROJECT_ID:-}" != 86648389 ] || \
    [ "${CI_COMMIT_REF_PROTECTED:-}" != true ] || [ "${CI_COMMIT_BRANCH:-}" != main ] || \
    [ "${CI_PIPELINE_SOURCE:-}" = merge_request_event ]; then

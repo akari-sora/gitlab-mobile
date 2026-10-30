@@ -568,26 +568,15 @@ void main() {
   );
 
   test(
-    'REST production receipts keep every candidate operation releaseClosed',
+    'REST production policy runs a released operation (v0.6.0)',
     () async {
-      var confirmations = 0;
-      final receipt = await _run(
-        mr7RestScenarios(),
-        policy: Mr7Policy.production,
-        confirm: (_) async {
-          confirmations++;
-          return true;
-        },
-      );
-      expect(confirmations, 0);
-      expect(_rows(receipt), hasLength(executable.length));
-      for (final row in _rows(receipt)) {
-        expect(row['status'], 'NOT_RUN');
-        expect(row['reason'], 'releaseClosed');
-        expect(row['mutationCount'], 0);
-        expect(row['readback'], 'NOT_RUN');
-      }
-      expect(_part(receipt, 'coverage')['rest'], 'NOT_RUN');
+      final receipt = await _run([
+        mr7RestScenarios().first,
+      ], policy: Mr7Policy.production);
+      final row = _rows(receipt).single;
+      expect(row['status'], 'PASS', reason: jsonEncode(receipt));
+      expect(row['readback'], 'PASS');
+      expect(row['mutationCount'], 1);
       expect(receipt['finalEligible'], isFalse);
     },
   );
