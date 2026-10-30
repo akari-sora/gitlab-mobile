@@ -47,7 +47,8 @@ not establish CI success. Real-provider and private-project integration,
 physical-device/publication and G0 acceptance stay open. iOS validation is
 deferred while Android is the current delivery priority; that deferral is not
 iOS acceptance. Evidence is in [v0.6 AI verification](V0_6_AI_VERIFICATION.md)
-and the linked APK receipt.
+and the linked APK receipt. Since v0.6.0 (2026-10-30) the gitlab build ships the
+assistant on; current state and next steps are in [PLAN_STATUS](PLAN_STATUS.md).
 
 Ordinary Work Item note editing checks the server's on-demand `adminNote`
 permission instead of inferring access from note authorship. It validates the
