@@ -106,10 +106,10 @@ properties file and keystore must follow the same private-file rules.
 Use the pinned Flutter SDK and committed dependency lock:
 
 ```sh
-./.fvm/flutter_sdk/bin/flutter pub get --enforce-lockfile
-./.fvm/flutter_sdk/bin/flutter build apk --debug --flavor gitlab
-./.fvm/flutter_sdk/bin/flutter build apk --profile --flavor gitlab
-./.fvm/flutter_sdk/bin/flutter build apk --release --flavor gitlab
+fvm flutter pub get --enforce-lockfile
+fvm flutter build apk --debug --flavor gitlab
+fvm flutter build apk --profile --flavor gitlab
+fvm flutter build apk --release --flavor gitlab
 ```
 
 Build only the variant required for the current task. A successful release build
@@ -452,7 +452,7 @@ cannot check it):
   "gitlab-mobile - Play Upload Keystore (play-upload/gitlab-mobile.p12)" and
   "gitlab-mobile - Play Upload Signing Properties (play-upload/signing.properties)".
 
-Registering it in Play Console and the first bundle upload are `NOT_RUN`.
+On 2026-10-30 the v0.6.1 Play AAB (`c39818e5`, versionCode 7) was uploaded as a draft and replaced by v0.6.2 (`c6919e52`, versionCode 8), signed with this upload key and submitted for review; see [Plan and status](PLAN_STATUS.md).
 
 ### Build the bundle
 

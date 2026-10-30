@@ -1,5 +1,7 @@
 # Mobile parity and performance follow-up
 
+> Historical 2026-10-02 implementation plan; superseded by [MOBILE_PARITY_PERFORMANCE.md](MOBILE_PARITY_PERFORMANCE.md) and [PLAN_STATUS.md](PLAN_STATUS.md) (including C1–C3 read/offline caches).
+
 Started 2026-10-02 from `0e1298e` (v0.5.0). This is an implementation plan,
 not acceptance evidence. Keep the native mobile UI, pinned SDK and dependency
 lock; add no dependencies. Never persist private read caches to disk.

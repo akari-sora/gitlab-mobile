@@ -1,5 +1,7 @@
 # Mobile v0.2 continuation — September 20, 2026
 
+> Historical v0.2 handoff record; superseded by [V0_2_VERIFICATION.md](V0_2_VERIFICATION.md), [V0_3_VERIFICATION.md](V0_3_VERIFICATION.md) and [PLAN_STATUS.md](PLAN_STATUS.md).
+
 This record distinguishes implemented controls, synthetic tests, public live reads, authenticated connector calls and physical-device acceptance. None is interchangeable with the others.
 
 ## Product changes

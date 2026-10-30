@@ -1,10 +1,9 @@
 # MR7 Play declarations: technical answers and local artifact receipt
 
-Status: **DRAFT / no submission**. Prepared on 2026-10-29 (Asia/Taipei;
-local command receipts use 2026-10-28 UTC). All store-facing wording is
-**lead to phrase**. This is the 7C technical handoff under
+Status: **7C technical handoff (2026-10-29); Play Console declarations filled; 0.6.2 (versionCode 8) submitted for review on 2026-10-30** (see [Plan and status](PLAN_STATUS.md)). Prepared on 2026-10-29 (Asia/Taipei;
+local command receipts use 2026-10-28 UTC). This is the 7C technical handoff under
 [MR7 breakdown §6](plans/mr7-breakdown.md#6-7c-play-聲明與官方政策查閱-2026-10-28),
-decisions 7-D6/7-D10 and coverage rows 11/15/22/23/27/28.
+decisions 7-D6/7-D10 and coverage rows 11/15/22/23/27/28; sections 1–7 below retain the 2026-10-29 `90dea7e8` artifact receipt and technical analysis.
 
 The checked-out source is `90dea7e8e113592e6d994279d0790e6e74a2dba5`,
 branch `docs/mr7-7c-play`. No tracked application code, CI, localization, store listing or canonical
@@ -37,14 +36,14 @@ properties both `0600`, and `python3 tool/android_signing.py verify` passed.
 | QA / benchmark options | No `MR6C_QA`, `EMULATOR_UI_QA`, `EMULATOR_PERF_QA` or `PERF_DIAGNOSTICS` define supplied; normal production entrypoint |
 | Distribution | All four APKs `local-only`; no pipeline/job or public download URL created |
 
-> **Evidence location.** The APKs and receipts linked below are local, untracked artifacts kept outside the repository (relative links resolve only from the 7C working directory). Their SHA-256 values in this table are the stable reference; to re-obtain them, rebuild from the recorded source SHA with the recorded defines and compare hashes.
+> **Evidence location.** The APK and receipt paths below (`../../evidence/…`) are local, untracked artifacts kept outside the repository in the 7C session directory. Their SHA-256 values in this table are the stable reference; to re-obtain them, rebuild from the recorded source SHA with the recorded defines and compare hashes.
 
 | Flavor / variant | Application ID | Bytes | SHA-256 | Debuggable | Retained APK |
 |---|---|---:|---|---|---|
-| gitlab-debug | `io.gitlabmobile.gitlab_mobile` | 192912275 | `77a6283c601d31ff412727c74c92e7e7d1bc6ee58e99d06e12388ecc33f8ed90` | true | [app-gitlab-debug.apk](../../evidence/apks/app-gitlab-debug.apk) |
-| play-debug | `app.mergeline` | 193071234 | `1b0ae07c083a6918b227832027eddb4797704eae98143f89aacf6371174f5b84` | true | [app-play-debug.apk](../../evidence/apks/app-play-debug.apk) |
-| gitlab-release | `io.gitlabmobile.gitlab_mobile` | 95804463 | `0f1dcfa3e880f26b3184c313755f32f4a4cbc77cdcf801f0dca8d113c7a21149` | false | [app-gitlab-release.apk](../../evidence/apks/app-gitlab-release.apk) |
-| play-release | `app.mergeline` | 95821821 | `e66b66d9997d405837638369d9ed5c5c0ca4946ca001c8850fd16f76172aff2b` | false | [app-play-release.apk](../../evidence/apks/app-play-release.apk) |
+| gitlab-debug | `io.gitlabmobile.gitlab_mobile` | 192912275 | `77a6283c601d31ff412727c74c92e7e7d1bc6ee58e99d06e12388ecc33f8ed90` | true | `../../evidence/apks/app-gitlab-debug.apk` |
+| play-debug | `app.mergeline` | 193071234 | `1b0ae07c083a6918b227832027eddb4797704eae98143f89aacf6371174f5b84` | true | `../../evidence/apks/app-play-debug.apk` |
+| gitlab-release | `io.gitlabmobile.gitlab_mobile` | 95804463 | `0f1dcfa3e880f26b3184c313755f32f4a4cbc77cdcf801f0dca8d113c7a21149` | false | `../../evidence/apks/app-gitlab-release.apk` |
+| play-release | `app.mergeline` | 95821821 | `e66b66d9997d405837638369d9ed5c5c0ca4946ca001c8850fd16f76172aff2b` | false | `../../evidence/apks/app-play-release.apk` |
 
 All four APKs verify under **v2** with the same expected certificate. Raw
 `apksigner` reports v1, v3, v3.1 and v4 as false; no other verified
@@ -52,7 +51,7 @@ scheme or store-signing identity is claimed. All include `arm64-v8a`,
 `armeabi-v7a` and `x86_64`. `artifact-survey.json` confirms that each
 flavor's debug/release requested permission sets are identical.
 
-The table and [retained packaging receipt](../../evidence/packaging-receipt.json)
+The table and `../../evidence/packaging-receipt.json`
 record these local artifacts. The release-inventory index is owned
 by 7R; its link to this receipt remains a lead/7R handoff item. Existing
 inventory rows were not edited or used as evidence for these new APKs.

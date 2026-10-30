@@ -1,5 +1,7 @@
 # Project: GitLab Mobile v0.4.0
 
+> Historical v0.4.0 milestone plan; superseded by [docs/PLAN_STATUS.md](docs/PLAN_STATUS.md), [CHANGELOG.md](CHANGELOG.md) and [CLAUDE.md](CLAUDE.md).
+
 ## Architecture
 - **Tech Stack**: Flutter 3.47.2 (via FVM), Dart 3.7.0, Riverpod, Material 3 (Material You adaptive).
 - **Core Architecture**:

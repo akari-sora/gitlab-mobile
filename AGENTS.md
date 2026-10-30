@@ -2,7 +2,7 @@
 
 Build a mobile-first Flutter GitLab client for Android/iOS. No desktop-first layout and no WebView wrapper.
 
-Read README.md, docs/CI.md and docs/ROADMAP.md before work. The current implementation is the G0 PAT/private-repository reader. Do not mark G0 accepted based only on compilation or mocked API tests.
+Read README.md, docs/PLAN_STATUS.md, docs/CI.md and docs/ROADMAP.md before work. Current state and next steps are in docs/PLAN_STATUS.md (v0.6.2 released on the GitLab channel and submitted to Google Play for review, with the AI assistant on and background runs off). Do not mark G0 accepted based only on compilation or mocked API tests.
 
 ## Identity and content
 
