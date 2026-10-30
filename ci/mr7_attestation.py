@@ -273,14 +273,17 @@ def metadata_for_delivery(root, sha, mode):
     flags = {key: metadata.get(key, False) for key in FLAGS}
     require(all(type(value) is bool for value in flags.values()), "Invalid metadata flags")
     require(not flags["ai_background"] or flags["ai_assistant"], "Invalid background flag")
-    require(flags["ai_assistant"] == (mode == "ai"), "Wrong delivery mode for artifact flags")
+    require(flags["ai_assistant"] == (mode != "off"), "Wrong delivery mode for artifact flags")
     apks = sorted(directory.glob("*.apk"))
     require(len(apks) == 1 and not apks[0].is_symlink(), "Expected exactly one APK")
     with apks[0].open("rb") as stream:
         apk_hash = hashlib.file_digest(stream, "sha256").hexdigest()
     if "apk_sha256" in metadata:
         require(metadata["apk_sha256"] == apk_hash, "APK metadata digest mismatch")
-    if mode == "ai":
+    # "owner" is the AI-on lane the owner accepted on 2026-10-30 without 7R receipts:
+    # the same release metadata checks, but no attestation and no APK re-inspection
+    # (android_debug already inspected the APK it built).
+    if mode in ("ai", "owner"):
         expected = {"build_type": "release", "package": "io.gitlabmobile.gitlab_mobile",
                     "debuggable": False, "certificate_sha256": STABLE_CERT,
                     "entrypoint": "lib/main.dart", **FLAGS}
@@ -290,6 +293,7 @@ def metadata_for_delivery(root, sha, mode):
         for key, value in source_digests(root, require_clean=True).items():
             require(metadata.get(key) == value, f"Source metadata mismatch: {key}")
         require(metadata.get("apk_sha256") == apk_hash, "Missing exact APK digest")
+    if mode == "ai":
         require(inspect_apk(apks[0]) == {key: metadata[key] for key in
                 ("package", "debuggable", "certificate_sha256")}, "APK inspection disagrees with metadata")
     return metadata, {"apk_name": apks[0].name, "apk_sha256": apk_hash, "metadata_sha256": digest(data)}
@@ -476,7 +480,7 @@ def api_from_environment():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("create", "delivery"))
-    parser.add_argument("--mode", choices=("off", "ai"), default="ai")
+    parser.add_argument("--mode", choices=("off", "owner", "ai"), default="ai")
     parser.add_argument("--attestation-job-id")
     parser.add_argument("--receipts-job-id")
     args = parser.parse_args(argv)
@@ -487,12 +491,13 @@ def main(argv=None):
                     "CI_COMMIT_BRANCH": os.environ.get("CI_COMMIT_BRANCH") == RELEASE_REF,
                     "CI_PIPELINE_SOURCE": os.environ.get("CI_PIPELINE_SOURCE") != "merge_request_event"},
                    "Not a protected project release lane")
-    if args.action == "delivery" and args.mode == "off":
+    if args.action == "delivery" and args.mode in ("off", "owner"):
         api = GitLab(None, os.environ.get("CI_JOB_TOKEN", ""))
         verify_current_job(api.current_job(), "publish_preview", sha)
         require(api.current_release_protected(), "Release branch is not protected: protected")
-        metadata_for_delivery(Path("."), sha, "off")
-        print("MR7 AI-off delivery metadata verified")
+        metadata_for_delivery(Path("."), sha, args.mode)
+        print("MR7 AI-off delivery metadata verified" if args.mode == "off"
+              else "AI-on delivery (owner waiver 2026-10-30) metadata verified")
         return
     api = api_from_environment()
     name = "mr7_release_attestation" if args.action == "create" else "publish_preview_ai"

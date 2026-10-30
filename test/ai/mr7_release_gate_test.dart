@@ -80,14 +80,28 @@ void main() {
       const bool.fromEnvironment('MERGELINE_AI_ASSISTANT'),
     );
     expect(const bool.fromEnvironment('MERGELINE_AI_BACKGROUND'), isFalse);
-    expect(aiReleasedReadNames, isEmpty);
-    expect(aiReleasedWriteTargets, isEmpty);
+    // v0.6.0 releases every read and every model-visible write (owner,
+    // 2026-10-30); the internal suggestion batch stays hidden.
+    final visible = {
+      for (final row in ProductionAiLedger.rows)
+        if (row.modelVisible) row.operationId,
+    };
+    expect(aiReleasedReadNames, fixtureReleasePolicy.readNames);
+    expect(aiReleasedWriteTargets.keys.toSet(), visible);
+    expect(aiReleasedWriteTargets, isNot(contains('batchApplySuggestions')));
+    for (final targets in aiReleasedWriteTargets.values) {
+      expect(targets, AiTargetKind.values.toSet());
+      expect(() => targets.clear(), throwsUnsupportedError);
+    }
     expect(() => aiReleasedReadNames.add('future'), throwsUnsupportedError);
     expect(
       () => aiReleasedWriteTargets['future'] = {AiTargetKind.issue},
       throwsUnsupportedError,
     );
-    expect(productionAiLedger.modelVisible, isEmpty);
+    expect(
+      productionAiLedger.modelVisible.map((row) => row.operationId).toSet(),
+      visible,
+    );
     expect(
       productionAiReleasePolicy.allowsWriteOperation('futureWrite'),
       isFalse,
@@ -99,11 +113,16 @@ void main() {
       ),
       isFalse,
     );
-    expect(toolsForScope(coordScope, ledger: const _FutureLedger()), isEmpty);
-    expect(toolsForScope(coordScope, ledger: fixtureAiLedger), isEmpty);
+    final futureTools = toolsForScope(
+      coordScope,
+      ledger: const _FutureLedger(),
+    ).map((row) => row.operationId);
+    expect(futureTools, isNot(contains('futureWrite')));
+    expect(futureTools, isNot(contains('batchApplySuggestions')));
+    expect(toolsForScope(coordScope, ledger: fixtureAiLedger), isNotEmpty);
     final policy = aiProductionWritePolicy(AiAutonomyLevel.bypass);
-    expect(policy.operationIds, isEmpty);
-    expect(policy.hardLineOperationIds, isEmpty);
+    expect(policy.operationIds, isNotEmpty);
+    expect(policy.operationIds, everyElement(isIn(visible)));
     expect(policy.catalogueVersion, 6);
     expect(policy.policyVersion, 5);
   });
@@ -127,7 +146,10 @@ void main() {
       () => candidate.writeTargets['updateWorkItemState']!.clear(),
       throwsUnsupportedError,
     );
-    expect(productionAiReleasePolicy.writeTargets, isEmpty);
+    expect(
+      identical(productionAiReleasePolicy.writeTargets, aiReleasedWriteTargets),
+      isTrue,
+    );
   });
 
   test(
@@ -214,7 +236,7 @@ void main() {
 
   for (final entry in mr7ReadArguments.entries) {
     test(
-      'forged production read ${entry.key} refuses an executable call',
+      'production read ${entry.key} is released and executes',
       () async {
         final call = AiToolCall(
           id: entry.key,
@@ -222,7 +244,8 @@ void main() {
           arguments: entry.value,
         );
         for (final view in [fixtureReleasePolicy, productionAiReleasePolicy]) {
-          final released = identical(view, fixtureReleasePolicy);
+          final released = view.allowsRead(entry.key);
+          expect(released, isTrue);
           final adapter = mr7ReadAdapter();
           final api = testApi(adapter);
           addTearDown(api.close);
@@ -300,11 +323,15 @@ void main() {
 
   for (final row in ProductionAiLedger.rows) {
     test(
-      'forged production write ${row.operationId} refuses before freshness and port',
+      'production write ${row.operationId} follows the release policy',
       () async {
         final call = mr7WriteCall(row.operationId);
         for (final view in [fixtureReleasePolicy, productionAiReleasePolicy]) {
-          final released = identical(view, fixtureReleasePolicy);
+          final released = view.allowsWriteOperation(row.operationId);
+          expect(
+            released,
+            identical(view, fixtureReleasePolicy) || row.modelVisible,
+          );
           final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
           addTearDown(h.dispose);
           if (row.operationId == 'upload_attachment') {

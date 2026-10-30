@@ -64,11 +64,16 @@ enum AiScopeKind {
   accountGlobal,
 }
 
-/// MR7 starts closed. Only 7R adds operations with complete release evidence.
-/// Shared operations (including todo snooze) stay closed until every supported
-/// ownership context is proven; project evidence cannot authorize group todos.
-const Map<String, Set<AiTargetKind>> aiReleasedWriteTargets =
-    <String, Set<AiTargetKind>>{};
+/// Every model-visible operation is released for every target kind in v0.6.0
+/// (owner decision 2026-10-30: synthetic sandbox suites plus one emulator
+/// walkthrough instead of the 7R live matrix). Binding, the confirmation card,
+/// typed-name deletes and hard lines still apply to each call.
+final Map<String, Set<AiTargetKind>> aiReleasedWriteTargets =
+    Map<String, Set<AiTargetKind>>.unmodifiable(<String, Set<AiTargetKind>>{
+      for (final AiCapability row in ProductionAiLedger.rows)
+        if (row.modelVisible)
+          row.operationId: Set<AiTargetKind>.unmodifiable(AiTargetKind.values),
+    });
 
 /// How a capability is admitted by a grant. Group work items have no MR6b-1 tool.
 enum AiScopeClass {

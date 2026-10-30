@@ -698,6 +698,22 @@ class DeliveryGateTests(unittest.TestCase):
         m.metadata_for_delivery(self.root, SHA, 'off')
         with self.assertRaises(m.GateError): m.metadata_for_delivery(self.root, SHA, 'ai')
 
+    def test_owner_mode_checks_release_metadata_without_apk_inspection(self):
+        with mock.patch.object(m, 'inspect_apk', side_effect=AssertionError('inspected')):
+            m.metadata_for_delivery(self.root, SHA, 'owner')
+        with self.assertRaises(m.GateError): m.metadata_for_delivery(self.root, SHA, 'off')
+        for key, value in (('channel', 'play'), ('build_type', 'debug'), ('package', 'wrong'),
+                           ('debuggable', True), ('certificate_sha256', 'f' * 64),
+                           ('ai_assistant', False), ('ai_background', True), ('tree', 'f' * 40),
+                           ('apk_sha256', 'f' * 64)):
+            with self.subTest(key=key):
+                old = self.metadata[key]
+                self.metadata[key] = value
+                self.write_metadata()
+                with self.assertRaises(m.GateError): m.metadata_for_delivery(self.root, SHA, 'owner')
+                self.metadata[key] = old
+        self.write_metadata()
+
     def shell_delivery(self, mode, *, legacy=False, fake_kind='valid', job_id='', extra_env=None):
         # The actual shell and validator execute; GitLab is an in-process fake and
         # curl/git are synthetic executables, so no network or credentials are used.

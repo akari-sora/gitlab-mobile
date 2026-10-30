@@ -164,7 +164,7 @@ android_debug:
   script:
     - python3 ci/install_packages.py openjdk-21-jdk-headless
     - source ci/install_android.sh
-    - bash ci/build_android.sh --ai-assistant false --ai-background false
+    - bash ci/build_android.sh --ai-assistant true --ai-background false
   variables:
     GITLAB_MOBILE_ALLOW_EPHEMERAL_DEBUG_SIGNING: '1'
   artifacts:
@@ -215,7 +215,7 @@ publish_preview:
   before_script:
     - python3 ci/install_packages.py git curl ca-certificates
   script:
-    - bash ci/deliver_preview.sh off
+    - bash ci/deliver_preview.sh owner
 publish_preview_ai:
   extends: .flutter
   stage: deliver
