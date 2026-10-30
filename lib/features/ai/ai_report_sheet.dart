@@ -268,7 +268,7 @@ class _AiReportSheetState extends State<AiReportSheet> {
           children: [
             Text(l10n.aiReportTitle, style: theme.textTheme.titleMedium),
             const SizedBox(height: 4),
-            Text(l10n.aiReportIntro, style: muted),
+            Text(l10n.aiReportFormIntro, style: muted),
             const SizedBox(height: 12),
             Text(l10n.aiReportCategory, style: theme.textTheme.labelLarge),
             RadioGroup<AiReportCategory>(
@@ -307,8 +307,9 @@ class _AiReportSheetState extends State<AiReportSheet> {
               onChanged: (value) => setState(() => _attach = value),
             ),
             const SizedBox(height: 4),
-            // Text first, button under it: a long address or
-            // label at large text sizes must not overflow.
+            // The fallback address, in case the form cannot be reached.
+            // Text first, button under it: a long address or label at large
+            // text sizes must not overflow.
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -316,7 +317,7 @@ class _AiReportSheetState extends State<AiReportSheet> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    l10n.aiReportDestination(aiReportEmail),
+                    l10n.aiReportMailFallback(aiReportEmail),
                     style: muted,
                   ),
                 ),

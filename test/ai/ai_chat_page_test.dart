@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
+import 'package:gitlab_mobile/core/ai/ai_report.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -801,17 +802,22 @@ void main() {
     );
 
     final origins = <Rect?>[];
+    // What reached the mail app or the share sheet: the fallback route.
+    final handedOff = <({String subject, String body})>[];
 
-    Future<List<({String subject, String body})>> openReport(
+    /// Opens the sheet; returns what was posted to the form in the app.
+    Future<List<AiReportFormFields>> openReport(
       WidgetTester tester,
       _FakeSession session, {
+      AiReportPostFailure? postFailure,
       AiReportRoute route = AiReportRoute.mail,
       bool fail = false,
       String tag = 'zh-TW',
       double scale = 1,
     }) async {
-      final sent = <({String subject, String body})>[];
+      final posted = <AiReportFormFields>[];
       origins.clear();
+      handedOff.clear();
       await tester.pumpWidget(
         _host(
           AiChatPage(
@@ -821,11 +827,15 @@ void main() {
               buildNumber: '612',
               commit: 'abc1234',
             ),
+            postReport: (fields) async {
+              if (postFailure != null) throw postFailure;
+              posted.add(fields);
+            },
             sendReport:
                 ({required subject, required body, sharePositionOrigin}) async {
               origins.add(sharePositionOrigin);
               if (fail) throw StateError('no mail, no share');
-              sent.add((subject: subject, body: body));
+              handedOff.add((subject: subject, body: body));
               return route;
             },
           ),
@@ -837,7 +847,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('ai-chat-report')));
       await tester.pumpAndSettle();
       expect(find.text(l10n.aiReportTitle), findsOneWidget);
-      return sent;
+      return posted;
     }
 
     _FakeSession answered() => _FakeSession(
@@ -861,7 +871,7 @@ void main() {
       tester,
     ) async {
       final session = answered();
-      final sent = await openReport(tester, session);
+      final posted = await openReport(tester, session);
       final button = find.byKey(const ValueKey('ai-report-send'));
       expect(tester.widget<ButtonStyleButton>(button).onPressed, isNull);
       await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
@@ -874,17 +884,151 @@ void main() {
       expect(shown, isNot(contains('renames')));
       await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
       await tester.pumpAndSettle();
-      expect(tester.widget<Text>(preview).data, contains(answerText));
+      final confirmed = tester.widget<Text>(preview).data!;
+      expect(confirmed, contains(answerText));
       await send(tester);
-      expect(sent.single.body, contains(answerText));
-      expect(sent.single.body.split('\n').first, l10n.aiReportSendTo(aiReportEmail));
+      final fields = posted.single;
+      expect(fields.reason, 'inaccurate');
+      expect(fields.app, '0.6.0+612 (abc1234)');
+      expect(fields.details, contains('preset: opencode-go'));
+      expect(fields.excerpt, answerText);
+      // Everything posted is in the preview the user confirmed.
+      expect(fields.shownIn(confirmed), isTrue);
+      expect(session.reported, hasLength(1));
+      expect(find.text(l10n.aiReportSent), findsOneWidget);
+      // Posted inside the app: neither mail nor the share sheet was opened.
+      expect(origins, isEmpty);
+      expect(handedOff, isEmpty);
+    });
+
+    testWidgets('a failed post offers mail, used only when the user agrees', (
+      tester,
+    ) async {
+      final session = answered();
+      final posted = await openReport(
+        tester,
+        session,
+        postFailure: const AiReportPostFailure(500),
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tester.pumpAndSettle();
+      final preview = find.byKey(const ValueKey('ai-report-preview'));
+      final confirmed = tester.widget<Text>(preview).data!;
+      await send(tester);
+      expect(posted, isEmpty);
+      // The failure is shown, and nothing is handed over until the user
+      // picks mail or sharing.
+      expect(find.text(l10n.aiReportPostFailed), findsOneWidget);
+      expect(
+        find.text(l10n.aiReportPostRefused(500, aiReportEmail)),
+        findsOneWidget,
+      );
+      expect(handedOff, isEmpty);
+      expect(session.reported, isEmpty);
+      await tester.tap(find.text(l10n.aiReportUseMail));
+      await tester.pumpAndSettle();
+      final mail = handedOff.single;
+      expect(mail.subject, l10n.aiReportSubject);
+      final lines = mail.body.split('\n');
+      expect(lines.first, l10n.aiReportSendTo(aiReportEmail));
+      expect(lines[1], 'to: $aiReportEmail');
+      // The same report the user confirmed, line by line.
+      for (final line in confirmed.split('\n')) {
+        expect(mail.body, contains(line));
+      }
       expect(session.reported, hasLength(1));
       expect(find.text(l10n.aiReportMailOpened), findsOneWidget);
     });
 
+    testWidgets('declining the fallback sends nothing', (tester) async {
+      final session = answered();
+      await openReport(
+        tester,
+        session,
+        postFailure: const AiReportPostFailure(),
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(
+        find.text(l10n.aiReportPostUnreachable(aiReportEmail)),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(l10n.cancelAction));
+      await tester.pumpAndSettle();
+      expect(handedOff, isEmpty);
+      expect(origins, isEmpty);
+      expect(session.reported, isEmpty);
+      expect(find.byKey(const ValueKey('ai-chat-report')), findsOneWidget);
+    });
+
+    testWidgets('a post that may have arrived says so before the fallback', (
+      tester,
+    ) async {
+      final session = answered();
+      await openReport(
+        tester,
+        session,
+        postFailure: const AiReportPostFailure.uncertain(),
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(
+        find.text(l10n.aiReportPostUncertain(aiReportEmail)),
+        findsOneWidget,
+      );
+      expect(
+        find.text(l10n.aiReportPostUnreachable(aiReportEmail)),
+        findsNothing,
+      );
+      await tester.tap(find.text(l10n.cancelAction));
+      await tester.pumpAndSettle();
+      expect(handedOff, isEmpty);
+    });
+
+    testWidgets('nothing about the account, project or provider is posted', (
+      tester,
+    ) async {
+      final session = answered();
+      final posted = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-privacy')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-report-description')),
+        'it printed synthetic-secret',
+      );
+      await tester.pumpAndSettle();
+      await send(tester);
+      final form = posted.single.form;
+      expect(form.keys, {
+        aiReportReasonEntry,
+        aiReportDetailsEntry,
+        aiReportExcerptEntry,
+        aiReportAppEntry,
+      });
+      final values = form.values.join('\n');
+      for (final absent in [
+        'synthetic-secret',
+        'team/example',
+        'Synthetic change',
+        '!44',
+        'provider.example',
+        'Provider one',
+        aiReportEmail,
+      ]) {
+        expect(values, isNot(contains(absent)), reason: absent);
+      }
+      expect(posted.single.details, contains('it printed [REDACTED]'));
+    });
+
     testWidgets('the text is checked again when it is sent', (tester) async {
       final session = answered();
-      final sent = await openReport(tester, session);
+      final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
@@ -904,11 +1048,15 @@ void main() {
       session.update(() => session.items = [rebuilt]);
       await tester.pumpAndSettle();
       await send(tester);
-      final body = sent.single.body;
-      expect(body, contains('It renames [REDACTED] files.'));
-      expect(body, contains('description: pasted [REDACTED] by mistake'));
-      expect(body, isNot(contains('synthetic-secret')));
-      expect(body, isNot(contains('renames **one** file')));
+      final fields = posted.single;
+      expect(fields.excerpt, 'It renames [REDACTED] files.');
+      expect(
+        fields.details,
+        contains('description: pasted [REDACTED] by mistake'),
+      );
+      final values = fields.form.values.join('\n');
+      expect(values, isNot(contains('synthetic-secret')));
+      expect(values, isNot(contains('renames **one** file')));
       // The report is marked on the answer the user picked; the session
       // follows it to the current one.
       expect(session.reported, [original]);
@@ -918,7 +1066,7 @@ void main() {
       tester,
     ) async {
       final session = answered();
-      final sent = await openReport(tester, session);
+      final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
@@ -938,7 +1086,7 @@ void main() {
       expect(tester.widget<Text>(preview).data, contains(answerText));
       await send(tester);
       // Nothing left; the sheet now shows the text that would go.
-      expect(sent, isEmpty);
+      expect(posted, isEmpty);
       final note = find.byKey(const ValueKey('ai-report-preview-updated'));
       expect(note, findsOne);
       // The note is on screen and Send announced it.
@@ -951,14 +1099,14 @@ void main() {
       );
       expect(tester.widget<Text>(preview).data, contains('two files'));
       await send(tester);
-      expect(sent.single.body, contains('two files'));
+      expect(posted.single.excerpt, contains('two files'));
     });
 
     testWidgets('a second Send while the first is checked sends once', (
       tester,
     ) async {
       final session = answered()..refreshGate = Completer<void>();
-      final sent = await openReport(tester, session);
+      final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
       await tester.pumpAndSettle();
       final button = find.byKey(const ValueKey('ai-report-send'));
@@ -970,7 +1118,7 @@ void main() {
       expect(session.secretRefreshes, 1);
       session.refreshGate!.complete();
       await tester.pumpAndSettle();
-      expect(sent, hasLength(1));
+      expect(posted, hasLength(1));
       expect(session.reported, hasLength(1));
     });
 
@@ -1002,7 +1150,7 @@ void main() {
     ) async {
       const token = 'synthetic-rotated-oauth-token';
       final session = answered()..rotatedSecret = token;
-      final sent = await openReport(tester, session);
+      final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-other')));
       await tester.pumpAndSettle();
       await tester.enterText(
@@ -1011,21 +1159,21 @@ void main() {
       );
       await tester.pumpAndSettle();
       await send(tester);
-      expect(sent, isEmpty);
+      expect(posted, isEmpty);
       final preview = find.byKey(const ValueKey('ai-report-preview'));
       expect(tester.widget<Text>(preview).data, isNot(contains(token)));
       await send(tester);
-      expect(sent.single.body, contains('pasted [REDACTED] here'));
-      expect(sent.single.body, isNot(contains(token)));
+      expect(posted.single.details, contains('pasted [REDACTED] here'));
+      expect(posted.single.form.values.join('\n'), isNot(contains(token)));
     });
 
     testWidgets('secrets that cannot be read stop the report', (tester) async {
       final session = answered()..secretsReadable = false;
-      final sent = await openReport(tester, session);
+      final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
       await tester.pumpAndSettle();
       await send(tester);
-      expect(sent, isEmpty);
+      expect(posted, isEmpty);
       expect(session.reported, isEmpty);
       expect(find.text(l10n.aiReportNotChecked), findsOneWidget);
     });
@@ -1034,10 +1182,17 @@ void main() {
       tester,
     ) async {
       final session = answered();
-      await openReport(tester, session, route: AiReportRoute.share);
+      await openReport(
+        tester,
+        session,
+        postFailure: const AiReportPostFailure(),
+        route: AiReportRoute.share,
+      );
       await tester.tap(find.byKey(const ValueKey('ai-report-other')));
       await tester.pumpAndSettle();
       await send(tester);
+      await tester.tap(find.text(l10n.aiReportUseMail));
+      await tester.pumpAndSettle();
       expect(origins.single, isNotNull);
       expect(origins.single!.isEmpty, isFalse);
     });
@@ -1057,13 +1212,13 @@ void main() {
 
     testWidgets('an answer gone before sending is not sent', (tester) async {
       final session = answered();
-      final sent = await openReport(tester, session);
+      final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-other')));
       await tester.pumpAndSettle();
       session.update(() => session.items = []);
       await tester.pumpAndSettle();
       await send(tester);
-      expect(sent, isEmpty);
+      expect(posted, isEmpty);
       expect(session.reported, isEmpty);
       expect(find.text(l10n.aiReportNotChecked), findsOneWidget);
     });
@@ -1122,7 +1277,7 @@ void main() {
         addTearDown(() => useLanguage(languageForTag('zh-TW')!));
         const token = 'synthetic-rotated-oauth-token';
         final session = answered()..rotatedSecret = token;
-        final sent = await openReport(tester, session, tag: tag, scale: scale);
+        final posted = await openReport(tester, session, tag: tag, scale: scale);
         final other = find.byKey(const ValueKey('ai-report-other'));
         await tester.ensureVisible(other);
         await tester.pumpAndSettle();
@@ -1139,7 +1294,7 @@ void main() {
         await tester.tap(button);
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        expect(sent, isEmpty);
+        expect(posted, isEmpty);
         expect(find.byKey(const ValueKey('ai-report-preview-updated')), findsOne);
         // Send stays above the keyboard and part of the preview shows.
         expect(tester.getRect(button).bottom, lessThanOrEqualTo(640 - 280));
@@ -1170,7 +1325,7 @@ void main() {
       addTearDown(tester.view.reset);
       const token = 'synthetic-rotated-oauth-token';
       final session = answered()..rotatedSecret = token;
-      final sent = await openReport(tester, session);
+      final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-other')));
       await tester.pumpAndSettle();
       final description = find.byKey(const ValueKey('ai-report-description'));
@@ -1183,7 +1338,7 @@ void main() {
       tester.takeAnnouncements();
       await tester.tap(find.byKey(const ValueKey('ai-report-send')));
       await tester.pumpAndSettle();
-      expect(sent, isEmpty);
+      expect(posted, isEmpty);
       // Announced even though the note was outside the form's viewport in
       // the frame it appeared.
       expect(
@@ -1228,7 +1383,7 @@ void main() {
       tester,
     ) async {
       final session = answered()..refreshGate = Completer<void>();
-      final sent = await openReport(tester, session);
+      final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-other')));
       await tester.pumpAndSettle();
       await tester.enterText(
@@ -1242,7 +1397,7 @@ void main() {
       await tester.pump();
       session.refreshGate!.complete();
       await tester.pumpAndSettle();
-      expect(sent, isEmpty);
+      expect(posted, isEmpty);
       expect(find.byKey(const ValueKey('ai-report-preview-updated')), findsOne);
       final preview = find.byKey(const ValueKey('ai-report-preview'));
       expect(tester.widget<Text>(preview).data, contains('typed-just-now'));
@@ -1252,7 +1407,7 @@ void main() {
       tester,
     ) async {
       final session = answered()..refreshGate = Completer<void>();
-      final sent = await openReport(tester, session);
+      final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
       await tester.pumpAndSettle();
       final button = find.byKey(const ValueKey('ai-report-send'));
@@ -1264,7 +1419,7 @@ void main() {
       await tester.pump();
       session.refreshGate!.complete();
       await tester.pumpAndSettle();
-      expect(sent, isEmpty);
+      expect(posted, isEmpty);
       expect(find.byType(AiChatPage), findsOneWidget);
     });
 
@@ -1281,7 +1436,7 @@ void main() {
       useLanguage(languageForTag('en')!);
       addTearDown(() => useLanguage(languageForTag('zh-TW')!));
       final session = answered();
-      final sent = await openReport(tester, session, tag: 'en', scale: 2);
+      final posted = await openReport(tester, session, tag: 'en', scale: 2);
       final harmful = find.byKey(const ValueKey('ai-report-harmful'));
       await tester.ensureVisible(harmful);
       await tester.pumpAndSettle();
@@ -1310,20 +1465,23 @@ void main() {
       await tester.pump();
       tester.view.resetViewInsets();
       await tester.pumpAndSettle();
-      expect(sent, hasLength(1));
+      expect(posted, hasLength(1));
     });
 
     testWidgets('the share sheet route says where to send', (tester) async {
       final session = answered();
-      final sent = await openReport(
+      await openReport(
         tester,
         session,
+        postFailure: const AiReportPostFailure(503),
         route: AiReportRoute.share,
       );
       await tester.tap(find.byKey(const ValueKey('ai-report-other')));
       await tester.pumpAndSettle();
       await send(tester);
-      expect(sent.single.body, isNot(contains('renames')));
+      await tester.tap(find.text(l10n.aiReportUseMail));
+      await tester.pumpAndSettle();
+      expect(handedOff.single.body, isNot(contains('renames')));
       expect(find.text(l10n.aiReportShareOpened(aiReportEmail)), findsOne);
       expect(session.reported, hasLength(1));
     });
@@ -1332,10 +1490,18 @@ void main() {
       tester,
     ) async {
       final session = answered();
-      await openReport(tester, session, fail: true);
+      await openReport(
+        tester,
+        session,
+        postFailure: const AiReportPostFailure(),
+        fail: true,
+      );
       await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
       await tester.pumpAndSettle();
       await send(tester);
+      await tester.tap(find.text(l10n.aiReportUseMail));
+      await tester.pumpAndSettle();
+      expect(origins, hasLength(1));
       expect(session.reported, isEmpty);
       expect(find.text(l10n.aiReportFailed), findsOneWidget);
     });

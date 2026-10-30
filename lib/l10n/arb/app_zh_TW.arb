@@ -10925,7 +10925,7 @@
   "aiDraftCheckFailed": "無法檢查這段回答，所以沒有附加。",
   "aiReportAction": "回報",
   "aiReportTitle": "回報此回應",
-  "aiReportIntro": "回報會寄給 Mergeline 的開發者，用來改善 AI 功能。預設寄出類別、你的說明、應用程式版本、模型與服務設定、時間和訊息序號，不含回應內容。",
+  "aiReportFormIntro": "回報會在應用程式內透過 Google Forms 送給 Mergeline 的開發者，用來改善 AI 功能。預設送出類別、你的說明、應用程式版本、模型與服務設定、時間和訊息序號，不含回應內容。",
   "aiReportCategory": "哪裡有問題？",
   "aiReportHarmful": "有害或冒犯的內容",
   "aiReportInaccurate": "不正確或誤導",
@@ -10934,15 +10934,15 @@
   "aiReportDescription": "說明（選填）",
   "aiReportAttach": "附上這則回應的內容",
   "aiReportAttachHint": "預設不附上。附上的內容已遮蔽秘密。",
-  "aiReportDestination": "寄送到 {email}",
-  "@aiReportDestination": {
+  "aiReportMailFallback": "無法送出時，可以改用郵件寄到 {email}。",
+  "@aiReportMailFallback": {
     "placeholders": {
       "email": {}
     }
   },
   "aiReportCopyAddress": "複製地址",
   "aiReportAddressCopied": "已複製地址",
-  "aiReportPreview": "要寄出的內容",
+  "aiReportPreview": "要送出的內容",
   "aiReportSend": "送出回報",
   "aiReportSendTo": "請寄到 {email}",
   "@aiReportSendTo": {
@@ -10966,6 +10966,29 @@
   "aiReportNotSaved": "回報標記沒能存進加密紀錄；重新開啟後，這則回應可能會再次顯示。",
   "aiReportPreviewUpdated": "預覽已更新為要送出的內容，確認後請再按一次「送出回報」。",
   "aiReportNotChecked": "無法檢查要送出的內容，回報沒有送出。",
+  "aiReportSending": "正在透過 Google Forms 送出回報…",
+  "aiReportSent": "回報已送給 Mergeline 的開發者，謝謝。",
+  "aiReportPostFailed": "回報沒有送出",
+  "aiReportPostUnreachable": "無法連上 Google Forms，回報沒有送出。要改用郵件或分享，把同一份回報寄到 {email} 嗎？",
+  "@aiReportPostUnreachable": {
+    "placeholders": {
+      "email": {}
+    }
+  },
+  "aiReportPostUncertain": "無法確認 Google Forms 是否收到回報，它可能已經送出。要改用郵件或分享，把同一份回報寄到 {email} 嗎？",
+  "@aiReportPostUncertain": {
+    "placeholders": {
+      "email": {}
+    }
+  },
+  "aiReportPostRefused": "Google Forms 沒有收下回報（HTTP {status}）。要改用郵件或分享，把同一份回報寄到 {email} 嗎？",
+  "@aiReportPostRefused": {
+    "placeholders": {
+      "status": {},
+      "email": {}
+    }
+  },
+  "aiReportUseMail": "改用郵件或分享",
   "aiIntentStar": "標星|加上星號",
   "aiIntentUnstar": "取消標星|移除星號",
   "aiIntentSubscribe": "訂閱",
