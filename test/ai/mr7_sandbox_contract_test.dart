@@ -3247,7 +3247,7 @@ void main() {
     expect(sends, 2);
   });
   test(
-    'production policy is the production view and candidate is never final',
+    'production policy is the production view and is never final',
     () async {
       expect(
         identical(
@@ -3266,9 +3266,13 @@ void main() {
       expect(receipt['evidenceClass'], 'SYNTHETIC');
       expect(receipt['finalEligible'], isFalse);
       expect(receipt['live'], 'NOT_RUN');
-      expect(_rows(receipt).single['status'], 'NOT_RUN');
-      expect(_rows(receipt).single['reason'], 'releaseClosed');
-      expect(server.scenarioWrites, 0);
+      // v0.6.0 releases setStar, so the production view executes it.
+      expect(
+        _rows(receipt).single['status'],
+        'PASS',
+        reason: jsonEncode(receipt),
+      );
+      expect(server.scenarioWrites, 1);
     },
   );
 

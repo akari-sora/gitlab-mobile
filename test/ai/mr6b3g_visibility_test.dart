@@ -159,7 +159,7 @@ final class _Writes {
 }
 
 void main() {
-  test('G14 rows remain intact while the MR7 release policy is closed', () {
+  test('G14 rows remain intact and released in the v0.6.0 policy', () {
     expect(aiToolCatalogueVersion, 6);
     expect(aiDisclosureVersion, 2);
     expect(aiGroupWorkItemWritesEnabledForTesting, isNull);
@@ -167,7 +167,7 @@ void main() {
     final policy = aiProductionWritePolicy(AiAutonomyLevel.bypass);
     expect(policy.policyVersion, 5);
     expect(policy.catalogueVersion, 6);
-    expect(policy.operationIds, isEmpty);
+    expect(policy.operationIds, containsAll(_aliases));
     final groups = ProductionAiLedger.rows.where(
       (row) => row.scopeClass == AiScopeClass.groupWorkItem,
     );
