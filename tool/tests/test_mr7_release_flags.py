@@ -144,6 +144,7 @@ fi
         self.assertIs(metadata['ai_assistant'], True)
         self.assertIs(metadata['ai_background'], False)
         self.assertEqual(metadata['channel'], 'play')
+        self.assertEqual(metadata['package'], 'app.mergeline')
         result = self.build('--flavor', 'play', '--ai-assistant', 'true', '--ai-background', 'true')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Play AI background must remain off.', result.stderr)
