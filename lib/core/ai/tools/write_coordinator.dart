@@ -3372,13 +3372,21 @@ Map<String, AiArgSpec> _argumentSpecs(AiCapability capability) =>
         : capability.arguments;
 
 Map<String, Object?> _arguments(AiToolCall call, AiCapability capability) {
-  final args = call.arguments;
+  final rawArgs = call.arguments;
   final specs = {
     for (final entry in _argumentSpecs(capability).entries)
       if (entry.value.modelVisible) entry.key: entry.value,
     'reason': const AiArgSpec(AiArgType.string),
   };
-  if (args is! Map<String, Object?> || !_validObject(args, specs) ||
+  if (rawArgs is! Map<String, Object?>) {
+    throw const _WriteBlocked('invalidArguments');
+  }
+  final args = _withoutPlaceholderFields(
+    capability.operationId,
+    rawArgs,
+    specs,
+  );
+  if (!_validObject(args, specs) ||
       (args['projectId'] != null && (args['projectId']! as int) < 1) ||
       (args['groupId'] != null && (args['groupId']! as int) < 1) ||
       (capability.scopeClass == AiScopeClass.groupWorkItem &&
@@ -3393,7 +3401,7 @@ Map<String, Object?> _arguments(AiToolCall call, AiCapability capability) {
       _describeArgumentFailure(args, specs, capability),
     );
   }
-  return _withoutPlaceholderFields(capability.operationId, args);
+  return args;
 }
 
 final _safeArgumentKey = RegExp(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$');
@@ -3620,39 +3628,120 @@ AiAppText? _capValidationClause(String clause, int maxChars) {
   return clipped;
 }
 
-// Small models (gpt-4o-mini, 2026-10-30) fill every optional REST issue and
-// merge request field with an empty or zero placeholder; on an update that
-// would clear labels, assignees or the milestone the user never mentioned.
-// Such values count as "not set", in the preview and in the request alike.
-// Clearing goes through the dedicated label, assignee and milestone writes.
+// Small models (gpt-4o-mini, 2026-10-30) fill every optional argument with an
+// empty, null or zero placeholder; on an update that would clear or overwrite
+// existing data (or fail optional validation) for fields the user never
+// mentioned. Such values count as "not set" in the preview and request alike.
 const _placeholderFieldOperations = {
+  'addAwardEmoji',
+  'removeAwardEmoji',
   'createIssue',
   'updateIssue',
   'createMergeRequest',
   'updateMergeRequest',
+  'createDiscussion',
+  'createDraftNote',
+  'createLabel',
+  'updateLabel',
+  'createMilestone',
+  'updateMilestone',
+  'moveBoardCard',
+  'applySuggestion',
+  'updateWorkItemContent',
+  'updateWorkItemDates',
+  'updateWorkItemMilestone',
+  'updateWorkItemWeight',
+  'updateGroupWorkItemDates',
+  'updateGroupWorkItemMilestone',
+  'updateGroupWorkItemWeight',
+  'updateGroupWorkItemContent',
+  'createTag',
+  'createRelease',
+  'updateRelease',
+  'mergeRequest',
+  'createPipeline',
+  'createSnippet',
+  'updateSnippetMetadata',
+  'updateSnippetFiles',
+  'createProject',
+  'editProject',
 };
+
+const _zeroPlaceholderFields = {
+  'milestone_id',
+  'noteId',
+  'old_line',
+  'new_line',
+};
+
+const _zeroPlaceholderListFields = {
+  'assignee_ids',
+  'reviewer_ids',
+};
+
+bool _isPlaceholderValue(String key, Object? value) =>
+    value == null ||
+    (value is String && value.isEmpty) ||
+    (value is List &&
+        (value.isEmpty ||
+            (_zeroPlaceholderListFields.contains(key) &&
+                value.every((item) => item == 0)))) ||
+    (_zeroPlaceholderFields.contains(key) && value == 0);
 
 Map<String, Object?> _withoutPlaceholderFields(
   String operationId,
   Map<String, Object?> args,
+  Map<String, AiArgSpec> specs,
 ) {
-  final fields = args['fields'];
-  if (!_placeholderFieldOperations.contains(operationId) ||
-      fields is! Map<String, Object?>) {
-    return args;
+  if (!_placeholderFieldOperations.contains(operationId)) return args;
+  return _stripPlaceholders(args, specs);
+}
+
+Map<String, Object?> _stripPlaceholders(
+  Map<String, Object?> values,
+  Map<String, AiArgSpec> specs,
+) {
+  final out = <String, Object?>{};
+  for (final entry in values.entries) {
+    final key = entry.key;
+    final value = entry.value;
+    final spec = specs[key];
+    if (spec == null) {
+      out[key] = value;
+      continue;
+    }
+    if (key != 'reason' && !spec.required && _isPlaceholderValue(key, value)) {
+      continue;
+    }
+    if (spec.type == AiArgType.object && value is Map<String, Object?>) {
+      final nested = _stripPlaceholders(value, _nestedProperties(spec));
+      if (!spec.required &&
+          (nested.isEmpty ||
+              (key == 'position' &&
+                  nested.entries.every(
+                    (e) =>
+                        e.key == 'position_type' ||
+                        _isPlaceholderValue(e.key, e.value),
+                  )))) {
+        continue;
+      }
+      out[key] = nested;
+    } else if ((spec.type == AiArgType.variables ||
+            spec.type == AiArgType.snippetActions) &&
+        value is List<Object?>) {
+      final nested = _nestedProperties(spec);
+      out[key] = <Object?>[
+        for (final item in value)
+          if (item is Map<String, Object?>)
+            _stripPlaceholders(item, nested)
+          else
+            item,
+      ];
+    } else {
+      out[key] = value;
+    }
   }
-  bool placeholder(String key, Object? value) =>
-      value == null ||
-      (value is String && value.isEmpty) ||
-      (value is List && value.isEmpty) ||
-      (key == 'milestone_id' && value == 0);
-  return {
-    ...args,
-    'fields': {
-      for (final entry in fields.entries)
-        if (!placeholder(entry.key, entry.value)) entry.key: entry.value,
-    },
-  };
+  return out;
 }
 
 bool _validObject(Map<String, Object?> values, Map<String, AiArgSpec> specs) =>

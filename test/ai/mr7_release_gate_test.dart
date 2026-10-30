@@ -405,6 +405,355 @@ void main() {
     c.stop('done');
   });
 
+  for (final item in <({
+    String operation,
+    Map<String, Object?> extra,
+    void Function(Map<String, Object?>) verify,
+  })>[
+    (
+      operation: 'addAwardEmoji',
+      extra: {'name': 'thumbsup', 'noteId': 0},
+      verify: (args) {
+        expect(args['name'], 'thumbsup');
+        expect(args, isNot(contains('noteId')));
+      },
+    ),
+    (
+      operation: 'removeAwardEmoji',
+      extra: {'awardId': 8, 'noteId': 0},
+      verify: (args) {
+        expect(args['awardId'], 8);
+        expect(args, isNot(contains('noteId')));
+      },
+    ),
+    (
+      operation: 'createDiscussion',
+      extra: {
+        'body': 'synthetic',
+        'position': {
+          'position_type': 'text',
+          'base_sha': mr7Base,
+          'start_sha': mr7Base,
+          'head_sha': mr7Head,
+          'old_path': 'README.md',
+          'new_path': 'README.md',
+          'old_line': 0,
+          'new_line': 3,
+        },
+      },
+      verify: (args) {
+        expect(args['body'], 'synthetic');
+        expect(args['position'], {
+          'position_type': 'text',
+          'base_sha': mr7Base,
+          'start_sha': mr7Base,
+          'head_sha': mr7Head,
+          'old_path': 'README.md',
+          'new_path': 'README.md',
+          'new_line': 3,
+        });
+      },
+    ),
+    (
+      operation: 'createDraftNote',
+      extra: {
+        'body': 'synthetic',
+        'commitId': '',
+        'position': {
+          'position_type': 'text',
+          'base_sha': mr7Base,
+          'start_sha': mr7Base,
+          'head_sha': mr7Head,
+          'old_path': 'README.md',
+          'new_path': 'README.md',
+          'old_line': 0,
+          'new_line': 3,
+        },
+      },
+      verify: (args) {
+        expect(args['body'], 'synthetic');
+        expect(args, isNot(contains('commitId')));
+        expect(args['position'], {
+          'position_type': 'text',
+          'base_sha': mr7Base,
+          'start_sha': mr7Base,
+          'head_sha': mr7Head,
+          'old_path': 'README.md',
+          'new_path': 'README.md',
+          'new_line': 3,
+        });
+      },
+    ),
+    (
+      operation: 'createLabel',
+      extra: {
+        'fields': {'name': 'synthetic', 'color': '#ffffff', 'description': ''},
+      },
+      verify: (args) =>
+          expect(args['fields'], {'name': 'synthetic', 'color': '#ffffff'}),
+    ),
+    (
+      operation: 'updateLabel',
+      extra: {
+        'fields': {'name': '', 'color': '#000000', 'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'color': '#000000'}),
+    ),
+    (
+      operation: 'createMilestone',
+      extra: {
+        'fields': {
+          'title': 'synthetic',
+          'description': '',
+          'due_date': '',
+          'start_date': '2026-10-01',
+        },
+      },
+      verify: (args) => expect(args['fields'], {
+        'title': 'synthetic',
+        'start_date': '2026-10-01',
+      }),
+    ),
+    (
+      operation: 'updateMilestone',
+      extra: {
+        'fields': {
+          'title': 'synthetic',
+          'description': '',
+          'due_date': '',
+          'start_date': '',
+        },
+      },
+      verify: (args) => expect(args['fields'], {'title': 'synthetic'}),
+    ),
+    (
+      operation: 'moveBoardCard',
+      extra: {
+        'fields': {'labels': '', 'state_event': 'close'},
+      },
+      verify: (args) => expect(args['fields'], {'state_event': 'close'}),
+    ),
+    (
+      operation: 'applySuggestion',
+      extra: {'suggestionId': 5, 'commitMessage': ''},
+      verify: (args) {
+        expect(args['suggestionId'], 5);
+        expect(args, isNot(contains('commitMessage')));
+      },
+    ),
+    (
+      operation: 'updateWorkItemContent',
+      extra: {'title': 'Synthetic title', 'description': ''},
+      verify: (args) {
+        expect(args['title'], 'Synthetic title');
+        expect(args, isNot(contains('description')));
+      },
+    ),
+    (
+      operation: 'updateWorkItemDates',
+      extra: {
+        'mode': 'manual',
+        'startDate': '',
+        'dueDate': '2026-11-01',
+        'clearStart': null,
+      },
+      verify: (args) {
+        expect(args['dueDate'], '2026-11-01');
+        expect(args, isNot(contains('startDate')));
+        expect(args, isNot(contains('clearStart')));
+      },
+    ),
+    (
+      operation: 'updateWorkItemMilestone',
+      extra: {'milestoneTitle': '', 'clearMilestone': true},
+      verify: (args) {
+        expect(args['clearMilestone'], isTrue);
+        expect(args, isNot(contains('milestoneTitle')));
+      },
+    ),
+    (
+      operation: 'updateWorkItemWeight',
+      extra: {'weight': 0, 'clearWeight': null},
+      verify: (args) {
+        expect(args['weight'], 0);
+        expect(args, isNot(contains('clearWeight')));
+      },
+    ),
+    (
+      operation: 'updateGroupWorkItemDates',
+      extra: {
+        'mode': 'manual',
+        'startDate': '',
+        'dueDate': '2026-11-01',
+        'clearStart': null,
+      },
+      verify: (args) {
+        expect(args['dueDate'], '2026-11-01');
+        expect(args, isNot(contains('startDate')));
+        expect(args, isNot(contains('clearStart')));
+      },
+    ),
+    (
+      operation: 'updateGroupWorkItemMilestone',
+      extra: {'milestoneTitle': '', 'clearMilestone': true},
+      verify: (args) {
+        expect(args['clearMilestone'], isTrue);
+        expect(args, isNot(contains('milestoneTitle')));
+      },
+    ),
+    (
+      operation: 'updateGroupWorkItemWeight',
+      extra: {'weight': 0, 'clearWeight': null},
+      verify: (args) {
+        expect(args['weight'], 0);
+        expect(args, isNot(contains('clearWeight')));
+      },
+    ),
+    (
+      operation: 'updateGroupWorkItemContent',
+      extra: {'title': 'Synthetic title', 'description': ''},
+      verify: (args) {
+        expect(args['title'], 'Synthetic title');
+        expect(args, isNot(contains('description')));
+      },
+    ),
+    (
+      operation: 'createTag',
+      extra: {'tag_name': 'v2/test', 'ref': 'main', 'message': ''},
+      verify: (args) {
+        expect(args['tag_name'], 'v2/test');
+        expect(args, isNot(contains('message')));
+      },
+    ),
+    (
+      operation: 'createRelease',
+      extra: {
+        'fields': {
+          'tag_name': 'v1',
+          'name': 'Version One',
+          'description': '',
+        },
+      },
+      verify: (args) => expect(args['fields'], {
+        'tag_name': 'v1',
+        'name': 'Version One',
+      }),
+    ),
+    (
+      operation: 'updateRelease',
+      extra: {
+        'fields': {'name': 'Revised', 'description': ''},
+      },
+      verify: (args) => expect(args['fields'], {'name': 'Revised'}),
+    ),
+    (
+      operation: 'mergeRequest',
+      extra: {
+        'squash': true,
+        'autoMerge': null,
+        'removeSourceBranch': null,
+      },
+      verify: (args) {
+        expect(args['squash'], isTrue);
+        expect(args, isNot(contains('autoMerge')));
+        expect(args, isNot(contains('removeSourceBranch')));
+      },
+    ),
+    (
+      operation: 'createPipeline',
+      extra: {
+        'ref': 'feature/test',
+        'variables': <Object?>[
+          {'key': 'BUILD_TARGET', 'value': 'debug', 'variable_type': ''},
+        ],
+      },
+      verify: (args) => expect(args['variables'], [
+        {'key': 'BUILD_TARGET', 'value': 'debug'},
+      ]),
+    ),
+    (
+      operation: 'createSnippet',
+      extra: {'title': 'Snippet', 'description': '', 'visibility': ''},
+      verify: (args) {
+        expect(args['title'], 'Snippet');
+        expect(args, isNot(contains('description')));
+        expect(args, isNot(contains('visibility')));
+      },
+    ),
+    (
+      operation: 'updateSnippetMetadata',
+      extra: {
+        'fields': {'title': 'Revised', 'description': '', 'visibility': ''},
+      },
+      verify: (args) => expect(args['fields'], {'title': 'Revised'}),
+    ),
+    (
+      operation: 'updateSnippetFiles',
+      extra: {
+        'actions': <Object?>[
+          {
+            'action': 'create',
+            'file_path': 'b.txt',
+            'content': 'second\n',
+            'previous_path': '',
+            'edits': <Object?>[],
+          },
+        ],
+      },
+      verify: (args) => expect(args['actions'], [
+        {'action': 'create', 'file_path': 'b.txt', 'content': 'second\n'},
+      ]),
+    ),
+    (
+      operation: 'createProject',
+      extra: {
+        'name': 'New project',
+        'path': 'new-project',
+        'description': '',
+      },
+      verify: (args) {
+        expect(args['name'], 'New project');
+        expect(args, isNot(contains('description')));
+      },
+    ),
+    (
+      operation: 'editProject',
+      extra: {'name': 'Edited project', 'description': ''},
+      verify: (args) {
+        expect(args['name'], 'Edited project');
+        expect(args, isNot(contains('description')));
+      },
+    ),
+  ]) {
+    test(
+      'placeholder ${item.operation} fields count as not set (gpt-4o-mini)',
+      () async {
+        final row = productionAiLedger.find(item.operation)!;
+        final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
+        addTearDown(h.dispose);
+        final probe = Mr7WriteProbe();
+        final c = h.newCoordinator(
+          scope: mr7WriteScope(row),
+          portFactory: () => probe,
+        );
+        c.beginRun('Requested synthetic action.');
+        c.beginTurn();
+        final call = AiToolCall(
+          id: 'placeholders-${item.operation}',
+          name: item.operation,
+          arguments: {
+            ...mr7WriteArguments[item.operation]!,
+            ...item.extra,
+            'reason': 'Requested synthetic action.',
+          },
+        );
+        expect(await c.propose(call), isNull);
+        item.verify(probe.requests.single.arguments);
+        c.stop('done');
+      },
+    );
+  }
+
   test(
     'internal batch has executable arguments but remains model-hidden',
     () async {
