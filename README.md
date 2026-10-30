@@ -11,6 +11,17 @@ A mobile-first Flutter client for GitLab® on Android and iOS, formerly develope
 
 The app needs **GitLab 18.11** or later (GitLab.com or HTTPS self-managed instances). Older instances stay readable where possible, but some screens report `unsupported` instead of loading. Work-item comment writes, including AI-assisted writes, need GitLab 18.9+, which the minimum covers. One exception: the work-item development row's closing-merge-requests count needs GitLab 19.4 and shows as unavailable below that.
 
+## 2026-10-30 — v0.6.0: the AI assistant
+
+- **Bring-your-own-key AI assistant**, on in the GitLab-channel build ([release](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.6.0)). Add a provider under 我的 › AI 助理, then turn on 「允許 GitLab 工具」 in its advanced settings.
+- **What the AI can do:** read files, diffs, issues, merge requests, job logs and more, and propose any write the app itself can do.
+  - Every write shows a confirmation card first.
+  - High-risk writes need the user to type the name.
+  - Each write is read back afterwards.
+- **Evidence:** both CI lanes (16,424 AI-off and 17,583 AI-on tests), synthetic sandbox suites, and one emulator walkthrough with `gpt-4o-mini` on a private sandbox project: read, create issue, comment, create/delete branch, close issue and a rejected proposal. The in-app update from v0.5.0 was also checked.
+- **Not tested:** the per-operation live matrix is **NOT_RUN** by owner decision.
+- **Not shipped:** Google Play and iOS. Current state and next steps are in [PLAN_STATUS](docs/PLAN_STATUS.md).
+
 ## 2026-10-22 — reviewed AI answers and clearer list actors
 
 - **AI answers stay drafts until reviewed.** A completed, display-safe Work Item answer can be appended to the existing ordinary-comment draft, preserving its Markdown and whitespace. Opening, leaving and reopening the editor sends nothing; posting still requires an explicit Save. Production AI remains disabled by default.
