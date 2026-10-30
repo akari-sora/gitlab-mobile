@@ -10,7 +10,7 @@ import 'wire/wire_format.dart';
 
 /// The app version sent in the AI User-Agent. tool/tests/test_ai_client_version.py
 /// keeps it equal to the version in pubspec.yaml.
-const aiClientAppVersion = '0.6.1';
+const aiClientAppVersion = '0.6.2';
 
 /// A conversation-scoped adapter client. It never owns conversation history or
 /// executes tools; the runner decides whether/when to freeze a completed turn.

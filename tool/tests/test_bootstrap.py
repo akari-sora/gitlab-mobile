@@ -701,7 +701,9 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('android.permission.REQUEST_INSTALL_PACKAGES', gitlab_manifest)
         self.assertIn('android:exported="false"', gitlab_manifest)
         self.assertIn('${applicationId}.updates', gitlab_manifest)
-        self.assertFalse((app / 'src/play/AndroidManifest.xml').exists(),
+        play_manifest = (app / 'src/play/AndroidManifest.xml').read_text()
+        self.assertEqual(play_manifest, bootstrap.PLAY_MANIFEST)
+        self.assertNotIn('REQUEST_INSTALL_PACKAGES', play_manifest,
                          'the Play flavor must not request install permission')
         self.assertIn('<cache-path name="updates" path="updates/" />',
                       (app / 'src/gitlab/res/xml/update_paths.xml').read_text())
@@ -1483,7 +1485,7 @@ class BootstrapTests(unittest.TestCase):
         app = self._managed_android()
         files = bootstrap._check_update_template(app)
         before = {path: path.read_bytes() for path in app.rglob('*') if path.is_file()}
-        for name in files:
+        for name in set(files) - {'src/play/AndroidManifest.xml'}:
             path = app / name
             original = path.read_bytes()
             path.unlink()
@@ -1496,10 +1498,67 @@ class BootstrapTests(unittest.TestCase):
         ):
             path = app / 'src/play/AndroidManifest.xml'
             path.write_text(f'<manifest xmlns:android="{bootstrap.ANDROID}">{content}</manifest>')
-            with self.assertRaisesRegex(RuntimeError, 'Unknown Android source-set manifest'):
+            with self.assertRaisesRegex(RuntimeError, 'Unknown managed Android content: src/play/AndroidManifest.xml'):
                 bootstrap.configure_android(self.root)
-            path.unlink()
+            path.write_text(bootstrap.PLAY_MANIFEST)
+        foreign = app / 'src/staging/AndroidManifest.xml'
+        foreign.parent.mkdir(parents=True, exist_ok=True)
+        foreign.write_text(f'<manifest xmlns:android="{bootstrap.ANDROID}" />')
+        with self.assertRaisesRegex(RuntimeError, 'Unknown Android source-set manifest: staging'):
+            bootstrap.configure_android(self.root)
+        foreign.unlink()
+        foreign.parent.rmdir()
         self.assertEqual({path: path.read_bytes() for path in before}, before)
+
+    def test_play_manifest_removes_fgs_and_upgrades_pre_change_tree(self):
+        app = self._managed_android()
+        main_manifest = app / 'src/main/AndroidManifest.xml'
+        gitlab_manifest = app / 'src/gitlab/AndroidManifest.xml'
+        play_manifest = app / 'src/play/AndroidManifest.xml'
+        main_before = main_manifest.read_bytes()
+        gitlab_before = gitlab_manifest.read_bytes()
+        self.assertEqual(play_manifest.read_text(), bootstrap.PLAY_MANIFEST)
+        self.assertEqual(gitlab_manifest.read_text(), bootstrap.GITLAB_MANIFEST)
+        a = '{' + bootstrap.ANDROID + '}'
+        tools = '{http://schemas.android.com/tools}'
+        play_root = ET.parse(play_manifest).getroot()
+        self.assertEqual(
+            [(node.get(a + 'name'), node.get(tools + 'node')) for node in play_root.findall('uses-permission')],
+            [
+                ('android.permission.FOREGROUND_SERVICE', 'remove'),
+                ('android.permission.FOREGROUND_SERVICE_DATA_SYNC', 'remove'),
+            ],
+        )
+        self.assertEqual(
+            [(node.get(a + 'name'), node.get(tools + 'node')) for node in play_root.findall('application/service')],
+            [('.AgentRunService', 'remove')],
+        )
+        self.assertNotIn('POST_NOTIFICATIONS', play_manifest.read_text())
+        main_root = ET.parse(main_manifest).getroot()
+        self.assertIn(
+            'android.permission.POST_NOTIFICATIONS',
+            [node.get(a + 'name') for node in main_root.findall('uses-permission')],
+        )
+        # Upgrading a pre-change managed tree (no play manifest yet) adds it cleanly.
+        play_manifest.unlink()
+        bootstrap.configure_android(self.root)
+        self.assertEqual(play_manifest.read_text(), bootstrap.PLAY_MANIFEST)
+        self.assertEqual(main_manifest.read_bytes(), main_before)
+        self.assertEqual(gitlab_manifest.read_bytes(), gitlab_before)
+        # A tampered play manifest is refused before any writes.
+        before = {path: path.read_bytes() for path in app.rglob('*') if path.is_file()}
+        for tampered in (
+            bootstrap.PLAY_MANIFEST.replace('FOREGROUND_SERVICE_DATA_SYNC', 'POST_NOTIFICATIONS'),
+            bootstrap.PLAY_MANIFEST.replace('tools:node="remove"', 'tools:node="merge"', 1),
+            bootstrap.PLAY_MANIFEST + '<!-- drift -->\n',
+        ):
+            play_manifest.write_text(tampered)
+            with self.subTest(tampered=tampered), self.assertRaisesRegex(
+                RuntimeError, 'Unknown managed Android content: src/play/AndroidManifest.xml'
+            ):
+                bootstrap.configure_android(self.root)
+        play_manifest.write_text(bootstrap.PLAY_MANIFEST)
+        self.assertEqual({path: path.read_bytes() for path in app.rglob('*') if path.is_file()}, before)
 
     def test_invalid_signing_or_flavor_blocks_are_refused_before_any_write(self):
         app = self._app()

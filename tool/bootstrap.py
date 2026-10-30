@@ -1390,6 +1390,24 @@ object AppUpdateChannel {{
 }}
 '''
 
+PLAY_MANIFEST = '''<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Play channel: background AI runs stay off; remove foreground-service declarations. -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"
+        tools:node="remove" />
+    <application>
+        <service
+            android:name=".AgentRunService"
+            tools:node="remove" />
+    </application>
+</manifest>
+'''
+
 UPDATE_DEPENDENCIES_BEGIN = '// GITLAB_MOBILE_UPDATE_DEPENDENCIES_BEGIN'
 UPDATE_DEPENDENCIES_END = '// GITLAB_MOBILE_UPDATE_DEPENDENCIES_END'
 UPDATE_DEPENDENCIES = f'''{UPDATE_DEPENDENCIES_BEGIN}
@@ -1439,12 +1457,15 @@ def _check_update_template(app: Path) -> dict[str, str]:
         'src/gitlab/AndroidManifest.xml': GITLAB_MANIFEST,
         'src/gitlab/res/xml/update_paths.xml': GITLAB_UPDATE_PATHS,
         f'src/play/kotlin/{KOTLIN_PACKAGE}/AppUpdateChannel.kt': PLAY_UPDATE_CHANNEL,
+        'src/play/AndroidManifest.xml': PLAY_MANIFEST,
     }
     _check_managed_files(app, files)
     present = {name for name in files if (app / name).exists()}
     required = set(files)
     if current == TEMPLATE_MAIN_ACTIVITY:
         required = set()
+    elif 'src/play/AndroidManifest.xml' not in present:
+        required.remove('src/play/AndroidManifest.xml')
     if present != required:
         raise RuntimeError('Incomplete managed update/link template; review before upgrading.')
     if current == TEMPLATE_MAIN_ACTIVITY and UPDATE_DEPENDENCIES_BEGIN in text:
@@ -1453,7 +1474,8 @@ def _check_update_template(app: Path) -> dict[str, str]:
         raise RuntimeError('Incomplete managed update dependency markers.')
     for manifest in (app / 'src').glob('*/AndroidManifest.xml'):
         source_set = manifest.parent.name
-        if source_set in {'main', 'gitlab'}:
+        if source_set in {'main', 'gitlab'} or (
+                source_set == 'play' and manifest.is_file() and manifest.read_text(encoding='utf-8') == PLAY_MANIFEST):
             continue
         # These two unmodified manifests come from the pinned Flutter template.
         expected = ET.fromstring(f'<manifest xmlns:android="{ANDROID}">'
