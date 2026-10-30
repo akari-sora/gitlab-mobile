@@ -2387,6 +2387,7 @@
   "aiReportSent": "रिपोर्ट Mergeline के डेवलपर को भेज दी गई। धन्यवाद।",
   "aiReportPostFailed": "रिपोर्ट नहीं भेजी गई",
   "aiReportPostUnreachable": "Google Forms से संपर्क नहीं हो सका, इसलिए रिपोर्ट नहीं भेजी गई। क्या इसके बजाय यही रिपोर्ट ईमेल या शेयर करके {email} पर भेजनी है?",
+  "aiReportPostUncertain": "यह पुष्टि नहीं हो सकी कि Google Forms को रिपोर्ट मिली; हो सकता है वह पहले ही भेजी जा चुकी हो। क्या इसके बजाय यही रिपोर्ट ईमेल या शेयर करके {email} पर भेजनी है?",
   "aiReportPostRefused": "Google Forms ने रिपोर्ट स्वीकार नहीं की (HTTP {status})। क्या इसके बजाय यही रिपोर्ट ईमेल या शेयर करके {email} पर भेजनी है?",
   "aiReportUseMail": "ईमेल या शेयर का उपयोग करें",
   "aiIntentStar": "तारा लगाओ",

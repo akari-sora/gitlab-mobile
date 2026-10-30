@@ -533,14 +533,16 @@ class _AiChatPageState extends State<AiChatPage> {
       final time = DateTime.now();
       final source = item.source;
       // Built from the answer as it is now (a redaction pass may have
-      // replaced it). The answer is redacted whole before the report cuts it
-      // to the excerpt's length; null when it is gone or cannot be checked.
+      // replaced it). The answer gets the report's clean-up and is redacted
+      // whole before the report cuts it to the excerpt's length: the clean-up
+      // can join a secret split by invisible characters. Null when it is gone
+      // or cannot be checked.
       AiReport? report(AiReportChoice choice) {
         final current = _session.currentOf(item);
         if (current == null) return null;
         String? response;
         if (choice.attachResponse) {
-          response = _session.draftSafe(current.text);
+          response = _session.draftSafe(aiReportResponseText(current.text));
           if (response.isEmpty && current.text.isNotEmpty) return null;
         }
         return AiReport(
@@ -610,9 +612,15 @@ class _AiChatPageState extends State<AiChatPage> {
           return confirmAction(
             context,
             l10n.aiReportPostFailed,
-            failure.status == null
-                ? l10n.aiReportPostUnreachable(aiReportEmail)
-                : l10n.aiReportPostRefused(failure.status, aiReportEmail),
+            switch (failure) {
+              AiReportPostFailure(:final status?) => l10n.aiReportPostRefused(
+                status,
+                aiReportEmail,
+              ),
+              AiReportPostFailure(mayHaveArrived: true) =>
+                l10n.aiReportPostUncertain(aiReportEmail),
+              _ => l10n.aiReportPostUnreachable(aiReportEmail),
+            },
             confirmLabel: l10n.aiReportUseMail,
           );
         },

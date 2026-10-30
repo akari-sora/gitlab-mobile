@@ -2389,6 +2389,7 @@ const _messagesPl = <String>[
   'Zgłoszenie zostało wysłane do twórcy Mergeline. Dziękujemy.',
   'Zgłoszenie nie zostało wysłane',
   'Nie udało się połączyć z Google Forms, więc zgłoszenie nie zostało wysłane. Wysłać to samo zgłoszenie na adres {email} pocztą lub przez udostępnianie?',
+  'Nie udało się potwierdzić, że Google Forms otrzymało zgłoszenie; mogło już zostać wysłane. Wysłać to samo zgłoszenie na adres {email} pocztą lub przez udostępnianie?',
   'Google Forms nie przyjął zgłoszenia (HTTP {status}). Wysłać to samo zgłoszenie na adres {email} pocztą lub przez udostępnianie?',
   'Użyj poczty lub udostępniania',
   'dodaj gwiazdke',

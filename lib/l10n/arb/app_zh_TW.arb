@@ -10975,6 +10975,12 @@
       "email": {}
     }
   },
+  "aiReportPostUncertain": "無法確認 Google Forms 是否收到回報，它可能已經送出。要改用郵件或分享，把同一份回報寄到 {email} 嗎？",
+  "@aiReportPostUncertain": {
+    "placeholders": {
+      "email": {}
+    }
+  },
   "aiReportPostRefused": "Google Forms 沒有收下回報（HTTP {status}）。要改用郵件或分享，把同一份回報寄到 {email} 嗎？",
   "@aiReportPostRefused": {
     "placeholders": {

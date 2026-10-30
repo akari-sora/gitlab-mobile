@@ -2387,6 +2387,7 @@
   "aiReportSent": "Zgłoszenie zostało wysłane do twórcy Mergeline. Dziękujemy.",
   "aiReportPostFailed": "Zgłoszenie nie zostało wysłane",
   "aiReportPostUnreachable": "Nie udało się połączyć z Google Forms, więc zgłoszenie nie zostało wysłane. Wysłać to samo zgłoszenie na adres {email} pocztą lub przez udostępnianie?",
+  "aiReportPostUncertain": "Nie udało się potwierdzić, że Google Forms otrzymało zgłoszenie; mogło już zostać wysłane. Wysłać to samo zgłoszenie na adres {email} pocztą lub przez udostępnianie?",
   "aiReportPostRefused": "Google Forms nie przyjął zgłoszenia (HTTP {status}). Wysłać to samo zgłoszenie na adres {email} pocztą lub przez udostępnianie?",
   "aiReportUseMail": "Użyj poczty lub udostępniania",
   "aiIntentStar": "dodaj gwiazdke",

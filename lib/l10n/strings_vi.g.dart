@@ -2389,6 +2389,7 @@ const _messagesVi = <String>[
   'Đã gửi báo cáo tới nhà phát triển của Mergeline. Xin cảm ơn.',
   'Chưa gửi được báo cáo',
   'Không kết nối được với Google Forms nên báo cáo chưa được gửi. Gửi cùng báo cáo này tới {email} qua thư hoặc chia sẻ thay thế?',
+  'Không xác nhận được Google Forms đã nhận báo cáo hay chưa; báo cáo có thể đã được gửi. Gửi cùng báo cáo này tới {email} qua thư hoặc chia sẻ thay thế?',
   'Google Forms không nhận báo cáo (HTTP {status}). Gửi cùng báo cáo này tới {email} qua thư hoặc chia sẻ thay thế?',
   'Dùng thư hoặc chia sẻ',
   'gắn sao',

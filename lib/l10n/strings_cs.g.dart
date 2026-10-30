@@ -2389,6 +2389,7 @@ const _messagesCs = <String>[
   'Hlášení bylo odesláno vývojáři Mergeline. Děkujeme.',
   'Hlášení nebylo odesláno',
   'Ke službě Google Forms se nepodařilo připojit, proto hlášení nebylo odesláno. Chcete stejné hlášení místo toho poslat poštou nebo sdílením na adresu {email}?',
+  'Nepodařilo se ověřit, že služba Google Forms hlášení přijala; možná už bylo odesláno. Chcete stejné hlášení místo toho poslat poštou nebo sdílením na adresu {email}?',
   'Služba Google Forms hlášení nepřijala (HTTP {status}). Chcete stejné hlášení místo toho poslat poštou nebo sdílením na adresu {email}?',
   'Použít poštu nebo sdílení',
   'pridat hvezdu',

@@ -2387,6 +2387,7 @@
   "aiReportSent": "举报已发送给 Mergeline 的开发者，谢谢。",
   "aiReportPostFailed": "举报没有发送",
   "aiReportPostUnreachable": "无法连接 Google Forms，举报没有发送。要改用邮件或分享，把同一份举报发送到 {email} 吗？",
+  "aiReportPostUncertain": "无法确认 Google Forms 是否收到举报，它可能已经发送。要改用邮件或分享，把同一份举报发送到 {email} 吗？",
   "aiReportPostRefused": "Google Forms 没有接收举报（HTTP {status}）。要改用邮件或分享，把同一份举报发送到 {email} 吗？",
   "aiReportUseMail": "改用邮件或分享",
   "aiIntentStar": "标星|加上星号",

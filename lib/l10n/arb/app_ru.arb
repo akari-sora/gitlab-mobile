@@ -2387,6 +2387,7 @@
   "aiReportSent": "Жалоба отправлена разработчику Mergeline. Спасибо.",
   "aiReportPostFailed": "Жалоба не отправлена",
   "aiReportPostUnreachable": "Не удалось связаться с Google Forms, поэтому жалоба не отправлена. Отправить ту же жалобу на {email} по почте или через меню отправки?",
+  "aiReportPostUncertain": "Не удалось подтвердить, что Google Forms получил жалобу; возможно, она уже отправлена. Отправить ту же жалобу на {email} по почте или через меню отправки?",
   "aiReportPostRefused": "Google Forms не принял жалобу (HTTP {status}). Отправить ту же жалобу на {email} по почте или через меню отправки?",
   "aiReportUseMail": "Почта или меню отправки",
   "aiIntentStar": "поставить звезду",

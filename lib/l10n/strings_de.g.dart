@@ -2389,6 +2389,7 @@ const _messagesDe = <String>[
   'Meldung an den Entwickler von Mergeline gesendet. Danke!',
   'Meldung nicht gesendet',
   'Google Forms war nicht erreichbar, daher wurde die Meldung nicht gesendet. Dieselbe Meldung stattdessen per E-Mail oder Teilen an {email} senden?',
+  'Es ließ sich nicht bestätigen, dass Google Forms die Meldung erhalten hat; sie wurde möglicherweise schon gesendet. Dieselbe Meldung stattdessen per E-Mail oder Teilen an {email} senden?',
   'Google Forms hat die Meldung nicht angenommen (HTTP {status}). Dieselbe Meldung stattdessen per E-Mail oder Teilen an {email} senden?',
   'E-Mail oder Teilen verwenden',
   'Stern setzen|markieren',

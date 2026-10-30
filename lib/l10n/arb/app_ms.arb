@@ -2387,6 +2387,7 @@
   "aiReportSent": "Laporan telah dihantar kepada pembangun Mergeline. Terima kasih.",
   "aiReportPostFailed": "Laporan tidak dihantar",
   "aiReportPostUnreachable": "Google Forms tidak dapat dihubungi, jadi laporan tidak dihantar. Hantar laporan yang sama kepada {email} melalui mel atau perkongsian?",
+  "aiReportPostUncertain": "Tidak dapat mengesahkan bahawa Google Forms menerima laporan; laporan mungkin sudah dihantar. Hantar laporan yang sama kepada {email} melalui mel atau perkongsian?",
   "aiReportPostRefused": "Google Forms tidak menerima laporan (HTTP {status}). Hantar laporan yang sama kepada {email} melalui mel atau perkongsian?",
   "aiReportUseMail": "Guna mel atau perkongsian",
   "aiIntentStar": "beri bintang",

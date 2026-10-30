@@ -2387,6 +2387,7 @@
   "aiReportSent": "Rapporten har skickats till utvecklaren av Mergeline. Tack!",
   "aiReportPostFailed": "Rapporten skickades inte",
   "aiReportPostUnreachable": "Det gick inte att nå Google Forms, så rapporten skickades inte. Vill du skicka samma rapport till {email} med e-post eller delning i stället?",
+  "aiReportPostUncertain": "Det gick inte att bekräfta att Google Forms tog emot rapporten; den kan redan ha skickats. Vill du skicka samma rapport till {email} med e-post eller delning i stället?",
   "aiReportPostRefused": "Google Forms tog inte emot rapporten (HTTP {status}). Vill du skicka samma rapport till {email} med e-post eller delning i stället?",
   "aiReportUseMail": "Använd e-post eller delning",
   "aiIntentStar": "stjarnmarkera",

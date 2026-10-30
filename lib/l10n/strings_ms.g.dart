@@ -2389,6 +2389,7 @@ const _messagesMs = <String>[
   'Laporan telah dihantar kepada pembangun Mergeline. Terima kasih.',
   'Laporan tidak dihantar',
   'Google Forms tidak dapat dihubungi, jadi laporan tidak dihantar. Hantar laporan yang sama kepada {email} melalui mel atau perkongsian?',
+  'Tidak dapat mengesahkan bahawa Google Forms menerima laporan; laporan mungkin sudah dihantar. Hantar laporan yang sama kepada {email} melalui mel atau perkongsian?',
   'Google Forms tidak menerima laporan (HTTP {status}). Hantar laporan yang sama kepada {email} melalui mel atau perkongsian?',
   'Guna mel atau perkongsian',
   'beri bintang',

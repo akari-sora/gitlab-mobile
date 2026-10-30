@@ -2387,6 +2387,7 @@
   "aiReportSent": "報告を Mergeline の開発者に送信しました。ありがとうございます。",
   "aiReportPostFailed": "報告は送信されませんでした",
   "aiReportPostUnreachable": "Google Forms に接続できなかったため、報告は送信されませんでした。代わりにメールまたは共有で、同じ報告を {email} に送りますか？",
+  "aiReportPostUncertain": "Google Forms が報告を受け取ったか確認できませんでした。すでに送信されている可能性があります。代わりにメールまたは共有で、同じ報告を {email} に送りますか？",
   "aiReportPostRefused": "Google Forms が報告を受け付けませんでした（HTTP {status}）。代わりにメールまたは共有で、同じ報告を {email} に送りますか？",
   "aiReportUseMail": "メールまたは共有を使う",
   "aiIntentStar": "星を付ける",

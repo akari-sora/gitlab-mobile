@@ -2387,6 +2387,7 @@
   "aiReportSent": "Melding verzonden naar de ontwikkelaar van Mergeline. Bedankt.",
   "aiReportPostFailed": "Melding niet verzonden",
   "aiReportPostUnreachable": "Google Forms was niet bereikbaar, dus de melding is niet verzonden. Dezelfde melding in plaats daarvan via e-mail of delen naar {email} sturen?",
+  "aiReportPostUncertain": "Kon niet bevestigen dat Google Forms de melding heeft ontvangen; mogelijk is die al verzonden. Dezelfde melding in plaats daarvan via e-mail of delen naar {email} sturen?",
   "aiReportPostRefused": "Google Forms heeft de melding niet aangenomen (HTTP {status}). Dezelfde melding in plaats daarvan via e-mail of delen naar {email} sturen?",
   "aiReportUseMail": "E-mail of delen gebruiken",
   "aiIntentStar": "ster geven",

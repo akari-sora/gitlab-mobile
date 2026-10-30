@@ -2389,6 +2389,7 @@ const _messagesSv = <String>[
   'Rapporten har skickats till utvecklaren av Mergeline. Tack!',
   'Rapporten skickades inte',
   'Det gick inte att nå Google Forms, så rapporten skickades inte. Vill du skicka samma rapport till {email} med e-post eller delning i stället?',
+  'Det gick inte att bekräfta att Google Forms tog emot rapporten; den kan redan ha skickats. Vill du skicka samma rapport till {email} med e-post eller delning i stället?',
   'Google Forms tog inte emot rapporten (HTTP {status}). Vill du skicka samma rapport till {email} med e-post eller delning i stället?',
   'Använd e-post eller delning',
   'stjarnmarkera',

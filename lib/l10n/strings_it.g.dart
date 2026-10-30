@@ -2389,6 +2389,7 @@ const _messagesIt = <String>[
   'Segnalazione inviata allo sviluppatore di Mergeline. Grazie.',
   'Segnalazione non inviata',
   'Impossibile raggiungere Google Forms, quindi la segnalazione non è stata inviata. Vuoi inviare la stessa segnalazione a {email} per email o tramite condivisione?',
+  'Impossibile confermare che Google Forms abbia ricevuto la segnalazione; potrebbe essere già stata inviata. Vuoi inviare la stessa segnalazione a {email} per email o tramite condivisione?',
   'Google Forms non ha accettato la segnalazione (HTTP {status}). Vuoi inviare la stessa segnalazione a {email} per email o tramite condivisione?',
   'Usa email o condivisione',
   'aggiungere stella',

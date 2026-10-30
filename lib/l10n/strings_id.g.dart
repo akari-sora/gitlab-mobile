@@ -2389,6 +2389,7 @@ const _messagesId = <String>[
   'Laporan telah dikirim kepada pengembang Mergeline. Terima kasih.',
   'Laporan tidak terkirim',
   'Google Forms tidak dapat dihubungi, jadi laporan tidak dikirim. Kirim laporan yang sama ke {email} lewat surel atau fitur berbagi?',
+  'Tidak dapat memastikan Google Forms menerima laporan; laporan mungkin sudah terkirim. Kirim laporan yang sama ke {email} lewat surel atau fitur berbagi?',
   'Google Forms tidak menerima laporan (HTTP {status}). Kirim laporan yang sama ke {email} lewat surel atau fitur berbagi?',
   'Gunakan surel atau berbagi',
   'beri bintang',

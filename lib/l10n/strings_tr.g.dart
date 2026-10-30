@@ -2389,6 +2389,7 @@ const _messagesTr = <String>[
   'Bildirim Mergeline geliştiricisine gönderildi. Teşekkürler.',
   'Bildirim gönderilmedi',
   'Google Forms\'a ulaşılamadığı için bildirim gönderilmedi. Aynı bildirim bunun yerine e-posta veya paylaşım ile {email} adresine gönderilsin mi?',
+  'Google Forms\'un bildirimi aldığı doğrulanamadı; bildirim zaten gönderilmiş olabilir. Aynı bildirim bunun yerine e-posta veya paylaşım ile {email} adresine gönderilsin mi?',
   'Google Forms bildirimi kabul etmedi (HTTP {status}). Aynı bildirim bunun yerine e-posta veya paylaşım ile {email} adresine gönderilsin mi?',
   'E-posta veya paylaşımı kullan',
   'yildiz ekle',

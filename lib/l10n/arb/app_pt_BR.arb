@@ -2387,6 +2387,7 @@
   "aiReportSent": "Denúncia enviada ao desenvolvedor do Mergeline. Obrigado.",
   "aiReportPostFailed": "Denúncia não enviada",
   "aiReportPostUnreachable": "Não foi possível acessar o Google Forms, então a denúncia não foi enviada. Enviar a mesma denúncia para {email} por e-mail ou compartilhamento?",
+  "aiReportPostUncertain": "Não foi possível confirmar que o Google Forms recebeu a denúncia; ela pode já ter sido enviada. Enviar a mesma denúncia para {email} por e-mail ou compartilhamento?",
   "aiReportPostRefused": "O Google Forms não aceitou a denúncia (HTTP {status}). Enviar a mesma denúncia para {email} por e-mail ou compartilhamento?",
   "aiReportUseMail": "Usar e-mail ou compartilhamento",
   "aiIntentStar": "favoritar",

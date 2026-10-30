@@ -2387,6 +2387,7 @@
   "aiReportSent": "Raportul a fost trimis dezvoltatorului Mergeline. Mulțumim.",
   "aiReportPostFailed": "Raportul nu a fost trimis",
   "aiReportPostUnreachable": "Google Forms nu a putut fi accesat, așa că raportul nu a fost trimis. Trimiți același raport la {email} prin e-mail sau partajare?",
+  "aiReportPostUncertain": "Nu s-a putut confirma că Google Forms a primit raportul; este posibil să fi fost deja trimis. Trimiți același raport la {email} prin e-mail sau partajare?",
   "aiReportPostRefused": "Google Forms nu a acceptat raportul (HTTP {status}). Trimiți același raport la {email} prin e-mail sau partajare?",
   "aiReportUseMail": "Folosește e-mail sau partajare",
   "aiIntentStar": "adauga stea",

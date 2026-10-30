@@ -2387,6 +2387,7 @@
   "aiReportSent": "Đã gửi báo cáo tới nhà phát triển của Mergeline. Xin cảm ơn.",
   "aiReportPostFailed": "Chưa gửi được báo cáo",
   "aiReportPostUnreachable": "Không kết nối được với Google Forms nên báo cáo chưa được gửi. Gửi cùng báo cáo này tới {email} qua thư hoặc chia sẻ thay thế?",
+  "aiReportPostUncertain": "Không xác nhận được Google Forms đã nhận báo cáo hay chưa; báo cáo có thể đã được gửi. Gửi cùng báo cáo này tới {email} qua thư hoặc chia sẻ thay thế?",
   "aiReportPostRefused": "Google Forms không nhận báo cáo (HTTP {status}). Gửi cùng báo cáo này tới {email} qua thư hoặc chia sẻ thay thế?",
   "aiReportUseMail": "Dùng thư hoặc chia sẻ",
   "aiIntentStar": "gắn sao",

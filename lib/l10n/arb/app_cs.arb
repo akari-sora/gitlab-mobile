@@ -2387,6 +2387,7 @@
   "aiReportSent": "Hlášení bylo odesláno vývojáři Mergeline. Děkujeme.",
   "aiReportPostFailed": "Hlášení nebylo odesláno",
   "aiReportPostUnreachable": "Ke službě Google Forms se nepodařilo připojit, proto hlášení nebylo odesláno. Chcete stejné hlášení místo toho poslat poštou nebo sdílením na adresu {email}?",
+  "aiReportPostUncertain": "Nepodařilo se ověřit, že služba Google Forms hlášení přijala; možná už bylo odesláno. Chcete stejné hlášení místo toho poslat poštou nebo sdílením na adresu {email}?",
   "aiReportPostRefused": "Služba Google Forms hlášení nepřijala (HTTP {status}). Chcete stejné hlášení místo toho poslat poštou nebo sdílením na adresu {email}?",
   "aiReportUseMail": "Použít poštu nebo sdílení",
   "aiIntentStar": "pridat hvezdu",

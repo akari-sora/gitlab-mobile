@@ -2389,6 +2389,7 @@ const _messagesFr = <String>[
   'Signalement envoyé au développeur de Mergeline. Merci.',
   'Signalement non envoyé',
   'Impossible de joindre Google Forms : le signalement n’a pas été envoyé. Envoyer plutôt le même signalement à {email} par e-mail ou par partage ?',
+  'Impossible de confirmer que Google Forms a reçu le signalement ; il a peut-être déjà été envoyé. Envoyer plutôt le même signalement à {email} par e-mail ou par partage ?',
   'Google Forms n’a pas accepté le signalement (HTTP {status}). Envoyer plutôt le même signalement à {email} par e-mail ou par partage ?',
   'Utiliser l’e-mail ou le partage',
   'ajouter une etoile',

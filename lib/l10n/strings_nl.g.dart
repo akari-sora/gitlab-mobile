@@ -2389,6 +2389,7 @@ const _messagesNl = <String>[
   'Melding verzonden naar de ontwikkelaar van Mergeline. Bedankt.',
   'Melding niet verzonden',
   'Google Forms was niet bereikbaar, dus de melding is niet verzonden. Dezelfde melding in plaats daarvan via e-mail of delen naar {email} sturen?',
+  'Kon niet bevestigen dat Google Forms de melding heeft ontvangen; mogelijk is die al verzonden. Dezelfde melding in plaats daarvan via e-mail of delen naar {email} sturen?',
   'Google Forms heeft de melding niet aangenomen (HTTP {status}). Dezelfde melding in plaats daarvan via e-mail of delen naar {email} sturen?',
   'E-mail of delen gebruiken',
   'ster geven',

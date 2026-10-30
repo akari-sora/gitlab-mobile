@@ -2389,6 +2389,7 @@ const _messagesZhTw = <String>[
   '回報已送給 Mergeline 的開發者，謝謝。',
   '回報沒有送出',
   '無法連上 Google Forms，回報沒有送出。要改用郵件或分享，把同一份回報寄到 {email} 嗎？',
+  '無法確認 Google Forms 是否收到回報，它可能已經送出。要改用郵件或分享，把同一份回報寄到 {email} 嗎？',
   'Google Forms 沒有收下回報（HTTP {status}）。要改用郵件或分享，把同一份回報寄到 {email} 嗎？',
   '改用郵件或分享',
   '標星|加上星號',

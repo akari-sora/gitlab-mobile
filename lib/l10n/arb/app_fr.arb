@@ -2387,6 +2387,7 @@
   "aiReportSent": "Signalement envoyé au développeur de Mergeline. Merci.",
   "aiReportPostFailed": "Signalement non envoyé",
   "aiReportPostUnreachable": "Impossible de joindre Google Forms : le signalement n’a pas été envoyé. Envoyer plutôt le même signalement à {email} par e-mail ou par partage ?",
+  "aiReportPostUncertain": "Impossible de confirmer que Google Forms a reçu le signalement ; il a peut-être déjà été envoyé. Envoyer plutôt le même signalement à {email} par e-mail ou par partage ?",
   "aiReportPostRefused": "Google Forms n’a pas accepté le signalement (HTTP {status}). Envoyer plutôt le même signalement à {email} par e-mail ou par partage ?",
   "aiReportUseMail": "Utiliser l’e-mail ou le partage",
   "aiIntentStar": "ajouter une etoile",

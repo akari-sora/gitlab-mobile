@@ -2387,6 +2387,7 @@
   "aiReportSent": "أُرسل البلاغ إلى مطوّر Mergeline. شكرًا لك.",
   "aiReportPostFailed": "لم يُرسل البلاغ",
   "aiReportPostUnreachable": "تعذّر الوصول إلى Google Forms، لذلك لم يُرسل البلاغ. هل تريد إرسال البلاغ نفسه إلى {email} بالبريد أو المشاركة بدلًا من ذلك؟",
+  "aiReportPostUncertain": "تعذّر التأكد من أن Google Forms تلقّى البلاغ، وربما يكون قد أُرسل بالفعل. هل تريد إرسال البلاغ نفسه إلى {email} بالبريد أو المشاركة بدلًا من ذلك؟",
   "aiReportPostRefused": "لم يقبل Google Forms البلاغ (HTTP {status}). هل تريد إرسال البلاغ نفسه إلى {email} بالبريد أو المشاركة بدلًا من ذلك؟",
   "aiReportUseMail": "استخدام البريد أو المشاركة",
   "aiIntentStar": "أضف نجمة",

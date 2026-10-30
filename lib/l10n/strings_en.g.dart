@@ -2389,6 +2389,7 @@ const _messagesEn = <String>[
   'Report sent to Mergeline\'s developer. Thank you.',
   'Report not sent',
   'Google Forms could not be reached, so the report was not sent. Send the same report to {email} by mail or sharing instead?',
+  'Could not confirm that Google Forms received the report; it may already have been sent. Send the same report to {email} by mail or sharing instead?',
   'Google Forms did not accept the report (HTTP {status}). Send the same report to {email} by mail or sharing instead?',
   'Use mail or sharing',
   'star|add a star',

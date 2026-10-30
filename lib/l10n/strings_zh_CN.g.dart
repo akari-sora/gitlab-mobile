@@ -2389,6 +2389,7 @@ const _messagesZhCn = <String>[
   '举报已发送给 Mergeline 的开发者，谢谢。',
   '举报没有发送',
   '无法连接 Google Forms，举报没有发送。要改用邮件或分享，把同一份举报发送到 {email} 吗？',
+  '无法确认 Google Forms 是否收到举报，它可能已经发送。要改用邮件或分享，把同一份举报发送到 {email} 吗？',
   'Google Forms 没有接收举报（HTTP {status}）。要改用邮件或分享，把同一份举报发送到 {email} 吗？',
   '改用邮件或分享',
   '标星|加上星号',

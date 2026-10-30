@@ -964,6 +964,31 @@ void main() {
       expect(find.byKey(const ValueKey('ai-chat-report')), findsOneWidget);
     });
 
+    testWidgets('a post that may have arrived says so before the fallback', (
+      tester,
+    ) async {
+      final session = answered();
+      await openReport(
+        tester,
+        session,
+        postFailure: const AiReportPostFailure.uncertain(),
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(
+        find.text(l10n.aiReportPostUncertain(aiReportEmail)),
+        findsOneWidget,
+      );
+      expect(
+        find.text(l10n.aiReportPostUnreachable(aiReportEmail)),
+        findsNothing,
+      );
+      await tester.tap(find.text(l10n.cancelAction));
+      await tester.pumpAndSettle();
+      expect(handedOff, isEmpty);
+    });
+
     testWidgets('nothing about the account, project or provider is posted', (
       tester,
     ) async {

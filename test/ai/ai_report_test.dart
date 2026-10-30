@@ -114,6 +114,29 @@ void main() {
   });
 
   group('the developer\'s form', () {
+    test('a secret split by invisible characters across the cut is '
+        'redacted, not cut in half', () {
+      const key =
+          'f00dbabe0123456789abcdef0123456789abcdef0123456789abcdef01234567';
+      final redactor = Redactor(secrets: const _Secrets([key]));
+      // The chat's redaction strips only some format characters, so it does
+      // not see a key split by the ones the report's clean-up removes.
+      String draftSafe(String text) => redactor
+          .redactSource(text.replaceAll(RegExp('[\\u2060-\\u2069]'), ''))
+          .text;
+      for (final joiner in ['\u206a', '\u00ad', '\u{e0020}', '\ufe0f']) {
+        final split = key.split('').join(joiner);
+        final answer = '${'x' * 3970}$split tail';
+        // What the chat page does: clean up, redact whole, then build.
+        final response = draftSafe(aiReportResponseText(answer));
+        final fields = aiReportFormFields(_report(response: response));
+        final checked = fields.checked(draftSafe)!;
+        expect(checked.excerpt.length, lessThanOrEqualTo(aiReportExcerptLimit));
+        expect(checked.excerpt, isNot(contains(key.substring(0, 8))));
+        expect(checked.excerpt, isNot(contains(joiner)));
+      }
+    });
+
     const details =
         'description: wrong file\n'
         'preset: openai-default\n'

@@ -2389,6 +2389,7 @@ const _messagesRo = <String>[
   'Raportul a fost trimis dezvoltatorului Mergeline. Mulțumim.',
   'Raportul nu a fost trimis',
   'Google Forms nu a putut fi accesat, așa că raportul nu a fost trimis. Trimiți același raport la {email} prin e-mail sau partajare?',
+  'Nu s-a putut confirma că Google Forms a primit raportul; este posibil să fi fost deja trimis. Trimiți același raport la {email} prin e-mail sau partajare?',
   'Google Forms nu a acceptat raportul (HTTP {status}). Trimiți același raport la {email} prin e-mail sau partajare?',
   'Folosește e-mail sau partajare',
   'adauga stea',

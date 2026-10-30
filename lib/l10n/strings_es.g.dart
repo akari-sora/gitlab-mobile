@@ -2389,6 +2389,7 @@ const _messagesEs = <String>[
   'Informe enviado al desarrollador de Mergeline. Gracias.',
   'No se envió el informe',
   'No se pudo conectar con Google Forms, así que el informe no se envió. ¿Quieres enviar el mismo informe a {email} por correo o con el panel para compartir?',
+  'No se pudo confirmar que Google Forms recibiera el informe; puede que ya se haya enviado. ¿Quieres enviar el mismo informe a {email} por correo o con el panel para compartir?',
   'Google Forms no aceptó el informe (HTTP {status}). ¿Quieres enviar el mismo informe a {email} por correo o con el panel para compartir?',
   'Usar correo o compartir',
   'poner estrella|destacar',

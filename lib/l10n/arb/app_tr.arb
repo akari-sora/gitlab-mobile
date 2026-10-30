@@ -2387,6 +2387,7 @@
   "aiReportSent": "Bildirim Mergeline geliştiricisine gönderildi. Teşekkürler.",
   "aiReportPostFailed": "Bildirim gönderilmedi",
   "aiReportPostUnreachable": "Google Forms'a ulaşılamadığı için bildirim gönderilmedi. Aynı bildirim bunun yerine e-posta veya paylaşım ile {email} adresine gönderilsin mi?",
+  "aiReportPostUncertain": "Google Forms'un bildirimi aldığı doğrulanamadı; bildirim zaten gönderilmiş olabilir. Aynı bildirim bunun yerine e-posta veya paylaşım ile {email} adresine gönderilsin mi?",
   "aiReportPostRefused": "Google Forms bildirimi kabul etmedi (HTTP {status}). Aynı bildirim bunun yerine e-posta veya paylaşım ile {email} adresine gönderilsin mi?",
   "aiReportUseMail": "E-posta veya paylaşımı kullan",
   "aiIntentStar": "yildiz ekle",

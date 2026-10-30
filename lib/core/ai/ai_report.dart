@@ -163,10 +163,17 @@ String aiReportFormText(AiReportFormFields fields) {
   return text.toString();
 }
 
+/// An attached response after the report's own clean-up. The chat page
+/// redacts this text whole before it builds a report: the clean-up removes
+/// invisible characters, which can join the pieces of a split secret, and
+/// the cut to [aiReportExcerptLimit] must only ever see text the redaction
+/// has already checked.
+String aiReportResponseText(String response) => _multiline(response);
+
 /// [response] cut to [aiReportExcerptLimit], never between the two halves
-/// of a surrogate pair. The chat page redacts the whole response before it
-/// builds a report, so the cut cannot leave the head of a secret the check
-/// would no longer recognise.
+/// of a surrogate pair. [response] has already been cleaned up
+/// ([aiReportResponseText]) and redacted whole, so the cut cannot leave the
+/// head of a secret the check would no longer recognise.
 String _excerpt(String response) {
   if (response.length <= aiReportExcerptLimit) return response;
   var end = aiReportExcerptLimit;
@@ -211,13 +218,26 @@ String _stripUnsafe(String value, {required bool keepNewlines}) {
       cleaned.writeCharCode(rune);
       continue;
     }
-    if (_isControl(rune) || _isBidiControl(rune)) continue;
+    if (_isControl(rune) || _isBidiControl(rune) || _isInvisible(rune)) {
+      continue;
+    }
     cleaned.writeCharCode(rune);
   }
   return cleaned.toString();
 }
 
 bool _isControl(int rune) => rune <= 0x1f || (rune >= 0x7f && rune <= 0x9f);
+
+/// Characters that render as nothing: they could hide text in the preview
+/// or split a secret so that no redaction pass matches it.
+bool _isInvisible(int rune) =>
+    rune == 0x00ad ||
+    (rune >= 0x200b && rune <= 0x200d) ||
+    (rune >= 0x2060 && rune <= 0x2064) ||
+    rune == 0xfeff ||
+    (rune >= 0xfe00 && rune <= 0xfe0f) ||
+    (rune >= 0xe0000 && rune <= 0xe007f) ||
+    (rune >= 0xe0100 && rune <= 0xe01ef);
 
 bool _isBidiControl(int rune) =>
     rune == 0x061c ||

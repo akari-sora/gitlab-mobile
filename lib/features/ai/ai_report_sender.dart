@@ -10,12 +10,20 @@ import '../../core/ai/ai_report.dart';
 enum AiReportRoute { form, mail, share }
 
 /// Why the developer's form did not take a report: [status] is the HTTP
-/// status it answered with, or null when no answer came (offline, a
-/// timeout, a failed TLS handshake).
+/// status it answered with, or null when no answer came.
 final class AiReportPostFailure implements Exception {
-  const AiReportPostFailure([this.status]);
+  /// The form answered [status], or the report never left the device
+  /// (offline, no connection, a failed TLS handshake).
+  const AiReportPostFailure([this.status]) : mayHaveArrived = false;
+
+  /// The exchange broke off after the report may have been sent (a timeout
+  /// or a reset while waiting for the answer): the form may have it.
+  const AiReportPostFailure.uncertain() : status = null, mayHaveArrived = true;
 
   final int? status;
+
+  /// Whether the form may have the report although no answer said so.
+  final bool mayHaveArrived;
 }
 
 /// Sends a report from inside the app, to the developer's form. When the
@@ -88,8 +96,18 @@ Future<void> postAiReport(
     if (status < 200 || status >= 300) throw AiReportPostFailure(status);
   } on AiReportPostFailure {
     rethrow;
+  } on DioException catch (error) {
+    // Only a failure to connect proves the report never left the device.
+    switch (error.type) {
+      case DioExceptionType.connectionError:
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.badCertificate:
+        throw const AiReportPostFailure();
+      default:
+        throw const AiReportPostFailure.uncertain();
+    }
   } on Object {
-    throw const AiReportPostFailure();
+    throw const AiReportPostFailure.uncertain();
   } finally {
     deadline.cancel();
     dio.close(force: true);

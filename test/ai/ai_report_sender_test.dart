@@ -52,8 +52,10 @@ const _fields = AiReportFormFields(
   app: '0.6.0+612 (abc1234)',
 );
 
-Matcher _failure(int? status) =>
-    isA<AiReportPostFailure>().having((f) => f.status, 'status', status);
+Matcher _failure(int? status, {bool mayHaveArrived = false}) =>
+    isA<AiReportPostFailure>()
+        .having((f) => f.status, 'status', status)
+        .having((f) => f.mayHaveArrived, 'mayHaveArrived', mayHaveArrived);
 
 void main() {
   group('the form post', () {
@@ -158,7 +160,21 @@ void main() {
           adapter: adapter,
           timeout: const Duration(milliseconds: 50),
         ),
-        throwsA(_failure(null)),
+        throwsA(_failure(null, mayHaveArrived: true)),
+      );
+    });
+
+    test('a reset after the report went out may have delivered it', () async {
+      final adapter = _FormAdapter(
+        (options, _) => throw DioException.receiveTimeout(
+          timeout: const Duration(seconds: 15),
+          requestOptions: options,
+        ),
+      );
+
+      await expectLater(
+        postAiReport(_fields, adapter: adapter),
+        throwsA(_failure(null, mayHaveArrived: true)),
       );
     });
   });

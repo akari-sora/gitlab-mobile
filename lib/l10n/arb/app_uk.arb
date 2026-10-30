@@ -2387,6 +2387,7 @@
   "aiReportSent": "Скаргу надіслано розробнику Mergeline. Дякуємо.",
   "aiReportPostFailed": "Скаргу не надіслано",
   "aiReportPostUnreachable": "Не вдалося зв’язатися з Google Forms, тому скаргу не надіслано. Надіслати ту саму скаргу на {email} поштою або через меню поширення?",
+  "aiReportPostUncertain": "Не вдалося підтвердити, що Google Forms отримав скаргу; можливо, її вже надіслано. Надіслати ту саму скаргу на {email} поштою або через меню поширення?",
   "aiReportPostRefused": "Google Forms не прийняв скаргу (HTTP {status}). Надіслати ту саму скаргу на {email} поштою або через меню поширення?",
   "aiReportUseMail": "Пошта або меню поширення",
   "aiIntentStar": "поставити зірку",

@@ -2389,6 +2389,7 @@ const _messagesPtBr = <String>[
   'Denúncia enviada ao desenvolvedor do Mergeline. Obrigado.',
   'Denúncia não enviada',
   'Não foi possível acessar o Google Forms, então a denúncia não foi enviada. Enviar a mesma denúncia para {email} por e-mail ou compartilhamento?',
+  'Não foi possível confirmar que o Google Forms recebeu a denúncia; ela pode já ter sido enviada. Enviar a mesma denúncia para {email} por e-mail ou compartilhamento?',
   'O Google Forms não aceitou a denúncia (HTTP {status}). Enviar a mesma denúncia para {email} por e-mail ou compartilhamento?',
   'Usar e-mail ou compartilhamento',
   'favoritar',

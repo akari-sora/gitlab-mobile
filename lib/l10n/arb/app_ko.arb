@@ -2387,6 +2387,7 @@
   "aiReportSent": "신고를 Mergeline 개발자에게 보냈습니다. 감사합니다.",
   "aiReportPostFailed": "신고를 보내지 못함",
   "aiReportPostUnreachable": "Google Forms에 연결할 수 없어 신고를 보내지 못했습니다. 대신 메일이나 공유로 같은 신고를 {email}(으)로 보낼까요?",
+  "aiReportPostUncertain": "Google Forms가 신고를 받았는지 확인할 수 없습니다. 이미 전송되었을 수 있습니다. 대신 메일이나 공유로 같은 신고를 {email}(으)로 보낼까요?",
   "aiReportPostRefused": "Google Forms가 신고를 받지 않았습니다(HTTP {status}). 대신 메일이나 공유로 같은 신고를 {email}(으)로 보낼까요?",
   "aiReportUseMail": "메일 또는 공유 사용",
   "aiIntentStar": "별표",
