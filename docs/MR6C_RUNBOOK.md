@@ -217,7 +217,10 @@ python3 tool/mr6c_emulator_checks.py --plan --avd "$MR6C_AVD" --api "$MR6C_API" 
 
 The last command is offline matrix generation. API-specific serials are read
 independently. Add --flavor play only for separately verified app.mergeline;
-gitlab uses io.gitlabmobile.gitlab_mobile. MainActivity namespace is always
+gitlab uses io.gitlabmobile.gitlab_mobile. Since v0.6.2 the play flavor has no
+`AgentRunService` and no foreground-service permissions (managed
+`src/play/AndroidManifest.xml`), so the V9 service checks (for example
+`service_gone`) apply to gitlab only. MainActivity namespace is always
 io.gitlabmobile.gitlab_mobile. None of these device commands ran here.
 
 Before installation, save one original base APK, verify SHA-256/package/version/

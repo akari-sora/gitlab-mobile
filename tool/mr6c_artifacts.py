@@ -318,7 +318,8 @@ def apk_info(apk, flavor, variant, tools, expected_signer=LOCAL_SIGNER):
             'verified_schemes': schemes}
 
 
-def verify_dex(apk, variant, tools, mapping=None):
+def verify_dex(apk, variant, tools, mapping=None, flavor='gitlab'):
+    require(flavor in PACKAGES, 'Invalid flavor')
     names = defined_classes(run([tools['apkanalyzer'], 'dex', 'packages', '--defined-only', apk]))
     classes, methods, mapping_hash = read_mapping(mapping)
     if variant == 'debug':
@@ -330,16 +331,17 @@ def verify_dex(apk, variant, tools, mapping=None):
         mapped_qa = {new for old, new in classes.items() if QA_CLASS.search(old)}
         require(not (mapped_qa & names), 'Mapped QA class present in release DEX')
         require(not any(QA_CLASS.search(name) for name in names), 'Unmapped QA class present in release DEX')
-    service = classes.get(SERVICE, SERVICE)
-    require(service in names, 'Compiled service missing from defined DEX classes')
     checked = []
-    for original, descriptor in (('onTimeout', '(II)V'), ('onDestroy', '()V')):
-        method = methods.get((original, descriptor), original) + descriptor
-        code = run([tools['apkanalyzer'], 'dex', 'code', '--class', service, '--method', method, apk])
-        require(re.search(r'^\.method\s+[^\n]*\b' + re.escape(method) + r'\s*$', code, re.M)
-                and '.registers ' in code and '.end method' in code,
-                f'{apk}: missing compiled {SERVICE}.{original}')
-        checked.append({'original': original + descriptor, 'dex': service + '.' + method})
+    if flavor == 'gitlab':
+        service = classes.get(SERVICE, SERVICE)
+        require(service in names, 'Compiled service missing from defined DEX classes')
+        for original, descriptor in (('onTimeout', '(II)V'), ('onDestroy', '()V')):
+            method = methods.get((original, descriptor), original) + descriptor
+            code = run([tools['apkanalyzer'], 'dex', 'code', '--class', service, '--method', method, apk])
+            require(re.search(r'^\.method\s+[^\n]*\b' + re.escape(method) + r'\s*$', code, re.M)
+                    and '.registers ' in code and '.end method' in code,
+                    f'{apk}: missing compiled {SERVICE}.{original}')
+            checked.append({'original': original + descriptor, 'dex': service + '.' + method})
     return {'defined_class_count': len(names), 'service_methods': checked,
             'mapping_sha256': mapping_hash, 'qa_adapter_defined': QA_ADAPTER in names}
 
@@ -510,7 +512,7 @@ def readback(root, receipt_paths, *, head=None):
                         require(recorded_mapping is None, f'{flavor}: R8 mapping recorded but missing')
                 else:
                     mapping = None
-                item['dex'] = verify_dex(apk, variant, tools, mapping)
+                item['dex'] = verify_dex(apk, variant, tools, mapping, flavor=flavor)
                 item['status'] = ('NATIVE_CHECKS_UNVERIFIED' if variant == 'release' and
                                   item['r8_inputs'].get('completeness') != 'SAME_INVOCATION_CAPTURE'
                                   else 'NATIVE_CHECKS_PASS')

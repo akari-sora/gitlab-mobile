@@ -82,14 +82,31 @@ class ArtifactTests(unittest.TestCase):
         return runner
 
     def test_uses_c1_per_manifest_verifier_for_each_actual_merged_manifest(self):
-        base = self.root / 'build/app/intermediates/merged_manifest/gitlabRelease/a'
-        base.mkdir(parents=True)
-        path = base / 'AndroidManifest.xml'
-        path.write_text('<manifest/>')
-        with patch.object(m._c1, 'verify_merged_manifest') as verify:
-            found = m.manifests(self.root, 'gitlab', 'release')
-        verify.assert_called_once_with(path, 'gitlab')
-        self.assertEqual(found[0]['sha256'], m.sha256_file(path))
+        helper = m._c1.BootstrapTests()
+        helper.root = self.root
+        helper._managed_android()
+        gitlab_debug = helper._merged_fixture('gitlab')
+        play_debug = helper._merged_fixture('play')
+        gitlab_release = self.root / 'build/app/intermediates/merged_manifest/gitlabRelease/a/AndroidManifest.xml'
+        play_release = self.root / 'build/app/intermediates/merged_manifest/playRelease/a/AndroidManifest.xml'
+        gitlab_release.parent.mkdir(parents=True, exist_ok=True)
+        play_release.parent.mkdir(parents=True, exist_ok=True)
+        gitlab_release.write_bytes(gitlab_debug.read_bytes())
+        play_release.write_bytes(play_debug.read_bytes())
+        found_gitlab = m.manifests(self.root, 'gitlab', 'release')
+        found_play = m.manifests(self.root, 'play', 'release')
+        self.assertEqual(found_gitlab[0]['sha256'], m.sha256_file(gitlab_release))
+        self.assertEqual(found_play[0]['sha256'], m.sha256_file(play_release))
+        # Cross-flavor manifests fail closed: play rejects FGS, gitlab requires it.
+        play_release.write_bytes(gitlab_debug.read_bytes().replace(b'io.gitlabmobile.gitlab_mobile', b'app.mergeline', 1))
+        with self.assertRaises(AssertionError):
+            m.manifests(self.root, 'play', 'release')
+        gitlab_release.write_bytes(
+            play_debug.read_bytes().replace(b'app.mergeline', b'io.gitlabmobile.gitlab_mobile')
+        )
+        with self.assertRaises(AssertionError):
+            m.manifests(self.root, 'gitlab', 'release')
+        play_release.unlink()
         with self.assertRaises(m.EvidenceError):
             m.manifests(self.root, 'play', 'release')
 
@@ -199,10 +216,38 @@ class ArtifactTests(unittest.TestCase):
             method = args[args.index('--method') + 1]
             return f'.method public {method}\n.registers 1\n.end method\n'
         with patch.object(m, 'run', side_effect=fake_run):
-            result = m.verify_dex(self.apk, 'release', self.tools, mapping)
+            result = m.verify_dex(self.apk, 'release', self.tools, mapping, flavor='gitlab')
         self.assertEqual(result['service_methods'][0]['dex'], 'a.b.c(II)V')
         self.assertEqual(result['service_methods'][1]['dex'], 'a.b.d()V')
         self.assertEqual(result['mapping_sha256'], m.sha256_file(mapping))
+        # GitLab still requires both AgentRunService override methods in DEX.
+        def missing_method(args, **_kwargs):
+            if 'packages' in args:
+                return 'C d 2 0 10 a.b\n'
+            return ''
+        with patch.object(m, 'run', side_effect=missing_method):
+            with self.assertRaisesRegex(m.EvidenceError, 'missing compiled'):
+                m.verify_dex(self.apk, 'release', self.tools, mapping, flavor='gitlab')
+        # Play strips AgentRunService from its manifest, so R8 may drop its override methods.
+        play_mapping = self.root / 'play-mapping.txt'
+        play_mapping.write_text('io.gitlabmobile.gitlab_mobile.MainActivity -> a.a:\n')
+        play_calls = []
+        def play_run(args, **_kwargs):
+            play_calls.append(args)
+            if 'packages' in args:
+                return 'C d 1 0 10 a.a\n'
+            raise AssertionError('play must not inspect AgentRunService override methods in dex')
+        with patch.object(m, 'run', side_effect=play_run):
+            play_result = m.verify_dex(self.apk, 'release', self.tools, play_mapping, flavor='play')
+        self.assertEqual(play_result['service_methods'], [])
+        self.assertEqual(play_result['mapping_sha256'], m.sha256_file(play_mapping))
+        self.assertEqual(len(play_calls), 1)
+        # Play release still rejects QA classes in R8 mapping and DEX.
+        qa_mapping = self.root / 'play-qa-mapping.txt'
+        qa_mapping.write_text(m.QA_ADAPTER + ' -> z.a:\n')
+        with patch.object(m, 'run', return_value='C d 1 0 1 z.a\n'):
+            with self.assertRaisesRegex(m.EvidenceError, 'QA class'):
+                m.verify_dex(self.apk, 'release', self.tools, qa_mapping, flavor='play')
 
     def test_debug_adapter_must_be_a_defined_class_not_a_string(self):
         def fake_run(args, **_kwargs):
@@ -236,6 +281,52 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(report['status'], 'NOT_VERIFIED')
         self.assertEqual(report['dart_aot_qa_handler'], 'NOT_VERIFIED')
         self.assertTrue(all(item['status'] == 'NATIVE_CHECKS_PASS' for item in report['artifacts'].values()))
+
+    def test_readback_verifies_flavor_specific_manifests_and_dex(self):
+        helper = m._c1.BootstrapTests()
+        helper.root = self.root
+        helper._managed_android()
+        gitlab_debug = helper._merged_fixture('gitlab')
+        play_debug = helper._merged_fixture('play')
+        for flavor, source in (('gitlab', gitlab_debug), ('play', play_debug)):
+            rel = self.root / f'build/app/intermediates/merged_manifests/{flavor}Release/processManifest/AndroidManifest.xml'
+            rel.parent.mkdir(parents=True, exist_ok=True)
+            rel.write_bytes(source.read_bytes())
+        gitlab_map = self.root / 'build/app/outputs/mapping/gitlabRelease/mapping.txt'
+        play_map = self.root / 'build/app/outputs/mapping/playRelease/mapping.txt'
+        gitlab_map.parent.mkdir(parents=True, exist_ok=True)
+        play_map.parent.mkdir(parents=True, exist_ok=True)
+        gitlab_map.write_text(m.SERVICE + ' -> a.b:\n'
+                              '    void onTimeout(int,int) -> c\n'
+                              '    void onDestroy() -> d\n')
+        play_map.write_text('io.gitlabmobile.gitlab_mobile.MainActivity -> a.a:\n')
+        receipts = {'gitlab': self.root / 'gitlab.json', 'play': self.root / 'play.json'}
+        def fake_run(args, **_kwargs):
+            target = str(args[-1])
+            if 'packages' in args:
+                if 'debug' in target:
+                    return f'C d 2 0 10 {m.SERVICE}\nC d 1 0 10 {m.QA_ADAPTER}\n'
+                if 'gitlab-release' in target:
+                    return 'C d 2 0 10 a.b\n'
+                return 'C d 1 0 10 a.a\n'
+            if 'play-release' in target:
+                raise AssertionError('play release must not require AgentRunService override methods in dex')
+            method = args[args.index('--method') + 1]
+            return f'.method public {method}\n.registers 1\n.end method\n'
+        with patch.object(m, 'source_head', return_value='a' * 40), \
+             patch.object(m._c1, 'verify_android_build_config'), \
+             patch.object(m, 'sdk_tools', return_value=self.tools), \
+             patch.object(m, 'apk_info', return_value={'sha256': 'c' * 64}), \
+             patch.object(m, 'read_r8_inputs', side_effect=lambda path, _: {
+                 'mapping_sha256': m.sha256_file(gitlab_map if path.stem == 'gitlab' else play_map),
+                 'completeness': 'SAME_INVOCATION_CAPTURE',
+                 'source_head': 'a' * 40, 'flavor': path.stem}), \
+             patch.object(m, 'run', side_effect=fake_run):
+            report = m.readback(self.root, receipts)
+        self.assertEqual(report['status'], 'NOT_VERIFIED')
+        self.assertTrue(all(item['status'] == 'NATIVE_CHECKS_PASS' for item in report['artifacts'].values()))
+        self.assertEqual(len(report['artifacts']['gitlab_release']['dex']['service_methods']), 2)
+        self.assertEqual(report['artifacts']['play_release']['dex']['service_methods'], [])
 
     def test_readback_rejects_mapping_not_bound_to_receipt(self):
         mapping = self.root / 'build/app/outputs/mapping/gitlabRelease/mapping.txt'

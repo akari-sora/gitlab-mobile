@@ -18,9 +18,13 @@ import android_signing
 MERGED_COMMON_PERMISSIONS = {
     'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE',
     'android.permission.WAKE_LOCK', 'android.permission.USE_BIOMETRIC',
-    'android.permission.USE_FINGERPRINT', 'android.permission.FOREGROUND_SERVICE',
-    'android.permission.FOREGROUND_SERVICE_DATA_SYNC', 'android.permission.POST_NOTIFICATIONS',
+    'android.permission.USE_FINGERPRINT', 'android.permission.POST_NOTIFICATIONS',
     'android.permission.VIBRATE',
+}
+MERGED_GITLAB_PERMISSIONS = {
+    'android.permission.FOREGROUND_SERVICE',
+    'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
+    'android.permission.REQUEST_INSTALL_PACKAGES',
 }
 
 
@@ -38,7 +42,7 @@ def verify_merged_manifest(path, flavor):
     permissions = [node.get(a + 'name') for node in root.findall('uses-permission')]
     expected = MERGED_COMMON_PERMISSIONS | {package + '.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'}
     if flavor == 'gitlab':
-        expected |= {'android.permission.REQUEST_INSTALL_PACKAGES'}
+        expected |= MERGED_GITLAB_PERMISSIONS
     _require(len(permissions) == len(set(permissions)), f'{path}: duplicate permissions')
     _require(set(permissions) == expected, f'{path}: permission difference {set(permissions) ^ expected}')
     _require(not root.findall('uses-permission-sdk-23'), f'{path}: unexpected conditional permissions')
@@ -58,13 +62,16 @@ def verify_merged_manifest(path, flavor):
     services = app.findall('service')
     namespace = 'io.gitlabmobile.gitlab_mobile'
     agents = [node for node in services if node.get(a + 'name', '').split('.')[-1] == 'AgentRunService']
-    _require(len(agents) == 1, f'{path}: AgentRunService must be unique')
-    service = agents[0]
-    _require(service.attrib == {a + name: value for name, value in {
-        'name': namespace + '.AgentRunService', 'exported': 'false',
-        'stopWithTask': 'true', 'foregroundServiceType': 'dataSync',
-    }.items()}, f'{path}: service attributes')
-    _require(not list(service), f'{path}: unexpected service children')
+    if flavor == 'gitlab':
+        _require(len(agents) == 1, f'{path}: AgentRunService must be unique')
+        service = agents[0]
+        _require(service.attrib == {a + name: value for name, value in {
+            'name': namespace + '.AgentRunService', 'exported': 'false',
+            'stopWithTask': 'true', 'foregroundServiceType': 'dataSync',
+        }.items()}, f'{path}: service attributes')
+        _require(not list(service), f'{path}: unexpected service children')
+    else:
+        _require(not agents, f'{path}: play must not declare AgentRunService')
     # image_picker_android 0.8.13+23 contributes this disabled metadata service.
     plugin_services = [node for node in services if node not in agents]
     _require(len(plugin_services) == 1, f'{path}: unexpected plugin services')
@@ -1560,6 +1567,22 @@ class BootstrapTests(unittest.TestCase):
         play_manifest.write_text(bootstrap.PLAY_MANIFEST)
         self.assertEqual({path: path.read_bytes() for path in app.rglob('*') if path.is_file()}, before)
 
+    def test_missing_play_manifest_and_another_managed_file_is_refused_before_writes(self):
+        app = self._managed_android()
+        files = bootstrap._check_update_template(app)
+        play_manifest = app / 'src/play/AndroidManifest.xml'
+        play_manifest.unlink()
+        for name in sorted(set(files) - {'src/play/AndroidManifest.xml'}):
+            path = app / name
+            original = path.read_bytes()
+            path.unlink()
+            before = {item: item.read_bytes() for item in app.rglob('*') if item.is_file()}
+            with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, 'Incomplete managed update/link'):
+                bootstrap.configure_android(self.root)
+            self.assertFalse(play_manifest.exists())
+            self.assertEqual({item: item.read_bytes() for item in app.rglob('*') if item.is_file()}, before)
+            path.write_bytes(original)
+
     def test_invalid_signing_or_flavor_blocks_are_refused_before_any_write(self):
         app = self._app()
         (app / 'src/main/AndroidManifest.xml').write_text(self.FRESH_MANIFEST)
@@ -1653,6 +1676,17 @@ class BootstrapTests(unittest.TestCase):
         a = '{' + bootstrap.ANDROID + '}'
         package = 'app.mergeline' if flavor == 'play' else 'io.gitlabmobile.gitlab_mobile'
         root.set('package', package)
+        if flavor == 'play':
+            for node in list(root.findall('uses-permission')):
+                if node.get(a + 'name') in {
+                    'android.permission.FOREGROUND_SERVICE',
+                    'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
+                }:
+                    root.remove(node)
+            application = root.find('application')
+            for node in list(application.findall('service')):
+                if node.get(a + 'name', '').split('.')[-1] == 'AgentRunService':
+                    application.remove(node)
         for node in root.findall('application/activity') + root.findall('application/service'):
             if node.get(a + 'name', '').startswith('.'):
                 node.set(a + 'name', 'io.gitlabmobile.gitlab_mobile' + node.get(a + 'name'))
@@ -1660,7 +1694,7 @@ class BootstrapTests(unittest.TestCase):
         existing = {node.get(a + 'name') for node in root.findall('uses-permission')}
         permissions = MERGED_COMMON_PERMISSIONS | {package + '.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'}
         if flavor == 'gitlab':
-            permissions |= {'android.permission.REQUEST_INSTALL_PACKAGES'}
+            permissions |= MERGED_GITLAB_PERMISSIONS
         for permission in sorted(permissions - existing):
             ET.SubElement(root, 'uses-permission', {a + 'name': permission})
         plugin = ET.SubElement(root.find('application'), 'service', {
@@ -1681,26 +1715,40 @@ class BootstrapTests(unittest.TestCase):
             verify_generated_root(self.root)
         play = self._merged_fixture('play')
         self.assertEqual(set(verify_generated_root(self.root)), {'gitlab', 'play'})
+        play_root = ET.parse(play).getroot()
+        a = '{' + bootstrap.ANDROID + '}'
+        play_permissions = {node.get(a + 'name') for node in play_root.findall('uses-permission')}
+        self.assertNotIn('android.permission.FOREGROUND_SERVICE', play_permissions)
+        self.assertNotIn('android.permission.FOREGROUND_SERVICE_DATA_SYNC', play_permissions)
+        self.assertEqual(
+            [node for node in play_root.findall('application/service')
+             if node.get(a + 'name', '').split('.')[-1] == 'AgentRunService'],
+            [],
+        )
+        gitlab_root = ET.parse(gitlab).getroot()
+        gitlab_permissions = {node.get(a + 'name') for node in gitlab_root.findall('uses-permission')}
+        self.assertIn('android.permission.FOREGROUND_SERVICE', gitlab_permissions)
+        self.assertIn('android.permission.FOREGROUND_SERVICE_DATA_SYNC', gitlab_permissions)
+        self.assertEqual(
+            len([node for node in gitlab_root.findall('application/service')
+                 if node.get(a + 'name', '').split('.')[-1] == 'AgentRunService']),
+            1,
+        )
         original = play.read_text()
         for mutated in (
             original.replace('</manifest>', '<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" /></manifest>'),
             original.replace('</manifest>', '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" /></manifest>'),
+            original.replace('</manifest>', '<uses-permission android:name="android.permission.FOREGROUND_SERVICE" /></manifest>'),
+            original.replace('</manifest>', '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" /></manifest>'),
+            original.replace('</manifest>', '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" /></manifest>'),
+            original.replace('</application>', '<service android:name="io.gitlabmobile.gitlab_mobile.AgentRunService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="true" /></application>'),
+            original.replace('</application>', '<service android:name=".AgentRunService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="true" /></application>'),
             original.replace('</application>', '<receiver android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" /></application>'),
             original.replace('</application>', '<receiver android:name="foreign.BootReceiver"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver></application>'),
-            original.replace('</manifest>', '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" /></manifest>'),
-            original.replace('android:stopWithTask="true"', 'android:stopWithTask="false"'),
-            original.replace('android:foregroundServiceType="dataSync"', 'android:foregroundServiceType="location"'),
             original.replace('android:allowBackup="false"', 'android:allowBackup="true"'),
             original.replace('android:usesCleartextTraffic="false"', 'android:usesCleartextTraffic="true"'),
             original.replace('android:host="gitlab.com"', 'android:host="foreign.example"'),
             original.replace('android:host="oauth"', 'android:host="foreign"'),
-            original.replace('io.gitlabmobile.gitlab_mobile.AgentRunService', '.AgentRunService'),
-            original.replace('android:foregroundServiceType="dataSync"',
-                             'android:foregroundServiceType="dataSync" android:enabled="false"'),
-            original.replace('android:foregroundServiceType="dataSync"',
-                             'android:foregroundServiceType="dataSync" android:permission="foreign.permission"'),
-            original.replace('android:foregroundServiceType="dataSync"',
-                             'android:foregroundServiceType="dataSync" android:process=":foreign"'),
             original.replace('io.gitlabmobile.gitlab_mobile.MainActivity', 'foreign.MainActivity'),
             original.replace('io.gitlabmobile.gitlab_mobile.LinkActivity', 'foreign.LinkActivity'),
             original.replace('</application>', '<activity android:name="foreign.MainActivity" /></application>'),
@@ -1710,6 +1758,26 @@ class BootstrapTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 verify_merged_manifest(play, 'play')
         play.write_text(original)
+        original_gitlab = gitlab.read_text()
+        for mutated in (
+            original_gitlab.replace('<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />', ''),
+            original_gitlab.replace('<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />', ''),
+            original_gitlab.replace('<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />', ''),
+            original_gitlab.replace('android:stopWithTask="true"', 'android:stopWithTask="false"'),
+            original_gitlab.replace('android:foregroundServiceType="dataSync"', 'android:foregroundServiceType="location"'),
+            original_gitlab.replace('io.gitlabmobile.gitlab_mobile.AgentRunService', '.AgentRunService'),
+            original_gitlab.replace('android:foregroundServiceType="dataSync"',
+                                    'android:foregroundServiceType="dataSync" android:enabled="false"'),
+            original_gitlab.replace('android:foregroundServiceType="dataSync"',
+                                    'android:foregroundServiceType="dataSync" android:permission="foreign.permission"'),
+            original_gitlab.replace('android:foregroundServiceType="dataSync"',
+                                    'android:foregroundServiceType="dataSync" android:process=":foreign"'),
+            re.sub(r'<service[^>]*AgentRunService[^>]*/>', '', original_gitlab),
+        ):
+            gitlab.write_text(mutated)
+            with self.assertRaises(AssertionError):
+                verify_merged_manifest(gitlab, 'gitlab')
+        gitlab.write_text(original_gitlab)
         gitlab.unlink()
         with self.assertRaisesRegex(AssertionError, 'No actual gitlabDebug merged manifest'):
             verify_generated_root(self.root)

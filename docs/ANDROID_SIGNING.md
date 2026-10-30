@@ -456,12 +456,35 @@ On 2026-10-30 the v0.6.1 Play AAB (`c39818e5`, versionCode 7) was uploaded as a 
 
 ### Build the bundle
 
+`tool/bootstrap.py` refuses an existing `android/` (`android`, `ios`,
+`.metadata`) tree, so regenerate the native templates before a Play build to
+ensure the managed `android/app/src/play/AndroidManifest.xml` is installed.
+Removing `ios/` also drops any local iOS settings in that generated tree; build
+from a fresh worktree if you keep some.
+
 ```sh
+rm -rf android ios .metadata
+python3 tool/bootstrap.py --flutter .fvm/flutter_sdk/bin/flutter
+
 GITLAB_MOBILE_SIGNING_PROPERTIES=~/.config/gitlab-mobile/play-upload/signing.properties \
-  fvm flutter build appbundle --release --flavor play --build-number <versionCode>
+  fvm flutter build appbundle --release --flavor play --build-number <versionCode> \
+  --dart-define=MERGELINE_AI_ASSISTANT=true --dart-define=MERGELINE_AI_BACKGROUND=false
 ```
 
 Take `<versionCode>` above every published build: Play needs it to grow.
+Before uploading, check the release AAB with `bundletool dump manifest` and
+verify that no `FOREGROUND_SERVICE*` permission or `AgentRunService` is
+present:
+
+```sh
+bundletool dump manifest --bundle=build/app/outputs/bundle/playRelease/app-play-release.aab \
+  > /tmp/play-manifest.xml && grep -c 'package="app.mergeline"' /tmp/play-manifest.xml \
+  && ! grep -E 'FOREGROUND_SERVICE|AgentRunService' /tmp/play-manifest.xml
+```
+
+Save the dump first so a failing `bundletool` cannot look like a pass: the
+command must print `1` (the dump is the Play manifest) and exit 0 (no
+foreground-service entry) before upload.
 
 ### Before the first upload
 
