@@ -20,7 +20,7 @@ This page is the single place for **what we are building, in what order, and whe
   - Release notes are in Traditional Chinese; v0.6.0 is the template.
 - **Evidence:** both CI lanes, the synthetic sandbox suites and one emulator walkthrough with `gpt-4o-mini` on a run-owned private sandbox project (details in the MR7 row). The per-operation live matrix is NOT_RUN by owner decision.
 - **Not shipped:**
-  - Google Play: there is no app in Play Console yet, and the play flavour refuses AI flags.
+  - Google Play: the app exists in Play Console but is not submitted yet (see Next steps). The play flavour may carry the assistant; background runs stay off.
   - iOS.
   - Background AI runs (`MERGELINE_AI_BACKGROUND=false`).
 
@@ -31,8 +31,8 @@ There are two tracks.
 **AI assistant ("Mergeline Copilot").**
 - **Model:** bring-your-own-key, with OpenAI-compatible Chat Completions, the Responses API and Anthropic Messages.
 - **Writes:** the AI may perform every write the app itself can do. Autonomy is selectable, from read-only through confirm-each and low-risk-automatic to a conversation grant and bypass. Hard limits always need the user to type a name.
-- **Release:** v0.6.0 (GitLab channel) ships the assistant on, with every read and every model-visible write released. On 2026-10-30 the owner replaced the remaining 7R live matrix with the synthetic suites plus one emulator walkthrough. The Play flavour stays off.
-- **Play listing:** Play only, at US$3.99. The listing is prepared after the AI assistant ships.
+- **Release:** v0.6.0 (GitLab channel) ships the assistant on, with every read and every model-visible write released. On 2026-10-30 the owner replaced the remaining 7R live matrix with the synthetic suites plus one emulator walkthrough. Owner decision 2026-10-30: the Play build ships the assistant once in-app AI reporting lands (Google Play's AI-generated content policy), with background runs off.
+- **Play listing:** Play only, at US$3.99. Reviewers get in through a Demo mode on built-in sample data (owner decision 2026-10-30), so no credentials go into Play Console.
 
 **Read cache.**
 - **Scope:** a memory cache, rate-limit awareness and an encrypted disk cache. On top of those comes offline repository viewing, which GitHub Mobile does not offer.
@@ -77,13 +77,14 @@ There are two tracks.
 ## Next steps
 In priority order. Steps marked **owner** need the owner in person.
 
-1. **Play listing.** Owner decision 2026-10-21: Play only, US$3.99, with screenshots that feature the AI assistant.
-   - **Owner:** create `app.mergeline` in Play Console, set the paid price, and fill in data safety (the AI sends content to the user's own provider) and the content rating.
-   - **Owner decision:** should the Play build carry the assistant? MR7 7C keeps Play AI off until the in-app AI report path meets Google Play's generative-AI policy (MR7 breakdown §6.3, [`MR7_PLAY_DECLARATIONS.md`](MR7_PLAY_DECLARATIONS.md)). Opening it means changing the Play guard in `ci/build_android.sh` and updating the 7C rows.
-   - **Claude:**
-     - Listing copy per [`STORE_LISTING.md`](STORE_LISTING.md).
-     - Beautified screenshots, including the AI chat and the provider setup.
-     - `release-preflight`, then the upload.
+1. **Play listing.** Owner decisions: Play only, US$3.99, screenshots that feature the AI assistant (2026-10-21); the Play build carries the assistant after in-app AI reporting lands, and reviewers use a Demo mode (2026-10-30).
+   - **Done in Play Console (2026-10-30):** app `app.mergeline` created under the CB Studio developer account; store listing text (zh-TW); app access (Demo mode instructions, no credentials); ads, advertising ID, target audience, government apps, financial features and health declarations; data safety (collected, not shared: user IDs, required; in-app messages, photos, videos, files and other user content, optional; **not** all encrypted in transit, because an AI provider may be a LAN HTTP server; the optional deletion URL is empty because Play's URL check rejected the Google Doc link); privacy policy ([`PRIVACY.md`](PRIVACY.md), hosted as a public Google Doc because Google's checker got HTTP 429 from gitlab.com).
+   - **Owner:** the content rating questionnaire (needs the owner's email and the IARC terms) and the price (US$3.99, all countries). Both need the owner in Play Console.
+   - **Claude, in order:**
+     - Merge in-app AI reporting (report goes to the developer's Google Form, mail/share fallback) and Demo mode.
+     - Update [`MR7_PLAY_DECLARATIONS.md`](MR7_PLAY_DECLARATIONS.md) 7C rows for Play AI on.
+     - Demo-mode screenshots on the emulator, beautified, featuring the AI chat; upload them with the icon and feature graphic.
+     - `release-preflight`, then a local Play AAB (AI on, background off, upload key) to the production track, and submit for review.
 2. **Small-model robustness.** Found in the v0.6.0 walkthrough with `gpt-4o-mini`:
    - **Unrequested changes.** The model sometimes proposes changes nobody asked for; it rewrote an issue title while reopening the issue. Consider marking changed against unchanged fields in the confirmation card.
    - **Unexplained refusals.** A `validation` refusal reaches the model without the field name, so it retried the same call four times. Return which field failed.

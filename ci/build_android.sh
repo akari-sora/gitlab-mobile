@@ -27,8 +27,10 @@ esac
 case "$flavor" in
   gitlab) ;;
   play)
-    if [ "$ai_assistant" != false ] || [ "$ai_background" != false ]; then
-      printf '%s\n' 'Play AI flags must remain off.' >&2
+    # The Play build may carry the assistant (in-app AI reporting meets the
+    # generative-AI policy); background work stays off until it is declared.
+    if [ "$ai_background" != false ]; then
+      printf '%s\n' 'Play AI background must remain off.' >&2
       exit 1
     fi
     ;;
