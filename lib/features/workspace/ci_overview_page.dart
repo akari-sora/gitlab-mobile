@@ -97,6 +97,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
 
   int _loadEpoch = 0;
   bool _loading = false;
+  bool _firstLoadDone = false;
   bool _loadingMore = false;
   Uri? _nextPageUri;
   ApiFailure? _error;
@@ -156,6 +157,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     if (accountChanged || apiChanged || sessionChanged) {
       _loadEpoch++;
       _loading = false;
+      _firstLoadDone = false;
       _loadingMore = false;
       _nextPageUri = null;
       _error = null;
@@ -234,6 +236,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
 
       final projects = page.items.map(Project.fromJson).toList();
       setState(() {
+        _firstLoadDone = true;
         final previous = {for (final item in _items) item.project.id: item};
         _items = projects.map((project) {
           final item = previous[project.id];
@@ -273,6 +276,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       if (current()) {
         setState(() {
           _loading = false;
+          _firstLoadDone = true;
         });
         if (revalidateStaleProjects) {
           unawaited(_load(fresh: true, background: true));
@@ -695,11 +699,13 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
               ),
             ),
             const SizedBox(height: 8),
+            if (_loading && _firstLoadDone)
+              const LinearProgressIndicator(minHeight: 2),
           ],
         );
 
   List<Widget> _bodySlivers(double gutter, List<ProjectCiItem> displayed) {
-    if (_loading && _items.isEmpty) {
+    if (_loading && !_firstLoadDone) {
       return [
         SliverToBoxAdapter(
           child: ListSkeleton(
@@ -811,7 +817,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                   ),
                   const SizedBox(width: 8),
                   if (item.state == ProjectCiLoadState.loading)
-                    const SkeletonBone(width: 56, height: 22, radius: 999)
+                    const SkeletonBone(width: 20, height: 20, radius: 10)
                   else if (item.state == ProjectCiLoadState.unknown)
                     Icon(
                       Icons.help_outline,

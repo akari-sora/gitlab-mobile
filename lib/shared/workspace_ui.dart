@@ -849,15 +849,36 @@ class ListSkeleton extends StatelessWidget implements Skeleton {
     this.rows = 8,
     this.grouped = false,
     this.padding = EdgeInsets.zero,
+    this.rowHeight = RowsSkeleton.rowHeight,
+    this.leadingSize = 36,
+    this.leadingRadius = 8,
+    this.showLeading = true,
+    this.showSubtitle = true,
+    this.liveRegion = true,
   });
 
   final int rows;
   final bool grouped;
   final EdgeInsetsGeometry padding;
+  final double rowHeight;
+  final double leadingSize;
+  final double leadingRadius;
+  final bool showLeading;
+  final bool showSubtitle;
+  final bool liveRegion;
 
   @override
-  Widget build(BuildContext context) =>
-      RowsSkeleton(rows: rows, grouped: grouped, padding: padding);
+  Widget build(BuildContext context) => RowsSkeleton(
+    rows: rows,
+    grouped: grouped,
+    padding: padding,
+    itemHeight: rowHeight,
+    leadingSize: leadingSize,
+    leadingRadius: leadingRadius,
+    showLeading: showLeading,
+    showSubtitle: showSubtitle,
+    liveRegion: liveRegion,
+  );
 }
 
 Future<bool> confirmAction(

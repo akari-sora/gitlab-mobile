@@ -232,8 +232,10 @@ class _ComparePageState extends State<ComparePage> {
     final projectId = widget.project.id;
     setState(() {
       _loading = true;
-      _result = null;
-      _resultSpec = null;
+      if (_resultSpec != spec) {
+        _result = null;
+        _resultSpec = null;
+      }
       _error = null;
       _errorSpec = null;
       _validation = null;
@@ -371,8 +373,8 @@ class _ComparePageState extends State<ComparePage> {
   );
 
   Widget _content(BuildContext context) {
-    if (_loading) {
-      return const DiffSkeleton();
+    if (_loading && _result == null) {
+      return const CompareSkeleton();
     }
     if (_error != null) {
       final spec = _errorSpec;
@@ -394,7 +396,15 @@ class _ComparePageState extends State<ComparePage> {
       return EmptyState(l10n.selectTwoVersionsToCompare, icon: Icons.compare_arrows);
     }
     if (result.sameRef) {
-      return EmptyState(l10n.versionsIdenticalNoDiff, icon: Icons.done_all);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_loading) const LinearProgressIndicator(minHeight: 2),
+          Expanded(
+            child: EmptyState(l10n.versionsIdenticalNoDiff, icon: Icons.done_all),
+          ),
+        ],
+      );
     }
     final spec = _resultSpec!;
     return DefaultTabController(
@@ -402,6 +412,7 @@ class _ComparePageState extends State<ComparePage> {
       length: 2,
       child: Column(
         children: [
+          if (_loading) const LinearProgressIndicator(minHeight: 2),
           if (result.timeout) _timeoutNotice(context),
           TabBar(
             tabs: [

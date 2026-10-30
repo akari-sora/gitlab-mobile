@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../core/syntax_highlighter.dart';
 import '../l10n/l10n.dart';
-import 'skeleton.dart';
 import 'theme.dart';
 
 /// The lines of one text file, prepared for [CodeTextView]: lower-case copies
@@ -60,6 +59,18 @@ class CodeTextView extends StatelessWidget {
     height: 1.55,
   );
 
+  /// Shared code padding matched by [CodeSkeleton].
+  static const EdgeInsets padding = EdgeInsets.all(12);
+
+  /// Width reserved for the line-number gutter.
+  static const double gutterWidth = 48;
+
+  /// Gap between the line-number gutter and code text.
+  static const double gutterGap = 8;
+
+  /// Vertical pitch of each code row (24dp minimum target + 2dp vertical padding).
+  static const double linePitch = 26;
+
   final CodeTextIndex index;
   final List<int> visibleIndices;
   final String filePath;
@@ -99,7 +110,7 @@ class CodeTextView extends StatelessWidget {
                   controller: vertical,
                   itemCount: visibleIndices.length,
                   padding: EdgeInsets.symmetric(
-                    vertical: CodeSkeleton.defaultPadding.top,
+                    vertical: padding.top,
                   ),
                   itemBuilder: (context, row) => _line(context, row),
                 ),
@@ -124,7 +135,7 @@ class CodeTextView extends StatelessWidget {
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
           : null,
       padding: EdgeInsets.symmetric(
-        horizontal: CodeSkeleton.defaultPadding.left,
+        horizontal: padding.left,
         vertical: 1,
       ),
       child: Row(
@@ -144,7 +155,7 @@ class CodeTextView extends StatelessWidget {
               // number keeps the 24dp WCAG 2.5.8 minimum in a 48dp-wide column.
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
-                  minWidth: CodeSkeleton.gutterWidth,
+                  minWidth: gutterWidth,
                   minHeight: 24,
                 ),
                 child: Align(
@@ -163,7 +174,7 @@ class CodeTextView extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: gutterGap),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),

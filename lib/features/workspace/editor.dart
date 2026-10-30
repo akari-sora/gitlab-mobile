@@ -230,6 +230,7 @@ Future<bool> openEditor(
 }
 
 class ResourceEditor extends StatefulWidget {
+  static const EdgeInsets bodyPadding = EdgeInsets.fromLTRB(20, 8, 20, 32);
   const ResourceEditor({
     super.key,
     required this.account,
@@ -754,9 +755,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
       ),
       body: SafeArea(
         child: _loading
-            ? const CodeSkeleton(padding: CodeSkeleton.editorPadding)
+            ? const EditorSkeleton(padding: ResourceEditor.bodyPadding)
             : SingleChildScrollView(
-                padding: CodeSkeleton.editorPadding,
+                padding: ResourceEditor.bodyPadding,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [

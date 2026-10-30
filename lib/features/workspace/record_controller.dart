@@ -27,6 +27,7 @@ class RecordController extends ChangeNotifier {
   bool _disposed = false, _backgroundEnabled = true;
   int _generation = 0;
   int _loadedPages = 0;
+  bool get hasLoaded => _loadedPages > 0 || items.isNotEmpty;
   bool _failedReconcile = false;
   bool _resumeWhenVisible = false;
   Future<void>? _revalidation;

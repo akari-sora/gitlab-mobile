@@ -289,6 +289,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
   ApiFailure? _error;
   ApiFailure? _blobError;
   bool _loading = true;
+  bool _firstLoadDone = false;
   bool _blobLoading = false;
   bool _busy = false;
   bool _markdownPreview = false;
@@ -341,6 +342,14 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         !identical(oldWidget.api, widget.api)) {
       _dismissRoutes();
       _busy = false;
+      _firstLoadDone = false;
+      _snippet = null;
+      _content = null;
+      _snapshot = null;
+      _blob = null;
+      _selectedPath = null;
+      _error = null;
+      _blobError = null;
       unawaited(_load());
     }
   }
@@ -483,12 +492,11 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         _snippet = snapshot.snippet;
         _content = null;
         _snapshot = snapshot;
-        _blob = null;
+        if (_selectedPath != selected) _blob = null;
         _selectedPath = selected;
         _markdownPreview = false;
-        _loading = false;
       });
-      unawaited(_selectFile(selected));
+      await _selectFile(selected);
     } catch (error) {
       if (!mounted || generation != _generation) return;
       final failure = safeFailure(error);
@@ -496,6 +504,13 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         _error = failure;
         _loading = false;
       });
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() {
+          _loading = false;
+          _firstLoadDone = true;
+        });
+      }
     }
   }
 
@@ -1116,15 +1131,19 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
   }
 
   Widget _body() {
-    if (_loading) {
+    if (_loading && !_firstLoadDone) {
       final gutter = feedGutter(context);
-      return CodeSkeleton(padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 24));
+      return SnippetDetailSkeleton(
+        padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 24),
+      );
     }
+    final showProgress = _firstLoadDone && (_loading || _blobLoading);
     final error = _error;
     if (error != null) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
+          if (showProgress) const LinearProgressIndicator(minHeight: 2),
           FailureNotice(
             error,
             account: widget.account,
@@ -1136,104 +1155,129 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         ],
       );
     }
-    if (_snapshot != null) return _multiBody();
-    final snippet = _snippet!;
-    final lines = _content!.split('\n');
+    if (_snapshot != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showProgress) const LinearProgressIndicator(minHeight: 2),
+          Expanded(child: _multiBody()),
+        ],
+      );
+    }
+    final snippet = _snippet;
+    final content = _content;
+    if (snippet == null || content == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showProgress) const LinearProgressIndicator(minHeight: 2),
+        ],
+      );
+    }
+    final lines = content.split('\n');
     final truncatedLineCount = lines.where((line) => line.length > 2000).length;
     final gutter = feedGutter(context);
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: CustomScrollView(
-        key: PageStorageKey(
-          '${widget.account.key}/${widget.project.id}/snippets/${snippet.id}',
-        ),
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 8),
-            sliver: SliverList.list(
-              children: [
-                Text(
-                  snippet.title,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    Chip(label: Text(snippet.visibility)),
-                    Chip(label: Text(snippet.fileName)),
-                    Chip(label: Text(snippet.authorName)),
-                  ],
-                ),
-                if (snippet.description.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  MarkdownView(
-                    snippet.description,
-                    base: null,
-                    api: widget.api,
-                    projectId: widget.project.id,
-                    projectWeb: widget.account.instance.projectWeb(
-                      widget.project.path,
-                    ),
-                    projectPath: widget.project.path,
-                    account: widget.account,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showProgress) const LinearProgressIndicator(minHeight: 2),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: CustomScrollView(
+              key: PageStorageKey(
+                '${widget.account.key}/${widget.project.id}/snippets/${snippet.id}',
+              ),
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 8),
+                  sliver: SliverList.list(
+                    children: [
+                      Text(
+                        snippet.title,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          Chip(label: Text(snippet.visibility)),
+                          Chip(label: Text(snippet.fileName)),
+                          Chip(label: Text(snippet.authorName)),
+                        ],
+                      ),
+                      if (snippet.description.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        MarkdownView(
+                          snippet.description,
+                          base: null,
+                          api: widget.api,
+                          projectId: widget.project.id,
+                          projectWeb: widget.account.instance.projectWeb(
+                            widget.project.path,
+                          ),
+                          projectPath: widget.project.path,
+                          account: widget.account,
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      Text(l10n.content, style: Theme.of(context).textTheme.titleMedium),
+                      if (truncatedLineCount > 0) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          l10n.previewLinesTruncated(truncatedLineCount),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                    ],
                   ),
-                ],
-                const SizedBox(height: 12),
-                Text(l10n.content, style: Theme.of(context).textTheme.titleMedium),
-                if (truncatedLineCount > 0) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    l10n.previewLinesTruncated(truncatedLineCount),
-                    style: Theme.of(context).textTheme.bodySmall,
+                ),
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 24),
+                  sliver: SliverList.builder(
+                    itemCount: lines.length,
+                    itemBuilder: (context, index) {
+                      final raw = lines[index];
+                      final truncated = raw.length > 2000;
+                      final shown = truncated ? '${raw.substring(0, 2000)} …' : raw;
+                      return Container(
+                        color: index.isEven
+                            ? Theme.of(context).colorScheme.surfaceContainerLow
+                            : null,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 3,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 44,
+                              child: Text(
+                                '${index + 1}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                            Expanded(
+                              child: SelectableText(
+                                shown.isEmpty ? ' ' : shown,
+                                style: codeTextStyle(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                ],
-                const SizedBox(height: 8),
+                ),
               ],
             ),
           ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 24),
-            sliver: SliverList.builder(
-              itemCount: lines.length,
-              itemBuilder: (context, index) {
-                final raw = lines[index];
-                final truncated = raw.length > 2000;
-                final shown = truncated ? '${raw.substring(0, 2000)} …' : raw;
-                return Container(
-                  color: index.isEven
-                      ? Theme.of(context).colorScheme.surfaceContainerLow
-                      : null,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 3,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 44,
-                        child: Text(
-                          '${index + 1}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                      Expanded(
-                        child: SelectableText(
-                          shown.isEmpty ? ' ' : shown,
-                          style: codeTextStyle(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1289,20 +1333,6 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
   );
 
   List<Widget> _blobSlivers(double gutter) {
-    if (_blobLoading) {
-      final path = _selectedPath;
-      final preview = path != null && _markdownPreview && _isMarkdown(path);
-      return [
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 24),
-          sliver: SliverToBoxAdapter(
-            child: preview
-                ? const MarkdownSkeleton(padding: EdgeInsets.zero)
-                : const CodeSkeleton(padding: EdgeInsets.zero),
-          ),
-        ),
-      ];
-    }
     final error = _blobError;
     if (error != null) {
       return [

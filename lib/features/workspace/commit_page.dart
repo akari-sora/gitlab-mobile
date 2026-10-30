@@ -39,6 +39,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
   List<Json> _diffs = const [];
   Uri? _diffNext;
   bool _loading = true;
+  bool _firstLoadDone = false;
   bool _diffsLoading = false;
   ApiFailure? _error;
   int _epoch = 0;
@@ -88,13 +89,22 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
           ..clear()
           ..addAll(initialExpanded);
         _loading = false;
+        _firstLoadDone = true;
       });
     } catch (e) {
       if (!mounted || epoch != _epoch) return;
       setState(() {
         _error = safeFailure(e);
         _loading = false;
+        _firstLoadDone = true;
       });
+    } finally {
+      if (mounted && epoch == _epoch && (_loading || !_firstLoadDone)) {
+        setState(() {
+          _loading = false;
+          _firstLoadDone = true;
+        });
+      }
     }
   }
 
@@ -233,8 +243,8 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
   }
 
   Widget _buildBody(BuildContext context, ColorScheme scheme) {
-    if (_loading && _commit == null) {
-      return const DiffSkeleton();
+    if (_loading && !_firstLoadDone && _commit == null) {
+      return const CommitSkeleton();
     }
 
     if (_error != null && _commit == null) {
@@ -279,6 +289,11 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
+          if (_loading && _firstLoadDone)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
           // Commit metadata card
           Card(
             child: Padding(
@@ -489,10 +504,10 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
           ),
           const SizedBox(height: 8),
 
-          if (_diffs.isEmpty && _loading)
+          if (_diffs.isEmpty && _loading && !_firstLoadDone)
             const DiffSkeleton(padding: EdgeInsets.zero),
 
-          if (_diffs.isEmpty && !_loading)
+          if (_diffs.isEmpty && (_firstLoadDone || !_loading))
             Card(
               child: Padding(
                 padding: EdgeInsets.all(24),

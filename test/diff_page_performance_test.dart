@@ -375,7 +375,19 @@ void main() {
 
         // Verify that the screen immediately displays an honest loading state without blocking
         expect(parserCalls, 1);
-        expect(find.byType(DiffSkeleton, skipOffstage: false), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('diff-file-skeleton'), skipOffstage: false),
+          findsOneWidget,
+        );
+        expect(
+          tester.widget(
+            find.byKey(
+              const ValueKey('diff-file-skeleton'),
+              skipOffstage: false,
+            ),
+          ),
+          isA<DiffSkeleton>(),
+        );
         expect(
           find.byType(CircularProgressIndicator, skipOffstage: false),
           findsNothing,
@@ -388,7 +400,7 @@ void main() {
         await settleNetworkWidgets(tester);
 
         // Loading indicator is gone, lines are rendered
-        expect(find.byType(DiffSkeleton), findsNothing);
+        expect(find.byKey(const ValueKey('diff-file-skeleton')), findsNothing);
         expect(find.text('line1'), findsOneWidget);
       },
     );
@@ -448,14 +460,26 @@ void main() {
 
         await tester.tap(find.text('lib/production_compute.dart'));
         await tester.pump();
-        expect(find.byType(DiffSkeleton, skipOffstage: false), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('diff-file-skeleton'), skipOffstage: false),
+          findsOneWidget,
+        );
+        expect(
+          tester.widget(
+            find.byKey(
+              const ValueKey('diff-file-skeleton'),
+              skipOffstage: false,
+            ),
+          ),
+          isA<DiffSkeleton>(),
+        );
 
         await pumpUntil(
           tester,
           () => find.textContaining('中文差異內容-1-').evaluate().isNotEmpty,
           description: 'default production parser completion',
         );
-        expect(find.byType(DiffSkeleton), findsNothing);
+        expect(find.byKey(const ValueKey('diff-file-skeleton')), findsNothing);
         expect(find.textContaining('中文差異內容-1-'), findsOneWidget);
       },
     );
@@ -937,7 +961,10 @@ void main() {
       await settleNetworkWidgets(tester);
       await tester.tap(find.text('lib/parser_pending.dart'));
       await tester.pump(const Duration(milliseconds: 400));
-      expect(find.byType(DiffSkeleton, skipOffstage: false), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('diff-file-skeleton'), skipOffstage: false),
+        findsOneWidget,
+      );
 
       await tester.pumpWidget(
         host(
@@ -1522,7 +1549,7 @@ void main() {
         await tester.tap(find.text('lib/cache_0.dart'));
         await tester.pump();
         expect(
-          find.byType(DiffSkeleton, skipOffstage: false),
+          find.byKey(const ValueKey('diff-file-skeleton'), skipOffstage: false),
           findsOneWidget,
           reason:
               'Three retained source+parsed payloads exceed the 8 MiB estimate, so the oldest must reparse.',
@@ -1687,7 +1714,7 @@ void main() {
         await tester.tap(find.text('lib/account_test.dart'));
         await tester.pump();
         expect(
-          find.byType(DiffSkeleton, skipOffstage: false),
+          find.byKey(const ValueKey('diff-file-skeleton'), skipOffstage: false),
           findsNothing,
           reason:
               'The exact same production source should be an immediate hit.',
@@ -1713,7 +1740,7 @@ void main() {
         await tester.tap(find.text('lib/account_test.dart'));
         await tester.pump();
         expect(
-          find.byType(DiffSkeleton, skipOffstage: false),
+          find.byKey(const ValueKey('diff-file-skeleton'), skipOffstage: false),
           findsOneWidget,
           reason: 'A replacement API owner must not reuse another API cache.',
         );
@@ -1821,7 +1848,10 @@ void main() {
           await tester.tap(find.text(path));
           await tester.pump();
           expect(
-            find.byType(DiffSkeleton, skipOffstage: false),
+            find.byKey(
+              const ValueKey('diff-file-skeleton'),
+              skipOffstage: false,
+            ),
             expectLoading ? findsOneWidget : findsNothing,
           );
           await settleNetworkWidgets(tester);

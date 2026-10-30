@@ -47,9 +47,8 @@ void main() {
     final treeB = fixture.adapter.requests.where((r) => r.uri.path.endsWith('/repository/tree') && r.uri.queryParameters['ref'] == shaB).length;
     heldTreeB.complete();
     await settleWorkspace(tester);
-    final card = find.byType(RepositoryReadmeCard);
-    final failure = find.descendant(of: card, matching: find.byType(FailureNotice)).evaluate().length;
-    final spinner = find.descendant(of: card, matching: find.byType(MarkdownSkeleton)).evaluate().length;
+    final failure = _activeInReadmeCard(FailureNotice).evaluate().length;
+    final spinner = _activeInReadmeCard(MarkdownSkeleton).evaluate().length;
     final bbb = find.textContaining('marker-bbb', findRichText: true).evaluate().length;
     final raws = fixture.adapter.requests.where((r) => r.uri.path.endsWith('README.md/raw')).map((r) => r.uri.queryParameters['ref']!.substring(0, 1)).toList();
     final heads = fixture.adapter.requests.where((r) => r.method == 'HEAD').map((r) => r.uri.queryParameters['ref']!.substring(0, 1)).toList();
@@ -319,7 +318,7 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.textContaining('marker-aaa', findRichText: true), findsNothing, reason: 'old README never applied');
       expect(
-        find.descendant(of: find.byType(RepositoryReadmeCard), matching: find.byType(MarkdownSkeleton)),
+        _activeInReadmeCard(MarkdownSkeleton),
         findsOneWidget,
         reason: 'B README still loading',
       );
@@ -433,10 +432,7 @@ void main() {
         heldTreeA.complete();
         await settleNetworkWidgets(tester);
         expect(
-          find.descendant(
-            of: find.byType(RepositoryReadmeCard),
-            matching: find.byType(MarkdownSkeleton),
-          ),
+          _activeInReadmeCard(MarkdownSkeleton),
           findsOneWidget,
           reason: 'late tree A must not end README B loading',
         );
@@ -508,10 +504,7 @@ void main() {
         findsNothing,
       );
       expect(
-        find.descendant(
-          of: find.byType(RepositoryReadmeCard),
-          matching: find.byType(MarkdownSkeleton),
-        ),
+        _activeInReadmeCard(MarkdownSkeleton),
         findsOneWidget,
         reason: 'README A completion must not end README B loading',
       );
@@ -557,19 +550,13 @@ void main() {
         );
         await settleWorkspace(tester);
         expect(
-          find.descendant(
-            of: find.byType(RepositoryReadmeCard),
-            matching: find.byType(MarkdownSkeleton),
-          ),
+          _activeInReadmeCard(MarkdownSkeleton),
           findsNothing,
           reason: 'same SHA refresh must not orphan a README completion',
         );
         if (status == 500) {
           final notice = tester.widget<FailureNotice>(
-            find.descendant(
-              of: find.byType(RepositoryReadmeCard),
-              matching: find.byType(FailureNotice),
-            ),
+            _activeInReadmeCard(FailureNotice),
           );
           expect(notice.onRetry, isNotNull);
           fixture.readmePending.clear();
@@ -626,10 +613,7 @@ void main() {
       );
       await settleWorkspace(tester);
       final notice = tester.widget<FailureNotice>(
-        find.descendant(
-          of: find.byType(RepositoryReadmeCard),
-          matching: find.byType(FailureNotice),
-        ),
+        _activeInReadmeCard(FailureNotice),
       );
       expect(notice.onRetry, isNotNull);
       final blockers = [
@@ -652,10 +636,7 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(fixture.readmeHeadReads, 1, reason: 'README A retry is queued');
       expect(
-        find.descendant(
-          of: find.byType(RepositoryReadmeCard),
-          matching: find.byType(MarkdownSkeleton),
-        ),
+        _activeInReadmeCard(MarkdownSkeleton),
         findsOneWidget,
       );
       final state = tester.state<RepositoryTabState>(
@@ -701,10 +682,7 @@ void main() {
       await tester.pumpWidget(workspaceHost(fixture.tab()));
       await settleWorkspace(tester);
       final notice = tester.widget<FailureNotice>(
-        find.descendant(
-          of: find.byType(RepositoryReadmeCard),
-          matching: find.byType(FailureNotice),
-        ),
+        _activeInReadmeCard(FailureNotice),
       );
       expect(notice.onRetry, isNotNull);
       final occupied = Completer<void>();
@@ -748,10 +726,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.descendant(
-          of: find.byType(RepositoryReadmeCard),
-          matching: find.byType(FailureNotice),
-        ),
+        _activeInReadmeCard(FailureNotice),
         findsNothing,
       );
     },
@@ -795,6 +770,23 @@ void _viewport(WidgetTester tester) {
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 }
+
+Finder _activeInReadmeCard(Type type) => find.descendant(
+  of: find.byType(RepositoryReadmeCard),
+  matching: find.byWidgetPredicate((widget) {
+    if (widget.runtimeType != type) return false;
+    for (final element in find
+        .ancestor(
+          of: find.byWidget(widget),
+          matching: find.byType(FadeTransition),
+        )
+        .evaluate()) {
+      final fade = element.widget as FadeTransition;
+      if (fade.opacity.status == AnimationStatus.reverse) return false;
+    }
+    return true;
+  }),
+);
 
 List<Json> _rootTree() => [
   {'id': '1', 'name': 'lib', 'path': 'lib', 'type': 'tree', 'mode': '040000'},

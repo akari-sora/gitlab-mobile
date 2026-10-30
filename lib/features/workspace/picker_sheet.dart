@@ -345,7 +345,7 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
               ),
               for (final choice in pinned) _row(choice),
             ],
-            if (_records.loading && _records.items.isEmpty) const RowsSkeleton(),
+            if (_records.loading && !_records.hasLoaded) const RowsSkeleton(),
             if (showCreate) _row(PickerChoice(id: query, name: query), create: true),
             if (empty) EmptyState(l10n.noMatchingItems),
             for (final item in items) _row(item),

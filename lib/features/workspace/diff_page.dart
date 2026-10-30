@@ -326,6 +326,11 @@ String _excerpt(String body) {
 }
 
 class ReviewDiffPage extends StatefulWidget {
+  static const EdgeInsets contentPadding = EdgeInsets.all(16);
+  static const EdgeInsets filePadding = EdgeInsets.symmetric(
+    horizontal: 16,
+    vertical: 8,
+  );
   const ReviewDiffPage({
     super.key,
     required this.account,
@@ -354,6 +359,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
   ApiFailure? _error;
   ApiFailure? _discussionsError;
   bool _loading = true;
+  bool _firstLoadDone = false;
   bool _discussionsTruncated = false;
   bool _openedTarget = false;
   int _epoch = 0;
@@ -466,6 +472,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
         ).map(diffFilePath).toSet();
         _viewedFiles.retainAll(currentPaths);
         _loading = false;
+        _firstLoadDone = true;
       });
     } catch (e) {
       if (!mounted || epoch != _epoch) {
@@ -475,7 +482,15 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
       setState(() {
         _error = safeFailure(e);
         _loading = false;
+        _firstLoadDone = true;
       });
+    } finally {
+      if (mounted && epoch == _epoch && (_loading || !_firstLoadDone)) {
+        setState(() {
+          _loading = false;
+          _firstLoadDone = true;
+        });
+      }
     }
     final loaded = await discussionsFuture;
     if (!mounted || epoch != _epoch) return;
@@ -618,8 +633,8 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const DiffSkeleton();
+    if (_loading && !_firstLoadDone) {
+      return const DiffSkeleton(padding: ReviewDiffPage.contentPadding);
     }
     if (_error != null) {
       return ListView(
@@ -648,6 +663,10 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
+          if (_loading && _firstLoadDone)
+            const SliverToBoxAdapter(
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
               16,
@@ -1866,7 +1885,10 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       ),
       body: gestureSafe(
         _diffLoading
-            ? const DiffSkeleton(padding: DiffSkeleton.filePadding)
+            ? const DiffSkeleton(
+                key: ValueKey('diff-file-skeleton'),
+                padding: ReviewDiffPage.filePadding,
+              )
             : _diffError != null
             ? ListView(
                 controller: _scroll,

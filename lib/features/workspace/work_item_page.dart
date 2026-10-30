@@ -511,6 +511,8 @@ Widget workItemCard(
 }
 
 class WorkItemPage extends StatefulWidget {
+  static const EdgeInsets headerPadding = EdgeInsets.fromLTRB(16, 8, 16, 12);
+  static const EdgeInsets summaryPadding = EdgeInsets.fromLTRB(16, 14, 16, 24);
   const WorkItemPage({super.key, required this.account, required this.api, required this.project, required this.resource, required this.iid, this.type = ProjectWorkItemType.issue, this.showBackButton = true, this.onBack, this.onDeleted, this.onMutated}) : assert(resource == 'issues' || type == ProjectWorkItemType.issue);
   final Account account;
   final GitLabApi api;
@@ -1908,7 +1910,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                       appBar,
                       Padding(
                         // Aligned with the content below, clear of the app bar.
-                        padding: DetailSkeleton.headerPadding,
+                        padding: WorkItemPage.headerPadding,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1980,7 +1982,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                     controller: _tabs,
                     children: [
                       ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                        padding: WorkItemPage.summaryPadding,
                         children: [
                           if (_error != null)
                             FailureNotice(
@@ -2279,6 +2281,7 @@ class _MergeChecks extends StatefulWidget {
 
 class _MergeChecksState extends State<_MergeChecks> {
   late Future<Json> _approvals;
+  Json? _lastApprovals;
   Future<Json> _cachedApprovals({bool fresh = false}) async {
     var read = await widget.api.cachedRecord([...widget.path, 'approvals'], fresh: fresh, maxAge: _threadMaxAge);
     if (read.superseded) {
@@ -2287,6 +2290,7 @@ class _MergeChecksState extends State<_MergeChecks> {
     if (read.dropped || read.superseded) {
       throw const ApiFailure(FailureKind.cancelled);
     }
+    _lastApprovals = read.value;
     return read.value;
   }
 
@@ -2296,7 +2300,13 @@ class _MergeChecksState extends State<_MergeChecks> {
   @override
   void didUpdateWidget(covariant _MergeChecks oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.data != widget.data) { _approvals = _cachedApprovals(); }
+    if (oldWidget.account.key != widget.account.key ||
+        oldWidget.path.join('/') != widget.path.join('/')) {
+      _lastApprovals = null;
+      _approvals = _cachedApprovals();
+    } else if (oldWidget.data != widget.data) {
+      _approvals = _cachedApprovals();
+    }
   }
 
   @override
@@ -2316,6 +2326,7 @@ class _MergeChecksState extends State<_MergeChecks> {
       Text(l10n.review, style: Theme.of(context).textTheme.titleMedium),
       FutureBuilder<Json>(
         future: _approvals,
+        initialData: _lastApprovals,
         builder: (context, snap) {
           if (snap.hasError) {
             return FailureNotice(
@@ -2328,7 +2339,15 @@ class _MergeChecksState extends State<_MergeChecks> {
       }),
             );
           }
-          if (!snap.hasData) { return const ListSkeleton(); }
+          if (!snap.hasData) {
+            return const ListSkeleton(
+              rows: 1,
+              rowHeight: 44,
+              showLeading: false,
+              showSubtitle: false,
+              liveRegion: false,
+            );
+          }
           final approved = valueObjects(snap.data!, 'approved_by');
           return Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(approved.isEmpty ? l10n.noApproversYet
         : approved.map((v) => isolated('@${valueText(valueObject(v, 'user'), 'username')}')).join(l10n.listSeparator)));

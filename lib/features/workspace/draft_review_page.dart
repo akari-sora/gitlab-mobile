@@ -71,6 +71,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
   List<Json> _drafts = const [];
   ApiFailure? _error;
   bool _loading = true;
+  bool _firstLoadDone = false;
   bool _busy = false;
   bool _readbackRequired = false;
   int _epoch = 0;
@@ -126,6 +127,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
       _drafts = const [];
       _error = null;
       _loading = true;
+      _firstLoadDone = false;
       _busy = false;
       _readbackRequired = false;
       unawaited(_load());
@@ -198,7 +200,10 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
       return false;
     } finally {
       if (_isCurrent(scope) && epoch == _epoch) {
-        setState(() => _loading = false);
+        setState(() {
+          _loading = false;
+          _firstLoadDone = true;
+        });
       }
     }
   }
@@ -697,7 +702,8 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
+            if ((_loading && _firstLoadDone) || _busy)
+              const LinearProgressIndicator(minHeight: 2),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: () async {
@@ -744,7 +750,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
                       }
                       contentIndex--;
                     }
-                    if (_loading && !hasContent) return const ListSkeleton();
+                    if (_loading && !_firstLoadDone) return const ListSkeleton();
                     if (!hasContent) {
                       return Padding(
                         padding: EdgeInsets.symmetric(vertical: 48),

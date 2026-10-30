@@ -7,6 +7,7 @@ import '../../core/board_mutations.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import 'records_feed.dart';
 import 'work_item_page.dart';
@@ -35,6 +36,7 @@ class _BoardsPageState extends State<BoardsPage> {
   BoardDefinition? _board;
   ApiFailure? _error;
   bool _loading = true;
+  bool _firstLoadDone = false;
   bool _writing = false;
   int _columnIndex = 0;
   int _generation = 0;
@@ -91,6 +93,7 @@ class _BoardsPageState extends State<BoardsPage> {
       _generation++;
       _dismissRoutes();
       _writing = false;
+      _firstLoadDone = false;
       _boards = const [];
       _board = null;
       _feeds.clear();
@@ -157,6 +160,7 @@ class _BoardsPageState extends State<BoardsPage> {
         setState(() {
           _board = null;
           _loading = false;
+          _firstLoadDone = true;
         });
         return;
       }
@@ -174,6 +178,7 @@ class _BoardsPageState extends State<BoardsPage> {
         setState(() {
           _error = safeFailure(error);
           _loading = false;
+          _firstLoadDone = true;
         });
       }
     }
@@ -221,6 +226,7 @@ class _BoardsPageState extends State<BoardsPage> {
         _board = definition;
         _columnIndex = 0;
         _loading = false;
+        _firstLoadDone = true;
       });
       if (_pages.hasClients) _pages.jumpToPage(0);
     } catch (error) {
@@ -228,6 +234,14 @@ class _BoardsPageState extends State<BoardsPage> {
         setState(() {
           _error = safeFailure(error);
           _loading = false;
+          _firstLoadDone = true;
+        });
+      }
+    } finally {
+      if (mounted && activeGeneration == _generation && (_loading || !_firstLoadDone)) {
+        setState(() {
+          _loading = false;
+          _firstLoadDone = true;
         });
       }
     }
@@ -1028,6 +1042,7 @@ class _BoardsPageState extends State<BoardsPage> {
       emptyDetail: _query.isEmpty ? l10n.pullToRefreshThisList : l10n.searchAppliesAfterSubmit,
       emptyIcon: _columnIcon(column.kind),
       grouped: true,
+      skeletonLiveRegion: false,
       visible: column.kind == BoardColumnKind.open
           ? (issue) => boardOpenIssueMatches(board, issue)
           : null,
@@ -1086,7 +1101,7 @@ class _BoardsPageState extends State<BoardsPage> {
   }
 
   Widget _body() {
-    if (_loading) return const ListSkeleton();
+    if (_loading && !_firstLoadDone) return const BoardColumnsSkeleton();
     final error = _error;
     if (error != null) {
       return ListView(
@@ -1191,7 +1206,14 @@ class _BoardsPageState extends State<BoardsPage> {
         ),
       ],
     ),
-    body: _body(),
+    body: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if ((_loading && _firstLoadDone) || _writing)
+          const LinearProgressIndicator(minHeight: 2),
+        Expanded(child: _body()),
+      ],
+    ),
   );
 }
 

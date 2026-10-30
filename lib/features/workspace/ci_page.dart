@@ -819,6 +819,7 @@ class PipelinePageState extends State<PipelinePage> {
       _resumeWhenVisible = false;
       _busy = false;
       _loading = false;
+      _firstLoadDone = false;
       unawaited(_load());
     }
   }
@@ -837,7 +838,7 @@ class PipelinePageState extends State<PipelinePage> {
   bool _stale = false, _revalidating = false;
   FailureKind? _backgroundFailure;
   DateTime? _backgroundRetryAt;
-  bool _busy = false, _loading = false;
+  bool _busy = false, _loading = false, _firstLoadDone = false;
   @override
   void initState() { super.initState(); unawaited(_load()); }
   bool _revoked(ApiFailure failure) => switch (failure.kind) {
@@ -910,7 +911,7 @@ class PipelinePageState extends State<PipelinePage> {
         }
         return;
       }
-      setState(() { _apply(read); _loading = false; });
+      setState(() { _apply(read); _loading = false; _firstLoadDone = true; });
       _startRevalidation(generation, readEpoch: readEpoch);
     } catch (e) {
       if (_readCurrent(generation, readEpoch)) {
@@ -918,8 +919,11 @@ class PipelinePageState extends State<PipelinePage> {
         setState(() { _error = failure; if (_revoked(failure)) _withdraw(); });
       }
     } finally {
-      if (_readCurrent(generation, readEpoch) && _loading) {
-        setState(() => _loading = false);
+      if (_readCurrent(generation, readEpoch) && (_loading || !_firstLoadDone)) {
+        setState(() {
+          _loading = false;
+          _firstLoadDone = true;
+        });
       }
     }
   }
@@ -1150,7 +1154,7 @@ class PipelinePageState extends State<PipelinePage> {
                 ),
             ])),
         ])),
-        if ((_loading && _data != null) || _busy) const LinearProgressIndicator(minHeight: 2),
+        if ((_loading && _firstLoadDone) || _busy) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
           resourceLabel: '${widget.project.path} · Pipeline #${widget.id}',
           onSwitchAccount: endSessionFrom(context, ResumeTarget(
@@ -1170,17 +1174,9 @@ class PipelinePageState extends State<PipelinePage> {
               onRetry: () => unawaited(_load(fresh: true)),
             ),
           ),
-        if (_data == null && _loading)
+        if (!_firstLoadDone && _loading)
           Expanded(
-            child: RowsSkeleton(
-              grouped: true,
-              padding: EdgeInsets.fromLTRB(
-                feedGutter(context),
-                8,
-                feedGutter(context),
-                0,
-              ),
-            ),
+            child: PipelineSkeleton(gutter: feedGutter(context)),
           ),
         if (_data != null)
           TabBar(
@@ -1201,6 +1197,7 @@ class PipelinePageState extends State<PipelinePage> {
                   empty: l10n.noJobsYet,
                   emptyIcon: Icons.work_outline,
                   grouped: true,
+                  skeletonLiveRegion: false,
                   account: widget.account,
                   resourceLabel: l10n.pipelineJobsTitle(widget.project.path, widget.id),
                   onSwitchAccount: endSessionFrom(context),
@@ -1327,6 +1324,8 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
   bool _loadingSummary = false;
   bool _loadingCases = false;
   bool _loadingMore = false;
+  bool _firstLoadDone = false;
+  bool _casesFirstLoadDone = false;
   TestReportSummary? _summary;
   ApiFailure? _summaryError;
   ApiFailure? _casesError;
@@ -1356,8 +1355,14 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
   @override
   void didUpdateWidget(covariant PipelineTestsView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.pipelineId != widget.pipelineId ||
-        oldWidget.pipelineStatus != widget.pipelineStatus) {
+    if (oldWidget.pipelineId != widget.pipelineId) {
+      _firstLoadDone = false;
+      _casesFirstLoadDone = false;
+      _summary = null;
+      _cases = [];
+      _nextPage = null;
+      unawaited(refresh());
+    } else if (oldWidget.pipelineStatus != widget.pipelineStatus) {
       unawaited(refresh());
     }
   }
@@ -1375,8 +1380,10 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
       _loadingSummary = true;
       _summaryError = null;
       _casesError = null;
-      _cases = [];
-      _nextPage = null;
+      if (!_casesFirstLoadDone) {
+        _cases = [];
+        _nextPage = null;
+      }
     });
 
     try {
@@ -1400,6 +1407,12 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
       setState(() {
         _summary = summary;
         _loadingSummary = false;
+        _firstLoadDone = true;
+        if (summary.totalCount == 0) {
+          _cases = [];
+          _nextPage = null;
+          _casesFirstLoadDone = true;
+        }
         if (summary.failedCount > 0) {
           _filter = 'failed';
         } else if (summary.errorCount > 0) {
@@ -1416,7 +1429,15 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
       setState(() {
         _summaryError = safeFailure(e);
         _loadingSummary = false;
+        _firstLoadDone = true;
       });
+    } finally {
+      if (mounted && gen == _generation && (_loadingSummary || !_firstLoadDone)) {
+        setState(() {
+          _loadingSummary = false;
+          _firstLoadDone = true;
+        });
+      }
     }
   }
 
@@ -1438,13 +1459,23 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
         _cases = page.testCases;
         _nextPage = page.next;
         _loadingCases = false;
+        _casesFirstLoadDone = true;
       });
     } catch (e) {
       if (!mounted || summaryGen != _generation || caseGen != _casesGeneration) return;
       setState(() {
         _casesError = safeFailure(e);
         _loadingCases = false;
+        _casesFirstLoadDone = true;
       });
+    } finally {
+      if (mounted && summaryGen == _generation && caseGen == _casesGeneration &&
+          (_loadingCases || !_casesFirstLoadDone)) {
+        setState(() {
+          _loadingCases = false;
+          _casesFirstLoadDone = true;
+        });
+      }
     }
   }
 
@@ -1792,7 +1823,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
     super.build(context);
     final gutter = feedGutter(context);
 
-    if (_loadingSummary && _summary == null) {
+    if (_loadingSummary && !_firstLoadDone) {
       return const ListSkeleton();
     }
 
@@ -1804,6 +1835,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 24 + MediaQuery.paddingOf(context).bottom),
             children: [
+              if (_loadingSummary) const LinearProgressIndicator(minHeight: 2),
               if (_isInProgress)
                 EmptyState(l10n.testsInProgress, detail: l10n.pipelineTestReportPending, icon: Icons.schedule)
               else
@@ -1838,6 +1870,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 24 + MediaQuery.paddingOf(context).bottom),
           children: [
+            if (_loadingSummary) const LinearProgressIndicator(minHeight: 2),
             if (_isInProgress)
               EmptyState(l10n.testsInProgress, detail: l10n.pipelineTestReportPending, icon: Icons.schedule)
             else
@@ -1863,6 +1896,11 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 24 + MediaQuery.paddingOf(context).bottom),
         children: [
+          if (_loadingSummary || (_loadingCases && _casesFirstLoadDone))
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
           _buildSummaryCard(context, summary),
           const SizedBox(height: 12),
           _buildFilterChips(context, summary),
@@ -1889,8 +1927,8 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                 ),
               ),
             ),
-          if (_loadingCases && _cases.isEmpty)
-            const ListSkeleton()
+          if (_loadingCases && !_casesFirstLoadDone)
+            const ListSkeleton(liveRegion: false)
           else if (_cases.isEmpty && _casesError != null)
             const SizedBox.shrink()
           else if (filteredCases.isEmpty)
@@ -1953,6 +1991,7 @@ final class _HiddenLoad implements Exception {
 }
 
 class JobLogPage extends StatefulWidget {
+  static const EdgeInsets logPadding = EdgeInsets.symmetric(horizontal: 16, vertical: 8);
   const JobLogPage({super.key, required this.account, required this.api, required this.project, required this.id,
     this.generation = 0, this.sharer = const SystemArtifactSharer(), this.artifactDirectory = jobArtifactDirectory,
     this.openSink = openArtifactSink, this.promoteArtifact = promoteArtifactFile});
@@ -1995,7 +2034,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Set<int> _queryHits = const <int>{};
   final Map<String, bool> _sectionOpen = {};
   ApiFailure? _error;
-  bool _loading = false, _busy = false, _confirming = false, _downloading = false, _auto = false, _follow = true;
+  bool _loading = false, _firstLoadDone = false, _busy = false, _confirming = false, _downloading = false, _auto = false, _follow = true;
   String _query = '';
   final _searchController = TextEditingController();
   List<_LogMatch> _matches = const <_LogMatch>[];
@@ -2205,8 +2244,11 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         }
       }
     } finally {
-      if (current()) {
-        setState(() => _loading = false);
+      if ( current() ) {
+        setState(() {
+          _loading = false;
+          _firstLoadDone = true;
+        });
         // The page may have come back while this load was still running.
         _resumeWhenVisible();
       }
@@ -2819,18 +2861,18 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             Expanded(child: Text(l10n.readCacheLogTruncated, style: Theme.of(context).textTheme.bodySmall)),
           ]),
         ),
-        if ((_loading && !noLog) || _busy) const LinearProgressIndicator(minHeight: 2),
+        if ((_loading && _firstLoadDone) || _busy) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _load,
           account: widget.account, resourceLabel: '${widget.project.path} · Job #$_jobId',
           onSwitchAccount: endSessionFrom(context)),
-        Expanded(child: noLog && _loading
-          ? const LogSkeleton()
-          : noLog && !_loading && _error == null
+        Expanded(child: !_firstLoadDone && _loading
+          ? const LogSkeleton(padding: JobLogPage.logPadding)
+          : noLog && _error == null
           ? SingleChildScrollView(child: EmptyState(l10n.noLogYet,
               detail: _job?['status'] == 'manual' ? l10n.jobNotStartedMenuHint : l10n.jobLogAppearsAfterStart,
               icon: Icons.terminal))
           : Directionality(textDirection: TextDirection.ltr, child: SelectionArea(child: ListView.builder(controller: _scroll,
-              padding: LogSkeleton.defaultPadding,
+              padding: JobLogPage.logPadding,
               itemCount: rows.length, itemBuilder: (context, index) {
                 final row = rows[index];
                 final section = row.section;

@@ -663,7 +663,7 @@ class _ProjectPageState extends State<ProjectPage>
               ? null
               : _toggleStarFromHeader,
           icon: _starBusy && !_starChecked
-              ? const SkeletonBone(width: 18, height: 18, radius: 9)
+              ? const SkeletonBone(width: 20, height: 20, radius: 10)
               : Icon(
                   _starred == true
                       ? Icons.star
