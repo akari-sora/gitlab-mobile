@@ -168,6 +168,7 @@ class AiChatPage extends StatefulWidget {
     this.focusProposal,
     this.draftTarget,
     this.analyzeDraft = analyzeAiDraft,
+    this.postReport = postAiReport,
     this.sendReport = sendAiReport,
     this.buildInfo = loadBuildInfo,
     this.now = DateTime.now,
@@ -182,7 +183,12 @@ class AiChatPage extends StatefulWidget {
   /// Checks an answer before it is appended; tests run it in place.
   final AiDraftAnalyzer analyzeDraft;
 
-  /// Hands a report to the mail app or the share sheet; replaced in tests.
+  /// Posts a report to the developer's form inside the app; replaced in
+  /// tests.
+  final Future<void> Function(AiReportFormFields fields) postReport;
+
+  /// Hands a report to the mail app or the share sheet, the fallback the
+  /// user can pick when the form does not take it; replaced in tests.
   final Future<AiReportRoute> Function({
     required String subject,
     required String body,
@@ -509,8 +515,10 @@ class _AiChatPageState extends State<AiChatPage> {
   final _pageBody = GlobalKey();
 
   /// Reports [item] (plan v5 §6.7): the user picks what is wrong and sees
-  /// the exact text; mail is tried first, then the share sheet. The answer is
-  /// then folded away here, whether or not the user finishes sending.
+  /// the exact text; it is posted to the developer's form inside the app.
+  /// When the form does not take it, the user is told and can hand the same
+  /// report to mail or the share sheet instead. The answer is then folded
+  /// away here.
   Future<void> _report(AiAssistantItem item, Rect? origin) async {
     final assistants = _session.items.whereType<AiAssistantItem>().toList();
     final number = assistants.indexOf(item) + 1;
@@ -525,38 +533,57 @@ class _AiChatPageState extends State<AiChatPage> {
       final time = DateTime.now();
       final source = item.source;
       // Built from the answer as it is now (a redaction pass may have
-      // replaced it) and redacted as a whole last, after the report's own
-      // clean-up: nothing the user typed or the formatting joined escapes
-      // the check. The redaction also drops the direction isolates around
-      // the translated address; the plain `to:` line keeps it copyable.
-      String body(AiReportChoice choice) {
+      // replaced it). The answer is redacted whole before the report cuts it
+      // to the excerpt's length; null when it is gone or cannot be checked.
+      AiReport? report(AiReportChoice choice) {
         final current = _session.currentOf(item);
-        if (current == null) return '';
-        return _session.draftSafe(
-          aiReportBody(
-            AiReport(
-              category: choice.category,
-              description: choice.description,
-              appVersion: version,
-              presetId: source?.presetId ?? 'unknown',
-              format: source?.format ?? 'unknown',
-              model: source?.model ?? 'unknown',
-              time: time,
-              messageIndex: number,
-              response: choice.attachResponse ? current.text : null,
-            ),
-            sendToLine: l10n.aiReportSendTo(aiReportEmail),
-          ),
+        if (current == null) return null;
+        String? response;
+        if (choice.attachResponse) {
+          response = _session.draftSafe(current.text);
+          if (response.isEmpty && current.text.isNotEmpty) return null;
+        }
+        return AiReport(
+          category: choice.category,
+          description: choice.description,
+          appVersion: version,
+          presetId: source?.presetId ?? 'unknown',
+          format: source?.format ?? 'unknown',
+          model: source?.model ?? 'unknown',
+          time: time,
+          messageIndex: number,
+          response: response,
         );
+      }
+
+      // The preview: every answer the form receives, redacted as a whole
+      // last, after the report's own clean-up: nothing the user typed or the
+      // formatting joined escapes the check.
+      String body(AiReportChoice choice) {
+        final built = report(choice);
+        if (built == null) return '';
+        return _session.draftSafe(aiReportFormText(aiReportFormFields(built)));
       }
 
       // At Send the live secrets are read again, including a token OAuth
       // rotated in place, and the text is built once more. The sheet sends
-      // it only when it is exactly the preview the user saw.
+      // it only when it is exactly the preview the user saw. Each answer is
+      // also checked on its own and must read unchanged in that text, so the
+      // form receives nothing the user was not shown.
+      ({String text, AiReportFormFields fields, AiReport report})? prepared;
       Future<String?> prepare(AiReportChoice choice) async {
+        prepared = null;
         if (!await _session.refreshSecrets() || !mounted) return null;
-        final text = body(choice);
-        return text.isEmpty ? null : text;
+        final built = report(choice);
+        if (built == null) return null;
+        final fields = aiReportFormFields(built);
+        final text = _session.draftSafe(aiReportFormText(fields));
+        final checked = fields.checked(_session.draftSafe);
+        if (text.isEmpty || checked == null || !checked.shownIn(text)) {
+          return null;
+        }
+        prepared = (text: text, fields: checked, report: built);
+        return text;
       }
 
       final result = await showAiReportSheet(
@@ -565,42 +592,85 @@ class _AiChatPageState extends State<AiChatPage> {
         prepare: prepare,
       );
       if (result == null || !mounted) return;
-      final text = result.text;
+      final ready = prepared;
       // Null when the answer is gone or the text could not be checked.
-      if (text == null) {
+      if (result.text == null || ready == null || ready.text != result.text) {
         _notice(l10n.aiReportNotChecked);
         return;
       }
-      final AiReportRoute route;
-      try {
-        route = await widget.sendReport(
-          subject: l10n.aiReportSubject,
-          body: text,
-          sharePositionOrigin: origin,
-        );
-      } on Object {
-        _notice(l10n.aiReportFailed);
-        return;
-      }
-      if (!mounted) return;
-      _session.markReported(item);
-      _notice(
-        route == AiReportRoute.mail
-            ? l10n.aiReportMailOpened
-            : l10n.aiReportShareOpened(aiReportEmail),
+      _notice(l10n.aiReportSending, duration: const Duration(seconds: 20));
+      final route = await sendAiReportInApp(
+        fields: ready.fields,
+        post: widget.postReport,
+        offerFallback: (failure) async {
+          _messenger.currentState?.removeCurrentSnackBar();
+          if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) {
+            return false;
+          }
+          return confirmAction(
+            context,
+            l10n.aiReportPostFailed,
+            failure.status == null
+                ? l10n.aiReportPostUnreachable(aiReportEmail)
+                : l10n.aiReportPostRefused(failure.status, aiReportEmail),
+            confirmLabel: l10n.aiReportUseMail,
+          );
+        },
+        fallback: () => _handOffReport(ready.report, origin),
       );
+      if (route == null || !mounted) return;
+      _session.markReported(item);
+      _messenger.currentState?.removeCurrentSnackBar();
+      _notice(switch (route) {
+        AiReportRoute.form => l10n.aiReportSent,
+        AiReportRoute.mail => l10n.aiReportMailOpened,
+        AiReportRoute.share => l10n.aiReportShareOpened(aiReportEmail),
+      });
     } finally {
       if (mounted) setState(() => _reporting = false);
+    }
+  }
+
+  /// The fallback the user picked after the form did not take [report]: the
+  /// same answers as mail text, with the address, redacted whole once more
+  /// against secrets read again (the post took time). Null when nothing was
+  /// handed over; the notice says why.
+  Future<AiReportRoute?> _handOffReport(AiReport report, Rect? origin) async {
+    if (!await _session.refreshSecrets() || !mounted) {
+      _notice(l10n.aiReportNotChecked);
+      return null;
+    }
+    final text = _session.draftSafe(
+      aiReportBody(report, sendToLine: l10n.aiReportSendTo(aiReportEmail)),
+    );
+    if (text.isEmpty) {
+      _notice(l10n.aiReportNotChecked);
+      return null;
+    }
+    try {
+      return await widget.sendReport(
+        subject: l10n.aiReportSubject,
+        body: text,
+        sharePositionOrigin: origin,
+      );
+    } on Object {
+      _notice(l10n.aiReportFailed);
+      return null;
     }
   }
 
   /// Says why nothing was appended, while the chat is in front. When another
   /// page covers it, that page is the reason, and the notice would not be
   /// seen anyway.
-  void _notice(String message) {
+  void _notice(
+    String message, {
+    Duration duration = const Duration(seconds: 4),
+  }) {
     if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return;
     // The page's own messenger, which this state sits above.
-    _messenger.currentState?.showSnackBar(SnackBar(content: Text(message)));
+    _messenger.currentState?.showSnackBar(
+      SnackBar(content: Text(message), duration: duration),
+    );
   }
 
   String _draftTarget(AiWorkItemOrigin origin) {
