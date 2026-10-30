@@ -10,8 +10,10 @@ The checked-out source is `90dea7e8e113592e6d994279d0790e6e74a2dba5`,
 branch `docs/mr7-7c-play`. No tracked application code, CI, localization, store listing or canonical
 signing configuration is changed by this packet. `MERGELINE_AI_ASSISTANT` and
 `MERGELINE_AI_BACKGROUND` both default to **false** in
-`lib/features/ai/ai_gate.dart:2`; Play AI remains off under 7-D10. Enabling
-GitLab-channel AI elsewhere would not enable Play or close any Play gate.
+`lib/features/ai/ai_gate.dart:2`. Play AI stayed off under 7-D10 until in-app
+AI reporting landed (!270); from v0.6.1 the Play build carries the assistant
+(owner decision 2026-10-30) with background runs off. Enabling GitLab-channel
+AI elsewhere would not enable Play or close any Play gate.
 
 ## 1. Build identity and artifact readback
 
@@ -293,8 +295,8 @@ the AI reporting requirement. Sources accessed 2026-10-29:
 | Report entry and user choice | `ai_chat_page.dart:522` presents a rebuilt/redacted preview of exactly the posted answers and refreshes live-secret masking; generated response is optional. The sheet's intro says the report goes to Mergeline's developer through Google Forms and lists what is included. `ai_report.dart:134` constructs bounded category/description/build/provider/model/time answers. | Useful source support; real UI/device behavior and all-locale meaning **NOT_RUN**; lead/7D owns wording. |
 | Report without exiting the app | **Met in source (in-app reporting gate).** Send posts the report from inside the app to the developer's Google Form (`ai_report_sender.dart:46`; endpoint `https://docs.google.com/forms/d/e/1FAIpQLScaYt4bgLaArUMkzdFW5mBWSCK_ATRYfbLcSbL_3mrD4eKYDg/formResponse`, owner: the developer). Fields: `entry.383596251` reason (category name), `entry.1990565550` details (description, preset, format, model, time, message number), `entry.1603202973` excerpt (attached redacted response, at most 4,000 characters, empty by default), `entry.441670215` app version. A 2xx answer shows a success notice (a redirect, such as to a sign-in page, is a failure) in the app; any other answer or a transport error shows the failure and offers the old mail → share route, which runs only if the user picks it. Synthetic tests: `test/ai/ai_report_test.dart`, `test/ai/ai_report_sender_test.dart`, `test/ai/ai_chat_page_test.dart` (reporting group). | Live post from the app and device walkthrough **NOT_RUN** in this change; the form was reached anonymously with curl on 2026-10-30 (HTTP 200, lead's evidence). |
 | Feed reports into improvement/moderation | Reports land in the developer's Google Form responses. No triage/retention process, response commitment or moderation feedback evidence collected. | Lead owns the triage/retention process. Do not describe a report as received merely because a share sheet opened; a fallback handoff is not a form submission. |
-| Safe reviewer access | No reviewer credentials or private project/provider key supplied. | Lead to prepare synthetic fixtures, safe account access/steps and cost limits; no private material in the handoff. **NOT_RUN**. |
-| Enablement | Both flags false for these artifacts; background manifest still present. | **Play AI remains off (7-D10)** until declarations, content/reporting, artifact and relevant device evidence are complete. No policy approval claimed. |
+| Safe reviewer access | No reviewer credentials or private project/provider key supplied. | Demo mode (sign-in screen › 試用 Demo): built-in sample data, a scripted offline AI and no account; Play Console App access carries the demo instructions only (filled 2026-10-30). |
+| Enablement | Both flags false for these artifacts; background manifest still present. | **Play AI on from v0.6.1** (owner decision 2026-10-30, after in-app reporting landed in !270): `ci/build_android.sh` accepts `--flavor play --ai-assistant true` and still refuses `--ai-background true`. Data safety filled in Play Console 2026-10-30. Device evidence so far: one emulator walkthrough of a locally built Play release APK from the pre-review Demo branch (`feat/play-demo` at 1831b623, AI on, background off, upload key) in Demo mode: explain a file, propose a comment, approve, write confirmed. The uploaded AAB's own check is recorded with the upload. No policy approval claimed until Google's review. |
 
 ## 5. Every preset: official terms and data-use references
 

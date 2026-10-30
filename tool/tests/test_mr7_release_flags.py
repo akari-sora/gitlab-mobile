@@ -125,7 +125,7 @@ fi
         result = self.build('--ai-background', 'true')
         self.assertNotEqual(result.returncode, 0)
 
-    def test_play_flags_remain_off(self):
+    def test_play_allows_the_assistant_but_not_background(self):
         result = self.build('--flavor', 'play')
         self.assertEqual(result.returncode, 0, result.stderr)
         args, metadata = self.read_build()
@@ -134,6 +134,20 @@ fi
         self.assertEqual(metadata['channel'], 'play')
         result = self.build('--flavor', 'play', '--ai-assistant', 'true')
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn('APK package does not match build flavor', result.stderr)
+        self.sdk_stub('aapt2', "#!/bin/bash\nprintf \"package: name='app.mergeline'\\n\"\n")
+        result = self.build('--flavor', 'play', '--ai-assistant', 'true')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args, metadata = self.read_build()
+        self.assertIn('--dart-define=MERGELINE_AI_ASSISTANT=true', args)
+        self.assertIn('--dart-define=MERGELINE_AI_BACKGROUND=false', args)
+        self.assertIs(metadata['ai_assistant'], True)
+        self.assertIs(metadata['ai_background'], False)
+        self.assertEqual(metadata['channel'], 'play')
+        self.assertEqual(metadata['package'], 'app.mergeline')
+        result = self.build('--flavor', 'play', '--ai-assistant', 'true', '--ai-background', 'true')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Play AI background must remain off.', result.stderr)
 
     def test_invalid_or_missing_options_fail_before_build(self):
         for args in (('--ai-assistant', 'yes'), ('--ai-background', ''),
