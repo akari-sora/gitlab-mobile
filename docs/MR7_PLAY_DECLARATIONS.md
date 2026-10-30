@@ -153,13 +153,15 @@ replace artifact evidence or a runtime channel probe. No emulator was used.
 
 ## 2. FGS declaration field draft (`dataSync`)
 
+> **2026-10-30 Play-flavor update:** `tool/bootstrap.py` now generates a managed `android/app/src/play/AndroidManifest.xml` (`PLAY_MANIFEST`) that strips `android.permission.FOREGROUND_SERVICE`, `android.permission.FOREGROUND_SERVICE_DATA_SYNC` and `.AgentRunService` via `tools:node="remove"` while keeping `android.permission.POST_NOTIFICATIONS` and everything else (the `gitlab` flavor keeps the foreground service and both permissions). Because the Play build never enables background AI runs (`MERGELINE_AI_BACKGROUND=false`, enforced by `ci/build_android.sh`) and its merged manifest no longer declares any `FOREGROUND_SERVICE*` permission or `AgentRunService`, **no Foreground Service declaration is needed in Google Play Console for the Play build**. The draft below is retained from the 2026-10-29 7C packet for reference if a future Play release ever enables background runs.
+
 All entries below are technical inputs; **lead to phrase** the final Console
 description. Manifest presence still needs review while the background flag
 is false. No approval or video is claimed.
 
 | Declaration field | Technical answer / evidence |
 |---|---|
-| Type / permission | Candidate `dataSync`; `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_DATA_SYNC` are present in both flavors. Type applicability and Play acceptance remain unapproved. |
+| Type / permission | Candidate `dataSync`; in the 2026-10-29 receipt above, `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_DATA_SYNC` were present in both flavors. From 2026-10-30, `src/play/AndroidManifest.xml` removes both permissions and `.AgentRunService` from the Play flavor, so no Play Console FGS declaration is required (`gitlab` keeps them). |
 | Use case (Console) | Candidate: **Network transfer: Upload or download** (data fetch / server-side processing while the user briefly leaves). Lead to confirm against the Console's current options; not an approval. |
 | Feature | If enabled after its gates, one user-started AI/GitLab network run: selected-provider inference, allowed GitLab reads and separately authorized writes/uploads while the user briefly leaves the app. No scheduled or boot-initiated always-running agent. |
 | User trigger | User starts a run in the app with the current account, recipient consent and allowed scope; show that exact sequence in the recording. The default-off APKs in this receipt cannot serve as an enabled-feature demonstration. |
