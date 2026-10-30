@@ -12,8 +12,11 @@ import 'session_controller.dart';
 
 import '../../l10n/l10n.dart';
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.session});
+  const LoginScreen({super.key, required this.session, this.onTryDemo});
   final SessionController session;
+
+  /// Opens the built-in demo; the action is hidden when null.
+  final VoidCallback? onTryDemo;
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
@@ -465,6 +468,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                   },
                             icon: const Icon(Icons.open_in_browser, size: 20),
                             label: Text(l10n.signInWithGitlabAuth),
+                          ),
+                        ],
+                        if (widget.onTryDemo case final tryDemo?) ...[
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            key: const Key('tryDemoButton'),
+                            onPressed: locked ? null : tryDemo,
+                            icon: const Icon(Icons.science_outlined, size: 20),
+                            label: Text(l10n.demoTryAction),
                           ),
                         ],
                         const SizedBox(height: 16),

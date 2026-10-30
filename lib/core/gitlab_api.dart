@@ -161,6 +161,7 @@ final class GitLabApi {
     DateTime Function()? readCacheClock,
     ReadCacheSource? readCacheSource,
     GitLabRateBudget? rateBudget,
+    String Function()? forbiddenDetail,
   }) : _credential = credential ?? PatCredential(token ?? ''),
        _dio = dio ?? Dio(),
        _cdnAdapter = cdnAdapter,
@@ -168,6 +169,7 @@ final class GitLabApi {
        _readCacheClock = readCacheClock ?? DateTime.now,
        _readCacheSource = readCacheSource,
        rateBudget = rateBudget ?? GitLabRateBudget(now: readCacheClock),
+       _forbiddenDetail = forbiddenDetail,
        _onOAuthRotated = onOAuthRotated {
     final access = _credential.accessToken;
     if (access.trim().isEmpty || RegExp(r'\s').hasMatch(access)) {
@@ -191,6 +193,10 @@ final class GitLabApi {
   final OAuthTokenClient? _oauth;
   final DateTime Function() _readCacheClock;
   final ReadCacheSource? _readCacheSource;
+
+  /// Explains a 403 in place of the generic role and scope text; the demo
+  /// uses it to say which changes it keeps.
+  final String Function()? _forbiddenDetail;
   final GitLabRateBudget rateBudget;
   late final RunBudgetAllocator runBudget = RunBudgetAllocator(rateBudget);
   DiskBinding? _offlineBinding;
@@ -477,6 +483,13 @@ final class GitLabApi {
           _cache.revoke(uri, 401);
           await _cache.settleDiskSafety();
           if (_closed) throw const ApiFailure(FailureKind.cancelled);
+        }
+        if (status == 403 && _forbiddenDetail != null) {
+          throw ApiFailure(
+            FailureKind.forbidden,
+            status: 403,
+            detail: _forbiddenDetail(),
+          );
         }
         throw ApiFailure.fromStatus(status, retryAt: rateBudget.retryAtFor(_rateClass(uri, method)));
       }

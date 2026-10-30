@@ -28,7 +28,10 @@ import 'features/auth/session_controller.dart';
 import 'features/cache/read_cache_disk_coordinator.dart';
 import 'features/cache/read_cache_key_store.dart';
 import 'features/cache/read_cache_settings_store.dart';
+import 'features/demo/demo_app.dart';
+import 'features/demo/demo_runtime.dart';
 import 'features/offline/offline_app.dart';
+import 'features/shell/appearance.dart';
 import 'features/shell/authenticated_app.dart';
 import 'features/shell/incoming_links.dart';
 import 'features/security/app_lock.dart';
@@ -515,6 +518,11 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   late final AppLifecycleListener _readCacheLifecycle;
   _SessionRecovery? _sessionRecovery;
   bool _sessionWasActive = false;
+
+  /// The demo visit on screen instead of the sign-in screen, if any. It owns
+  /// its own session and stores; the device's session never sees it.
+  DemoRuntime? _demo;
+  bool _enteringDemo = false;
   @override
   void initState() {
     super.initState();
@@ -584,6 +592,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   }
   @override
   void dispose() {
+    _demo?.dispose();
     _readCacheLifecycle.dispose();
     _sessionRecovery?.dispose();
     _recoveryNotifier?.dispose();
@@ -601,6 +610,34 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     // Launcher shortcut labels live outside the widget tree.
     final account = ref.read(sessionProvider).active?.key;
     if (account != null) unawaited(_shortcuts.publish(account));
+  }
+
+  Future<void> _enterDemo() async {
+    if (_demo != null || _enteringDemo) return;
+    _enteringDemo = true;
+    final appearance = ref.read(appearanceProvider);
+    try {
+      final demo = await DemoRuntime.start(
+        ai: _ai != null,
+        appearance: encodeAppearance(appearance.mode, appearance.useDynamicColor),
+        language: _language,
+      );
+      if (!mounted) {
+        demo.dispose();
+        return;
+      }
+      setState(() => _demo = demo);
+    } finally {
+      _enteringDemo = false;
+    }
+  }
+
+  /// Back to the sign-in screen; the demo's tree goes first, then its state.
+  Future<void> _exitDemo() async {
+    final demo = _demo;
+    if (demo == null) return;
+    if (mounted) setState(() => _demo = null);
+    WidgetsBinding.instance.addPostFrameCallback((_) => demo.dispose());
   }
 
   /// The offline shell has no account client, so shortcuts are bound to no
@@ -623,6 +660,11 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
       final signedIn =
           offline == null && session.active != null && session.api != null;
       _syncShortcuts(signedIn, offline != null, session.active?.key);
+      // The demo is only ever opened from the sign-in screen; a real session
+      // that starts meanwhile ends it.
+      if (_demo != null && (signedIn || offline != null)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_exitDemo()));
+      }
       if (signedIn) {
         return AuthenticatedApp(
           key: ValueKey(session.generation), session: session, appearance: appearance, shortcuts: _shortcuts,
@@ -636,6 +678,15 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
         return OfflineApp(
           key: ValueKey(session.generation), session: session, appearance: appearance,
           lock: ref.read(appLockProvider), language: _language, incoming: _links,
+        );
+      }
+      if (_demo case final demo?) {
+        return DemoApp(
+          key: ObjectKey(demo),
+          runtime: demo,
+          onExit: _exitDemo,
+          language: _language,
+          lock: ref.read(appLockProvider),
         );
       }
       return DynamicColorBuilder(builder: (light, dark) {
@@ -654,7 +705,10 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
             ? _ResumeScreen(session: session)
             : session.initializing
             ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-            : LoginScreen(session: session),
+            : LoginScreen(
+                session: session,
+                onTryDemo: () => unawaited(_enterDemo()),
+              ),
         );
       });
     });

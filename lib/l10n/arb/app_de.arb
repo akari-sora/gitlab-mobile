@@ -3026,5 +3026,20 @@
   "offlineLossSwitchUnknown": "Beim Kontowechsel werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.",
   "offlineLossSignOutUnknown": "Beim Abmelden werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.",
   "offlineLossRemoveUnknown": "Beim Entfernen des Kontos werden alle Offline-Projekte von @{username} auf diesem Gerät gelöscht; wie viele es sind, lässt sich gerade nicht feststellen.",
-  "offlineCacheClearUnknownProjects": "Der automatische Cache und alle Offline-Projekte dieses Kontos werden gelöscht (wie viele es sind, lässt sich gerade nicht feststellen). Das kann nicht rückgängig gemacht werden."
+  "offlineCacheClearUnknownProjects": "Der automatische Cache und alle Offline-Projekte dieses Kontos werden gelöscht (wie viele es sind, lässt sich gerade nicht feststellen). Das kann nicht rückgängig gemacht werden.",
+  "demoTryAction": "Demo ausprobieren (Beispieldaten, kein Konto nötig)",
+  "demoBanner": "Demo · Beispieldaten",
+  "demoExitAction": "Demo beenden",
+  "demoExitHint": "Zurück zur Anmeldung. Änderungen in der Demo liegen nur im Arbeitsspeicher und sind nach dem Beenden weg.",
+  "demoWriteRefused": "In der Demo lassen sich nur Issues erstellen, Kommentare hinzufügen und Issues schließen oder wieder öffnen; diese Änderung wurde nicht ausgeführt.",
+  "demoProviderName": "Demo (offline)",
+  "demoConsentNotice": "Das ist die Demo: Es wird nichts gesendet, und die Antworten der KI sind vorab geschriebene Beispiele. Mit Ihrem eigenen Konto nutzt die KI den Anbieter und Schlüssel, den Sie einrichten.",
+  "demoAiExplain": "Beispielantwort: Das ist {subject} im Demo-Projekt. Mit einem echten Konto liest die KI diese Seite und fasst das Wichtigste zusammen; diese Antwort wurde vorab geschrieben. Sie können mich bitten, einen Kommentar hinzuzufügen, ein Issue zu erstellen oder ein Issue zu schließen – vorher frage ich Sie um Bestätigung.",
+  "demoAiDone": "Beispielantwort: Erledigt. Die Änderung liegt nur im Speicher der Demo und ist nach dem Beenden weg.",
+  "demoAiNotDone": "Beispielantwort: Die Änderung wurde nicht ausgeführt, die Demodaten bleiben unverändert.",
+  "demoAiNoteBody": "Dieser Kommentar ist ein Beispiel, das die KI in der Demo geschrieben hat.",
+  "demoAiIssueTitle": "Beispiel-Issue, von der KI in der Demo erstellt",
+  "demoKeywordsComment": "kommentar,kommentiere,notiz",
+  "demoKeywordsIssue": "issue erstellen,erstelle ein issue,neues issue,issue anlegen",
+  "demoKeywordsClose": "schließ,schliess"
 }

@@ -5,6 +5,7 @@ import '../../core/ai/tools/write_ledger.dart'
     show AiScopeClass, productionAiLedger;
 import '../../l10n/l10n.dart';
 import '../../shared/external_link.dart';
+import '../demo/demo_scope.dart';
 import 'ai_scope.dart';
 import 'ai_settings_failure.dart';
 import 'ai_stores.dart';
@@ -219,6 +220,15 @@ class _AiConsentPageState extends State<_AiConsentPage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
+                  // The demo's provider is a script on the device: the
+                  // recipient below never receives anything.
+                  if (DemoScope.maybeOf(context) != null)
+                    _InfoCard(
+                      key: const ValueKey('ai-consent-demo'),
+                      icon: Icons.science_outlined,
+                      title: l10n.demoBanner,
+                      children: [Text(l10n.demoConsentNotice)],
+                    ),
                   if (details.grantedAt != null)
                     _InfoCard(
                       icon: Icons.history,

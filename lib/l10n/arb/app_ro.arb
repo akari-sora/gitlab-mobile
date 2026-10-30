@@ -3026,5 +3026,20 @@
   "offlineLossSwitchUnknown": "Schimbarea contului șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.",
   "offlineLossSignOutUnknown": "Deconectarea șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.",
   "offlineLossRemoveUnknown": "Eliminarea contului șterge toate proiectele offline ale lui @{username} de pe acest dispozitiv; acum nu se poate confirma câte sunt.",
-  "offlineCacheClearUnknownProjects": "Se șterg cache-ul automat și toate proiectele offline ale acestui cont (acum nu se poate confirma câte sunt). Acțiunea nu poate fi anulată."
+  "offlineCacheClearUnknownProjects": "Se șterg cache-ul automat și toate proiectele offline ale acestui cont (acum nu se poate confirma câte sunt). Acțiunea nu poate fi anulată.",
+  "demoTryAction": "Încearcă demo-ul (date de exemplu, fără cont)",
+  "demoBanner": "Demo · date de exemplu",
+  "demoExitAction": "Ieși din demo",
+  "demoExitHint": "Revine la ecranul de conectare. Modificările din demo există doar în memorie și dispar când ieși.",
+  "demoWriteRefused": "În demo poți doar să creezi probleme, să adaugi comentarii și să închizi sau să redeschizi probleme; modificarea nu a fost făcută.",
+  "demoProviderName": "Demo (offline)",
+  "demoConsentNotice": "Acesta este demo-ul: nu se trimite nimic nicăieri, iar răspunsurile AI sunt exemple scrise dinainte. Cu propriul cont, AI folosește furnizorul și cheia pe care le configurezi.",
+  "demoAiExplain": "Răspuns de exemplu: acesta este {subject} din proiectul demo. Cu un cont real, AI citește această pagină și rezumă ce contează; acest răspuns a fost scris dinainte. Îmi poți cere să adaug un comentariu, să creez o problemă sau să închid o problemă, iar eu îți voi cere mai întâi confirmarea.",
+  "demoAiDone": "Răspuns de exemplu: gata. Modificarea există doar în memoria demo-ului și dispare când ieși din el.",
+  "demoAiNotDone": "Răspuns de exemplu: modificarea nu a fost făcută, așa că datele demo-ului rămân la fel.",
+  "demoAiNoteBody": "Acest comentariu este un exemplu scris de AI în demo.",
+  "demoAiIssueTitle": "Problemă de exemplu creată de AI în demo",
+  "demoKeywordsComment": "comentariu,comentează",
+  "demoKeywordsIssue": "creează o problemă,creeaza o problema,problemă nouă",
+  "demoKeywordsClose": "închide,inchide"
 }

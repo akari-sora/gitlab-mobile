@@ -3026,5 +3026,20 @@
   "offlineLossSwitchUnknown": "계정을 전환하면 이 기기에 있는 @{username}의 오프라인 프로젝트가 모두 삭제됩니다. 지금은 개수를 확인할 수 없습니다.",
   "offlineLossSignOutUnknown": "로그아웃하면 이 기기에 있는 @{username}의 오프라인 프로젝트가 모두 삭제됩니다. 지금은 개수를 확인할 수 없습니다.",
   "offlineLossRemoveUnknown": "계정을 제거하면 이 기기에 있는 @{username}의 오프라인 프로젝트가 모두 삭제됩니다. 지금은 개수를 확인할 수 없습니다.",
-  "offlineCacheClearUnknownProjects": "자동 캐시와 이 계정의 오프라인 프로젝트가 모두 삭제됩니다(지금은 개수를 확인할 수 없음). 이 작업은 되돌릴 수 없습니다."
+  "offlineCacheClearUnknownProjects": "자동 캐시와 이 계정의 오프라인 프로젝트가 모두 삭제됩니다(지금은 개수를 확인할 수 없음). 이 작업은 되돌릴 수 없습니다.",
+  "demoTryAction": "데모 체험(샘플 데이터, 계정 필요 없음)",
+  "demoBanner": "데모 · 샘플 데이터",
+  "demoExitAction": "데모 종료",
+  "demoExitHint": "로그인 화면으로 돌아갑니다. 데모에서 한 변경은 메모리에만 있으며 종료하면 사라집니다.",
+  "demoWriteRefused": "데모에서는 이슈 만들기, 댓글 추가, 이슈 닫기와 다시 열기만 할 수 있습니다. 이 변경은 적용되지 않았습니다.",
+  "demoProviderName": "데모(오프라인)",
+  "demoConsentNotice": "데모입니다. 내용은 어디에도 전송되지 않으며 AI 답변은 미리 작성된 예시입니다. 내 계정에서는 AI가 직접 설정한 제공자와 키를 사용합니다.",
+  "demoAiExplain": "예시 답변: 데모 프로젝트의 {subject}입니다. 실제 계정에서는 AI가 이 페이지를 읽고 핵심을 정리합니다. 이 답변은 미리 작성된 것입니다. 댓글 추가, 이슈 만들기, 이슈 닫기를 요청하면 실행 전에 먼저 확인을 받습니다.",
+  "demoAiDone": "예시 답변: 완료했습니다. 이 변경은 데모 메모리에만 있으며 데모를 종료하면 사라집니다.",
+  "demoAiNotDone": "예시 답변: 변경이 실행되지 않아 데모 데이터는 그대로입니다.",
+  "demoAiNoteBody": "이 댓글은 데모에서 AI가 작성한 예시입니다.",
+  "demoAiIssueTitle": "데모에서 AI가 만든 예시 이슈",
+  "demoKeywordsComment": "댓글,코멘트,답글",
+  "demoKeywordsIssue": "이슈 만들,이슈를 만들,새 이슈,이슈 생성",
+  "demoKeywordsClose": "닫아,닫기,닫아줘"
 }

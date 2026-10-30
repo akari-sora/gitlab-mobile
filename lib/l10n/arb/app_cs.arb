@@ -3026,5 +3026,20 @@
   "offlineLossSwitchUnknown": "Přepnutím účtu se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.",
   "offlineLossSignOutUnknown": "Odhlášením se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.",
   "offlineLossRemoveUnknown": "Odebráním účtu se smažou všechny offline projekty uživatele @{username} v tomto zařízení; jejich počet teď nelze ověřit.",
-  "offlineCacheClearUnknownProjects": "Automatická mezipaměť a všechny offline projekty tohoto účtu se smažou (jejich počet teď nelze ověřit). Tuto akci nelze vrátit zpět."
+  "offlineCacheClearUnknownProjects": "Automatická mezipaměť a všechny offline projekty tohoto účtu se smažou (jejich počet teď nelze ověřit). Tuto akci nelze vrátit zpět.",
+  "demoTryAction": "Vyzkoušet demo (ukázková data, bez účtu)",
+  "demoBanner": "Demo · ukázková data",
+  "demoExitAction": "Ukončit demo",
+  "demoExitHint": "Návrat na přihlašovací obrazovku. Změny v demu existují jen v paměti a po ukončení zmizí.",
+  "demoWriteRefused": "V demu lze jen vytvářet problémy, přidávat komentáře a zavírat nebo znovu otevírat problémy; tato změna nebyla provedena.",
+  "demoProviderName": "Demo (offline)",
+  "demoConsentNotice": "Toto je demo: nic se nikam neodesílá a odpovědi AI jsou předem napsané ukázky. S vlastním účtem AI používá poskytovatele a klíč, které si nastavíte.",
+  "demoAiExplain": "Ukázková odpověď: toto je {subject} v ukázkovém projektu. Se skutečným účtem AI tuto stránku přečte a shrne to podstatné; tato odpověď je napsaná předem. Můžete mě požádat o přidání komentáře, vytvoření problému nebo zavření problému a já vás nejdřív požádám o potvrzení.",
+  "demoAiDone": "Ukázková odpověď: hotovo. Změna existuje jen v paměti dema a po jeho ukončení zmizí.",
+  "demoAiNotDone": "Ukázková odpověď: změna nebyla provedena, data dema zůstávají beze změny.",
+  "demoAiNoteBody": "Tento komentář je ukázka, kterou v demu napsala AI.",
+  "demoAiIssueTitle": "Ukázkový problém vytvořený AI v demu",
+  "demoKeywordsComment": "komentář,okomentuj",
+  "demoKeywordsIssue": "vytvoř problém,vytvořit problém,nový problém",
+  "demoKeywordsClose": "zavři,zavřít,uzavři"
 }

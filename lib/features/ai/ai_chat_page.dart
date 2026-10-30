@@ -34,6 +34,7 @@ import 'ai_scope.dart';
 import 'ai_scope_add.dart';
 import 'ai_settings_page.dart';
 import 'ai_write_ui.dart';
+import '../demo/demo_scope.dart';
 
 /// Opens the chat for [origin] from a page that may or may not have AI.
 /// Returns false when AI is not available here (no scope or registry).
@@ -802,6 +803,8 @@ class _AiChatPageState extends State<AiChatPage> {
   }
 
   Future<void> _openSettings() async {
+    // The demo's provider is fixed and its settings are not offered.
+    if (DemoScope.maybeOf(context) != null) return;
     final scope = AiScope.of(context);
     final session = ProviderScope.containerOf(
       context,
@@ -943,10 +946,11 @@ class _AiChatPageState extends State<AiChatPage> {
                         enabled: adds.canAddGroupWorkItem,
                         child: Text(l10n.aiAddGroupWorkItem),
                       ),
-                    PopupMenuItem(
-                      value: '#settings',
-                      child: Text(l10n.aiChatOpenSettings),
-                    ),
+                    if (DemoScope.maybeOf(context) == null)
+                      PopupMenuItem(
+                        value: '#settings',
+                        child: Text(l10n.aiChatOpenSettings),
+                      ),
                     if (_session.providers.length > 1) ...[
                       const PopupMenuDivider(),
                       for (final candidate in _session.providers)

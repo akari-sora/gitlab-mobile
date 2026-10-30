@@ -177,6 +177,7 @@ class AiChatController extends ChangeNotifier
     bool Function()? clientMayStart,
     AiBackgroundExecution? backgroundExecution,
     AiWriteJournal? writeJournal,
+    AiHistoryCoordinator? history,
     ledger.AiWriteScope Function()? writeScope,
     AiWriteFreshnessReader? readWriteFreshness,
     @visibleForTesting
@@ -196,6 +197,7 @@ class AiChatController extends ChangeNotifier
        _backgroundExecution = backgroundExecution,
        _ownsBackgroundExecution = backgroundExecution == null,
        _writeJournal = writeJournal ?? AiWriteJournal.instance,
+       _history = history ?? AiHistoryCoordinator.instance,
        _writeScopeOverride = writeScope,
        _readWriteFreshness = readWriteFreshness,
        _capabilityLedger = capabilityLedger ??
@@ -523,7 +525,9 @@ class AiChatController extends ChangeNotifier
   AiRunnerBinding? _binding;
   final List<AiChatItem> _items = [];
   final Expando<AiChatItem> _successors = Expando<AiChatItem>();
-  final AiHistoryCoordinator _history = AiHistoryCoordinator.instance;
+  /// [AiHistoryCoordinator.instance] unless the owner supplies its own (the
+  /// demo keeps its history in memory).
+  final AiHistoryCoordinator _history;
   final Map<String, AiSavedConversation> _pendingReportedHistory = {};
   final Set<String> _blockedReportedHistory = {};
   late AiHistoryState _historyState;

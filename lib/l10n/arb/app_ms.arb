@@ -3026,5 +3026,20 @@
   "offlineLossSwitchUnknown": "Menukar account akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.",
   "offlineLossSignOutUnknown": "Log keluar akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.",
   "offlineLossRemoveUnknown": "Membuang account akan memadam semua project luar talian milik @{username} pada peranti ini; bilangannya tidak dapat disahkan sekarang.",
-  "offlineCacheClearUnknownProjects": "Cache automatik dan semua project luar talian account ini akan dipadam (bilangannya tidak dapat disahkan sekarang). Tindakan ini tidak boleh dibatalkan."
+  "offlineCacheClearUnknownProjects": "Cache automatik dan semua project luar talian account ini akan dipadam (bilangannya tidak dapat disahkan sekarang). Tindakan ini tidak boleh dibatalkan.",
+  "demoTryAction": "Cuba demo (data contoh, tanpa akaun)",
+  "demoBanner": "Demo · data contoh",
+  "demoExitAction": "Keluar daripada demo",
+  "demoExitHint": "Kembali ke skrin log masuk. Perubahan dalam demo hanya disimpan dalam memori dan hilang apabila anda keluar.",
+  "demoWriteRefused": "Demo hanya boleh mencipta isu, menambah komen, serta menutup atau membuka semula isu; perubahan ini tidak dibuat.",
+  "demoProviderName": "Demo (luar talian)",
+  "demoConsentNotice": "Ini demo: tiada apa-apa dihantar ke mana-mana, dan balasan AI ialah contoh yang ditulis lebih awal. Dengan akaun anda sendiri, AI menggunakan penyedia dan kunci yang anda tetapkan.",
+  "demoAiExplain": "Jawapan contoh: ini ialah {subject} dalam projek demo. Dengan akaun sebenar, AI membaca halaman ini dan merumuskan perkara penting; jawapan ini ditulis lebih awal. Anda boleh meminta saya menambah komen, mencipta isu atau menutup isu, dan saya akan meminta pengesahan anda dahulu.",
+  "demoAiDone": "Jawapan contoh: selesai. Perubahan ini hanya wujud dalam memori demo dan hilang apabila anda keluar daripada demo.",
+  "demoAiNotDone": "Jawapan contoh: perubahan tidak dibuat, jadi data demo kekal seperti asal.",
+  "demoAiNoteBody": "Komen ini ialah contoh yang ditulis oleh AI dalam demo.",
+  "demoAiIssueTitle": "Isu contoh yang dicipta oleh AI dalam demo",
+  "demoKeywordsComment": "komen,ulasan",
+  "demoKeywordsIssue": "cipta isu,buat isu,isu baharu",
+  "demoKeywordsClose": "tutup"
 }

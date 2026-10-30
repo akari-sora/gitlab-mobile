@@ -56,6 +56,28 @@ Mergeline is an independent third-party client. It is not affiliated with or
 endorsed by GitLab Inc. GITLAB is a trademark of GitLab Inc. in the United
 States and other countries and regions.
 
+## App access (Play review)
+
+Reviewers need no account or credentials. Text for the Play Console *App
+access* form:
+
+1. Open the app. On the sign-in screen tap **Try the demo (sample data, no
+   account needed)** (試用 Demo（範例資料，不需帳號）).
+2. The full app opens on built-in sample data, with a "Demo · sample data"
+   banner on every page. Nothing is sent to any server. 我的 (Me) › **Exit
+   demo** returns to the sign-in screen and forgets every change.
+3. AI assistant, in builds that include it: open Pocket Planner › Files ›
+   any file › ⋮ › **Explain this file with AI**. In the demo the AI gives
+   pre-written sample answers on the device, and its consent screen says so;
+   ask it to add a comment to see the confirmation card. With a real account
+   the AI uses the provider and API key the user sets up; the app has no AI
+   service of its own.
+
+The demo follows the build's AI gate (`MERGELINE_AI_ASSISTANT`). While
+`ci/build_android.sh` keeps the play flavor's AI flags off, a Play build's
+demo has no assistant and step 3 does not apply. Store screenshots are taken
+in the demo, so they show no real account.
+
 ## Read-cache data safety
 
 The encrypted read cache stays on the device; it adds no off-device collection

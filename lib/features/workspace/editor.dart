@@ -8,6 +8,7 @@ import '../../core/models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
+import '../demo/demo_scope.dart';
 import 'attachment_picker.dart';
 import 'markdown_edit.dart';
 import 'picker_sheet.dart';
@@ -24,6 +25,8 @@ String _draftPrefix(Account account) =>
 final _draftClearEpochs = <String, int>{};
 final _draftWrites = <String, Future<void>>{};
 Future<void> clearSecureDrafts(Account account) async {
+  // The demo account never stores drafts.
+  if (isDemoAccount(account)) return;
   _draftClearEpochs[account.key] = (_draftClearEpochs[account.key] ?? 0) + 1;
   await (_draftWrites[account.key] ?? Future<void>.value());
   final entries = await _draftStorage.readAll();
@@ -42,6 +45,7 @@ Future<String> readDraftField(
   String resource,
   String field,
 ) async {
+  if (isDemoAccount(account)) return '';
   await (_draftWrites[account.key] ?? Future<void>.value());
   final raw = await _draftStorage.read(
     key: '${_draftPrefix(account)}${base64Url.encode(utf8.encode(resource))}',
@@ -297,6 +301,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
       (widget.isCurrent?.call() ?? true);
   bool get _locked => _saving || _guarding || !_draftCurrent;
 
+  /// Drafts go to secure storage, except in the demo, which writes nothing.
+  bool get _persistent => widget.persistent && !isDemoAccount(widget.account);
+
   @override
   void initState() {
     super.initState();
@@ -325,7 +332,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
       if (widget.appendValues.isNotEmpty) {
         await (_draftWrites[widget.account.key] ?? Future<void>.value());
       }
-      final raw = widget.persistent ? await _draftStorage.read(key: _key) : null;
+      final raw = _persistent ? await _draftStorage.read(key: _key) : null;
       if (raw != null && mounted && _draftCurrent) {
         final value = jsonDecode(raw);
         if (widget.appendValues.isNotEmpty &&
@@ -439,7 +446,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   // A completed write settles only the exact submitted draft, even when its
   // route owner has changed. Account removal or newer draft content wins.
   Future<void> _settleStoredDraft(String expected, String? replacement) async {
-    if (!widget.persistent) return;
+    if (!_persistent) return;
     final pending = _draftWrites[widget.account.key] ?? Future<void>.value();
     final settlement = pending.then((_) async {
       if (_draftEpoch != (_draftClearEpochs[widget.account.key] ?? 0)) return;
@@ -464,7 +471,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   void _persist() {
     // While a stale draft is held, keystrokes, leave, and dispose must not
     // replace the stored copy. Apply persists only after the hold is cleared.
-    if (_done || !widget.persistent || !_dirty || _staleDraft != null || !_draftCurrent ||
+    if (_done || !_persistent || !_dirty || _staleDraft != null || !_draftCurrent ||
         (widget.appendValues.isNotEmpty && _draftUnavailable)) { return; }
     final data = jsonEncode(_storedDraft());
     final pending = _draftWrites[widget.account.key] ?? Future<void>.value();
@@ -618,7 +625,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
     });
     String? attemptedDraft;
     try {
-      if (widget.blockRetryOnWriteUncertain && widget.persistent) {
+      if (widget.blockRetryOnWriteUncertain && _persistent) {
         // Persist before dispatch, so losing the route/process or API
         // acknowledgement cannot turn the same draft into a blind retry.
         _writeUncertain = true;
@@ -649,7 +656,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
         }
       }
       if (!_draftCurrent) return;
-      if (widget.persistent && attemptedDraft == null) {
+      if (_persistent && attemptedDraft == null) {
         try {
           await _draftStorage.delete(key: _key);
         } catch (_) {

@@ -3026,5 +3026,20 @@
   "offlineLossSwitchUnknown": "Hesap değiştirmek, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.",
   "offlineLossSignOutUnknown": "Oturumu kapatmak, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.",
   "offlineLossRemoveUnknown": "Hesabı kaldırmak, @{username} hesabının bu cihazdaki tüm çevrimdışı projelerini siler; kaç tane olduğu şu anda doğrulanamıyor.",
-  "offlineCacheClearUnknownProjects": "Otomatik önbellek ve bu hesabın tüm çevrimdışı projeleri silinir (kaç tane olduğu şu anda doğrulanamıyor). Bu işlem geri alınamaz."
+  "offlineCacheClearUnknownProjects": "Otomatik önbellek ve bu hesabın tüm çevrimdışı projeleri silinir (kaç tane olduğu şu anda doğrulanamıyor). Bu işlem geri alınamaz.",
+  "demoTryAction": "Demoyu dene (örnek veriler, hesap gerekmez)",
+  "demoBanner": "Demo · örnek veriler",
+  "demoExitAction": "Demodan çık",
+  "demoExitHint": "Giriş ekranına döner. Demoda yapılan değişiklikler yalnızca bellekte tutulur ve çıkınca kaybolur.",
+  "demoWriteRefused": "Demoda yalnızca sorun oluşturabilir, yorum ekleyebilir ve sorunları kapatıp yeniden açabilirsiniz; bu değişiklik yapılmadı.",
+  "demoProviderName": "Demo (çevrimdışı)",
+  "demoConsentNotice": "Bu demo: hiçbir şey hiçbir yere gönderilmez ve AI yanıtları önceden yazılmış örneklerdir. Kendi hesabınızla AI, ayarladığınız sağlayıcıyı ve anahtarı kullanır.",
+  "demoAiExplain": "Örnek yanıt: bu, demo projesindeki {subject}. Gerçek bir hesapta AI bu sayfayı okur ve önemli noktaları özetler; bu yanıt önceden yazılmıştır. Benden yorum eklememi, sorun oluşturmamı veya bir sorunu kapatmamı isteyebilirsiniz; önce onayınızı alırım.",
+  "demoAiDone": "Örnek yanıt: tamamlandı. Değişiklik yalnızca demonun belleğinde durur ve demodan çıkınca kaybolur.",
+  "demoAiNotDone": "Örnek yanıt: değişiklik yapılmadı, demo verileri aynı kaldı.",
+  "demoAiNoteBody": "Bu yorum, AI’ın demoda yazdığı bir örnektir.",
+  "demoAiIssueTitle": "AI’ın demoda oluşturduğu örnek sorun",
+  "demoKeywordsComment": "yorum",
+  "demoKeywordsIssue": "sorun oluştur,yeni sorun,sorun aç",
+  "demoKeywordsClose": "kapat"
 }
