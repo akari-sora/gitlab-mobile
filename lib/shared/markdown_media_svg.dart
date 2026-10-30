@@ -24,10 +24,32 @@ Future<Uint8List?> sanitizeMarkdownSvg(
     throw const ApiFailure(FailureKind.tooLarge);
   }
   final type = (contentType ?? '').split(';').first.trim().toLowerCase();
+  if (type != 'image/svg+xml' && !_startsWithXmlMarkup(bytes)) {
+    return null;
+  }
   if (bytes.length <= _isolateThreshold) {
     return _sanitizeSvgBytes(bytes, type);
   }
   return Isolate.run(() => _sanitizeSvgBytes(bytes, type));
+}
+
+bool _startsWithXmlMarkup(Uint8List bytes) {
+  var index = 0;
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xef &&
+      bytes[1] == 0xbb &&
+      bytes[2] == 0xbf) {
+    index = 3;
+  }
+  while (index < bytes.length) {
+    final byte = bytes[index];
+    if (byte == 0x20 || byte == 0x09 || byte == 0x0a || byte == 0x0d) {
+      index++;
+      continue;
+    }
+    return byte == 0x3c;
+  }
+  return false;
 }
 
 Uint8List? _sanitizeSvgBytes(Uint8List bytes, String contentType) {
@@ -157,6 +179,18 @@ void _validateEmbeddedRaster(String uri) {
   }
 }
 
+/// Reads raster header dimensions (PNG, GIF, JPEG, WebP) in O(1) without
+/// copying or decoding the full image buffer.
+(int, int)? markdownRasterDimensions(Uint8List data) {
+  final size =
+      _pngDimensions(data) ??
+      _gifDimensions(data) ??
+      _jpegDimensions(data) ??
+      _webpDimensions(data);
+  if (size == null || size.$1 <= 0 || size.$2 <= 0) return null;
+  return size;
+}
+
 (int, int)? _rasterDimensions(Uint8List data, String mediaType) =>
     switch (mediaType) {
       'image/png' => _pngDimensions(data),
@@ -204,7 +238,11 @@ void _validateEmbeddedRaster(String uri) {
     }
     if (offset >= data.length) return null;
     final marker = data[offset++];
-    if (marker == 0xd8 || marker == 0xd9 || marker == 0x01) continue;
+    if (marker == 0x00 ||
+        marker == 0x01 ||
+        (marker >= 0xd0 && marker <= 0xd9)) {
+      continue;
+    }
     if (offset + 1 >= data.length) return null;
     final length = (data[offset] << 8) | data[offset + 1];
     if (length < 2 || offset + length > data.length) return null;

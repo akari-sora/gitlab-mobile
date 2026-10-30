@@ -16,7 +16,13 @@ import 'attachment_ref.dart';
 enum MarkdownMediaSourceKind { upload, repository, external, data, blocked }
 
 final class MarkdownMediaNotImage implements Exception {
-  const MarkdownMediaNotImage();
+  const MarkdownMediaNotImage([this.contentType]);
+  final String? contentType;
+  bool get isAudio => _normaliseContentType(contentType).startsWith('audio/');
+  bool get isMedia {
+    final normalized = _normaliseContentType(contentType);
+    return normalized.startsWith('video/') || normalized.startsWith('audio/');
+  }
 }
 
 /// A Markdown media target after its trust boundary and repository coordinate
@@ -574,6 +580,15 @@ final class MarkdownMediaLoader {
         snapshot.checkCurrent();
         return bytes;
       }
+      void checkContentType(String value) {
+        final normalized = _normaliseContentType(value);
+        if (image &&
+            (normalized.startsWith('video/') ||
+                normalized.startsWith('audio/'))) {
+          throw MarkdownMediaNotImage(normalized);
+        }
+        onContentType?.call(normalized);
+      }
       switch (source.kind) {
         case MarkdownMediaSourceKind.data:
           final bytes = source.bytes;
@@ -602,7 +617,7 @@ final class MarkdownMediaLoader {
             maxBytes: image ? _repositoryImageBytes : _mediaBytes,
             cancelToken: operation,
             onProgress: onProgress,
-            onContentType: onContentType,
+            onContentType: checkContentType,
             sink: sink,
           );
         case MarkdownMediaSourceKind.upload:
@@ -611,6 +626,7 @@ final class MarkdownMediaLoader {
             image: image,
             cancelToken: operation,
             onProgress: onProgress,
+            onContentType: checkContentType,
             sink: sink,
           );
         case MarkdownMediaSourceKind.external:
@@ -647,6 +663,7 @@ final class MarkdownMediaLoader {
     required bool image,
     required CancelToken? cancelToken,
     required void Function(int, int?)? onProgress,
+    required void Function(String)? onContentType,
     required IOSink? sink,
   }) async {
     final api = _api;
@@ -676,6 +693,7 @@ final class MarkdownMediaLoader {
         parts[1],
         sink: output,
         onProgress: onProgress,
+        onContentType: onContentType,
         cancel: cancelToken == null ? null : cancelled.future,
         maxBytes: image ? _repositoryImageBytes : _mediaBytes,
       );
@@ -726,12 +744,14 @@ final class MarkdownMediaLoader {
         if (status >= 300 && status < 400) {
           await _release(response.data);
           if (redirects == 3) {
+            if (!token.isCancelled) token.cancel('external media redirect limit');
             throw ApiFailure(FailureKind.redirectBlocked, status: status);
           }
           final location = response.headers.value('location');
           final parsed = location == null ? null : Uri.tryParse(location);
           final next = parsed == null ? null : uri.resolveUri(parsed);
           if (next == null || !_safeExternal(next)) {
+            if (!token.isCancelled) token.cancel('external media unsafe redirect');
             throw ApiFailure(FailureKind.redirectBlocked, status: status);
           }
           uri = next;
@@ -739,6 +759,7 @@ final class MarkdownMediaLoader {
           continue;
         }
         if (status < 200 || status >= 300) {
+          if (!token.isCancelled) token.cancel('external media status $status');
           await _release(response.data);
           throw ApiFailure.fromStatus(status);
         }
@@ -748,10 +769,12 @@ final class MarkdownMediaLoader {
             .trim()
             .toLowerCase();
         if (image && !type.startsWith('image/')) {
+          if (!token.isCancelled) token.cancel('markdown media not image');
           await _release(response.data);
-          throw const MarkdownMediaNotImage();
+          throw MarkdownMediaNotImage(type);
         }
         if (!image && !_mediaType(type)) {
+          if (!token.isCancelled) token.cancel('markdown media unsupported');
           await _release(response.data);
           throw const ApiFailure(FailureKind.unsupported);
         }

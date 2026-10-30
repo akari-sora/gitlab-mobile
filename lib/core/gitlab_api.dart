@@ -313,6 +313,7 @@ final class GitLabApi {
     bool allowRangeNotSatisfiable = false,
     bool graphQuery = false,
     CancelToken? cancelToken,
+    void Function(String contentType)? onContentType,
   }) => _send(
     uri,
     method: method,
@@ -323,6 +324,7 @@ final class GitLabApi {
     allowRangeNotSatisfiable: allowRangeNotSatisfiable,
     graphQuery: graphQuery,
     cancelToken: cancelToken,
+    onContentType: onContentType,
   );
 
   /// Shared request path for JSON calls and multipart uploads.
@@ -340,6 +342,7 @@ final class GitLabApi {
     Duration? sendTimeout,
     void Function()? onSendStarted,
     CancelToken? cancelToken,
+    void Function(String contentType)? onContentType,
   }) async {
     if (_closed || cancelToken?.isCancelled == true) {
       const failure = ApiFailure(FailureKind.cancelled);
@@ -365,6 +368,7 @@ final class GitLabApi {
     // Only private, fixed GraphQL queries use this read path. POST mutations
     // retain the write fences and are never retried automatically.
     final writing = method != 'GET' && method != 'HEAD' && !graphQuery;
+    assert(onContentType == null || (method == 'GET' || method == 'HEAD'));
     final affected = writing ? _cache.affected(uri, method, data, graphMutation: graphMutation) : <String>{};
     var writeStarted = false;
     var sendStarted = false;
@@ -486,6 +490,7 @@ final class GitLabApi {
               allowRangeNotSatisfiable: allowRangeNotSatisfiable,
               graphQuery: graphQuery,
               cancelToken: cancelToken,
+              onContentType: onContentType,
             );
           }
           throw _knownMutation401(refreshSucceeded: true);
@@ -521,10 +526,29 @@ final class GitLabApi {
             ? FailureKind.writeUncertain
             : FailureKind.invalidResponse);
       }
+      if (!writing &&
+          (method == 'GET' || method == 'HEAD') &&
+          onContentType != null) {
+        final contentType = (response.headers.value('content-type') ?? '')
+            .split(';')
+            .first
+            .trim()
+            .toLowerCase();
+        try {
+          onContentType(contentType);
+        } on Object {
+          cancel.cancel('content type rejected');
+          await body.stream.listen((_) {}).cancel();
+          if (_closed) throw const ApiFailure(FailureKind.cancelled);
+          rethrow;
+        }
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      }
       final length = int.tryParse(
         response.headers.value('content-length') ?? '',
       );
       if (length != null && length > maxBytes) {
+        cancel.cancel('response budget exceeded');
         await body.stream.listen((_) {}).cancel();
         throw ApiFailure(writing
             ? FailureKind.writeUncertain
@@ -1062,13 +1086,21 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     final total = int.tryParse(
       response.headers.value(Headers.contentLengthHeader) ?? '',
     );
-    onContentType?.call(
-      (response.headers.value(Headers.contentTypeHeader) ?? '')
-          .split(';')
-          .first
-          .trim()
-          .toLowerCase(),
-    );
+    try {
+      onContentType?.call(
+        (response.headers.value(Headers.contentTypeHeader) ?? '')
+            .split(';')
+            .first
+            .trim()
+            .toLowerCase(),
+      );
+    } on Object {
+      _cancelTransport(token);
+      await _releaseBody(response.data);
+      if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      rethrow;
+    }
+    if (_closed) throw const ApiFailure(FailureKind.cancelled);
     if (total != null && total > maxBytes) {
       _cancelTransport(token);
       await _releaseBody(response.data);
@@ -1279,6 +1311,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     String filename, {
     required IOSink sink,
     void Function(int received, int? total)? onProgress,
+    void Function(String contentType)? onContentType,
     Future<void>? cancel,
     int maxBytes = 4 * 1024 * 1024,
   }) {
@@ -1290,6 +1323,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         filename,
         sink: sink,
         onProgress: onProgress,
+        onContentType: onContentType,
         cancel: cancel,
         maxBytes: maxBytes,
       ).then((value) {
@@ -1313,6 +1347,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     String filename, {
     required IOSink sink,
     void Function(int received, int? total)? onProgress,
+    void Function(String contentType)? onContentType,
     Future<void>? cancel,
     int maxBytes = 4 * 1024 * 1024,
   }) async {
@@ -1331,6 +1366,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         if (!token.isCancelled) token.cancel('upload download aborted');
       }));
     }
+    var contentTypeRejected = false;
     try {
       return await _fetchAndStreamUpload(
         uri: uri,
@@ -1340,6 +1376,16 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         token: token,
         maxBytes: maxBytes,
         onProgress: onProgress,
+        onContentType: onContentType == null
+            ? null
+            : (value) {
+                try {
+                  onContentType(value);
+                } on Object {
+                  contentTypeRejected = true;
+                  rethrow;
+                }
+              },
         allowRefresh: true,
       );
     } on DioException catch (error) {
@@ -1352,7 +1398,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     } on IOException {
       throw const ApiFailure(FailureKind.network);
     } catch (_) {
-      if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+      if ((_closed || token.isCancelled) && !contentTypeRejected) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
       rethrow;
     } finally {
       _requests.remove(token);
@@ -1367,6 +1415,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     required CancelToken token,
     required int maxBytes,
     required void Function(int received, int? total)? onProgress,
+    required void Function(String contentType)? onContentType,
     required bool allowRefresh,
   }) async {
     if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
@@ -1403,6 +1452,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         token: token,
         maxBytes: maxBytes,
         onProgress: onProgress,
+        onContentType: onContentType,
       );
     }
     await _discardBody(response.data);
@@ -1427,6 +1477,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         token: token,
         maxBytes: maxBytes,
         onProgress: onProgress,
+        onContentType: onContentType,
         allowRefresh: false,
       );
     }
@@ -1448,9 +1499,24 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     required CancelToken token,
     required int maxBytes,
     required void Function(int received, int? total)? onProgress,
+    required void Function(String contentType)? onContentType,
   }) async {
     final headers = response.headers;
     final total = int.tryParse(headers.value(Headers.contentLengthHeader) ?? '');
+    if (onContentType != null) {
+      final contentType = (headers.value(Headers.contentTypeHeader) ?? '')
+          .split(';')
+          .first
+          .trim()
+          .toLowerCase();
+      try {
+        onContentType(contentType);
+      } on Object {
+        _cancelTransport(token);
+        await _releaseBody(response.data);
+        rethrow;
+      }
+    }
     if (total != null && total > maxBytes) {
       _cancelTransport(token);
       await _releaseBody(response.data);
