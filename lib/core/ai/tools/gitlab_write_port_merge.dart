@@ -294,10 +294,12 @@ extension _MergePrepare on GitLabAiWritePort {
       case 'deleteDraftNote':
         final id = _positive(a, 'noteId');
         final draft = await _api.record([...path, 'draft_notes', '$id']);
-        final author = draft['author'];
-        final username = author is Map ? author['username'] : null;
+        // GitLab's draft-note entity carries only author_id, and a draft is
+        // visible to its author alone: it must be this account's own user.
+        final authorId = draft['author_id'];
         if (draft['id'] != id || draft['note'] is! String ||
-            username is! String || username.isEmpty) {
+            authorId is! int ||
+            '${_api.instance.key}#$authorId' != accountKey) {
           throw const AiWriteRefused('draftsChanged');
         }
         draftNoteId = id;
@@ -305,7 +307,6 @@ extension _MergePrepare on GitLabAiWritePort {
         preview = AiDeletePreview(
           targetName: '',
           parentName: '!$iid',
-          author: '@$username',
           excerpt: _mergeExcerpt(draft['note']! as String),
           count: 1,
         );

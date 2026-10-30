@@ -64,7 +64,8 @@ final class Server {
     {
       'id': 8,
       'note': 'review text',
-      'author': {'username': 'reviewer'},
+      // GitLab's draft-note entity has author_id, never an author object.
+      'author_id': 7,
     },
   ];
   final commitMessages = <String>['change'];
@@ -738,7 +739,8 @@ void main() {
         final preview = p.preview as AiDeletePreview;
         expect(preview.targetName, isEmpty);
         expect(preview.parentName, '!3');
-        expect(preview.author, '@reviewer');
+        // Drafts are only visible to their author: the account itself.
+        expect(preview.author, isNull);
         expect(preview.excerpt, 'review text');
         final unbound = bindTargets(
           userMessage: 'delete the draft on !3',
@@ -785,6 +787,36 @@ void main() {
         s.prepare('deleteDraftNote', args: {'noteId': 8}),
         throwsA(reason('draftsChanged')),
       );
+    },
+  );
+  test(
+    'draft deletion binds the documented author_id to this account',
+    () async {
+      // The documented draft-note entity has author_id and no author object.
+      s.drafts.single
+        ..remove('author_id')
+        ..['author'] = {'id': 7, 'username': 'tester'};
+      await expectLater(
+        s.prepare('deleteDraftNote', args: {'noteId': 8}),
+        throwsA(reason('draftsChanged')),
+      );
+      s.drafts.single
+        ..remove('author')
+        ..['author_id'] = 8;
+      await expectLater(
+        s.prepare('deleteDraftNote', args: {'noteId': 8}),
+        throwsA(reason('draftsChanged')),
+      );
+      for (final authorId in ['7', null]) {
+        s.drafts.single['author_id'] = authorId;
+        await expectLater(
+          s.prepare('deleteDraftNote', args: {'noteId': 8}),
+          throwsA(reason('draftsChanged')),
+          reason: '$authorId',
+        );
+      }
+      s.drafts.single['author_id'] = 7;
+      await s.prepare('deleteDraftNote', args: {'noteId': 8});
     },
   );
   test('draft deletion excerpt is three lines and at most 200 characters', () async {

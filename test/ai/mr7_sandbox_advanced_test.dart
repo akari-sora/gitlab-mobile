@@ -240,7 +240,9 @@ Future<AiTierDecision> _preparedDecision(
         allBound: true,
         intentAuthorizesLowRisk: true,
       ),
-      target: prepared.bindingTargets.first,
+      target: prepared.bindingTargets.singleWhere(
+        (t) => t.kind == c.scenario!.targetKind,
+      ),
       facts: prepared.facts,
       arguments: arguments,
       typedName: prepared.confirmName,
@@ -562,6 +564,12 @@ void main() {
       expect(c.scenario?.captureEffects, isTrue, reason: id);
       expect(c.tier, isIn(['T3', 'T4', 'hardLine']), reason: id);
     }
+    // Only the deprecated cancel fallback may dispatch twice.
+    for (final c in _executable) {
+      final twice = c.id == 'b3-cancelAutoMerge-deprecated-fallback';
+      expect(c.scenario!.expectedMutations, twice ? 2 : 1, reason: c.id);
+      expect(c.scenario!.maxMutations, twice ? 2 : 1, reason: c.id);
+    }
     // Variants a wave 3c witness cannot honestly cover keep a typed reason.
     const closed = {
       'b3-playPipelineSchedule-empty-parameters': (
@@ -591,6 +599,10 @@ void main() {
       'b3-deletePackage-owned-registry-fixture': (
         Mr7ClosureCause.fixtureUnavailable,
         'registryFixtureUnavailable',
+      ),
+      'b3-createSnippet-private-project': (
+        Mr7ClosureCause.releasePolicy,
+        'snippetVariantNotOpened',
       ),
     };
     for (final entry in closed.entries) {
@@ -1786,6 +1798,10 @@ void main() {
       expect(confirms, 0);
       expect(row['mutationCount'], 0);
       expect(row['status'], isNot('PASS'));
+      // Defence in depth: real GitLab marks such a suggestion not appliable,
+      // which production refuses earlier; this pins the diff-version binding
+      // refusal, which reuses the suggestionForeign code.
+      expect(row['reason'], 'suggestionForeign', reason: jsonEncode(receipt));
       expect(fixture.mutations, isEmpty);
       expect(
         fixture.server.requests,

@@ -1477,6 +1477,13 @@ Mr7AdvancedCase _upgrade(Mr7AdvancedCase c) {
       'File HEAD reads are admitted since wave 3a and deleteFile runs the production file reads; no edit or create chain with an exact-content witness is built or tested in this subset.',
     );
   }
+  if (c.operation == 'createSnippet' && c.variant == 'private-project') {
+    return (
+      Mr7ClosureCause.releasePolicy,
+      'snippetVariantNotOpened',
+      'Outside 7B3j scope, not unproven: the production createSnippet chain already runs through new-nonprivate; this private variant is not opened yet.',
+    );
+  }
   if (c.operation.contains('Snippet') && c.variant != 'new-nonprivate') {
     return (
       Mr7ClosureCause.releasePolicy,
@@ -1489,7 +1496,7 @@ Mr7AdvancedCase _upgrade(Mr7AdvancedCase c) {
     return (
       Mr7ClosureCause.releasePolicy,
       'uploadFieldNotApplicable',
-      'The operation carries no model-written content field: a deletion sends none and a suggestion applies server-held text, so an upload placeholder cannot round-trip through it.',
+      'No field round-trips server-read text: a deletion and an applied suggestion carry at most a new model-written commit message, so an upload placeholder has nothing to restore.',
     );
   }
   if (c.operation == 'applySuggestion' && c.variant == 'suggestion-version') {
@@ -1910,13 +1917,7 @@ final class Mr7AdvancedFixture {
           ],
           _ => [_draft(8, 'Synthetic external review')],
         }
-      : [
-          {
-            'id': 8,
-            'note': 'Synthetic review text',
-            'author': {'id': 7, 'username': 'synthetic-owner'},
-          },
-        ];
+      : [_draft(8, 'Synthetic review text')];
 
   /// The documented draft note entity. An ordinary draft carries the text
   /// position whose coordinates are all null.

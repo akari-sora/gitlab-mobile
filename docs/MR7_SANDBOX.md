@@ -823,14 +823,17 @@ Still closed, with typed reasons:
   positioned on an older MR version is refused before dispatch (zero writes);
   this is refusal evidence, not operation coverage.
 - deleteFile and applySuggestion same-field-upload-roundtrip:
-  `uploadFieldNotApplicable`; neither operation carries a model-written content
-  field.
+  `uploadFieldNotApplicable`; no field round-trips server-read text (the only
+  model-written text is a new commit message), so an upload placeholder has
+  nothing to restore.
 - Drift, provenance, refusal, registry, runner and owner-only variants keep
   their earlier codes. Unsupported suggestion ranges and multiline or image
   draft positions remain refused by the witnesses before dispatch.
 - The closure texts that named seams wave 3a delivered are reworded:
   edit_file/createFile now `fileChainNotImplemented` and the remaining snippet
-  variants `snippetChainNotRun`; they need a chain, not a witness.
+  variants `snippetChainNotRun`; they need a chain, not a witness. createSnippet
+  private-project is `snippetVariantNotOpened`: its chain already runs through
+  new-nonprivate, and the variant is simply not opened yet.
 
 ### Real API shapes and primary sources
 
