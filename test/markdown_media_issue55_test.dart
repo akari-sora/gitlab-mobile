@@ -7,12 +7,19 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/failure.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/features/workspace/repository_page.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/artifact_storage.dart';
 import 'package:gitlab_mobile/shared/attachment_budget.dart';
 import 'package:gitlab_mobile/shared/attachment_image.dart';
+import 'package:gitlab_mobile/shared/attachment_ref.dart';
 import 'package:gitlab_mobile/shared/markdown_media.dart';
+import 'package:gitlab_mobile/shared/markdown_media_source.dart';
+import 'package:gitlab_mobile/shared/markdown_media_svg.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
+import 'package:gitlab_mobile/shared/network_boundary.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
 import 'support/fake_adapter.dart';
@@ -57,6 +64,50 @@ Uint8List _largeGifBytes(int totalBytes) {
   }
   out.add(const [0x00, 0x3b]); // Sub-block terminator + GIF trailer ';'
   return out.takeBytes();
+}
+
+Uint8List _craftedGif({
+  required int screenW,
+  required int screenH,
+  required int frameW,
+  required int frameH,
+  int left = 0,
+  int top = 0,
+}) {
+  int lo(int v) => v & 0xff;
+  int hi(int v) => (v >> 8) & 0xff;
+  return Uint8List.fromList([
+    0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
+    lo(screenW), hi(screenW), lo(screenH), hi(screenH), 0x80, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0xff, 0xff, 0xff, // 2-entry GCT
+    0x2c, lo(left), hi(left), lo(top), hi(top),
+    lo(frameW), hi(frameW), lo(frameH), hi(frameH), 0x00,
+    0x02, 0x01, 0x2c, 0x00, // LZW min 2, one sub-block (clear, EOI), terminator
+    0x3b,
+  ]);
+}
+
+Uint8List _craftedJpegWithRst() {
+  final b = BytesBuilder();
+  b.add(const [0xff, 0xd8, 0xff, 0xd0]); // SOI, RST0 (parameterless)
+  b.add(const [
+    0xff, 0xc0, 0x00, 0x0b, 0x08, 0x40, 0x00, 0x40, 0x00, 0x01, 0x01, 0x11, 0x00,
+  ]); // SOF0 16384x16384
+  final com = Uint8List(65533);
+  const fake = [
+    0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00,
+  ];
+  const at = 65476 - 21;
+  for (var i = 0; i < fake.length; i++) {
+    com[at + i] = fake[i];
+  }
+  b.add(const [0xff, 0xfe, 0xff, 0xff]);
+  b.add(com);
+  b.add([0xff, 0xdb, 0x00, 0x43, 0x00, ...List.filled(64, 1)]);
+  b.add(const [
+    0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00, 0, 0, 0, 0, 0xff, 0xd9,
+  ]);
+  return b.takeBytes();
 }
 
 final class _RequestRecord {
@@ -286,7 +337,16 @@ void main() {
     final web = fixture.account.instance.projectWeb(fixture.project.path);
     final base = Uri.parse('$web/-/blob/$_sha/README.md');
 
-    Future<({int pumps, int cards, int renderedImages, List<_RequestRecord> records})>
+    Future<
+      ({
+        int pumps,
+        int cards,
+        int mediaImages,
+        int attachmentImages,
+        int renderedImages,
+        List<_RequestRecord> records,
+      })
+    >
     runCase(String name, String markdown) async {
       logs.clear();
       clock
@@ -315,21 +375,14 @@ void main() {
       final mediaImages = find.byType(MarkdownMediaImage).evaluate().length;
       final attachmentImages = find.byType(AttachmentImage).evaluate().length;
       final renderedImages = find.byType(Image).evaluate().length;
-      // ignore: avoid_print
-      print(
-        '=== CASE $name ===\n'
-        'textAppeared: pumps=${textAppearance.pumps} elapsedMs=${textAppearance.elapsedMs} '
-        'cards=$cards mediaImages=$mediaImages '
-        'attachmentImages=$attachmentImages renderedImages=$renderedImages\n'
-        'requests (${logs.length}):\n'
-        '${logs.isEmpty ? '  (none)' : logs.map((r) => '  $r').join('\n')}',
-      );
       final snapshot = List<_RequestRecord>.of(logs);
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
       return (
         pumps: textAppearance.pumps,
         cards: cards,
+        mediaImages: mediaImages,
+        attachmentImages: attachmentImages,
         renderedImages: renderedImages,
         records: snapshot,
       );
@@ -342,6 +395,9 @@ void main() {
     );
     expect(caseA.pumps, 0);
     expect(caseA.cards, 2);
+    expect(caseA.mediaImages, 0);
+    expect(caseA.attachmentImages, 0);
+    expect(caseA.renderedImages, 0);
     expect(caseA.records, isEmpty);
 
     // (b) HTML <video src="demo.mp4" controls></video> and <img src="demo.mp4">
@@ -351,6 +407,9 @@ void main() {
     );
     expect(caseB.pumps, 0);
     expect(caseB.cards, 2);
+    expect(caseB.mediaImages, 0);
+    expect(caseB.attachmentImages, 0);
+    expect(caseB.renderedImages, 0);
     expect(caseB.records, isEmpty);
 
     // (c) Extension-less video links served as video/mp4 and uppercase .MP4
@@ -360,6 +419,8 @@ void main() {
     );
     expect(caseC.pumps, 0);
     expect(caseC.cards, 5);
+    expect(caseC.mediaImages, 2);
+    expect(caseC.attachmentImages, 1);
     expect(caseC.renderedImages, 0);
     // Uppercase .MP4 never fired a request; the 3 extension-less image links
     // aborted immediately upon inspecting Content-Type: video/mp4 with 0 body bytes read.
@@ -375,6 +436,9 @@ void main() {
       '![gif](anim.gif)\n\n![p1](normal1.png)\n\n![p2](/uploads/$_secret/normal2.png)',
     );
     expect(caseD.pumps, 0);
+    expect(caseD.cards, 0);
+    expect(caseD.mediaImages, 2);
+    expect(caseD.attachmentImages, 1);
     expect(caseD.renderedImages, 3);
     expect(caseD.records, hasLength(3));
 
@@ -385,6 +449,8 @@ void main() {
     );
     expect(caseE.pumps, 0);
     expect(caseE.cards, 2);
+    expect(caseE.mediaImages, 1);
+    expect(caseE.attachmentImages, 0);
     expect(caseE.renderedImages, 1);
     expect(caseE.records, hasLength(1));
     expect(caseE.records.single.uri.path, '/ext.gif');
@@ -450,25 +516,27 @@ void main() {
       // Verify byte-budget cap on a large GIF: when maxTotalBytes is smaller than
       // the 3 MiB GIF, the GIF shows the size-limit fallback and does not prevent
       // a subsequent normal PNG from loading.
+      final cappedDio = Dio()
+        ..httpClientAdapter = FakeAdapter((request) {
+          final isGif = request.uri.path.contains('ext.gif');
+          final record = _RequestRecord(
+            timestampMs: clock.elapsedMilliseconds,
+            client: 'ext',
+            method: request.method,
+            uri: request.uri,
+            contentType: isGif ? 'image/gif' : 'image/png',
+          );
+          return _trackedStreamResponse(
+            record,
+            isGif ? gifBytes : _png,
+          );
+        });
+      addTearDown(cappedDio.close);
       await tester.pumpWidget(
         _host(
           MarkdownView(
             '![gif](https://cdn.example/ext.gif)\n\n![ok](https://cdn.example/fast1.png)',
-            externalMediaClient: Dio()
-              ..httpClientAdapter = FakeAdapter((request) {
-                final isGif = request.uri.path.contains('ext.gif');
-                final record = _RequestRecord(
-                  timestampMs: clock.elapsedMilliseconds,
-                  client: 'ext',
-                  method: request.method,
-                  uri: request.uri,
-                  contentType: isGif ? 'image/gif' : 'image/png',
-                );
-                return _trackedStreamResponse(
-                  record,
-                  isGif ? gifBytes : _png,
-                );
-              }),
+            externalMediaClient: cappedDio,
             budget: AttachmentBudget(maxTotalBytes: 512 * 1024),
           ),
         ),
@@ -624,6 +692,341 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(videoRequests, isEmpty);
       expect(find.byType(Image), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'crafted GIF and JPEG decompression bombs are rejected as tooLarge by both MarkdownMediaImage and AttachmentImage',
+    (tester) async {
+      final fixture = WorkspaceFixture();
+      addTearDown(fixture.api.close);
+      final web = fixture.account.instance.projectWeb(fixture.project.path);
+
+      final zeroCanvasGif = _craftedGif(
+        screenW: 0,
+        screenH: 0,
+        frameW: 5000,
+        frameH: 5000,
+      );
+      final rstJpeg = _craftedJpegWithRst();
+      expect(markdownRasterDimensions(zeroCanvasGif), isNull);
+      expect(markdownRasterDimensions(rstJpeg), (16384, 16384));
+
+      final cases = <({String name, String contentType, Uint8List bytes})>[
+        (
+          name: 'gif_1x1_canvas_6000x6000_frame.gif',
+          contentType: 'image/gif',
+          bytes: _craftedGif(
+            screenW: 1,
+            screenH: 1,
+            frameW: 6000,
+            frameH: 6000,
+          ),
+        ),
+        (
+          name: 'gif_frame_offset_9000_9000.gif',
+          contentType: 'image/gif',
+          bytes: _craftedGif(
+            screenW: 1,
+            screenH: 1,
+            frameW: 1,
+            frameH: 1,
+            left: 9000,
+            top: 9000,
+          ),
+        ),
+        (
+          name: 'gif_0x0_canvas_5000x5000_frame.gif',
+          contentType: 'image/gif',
+          bytes: zeroCanvasGif,
+        ),
+        (
+          name: 'jpeg_rst_16384_sof_with_fake_1x1_com.jpg',
+          contentType: 'image/jpeg',
+          bytes: rstJpeg,
+        ),
+      ];
+
+      final byName = {for (final entry in cases) entry.name: entry};
+      final adapter = FakeAdapter((request) {
+        final name = request.uri.pathSegments.last;
+        final match = byName[name];
+        if (match != null) {
+          return ResponseBody.fromBytes(
+            match.bytes,
+            200,
+            headers: {
+              'content-type': [match.contentType],
+            },
+          );
+        }
+        return ResponseBody.fromString('', 404);
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final externalDio = Dio()..httpClientAdapter = adapter;
+      addTearDown(externalDio.close);
+
+      for (final entry in cases) {
+        // 1. MarkdownMediaImage (external / repository path)
+        await tester.pumpWidget(
+          _host(
+            MarkdownView(
+              '![ext](https://cdn.example/${entry.name})',
+              externalMediaClient: externalDio,
+            ),
+          ),
+        );
+        await settleNetworkWidgets(tester);
+        expect(
+          find.byType(Image),
+          findsNothing,
+          reason: 'MarkdownMediaImage must reject ${entry.name}',
+        );
+        expect(
+          find.textContaining(l10n.markdownMediaTooLarge),
+          findsOneWidget,
+          reason: 'MarkdownMediaImage must report tooLarge for ${entry.name}',
+        );
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+
+        // 2. AttachmentImage (project upload path)
+        await tester.pumpWidget(
+          _host(
+            MarkdownView(
+              '![up](/uploads/$_secret/${entry.name})',
+              api: api,
+              account: fixture.account,
+              projectId: fixture.project.id,
+              projectWeb: web,
+              base: web,
+            ),
+          ),
+        );
+        await settleNetworkWidgets(tester);
+        expect(
+          find.byType(Image),
+          findsNothing,
+          reason: 'AttachmentImage must reject ${entry.name}',
+        );
+        expect(
+          find.text(l10n.imageExceedsPreviewLimit2),
+          findsOneWidget,
+          reason: 'AttachmentImage must report oversize for ${entry.name}',
+        );
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+      }
+    },
+  );
+
+  testWidgets(
+    'AttachmentBudget charges first-come: a later fast small image wins the budget and an earlier slow large one shows size-limit state',
+    (tester) async {
+      final fixture = WorkspaceFixture();
+      addTearDown(fixture.api.close);
+      final web = fixture.account.instance.projectWeb(fixture.project.path);
+      final slowGate = Completer<void>();
+      addTearDown(() {
+        if (!slowGate.isCompleted) slowGate.complete();
+      });
+      final largePng = _largeGifBytes(2048);
+
+      final adapter = FakeAdapter((request) async {
+        final isSlow = request.uri.path.endsWith('/early_large.gif');
+        if (isSlow) {
+          await slowGate.future;
+          return ResponseBody.fromBytes(
+            largePng,
+            200,
+            headers: {
+              'content-type': ['image/gif'],
+            },
+          );
+        }
+        return ResponseBody.fromBytes(
+          _png,
+          200,
+          headers: {
+            'content-type': ['image/png'],
+          },
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      final budget = AttachmentBudget(maxTotalBytes: largePng.length);
+      await tester.pumpWidget(
+        _host(
+          MarkdownView(
+            '![early](/uploads/$_secret/early_large.gif)\n\n![late](/uploads/$_secret/late_small.png)',
+            api: api,
+            account: fixture.account,
+            projectId: fixture.project.id,
+            projectWeb: web,
+            base: web,
+            budget: budget,
+          ),
+        ),
+      );
+      await pumpUntil(
+        tester,
+        () => find.byType(Image).evaluate().length == 1,
+        description: 'later small image finishes first and renders',
+      );
+      expect(budget.cachedBytes(const ProjectUploadRef(secret: _secret, filename: 'late_small.png')), isNotNull);
+
+      slowGate.complete();
+      await settleNetworkWidgets(tester);
+      expect(find.byType(Image), findsOneWidget);
+      expect(find.text(l10n.exceedsSizeLimit), findsOneWidget);
+    },
+  );
+
+  test(
+    'GitLabApi rechecks _closed after onContentType throws in _send and _rawFileBytes',
+    () async {
+      for (final mode in ['projectUpload', 'rawFileBytes']) {
+        late final GitLabApi api;
+        final adapter = FakeAdapter(
+          (_) => ResponseBody.fromBytes(
+            _png,
+            200,
+            headers: {
+              'content-type': ['video/mp4'],
+            },
+          ),
+        );
+        api = testApi(adapter);
+        addTearDown(api.close);
+
+        Future<Uint8List> call() => mode == 'projectUpload'
+            ? api.projectUpload(
+                42,
+                _secret,
+                'clip',
+                onContentType: (_) {
+                  api.close();
+                  throw const MarkdownMediaNotImage('video/mp4');
+                },
+              )
+            : api.rawFileBytes(
+                '42',
+                'clip',
+                _sha,
+                onContentType: (_) {
+                  api.close();
+                  throw const MarkdownMediaNotImage('video/mp4');
+                },
+              );
+
+        await expectLater(
+          call(),
+          throwsA(
+            isA<ApiFailure>().having(
+              (failure) => failure.kind,
+              'kind',
+              FailureKind.cancelled,
+            ),
+          ),
+        );
+      }
+    },
+  );
+
+  testWidgets(
+    'content-type-detected video in demo and offlineSnapshot modes shows offline placeholder instead of media card',
+    (tester) async {
+      final fixture = WorkspaceFixture();
+      addTearDown(fixture.api.close);
+      final web = fixture.account.instance.projectWeb(fixture.project.path);
+      final adapter = FakeAdapter(
+        (_) => ResponseBody.fromBytes(
+          Uint8List(0),
+          200,
+          headers: {
+            'content-type': ['video/mp4'],
+          },
+        ),
+      );
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      for (final mode in [
+        NetworkBoundaryMode.demo,
+        NetworkBoundaryMode.offlineSnapshot,
+      ]) {
+        await tester.pumpWidget(
+          NetworkBoundary(
+            mode: mode,
+            child: _host(
+              MarkdownView(
+                '![repoClip](clip)\n\n'
+                '${mode == NetworkBoundaryMode.offlineSnapshot ? '![upClip](/uploads/$_secret/clip)' : ''}',
+                api: api,
+                account: fixture.account,
+                projectId: fixture.project.id,
+                projectWeb: web,
+                base: Uri.parse('$web/-/blob/$_sha/README.md'),
+              ),
+            ),
+          ),
+        );
+        await settleNetworkWidgets(tester);
+        expect(find.byType(MarkdownMediaCard), findsNothing);
+        expect(
+          find.byKey(const ValueKey('snapshot-media-placeholder')),
+          findsWidgets,
+        );
+        expect(
+          find.text(
+            mode == NetworkBoundaryMode.demo
+                ? l10n.demoOffline
+                : l10n.snapshotMediaOffline,
+          ),
+          findsWidgets,
+        );
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+      }
+    },
+  );
+
+  testWidgets(
+    'upload handed off to MarkdownMediaCard from <img height="24"> sizes itself without overflow',
+    (tester) async {
+      final fixture = WorkspaceFixture();
+      addTearDown(fixture.api.close);
+      final web = fixture.account.instance.projectWeb(fixture.project.path);
+      final adapter = FakeAdapter(
+        (_) => ResponseBody.fromBytes(
+          Uint8List(0),
+          200,
+          headers: {
+            'content-type': ['video/mp4'],
+          },
+        ),
+      );
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        _host(
+          MarkdownView(
+            '<img src="/uploads/$_secret/clip" width="120" height="24">',
+            api: api,
+            account: fixture.account,
+            projectId: fixture.project.id,
+            projectWeb: web,
+            base: web,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.byType(MarkdownMediaCard), findsOneWidget);
+      expect(tester.getSize(find.byType(MarkdownMediaCard)).height, greaterThan(24));
     },
   );
 }

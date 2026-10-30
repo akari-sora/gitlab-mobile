@@ -68,7 +68,16 @@ int _decodeWidth(double layoutWidth, double devicePixelRatio) {
   return raw;
 }
 
-enum _Phase { loading, ready, media, failed, capped, overBytes, oversize }
+enum _Phase {
+  loading,
+  ready,
+  media,
+  offlineMedia,
+  failed,
+  capped,
+  overBytes,
+  oversize,
+}
 
 class AttachmentImage extends StatefulWidget {
   const AttachmentImage({
@@ -79,6 +88,8 @@ class AttachmentImage extends StatefulWidget {
     required this.secret,
     required this.filename,
     this.alt,
+    this.width,
+    this.height,
     this.projectWeb,
     this.projectPath,
     this.loader,
@@ -90,6 +101,8 @@ class AttachmentImage extends StatefulWidget {
   final String secret;
   final String filename;
   final String? alt;
+  final double? width;
+  final double? height;
   final Uri? projectWeb;
   final String? projectPath;
   final MarkdownMediaLoader? loader;
@@ -192,10 +205,10 @@ class _AttachmentImageState extends State<AttachmentImage> {
       });
     } on MarkdownMediaNotImage catch (error) {
       if (!mounted || epoch != _epoch) return;
-      if (error.isMedia &&
-          NetworkBoundary.modeOf(context) != NetworkBoundaryMode.demo) {
+      if (error.isMedia) {
+        final blocked = NetworkBoundary.blocks(context);
         setState(() {
-          _phase = _Phase.media;
+          _phase = blocked ? _Phase.offlineMedia : _Phase.media;
           _mediaAudio = error.isAudio;
           _failure = null;
         });
@@ -221,9 +234,11 @@ class _AttachmentImageState extends State<AttachmentImage> {
   /// A header that cannot be read falls through to [Image.memory]'s errorBuilder.
   Future<bool> _exceedsPixelLimit(Uint8List bytes) async {
     final headerSize = markdownRasterDimensions(bytes);
-    if (headerSize != null) {
-      if (headerSize.$1 <= 0 || headerSize.$2 <= 0) return false;
-      return headerSize.$1 * headerSize.$2 > _pixelLimit;
+    if (headerSize != null &&
+        headerSize.$1 > 0 &&
+        headerSize.$2 > 0 &&
+        headerSize.$1 * headerSize.$2 > _pixelLimit) {
+      return true;
     }
     ui.ImmutableBuffer? buffer;
     ui.ImageDescriptor? descriptor;
@@ -315,6 +330,15 @@ class _AttachmentImageState extends State<AttachmentImage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_phase == _Phase.offlineMedia ||
+        (_phase == _Phase.media && NetworkBoundary.blocks(context))) {
+      return SnapshotMediaPlaceholder(
+        alt: widget.alt,
+        note: NetworkBoundary.modeOf(context) == NetworkBoundaryMode.demo
+            ? l10n.demoOffline
+            : l10n.snapshotMediaOffline,
+      );
+    }
     if (_phase == _Phase.media) {
       final web = widget.projectWeb;
       return MarkdownMediaCard(
@@ -331,6 +355,13 @@ class _AttachmentImageState extends State<AttachmentImage> {
         audio: _mediaAudio,
       );
     }
+    final child = _buildContent(context);
+    return widget.width == null && widget.height == null
+        ? child
+        : SizedBox(width: widget.width, height: widget.height, child: child);
+  }
+
+  Widget _buildContent(BuildContext context) {
     if (!_allowed || _phase == _Phase.capped) {
       return attachmentIconRow(l10n.attachmentExceedsDisplayLimit);
     }

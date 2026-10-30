@@ -368,6 +368,7 @@ final class GitLabApi {
     // Only private, fixed GraphQL queries use this read path. POST mutations
     // retain the write fences and are never retried automatically.
     final writing = method != 'GET' && method != 'HEAD' && !graphQuery;
+    assert(onContentType == null || (method == 'GET' || method == 'HEAD'));
     final affected = writing ? _cache.affected(uri, method, data, graphMutation: graphMutation) : <String>{};
     var writeStarted = false;
     var sendStarted = false;
@@ -525,7 +526,9 @@ final class GitLabApi {
             ? FailureKind.writeUncertain
             : FailureKind.invalidResponse);
       }
-      if (onContentType != null) {
+      if (!writing &&
+          (method == 'GET' || method == 'HEAD') &&
+          onContentType != null) {
         final contentType = (response.headers.value('content-type') ?? '')
             .split(';')
             .first
@@ -536,8 +539,10 @@ final class GitLabApi {
         } on Object {
           cancel.cancel('content type rejected');
           await body.stream.listen((_) {}).cancel();
+          if (_closed) throw const ApiFailure(FailureKind.cancelled);
           rethrow;
         }
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
       }
       final length = int.tryParse(
         response.headers.value('content-length') ?? '',
@@ -1092,8 +1097,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     } on Object {
       _cancelTransport(token);
       await _releaseBody(response.data);
+      if (_closed) throw const ApiFailure(FailureKind.cancelled);
       rethrow;
     }
+    if (_closed) throw const ApiFailure(FailureKind.cancelled);
     if (total != null && total > maxBytes) {
       _cancelTransport(token);
       await _releaseBody(response.data);

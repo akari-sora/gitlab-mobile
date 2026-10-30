@@ -857,7 +857,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         // offline; online they keep the ordinary behaviour below.
         if (NetworkBoundary.blocks(context) ||
             source.kind == MarkdownMediaSourceKind.repository) {
-          return _SnapshotMediaPlaceholder(
+          return SnapshotMediaPlaceholder(
             alt: alt,
             note: source.kind == MarkdownMediaSourceKind.repository
                 ? l10n.snapshotMediaNotSaved
@@ -887,7 +887,7 @@ class _MarkdownViewState extends State<MarkdownView> {
           (isMedia ||
               (source.kind != MarkdownMediaSourceKind.repository &&
                   source.kind != MarkdownMediaSourceKind.data))) {
-        return _SnapshotMediaPlaceholder(alt: alt, note: l10n.demoOffline);
+        return SnapshotMediaPlaceholder(alt: alt, note: l10n.demoOffline);
       }
         if (isMedia) {
         return MarkdownMediaCard(
@@ -921,22 +921,21 @@ class _MarkdownViewState extends State<MarkdownView> {
           client != null &&
           id != null &&
             !ref.filename.toLowerCase().endsWith('.svg')) {
-          final upload = AttachmentImage(
-            api: client,
-            budget: budget,
-            projectId: id,
-            secret: ref.secret,
-            filename: ref.filename,
-            alt: alt,
-            projectWeb: projectWeb,
-            projectPath: widget.projectPath,
-            loader: _loader,
-            account: widget.account,
-          );
-        return imageWidth == null && imageHeight == null
-            ? upload
-            : SizedBox(width: imageWidth, height: imageHeight, child: upload);
-        }
+        return AttachmentImage(
+          api: client,
+          budget: budget,
+          projectId: id,
+          secret: ref.secret,
+          filename: ref.filename,
+          alt: alt,
+          width: imageWidth,
+          height: imageHeight,
+          projectWeb: projectWeb,
+          projectPath: widget.projectPath,
+          loader: _loader,
+          account: widget.account,
+        );
+      }
       return MarkdownMediaImage(
         source: source,
         loader: _loader,
@@ -1160,7 +1159,7 @@ class _SnapshotImageState extends State<_SnapshotImage> {
   Widget build(BuildContext context) {
     final note = _note;
     if (note != null) {
-      return _SnapshotMediaPlaceholder(alt: widget.alt, note: note);
+      return SnapshotMediaPlaceholder(alt: widget.alt, note: note);
     }
     final bytes = _bytes;
     if (bytes == null) {
@@ -1170,7 +1169,7 @@ class _SnapshotImageState extends State<_SnapshotImage> {
         child: CircularProgressIndicator(semanticsLabel: l10n.attachmentLoading),
       );
     }
-    final fallback = _SnapshotMediaPlaceholder(
+    final fallback = SnapshotMediaPlaceholder(
       alt: widget.alt,
       note: l10n.snapshotDamaged,
     );
@@ -1190,57 +1189,6 @@ class _SnapshotImageState extends State<_SnapshotImage> {
               semanticLabel: widget.alt,
               errorBuilder: (_, _, _) => fallback,
             ),
-    );
-  }
-}
-
-/// Stands in for media that an offline snapshot view does not show.
-class _SnapshotMediaPlaceholder extends StatelessWidget {
-  const _SnapshotMediaPlaceholder({required this.alt, required this.note});
-
-  final String? alt;
-  final String note;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final label = (alt ?? '').trim();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Container(
-        key: const ValueKey('snapshot-media-placeholder'),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.image_not_supported_outlined,
-              size: 20,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (label.isNotEmpty)
-                    Text(isolated(label), style: theme.textTheme.bodyMedium),
-                  Text(
-                    note,
-                    style: (label.isEmpty
-                            ? theme.textTheme.bodyMedium
-                            : theme.textTheme.bodySmall)
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

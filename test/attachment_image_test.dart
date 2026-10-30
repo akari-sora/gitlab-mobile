@@ -438,4 +438,39 @@ void main() {
     expect(find.text('無法解碼圖片'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('a later small image that finishes first is charged first and an earlier large one shows the size limit', (tester) async {
+    final slowGate = Completer<void>();
+    addTearDown(() { if (!slowGate.isCompleted) slowGate.complete(); });
+    final largePng = Uint8List.fromList([..._png, ...List.filled(200, 0)]);
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    final adapter = FakeAdapter((request) async {
+      if (request.uri.path.endsWith('/early.png')) {
+        await slowGate.future;
+        return ResponseBody.fromBytes(largePng, 200, headers: {'content-type': ['image/png']});
+      }
+      return ResponseBody.fromBytes(_png, 200, headers: {'content-type': ['image/png']});
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    _surface(tester);
+    final web = fixture.account.instance.projectWeb(fixture.project.path);
+    await tester.pumpWidget(_host(MarkdownView(
+      '![early](/uploads/$_secret/early.png)\n\n![late](/uploads/$_secret/late.png)',
+      api: api, projectId: 42, projectWeb: web, base: web,
+      budget: AttachmentBudget(maxTotalBytes: largePng.length),
+    )));
+    await pumpUntil(
+      tester,
+      () => find.byType(Image).evaluate().length == 1,
+      description: 'later small image rendered first',
+    );
+    expect(find.byType(Image), findsOneWidget);
+    slowGate.complete();
+    await settleNetworkWidgets(tester);
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.text('超過大小上限'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

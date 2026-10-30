@@ -133,6 +133,7 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
   bool _svg = false;
   bool _capped = false;
   bool _mediaCard = false;
+  bool _offlineMedia = false;
   bool _mediaAudio = false;
   Object? _error;
   int _epoch = 0;
@@ -162,6 +163,7 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
       _bytes = null;
       _error = null;
       _mediaCard = false;
+      _offlineMedia = false;
       _mediaAudio = false;
       unawaited(_load());
     }
@@ -195,22 +197,22 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
       final svg = sanitised != null;
       if (!svg) {
         final headerSize = markdownRasterDimensions(bytes);
-        if (headerSize != null) {
-          if (headerSize.$1 * headerSize.$2 > 24000000) {
+        if (headerSize != null &&
+            headerSize.$1 > 0 &&
+            headerSize.$2 > 0 &&
+            headerSize.$1 * headerSize.$2 > 24000000) {
+          throw const ApiFailure(FailureKind.tooLarge);
+        }
+        final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+        ui.ImageDescriptor? descriptor;
+        try {
+          descriptor = await ui.ImageDescriptor.encoded(buffer);
+          if (descriptor.width * descriptor.height > 24000000) {
             throw const ApiFailure(FailureKind.tooLarge);
           }
-        } else {
-          final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-          ui.ImageDescriptor? descriptor;
-          try {
-            descriptor = await ui.ImageDescriptor.encoded(buffer);
-            if (descriptor.width * descriptor.height > 24000000) {
-              throw const ApiFailure(FailureKind.tooLarge);
-            }
-          } finally {
-            descriptor?.dispose();
-            buffer.dispose();
-          }
+        } finally {
+          descriptor?.dispose();
+          buffer.dispose();
         }
       }
       if (!mounted || epoch != _epoch) return;
@@ -221,10 +223,11 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
       });
     } on MarkdownMediaNotImage catch (error) {
       if (!mounted || epoch != _epoch) return;
-      if (error.isMedia &&
-          NetworkBoundary.modeOf(context) != NetworkBoundaryMode.demo) {
+      if (error.isMedia) {
+        final blocked = NetworkBoundary.blocks(context);
         setState(() {
-          _mediaCard = true;
+          _mediaCard = !blocked;
+          _offlineMedia = blocked;
           _mediaAudio = error.isAudio;
           _error = null;
         });
@@ -242,6 +245,7 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
       _bytes = null;
       _error = null;
       _mediaCard = false;
+      _offlineMedia = false;
       _mediaAudio = false;
     });
     unawaited(_load());
@@ -286,6 +290,14 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_offlineMedia || (_mediaCard && NetworkBoundary.blocks(context))) {
+      return SnapshotMediaPlaceholder(
+        alt: widget.alt,
+        note: NetworkBoundary.modeOf(context) == NetworkBoundaryMode.demo
+            ? l10n.demoOffline
+            : l10n.snapshotMediaOffline,
+      );
+    }
     if (_mediaCard) {
       return MarkdownMediaCard(
         source: widget.source,
@@ -778,4 +790,59 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
 bool _hasFileExtension(String name) {
   final dot = name.lastIndexOf('.');
   return dot > 0 && dot < name.length - 1;
+}
+
+/// Stands in for media that an offline snapshot or demo view does not show.
+class SnapshotMediaPlaceholder extends StatelessWidget {
+  const SnapshotMediaPlaceholder({
+    super.key,
+    required this.alt,
+    required this.note,
+  });
+
+  final String? alt;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = (alt ?? '').trim();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Container(
+        key: const ValueKey('snapshot-media-placeholder'),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.image_not_supported_outlined,
+              size: 20,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (label.isNotEmpty)
+                    Text(isolated(label), style: theme.textTheme.bodyMedium),
+                  Text(
+                    note,
+                    style: (label.isEmpty
+                            ? theme.textTheme.bodyMedium
+                            : theme.textTheme.bodySmall)
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

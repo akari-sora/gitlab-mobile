@@ -5,6 +5,12 @@ import 'dart:typed_data';
 ///
 /// One budget is shared by every image in a [MarkdownView]. A parent can pass
 /// the same instance into several views so the whole page shares the cap.
+///
+/// Image slots ([claimImage]) are granted in build order, whereas the byte cap
+/// ([maxTotalBytes]) is charged first-come as downloads finish so a slow
+/// image never blocks faster previews behind it; an earlier large download
+/// that finishes after smaller ones have consumed the remaining bytes is
+/// rejected with [AttachmentBudgetExceeded].
 final class AttachmentBudget {
   AttachmentBudget({
     this.maxImages = 20,

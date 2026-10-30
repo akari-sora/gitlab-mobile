@@ -181,11 +181,15 @@ void _validateEmbeddedRaster(String uri) {
 
 /// Reads raster header dimensions (PNG, GIF, JPEG, WebP) in O(1) without
 /// copying or decoding the full image buffer.
-(int, int)? markdownRasterDimensions(Uint8List data) =>
-    _pngDimensions(data) ??
-    _gifDimensions(data) ??
-    _jpegDimensions(data) ??
-    _webpDimensions(data);
+(int, int)? markdownRasterDimensions(Uint8List data) {
+  final size =
+      _pngDimensions(data) ??
+      _gifDimensions(data) ??
+      _jpegDimensions(data) ??
+      _webpDimensions(data);
+  if (size == null || size.$1 <= 0 || size.$2 <= 0) return null;
+  return size;
+}
 
 (int, int)? _rasterDimensions(Uint8List data, String mediaType) =>
     switch (mediaType) {
@@ -234,7 +238,11 @@ void _validateEmbeddedRaster(String uri) {
     }
     if (offset >= data.length) return null;
     final marker = data[offset++];
-    if (marker == 0xd8 || marker == 0xd9 || marker == 0x01) continue;
+    if (marker == 0x00 ||
+        marker == 0x01 ||
+        (marker >= 0xd0 && marker <= 0xd9)) {
+      continue;
+    }
     if (offset + 1 >= data.length) return null;
     final length = (data[offset] << 8) | data[offset + 1];
     if (length < 2 || offset + length > data.length) return null;
