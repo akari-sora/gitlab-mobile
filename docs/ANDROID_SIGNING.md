@@ -456,12 +456,29 @@ Registering it in Play Console and the first bundle upload are `NOT_RUN`.
 
 ### Build the bundle
 
+`tool/bootstrap.py` refuses an existing `android/` (`android`, `ios`,
+`.metadata`) tree, so regenerate the native templates before a Play build to
+ensure the managed `android/app/src/play/AndroidManifest.xml` is installed:
+
 ```sh
+rm -rf android ios .metadata
+python3 tool/bootstrap.py --flutter .fvm/flutter_sdk/bin/flutter
+
 GITLAB_MOBILE_SIGNING_PROPERTIES=~/.config/gitlab-mobile/play-upload/signing.properties \
   fvm flutter build appbundle --release --flavor play --build-number <versionCode>
 ```
 
 Take `<versionCode>` above every published build: Play needs it to grow.
+Before uploading, check the release AAB with `bundletool dump manifest` and
+verify that no `FOREGROUND_SERVICE*` permission or `AgentRunService` is
+present:
+
+```sh
+bundletool dump manifest --bundle=build/app/outputs/bundle/playRelease/app-play-release.aab \
+  | grep -E 'FOREGROUND_SERVICE|AgentRunService'
+```
+
+The `grep` command must produce no matches (exit status 1) before upload.
 
 ### Before the first upload
 
