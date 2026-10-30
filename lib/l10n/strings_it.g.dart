@@ -3041,7 +3041,8 @@ const _messagesIt = <String>[
   'Risposta di esempio: la modifica non è stata applicata, quindi i dati della demo restano invariati.',
   'Questo commento è un esempio scritto dall’IA nella demo.',
   'Issue di esempio creata dall’IA nella demo',
-  'commento,commenta,nota',
+  'commento,commenta,commentare,nota',
   'crea una issue,creare una issue,nuova issue,apri una issue',
   'chiudi,chiudere',
+  'Non disponibile nella demo, che resta offline',
 ];

@@ -3043,5 +3043,6 @@ const _messagesSv = <String>[
   'Exempelärende som AI skapade i demon',
   'kommentar,kommentera',
   'skapa ett ärende,skapa ärende,nytt ärende',
-  'stäng',
+  'stäng,stänga',
+  'Inte tillgängligt i demon, som är offline',
 ];

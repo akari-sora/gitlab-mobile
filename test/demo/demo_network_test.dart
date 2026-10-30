@@ -317,6 +317,40 @@ void main() {
     );
 
     test(
+      'matches whole words where words are spaced',
+      () => _offline(() async {
+        final dio = _ai(issue);
+        Future<Map<String, Object?>?> call(String text) async => _toolCall(
+          await dio.post<dynamic>(
+            _responses,
+            data: _ask(
+              text,
+              tools: ['createNote', 'createIssue', 'updateIssue'],
+            ),
+          ),
+        );
+        expect(await call('Why was this closed?'), isNull);
+        expect(await call('Summarise the release notes'), isNull);
+        expect((await call('Please close it'))?['name'], 'updateIssue');
+        expect((await call('Add a note, please'))?['name'], 'createNote');
+        // Without spaces between words a keyword is found anywhere.
+        expect((await call('幫我關閉它'))?['name'], 'updateIssue');
+      }),
+    );
+
+    test(
+      'keeps whole characters in the reason',
+      () => _offline(() async {
+        final asked = '${'a' * 199}😀 comment';
+        final reply = await _ai(
+          file,
+        ).post<dynamic>(_responses, data: _ask(asked, tools: ['createNote']));
+        final reason = _toolCall(reply)!['reason']! as String;
+        expect(reason, '${'a' * 199}😀');
+      }),
+    );
+
+    test(
       'reports whether the change ran',
       () => _offline(() async {
         Map<String, Object?> result(String output) => {

@@ -3041,7 +3041,8 @@ const _messagesEs = <String>[
   'Respuesta de ejemplo: el cambio no se hizo, así que los datos de la demo siguen igual.',
   'Este comentario es un ejemplo que escribió la IA en la demo.',
   'Incidencia de ejemplo creada por la IA en la demo',
-  'comentario,comenta,nota',
+  'comentario,comenta,comentar,nota',
   'crear una incidencia,crea una incidencia,nueva incidencia,abre una incidencia',
   'cierra,cerrar',
+  'No disponible en la demo, que funciona sin conexión',
 ];

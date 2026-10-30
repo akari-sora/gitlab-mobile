@@ -3041,5 +3041,6 @@
   "demoAiIssueTitle": "데모에서 AI가 만든 예시 이슈",
   "demoKeywordsComment": "댓글,코멘트,답글",
   "demoKeywordsIssue": "이슈 만들,이슈를 만들,새 이슈,이슈 생성",
-  "demoKeywordsClose": "닫아,닫기,닫아줘"
+  "demoKeywordsClose": "닫아,닫기,닫아줘",
+  "demoOffline": "데모는 오프라인이라 사용할 수 없습니다"
 }

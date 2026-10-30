@@ -3039,7 +3039,8 @@
   "demoAiNotDone": "Risposta di esempio: la modifica non è stata applicata, quindi i dati della demo restano invariati.",
   "demoAiNoteBody": "Questo commento è un esempio scritto dall’IA nella demo.",
   "demoAiIssueTitle": "Issue di esempio creata dall’IA nella demo",
-  "demoKeywordsComment": "commento,commenta,nota",
+  "demoKeywordsComment": "commento,commenta,commentare,nota",
   "demoKeywordsIssue": "crea una issue,creare una issue,nuova issue,apri una issue",
-  "demoKeywordsClose": "chiudi,chiudere"
+  "demoKeywordsClose": "chiudi,chiudere",
+  "demoOffline": "Non disponibile nella demo, che resta offline"
 }

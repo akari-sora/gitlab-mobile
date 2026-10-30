@@ -3039,7 +3039,8 @@
   "demoAiNotDone": "Respuesta de ejemplo: el cambio no se hizo, así que los datos de la demo siguen igual.",
   "demoAiNoteBody": "Este comentario es un ejemplo que escribió la IA en la demo.",
   "demoAiIssueTitle": "Incidencia de ejemplo creada por la IA en la demo",
-  "demoKeywordsComment": "comentario,comenta,nota",
+  "demoKeywordsComment": "comentario,comenta,comentar,nota",
   "demoKeywordsIssue": "crear una incidencia,crea una incidencia,nueva incidencia,abre una incidencia",
-  "demoKeywordsClose": "cierra,cerrar"
+  "demoKeywordsClose": "cierra,cerrar",
+  "demoOffline": "No disponible en la demo, que funciona sin conexión"
 }

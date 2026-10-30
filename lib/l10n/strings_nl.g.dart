@@ -3044,4 +3044,5 @@ const _messagesNl = <String>[
   'opmerking,reactie,commentaar',
   'issue maken,maak een issue,nieuw issue,nieuwe issue',
   'sluit,sluiten',
+  'Niet beschikbaar in de demo, die offline blijft',
 ];

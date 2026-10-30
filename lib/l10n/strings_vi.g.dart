@@ -3044,4 +3044,5 @@ const _messagesVi = <String>[
   'bình luận,nhận xét',
   'tạo vấn đề,tạo một vấn đề,vấn đề mới',
   'đóng',
+  'Không dùng được trong bản demo vì bản demo chạy ngoại tuyến',
 ];

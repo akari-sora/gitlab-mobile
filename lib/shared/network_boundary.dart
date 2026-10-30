@@ -10,6 +10,11 @@ enum NetworkBoundaryMode {
   /// An offline repository snapshot without an account API client: nothing
   /// below may open the browser, share, download or fetch media (§5.8).
   offlineSnapshot,
+
+  /// The built-in demo: its data is on the device and its addresses are on
+  /// a host that never resolves, so the same outbound actions are refused,
+  /// and Markdown loads only the demo's own repository images.
+  demo,
 }
 
 /// Declares the network boundary for its subtree. Without one the subtree is
@@ -29,14 +34,21 @@ class NetworkBoundary extends InheritedWidget {
 
   /// Whether outbound actions are refused here.
   static bool blocks(BuildContext context) =>
-      modeOf(context) == NetworkBoundaryMode.offlineSnapshot;
+      modeOf(context) != NetworkBoundaryMode.online;
 
   /// Refuses an outbound action without any side effect and tells the user.
   /// Returns true when the action must not run.
   static bool refuse(BuildContext context) {
-    if (!blocks(context)) return false;
+    final mode = modeOf(context);
+    if (mode == NetworkBoundaryMode.online) return false;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(l10n.offlineBlockedAction)),
+      SnackBar(
+        content: Text(
+          mode == NetworkBoundaryMode.demo
+              ? l10n.demoOffline
+              : l10n.offlineBlockedAction,
+        ),
+      ),
     );
     return true;
   }

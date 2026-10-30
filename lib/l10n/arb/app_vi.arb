@@ -3041,5 +3041,6 @@
   "demoAiIssueTitle": "Vấn đề mẫu do AI tạo trong bản demo",
   "demoKeywordsComment": "bình luận,nhận xét",
   "demoKeywordsIssue": "tạo vấn đề,tạo một vấn đề,vấn đề mới",
-  "demoKeywordsClose": "đóng"
+  "demoKeywordsClose": "đóng",
+  "demoOffline": "Không dùng được trong bản demo vì bản demo chạy ngoại tuyến"
 }

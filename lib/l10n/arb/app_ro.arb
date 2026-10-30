@@ -3039,7 +3039,8 @@
   "demoAiNotDone": "Răspuns de exemplu: modificarea nu a fost făcută, așa că datele demo-ului rămân la fel.",
   "demoAiNoteBody": "Acest comentariu este un exemplu scris de AI în demo.",
   "demoAiIssueTitle": "Problemă de exemplu creată de AI în demo",
-  "demoKeywordsComment": "comentariu,comentează",
+  "demoKeywordsComment": "comentariu,comentează,comenteaza",
   "demoKeywordsIssue": "creează o problemă,creeaza o problema,problemă nouă",
-  "demoKeywordsClose": "închide,inchide"
+  "demoKeywordsClose": "închide,inchide",
+  "demoOffline": "Indisponibil în demo, care rămâne offline"
 }

@@ -3041,5 +3041,6 @@
   "demoAiIssueTitle": "デモで AI が作成したサンプルのイシュー",
   "demoKeywordsComment": "コメント,返信",
   "demoKeywordsIssue": "イシューを作,新しいイシュー,イシューを立て",
-  "demoKeywordsClose": "クローズ,閉じ"
+  "demoKeywordsClose": "クローズ,閉じ",
+  "demoOffline": "デモはオフラインのため使えません"
 }

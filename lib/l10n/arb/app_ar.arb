@@ -3041,5 +3041,6 @@
   "demoAiIssueTitle": "مشكلة نموذجية أنشأها AI في العرض التوضيحي",
   "demoKeywordsComment": "تعليق,علّق,علق",
   "demoKeywordsIssue": "أنشئ مشكلة,إنشاء مشكلة,مشكلة جديدة",
-  "demoKeywordsClose": "أغلق,إغلاق"
+  "demoKeywordsClose": "أغلق,إغلاق",
+  "demoOffline": "غير متاح في العرض التوضيحي، فهو يعمل دون اتصال"
 }

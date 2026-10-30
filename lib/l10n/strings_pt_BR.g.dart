@@ -3041,7 +3041,8 @@ const _messagesPtBr = <String>[
   'Resposta de exemplo: a alteração não foi feita, então os dados da demonstração continuam iguais.',
   'Este comentário é um exemplo que a IA escreveu na demonstração.',
   'Issue de exemplo criada pela IA na demonstração',
-  'comentário,comentario,comente,nota',
+  'comentário,comentario,comente,comentar,nota',
   'criar uma issue,crie uma issue,nova issue,abra uma issue',
   'feche,fechar',
+  'Indisponível na demonstração, que funciona offline',
 ];

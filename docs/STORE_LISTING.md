@@ -66,17 +66,22 @@ access* form:
 2. The full app opens on built-in sample data, with a "Demo · sample data"
    banner on every page. Nothing is sent to any server. 我的 (Me) › **Exit
    demo** returns to the sign-in screen and forgets every change.
-3. AI assistant, in builds that include it: open Pocket Planner › Files ›
-   any file › ⋮ › **Explain this file with AI**. In the demo the AI gives
-   pre-written sample answers on the device, and its consent screen says so;
-   ask it to add a comment to see the confirmation card. With a real account
-   the AI uses the provider and API key the user sets up; the app has no AI
-   service of its own.
+3. AI assistant: open Pocket Planner › Files › any file › ⋮ › **Explain
+   this file with AI**. Agree on the consent screen, which says that in the
+   demo nothing is sent and the answers are pre-written samples on the
+   device. Tap a suggestion for a sample answer, then ask it to add a comment
+   (for example "Add a comment to #1") to see the confirmation card, approve
+   it, and find the comment on issue #1. With a real account the AI uses the
+   provider and API key the user sets up; the app has no AI service of its
+   own.
 
-The demo follows the build's AI gate (`MERGELINE_AI_ASSISTANT`). While
-`ci/build_android.sh` keeps the play flavor's AI flags off, a Play build's
-demo has no assistant and step 3 does not apply. Store screenshots are taken
-in the demo, so they show no real account.
+The Play build carries the AI assistant (the play flavor builds with
+`--ai-assistant true`; background execution stays off), so step 3 is the Play
+reviewer's path. The demo follows the build's AI gate
+(`MERGELINE_AI_ASSISTANT`): a build without the assistant shows the demo
+without it. In the demo the browser, sharing and downloads are refused, and
+Markdown loads only the demo's own repository images. Store screenshots are
+taken in the demo, so they show no real account.
 
 ## Read-cache data safety
 

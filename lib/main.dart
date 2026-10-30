@@ -612,6 +612,8 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     if (account != null) unawaited(_shortcuts.publish(account));
   }
 
+  /// Opens the demo. Whatever it built is released if it fails, and the
+  /// failure reaches the sign-in screen, which shows it.
   Future<void> _enterDemo() async {
     if (_demo != null || _enteringDemo) return;
     _enteringDemo = true;
@@ -707,7 +709,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
             ? const Scaffold(body: Center(child: CircularProgressIndicator()))
             : LoginScreen(
                 session: session,
-                onTryDemo: () => unawaited(_enterDemo()),
+                onTryDemo: _enterDemo,
               ),
         );
       });

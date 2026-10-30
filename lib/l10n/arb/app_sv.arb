@@ -3041,5 +3041,6 @@
   "demoAiIssueTitle": "Exempelärende som AI skapade i demon",
   "demoKeywordsComment": "kommentar,kommentera",
   "demoKeywordsIssue": "skapa ett ärende,skapa ärende,nytt ärende",
-  "demoKeywordsClose": "stäng"
+  "demoKeywordsClose": "stäng,stänga",
+  "demoOffline": "Inte tillgängligt i demon, som är offline"
 }

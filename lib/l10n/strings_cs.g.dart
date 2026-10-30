@@ -3041,7 +3041,8 @@ const _messagesCs = <String>[
   'Ukázková odpověď: změna nebyla provedena, data dema zůstávají beze změny.',
   'Tento komentář je ukázka, kterou v demu napsala AI.',
   'Ukázkový problém vytvořený AI v demu',
-  'komentář,okomentuj',
+  'komentář,komentáře,okomentuj',
   'vytvoř problém,vytvořit problém,nový problém',
   'zavři,zavřít,uzavři',
+  'V demu nedostupné, demo zůstává offline',
 ];

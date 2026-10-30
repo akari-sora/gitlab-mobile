@@ -3039,7 +3039,8 @@
   "demoAiNotDone": "Örnek yanıt: değişiklik yapılmadı, demo verileri aynı kaldı.",
   "demoAiNoteBody": "Bu yorum, AI’ın demoda yazdığı bir örnektir.",
   "demoAiIssueTitle": "AI’ın demoda oluşturduğu örnek sorun",
-  "demoKeywordsComment": "yorum",
+  "demoKeywordsComment": "yorum,yorumu,yorumunu,yorum yap",
   "demoKeywordsIssue": "sorun oluştur,yeni sorun,sorun aç",
-  "demoKeywordsClose": "kapat"
+  "demoKeywordsClose": "kapat,kapatın,kapatır mısın",
+  "demoOffline": "Demoda kullanılamaz, demo çevrimdışı çalışır"
 }

@@ -3041,7 +3041,8 @@ const _messagesRo = <String>[
   'Răspuns de exemplu: modificarea nu a fost făcută, așa că datele demo-ului rămân la fel.',
   'Acest comentariu este un exemplu scris de AI în demo.',
   'Problemă de exemplu creată de AI în demo',
-  'comentariu,comentează',
+  'comentariu,comentează,comenteaza',
   'creează o problemă,creeaza o problema,problemă nouă',
   'închide,inchide',
+  'Indisponibil în demo, care rămâne offline',
 ];

@@ -33,7 +33,8 @@ void main() {
         .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     final secure = recordSecureStorage();
     final previousOverrides = HttpOverrides.current;
-    HttpOverrides.global = noNetwork;
+    final network = NoNetwork();
+    HttpOverrides.global = network;
     addTearDown(() => HttpOverrides.global = previousOverrides);
     phoneView(tester);
     final runtime = (await tester.runAsync(() => DemoRuntime.start(ai: true)))!;
@@ -156,6 +157,7 @@ void main() {
     expect(find.text(l10n.demoAiNoteBody), findsOneWidget);
 
     expect(runtime.server.unhandled, isEmpty);
+    expect(network.attempts, 0, reason: 'no real HTTP client was opened');
     expect(
       secure.changes,
       isEmpty,

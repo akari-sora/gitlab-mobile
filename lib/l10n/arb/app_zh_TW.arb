@@ -13207,17 +13207,22 @@
   },
   "demoKeywordsComment": "留言,評論,回覆,意見",
   "@demoKeywordsComment": {
-    "description": "Comma-separated words that make the demo AI propose a comment (matched in lower case; never shown)",
+    "description": "Comma-separated words that make the demo AI propose a comment (matched in lower case; whole words in Latin, Cyrillic and Greek script, anywhere in the text otherwise; never shown)",
     "placeholders": {}
   },
   "demoKeywordsIssue": "建立議題,新增議題,開議題,開一個議題,開個議題",
   "@demoKeywordsIssue": {
-    "description": "Comma-separated phrases that make the demo AI propose a new issue (matched in lower case; never shown)",
+    "description": "Comma-separated phrases that make the demo AI propose a new issue (matched in lower case; whole words in Latin, Cyrillic and Greek script, anywhere in the text otherwise; never shown)",
     "placeholders": {}
   },
   "demoKeywordsClose": "關閉,關掉,結案",
   "@demoKeywordsClose": {
-    "description": "Comma-separated words that make the demo AI propose closing an issue (matched in lower case; never shown)",
+    "description": "Comma-separated words that make the demo AI propose closing an issue (matched in lower case; whole words in Latin, Cyrillic and Greek script, anywhere in the text otherwise; never shown)",
+    "placeholders": {}
+  },
+  "demoOffline": "Demo 不會連線，這裡無法使用",
+  "@demoOffline": {
+    "description": "Snack bar and media note when the demo refuses the browser, sharing, a download or outside media",
     "placeholders": {}
   }
 }

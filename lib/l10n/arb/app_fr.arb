@@ -3039,7 +3039,8 @@
   "demoAiNotDone": "Réponse d’exemple : la modification n’a pas été faite, les données de la démo restent inchangées.",
   "demoAiNoteBody": "Ce commentaire est un exemple rédigé par l’IA dans la démo.",
   "demoAiIssueTitle": "Ticket d’exemple créé par l’IA dans la démo",
-  "demoKeywordsComment": "commentaire,commente,note",
+  "demoKeywordsComment": "commentaire,commente,commenter,note",
   "demoKeywordsIssue": "créer un ticket,crée un ticket,nouveau ticket,ouvre un ticket",
-  "demoKeywordsClose": "ferme,fermer"
+  "demoKeywordsClose": "ferme,fermer",
+  "demoOffline": "Indisponible dans la démo, qui reste hors ligne"
 }

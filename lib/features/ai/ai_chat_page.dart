@@ -1069,7 +1069,9 @@ class _AiChatPageState extends State<AiChatPage> {
             _session.phase == AiChatPhase.preparing
         ? _BlockerCard(
             session: _session,
-            onOpenSettings: _openSettings,
+            onOpenSettings: DemoScope.maybeOf(context) == null
+                ? _openSettings
+                : null,
             onReviewConsent: _reviewConsent,
           )
         : paused != null
@@ -1244,7 +1246,9 @@ class _BlockerCard extends StatelessWidget {
   });
 
   final AiChatSession session;
-  final VoidCallback onOpenSettings;
+
+  /// Null hides the settings action (the demo offers no AI settings).
+  final VoidCallback? onOpenSettings;
   final VoidCallback onReviewConsent;
 
   @override

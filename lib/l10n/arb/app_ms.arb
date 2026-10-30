@@ -3041,5 +3041,6 @@
   "demoAiIssueTitle": "Isu contoh yang dicipta oleh AI dalam demo",
   "demoKeywordsComment": "komen,ulasan",
   "demoKeywordsIssue": "cipta isu,buat isu,isu baharu",
-  "demoKeywordsClose": "tutup"
+  "demoKeywordsClose": "tutup",
+  "demoOffline": "Tidak tersedia dalam demo, yang kekal di luar talian"
 }

@@ -3041,5 +3041,6 @@
   "demoAiIssueTitle": "Voorbeeldissue, door de AI in de demo gemaakt",
   "demoKeywordsComment": "opmerking,reactie,commentaar",
   "demoKeywordsIssue": "issue maken,maak een issue,nieuw issue,nieuwe issue",
-  "demoKeywordsClose": "sluit,sluiten"
+  "demoKeywordsClose": "sluit,sluiten",
+  "demoOffline": "Niet beschikbaar in de demo, die offline blijft"
 }

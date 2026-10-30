@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/widgets.dart' show StringCharacters;
 
 import '../../core/ai/ai_endpoint.dart';
 import '../../core/ai/ai_provider.dart';
@@ -202,10 +203,10 @@ final class DemoAiAdapter implements HttpClientAdapter {
     bool mentions(String Function(AppStrings) words) =>
         {...words(l10n).split(','), ...words(english).split(',')}
             .map((word) => word.trim().toLowerCase())
-            .any((word) => word.isNotEmpty && text.contains(word));
+            .any((word) => word.isNotEmpty && _mentions(text, word));
     final project = projectForAiChatOrigin(origin);
     if (project == null) return null;
-    final reason = asked.length > 200 ? asked.substring(0, 200) : asked;
+    final reason = asked.characters.take(200).toString();
     if (mentions((s) => s.demoKeywordsComment)) {
       final target = _commentTarget(project);
       if (target == null || !tools.contains('createNote')) return null;
@@ -244,6 +245,24 @@ final class DemoAiAdapter implements HttpClientAdapter {
     }
     return null;
   }
+
+  /// Scripts that separate words with spaces and inflect them (Latin,
+  /// Cyrillic, Greek) match whole words, so "close" is not found in
+  /// "closed"; the catalogs list the forms they need. Elsewhere (Chinese,
+  /// Japanese, Korean particles, Thai, Arabic, Devanagari) a keyword is
+  /// found anywhere in the text.
+  static bool _mentions(String text, String word) {
+    if (!_spacedScript.hasMatch(word)) return text.contains(word);
+    return RegExp(
+      '(?<![\\p{L}\\p{M}\\p{N}])${RegExp.escape(word)}(?![\\p{L}\\p{M}\\p{N}])',
+      unicode: true,
+    ).hasMatch(text);
+  }
+
+  static final _spacedScript = RegExp(
+    r"^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{M}\s'’-]+$",
+    unicode: true,
+  );
 
   /// The issue or merge request a comment goes to: the page's own, else the
   /// sample project's open bug.

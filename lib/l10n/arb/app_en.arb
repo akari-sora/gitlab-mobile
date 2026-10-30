@@ -3045,7 +3045,8 @@
   "demoAiNotDone": "Sample answer: the change was not made, so the demo data stays as it was.",
   "demoAiNoteBody": "This comment is a sample the AI wrote in the demo.",
   "demoAiIssueTitle": "Sample issue created by the AI in the demo",
-  "demoKeywordsComment": "comment,note,reply",
+  "demoKeywordsComment": "comment,comments,note,reply",
   "demoKeywordsIssue": "create an issue,create issue,new issue,open an issue,file an issue",
-  "demoKeywordsClose": "close"
+  "demoKeywordsClose": "close",
+  "demoOffline": "Not available in the demo, which stays offline"
 }

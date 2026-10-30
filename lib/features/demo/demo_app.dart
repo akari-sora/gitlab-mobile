@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../shared/network_boundary.dart';
 import '../security/app_lock.dart';
 import '../shell/authenticated_app.dart';
 import '../shell/build_info.dart';
@@ -12,8 +13,9 @@ import 'demo_scope.dart';
 
 /// The signed-in shell over [runtime], the way an account would see it, with
 /// a "Demo" banner on every page. It has no update check, incoming links or
-/// AI notifications, and nothing in it reaches the device's account list or
-/// settings. [onExit] returns to the sign-in screen; the caller then disposes
+/// AI notifications, nothing in it reaches the device's account list or
+/// settings, and its [NetworkBoundary] refuses the browser, sharing,
+/// downloads and Markdown media from anywhere but the demo's repositories. [onExit] returns to the sign-in screen; the caller then disposes
 /// [runtime].
 class DemoApp extends StatefulWidget {
   const DemoApp({
@@ -81,17 +83,20 @@ class _DemoAppState extends State<DemoApp> {
       container: runtime.container,
       child: DemoScope(
         exit: _exit,
-        child: AuthenticatedApp(
-          session: session,
-          appearance: runtime.appearance,
-          shortcuts: runtime.shortcuts,
-          language: widget.language,
-          lock: widget.lock,
-          buildInfoLoader: widget.buildInfoLoader,
-          ai: runtime.ai,
-          aiSessionFactory: runtime.aiSessionFactory,
-          offlineCoordinator: runtime.offline,
-          writeJournal: runtime.journal,
+        child: NetworkBoundary(
+          mode: NetworkBoundaryMode.demo,
+          child: AuthenticatedApp(
+            session: session,
+            appearance: runtime.appearance,
+            shortcuts: runtime.shortcuts,
+            language: widget.language,
+            lock: widget.lock,
+            buildInfoLoader: widget.buildInfoLoader,
+            ai: runtime.ai,
+            aiSessionFactory: runtime.aiSessionFactory,
+            offlineCoordinator: runtime.offline,
+            writeJournal: runtime.journal,
+          ),
         ),
       ),
     );

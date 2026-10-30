@@ -560,6 +560,8 @@ class _MarkdownViewState extends State<MarkdownView> {
       projectId: projectId,
       projectWeb: widget.projectWeb,
     );
+    // A download goes to the device's storage; the demo keeps none.
+    if (uploadRef != null && NetworkBoundary.refuse(context)) return;
     if (uploadRef != null && api != null && projectId != null) {
       Account? activeAccount = widget.account;
       if (activeAccount == null) {
@@ -878,6 +880,15 @@ class _MarkdownViewState extends State<MarkdownView> {
             'ogg',
             'wav',
           }.contains(extension);
+      // The demo stays on the device: only its own repository images load.
+      // Uploads, external media, and audio and video (which would be staged
+      // on disk) show a note instead.
+      if (NetworkBoundary.modeOf(context) == NetworkBoundaryMode.demo &&
+          (isMedia ||
+              (source.kind != MarkdownMediaSourceKind.repository &&
+                  source.kind != MarkdownMediaSourceKind.data))) {
+        return _SnapshotMediaPlaceholder(alt: alt, note: l10n.demoOffline);
+      }
         if (isMedia) {
         return MarkdownMediaCard(
           source: source,

@@ -9219,4 +9219,7 @@ final class AppStrings {
 
   /// 關閉,關掉,結案
   String get demoKeywordsClose => language._messages[3041];
+
+  /// Demo 不會連線，這裡無法使用
+  String get demoOffline => language._messages[3042];
 }

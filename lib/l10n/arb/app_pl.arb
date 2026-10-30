@@ -3039,7 +3039,8 @@
   "demoAiNotDone": "Przykładowa odpowiedź: zmiana nie została wprowadzona, więc dane demo się nie zmieniły.",
   "demoAiNoteBody": "Ten komentarz to przykład napisany przez AI w demo.",
   "demoAiIssueTitle": "Przykładowe zgłoszenie utworzone przez AI w demo",
-  "demoKeywordsComment": "komentarz,skomentuj",
+  "demoKeywordsComment": "komentarz,komentarza,skomentuj",
   "demoKeywordsIssue": "utwórz zgłoszenie,nowe zgłoszenie,załóż zgłoszenie",
-  "demoKeywordsClose": "zamknij,zamknąć"
+  "demoKeywordsClose": "zamknij,zamknąć,zamknijcie",
+  "demoOffline": "Niedostępne w demo, które działa offline"
 }

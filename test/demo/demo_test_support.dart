@@ -48,13 +48,18 @@ RecordingSecureValues recordSecureStorage() {
 Future<BuildInfo> testBuildInfo() async =>
     const BuildInfo(version: '0.0.0', buildNumber: '1', commit: 'test');
 
-/// Any `HttpClient` the code under test opens fails the test.
-HttpOverrides get noNetwork => _NoNetwork();
+/// Any `HttpClient` the code under test opens is counted and refused, so a
+/// caller that swallows the error still shows up in [NoNetwork.attempts].
+HttpOverrides get noNetwork => NoNetwork();
 
-final class _NoNetwork extends HttpOverrides {
+final class NoNetwork extends HttpOverrides {
+  int attempts = 0;
+
   @override
-  HttpClient createHttpClient(SecurityContext? context) =>
-      throw StateError('The demo opened a real HTTP connection');
+  HttpClient createHttpClient(SecurityContext? context) {
+    attempts++;
+    throw StateError('The demo opened a real HTTP connection');
+  }
 }
 
 void phoneView(WidgetTester tester) {

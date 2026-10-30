@@ -3044,4 +3044,5 @@ const _messagesId = <String>[
   'komentar,komentari',
   'buat isu,buatkan isu,isu baru',
   'tutup',
+  'Tidak tersedia di demo, yang tetap offline',
 ];

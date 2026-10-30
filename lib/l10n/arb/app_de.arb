@@ -3039,7 +3039,8 @@
   "demoAiNotDone": "Beispielantwort: Die Änderung wurde nicht ausgeführt, die Demodaten bleiben unverändert.",
   "demoAiNoteBody": "Dieser Kommentar ist ein Beispiel, das die KI in der Demo geschrieben hat.",
   "demoAiIssueTitle": "Beispiel-Issue, von der KI in der Demo erstellt",
-  "demoKeywordsComment": "kommentar,kommentiere,notiz",
+  "demoKeywordsComment": "kommentar,kommentare,kommentiere,kommentieren,notiz",
   "demoKeywordsIssue": "issue erstellen,erstelle ein issue,neues issue,issue anlegen",
-  "demoKeywordsClose": "schließ,schliess"
+  "demoKeywordsClose": "schließe,schließen,schließ,schliesse,schliessen",
+  "demoOffline": "In der Demo nicht verfügbar, sie bleibt offline"
 }

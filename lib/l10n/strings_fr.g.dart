@@ -3041,7 +3041,8 @@ const _messagesFr = <String>[
   'Réponse d’exemple : la modification n’a pas été faite, les données de la démo restent inchangées.',
   'Ce commentaire est un exemple rédigé par l’IA dans la démo.',
   'Ticket d’exemple créé par l’IA dans la démo',
-  'commentaire,commente,note',
+  'commentaire,commente,commenter,note',
   'créer un ticket,crée un ticket,nouveau ticket,ouvre un ticket',
   'ferme,fermer',
+  'Indisponible dans la démo, qui reste hors ligne',
 ];

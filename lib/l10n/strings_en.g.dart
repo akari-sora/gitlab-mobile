@@ -3041,7 +3041,8 @@ const _messagesEn = <String>[
   'Sample answer: the change was not made, so the demo data stays as it was.',
   'This comment is a sample the AI wrote in the demo.',
   'Sample issue created by the AI in the demo',
-  'comment,note,reply',
+  'comment,comments,note,reply',
   'create an issue,create issue,new issue,open an issue,file an issue',
   'close',
+  'Not available in the demo, which stays offline',
 ];

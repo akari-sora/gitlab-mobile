@@ -3041,7 +3041,8 @@ const _messagesTr = <String>[
   'Örnek yanıt: değişiklik yapılmadı, demo verileri aynı kaldı.',
   'Bu yorum, AI’ın demoda yazdığı bir örnektir.',
   'AI’ın demoda oluşturduğu örnek sorun',
-  'yorum',
+  'yorum,yorumu,yorumunu,yorum yap',
   'sorun oluştur,yeni sorun,sorun aç',
-  'kapat',
+  'kapat,kapatın,kapatır mısın',
+  'Demoda kullanılamaz, demo çevrimdışı çalışır',
 ];

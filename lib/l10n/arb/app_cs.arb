@@ -3039,7 +3039,8 @@
   "demoAiNotDone": "Ukázková odpověď: změna nebyla provedena, data dema zůstávají beze změny.",
   "demoAiNoteBody": "Tento komentář je ukázka, kterou v demu napsala AI.",
   "demoAiIssueTitle": "Ukázkový problém vytvořený AI v demu",
-  "demoKeywordsComment": "komentář,okomentuj",
+  "demoKeywordsComment": "komentář,komentáře,okomentuj",
   "demoKeywordsIssue": "vytvoř problém,vytvořit problém,nový problém",
-  "demoKeywordsClose": "zavři,zavřít,uzavři"
+  "demoKeywordsClose": "zavři,zavřít,uzavři",
+  "demoOffline": "V demu nedostupné, demo zůstává offline"
 }

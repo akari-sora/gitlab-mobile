@@ -3041,7 +3041,8 @@ const _messagesDe = <String>[
   'Beispielantwort: Die Änderung wurde nicht ausgeführt, die Demodaten bleiben unverändert.',
   'Dieser Kommentar ist ein Beispiel, das die KI in der Demo geschrieben hat.',
   'Beispiel-Issue, von der KI in der Demo erstellt',
-  'kommentar,kommentiere,notiz',
+  'kommentar,kommentare,kommentiere,kommentieren,notiz',
   'issue erstellen,erstelle ein issue,neues issue,issue anlegen',
-  'schließ,schliess',
+  'schließe,schließen,schließ,schliesse,schliessen',
+  'In der Demo nicht verfügbar, sie bleibt offline',
 ];

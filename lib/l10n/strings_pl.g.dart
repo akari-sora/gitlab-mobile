@@ -3041,7 +3041,8 @@ const _messagesPl = <String>[
   'Przykładowa odpowiedź: zmiana nie została wprowadzona, więc dane demo się nie zmieniły.',
   'Ten komentarz to przykład napisany przez AI w demo.',
   'Przykładowe zgłoszenie utworzone przez AI w demo',
-  'komentarz,skomentuj',
+  'komentarz,komentarza,skomentuj',
   'utwórz zgłoszenie,nowe zgłoszenie,załóż zgłoszenie',
-  'zamknij,zamknąć',
+  'zamknij,zamknąć,zamknijcie',
+  'Niedostępne w demo, które działa offline',
 ];
