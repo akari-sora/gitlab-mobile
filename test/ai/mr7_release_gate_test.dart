@@ -18,6 +18,7 @@ import '../support/fake_adapter.dart';
 import 'fx_coord_support.dart';
 import 'mr6b3_support.dart';
 import 'mr7_release_gate_support.dart';
+import 'p10_support.dart';
 import 'p6_support.dart';
 import 'release_policy_support.dart';
 
@@ -892,7 +893,7 @@ void main() {
       final coords = operation == 'updateWorkItemDates'
           ? <String, Object?>{'projectId': 9, 'iid': 3}
           : <String, Object?>{'groupId': 7, 'iid': 5};
-      final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
+      final h = await CoordHarness.create(maxGitLabRequests: row.httpCap * 2);
       addTearDown(h.dispose);
       final probe = Mr7WriteProbe();
       final c = h.newCoordinator(
@@ -932,9 +933,198 @@ void main() {
       expect(await c.propose(emptyDates), isNull);
       expect(probe.requests.single.arguments['startDate'], '');
       expect(probe.requests.single.arguments['dueDate'], '');
+
+      c.beginTurn();
+      final inherited = AiToolCall(
+        id: 'dates-inherited-$operation',
+        name: operation,
+        arguments: {
+          ...coords,
+          'mode': 'inherited',
+          'startDate': '',
+          'clearStart': null,
+          'reason': 'Requested synthetic action.',
+        },
+      );
+      expect(await c.propose(inherited), isNull);
+      expect(probe.requests.last.arguments['mode'], 'inherited');
+      expect(probe.requests.last.arguments, isNot(contains('startDate')));
+      expect(probe.requests.last.arguments, isNot(contains('clearStart')));
       c.stop('done');
     }
   });
+
+  for (final item in <({
+    String label,
+    String operation,
+    Map<String, Object?> arguments,
+  })>[
+    (
+      label: 'updateIssue multi-placeholder',
+      operation: 'updateIssue',
+      arguments: {
+        'projectId': 9,
+        'iid': 3,
+        'fields': {
+          'description': '',
+          'labels': '',
+          'assignee_ids': <int>[],
+          'milestone_id': 0,
+        },
+      },
+    ),
+    (
+      label: 'updateMilestone multi-placeholder',
+      operation: 'updateMilestone',
+      arguments: {
+        'projectId': 9,
+        'milestoneId': 8,
+        'fields': {
+          'description': '',
+          'due_date': '',
+          'start_date': '',
+        },
+      },
+    ),
+    (
+      label: 'updateRelease multi-placeholder',
+      operation: 'updateRelease',
+      arguments: {
+        'projectId': 9,
+        'tag_name': 'v1',
+        'fields': {
+          'name': '',
+          'description': '',
+        },
+      },
+    ),
+    (
+      label: 'updateLabel multi-placeholder',
+      operation: 'updateLabel',
+      arguments: {
+        'projectId': 9,
+        'labelId': 8,
+        'fields': {
+          'name': '',
+          'color': '',
+          'description': '',
+        },
+      },
+    ),
+  ]) {
+    test(
+      '${item.label} keeps stripped empty fields and is rejected by port',
+      () async {
+        final row = productionAiLedger.find(item.operation)!;
+        final h = await CoordHarness.create(maxGitLabRequests: row.httpCap * 2);
+        addTearDown(h.dispose);
+        final probe = Mr7WriteProbe();
+        final c = h.newCoordinator(
+          scope: mr7WriteScope(row),
+          portFactory: () => probe,
+        );
+        c.beginRun('Requested synthetic action.');
+        c.beginTurn();
+        final call = AiToolCall(
+          id: 'multi-placeholder-${item.operation}',
+          name: item.operation,
+          arguments: {
+            ...item.arguments,
+            'reason': 'Requested synthetic action.',
+          },
+        );
+        expect(await c.propose(call), isNull);
+        expect(probe.requests.single.arguments['fields'], isEmpty);
+        c.stop('done');
+
+        final real = h.newCoordinator(scope: mr7WriteScope(row));
+        real.beginRun('Requested synthetic action.');
+        real.beginTurn();
+        expect(await real.propose(call), isNull);
+        expect(real.recordedOutcomeFor(call.id)?.reasonCode, 'validation');
+        expect(h.mutations, 0);
+        real.stop('done');
+      },
+    );
+  }
+
+  test(
+    'updateSnippetFiles strips placeholder content on update and move',
+    () async {
+      final row = productionAiLedger.find('updateSnippetFiles')!;
+      for (final item in <({
+        String label,
+        Map<String, Object?> rawAction,
+        Map<String, Object?> expectedAction,
+      })>[
+        (
+          label: 'update',
+          rawAction: {
+            'action': 'update',
+            'file_path': 'a.txt',
+            'content': '',
+            'previous_path': '',
+            'edits': <Object?>[
+              {'old': 'alpha', 'new': 'beta'},
+            ],
+          },
+          expectedAction: {
+            'action': 'update',
+            'file_path': 'a.txt',
+            'edits': [
+              {'old': 'alpha', 'new': 'beta'},
+            ],
+          },
+        ),
+        (
+          label: 'move',
+          rawAction: {
+            'action': 'move',
+            'file_path': 'b.txt',
+            'previous_path': 'a.txt',
+            'content': '',
+            'edits': <Object?>[],
+          },
+          expectedAction: {
+            'action': 'move',
+            'file_path': 'b.txt',
+            'previous_path': 'a.txt',
+          },
+        ),
+      ]) {
+        final h = await CoordHarness.create(maxGitLabRequests: row.httpCap);
+        addTearDown(h.dispose);
+        final probe = Mr7WriteProbe();
+        final c = h.newCoordinator(
+          scope: mr7WriteScope(row),
+          portFactory: () => probe,
+        );
+        c.beginRun('Requested synthetic action.');
+        c.beginTurn();
+        final call = AiToolCall(
+          id: 'snippet-${item.label}',
+          name: 'updateSnippetFiles',
+          arguments: {
+            'projectId': 9,
+            'snippetId': 12,
+            'actions': <Object?>[item.rawAction],
+            'reason': 'Requested synthetic action.',
+          },
+        );
+        expect(await c.propose(call), isNull);
+        final forwarded = probe.requests.single.arguments;
+        expect(forwarded['actions'], [item.expectedAction]);
+        c.stop('done');
+
+        final server = P10Server();
+        addTearDown(server.api.close);
+        final prepared = await server.writePort.prepare(
+          p10Request('updateSnippetFiles', forwarded),
+        );
+        expect(prepared.request.operationId, 'updateSnippetFiles');
+      }
+    },
+  );
 
   test(
     'internal batch has executable arguments but remains model-hidden',

@@ -3695,8 +3695,18 @@ Map<String, Object?> _withoutPlaceholderFields(
   Map<String, AiArgSpec> specs,
 ) {
   if (!_placeholderFieldOperations.contains(operationId)) return args;
-  final stripped = _stripPlaceholders(args, specs);
-  return _wouldChangeAnything(operationId, stripped) ? stripped : args;
+  var removed = 0;
+  final stripped = _stripPlaceholders(
+    args,
+    specs,
+    onRemove: () => removed++,
+  );
+  if (_wouldChangeAnything(operationId, stripped)) return stripped;
+  return removed == 1 ||
+          operationId == 'updateWorkItemDates' ||
+          operationId == 'updateGroupWorkItemDates'
+      ? args
+      : stripped;
 }
 
 bool _wouldChangeAnything(String operationId, Map<String, Object?> args) =>
@@ -3714,7 +3724,8 @@ bool _wouldChangeAnything(String operationId, Map<String, Object?> args) =>
       'editProject' =>
         args.containsKey('name') || args.containsKey('description'),
       'updateWorkItemDates' || 'updateGroupWorkItemDates' =>
-        args.containsKey('startDate') ||
+        args['mode'] == 'inherited' ||
+            args.containsKey('startDate') ||
             args.containsKey('dueDate') ||
             args['clearStart'] == true ||
             args['clearDue'] == true,
@@ -3727,8 +3738,9 @@ bool _wouldChangeAnything(String operationId, Map<String, Object?> args) =>
 
 Map<String, Object?> _stripPlaceholders(
   Map<String, Object?> values,
-  Map<String, AiArgSpec> specs,
-) {
+  Map<String, AiArgSpec> specs, {
+  void Function()? onRemove,
+}) {
   final out = <String, Object?>{};
   for (final entry in values.entries) {
     final key = entry.key;
@@ -3739,13 +3751,18 @@ Map<String, Object?> _stripPlaceholders(
       continue;
     }
     if (key != 'reason' &&
-        key != 'content' &&
+        !(key == 'content' && values['action'] == 'create') &&
         !spec.required &&
         _isPlaceholderValue(key, value)) {
+      onRemove?.call();
       continue;
     }
     if (spec.type == AiArgType.object && value is Map<String, Object?>) {
-      final nested = _stripPlaceholders(value, _nestedProperties(spec));
+      final nested = _stripPlaceholders(
+        value,
+        _nestedProperties(spec),
+        onRemove: onRemove,
+      );
       if (!spec.required &&
           (nested.isEmpty ||
               (key == 'position' &&
@@ -3764,7 +3781,7 @@ Map<String, Object?> _stripPlaceholders(
       out[key] = <Object?>[
         for (final item in value)
           if (item is Map<String, Object?>)
-            _stripPlaceholders(item, nested)
+            _stripPlaceholders(item, nested, onRemove: onRemove)
           else
             item,
       ];
