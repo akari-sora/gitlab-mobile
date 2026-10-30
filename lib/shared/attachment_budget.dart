@@ -26,10 +26,7 @@ final class AttachmentBudget {
   final Set<Object> _slots = {};
   int _usedBytes = 0;
   int _inFlight = 0;
-  int _turn = 0;
-  int _accountedTurn = 0;
   final List<Completer<void>> _waiters = [];
-  final Map<int, Completer<void>> _turns = {};
 
   /// False once this page already previews [maxImages] distinct uploads.
   /// A reference that already holds a slot keeps it, so a preview that is
@@ -60,42 +57,20 @@ final class AttachmentBudget {
   }
 
   Future<Uint8List> _load(Object ref, Future<Uint8List> Function() load) async {
-    final turn = _turn++;
     await _enter();
     try {
-      if (turn == _accountedTurn && _usedBytes >= maxTotalBytes) {
-        _finishTurn(turn);
+      if (_usedBytes >= maxTotalBytes) {
         throw const AttachmentBudgetExceeded();
       }
-      Object? error;
-      StackTrace? stack;
-      Uint8List? bytes;
-      try {
-        bytes = await load();
-      } catch (caught, caughtStack) {
-        error = caught;
-        stack = caughtStack;
+      final data = await load();
+      // A payload that does not fit is dropped and not charged, so later
+      // images that still fit are not refused for bytes nobody holds.
+      if (_usedBytes + data.length > maxTotalBytes) {
+        throw const AttachmentBudgetExceeded();
       }
-      await _waitTurn(turn);
-      try {
-        if (error != null) {
-          Error.throwWithStackTrace(error, stack ?? StackTrace.empty);
-        }
-        final data = bytes;
-        if (data == null) {
-          throw StateError('upload produced no bytes');
-        }
-        // A payload that does not fit is dropped and not charged, so later
-        // images that still fit are not refused for bytes nobody holds.
-        if (_usedBytes + data.length > maxTotalBytes) {
-          throw const AttachmentBudgetExceeded();
-        }
-        _usedBytes += data.length;
-        _bytes[ref] = data;
-        return data;
-      } finally {
-        _finishTurn(turn);
-      }
+      _usedBytes += data.length;
+      _bytes[ref] = data;
+      return data;
     } finally {
       _leave();
     }
@@ -118,19 +93,6 @@ final class AttachmentBudget {
       return;
     }
     _inFlight--;
-  }
-
-  Future<void> _waitTurn(int turn) {
-    if (turn <= _accountedTurn) return Future<void>.value();
-    final gate = _turns.putIfAbsent(turn, Completer<void>.new);
-    return gate.future;
-  }
-
-  void _finishTurn(int turn) {
-    if (turn != _accountedTurn) return;
-    _accountedTurn++;
-    final next = _turns.remove(_accountedTurn);
-    if (next != null && !next.isCompleted) next.complete();
   }
 }
 

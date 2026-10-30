@@ -930,6 +930,8 @@ class _MarkdownViewState extends State<MarkdownView> {
             alt: alt,
             projectWeb: projectWeb,
             projectPath: widget.projectPath,
+            loader: _loader,
+            account: widget.account,
           );
         return imageWidth == null && imageHeight == null
             ? upload

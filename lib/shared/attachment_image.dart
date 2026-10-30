@@ -14,6 +14,10 @@ import 'artifact_storage.dart';
 import 'attachment_budget.dart';
 import 'attachment_ref.dart';
 import 'external_link.dart';
+import 'markdown_media.dart';
+import 'markdown_media_source.dart';
+import 'markdown_media_svg.dart';
+import 'network_boundary.dart';
 import 'workspace_ui.dart';
 
 import '../l10n/l10n.dart';
@@ -64,7 +68,7 @@ int _decodeWidth(double layoutWidth, double devicePixelRatio) {
   return raw;
 }
 
-enum _Phase { loading, ready, failed, capped, overBytes, oversize }
+enum _Phase { loading, ready, media, failed, capped, overBytes, oversize }
 
 class AttachmentImage extends StatefulWidget {
   const AttachmentImage({
@@ -77,6 +81,8 @@ class AttachmentImage extends StatefulWidget {
     this.alt,
     this.projectWeb,
     this.projectPath,
+    this.loader,
+    this.account,
   });
   final GitLabApi api;
   final AttachmentBudget budget;
@@ -86,6 +92,8 @@ class AttachmentImage extends StatefulWidget {
   final String? alt;
   final Uri? projectWeb;
   final String? projectPath;
+  final MarkdownMediaLoader? loader;
+  final Account? account;
   @override
   State<AttachmentImage> createState() => _AttachmentImageState();
 }
@@ -94,6 +102,8 @@ class _AttachmentImageState extends State<AttachmentImage> {
   _Phase _phase = _Phase.loading;
   ApiFailure? _failure;
   bool _allowed = false;
+  bool _mediaAudio = false;
+  MarkdownMediaLoader? _ownedLoader;
   int _epoch = 0;
 
   ProjectUploadRef get _ref => ProjectUploadRef(secret: widget.secret, filename: widget.filename);
@@ -121,6 +131,10 @@ class _AttachmentImageState extends State<AttachmentImage> {
   @override
   void didUpdateWidget(AttachmentImage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.api != widget.api || widget.loader != null) {
+      _ownedLoader?.close();
+      _ownedLoader = null;
+    }
     if (oldWidget.api == widget.api &&
         oldWidget.projectId == widget.projectId &&
         oldWidget.secret == widget.secret &&
@@ -130,6 +144,7 @@ class _AttachmentImageState extends State<AttachmentImage> {
     }
     _allowed = widget.budget.claimImage(ProjectUploadRef(secret: widget.secret, filename: widget.filename));
     _failure = null;
+    _mediaAudio = false;
     if (!_allowed) {
       _epoch++;
       setState(() => _phase = _Phase.capped);
@@ -142,6 +157,8 @@ class _AttachmentImageState extends State<AttachmentImage> {
   @override
   void dispose() {
     _epoch++;
+    _ownedLoader?.close();
+    _ownedLoader = null;
     super.dispose();
   }
 
@@ -152,7 +169,17 @@ class _AttachmentImageState extends State<AttachmentImage> {
     try {
       final oversize = await _exceedsPixelLimit(await widget.budget.fetch(
         ref,
-        () => widget.api.projectUpload(widget.projectId, widget.secret, widget.filename),
+        () => widget.api.projectUpload(
+          widget.projectId,
+          widget.secret,
+          widget.filename,
+          onContentType: (contentType) {
+            if (contentType.startsWith('video/') ||
+                contentType.startsWith('audio/')) {
+              throw MarkdownMediaNotImage(contentType);
+            }
+          },
+        ),
       ));
       if (!mounted || epoch != _epoch) return;
       if (oversize) {
@@ -162,6 +189,21 @@ class _AttachmentImageState extends State<AttachmentImage> {
       setState(() {
         _phase = _Phase.ready;
         _failure = null;
+      });
+    } on MarkdownMediaNotImage catch (error) {
+      if (!mounted || epoch != _epoch) return;
+      if (error.isMedia &&
+          NetworkBoundary.modeOf(context) != NetworkBoundaryMode.demo) {
+        setState(() {
+          _phase = _Phase.media;
+          _mediaAudio = error.isAudio;
+          _failure = null;
+        });
+        return;
+      }
+      setState(() {
+        _phase = _Phase.failed;
+        _failure = _decodeFailure;
       });
     } on AttachmentBudgetExceeded {
       if (!mounted || epoch != _epoch) return;
@@ -178,6 +220,11 @@ class _AttachmentImageState extends State<AttachmentImage> {
   /// True only when the header is readable and wider than the preview cap.
   /// A header that cannot be read falls through to [Image.memory]'s errorBuilder.
   Future<bool> _exceedsPixelLimit(Uint8List bytes) async {
+    final headerSize = markdownRasterDimensions(bytes);
+    if (headerSize != null) {
+      if (headerSize.$1 <= 0 || headerSize.$2 <= 0) return false;
+      return headerSize.$1 * headerSize.$2 > _pixelLimit;
+    }
     ui.ImmutableBuffer? buffer;
     ui.ImageDescriptor? descriptor;
     try {
@@ -200,6 +247,7 @@ class _AttachmentImageState extends State<AttachmentImage> {
     setState(() {
       _phase = _Phase.loading;
       _failure = null;
+      _mediaAudio = false;
     });
     unawaited(_fetch());
   }
@@ -267,6 +315,22 @@ class _AttachmentImageState extends State<AttachmentImage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_phase == _Phase.media) {
+      final web = widget.projectWeb;
+      return MarkdownMediaCard(
+        source: MarkdownMediaSource(
+          kind: MarkdownMediaSourceKind.upload,
+          project: '${widget.projectId}',
+          path: '${widget.secret}/${widget.filename}',
+          uri: web == null ? null : projectUploadWeb(web, _ref),
+          filename: widget.filename,
+        ),
+        loader: widget.loader ??
+            (_ownedLoader ??= MarkdownMediaLoader(api: widget.api)),
+        account: widget.account,
+        audio: _mediaAudio,
+      );
+    }
     if (!_allowed || _phase == _Phase.capped) {
       return attachmentIconRow(l10n.attachmentExceedsDisplayLimit);
     }
