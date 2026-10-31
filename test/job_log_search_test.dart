@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/job_trace.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 
+import 'support/fake_adapter.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show settleWorkspace, workspaceHost;
 
@@ -340,7 +343,104 @@ void main() {
 
       expect(find.textContaining('Hidden warning in step'), findsOneWidget);
     });
+
+    testWidgets('search results and section filtering on streamed chunks match whole-fixture baseline using prebuilt lowerText', (tester) async {
+      final baseline = JobTrace.parse(_SearchFixture.trace);
+      final streamedParser = JobTraceParser();
+      final rawBytes = utf8.encode(_SearchFixture.trace);
+      for (var i = 0; i < rawBytes.length; i += 19) {
+        final end = (i + 19 < rawBytes.length) ? i + 19 : rawBytes.length;
+        streamedParser.addBytes(rawBytes.sublist(i, end));
+      }
+      final streamed = streamedParser.finish();
+
+      expect(streamed.lines.length, baseline.lines.length);
+      for (var i = 0; i < baseline.lines.length; i++) {
+        expect(streamed.lines[i].lowerText, baseline.lines[i].text.toLowerCase());
+        expect(streamed.lines[i].lowerText, baseline.lines[i].lowerText);
+      }
+
+      final fixture = _ChunkedSearchFixture();
+      addTearDown(fixture.api.close);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(workspaceHost(JobLogPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        id: 501,
+      )));
+      await settleWorkspace(tester);
+
+      // Append second half via poll
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await settleWorkspace(tester);
+
+      final searchFinder = find.byKey(const ValueKey('job-log-search-501'));
+      for (final query in ['ERROR', 'warning', 'secret target', '[test-bracket]', '測試日誌', '🚀']) {
+        await tester.enterText(searchFinder, query);
+        await tester.pump();
+
+        // Reference match count from baseline lowercasing
+        final needle = query.toLowerCase();
+        var expectedCount = 0;
+        final expectedLineTexts = <String>[];
+        for (final line in baseline.lines) {
+          var start = 0;
+          final lower = line.text.toLowerCase();
+          var lineMatched = false;
+          while (start < lower.length) {
+            final idx = lower.indexOf(needle, start);
+            if (idx < 0) break;
+            expectedCount++;
+            lineMatched = true;
+            start = idx + needle.length;
+          }
+          if (lineMatched) expectedLineTexts.add(line.text);
+        }
+
+        expect(find.text('1/$expectedCount'), findsOneWidget, reason: 'query $query match counter');
+        for (final matchedLine in expectedLineTexts) {
+          expect(
+            find.descendant(of: find.byType(ListView), matching: find.textContaining(matchedLine)),
+            findsOneWidget,
+            reason: 'query $query visible line $matchedLine',
+          );
+        }
+      }
+    });
   });
+}
+
+class _ChunkedSearchFixture extends WorkspaceFixture {
+  static final _bytes = utf8.encode(_SearchFixture.trace);
+  static final _split = _bytes.length ~/ 2;
+  static final _part1 = utf8.decode(_bytes.sublist(0, _split), allowMalformed: true);
+  static final _part1Bytes = utf8.encode(_part1);
+  static final _part2 = _SearchFixture.trace.substring(_part1.length);
+  static final _part2Bytes = utf8.encode(_part2);
+
+  @override
+  FutureOr<ResponseBody> respond(RequestOptions request) {
+    if (request.uri.path.endsWith('/jobs/501')) {
+      return jsonResponse({'id': 501, 'status': 'running', 'name': 'chunked-search'});
+    }
+    if (request.uri.path.endsWith('/jobs/501/trace')) {
+      if (request.headers['Range'] == 'bytes=${_part1Bytes.length}-') {
+        return ResponseBody.fromString(_part2, 206, headers: {
+          'content-range': [
+            'bytes ${_part1Bytes.length}-${_part1Bytes.length + _part2Bytes.length - 1}/${_part1Bytes.length + _part2Bytes.length}',
+          ],
+          'x-gitlab-trace-eof': ['true'],
+        });
+      }
+      return ResponseBody.fromString(_part1, 200);
+    }
+    return super.respond(request);
+  }
 }
 
 class _SearchFixture extends WorkspaceFixture {

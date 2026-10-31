@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import '../ai/ai_chat_page.dart';
@@ -2017,7 +2015,8 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Json? _job;
   JobTrace _trace = JobTrace.empty;
   JobTrace _indexed = JobTrace.empty;
-  BytesBuilder _rawBytes = BytesBuilder(copy: false);
+  JobTraceParser _parser = JobTraceParser();
+  bool _hasTraceBytes = false;
   int _traceOffset = 0;
 
   /// The verified tail of this attempt's finished log, when one is shown. Its
@@ -2155,7 +2154,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       // That tail path neither starts nor shows anything while the page is
       // hidden: it runs again when the page is visible.
       final terminal = const {'success', 'failed', 'canceled', 'skipped'}.contains(job['status']);
-      final useTail = terminal && (_tail != null || (_traceOffset == 0 && _rawBytes.isEmpty));
+      final useTail = terminal && (_tail != null || (_traceOffset == 0 && !_hasTraceBytes));
       if (useTail && !_visible) throw const _HiddenLoad();
       // Metadata and trace have independent failure modes. Keep the controls
       // usable even when an expired or oversized trace cannot be displayed.
@@ -2170,53 +2169,77 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       // Hidden now: the fallback read below must not start either.
       if (useTail && !_visible) throw const _HiddenLoad();
       var changed = false;
+      List<int>? bytesToParse;
+      var resetParser = false;
+      var nextOffset = _traceOffset;
+      var nextTail = _tail;
+      var stopPolling = false;
       if (tail != null) {
-        // A fresh builder: the tail never joins bytes of an earlier read or
+        // A fresh parser: the tail never joins bytes of an earlier read or
         // attempt, and the next offset is the tail's absolute end.
-        _rawBytes = BytesBuilder(copy: false)..add(tail.bytes);
-        _traceOffset = tail.nextOffset;
-        _tail = tail;
-        _auto = false;
-        _timer?.cancel();
+        bytesToParse = tail.bytes;
+        resetParser = true;
+        nextOffset = tail.nextOffset;
+        nextTail = tail;
+        stopPolling = true;
         changed = true;
       } else {
         if (_tail != null) {
           // The tail no longer applies; restart the original path from byte 0.
           _tail = null;
-          _rawBytes = BytesBuilder(copy: false);
+          _parser = JobTraceParser();
+          _hasTraceBytes = false;
           _traceOffset = 0;
+          nextTail = null;
+          nextOffset = 0;
         }
         final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
         if (!current()) { return; }
         // The bounded fallback after `unsupported` may finish while hidden.
         if (useTail && !_visible) throw const _HiddenLoad();
         if (chunk.isEof) {
-          _auto = false;
-          _timer?.cancel();
+          stopPolling = true;
         }
-        changed = chunk.bytes.isNotEmpty || _rawBytes.isEmpty;
+        changed = chunk.bytes.isNotEmpty || !_hasTraceBytes;
         if (chunk.bytes.isNotEmpty) {
           if (chunk.nextOffset != null && chunk.nextOffset! < _traceOffset) {
-            _rawBytes = BytesBuilder(copy: false);
-            _rawBytes.add(chunk.bytes);
-            _traceOffset = chunk.nextOffset!;
+            resetParser = true;
+            bytesToParse = chunk.bytes;
+            nextOffset = chunk.nextOffset!;
           } else {
-            _rawBytes.add(chunk.bytes);
-            _traceOffset = chunk.nextOffset ?? _rawBytes.length;
+            bytesToParse = chunk.bytes;
+            nextOffset = chunk.nextOffset ?? (_traceOffset + chunk.bytes.length);
           }
         }
       }
+      if (stopPolling) {
+        _auto = false;
+        _timer?.cancel();
+      }
       if (changed) {
-        var text = utf8.decode(_rawBytes.toBytes(), allowMalformed: true);
-        // A 2 MiB tail can hold more lines than the screen parses; keep its
-        // last lines. Display only: offsets and stored bytes are unchanged.
-        _tailClipped = false;
-        if (_tail != null) {
-          final kept = _lastLines(text, GitLabApi.maxTextLines - 1);
-          _tailClipped = kept.length != text.length;
-          text = kept;
+        final targetParser = resetParser ? JobTraceParser() : _parser;
+        final parsed = bytesToParse != null
+            ? await targetParser.addBytesAsync(
+                bytesToParse,
+                shouldCommit: () => current() && (!useTail || _visible),
+              )
+            : targetParser.snapshot();
+        if (!current()) { return; }
+        if (useTail && !_visible) throw const _HiddenLoad();
+        if (useTail && nextTail == null && parsed.truncated) {
+          throw const ApiFailure(FailureKind.tooLarge);
         }
-        final parsed = JobTrace.parse(text);
+        _parser = targetParser;
+        _traceOffset = nextOffset;
+        _tail = nextTail;
+        if (resetParser) {
+          _hasTraceBytes = bytesToParse != null && bytesToParse.isNotEmpty;
+        } else if (bytesToParse != null && bytesToParse.isNotEmpty) {
+          _hasTraceBytes = true;
+        }
+        // Display only: offsets stay absolute while lines beyond maxTextLines
+        // are trimmed by the sliding window.
+        _tailClipped = parsed.truncated;
         setState(() {
           _trace = parsed;
           _firstLoadDone = true;
@@ -2258,16 +2281,6 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         _resumeWhenVisible();
       }
     }
-  }
-
-  /// The end of [text] holding at most [newlines] line breaks.
-  static String _lastLines(String text, int newlines) {
-    var seen = 0;
-    for (var i = text.length - 1; i >= 0; i--) {
-      if (text.codeUnitAt(i) != 0x0A) continue;
-      if (++seen > newlines) return text.substring(i + 1);
-    }
-    return text;
   }
 
   /// The finished job's verified tail, from memory, the offline cache or one
@@ -2322,7 +2335,8 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         if (newId != _jobId || action == 'retry') {
           _jobId = newId; _trace = JobTrace.empty; _query = ''; _matches = const <_LogMatch>[];
           _currentMatch = 0; _searchController.clear(); _follow = true; _sectionOpen.clear();
-          _rawBytes = BytesBuilder(copy: false);
+          _parser = JobTraceParser();
+          _hasTraceBytes = false;
           _traceOffset = 0;
           _tail = null;
           _tailClipped = false;
@@ -2402,7 +2416,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         if (sections[index].endLine > line) active.add(index);
         next++;
       }
-      if (_trace.lines[line].text.toLowerCase().contains(needle)) hits.addAll(active);
+      if (_trace.lines[line].lowerText.contains(needle)) hits.addAll(active);
     }
     return hits;
   }
@@ -2411,8 +2425,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     final needle = query.toLowerCase();
     final matches = <_LogMatch>[];
     for (var l = 0; l < _trace.lines.length; l++) {
-      final text = _trace.lines[l].text;
-      final lower = text.toLowerCase();
+      final lower = _trace.lines[l].lowerText;
       var start = 0;
       while (start < lower.length) {
         final idx = lower.indexOf(needle, start);
@@ -2487,6 +2500,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   }
   List<InlineSpan> _buildHighlightSpans({
     required String text,
+    String? lowerText,
     required int? lineIndex,
     required TextStyle baseStyle,
   }) {
@@ -2494,7 +2508,10 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       return [TextSpan(text: text.isEmpty ? ' ' : text, style: baseStyle)];
     }
     final needle = _query.toLowerCase();
-    final lower = text.toLowerCase();
+    final lower = lowerText ??
+        (lineIndex < _trace.lines.length
+            ? _trace.lines[lineIndex].lowerText
+            : text.toLowerCase());
     final spans = <InlineSpan>[];
     var cursor = 0;
     while (cursor < text.length) {
@@ -2533,7 +2550,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     final needle = _query.toLowerCase();
     void addLine(int line) {
       final traceLine = lines[line];
-      if (needle.isEmpty || traceLine.text.toLowerCase().contains(needle)) {
+      if (needle.isEmpty || traceLine.lowerText.contains(needle)) {
         rows.add(_LogRow.line(traceLine, lineIndex: line));
       }
     }
@@ -2902,6 +2919,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 } else {
                   final spans = _buildHighlightSpans(
                     text: text,
+                    lowerText: traceLine?.lowerText,
                     lineIndex: row.lineIndex,
                     baseStyle: baseStyle,
                   );
