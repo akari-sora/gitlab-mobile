@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/failure.dart';
+import '../../core/repository_ref.dart';
 import '../../core/unified_diff.dart';
 import '../../shared/attachment_budget.dart';
 import '../../shared/external_link.dart';
@@ -108,6 +109,19 @@ final _diffCacheExpando = Expando<_DiffCache>('diffCache');
 
 _DiffCache _getDiffCache(GitLabApi api) {
   return _diffCacheExpando[api] ??= _DiffCache();
+}
+
+typedef DiffCacheStats = ({int entries, int estimatedBytes, int parsedLines});
+
+/// The shared parsed-diff cache totals for [api], for budget tests.
+@visibleForTesting
+DiffCacheStats debugDiffCacheStats(GitLabApi api) {
+  final cache = _getDiffCache(api);
+  return (
+    entries: cache._entries.length,
+    estimatedBytes: cache._estimatedBytes,
+    parsedLines: cache._parsedLines,
+  );
 }
 
 const _maxDiscussionPages = 20;
@@ -648,6 +662,10 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
       );
     }
     final files = valueObjects(_version ?? {}, 'diffs');
+    // GitLab reports a truncated diff as the version's state; there is no
+    // overflow key (issue #59).
+    final overflow =
+        valueText(_version ?? const <String, dynamic>{}, 'state').startsWith('overflow');
     final target = widget.initialTarget;
     final missingTarget = target != null && _fileFor(target) == null;
     final unmatched = _unmatchedDiscussions();
@@ -680,7 +698,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                     l10n.pinnedDiffVersion(shortSha(widget.expectedSha)),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  if (_version?['overflow'] == true)
+                  if (overflow)
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: Text(l10n.partialDiffNotComplete),
@@ -995,6 +1013,7 @@ class _DiffFileScreen extends StatefulWidget {
 class _DiffFileScreenState extends State<_DiffFileScreen> {
   List<DiffLine>? _lines;
   String? _unavailable;
+  bool _overLimit = false;
   ApiFailure? _diffError;
   bool _diffLoading = false;
   late List<Json> _discussions;
@@ -1033,6 +1052,30 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     path: diffFilePath(widget.file),
   );
 
+  /// GitLab's blob page for a file whose diff GitLab withheld (`too_large`)
+  /// or that exceeds this screen's limits: the file at the head commit, or
+  /// at the base commit for a deleted file. Null when no valid link exists.
+  Uri? get _webFallback {
+    final file = widget.file;
+    if (file['too_large'] != true && !_overLimit) return null;
+    final deleted = file['deleted_file'] == true;
+    try {
+      return repositoryBlobWebUri(
+        instance: widget.account.instance,
+        projectPath: widget.project.path,
+        sha: valueText(
+          widget.version,
+          deleted ? 'base_commit_sha' : 'head_commit_sha',
+        ),
+        filePath: valueText(file, deleted ? 'old_path' : 'new_path'),
+      );
+    } on FormatException {
+      return null;
+    } on ApiFailure {
+      return null;
+    }
+  }
+
   int _parsedTextBytes(List<DiffLine> lines) {
     var bytes = 0;
     for (final line in lines) {
@@ -1057,6 +1100,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     _lines = null;
     _diffError = null;
     _unavailable = null;
+    _overLimit = false;
     _seekLow = 0;
     _seekHigh = -1;
     _seekStall = 0;
@@ -1080,6 +1124,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
         : utf8.encode(diff).length;
     if (sourceBytes == null || sourceBytes > _maxDiffSourceBytes) {
       _unavailable = l10n.inlineCommentsDisabled;
+      _overLimit = true;
       _diffLoading = false;
       if (widget.initialTarget != null) {
         _scheduleReveal();
@@ -1166,6 +1211,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       }
       setState(() {
         _unavailable = l10n.inlineCommentsDisabled;
+        _overLimit = true;
         _diffLoading = false;
       });
       if (widget.initialTarget != null) {
@@ -1908,6 +1954,19 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                     l10n.cannotDisplayDiff,
                     detail: _unavailable,
                     icon: Icons.code_off,
+                    action: switch (_webFallback) {
+                      final web? => FilledButton.tonalIcon(
+                        key: const ValueKey('diff-file-open-web'),
+                        onPressed: () {
+                          if (mounted && !_disposed && !widget.api.isClosed) {
+                            unawaited(openExternal(context, web));
+                          }
+                        },
+                        icon: const Icon(Icons.open_in_new, size: 18),
+                        label: Text(l10n.openInGitlab),
+                      ),
+                      null => null,
+                    },
                   ),
                   if (_discussionsLoading)
                     Padding(

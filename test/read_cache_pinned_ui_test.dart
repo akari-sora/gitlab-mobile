@@ -159,13 +159,13 @@ Future<void> _untilJobLoadFinishes(WidgetTester tester) async {
   await _until(tester, () => !_shown(progress), 'hidden job log load finished');
 }
 
-Json _version() => {
+Json _version({String state = 'collected'}) => {
   'id': 9,
   'created_at': '2026-10-27T10:00:00Z',
   'base_commit_sha': _sha,
   'start_commit_sha': _sha,
   'head_commit_sha': _sha,
-  'state': 'collected',
+  'state': state,
   'real_size': '1',
   'diffs': [
     {
@@ -184,9 +184,9 @@ Json _version() => {
   ],
 };
 
-FakeAdapter _diffAdapter() => FakeAdapter((request) {
+FakeAdapter _diffAdapter({String state = 'collected'}) => FakeAdapter((request) {
   final path = request.uri.path;
-  if (path.endsWith('/merge_requests/3/versions/9')) return jsonResponse(_version());
+  if (path.endsWith('/merge_requests/3/versions/9')) return jsonResponse(_version(state: state));
   if (path.endsWith('/merge_requests/3/versions')) {
     return jsonResponse([
       {
@@ -194,7 +194,7 @@ FakeAdapter _diffAdapter() => FakeAdapter((request) {
         'head_commit_sha': _sha,
         'base_commit_sha': _sha,
         'start_commit_sha': _sha,
-        'state': 'collected',
+        'state': state,
       },
     ]);
   }
@@ -299,6 +299,34 @@ void main() {
         reason: 'version discovery stays on the network');
       expect(secondAdapter.requests.where((r) => r.uri.path.endsWith('/versions/9')), isEmpty,
         reason: 'the selected version detail came from disk');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('an overflow version restored from disk keeps the partial notice (#59)', (tester) async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      expect(await _run(tester, h.recover), isTrue);
+      final first = await _run(tester, () => h.client(_diffAdapter(state: 'overflow')));
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: ReviewDiffPage(
+        account: _user, api: first, project: _project, iid: 3, expectedSha: _sha))));
+      await _until(tester, () => _shown(find.text('readme.md')), 'network diff');
+      expect(find.text(l10n.partialDiffNotComplete), findsOneWidget);
+      await _run(tester, h.flush);
+      final stored = await _run(tester, () => h.entry(
+        ['projects', '1', 'merge_requests', '3', 'versions', '9'], 'application/json'));
+      expect((stored!.body as Map)['state'], 'overflow', reason: 'the projection keeps state');
+
+      // The second client's network says collected: the notice can only come
+      // from the stored overflow version.
+      await tester.pumpWidget(const SizedBox());
+      final secondAdapter = _diffAdapter();
+      final second = await _run(tester, () => h.client(secondAdapter));
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: ReviewDiffPage(
+        account: _user, api: second, project: _project, iid: 3, expectedSha: _sha))));
+      await _until(tester, () => _shown(find.text('readme.md')), 'disk diff');
+      expect(secondAdapter.requests.where((r) => r.uri.path.endsWith('/versions/9')), isEmpty,
+        reason: 'the selected version detail came from disk');
+      expect(find.text(l10n.partialDiffNotComplete), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

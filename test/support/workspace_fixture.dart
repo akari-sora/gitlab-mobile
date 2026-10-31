@@ -70,6 +70,8 @@ class WorkspaceFixture {
   String versionBaseSha = sha;
   String versionStartSha = sha;
   String versionHeadSha = sha;
+  /// GitLab's version state: `collected`, `overflow` or `without_files`.
+  String versionState = 'collected';
   bool _discussionDeferred = false;
   List<Json>? _pagedDiscussions;
   List<Json>? _storedDiscussions;
@@ -520,9 +522,9 @@ class WorkspaceFixture {
       mergeFields['rebase_in_progress'] = true;
       return jsonResponse({'rebase_in_progress': true});
     }
-    if (joined == 'projects/42/merge_requests/12/versions') { return jsonResponse([{'id': 1, 'head_commit_sha': versionHeadSha}]); }
+    if (joined == 'projects/42/merge_requests/12/versions') { return jsonResponse([{'id': 1, 'head_commit_sha': versionHeadSha, 'state': versionState}]); }
     if (joined == 'projects/42/merge_requests/12/versions/1') {
-      return jsonResponse({'id': 1, 'head_commit_sha': versionHeadSha, 'base_commit_sha': versionBaseSha, 'start_commit_sha': versionStartSha, 'diffs': versionDiffs ?? [
+      return jsonResponse({'id': 1, 'head_commit_sha': versionHeadSha, 'base_commit_sha': versionBaseSha, 'start_commit_sha': versionStartSha, 'state': versionState, 'diffs': versionDiffs ?? [
         {'old_path': 'lib/session.dart', 'new_path': 'lib/session.dart', 'diff': '@@ -1 +1 @@\n-old\n+new\n'},
       ]});
     }
@@ -606,10 +608,10 @@ class WorkspaceFixture {
       final tail = path.sublist(4).join('/');
       if (tail == 'approvals') return jsonResponse({'approved_by': <Json>[]});
       if (tail == 'discussions' && method == 'GET') return jsonResponse([]);
-      if (tail == 'versions') return jsonResponse([{'id': 1, 'head_commit_sha': sha}]);
+      if (tail == 'versions') return jsonResponse([{'id': 1, 'head_commit_sha': sha, 'state': 'collected'}]);
       if (tail == 'versions/1') {
         return jsonResponse({
-          'id': 1, 'head_commit_sha': sha, 'base_commit_sha': sha, 'start_commit_sha': sha, 'diffs': <Json>[],
+          'id': 1, 'head_commit_sha': sha, 'base_commit_sha': sha, 'start_commit_sha': sha, 'state': 'collected', 'diffs': <Json>[],
         });
       }
     }

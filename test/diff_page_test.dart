@@ -1,11 +1,106 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/unified_diff.dart';
 import 'package:gitlab_mobile/features/workspace/diff_page.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:url_launcher_platform_interface/link.dart';
+import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
+
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
+import 'support/workspace_fixture.dart';
+
+final class _FakeUrlLauncher extends UrlLauncherPlatform
+    with MockPlatformInterfaceMixin {
+  final List<String> launched = [];
+
+  @override
+  LinkDelegate? get linkDelegate => null;
+
+  @override
+  Future<bool> launchUrl(String url, LaunchOptions options) async {
+    launched.add(url);
+    return true;
+  }
+}
+
+_FakeUrlLauncher _stubLauncher() {
+  final launcher = _FakeUrlLauncher();
+  final original = UrlLauncherPlatform.instance;
+  UrlLauncherPlatform.instance = launcher;
+  addTearDown(() => UrlLauncherPlatform.instance = original);
+  return launcher;
+}
+
+/// A merge request version diff item in GitLab's response shape.
+Map<String, dynamic> _gitLabDiffItem({
+  required String path,
+  required String diff,
+  bool deletedFile = false,
+  bool tooLarge = false,
+}) => {
+  'diff': diff,
+  'new_path': path,
+  'old_path': path,
+  'a_mode': '100644',
+  'b_mode': deletedFile ? '0' : '100644',
+  'new_file': false,
+  'renamed_file': false,
+  'deleted_file': deletedFile,
+  'generated_file': false,
+  'collapsed': false,
+  'too_large': tooLarge,
+};
+
+/// A single-hunk diff whose parse yields exactly [parsedLines] rows: the hunk
+/// header plus `parsedLines - 1` added lines.
+String _syntheticDiff(int parsedLines, String prefix) {
+  final added = parsedLines - 1;
+  final buffer = StringBuffer('@@ -0,0 +1,$added @@\n');
+  for (var i = 1; i <= added; i++) {
+    buffer.writeln('+$prefix-$i');
+  }
+  return buffer.toString();
+}
+
+/// The screen's own retained-size estimate: UTF-8 source, parsed UTF-8 text
+/// and 64 bytes per row.
+int _estimatedBytes(String source, List<DiffLine> lines) {
+  var bytes = utf8.encode(source).length + lines.length * 64;
+  for (final line in lines) {
+    bytes += utf8.encode(line.text).length;
+  }
+  return bytes;
+}
+
+Widget _fixturePage(WorkspaceFixture fixture) => MaterialApp(
+  home: Scaffold(
+    body: ReviewDiffPage(
+      account: fixture.account,
+      api: fixture.api,
+      project: fixture.project,
+      iid: 12,
+      expectedSha: WorkspaceFixture.sha,
+    ),
+  ),
+);
+
+Future<void> _openFile(WidgetTester tester, String path, Finder shown) async {
+  await tester.tap(find.text(path));
+  await pumpUntil(
+    tester,
+    () => shown.evaluate().isNotEmpty,
+    maxCycles: 400,
+    description: '$path shown',
+  );
+  await settleNetworkWidgets(tester);
+}
 
 void main() {
   setUp(() {
@@ -187,21 +282,25 @@ void main() {
     },
   );
 
-  testWidgets('DiffFileScreen shows empty state for collapsed/too_large diff', (
+  testWidgets('DiffFileScreen too_large diff offers open in GitLab', (
     tester,
   ) async {
+    final launcher = _stubLauncher();
     final collapsedVersion = {
       'id': 1,
       'head_commit_sha': headSha,
       'base_commit_sha': baseSha,
       'start_commit_sha': startSha,
+      'state': 'collected',
       'diffs': [
-        {
-          'old_path': 'assets/big.bin',
-          'new_path': 'assets/big.bin',
-          'too_large': true,
-          'diff': '',
-        },
+        _gitLabDiffItem(path: 'assets/big.bin', diff: '', tooLarge: true),
+        _gitLabDiffItem(
+          path: 'assets/gone.bin',
+          diff: '',
+          deletedFile: true,
+          tooLarge: true,
+        ),
+        _gitLabDiffItem(path: 'assets/empty.bin', diff: ''),
       ],
     };
 
@@ -239,6 +338,193 @@ void main() {
 
     expect(find.text('無法顯示差異'), findsOneWidget);
     expect(find.text('GitLab 未提供這份文字差異，或內容為二進位檔案。'), findsOneWidget);
+    final openWeb = find.byKey(const ValueKey('diff-file-open-web'));
+    expect(
+      find.descendant(of: openWeb, matching: find.text('在 GitLab 開啟')),
+      findsOneWidget,
+    );
+    await tester.tap(openWeb);
+    await tester.pump();
+    expect(launcher.launched, [
+      'https://example.com/gitlab/group/project/-/blob/$headSha/assets/big.bin',
+    ]);
+
+    // A deleted file no longer exists at the head: open it at the base.
+    await tester.pageBack();
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('assets/gone.bin'));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.byKey(const ValueKey('diff-file-open-web')));
+    await tester.pump();
+    expect(
+      launcher.launched.last,
+      'https://example.com/gitlab/group/project/-/blob/$baseSha/assets/gone.bin',
+    );
+
+    // An empty diff GitLab did not mark too_large keeps the plain message.
+    await tester.pageBack();
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('assets/empty.bin'));
+    await settleNetworkWidgets(tester);
+    expect(find.text('GitLab 未提供這份文字差異，或內容為二進位檔案。'), findsOneWidget);
+    expect(find.byKey(const ValueKey('diff-file-open-web')), findsNothing);
+    expect(launcher.launched, hasLength(2));
+  });
+
+  group('version state (#59)', () {
+    testWidgets('an overflow version shows the partial diff notice', (
+      tester,
+    ) async {
+      final fixture = WorkspaceFixture()
+        ..omitSeedDiscussions = true
+        ..versionState = 'overflow';
+      addTearDown(fixture.api.close);
+
+      await tester.pumpWidget(_fixturePage(fixture));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('lib/session.dart'), findsOneWidget);
+      expect(find.text(l10n.partialDiffNotComplete), findsOneWidget);
+    });
+
+    testWidgets('a collected version shows no partial diff notice', (
+      tester,
+    ) async {
+      final fixture = WorkspaceFixture()..omitSeedDiscussions = true;
+      addTearDown(fixture.api.close);
+
+      await tester.pumpWidget(_fixturePage(fixture));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('lib/session.dart'), findsOneWidget);
+      expect(find.text(l10n.partialDiffNotComplete), findsNothing);
+    });
+  });
+
+  group('large diff baselines (#59)', () {
+    testWidgets(
+      'parses 5,000- and 20,000-line diffs through the real parser and caches them',
+      (tester) async {
+        final diff5k = _syntheticDiff(5000, 'fivek');
+        final diff20k = _syntheticDiff(20000, 'twentyk');
+        final parsed5k = parseUnifiedDiff(diff5k);
+        final parsed20k = parseUnifiedDiff(diff20k);
+        expect(parsed5k, hasLength(5000));
+        expect(parsed20k, hasLength(20000));
+
+        final fixture = WorkspaceFixture()
+          ..omitSeedDiscussions = true
+          ..versionDiffs = [
+            _gitLabDiffItem(path: 'lib/five_k.dart', diff: diff5k),
+            _gitLabDiffItem(path: 'lib/twenty_k.dart', diff: diff20k),
+          ];
+        addTearDown(fixture.api.close);
+        await tester.pumpWidget(_fixturePage(fixture));
+        await settleNetworkWidgets(tester);
+
+        await _openFile(tester, 'lib/five_k.dart', find.text('fivek-1'));
+        final after5k = debugDiffCacheStats(fixture.api);
+        expect(after5k.entries, 1);
+        expect(after5k.parsedLines, 5000);
+        expect(after5k.estimatedBytes, _estimatedBytes(diff5k, parsed5k));
+
+        await tester.pageBack();
+        await settleNetworkWidgets(tester);
+        await _openFile(tester, 'lib/twenty_k.dart', find.text('twentyk-1'));
+        expect(find.byKey(const ValueKey('diff-file-open-web')), findsNothing);
+        final after20k = debugDiffCacheStats(fixture.api);
+        expect(after20k.entries, 2);
+        expect(after20k.parsedLines, 25000);
+        expect(
+          after20k.estimatedBytes,
+          _estimatedBytes(diff5k, parsed5k) +
+              _estimatedBytes(diff20k, parsed20k),
+        );
+      },
+    );
+
+    testWidgets(
+      'a diff over 20,000 lines or 2 MiB takes the too-large path with open in GitLab',
+      (tester) async {
+        final launcher = _stubLauncher();
+        final overLines = _syntheticDiff(20001, 'over-lines');
+        // The parser itself refuses more than 20,000 rows.
+        expect(() => parseUnifiedDiff(overLines), throwsFormatException);
+        final overBytes = '@@ -0,0 +1,1 @@\n+${'x' * (2 * 1024 * 1024 + 32)}\n';
+
+        final fixture = WorkspaceFixture()
+          ..omitSeedDiscussions = true
+          ..versionDiffs = [
+            _gitLabDiffItem(path: 'lib/over_lines.dart', diff: overLines),
+            _gitLabDiffItem(path: 'lib/over_bytes.dart', diff: overBytes),
+          ];
+        addTearDown(fixture.api.close);
+        await tester.pumpWidget(_fixturePage(fixture));
+        await settleNetworkWidgets(tester);
+
+        final openWeb = find.byKey(const ValueKey('diff-file-open-web'));
+        await _openFile(tester, 'lib/over_lines.dart', openWeb);
+        expect(find.text(l10n.cannotDisplayDiff), findsOneWidget);
+        expect(find.text(l10n.inlineCommentsDisabled), findsOneWidget);
+        expect(find.text('over-lines-1'), findsNothing);
+        expect(debugDiffCacheStats(fixture.api).entries, 0);
+        await tester.tap(openWeb);
+        await tester.pump();
+        expect(launcher.launched, [
+          'https://example.com/gitlab/studio/mobile-workspace/-/blob/'
+              '${WorkspaceFixture.sha}/lib/over_lines.dart',
+        ]);
+
+        await tester.pageBack();
+        await settleNetworkWidgets(tester);
+        await _openFile(tester, 'lib/over_bytes.dart', openWeb);
+        expect(find.text(l10n.cannotDisplayDiff), findsOneWidget);
+        expect(find.text(l10n.inlineCommentsDisabled), findsOneWidget);
+        expect(debugDiffCacheStats(fixture.api).entries, 0);
+      },
+    );
+
+    testWidgets('the diff cache stays within 8 MiB and 40,000 lines', (
+      tester,
+    ) async {
+      const maxCacheBytes = 8 * 1024 * 1024;
+      const maxCacheLines = 40000;
+      final pad = 'p' * 85;
+      // A, B and C are about 3 MiB each by the estimate, so the third one
+      // evicts by bytes; D's 18,000 rows then evict by lines.
+      final files = {
+        'lib/budget_a.dart': _syntheticDiff(12000, 'budA-$pad'),
+        'lib/budget_b.dart': _syntheticDiff(12000, 'budB-$pad'),
+        'lib/budget_c.dart': _syntheticDiff(12000, 'budC-$pad'),
+        'lib/budget_d.dart': _syntheticDiff(18000, 'budD'),
+      };
+      final fixture = WorkspaceFixture()
+        ..omitSeedDiscussions = true
+        ..versionDiffs = [
+          for (final file in files.entries)
+            _gitLabDiffItem(path: file.key, diff: file.value),
+        ];
+      addTearDown(fixture.api.close);
+      await tester.pumpWidget(_fixturePage(fixture));
+      await settleNetworkWidgets(tester);
+
+      final entries = <int>[];
+      for (final file in files.entries) {
+        final firstRow = file.value.split('\n')[1].substring(1);
+        await _openFile(tester, file.key, find.text(firstRow));
+        final stats = debugDiffCacheStats(fixture.api);
+        expect(stats.estimatedBytes, lessThanOrEqualTo(maxCacheBytes));
+        expect(stats.parsedLines, lessThanOrEqualTo(maxCacheLines));
+        entries.add(stats.entries);
+        await tester.pageBack();
+        await settleNetworkWidgets(tester);
+      }
+      // Two entries after B (A + B), still two after C (A evicted for bytes)
+      // and after D (B evicted for lines).
+      expect(entries, [1, 2, 2, 2]);
+      final last = debugDiffCacheStats(fixture.api);
+      expect(last.parsedLines, 12000 + 18000);
+    });
   });
 
   testWidgets(
