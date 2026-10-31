@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "Sertifikat server sudah kedaluwarsa atau belum berlaku, dan mengimpor sertifikat CA tidak bisa memperbaikinya. Minta administrator memperbaruinya atau periksa tanggal dan waktu perangkat ini.",
   "caImportDidNotHelp": "Dengan sertifikat CA ini sertifikat situs tetap tidak tepercaya, jadi sertifikat ini tidak disimpan. Sertifikat CA tidak bisa memperbaiki sertifikat untuk nama host lain, sertifikat kedaluwarsa, atau sertifikat dari CA lain.",
   "caReplaceWarning": "Situs ini sudah punya sertifikat CA tersimpan yang akan diganti. Kecuali administrator Anda mengganti CA, ini bisa berarti koneksi sedang disadap.",
-  "caCurrentFingerprintLabel": "Sidik jari SHA-256 saat ini"
+  "caCurrentFingerprintLabel": "Sidik jari SHA-256 saat ini",
+  "aiOnDeviceUnavailableTitle": "AI bawaan tidak tersedia di ponsel ini",
+  "aiOnDeviceUnavailableDetail": "AI bawaan memerlukan ponsel yang didukung dan komponen sistem, atau Anda dapat menggunakan penyedia AI cloud maupun jaringan lokal.",
+  "aiOnDeviceModelNotReadyTitle": "Model AI bawaan ponsel belum siap",
+  "aiOnDeviceModelNotReadyDetail": "Pastikan ruang penyimpanan ponsel cukup dan unduhan model AI sistem telah selesai, lalu coba lagi.",
+  "aiOnDeviceForegroundOnlyTitle": "AI bawaan memerlukan aplikasi tetap tampil di layar",
+  "aiOnDeviceForegroundOnlyDetail": "Sistem hanya menjalankan AI bawaan saat aplikasi terbuka di layar. Kembali ke aplikasi dan coba lagi secara manual.",
+  "aiOnDeviceBusyTitle": "AI bawaan ponsel sedang sibuk",
+  "aiOnDeviceBusyDetail": "Tugas lain sedang menggunakan AI bawaan ponsel saat ini. Tunggu sebentar lalu coba lagi secara manual.",
+  "aiOnDeviceQuotaExceededTitle": "AI bawaan mencapai batas penggunaan sistem",
+  "aiOnDeviceQuotaExceededDetail": "Sistem membatasi sementara permintaan ke AI bawaan. Tunggu sebentar atau beralih ke penyedia AI lain.",
+  "aiOnDeviceErrorTitle": "AI bawaan tidak dapat menyelesaikan balasan",
+  "aiOnDeviceErrorDetail": "Pembuatan di perangkat tidak selesai. Coba lagi nanti atau gunakan penyedia AI lain.",
+  "aiNoticeOnDeviceContextTruncated": "Konteks halaman dipersingkat agar sesuai dengan batas AI bawaan ponsel"
 }

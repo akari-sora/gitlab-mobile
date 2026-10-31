@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "Chứng chỉ của máy chủ đã hết hạn hoặc chưa có hiệu lực, và việc nhập chứng chỉ CA không khắc phục được. Hãy nhờ quản trị viên gia hạn hoặc kiểm tra ngày giờ của thiết bị này.",
   "caImportDidNotHelp": "Với chứng chỉ CA này, chứng chỉ của trang vẫn không được tin cậy nên nó không được giữ lại. Chứng chỉ CA không khắc phục được chứng chỉ cấp cho tên máy chủ khác, chứng chỉ đã hết hạn hoặc chứng chỉ của CA khác.",
   "caReplaceWarning": "Trang này đã có một chứng chỉ CA được lưu và nó sẽ bị thay thế. Trừ khi quản trị viên đã đổi CA, điều này có thể nghĩa là kết nối đang bị chặn.",
-  "caCurrentFingerprintLabel": "Dấu vân tay SHA-256 hiện tại"
+  "caCurrentFingerprintLabel": "Dấu vân tay SHA-256 hiện tại",
+  "aiOnDeviceUnavailableTitle": "AI tích hợp không khả dụng trên điện thoại này",
+  "aiOnDeviceUnavailableDetail": "AI tích hợp cần điện thoại được hỗ trợ và thành phần hệ thống, hoặc bạn có thể dùng nhà cung cấp AI đám mây hay mạng cục bộ.",
+  "aiOnDeviceModelNotReadyTitle": "Mô hình AI tích hợp trên điện thoại chưa sẵn sàng",
+  "aiOnDeviceModelNotReadyDetail": "Hãy đảm bảo điện thoại còn đủ dung lượng và đã tải xong mô hình AI hệ thống, sau đó thử lại.",
+  "aiOnDeviceForegroundOnlyTitle": "AI tích hợp cần ứng dụng hiển thị trên màn hình",
+  "aiOnDeviceForegroundOnlyDetail": "Hệ thống chỉ chạy AI tích hợp khi ứng dụng đang mở trên màn hình. Hãy quay lại ứng dụng và thử lại thủ công.",
+  "aiOnDeviceBusyTitle": "AI tích hợp trên điện thoại đang bận",
+  "aiOnDeviceBusyDetail": "Một tác vụ khác đang sử dụng AI tích hợp của điện thoại. Hãy đợi một chút rồi thử lại thủ công.",
+  "aiOnDeviceQuotaExceededTitle": "AI tích hợp đã đạt giới hạn sử dụng của hệ thống",
+  "aiOnDeviceQuotaExceededDetail": "Hệ thống tạm thời giới hạn yêu cầu tới AI tích hợp. Hãy đợi một chút hoặc chuyển sang nhà cung cấp AI khác.",
+  "aiOnDeviceErrorTitle": "AI tích hợp không thể hoàn tất câu trả lời",
+  "aiOnDeviceErrorDetail": "Quá trình tạo trên thiết bị chưa hoàn tất. Hãy thử lại sau hoặc dùng nhà cung cấp AI khác.",
+  "aiNoticeOnDeviceContextTruncated": "Nội dung trang đã được rút gọn để vừa giới hạn của AI tích hợp trên điện thoại"
 }

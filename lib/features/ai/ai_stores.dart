@@ -1599,7 +1599,10 @@ final class AiSettingsController extends ChangeNotifier {
     try {
       for (final provider in loaded) {
         _validateProviderEndpoints(provider);
-        _validateProviderCaps(provider.caps);
+        _validateProviderCaps(
+          provider.caps,
+          onDevice: _isOnDeviceProviderOrTombstone(provider),
+        );
       }
     } on Object catch (error) {
       throw AiStoreException(
@@ -1680,7 +1683,7 @@ final class AiSettingsController extends ChangeNotifier {
       );
     }
     _validateProviderEndpoints(provider);
-    _validateProviderCaps(provider.caps);
+    _validateProviderCaps(provider.caps, onDevice: provider.isOnDevice);
     final pending = _deletingProviders[provider.id];
     if (pending != null) {
       await _persistProviderDeletionMarker(pending);
@@ -1758,7 +1761,7 @@ final class AiSettingsController extends ChangeNotifier {
       );
     }
     _validateProviderEndpoints(provider);
-    _validateProviderCaps(provider.caps);
+    _validateProviderCaps(provider.caps, onDevice: provider.isOnDevice);
     final pending = _deletingProviders[provider.id];
     if (pending != null) {
       await _persistProviderDeletionMarker(pending);
@@ -2758,10 +2761,13 @@ bool _sameKeyRecipient(AiProviderConfig left, AiProviderConfig right) =>
     left.authStyle == right.authStyle &&
     _providerRecipient(left) == _providerRecipient(right);
 
-String _providerRecipient(AiProviderConfig provider) => AiEndpoint.parse(
-  provider.baseUrl,
-  allowLanCleartext: provider.allowLanCleartext,
-).key;
+String _providerRecipient(AiProviderConfig provider) =>
+    _isOnDeviceProviderOrTombstone(provider)
+    ? AiPresets.onDeviceOrigin
+    : AiEndpoint.parse(
+        provider.baseUrl,
+        allowLanCleartext: provider.allowLanCleartext,
+      ).key;
 
 String _providerKeyBinding(AiProviderConfig provider, String key) => sha256
     .convert(
@@ -2780,7 +2786,32 @@ const _deletingProviderPreset = 'gitlab-mobile:deleting-provider';
 bool _isDeletingProvider(AiProviderConfig provider) =>
     provider.presetId == _deletingProviderPreset;
 
+bool _isOnDeviceProviderOrTombstone(AiProviderConfig provider) =>
+    provider.isOnDevice ||
+    (_isDeletingProvider(provider) &&
+        provider.format == AiFormat.onDevicePrompt &&
+        provider.baseUrl == AiPresets.onDeviceOrigin);
+
 void _validateProviderEndpoints(AiProviderConfig provider) {
+  if (_isOnDeviceProviderOrTombstone(provider)) {
+    final valid = _isDeletingProvider(provider)
+        ? _copyProviderWithPreset(
+            provider,
+            presetId: AiPresets.onDeviceId,
+          ).isValidOnDevice
+        : provider.isValidOnDevice;
+    if (!valid) {
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.invalidValue, 'saveProviderEndpoint'),
+      );
+    }
+    return;
+  }
+  if (provider.format == AiFormat.onDevicePrompt) {
+    throw const AiStoreException(
+      AiStoreFailure(AiStoreFailureKind.invalidValue, 'saveProviderEndpoint'),
+    );
+  }
   try {
     AiEndpoint.parse(
       provider.baseUrl,
@@ -2804,10 +2835,12 @@ void _validateProviderEndpoints(AiProviderConfig provider) {
   }
 }
 
-void _validateProviderCaps(AiCaps caps) {
+void _validateProviderCaps(AiCaps caps, {bool onDevice = false}) {
+  final minOutputTokens = onDevice ? 1 : 512;
+  final maxOutputTokens = onDevice ? 4096 : 65536;
   if (caps.maxRequestChars <= 0 ||
-      caps.maxOutputTokens < 512 ||
-      caps.maxOutputTokens > 65536) {
+      caps.maxOutputTokens < minOutputTokens ||
+      caps.maxOutputTokens > maxOutputTokens) {
     throw const AiStoreException(
       AiStoreFailure(AiStoreFailureKind.invalidValue, 'saveProviderCaps'),
     );
@@ -2939,27 +2972,33 @@ AiProviderConfig _decodeProvider(Object? raw) {
       revision < 0) {
     throw const FormatException('Invalid provider field type');
   }
+  final presetId = _nonEmptyString(json['presetId'], 'provider.presetId');
+  final format = _enumValue(AiFormat.values, json['format'], 'provider.format');
+  final onDevice =
+      presetId == AiPresets.onDeviceId ||
+      (presetId == _deletingProviderPreset &&
+          format == AiFormat.onDevicePrompt);
   return AiProviderConfig(
     id: _nonEmptyString(json['id'], 'provider.id'),
     name: _nonEmptyString(json['name'], 'provider.name'),
-    presetId: _nonEmptyString(json['presetId'], 'provider.presetId'),
+    presetId: presetId,
     baseUrl: _nonEmptyString(json['baseUrl'], 'provider.baseUrl'),
     modelsUrl: modelsUrl as String?,
-    format: _enumValue(AiFormat.values, json['format'], 'provider.format'),
+    format: format,
     model: _nonEmptyString(json['model'], 'provider.model'),
     authStyle: _enumValue(
       AiAuthStyle.values,
       json['authStyle'],
       'provider.authStyle',
     ),
-    caps: _decodeCaps(json['caps']),
+    caps: _decodeCaps(json['caps'], onDevice: onDevice),
     allowLanCleartext: allowLanCleartext,
     toolsEnabled: toolsEnabled,
     recipientRevision: revision,
   );
 }
 
-AiCaps _decodeCaps(Object? raw) {
+AiCaps _decodeCaps(Object? raw, {bool onDevice = false}) {
   final json = _strictObject(raw, 'provider.caps');
   _requireKeys(json, <String>{
     'tokenLimitField',
@@ -2985,10 +3024,12 @@ AiCaps _decodeCaps(Object? raw) {
       (json['maxRequestChars']! as int) <= 0) {
     throw const FormatException('Invalid provider caps');
   }
-  final maxOutputTokens = json['maxOutputTokens'] ?? 4096;
+  final minOutputTokens = onDevice ? 1 : 512;
+  final maxAllowedOutputTokens = onDevice ? 4096 : 65536;
+  final maxOutputTokens = json['maxOutputTokens'] ?? (onDevice ? 1024 : 4096);
   if (maxOutputTokens is! int ||
-      maxOutputTokens < 512 ||
-      maxOutputTokens > 65536) {
+      maxOutputTokens < minOutputTokens ||
+      maxOutputTokens > maxAllowedOutputTokens) {
     throw const FormatException('Invalid output token limit');
   }
   return AiCaps(

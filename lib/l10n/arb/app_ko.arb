@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "서버 인증서가 만료되었거나 아직 유효하지 않으므로 CA 인증서를 가져와도 해결되지 않습니다. 관리자에게 갱신을 요청하거나 이 기기의 날짜와 시간을 확인하세요.",
   "caImportDidNotHelp": "이 CA 인증서로도 사이트 인증서를 신뢰할 수 없어 저장하지 않았습니다. CA 인증서로는 호스트 이름 불일치, 만료된 인증서, 다른 CA가 발급한 인증서를 해결할 수 없습니다.",
   "caReplaceWarning": "이 사이트에는 이미 CA 인증서가 저장되어 있으며 교체됩니다. 관리자가 CA를 변경한 경우가 아니라면 연결이 가로채이고 있다는 뜻일 수 있습니다.",
-  "caCurrentFingerprintLabel": "현재 SHA-256 지문"
+  "caCurrentFingerprintLabel": "현재 SHA-256 지문",
+  "aiOnDeviceUnavailableTitle": "이 휴대전화에서는 내장 AI를 사용할 수 없습니다",
+  "aiOnDeviceUnavailableDetail": "내장 AI는 지원 기기와 시스템 구성 요소가 필요합니다. 클라우드나 로컬 네트워크 AI 제공자를 사용할 수도 있습니다.",
+  "aiOnDeviceModelNotReadyTitle": "휴대전화의 내장 AI 모델이 아직 준비되지 않았습니다",
+  "aiOnDeviceModelNotReadyDetail": "저장 공간을 확인하고 시스템 AI 모델 다운로드가 끝난 뒤 다시 시도하세요.",
+  "aiOnDeviceForegroundOnlyTitle": "내장 AI는 화면이 열려 있어야 합니다",
+  "aiOnDeviceForegroundOnlyDetail": "시스템은 앱이 화면에 열려 있을 때만 내장 AI를 실행합니다. 화면으로 돌아온 뒤 수동으로 다시 시도하세요.",
+  "aiOnDeviceBusyTitle": "휴대전화의 내장 AI가 사용 중입니다",
+  "aiOnDeviceBusyDetail": "다른 작업이 휴대전화의 내장 AI를 사용 중입니다. 잠시 후 수동으로 다시 시도하세요.",
+  "aiOnDeviceQuotaExceededTitle": "내장 AI가 시스템 사용 한도에 도달했습니다",
+  "aiOnDeviceQuotaExceededDetail": "시스템에서 내장 AI 요청을 일시적으로 제한했습니다. 잠시 기다리거나 다른 AI 제공자로 전환하세요.",
+  "aiOnDeviceErrorTitle": "내장 AI가 응답을 완료하지 못했습니다",
+  "aiOnDeviceErrorDetail": "기기 내 생성이 완료되지 않았습니다. 잠시 후 다시 시도하거나 다른 AI 제공자를 사용하세요.",
+  "aiNoticeOnDeviceContextTruncated": "휴대전화 내장 AI 한도에 맞추어 페이지 내용을 줄였습니다"
 }

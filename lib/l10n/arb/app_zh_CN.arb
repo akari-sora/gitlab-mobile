@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "服务器的证书已过期或尚未生效，导入 CA 证书也无法解决。请让管理员更新证书，或检查本设备的日期和时间。",
   "caImportDidNotHelp": "导入此 CA 证书后，站点的证书仍不受信任，因此没有保留它。CA 证书无法解决主机名不匹配、已过期或由其他 CA 签发的证书。",
   "caReplaceWarning": "此站点已保存一个 CA 证书，它将被替换。除非管理员更换了 CA，否则这可能表示连接遭到拦截。",
-  "caCurrentFingerprintLabel": "当前的 SHA-256 指纹"
+  "caCurrentFingerprintLabel": "当前的 SHA-256 指纹",
+  "aiOnDeviceUnavailableTitle": "此手机不支持内置 AI",
+  "aiOnDeviceUnavailableDetail": "内置 AI 需要支持的机型与系统组件，也可以改用云端或局域网 AI 服务商。",
+  "aiOnDeviceModelNotReadyTitle": "手机内置 AI 模型尚未就绪",
+  "aiOnDeviceModelNotReadyDetail": "请确认手机有足够存储空间并完成系统 AI 模型下载后再试一次。",
+  "aiOnDeviceForegroundOnlyTitle": "内置 AI 需要画面保持开启",
+  "aiOnDeviceForegroundOnlyDetail": "系统只允许在前台运行内置 AI，请回到画面后手动重试。",
+  "aiOnDeviceBusyTitle": "手机内置 AI 正在忙碌",
+  "aiOnDeviceBusyDetail": "其他任务正在使用手机的内置 AI，请稍后再手动重试。",
+  "aiOnDeviceQuotaExceededTitle": "手机内置 AI 已达系统用量上限",
+  "aiOnDeviceQuotaExceededDetail": "系统暂时限制内置 AI 的调用次数，请稍后再试或切换其他 AI 服务商。",
+  "aiOnDeviceErrorTitle": "手机内置 AI 无法完成回复",
+  "aiOnDeviceErrorDetail": "本地推理未完成，请稍后手动重试，或改用其他 AI 服务商。",
+  "aiNoticeOnDeviceContextTruncated": "已配合手机内置 AI 的长度上限缩短此页内容"
 }

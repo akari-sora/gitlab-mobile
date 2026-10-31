@@ -441,6 +441,7 @@ String _noticeKindCode(AiNoticeKind value) => switch (value) {
   AiNoticeKind.stopped => 'stopped',
   AiNoticeKind.notSent => 'not_sent',
   AiNoticeKind.newConversation => 'new_conversation',
+  AiNoticeKind.onDeviceContextTruncated => 'on_device_context_truncated',
 };
 
 AiNoticeKind _noticeKind(String value) => switch (value) {
@@ -452,6 +453,7 @@ AiNoticeKind _noticeKind(String value) => switch (value) {
   'stopped' => AiNoticeKind.stopped,
   'not_sent' => AiNoticeKind.notSent,
   'new_conversation' => AiNoticeKind.newConversation,
+  'on_device_context_truncated' => AiNoticeKind.onDeviceContextTruncated,
   _ => throw const AiHistoryUnsupportedFormat(),
 };
 

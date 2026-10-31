@@ -972,7 +972,15 @@ class MergelineOnDeviceAi {
             closeCleanly();
           },
           onDone: () {
+            // The shared stream ended ([close] or the platform side) before
+            // this request's own done: the reply is cut short, not complete.
             if (!finished) {
+              controller.addError(
+                const OnDeviceAiException(
+                  OnDeviceAiErrorCode.cancelled,
+                  debugMessage: 'event stream closed',
+                ),
+              );
               closeCleanly();
             }
           },
@@ -1036,7 +1044,8 @@ class MergelineOnDeviceAi {
   }
 
   /// Cancels all active downloads and generations and releases the native
-  /// `GenerativeModel`.
+  /// `GenerativeModel`. Active [generate] streams end with an
+  /// [OnDeviceAiException] of [OnDeviceAiErrorCode.cancelled].
   ///
   /// Note: Google ML Kit (`MlKitContext`) cannot be de-initialized once
   /// initialized in the current process, and Google's `datatransport` runtime

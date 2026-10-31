@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/ai/ai_endpoint.dart';
+import '../../core/ai/ai_failure.dart';
 import '../../core/ai/ai_provider.dart';
 import '../../core/ai/ai_transport.dart';
 import '../../core/ai/ai_wire_client.dart';
@@ -1300,7 +1301,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       AiTokenLimitField.maxTokens,
       AiTokenLimitField.maxCompletionTokens,
     ],
-    AiFormat.responses => const <AiTokenLimitField>[
+    AiFormat.responses || AiFormat.onDevicePrompt => const <AiTokenLimitField>[
       AiTokenLimitField.maxOutputTokens,
     ],
     AiFormat.anthropicMessages => const <AiTokenLimitField>[
@@ -1391,6 +1392,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     AiFormat.chatCompletions => l10n.aiProviderFormatChat,
     AiFormat.responses => l10n.aiProviderFormatResponses,
     AiFormat.anthropicMessages => l10n.aiProviderFormatAnthropic,
+    AiFormat.onDevicePrompt => AiPresets.onDevice.name,
   };
 
   String _authStyleLabel(AiAuthStyle style) => switch (style) {
@@ -1500,7 +1502,7 @@ final class _PolicyNotice extends StatelessWidget {
         Icons.model_training,
         l10n.aiProviderModelTrainingWarning,
       ),
-      AiDataUse.noTraining => (
+      AiDataUse.noTraining || AiDataUse.onDevice => (
         Icons.verified_user_outlined,
         l10n.aiPolicyNoTraining,
       ),
@@ -1546,6 +1548,10 @@ AiWireClient _defaultClientFactory(AiProviderConfig config, String apiKey) {
     AiFormat.chatCompletions => const ChatCompletionsFormat(),
     AiFormat.responses => const ResponsesFormat(),
     AiFormat.anthropicMessages => const AnthropicMessagesFormat(),
+    // The editor tests network providers only; on-device has no endpoint.
+    AiFormat.onDevicePrompt => throw const AiFailure(
+      AiFailureKind.policyBlocked,
+    ),
   };
   return AiWireClient(
     transport: AiTransport(

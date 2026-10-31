@@ -9312,4 +9312,43 @@ final class AppStrings {
 
   /// 目前的 SHA-256 指紋
   String get caCurrentFingerprintLabel => language._messages[3072];
+
+  /// 此手機不支援內建 AI
+  String get aiOnDeviceUnavailableTitle => language._messages[3073];
+
+  /// 內建 AI 需要支援的機型與系統元件，也可以改用雲端或區域網路 AI 服務商。
+  String get aiOnDeviceUnavailableDetail => language._messages[3074];
+
+  /// 手機內建 AI 模型尚未就緒
+  String get aiOnDeviceModelNotReadyTitle => language._messages[3075];
+
+  /// 請確認手機有足夠儲存空間並完成系統 AI 模型下載後再試一次。
+  String get aiOnDeviceModelNotReadyDetail => language._messages[3076];
+
+  /// 內建 AI 需要畫面保持開啟
+  String get aiOnDeviceForegroundOnlyTitle => language._messages[3077];
+
+  /// 系統只允許在前景執行內建 AI，請回到畫面後手動重試。
+  String get aiOnDeviceForegroundOnlyDetail => language._messages[3078];
+
+  /// 手機內建 AI 正在忙碌
+  String get aiOnDeviceBusyTitle => language._messages[3079];
+
+  /// 其他工作正在使用手機的內建 AI，請稍候再手動重試。
+  String get aiOnDeviceBusyDetail => language._messages[3080];
+
+  /// 手機內建 AI 已達系統用量上限
+  String get aiOnDeviceQuotaExceededTitle => language._messages[3081];
+
+  /// 系統暫時限制內建 AI 的呼叫次數，請稍候再試或切換其他 AI 服務商。
+  String get aiOnDeviceQuotaExceededDetail => language._messages[3082];
+
+  /// 手機內建 AI 無法完成回覆
+  String get aiOnDeviceErrorTitle => language._messages[3083];
+
+  /// 本機推論未完成，請稍候手動重試，或改用其他 AI 服務商。
+  String get aiOnDeviceErrorDetail => language._messages[3084];
+
+  /// 已配合手機內建 AI 的長度上限縮短此頁內容
+  String get aiNoticeOnDeviceContextTruncated => language._messages[3085];
 }

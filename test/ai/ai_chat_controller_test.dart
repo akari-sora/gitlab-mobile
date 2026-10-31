@@ -201,7 +201,8 @@ AiWireClient _wireClient(
     adapter: adapter,
   );
   final wire = switch (config.format) {
-    AiFormat.chatCompletions => const ChatCompletionsFormat(),
+    AiFormat.chatCompletions ||
+    AiFormat.onDevicePrompt => const ChatCompletionsFormat(),
     AiFormat.responses => const ResponsesFormat(),
     AiFormat.anthropicMessages => const AnthropicMessagesFormat(),
   };
@@ -260,7 +261,7 @@ List<String> _toolThenAnswer(
       },
     }),
   ],
-  AiFormat.chatCompletions => [
+  AiFormat.chatCompletions || AiFormat.onDevicePrompt => [
     '${_data({
       'choices': [
         {
@@ -346,7 +347,7 @@ String _partialEvents(AiFormat format, String partial) => switch (format) {
           'response': {'output': <Object?>[]},
         })}'
         '${_data({'type': 'response.output_text.delta', 'delta': partial})}',
-  AiFormat.chatCompletions => _data({
+  AiFormat.chatCompletions || AiFormat.onDevicePrompt => _data({
     'choices': [
       {
         'index': 0,
@@ -500,6 +501,36 @@ void main() {
       );
     },
   );
+
+  test('the chat refuses an on-device provider unsent', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    await _configure(
+      environment,
+      AiProviderConfig.onDevice(),
+      grantConsent: true,
+    );
+    // The production client factory: on-device wiring arrives with MR 3.
+    final controller = _controller(environment);
+    addTearDown(controller.dispose);
+    await controller.recheck();
+    expect(controller.blocker, AiChatBlocker.none);
+
+    await controller.send('hello');
+    expect(
+      controller.failure,
+      isA<AiFailure>().having(
+        (f) => f.kind,
+        'kind',
+        AiFailureKind.policyBlocked,
+      ),
+    );
+    expect(controller.lastEnd, AiRunEnd.failed);
+    expect(
+      controller.items.whereType<AiAssistantItem>().map((item) => item.text),
+      everyElement(isEmpty),
+    );
+  });
 
   test('draft text keeps its lines and loses hidden characters', () async {
     final environment = await _environment();
@@ -1600,7 +1631,9 @@ void main() {
     expect(safe, isNot(contains(newRefresh)));
   });
 
-  for (final format in AiFormat.values) {
+  for (final format in AiFormat.values.where(
+    (f) => f != AiFormat.onDevicePrompt,
+  )) {
     test(
       '${format.name} provider request bytes ignore report and source metadata',
       () async {
@@ -2395,7 +2428,9 @@ void main() {
     });
   });
 
-  for (final format in AiFormat.values) {
+  for (final format in AiFormat.values.where(
+    (f) => f != AiFormat.onDevicePrompt,
+  )) {
     test('streams a tool run and final answer for ${format.name}', () async {
       final environment = await _environment();
       addTearDown(environment.dispose);
@@ -2860,7 +2895,9 @@ void main() {
     expect(controller.items, hasLength(2));
   });
 
-  for (final format in AiFormat.values) {
+  for (final format in AiFormat.values.where(
+    (f) => f != AiFormat.onDevicePrompt,
+  )) {
     test('stop mid-stream keeps ${format.name} partial reply', () async {
       final environment = await _environment();
       addTearDown(environment.dispose);

@@ -24,6 +24,12 @@ enum AiFailureKind {
   contentFilter,
   refusal,
   policyBlocked,
+  onDeviceUnavailable,
+  onDeviceModelNotReady,
+  onDeviceForegroundOnly,
+  onDeviceBusy,
+  onDeviceQuotaExceeded,
+  onDeviceError,
 }
 
 final class AiFailure implements Exception, UserFacingFailure {
@@ -115,6 +121,12 @@ final class AiFailure implements Exception, UserFacingFailure {
     AiFailureKind.contentFilter => l10n.aiContentFilterTitle,
     AiFailureKind.refusal => l10n.aiRefusalTitle,
     AiFailureKind.policyBlocked => l10n.aiPolicyBlockedTitle,
+    AiFailureKind.onDeviceUnavailable => l10n.aiOnDeviceUnavailableTitle,
+    AiFailureKind.onDeviceModelNotReady => l10n.aiOnDeviceModelNotReadyTitle,
+    AiFailureKind.onDeviceForegroundOnly => l10n.aiOnDeviceForegroundOnlyTitle,
+    AiFailureKind.onDeviceBusy => l10n.aiOnDeviceBusyTitle,
+    AiFailureKind.onDeviceQuotaExceeded => l10n.aiOnDeviceQuotaExceededTitle,
+    AiFailureKind.onDeviceError => l10n.aiOnDeviceErrorTitle,
   };
 
   @override
@@ -141,6 +153,12 @@ final class AiFailure implements Exception, UserFacingFailure {
     AiFailureKind.contentFilter => l10n.aiContentFilterDetail,
     AiFailureKind.refusal => l10n.aiRefusalDetail,
     AiFailureKind.policyBlocked => l10n.aiPolicyBlockedDetail,
+    AiFailureKind.onDeviceUnavailable => l10n.aiOnDeviceUnavailableDetail,
+    AiFailureKind.onDeviceModelNotReady => l10n.aiOnDeviceModelNotReadyDetail,
+    AiFailureKind.onDeviceForegroundOnly => l10n.aiOnDeviceForegroundOnlyDetail,
+    AiFailureKind.onDeviceBusy => l10n.aiOnDeviceBusyDetail,
+    AiFailureKind.onDeviceQuotaExceeded => l10n.aiOnDeviceQuotaExceededDetail,
+    AiFailureKind.onDeviceError => l10n.aiOnDeviceErrorDetail,
   };
 
   @override

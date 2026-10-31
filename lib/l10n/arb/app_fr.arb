@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "Le certificat du serveur a expiré ou n'est pas encore valide, ce qu'un certificat CA importé ne peut pas corriger. Demandez à l'administrateur de le renouveler ou vérifiez la date et l'heure de cet appareil.",
   "caImportDidNotHelp": "Avec ce certificat CA, le certificat du site n'est toujours pas approuvé ; il n'a donc pas été conservé. Un certificat CA ne corrige pas un certificat émis pour un autre nom d'hôte, expiré ou émis par une autre CA.",
   "caReplaceWarning": "Un certificat CA est déjà enregistré pour ce site et va être remplacé. Sauf si votre administrateur a changé de CA, cela peut indiquer que la connexion est interceptée.",
-  "caCurrentFingerprintLabel": "Empreinte SHA-256 actuelle"
+  "caCurrentFingerprintLabel": "Empreinte SHA-256 actuelle",
+  "aiOnDeviceUnavailableTitle": "L’IA intégrée n’est pas disponible sur ce téléphone",
+  "aiOnDeviceUnavailableDetail": "L’IA intégrée nécessite un téléphone compatible et des composants système, ou vous pouvez utiliser un fournisseur d’IA cloud ou sur le réseau local.",
+  "aiOnDeviceModelNotReadyTitle": "Le modèle d’IA intégrée du téléphone n’est pas prêt",
+  "aiOnDeviceModelNotReadyDetail": "Vérifiez que le téléphone dispose d’assez d’espace et que le téléchargement du modèle d’IA système est terminé, puis réessayez.",
+  "aiOnDeviceForegroundOnlyTitle": "L’IA intégrée nécessite l’application à l’écran",
+  "aiOnDeviceForegroundOnlyDetail": "Le système n’exécute l’IA intégrée que lorsque l’application est affichée à l’écran. Revenez à l’application et réessayez manuellement.",
+  "aiOnDeviceBusyTitle": "L’IA intégrée du téléphone est occupée",
+  "aiOnDeviceBusyDetail": "Une autre tâche utilise actuellement l’IA intégrée du téléphone. Patientez un instant puis réessayez manuellement.",
+  "aiOnDeviceQuotaExceededTitle": "L’IA intégrée a atteint la limite d’utilisation du système",
+  "aiOnDeviceQuotaExceededDetail": "Le système a temporairement limité les requêtes vers l’IA intégrée. Patientez un peu ou passez à un autre fournisseur d’IA.",
+  "aiOnDeviceErrorTitle": "L’IA intégrée n’a pas pu terminer la réponse",
+  "aiOnDeviceErrorDetail": "La génération sur l’appareil ne s’est pas terminée. Réessayez plus tard ou choisissez un autre fournisseur d’IA.",
+  "aiNoticeOnDeviceContextTruncated": "Le contexte de la page a été raccourci pour respecter la limite de l’IA intégrée du téléphone"
 }

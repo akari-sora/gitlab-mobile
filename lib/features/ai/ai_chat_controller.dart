@@ -4022,6 +4022,10 @@ AiWireClient _createWireClient({
     AiFormat.chatCompletions => const ChatCompletionsFormat(),
     AiFormat.responses => const ResponsesFormat(),
     AiFormat.anthropicMessages => const AnthropicMessagesFormat(),
+    // The on-device client and runner wiring arrive with MR 3's UI.
+    AiFormat.onDevicePrompt => throw const AiFailure(
+      AiFailureKind.policyBlocked,
+    ),
   };
   return AiWireClient(
     transport: AiTransport(

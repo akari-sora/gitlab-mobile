@@ -960,17 +960,75 @@ void main() {
         system: 'System',
         turns: const <OnDeviceTurn>[OnDeviceTurn.user('Hello')],
       );
+      final errors = <Object>[];
       final done = Completer<void>();
-      final sub = stream.listen((_) {}, onDone: done.complete);
+      final sub = stream.listen(
+        (_) {},
+        onError: errors.add,
+        onDone: done.complete,
+      );
 
       await plugin.close();
       await done.future;
+      // The cut-short reply ends with an error, never a silent done.
+      expect(errors, <Object>[
+        isA<OnDeviceAiException>().having(
+          (OnDeviceAiException e) => e.code,
+          'code',
+          OnDeviceAiErrorCode.cancelled,
+        ),
+      ]);
       expect(cancelCount, 1);
       expect(
         methodCalls.where((MethodCall c) => c.method == 'close'),
         hasLength(1),
       );
       await sub.cancel();
+    });
+
+    test('an event channel that ends mid-reply fails the generation as cancelled', () async {
+      final plugin = createAndroidPlugin();
+      MockStreamHandlerEventSink? activeSink;
+
+      streamHandler = MockStreamHandler.inline(
+        onListen: (Object? arguments, MockStreamHandlerEventSink events) {
+          activeSink = events;
+        },
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockStreamHandler(eventChannel, streamHandler);
+
+      final stream = plugin.generate(
+        system: 'System',
+        turns: const <OnDeviceTurn>[OnDeviceTurn.user('Hello')],
+      );
+      final chunks = <String>[];
+      final result = Completer<Object>();
+      stream.listen(
+        chunks.add,
+        onError: result.complete,
+        onDone: () {
+          if (!result.isCompleted) result.complete('done');
+        },
+      );
+
+      activeSink!.success(<String, Object?>{
+        'event': 'generate',
+        'requestId': stream.requestId,
+        'type': 'chunk',
+        'text': 'Partial',
+      });
+      activeSink!.endOfStream();
+
+      expect(
+        await result.future,
+        isA<OnDeviceAiException>().having(
+          (OnDeviceAiException e) => e.code,
+          'code',
+          OnDeviceAiErrorCode.cancelled,
+        ),
+      );
+      expect(chunks, <String>['Partial']);
     });
   });
 

@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "Certificatul serverului a expirat sau nu este încă valid, iar importarea unui certificat CA nu rezolvă asta. Cere administratorului să îl reînnoiască sau verifică data și ora acestui dispozitiv.",
   "caImportDidNotHelp": "Cu acest certificat CA, certificatul site-ului tot nu este de încredere, așa că nu a fost păstrat. Un certificat CA nu rezolvă un certificat emis pentru alt nume de gazdă, unul expirat sau unul de la altă CA.",
   "caReplaceWarning": "Pentru acest site este deja salvat un certificat CA, care va fi înlocuit. Dacă administratorul nu a schimbat CA-ul, asta poate însemna că conexiunea este interceptată.",
-  "caCurrentFingerprintLabel": "Amprenta SHA-256 actuală"
+  "caCurrentFingerprintLabel": "Amprenta SHA-256 actuală",
+  "aiOnDeviceUnavailableTitle": "AI-ul integrat nu este disponibil pe acest telefon",
+  "aiOnDeviceUnavailableDetail": "AI-ul integrat necesită un telefon compatibil și componente de sistem, sau poți folosi un furnizor AI în cloud ori în rețeaua locală.",
+  "aiOnDeviceModelNotReadyTitle": "Modelul AI integrat al telefonului nu este pregătit",
+  "aiOnDeviceModelNotReadyDetail": "Asigură-te că telefonul are suficient spațiu și finalizează descărcarea modelului AI de sistem, apoi încearcă din nou.",
+  "aiOnDeviceForegroundOnlyTitle": "AI-ul integrat necesită aplicația deschisă pe ecran",
+  "aiOnDeviceForegroundOnlyDetail": "Sistemul rulează AI-ul integrat doar cât timp aplicația este afișată pe ecran. Revino în aplicație și reîncearcă manual.",
+  "aiOnDeviceBusyTitle": "AI-ul integrat al telefonului este ocupat",
+  "aiOnDeviceBusyDetail": "O altă activitate folosește acum AI-ul integrat al telefonului. Așteaptă puțin și reîncearcă manual.",
+  "aiOnDeviceQuotaExceededTitle": "AI-ul integrat a atins limita de utilizare a sistemului",
+  "aiOnDeviceQuotaExceededDetail": "Sistemul a limitat temporar cererile către AI-ul integrat. Așteaptă puțin sau treci la alt furnizor AI.",
+  "aiOnDeviceErrorTitle": "AI-ul integrat nu a putut finaliza răspunsul",
+  "aiOnDeviceErrorDetail": "Generarea pe dispozitiv nu s-a încheiat. Reîncearcă mai târziu sau folosește alt furnizor AI.",
+  "aiNoticeOnDeviceContextTruncated": "Contextul paginii a fost scurtat pentru a se încadra în limita AI-ului integrat al telefonului"
 }

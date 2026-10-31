@@ -10,7 +10,7 @@ import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 
 Object outputFor(AiFormat format) => switch (format) {
-  AiFormat.chatCompletions => {
+  AiFormat.chatCompletions || AiFormat.onDevicePrompt => {
     'role': 'assistant',
     'content': '',
     'tool_calls': [

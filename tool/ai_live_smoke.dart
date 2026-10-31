@@ -921,7 +921,8 @@ Map<String, Object?> aiLiveAssessText(
 }
 
 String _outputText(ProviderOutputEntry output) => switch (output.format) {
-  AiFormat.chatCompletions => _stringValue(wireObject(output.raw)['content']),
+  AiFormat.chatCompletions ||
+  AiFormat.onDevicePrompt => _stringValue(wireObject(output.raw)['content']),
   AiFormat.responses => [
     for (final value in wireList(output.raw))
       if (wireObject(value)['type'] == 'message')

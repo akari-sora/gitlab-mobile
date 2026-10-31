@@ -3078,5 +3078,18 @@
   "serverCertificateNotValidNow": "The server's certificate has expired or is not valid yet, which importing a CA certificate cannot fix. Ask the administrator to renew it, or check this device's date and time.",
   "caImportDidNotHelp": "With this CA certificate the site's certificate is still not trusted, so it was not kept. A CA certificate cannot fix a certificate issued for another host name, an expired certificate, or one from a different CA.",
   "caReplaceWarning": "A CA certificate is already stored for this site and will be replaced. Unless your administrator changed the CA, this can mean the connection is being intercepted.",
-  "caCurrentFingerprintLabel": "Current SHA-256 fingerprint"
+  "caCurrentFingerprintLabel": "Current SHA-256 fingerprint",
+  "aiOnDeviceUnavailableTitle": "Built-in AI is not available on this phone",
+  "aiOnDeviceUnavailableDetail": "Built-in AI needs a supported phone and system components, or you can use a cloud or local network AI provider.",
+  "aiOnDeviceModelNotReadyTitle": "The phone's built-in AI model is not ready",
+  "aiOnDeviceModelNotReadyDetail": "Make sure the phone has enough storage and finishes downloading the system AI model, then try again.",
+  "aiOnDeviceForegroundOnlyTitle": "Built-in AI needs the app on screen",
+  "aiOnDeviceForegroundOnlyDetail": "The system only runs built-in AI while the app is open on screen. Return to the app and retry manually.",
+  "aiOnDeviceBusyTitle": "The phone's built-in AI is busy",
+  "aiOnDeviceBusyDetail": "Another task is using the phone's built-in AI right now. Wait a moment and retry manually.",
+  "aiOnDeviceQuotaExceededTitle": "Built-in AI reached the system usage limit",
+  "aiOnDeviceQuotaExceededDetail": "The system temporarily limited built-in AI requests. Wait a little or switch to another AI provider.",
+  "aiOnDeviceErrorTitle": "Built-in AI could not complete the reply",
+  "aiOnDeviceErrorDetail": "On-device generation did not finish. Retry manually later, or switch to another AI provider.",
+  "aiNoticeOnDeviceContextTruncated": "Page context was shortened to fit the phone's built-in AI limit"
 }

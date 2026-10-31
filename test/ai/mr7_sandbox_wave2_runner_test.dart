@@ -102,7 +102,7 @@ Map<String, Object?> _attachmentWireBody(
         'status': 'completed',
       },
     ],
-    AiFormat.chatCompletions => {
+    AiFormat.chatCompletions || AiFormat.onDevicePrompt => {
       'role': 'assistant',
       'content': 'Acknowledged.',
       'tool_calls': [
