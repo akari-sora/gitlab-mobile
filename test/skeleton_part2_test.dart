@@ -29,6 +29,7 @@ import 'package:gitlab_mobile/features/ai/ai_write_log_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_activity.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/main.dart' show StartupScreen;
+import 'package:gitlab_mobile/shared/hub_ui.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
@@ -249,6 +250,41 @@ void main() {
           greaterThanOrEqualTo(96 / tester.view.devicePixelRatio),
         );
         semantics.dispose();
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets(
+      'the skeleton fades in, and appears at once under reduced motion',
+      (tester) async {
+        double opacity() => tester
+            .widget<Opacity>(
+              find.ancestor(
+                of: find.byType(AppShellSkeleton),
+                matching: find.byType(Opacity),
+              ),
+            )
+            .opacity;
+        await tester.pumpWidget(const MaterialApp(home: StartupScreen()));
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(opacity(), lessThan(0.1));
+        await tester.pump(const Duration(milliseconds: 90));
+        expect(opacity(), allOf(greaterThan(0.1), lessThan(0.9)));
+        await tester.pump(StartupScreen.fadeIn);
+        expect(opacity(), 1);
+        await tester.pumpWidget(const SizedBox());
+
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: MediaQuery(
+              data: MediaQueryData(disableAnimations: true),
+              child: StartupScreen(),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump();
+        expect(opacity(), 1);
         await tester.pumpWidget(const SizedBox());
       },
     );
@@ -690,5 +726,31 @@ void main() {
         semantics.dispose();
       },
     );
+  });
+
+  testWidgets('a hub row value read for the first time is a line skeleton', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    Widget row({required bool loading}) => MaterialApp(
+      home: Scaffold(
+        body: HubRow(
+          key: const ValueKey('row'),
+          leading: const Icon(Icons.auto_awesome),
+          title: 'AI',
+          subtitle: loading ? 'stale' : 'Not configured',
+          subtitleLoading: loading,
+        ),
+      ),
+    );
+    await tester.pumpWidget(row(loading: true));
+    expect(find.byType(LineSkeleton), findsOneWidget);
+    expect(find.text('stale'), findsNothing);
+    expect(find.bySemanticsLabel('AI'), findsOneWidget);
+    expect(find.bySemanticsLabel(_loadingLabel), findsNothing);
+    await tester.pumpWidget(row(loading: false));
+    expect(find.byType(LineSkeleton), findsNothing);
+    expect(find.text('Not configured'), findsOneWidget);
+    semantics.dispose();
   });
 }

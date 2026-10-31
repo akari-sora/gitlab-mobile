@@ -268,28 +268,53 @@ class _OfflineProjectsPageState extends State<OfflineProjectsPage> {
           const LinearProgressIndicator(minHeight: 2),
         HubSection(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Text(
-                l10n.offlineProjectsHeader(
-                  _repos.snapshots.length,
-                  snapshotSize(_repos.usedBytes),
-                  snapshotLimitText,
-                ),
-                key: const ValueKey('offline-projects-header'),
-                style: theme.textTheme.titleMedium,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: (_repos.usedBytes / snapshotAccountLimit).clamp(0.0, 1.0),
-                  minHeight: 4,
+            // The count and usage are known only after a successful read:
+            // bones while the first one runs, nothing after a failed one.
+            if (_repos.hasLoaded) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  l10n.offlineProjectsHeader(
+                    _repos.snapshots.length,
+                    snapshotSize(_repos.usedBytes),
+                    snapshotLimitText,
+                  ),
+                  key: const ValueKey('offline-projects-header'),
+                  style: theme.textTheme.titleMedium,
                 ),
               ),
-            ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: (_repos.usedBytes / snapshotAccountLimit).clamp(
+                      0.0,
+                      1.0,
+                    ),
+                    minHeight: 4,
+                  ),
+                ),
+              ),
+            ] else if (firstLoad) ...[
+              const Padding(
+                key: ValueKey('offline-projects-header-loading'),
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: LineSkeleton(
+                  widthFactor: 0.6,
+                  lineHeight: 24,
+                  boneHeight: 16,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: LineSkeleton(
+                  widthFactor: 1,
+                  lineHeight: 4,
+                  boneHeight: 4,
+                ),
+              ),
+            ],
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               child: Text(

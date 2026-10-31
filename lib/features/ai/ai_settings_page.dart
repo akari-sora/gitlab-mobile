@@ -842,8 +842,6 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           }
           return ListView(
             children: [
-              if (_loading && _firstLoadDone)
-                const LinearProgressIndicator(minHeight: 2),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Text(

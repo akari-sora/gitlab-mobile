@@ -607,7 +607,7 @@ class _OfflineHome extends StatelessWidget {
     return [
       if (firstLoad)
         const HubSectionSkeleton(rowHeight: 80)
-      else if (repositories.loading && saved.isEmpty)
+      else if (repositories.loading)
         const LinearProgressIndicator(minHeight: 2),
       if (blocked && !repositories.loading)
         OfflineNotice(

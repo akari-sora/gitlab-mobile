@@ -36,6 +36,7 @@ import 'features/shell/authenticated_app.dart';
 import 'features/shell/incoming_links.dart';
 import 'features/security/app_lock.dart';
 import 'features/shell/language.dart';
+import 'shared/motion.dart';
 import 'shared/skeleton.dart';
 import 'shared/theme.dart';
 import 'shared/scroll_performance.dart';
@@ -724,12 +725,16 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
 /// frame, so the plugin is warm and the three reads behind `initializing`
 /// normally finish in a few tens of milliseconds. A skeleton for that long
 /// would only flash, so the screen stays blank for [delay] and shows the
-/// neutral [AppShellSkeleton] only when the reads are slower than that.
+/// neutral [AppShellSkeleton] only when the reads are slower than that. It
+/// fades in over [fadeIn] (none under reduced motion), so a read that ends
+/// just after the delay replaces a faint skeleton instead of flashing one.
 class StartupScreen extends StatefulWidget {
   const StartupScreen({
     super.key,
     this.delay = const Duration(milliseconds: 150),
   });
+
+  static const fadeIn = Duration(milliseconds: 180);
 
   final Duration delay;
 
@@ -760,7 +765,23 @@ class _StartupScreenState extends State<StartupScreen> {
     if (!_showSkeleton) {
       return const Scaffold();
     }
-    return const Scaffold(body: SafeArea(child: AppShellSkeleton()));
+    return Scaffold(
+      body: SafeArea(
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: reduceMotion(context)
+              ? Duration.zero
+              : StartupScreen.fadeIn,
+          builder: (context, opacity, child) => Opacity(
+            opacity: opacity,
+            // Announced from the first frame, while it is still faint.
+            alwaysIncludeSemantics: true,
+            child: child,
+          ),
+          child: const AppShellSkeleton(),
+        ),
+      ),
+    );
   }
 }
 

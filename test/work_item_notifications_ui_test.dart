@@ -430,7 +430,10 @@ void main() {
     );
     await tester.tap(find.text('通知訂閱'));
     await tester.pump();
-    expect(find.text('正在確認通知訂閱…'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('work-item-notifications-loading')),
+      findsOneWidget,
+    );
 
     owner.replace();
     pending.complete(jsonResponse(_readEnvelope(subscribed: true)));

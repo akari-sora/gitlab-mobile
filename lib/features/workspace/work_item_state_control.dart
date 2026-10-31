@@ -9,6 +9,7 @@ import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_state_models.dart';
 
 import '../../l10n/l10n.dart';
+import '../../shared/skeleton.dart';
 typedef WorkItemStateLoader =
     Future<WorkItemStateSnapshot> Function(
       WorkItemGraphSummary expected, {
@@ -303,16 +304,16 @@ class _WorkItemStateControlState extends State<WorkItemStateControl> {
           children: [
             Text(l10n.workItemState, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            if (_loading)
-              Row(
+            // The read's output is a value (open or closed) and the button
+            // under it, so its first read is their shape, not a label.
+            if (_loading && snapshot == null)
+              const Column(
+                key: ValueKey('work-item-state-loading'),
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(child: Text(l10n.confirmingStateAndPermission)),
+                  LineSkeleton(widthFactor: 0.3),
+                  SizedBox(height: 8),
+                  LineSkeleton(widthFactor: 1, lineHeight: 48, boneHeight: 40),
                 ],
               )
             else if (_error != null) ...[
@@ -329,6 +330,7 @@ class _WorkItemStateControlState extends State<WorkItemStateControl> {
                 label: Text(l10n.reloadState),
               ),
             ] else if (snapshot != null) ...[
+              if (_loading) const LinearProgressIndicator(minHeight: 2),
               Text(snapshot.state == WorkItemState.open ? l10n.currentlyOpen : l10n.currentlyClosed),
               const SizedBox(height: 8),
               if (!snapshot.canUpdate)
@@ -337,7 +339,7 @@ class _WorkItemStateControlState extends State<WorkItemStateControl> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: _confirming || _writing
+                    onPressed: _confirming || _writing || _loading
                         ? null
                         : () => unawaited(_change(event)),
                     icon: _writing

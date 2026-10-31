@@ -120,7 +120,12 @@ void main() {
             throw StateError('must not write'),
       ),
     );
-    expect(find.text('確認最新狀態與更新權限…'), findsOneWidget);
+    // The first read shows the state's shape; no write button exists yet.
+    expect(
+      find.byKey(const ValueKey('work-item-state-loading')),
+      findsOneWidget,
+    );
+    expect(find.byType(OutlinedButton), findsNothing);
 
     pending.complete(_snapshot(canUpdate: false));
     await tester.pumpAndSettle();
