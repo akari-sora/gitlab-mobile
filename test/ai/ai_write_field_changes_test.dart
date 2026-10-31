@@ -715,6 +715,65 @@ void main() {
     }
   });
 
+  test('6b. only the whitespace GitLab strips is ignored', () {
+    final record = <String, dynamic>{
+      ...WorkspaceFixture().issue(7, _issueTitle),
+      'description': '    code\n',
+      'labels': ['bug', 'ux'],
+    };
+    AiFieldChangeStatus status(String field, Object? value) =>
+        _compare('updateIssue', field, value, record).status;
+
+    // Ruby's strip set (NUL, tab, LF, VT, FF, CR, space) is what GitLab
+    // removes from a title or a label name, so these are the same values.
+    for (final title in [
+      '  $_issueTitle ',
+      '\t$_issueTitle\r\n',
+      '\x00$_issueTitle\x0b\x0c',
+    ]) {
+      expect(status('title', title), AiFieldChangeStatus.unchanged);
+    }
+    for (final labels in ['ux,bug', ' bug ,\tux\n', 'bug, ux, ']) {
+      expect(status('labels', labels), AiFieldChangeStatus.unchanged);
+    }
+
+    // Unicode spaces are kept by GitLab: a different title, a different
+    // label (the real `bug` would be removed).
+    for (final title in [
+      '\u00a0$_issueTitle',
+      '$_issueTitle\ufeff',
+      '\u3000$_issueTitle',
+      '$_issueTitle\u2028',
+    ]) {
+      final change = _compare('updateIssue', 'title', title, record);
+      expect(change.status, AiFieldChangeStatus.changed, reason: title);
+      expect(change.previous, _issueTitle);
+    }
+    for (final labels in [
+      '\u00a0bug, ux',
+      'bug\u2028, ux',
+      'bug, ux\ufeff',
+      'bug,\u3000ux',
+    ]) {
+      expect(
+        status('labels', labels),
+        AiFieldChangeStatus.changed,
+        reason: labels,
+      );
+    }
+
+    // A description is compared exactly: indentation and line ends are
+    // content.
+    expect(status('description', '    code\n'), AiFieldChangeStatus.unchanged);
+    for (final description in ['code', '    code', 'code\n', '  code\n']) {
+      expect(
+        status('description', description),
+        AiFieldChangeStatus.changed,
+        reason: description,
+      );
+    }
+  });
+
   testWidgets('7. a previous title holding a secret is shown redacted', (
     tester,
   ) async {
@@ -753,15 +812,21 @@ void main() {
     }, safeDisplay: safeDisplay);
     expect(change.previous, 'Old [REDACTED] and [REDACTED]');
 
-    // The cap is 200 code units, never inside a surrogate pair.
-    final capped = _compare('updateIssue', 'title', 'Short', {
-      'title': '${'a' * 199}😀 tail',
-    }, safeDisplay: safeDisplay);
-    expect(capped.previous, 'a' * 199);
-    final long = _compare('updateIssue', 'title', 'Short', {
-      'title': 'b' * 255,
-    }, safeDisplay: safeDisplay);
-    expect(long.previous, 'b' * 200);
+    // The cap is 200 code units with the `…` that marks a cut, never inside
+    // a surrogate pair; a value that fits is shown whole.
+    String? previousOf(String title) => _compare('updateIssue', 'title', 'S', {
+      'title': title,
+    }, safeDisplay: safeDisplay).previous;
+    expect(previousOf('c' * 200), 'c' * 200);
+    expect(previousOf('b' * 255), '${'b' * 199}…');
+    expect(previousOf('${'a' * 198}😀 tail'), '${'a' * 198}…');
+    expect(previousOf('${'a' * 197}😀 tail'), '${'a' * 197}😀…');
+    for (final title in ['b' * 255, '${'a' * 198}😀 tail']) {
+      expect(
+        previousOf(title)!.length,
+        lessThanOrEqualTo(aiPreviousValueLimit),
+      );
+    }
   });
 
   testWidgets('8. in Arabic the previous value is wrapped in isolates', (
@@ -777,7 +842,9 @@ void main() {
     useLanguage(languageForTag('ar')!);
     await tester.pumpWidget(_cardHost(proposal, tag: 'ar'));
     final shown = tester.widget<Text>(_previous('title')).data!;
-    expect(shown, contains('\u2068$_issueTitle\u2069'));
+    // The generated Arabic message isolates every argument by itself; the
+    // inner pair is the card's own isolated(), as for any GitLab text.
+    expect(shown, contains('\u2068\u2068$_issueTitle\u2069\u2069'));
     expect(shown, contains(l10n.aiProposalFieldPrevious('').trim()));
     expect(
       find.descendant(
@@ -919,28 +986,31 @@ void main() {
       expect(display, isNot(contains(marker)), reason: marker);
     }
 
+    // The journal as written to disk, decrypted: every field of every entry,
+    // not a selection.
     final entries = harness.journal.entries(harness.account);
-    expect(entries, isNotEmpty);
-    for (final entry in entries) {
-      final journaled = jsonEncode({
-        'execution': entry.executionId,
-        'process': entry.processId,
-        'account': entry.accountKey,
-        'conversation': entry.conversationId,
-        'run': entry.runId,
-        'operation': entry.operationId,
-        'writes': [for (final key in entry.writeKeys) key.parts],
-        'dependencies': [for (final key in entry.dependencyKeys) key.parts],
-        'payloadSha256': entry.payloadSha256,
-        'releaseName': entry.releaseName,
-        'instance': entry.instanceKey,
-        'state': entry.state.name,
-        'sequence': entry.sequence,
-        'dispatchedAt': entry.dispatchedAt?.toIso8601String(),
-        'observation': entry.observation,
-      });
-      expect(journaled, isNot(contains(oldTitle)));
-      expect(journaled, isNot(contains(newTitle)));
+    expect(entries, hasLength(1));
+    final raw = await AiJournalFiles(harness.root).read(harness.account);
+    final journaled = jsonEncode(
+      await AiHistoryCipher.decryptJson(
+        raw!,
+        harness.journalKeys.keys[harness.account]!,
+        harness.account,
+        AiJournalFiles.fileName,
+      ),
+    );
+    expect(journaled, contains(entries.single.executionId));
+    expect(journaled, contains('updateIssue'));
+    for (final text in [
+      oldTitle,
+      newTitle,
+      'fieldChanges',
+      'comparable',
+      l10n.aiProposalFieldChanged,
+      l10n.aiProposalFieldUnchanged,
+      l10n.aiProposalFieldPrevious(''),
+    ]) {
+      expect(journaled, isNot(contains(text)), reason: text);
     }
   });
 
@@ -1110,8 +1180,9 @@ void main() {
     final unlocked = compare('discussion_locked', false);
     expect(unlocked.status, AiFieldChangeStatus.changed);
     expect(unlocked.previous, isNull);
-    // A null description and an empty or blank one are the same.
-    expect(compare('description', '  ').status, AiFieldChangeStatus.unchanged);
+    // A null description and an empty one are the same; blank text is not.
+    expect(compare('description', '').status, AiFieldChangeStatus.unchanged);
+    expect(compare('description', '  ').status, AiFieldChangeStatus.changed);
     final description = compare('description', 'Now with text');
     expect(description.status, AiFieldChangeStatus.changed);
     expect(description.previous, isNull);

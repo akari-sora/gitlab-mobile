@@ -2392,7 +2392,77 @@ void main() {
       final rendered = tester.widget<Text>(prev).data!;
       const ltrIsolate = '\u2068';
       const popIsolate = '\u2069';
-      expect(rendered, contains('$ltrIsolate$oldTitle$popIsolate'));
+      // The Arabic message isolates its argument by itself; the inner pair
+      // is the card's own isolated(), without which this fails.
+      expect(
+        rendered,
+        contains('$ltrIsolate$ltrIsolate$oldTitle$popIsolate$popIsolate'),
+      );
+    });
+
+    testWidgets('an old title that reads true or false is shown as it is', (
+      tester,
+    ) async {
+      final proposal = _proposal(
+        operationId: 'updateIssue',
+        fields: const {'title': 'Ship it', 'confidential': 'false'},
+        fieldChanges: const {
+          'title': AiFieldChange.changed(previous: 'false'),
+          'confidential': AiFieldChange.changed(previous: 'true'),
+        },
+        editableField: null,
+        releaseName: '#7',
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+        ),
+      );
+      String previous(String key) => tester
+          .widget<Text>(find.byKey(ValueKey('ai-proposal-previous-$key')))
+          .data!;
+      expect(previous('title'), l10n.aiProposalFieldPrevious('false'));
+      expect(
+        previous('confidential'),
+        l10n.aiProposalFieldPrevious(l10n.yesLabel),
+      );
+    });
+
+    testWidgets('prose and set fields never show an old value', (tester) async {
+      final proposal = _proposal(
+        operationId: 'updateIssue',
+        fields: const {
+          'description': 'New body',
+          'labels': 'ux',
+          'assignee_ids': '[7]',
+        },
+        // Even if a comparison carried one, the card leaves it out.
+        fieldChanges: const {
+          'description': AiFieldChange.changed(previous: 'Old body'),
+          'labels': AiFieldChange.changed(previous: 'bug'),
+          'assignee_ids': AiFieldChange.changed(previous: '[1]'),
+        },
+        editableField: null,
+        releaseName: '#7',
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+        ),
+      );
+      for (final key in ['description', 'labels', 'assignee_ids']) {
+        expect(
+          find.byKey(ValueKey('ai-proposal-change-$key')),
+          findsOneWidget,
+          reason: key,
+        );
+        expect(
+          find.byKey(ValueKey('ai-proposal-previous-$key')),
+          findsNothing,
+          reason: key,
+        );
+      }
+      expect(find.textContaining('Old body'), findsNothing);
     });
   });
 }

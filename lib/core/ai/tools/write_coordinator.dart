@@ -28,6 +28,10 @@ import 'write_tier.dart';
 export 'write_tier.dart' show AiGateDecision;
 
 /// Whether a proposed field on an approval card changes the current record.
+/// [unchanged] means the two values are equal after only the normalisation
+/// GitLab applies on write (Ruby `strip` of a title or label name, labels and
+/// assignees as sets, null and "" for an empty description); any other
+/// difference is [changed]. A value either side cannot read is [unknown].
 enum AiFieldChangeStatus { changed, unchanged, unknown }
 
 /// Display-only comparison result for one field on [AiWriteProposal].
@@ -3338,31 +3342,70 @@ port.AiWriteRequest _edit(
 }
 
 // Identifiers are represented by the target; content comes from the ledger.
+// The card's field rows and their change markers walk the same keys.
+void _forEachCardField(
+  port.AiWriteRequest request,
+  AiCapability capability,
+  void Function(String key, Object value) visit,
+) {
+  void walk(Map<String, Object?> values, Map<String, AiArgSpec> specs) {
+    for (final MapEntry(:key, :value) in values.entries) {
+      final spec = specs[key];
+      if (spec == null || !spec.modelVisible || value == null) continue;
+      if (key == 'fields' && value is Map<String, Object?>) {
+        walk(value, spec.properties);
+      } else if (key != 'resource' &&
+          key != 'iid' &&
+          key != 'position' &&
+          !key.endsWith('Id')) {
+        visit(key, value);
+      }
+    }
+  }
+
+  walk(request.arguments, _argumentSpecs(capability));
+}
+
 Map<String, String> _fields(
   port.AiWriteRequest request,
   AiCapability capability,
   String Function(String) safeDisplay,
 ) {
   final shown = <String, String>{};
-  void add(Map<String, Object?> values, Map<String, AiArgSpec> specs) {
-    for (final entry in values.entries) {
-      final spec = specs[entry.key];
-      if (spec == null || !spec.modelVisible || entry.value == null) continue;
-      if (entry.key == 'fields' && entry.value is Map<String, Object?>) {
-        add(entry.value! as Map<String, Object?>, spec.properties);
-      } else if (entry.key != 'resource' && entry.key != 'iid' &&
-          entry.key != 'position' && !entry.key.endsWith('Id')) {
-        shown[entry.key] = safeDisplay(
-          entry.value is String ? entry.value! as String : jsonEncode(entry.value),
-        );
-      }
-    }
-  }
-  add(request.arguments, _argumentSpecs(capability));
+  _forEachCardField(request, capability, (key, value) {
+    shown[key] = safeDisplay(value is String ? value : jsonEncode(value));
+  });
   return Map.unmodifiable(shown);
 }
 
 final _isoDatePattern = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+
+/// Ruby's `String#strip`, which GitLab applies to titles and label names:
+/// NUL and ASCII whitespace (`\t \n \v \f \r` and space) at either end.
+/// Dart's `trim()` also removes Unicode spaces (NBSP, BOM, U+3000, U+2028
+/// and others) that GitLab keeps, and would hide a real change as
+/// "unchanged".
+String _gitLabStrip(String value) {
+  bool strippable(int unit) =>
+      unit == 0x00 || unit == 0x20 || (unit >= 0x09 && unit <= 0x0d);
+  var start = 0;
+  var end = value.length;
+  while (start < end && strippable(value.codeUnitAt(start))) {
+    start++;
+  }
+  while (end > start && strippable(value.codeUnitAt(end - 1))) {
+    end--;
+  }
+  return value.substring(start, end);
+}
+
+/// A label list as GitLab reads it: comma-separated names, each stripped,
+/// empty names dropped.
+Set<String> _gitLabLabelNames(Iterable<String> names) => {
+  for (final name in names)
+    if (_gitLabStrip(name) case final stripped when stripped.isNotEmpty)
+      stripped,
+};
 
 bool? _parseComparableBool(Object? value) => switch (value) {
   final bool b => b,
@@ -3372,7 +3415,9 @@ bool? _parseComparableBool(Object? value) => switch (value) {
 };
 
 /// Extracts the whitelisted current values from the freshness read's [target]
-/// record, for REST `updateIssue` and `updateMergeRequest` only.
+/// record, for REST `updateIssue` and `updateMergeRequest` only. Each value is
+/// normalised only as GitLab itself normalises the field on write, so equal
+/// values mean the write leaves the field as it is.
 Map<String, AiComparableValue> aiComparableFieldsFor(
   String operationId,
   Map<String, dynamic> target,
@@ -3382,14 +3427,19 @@ Map<String, AiComparableValue> aiComparableFieldsFor(
   }
   final out = <String, AiComparableValue>{};
   if (target['title'] case final String title) {
-    out['title'] = AiComparableValue.string(title.trim(), previous: title);
+    out['title'] = AiComparableValue.string(
+      _gitLabStrip(title),
+      previous: title,
+    );
   }
   if (target.containsKey('description')) {
     final raw = target['description'];
+    // Compared exactly: only null and "" are the same. Whitespace inside a
+    // description is content (indented code, Markdown line breaks).
     if (raw == null) {
       out['description'] = const AiComparableValue.string('');
     } else if (raw is String) {
-      out['description'] = AiComparableValue.string(raw.trim());
+      out['description'] = AiComparableValue.string(raw);
     }
   }
   if (target.containsKey('due_date')) {
@@ -3414,14 +3464,14 @@ Map<String, AiComparableValue> aiComparableFieldsFor(
   }
   if (target.containsKey('milestone')) {
     final milestone = target['milestone'];
-    if (milestone == null || milestone == 0) {
+    if (milestone == null) {
       out['milestone_id'] = const AiComparableValue.integer(0);
     } else if (milestone is Map) {
       final id = milestone['id'];
       final title = milestone['title'];
       if (id is int && (title == null || title is String)) {
         out['milestone_id'] = AiComparableValue.integer(
-          id == 0 ? 0 : id,
+          id,
           previous: title is String && title.isNotEmpty ? title : null,
         );
       }
@@ -3429,10 +3479,9 @@ Map<String, AiComparableValue> aiComparableFieldsFor(
   }
   if (target['labels'] case final List<Object?> labels
       when labels.every((item) => item is String)) {
-    out['labels'] = AiComparableValue.strings({
-      for (final item in labels)
-        if ((item! as String).trim().isNotEmpty) (item as String).trim(),
-    });
+    out['labels'] = AiComparableValue.strings(
+      _gitLabLabelNames(labels.cast<String>()),
+    );
   }
   if (target['assignees'] case final List<Object?> assignees
       when assignees.every((item) => item is Map && item['id'] is int)) {
@@ -3451,11 +3500,24 @@ Map<String, AiComparableValue> aiComparableFieldsFor(
   return Map.unmodifiable(out);
 }
 
+/// The longest previous value the card shows, in UTF-16 code units.
+const aiPreviousValueLimit = 200;
+
+/// A previous value for the card: redacted first, then capped at
+/// [aiPreviousValueLimit] code units including a trailing `…` when cut. The
+/// cut falls on a code point boundary, never inside a surrogate pair;
+/// `lib/core` is plain Dart, so it does not cut on grapheme clusters.
 String? _formatPrevious(String? raw, String Function(String) safeDisplay) {
   if (raw == null || raw.isEmpty) return null;
   final redacted = safeDisplay(raw);
   if (redacted.isEmpty) return null;
-  return clipAiPlainForEscapedBudget(redacted, 200, escapeDepth: 0);
+  if (redacted.length <= aiPreviousValueLimit) return redacted;
+  final kept = clipAiPlainForEscapedBudget(
+    redacted,
+    aiPreviousValueLimit - 1,
+    escapeDepth: 0,
+  );
+  return '$kept…';
 }
 
 /// Compares one proposed field against [comparable] for [operationId].
@@ -3477,7 +3539,7 @@ AiFieldChange aiCompareWriteField({
       if (currentVal == null || proposed is! String) {
         return const AiFieldChange.unknown();
       }
-      return proposed.trim() == currentVal
+      return _gitLabStrip(proposed) == currentVal
           ? const AiFieldChange.unchanged()
           : AiFieldChange.changed(
               previous: _formatPrevious(current.previous, safeDisplay),
@@ -3487,7 +3549,7 @@ AiFieldChange aiCompareWriteField({
       if (currentVal == null || (proposed != null && proposed is! String)) {
         return const AiFieldChange.unknown();
       }
-      return ((proposed as String?) ?? '').trim() == currentVal
+      return ((proposed as String?) ?? '') == currentVal
           ? const AiFieldChange.unchanged()
           : const AiFieldChange.changed();
     case 'due_date':
@@ -3548,10 +3610,7 @@ AiFieldChange aiCompareWriteField({
       if (currentSet == null || proposed is! String) {
         return const AiFieldChange.unknown();
       }
-      final proposedSet = <String>{
-        for (final part in proposed.split(','))
-          if (part.trim().isNotEmpty) part.trim(),
-      };
+      final proposedSet = _gitLabLabelNames(proposed.split(','));
       final same =
           proposedSet.length == currentSet.length &&
           currentSet.containsAll(proposedSet);
@@ -3606,28 +3665,15 @@ Map<String, AiFieldChange> _fieldChanges(
     return const <String, AiFieldChange>{};
   }
   final changes = <String, AiFieldChange>{};
-  void add(Map<String, Object?> values, Map<String, AiArgSpec> specs) {
-    for (final entry in values.entries) {
-      final spec = specs[entry.key];
-      if (spec == null || !spec.modelVisible || entry.value == null) continue;
-      if (entry.key == 'fields' && entry.value is Map<String, Object?>) {
-        add(entry.value! as Map<String, Object?>, spec.properties);
-      } else if (entry.key != 'resource' &&
-          entry.key != 'iid' &&
-          entry.key != 'position' &&
-          !entry.key.endsWith('Id')) {
-        changes[entry.key] = aiCompareWriteField(
-          operationId: operationId,
-          field: entry.key,
-          proposed: entry.value,
-          comparable: comparable,
-          safeDisplay: safeDisplay,
-        );
-      }
-    }
-  }
-
-  add(request.arguments, _argumentSpecs(capability));
+  _forEachCardField(request, capability, (key, value) {
+    changes[key] = aiCompareWriteField(
+      operationId: operationId,
+      field: key,
+      proposed: value,
+      comparable: comparable,
+      safeDisplay: safeDisplay,
+    );
+  });
   return Map.unmodifiable(changes);
 }
 

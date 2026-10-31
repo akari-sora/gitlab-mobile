@@ -687,6 +687,18 @@ String aiWriteStatusLabel(AiWriteResultStatus status) => switch (status) {
 // Fields that hold prose, shown in a box with their line breaks.
 const _proseFields = {'body', 'description', 'note'};
 
+/// Never shown with an old value, whatever the comparison carries: prose is
+/// too long to repeat, and a set change is read from the marker alone.
+const _noPreviousFields = {'description', 'labels', 'assignee_ids'};
+
+/// An old value as the card shows it: a boolean field reads 是/否 like its
+/// proposed value; anything else (an old title that is literally `false`)
+/// stays as GitLab has it.
+String _previousText(String key, String previous) =>
+    key == 'confidential' || key == 'discussion_locked'
+    ? aiFieldValue(key, previous)
+    : previous;
+
 /// The snooze deadline in the user's words. A parseable timestamp becomes a
 /// local date and time; anything else shows exactly as the model sent it.
 String _snoozeUntilText(BuildContext context, String value) {
@@ -1096,12 +1108,12 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                               : muted,
                         ),
                         if (change.previous case final previous?
-                            when change.status ==
-                                AiFieldChangeStatus.changed) ...[
+                            when change.status == AiFieldChangeStatus.changed &&
+                                !_noPreviousFields.contains(key)) ...[
                           const SizedBox(height: 2),
                           Text(
                             l10n.aiProposalFieldPrevious(
-                              isolated(aiFieldValue(key, previous)),
+                              isolated(_previousText(key, previous)),
                             ),
                             key: ValueKey('ai-proposal-previous-$key'),
                             style: muted,
