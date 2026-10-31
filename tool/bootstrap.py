@@ -1784,6 +1784,21 @@ def _plist_key(name: str) -> ET.Element:
     return key
 
 
+def generate_templates(flutter: str) -> None:
+    with tempfile.TemporaryDirectory(prefix='gitlab-mobile-') as temporary:
+        template = Path(temporary) / 'gitlab_mobile'
+        packages_dir = ROOT / 'packages'
+        if packages_dir.is_dir():
+            shutil.copytree(packages_dir, template / 'packages')
+        subprocess.run([flutter, 'create', '--platforms=android,ios', '--org=io.gitlabmobile',
+                        '--project-name=gitlab_mobile', '--no-pub', str(template)], check=True)
+        configure_android(template / 'android')
+        configure_ios(template / 'ios')
+        for name in ('android', 'ios'):
+            shutil.copytree(template / name, ROOT / name)
+        shutil.copy2(template / '.metadata', ROOT / '.metadata')
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--flutter', default='flutter', help='Path to pinned Flutter executable.')
@@ -1801,15 +1816,7 @@ def main() -> int:
         for name in ('android', 'ios', '.metadata'):
             if (ROOT / name).exists():
                 raise RuntimeError(f'{name} already exists. Refusing to overwrite native work.')
-        with tempfile.TemporaryDirectory(prefix='gitlab-mobile-') as temporary:
-            template = Path(temporary) / 'gitlab_mobile'
-            subprocess.run([flutter, 'create', '--platforms=android,ios', '--org=io.gitlabmobile',
-                            '--project-name=gitlab_mobile', '--no-pub', str(template)], check=True)
-            configure_android(template / 'android')
-            configure_ios(template / 'ios')
-            for name in ('android', 'ios'):
-                shutil.copytree(template / name, ROOT / name)
-            shutil.copy2(template / '.metadata', ROOT / '.metadata')
+        generate_templates(flutter)
         apply_launcher_icons(flutter, offline=args.offline)
         print('Native runners generated. Apple team/signing and device checks remain unconfigured.')
         print('Next: flutter pub get; dart format lib test; flutter analyze; flutter test')
