@@ -3116,4 +3116,5 @@ const _messagesId = <String>[
   'Sumber AI di perangkat ini tidak dapat membuat perubahan; beralihlah ke penyedia cloud.',
   'Konten akun ini mungkin diatur oleh kebijakan organisasi Anda atau GitLab yang dikelola sendiri. Konten hanya diproses di ponsel ini dan tidak dikirim ke penyedia AI mana pun.',
   'AI bawaan ponsel hanya membaca halaman ini. Data lain dari proyek tidak dibaca.',
+  'AI bawaan ponsel tidak dapat membaca atau mengubah Kotak Masuk. Gunakan penyedia cloud sebagai gantinya.',
 ];

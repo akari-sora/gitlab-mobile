@@ -244,6 +244,12 @@ class _AiChatPageState extends State<AiChatPage> {
 
   AiChatSession get _session => widget.session;
 
+  /// The on-device AI cannot read or change the Inbox: the page shows a
+  /// notice instead of the composer result, and nothing is sent.
+  bool get _onDeviceInbox =>
+      _session.origin is AiInboxOrigin &&
+      (_session.provider?.isOnDevice ?? false);
+
   @override
   void initState() {
     super.initState();
@@ -1071,6 +1077,16 @@ class _AiChatPageState extends State<AiChatPage> {
         (gate.sendBlockReason, gate.sendBlockedUntil),
       _ => (null, null),
     };
+    final cloudProvider = _session.providers
+        .where((candidate) => !candidate.isOnDevice)
+        .firstOrNull;
+    final canOpenSettings = DemoScope.maybeOf(context) == null;
+    final VoidCallback? onSwitchToCloud = cloudProvider != null
+        ? () => unawaited(_switchProvider(cloudProvider.id))
+        : (canOpenSettings ? _openSettings : null);
+    final String? switchToCloudLabel = cloudProvider != null
+        ? l10n.aiChatSwitchProvider
+        : (canOpenSettings ? l10n.aiChatOpenSettings : null);
     final notice =
         _session.blocker != AiChatBlocker.none ||
             _session.phase == AiChatPhase.preparing
@@ -1087,6 +1103,11 @@ class _AiChatPageState extends State<AiChatPage> {
             until: pausedUntil,
             now: widget.now,
             onResume: _sendPauseEnded,
+          )
+        : _session.phase == AiChatPhase.idle && _onDeviceInbox
+        ? _OnDeviceInboxCard(
+            onSwitchProvider: onSwitchToCloud,
+            switchProviderLabel: switchToCloudLabel,
           )
         : null;
     final continuation = switch (_session) {
@@ -1151,16 +1172,6 @@ class _AiChatPageState extends State<AiChatPage> {
         controller: _scroll,
       );
     }
-    final cloudProvider = _session.providers
-        .where((candidate) => !candidate.isOnDevice)
-        .firstOrNull;
-    final canOpenSettings = DemoScope.maybeOf(context) == null;
-    final VoidCallback? onSwitchToCloud = cloudProvider != null
-        ? () => unawaited(_switchProvider(cloudProvider.id))
-        : (canOpenSettings ? _openSettings : null);
-    final String? switchToCloudLabel = cloudProvider != null
-        ? l10n.aiChatSwitchProvider
-        : (canOpenSettings ? l10n.aiChatOpenSettings : null);
     final children = <Widget>[
       for (final item in items)
         _ChatItemView(
@@ -1375,6 +1386,56 @@ class _BlockerCard extends StatelessWidget {
   }
 }
 
+/// The Inbox with the phone's built-in AI: it has no data and no tools there,
+/// so the page says so and offers the cloud switch (or AI settings) instead
+/// of sending.
+class _OnDeviceInboxCard extends StatelessWidget {
+  const _OnDeviceInboxCard({
+    required this.onSwitchProvider,
+    required this.switchProviderLabel,
+  });
+
+  final VoidCallback? onSwitchProvider;
+  final String? switchProviderLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      key: const ValueKey('ai-on-device-inbox-card'),
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.cloud_outlined, size: 20),
+                const SizedBox(width: 8),
+                Expanded(child: Text(l10n.aiOnDeviceInboxUnavailable)),
+              ],
+            ),
+            if (onSwitchProvider != null && switchProviderLabel != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: FilledButton.tonal(
+                  key: const ValueKey('ai-on-device-switch-provider'),
+                  onPressed: onSwitchProvider,
+                  child: Text(switchProviderLabel!),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyConversation extends StatelessWidget {
   const _EmptyConversation({
     required this.origin,
@@ -1418,32 +1479,34 @@ class _EmptyConversation extends StatelessWidget {
         if (notice case final notice?) ...[notice, const SizedBox(height: 20)],
         Icon(Icons.auto_awesome, size: 40, color: theme.colorScheme.primary),
         const SizedBox(height: 12),
-        Text(
-          switch (origin) {
-            AiGeneralOrigin() => l10n.aiChatEmptyGeneral,
-            // A group's own work item has no project to read around it: the
-            // conversation covers this item, not the group's other items or
-            // its projects. A path that cannot be checked is left out.
-            // With user-added items the sentence names them as in scope and
-            // keeps out only the group's items that were not added.
-            AiGroupWorkItemOrigin(:final group, :final iid) => switch ((
-              safe(group.fullPath),
-              addedGroupItems,
-            )) {
-              ('', false) => l10n.aiChatEmptyGroupItem,
-              ('', true) => l10n.aiChatEmptyGroupItemAdded,
-              (final path, false) => l10n.aiChatEmptyGroup(path, iid),
-              (final path, true) => l10n.aiChatEmptyGroupAdded(path, iid),
+        // On-device, the Inbox notice above replaces the scope sentence.
+        if (!onDevice || origin is! AiInboxOrigin)
+          Text(
+            switch (origin) {
+              AiGeneralOrigin() => l10n.aiChatEmptyGeneral,
+              // A group's own work item has no project to read around it: the
+              // conversation covers this item, not the group's other items or
+              // its projects. A path that cannot be checked is left out.
+              // With user-added items the sentence names them as in scope and
+              // keeps out only the group's items that were not added.
+              AiGroupWorkItemOrigin(:final group, :final iid) => switch ((
+                safe(group.fullPath),
+                addedGroupItems,
+              )) {
+                ('', false) => l10n.aiChatEmptyGroupItem,
+                ('', true) => l10n.aiChatEmptyGroupItemAdded,
+                (final path, false) => l10n.aiChatEmptyGroup(path, iid),
+                (final path, true) => l10n.aiChatEmptyGroupAdded(path, iid),
+              },
+              // On-device has no tools, so it never reads beyond this page.
+              _ => onDevice ? l10n.aiChatEmptyOnDevice : l10n.aiChatEmpty,
             },
-            // On-device has no tools, so it never reads beyond this page.
-            _ => onDevice ? l10n.aiChatEmptyOnDevice : l10n.aiChatEmpty,
-          },
-          key: const ValueKey('ai-chat-empty-scope'),
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+            key: const ValueKey('ai-chat-empty-scope'),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
         const SizedBox(height: 20),
         Wrap(
           alignment: WrapAlignment.center,

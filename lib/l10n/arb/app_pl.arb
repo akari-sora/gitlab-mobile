@@ -3113,5 +3113,6 @@
   "aiOnDeviceDownloadKeepOpen": "Nie zamykaj tej strony, dopóki pobieranie się nie zakończy; opuszczenie jej zatrzyma pobieranie.",
   "aiOnDeviceCannotWrite": "To wbudowane źródło AI nie może wprowadzać zmian; przełącz się na dostawcę chmurowego.",
   "aiConsentSelfManagedNoticeOnDevice": "Treść tego konta może podlegać zasadom organizacji lub samodzielnie zarządzanego GitLab. Jest przetwarzana tylko na tym telefonie i nie jest wysyłana do żadnego dostawcy AI.",
-  "aiChatEmptyOnDevice": "Wbudowane AI telefonu odczytuje tylko tę stronę. Nie odczytuje innych danych z projektu."
+  "aiChatEmptyOnDevice": "Wbudowane AI telefonu odczytuje tylko tę stronę. Nie odczytuje innych danych z projektu.",
+  "aiOnDeviceInboxUnavailable": "Wbudowane AI telefonu nie może odczytywać ani zmieniać skrzynki Odebrane. Użyj dostawcy chmurowego."
 }

@@ -3119,5 +3119,6 @@
   "aiOnDeviceDownloadKeepOpen": "Keep this page open until the download finishes; leaving it stops the download.",
   "aiOnDeviceCannotWrite": "This on-device AI source cannot make changes; switch to a cloud provider.",
   "aiConsentSelfManagedNoticeOnDevice": "This account's content may be governed by your organization or self-managed GitLab policy. It is processed only on this phone and is not sent to an AI provider.",
-  "aiChatEmptyOnDevice": "The phone's built-in AI reads only this page. It does not read other data from the project."
+  "aiChatEmptyOnDevice": "The phone's built-in AI reads only this page. It does not read other data from the project.",
+  "aiOnDeviceInboxUnavailable": "The phone's built-in AI can't read or change the Inbox. Use a cloud provider instead."
 }

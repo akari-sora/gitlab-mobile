@@ -13539,5 +13539,9 @@
   "aiChatEmptyOnDevice": "手機內建 AI 只會讀取這個頁面，不會讀取專案的其他資料。",
   "@aiChatEmptyOnDevice": {
     "description": "features/ai/ai_chat_page.dart: chat empty-state scope line for the on-device provider, which has no tools"
+  },
+  "aiOnDeviceInboxUnavailable": "手機內建 AI 無法讀取或變更收件匣，請改用雲端供應商。",
+  "@aiOnDeviceInboxUnavailable": {
+    "description": "features/ai/ai_chat_page.dart: notice shown instead of sending in the Inbox conversation when the provider is the on-device AI, which has neither data nor tools there"
   }
 }

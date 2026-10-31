@@ -3116,4 +3116,5 @@ const _messagesDe = <String>[
   'Diese lokale KI-Quelle kann keine Änderungen vornehmen; wechseln Sie zu einem Cloud-Anbieter.',
   'Die Inhalte dieses Kontos können den Richtlinien Ihrer Organisation oder Ihrer selbst verwalteten GitLab-Instanz unterliegen. Sie werden nur auf diesem Telefon verarbeitet und an keinen KI-Anbieter gesendet.',
   'Die integrierte Telefon-KI liest nur diese Seite. Weitere Daten aus dem Projekt liest sie nicht.',
+  'Die integrierte Telefon-KI kann den Posteingang weder lesen noch ändern. Verwenden Sie stattdessen einen Cloud-Anbieter.',
 ];

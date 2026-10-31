@@ -3116,4 +3116,5 @@ const _messagesRo = <String>[
   'Această sursă AI de pe dispozitiv nu poate face modificări; comutați la un furnizor cloud.',
   'Conținutul acestui cont poate fi guvernat de politica organizației sau a instanței GitLab autogestionate. Este procesat doar pe acest telefon și nu este trimis niciunui furnizor de AI.',
   'AI-ul integrat în telefon citește doar această pagină. Nu citește alte date din proiect.',
+  'AI-ul integrat în telefon nu poate citi și nici modifica mesajele primite. Folosiți un furnizor cloud.',
 ];

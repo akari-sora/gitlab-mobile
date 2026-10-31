@@ -3116,4 +3116,5 @@ const _messagesFr = <String>[
   'Cette source d’IA sur l’appareil ne peut pas effectuer de modifications ; passez à un fournisseur cloud.',
   'Le contenu de ce compte peut être régi par la politique de votre organisation ou de votre instance GitLab autogérée. Il est traité uniquement sur ce téléphone et n’est envoyé à aucun fournisseur d’IA.',
   'L’IA intégrée au téléphone lit uniquement cette page. Elle ne lit pas les autres données du projet.',
+  'L’IA intégrée au téléphone ne peut ni lire ni modifier la boîte de réception. Utilisez plutôt un fournisseur cloud.',
 ];

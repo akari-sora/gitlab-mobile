@@ -3116,4 +3116,5 @@ const _messagesPl = <String>[
   'To wbudowane źródło AI nie może wprowadzać zmian; przełącz się na dostawcę chmurowego.',
   'Treść tego konta może podlegać zasadom organizacji lub samodzielnie zarządzanego GitLab. Jest przetwarzana tylko na tym telefonie i nie jest wysyłana do żadnego dostawcy AI.',
   'Wbudowane AI telefonu odczytuje tylko tę stronę. Nie odczytuje innych danych z projektu.',
+  'Wbudowane AI telefonu nie może odczytywać ani zmieniać skrzynki Odebrane. Użyj dostawcy chmurowego.',
 ];

@@ -3113,5 +3113,6 @@
   "aiOnDeviceDownloadKeepOpen": "İndirme bitene kadar bu sayfayı açık tutun; sayfadan çıkmak indirmeyi durdurur.",
   "aiOnDeviceCannotWrite": "Bu cihaz içi AI kaynağı değişiklik yapamaz; bir bulut sağlayıcısına geçin.",
   "aiConsentSelfManagedNoticeOnDevice": "Bu hesabın içeriği kuruluşunuzun veya kendi yönettiğiniz GitLab'ın politikasına tabi olabilir. İçerik yalnızca bu telefonda işlenir ve hiçbir AI sağlayıcısına gönderilmez.",
-  "aiChatEmptyOnDevice": "Telefonun yerleşik AI modeli yalnızca bu sayfayı okur. Projedeki diğer verileri okumaz."
+  "aiChatEmptyOnDevice": "Telefonun yerleşik AI modeli yalnızca bu sayfayı okur. Projedeki diğer verileri okumaz.",
+  "aiOnDeviceInboxUnavailable": "Telefonun yerleşik AI modeli gelen kutusunu okuyamaz veya değiştiremez. Bunun yerine bir bulut sağlayıcısı kullanın."
 }

@@ -3116,4 +3116,5 @@ const _messagesEn = <String>[
   'This on-device AI source cannot make changes; switch to a cloud provider.',
   'This account\'s content may be governed by your organization or self-managed GitLab policy. It is processed only on this phone and is not sent to an AI provider.',
   'The phone\'s built-in AI reads only this page. It does not read other data from the project.',
+  'The phone\'s built-in AI can\'t read or change the Inbox. Use a cloud provider instead.',
 ];

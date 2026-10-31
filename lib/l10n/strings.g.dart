@@ -9435,4 +9435,7 @@ final class AppStrings {
 
   /// 手機內建 AI 只會讀取這個頁面，不會讀取專案的其他資料。
   String get aiChatEmptyOnDevice => language._messages[3113];
+
+  /// 手機內建 AI 無法讀取或變更收件匣，請改用雲端供應商。
+  String get aiOnDeviceInboxUnavailable => language._messages[3114];
 }

@@ -3116,4 +3116,5 @@ const _messagesPtBr = <String>[
   'Esta fonte de IA no dispositivo não pode fazer alterações; mude para um provedor na nuvem.',
   'O conteúdo desta conta pode estar sujeito à política da sua organização ou da instância autogerenciada do GitLab. Ele é processado apenas neste telefone e não é enviado a nenhum provedor de IA.',
   'A IA integrada do telefone lê apenas esta página. Ela não lê outros dados do projeto.',
+  'A IA integrada do telefone não pode ler nem alterar a caixa de entrada. Use um provedor na nuvem.',
 ];

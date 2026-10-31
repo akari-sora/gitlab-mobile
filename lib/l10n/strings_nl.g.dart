@@ -3116,4 +3116,5 @@ const _messagesNl = <String>[
   'Deze AI-bron op het toestel kan geen wijzigingen aanbrengen; schakel over naar een cloudprovider.',
   'De inhoud van dit account kan onder het beleid van je organisatie of zelfbeheerde GitLab-instantie vallen. Deze wordt alleen op deze telefoon verwerkt en niet naar een AI-provider gestuurd.',
   'De ingebouwde telefoon-AI leest alleen deze pagina. Andere gegevens uit het project leest de AI niet.',
+  'De ingebouwde telefoon-AI kan de inbox niet lezen of wijzigen. Gebruik in plaats daarvan een cloudprovider.',
 ];

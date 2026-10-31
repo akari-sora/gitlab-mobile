@@ -3116,4 +3116,5 @@ const _messagesEs = <String>[
   'Esta fuente de IA en el dispositivo no puede realizar cambios; cambia a un proveedor en la nube.',
   'El contenido de esta cuenta puede estar sujeto a las políticas de tu organización o de una instancia de GitLab autogestionada. Solo se procesa en este teléfono y no se envía a ningún proveedor de IA.',
   'La IA integrada del teléfono solo lee esta página. No lee otros datos del proyecto.',
+  'La IA integrada del teléfono no puede leer ni cambiar la bandeja de entrada. Usa un proveedor en la nube.',
 ];

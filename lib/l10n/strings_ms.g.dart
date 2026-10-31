@@ -3116,4 +3116,5 @@ const _messagesMs = <String>[
   'Sumber AI pada peranti ini tidak boleh membuat perubahan; tukar kepada penyedia awan.',
   'Kandungan akaun ini mungkin tertakluk pada dasar organisasi anda atau GitLab urus sendiri. Kandungan hanya diproses pada telefon ini dan tidak dihantar kepada mana-mana penyedia AI.',
   'AI terbina dalam telefon hanya membaca halaman ini. AI tidak membaca data lain daripada projek.',
+  'AI terbina dalam telefon tidak boleh membaca atau mengubah peti masuk. Gunakan penyedia awan sebaliknya.',
 ];

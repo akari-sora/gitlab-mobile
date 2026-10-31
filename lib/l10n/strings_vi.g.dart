@@ -3116,4 +3116,5 @@ const _messagesVi = <String>[
   'Nguồn AI trên thiết bị này không thể thực hiện thay đổi; hãy chuyển sang nhà cung cấp đám mây.',
   'Nội dung của tài khoản này có thể chịu sự điều chỉnh của chính sách tổ chức hoặc GitLab tự quản lý. Nội dung chỉ được xử lý trên điện thoại này và không được gửi đến nhà cung cấp AI nào.',
   'AI tích hợp trên điện thoại chỉ đọc trang này. AI không đọc dữ liệu khác trong dự án.',
+  'AI tích hợp trên điện thoại không thể đọc hay thay đổi hộp thư đến. Hãy dùng nhà cung cấp đám mây.',
 ];

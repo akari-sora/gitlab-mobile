@@ -1161,113 +1161,149 @@ void main() {
   });
 
   group('6. No tools in UI and write refusal card (aiOnDeviceCannotWrite)', () {
-    testWidgets(
-      'on-device hides tool/write UI affordances and shows the write refusal '
-      'card with cloud switch action when the user asks for a GitLab write',
-      (tester) async {
-        late _ChatEnvironment env;
-        late AiChatController controller;
-        final fakePlugin = _FakeOnDeviceTransportPlugin();
+    for (final inbox in const [false, true]) {
+      testWidgets(
+        inbox
+            ? 'on-device in the Inbox sends nothing: a notice with the cloud '
+                  'switch replaces the composer result and the refusal card'
+            : 'on-device hides tool/write UI affordances and shows the write '
+                  'refusal card with cloud switch action when the user asks for '
+                  'a GitLab write',
+        (tester) async {
+          late _ChatEnvironment env;
+          late AiChatController controller;
+          final fakePlugin = _FakeOnDeviceTransportPlugin();
 
-        await tester.runAsync(() async {
-          env = await _createChatEnvironment();
-          final onDevice = await env.settings.saveProvider(
-            AiProviderConfig.onDevice(),
-          );
-          final cloud = await env.settings.saveProvider(
-            AiProviderConfig(
-              id: 'cloud-openai',
-              name: 'Cloud OpenAI',
-              presetId: 'openai',
-              baseUrl: 'https://api.openai.com/v1',
-              format: AiFormat.responses,
-              model: 'gpt-5.4-mini',
-              authStyle: AiAuthStyle.bearer,
-              caps: AiPresets.openAi.capsFor(AiFormat.responses),
-              allowLanCleartext: false,
-              toolsEnabled: true,
-              recipientRevision: 1,
-            ),
-          );
-          await env.settings.setDefaultProvider(onDevice.id);
-          await env.settings.grantConsent(
-            env.workspace.account.key,
-            aiConversationConsentContract(
-              env.settings,
+          await tester.runAsync(() async {
+            env = await _createChatEnvironment();
+            final onDevice = await env.settings.saveProvider(
+              AiProviderConfig.onDevice(),
+            );
+            final cloud = await env.settings.saveProvider(
+              AiProviderConfig(
+                id: 'cloud-openai',
+                name: 'Cloud OpenAI',
+                presetId: 'openai',
+                baseUrl: 'https://api.openai.com/v1',
+                format: AiFormat.responses,
+                model: 'gpt-5.4-mini',
+                authStyle: AiAuthStyle.bearer,
+                caps: AiPresets.openAi.capsFor(AiFormat.responses),
+                allowLanCleartext: false,
+                toolsEnabled: true,
+                recipientRevision: 1,
+              ),
+            );
+            await env.settings.setDefaultProvider(onDevice.id);
+            await env.settings.grantConsent(
               env.workspace.account.key,
-              onDevice,
+              aiConversationConsentContract(
+                env.settings,
+                env.workspace.account.key,
+                onDevice,
+                releasePolicy: fixtureReleasePolicy,
+              ),
+              const <String, Object?>{'synthetic': true},
+            );
+            expect(cloud.isOnDevice, isFalse);
+
+            controller = AiChatController(
               releasePolicy: fixtureReleasePolicy,
-            ),
-            const <String, Object?>{'synthetic': true},
-          );
-          expect(cloud.isOnDevice, isFalse);
-
-          controller = AiChatController(
-            releasePolicy: fixtureReleasePolicy,
-            appInForeground: () => true,
-            origin: const AiInboxOrigin(),
-            session: env.session,
-            settings: env.settings,
-            runningCount: () => 0,
-            wireClientFactory:
-                ({required config, required apiKey, required conversationId}) =>
-                    AiWireClient.onDevice(
-                      config: config,
-                      conversationId: conversationId,
-                      appVersion: 'test',
-                      onDeviceTransport: OnDeviceAiTransport(
-                        plugin: fakePlugin,
+              appInForeground: () => true,
+              origin: inbox ? const AiInboxOrigin() : const AiGeneralOrigin(),
+              session: env.session,
+              settings: env.settings,
+              runningCount: () => 0,
+              wireClientFactory:
+                  ({required config, required apiKey, required conversationId}) =>
+                      AiWireClient.onDevice(
+                        config: config,
+                        conversationId: conversationId,
+                        appVersion: 'test',
+                        onDeviceTransport: OnDeviceAiTransport(
+                          plugin: fakePlugin,
+                        ),
                       ),
-                    ),
+            );
+            await controller.recheck();
+          });
+          addTearDown(() {
+            controller.dispose();
+            env.dispose();
+          });
+
+          await tester.pumpWidget(_host(AiChatPage(session: controller)));
+          await tester.pump();
+
+          // Tool/write affordances and inbox mark-all suggestion are hidden.
+          expect(find.byType(AiChatLevelButton), findsNothing);
+          expect(find.byKey(const ValueKey('ai-chat-attach')), findsNothing);
+          expect(find.text(l10n.aiSuggestInboxMarkAll), findsNothing);
+
+          if (inbox) {
+            // No data and no tools here: the notice says so before anything is
+            // typed, the composer is off and no scope sentence claims a page.
+            expect(
+              find.byKey(const ValueKey('ai-on-device-inbox-card')),
+              findsOneWidget,
+            );
+            expect(find.text(l10n.aiOnDeviceInboxUnavailable), findsOneWidget);
+            expect(find.byKey(const ValueKey('ai-chat-empty-scope')), findsNothing);
+            expect(find.text(l10n.aiChatEmptyOnDevice), findsNothing);
+            expect(controller.canSend, isFalse);
+          }
+
+          // Sending a write request never calls the model. Outside the Inbox it
+          // shows the refusal card; in the Inbox nothing is sent at all.
+          await tester.runAsync(() async {
+            await controller.send('Close this issue');
+          });
+          await tester.pump();
+
+          expect(fakePlugin.calls, isEmpty);
+          expect(
+            find.byKey(const ValueKey('ai-on-device-cannot-write-card')),
+            inbox ? findsNothing : findsOneWidget,
           );
-          await controller.recheck();
-        });
-        addTearDown(() {
-          controller.dispose();
-          env.dispose();
-        });
+          expect(
+            find.text(l10n.aiOnDeviceCannotWrite),
+            inbox ? findsNothing : findsOneWidget,
+          );
+          if (inbox) {
+            expect(controller.items, isEmpty);
+            expect(
+              find.byKey(const ValueKey('ai-on-device-inbox-card')),
+              findsOneWidget,
+            );
+          }
+          expect(
+            find.byKey(const ValueKey('ai-on-device-switch-provider')),
+            findsOneWidget,
+          );
 
-        await tester.pumpWidget(_host(AiChatPage(session: controller)));
-        await tester.pump();
-
-        // Tool/write affordances and inbox mark-all suggestion are hidden.
-        expect(find.byType(AiChatLevelButton), findsNothing);
-        expect(find.byKey(const ValueKey('ai-chat-attach')), findsNothing);
-        expect(find.text(l10n.aiSuggestInboxMarkAll), findsNothing);
-
-        // Sending a write request shows the refusal card without calling the
-        // model.
-        await tester.runAsync(() async {
-          await controller.send('Close this issue');
-        });
-        await tester.pump();
-
-        expect(fakePlugin.calls, isEmpty);
-        expect(
-          find.byKey(const ValueKey('ai-on-device-cannot-write-card')),
-          findsOneWidget,
-        );
-        expect(find.text(l10n.aiOnDeviceCannotWrite), findsOneWidget);
-        expect(
-          find.byKey(const ValueKey('ai-on-device-switch-provider')),
-          findsOneWidget,
-        );
-
-        // Tapping the switch button opens the switch confirmation dialog, and
-        // confirming switches to the cloud provider!
-        await tester.tap(
-          find.byKey(const ValueKey('ai-on-device-switch-provider')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text(l10n.confirmAction));
-        await tester.pumpAndSettle();
-        await tester.runAsync(() async {
-          await _waitFor(() => controller.provider?.id == 'cloud-openai');
-        });
-        await tester.pumpAndSettle();
-        expect(controller.provider?.id, 'cloud-openai');
-      },
-    );
+          // Tapping the switch button switches to the cloud provider. With a
+          // conversation to discard (the refusal) it asks first; the empty
+          // Inbox chat has nothing to discard.
+          await tester.tap(
+            find.byKey(const ValueKey('ai-on-device-switch-provider')),
+          );
+          await tester.pumpAndSettle();
+          if (!inbox) {
+            await tester.tap(find.text(l10n.confirmAction));
+            await tester.pumpAndSettle();
+          }
+          await tester.runAsync(() async {
+            await _waitFor(() => controller.provider?.id == 'cloud-openai');
+          });
+          await tester.pumpAndSettle();
+          expect(controller.provider?.id, 'cloud-openai');
+          expect(
+            find.byKey(const ValueKey('ai-on-device-inbox-card')),
+            findsNothing,
+          );
+        },
+      );
+    }
 
     test('write requests are imperatives; questions and reads are not', () {
       const origin = AiGeneralOrigin();
@@ -1287,6 +1323,15 @@ void main() {
         '幫我留言說 LGTM',
         '幫我把這個 MR 合併',
         '把這個議題關閉',
+        // Inbox actions.
+        'Clear my inbox',
+        'Archive all notifications',
+        'Dismiss my to-dos',
+        'Snooze this todo',
+        '請清空收件匣',
+        '幫我封存所有通知',
+        '請略過這些待辦',
+        '麻煩你忽略通知',
       ]) {
         expect(
           looksLikeGitLabWriteRequest(text, origin: origin),
@@ -1338,22 +1383,21 @@ void main() {
           reason: text,
         );
       }
-      // The Inbox conversation can only mark to-dos done; a question about
-      // it still goes to the model.
-      expect(
-        looksLikeGitLabWriteRequest(
-          'Clear my inbox',
-          origin: const AiInboxOrigin(),
-        ),
-        isTrue,
-      );
-      expect(
-        looksLikeGitLabWriteRequest(
-          'What is in my inbox?',
-          origin: const AiInboxOrigin(),
-        ),
-        isFalse,
-      );
+      // The Inbox origin no longer turns every non-question into a write:
+      // the same rule applies there.
+      for (final (text, write) in const [
+        ('Clear my inbox', true),
+        ('請清空收件匣', true),
+        ('What is in my inbox?', false),
+        ('Summarize my inbox', false),
+        ('In Traditional Chinese, explain what code review is.', false),
+      ]) {
+        expect(
+          looksLikeGitLabWriteRequest(text, origin: const AiInboxOrigin()),
+          write,
+          reason: text,
+        );
+      }
     });
 
     test('a read question on a page reaches the on-device model', () async {

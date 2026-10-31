@@ -3113,5 +3113,6 @@
   "aiOnDeviceDownloadKeepOpen": "Mantenha esta página aberta até o download terminar; sair dela interrompe o download.",
   "aiOnDeviceCannotWrite": "Esta fonte de IA no dispositivo não pode fazer alterações; mude para um provedor na nuvem.",
   "aiConsentSelfManagedNoticeOnDevice": "O conteúdo desta conta pode estar sujeito à política da sua organização ou da instância autogerenciada do GitLab. Ele é processado apenas neste telefone e não é enviado a nenhum provedor de IA.",
-  "aiChatEmptyOnDevice": "A IA integrada do telefone lê apenas esta página. Ela não lê outros dados do projeto."
+  "aiChatEmptyOnDevice": "A IA integrada do telefone lê apenas esta página. Ela não lê outros dados do projeto.",
+  "aiOnDeviceInboxUnavailable": "A IA integrada do telefone não pode ler nem alterar a caixa de entrada. Use um provedor na nuvem."
 }

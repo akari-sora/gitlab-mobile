@@ -1034,7 +1034,14 @@ class AiChatController extends ChangeNotifier
       blocker == AiChatBlocker.none &&
       _context != null &&
       sendBlockReason == null &&
-      runningCount() < AiRunRegistry.maxRunning;
+      runningCount() < AiRunRegistry.maxRunning &&
+      !_onDeviceInbox;
+
+  /// The Inbox conversation reads no data on any provider, and the phone's
+  /// built-in AI has no tools: there it can neither read nor change anything,
+  /// so nothing is sent and the page says so instead.
+  bool get _onDeviceInbox =>
+      origin is AiInboxOrigin && (_provider?.isOnDevice ?? false);
   @override
   set confirmCleartext(Future<bool> Function()? callback) =>
       _confirmCleartext = callback;
@@ -4136,12 +4143,14 @@ final _enWriteActionPattern = RegExp(
   r'(?:(?:please|pls|kindly|now|then|also)\s+)?'
   r'(?:create|submit|post|leave|add|edit|update|modify|change|rename|close|'
   r'reopen|merge|approve|unapprove|assign|unassign|delete|remove|retry|'
-  r'rerun|cancel|trigger|resolve|unresolve|mark|comment|reply|label)\b'
+  r'rerun|cancel|trigger|resolve|unresolve|mark|comment|reply|label|'
+  r'clear|archive|dismiss|snooze)\b'
   r'(?![^\w.!?\n]+(?:me|us)\b)'
   r'(?:[^\w.!?\n]+[\w-]+){0,4}?[^\w.!?\n]+'
   r'(?:issues?|mrs?|merge\s+requests?|comments?|notes?|replies|reply|'
   r'discussions?|threads?|titles?|descriptions?|labels?|milestones?|'
-  r'releases?|snippets?|pipelines?|jobs?|todos?|to-dos?|inbox|done)\b',
+  r'releases?|snippets?|pipelines?|jobs?|todos?|to-dos?|inbox|'
+  r'notifications?|done)\b',
   caseSensitive: false,
 );
 
@@ -4157,13 +4166,15 @@ const _cjkWriteVerbs =
     '\\u6279\\u51c6|\\u53d6\\u6d88\\u6838\\u51c6|\\u6307\\u6d3e|'
     '\\u53d6\\u6d88\\u6307\\u6d3e|\\u522a\\u9664|\\u79fb\\u9664|'
     '\\u91cd\\u8a66|\\u91cd\\u65b0\\u57f7\\u884c|\\u53d6\\u6d88|'
-    '\\u89f8\\u767c|\\u6a19\\u8a18|\\u6a19\\u70ba';
+    '\\u89f8\\u767c|\\u6a19\\u8a18|\\u6a19\\u70ba|'
+    // Inbox actions: 清空, 封存, 略過, 忽略.
+    '\\u6e05\\u7a7a|\\u5c01\\u5b58|\\u7565\\u904e|\\u5ffd\\u7565';
 const _cjkWriteTargets =
     'issue|mr|\\u5408\\u4f75\\u8acb\\u6c42|\\u8b70\\u984c|\\u7559\\u8a00|'
     '\\u8a55\\u8ad6|\\u5099\\u8a3b|\\u8a0e\\u8ad6|\\u6a19\\u984c|'
     '\\u63cf\\u8ff0|\\u6a19\\u7c64|\\u91cc\\u7a0b\\u7891|\\u770b\\u677f|'
     'release|\\u7a0b\\u5f0f\\u78bc\\u7247\\u6bb5|snippet|pipeline|job|'
-    '\\u5f85\\u8fa6|todo|\\u6536\\u4ef6\\u5323';
+    '\\u5f85\\u8fa6|todo|\\u6536\\u4ef6\\u5323|\\u901a\\u77e5';
 const _cjkAsk =
     '(?:(?:\\u8acb|\\u9ebb\\u7169(?:\\u4f60)?)(?:\\u5e6b\\u6211)?|\\u5e6b\\u6211)';
 const _cjkGap = '[^\\u3002\\uff01\\uff1f!?\\n]{0,16}?';
@@ -4185,8 +4196,8 @@ final _cjkWriteActionPattern = RegExp(
 );
 
 /// Detects explicit GitLab write requests for the read-only on-device source.
-/// The Inbox conversation can only mark to-dos done, so all of it is a write,
-/// except a question.
+/// The same rule applies to every origin; an on-device Inbox conversation
+/// never reaches it, because it cannot send at all (see `canSend`).
 bool looksLikeGitLabWriteRequest(String text, {required AiChatOrigin origin}) {
   final trimmed = text.trim();
   if (trimmed.isEmpty ||
@@ -4195,8 +4206,7 @@ bool looksLikeGitLabWriteRequest(String text, {required AiChatOrigin origin}) {
       _cjkQuestionWord.hasMatch(trimmed)) {
     return false;
   }
-  return origin is AiInboxOrigin ||
-      _enWriteActionPattern.hasMatch(trimmed) ||
+  return _enWriteActionPattern.hasMatch(trimmed) ||
       _cjkWriteActionPattern.hasMatch(trimmed);
 }
 

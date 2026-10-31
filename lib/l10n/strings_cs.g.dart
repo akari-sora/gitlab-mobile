@@ -3116,4 +3116,5 @@ const _messagesCs = <String>[
   'Tento místní zdroj AI nemůže provádět změny; přepněte na cloudového poskytovatele.',
   'Obsah tohoto účtu se může řídit zásadami vaší organizace nebo samostatně spravované instance GitLabu. Zpracovává se jen v tomto telefonu a neodesílá se žádnému poskytovateli AI.',
   'Vestavěná AI telefonu čte jen tuto stránku. Další data z projektu nečte.',
+  'Vestavěná AI telefonu nemůže číst ani měnit složku Doručené. Použijte cloudového poskytovatele.',
 ];

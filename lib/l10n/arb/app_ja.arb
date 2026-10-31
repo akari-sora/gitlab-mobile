@@ -3113,5 +3113,6 @@
   "aiOnDeviceDownloadKeepOpen": "ダウンロードが終わるまでこのページを開いたままにしてください。離れるとダウンロードは停止します。",
   "aiOnDeviceCannotWrite": "この端末内蔵 AI は変更を行えません。変更するにはクラウドの AI プロバイダーに切り替えてください。",
   "aiConsentSelfManagedNoticeOnDevice": "このアカウントの内容には、所属組織または自己管理 GitLab のポリシーが適用される場合があります。内容はこの端末内でのみ処理され、AI プロバイダーには送信されません。",
-  "aiChatEmptyOnDevice": "端末内蔵 AI はこのページだけを読みます。プロジェクトのほかのデータは読みません。"
+  "aiChatEmptyOnDevice": "端末内蔵 AI はこのページだけを読みます。プロジェクトのほかのデータは読みません。",
+  "aiOnDeviceInboxUnavailable": "端末内蔵 AI は受信トレイを読み取ることも変更することもできません。クラウドのプロバイダーを使用してください。"
 }

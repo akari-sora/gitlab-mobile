@@ -7,6 +7,7 @@ import '../ai_failure.dart';
 import '../ai_provider.dart';
 import '../ai_transcript.dart';
 import '../app_text.dart';
+import '../prompts.dart';
 import '../redaction.dart';
 import '../sse.dart';
 import 'wire_format.dart';
@@ -192,7 +193,13 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
   const historyClose = '</conversation_history>';
   final systemSection =
       '<system_instructions>\n${plan.system}\n</system_instructions>';
-  final userSection = '<user_request>\n${tail.text}\n</user_request>';
+  // Section text is escaped at delivery only (& < >), so an earlier answer
+  // or question cannot close a section or fake <gitlab_data>. The plain
+  // values below stay raw for the transport's redaction check, and the
+  // budget counts the escaped text that is sent.
+  final userSection =
+      '<user_request>\n${escapeUntrustedGitLabText(tail.text)}\n'
+      '</user_request>';
   final basePrompt = '$systemSection\n\n$userSection';
   final baseTokens = estimateOnDeviceTokens(basePrompt);
   if (baseTokens > maxInputTokens) {
@@ -207,7 +214,8 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
       case AppUserEntry(:final text, :final context):
         final sectionParts = <String>[
           for (final block in context) block.text,
-          if (text.isNotEmpty) '<user_turn>\n$text\n</user_turn>',
+          if (text.isNotEmpty)
+            '<user_turn>\n${escapeUntrustedGitLabText(text)}\n</user_turn>',
         ];
         if (sectionParts.isNotEmpty) {
           historyEntries.add((
@@ -225,7 +233,9 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
         if (content is String && content.isNotEmpty) {
           historyEntries.add((
             role: OnDeviceRole.model,
-            section: '<assistant_turn>\n$content\n</assistant_turn>',
+            section:
+                '<assistant_turn>\n${escapeUntrustedGitLabText(content)}\n'
+                '</assistant_turn>',
             plain: <String>[content],
           ));
         }

@@ -3116,4 +3116,5 @@ const _messagesSv = <String>[
   'Den här AI-källan på enheten kan inte göra ändringar; byt till en molnleverantör.',
   'Innehållet i det här kontot kan omfattas av organisationens eller den egenhanterade GitLab-instansens policy. Det bearbetas bara på den här telefonen och skickas inte till någon AI-leverantör.',
   'Telefonens inbyggda AI läser bara den här sidan. Andra data från projektet läser den inte.',
+  'Telefonens inbyggda AI kan inte läsa eller ändra inkorgen. Använd en molnleverantör i stället.',
 ];

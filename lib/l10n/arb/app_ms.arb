@@ -3113,5 +3113,6 @@
   "aiOnDeviceDownloadKeepOpen": "Biarkan halaman ini terbuka sehingga muat turun selesai; meninggalkannya akan menghentikan muat turun.",
   "aiOnDeviceCannotWrite": "Sumber AI pada peranti ini tidak boleh membuat perubahan; tukar kepada penyedia awan.",
   "aiConsentSelfManagedNoticeOnDevice": "Kandungan akaun ini mungkin tertakluk pada dasar organisasi anda atau GitLab urus sendiri. Kandungan hanya diproses pada telefon ini dan tidak dihantar kepada mana-mana penyedia AI.",
-  "aiChatEmptyOnDevice": "AI terbina dalam telefon hanya membaca halaman ini. AI tidak membaca data lain daripada projek."
+  "aiChatEmptyOnDevice": "AI terbina dalam telefon hanya membaca halaman ini. AI tidak membaca data lain daripada projek.",
+  "aiOnDeviceInboxUnavailable": "AI terbina dalam telefon tidak boleh membaca atau mengubah peti masuk. Gunakan penyedia awan sebaliknya."
 }
