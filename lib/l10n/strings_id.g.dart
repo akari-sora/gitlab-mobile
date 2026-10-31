@@ -3041,4 +3041,7 @@ const _messagesId = <String>[
   'buat isu,buatkan isu,isu baru',
   'tutup',
   'Tidak tersedia di demo, yang tetap offline',
+  'Akan berubah',
+  'Tidak berubah',
+  'Saat ini: {value}',
 ];

@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "コメント,返信",
   "demoKeywordsIssue": "イシューを作,新しいイシュー,イシューを立て",
   "demoKeywordsClose": "クローズ,閉じ",
-  "demoOffline": "デモはオフラインのため使えません"
+  "demoOffline": "デモはオフラインのため使えません",
+  "aiProposalFieldChanged": "変更あり",
+  "aiProposalFieldUnchanged": "変更なし",
+  "aiProposalFieldPrevious": "現在：{value}"
 }

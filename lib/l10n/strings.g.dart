@@ -9210,4 +9210,13 @@ final class AppStrings {
 
   /// Demo 不會連線，這裡無法使用
   String get demoOffline => language._messages[3038];
+
+  /// 將變更
+  String get aiProposalFieldChanged => language._messages[3039];
+
+  /// 不變
+  String get aiProposalFieldUnchanged => language._messages[3040];
+
+  /// 原本：{value}
+  String aiProposalFieldPrevious(Object? value) => _format(language, language._messages[3041], {'value': value});
 }

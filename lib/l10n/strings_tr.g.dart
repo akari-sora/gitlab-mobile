@@ -3041,4 +3041,7 @@ const _messagesTr = <String>[
   'sorun oluştur,yeni sorun,sorun aç',
   'kapat,kapatın,kapatır mısın',
   'Demoda kullanılamaz, demo çevrimdışı çalışır',
+  'Değişecek',
+  'Değişmedi',
+  'Şu an: {value}',
 ];

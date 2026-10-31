@@ -3041,4 +3041,7 @@ const _messagesFr = <String>[
   'créer un ticket,crée un ticket,nouveau ticket,ouvre un ticket',
   'ferme,fermer',
   'Indisponible dans la démo, qui reste hors ligne',
+  'Sera modifié',
+  'Inchangé',
+  'Actuel : {value}',
 ];

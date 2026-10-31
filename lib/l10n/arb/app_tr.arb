@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "yorum,yorumu,yorumunu,yorum yap",
   "demoKeywordsIssue": "sorun oluştur,yeni sorun,sorun aç",
   "demoKeywordsClose": "kapat,kapatın,kapatır mısın",
-  "demoOffline": "Demoda kullanılamaz, demo çevrimdışı çalışır"
+  "demoOffline": "Demoda kullanılamaz, demo çevrimdışı çalışır",
+  "aiProposalFieldChanged": "Değişecek",
+  "aiProposalFieldUnchanged": "Değişmedi",
+  "aiProposalFieldPrevious": "Şu an: {value}"
 }

@@ -13208,5 +13208,25 @@
   "@demoOffline": {
     "description": "Snack bar and media note when the demo refuses the browser, sharing, a download or outside media",
     "placeholders": {}
+  },
+  "aiProposalFieldChanged": "將變更",
+  "@aiProposalFieldChanged": {
+    "description": "Marker beside a field on the AI write confirmation card that will change",
+    "placeholders": {}
+  },
+  "aiProposalFieldUnchanged": "不變",
+  "@aiProposalFieldUnchanged": {
+    "description": "Marker beside a field on the AI write confirmation card whose value matches the current record",
+    "placeholders": {}
+  },
+  "aiProposalFieldPrevious": "原本：{value}",
+  "@aiProposalFieldPrevious": {
+    "description": "Previous value shown under a changed short field on the AI write confirmation card",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Old title"
+      }
+    }
   }
 }

@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "comentariu,comentează,comenteaza",
   "demoKeywordsIssue": "creează o problemă,creeaza o problema,problemă nouă",
   "demoKeywordsClose": "închide,inchide",
-  "demoOffline": "Indisponibil în demo, care rămâne offline"
+  "demoOffline": "Indisponibil în demo, care rămâne offline",
+  "aiProposalFieldChanged": "Se va modifica",
+  "aiProposalFieldUnchanged": "Neschimbat",
+  "aiProposalFieldPrevious": "Actual: {value}"
 }

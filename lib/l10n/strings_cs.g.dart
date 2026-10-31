@@ -3041,4 +3041,7 @@ const _messagesCs = <String>[
   'vytvoř problém,vytvořit problém,nový problém',
   'zavři,zavřít,uzavři',
   'V demu nedostupné, demo zůstává offline',
+  'Změní se',
+  'Beze změny',
+  'Nyní: {value}',
 ];

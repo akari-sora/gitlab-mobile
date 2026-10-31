@@ -3041,4 +3041,7 @@ const _messagesMs = <String>[
   'cipta isu,buat isu,isu baharu',
   'tutup',
   'Tidak tersedia dalam demo, yang kekal di luar talian',
+  'Akan berubah',
+  'Tidak berubah',
+  'Semasa: {value}',
 ];

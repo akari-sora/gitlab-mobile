@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "commento,commenta,commentare,nota",
   "demoKeywordsIssue": "crea una issue,creare una issue,nuova issue,apri una issue",
   "demoKeywordsClose": "chiudi,chiudere",
-  "demoOffline": "Non disponibile nella demo, che resta offline"
+  "demoOffline": "Non disponibile nella demo, che resta offline",
+  "aiProposalFieldChanged": "Verrà modificato",
+  "aiProposalFieldUnchanged": "Invariato",
+  "aiProposalFieldPrevious": "Attuale: {value}"
 }

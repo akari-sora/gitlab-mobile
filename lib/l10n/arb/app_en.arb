@@ -3044,5 +3044,8 @@
   "demoKeywordsComment": "comment,comments,note,reply",
   "demoKeywordsIssue": "create an issue,create issue,new issue,open an issue,file an issue",
   "demoKeywordsClose": "close",
-  "demoOffline": "Not available in the demo, which stays offline"
+  "demoOffline": "Not available in the demo, which stays offline",
+  "aiProposalFieldChanged": "Will change",
+  "aiProposalFieldUnchanged": "Unchanged",
+  "aiProposalFieldPrevious": "Currently: {value}"
 }

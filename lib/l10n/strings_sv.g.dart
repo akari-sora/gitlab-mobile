@@ -3041,4 +3041,7 @@ const _messagesSv = <String>[
   'skapa ett ärende,skapa ärende,nytt ärende',
   'stäng,stänga',
   'Inte tillgängligt i demon, som är offline',
+  'Ändras',
+  'Oförändrad',
+  'Nuvarande: {value}',
 ];

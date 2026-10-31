@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "opmerking,reactie,commentaar",
   "demoKeywordsIssue": "issue maken,maak een issue,nieuw issue,nieuwe issue",
   "demoKeywordsClose": "sluit,sluiten",
-  "demoOffline": "Niet beschikbaar in de demo, die offline blijft"
+  "demoOffline": "Niet beschikbaar in de demo, die offline blijft",
+  "aiProposalFieldChanged": "Wordt gewijzigd",
+  "aiProposalFieldUnchanged": "Ongewijzigd",
+  "aiProposalFieldPrevious": "Huidig: {value}"
 }

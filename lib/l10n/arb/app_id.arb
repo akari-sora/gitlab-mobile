@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "komentar,komentari",
   "demoKeywordsIssue": "buat isu,buatkan isu,isu baru",
   "demoKeywordsClose": "tutup",
-  "demoOffline": "Tidak tersedia di demo, yang tetap offline"
+  "demoOffline": "Tidak tersedia di demo, yang tetap offline",
+  "aiProposalFieldChanged": "Akan berubah",
+  "aiProposalFieldUnchanged": "Tidak berubah",
+  "aiProposalFieldPrevious": "Saat ini: {value}"
 }

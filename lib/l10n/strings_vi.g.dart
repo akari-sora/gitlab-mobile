@@ -3041,4 +3041,7 @@ const _messagesVi = <String>[
   'tạo vấn đề,tạo một vấn đề,vấn đề mới',
   'đóng',
   'Không dùng được trong bản demo vì bản demo chạy ngoại tuyến',
+  'Sẽ thay đổi',
+  'Không đổi',
+  'Hiện tại: {value}',
 ];

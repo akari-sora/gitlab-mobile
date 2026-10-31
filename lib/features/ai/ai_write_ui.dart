@@ -886,6 +886,43 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
     });
   }
 
+  /// One proposed value: prose in a bordered box, anything else on one line.
+  Widget _fieldValue(
+    BuildContext context,
+    String key,
+    String value,
+    TextStyle? style,
+  ) {
+    if (!_proseFields.contains(key)) {
+      return Text(
+        key == 'until'
+            ? _snoozeUntilText(context, value)
+            : aiFieldValue(key, value),
+        key: ValueKey('ai-proposal-field-$key'),
+        style: style,
+      );
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: SizedBox(
+          width: double.infinity,
+          child: Text(
+            value,
+            key: ValueKey('ai-proposal-field-$key'),
+            style: style,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1024,35 +1061,60 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                   !aiFieldInPreview(preview, key) &&
                   !(upload != null && _uploadFields.contains(key))) ...[
                 const SizedBox(height: 8),
-                Text(aiFieldLabel(key), style: theme.textTheme.labelMedium),
-                const SizedBox(height: 2),
-                if (_proseFields.contains(key))
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: scheme.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: scheme.outlineVariant),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: Text(
-                          value,
-                          key: ValueKey('ai-proposal-field-$key'),
-                          style: theme.textTheme.bodySmall,
+                // Compared with the current record (REST issue and MR
+                // updates): a marker, and for short fields the value now.
+                // One semantics node, so the marker is read with the field.
+                if (proposal.fieldChanges[key] case final change?
+                    when change.status != AiFieldChangeStatus.unknown)
+                  MergeSemantics(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 6,
+                          runSpacing: 2,
+                          children: [
+                            Text(
+                              aiFieldLabel(key),
+                              style: theme.textTheme.labelMedium,
+                            ),
+                            _FieldChangeMarker(
+                              key: ValueKey('ai-proposal-change-$key'),
+                              changed:
+                                  change.status == AiFieldChangeStatus.changed,
+                            ),
+                          ],
                         ),
-                      ),
+                        const SizedBox(height: 2),
+                        _fieldValue(
+                          context,
+                          key,
+                          value,
+                          change.status == AiFieldChangeStatus.changed
+                              ? theme.textTheme.bodySmall
+                              : muted,
+                        ),
+                        if (change.previous case final previous?
+                            when change.status ==
+                                AiFieldChangeStatus.changed) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            l10n.aiProposalFieldPrevious(
+                              isolated(aiFieldValue(key, previous)),
+                            ),
+                            key: ValueKey('ai-proposal-previous-$key'),
+                            style: muted,
+                          ),
+                        ],
+                      ],
                     ),
                   )
-                else
-                  Text(
-                    key == 'until'
-                        ? _snoozeUntilText(context, value)
-                        : aiFieldValue(key, value),
-                    key: ValueKey('ai-proposal-field-$key'),
-                    style: theme.textTheme.bodySmall,
-                  ),
+                else ...[
+                  Text(aiFieldLabel(key), style: theme.textTheme.labelMedium),
+                  const SizedBox(height: 2),
+                  _fieldValue(context, key, value, theme.textTheme.bodySmall),
+                ],
               ],
             if (proposal.closingRefs.isNotEmpty &&
                 preview is! AiMergePreview) ...[
@@ -1162,6 +1224,32 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Beside a field label: whether the write changes the field (icon and text,
+/// never colour alone). The unchanged icon is two bars, read as "=".
+class _FieldChangeMarker extends StatelessWidget {
+  const _FieldChangeMarker({super.key, required this.changed});
+
+  final bool changed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = AppPalette.of(theme.brightness);
+    final color = changed ? palette.accent : palette.muted;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(changed ? Icons.edit : Icons.drag_handle, size: 14, color: color),
+        const SizedBox(width: 2),
+        Text(
+          changed ? l10n.aiProposalFieldChanged : l10n.aiProposalFieldUnchanged,
+          style: theme.textTheme.labelSmall?.copyWith(color: color),
+        ),
+      ],
     );
   }
 }

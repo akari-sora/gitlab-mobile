@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "comentario,comenta,comentar,nota",
   "demoKeywordsIssue": "crear una incidencia,crea una incidencia,nueva incidencia,abre una incidencia",
   "demoKeywordsClose": "cierra,cerrar",
-  "demoOffline": "No disponible en la demo, que funciona sin conexión"
+  "demoOffline": "No disponible en la demo, que funciona sin conexión",
+  "aiProposalFieldChanged": "Cambiará",
+  "aiProposalFieldUnchanged": "Sin cambios",
+  "aiProposalFieldPrevious": "Actual: {value}"
 }

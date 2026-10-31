@@ -3041,4 +3041,7 @@ const _messagesEs = <String>[
   'crear una incidencia,crea una incidencia,nueva incidencia,abre una incidencia',
   'cierra,cerrar',
   'No disponible en la demo, que funciona sin conexión',
+  'Cambiará',
+  'Sin cambios',
+  'Actual: {value}',
 ];

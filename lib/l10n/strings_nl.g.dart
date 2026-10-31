@@ -3041,4 +3041,7 @@ const _messagesNl = <String>[
   'issue maken,maak een issue,nieuw issue,nieuwe issue',
   'sluit,sluiten',
   'Niet beschikbaar in de demo, die offline blijft',
+  'Wordt gewijzigd',
+  'Ongewijzigd',
+  'Huidig: {value}',
 ];
