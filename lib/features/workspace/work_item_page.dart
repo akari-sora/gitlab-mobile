@@ -1685,7 +1685,10 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
           children: [
             // Both shrink and wrap in a long translation or at large text.
             Flexible(child: Text(l10n.assignee, style: Theme.of(context).textTheme.titleSmall)),
+            // The button gets the larger share: Flexible does not hand a short
+            // title's unused width to its sibling.
             Flexible(
+              flex: 2,
               child: TextButton.icon(
                 key: const ValueKey('quick-edit-assignees'),
                 onPressed: _busy ? null : _editAssignees,
@@ -1738,6 +1741,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
           children: [
             Flexible(child: Text(l10n.reviewers, style: Theme.of(context).textTheme.titleSmall)),
             Flexible(
+              flex: 2,
               child: TextButton.icon(
                 key: const ValueKey('quick-edit-reviewers'),
                 onPressed: _busy ? null : _editReviewers,
@@ -1786,6 +1790,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
           children: [
             Flexible(child: Text(l10n.labelNoun, style: Theme.of(context).textTheme.titleSmall)),
             Flexible(
+              flex: 2,
               child: TextButton.icon(
                 key: const ValueKey('quick-edit-labels'),
                 onPressed: _busy ? null : _editLabelsQuick,
