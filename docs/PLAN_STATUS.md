@@ -102,8 +102,8 @@ In priority order. Steps marked **owner** need the owner in person.
      - Spinners stay for actions in progress, progress percentages, pull-to-refresh, loading more, one-shot dialogs and labelled checks that come before a button or notice.
      - Device check NOT_RUN.
    - **#59, done (2026-10-31).** Large MR diffs: the partial-diff notice now reads the version's `state == "overflow"` (also from the offline cache), too-large files (GitLab `too_large` or over the app's 2 MiB / 20,000-line limits) offer "Open in GitLab", and deterministic baselines cover 5,000/20,000-line parsing and the 8 MiB / 40,000-line cache. Load-anyway for collapsed files and completing an overflowing MR from the paginated `/diffs` were dropped: the API cannot provide them (live check on 2026-10-31, see issue #59). Possible follow-up: an on-device diff for too-large files. Device check NOT_RUN.
-   - **#57, On-device AI ([plan](plans/on-device-ai-plan.md)).**
-     - **MR 1 (`feat/on-device-ai-plugin`):** the plugin package (`packages/mergeline_on_device_ai`) wrapping ML Kit GenAI Prompt (`com.google.mlkit:genai-prompt:1.0.0-beta1`) for Android AICore / Gemini Nano.
+   - **#57, On-device AI (issue #57).**
+     - **MR 1 (`feat/on-device-ai-plugin`):** the plugin package (`packages/mergeline_on_device_ai`) wrapping ML Kit GenAI Prompt (`com.google.mlkit:genai-prompt:1.0.0-beta5`) for Android AICore / Gemini Nano.
      - **Privacy:** ML Kit initialises only after opt-in (`deviceSupport()` checks `SDK_INT >= 26` and AICore package presence without touching ML Kit), and `MlKitInitProvider` is removed in the app manifest and checked in CI (`ci/build_android.sh`).
      - **Next:** MR 2 and MR 3 are next.
      - **Device verification:** `NOT_RUN`; needs a supported phone (the owner has a Galaxy Z Fold7).

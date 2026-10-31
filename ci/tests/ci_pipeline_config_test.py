@@ -561,7 +561,8 @@ class CheckScriptTests(unittest.TestCase):
                                       '--dart-define=MERGELINE_AI_BACKGROUND=false',
                                       '--coverage-path=coverage-ai/lcov.info']
                 self.assertEqual(commands[2], expected_args + self.lane(mode))
-                self.assertEqual(commands[3], ['test'])
+                # The plugin resolves from its committed lock, offline, then tests without pub.
+                self.assertEqual(commands[3:5], [['pub', 'get', '--enforce-lockfile', '--offline'], ['test', '--no-pub']])
                 output = 'ci-output' if mode == 'default' else 'ci-output-ai'
                 coverage = 'coverage' if mode == 'default' else 'coverage-ai'
                 self.assertIn(f'{output}/junit.xml', files)

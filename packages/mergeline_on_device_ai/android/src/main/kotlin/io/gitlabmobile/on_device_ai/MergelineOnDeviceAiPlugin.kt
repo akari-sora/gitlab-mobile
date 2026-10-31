@@ -296,6 +296,9 @@ class MergelineOnDeviceAiPlugin :
                 if (!terminalEventSent) {
                     val isNowAvailable = try {
                         mlBridge.isModelAvailable()
+                    } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                        // A cancel during this last check is still a cancel, not a failure.
+                        throw cancelled
                     } catch (_: Throwable) {
                         false
                     }
