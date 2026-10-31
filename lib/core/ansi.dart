@@ -308,6 +308,17 @@ final class AnsiStateMachine {
     _paramBuffer.clear();
   }
 
+  /// Creates an independent copy of the active style and partial escape state.
+  AnsiStateMachine copy() {
+    final cloned = AnsiStateMachine(maxLineLength: maxLineLength)
+      ..currentStyle = currentStyle
+      .._state = _state;
+    if (_paramBuffer.isNotEmpty) {
+      cloned._paramBuffer.write(_paramBuffer.toString());
+    }
+    return cloned;
+  }
+
   /// Parses a chunk or line of text into a list of [AnsiSpan]s.
   /// If [flushAtEnd] is true (default), unclosed escape sequences at EOF are safely dropped.
   List<AnsiSpan> parseSpans(String input, {bool flushAtEnd = true}) {

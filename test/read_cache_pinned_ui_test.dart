@@ -443,7 +443,8 @@ void main() {
       expect(_rows(tester), 2);
       final attempt8 = adapter.requests.where((r) => _isTrace(r, 8)).toList();
       expect(attempt8, isNotEmpty);
-      expect(attempt8.first.headers['Range'], isNull, reason: 'byte 0 of the new attempt');
+      expect(attempt8.first.headers['Range'], 'bytes=0-${GitLabApi.maxTextBytes - 1}',
+        reason: 'byte 0 of the new attempt, bounded by the text budget');
       expect(attempt8.first.uri.queryParameters['offset'], isNull);
       expect(find.byKey(const ValueKey('job-log-truncated')), findsNothing);
       await tester.pump(const Duration(milliseconds: 500)); // confirm dialog cleanup
@@ -510,7 +511,7 @@ void main() {
       final first = utf8.encode('running line one\n');
       final adapter = FakeAdapter((request) {
         if (_isTrace(request, 7)) {
-          if (request.headers['Range'] == 'bytes=${first.length}-') {
+          if ((request.headers['Range'] as String?)?.startsWith('bytes=${first.length}-') == true) {
             return ResponseBody.fromString('running line two\n', 206, headers: {
               'content-range': ['bytes ${first.length}-${first.length + 16}/*'],
             });

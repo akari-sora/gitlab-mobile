@@ -2760,6 +2760,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     }
     // A suffix may start inside one UTF-8 scalar. Only its leading continuation
     // bytes can be discarded; malformed content elsewhere remains unsupported.
+    // It then starts after the cut line, so offsets stay absolute and exact.
     var skip = 0;
     if (start > 0) {
       while (skip < response.bytes.length &&
@@ -2767,6 +2768,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         skip++;
       }
       if (skip > 3) throw const ApiFailure(FailureKind.unsupported);
+      skip = skipCutLine(response.bytes, skip);
     }
     final bytes = response.bytes.sublist(skip);
     try {
@@ -2801,12 +2803,27 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       int requestCount,
     })
   >
-  jobTraceChunk(int project, int job, {int offset = 0, int? maxBytes}) async {
+  jobTraceChunk(
+    int project,
+    int job, {
+    int offset = 0,
+    int? maxBytes,
+    bool bounded = false,
+    bool tail = false,
+  }) async {
+    final limit = maxBytes ?? maxTextBytes;
     final query = <String, String>{
-      if (offset > 0) 'offset': '$offset',
+      if (!tail && offset > 0) 'offset': '$offset',
     };
     final headers = <String, String>{
-      if (offset > 0) 'Range': 'bytes=$offset-',
+      if (tail)
+        'Range': 'bytes=-$limit'
+      else if (bounded)
+        // Bounded from byte 0 too: Content-Range then reports the total, so
+        // a caller can tell a log past the budget without reading more.
+        'Range': 'bytes=$offset-${offset + limit - 1}'
+      else if (offset > 0)
+        'Range': 'bytes=$offset-',
     };
     final uri = instance.api(
       ['projects', '$project', 'jobs', '$job', 'trace'],
@@ -2816,7 +2833,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       final result = await _read(
         uri,
         headers: headers.isNotEmpty ? headers : null,
-        maxBytes: maxBytes ?? maxTextBytes,
+        maxBytes: limit,
         allowRangeNotSatisfiable: true,
       );
       final eofHeader = result.headers.value('x-gitlab-trace-eof');
@@ -2835,37 +2852,86 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
 
       final contentRange = result.headers.value('content-range');
       int? startOffset = result.statusCode == 206 ? null : offset;
+      int? endOffset;
       int? totalBytes;
       if (contentRange != null) {
-        final match = RegExp(r'bytes\s+(\d+)-(\d+)/(\d+)', caseSensitive: false)
-            .firstMatch(contentRange);
+        final match = RegExp(
+          r'bytes\s+(\d+)-(\d+)/(\d+|\*)',
+          caseSensitive: false,
+        ).firstMatch(contentRange);
         if (match != null) {
           startOffset = int.tryParse(match.group(1) ?? '');
-          final end = int.tryParse(match.group(2) ?? '');
+          endOffset = int.tryParse(match.group(2) ?? '');
           final total = int.tryParse(match.group(3) ?? '');
           totalBytes = total;
-          if (end != null && total != null && end + 1 >= total) {
+          if (endOffset != null &&
+              total != null &&
+              endOffset + 1 >= total &&
+              eofHeader != 'false' &&
+              eofHeader != '0') {
             isEof = true;
+          }
+        } else {
+          final unsat = RegExp(
+            r'bytes\s+\*/(\d+)',
+            caseSensitive: false,
+          ).firstMatch(contentRange);
+          if (unsat != null) {
+            totalBytes = int.tryParse(unsat.group(1) ?? '');
           }
         }
       }
 
       List<int> chunkBytes;
+      int? nextOffset;
       if (result.statusCode == 206) {
         chunkBytes = result.bytes;
+        if (startOffset != null) {
+          nextOffset = startOffset + chunkBytes.length;
+        } else if (endOffset != null && chunkBytes.isNotEmpty) {
+          nextOffset = endOffset + 1;
+        } else if (tail) {
+          // A suffix's start depends on a total the server did not report:
+          // the absolute offset is unknown, so none is claimed.
+          nextOffset = null;
+        } else {
+          nextOffset = offset + chunkBytes.length;
+        }
+        if (tail && (startOffset ?? 0) > 0 && chunkBytes.isNotEmpty) {
+          var skip = 0;
+          while (skip < chunkBytes.length &&
+              skip < 3 &&
+              (chunkBytes[skip] & 0xc0) == 0x80) {
+            skip++;
+          }
+          skip = skipCutLine(chunkBytes, skip);
+          if (skip > 0) {
+            // nextOffset is the suffix's absolute end and stays as it is.
+            chunkBytes = chunkBytes.sublist(skip);
+            startOffset = startOffset! + skip;
+          }
+        }
       } else if (result.statusCode == 200) {
-        if (offset > 0 && result.bytes.length > offset) {
+        // A server that ignores Range (gitlab.com's trace endpoint, #58)
+        // answers every read with the whole log. Logs only grow, so the bytes
+        // past [offset] are the new ones. A shorter, non-empty body means the
+        // log was replaced: it is returned whole from byte 0, below [offset].
+        if (!tail && offset > 0 && result.bytes.length >= offset) {
           chunkBytes = result.bytes.sublist(offset);
-        } else if (offset > 0 && result.bytes.length <= offset) {
+          startOffset = offset;
+        } else if (!tail && offset > 0 && result.bytes.isEmpty) {
           chunkBytes = const <int>[];
+          startOffset = offset;
         } else {
           chunkBytes = result.bytes;
+          startOffset = 0;
         }
+        nextOffset = startOffset + chunkBytes.length;
       } else {
         chunkBytes = result.bytes;
+        nextOffset = (tail ? 0 : offset) + chunkBytes.length;
       }
 
-      final nextOffset = offset + chunkBytes.length;
       return (
         bytes: chunkBytes,
         isEof: isEof,

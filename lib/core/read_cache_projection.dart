@@ -200,6 +200,9 @@ ProjectedDiskEntry? projectReadCacheResponse(
         drop++;
       }
       if (drop >= body.bytes.length) return null;
+      // Keep the stored tail on a whole line, like the network tail, unless
+      // the cut already falls just after a newline.
+      if (body.bytes[drop - 1] != 0x0A) drop = skipCutLine(body.bytes, drop);
       body = ReadCacheTerminalLog(
         projectId: body.projectId,
         jobId: body.jobId,

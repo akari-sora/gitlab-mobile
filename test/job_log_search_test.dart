@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/job_trace.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 
+import 'support/fake_adapter.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show settleWorkspace, workspaceHost;
 
@@ -340,7 +343,331 @@ void main() {
 
       expect(find.textContaining('Hidden warning in step'), findsOneWidget);
     });
+
+    testWidgets('search results and section filtering on streamed chunks match whole-fixture baseline using prebuilt lowerText', (tester) async {
+      final baseline = JobTrace.parse(_SearchFixture.trace);
+      final streamedParser = JobTraceParser();
+      final rawBytes = utf8.encode(_SearchFixture.trace);
+      for (var i = 0; i < rawBytes.length; i += 19) {
+        final end = (i + 19 < rawBytes.length) ? i + 19 : rawBytes.length;
+        streamedParser.addBytes(rawBytes.sublist(i, end));
+      }
+      final streamed = streamedParser.finish();
+
+      expect(streamed.lines.length, baseline.lines.length);
+      for (var i = 0; i < baseline.lines.length; i++) {
+        expect(streamed.lines[i].lowerText, baseline.lines[i].text.toLowerCase());
+        expect(streamed.lines[i].lowerText, baseline.lines[i].lowerText);
+      }
+
+      final fixture = _ChunkedSearchFixture();
+      addTearDown(fixture.api.close);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(workspaceHost(JobLogPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        id: 501,
+      )));
+      await settleWorkspace(tester);
+
+      // Append second half via poll
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await settleWorkspace(tester);
+
+      final searchFinder = find.byKey(const ValueKey('job-log-search-501'));
+      for (final query in ['ERROR', 'warning', 'secret target', '[test-bracket]', '測試日誌', '🚀']) {
+        await tester.enterText(searchFinder, query);
+        await tester.pump();
+
+        // Reference match count from baseline lowercasing
+        final needle = query.toLowerCase();
+        var expectedCount = 0;
+        final expectedLineTexts = <String>[];
+        for (final line in baseline.lines) {
+          var start = 0;
+          final lower = line.text.toLowerCase();
+          var lineMatched = false;
+          while (start < lower.length) {
+            final idx = lower.indexOf(needle, start);
+            if (idx < 0) break;
+            expectedCount++;
+            lineMatched = true;
+            start = idx + needle.length;
+          }
+          if (lineMatched) expectedLineTexts.add(line.text);
+        }
+
+        expect(find.text('1/$expectedCount'), findsOneWidget, reason: 'query $query match counter');
+        for (final matchedLine in expectedLineTexts) {
+          expect(
+            find.descendant(of: find.byType(ListView), matching: find.textContaining(matchedLine)),
+            findsOneWidget,
+            reason: 'query $query visible line $matchedLine',
+          );
+        }
+      }
+    });
+
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('window slide while not following keeps the rows on screen still (text scale $scale), then shows the latest window back at the tail', (tester) async {
+        final chunk1Buf = StringBuffer();
+        for (var i = 0; i < 20000; i++) {
+          // Long rows wrap at 412 px, more so at text scale 2.0, so no fixed
+          // row height can describe them.
+          chunk1Buf.writeln(i % 10 != 1
+              ? 'plain log row $i'
+              : 'wrapped log row $i ${'with a long tail of words that wraps ' * 3}');
+        }
+        final chunk1Text = chunk1Buf.toString();
+        final chunk1Bytes = utf8.encode(chunk1Text);
+        final chunk2Buf = StringBuffer();
+        for (var i = 20000; i < 20100; i++) {
+          chunk2Buf.writeln('plain log row $i');
+        }
+        final chunk2Text = chunk2Buf.toString();
+        final chunk2Bytes = utf8.encode(chunk2Text);
+
+        final fixture = _CustomTraceFixture((request) {
+          if (request.uri.path.endsWith('/jobs/501')) {
+            return jsonResponse({'id': 501, 'status': 'running', 'name': 'slide-freeze'});
+          }
+          if (request.uri.path.endsWith('/jobs/501/trace')) {
+            final range = request.headers['Range'] as String?;
+            if (range != null && range.startsWith('bytes=${chunk1Bytes.length}-')) {
+              return ResponseBody.fromString(chunk2Text, 206, headers: {
+                'content-range': [
+                  'bytes ${chunk1Bytes.length}-${chunk1Bytes.length + chunk2Bytes.length - 1}/*',
+                ],
+              });
+            }
+            if (range != null &&
+                range.startsWith('bytes=${chunk1Bytes.length + chunk2Bytes.length}-')) {
+              return ResponseBody.fromString('', 206, headers: {
+                'content-range': ['bytes */${chunk1Bytes.length + chunk2Bytes.length}'],
+              });
+            }
+            return ResponseBody.fromString(chunk1Text, 200);
+          }
+          return jsonResponse({}, status: 404);
+        });
+        addTearDown(fixture.api.close);
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(412, 900);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        await tester.pumpWidget(workspaceHost(JobLogPage(
+          account: fixture.account,
+          api: fixture.api,
+          project: fixture.project,
+          id: 501,
+        ), scale: scale));
+        await settleWorkspace(tester);
+        expect(MediaQuery.textScalerOf(tester.element(find.byType(ListView))).scale(10), 10 * scale);
+        // Polls come from the 10 s auto-refresh: the refresh button is the
+        // reader asking for the latest window, tested below.
+        await tester.tap(find.text('10 秒更新'));
+        await tester.pump();
+
+        // Scroll up from the tail (follow inactive) to rows that would move if
+        // the 100 rows the slide drops (wrapped ones among them) were taken
+        // off the top of the list.
+        final scrollable = tester.state<ScrollableState>(
+          find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)),
+        );
+        expect(scrollable.position.extentAfter, 0, reason: 'followed to the end');
+        final reading = scrollable.position.maxScrollExtent - 3000;
+        scrollable.position.jumpTo(reading);
+        await tester.pumpAndSettle();
+        final before = _firstVisibleRow(tester);
+        expect(before, anyOf(startsWith('plain log row'), startsWith('wrapped log row')));
+        expect(scrollable.position.extentAfter, greaterThan(80));
+
+        // The poll appends 100 lines: the window slides by 100 in the
+        // background, and nothing on screen moves.
+        await tester.pump(const Duration(seconds: 10));
+        await settleWorkspace(tester);
+        expect(scrollable.position.pixels, reading);
+        expect(_firstVisibleRow(tester), before);
+        expect(find.text('plain log row 20099'), findsNothing);
+        // A second poll with nothing new keeps it still too.
+        await tester.pump(const Duration(seconds: 10));
+        await settleWorkspace(tester);
+        expect(_firstVisibleRow(tester), before);
+
+        // Tapping refresh shows the held window where the reader is: the
+        // rows move up by the 100 dropped ones and the list does not jump.
+        await tester.tap(find.byTooltip('重新讀取 Log'));
+        await settleWorkspace(tester);
+        expect(scrollable.position.pixels, reading);
+        expect(scrollable.position.extentAfter, greaterThan(80));
+        final after = _firstVisibleRow(tester);
+        int rowNumber(String row) => int.parse(RegExp(r'log row (\d+)').firstMatch(row)!.group(1)!);
+        expect(rowNumber(after), greaterThan(rowNumber(before)));
+
+        // Back at the tail, the latest window is shown and followed.
+        scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+        await tester.pump();
+        await tester.pump();
+        await tester.pump();
+        await settleWorkspace(tester);
+        expect(find.text('plain log row 20099'), findsOneWidget);
+        expect(scrollable.position.extentAfter, 0);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+      });
+    }
+
+    testWidgets('active search match is re-anchored by line position when the window, slid past an earlier match, is shown on return to follow', (tester) async {
+      final chunk1Buf = StringBuffer();
+      for (var i = 0; i < 19999; i++) {
+        if (i == 10) {
+          chunk1Buf.writeln('needle early line $i');
+        } else if (i == 5000) {
+          chunk1Buf.writeln('needle middle line $i');
+        } else if (i == 10000) {
+          chunk1Buf.writeln('needle late line $i');
+        } else {
+          chunk1Buf.writeln('plain log row $i');
+        }
+      }
+      final chunk1Text = chunk1Buf.toString();
+      final chunk1Bytes = utf8.encode(chunk1Text);
+
+      final chunk2Buf = StringBuffer();
+      for (var i = 19999; i < 20100; i++) {
+        chunk2Buf.writeln('plain log row $i');
+      }
+      final chunk2Text = chunk2Buf.toString();
+      final chunk2Bytes = utf8.encode(chunk2Text);
+
+      final fixture = _CustomTraceFixture((request) {
+        if (request.uri.path.endsWith('/jobs/501')) {
+          return jsonResponse({'id': 501, 'status': 'running', 'name': 'reanchor-search'});
+        }
+        if (request.uri.path.endsWith('/jobs/501/trace')) {
+          final range = request.headers['Range'] as String?;
+          if (range != null && range.startsWith('bytes=${chunk1Bytes.length}-')) {
+            return ResponseBody.fromString(chunk2Text, 206, headers: {
+              'content-range': [
+                'bytes ${chunk1Bytes.length}-${chunk1Bytes.length + chunk2Bytes.length - 1}/*',
+              ],
+            });
+          }
+          return ResponseBody.fromString(chunk1Text, 200);
+        }
+        return jsonResponse({}, status: 404);
+      });
+      addTearDown(fixture.api.close);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpWidget(workspaceHost(JobLogPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        id: 501,
+      )));
+      await settleWorkspace(tester);
+      await tester.tap(find.text('10 秒更新'));
+      await tester.pump();
+
+      final searchFinder = find.byKey(const ValueKey('job-log-search-501'));
+      await tester.enterText(searchFinder, 'needle');
+      await tester.pump();
+      expect(find.text('1/3'), findsOneWidget);
+
+      // Select match 2 of 3 ('needle middle line 5000').
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down));
+      await tester.pumpAndSettle();
+      expect(find.text('2/3'), findsOneWidget);
+
+      // The 10 s poll appends 101 lines -> the window slides past line 10
+      // ('needle early line 10') in the background. Searching turned follow
+      // off, so the rows and matches on screen stay as they were.
+      await tester.pump(const Duration(seconds: 10));
+      await settleWorkspace(tester);
+      expect(find.text('2/3'), findsOneWidget);
+
+      // Following again shows the latest window. Only 2 matches remain
+      // ('needle middle line 5000' and 'needle late line 10000'). Because
+      // _currentMatch is re-anchored by absolute line position, it stays on
+      // 'needle middle line 5000', which is now match 1/2 (index 0).
+      await tester.tap(find.text('跟隨尾端'));
+      await tester.pump();
+      await settleWorkspace(tester);
+      expect(find.text('1/2'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
   });
+}
+
+/// Text of the topmost log row inside the list's viewport.
+String _firstVisibleRow(WidgetTester tester) {
+  final viewport = tester.getRect(find.byType(ListView));
+  String? text;
+  var top = double.infinity;
+  for (final element in find
+      .descendant(of: find.byType(ListView), matching: find.byType(RichText))
+      .evaluate()) {
+    final box = element.renderObject! as RenderBox;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    if (rect.bottom <= viewport.top + 0.5 || rect.top >= viewport.bottom) continue;
+    if (rect.top < top) {
+      top = rect.top;
+      text = (element.widget as RichText).text.toPlainText();
+    }
+  }
+  return text!;
+}
+
+class _CustomTraceFixture extends WorkspaceFixture {
+  _CustomTraceFixture(this._handler);
+  final FutureOr<ResponseBody> Function(RequestOptions request) _handler;
+
+  @override
+  FutureOr<ResponseBody> respond(RequestOptions request) => _handler(request);
+}
+
+class _ChunkedSearchFixture extends WorkspaceFixture {
+  static final _bytes = utf8.encode(_SearchFixture.trace);
+  static final _split = _bytes.length ~/ 2;
+  static final _part1 = utf8.decode(_bytes.sublist(0, _split), allowMalformed: true);
+  static final _part1Bytes = utf8.encode(_part1);
+  static final _part2 = _SearchFixture.trace.substring(_part1.length);
+  static final _part2Bytes = utf8.encode(_part2);
+
+  @override
+  FutureOr<ResponseBody> respond(RequestOptions request) {
+    if (request.uri.path.endsWith('/jobs/501')) {
+      return jsonResponse({'id': 501, 'status': 'running', 'name': 'chunked-search'});
+    }
+    if (request.uri.path.endsWith('/jobs/501/trace')) {
+      final range = request.headers['Range'] as String?;
+      if (range != null && range.startsWith('bytes=${_part1Bytes.length}-')) {
+        return ResponseBody.fromString(_part2, 206, headers: {
+          'content-range': [
+            'bytes ${_part1Bytes.length}-${_part1Bytes.length + _part2Bytes.length - 1}/${_part1Bytes.length + _part2Bytes.length}',
+          ],
+          'x-gitlab-trace-eof': ['true'],
+        });
+      }
+      return ResponseBody.fromString(_part1, 200);
+    }
+    return super.respond(request);
+  }
 }
 
 class _SearchFixture extends WorkspaceFixture {

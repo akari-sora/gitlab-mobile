@@ -1,7 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:typed_data' show BytesBuilder;
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import '../ai/ai_chat_page.dart';
@@ -2017,16 +2016,38 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Json? _job;
   JobTrace _trace = JobTrace.empty;
   JobTrace _indexed = JobTrace.empty;
-  BytesBuilder _rawBytes = BytesBuilder(copy: false);
+  JobTraceParser _parser = JobTraceParser();
+  bool _hasTraceBytes = false;
   int _traceOffset = 0;
 
   /// The verified tail of this attempt's finished log, when one is shown. Its
   /// offsets are absolute; it may start after byte 0 (C2 §4.5).
   ReadCacheTerminalLog? _tail;
 
-  /// Whether leading lines of the tail were also left out, to stay within the
-  /// screen's line limit.
+  /// Whether earlier lines of the trace on screen were left out—either
+  /// because the sliding window dropped lines above `GitLabApi.maxTextLines`
+  /// or because the log was read as a tail.
   bool _tailClipped = false;
+
+  /// The same for the latest parse, which may not be on screen yet.
+  bool _latestClipped = false;
+
+  /// Bumped whenever the parser restarts, so line indices of two traces are
+  /// compared only within one numbering: the latest parse's and the shown one.
+  int _numbering = 0, _shownNumbering = 0;
+
+  /// A newer trace held off screen while the reader is not following the tail
+  /// and showing it would move the rows they are reading (a window slide or a
+  /// restarted parse). It is shown when they return to the tail.
+  JobTrace? _pending;
+  bool _pendingScheduled = false;
+
+  /// The last tail had no absolute offset (a 206 without Content-Range), so
+  /// no byte range can continue it: the next load reads the tail again.
+  bool _resyncTail = false;
+
+  /// Bounded reads one load makes to reach the end of the log.
+  static const _maxReadsPerLoad = 16;
 
   /// A finished-job load stopped because the page was hidden; it runs again
   /// once the page is visible.
@@ -2064,7 +2085,99 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       setState(() => _rateLevel = snapshot.level);
       _schedule();
     });
+    _scroll.addListener(_maybeShowPending);
     WidgetsBinding.instance.addObserver(this); unawaited(_load());
+  }
+
+  /// Puts [trace], the latest parse, on screen. The active search match stays
+  /// on the same line within one numbering; after a restarted parse the
+  /// matches start over.
+  void _show(JobTrace trace) {
+    final oldTrace = _trace;
+    final sameNumbering = _shownNumbering == _numbering;
+    final prevMatch = (_query.isNotEmpty &&
+            _matches.isNotEmpty &&
+            _currentMatch >= 0 &&
+            _currentMatch < _matches.length)
+        ? _matches[_currentMatch]
+        : null;
+    setState(() {
+      _trace = trace;
+      _pending = null;
+      _tailClipped = _latestClipped;
+      _shownNumbering = _numbering;
+      _firstLoadDone = true;
+      if (_query.isEmpty) return;
+      _matches = _findMatches(_query);
+      if (_matches.isEmpty || !sameNumbering) {
+        _currentMatch = 0;
+      } else if (prevMatch != null) {
+        final targetLine =
+            oldTrace.windowStart + prevMatch.lineIndex - trace.windowStart;
+        final exactIdx = _matches.indexWhere(
+          (m) => m.lineIndex == targetLine && m.start == prevMatch.start,
+        );
+        if (exactIdx >= 0) {
+          _currentMatch = exactIdx;
+        } else {
+          final nextIdx = _matches.indexWhere(
+            (m) =>
+                m.lineIndex > targetLine ||
+                (m.lineIndex == targetLine && m.start >= prevMatch.start),
+          );
+          _currentMatch = nextIdx >= 0 ? nextIdx : _matches.length - 1;
+        }
+      } else if (_currentMatch >= _matches.length) {
+        _currentMatch = _matches.length - 1;
+      }
+    });
+  }
+
+  /// Shows a held-back trace once the reader is back at the tail with follow
+  /// on. Scroll notifications can arrive during layout, so it waits a frame.
+  void _maybeShowPending() {
+    if (_pending == null || _pendingScheduled || !_follow ||
+        !_scroll.hasClients || _scroll.position.extentAfter >= 80) {
+      return;
+    }
+    _pendingScheduled = true;
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        _pendingScheduled = false;
+        final pending = _pending;
+        if (!mounted || pending == null || !_follow ||
+            !_scroll.hasClients || _scroll.position.extentAfter >= 80) {
+          return;
+        }
+        _showPendingAtTail(pending);
+      })
+      ..ensureVisualUpdate();
+  }
+
+  void _showPendingAtTail(JobTrace pending) {
+    final jobId = _jobId;
+    _show(pending);
+    _jumpToEnd(() => mounted && jobId == _jobId);
+  }
+
+  /// Jumps to the end of the log after the next frame. The lazily built list
+  /// only estimates its extent until rows near the end are laid out, so one
+  /// jump stops short when rows differ in height (wrapped lines, headers);
+  /// that would read as "not following" and hold back the next window. It
+  /// repeats for a few frames unless something else moved the list.
+  void _jumpToEnd(bool Function() current, {int frames = 4, double? last}) {
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (!current() || !_scroll.hasClients) return;
+        final position = _scroll.position;
+        // The reader scrolled meanwhile: leave the list where they put it.
+        if (last != null && position.pixels != last) return;
+        final end = position.maxScrollExtent;
+        if (position.pixels == end) return;
+        _scroll.jumpTo(end);
+        if (frames > 1) _jumpToEnd(current, frames: frames - 1, last: end);
+      })
+      ..ensureVisualUpdate();
   }
   void _updateTickerMode() {
     final mode = TickerMode.getValuesNotifier(context);
@@ -2141,7 +2254,16 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       }
     });
   }
-  Future<void> _load() async {
+  /// The refresh button shows the latest window, including one held back
+  /// while the reader is away from the tail; it jumps to the end only when
+  /// they follow it.
+  void _refresh() {
+    final pending = _pending;
+    if (pending != null) _show(pending);
+    unawaited(_load(showLatest: true));
+  }
+
+  Future<void> _load({bool showLatest = false}) async {
     if (_loading || !mounted) { return; }
     final epoch = ++_loadEpoch, jobId = _jobId;
     bool current() => mounted && epoch == _loadEpoch && jobId == _jobId;
@@ -2155,13 +2277,15 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       // That tail path neither starts nor shows anything while the page is
       // hidden: it runs again when the page is visible.
       final terminal = const {'success', 'failed', 'canceled', 'skipped'}.contains(job['status']);
-      final useTail = terminal && (_tail != null || (_traceOffset == 0 && _rawBytes.isEmpty));
+      final useTail = terminal && (_tail != null || (_traceOffset == 0 && !_hasTraceBytes));
       if (useTail && !_visible) throw const _HiddenLoad();
       // Metadata and trace have independent failure modes. Keep the controls
       // usable even when an expired or oversized trace cannot be displayed.
       setState(() {
         _job = job;
-        if (!const ['running', 'pending', 'created', 'preparing', 'waiting_for_resource'].contains(job['status'])) {
+        // A finished job keeps loading until the end of its log is read; the
+        // trace read below stops polling once it gets there (#58).
+        if (!terminal && !const ['running', 'pending', 'created', 'preparing', 'waiting_for_resource'].contains(job['status'])) {
           _auto = false; _timer?.cancel();
         }
       });
@@ -2169,74 +2293,173 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       if (!current()) { return; }
       // Hidden now: the fallback read below must not start either.
       if (useTail && !_visible) throw const _HiddenLoad();
-      var changed = false;
+      List<int> bytesToParse;
+      // Parse into a new parser: the bytes do not continue the previous ones.
+      var restart = useTail;
+      // The bytes are a tail read: lines before them are left out.
+      var tailRead = false;
+      var atEnd = false;
+      var resync = false;
+      var nextOffset = _traceOffset;
+      var nextTail = _tail;
       if (tail != null) {
-        // A fresh builder: the tail never joins bytes of an earlier read or
-        // attempt, and the next offset is the tail's absolute end.
-        _rawBytes = BytesBuilder(copy: false)..add(tail.bytes);
-        _traceOffset = tail.nextOffset;
-        _tail = tail;
-        _auto = false;
-        _timer?.cancel();
-        changed = true;
+        // The tail never joins bytes of an earlier read or attempt, and the
+        // next offset is the tail's absolute end.
+        bytesToParse = tail.bytes;
+        atEnd = true;
+        nextOffset = tail.nextOffset;
+        nextTail = tail;
       } else {
+        var offset = _traceOffset;
         if (_tail != null) {
           // The tail no longer applies; restart the original path from byte 0.
-          _tail = null;
-          _rawBytes = BytesBuilder(copy: false);
-          _traceOffset = 0;
+          nextTail = null;
+          offset = 0;
+          restart = true;
         }
-        final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
-        if (!current()) { return; }
-        // The bounded fallback after `unsupported` may finish while hidden.
-        if (useTail && !_visible) throw const _HiddenLoad();
-        if (chunk.isEof) {
-          _auto = false;
-          _timer?.cancel();
-        }
-        changed = chunk.bytes.isNotEmpty || _rawBytes.isEmpty;
-        if (chunk.bytes.isNotEmpty) {
-          if (chunk.nextOffset != null && chunk.nextOffset! < _traceOffset) {
-            _rawBytes = BytesBuilder(copy: false);
-            _rawBytes.add(chunk.bytes);
-            _traceOffset = chunk.nextOffset!;
-          } else {
-            _rawBytes.add(chunk.bytes);
-            _traceOffset = chunk.nextOffset ?? _rawBytes.length;
+        // Every read is bounded by the text budget. A load reads on until the
+        // end of the log; when the end is more than one budget past where it
+        // started, it shows the log's tail instead of a slice from the middle.
+        const limit = GitLabApi.maxTextBytes;
+        final from = offset;
+        final collected = BytesBuilder(copy: false);
+        var mustTail = _resyncTail && !useTail;
+        for (var reads = 0; !mustTail && !atEnd; reads++) {
+          if (reads == _maxReadsPerLoad) {
+            // A finished job still shows its true end (from byte 0 after
+            // `unsupported`: whole or not at all).
+            if (useTail) throw const ApiFailure(FailureKind.tooLarge);
+            if (terminal) mustTail = true;
+            break;
           }
+          if (!current()) { return; }
+          if (useTail && !_visible) throw const _HiddenLoad();
+          final ({
+            List<int> bytes,
+            bool isEof,
+            int? nextOffset,
+            int requestCount,
+            int? startOffset,
+            int? totalBytes,
+          }) chunk;
+          try {
+            chunk = await widget.api.jobTraceChunk(
+              widget.project.id,
+              jobId,
+              offset: offset,
+              bounded: true,
+            );
+          } on ApiFailure catch (failure) {
+            // A server that ignores the bound sends more than the budget.
+            if (useTail || failure.kind != FailureKind.tooLarge) rethrow;
+            mustTail = true;
+            break;
+          }
+          if (!current()) { return; }
+          // The bounded fallback after `unsupported` may finish while hidden.
+          if (useTail && !_visible) throw const _HiddenLoad();
+          final end = chunk.nextOffset ?? offset + chunk.bytes.length;
+          if (chunk.bytes.isNotEmpty && end < offset) {
+            // The server's trace restarted below the offset read so far.
+            restart = true;
+            collected
+              ..clear()
+              ..add(chunk.bytes);
+            offset = end;
+            atEnd = true;
+            break;
+          }
+          final total = chunk.totalBytes;
+          // gitlab.com's trace endpoint ignores Range and answers 200 with the
+          // whole log (#58): jobTraceChunk then returns only the bytes past
+          // the offset, with no total, and the read is at its end. The short
+          // reads with an unknown `/*` total handled here and below do not
+          // occur there; they are kept for servers that honour Range.
+          atEnd = chunk.isEof ||
+              (total != null ? end >= total : chunk.bytes.length < limit);
+          if (!atEnd &&
+              ((total != null && total - from > limit) || end - from >= limit)) {
+            // More than one budget behind: a finished job from byte 0 after
+            // `unsupported` is shown whole or not at all, as before.
+            if (useTail) throw const ApiFailure(FailureKind.tooLarge);
+            mustTail = true;
+            break;
+          }
+          collected.add(chunk.bytes);
+          offset = end;
+          if (chunk.bytes.isEmpty) break;
+        }
+        if (mustTail) {
+          if (!current()) { return; }
+          final last = await widget.api.jobTraceChunk(
+            widget.project.id,
+            jobId,
+            tail: true,
+          );
+          if (!current()) { return; }
+          bytesToParse = last.bytes;
+          restart = true;
+          tailRead = true;
+          atEnd = true;
+          // Without an absolute offset no range can continue this tail: the
+          // next load reads the tail again.
+          resync = last.nextOffset == null;
+          nextOffset = last.nextOffset ?? 0;
+        } else {
+          bytesToParse = collected.takeBytes();
+          nextOffset = offset;
         }
       }
-      if (changed) {
-        var text = utf8.decode(_rawBytes.toBytes(), allowMalformed: true);
-        // A 2 MiB tail can hold more lines than the screen parses; keep its
-        // last lines. Display only: offsets and stored bytes are unchanged.
-        _tailClipped = false;
-        if (_tail != null) {
-          final kept = _lastLines(text, GitLabApi.maxTextLines - 1);
-          _tailClipped = kept.length != text.length;
-          text = kept;
+      final isTerminalEof = terminal && atEnd;
+      if (isTerminalEof) {
+        _auto = false;
+        _timer?.cancel();
+      }
+      // Read where the reader is now, after the awaits above.
+      bool following() =>
+          follow || (_follow && (!_scroll.hasClients || _scroll.position.extentAfter < 80));
+      if (restart ||
+          bytesToParse.isNotEmpty ||
+          !_hasTraceBytes ||
+          (isTerminalEof && _parser.hasPendingUtf8)) {
+        final targetParser = restart ? JobTraceParser() : _parser;
+        final parsed = await targetParser.addBytesAsync(
+          bytesToParse,
+          isLast: isTerminalEof,
+          shouldCommit: () => current() && (!useTail || _visible),
+        );
+        if (!current()) { return; }
+        // Not committed: the page went out of sight while the parse ran.
+        if (parsed == null || (useTail && !_visible)) throw const _HiddenLoad();
+        if (useTail && nextTail == null && parsed.truncated) {
+          throw const ApiFailure(FailureKind.tooLarge);
         }
-        final parsed = JobTrace.parse(text);
-        setState(() {
-          _trace = parsed;
-          _firstLoadDone = true;
-          if (_query.isNotEmpty) {
-            _matches = _findMatches(_query);
-            if (_matches.isEmpty) {
-              _currentMatch = 0;
-            } else if (_currentMatch >= _matches.length) {
-              _currentMatch = _matches.length - 1;
-            }
-          }
-        });
+        // The latest parse, kept whether or not it goes on screen now.
+        if (restart) _numbering++;
+        _parser = targetParser;
+        _traceOffset = nextOffset;
+        _tail = nextTail;
+        _resyncTail = resync;
+        _hasTraceBytes =
+            bytesToParse.isNotEmpty || (!restart && _hasTraceBytes);
+        _latestClipped = parsed.truncated ||
+            tailRead ||
+            (nextTail?.truncated ?? false) ||
+            (!restart && _latestClipped);
+        final shownEmpty = _trace.lines.isEmpty && _trace.sections.isEmpty;
+        // Off the tail, rows the reader is looking at never move: a window
+        // slide or a restarted parse waits until they come back to the tail.
+        final append = _numbering == _shownNumbering &&
+            parsed.windowStart == _trace.windowStart;
+        if (following() || append || shownEmpty || !_firstLoadDone || showLatest) {
+          _show(parsed);
+        } else {
+          _pending = parsed;
+        }
       } else if (!_firstLoadDone) {
         setState(() => _firstLoadDone = true);
       }
-      if (follow) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (current() && _scroll.hasClients) { _scroll.jumpTo(_scroll.position.maxScrollExtent); }
-        });
-      }
+      if (following()) _jumpToEnd(current);
     } on _HiddenLoad {
       if (current()) _reloadWhenVisible = true;
     } catch (e) {
@@ -2258,16 +2481,6 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         _resumeWhenVisible();
       }
     }
-  }
-
-  /// The end of [text] holding at most [newlines] line breaks.
-  static String _lastLines(String text, int newlines) {
-    var seen = 0;
-    for (var i = text.length - 1; i >= 0; i--) {
-      if (text.codeUnitAt(i) != 0x0A) continue;
-      if (++seen > newlines) return text.substring(i + 1);
-    }
-    return text;
   }
 
   /// The finished job's verified tail, from memory, the offline cache or one
@@ -2322,10 +2535,16 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         if (newId != _jobId || action == 'retry') {
           _jobId = newId; _trace = JobTrace.empty; _query = ''; _matches = const <_LogMatch>[];
           _currentMatch = 0; _searchController.clear(); _follow = true; _sectionOpen.clear();
-          _rawBytes = BytesBuilder(copy: false);
+          _parser = JobTraceParser();
+          _hasTraceBytes = false;
           _traceOffset = 0;
           _tail = null;
           _tailClipped = false;
+          _latestClipped = false;
+          _pending = null;
+          _resyncTail = false;
+          _numbering++;
+          _shownNumbering = _numbering;
           _firstLoadDone = false;
         }
         // The load below replaces any load deferred while the dialog covered
@@ -2402,7 +2621,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         if (sections[index].endLine > line) active.add(index);
         next++;
       }
-      if (_trace.lines[line].text.toLowerCase().contains(needle)) hits.addAll(active);
+      if (_trace.lines[line].lowerText.contains(needle)) hits.addAll(active);
     }
     return hits;
   }
@@ -2411,8 +2630,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     final needle = query.toLowerCase();
     final matches = <_LogMatch>[];
     for (var l = 0; l < _trace.lines.length; l++) {
-      final text = _trace.lines[l].text;
-      final lower = text.toLowerCase();
+      final lower = _trace.lines[l].lowerText;
       var start = 0;
       while (start < lower.length) {
         final idx = lower.indexOf(needle, start);
@@ -2487,6 +2705,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   }
   List<InlineSpan> _buildHighlightSpans({
     required String text,
+    String? lowerText,
     required int? lineIndex,
     required TextStyle baseStyle,
   }) {
@@ -2494,7 +2713,10 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       return [TextSpan(text: text.isEmpty ? ' ' : text, style: baseStyle)];
     }
     final needle = _query.toLowerCase();
-    final lower = text.toLowerCase();
+    final lower = lowerText ??
+        (lineIndex < _trace.lines.length
+            ? _trace.lines[lineIndex].lowerText
+            : text.toLowerCase());
     final spans = <InlineSpan>[];
     var cursor = 0;
     while (cursor < text.length) {
@@ -2533,7 +2755,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     final needle = _query.toLowerCase();
     void addLine(int line) {
       final traceLine = lines[line];
-      if (needle.isEmpty || traceLine.text.toLowerCase().contains(needle)) {
+      if (needle.isEmpty || traceLine.lowerText.contains(needle)) {
         rows.add(_LogRow.line(traceLine, lineIndex: line));
       }
     }
@@ -2751,7 +2973,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         uri: widget.account.instance.projectWeb('${widget.project.path}/-/jobs/$_jobId'),
         ownerKey: (widget.account.key, widget.api, widget.project.id, _jobId, widget.generation),
         isCurrent: () => _ownerCurrent),
-        IconButton(tooltip: l10n.reloadJobLog, onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
+        IconButton(tooltip: l10n.reloadJobLog, onPressed: _loading || _busy || _confirming ? null : _refresh, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(tooltip: l10n.jobActions, enabled: !_busy && !_confirming && !_downloading && _job != null,
           onSelected: (value) => value == 'ai' ? _openAi() : _action(value), itemBuilder: (_) => [
           if (ai && !failed) PopupMenuItem(value: 'ai', child: Text(l10n.aiDiscuss)),
@@ -2784,7 +3006,12 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
               }), selected: _auto, onSelected: (value) {
                 setState(() => _auto = value); _schedule();
               }),
-              FilterChip(label: Text(l10n.followLogTail), selected: _follow, onSelected: (value) => setState(() => _follow = value)),
+              FilterChip(label: Text(l10n.followLogTail), selected: _follow, onSelected: (value) {
+                setState(() => _follow = value);
+                // Following again shows the latest window held back meanwhile.
+                final pending = _pending;
+                if (value && pending != null) _showPendingAtTail(pending);
+              }),
             ])),
           if (_job != null) _buildJobActionCard(valueText(_job!, 'status')),
         ])),
@@ -2858,7 +3085,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             ],
           ),
         ),
-        if ((_tail?.truncated ?? false) || _tailClipped) Padding(
+        if (_tailClipped) Padding(
           key: const ValueKey('job-log-truncated'),
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Row(children: [
@@ -2868,7 +3095,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           ]),
         ),
         if ((_loading && _firstLoadDone) || _busy) const LinearProgressIndicator(minHeight: 2),
-        if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _load,
+        if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _refresh,
           account: widget.account, resourceLabel: '${widget.project.path} · Job #$_jobId',
           onSwitchAccount: endSessionFrom(context)),
         Expanded(child: !_firstLoadDone && _loading
@@ -2902,6 +3129,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 } else {
                   final spans = _buildHighlightSpans(
                     text: text,
+                    lowerText: traceLine?.lowerText,
                     lineIndex: row.lineIndex,
                     baseStyle: baseStyle,
                   );
