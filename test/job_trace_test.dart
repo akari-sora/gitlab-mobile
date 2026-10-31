@@ -116,6 +116,29 @@ void main() {
     expect(captured!.headers['Range'], isNull);
   });
 
+  test('jobTraceChunk on a server ignoring Range (200, whole log): bytes past the offset; a shorter body is returned whole from byte 0', () async {
+    var body = 'first line\nsecond line\n';
+    final api = testApi(FakeAdapter((request) => ResponseBody.fromString(body, 200)));
+    addTearDown(api.close);
+    final grown = await api.jobTraceChunk(42, 1, offset: 11, bounded: true);
+    expect(utf8.decode(grown.bytes), 'second line\n');
+    expect(grown.startOffset, 11);
+    expect(grown.nextOffset, 23);
+    expect(grown.totalBytes, isNull);
+    final same = await api.jobTraceChunk(42, 1, offset: 23, bounded: true);
+    expect(same.bytes, isEmpty);
+    expect(same.nextOffset, 23);
+    body = 'replaced\n';
+    final replaced = await api.jobTraceChunk(42, 1, offset: 23, bounded: true);
+    expect(utf8.decode(replaced.bytes), 'replaced\n');
+    expect(replaced.startOffset, 0);
+    expect(replaced.nextOffset, 9);
+    body = '';
+    final erased = await api.jobTraceChunk(42, 1, offset: 23, bounded: true);
+    expect(erased.bytes, isEmpty);
+    expect(erased.nextOffset, 23, reason: 'an empty body keeps what is shown');
+  });
+
   test('jobTraceChunk tail starting mid-line drops the cut line and keeps offsets absolute', () async {
     const cut = 'ut off part of a line\n';
     const rest = '2026-10-20T06:56:03.100000Z 00O next whole line\n'
@@ -1531,7 +1554,10 @@ void main() {
         return jsonResponse({}, status: 404);
       }));
       addTearDown(api.close);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await _pumpJobLog(tester, api);
+      await tester.tap(find.text('10 秒更新'));
+      await tester.pump();
       await tester.enterText(find.byKey(const ValueKey('job-log-search-1')), 'needle');
       await tester.pump();
       expect(find.text('1/3'), findsOneWidget);
@@ -1541,7 +1567,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('3/3'), findsOneWidget); // 'needle line 8'
 
-      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await tester.pump(const Duration(seconds: 10)); // the auto-refresh poll
       await _settleJobLog(tester);
       // Searching turned follow off: the restarted parse waits off screen.
       expect(find.text('3/3'), findsOneWidget);
@@ -1587,6 +1613,124 @@ void main() {
       expect(ranges, ['bytes=0-${limit - 1}', 'bytes=-$limit', 'bytes=-$limit']);
       expect(find.text('tail read 2'), findsOneWidget);
       expect(find.text('tail read 1'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+  });
+  group('Server ignoring Range: 200 with the whole log on every read (#58, gitlab.com)', () {
+    const limit = GitLabApi.maxTextBytes;
+    String part(int from, int to) => [
+          for (var i = from; i < to; i++)
+            i % 7 == 0 ? '\x1b[3${i % 8}mcolored row $i\x1b[0m' : 'row $i of the growing log',
+        ].join('\n');
+    FakeAdapter wholeLog(String Function() text, List<String?> ranges, {String status = 'running'}) =>
+        FakeAdapter((request) {
+          if (request.uri.path.endsWith('/jobs/1')) {
+            return jsonResponse({'id': 1, 'status': status, 'name': 'ignores-range'});
+          }
+          if (request.uri.path.endsWith('/trace')) {
+            ranges.add(request.headers['Range'] as String?);
+            final bytes = utf8.encode(text());
+            return ResponseBody.fromBytes(bytes, 200, headers: {
+              'content-length': ['${bytes.length}'],
+              'accept-ranges': ['bytes'],
+            });
+          }
+          return jsonResponse({}, status: 404);
+        });
+    List<String> rows(WidgetTester tester) => find
+        .descendant(of: find.byType(ListView), matching: find.byType(RichText))
+        .evaluate()
+        .map((e) => (e.widget as RichText).text.toPlainText())
+        .toList();
+
+    testWidgets('polls parse only the new bytes, show the rows of a fresh load, and never read the tail', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 2600);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var text = 'section_start:1:build\r\n${part(0, 40)}\n';
+      final initialBytes = utf8.encode(text).length;
+      final ranges = <String?>[];
+      final api = testApi(wholeLog(() => text, ranges));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.text('row 39 of the growing log'), findsOneWidget);
+
+      final added = '${part(40, 60)}\nsection_end:2:build\r\nafter the section\n';
+      text = '$text$added';
+      JobTrace.resetDebugCounters();
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      // Only the appended text went through the parser, not the whole body.
+      expect(JobTrace.debugCharactersProcessed, greaterThan(0));
+      expect(JobTrace.debugCharactersProcessed, lessThanOrEqualTo(added.length));
+      expect(JobTrace.debugCharactersProcessed, lessThan(text.length - added.length));
+      expect(ranges, [
+        'bytes=0-${limit - 1}',
+        'bytes=$initialBytes-${initialBytes + limit - 1}',
+      ]);
+      // A poll with nothing new parses nothing and reads once.
+      JobTrace.resetDebugCounters();
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(JobTrace.debugCharactersProcessed, 0);
+      expect(ranges, hasLength(3));
+      expect(ranges.where((r) => r!.startsWith('bytes=-')), isEmpty);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsNothing);
+      final polled = rows(tester);
+      expect(polled, contains('after the section'));
+
+      // The same log loaded fresh shows the same rows.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      final fresh = testApi(wholeLog(() => text, <String?>[]));
+      addTearDown(fresh.close);
+      await _pumpJobLog(tester, fresh);
+      expect(rows(tester), polled);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('a body shorter than the offset (log replaced) restarts from it', (tester) async {
+      var text = '${part(0, 30)}\n';
+      final ranges = <String?>[];
+      final api = testApi(wholeLog(() => text, ranges));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.text('row 29 of the growing log'), findsOneWidget);
+
+      text = 'replaced log line one\nreplaced log line two\n';
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(find.text('replaced log line two'), findsOneWidget);
+      expect(find.text('row 29 of the growing log'), findsNothing);
+      expect(find.textContaining('of the growing log'), findsNothing);
+      expect(ranges.where((r) => r!.startsWith('bytes=-')), isEmpty);
+
+      // It continues from the replaced log's end.
+      text = '${text}third line\n';
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(ranges.last, 'bytes=44-${44 + limit - 1}');
+      expect(find.text('third line'), findsOneWidget);
+      expect(find.text('replaced log line one'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('a whole log over 2 MiB still ends in the preview error after one tail attempt', (tester) async {
+      final big = '${'x' * 120}\n' * 18000;
+      expect(big.length, greaterThan(limit));
+      final ranges = <String?>[];
+      final api = testApi(wholeLog(() => big, ranges));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.text('內容超出預覽上限'), findsOneWidget);
+      expect(ranges, ['bytes=0-${limit - 1}', 'bytes=-$limit']);
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump();

@@ -2254,7 +2254,16 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       }
     });
   }
-  Future<void> _load() async {
+  /// The refresh button shows the latest window, including one held back
+  /// while the reader is away from the tail; it jumps to the end only when
+  /// they follow it.
+  void _refresh() {
+    final pending = _pending;
+    if (pending != null) _show(pending);
+    unawaited(_load(showLatest: true));
+  }
+
+  Future<void> _load({bool showLatest = false}) async {
     if (_loading || !mounted) { return; }
     final epoch = ++_loadEpoch, jobId = _jobId;
     bool current() => mounted && epoch == _loadEpoch && jobId == _jobId;
@@ -2361,6 +2370,11 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             break;
           }
           final total = chunk.totalBytes;
+          // gitlab.com's trace endpoint ignores Range and answers 200 with the
+          // whole log (#58): jobTraceChunk then returns only the bytes past
+          // the offset, with no total, and the read is at its end. The short
+          // reads with an unknown `/*` total handled here and below do not
+          // occur there; they are kept for servers that honour Range.
           atEnd = chunk.isEof ||
               (total != null ? end >= total : chunk.bytes.length < limit);
           if (!atEnd &&
@@ -2437,7 +2451,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         // slide or a restarted parse waits until they come back to the tail.
         final append = _numbering == _shownNumbering &&
             parsed.windowStart == _trace.windowStart;
-        if (following() || append || shownEmpty || !_firstLoadDone) {
+        if (following() || append || shownEmpty || !_firstLoadDone || showLatest) {
           _show(parsed);
         } else {
           _pending = parsed;
@@ -2959,7 +2973,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         uri: widget.account.instance.projectWeb('${widget.project.path}/-/jobs/$_jobId'),
         ownerKey: (widget.account.key, widget.api, widget.project.id, _jobId, widget.generation),
         isCurrent: () => _ownerCurrent),
-        IconButton(tooltip: l10n.reloadJobLog, onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
+        IconButton(tooltip: l10n.reloadJobLog, onPressed: _loading || _busy || _confirming ? null : _refresh, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(tooltip: l10n.jobActions, enabled: !_busy && !_confirming && !_downloading && _job != null,
           onSelected: (value) => value == 'ai' ? _openAi() : _action(value), itemBuilder: (_) => [
           if (ai && !failed) PopupMenuItem(value: 'ai', child: Text(l10n.aiDiscuss)),

@@ -2912,14 +2912,21 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           }
         }
       } else if (result.statusCode == 200) {
-        if (!tail && offset > 0 && result.bytes.length > offset) {
+        // A server that ignores Range (gitlab.com's trace endpoint, #58)
+        // answers every read with the whole log. Logs only grow, so the bytes
+        // past [offset] are the new ones. A shorter, non-empty body means the
+        // log was replaced: it is returned whole from byte 0, below [offset].
+        if (!tail && offset > 0 && result.bytes.length >= offset) {
           chunkBytes = result.bytes.sublist(offset);
-        } else if (!tail && offset > 0 && result.bytes.length <= offset) {
+          startOffset = offset;
+        } else if (!tail && offset > 0 && result.bytes.isEmpty) {
           chunkBytes = const <int>[];
+          startOffset = offset;
         } else {
           chunkBytes = result.bytes;
+          startOffset = 0;
         }
-        nextOffset = (tail ? 0 : offset) + chunkBytes.length;
+        nextOffset = startOffset + chunkBytes.length;
       } else {
         chunkBytes = result.bytes;
         nextOffset = (tail ? 0 : offset) + chunkBytes.length;

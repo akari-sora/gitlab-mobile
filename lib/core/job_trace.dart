@@ -160,7 +160,11 @@ final class JobTraceParser {
   // head would lose section markers and SGR state and make the rows depend
   // on how the bytes were chunked. One read is bounded by
   // GitLabApi.maxTextBytes; snapshots re-parse this line, which the span
-  // counter and estimatedBytes account for.
+  // counter and estimatedBytes account for. Known gap (follow-up, #58): a
+  // running job's line that never ends (hours of `\r` progress) grows without
+  // bound. A cap must be at maxTextBytes scale, carry the section and ANSI
+  // state through the dropped head, cut just after a `\r`, and show the
+  // truncation notice.
 
   static const _blockSize = 512;
 

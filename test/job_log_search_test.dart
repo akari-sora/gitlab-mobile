@@ -461,6 +461,7 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
 
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
         await tester.pumpWidget(workspaceHost(JobLogPage(
           account: fixture.account,
           api: fixture.api,
@@ -469,6 +470,10 @@ void main() {
         ), scale: scale));
         await settleWorkspace(tester);
         expect(MediaQuery.textScalerOf(tester.element(find.byType(ListView))).scale(10), 10 * scale);
+        // Polls come from the 10 s auto-refresh: the refresh button is the
+        // reader asking for the latest window, tested below.
+        await tester.tap(find.text('10 秒更新'));
+        await tester.pump();
 
         // Scroll up from the tail (follow inactive) to rows that would move if
         // the 100 rows the slide drops (wrapped ones among them) were taken
@@ -486,15 +491,25 @@ void main() {
 
         // The poll appends 100 lines: the window slides by 100 in the
         // background, and nothing on screen moves.
-        await tester.tap(find.byTooltip('重新讀取 Log'));
+        await tester.pump(const Duration(seconds: 10));
         await settleWorkspace(tester);
         expect(scrollable.position.pixels, reading);
         expect(_firstVisibleRow(tester), before);
         expect(find.text('plain log row 20099'), findsNothing);
         // A second poll with nothing new keeps it still too.
-        await tester.tap(find.byTooltip('重新讀取 Log'));
+        await tester.pump(const Duration(seconds: 10));
         await settleWorkspace(tester);
         expect(_firstVisibleRow(tester), before);
+
+        // Tapping refresh shows the held window where the reader is: the
+        // rows move up by the 100 dropped ones and the list does not jump.
+        await tester.tap(find.byTooltip('重新讀取 Log'));
+        await settleWorkspace(tester);
+        expect(scrollable.position.pixels, reading);
+        expect(scrollable.position.extentAfter, greaterThan(80));
+        final after = _firstVisibleRow(tester);
+        int rowNumber(String row) => int.parse(RegExp(r'log row (\d+)').firstMatch(row)!.group(1)!);
+        expect(rowNumber(after), greaterThan(rowNumber(before)));
 
         // Back at the tail, the latest window is shown and followed.
         scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
@@ -556,6 +571,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpWidget(workspaceHost(JobLogPage(
         account: fixture.account,
         api: fixture.api,
@@ -563,6 +579,8 @@ void main() {
         id: 501,
       )));
       await settleWorkspace(tester);
+      await tester.tap(find.text('10 秒更新'));
+      await tester.pump();
 
       final searchFinder = find.byKey(const ValueKey('job-log-search-501'));
       await tester.enterText(searchFinder, 'needle');
@@ -574,10 +592,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('2/3'), findsOneWidget);
 
-      // Poll appends 101 lines -> the window slides past line 10 ('needle early
-      // line 10') in the background. Searching turned follow off, so the rows
-      // and matches on screen stay as they were.
-      await tester.tap(find.byTooltip('重新讀取 Log'));
+      // The 10 s poll appends 101 lines -> the window slides past line 10
+      // ('needle early line 10') in the background. Searching turned follow
+      // off, so the rows and matches on screen stay as they were.
+      await tester.pump(const Duration(seconds: 10));
       await settleWorkspace(tester);
       expect(find.text('2/3'), findsOneWidget);
 
