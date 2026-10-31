@@ -443,7 +443,8 @@ void main() {
       expect(_rows(tester), 2);
       final attempt8 = adapter.requests.where((r) => _isTrace(r, 8)).toList();
       expect(attempt8, isNotEmpty);
-      expect(attempt8.first.headers['Range'], isNull, reason: 'byte 0 of the new attempt');
+      expect(attempt8.first.headers['Range'], 'bytes=0-${GitLabApi.maxTextBytes - 1}',
+        reason: 'byte 0 of the new attempt, bounded by the text budget');
       expect(attempt8.first.uri.queryParameters['offset'], isNull);
       expect(find.byKey(const ValueKey('job-log-truncated')), findsNothing);
       await tester.pump(const Duration(milliseconds: 500)); // confirm dialog cleanup

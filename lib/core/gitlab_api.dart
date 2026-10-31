@@ -2760,6 +2760,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     }
     // A suffix may start inside one UTF-8 scalar. Only its leading continuation
     // bytes can be discarded; malformed content elsewhere remains unsupported.
+    // It then starts after the cut line, so offsets stay absolute and exact.
     var skip = 0;
     if (start > 0) {
       while (skip < response.bytes.length &&
@@ -2767,6 +2768,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         skip++;
       }
       if (skip > 3) throw const ApiFailure(FailureKind.unsupported);
+      skip = skipCutLine(response.bytes, skip);
     }
     final bytes = response.bytes.sublist(skip);
     try {
@@ -2816,9 +2818,12 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     final headers = <String, String>{
       if (tail)
         'Range': 'bytes=-$limit'
+      else if (bounded)
+        // Bounded from byte 0 too: Content-Range then reports the total, so
+        // a caller can tell a log past the budget without reading more.
+        'Range': 'bytes=$offset-${offset + limit - 1}'
       else if (offset > 0)
-        'Range':
-            bounded ? 'bytes=$offset-${offset + limit - 1}' : 'bytes=$offset-',
+        'Range': 'bytes=$offset-',
     };
     final uri = instance.api(
       ['projects', '$project', 'jobs', '$job', 'trace'],
@@ -2878,13 +2883,17 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       }
 
       List<int> chunkBytes;
-      int nextOffset;
+      int? nextOffset;
       if (result.statusCode == 206) {
         chunkBytes = result.bytes;
         if (startOffset != null) {
           nextOffset = startOffset + chunkBytes.length;
         } else if (endOffset != null && chunkBytes.isNotEmpty) {
           nextOffset = endOffset + 1;
+        } else if (tail) {
+          // A suffix's start depends on a total the server did not report:
+          // the absolute offset is unknown, so none is claimed.
+          nextOffset = null;
         } else {
           nextOffset = offset + chunkBytes.length;
         }
@@ -2895,7 +2904,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
               (chunkBytes[skip] & 0xc0) == 0x80) {
             skip++;
           }
+          skip = skipCutLine(chunkBytes, skip);
           if (skip > 0) {
+            // nextOffset is the suffix's absolute end and stays as it is.
             chunkBytes = chunkBytes.sublist(skip);
             startOffset = startOffset! + skip;
           }

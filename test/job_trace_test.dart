@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
@@ -9,6 +10,7 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/job_trace.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/read_cache_disk_contract.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'support/fake_adapter.dart';
@@ -92,6 +94,108 @@ void main() {
     expect(result.bytes, isEmpty);
     expect(result.nextOffset, 100);
     expect(result.isEof, isTrue);
+  });
+
+  test('jobTraceChunk bounded from byte 0 sends bytes=0-(budget-1) and reports the total', () async {
+    RequestOptions? captured;
+    final api = testApi(FakeAdapter((request) {
+      captured = request;
+      return ResponseBody.fromString('head', 206, headers: {
+        'content-range': ['bytes 0-3/5000000'],
+      });
+    }));
+    addTearDown(api.close);
+    final result = await api.jobTraceChunk(42, 1, bounded: true);
+    expect(captured!.headers['Range'], 'bytes=0-${GitLabApi.maxTextBytes - 1}');
+    expect(captured!.uri.queryParameters['offset'], isNull);
+    expect(result.startOffset, 0);
+    expect(result.nextOffset, 4);
+    expect(result.totalBytes, 5000000);
+    // The default (unbounded) shape is unchanged for other callers.
+    await api.jobTraceChunk(42, 1);
+    expect(captured!.headers['Range'], isNull);
+  });
+
+  test('jobTraceChunk tail starting mid-line drops the cut line and keeps offsets absolute', () async {
+    const cut = 'ut off part of a line\n';
+    const rest = '2026-10-20T06:56:03.100000Z 00O next whole line\n'
+        '2026-10-20T06:56:04.100000Z 00O last line\n';
+    final body = [0x80, 0x80, ...utf8.encode(cut), ...utf8.encode(rest)];
+    const start = 5000;
+    final total = start + body.length;
+    final api = testApi(FakeAdapter((request) {
+      expect(request.headers['Range'], 'bytes=-${GitLabApi.maxTextBytes}');
+      return ResponseBody.fromBytes(body, 206, headers: {
+        'content-range': ['bytes $start-${total - 1}/$total'],
+      });
+    }));
+    addTearDown(api.close);
+    final result = await api.jobTraceChunk(42, 1, tail: true);
+    expect(utf8.decode(result.bytes), rest);
+    expect(result.startOffset, start + 2 + utf8.encode(cut).length);
+    expect(result.startOffset! + result.bytes.length, total);
+    expect(result.nextOffset, total);
+    expect(result.totalBytes, total);
+    // Parsed from a whole line, the runner timestamps are stripped.
+    final trace = JobTraceParser().addBytes(result.bytes, isLast: true);
+    expect(trace.lines.map((l) => l.text).toList(), ['next whole line', 'last line', '']);
+  });
+
+  test('jobTraceChunk tail that is one long line keeps it (no newline to align on)', () async {
+    final api = testApi(FakeAdapter((request) => ResponseBody.fromString('one long line', 206, headers: {
+      'content-range': ['bytes 10-22/23'],
+    })));
+    addTearDown(api.close);
+    final result = await api.jobTraceChunk(42, 1, tail: true);
+    expect(utf8.decode(result.bytes), 'one long line');
+    expect(result.startOffset, 10);
+    expect(result.nextOffset, 23);
+  });
+
+  test('jobTraceChunk tail 206 without Content-Range claims no absolute offset', () async {
+    final api = testApi(FakeAdapter((request) => ResponseBody.fromString('tail bytes\n', 206)));
+    addTearDown(api.close);
+    final result = await api.jobTraceChunk(42, 1, tail: true);
+    expect(utf8.decode(result.bytes), 'tail bytes\n');
+    expect(result.startOffset, isNull);
+    expect(result.nextOffset, isNull);
+    expect(result.totalBytes, isNull);
+  });
+
+  test('cachedTerminalJobTrace suffix starting mid-line starts on a whole line with absolute offsets', () async {
+    final head = StringBuffer();
+    for (var i = 0; i < 30000; i++) {
+      head.write('2026-10-20T06:56:03.100000Z 00O terminal output line number $i of the job\n');
+    }
+    final all = utf8.encode(head.toString());
+    expect(all.length, greaterThan(readCacheTerminalLogLimit));
+    final from = all.length - readCacheTerminalLogLimit;
+    expect(all[from - 1], isNot(0x0A), reason: 'the fixture cuts inside a line');
+    final api = testApi(FakeAdapter((request) {
+      if (request.uri.path.endsWith('/jobs/1')) {
+        return jsonResponse({
+          'id': 1, 'status': 'failed', 'name': 'terminal',
+          'pipeline': {'id': 9, 'project_id': 42},
+          'erased_at': null, 'finished_at': '2026-10-20T07:00:00Z',
+        });
+      }
+      expect(request.headers['Range'], 'bytes=-$readCacheTerminalLogLimit');
+      return ResponseBody.fromBytes(all.sublist(from), 206, headers: {
+        'content-range': ['bytes $from-${all.length - 1}/${all.length}'],
+        'content-length': ['$readCacheTerminalLogLimit'],
+      });
+    }));
+    addTearDown(api.close);
+    final log = (await api.cachedTerminalJobTrace(42, 1)).value;
+    final skipped = all.indexOf(0x0A, from) + 1 - from;
+    expect(log.startOffset, from + skipped);
+    expect(all[log.startOffset - 1], 0x0A);
+    expect(log.bytes, all.sublist(log.startOffset));
+    expect(log.nextOffset, all.length);
+    expect(log.truncated, isTrue);
+    final trace = JobTraceParser().addBytes(log.bytes, isLast: true);
+    expect(trace.lines.first.text, startsWith('terminal output line number'));
+    expect(trace.lines.where((l) => l.text.contains('Z 00O')), isEmpty);
   });
 
   testWidgets('JobLogPage preserves section collapsed state during offset streaming updates', (tester) async {
@@ -291,7 +395,7 @@ void main() {
       ]);
     });
 
-    test('caps unterminated pending \\r progress line so memory and parseSpans work stay bounded', () {
+    test('keeps an unterminated \\r progress line whole: old-parser output, counted work and memory', () {
       JobTrace.resetDebugCounters();
       final parser = JobTraceParser();
       final chunk = utf8.encode('${'x' * 20000}\r');
@@ -303,13 +407,58 @@ void main() {
       }
       final snap = parser.snapshot();
       expect(parser.charactersProcessed, 50 * chunk.length);
-      // Display still shows the 20,000 'x' characters (chunked at 4096 chars per line).
+      // The pending line is never capped: the rows are exactly the old
+      // whole-text parser's rows for the same input.
+      _expectMatchesOld(
+        snap,
+        OldJobTrace.parse(utf8.decode([for (var i = 0; i < 50; i++) ...chunk])),
+        reason: 'pending \\r line',
+      );
       expect(snap.lines.map((l) => l.text).join().length, 20000);
-      // Estimated bytes includes raw buffers and stays bounded well below 512 KiB.
-      expect(parser.estimatedBytes, lessThan(512 * 1024));
-      // Total characters fed to parseSpans across all 50 snapshots stays bounded
-      // (capping prevents quadratic 25.5M char re-parsing).
-      expect(JobTrace.debugCharactersProcessed, lessThan(3000000));
+      // estimatedBytes counts the retained raw pending line (2 bytes per code
+      // unit); the input is within the 2 MiB read budget, so is the estimate.
+      expect(parser.estimatedBytes, greaterThanOrEqualTo(2 * 50 * (chunk.length - 1)));
+      expect(parser.estimatedBytes, lessThan(2 * GitLabApi.maxTextBytes));
+      // Every snapshot re-parses the pending line once (counted), and never
+      // more than that: at most one preview parse per snapshot.
+      expect(JobTrace.debugCharactersProcessed, greaterThanOrEqualTo(50 * (chunk.length - 1)));
+      expect(JobTrace.debugCharactersProcessed, lessThanOrEqualTo(chunk.length * 50 * 51 ~/ 2));
+    });
+
+    test('lines longer than 64K characters spanning many chunks match the old parser (plain, marker, SGR, isolate)', () async {
+      final cases = <String, String>{
+        'plain 100K line': '${'a' * 100000}\nafter\n',
+        'section_end inside the long prefix':
+            'section_start:1:outer[collapsed=true]\rhead\nsection_end:2:outer\r${'b' * 100000}\nafter outside\n',
+        'SGR inside the long prefix': '\x1b[31m${'r' * 100000}\nnext line should be red\n',
+        'SGR change late in a long line':
+            '${'p' * 70000}\x1b[1;32m${'g' * 40000}\nstill bold green\n',
+        'progress residual':
+            '${List.generate(2000, (i) => 'Progress ${'#' * 30} ${i.toString().padLeft(5)}').join('\r')}\rDone\n',
+      };
+      for (final entry in cases.entries) {
+        final bytes = utf8.encode(entry.value);
+        final expected = OldJobTrace.parse(entry.value);
+        // 5,000-byte chunks: the pending line passes 64K characters long before
+        // its newline; every snapshot equals the old parse of that prefix.
+        final p = JobTraceParser();
+        for (var i = 0; i < bytes.length; i += 5000) {
+          final end = i + 5000 < bytes.length ? i + 5000 : bytes.length;
+          p.addBytes(bytes.sublist(i, end));
+          _expectMatchesOld(
+            p.snapshot(),
+            OldJobTrace.parse(utf8.decode(bytes.sublist(0, end))),
+            reason: '${entry.key} prefix=$end',
+          );
+        }
+        _expectMatchesOld(p.finish(), expected, reason: '${entry.key} finish');
+        // The same text through the background isolate (> 64 KiB chunks).
+        final iso = JobTraceParser();
+        final first = await iso.addBytesAsync(bytes.sublist(0, 70000));
+        expect(first, isNotNull);
+        final last = await iso.addBytesAsync(bytes.sublist(70000), isLast: true);
+        _expectMatchesOld(last!, expected, reason: '${entry.key} isolate');
+      }
     });
 
     test('maxSections lifetime counter caps total sections at 1024 even after earlier sections evict from window', () {
@@ -800,7 +949,7 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('BLOCKER 1: running job whose first read at offset 0 exceeds 2 MiB falls back to Range: bytes=-2MiB, shows tail + notice, and continues polling', (tester) async {
+    testWidgets('BLOCKER 1: running job whose bounded first read reports more than 2 MiB reads Range: bytes=-2MiB, shows tail + notice, and continues polling', (tester) async {
       // 22,000 timestamped lines (~104 bytes each = 2,288,000 bytes > 2 MiB).
       final fullBuf = StringBuffer();
       for (var i = 0; i < 22000; i++) {
@@ -827,10 +976,13 @@ void main() {
         if (request.uri.path.endsWith('/trace')) {
           final range = request.headers['Range'] as String?;
           requestedRanges.add(range);
-          if (range == null) {
-            // Unbounded offset=0 request serves > 2 MiB, triggering tooLarge in Dio.
-            return ResponseBody.fromBytes(fullBytes, 200, headers: {
-              'content-length': ['${fullBytes.length}'],
+          if (range == 'bytes=0-${GitLabApi.maxTextBytes - 1}') {
+            // The bounded first read reports the total: more than one budget.
+            return ResponseBody.fromBytes(
+              Uint8List.sublistView(fullBytes, 0, GitLabApi.maxTextBytes), 206, headers: {
+              'content-range': [
+                'bytes 0-${GitLabApi.maxTextBytes - 1}/${fullBytes.length}',
+              ],
             });
           }
           if (range == 'bytes=-${GitLabApi.maxTextBytes}') {
@@ -880,7 +1032,7 @@ void main() {
 
       expect(find.textContaining('fresh polled line 22000'), findsOneWidget);
       expect(requestedRanges, [
-        null,
+        'bytes=0-${GitLabApi.maxTextBytes - 1}',
         'bytes=-${GitLabApi.maxTextBytes}',
         'bytes=${fullBytes.length}-${fullBytes.length + GitLabApi.maxTextBytes - 1}',
       ]);
@@ -889,7 +1041,7 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('BLOCKER 2: poll exceeding 2 MiB splits into bounded ranges and recovers via tail read if server ignores bound', (tester) async {
+    testWidgets('BLOCKER 2: a poll behind reads bounded ranges to the end in one load, and recovers via a tail read if the server ignores the bound', (tester) async {
       final initialBytes = Uint8List.fromList(utf8.encode('initial line 0\n'));
       final limit = GitLabApi.maxTextBytes;
       // Simulate a multi-poll catch-up across bounded ranges, then simulate a
@@ -914,7 +1066,8 @@ void main() {
         if (request.uri.path.endsWith('/trace')) {
           final range = request.headers['Range'] as String?;
           requestedRanges.add(range);
-          if (range == null) {
+          if (range == 'bytes=0-${limit - 1}') {
+            // A server that ignores the bound: the whole (small) log.
             return ResponseBody.fromBytes(initialBytes, 200);
           }
           if (range == 'bytes=${initialBytes.length}-${initialBytes.length + limit - 1}') {
@@ -970,17 +1123,16 @@ void main() {
       await _settleJobLog(tester);
       expect(find.text('initial line 0'), findsOneWidget);
 
-      // Poll 1: bounded range from initialBytes.length.
+      // One load reads bounded ranges on until the end: part 1 does not reach
+      // the reported total, so the same load reads part 2 from offset2.
       await tester.tap(find.byTooltip('重新讀取 Log'));
       await _settleJobLog(tester);
       expect(find.text('burst part 1 end'), findsOneWidget);
-
-      // Poll 2: bounded range from offset2.
-      await tester.tap(find.byTooltip('重新讀取 Log'));
-      await _settleJobLog(tester);
       expect(find.text('burst part 2 tail line'), findsOneWidget);
+      expect(pollCount, 2);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsNothing);
 
-      // Poll 3: server returns > 2 MiB -> page recovers with Range: bytes=-2MiB and shows notice.
+      // Next poll: server returns > 2 MiB -> page recovers with Range: bytes=-2MiB and shows notice.
       await tester.tap(find.byTooltip('重新讀取 Log'));
       await _settleJobLog(tester);
       expect(find.text('內容超出預覽上限'), findsNothing);
@@ -990,7 +1142,7 @@ void main() {
       final offset3 = offset2 + burstPart2.length;
       expect(pollCount, 3);
       expect(requestedRanges, [
-        null,
+        'bytes=0-${limit - 1}',
         'bytes=${initialBytes.length}-${initialBytes.length + limit - 1}',
         'bytes=$offset2-${offset2 + limit - 1}',
         'bytes=$offset3-${offset3 + limit - 1}',
@@ -1087,6 +1239,397 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
     });
+  });
+
+  group('Round 3 (#58): tail when far behind, read to the end, superseded loads, timestamps', () {
+    const limit = GitLabApi.maxTextBytes;
+
+    testWidgets('B1: a job that finishes more than 2 MiB past the last read shows its true final line plus the notice', (tester) async {
+      final head = utf8.encode('first line while running\n');
+      final b = StringBuffer();
+      for (var i = 0; i < 40000; i++) {
+        b.writeln('middle output line number $i padded with some text......');
+      }
+      b.writeln('FINAL ERROR: the build failed here');
+      final all = [...head, ...utf8.encode(b.toString())];
+      expect(all.length - head.length, greaterThan(limit));
+      var status = 'running';
+      List<int> served = head;
+      final ranges = <String?>[];
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': status, 'name': 'long-job'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          final range = request.headers['Range'] as String?;
+          ranges.add(range);
+          return _serveRange(served, range);
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.text('first line while running'), findsOneWidget);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsNothing);
+
+      // The job finishes with ~2.3 MiB more; the user taps refresh.
+      status = 'failed';
+      served = all;
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+
+      expect(find.text('FINAL ERROR: the build failed here'), findsOneWidget);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsOneWidget);
+      expect(find.text('內容超出預覽上限'), findsNothing);
+      expect(ranges, [
+        'bytes=0-${limit - 1}',
+        'bytes=${head.length}-${head.length + limit - 1}',
+        'bytes=-$limit',
+      ]);
+      // The end is on screen, so polling stops; the window ends at the last line.
+      final rows = find.descendant(of: find.byType(ListView), matching: find.byType(RichText));
+      expect(
+        rows.evaluate().map((e) => (e.widget as RichText).text.toPlainText()).toList(),
+        containsAllInOrder(['FINAL ERROR: the build failed here', ' ']),
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('B1: a finished job within one budget is read to its end in one load across short responses, whole and without the notice', (tester) async {
+      final head = utf8.encode('first line while running\n');
+      final b = StringBuffer();
+      for (var i = 0; i < 18000; i++) {
+        b.writeln('output line $i padded with text to reach about eighty bytes per row.....');
+      }
+      b.writeln('FINAL LINE of a finished job');
+      final all = [...head, ...utf8.encode(b.toString())];
+      expect(all.length - head.length, inInclusiveRange(1024 * 1024, limit));
+      var status = 'running';
+      List<int> served = head;
+      final ranges = <String?>[];
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': status, 'name': 'short-reads'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          final range = request.headers['Range'] as String?;
+          ranges.add(range);
+          // GitLab-like: at most 128 KiB per response.
+          return _serveRange(served, range, maxPerResponse: 128 * 1024);
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+
+      status = 'success';
+      served = all;
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+
+      // Rows here wrap unevenly (the test font is wide), so the list's extent
+      // estimate is off; following still lands on the true end.
+      final followed = tester.state<ScrollableState>(
+        find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)),
+      ).position;
+      expect(followed.extentAfter, 0);
+      expect(find.text('FINAL LINE of a finished job'), findsOneWidget);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsNothing);
+      expect(ranges.where((r) => r!.startsWith('bytes=-')), isEmpty);
+      // One load kept reading from where the previous read ended.
+      expect(ranges.length, greaterThan(9));
+      var expected = head.length;
+      for (final range in ranges.skip(1)) {
+        expect(range, 'bytes=$expected-${expected + limit - 1}');
+        expected = expected + 128 * 1024 > all.length ? all.length : expected + 128 * 1024;
+      }
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)),
+      );
+      scrollable.position.jumpTo(0);
+      await tester.pump();
+      expect(find.text('first line while running'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('B1: a running job that grows by more than 2 MiB between polls jumps to the tail with the notice, then polls on from it', (tester) async {
+      final head = utf8.encode('running head line\n');
+      final b = StringBuffer();
+      for (var i = 0; i < 40000; i++) {
+        b.writeln('burst output line number $i padded with some text......');
+      }
+      b.writeln('LAST LINE of the burst');
+      List<int> served = head;
+      final ranges = <String?>[];
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'fast-job'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          final range = request.headers['Range'] as String?;
+          ranges.add(range);
+          return _serveRange(served, range);
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.text('running head line'), findsOneWidget);
+
+      final burst = [...head, ...utf8.encode(b.toString())];
+      served = burst;
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(find.text('LAST LINE of the burst'), findsOneWidget);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsOneWidget);
+      expect(ranges.sublist(1), [
+        'bytes=${head.length}-${head.length + limit - 1}',
+        'bytes=-$limit',
+      ]);
+
+      // The next poll continues from the tail's absolute end.
+      served = [...burst, ...utf8.encode('appended after the tail\n')];
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(ranges.last, 'bytes=${burst.length}-${burst.length + limit - 1}');
+      expect(find.text('appended after the tail'), findsOneWidget);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    for (final oversized in [false, true]) {
+      testWidgets('SHOULD-FIX 1: a load superseded while its bounded read is in flight makes no tail request (${oversized ? 'read fails tooLarge' : 'read reports a total far ahead'})', (tester) async {
+        final hold = Completer<void>();
+        final ranges = <String?>[];
+        final api = testApi(FakeAdapter((request) async {
+          if (request.uri.path.endsWith('/jobs/1')) {
+            return jsonResponse({'id': 1, 'status': 'running', 'name': 'superseded'});
+          }
+          if (request.uri.path.endsWith('/trace')) {
+            ranges.add(request.headers['Range'] as String?);
+            await hold.future;
+            if (oversized) {
+              // A server ignoring the bound: more than the budget.
+              return ResponseBody.fromBytes(Uint8List(limit + 1024), 200);
+            }
+            return ResponseBody.fromString('head', 206, headers: {
+              'content-range': ['bytes 0-3/5000000'],
+            });
+          }
+          return jsonResponse({}, status: 404);
+        }));
+        addTearDown(api.close);
+        await tester.pumpWidget(workspaceHost(JobLogPage(
+          account: _account(), api: api, project: Project.fromJson(projectJson(42)), id: 1)));
+        await pumpUntil(tester, () => ranges.isNotEmpty, step: const Duration(milliseconds: 5),
+            description: 'bounded read started');
+        // Closing the page supersedes the load while its read is in flight.
+        await tester.pumpWidget(const SizedBox());
+        hold.complete();
+        await settleNetworkWidgets(tester);
+        expect(ranges, ['bytes=0-${limit - 1}']);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('SHOULD-FIX 2: a running log read as a tail starting mid-line shows its rows with runner timestamps stripped', (tester) async {
+      final b = StringBuffer();
+      for (var i = 0; i < 22000; i++) {
+        b.write('2026-10-20T06:56:03.100000Z 00O ');
+        b.writeln('\x1b[32m[step]\x1b[0m compiling module number $i of the very long build');
+      }
+      final all = utf8.encode(b.toString());
+      expect(all.length, greaterThan(limit));
+      expect(all[all.length - limit - 1], isNot(0x0A), reason: 'the tail starts mid-line');
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'long-job'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          return _serveRange(all, request.headers['Range'] as String?);
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsOneWidget);
+      expect(find.text('[step] compiling module number 21999 of the very long build'), findsOneWidget);
+      expect(find.textContaining('Z 00O'), findsNothing);
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)),
+      );
+      scrollable.position.jumpTo(0);
+      await tester.pump();
+      expect(find.textContaining('Z 00O'), findsNothing);
+      expect(find.textContaining(RegExp(r'^\[step\] compiling module number \d+ of the very long build$')), findsWidgets);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('SHOULD-FIX 2: a finished log opened as its pinned tail starting mid-line shows rows with runner timestamps stripped', (tester) async {
+      final b = StringBuffer();
+      for (var i = 0; i < 30000; i++) {
+        b.writeln('2026-10-20T06:56:03.100000Z 00O terminal output line number $i of the job');
+      }
+      final all = utf8.encode(b.toString());
+      expect(all[all.length - readCacheTerminalLogLimit - 1], isNot(0x0A));
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({
+            'id': 1, 'status': 'failed', 'name': 'terminal',
+            'pipeline': {'id': 9, 'project_id': 42},
+            'erased_at': null, 'finished_at': '2026-10-20T07:00:00Z',
+          });
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          return _serveRange(all, request.headers['Range'] as String?);
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsOneWidget);
+      expect(find.text('terminal output line number 29999 of the job'), findsOneWidget);
+      expect(find.textContaining('Z 00O'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('NIT: after a restarted parse on a tail read, search matches start over instead of re-anchoring across numberings', (tester) async {
+      final initial = utf8.encode(
+        '${[for (var i = 0; i < 10; i++) i % 3 == 2 ? 'needle line $i' : 'plain line $i'].join('\n')}\n',
+      );
+      const total = 5000000;
+      final tailBody = utf8.encode(
+        'cut part of a line\n${[for (var i = 0; i < 20; i++) 'needle tail $i'].join('\n')}\n',
+      );
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'restart-search'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          final range = request.headers['Range'] as String?;
+          if (range == 'bytes=0-${limit - 1}') return ResponseBody.fromBytes(initial, 200);
+          if (range == 'bytes=-$limit') {
+            return ResponseBody.fromBytes(tailBody, 206, headers: {
+              'content-range': ['bytes ${total - tailBody.length}-${total - 1}/$total'],
+            });
+          }
+          // Far behind: the bounded read reports a total more than a budget ahead.
+          return ResponseBody.fromString('abcd', 206, headers: {
+            'content-range': ['bytes ${initial.length}-${initial.length + 3}/$total'],
+          });
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      await tester.enterText(find.byKey(const ValueKey('job-log-search-1')), 'needle');
+      await tester.pump();
+      expect(find.text('1/3'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down));
+      await tester.pumpAndSettle();
+      expect(find.text('3/3'), findsOneWidget); // 'needle line 8'
+
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      // Searching turned follow off: the restarted parse waits off screen.
+      expect(find.text('3/3'), findsOneWidget);
+      await tester.tap(find.text('跟隨尾端'));
+      await tester.pump();
+      await _settleJobLog(tester);
+      // Line 8 of the old numbering means nothing in the tail: start over at
+      // its first match rather than at the tail's line 8.
+      expect(find.text('1/20'), findsOneWidget);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('NIT: a tail 206 without Content-Range has no offset, so the next poll reads the tail again', (tester) async {
+      final ranges = <String?>[];
+      var tails = 0;
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'no-content-range'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          final range = request.headers['Range'] as String?;
+          ranges.add(range);
+          if (range == 'bytes=-$limit') {
+            tails++;
+            return ResponseBody.fromString('tail read $tails\n', 206);
+          }
+          return ResponseBody.fromString('head', 206, headers: {
+            'content-range': ['bytes 0-3/5000000'],
+          });
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.text('tail read 1'), findsOneWidget);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsOneWidget);
+
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(ranges, ['bytes=0-${limit - 1}', 'bytes=-$limit', 'bytes=-$limit']);
+      expect(find.text('tail read 2'), findsOneWidget);
+      expect(find.text('tail read 1'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+  });
+}
+
+Account _account() => Account(
+      instance: GitLabInstance.parse('https://example.com/gitlab'),
+      user: const GitLabUser(id: 1, username: 'testuser', name: 'Test User'),
+      token: 'tok',
+    );
+
+Future<void> _pumpJobLog(WidgetTester tester, GitLabApi api) async {
+  await tester.pumpWidget(workspaceHost(JobLogPage(
+    account: _account(), api: api, project: Project.fromJson(projectJson(42)), id: 1)));
+  await _settleJobLog(tester);
+}
+
+/// Serves [all] honouring Range: none, `bytes=a-`, `bytes=a-b` and
+/// `bytes=-n`, with at most [maxPerResponse] bytes for a start-based range.
+ResponseBody _serveRange(List<int> all, String? range, {int? maxPerResponse}) {
+  if (range == null) return ResponseBody.fromBytes(all, 200);
+  final total = all.length;
+  final int start;
+  var end = total - 1;
+  final suffix = RegExp(r'^bytes=-(\d+)$').firstMatch(range);
+  if (suffix != null) {
+    final n = int.parse(suffix.group(1)!);
+    start = n < total ? total - n : 0;
+  } else {
+    final span = RegExp(r'^bytes=(\d+)-(\d*)$').firstMatch(range)!;
+    start = int.parse(span.group(1)!);
+    if (span.group(2)!.isNotEmpty) end = min(end, int.parse(span.group(2)!));
+    if (maxPerResponse != null) end = min(end, start + maxPerResponse - 1);
+  }
+  if (start >= total) {
+    return ResponseBody.fromBytes(const <int>[], 416, headers: {
+      'content-range': ['bytes */$total'],
+    });
+  }
+  return ResponseBody.fromBytes(all.sublist(start, end + 1), 206, headers: {
+    'content-range': ['bytes $start-$end/$total'],
   });
 }
 

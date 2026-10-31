@@ -156,9 +156,11 @@ final class JobTraceParser {
   /// isolate by [addBytesAsync].
   static const isolateThresholdBytes = 64 * 1024;
 
-  /// Maximum characters retained in an unterminated pending logical line
-  /// (e.g. `\r`-only progress output without a newline).
-  static const maxPendingLineChars = 64 * 1024;
+  // The unterminated logical line is kept whole, never capped: dropping its
+  // head would lose section markers and SGR state and make the rows depend
+  // on how the bytes were chunked. One read is bounded by
+  // GitLabApi.maxTextBytes; snapshots re-parse this line, which the span
+  // counter and estimatedBytes account for.
 
   static const _blockSize = 512;
 
@@ -392,25 +394,6 @@ final class JobTraceParser {
     return snapshot();
   }
 
-  void _capCurrentLogicalLine() {
-    if (_currentLogicalLine.length <= maxPendingLineChars) return;
-    final s = _currentLogicalLine.toString();
-    final searchEnd = s.endsWith('\r') ? s.length - 1 : s.length;
-    final lastCr = searchEnd > 0 ? s.lastIndexOf('\r', searchEnd - 1) : -1;
-    String kept;
-    if (lastCr >= 0) {
-      kept = s.substring(lastCr + 1);
-      if (kept.length > maxPendingLineChars) {
-        kept = kept.substring(kept.length - maxPendingLineChars);
-      }
-    } else {
-      kept = s.substring(s.length - maxPendingLineChars);
-    }
-    _currentLogicalLine
-      ..clear()
-      ..write(kept);
-  }
-
   void _feedDecodedText(String chunk) {
     if (chunk.isEmpty) return;
     _charactersProcessed += chunk.length;
@@ -456,7 +439,6 @@ final class JobTraceParser {
       final nl = chunk.indexOf('\n', start);
       if (nl < 0) {
         _currentLogicalLine.write(chunk.substring(start));
-        _capCurrentLogicalLine();
         return;
       }
       if (nl > start) {
@@ -475,12 +457,10 @@ final class JobTraceParser {
         final nl = chunk.indexOf('\n', pos);
         if (nl < 0) {
           _currentLogicalLine.write(chunk.substring(pos));
-          _capCurrentLogicalLine();
           return;
         }
         if (nl > pos) {
           _currentLogicalLine.write(chunk.substring(pos, nl));
-          _capCurrentLogicalLine();
         }
         _inPhysicalHeader = true;
         _newlinePending = true;

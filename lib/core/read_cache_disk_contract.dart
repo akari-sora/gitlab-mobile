@@ -177,6 +177,16 @@ final class ReadCacheTerminalLog {
   };
 }
 
+/// How many leading bytes of a log tail cut at [from] to drop so it starts on
+/// a whole line: through the first newline at or after [from], or [from] when
+/// nothing follows one (a tail that is one long line is kept). A tail that
+/// starts mid-line would show a partial row, and its first 32 characters
+/// decide whether the runner's timestamp headers are stripped from the log.
+int skipCutLine(List<int> bytes, int from) {
+  final newline = bytes.indexOf(0x0A, from);
+  return newline < 0 || newline + 1 >= bytes.length ? from : newline + 1;
+}
+
 /// Contains only closed-schema data. The commit lease stays on the candidate,
 /// outside the persistent entry. Bodies supplied here must already be frozen.
 final class ProjectedDiskEntry {
