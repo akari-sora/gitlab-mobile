@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:mergeline_on_device_ai/mergeline_on_device_ai.dart';
 
@@ -11,7 +12,7 @@ import 'wire/on_device_wire.dart';
 import 'wire/wire_format.dart';
 
 /// Default back-off delay before the single retry on [OnDeviceAiErrorCode.busy].
-const Duration kOnDeviceBusyRetryDelay = Duration(milliseconds: 250);
+const Duration kOnDeviceBusyRetryDelay = Duration(milliseconds: 1500);
 
 /// Narrow plugin interface injected into [OnDeviceAiTransport] so unit tests
 /// can supply a fake without touching platform channels or Google ML Kit.
@@ -39,12 +40,21 @@ final class _DefaultOnDeviceAiPlugin implements OnDeviceAiPlugin {
     required List<OnDeviceTurn> turns,
     int? maxOutputTokens,
     double? temperature,
-  }) => MergelineOnDeviceAi.instance.generate(
-    system: system,
-    turns: turns,
-    maxOutputTokens: maxOutputTokens,
-    temperature: temperature,
-  );
+  }) {
+    // Elsewhere the plugin answers with an empty stream; never reach it.
+    if (!Platform.isAndroid) {
+      throw const OnDeviceAiException(
+        OnDeviceAiErrorCode.unsupported,
+        debugMessage: 'not_android',
+      );
+    }
+    return MergelineOnDeviceAi.instance.generate(
+      system: system,
+      turns: turns,
+      maxOutputTokens: maxOutputTokens,
+      temperature: temperature,
+    );
+  }
 
   @override
   Future<void> cancel(String requestId) =>
@@ -90,6 +100,23 @@ AiFailure mapOnDeviceAiException(
     notSent: notSent,
   ),
 };
+
+final class _NoKnownSecrets implements KnownSecretsSource {
+  const _NoKnownSecrets();
+
+  @override
+  Iterable<String> get current => const <String>[];
+}
+
+bool _alreadyRedacted(OnDeviceAssembledPrompt prompt, Redactor redactor) {
+  try {
+    return prompt.plainStrings.every(
+      (value) => redactor.redactSource(value).text == value,
+    );
+  } on AiFailure {
+    return false;
+  }
+}
 
 final class _OnDeviceBusyRetry implements Exception {
   const _OnDeviceBusyRetry();
@@ -158,9 +185,14 @@ final class OnDeviceAiTransport {
     cancelActive();
   }
 
-  /// Sends [plan], which the runner has already fitted to the on-device input
-  /// cap. Without [redactor] this refuses (`contextTooLong`) rather than cut
-  /// context, since a cut end must be redacted again.
+  /// Sends [plan]. Its content must already be redacted by the runner: this
+  /// never redacts or rewrites it. The runner's single assembly, bound with
+  /// [bindOnDevicePrompt], is sent as is; an unbound plan is assembled here
+  /// and refused (`contextTooLong`) where it would need a cut.
+  ///
+  /// [redactor] (else the runner's, else the built-in patterns) only checks:
+  /// if any outgoing plain value changes under `redactSource`, nothing is
+  /// sent (`policyBlocked`, notSent).
   Future<AiDecodedTurn> complete(
     AiRequestPlan plan, {
     void Function(AiEvent)? onEvent,
@@ -169,7 +201,16 @@ final class OnDeviceAiTransport {
     if (_closed) {
       throw const AiFailure(AiFailureKind.cancelled, notSent: true);
     }
-    final assembled = assembleOnDevicePrompt(plan, redactor: redactor);
+    final bound = boundOnDevicePrompt(plan);
+    final assembled =
+        bound?.prompt ?? assembleOnDevicePrompt(plan, redactor: redactor);
+    final checker =
+        redactor ??
+        bound?.redactor ??
+        Redactor(secrets: const _NoKnownSecrets());
+    if (!_alreadyRedacted(assembled, checker)) {
+      throw const AiFailure(AiFailureKind.policyBlocked, notSent: true);
+    }
     final callGeneration = _generationId;
     try {
       return await _runAttempt(
@@ -359,6 +400,13 @@ final class OnDeviceAiTransport {
         if (_closed || callGeneration != _generationId) {
           completer.completeError(
             AiFailure(AiFailureKind.cancelled, notSent: !receivedAnyChunk),
+          );
+          return;
+        }
+        if (!receivedAnyChunk) {
+          // An empty reply is never a complete answer.
+          completer.completeError(
+            const AiFailure(AiFailureKind.onDeviceError, notSent: true),
           );
           return;
         }

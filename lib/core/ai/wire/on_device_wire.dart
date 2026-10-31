@@ -113,18 +113,47 @@ final class OnDeviceAssembledPrompt {
     required this.estimatedInputTokens,
     required this.maxOutputTokens,
     required this.contextTruncated,
+    required this.historyDropped,
     required List<AiContextBlock> sentContext,
+    required List<String> plainStrings,
   }) : turns = List<OnDeviceTurn>.unmodifiable(turns),
-       sentContext = List<AiContextBlock>.unmodifiable(sentContext);
+       sentContext = List<AiContextBlock>.unmodifiable(sentContext),
+       plainStrings = List<String>.unmodifiable(plainStrings);
 
   final String system;
   final List<OnDeviceTurn> turns;
   final String prompt;
   final int estimatedInputTokens;
   final int maxOutputTokens;
+
+  /// The current page context was clipped or partly dropped.
   final bool contextTruncated;
+
+  /// Older turns were left out; nothing was cut.
+  final bool historyDropped;
   final List<AiContextBlock> sentContext;
+
+  /// Every plain value sent (system, texts, context values), before any
+  /// wire escaping: what the transport checks against the redactor.
+  final List<String> plainStrings;
 }
+
+final _boundPrompts =
+    Expando<({OnDeviceAssembledPrompt prompt, Redactor redactor})>(
+      'onDevicePrompt',
+    );
+
+/// Binds the runner's single assembly, made with the conversation's
+/// [redactor], to the [plan] it sends, so the transport never assembles again.
+void bindOnDevicePrompt(
+  AiRequestPlan plan,
+  OnDeviceAssembledPrompt prompt,
+  Redactor redactor,
+) => _boundPrompts[plan] = (prompt: prompt, redactor: redactor);
+
+({OnDeviceAssembledPrompt prompt, Redactor redactor})? boundOnDevicePrompt(
+  AiRequestPlan plan,
+) => _boundPrompts[plan];
 
 /// Assembles a prompt and turn list for Android AICore / Gemini Nano under
 /// [maxInputTokens] (3,400 by default), truncating `<gitlab_data>` context
@@ -165,8 +194,8 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
   }
 
   var contextTruncated = false;
-  final historyEntries =
-      <({OnDeviceRole role, String turnText, String section})>[];
+  var historyDropped = false;
+  final historyEntries = <_HistoryTurn>[];
   for (final entry in plan.segment.frozen) {
     switch (entry) {
       case AppUserEntry(:final text, :final context):
@@ -183,6 +212,10 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
             role: OnDeviceRole.user,
             turnText: turnParts.join('\n\n'),
             section: sectionParts.join('\n\n'),
+            plain: <String>[
+              for (final block in context) ...block.plainData.plainStrings,
+              text,
+            ],
           ));
         }
       case ProviderOutputEntry(:final raw):
@@ -193,6 +226,7 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
             role: OnDeviceRole.model,
             turnText: content,
             section: '<assistant_turn>\n$content\n</assistant_turn>',
+            plain: <String>[content],
           ));
         }
       case AppToolResultsEntry():
@@ -202,8 +236,7 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
 
   // Fit prior turns, most recent first. A turn that does not fit is dropped
   // whole (never cut), together with every older turn.
-  final keptHistoryRev =
-      <({OnDeviceRole role, String turnText, String section})>[];
+  final keptHistoryRev = <_HistoryTurn>[];
   if (historyEntries.isNotEmpty) {
     final remainingForHistoryAndContext =
         maxInputTokens - baseTokens - (tail.context.isNotEmpty ? 4 : 0);
@@ -222,7 +255,7 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
       final item = historyEntries[i];
       final partTokens = estimateOnDeviceTokens(item.section);
       if (partTokens > historyBudget) {
-        contextTruncated = true;
+        historyDropped = true;
         break;
       }
       keptHistoryRev.add(item);
@@ -232,6 +265,7 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
     while (keptHistoryRev.isNotEmpty &&
         keptHistoryRev.last.role == OnDeviceRole.model) {
       keptHistoryRev.removeLast();
+      historyDropped = true;
     }
   }
   final keptHistory = keptHistoryRev.reversed.toList(growable: false);
@@ -317,9 +351,23 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
     estimatedInputTokens: estimatedTokens,
     maxOutputTokens: maxOutputTokens,
     contextTruncated: contextTruncated,
+    historyDropped: historyDropped,
     sentContext: sentContext,
+    plainStrings: <String>[
+      plan.system,
+      for (final item in keptHistory) ...item.plain,
+      for (final block in sentContext) ...block.plainData.plainStrings,
+      tail.text,
+    ],
   );
 }
+
+typedef _HistoryTurn = ({
+  OnDeviceRole role,
+  String turnText,
+  String section,
+  List<String> plain,
+});
 
 final class OnDevicePromptFormat extends WireFormatBase {
   const OnDevicePromptFormat();

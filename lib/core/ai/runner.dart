@@ -639,7 +639,7 @@ final class AiRunner {
         // The only asynchronous work after acquire: a final secret snapshot.
         await _refresh(epoch);
         final delivered = _redactTail(seg, delivery);
-        var truncatedThisCall = false;
+        OnDeviceAssembledPrompt? onDevicePrompt;
         if (config.isOnDevice) {
           final candidatePlan = _plan(seg, finishing: finishing);
           final OnDeviceAssembledPrompt assembled;
@@ -659,8 +659,8 @@ final class AiRunner {
             }
             rethrow;
           }
+          onDevicePrompt = assembled;
           if (assembled.contextTruncated) {
-            truncatedThisCall = true;
             if (seg.tail case final AppUserEntry tail) {
               seg.setTail(
                 tail.redactedCopy(
@@ -670,6 +670,11 @@ final class AiRunner {
               );
               _sentContext = List.unmodifiable(assembled.sentContext);
             }
+            // Only page context counts; older turns left out are no notice.
+            if (!contextTruncated) {
+              contextTruncated = true;
+              onNotice?.call(AiNoticeKind.onDeviceContextTruncated);
+            }
           }
         }
         // Everything from the last refresh through _complete is synchronous.
@@ -678,6 +683,10 @@ final class AiRunner {
           throw const _RunStopped(AiRunEnd.newSecret);
         }
         final plan = _plan(seg, finishing: finishing);
+        // The transport sends this single assembly; it never assembles again.
+        if (onDevicePrompt != null) {
+          bindOnDevicePrompt(plan, onDevicePrompt, _redactor);
+        }
         // This is the final redacted payload, including the finishing note.
         final encoded = wire.encodeJson(plan, config.caps);
         if (!config.isOnDevice &&
@@ -759,6 +768,16 @@ final class AiRunner {
             refused = true;
             modelCalls--;
           }
+          // The model's own input limit ends like an assembly-time overflow.
+          if (config.isOnDevice &&
+              failure.kind == AiFailureKind.contextTooLong) {
+            if (!froze) {
+              seg.restoreTail(previousTail);
+              _segment = segmentBeforeSend;
+              _needsProjection = true;
+            }
+            return result(AiRunEnd.contextTooLong, offer: modelCalls == 0);
+          }
           rethrow;
         } finally {
           if (!refused) _recordUsage(latestUsage, encoded.length);
@@ -766,10 +785,6 @@ final class AiRunner {
         _check(epoch);
         if (config.isOnDevice && turn.output.toolCalls.isNotEmpty) {
           throw const AiFailure(AiFailureKind.invalidResponse);
-        }
-        if (truncatedThisCall && !contextTruncated) {
-          contextTruncated = true;
-          onNotice?.call(AiNoticeKind.onDeviceContextTruncated);
         }
         if (seg.tail case AppUserEntry(:final context) when context.isNotEmpty) {
           // Prior tool fields are reduced to summaries on segment rollover.

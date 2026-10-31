@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
@@ -84,6 +85,80 @@ final class _MutableSecrets implements KnownSecretsSource {
   @override
   final Set<String> current = <String>{};
 }
+
+OnDeviceAiTransport _busyThenOk(
+  _FakeOnDeviceAiPlugin plugin, {
+  Future<void> Function(Duration)? wait,
+}) {
+  var attempts = 0;
+  plugin.handler = (_) => ++attempts == 1
+      ? Stream<String>.error(
+          const OnDeviceAiException(OnDeviceAiErrorCode.busy),
+        )
+      : Stream<String>.fromIterable(const <String>['late']);
+  return OnDeviceAiTransport(plugin: plugin, wait: wait);
+}
+
+AiRequestPlan _plan(String text, {List<AiContextBlock> context = const []}) {
+  final seg = AiSegment(
+    providerId: 'on-device',
+    recipientRevision: 1,
+    format: AiFormat.onDevicePrompt,
+    model: 'gemini-nano',
+    secretSetAtStart: SecretSetId.fromSecrets(const <String>[]),
+  );
+  seg.setTail(AppUserEntry(text: text, context: context));
+  return AiRequestPlan(
+    model: 'gemini-nano',
+    system: 'Sys',
+    segment: seg,
+    tools: const <AiToolSpec>[],
+    toolChoice: AiToolChoice.auto,
+    maxOutputTokens: 128,
+  );
+}
+
+AiRunner _runner(
+  _FakeOnDeviceAiPlugin plugin, {
+  List<AiContextBlock> context = const <AiContextBlock>[],
+  void Function(AiNoticeKind)? onNotice,
+}) {
+  final config = AiProviderConfig.onDevice();
+  final client = AiWireClient.onDevice(
+    config: config,
+    conversationId: 'conv-0003',
+    appVersion: '0.6.2',
+    onDeviceTransport: OnDeviceAiTransport(plugin: plugin),
+  );
+  final owner = Object();
+  return AiRunner(
+    appInForeground: () => true,
+    config: config,
+    wire: client.wire,
+    complete: client.complete,
+    secrets: _MutableSecrets(),
+    refreshSecrets: () async {},
+    guard: AiRunGuard(
+      expectedGeneration: 1,
+      ownerApi: owner,
+      generation: () => 1,
+      api: () => owner,
+      recipientRevision: () => 1,
+      consentValid: () => true,
+    ),
+    system: 'Sys',
+    close: client.close,
+    cancelActive: client.cancelActive,
+    context: context,
+    onNotice: onNotice,
+  );
+}
+
+Matcher _fails(AiFailureKind kind, {bool? notSent}) => throwsA(
+  isA<AiFailure>()
+      .having((f) => f.kind, 'kind', kind)
+      .having((f) => f.notSent, 'notSent', notSent ?? anything),
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -379,16 +454,13 @@ void main() {
       expect(contract.cleartext, isFalse);
       expect(contract.writePolicy, isNull);
       expect(contract.retentionDays, 0);
-      expect(
-        contract.dataCategories,
-        isNot(
-          containsAll(<String>[
-            'tool_reads',
-            'write_results',
-            'attachment_metadata',
-          ]),
-        ),
-      );
+      for (final category in const <String>[
+        'tool_reads',
+        'write_results',
+        'attachment_metadata',
+      ]) {
+        expect(contract.dataCategories, isNot(contains(category)));
+      }
 
       final withoutRetention = AiConsentContract(
         providerId: contract.providerId,
@@ -655,7 +727,8 @@ void main() {
       );
 
       final assembled = assembleOnDevicePrompt(plan);
-      expect(assembled.contextTruncated, isTrue);
+      expect(assembled.historyDropped, isTrue);
+      expect(assembled.contextTruncated, isFalse);
       expect(
         assembled.turns.map((t) => (t.role, t.text)).toList(),
         <(OnDeviceRole, String)>[
@@ -1039,6 +1112,158 @@ void main() {
     });
   });
 
+  group('Round 1: endings, redaction guard, overflow and notices', () {
+    test('a reply that ends with no text is an error, not an answer', () async {
+      final plugin = _FakeOnDeviceAiPlugin()
+        ..handler = (_) => const Stream<String>.empty();
+      final transport = OnDeviceAiTransport(plugin: plugin);
+      await expectLater(
+        transport.complete(_plan('Ping')),
+        _fails(AiFailureKind.onDeviceError, notSent: true),
+      );
+    });
+
+    test('off Android the default plugin is never reached', () async {
+      final channelCalls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel(MergelineOnDeviceAi.methodChannelName),
+            (call) async {
+              channelCalls.add(call);
+              return null;
+            },
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+              const MethodChannel(MergelineOnDeviceAi.methodChannelName),
+              null,
+            ),
+      );
+      // Test hosts are never Android.
+      await expectLater(
+        OnDeviceAiTransport().complete(_plan('Ping')),
+        _fails(AiFailureKind.onDeviceUnavailable, notSent: true),
+      );
+      expect(channelCalls, isEmpty);
+    });
+
+    for (final close in <bool>[false, true]) {
+      test('${close ? 'close' : 'cancelActive'} during the BUSY back-off '
+          'ends the call without a retry', () async {
+        final plugin = _FakeOnDeviceAiPlugin();
+        final waits = <Duration>[];
+        final waitStarted = Completer<void>();
+        final transport = _busyThenOk(
+          plugin,
+          wait: (delay) {
+            waits.add(delay);
+            waitStarted.complete();
+            return Completer<void>().future;
+          },
+        );
+        final call = transport.complete(_plan('Ping'));
+        await waitStarted.future;
+        close ? transport.close() : transport.cancelActive();
+        await expectLater(call, _fails(AiFailureKind.cancelled, notSent: true));
+        expect(waits, <Duration>[kOnDeviceBusyRetryDelay]);
+        expect(kOnDeviceBusyRetryDelay, const Duration(milliseconds: 1500));
+        expect(plugin.calls, hasLength(1));
+        expect(transport.isClosed, close);
+      });
+    }
+
+    test(
+      'a raw secret that reaches the transport is refused, not sent',
+      () async {
+        const known = 'synthetic-known-value-0001';
+        final plugin = _FakeOnDeviceAiPlugin();
+        final transport = OnDeviceAiTransport(plugin: plugin);
+        // A known secret, checked with the caller's redactor.
+        await expectLater(
+          transport.complete(
+            _plan('look at $known'),
+            redactor: Redactor(secrets: _MutableSecrets()..current.add(known)),
+          ),
+          _fails(AiFailureKind.policyBlocked, notSent: true),
+        );
+        // A token in page context, caught by the built-in patterns alone.
+        final token = 'glpat-${'A' * 24}';
+        await expectLater(
+          transport.complete(
+            _plan(
+              'Summarize',
+              context: <AiContextBlock>[
+                AiContextBlock.fromData(
+                  source: 'issue',
+                  data: AiAppText.untrusted(
+                    source: 'issue',
+                    nonce: '00112233445566778899aabbccddeeff',
+                    body: AiAppText.plain('deploy with $token'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _fails(AiFailureKind.policyBlocked, notSent: true),
+        );
+        expect(plugin.calls, isEmpty);
+        // Already-redacted text passes unchanged.
+        await transport.complete(_plan('look at [REDACTED]'));
+        expect(plugin.calls, hasLength(1));
+      },
+    );
+
+    test(
+      'the model\'s own input limit ends as contextTooLong with a new '
+      'conversation offered, and truncation is announced when it happens',
+      () async {
+        final plugin = _FakeOnDeviceAiPlugin()
+          ..handler = (_) => Stream<String>.error(
+            const OnDeviceAiException(OnDeviceAiErrorCode.inputTooLong),
+          );
+        final notices = <AiNoticeKind>[];
+        final runner = _runner(
+          plugin,
+          context: <AiContextBlock>[
+            AiContextBlock.fromData(
+              source: 'mr_diff',
+              data: AiAppText.untrusted(
+                source: 'mr_diff',
+                nonce: 'fedcba9876543210fedcba9876543210',
+                body: AiAppText.plain('diff line\n' * 3000),
+              ),
+            ),
+          ],
+          onNotice: notices.add,
+        );
+        final result = await runner.run('Summarize');
+        expect(plugin.calls, hasLength(1));
+        expect(result.reason, AiRunEnd.contextTooLong);
+        expect(result.offerRollover, isTrue);
+        expect(result.failure, isNull);
+        // Raised when the context was cut, although the call then failed.
+        expect(notices, <AiNoticeKind>[AiNoticeKind.onDeviceContextTruncated]);
+        expect(result.contextTruncated, isTrue);
+      },
+    );
+
+    test('dropping older turns alone raises no page-context notice', () async {
+      final notices = <AiNoticeKind>[];
+      final plugin = _FakeOnDeviceAiPlugin()
+        ..handler = (_) => Stream<String>.fromIterable(const <String>['ok']);
+      final runner = _runner(plugin, onNotice: notices.add);
+      expect((await runner.run('q1 ${'x' * 3000}')).reason, AiRunEnd.done);
+      final second = await runner.run('q2 ${'y' * 9000}');
+      expect(second.reason, AiRunEnd.done);
+      // The first turn did not fit; its orphaned answer went with it.
+      expect(plugin.calls.last.turns, hasLength(1));
+      expect(plugin.calls.last.turns.single.text, startsWith('q2 '));
+      expect(second.contextTruncated, isFalse);
+      expect(notices, isEmpty);
+    });
+  });
+
   group('7. No-tools runner and history codec', () {
     test(
       'AI summary runs once with page context only and sends no tools',
@@ -1054,6 +1279,7 @@ void main() {
           onDeviceTransport: OnDeviceAiTransport(plugin: plugin),
         );
         final plans = <AiRequestPlan>[];
+        final bound = <OnDeviceAssembledPrompt?>[];
         final owner = Object();
         final context = AiContextBlock.fromData(
           source: 'merge_request',
@@ -1070,6 +1296,7 @@ void main() {
           wire: client.wire,
           complete: (plan, {onEvent}) {
             plans.add(plan);
+            bound.add(boundOnDevicePrompt(plan)?.prompt);
             return client.complete(plan, onEvent: onEvent);
           },
           secrets: _MutableSecrets(),
@@ -1109,6 +1336,10 @@ void main() {
         expect(notices, isEmpty);
         expect(plans.single.tools, isEmpty);
         final call = plugin.calls.single;
+        // The transport sent the runner's assembly; it did not assemble again.
+        expect(bound.single, isNotNull);
+        expect(call.turns, bound.single!.turns);
+        expect(call.system, bound.single!.system);
         expect(call.system, contains('no tools'));
         expect(call.turns.single.role, OnDeviceRole.user);
         expect(call.turns.single.text, startsWith(context.text));
