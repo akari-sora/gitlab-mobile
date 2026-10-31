@@ -7,7 +7,9 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/project_analytics_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_more_page.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart';
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
 
@@ -67,6 +69,9 @@ final class _AnalyticsBackend {
       differentPipelineDates;
   final int contributorCount;
   final int? secondCommitStatus;
+  /// Holds the languages read until completed (#56 part 2).
+  Completer<void>? holdLanguages;
+  bool failLanguages = false;
   late final adapter = FakeAdapter(respond);
   late final api = testApi(adapter);
   int contributorReads = 0;
@@ -199,10 +204,20 @@ final class _AnalyticsBackend {
       );
     }
     if (path.endsWith('/languages')) {
-      if (languageForbidden) {
-        return jsonResponse({'message': 'forbidden'}, status: 403);
+      ResponseBody answer() {
+        if (languageForbidden) {
+          return jsonResponse({'message': 'forbidden'}, status: 403);
+        }
+        if (failLanguages) {
+          return jsonResponse({'message': 'failed'}, status: 500);
+        }
+        return jsonResponse({'Dart': 100});
       }
-      return jsonResponse({'Dart': 100});
+
+      if (holdLanguages case final gate?) {
+        return gate.future.then((_) => answer());
+      }
+      return answer();
     }
     if (path.endsWith('/starrers')) return jsonResponse([]);
     if (RegExp(r'/projects/\d+$').hasMatch(path)) {
@@ -242,6 +257,97 @@ Future<void> _scrollActive(WidgetTester tester, [double distance = 600]) async {
 }
 
 void main() {
+  // #56 part 2: the languages and coverage cards' first read is a compact
+  // skeleton under the tab's own live region; a refresh keeps the cards, and
+  // a retry after a failed first read shows the skeleton again.
+  testWidgets('repository cards show compact skeletons only on a first read', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final backend = _AnalyticsBackend()..holdLanguages = Completer<void>();
+    addTearDown(backend.api.close);
+    Widget page() => _host(
+      ProjectAnalyticsPage(
+        account: _account(backend.api),
+        api: backend.api,
+        project: _project(),
+      ),
+    );
+    await tester.pumpWidget(page());
+    await settleNetworkWidgets(tester);
+    await _openTab(tester, '儲存庫');
+    // Not _scrollActive: it settles, and a shimmer never does.
+    await tester.drag(
+      find.byType(CustomScrollView).hitTestable(),
+      const Offset(0, -600),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    final loading = find.byKey(const ValueKey('analytics-languages-loading'));
+    expect(loading, findsOneWidget);
+    expect(
+      find.descendant(of: loading, matching: find.byType(ChipsSkeleton)),
+      findsOneWidget,
+    );
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    // A card inside the loaded tab does not announce on its own.
+    expect(find.bySemanticsLabel('正在載入'), findsNothing);
+
+    backend.holdLanguages!.complete();
+    backend.holdLanguages = null;
+    await settleNetworkWidgets(tester);
+    expect(loading, findsNothing);
+    expect(find.byKey(const ValueKey('analytics-languages')), findsOneWidget);
+    expect(find.byKey(const ValueKey('coverage-summary')), findsOneWidget);
+
+    // A refresh keeps both cards while they are read again.
+    backend.holdLanguages = Completer<void>();
+    await tester.tap(find.byKey(const ValueKey('analytics-refresh')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(loading, findsNothing);
+    expect(
+      find.byKey(const ValueKey('coverage-summary-loading')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('analytics-languages')), findsOneWidget);
+    backend.holdLanguages!.complete();
+    backend.holdLanguages = null;
+    await settleNetworkWidgets(tester);
+    expect(find.byKey(const ValueKey('analytics-languages')), findsOneWidget);
+
+    // A failed first read, then retry: the skeleton again.
+    await tester.pumpWidget(const SizedBox());
+    backend.failLanguages = true;
+    await tester.pumpWidget(page());
+    await settleNetworkWidgets(tester);
+    await _openTab(tester, '儲存庫');
+    await tester.drag(
+      find.byType(CustomScrollView).hitTestable(),
+      const Offset(0, -600),
+    );
+    await settleNetworkWidgets(tester);
+    expect(loading, findsNothing);
+    final notice = find.byType(FailureNotice);
+    expect(notice, findsOneWidget);
+    backend
+      ..failLanguages = false
+      ..holdLanguages = Completer<void>();
+    final retry = find.descendant(
+      of: notice,
+      matching: find.byIcon(Icons.refresh),
+    );
+    await tester.ensureVisible(retry);
+    await tester.tap(retry);
+    await tester.pump();
+    expect(loading, findsOneWidget);
+    backend.holdLanguages!.complete();
+    backend.holdLanguages = null;
+    await settleNetworkWidgets(tester);
+    expect(loading, findsNothing);
+    expect(find.byKey(const ValueKey('analytics-languages')), findsOneWidget);
+    semantics.dispose();
+  });
+
   testWidgets(
     'loads only active tab and never exposes contributor email or merges equal names',
     (tester) async {

@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/work_item_attribute_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_attributes.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 
 import 'support/fake_adapter.dart';
 
@@ -98,6 +99,63 @@ final class _OwnerMarker extends ChangeNotifier {
 }
 
 void main() {
+  // #56 part 2: a field's first read is a one-line skeleton inside the loaded
+  // page (no live region of its own); a failed read retried shows it again.
+  testWidgets('a field first read is a line skeleton, not a bar', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final adapter = FakeAdapter((_) => jsonResponse({}));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final pending =
+        <WorkItemAttributeKind, Completer<WorkItemAttributeSnapshot>>{};
+    Future<WorkItemAttributeSnapshot> load(
+      WorkItemGraphSummary _,
+      WorkItemAttributeKind kind, {
+      bool Function()? isCurrent,
+    }) => (pending[kind] = Completer()).future;
+
+    await tester.pumpWidget(
+      _host(
+        account: _account(api),
+        api: api,
+        detail: _detail({'STATUS', 'WEIGHT'}),
+        loader: load,
+      ),
+    );
+    await tester.tap(find.text('屬性'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(LineSkeleton), findsNWidgets(2));
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.bySemanticsLabel('正在載入'), findsNothing);
+
+    pending[WorkItemAttributeKind.weight]!.complete(
+      _valueFor(WorkItemAttributeKind.weight),
+    );
+    pending[WorkItemAttributeKind.status]!.completeError(
+      const ApiFailure(FailureKind.server),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(LineSkeleton), findsNothing);
+    expect(find.text('權重：0'), findsOneWidget);
+    expect(find.text('GitLab 暫時無法回應'), findsOneWidget);
+
+    await tester.tap(find.text('重試'));
+    await tester.pump();
+    expect(find.byType(LineSkeleton), findsOneWidget);
+    expect(find.text('權重：0'), findsOneWidget);
+    pending[WorkItemAttributeKind.status]!.complete(
+      _valueFor(WorkItemAttributeKind.status),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(LineSkeleton), findsNothing);
+    semantics.dispose();
+  });
+
   testWidgets('lazy expansion caps reads at two and caches loaded rows', (
     tester,
   ) async {

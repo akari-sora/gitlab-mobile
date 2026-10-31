@@ -26,6 +26,7 @@ import 'markdown_media_source.dart';
 import 'markdown_media_svg.dart';
 import 'markdown_media_syntax.dart';
 import 'network_boundary.dart';
+import 'skeleton.dart';
 import 'theme.dart';
 
 import '../l10n/l10n.dart';
@@ -1163,11 +1164,7 @@ class _SnapshotImageState extends State<_SnapshotImage> {
     }
     final bytes = _bytes;
     if (bytes == null) {
-      return SizedBox(
-        width: 32,
-        height: 32,
-        child: CircularProgressIndicator(semanticsLabel: l10n.attachmentLoading),
-      );
+      return ImageSkeleton(semanticsLabel: l10n.attachmentLoading);
     }
     final fallback = SnapshotMediaPlaceholder(
       alt: widget.alt,

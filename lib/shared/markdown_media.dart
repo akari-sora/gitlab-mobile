@@ -20,6 +20,7 @@ import 'attachment_budget.dart';
 import 'markdown_media_source.dart';
 import 'markdown_media_svg.dart';
 import 'network_boundary.dart';
+import 'skeleton.dart';
 import 'workspace_ui.dart';
 
 String markdownMediaFailure(
@@ -311,12 +312,13 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
     if (error != null) return _failed(error);
     final bytes = _bytes;
     if (bytes == null) {
-      return SizedBox(
-        width: 32,
-        height: 32,
-        child: CircularProgressIndicator(
-          semanticsLabel: l10n.attachmentLoading,
-        ),
+      // The declared size, capped like the image below; an undeclared side
+      // keeps the spinner's old footprint.
+      final height = widget.height;
+      return ImageSkeleton(
+        width: widget.width,
+        height: height == null ? null : math.min(height, 480),
+        semanticsLabel: l10n.attachmentLoading,
       );
     }
     return LayoutBuilder(

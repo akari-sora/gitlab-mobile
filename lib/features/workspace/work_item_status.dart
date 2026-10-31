@@ -9,6 +9,7 @@ import '../../core/work_item_attribute_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_state_models.dart';
 import '../../core/work_item_status_models.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 
 import '../../l10n/l10n.dart';
@@ -1009,8 +1010,8 @@ class WorkItemStatusField extends StatelessWidget {
             l10n.latestStateUnconfirmed,
             key: ValueKey('work-item-status-field-stale'),
           )
-        else if (confirmed == null && loading)
-          const LinearProgressIndicator(minHeight: 2)
+        else if (confirmed == null && attribute == null && loading)
+          const LineSkeleton(key: ValueKey('work-item-status-field-loading'))
         else if (confirmed == null && failure != null)
           Wrap(
             spacing: 8,
@@ -1022,11 +1023,15 @@ class WorkItemStatusField extends StatelessWidget {
                 TextButton(onPressed: onRetry, child: Text(l10n.retryAction)),
             ],
           )
-        else
+        else ...[
+          // A re-read keeps the value under the thin bar.
+          if (confirmed == null && loading)
+            const LinearProgressIndicator(minHeight: 2),
           KeyedSubtree(
             key: const ValueKey('work-item-status-field-value'),
             child: _value(context),
           ),
+        ],
         if (unconfirmed && !writeHeld)
           Padding(
             key: ValueKey('work-item-status-field-unconfirmed'),

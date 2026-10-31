@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -18,6 +19,7 @@ import 'markdown_media.dart';
 import 'markdown_media_source.dart';
 import 'markdown_media_svg.dart';
 import 'network_boundary.dart';
+import 'skeleton.dart';
 import 'workspace_ui.dart';
 
 import '../l10n/l10n.dart';
@@ -372,14 +374,33 @@ class _AttachmentImageState extends State<AttachmentImage> {
       return _failureButton(attachmentImageFallback(widget.alt, failure), failure);
     }
     if (_phase != _Phase.ready) {
-      return Semantics(
-        label: l10n.attachmentLoading,
-        child: const ExcludeSemantics(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-          ),
-        ),
+      // A declared size gets a box of that size, laid out like the image
+      // below; without one, the spinner's old 18 dp footprint stays.
+      final width = widget.width;
+      final height = widget.height;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: width == null && height == null
+            ? ImageSkeleton(
+                width: 18,
+                height: 18,
+                radius: 4,
+                semanticsLabel: l10n.attachmentLoading,
+              )
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  final layout = constraints.maxWidth.isFinite
+                      ? constraints.maxWidth
+                      : 320.0;
+                  return ImageSkeleton(
+                    width: math.min(width ?? layout, layout),
+                    height: height == null
+                        ? 18
+                        : (height - 16).clamp(18.0, 320.0),
+                    semanticsLabel: l10n.attachmentLoading,
+                  );
+                },
+              ),
       );
     }
     final bytes = widget.budget.cachedBytes(_ref);

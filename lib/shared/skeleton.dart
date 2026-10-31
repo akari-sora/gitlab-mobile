@@ -1451,3 +1451,366 @@ class ChartSkeleton extends StatelessWidget implements Skeleton {
     );
   }
 }
+
+/// Skeleton for `WorkItemActivityPanel`'s discussion feed. Each thread has the
+/// author and date lines beside the 48 dp actions button, then two body lines;
+/// threads are 28 dp apart like the feed's dividers. The feed has no avatars.
+class ActivityTimelineSkeleton extends StatelessWidget implements Skeleton {
+  const ActivityTimelineSkeleton({
+    super.key,
+    this.threads = 3,
+    this.liveRegion = true,
+  });
+
+  final int threads;
+  final bool liveRegion;
+
+  static const _authorFactors = [0.46, 0.38, 0.52];
+  static const _bodyFactors = [
+    [0.92, 0.70],
+    [0.84, 0.56],
+    [0.88, 0.64],
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return _boundedSkeletonBody(
+      SkeletonShimmer(
+        liveRegion: liveRegion,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < threads; i++) ...[
+              if (i > 0) const SizedBox(height: 28),
+              SizedBox(
+                height: 48,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 3),
+                    SkeletonBone(
+                      widthFactor: _authorFactors[i % _authorFactors.length],
+                      height: 14,
+                      radius: 4,
+                    ),
+                    const SizedBox(height: 6),
+                    const SkeletonBone(width: 104, height: 11, radius: 4),
+                  ],
+                ),
+              ),
+              SkeletonLines(
+                factors: _bodyFactors[i % _bodyFactors.length],
+                lineHeight: 12,
+                spacing: 8,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Skeleton for one `HubSection`: an optional heading and rows shaped like
+/// `HubRow` (leading tile, title and subtitle), on the section's full-bleed
+/// surface with its bottom hairline. The surface is drawn outside the mask.
+/// [rowHeight] 72 and a 24 dp round leading fit two-line `ListTile` rows.
+class HubSectionSkeleton extends StatelessWidget implements Skeleton {
+  const HubSectionSkeleton({
+    super.key,
+    this.rows = 3,
+    this.heading = true,
+    this.rowHeight = 56,
+    this.leadingSize = 32,
+    this.leadingRadius = 8,
+    this.liveRegion = true,
+  });
+
+  static const headingPadding = EdgeInsets.fromLTRB(16, 18, 16, 6);
+
+  final int rows;
+  final bool heading;
+  final double rowHeight;
+  final double leadingSize;
+  final double leadingRadius;
+  final bool liveRegion;
+
+  Widget _row(int index) => SizedBox(
+    height: rowHeight,
+    child: Padding(
+      padding: SharedLayout.hubRowPadding,
+      child: Row(
+        children: [
+          SkeletonBone(
+            width: leadingSize,
+            height: leadingSize,
+            radius: leadingRadius,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SkeletonBone(
+                  widthFactor:
+                      HomeSectionSkeleton._titleFactors[index %
+                          HomeSectionSkeleton._titleFactors.length],
+                  height: 16,
+                  radius: 4,
+                ),
+                const SizedBox(height: 8),
+                SkeletonBone(
+                  widthFactor:
+                      HomeSectionSkeleton._subtitleFactors[index %
+                          HomeSectionSkeleton._subtitleFactors.length],
+                  height: 12,
+                  radius: 4,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final decoration = BoxDecoration(
+      color: theme.colorScheme.surface,
+      border: Border(
+        bottom: BorderSide(
+          color: theme.dividerTheme.color ?? theme.colorScheme.outlineVariant,
+        ),
+      ),
+    );
+    return _boundedSkeletonBody(
+      SkeletonShimmer(
+        decoration: decoration,
+        liveRegion: liveRegion,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (heading)
+                const Padding(
+                  padding: headingPadding,
+                  child: SizedBox(
+                    height: 28,
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: SkeletonBone(
+                        widthFactor: 0.42,
+                        height: 18,
+                        radius: 4,
+                      ),
+                    ),
+                  ),
+                ),
+              for (var i = 0; i < rows; i++) _row(i),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Skeleton for a settings page such as `AiSettingsPage`: the intro paragraph,
+/// then [sections] `HubSection` groups. The intro holds the one live region.
+class SettingsSkeleton extends StatelessWidget implements Skeleton {
+  const SettingsSkeleton({super.key, this.sections = 2, this.rows = 3});
+
+  static const introPadding = EdgeInsets.fromLTRB(16, 16, 16, 8);
+
+  final int sections;
+  final int rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return _boundedSkeletonBody(
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SkeletonShimmer(
+            child: Padding(
+              padding: introPadding,
+              child: SkeletonLines(
+                factors: [0.94, 0.58],
+                lineHeight: 14,
+                spacing: 10,
+              ),
+            ),
+          ),
+          for (var i = 0; i < sections; i++)
+            HubSectionSkeleton(rows: rows, liveRegion: false),
+        ],
+      ),
+    );
+  }
+}
+
+/// Neutral start-up skeleton (an app bar line and a few rows) for the moment
+/// before the saved accounts are read, when it is not yet known whether the
+/// sign-in screen or the signed-in shell comes next.
+class AppShellSkeleton extends StatelessWidget implements Skeleton {
+  const AppShellSkeleton({super.key, this.rows = 6});
+
+  final int rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return _boundedSkeletonBody(
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SkeletonShimmer(
+            liveRegion: false,
+            child: SizedBox(
+              height: kToolbarHeight,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: SkeletonBone(width: 140, height: 20, radius: 4),
+                ),
+              ),
+            ),
+          ),
+          RowsSkeleton(rows: rows),
+        ],
+      ),
+    );
+  }
+}
+
+/// Placeholder for a Markdown or attachment image while its bytes load: a box
+/// of the image's declared size, or [fallbackSize] for a side that is not
+/// declared (the footprint of the spinner it replaces). Like that spinner it
+/// carries [semanticsLabel] as a plain label and is not a live region, so a
+/// body with several images does not announce each one; pass [liveRegion]
+/// when the image is the whole page.
+class ImageSkeleton extends StatelessWidget implements Skeleton {
+  const ImageSkeleton({
+    super.key,
+    this.width,
+    this.height,
+    this.radius = 8,
+    this.semanticsLabel,
+    this.liveRegion = false,
+  });
+
+  static const fallbackSize = 32.0;
+
+  final double? width;
+  final double? height;
+  final double radius;
+  final String? semanticsLabel;
+  final bool liveRegion;
+
+  @override
+  Widget build(BuildContext context) {
+    final box = SkeletonShimmer(
+      liveRegion: liveRegion,
+      child: SkeletonBone(
+        width: width ?? fallbackSize,
+        height: height ?? fallbackSize,
+        radius: radius,
+      ),
+    );
+    final label = semanticsLabel;
+    if (label == null || liveRegion) return box;
+    return Semantics(label: label, child: box);
+  }
+}
+
+/// One-line placeholder for a value inside a section of a loaded page (an
+/// attribute, a status, a card subtitle): one bone centred in the text's
+/// [lineHeight], so the value replaces it without a jump. Not a live region
+/// by default, because the page around it has already announced loading.
+class LineSkeleton extends StatelessWidget implements Skeleton {
+  const LineSkeleton({
+    super.key,
+    this.widthFactor = 0.42,
+    this.lineHeight = 20,
+    this.boneHeight = 12,
+    this.liveRegion = false,
+  });
+
+  final double widthFactor;
+  final double lineHeight;
+  final double boneHeight;
+  final bool liveRegion;
+
+  @override
+  Widget build(BuildContext context) {
+    return SkeletonShimmer(
+      liveRegion: liveRegion,
+      child: SizedBox(
+        height: lineHeight,
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: SkeletonBone(
+            widthFactor: widthFactor,
+            height: boneHeight,
+            radius: 4,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Chip-shaped bones for a chip group inside a loaded section (work item
+/// types, emoji reactions, language shares). Each bone is centred in a
+/// [slotHeight] box, the height the real chip takes in layout.
+class ChipsSkeleton extends StatelessWidget implements Skeleton {
+  const ChipsSkeleton({
+    super.key,
+    this.widths = const [88, 64, 104],
+    this.chipHeight = 32,
+    this.slotHeight = 32,
+    this.radius = 8,
+    this.spacing = 8,
+    this.liveRegion = false,
+  });
+
+  final List<double> widths;
+  final double chipHeight;
+  final double slotHeight;
+  final double radius;
+  final double spacing;
+  final bool liveRegion;
+
+  @override
+  Widget build(BuildContext context) {
+    return SkeletonShimmer(
+      liveRegion: liveRegion,
+      child: Wrap(
+        spacing: spacing,
+        runSpacing: spacing,
+        children: [
+          for (final width in widths)
+            SizedBox(
+              width: width,
+              height: slotHeight,
+              child: Center(
+                child: SkeletonBone(
+                  width: width,
+                  height: chipHeight,
+                  radius: radius,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

@@ -11,6 +11,7 @@ import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_milestone_models.dart';
 import '../../core/work_item_status_models.dart';
 import '../../core/work_item_weight_models.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import 'work_item_milestone.dart';
 import 'work_item_status.dart';
@@ -797,8 +798,8 @@ class _AttributeRow extends StatelessWidget {
       children: [
         Text(title, style: Theme.of(context).textTheme.labelLarge),
         const SizedBox(height: 6),
-        if (loading)
-          const LinearProgressIndicator(minHeight: 2)
+        if (loading && snapshot == null)
+          const LineSkeleton()
         else if (error != null)
           Wrap(
             spacing: 8,
@@ -809,9 +810,11 @@ class _AttributeRow extends StatelessWidget {
               TextButton(onPressed: onRetry, child: Text(l10n.retryAction)),
             ],
           )
-        else if (snapshot != null)
-          _AttributeValue(snapshot!)
-        else
+        else if (snapshot != null) ...[
+          // A re-read keeps the value under the thin bar.
+          if (loading) const LinearProgressIndicator(minHeight: 2),
+          _AttributeValue(snapshot!),
+        ] else
           Text(l10n.waitingToLoad),
         ?action,
         const Divider(height: 18),

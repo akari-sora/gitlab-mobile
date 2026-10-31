@@ -36,6 +36,7 @@ import 'features/shell/authenticated_app.dart';
 import 'features/shell/incoming_links.dart';
 import 'features/security/app_lock.dart';
 import 'features/shell/language.dart';
+import 'shared/skeleton.dart';
 import 'shared/theme.dart';
 import 'shared/scroll_performance.dart';
 import 'core/brand.dart';
@@ -706,7 +707,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
           home: session.resuming
             ? _ResumeScreen(session: session)
             : session.initializing
-            ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+            ? const StartupScreen()
             : LoginScreen(
                 session: session,
                 onTryDemo: _enterDemo,
@@ -714,6 +715,52 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
         );
       });
     });
+  }
+}
+
+/// Start-up placeholder while the saved accounts are read.
+///
+/// `main` has already read the language from secure storage before the first
+/// frame, so the plugin is warm and the three reads behind `initializing`
+/// normally finish in a few tens of milliseconds. A skeleton for that long
+/// would only flash, so the screen stays blank for [delay] and shows the
+/// neutral [AppShellSkeleton] only when the reads are slower than that.
+class StartupScreen extends StatefulWidget {
+  const StartupScreen({
+    super.key,
+    this.delay = const Duration(milliseconds: 150),
+  });
+
+  final Duration delay;
+
+  @override
+  State<StartupScreen> createState() => _StartupScreenState();
+}
+
+class _StartupScreenState extends State<StartupScreen> {
+  bool _showSkeleton = false;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(widget.delay, () {
+      if (mounted) setState(() => _showSkeleton = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_showSkeleton) {
+      return const Scaffold();
+    }
+    return const Scaffold(body: SafeArea(child: AppShellSkeleton()));
   }
 }
 

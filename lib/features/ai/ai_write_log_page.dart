@@ -7,6 +7,7 @@ import '../../core/models.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/external_link.dart';
 import '../../shared/hub_ui.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import 'ai_write_journal.dart';
 import 'ai_write_reread.dart';
@@ -267,6 +268,8 @@ class _AiWriteLogPageState extends State<AiWriteLogPage> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(l10n.aiWriteLogIntro, style: muted),
               ),
+              if (_busy && entries != null)
+                const LinearProgressIndicator(minHeight: 2),
               if (_failure case final failure?)
                 _ReadFailure(
                   failure: failure,
@@ -275,9 +278,11 @@ class _AiWriteLogPageState extends State<AiWriteLogPage> {
                   onReset: _reset,
                 )
               else if (entries == null)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator()),
+                const HubSectionSkeleton(
+                  rows: 4,
+                  rowHeight: 72,
+                  leadingSize: 24,
+                  leadingRadius: 12,
                 )
               else ...[
                 if (interrupted.isNotEmpty)

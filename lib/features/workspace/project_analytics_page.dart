@@ -284,11 +284,10 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
             _moreError = null;
             _commitLoading = false;
           }
-          _coverage = null;
-          _coverageLoaded = false;
+          // The coverage and language cards keep what they show while they
+          // reload; only a first load shows their skeletons.
           _coverageLoading = false;
           _coverageError = null;
-          _languages = null;
           _languageLoading = false;
           _languageError = null;
         case 2:
@@ -535,7 +534,6 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     final request = ++_coverageRequest;
     setState(() {
       _coverageLoading = true;
-      _coverageLoaded = false;
       _coverageError = null;
     });
     try {
@@ -548,10 +546,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       }
     } catch (error) {
       if (_currentProject(owner) && request == _coverageRequest) {
-        setState(() {
-          _coverageLoaded = true;
-          _coverageError = safeFailure(error);
-        });
+        setState(() => _coverageError = safeFailure(error));
       }
     } finally {
       if (_currentProject(owner) && request == _coverageRequest) {
@@ -1014,14 +1009,14 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
 
   Widget _coverageCard() {
     if (!_coverageLoaded && _coverageError == null) {
+      // The loaded card's icon and title, its summary line still a bone. The
+      // tab's chart skeleton holds the live region.
       return Card(
+        key: const ValueKey('coverage-summary-loading'),
         child: ListTile(
+          leading: const Icon(Icons.fact_check_outlined),
           title: Text(l10n.coverage),
-          trailing: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          subtitle: const LineSkeleton(widthFactor: 0.7),
         ),
       );
     }
@@ -1052,12 +1047,24 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
   Widget _languagesCard() {
     if (_languages == null && _languageError == null) {
       return Card(
-        child: ListTile(
-          title: Text(l10n.languages),
-          trailing: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
+        key: const ValueKey('analytics-languages-loading'),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.languages,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              const ChipsSkeleton(
+                widths: [72, 56, 64],
+                chipHeight: 12,
+                slotHeight: 16,
+                radius: 4,
+              ),
+            ],
           ),
         ),
       );

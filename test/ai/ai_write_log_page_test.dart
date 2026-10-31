@@ -7,6 +7,7 @@ import 'package:gitlab_mobile/features/ai/ai_journal_key_store.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_log_page.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 
 import '../support/widget_settle.dart';
@@ -95,7 +96,7 @@ void main() {
       );
       await tester.pump();
       final loading = find
-          .byType(CircularProgressIndicator)
+          .byType(HubSectionSkeleton)
           .evaluate()
           .isNotEmpty;
       final reset = find.byKey(const ValueKey('ai-write-log-reset'));

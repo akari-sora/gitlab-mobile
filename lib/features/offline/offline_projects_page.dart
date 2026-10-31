@@ -9,6 +9,7 @@ import '../../core/offline/snapshot_schema.dart';
 import '../../core/repository_ref.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../workspace/project_page.dart';
@@ -256,11 +257,15 @@ class _OfflineProjectsPageState extends State<OfflineProjectsPage> {
       },
     };
     final online = snapshotOnline(context, _repos);
+    // The list's first read shows rows where the list goes; a re-read or an
+    // action keeps the list, or its empty state, under the thin bar.
+    final firstLoad = _repos.loading && !_repos.hasLoaded;
     return ListView(
       key: const ValueKey('offline-projects-list'),
       padding: const EdgeInsets.only(bottom: 32),
       children: [
-        if (_busy || _repos.loading) const LinearProgressIndicator(minHeight: 2),
+        if (_busy || (_repos.loading && !firstLoad))
+          const LinearProgressIndicator(minHeight: 2),
         HubSection(
           children: [
             Padding(
@@ -322,7 +327,9 @@ class _OfflineProjectsPageState extends State<OfflineProjectsPage> {
               ),
             ],
           ),
-        if (rows.isEmpty && !_repos.loading && blocker == null)
+        if (firstLoad && rows.isEmpty)
+          const HubSectionSkeleton(heading: false, rowHeight: 72)
+        else if (rows.isEmpty && !firstLoad && blocker == null)
           EmptyState(
             l10n.offlineEmptyTitle,
             detail: l10n.offlineEmptyDetail,

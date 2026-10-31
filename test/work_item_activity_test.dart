@@ -12,6 +12,7 @@ import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_activity.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 import 'package:gitlab_mobile/shared/resource_share.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 // ignore: depend_on_referenced_packages
@@ -2126,7 +2127,8 @@ void main() {
     );
     await _tap(tester, find.text('活動'));
     await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
+    expect(find.byType(ActivityTimelineSkeleton), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
     current = false;
     owner.notifyListeners();
@@ -2142,6 +2144,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('comment-late'), findsNothing);
+    expect(find.byType(ActivityTimelineSkeleton), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 

@@ -1163,18 +1163,22 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
 
   Widget _capabilities(BuildContext context) {
     if (_loadingTypes && _types.isEmpty) {
+      // Shaped like the loaded card below. The item list loading beside it
+      // holds the page's one live region.
       return Card(
+        key: const ValueKey('work-item-types-loading'),
         child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Row(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+              Text(
+                l10n.serverProvidedTypes,
+                style: Theme.of(context).textTheme.titleSmall,
               ),
-              SizedBox(width: 12),
-              Expanded(child: Text(l10n.loadingWorkItemTypes)),
+              const SizedBox(height: 8),
+              // Chips lay out at the padded 48 dp tap target.
+              const ChipsSkeleton(slotHeight: 48),
             ],
           ),
         ),

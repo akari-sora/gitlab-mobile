@@ -27,6 +27,7 @@ final class OfflineRepositories extends ChangeNotifier {
       _usedBytes = 0;
       _failure = null;
       _loading = false;
+      _hasLoaded = false;
       notifyListeners();
       unawaited(refresh());
     });
@@ -63,11 +64,16 @@ final class OfflineRepositories extends ChangeNotifier {
   List<SnapshotRecord> _snapshots = const [];
   SnapshotIndex? _index;
   int _usedBytes = 0, _revision = 0;
-  bool _disposed = false, _loading = false;
+  bool _disposed = false, _loading = false, _hasLoaded = false;
   SnapshotFailure? _failure;
 
   OfflineRepositoryState get state => coordinator.state(binding.accountKey);
   bool get loading => _loading;
+
+  /// Whether [snapshots] holds a successful read. False before the first one
+  /// and again once a change or a failed read has dropped the list, so the
+  /// next read is a first load (a skeleton, not a bar over nothing).
+  bool get hasLoaded => _hasLoaded;
   SnapshotFailure? get failure => _failure;
   List<SnapshotRecord> get snapshots => _snapshots;
   int get usedBytes => _usedBytes;
@@ -112,11 +118,13 @@ final class OfflineRepositories extends ChangeNotifier {
       _snapshots = records;
       _index = metadata?.$1;
       _usedBytes = metadata?.$2 ?? 0;
+      _hasLoaded = true;
     } on Object catch (error) {
       if (_disposed || revision != _revision) return;
       _snapshots = const [];
       _index = null;
       _usedBytes = 0;
+      _hasLoaded = false;
       _failure = snapshotFailure(error);
     } finally {
       if (!_disposed && revision == _revision) {

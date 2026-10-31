@@ -11,6 +11,7 @@ import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/attachment_budget.dart';
 import 'package:gitlab_mobile/shared/markdown_media.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import 'support/fake_adapter.dart';
@@ -188,9 +189,7 @@ void main() {
       ),
     );
     await tester.pump();
-    final spinner = tester.widget<CircularProgressIndicator>(
-      find.byType(CircularProgressIndicator),
-    );
+    final spinner = tester.widget<ImageSkeleton>(find.byType(ImageSkeleton));
     expect(spinner.semanticsLabel, l10n.attachmentLoading);
     pending.complete(
       ResponseBody.fromBytes(
