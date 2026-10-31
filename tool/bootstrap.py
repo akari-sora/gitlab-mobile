@@ -21,7 +21,9 @@ import l10n
 ROOT = Path(__file__).resolve().parents[1]
 SDK = '3.47.2'
 ANDROID = 'http://schemas.android.com/apk/res/android'
+TOOLS = 'http://schemas.android.com/tools'
 ET.register_namespace('android', ANDROID)
+ET.register_namespace('tools', TOOLS)
 
 
 def check_sdk(flutter: str) -> None:
@@ -47,6 +49,10 @@ OAUTH_PATH = '/callback'
 
 def _android_attr(name: str) -> str:
     return f'{{{ANDROID}}}{name}'
+
+
+def _tools_attr(name: str) -> str:
+    return f'{{{TOOLS}}}{name}'
 
 
 def register_oauth_android(root: ET.Element) -> None:
@@ -200,6 +206,8 @@ def harden_android(folder: Path) -> None:
             ET.SubElement(root, 'uses-permission', {_android_attr('name'): name})
     if application.find('service') is None:
         ET.SubElement(application, 'service', AGENT_SERVICE_ATTRIBUTES)
+    if application.find('provider') is None:
+        ET.SubElement(application, 'provider', MLKIT_INIT_PROVIDER_REMOVE_ATTRIBUTES)
     ET.indent(tree, space='    ')
     _write_xml(manifest, tree)
     resource = folder / 'app/src/main/res/xml'
@@ -406,6 +414,12 @@ AGENT_SERVICE_ATTRIBUTES = {
     _android_attr('exported'): 'false',
     _android_attr('foregroundServiceType'): 'dataSync',
     _android_attr('stopWithTask'): 'true',
+}
+MLKIT_INIT_PROVIDER_NAME = 'com.google.mlkit.common.internal.MlKitInitProvider'
+MLKIT_INIT_PROVIDER_REMOVE_ATTRIBUTES = {
+    _android_attr('name'): MLKIT_INIT_PROVIDER_NAME,
+    _android_attr('authorities'): '${applicationId}.mlkitinitprovider',
+    _tools_attr('node'): 'remove',
 }
 AGENT_STRINGS = {
     'ai_run_channel_name': 'aiRunChannelName',
@@ -1159,6 +1173,9 @@ def _check_agent_template(app: Path, root: ET.Element, files: dict[str, str]) ->
         raise RuntimeError('Incomplete managed agent service template; review before upgrading.')
     if application.findall('receiver'):
         raise RuntimeError('Unknown Android receiver content; no background restart is supported.')
+    providers = application.findall('provider')
+    if providers and (len(providers) != 1 or providers[0].attrib != MLKIT_INIT_PROVIDER_REMOVE_ATTRIBUTES or len(providers[0])):
+        raise RuntimeError('Unknown or conflicting Android provider manifest content.')
     # The link trampoline is another fully managed component. Do not silently
     # replace an exported/conflicting activity while hardening the manifest.
     expected_root = ET.fromstring(
@@ -1787,9 +1804,6 @@ def _plist_key(name: str) -> ET.Element:
 def generate_templates(flutter: str) -> None:
     with tempfile.TemporaryDirectory(prefix='gitlab-mobile-') as temporary:
         template = Path(temporary) / 'gitlab_mobile'
-        packages_dir = ROOT / 'packages'
-        if packages_dir.is_dir():
-            shutil.copytree(packages_dir, template / 'packages')
         subprocess.run([flutter, 'create', '--platforms=android,ios', '--org=io.gitlabmobile',
                         '--project-name=gitlab_mobile', '--no-pub', str(template)], check=True)
         configure_android(template / 'android')

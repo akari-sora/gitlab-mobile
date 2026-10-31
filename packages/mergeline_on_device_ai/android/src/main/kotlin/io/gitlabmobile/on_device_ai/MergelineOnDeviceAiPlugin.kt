@@ -1,6 +1,7 @@
 package io.gitlabmobile.on_device_ai
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.annotation.RequiresApi
 import com.google.mlkit.common.MlKit
@@ -23,6 +24,7 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -35,12 +37,18 @@ class MergelineOnDeviceAiPlugin :
     MethodCallHandler,
     EventChannel.StreamHandler {
 
+    private class ActiveRequest(
+        val token: Any,
+        @Volatile var job: Job? = null,
+    )
+
     private var applicationContext: Context? = null
     private var methodChannel: MethodChannel? = null
     private var eventChannel: EventChannel? = null
     private var eventSink: EventChannel.EventSink? = null
     private var pluginScope: CoroutineScope? = null
-    private val jobs = ConcurrentHashMap<String, Job>()
+    private val jobs = ConcurrentHashMap<String, ActiveRequest>()
+    private val requestOwners = ConcurrentHashMap<String, Any>()
     private var bridge: MlKitPromptBridge? = null
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -61,18 +69,9 @@ class MergelineOnDeviceAiPlugin :
         eventSink = null
         applicationContext = null
 
-        val activeJobs = jobs.values.toList()
-        jobs.clear()
-        for (job in activeJobs) {
-            job.cancel(CancellationException("Plugin detached from engine"))
-        }
+        closeActiveWorkAndModel("Plugin detached from engine")
         pluginScope?.cancel(CancellationException("Plugin detached from engine"))
         pluginScope = null
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            bridge?.close()
-        }
-        bridge = null
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -85,11 +84,77 @@ class MergelineOnDeviceAiPlugin :
 
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
+            "deviceSupport" -> handleDeviceSupport(result)
             "status" -> handleStatus(result)
             "download" -> handleDownload(call, result)
             "generate" -> handleGenerate(call, result)
             "cancel" -> handleCancel(call, result)
+            "close" -> handleClose(result)
             else -> result.notImplemented()
+        }
+    }
+
+    private fun handleDeviceSupport(result: Result) {
+        // Must NOT touch any ML Kit class so pre-consent capability checks
+        // never initialize MlKitContext or trigger diagnostics collection.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            result.success(
+                mapOf(
+                    "support" to "unsupported",
+                    "reason" to "sdk_too_old",
+                ),
+            )
+            return
+        }
+        val context = applicationContext
+        if (context == null) {
+            result.success(
+                mapOf(
+                    "support" to "unknown",
+                    "reason" to "no_context",
+                ),
+            )
+            return
+        }
+        try {
+            val pm = context.packageManager
+            val appInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getApplicationInfo(
+                    AICORE_PACKAGE_NAME,
+                    PackageManager.ApplicationInfoFlags.of(0L),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getApplicationInfo(AICORE_PACKAGE_NAME, 0)
+            }
+            if (!appInfo.enabled) {
+                result.success(
+                    mapOf(
+                        "support" to "unsupported",
+                        "reason" to "aicore_disabled",
+                    ),
+                )
+                return
+            }
+            result.success(
+                mapOf(
+                    "support" to "likely",
+                ),
+            )
+        } catch (_: PackageManager.NameNotFoundException) {
+            result.success(
+                mapOf(
+                    "support" to "unsupported",
+                    "reason" to "aicore_missing",
+                ),
+            )
+        } catch (t: Throwable) {
+            result.success(
+                mapOf(
+                    "support" to "unknown",
+                    "debugMessage" to t.message,
+                ),
+            )
         }
     }
 
@@ -118,11 +183,12 @@ class MergelineOnDeviceAiPlugin :
                 val payload = getOrCreateBridge().checkStatusPayload()
                 result.success(payload)
             } catch (t: Throwable) {
+                val mapped = mapThrowable(t, isDownload = false)
                 result.success(
                     mapOf(
                         "status" to "unavailable",
-                        "reason" to "unsupported",
-                        "debugMessage" to t.message,
+                        "reason" to mapped.code,
+                        "debugMessage" to mapped.debugMessage,
                     ),
                 )
             }
@@ -131,6 +197,14 @@ class MergelineOnDeviceAiPlugin :
 
     private fun handleDownload(call: MethodCall, result: Result) {
         val requestId = call.argument<String>("requestId") ?: DEFAULT_DOWNLOAD_ID
+        val existing = jobs[requestId]
+        if (existing != null) {
+            if (existing.job?.isActive != false) {
+                result.error("invalidArgument", "Duplicate active requestId: $requestId", null)
+                return
+            }
+            jobs.remove(requestId, existing)
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             emitEvent(
                 mapOf(
@@ -149,14 +223,26 @@ class MergelineOnDeviceAiPlugin :
             result.error("other", "Plugin scope is not active", null)
             return
         }
-        jobs.remove(requestId)?.cancel(CancellationException("Superseded download request"))
-        lateinit var launchedJob: Job
-        launchedJob = scope.launch {
+
+        val token = Any()
+        val activeRequest = ActiveRequest(token = token)
+        requestOwners[requestId] = token
+        jobs[requestId] = activeRequest
+        // Start with CoroutineStart.LAZY so the Job is registered in `jobs` before
+        // the coroutine body executes on Dispatchers.Main.immediate. An eager launch
+        // runs synchronously up to the first suspension point and, if it throws or
+        // finishes immediately, would otherwise enter `finally` before `launch` returns
+        // (crashing on an uninitialised reference or leaving a dead Job in `jobs`).
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                getOrCreateBridge().downloadFlow().collect { status ->
+                val mlBridge = getOrCreateBridge()
+                var terminalEventSent = false
+                mlBridge.downloadFlow().collect { status ->
                     when (status) {
                         is DownloadStatus.DownloadStarted -> {
-                            emitEvent(
+                            emitRequestEvent(
+                                requestId,
+                                token,
                                 mapOf(
                                     "event" to "download",
                                     "requestId" to requestId,
@@ -166,7 +252,9 @@ class MergelineOnDeviceAiPlugin :
                             )
                         }
                         is DownloadStatus.DownloadProgress -> {
-                            emitEvent(
+                            emitRequestEvent(
+                                requestId,
+                                token,
                                 mapOf(
                                     "event" to "download",
                                     "requestId" to requestId,
@@ -176,7 +264,10 @@ class MergelineOnDeviceAiPlugin :
                             )
                         }
                         is DownloadStatus.DownloadCompleted -> {
-                            emitEvent(
+                            terminalEventSent = true
+                            emitRequestEvent(
+                                requestId,
+                                token,
                                 mapOf(
                                     "event" to "download",
                                     "requestId" to requestId,
@@ -185,8 +276,11 @@ class MergelineOnDeviceAiPlugin :
                             )
                         }
                         is DownloadStatus.DownloadFailed -> {
+                            terminalEventSent = true
                             val mapped = mapThrowable(status.e, isDownload = true)
-                            emitEvent(
+                            emitRequestEvent(
+                                requestId,
+                                token,
                                 mapOf(
                                     "event" to "download",
                                     "requestId" to requestId,
@@ -199,8 +293,40 @@ class MergelineOnDeviceAiPlugin :
                         }
                     }
                 }
+                if (!terminalEventSent) {
+                    val isNowAvailable = try {
+                        mlBridge.isModelAvailable()
+                    } catch (_: Throwable) {
+                        false
+                    }
+                    if (isNowAvailable) {
+                        emitRequestEvent(
+                            requestId,
+                            token,
+                            mapOf(
+                                "event" to "download",
+                                "requestId" to requestId,
+                                "state" to "completed",
+                            ),
+                        )
+                    } else {
+                        emitRequestEvent(
+                            requestId,
+                            token,
+                            mapOf(
+                                "event" to "download",
+                                "requestId" to requestId,
+                                "state" to "failed",
+                                "code" to "other",
+                                "debugMessage" to "Download flow completed without a terminal event",
+                            ),
+                        )
+                    }
+                }
             } catch (e: CancellationException) {
-                emitEvent(
+                emitRequestEvent(
+                    requestId,
+                    token,
                     mapOf(
                         "event" to "download",
                         "requestId" to requestId,
@@ -211,7 +337,9 @@ class MergelineOnDeviceAiPlugin :
                 )
             } catch (t: Throwable) {
                 val mapped = mapThrowable(t, isDownload = true)
-                emitEvent(
+                emitRequestEvent(
+                    requestId,
+                    token,
                     mapOf(
                         "event" to "download",
                         "requestId" to requestId,
@@ -222,18 +350,38 @@ class MergelineOnDeviceAiPlugin :
                     ),
                 )
             } finally {
-                jobs.remove(requestId, launchedJob)
+                jobs.remove(requestId, activeRequest)
+                requestOwners.remove(requestId, token)
             }
         }
-        jobs[requestId] = launchedJob
+        activeRequest.job = job
+        job.start()
         result.success(mapOf("requestId" to requestId))
     }
 
     private fun handleGenerate(call: MethodCall, result: Result) {
         val requestId = call.argument<String>("requestId")
         if (requestId.isNullOrBlank()) {
-            result.error("other", "Missing requestId", null)
+            result.error("invalidArgument", "Missing requestId", null)
             return
+        }
+        val maxOutputTokens = call.argument<Int>("maxOutputTokens")
+        if (maxOutputTokens != null && maxOutputTokens <= 0) {
+            result.error("invalidArgument", "maxOutputTokens must be greater than 0", null)
+            return
+        }
+        val temperature = call.argument<Double>("temperature")
+        if (temperature != null && (temperature.isNaN() || temperature < 0.0 || temperature > 1.0)) {
+            result.error("invalidArgument", "temperature must be between 0.0 and 1.0", null)
+            return
+        }
+        val existing = jobs[requestId]
+        if (existing != null) {
+            if (existing.job?.isActive != false) {
+                result.error("invalidArgument", "Duplicate active requestId: $requestId", null)
+                return
+            }
+            jobs.remove(requestId, existing)
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             result.error("unsupported", "sdk_too_old", null)
@@ -246,12 +394,17 @@ class MergelineOnDeviceAiPlugin :
         }
         val system = call.argument<String>("system") ?: ""
         val rawTurns = call.argument<List<*>>("turns") ?: emptyList<Any?>()
-        val maxOutputTokens = call.argument<Int>("maxOutputTokens")
-        val temperature = call.argument<Double>("temperature")
 
-        jobs.remove(requestId)?.cancel(CancellationException("Replaced request $requestId"))
-        lateinit var launchedJob: Job
-        launchedJob = scope.launch {
+        val token = Any()
+        val activeRequest = ActiveRequest(token = token)
+        requestOwners[requestId] = token
+        jobs[requestId] = activeRequest
+        // Start with CoroutineStart.LAZY so the Job is registered in `jobs` before
+        // the coroutine body executes on Dispatchers.Main.immediate. An eager launch
+        // runs synchronously up to the first suspension point and, if it throws or
+        // finishes immediately, would otherwise enter `finally` before `launch` returns
+        // (crashing on an uninitialised reference or leaving a dead Job in `jobs`).
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val mlBridge = getOrCreateBridge()
                 val request = mlBridge.buildRequest(
@@ -263,7 +416,9 @@ class MergelineOnDeviceAiPlugin :
                 mlBridge.generateStream(request).collect { response ->
                     val text = response.candidates.firstOrNull()?.text.orEmpty()
                     if (text.isNotEmpty()) {
-                        emitEvent(
+                        emitRequestEvent(
+                            requestId,
+                            token,
                             mapOf(
                                 "event" to "generate",
                                 "requestId" to requestId,
@@ -273,7 +428,9 @@ class MergelineOnDeviceAiPlugin :
                         )
                     }
                 }
-                emitEvent(
+                emitRequestEvent(
+                    requestId,
+                    token,
                     mapOf(
                         "event" to "generate",
                         "requestId" to requestId,
@@ -281,7 +438,9 @@ class MergelineOnDeviceAiPlugin :
                     ),
                 )
             } catch (e: CancellationException) {
-                emitEvent(
+                emitRequestEvent(
+                    requestId,
+                    token,
                     mapOf(
                         "event" to "generate",
                         "requestId" to requestId,
@@ -292,7 +451,9 @@ class MergelineOnDeviceAiPlugin :
                 )
             } catch (t: Throwable) {
                 val mapped = mapThrowable(t, isDownload = false)
-                emitEvent(
+                emitRequestEvent(
+                    requestId,
+                    token,
                     mapOf(
                         "event" to "generate",
                         "requestId" to requestId,
@@ -303,25 +464,54 @@ class MergelineOnDeviceAiPlugin :
                     ),
                 )
             } finally {
-                jobs.remove(requestId, launchedJob)
+                jobs.remove(requestId, activeRequest)
+                requestOwners.remove(requestId, token)
             }
         }
-        jobs[requestId] = launchedJob
+        activeRequest.job = job
+        job.start()
         result.success(mapOf("requestId" to requestId))
     }
 
     private fun handleCancel(call: MethodCall, result: Result) {
         val requestId = call.argument<String>("requestId")
         if (!requestId.isNullOrBlank()) {
-            jobs.remove(requestId)?.cancel(CancellationException("Cancelled request $requestId"))
+            jobs.remove(requestId)?.job?.cancel(CancellationException("Cancelled request $requestId"))
         } else {
-            val activeJobs = jobs.values.toList()
+            val activeRequests = jobs.values.toList()
             jobs.clear()
-            for (job in activeJobs) {
-                job.cancel(CancellationException("Cancelled all requests"))
+            for (active in activeRequests) {
+                active.job?.cancel(CancellationException("Cancelled all requests"))
             }
         }
         result.success(null)
+    }
+
+    private fun handleClose(result: Result) {
+        closeActiveWorkAndModel("Plugin closed by caller")
+        result.success(null)
+    }
+
+    @Synchronized
+    private fun closeActiveWorkAndModel(reason: String) {
+        requestOwners.clear()
+        val activeRequests = jobs.values.toList()
+        jobs.clear()
+        for (active in activeRequests) {
+            active.job?.cancel(CancellationException(reason))
+        }
+        val currentBridge = bridge
+        bridge = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            currentBridge?.close()
+        }
+    }
+
+    private fun emitRequestEvent(requestId: String, token: Any, payload: Map<String, Any?>) {
+        if (requestOwners[requestId] !== token) {
+            return
+        }
+        emitEvent(payload)
     }
 
     private fun emitEvent(payload: Map<String, Any?>) {
@@ -382,20 +572,23 @@ class MergelineOnDeviceAiPlugin :
                 GenAiException.ErrorCode.AICORE_INCOMPATIBLE,
                 GenAiException.ErrorCode.NEEDS_SYSTEM_UPDATE,
                 -> "unsupported"
-                GenAiException.ErrorCode.NOT_ENOUGH_DISK_SPACE -> "notDownloaded"
+                GenAiException.ErrorCode.NOT_ENOUGH_DISK_SPACE -> "insufficientStorage"
                 GenAiException.ErrorCode.NOT_AVAILABLE -> {
                     if (isDownload) "unsupported" else "notDownloaded"
                 }
-                else -> if (isDownload) "notDownloaded" else "other"
+                else -> "other"
             }
             return MappedError(mappedCode, t.message, errorCode)
         }
-        return MappedError(if (isDownload) "notDownloaded" else "other", t.message, null)
+        return MappedError("other", t.message, null)
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
     private class MlKitPromptBridge {
         private val model: GenerativeModel = Generation.getClient()
+
+        suspend fun isModelAvailable(): Boolean =
+            model.checkStatus() == FeatureStatus.AVAILABLE
 
         suspend fun checkStatusPayload(): Map<String, Any?> {
             return when (model.checkStatus()) {
@@ -481,6 +674,7 @@ class MergelineOnDeviceAiPlugin :
         const val METHOD_CHANNEL_NAME = "io.gitlabmobile/on_device_ai"
         const val EVENT_CHANNEL_NAME = "io.gitlabmobile/on_device_ai/events"
         private const val DEFAULT_DOWNLOAD_ID = "download"
+        private const val AICORE_PACKAGE_NAME = "com.google.android.aicore"
 
         @Volatile
         private var mlKitInitialized = false
@@ -493,11 +687,18 @@ class MergelineOnDeviceAiPlugin :
             val appContext = context.applicationContext ?: context
             try {
                 MlKit.initialize(appContext)
-            } catch (_: IllegalStateException) {
+                mlKitInitialized = true
+            } catch (e: IllegalStateException) {
                 // MlKit.initialize throws IllegalStateException("MlKitContext is already initialized")
-                // if already initialized in this process.
+                // if already initialized in this process. Any other IllegalStateException is rethrown
+                // so the caller reports `other` without marking ML Kit initialized.
+                val message = e.message.orEmpty()
+                if (message.contains("MlKitContext is already initialized")) {
+                    mlKitInitialized = true
+                } else {
+                    throw e
+                }
             }
-            mlKitInitialized = true
         }
     }
 }

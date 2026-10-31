@@ -878,6 +878,9 @@ class BootstrapTests(unittest.TestCase):
             a + 'name': '.AgentRunService', a + 'exported': 'false',
             a + 'foregroundServiceType': 'dataSync', a + 'stopWithTask': 'true',
         })
+        providers = root.findall('application/provider')
+        self.assertEqual(len(providers), 1)
+        self.assertEqual(providers[0].attrib, bootstrap.MLKIT_INIT_PROVIDER_REMOVE_ATTRIBUTES)
         self.assertFalse(root.findall('.//receiver'))
         for forbidden in ('BOOT_COMPLETED', 'SCHEDULE_EXACT_ALARM', 'USE_EXACT_ALARM',
                           'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS'):
@@ -1495,6 +1498,8 @@ class BootstrapTests(unittest.TestCase):
             original.replace('</manifest>', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" android:maxSdkVersion="32" /></manifest>'),
             original.replace('android:noHistory="true"', 'android:noHistory="false"'),
             original.replace('</application>', '<service android:name=".ForeignService" /></application>'),
+            original.replace('</application>', '<provider android:name=".ForeignProvider" android:authorities="foreign.provider" /></application>'),
+            original.replace('com.google.mlkit.common.internal.MlKitInitProvider', 'foreign.Provider'),
             original.replace('android:name=".MainActivity" android:exported="true"',
                              'android:name=".MainActivity" android:exported="false"'),
             original.replace('android:host="oauth"', 'android:host="foreign"'),
@@ -1707,29 +1712,6 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(bootstrap.main(), 0)
         icons.assert_called_once_with('/pinned/flutter', offline=False)
 
-    def test_generate_templates_copies_local_packages_dir(self):
-        plugin_dir = self.root / 'packages/mergeline_on_device_ai'
-        plugin_dir.mkdir(parents=True)
-        (plugin_dir / 'pubspec.yaml').write_text('name: mergeline_on_device_ai\n')
-        observed_packages = []
-
-        def fake_flutter_create(cmd, **kwargs):
-            template_dir = Path(cmd[-1])
-            observed_packages.append((template_dir / 'packages/mergeline_on_device_ai/pubspec.yaml').read_text())
-            (template_dir / 'android').mkdir(parents=True, exist_ok=True)
-            (template_dir / 'ios').mkdir(parents=True, exist_ok=True)
-            (template_dir / '.metadata').write_text('metadata\n')
-
-        with patch.object(bootstrap, 'ROOT', self.root), \
-                patch.object(bootstrap.subprocess, 'run', side_effect=fake_flutter_create), \
-                patch.object(bootstrap, 'configure_android'), \
-                patch.object(bootstrap, 'configure_ios'):
-            bootstrap.generate_templates('/pinned/flutter')
-        self.assertEqual(observed_packages, ['name: mergeline_on_device_ai\n'])
-        self.assertTrue((self.root / 'android').is_dir())
-        self.assertTrue((self.root / 'ios').is_dir())
-        self.assertTrue((self.root / '.metadata').is_file())
-
     def _merged_fixture(self, flavor):
         app = self.root / 'app'
         path = self.root / f'build/app/intermediates/merged_manifests/{flavor}Debug/processManifest/AndroidManifest.xml'
@@ -1737,8 +1719,13 @@ class BootstrapTests(unittest.TestCase):
         tree = ET.parse(app / 'src/main/AndroidManifest.xml')
         root = tree.getroot()
         a = '{' + bootstrap.ANDROID + '}'
+        t = '{' + bootstrap.TOOLS + '}'
         package = 'app.mergeline' if flavor == 'play' else 'io.gitlabmobile.gitlab_mobile'
         root.set('package', package)
+        app_node = root.find('application')
+        for node in list(app_node.findall('provider')):
+            if node.get(t + 'node') == 'remove':
+                app_node.remove(node)
         if flavor == 'play':
             for node in list(root.findall('uses-permission')):
                 if node.get(a + 'name') in {

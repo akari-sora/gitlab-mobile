@@ -29,7 +29,14 @@ class AndroidReleaseFlagTests(unittest.TestCase):
         self.stub('python3', '#!/bin/bash\nif [ "$1" = tool/android_signing.py ]; then exit 0; fi\nexec ' +
                   shutil.which('python3') + ' "$@"\n')
         self.stub('dart', '#!/bin/bash\nexit 0\n')
-        self.sdk_stub('aapt2', "#!/bin/bash\nprintf \"package: name='io.gitlabmobile.gitlab_mobile'\\napplication-debuggable\\n\"\n")
+        self.sdk_stub('aapt2', (
+            "#!/bin/bash\n"
+            "if [ \"${2:-}\" = xmltree ]; then\n"
+            "  printf '      E: provider (line=42)\\n        A: android:name(0x01010003)=\"androidx.startup.InitializationProvider\"\\n'\n"
+            "  exit 0\n"
+            "fi\n"
+            "printf \"package: name='io.gitlabmobile.gitlab_mobile'\\napplication-debuggable\\n\"\n"
+        ))
         self.sdk_stub('apksigner', "#!/bin/bash\nprintf 'Signer #1 certificate SHA-256 digest: %s\\n' '" + 'f' * 64 + "'\n")
         self.stub('flutter', '''#!/bin/bash
 set -eu
@@ -135,7 +142,14 @@ fi
         result = self.build('--flavor', 'play', '--ai-assistant', 'true')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('APK package does not match build flavor', result.stderr)
-        self.sdk_stub('aapt2', "#!/bin/bash\nprintf \"package: name='app.mergeline'\\n\"\n")
+        self.sdk_stub('aapt2', (
+            "#!/bin/bash\n"
+            "if [ \"${2:-}\" = xmltree ]; then\n"
+            "  printf '      E: provider (line=42)\\n        A: android:name(0x01010003)=\"androidx.startup.InitializationProvider\"\\n'\n"
+            "  exit 0\n"
+            "fi\n"
+            "printf \"package: name='app.mergeline'\\n\"\n"
+        ))
         result = self.build('--flavor', 'play', '--ai-assistant', 'true')
         self.assertEqual(result.returncode, 0, result.stderr)
         args, metadata = self.read_build()
@@ -156,6 +170,31 @@ fi
                 result = self.build(*args)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((self.root / 'flutter-args.txt').exists())
+
+    def test_packaged_manifest_rejects_mlkit_init_provider_and_empty_provider_dump(self):
+        self.sdk_stub('aapt2', (
+            "#!/bin/bash\n"
+            "if [ \"${2:-}\" = xmltree ]; then\n"
+            "  printf '      E: provider (line=42)\\n        A: android:name(0x01010003)=\"com.google.mlkit.common.internal.MlKitInitProvider\"\\n'\n"
+            "  exit 0\n"
+            "fi\n"
+            "printf \"package: name='io.gitlabmobile.gitlab_mobile'\\napplication-debuggable\\n\"\n"
+        ))
+        result = self.build()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('MlKitInitProvider must not be present in packaged AndroidManifest.xml', result.stderr)
+
+        self.sdk_stub('aapt2', (
+            "#!/bin/bash\n"
+            "if [ \"${2:-}\" = xmltree ]; then\n"
+            "  printf '  E: manifest (line=1)\\n    E: application (line=10)\\n'\n"
+            "  exit 0\n"
+            "fi\n"
+            "printf \"package: name='io.gitlabmobile.gitlab_mobile'\\napplication-debuggable\\n\"\n"
+        ))
+        result = self.build()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('contained no provider entries', result.stderr)
 
 
 if __name__ == '__main__':
