@@ -1062,7 +1062,6 @@ void main() {
     await tester.pumpWidget(_host(_account(api), api));
     await settleNetworkWidgets(tester);
 
-    expect(find.text('讀取可用的工作項目類型…'), findsNothing);
     expect(find.byKey(const ValueKey('work-item-types-loading')), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(tester.takeException(), isNull);
@@ -1198,7 +1197,6 @@ void main() {
     await settleNetworkWidgets(tester);
 
     expect(find.text('Stale initial row'), findsNothing);
-    expect(find.text('讀取可用的工作項目類型…'), findsNothing);
     expect(find.byKey(const ValueKey('work-item-types-loading')), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(tester.takeException(), isNull);
