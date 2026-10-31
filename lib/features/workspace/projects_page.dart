@@ -483,26 +483,33 @@ class _ProjectsPageState extends State<ProjectsPage> {
         Expanded(child: ShaderMask(
           blendMode: BlendMode.dstIn,
           shaderCallback: (rect) => LinearGradient(
+            begin: AlignmentDirectional.centerStart,
+            end: AlignmentDirectional.centerEnd,
             stops: [0, (1 - 24 / rect.width).clamp(0, 1), 1],
             colors: const [Color(0xFF000000), Color(0xFF000000), Color(0x00000000)],
-          ).createShader(rect),
+          ).createShader(rect, textDirection: Directionality.of(context)),
           child: SingleChildScrollView(scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.fromLTRB(gutter, 4, _scope == 3 ? gutter : 24, 0),
+            padding: EdgeInsetsDirectional.fromSTEB(gutter, 4, _scope == 3 ? gutter : 24, 0),
             child: Row(children: [
-              for (var i = 0; i < 4; i++) Padding(padding: EdgeInsets.only(right: i == 3 ? 0 : 8), child: ChoiceChip(
+              for (var i = 0; i < 4; i++) Padding(padding: EdgeInsetsDirectional.only(end: i == 3 ? 0 : 8), child: ChoiceChip(
                 label: Text([l10n.myProjects, l10n.starred, l10n.allAccessible, l10n.groups][i]), selected: _scope == i,
                 showCheckmark: false, onSelected: (_) => setState(() => _scope = i))),
             ])),
         )),
-        if (_scope != 3) Padding(padding: EdgeInsets.fromLTRB(0, 4, gutter, 0), child: PopupMenuButton<String>(
+        // A hairline keeps the pinned sort apart from the scopes scrolling
+        // (and fading) beside it. The sort is an icon so the scopes keep the
+        // room; its menu checks the current order.
+        if (_scope != 3) Container(width: 1, height: 24, margin: const EdgeInsetsDirectional.only(top: 4),
+          color: theme.dividerTheme.color ?? theme.colorScheme.outlineVariant),
+        if (_scope != 3) Padding(padding: EdgeInsetsDirectional.fromSTEB(4, 4, gutter, 0), child: PopupMenuButton<String>(
           tooltip: l10n.sortBy,
           initialValue: _sort,
+          icon: const Icon(Icons.sort),
           onSelected: (value) => setState(() => _sort = value),
           itemBuilder: (_) => [
             for (final entry in _sorts.entries)
               CheckedPopupMenuItem(value: entry.key, checked: _sort == entry.key, child: Text(entry.value.$1)),
           ],
-          child: Chip(avatar: const Icon(Icons.sort, size: 18), label: Text(_sorts[_sort]!.$1)),
         )),
       ]),
       if (_query.isEmpty && _recentProjects.isNotEmpty) ...[
@@ -514,7 +521,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
           child: Row(children: [
             for (final rp in _recentProjects)
               Padding(
-                padding: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsetsDirectional.only(end: 8),
                 child: ActionChip(
                   key: ValueKey('recent-project-${rp.id}'),
                   avatar: Monogram(rp.name, size: 22),

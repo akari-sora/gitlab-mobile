@@ -1185,8 +1185,11 @@ class _SnapshotFilePageState extends State<SnapshotFilePage> {
                     (_loading &&
                         widget.entry.kind == SnapshotContentKind.text)) &&
                 !_preview)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              ColoredBox(
+                color: Theme.of(context).appBarTheme.backgroundColor ??
+                    Theme.of(context).colorScheme.surface,
+                child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: TextField(
                   key: const ValueKey('snapshot-file-search'),
                   controller: _search,
@@ -1201,7 +1204,7 @@ class _SnapshotFilePageState extends State<SnapshotFilePage> {
                   ),
                   onChanged: _onSearch,
                 ),
-              ),
+              )),
             Expanded(child: _content(context, text)),
           ],
         ),

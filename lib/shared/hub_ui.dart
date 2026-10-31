@@ -92,17 +92,23 @@ class HubSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (title != null)
+                // One height with or without a 48 dp trailing action, so the
+                // rows below start at the same distance from the heading.
                 Padding(
-                  padding: EdgeInsets.fromLTRB(16, 18, trailing == null ? 16 : 4, 6),
-                  child: Row(children: [
-                    Expanded(
-                      child: Semantics(
-                        header: true,
-                        child: Text(title!, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                  padding: EdgeInsetsDirectional.fromSTEB(
+                    SharedLayout.gutter, 6, trailing == null ? SharedLayout.gutter : 4, 0),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: SharedLayout.headingMinHeight),
+                    child: Row(children: [
+                      Expanded(
+                        child: Semantics(
+                          header: true,
+                          child: Text(title!, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                        ),
                       ),
-                    ),
-                    ?trailing,
-                  ]),
+                      ?trailing,
+                    ]),
+                  ),
                 ),
               ...children,
             ],

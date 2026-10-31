@@ -2113,6 +2113,7 @@
   "aiReplayProtectionStopped": "A new secret was detected in content already sent. The answer stopped because sent content cannot be retracted",
   "aiEndTokenBudget": "This conversation reached its usage limit. Start a new conversation",
   "aiAssistantLabel": "AI assistant",
+  "aiSectionTitle": "AI features",
   "aiRunChannelName": "AI background work",
   "aiRunServiceTitle": "AI assistant is working",
   "aiRunServiceText": "You can leave the app; the work keeps running.",

@@ -749,7 +749,6 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               labelText: l10n.searchLabels,
-              border: OutlineInputBorder(),
             ),
             onChanged: _onSearchEdited,
             onSubmitted: (_) => unawaited(_submitSearch()),

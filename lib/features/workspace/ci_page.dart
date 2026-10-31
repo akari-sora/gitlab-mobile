@@ -2990,7 +2990,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       child: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         CollapsingChrome(visible: _chrome, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           appBar,
-          Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Wrap(
+          Padding(padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8), child: Wrap(
             spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
               if (_job != null) StatusBadge(valueText(_job!, 'status')),
               Text(isolated('#$_jobId'), style: Theme.of(context).textTheme.bodySmall),

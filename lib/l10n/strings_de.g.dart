@@ -2115,6 +2115,7 @@ const _messagesDe = <String>[
   'In bereits gesendeten Inhalten wurde ein neues Geheimnis erkannt. Die Antwort wurde gestoppt, weil gesendete Inhalte nicht zurückgezogen werden können',
   'Das Nutzungslimit der Unterhaltung ist erreicht. Beginnen Sie eine neue Unterhaltung',
   'KI-Assistent',
+  'KI-Funktionen',
   'KI-Arbeit im Hintergrund',
   'KI-Assistent arbeitet',
   'Sie können die App verlassen, die Arbeit läuft weiter.',

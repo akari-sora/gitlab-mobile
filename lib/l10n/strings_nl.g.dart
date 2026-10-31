@@ -2115,6 +2115,7 @@ const _messagesNl = <String>[
   'Er is een nieuw geheim gevonden in al verzonden inhoud. Het antwoord is gestopt omdat verzonden inhoud niet kan worden ingetrokken',
   'Deze conversatie heeft de gebruikslimiet bereikt. Start een nieuwe conversatie',
   'AI-assistent',
+  'AI-functies',
   'AI-werk op de achtergrond',
   'AI-assistent is bezig',
   'Je kunt de app verlaten; het werk gaat door.',

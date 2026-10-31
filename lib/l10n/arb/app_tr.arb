@@ -2111,6 +2111,7 @@
   "aiReplayProtectionStopped": "Daha önce gönderilmiş içerikte yeni bir gizli bilgi algılandı. Gönderilen içerik geri alınamayacağı için yanıt durduruldu",
   "aiEndTokenBudget": "Bu konuşma kullanım sınırına ulaştı. Yeni bir konuşma başlatın",
   "aiAssistantLabel": "AI asistanı",
+  "aiSectionTitle": "AI özellikleri",
   "aiRunChannelName": "Arka planda AI çalışması",
   "aiRunServiceTitle": "AI asistanı çalışıyor",
   "aiRunServiceText": "Uygulamadan çıkabilirsiniz; çalışma devam eder.",

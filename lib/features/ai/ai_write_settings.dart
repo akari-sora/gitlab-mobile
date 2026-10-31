@@ -36,6 +36,7 @@ class AiWriteSettingsSection extends StatelessWidget {
     required this.onCeiling,
     required this.onStartingLevel,
     required this.onAttribution,
+    this.footer = const [],
   });
 
   final AiAccountRecord record;
@@ -44,6 +45,10 @@ class AiWriteSettingsSection extends StatelessWidget {
   final ValueChanged<AiAutonomyLevel> onCeiling;
   final ValueChanged<AiAutonomyLevel> onStartingLevel;
   final ValueChanged<bool> onAttribution;
+
+  /// Rows that belong to AI writes but live elsewhere, such as the change
+  /// log, kept inside this section rather than loose on the canvas.
+  final List<Widget> footer;
 
   @override
   Widget build(BuildContext context) {
@@ -68,13 +73,13 @@ class AiWriteSettingsSection extends StatelessWidget {
       title: l10n.aiWriteSettingsTitle,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
           child: Text(l10n.aiWriteSettingsIntro, style: muted),
         ),
         ListTile(
           key: const ValueKey('ai-write-ceiling'),
           enabled: ceilingEnabled,
-          leading: const Icon(Icons.vertical_align_top),
+          leading: const NeutralTile(Icons.vertical_align_top),
           title: Text(l10n.aiWriteCeiling),
           subtitle: Text(
             '${aiLevelLabel(record.ceiling)}\n${l10n.aiWriteCeilingHint}',
@@ -94,7 +99,7 @@ class AiWriteSettingsSection extends StatelessWidget {
         ListTile(
           key: const ValueKey('ai-write-starting'),
           enabled: enabled,
-          leading: const Icon(Icons.play_circle_outline),
+          leading: const NeutralTile(Icons.play_circle_outline),
           title: Text(l10n.aiWriteStartingLevel),
           subtitle: Text(aiLevelLabel(record.startingLevel)),
           trailing: const Icon(Icons.chevron_right),
@@ -112,12 +117,13 @@ class AiWriteSettingsSection extends StatelessWidget {
         ),
         SwitchListTile(
           key: const ValueKey('ai-write-attribution'),
-          secondary: const Icon(Icons.auto_awesome_outlined),
+          secondary: const NeutralTile(Icons.auto_awesome_outlined),
           title: Text(l10n.aiWriteAttribution),
           subtitle: Text(l10n.aiWriteAttributionHint),
           value: record.aiAttribution,
           onChanged: enabled ? onAttribution : null,
         ),
+        ...footer,
       ],
     );
   }

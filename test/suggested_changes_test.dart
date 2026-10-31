@@ -500,6 +500,20 @@ lineB();
       final applyBtn = find.byKey(const ValueKey('apply-suggestion-9902'));
       expect(applyBtn, findsOneWidget);
 
+      // The thread card's top gap moves the button under the floating
+      // thread navigator; scroll the diff list a little first.
+      await tester.drag(
+        find
+            .ancestor(
+              of: applyBtn,
+              matching: find.byWidgetPredicate(
+                (widget) => widget is Scrollable && widget.axisDirection == AxisDirection.down,
+              ),
+            )
+            .first,
+        const Offset(0, -150),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(applyBtn);
       await tester.pumpAndSettle();
 

@@ -780,12 +780,28 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                                     },
                                     child: Text(allViewed ? l10n.unmarkAllViewed : l10n.markAllAsViewed),
                                   );
+                                  // The action stays beside the count when
+                                  // both fit on one line (icon and gap 26 dp,
+                                  // button padding 16 dp, either label);
+                                  // otherwise, and at large text, it takes
+                                  // its own row.
+                                  final theme = Theme.of(context);
+                                  final actionWidth = math.max(
+                                    measureTextWidth(context, l10n.markAllAsViewed, theme.textTheme.labelLarge),
+                                    measureTextWidth(context, l10n.unmarkAllViewed, theme.textTheme.labelLarge),
+                                  );
+                                  final summaryWidth = measureTextWidth(
+                                    context,
+                                    l10n.reviewProgress(viewedCount, files.length),
+                                    theme.textTheme.titleSmall,
+                                  );
                                   final compact =
-                                      constraints.maxWidth < 420 ||
                                       MediaQuery.textScalerOf(
                                             context,
                                           ).scale(1) >
-                                          1.3;
+                                          1.3 ||
+                                      26 + summaryWidth + 16 + actionWidth + 4 >
+                                          constraints.maxWidth;
                                   if (compact) {
                                     return Column(
                                       crossAxisAlignment:
@@ -793,7 +809,8 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                                       children: [
                                         summary,
                                         Align(
-                                          alignment: Alignment.centerRight,
+                                          alignment:
+                                              AlignmentDirectional.centerEnd,
                                           child: action,
                                         ),
                                       ],
@@ -1879,6 +1896,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
             ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       appBar: AppBar(
+        titleSpacing: 0,
         title: Text(
           diffFilePath(widget.file),
           maxLines: 1,
@@ -2111,7 +2129,8 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                       ),
                                       child: Directionality(textDirection: TextDirection.ltr, child: Row(
                                         crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                            CrossAxisAlignment.baseline,
+                                        textBaseline: TextBaseline.alphabetic,
                                         children: [
                                           SizedBox(
                                             width: 30,
@@ -2122,8 +2141,9 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                                   MediaQuery.textScalerOf(
                                                     context,
                                                   ).clamp(maxScaleFactor: 1.3),
-                                              style: TextStyle(
-                                                fontSize: 10,
+                                              style: codeTextStyle(
+                                                context,
+                                                fontSize: 11,
                                                 color: scheme.onSurfaceVariant,
                                               ),
                                             ),
@@ -2137,8 +2157,9 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                                   MediaQuery.textScalerOf(
                                                     context,
                                                   ).clamp(maxScaleFactor: 1.3),
-                                              style: TextStyle(
-                                                fontSize: 10,
+                                              style: codeTextStyle(
+                                                context,
+                                                fontSize: 11,
                                                 color: scheme.onSurfaceVariant,
                                               ),
                                             ),
@@ -2339,7 +2360,7 @@ class _DiffThreadCard extends StatelessWidget {
     final theme = Theme.of(context);
     final resolved = _resolved(discussion);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 12, 8),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8),
       child: Card(
         margin: EdgeInsets.zero,
         child: Padding(

@@ -2111,6 +2111,7 @@
   "aiReplayProtectionStopped": "पहले भेजी गई सामग्री में नया रहस्य मिला। भेजी गई सामग्री वापस नहीं ली जा सकती, इसलिए उत्तर रोक दिया गया",
   "aiEndTokenBudget": "इस बातचीत की उपयोग सीमा पूरी हो गई। नई बातचीत शुरू करें",
   "aiAssistantLabel": "AI सहायक",
+  "aiSectionTitle": "AI सुविधाएँ",
   "aiRunChannelName": "AI का बैकग्राउंड काम",
   "aiRunServiceTitle": "AI सहायक काम कर रहा है",
   "aiRunServiceText": "आप ऐप छोड़ सकते हैं; काम चलता रहेगा।",

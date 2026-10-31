@@ -2111,6 +2111,7 @@
   "aiReplayProtectionStopped": "V již odeslaném obsahu byl zjištěn nový tajný údaj. Odpověď byla zastavena, protože odeslaný obsah nelze vzít zpět",
   "aiEndTokenBudget": "Konverzace dosáhla limitu využití. Zahajte novou konverzaci",
   "aiAssistantLabel": "Asistent AI",
+  "aiSectionTitle": "Funkce AI",
   "aiRunChannelName": "Práce AI na pozadí",
   "aiRunServiceTitle": "Asistent AI pracuje",
   "aiRunServiceText": "Aplikaci můžete opustit, práce bude pokračovat.",

@@ -608,6 +608,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
 
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 0,
         title: const Text('CI / CD'),
         actions: [
           IconButton(
@@ -641,7 +642,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: EdgeInsets.fromLTRB(gutter + 4, 0, gutter, 8),
+              padding: EdgeInsetsDirectional.fromSTEB(gutter, 8, gutter, 8),
               child: Text(
                 l10n.selectProjectForCi,
                 maxLines: 1,

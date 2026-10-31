@@ -605,6 +605,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('編輯'));
     await tester.pumpAndSettle();
+    // The labelled fields above can push the severity field below the
+    // test window, as the creation test above already allows for.
+    await tester.ensureVisible(find.byKey(const ValueKey('editor-severity')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('editor-severity')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('嚴重').last);
@@ -702,6 +706,10 @@ void main() {
     await tester.tap(find.byTooltip('更多操作'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('編輯'));
+    await tester.pumpAndSettle();
+    // The labelled fields above can push the severity field below the
+    // test window, as the creation test above already allows for.
+    await tester.ensureVisible(find.byKey(const ValueKey('editor-severity')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('editor-severity')));
     await tester.pumpAndSettle();

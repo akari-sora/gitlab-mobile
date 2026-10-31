@@ -7,6 +7,13 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart' as mui;
 
 import 'artifact_storage.dart';
+import 'layout_constants.dart';
+
+/// The rounded filled field border used by every input state.
+UnderlineInputBorder _filledBorder(BorderSide side) => UnderlineInputBorder(
+  borderRadius: const BorderRadius.all(Radius.circular(10)),
+  borderSide: side,
+);
 
 /// Transparent edge-to-edge bars whose icons contrast with [surface].
 /// Light surfaces get dark icons; dark surfaces get light icons.
@@ -335,16 +342,29 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
         side: BorderSide(color: hairline)),
     ),
     dividerTheme: DividerThemeData(color: hairline, thickness: 1, space: 1),
+    // Tiles line up with `HubRow`: text after a 32 dp leading slot and a
+    // 16 dp gap (64 dp from the edge), trailing controls 16 dp from the end.
     listTileTheme: ListTileThemeData(
       minTileHeight: 48, iconColor: scheme.onSurfaceVariant,
+      contentPadding: const EdgeInsetsDirectional.symmetric(horizontal: SharedLayout.gutter),
+      minLeadingWidth: SharedLayout.leadingSlot, horizontalTitleGap: SharedLayout.leadingGap,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ),
+    // Underline borders, not outlines: an outline border floats the label
+    // onto its top edge, half outside the fill. A non-outline border keeps
+    // the label inside the rounded fill, which `UnderlineInputBorder` paints
+    // with its full radius (`paintInterior`); with no border side it draws
+    // no line. Every state uses the same kind so focus never moves the label.
+    // All state borders are set here, so a field's own `border:` has no effect.
     inputDecorationTheme: InputDecorationTheme(
       filled: true, fillColor: inputFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: scheme.primary, width: 1.5)),
+      border: _filledBorder(BorderSide.none),
+      enabledBorder: _filledBorder(BorderSide.none),
+      disabledBorder: _filledBorder(BorderSide.none),
+      errorBorder: _filledBorder(BorderSide.none),
+      focusedBorder: _filledBorder(BorderSide(color: scheme.primary, width: 2)),
+      focusedErrorBorder: _filledBorder(BorderSide(color: scheme.error, width: 2)),
     ),
     chipTheme: ChipThemeData(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

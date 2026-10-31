@@ -752,6 +752,15 @@ void main() {
         await tester.pump();
         expect(source, findsOneWidget);
       }
+      // Without a field border of its own (the app theme sets every state
+      // border) the default test theme lays the fields out taller, so the
+      // start picker can be scrolled past by now: scroll back up to it.
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('work-item-dates-start-picker')),
+        -80,
+        scrollable: scroll,
+      );
+      await tester.pump();
       for (final target in [
         find.byKey(const ValueKey('work-item-dates-start-picker')),
         find.byKey(const ValueKey('work-item-dates-start-clear')),

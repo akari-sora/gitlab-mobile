@@ -13,6 +13,7 @@ import '../../core/ai/wire/anthropic_messages.dart';
 import '../../core/ai/wire/chat_completions.dart';
 import '../../core/ai/wire/responses.dart';
 import '../../l10n/l10n.dart';
+import '../../shared/layout_constants.dart';
 import '../../shared/workspace_ui.dart';
 import '../demo/demo_scope.dart';
 import 'ai_consent_dialog.dart';
@@ -1103,6 +1104,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       child: _WrappingFieldMessages(
         child: Scaffold(
           appBar: AppBar(
+            titleSpacing: 0,
             title: Text(
               _editing
                   ? l10n.aiProviderEditorEditTitle
@@ -1124,7 +1126,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
             child: Form(
               key: _formKey,
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -1173,7 +1175,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                               if (preset != null) _selectPreset(preset);
                             },
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: SharedLayout.fieldGap),
                     TextFormField(
                       key: const ValueKey('ai-provider-name'),
                       controller: _name,
@@ -1184,10 +1186,10 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                           : null,
                     ),
                     if (_preset.onDevice) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: SharedLayout.fieldGap),
                       _buildOnDeviceSection(),
                     ] else ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: SharedLayout.fieldGap),
                       DropdownButtonFormField<AiFormat>(
                         key: const ValueKey('ai-provider-format'),
                         isExpanded: true,
@@ -1208,7 +1210,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                                 if (format != null) _selectFormat(format);
                               },
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: SharedLayout.fieldGap),
                       KeyedSubtree(
                         key: _baseUrlFieldKey,
                         child: TextFormField(
@@ -1226,6 +1228,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                           ),
                         ),
                       ),
+                      // Clear of the field above, like the switches below.
+                      if (_showsCleartextControl || _preset.id == 'custom')
+                        const SizedBox(height: 8),
                       if (_showsCleartextControl)
                         SwitchListTile(
                           key: const ValueKey('ai-provider-cleartext'),
@@ -1262,7 +1267,14 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                                 },
                         ),
                       if (_requiresKey) ...[
-                        const SizedBox(height: 4),
+                        // A field gap straight after the base URL; a switch
+                        // above already brings its own padding.
+                        SizedBox(
+                          height:
+                              _showsCleartextControl || _preset.id == 'custom'
+                              ? 8
+                              : SharedLayout.fieldGap,
+                        ),
                         TextFormField(
                           key: const ValueKey('ai-provider-api-key'),
                           controller: _apiKey,
@@ -1318,7 +1330,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                             ),
                           ),
                       ],
-                      const SizedBox(height: 12),
+                      const SizedBox(height: SharedLayout.fieldGap),
                       TextFormField(
                         key: const ValueKey('ai-provider-model'),
                         controller: _model,
@@ -1410,9 +1422,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                       childrenPadding: EdgeInsets.zero,
                       title: Text(l10n.aiProviderAdvancedTitle),
                       children: [
-                        // Room for the first field's floating label, which
-                        // the tile's clip would otherwise cut.
-                        const SizedBox(height: 12),
+                        // A gap under the tile's title before the first
+                        // field.
+                        const SizedBox(height: 8),
                         if (!_preset.onDevice) ...[
                           KeyedSubtree(
                             key: _modelsUrlFieldKey,
@@ -1429,7 +1441,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                           SwitchListTile(
                             contentPadding: EdgeInsets.zero,
                             title: Text(l10n.aiProviderToolsEnabled),
@@ -1442,8 +1454,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                             onChanged: (value) =>
                                 setState(() => _toolsEnabled = value),
                           ),
-                          const SizedBox(height: 8),
-                          if (_requiresKey)
+                          const SizedBox(height: SharedLayout.fieldGap),
+                          if (_requiresKey) ...[
                             DropdownButtonFormField<AiAuthStyle>(
                               key: const ValueKey('ai-provider-auth-style'),
                               isExpanded: true,
@@ -1470,6 +1482,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                                 }
                               },
                             ),
+                            const SizedBox(height: SharedLayout.fieldGap),
+                          ],
                           DropdownButtonFormField<AiTokenLimitField>(
                             key: const ValueKey(
                               'ai-provider-token-limit-field',
@@ -1492,6 +1506,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                               }
                             },
                           ),
+                          const SizedBox(height: 8),
                           _capSwitch(
                             l10n.aiProviderToolChoiceCapability,
                             _caps.toolChoice,
@@ -1518,6 +1533,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                             _caps.promptCaching,
                             (value) => _copyCaps(promptCaching: value),
                           ),
+                          const SizedBox(height: SharedLayout.fieldGap),
                         ],
                         KeyedSubtree(
                           key: _requestLimitFieldKey,
@@ -1531,7 +1547,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: SharedLayout.fieldGap),
                         KeyedSubtree(
                           key: _outputLimitFieldKey,
                           child: TextFormField(

@@ -1528,6 +1528,7 @@ class _MobileShellState extends State<_MobileShell> {
             ),
             if (ai != null && demo == null)
               HubSection(
+                title: l10n.aiSectionTitle,
                 children: [
                   HubRow(
                     key: const ValueKey('ai-settings-row'),
@@ -1563,7 +1564,7 @@ class _MobileShellState extends State<_MobileShell> {
                   child: AppearancePicker(mode: widget.theme, onChanged: widget.changeTheme),
                 ),
                 SwitchListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  secondary: const IconTile(Icons.palette_outlined, color: HubColors.pink),
                   title: Text(l10n.useSystemColorsMaterialYou),
                   subtitle: Text(
                     widget.dynamicColorAvailable
@@ -1576,15 +1577,14 @@ class _MobileShellState extends State<_MobileShell> {
                       : null,
                 ),
                 if (widget.language case final language? when demo == null)
-                  ListTile(
+                  HubRow(
                     key: const ValueKey('language-row'),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    leading: const Icon(Icons.translate),
-                    title: Text(l10n.appLanguage),
-                    subtitle: Text(language.choice == null
+                    leading: const IconTile(Icons.translate, color: HubColors.teal),
+                    title: l10n.appLanguage,
+                    subtitle: language.choice == null
                         ? l10n.languageFollowsSystem(language.language.name)
-                        : language.language.name),
-                    trailing: const Icon(Icons.chevron_right),
+                        : language.language.name,
+                    chevron: true,
                     onTap: () => unawaited(_pickLanguage(language)),
                   ),
               ],
@@ -1597,8 +1597,7 @@ class _MobileShellState extends State<_MobileShell> {
                   children: [
                     SwitchListTile(
                       key: const ValueKey('app-lock-switch'),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                      secondary: const Icon(Icons.lock_outline),
+                      secondary: const IconTile(Icons.lock_outline, color: HubColors.slate),
                       title: Text(l10n.appLockLabel),
                       subtitle: Text(lock.available || lock.enabled
                           ? l10n.appLockAfterOpenOrLeave
@@ -1637,26 +1636,27 @@ class _MobileShellState extends State<_MobileShell> {
                   OfflineProjectsEntry(account: account),
                 ],
               ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text(
-                  appName,
-                  style: TextStyle(fontWeight: FontWeight.w600),
+            // About: a section like the others, its notes in the muted
+            // small style.
+            HubSection(
+              title: appName,
+              divider: false,
+              children: [
+                Padding(
+                  padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 16),
+                  child: DefaultTextStyle.merge(
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      BuildInfoLine(load: widget.buildInfoLoader),
+                      const SizedBox(height: 8),
+                      Text(appIndependence),
+                      const SizedBox(height: 8),
+                      Text(l10n.tokenScopeLimitsHint),
+                    ]),
+                  ),
                 ),
-                const SizedBox(height: 4),
-                BuildInfoLine(load: widget.buildInfoLoader),
-                const SizedBox(height: 4),
-                Text(
-                  appIndependence,
-                  style: TextStyle(fontSize: 12),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  l10n.tokenScopeLimitsHint,
-                  style: TextStyle(fontSize: 12),
-                ),
-              ]),
+              ],
             ),
           ],
         ),

@@ -10,6 +10,7 @@ import '../../core/providers.dart';
 import '../../core/release_assets.dart';
 import '../../core/repository_ref.dart';
 import '../../core/work_item_types.dart';
+import '../../shared/layout_constants.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
@@ -415,11 +416,11 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   Widget _section(BuildContext context, String title, List<(IconData, String, VoidCallback)> entries) => Padding(
     padding: const EdgeInsets.only(top: 16),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(padding: const EdgeInsets.only(left: 4, bottom: 6), child: Text(title,
+      Padding(padding: const EdgeInsetsDirectional.only(bottom: 6), child: Text(title,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
       Card(child: Column(children: [
         for (final (index, (icon, label, onTap)) in entries.indexed) ...[
-          if (index > 0) const Divider(height: 1, indent: 56),
+          if (index > 0) const Divider(height: 1, indent: SharedLayout.rowTextInset),
           ListTile(leading: Icon(icon), title: Text(label), trailing: const Icon(Icons.chevron_right, size: 18), onTap: onTap),
         ],
       ])),
@@ -556,7 +557,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
         (Icons.event_repeat_outlined, l10n.pipelineSchedules, () => _push(PipelineSchedulesPage(account: account, api: api, project: project))),
       ]),
       const SizedBox(height: 16),
-      Padding(padding: const EdgeInsets.only(left: 4, bottom: 6), child: Text(l10n.projectManagement,
+      Padding(padding: const EdgeInsetsDirectional.only(bottom: 6), child: Text(l10n.projectManagement,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
       Card(child: ListTile(leading: const Icon(Icons.settings_outlined), title: Text(l10n.nameAndDescription),
         trailing: const Icon(Icons.chevron_right, size: 18),
@@ -847,7 +848,7 @@ class _MetadataPageState extends State<MetadataPage> {
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
-  static Widget _inset(Widget child) => Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: child);
+  static Widget _inset(Widget child) => Padding(padding: const EdgeInsets.symmetric(horizontal: SharedLayout.gutter), child: child);
 
   /// The branch or tag pinned to its commit, or null without a valid SHA.
   static RepositoryRef? _pinnedRef(Json value, MetadataKind kind) {
@@ -945,7 +946,7 @@ class _MetadataPageState extends State<MetadataPage> {
       trailing: const Icon(Icons.chevron_right, size: 18), onTap: onTap);
     Widget rows(List<Widget> children) => _inset(Card(child: Column(children: [
       for (final (index, child) in children.indexed) ...[
-        if (index > 0) const Divider(height: 1, indent: 56),
+        if (index > 0) const Divider(height: 1, indent: SharedLayout.rowTextInset),
         child,
       ],
     ])));

@@ -2111,6 +2111,7 @@
   "aiReplayProtectionStopped": "ตรวจพบความลับใหม่ในเนื้อหาที่ส่งไปแล้ว จึงหยุดคำตอบเพราะไม่สามารถเรียกคืนเนื้อหาที่ส่งไปแล้วได้",
   "aiEndTokenBudget": "การสนทนานี้ถึงขีดจำกัดการใช้งานแล้ว โปรดเริ่มการสนทนาใหม่",
   "aiAssistantLabel": "ผู้ช่วย AI",
+  "aiSectionTitle": "ฟีเจอร์ AI",
   "aiRunChannelName": "งาน AI เบื้องหลัง",
   "aiRunServiceTitle": "ผู้ช่วย AI กำลังทำงาน",
   "aiRunServiceText": "ออกจากแอปได้ งานจะยังทำต่อไป",

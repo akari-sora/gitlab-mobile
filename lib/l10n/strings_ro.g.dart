@@ -2115,6 +2115,7 @@ const _messagesRo = <String>[
   'A fost detectat un secret nou în conținut deja trimis. Răspunsul a fost oprit deoarece conținutul trimis nu poate fi retras',
   'Conversația a atins limita de utilizare. Începeți o conversație nouă',
   'Asistent AI',
+  'Funcții AI',
   'Activitate AI în fundal',
   'Asistentul AI lucrează',
   'Poți ieși din aplicație; lucrul continuă.',

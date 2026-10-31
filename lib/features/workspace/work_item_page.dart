@@ -1468,30 +1468,26 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                 ),
               ],
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(key: const ValueKey('mr-draft-review-btn'), onPressed: _busy ? null : () => _openDraftReview(data), icon: const Icon(Icons.rate_review_outlined, size: 18), label: Text(l10n.reviewDrafts)),
-                  if (hasApproved)
-                    OutlinedButton.icon(key: const ValueKey('mr-unapprove-btn'), onPressed: _busy ? null : () => _action('unapprove'), icon: const Icon(Icons.undo, size: 18), label: Text(l10n.revokeMyApproval))
-                  else
-                    OutlinedButton.icon(key: const ValueKey('mr-approve-btn'), onPressed: _busy ? null : () => _action('approve'), icon: const Icon(Icons.verified_outlined, size: 18), label: Text(l10n.approve2)),
-                  if (rebaseInProgress)
-                    OutlinedButton.icon(
-                      key: const ValueKey('mr-rebase-progress-btn'),
-                      onPressed: null,
-                      icon: const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                      label: Text(l10n.rebaseInProgress),
-                    )
-                  else if (canRebase)
-                    OutlinedButton.icon(key: const ValueKey('mr-rebase-btn'), onPressed: _busy ? null : () => _action('rebase'), icon: const Icon(Icons.fork_right, size: 18), label: Text(divergedCommits > 0 ? l10n.rebaseBehindCount(divergedCommits) : 'Rebase')),
-                  if (autoScheduled)
-                    OutlinedButton.icon(key: const ValueKey('cancel-auto-merge'), onPressed: _busy ? null : () => _action('cancel_auto_merge'), icon: const Icon(Icons.close, size: 18), label: Text(l10n.cancelAutoMerge))
-                  else
-                    FilledButton.icon(onPressed: _busy ? null : () => _action('merge'), icon: Icon(autoCandidate ? Icons.schedule_send : Icons.merge, size: 18), label: Text(autoCandidate ? l10n.autoMergeEllipsis : l10n.merge)),
-                ],
+              // The merge (or cancel) action spans the card on its own row;
+              // the review actions share the row under it evenly.
+              SizedBox(
+                width: double.infinity,
+                child: autoScheduled
+                    ? OutlinedButton.icon(key: const ValueKey('cancel-auto-merge'), onPressed: _busy ? null : () => _action('cancel_auto_merge'), icon: const Icon(Icons.close, size: 18), label: Text(l10n.cancelAutoMerge))
+                    : FilledButton.icon(onPressed: _busy ? null : () => _action('merge'), icon: Icon(autoCandidate ? Icons.schedule_send : Icons.merge, size: 18), label: Text(autoCandidate ? l10n.autoMergeEllipsis : l10n.merge)),
               ),
+              const SizedBox(height: 8),
+              _reviewActions([
+                (key: const ValueKey('mr-draft-review-btn'), onPressed: _busy ? null : () => _openDraftReview(data), icon: const Icon(Icons.rate_review_outlined, size: 18), label: l10n.reviewDrafts),
+                if (hasApproved)
+                  (key: const ValueKey('mr-unapprove-btn'), onPressed: _busy ? null : () => _action('unapprove'), icon: const Icon(Icons.undo, size: 18), label: l10n.revokeMyApproval)
+                else
+                  (key: const ValueKey('mr-approve-btn'), onPressed: _busy ? null : () => _action('approve'), icon: const Icon(Icons.verified_outlined, size: 18), label: l10n.approve2),
+                if (rebaseInProgress)
+                  (key: const ValueKey('mr-rebase-progress-btn'), onPressed: null, icon: const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)), label: l10n.rebaseInProgress)
+                else if (canRebase)
+                  (key: const ValueKey('mr-rebase-btn'), onPressed: _busy ? null : () => _action('rebase'), icon: const Icon(Icons.fork_right, size: 18), label: divergedCommits > 0 ? l10n.rebaseBehindCount(divergedCommits) : 'Rebase'),
+              ]),
             ],
           ),
         ),
@@ -1612,7 +1608,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
     final rows = <Widget>[];
     void add(IconData icon, String label, String value) {
       rows
-        ..add(const Divider(height: 20))
+        ..add(const Divider(height: 24))
         ..add(
           Row(
             children: [
@@ -1640,13 +1636,16 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
     final subscribed = data['subscribed'];
     if (subscribed is bool) {
       rows
-        ..add(const Divider(height: 12))
+        ..add(const Divider(height: 24))
         ..add(
           SwitchListTile(
             key: const ValueKey('work-item-subscribe'),
             contentPadding: EdgeInsets.zero,
             minTileHeight: 48,
-            secondary: Icon(subscribed ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, color: muted),
+            // The same icon column as the attribute rows above.
+            minLeadingWidth: 18,
+            horizontalTitleGap: 10,
+            secondary: Icon(subscribed ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, size: 18, color: muted),
             title: Text(l10n.notifications),
             subtitle: Text(subscribed ? l10n.notifyOnNewActivity : l10n.muteItemNotifications),
             value: subscribed,
@@ -1684,13 +1683,19 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(l10n.assignee, style: Theme.of(context).textTheme.titleSmall),
-            TextButton.icon(
-              key: const ValueKey('quick-edit-assignees'),
-              onPressed: _busy ? null : _editAssignees,
-              icon: const Icon(Icons.group_add_outlined, size: 16),
-              label: Text(l10n.editList),
-              style: TextButton.styleFrom(visualDensity: VisualDensity.compact, minimumSize: const Size(48, 48)),
+            // Both shrink and wrap in a long translation or at large text.
+            Flexible(child: Text(l10n.assignee, style: Theme.of(context).textTheme.titleSmall)),
+            // The button gets the larger share: Flexible does not hand a short
+            // title's unused width to its sibling.
+            Flexible(
+              flex: 2,
+              child: TextButton.icon(
+                key: const ValueKey('quick-edit-assignees'),
+                onPressed: _busy ? null : _editAssignees,
+                icon: const Icon(Icons.group_add_outlined, size: 16),
+                label: Text(l10n.editList),
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact, minimumSize: const Size(48, 48)),
+              ),
             ),
           ],
         ),
@@ -1734,13 +1739,16 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(l10n.reviewers, style: Theme.of(context).textTheme.titleSmall),
-            TextButton.icon(
-              key: const ValueKey('quick-edit-reviewers'),
-              onPressed: _busy ? null : _editReviewers,
-              icon: const Icon(Icons.person_search_outlined, size: 16),
-              label: Text(l10n.editReviewers),
-              style: TextButton.styleFrom(visualDensity: VisualDensity.compact, minimumSize: const Size(48, 48)),
+            Flexible(child: Text(l10n.reviewers, style: Theme.of(context).textTheme.titleSmall)),
+            Flexible(
+              flex: 2,
+              child: TextButton.icon(
+                key: const ValueKey('quick-edit-reviewers'),
+                onPressed: _busy ? null : _editReviewers,
+                icon: const Icon(Icons.person_search_outlined, size: 16),
+                label: Text(l10n.editReviewers),
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact, minimumSize: const Size(48, 48)),
+              ),
             ),
           ],
         ),
@@ -1780,13 +1788,16 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(l10n.labelNoun, style: Theme.of(context).textTheme.titleSmall),
-            TextButton.icon(
-              key: const ValueKey('quick-edit-labels'),
-              onPressed: _busy ? null : _editLabelsQuick,
-              icon: const Icon(Icons.label_outline, size: 16),
-              label: Text(l10n.manageLabels),
-              style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+            Flexible(child: Text(l10n.labelNoun, style: Theme.of(context).textTheme.titleSmall)),
+            Flexible(
+              flex: 2,
+              child: TextButton.icon(
+                key: const ValueKey('quick-edit-labels'),
+                onPressed: _busy ? null : _editLabelsQuick,
+                icon: const Icon(Icons.label_outline, size: 16),
+                label: Text(l10n.manageLabels),
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+              ),
             ),
           ],
         ),
@@ -1893,7 +1904,12 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
     final author = valueObject(data, 'author');
     final authorName = valueText(author, 'name', valueText(author, 'username'));
     final created = relativeDate(valueText(data, 'created_at'));
-    final crowded = MediaQuery.textScalerOf(context).scale(14) > 14 * 1.3;
+    final tabLabels = [
+      l10n.summary,
+      if (mr) l10n.changes,
+      l10n.thread,
+      if (mr) l10n.checks,
+    ];
     return Scaffold(
       body: NotificationListener<ScrollNotification>(
         onNotification: _chrome.handle,
@@ -1965,18 +1981,18 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                       onRetry: () => unawaited(_load(fresh: true)),
                     ),
                   ),
-                TabBar(
-                  controller: _tabs,
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  isScrollable: crowded,
-                  tabAlignment: crowded ? TabAlignment.start : null,
-                  tabs: [
-                    Tab(text: l10n.summary),
-                    if (mr) Tab(text: l10n.changes),
-                    Tab(text: l10n.thread),
-                    if (mr) Tab(text: l10n.checks),
-                  ],
-                ),
+                // Scrolls at large text and when a translation is too long
+                // for an even share, instead of cutting the label.
+                LayoutBuilder(builder: (context, constraints) {
+                  final crowded = tabLabelsCrowded(context, tabLabels, constraints.maxWidth);
+                  return TabBar(
+                    controller: _tabs,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    isScrollable: crowded,
+                    tabAlignment: crowded ? TabAlignment.start : null,
+                    tabs: [for (final label in tabLabels) Tab(text: label)],
+                  );
+                }),
                 Expanded(
                   child: NotificationListener<KeepAliveNotification>(onNotification: (_) => true, child: TabBarView(
                     controller: _tabs,
@@ -2036,18 +2052,26 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                           const SizedBox(height: 16),
                           Card(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(14, 4, 8, 12),
+                              padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 8, 12),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   _buildAssigneesSection(data),
-                                  if (mr) ...[const Divider(height: 20), _buildReviewersSection(data)],
-                                  const Divider(height: 20),
+                                  if (mr) ...[const Divider(height: 24), _buildReviewersSection(data)],
+                                  const Divider(height: 24),
                                   _buildLabelsSection(data),
                                   if (valueObject(data, 'milestone').isNotEmpty) ...[
-                                    const Divider(height: 20),
-                                    Text(l10n.milestoneLabel, style: Theme.of(context).textTheme.titleSmall),
-                                    const SizedBox(height: 8),
+                                    const Divider(height: 24),
+                                    // As tall as the headings above, which
+                                    // carry a 48 dp edit button.
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(minHeight: 48),
+                                      child: Align(
+                                        alignment: AlignmentDirectional.centerStart,
+                                        child: Text(l10n.milestoneLabel, style: Theme.of(context).textTheme.titleSmall),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
                                     Wrap(
                                       spacing: 8,
                                       runSpacing: 2,
@@ -2311,7 +2335,7 @@ class _MergeChecksState extends State<_MergeChecks> {
 
   @override
   Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.all(20),
+    padding: const EdgeInsets.all(16),
     children: [
       Text(l10n.mergeConditions, style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 10),
@@ -2321,7 +2345,9 @@ class _MergeChecksState extends State<_MergeChecks> {
         l10n.versionShortSha(shortSha(valueText(widget.data, 'sha'))),
         style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace']),
       ),
-      if (widget.data['head_pipeline'] is Json) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: StatusBadge(valueText(valueObject(widget.data, 'head_pipeline'), 'status'))),
+      if (widget.data['head_pipeline'] is Json) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: StatusBadge(valueText(valueObject(widget.data, 'head_pipeline'), 'status')))),
       const Divider(height: 32),
       Text(l10n.review, style: Theme.of(context).textTheme.titleMedium),
       FutureBuilder<Json>(
@@ -2630,3 +2656,56 @@ String mergeStatusLabel(Json data) {
     _ => l10n.statusToken(token),
   };
 }
+
+/// One outlined review action under the merge button.
+typedef _ReviewAction = ({Key key, VoidCallback? onPressed, Widget icon, String label});
+
+/// The review actions under the merge button. They share one row in equal
+/// parts, 8 dp apart and of one height, only when every label fits its part
+/// on one line; otherwise each spans the card, so a long translation never
+/// breaks inside a word. The side padding is 12 dp in both layouts.
+Widget _reviewActions(List<_ReviewAction> actions) => LayoutBuilder(
+  builder: (context, constraints) {
+    const gap = 8.0, side = 12.0;
+    final theme = Theme.of(context);
+    final share = (constraints.maxWidth - gap * (actions.length - 1)) / actions.length;
+    // Icon 18 dp and its 8 dp gap, both side paddings, the outline and a
+    // little slack for rounding.
+    final fits = actions.every((action) =>
+        measureTextWidth(context, action.label, theme.textTheme.labelLarge) + 18 + 8 + 2 * side + 4 <= share);
+    Widget button(_ReviewAction action) => OutlinedButton.icon(
+      key: action.key,
+      onPressed: action.onPressed,
+      icon: action.icon,
+      label: Text(action.label),
+    );
+    return OutlinedButtonTheme(
+      data: OutlinedButtonThemeData(
+        style: (theme.outlinedButtonTheme.style ?? const ButtonStyle()).copyWith(
+          padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: side)),
+        ),
+      ),
+      child: fits
+          ? IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (index, action) in actions.indexed) ...[
+                    if (index > 0) const SizedBox(width: gap),
+                    Expanded(child: button(action)),
+                  ],
+                ],
+              ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final (index, action) in actions.indexed) ...[
+                  if (index > 0) const SizedBox(height: gap),
+                  button(action),
+                ],
+              ],
+            ),
+    );
+  },
+);

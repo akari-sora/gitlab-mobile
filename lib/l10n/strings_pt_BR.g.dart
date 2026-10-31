@@ -2115,6 +2115,7 @@ const _messagesPtBr = <String>[
   'Um novo segredo foi detectado em conteúdo já enviado. A resposta foi interrompida porque o conteúdo enviado não pode ser retirado',
   'A conversa atingiu o limite de uso. Inicie uma nova conversa',
   'Assistente de IA',
+  'Recursos de IA',
   'Trabalho de IA em segundo plano',
   'O assistente de IA está trabalhando',
   'Você pode sair do app; o trabalho continua.',

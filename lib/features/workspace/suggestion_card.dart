@@ -276,7 +276,6 @@ class _ApplySuggestionDialogState extends State<_ApplySuggestionDialog> {
             controller: _controller,
             decoration: InputDecoration(
               labelText: l10n.suggestionCommitMessage,
-              border: OutlineInputBorder(),
             ),
             maxLines: 2,
           ),

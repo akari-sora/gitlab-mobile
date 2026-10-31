@@ -2111,6 +2111,7 @@
   "aiReplayProtectionStopped": "En ny hemlighet upptäcktes i redan skickat innehåll. Svaret stoppades eftersom skickat innehåll inte kan återkallas",
   "aiEndTokenBudget": "Konversationen har nått användningsgränsen. Starta en ny konversation",
   "aiAssistantLabel": "AI-assistent",
+  "aiSectionTitle": "AI-funktioner",
   "aiRunChannelName": "AI-arbete i bakgrunden",
   "aiRunServiceTitle": "AI-assistenten arbetar",
   "aiRunServiceText": "Du kan lämna appen; arbetet fortsätter.",

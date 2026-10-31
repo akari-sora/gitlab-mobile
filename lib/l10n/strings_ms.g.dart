@@ -2115,6 +2115,7 @@ const _messagesMs = <String>[
   'Rahsia baharu dikesan dalam kandungan yang telah dihantar. Jawapan dihentikan kerana kandungan yang dihantar tidak boleh ditarik balik',
   'Perbualan ini mencapai had penggunaan. Mulakan perbualan baharu',
   'Pembantu AI',
+  'Ciri AI',
   'Kerja AI di latar belakang',
   'Pembantu AI sedang bekerja',
   'Anda boleh meninggalkan apl; kerja terus berjalan.',

@@ -107,7 +107,7 @@ class _MyWorkPageState extends State<MyWorkPage> {
   Widget build(BuildContext context) {
     final title = _mr ? l10n.mergeRequests : l10n.issues;
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(titleSpacing: 0, title: Text(title)),
       body: gestureSafe(RecordsFeed(
         identity: '$_resource/${_scope.name}/$_state',
         storageId: 'my-work-$_resource',

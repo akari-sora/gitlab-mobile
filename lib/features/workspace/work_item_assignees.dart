@@ -526,7 +526,6 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               labelText: l10n.searchPeople,
-              border: OutlineInputBorder(),
             ),
             onChanged: _onSearchEdited,
             onSubmitted: (_) => unawaited(_submitSearch()),

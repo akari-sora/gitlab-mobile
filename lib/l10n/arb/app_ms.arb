@@ -2111,6 +2111,7 @@
   "aiReplayProtectionStopped": "Rahsia baharu dikesan dalam kandungan yang telah dihantar. Jawapan dihentikan kerana kandungan yang dihantar tidak boleh ditarik balik",
   "aiEndTokenBudget": "Perbualan ini mencapai had penggunaan. Mulakan perbualan baharu",
   "aiAssistantLabel": "Pembantu AI",
+  "aiSectionTitle": "Ciri AI",
   "aiRunChannelName": "Kerja AI di latar belakang",
   "aiRunServiceTitle": "Pembantu AI sedang bekerja",
   "aiRunServiceText": "Anda boleh meninggalkan apl; kerja terus berjalan.",

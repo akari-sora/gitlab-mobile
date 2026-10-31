@@ -175,6 +175,13 @@ void main() {
 
       // Quick edit button should be visible
       expect(find.byKey(const ValueKey('quick-edit-assignees')), findsOneWidget);
+      // The attribute card starts just past the window's end: drag the
+      // detail's list up from just above the card.
+      await tester.dragFrom(
+        tester.getTopLeft(find.byKey(const ValueKey('quick-edit-assignees'))).translate(0, -40),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('quick-edit-assignees')));
       await settleNetworkWidgets(tester);
 

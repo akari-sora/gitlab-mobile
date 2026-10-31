@@ -1527,7 +1527,8 @@ class HubSectionSkeleton extends StatelessWidget implements Skeleton {
     this.liveRegion = true,
   });
 
-  static const headingPadding = EdgeInsets.fromLTRB(16, 18, 16, 6);
+  /// Matches `HubSection`'s heading: 6 dp above a 48 dp heading row.
+  static const headingPadding = EdgeInsetsDirectional.fromSTEB(16, 6, 16, 0);
 
   final int rows;
   final bool heading;
@@ -1601,7 +1602,7 @@ class HubSectionSkeleton extends StatelessWidget implements Skeleton {
                 const Padding(
                   padding: headingPadding,
                   child: SizedBox(
-                    height: 28,
+                    height: SharedLayout.headingMinHeight,
                     child: Align(
                       alignment: AlignmentDirectional.centerStart,
                       child: SkeletonBone(

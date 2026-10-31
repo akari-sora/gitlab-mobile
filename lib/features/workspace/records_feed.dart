@@ -168,13 +168,15 @@ class RecordsFeedState extends State<RecordsFeed> {
     return sections[index];
   }
 
-  Widget _groupedRow(BuildContext context, int index, int count, Widget child) {
+  /// One row in the grouped surface. [divider] draws the hairline above it;
+  /// a row that opens a section leaves it to the section's heading.
+  Widget _groupedRow(BuildContext context, int index, int count, Widget child, {bool divider = true}) {
     final scheme = Theme.of(context).colorScheme;
     final radius = const Radius.circular(12);
     final first = index == 0, last = index == count - 1;
     final material = Material(type: MaterialType.transparency, child: child);
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      if (!first) Divider(height: 1, thickness: 1, indent: 16, color: scheme.outlineVariant.withValues(alpha: .6)),
+      if (!first && divider) Divider(height: 1, thickness: 1, indent: 16, color: scheme.outlineVariant.withValues(alpha: .6)),
       if (first || last) ClipRRect(
         borderRadius: BorderRadius.vertical(top: first ? radius : Radius.zero, bottom: last ? radius : Radius.zero),
         child: material,
@@ -212,12 +214,17 @@ class RecordsFeedState extends State<RecordsFeed> {
   Widget build(BuildContext context) => ListenableBuilder(listenable: controller, builder: (context, _) {
     _deriveRows();
     final shown = _shown, sections = _sections;
+    bool opensSection(int index) =>
+        sections != null && (index == 0 || _sectionAt(index - 1) != _sectionAt(index));
     Widget withSection(BuildContext context, int index, Widget row) {
-      if (sections == null) return row;
+      if (!opensSection(index)) return row;
       final section = _sectionAt(index);
-      if (index > 0 && _sectionAt(index - 1) == section) return row;
       return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Padding(padding: EdgeInsets.fromLTRB(widget.grouped ? 14 : 4, index == 0 ? 10 : 16, 4, 6), child: Text(section,
+        // In the grouped surface the hairline goes above the heading, so a
+        // heading reads with its own rows rather than the group before it.
+        if (widget.grouped && index > 0) Divider(height: 1, thickness: 1,
+          color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: .6)),
+        Padding(padding: EdgeInsetsDirectional.fromSTEB(widget.grouped ? 14 : 4, index == 0 ? 10 : 16, 4, 6), child: Text(section,
           style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.primary))),
         row,
       ]);
@@ -254,7 +261,8 @@ class RecordsFeedState extends State<RecordsFeed> {
         ? SliverList.builder(itemCount: shown.length,
             itemBuilder: (context, index) => _groupedSurface(context, index, shown.length,
               withSection(context, index,
-                _groupedRow(context, index, shown.length, widget.itemBuilder(context, shown[index])))))
+                _groupedRow(context, index, shown.length, widget.itemBuilder(context, shown[index]),
+                  divider: !opensSection(index)))))
         : SliverList.builder(itemCount: shown.length,
             itemBuilder: (context, index) => withSection(context, index, Padding(
               padding: EdgeInsets.only(bottom: widget.itemSpacing), child: widget.itemBuilder(context, shown[index]))));

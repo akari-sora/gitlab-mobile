@@ -1084,7 +1084,6 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                       decoration: InputDecoration(
                         labelText: l10n.searchWorkItems,
                         hintText: l10n.titleOrKeyword,
-                        border: OutlineInputBorder(),
                         counterText: '',
                       ),
                       onSubmitted: (_) => _submitSearch(),
@@ -1115,7 +1114,6 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   isExpanded: true,
                   decoration: InputDecoration(
                     labelText: l10n.sortOrder,
-                    border: OutlineInputBorder(),
                   ),
                   items: [
                     for (final sort in GroupWorkItemSort.values)
@@ -1138,7 +1136,6 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   isExpanded: true,
                   decoration: InputDecoration(
                     labelText: l10n.workItemTypeFilter,
-                    border: OutlineInputBorder(),
                   ),
                   items: [
                     DropdownMenuItem<String?>(
@@ -1608,7 +1605,6 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                       decoration: InputDecoration(
                         labelText: l10n.searchWorkItems,
                         hintText: l10n.titleOrKeyword,
-                        border: OutlineInputBorder(),
                         counterText: '',
                       ),
                       onSubmitted: (_) => _submitSearch(),
@@ -1639,7 +1635,6 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   isExpanded: true,
                   decoration: InputDecoration(
                     labelText: l10n.sortOrder,
-                    border: OutlineInputBorder(),
                   ),
                   items: [
                     for (final sort in GroupWorkItemSort.values)
