@@ -198,60 +198,32 @@ Future<bool> confirmInstanceCa(
 /// 我的 › 帳號: one row per imported CA, with or without a saved account,
 /// showing its fingerprint, with a confirmed remove action.
 ///
-/// Removing the CA of the signed-in instance checks the account again
-/// without it ([reselect], or `session.select` when absent), so the removed
-/// CA stops being trusted at once rather than at the next sign-in.
+/// Removal takes effect at the next sign-in, account switch or app start:
+/// the open client keeps the context it was built with, and the session is
+/// not touched.
 class InstanceCaRows extends StatelessWidget {
-  const InstanceCaRows({
-    super.key,
-    required this.session,
-    this.locked = false,
-    this.reselect,
-  });
+  const InstanceCaRows({super.key, required this.session, this.locked = false});
   final SessionController session;
   final bool locked;
 
-  /// Runs [action] (remove, then check the account again) through the
-  /// shell's leave confirmations; the shell passes its `_leave`.
-  final Future<void> Function(Future<void> Function() action)? reselect;
-
   Future<void> _remove(BuildContext context, GitLabInstance instance) async {
-    final active = session.active;
-    final signedIn = active != null && active.instance.key == instance.key;
     final confirmed = await confirmAction(
       context,
       l10n.removeCustomCaTitle,
-      [
-        l10n.removeCustomCaDetail(instance.base.host),
-        if (signedIn) l10n.removeCustomCaSignInAgain,
-      ].join('\n\n'),
+      l10n.removeCustomCaDetail(instance.base.host),
       confirmLabel: l10n.removeCustomCaAction,
     );
     if (!confirmed || !context.mounted) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    Future<void> removeCa() async {
-      try {
-        await session.trust.remove(instance);
-        messenger?.showSnackBar(
-          SnackBar(content: LiveText(() => l10n.customCaRemoved)),
-        );
-      } on Object catch (error) {
-        if (context.mounted) showFailure(context, error);
+    try {
+      await session.trust.remove(instance);
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: LiveText(() => l10n.customCaRemoved)));
       }
+    } on Object catch (error) {
+      if (context.mounted) showFailure(context, error);
     }
-
-    if (!signedIn) {
-      await removeCa();
-      return;
-    }
-    Future<void> removeAndCheckAgain() async {
-      await removeCa();
-      // A new client for the same account, built without the removed CA.
-      if (session.active?.key == active.key) await session.select(active);
-    }
-
-    final leave = reselect;
-    await (leave == null ? removeAndCheckAgain() : leave(removeAndCheckAgain));
   }
 
   @override

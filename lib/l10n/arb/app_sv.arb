@@ -3072,6 +3072,5 @@
   "serverCertificateNotValidNow": "Serverns certifikat har gått ut eller är inte giltigt än, och det löser inte ett importerat CA-certifikat. Be administratören förnya det eller kontrollera enhetens datum och tid.",
   "caImportDidNotHelp": "Med det här CA-certifikatet är webbplatsens certifikat fortfarande inte betrott, så det sparades inte. Ett CA-certifikat löser inte ett certifikat för ett annat värdnamn, ett utgånget certifikat eller ett från en annan CA.",
   "caReplaceWarning": "Ett CA-certifikat finns redan sparat för den här webbplatsen och ersätts. Om inte administratören har bytt CA kan det betyda att anslutningen avlyssnas.",
-  "caCurrentFingerprintLabel": "Nuvarande SHA-256-fingeravtryck",
-  "removeCustomCaSignInAgain": "Du är inloggad på den här webbplatsen, så ditt konto kontrolleras igen direkt utan det här certifikatet."
+  "caCurrentFingerprintLabel": "Nuvarande SHA-256-fingeravtryck"
 }

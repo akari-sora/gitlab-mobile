@@ -9312,7 +9312,4 @@ final class AppStrings {
 
   /// 目前的 SHA-256 指紋
   String get caCurrentFingerprintLabel => language._messages[3072];
-
-  /// 你目前登入的是這個站台，移除後會立即在不使用此憑證的情況下重新驗證帳號。
-  String get removeCustomCaSignInAgain => language._messages[3073];
 }

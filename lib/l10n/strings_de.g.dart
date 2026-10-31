@@ -3075,5 +3075,4 @@ const _messagesDe = <String>[
   'Auch mit diesem CA-Zertifikat ist das Zertifikat der Website nicht vertrauenswürdig, daher wurde es nicht behalten. Ein CA-Zertifikat behebt kein Zertifikat für einen anderen Hostnamen, kein abgelaufenes und keines einer anderen CA.',
   'Für diese Website ist bereits ein CA-Zertifikat gespeichert, das ersetzt wird. Sofern Ihre Administration die CA nicht gewechselt hat, kann das bedeuten, dass die Verbindung abgefangen wird.',
   'Aktueller SHA-256-Fingerabdruck',
-  'Sie sind bei dieser Website angemeldet, daher wird Ihr Konto sofort ohne dieses Zertifikat erneut geprüft.',
 ];

@@ -3075,5 +3075,4 @@ const _messagesSv = <String>[
   'Med det här CA-certifikatet är webbplatsens certifikat fortfarande inte betrott, så det sparades inte. Ett CA-certifikat löser inte ett certifikat för ett annat värdnamn, ett utgånget certifikat eller ett från en annan CA.',
   'Ett CA-certifikat finns redan sparat för den här webbplatsen och ersätts. Om inte administratören har bytt CA kan det betyda att anslutningen avlyssnas.',
   'Nuvarande SHA-256-fingeravtryck',
-  'Du är inloggad på den här webbplatsen, så ditt konto kontrolleras igen direkt utan det här certifikatet.',
 ];

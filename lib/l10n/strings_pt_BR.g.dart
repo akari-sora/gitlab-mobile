@@ -3075,5 +3075,4 @@ const _messagesPtBr = <String>[
   'Com este certificado de CA o certificado do site continua não confiável, por isso ele não foi mantido. Um certificado de CA não resolve um certificado emitido para outro nome de host, expirado ou de outra CA.',
   'Este site já tem um certificado de CA salvo, que será substituído. A menos que o administrador tenha trocado a CA, isso pode significar que a conexão está sendo interceptada.',
   'Impressão digital SHA-256 atual',
-  'Você está conectado a este site, então sua conta é verificada de novo imediatamente sem este certificado.',
 ];

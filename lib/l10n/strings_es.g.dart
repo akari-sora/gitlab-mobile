@@ -3075,5 +3075,4 @@ const _messagesEs = <String>[
   'Con este certificado de CA el certificado del sitio sigue sin ser de confianza, así que no se guardó. Un certificado de CA no arregla un certificado emitido para otro nombre de host, uno caducado ni uno de otra CA.',
   'Este sitio ya tiene un certificado de CA guardado y se va a reemplazar. Salvo que tu administrador haya cambiado la CA, esto puede significar que la conexión está siendo interceptada.',
   'Huella digital SHA-256 actual',
-  'Has iniciado sesión en este sitio, así que tu cuenta se vuelve a comprobar enseguida sin este certificado.',
 ];

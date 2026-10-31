@@ -3075,5 +3075,4 @@ const _messagesPl = <String>[
   'Z tym certyfikatem CA certyfikat witryny nadal nie jest zaufany, więc nie został zachowany. Certyfikat CA nie naprawi certyfikatu wystawionego dla innej nazwy hosta, wygasłego ani wystawionego przez inny urząd.',
   'Dla tej witryny jest już zapisany certyfikat CA, który zostanie zastąpiony. Jeśli administrator nie zmienił urzędu certyfikacji, może to oznaczać przechwytywanie połączenia.',
   'Bieżący odcisk palca SHA-256',
-  'Jesteś zalogowany w tej witrynie, więc konto zostanie od razu sprawdzone ponownie bez tego certyfikatu.',
 ];

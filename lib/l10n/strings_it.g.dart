@@ -3075,5 +3075,4 @@ const _messagesIt = <String>[
   'Con questo certificato CA il certificato del sito non è ancora attendibile, quindi non è stato conservato. Un certificato CA non risolve un certificato emesso per un altro nome host, scaduto o emesso da un\'altra CA.',
   'Per questo sito è già salvato un certificato CA, che verrà sostituito. A meno che l\'amministratore non abbia cambiato CA, potrebbe significare che la connessione è intercettata.',
   'Impronta digitale SHA-256 attuale',
-  'Hai eseguito l\'accesso a questo sito, quindi il tuo account viene ricontrollato subito senza questo certificato.',
 ];

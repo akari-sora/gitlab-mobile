@@ -13367,9 +13367,5 @@
   "caCurrentFingerprintLabel": "目前的 SHA-256 指紋",
   "@caCurrentFingerprintLabel": {
     "description": "features/auth/instance_ca_ui.dart"
-  },
-  "removeCustomCaSignInAgain": "你目前登入的是這個站台，移除後會立即在不使用此憑證的情況下重新驗證帳號。",
-  "@removeCustomCaSignInAgain": {
-    "description": "features/auth/instance_ca_ui.dart"
   }
 }

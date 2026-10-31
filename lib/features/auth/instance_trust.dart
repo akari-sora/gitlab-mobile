@@ -133,6 +133,7 @@ final class InstanceTrust extends ChangeNotifier {
   /// certificate the platform no longer accepts falls back to the defaults,
   /// which fail closed.
   SecurityContext? securityContextFor(GitLabInstance instance) {
+    if (instance.isGitLabCom) return null;
     final certificate = _byInstance[instance.key];
     if (certificate == null) return null;
     try {
@@ -150,7 +151,11 @@ final class InstanceTrust extends ChangeNotifier {
       for (final entry in entries.entries) {
         _storageKeys.add(entry.key);
         final instanceKey = instanceKeyOfStorageKey(entry.key);
-        if (instanceKey == null || _touched.contains(instanceKey)) continue;
+        if (instanceKey == null ||
+            _touched.contains(instanceKey) ||
+            _isGitLabCom(instanceKey)) {
+          continue;
+        }
         // A value this build cannot read is ignored, not deleted: the user
         // can import again, which replaces it.
         final certificate = InstanceCaCertificate.decode(entry.value);
@@ -239,6 +244,15 @@ final class InstanceTrust extends ChangeNotifier {
       throw const CaCertificateFailure(CaCertificateProblem.removeFailed);
     } finally {
       _notify();
+    }
+  }
+
+  /// GitLab.com never takes a CA, whatever storage holds.
+  static bool _isGitLabCom(String instanceKey) {
+    try {
+      return GitLabInstance.parse(instanceKey).isGitLabCom;
+    } on FormatException {
+      return false;
     }
   }
 

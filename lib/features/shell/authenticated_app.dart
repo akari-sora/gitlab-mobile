@@ -1511,16 +1511,7 @@ class _MobileShellState extends State<_MobileShell> {
                     ),
                   ),
                 ],
-                InstanceCaRows(
-                  session: session,
-                  locked: _accountLocked,
-                  // Removing the signed-in instance's CA checks the account
-                  // again without it, through the switch confirmations.
-                  reselect: (action) => _leave(
-                    action,
-                    intent: LeaveIntent(LeaveKind.switchAccount, target: account),
-                  ),
-                ),
+                InstanceCaRows(session: session, locked: _accountLocked),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Align(alignment: Alignment.centerLeft, child: TextButton.icon(

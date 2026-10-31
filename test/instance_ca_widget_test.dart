@@ -205,20 +205,21 @@ void main() {
     await tester.tap(find.byKey(ValueKey('remove-instance-ca-${instance.key}')));
     await tester.pumpAndSettle();
     expect(find.text('移除自訂 CA 憑證？'), findsOneWidget);
-    // L5: this is the signed-in instance, so the account is checked again.
-    expect(find.textContaining('移除後會立即在不使用此憑證的情況下重新驗證帳號'),
-        findsOneWidget);
+    expect(find.textContaining('直到下次登入或切換帳號'), findsOneWidget);
     expect(session.trust.certificateFor(instance), isNotNull,
         reason: 'nothing changes before confirming');
     await tester.tap(find.widgetWithText(FilledButton, '移除'));
     await settleNetworkWidgets(tester);
+    // Removed from trust and storage; the next client gets the default roots.
     expect(session.trust.certificateFor(instance), isNull);
+    expect(session.trust.securityContextFor(instance), isNull);
+    expect((session.trust.store as MemoryInstanceTrustStore).values, isEmpty);
     expect(row, findsNothing);
-    // A new client for the same account replaced the one built with the CA.
+    expect(find.text('已移除自訂 CA 憑證'), findsOneWidget);
+    // The signed-in session is left alone until the next sign-in or switch.
     expect(session.active?.instance.key, instance.key);
-    expect(session.api, isNotNull);
-    expect(identical(session.api, apiBefore), isFalse);
-    expect(session.generation, isNot(generationBefore));
+    expect(identical(session.api, apiBefore), isTrue);
+    expect(session.generation, generationBefore);
   });
 
   testWidgets('M1: GitLab.com shows the interception warning and no import',
@@ -312,7 +313,6 @@ void main() {
         findsOneWidget);
     await tester.tap(find.byKey(ValueKey('remove-instance-ca-${orphan.key}')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('移除後會立即'), findsNothing, reason: 'not signed in');
     await tester.tap(find.widgetWithText(FilledButton, '移除'));
     await settleNetworkWidgets(tester);
     expect(trust.certificateFor(orphan), isNull);

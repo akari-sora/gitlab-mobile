@@ -3075,5 +3075,4 @@ const _messagesFr = <String>[
   'Avec ce certificat CA, le certificat du site n\'est toujours pas approuvé ; il n\'a donc pas été conservé. Un certificat CA ne corrige pas un certificat émis pour un autre nom d\'hôte, expiré ou émis par une autre CA.',
   'Un certificat CA est déjà enregistré pour ce site et va être remplacé. Sauf si votre administrateur a changé de CA, cela peut indiquer que la connexion est interceptée.',
   'Empreinte SHA-256 actuelle',
-  'Vous êtes connecté à ce site : votre compte est donc vérifié de nouveau immédiatement, sans ce certificat.',
 ];

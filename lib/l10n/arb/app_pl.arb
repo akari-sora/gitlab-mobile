@@ -3072,6 +3072,5 @@
   "serverCertificateNotValidNow": "Certyfikat serwera wygasł lub jeszcze nie jest ważny i import certyfikatu CA tego nie naprawi. Poproś administratora o odnowienie albo sprawdź datę i godzinę na tym urządzeniu.",
   "caImportDidNotHelp": "Z tym certyfikatem CA certyfikat witryny nadal nie jest zaufany, więc nie został zachowany. Certyfikat CA nie naprawi certyfikatu wystawionego dla innej nazwy hosta, wygasłego ani wystawionego przez inny urząd.",
   "caReplaceWarning": "Dla tej witryny jest już zapisany certyfikat CA, który zostanie zastąpiony. Jeśli administrator nie zmienił urzędu certyfikacji, może to oznaczać przechwytywanie połączenia.",
-  "caCurrentFingerprintLabel": "Bieżący odcisk palca SHA-256",
-  "removeCustomCaSignInAgain": "Jesteś zalogowany w tej witrynie, więc konto zostanie od razu sprawdzone ponownie bez tego certyfikatu."
+  "caCurrentFingerprintLabel": "Bieżący odcisk palca SHA-256"
 }

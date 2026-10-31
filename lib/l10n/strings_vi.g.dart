@@ -3075,5 +3075,4 @@ const _messagesVi = <String>[
   'Với chứng chỉ CA này, chứng chỉ của trang vẫn không được tin cậy nên nó không được giữ lại. Chứng chỉ CA không khắc phục được chứng chỉ cấp cho tên máy chủ khác, chứng chỉ đã hết hạn hoặc chứng chỉ của CA khác.',
   'Trang này đã có một chứng chỉ CA được lưu và nó sẽ bị thay thế. Trừ khi quản trị viên đã đổi CA, điều này có thể nghĩa là kết nối đang bị chặn.',
   'Dấu vân tay SHA-256 hiện tại',
-  'Bạn đang đăng nhập vào trang này, nên tài khoản sẽ được kiểm tra lại ngay mà không dùng chứng chỉ này.',
 ];

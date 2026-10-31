@@ -3072,6 +3072,5 @@
   "serverCertificateNotValidNow": "Sertifikat server sudah kedaluwarsa atau belum berlaku, dan mengimpor sertifikat CA tidak bisa memperbaikinya. Minta administrator memperbaruinya atau periksa tanggal dan waktu perangkat ini.",
   "caImportDidNotHelp": "Dengan sertifikat CA ini sertifikat situs tetap tidak tepercaya, jadi sertifikat ini tidak disimpan. Sertifikat CA tidak bisa memperbaiki sertifikat untuk nama host lain, sertifikat kedaluwarsa, atau sertifikat dari CA lain.",
   "caReplaceWarning": "Situs ini sudah punya sertifikat CA tersimpan yang akan diganti. Kecuali administrator Anda mengganti CA, ini bisa berarti koneksi sedang disadap.",
-  "caCurrentFingerprintLabel": "Sidik jari SHA-256 saat ini",
-  "removeCustomCaSignInAgain": "Anda masuk ke situs ini, jadi akun Anda langsung diperiksa ulang tanpa sertifikat ini."
+  "caCurrentFingerprintLabel": "Sidik jari SHA-256 saat ini"
 }

@@ -3075,5 +3075,4 @@ const _messagesMs = <String>[
   'Dengan sijil CA ini sijil tapak masih tidak dipercayai, jadi ia tidak disimpan. Sijil CA tidak dapat membetulkan sijil untuk nama hos lain, sijil yang tamat tempoh atau sijil daripada CA lain.',
   'Tapak ini sudah mempunyai sijil CA tersimpan yang akan diganti. Melainkan pentadbir anda menukar CA, ini mungkin bermakna sambungan sedang dipintas.',
   'Cap jari SHA-256 semasa',
-  'Anda log masuk ke tapak ini, jadi akaun anda disemak semula serta-merta tanpa sijil ini.',
 ];

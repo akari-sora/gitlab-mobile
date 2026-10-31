@@ -3075,5 +3075,4 @@ const _messagesCs = <String>[
   'Ani s tímto certifikátem CA není certifikát webu důvěryhodný, proto nebyl ponechán. Certifikát CA nevyřeší certifikát vydaný pro jiný název hostitele, prošlý certifikát ani certifikát od jiné CA.',
   'Pro tento web je už uložen certifikát CA a bude nahrazen. Pokud správce CA nezměnil, může to znamenat, že je připojení odposloucháváno.',
   'Aktuální otisk SHA-256',
-  'K tomuto webu jste přihlášeni, takže se účet hned znovu ověří bez tohoto certifikátu.',
 ];

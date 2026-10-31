@@ -412,6 +412,44 @@ void _securityReviewTests() {
     expect(session.untrusted?.instance.key, instance.key);
   });
 
+  test('removing the signed-in CA leaves the session; the next check uses '
+      'the default roots', () async {
+    final store = MemoryAccountStore();
+    final trust = InstanceTrust.memory();
+    final refusing = HandshakeRefusingAdapter();
+    final session = trustingSession(store, trust, refusing: refusing);
+    addTearDown(session.dispose);
+    await session.initialize();
+    final instance = GitLabInstance.parse('https://gitlab.example.com');
+    await trust.save(instance, ca);
+    await session.connect(instance.key, 'synthetic-test-token');
+    final signedIn = session.active!;
+    final api = session.api;
+    final generation = session.generation;
+
+    await trust.remove(instance);
+    expect(session.active, signedIn);
+    expect(identical(session.api, api), isTrue);
+    expect(session.generation, generation);
+    expect(refusing.attempts, 0);
+
+    await session.select(signedIn);
+    expect(refusing.attempts, 1, reason: 'the new client has no CA');
+    expect(session.active, isNull);
+    expect(session.untrusted?.retry, UntrustedRetry.select);
+  });
+
+  test('I1: a GitLab.com entry in storage is never loaded or used', () async {
+    final gitLabCom = GitLabInstance.parse('https://gitlab.com');
+    final trust = InstanceTrust(MemoryInstanceTrustStore({
+      instanceCaStorageKey(gitLabCom.key): ca.encode(),
+    }));
+    await trust.load();
+    expect(trust.certificateFor(gitLabCom), isNull);
+    expect(trust.securityContextFor(gitLabCom), isNull);
+    expect(trust.instanceKeys, isEmpty);
+  });
+
   test('L7: a hung CA delete cannot hold the account removal', () async {
     final store = MemoryAccountStore();
     final only = account('https://gitlab.example.com', 7);

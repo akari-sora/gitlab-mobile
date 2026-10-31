@@ -3072,6 +3072,5 @@
   "serverCertificateNotValidNow": "Sijil pelayan telah tamat tempoh atau belum sah, dan mengimport sijil CA tidak dapat membetulkannya. Minta pentadbir memperbaharuinya atau semak tarikh dan masa peranti ini.",
   "caImportDidNotHelp": "Dengan sijil CA ini sijil tapak masih tidak dipercayai, jadi ia tidak disimpan. Sijil CA tidak dapat membetulkan sijil untuk nama hos lain, sijil yang tamat tempoh atau sijil daripada CA lain.",
   "caReplaceWarning": "Tapak ini sudah mempunyai sijil CA tersimpan yang akan diganti. Melainkan pentadbir anda menukar CA, ini mungkin bermakna sambungan sedang dipintas.",
-  "caCurrentFingerprintLabel": "Cap jari SHA-256 semasa",
-  "removeCustomCaSignInAgain": "Anda log masuk ke tapak ini, jadi akaun anda disemak semula serta-merta tanpa sijil ini."
+  "caCurrentFingerprintLabel": "Cap jari SHA-256 semasa"
 }

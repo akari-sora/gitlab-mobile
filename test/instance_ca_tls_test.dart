@@ -77,6 +77,19 @@ Future<({String certificate, String key})> _issueServerCertificate(
   );
 }
 
+/// The second-host tests reach the loopback server as `localhost`; skip them
+/// where that name does not resolve to 127.0.0.1.
+Future<bool> _localhostIsIpv4Loopback() async {
+  try {
+    final addresses = await InternetAddress.lookup('localhost');
+    return addresses.any((address) => address.address == '127.0.0.1');
+  } on SocketException {
+    return false;
+  }
+}
+
+const _noLocalhost = 'localhost does not resolve to 127.0.0.1 on this host';
+
 TypeMatcher<ApiFailure> _failure(FailureKind kind) =>
     isA<ApiFailure>().having((failure) => failure.kind, 'kind', kind);
 
@@ -235,6 +248,7 @@ void main() {
   });
 
   test('a second host is not trusted through the session', () async {
+    if (!await _localhostIsIpv4Loopback()) return markTestSkipped(_noLocalhost);
     final store = MemoryAccountStore();
     final trust = InstanceTrust.memory();
     final session = SessionController(store, readCache: store.readCache, trust: trust);
@@ -277,6 +291,7 @@ void main() {
 
   test('L4: the artifact hop trusts the CA on the instance host only',
       () async {
+    if (!await _localhostIsIpv4Loopback()) return markTestSkipped(_noLocalhost);
     final api = client(ca.securityContext());
     var downloads = 0;
     Future<ArtifactDownload> download() async {

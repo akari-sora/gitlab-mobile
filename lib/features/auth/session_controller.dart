@@ -578,7 +578,8 @@ final class SessionController extends ChangeNotifier {
       try {
         await trust.remove(instance).timeout(limit);
       } on Object {
-        // Shown in 我的 › 帳號 until a later removal succeeds.
+        // Forgotten for this run only: storage may still hold it, and the
+        // next start's load trusts it again (follow-up in RESULT.md).
       }
     }
     if (_disposed) return false;

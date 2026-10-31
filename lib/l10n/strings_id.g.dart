@@ -3075,5 +3075,4 @@ const _messagesId = <String>[
   'Dengan sertifikat CA ini sertifikat situs tetap tidak tepercaya, jadi sertifikat ini tidak disimpan. Sertifikat CA tidak bisa memperbaiki sertifikat untuk nama host lain, sertifikat kedaluwarsa, atau sertifikat dari CA lain.',
   'Situs ini sudah punya sertifikat CA tersimpan yang akan diganti. Kecuali administrator Anda mengganti CA, ini bisa berarti koneksi sedang disadap.',
   'Sidik jari SHA-256 saat ini',
-  'Anda masuk ke situs ini, jadi akun Anda langsung diperiksa ulang tanpa sertifikat ini.',
 ];
