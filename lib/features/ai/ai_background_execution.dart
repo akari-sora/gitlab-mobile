@@ -1265,12 +1265,18 @@ final class AiBackgroundRunGate implements AiExecutionGate {
           : _owner._permit == _binding.permitId &&
                 _owner.status == AiBackgroundExecutionStatus.active);
 
-  Future<AiBackgroundStartResult> beginRun({required String runId}) =>
-      _beginRun(runId: runId, preserveBinding: false);
+  Future<AiBackgroundStartResult> beginRun({
+    required String runId,
+    bool foregroundOnly = false,
+  }) => _beginRun(
+    runId: runId,
+    preserveBinding: false,
+    foregroundOnly: foregroundOnly,
+  );
 
   /// A user-requested continuation retains the logical run identifier. It
   /// creates a new binding so tickets from the previous permit stay invalid.
-  Future<AiBackgroundStartResult> resumeRun() {
+  Future<AiBackgroundStartResult> resumeRun({bool foregroundOnly = false}) {
     if (!_current || _binding.runId.isEmpty || !_appInForeground()) {
       return Future.value(
         _recordStart(
@@ -1283,7 +1289,11 @@ final class AiBackgroundRunGate implements AiExecutionGate {
         ),
       );
     }
-    return _beginRun(runId: _binding.runId, preserveBinding: false);
+    return _beginRun(
+      runId: _binding.runId,
+      preserveBinding: false,
+      foregroundOnly: foregroundOnly,
+    );
   }
 
   /// Only a visible approval action can start the service after a normal
@@ -1317,12 +1327,39 @@ final class AiBackgroundRunGate implements AiExecutionGate {
   Future<AiBackgroundStartResult> _beginRun({
     required String runId,
     required bool preserveBinding,
+    bool foregroundOnly = false,
   }) async {
     if (!_owner._current || _disposed || !_isCurrent() || _starting) {
       return _recordStart(
         const AiBackgroundStartResult(
           AiBackgroundStartDisposition.invalidated,
           failure: AiBackgroundStartFailure.runChanged,
+        ),
+      );
+    }
+    if (foregroundOnly) {
+      if (!_appInForeground()) {
+        return _recordStart(
+          const AiBackgroundStartResult(
+            AiBackgroundStartDisposition.invalidated,
+            failure: AiBackgroundStartFailure.foregroundRequired,
+          ),
+        );
+      }
+      ++_revision;
+      _startFailure = null;
+      _invalidated = false;
+      _needsExplicitResume = false;
+      _released = false;
+      _awaitingApproval = false;
+      if (!preserveBinding) _binding = _newBinding(runId);
+      _approvalRestart = preserveBinding;
+      _active = true;
+      _backProtected = true;
+      _owner._workChanged();
+      return _recordStart(
+        const AiBackgroundStartResult(
+          AiBackgroundStartDisposition.foregroundOnly,
         ),
       );
     }

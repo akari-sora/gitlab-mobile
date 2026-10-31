@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mergeline_on_device_ai/mergeline_on_device_ai.dart';
 
 import '../../core/ai/ai_provider.dart';
 import '../../core/gitlab_api.dart';
@@ -31,6 +32,7 @@ class AiSettingsPage extends StatefulWidget {
     this.history,
     this.deviceCheck,
     this.writeJournal,
+    this.onDeviceAi,
   });
 
   final AiSettingsController settings;
@@ -48,6 +50,9 @@ class AiSettingsPage extends StatefulWidget {
 
   /// The account's AI change log; replaced in tests.
   final AiWriteJournal? writeJournal;
+
+  /// The phone's built-in AI bridge; replaced in tests.
+  final MergelineOnDeviceAi? onDeviceAi;
 
   @override
   State<AiSettingsPage> createState() => _AiSettingsPageState();
@@ -244,8 +249,12 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   void _edit([AiProviderConfig? provider]) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            AiProviderEditor(settings: widget.settings, provider: provider),
+        builder: (_) => AiProviderEditor(
+          settings: widget.settings,
+          provider: provider,
+          accountKey: widget.accountKey,
+          onDeviceAi: widget.onDeviceAi,
+        ),
       ),
     );
   }
@@ -336,9 +345,10 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   };
 
   Widget _provider(AiProviderConfig provider, bool isDefault) {
-    final preset = AiPresets.all
-        .where((p) => p.id == provider.presetId)
-        .firstOrNull;
+    final preset = AiPresets.byId(provider.presetId);
+    final presetName = preset != null && preset.onDevice
+        ? l10n.aiPresetOnDeviceName
+        : (preset?.name ?? provider.presetId);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -382,8 +392,11 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // The on-device format names the same model as the preset.
               Text(
-                '${isolated(preset?.name ?? provider.presetId)} · ${_format(provider.format)}',
+                provider.isOnDevice
+                    ? isolated(presetName)
+                    : '${isolated(presetName)} · ${_format(provider.format)}',
               ),
               Text(isolated(provider.model)),
               const SizedBox(height: 4),
@@ -391,7 +404,13 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 spacing: 8,
                 runSpacing: 4,
                 children: [
-                  _status(Icons.info_outline, l10n.aiProviderUnverifiedLabel),
+                  if (provider.isOnDevice)
+                    _status(
+                      Icons.smartphone_outlined,
+                      l10n.aiOnDeviceCapabilitiesNote,
+                    )
+                  else
+                    _status(Icons.info_outline, l10n.aiProviderUnverifiedLabel),
                   if (provider.caps.requiresKey)
                     _status(
                       widget.settings.knownProviderKeys.containsKey(provider.id)

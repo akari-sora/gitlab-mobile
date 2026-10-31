@@ -510,7 +510,7 @@ void main() {
       AiProviderConfig.onDevice(),
       grantConsent: true,
     );
-    // The production client factory: on-device wiring arrives with MR 3.
+    // The production client factory refuses unsent on a non-Android host.
     final controller = _controller(environment);
     addTearDown(controller.dispose);
     await controller.recheck();
@@ -519,11 +519,9 @@ void main() {
     await controller.send('hello');
     expect(
       controller.failure,
-      isA<AiFailure>().having(
-        (f) => f.kind,
-        'kind',
-        AiFailureKind.policyBlocked,
-      ),
+      isA<AiFailure>()
+          .having((f) => f.kind, 'kind', AiFailureKind.onDeviceUnavailable)
+          .having((f) => f.notSent, 'notSent', isTrue),
     );
     expect(controller.lastEnd, AiRunEnd.failed);
     expect(

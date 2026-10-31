@@ -530,7 +530,13 @@ final class AiRunner {
             AiExecutionPauseReason.unavailable,
           ));
         }
-        _needsProjection = true;
+        // On-device keeps no provider state: Continue resends the stopped
+        // turn unchanged, from the start, as a fresh model call.
+        if (config.isOnDevice) {
+          modelCalls = 0;
+        } else {
+          _needsProjection = true;
+        }
       } else {
         writeCoordinator?.beginRun(logical.bindingUtterance);
       }
@@ -1019,7 +1025,7 @@ final class AiRunner {
     } on AiExecutionPaused catch (stopped) {
       pause = stopped.pause;
       restoreUnsentTail();
-      _needsProjection = true;
+      if (!config.isOnDevice) _needsProjection = true;
       answer = await _partialAnswer(answer, partial.toString(), epoch);
       return result(AiRunEnd.stopped);
     } on _RunStopped catch (stopped) {
@@ -1035,6 +1041,17 @@ final class AiRunner {
     } on AiFailure catch (failure) {
       restoreUnsentTail();
       answer = await _partialAnswer(answer, partial.toString(), epoch);
+      // AICore refused because the app left the foreground before the
+      // lifecycle callback: the same pause as a background stop, so the
+      // pause card offers Continue instead of a second failure card.
+      if (config.isOnDevice &&
+          failure.kind == AiFailureKind.onDeviceForegroundOnly) {
+        pause = const AiExecutionPause(
+          AiExecutionPauseReason.foregroundRequired,
+          kind: AiContinuationKind.model,
+        );
+        return result(AiRunEnd.stopped);
+      }
       if (failure.requiresNewSegment) _needsProjection = true;
       return result(
         finishing ? AiRunEnd.toolBudget : AiRunEnd.failed,

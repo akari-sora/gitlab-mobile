@@ -83,6 +83,9 @@ enum AiNoticeKind {
 
   /// Page context was truncated to fit the 4,000-token on-device model limit.
   onDeviceContextTruncated,
+
+  /// The on-device provider is read-only and cannot make changes on GitLab.
+  onDeviceCannotWrite,
 }
 
 sealed class AiChatItem {

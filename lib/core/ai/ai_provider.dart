@@ -603,7 +603,8 @@ final class AiPresets {
   static const onDeviceOrigin = 'on-device://android-aicore';
   static const onDeviceModel = 'gemini-nano';
   static const onDeviceDataRetention = 'on_device';
-  static const onDevicePolicyUrl = 'https://developers.google.com/ml-kit/terms';
+  static const onDevicePolicyUrl =
+      'https://developers.google.com/ml-kit/android-data-disclosure';
   static const openCodePolicySource = 'https://opencode.ai/docs/go/';
   static const openCodeZenPolicySource = 'https://opencode.ai/docs/zen/';
   static const policyCheckedOn = '2026-10-20';

@@ -1185,7 +1185,16 @@ void main() {
             _plan('look at $known'),
             redactor: Redactor(secrets: _MutableSecrets()..current.add(known)),
           ),
-          _fails(AiFailureKind.policyBlocked, notSent: true),
+          throwsA(
+            isA<AiFailure>()
+                .having((f) => f.kind, 'kind', AiFailureKind.policyBlocked)
+                .having((f) => f.notSent, 'notSent', isTrue)
+                .having(
+                  (f) => f.requiresNewSegment,
+                  'requiresNewSegment',
+                  isTrue,
+                ),
+          ),
         );
         // A token in page context, caught by the built-in patterns alone.
         final token = 'glpat-${'A' * 24}';
@@ -1262,6 +1271,80 @@ void main() {
       expect(second.contextTruncated, isFalse);
       expect(notices, isEmpty);
     });
+
+    test(
+      'transport guard policyBlocked sets requiresNewSegment so the next '
+      'send rebuilds from the redacted summary and recovers',
+      () async {
+        final plugin = _FakeOnDeviceAiPlugin();
+        final config = AiProviderConfig.onDevice();
+        final transportSecrets = _MutableSecrets();
+        final runnerSecrets = _MutableSecrets();
+        final transport = OnDeviceAiTransport(plugin: plugin);
+        final client = AiWireClient.onDevice(
+          config: config,
+          conversationId: 'conv-guard-recovery',
+          appVersion: '0.6.2',
+          onDeviceTransport: transport,
+        );
+        final owner = Object();
+        final runner = AiRunner(
+          appInForeground: () => true,
+          config: config,
+          wire: client.wire,
+          complete: (plan, {onEvent}) => transport.complete(
+            plan,
+            onEvent: onEvent,
+            redactor: Redactor(secrets: transportSecrets),
+          ),
+          secrets: runnerSecrets,
+          refreshSecrets: () async {},
+          guard: AiRunGuard(
+            expectedGeneration: 1,
+            ownerApi: owner,
+            generation: () => 1,
+            api: () => owner,
+            recipientRevision: () => 1,
+            consentValid: () => true,
+          ),
+          system: 'Sys',
+          close: client.close,
+          cancelActive: client.cancelActive,
+        );
+
+        final first = await runner.run('First question with late-secret-xyz');
+        expect(first.reason, AiRunEnd.done);
+        expect(plugin.calls, hasLength(1));
+        final firstSegment = runner.segment;
+        expect(firstSegment, isNotNull);
+
+        // If the transport guard catches a secret in the assembled prompt,
+        // it throws policyBlocked(notSent: true, requiresNewSegment: true).
+        transportSecrets.current.add('late-secret-xyz');
+        final blocked = await runner.run('Second question');
+        expect(blocked.reason, AiRunEnd.failed);
+        expect(blocked.failure?.kind, AiFailureKind.policyBlocked);
+        expect(blocked.failure?.requiresNewSegment, isTrue);
+        expect(plugin.calls, hasLength(1));
+
+        // Once the runner's live secrets also include the secret, the next
+        // send starts a new segment from the redacted summary and recovers.
+        runnerSecrets.current.add('late-secret-xyz');
+        final recovered = await runner.run('Third question after recovery');
+        expect(recovered.reason, AiRunEnd.done);
+        expect(plugin.calls, hasLength(2));
+        expect(runner.segment, isNot(same(firstSegment)));
+        final lastCall = plugin.calls.last;
+        expect(
+          lastCall.turns.any((t) => t.text.contains('late-secret-xyz')),
+          isFalse,
+        );
+        expect(
+          lastCall.turns.last.text,
+          contains('Third question after recovery'),
+        );
+      },
+    );
   });
 
   group('7. No-tools runner and history codec', () {
@@ -1348,12 +1431,14 @@ void main() {
       },
     );
 
-    test('history codec round-trips on-device AiAnswerSource and '
-        'AiNoticeKind.onDeviceContextTruncated', () {
+    test('history codec round-trips on-device AiAnswerSource, '
+        'AiNoticeKind.onDeviceContextTruncated, and '
+        'AiNoticeKind.onDeviceCannotWrite', () {
       final conversation = AiConversation(
         items: <AiChatItem>[
           AiUserItem(text: 'Summarize diff'),
           const AiNoticeItem(AiNoticeKind.onDeviceContextTruncated),
+          const AiNoticeItem(AiNoticeKind.onDeviceCannotWrite),
           AiAssistantItem(
             text: 'Summary from Gemini Nano.',
             state: AiAssistantState.done,
@@ -1371,11 +1456,13 @@ void main() {
               as Map<String, Object?>;
       final restored = aiDisplayFromJson(encoded);
 
-      expect(restored.items, hasLength(3));
+      expect(restored.items, hasLength(4));
       final notice = restored.items[1] as AiNoticeItem;
       expect(notice.kind, AiNoticeKind.onDeviceContextTruncated);
+      final refusal = restored.items[2] as AiNoticeItem;
+      expect(refusal.kind, AiNoticeKind.onDeviceCannotWrite);
 
-      final answer = restored.items[2] as AiAssistantItem;
+      final answer = restored.items[3] as AiAssistantItem;
       expect(answer.text, 'Summary from Gemini Nano.');
       expect(answer.source?.presetId, 'on-device');
       expect(answer.source?.format, 'onDevicePrompt');

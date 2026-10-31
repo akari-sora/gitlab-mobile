@@ -141,8 +141,9 @@ class CatalogTest(unittest.TestCase):
         product_words = {
             'AI', 'API', 'URL', 'HTTP', 'HTTPS', 'JSON', 'Mergeline',
             'GitLab', 'OpenAI', 'Anthropic', 'OpenRouter', 'OpenCode', 'Azure',
-            'Gemini', 'DeepSeek', 'xAI', 'Ollama', 'LM', 'Studio',
-            'GPT', 'Claude', 'Grok', 'Google', 'Forms',
+            'Gemini', 'Nano', 'DeepSeek', 'xAI', 'Ollama', 'LM', 'Studio',
+            'GPT', 'Claude', 'Grok', 'Google', 'Forms', 'Android', 'AICore',
+            'ML', 'Kit', 'MB',
         }
         non_latin = {'ar', 'hi', 'th', 'ru', 'uk', 'ko', 'ja', 'zh-CN', 'zh-TW'}
         # Wire-format and header names are protocol identifiers: they stay

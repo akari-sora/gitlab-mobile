@@ -13419,5 +13419,101 @@
   "aiNoticeOnDeviceContextTruncated": "已配合手機內建 AI 的長度上限縮短此頁內容",
   "@aiNoticeOnDeviceContextTruncated": {
     "description": "features/ai/ai_chat_page.dart: AiNoticeKind.onDeviceContextTruncated"
+  },
+  "aiPresetOnDeviceName": "手機內建 AI（Gemini Nano）",
+  "@aiPresetOnDeviceName": {
+    "description": "features/ai/ai_provider_editor.dart, features/ai/ai_settings_page.dart, features/ai/ai_consent_dialog.dart"
+  },
+  "aiOnDeviceConsentBeforeStatus": "在同意資料揭露前，不會啟動 Google ML Kit 或查詢模型狀態。儲存後即可檢視並同意，接著檢查或下載模型。",
+  "@aiOnDeviceConsentBeforeStatus": {
+    "description": "features/ai/ai_provider_editor.dart: consent required before checking on-device model status"
+  },
+  "aiOnDeviceReviewConsentAction": "檢視並同意資料揭露",
+  "@aiOnDeviceReviewConsentAction": {
+    "description": "features/ai/ai_provider_editor.dart: review consent button for on-device AI"
+  },
+  "aiOnDeviceStatusAvailable": "模型已就緒，可直接在手機上使用",
+  "@aiOnDeviceStatusAvailable": {
+    "description": "features/ai/ai_provider_editor.dart: on-device model status available"
+  },
+  "aiOnDeviceStatusDownloadable": "模型可下載至手機使用",
+  "@aiOnDeviceStatusDownloadable": {
+    "description": "features/ai/ai_provider_editor.dart: on-device model status downloadable"
+  },
+  "aiOnDeviceStatusDownloading": "正在下載手機內建 AI 模型…",
+  "@aiOnDeviceStatusDownloading": {
+    "description": "features/ai/ai_provider_editor.dart: on-device model status downloading"
+  },
+  "aiOnDeviceStatusUnavailable": "此手機無法使用內建 AI 模型",
+  "@aiOnDeviceStatusUnavailable": {
+    "description": "features/ai/ai_provider_editor.dart: on-device model status unavailable"
+  },
+  "aiOnDeviceUnavailableReasonNotAndroid": "僅支援具備 AICore 的 Android 手機。",
+  "@aiOnDeviceUnavailableReasonNotAndroid": {
+    "description": "features/ai/ai_provider_editor.dart: unavailable reason not_android"
+  },
+  "aiOnDeviceUnavailableReasonSdkTooOld": "需要 Android 8.0 或更新版本。",
+  "@aiOnDeviceUnavailableReasonSdkTooOld": {
+    "description": "features/ai/ai_provider_editor.dart: unavailable reason sdk_too_old"
+  },
+  "aiOnDeviceUnavailableReasonAicoreMissing": "這支手機未安裝 Android AICore 系統服務。",
+  "@aiOnDeviceUnavailableReasonAicoreMissing": {
+    "description": "features/ai/ai_provider_editor.dart: unavailable reason aicore_missing"
+  },
+  "aiOnDeviceUnavailableReasonAicoreDisabled": "Android AICore 系統服務目前已停用。",
+  "@aiOnDeviceUnavailableReasonAicoreDisabled": {
+    "description": "features/ai/ai_provider_editor.dart: unavailable reason aicore_disabled"
+  },
+  "aiOnDeviceUnavailableReasonInsufficientStorage": "手機剩餘儲存空間不足，無法下載模型。",
+  "@aiOnDeviceUnavailableReasonInsufficientStorage": {
+    "description": "features/ai/ai_provider_editor.dart: unavailable reason insufficient_storage"
+  },
+  "aiOnDeviceUnavailableReasonUnsupported": "此機型不支援 Gemini Nano 內建模型。",
+  "@aiOnDeviceUnavailableReasonUnsupported": {
+    "description": "features/ai/ai_provider_editor.dart: unavailable reason unsupported"
+  },
+  "aiOnDeviceDownloadButton": "下載模型",
+  "@aiOnDeviceDownloadButton": {
+    "description": "features/ai/ai_provider_editor.dart: download on-device model button"
+  },
+  "aiOnDeviceDownloadProgress": "已下載 {downloadedMb} MB / {totalMb} MB",
+  "@aiOnDeviceDownloadProgress": {
+    "description": "features/ai/ai_provider_editor.dart: on-device model download progress",
+    "placeholders": {
+      "downloadedMb": {
+        "example": "512"
+      },
+      "totalMb": {
+        "example": "1024"
+      }
+    }
+  },
+  "aiOnDeviceCapabilitiesNote": "唯讀模式（無工具呼叫、上限約 4,000 個詞元、僅限前景執行）。",
+  "@aiOnDeviceCapabilitiesNote": {
+    "description": "features/ai/ai_provider_editor.dart: on-device capabilities note"
+  },
+  "aiConsentOnDeviceRecipient": "這支手機（Android AICore / Gemini Nano）",
+  "@aiConsentOnDeviceRecipient": {
+    "description": "features/ai/ai_consent_dialog.dart: on-device recipient label"
+  },
+  "aiConsentOnDeviceStaysOnPhone": "提問與頁面內容會留在這支手機上，由 Android AICore 在本機處理，不會傳送至雲端 AI 伺服器。",
+  "@aiConsentOnDeviceStaysOnPhone": {
+    "description": "features/ai/ai_consent_dialog.dart: on-device prompts and page content stay on phone"
+  },
+  "aiConsentOnDeviceMlKitTelemetry": "此功能使用的 Google ML Kit 會將診斷與使用情況資料（包含每個安裝實例的識別碼）傳送給 Google。",
+  "@aiConsentOnDeviceMlKitTelemetry": {
+    "description": "features/ai/ai_consent_dialog.dart: Google ML Kit diagnostics and usage telemetry disclosure"
+  },
+  "aiConsentOnDeviceCannotStopUntilRestart": "一旦啟動，即使事後撤回同意或移除此來源，也必須等到重新啟動應用程式後才能完全停止傳送上述診斷資料。",
+  "@aiConsentOnDeviceCannotStopUntilRestart": {
+    "description": "features/ai/ai_consent_dialog.dart: ML Kit telemetry cannot be fully stopped until app restart"
+  },
+  "aiConsentOnDeviceDisclosureLinkLabel": "Google ML Kit 資料揭露說明",
+  "@aiConsentOnDeviceDisclosureLinkLabel": {
+    "description": "features/ai/ai_consent_dialog.dart: ML Kit Android data disclosure link label"
+  },
+  "aiOnDeviceCannotWrite": "此本機 AI 來源無法執行修改；若需修改 GitLab 內容，請切換為雲端服務商。",
+  "@aiOnDeviceCannotWrite": {
+    "description": "features/ai/ai_chat_page.dart: on-device write refusal card text"
   }
 }

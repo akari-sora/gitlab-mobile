@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:mergeline_on_device_ai/mergeline_on_device_ai.dart';
 
 import '../../core/ai/ai_endpoint.dart';
 import '../../core/ai/ai_failure.dart';
@@ -1517,7 +1518,10 @@ final Expando<AiSettingsController> _settingsOwners =
 // instance passed through a SecureAiStore wrapper.
 
 final class AiSettingsController extends ChangeNotifier {
-  factory AiSettingsController(AiStore store) {
+  factory AiSettingsController(
+    AiStore store, {
+    Future<void> Function()? closeOnDeviceAi,
+  }) {
     final scope = store is SecureAiStore ? _secureSettingsScope : store;
     final existing = _settingsOwners[scope];
     if (existing != null) {
@@ -1526,16 +1530,26 @@ final class AiSettingsController extends ChangeNotifier {
         throw StateError('AiSettingsController disposal is pending');
       }
     }
-    return _settingsOwners[scope] = AiSettingsController._(store, scope);
+    return _settingsOwners[scope] = AiSettingsController._(
+      store,
+      scope,
+      closeOnDeviceAi: closeOnDeviceAi,
+    );
   }
 
-  AiSettingsController._(this.store, this._settingsScope)
-    : _accountMutations = AiAccountMutationCoordinator.forStore(store) {
+  AiSettingsController._(
+    this.store,
+    this._settingsScope, {
+    Future<void> Function()? closeOnDeviceAi,
+  }) : _closeOnDeviceAi =
+           closeOnDeviceAi ?? (() => MergelineOnDeviceAi.instance.close()),
+       _accountMutations = AiAccountMutationCoordinator.forStore(store) {
     _accountMutations.addListener(_accountRecordChanged);
   }
 
   final AiStore store;
   final Object _settingsScope;
+  final Future<void> Function() _closeOnDeviceAi;
   final AiAccountMutationCoordinator _accountMutations;
   List<AiProviderConfig> _providers = const <AiProviderConfig>[];
   final Map<String, AiProviderConfig> _deletingProviders =
@@ -2137,8 +2151,20 @@ final class AiSettingsController extends ChangeNotifier {
       presetId: _deletingProviderPreset,
     );
     _markProviderDeleting(deleting);
+    if (_isOnDeviceProviderOrTombstone(deleting)) {
+      await _closeOnDeviceAiSafe();
+    }
     await _writeProviderList(_providers);
     await _resumeProviderDeletion(deleting);
+  }
+
+  Future<void> _closeOnDeviceAiSafe() async {
+    try {
+      await _closeOnDeviceAi();
+    } on Object {
+      // Closing the native ML Kit client is best-effort and must not block
+      // local consent revocation or provider deletion.
+    }
   }
 
   Future<void> _persistProviderDeletionMarker(AiProviderConfig deleting) async {
@@ -2368,6 +2394,11 @@ final class AiSettingsController extends ChangeNotifier {
     if (!removed) return;
     _accounts[accountKey] = updated;
     _consentRevisions[accountKey] = consentRevision(accountKey) + 1;
+    final provider = _provider(providerId) ?? _deletingProviders[providerId];
+    if (providerId == AiPresets.onDeviceId ||
+        (provider != null && _isOnDeviceProviderOrTombstone(provider))) {
+      await _closeOnDeviceAiSafe();
+    }
     _notify();
   }
 
@@ -2451,11 +2482,18 @@ final class AiSettingsController extends ChangeNotifier {
     } finally {
       _notify();
     }
+    final hadOnDevice =
+        _providers.any(_isOnDeviceProviderOrTombstone) ||
+        _deletingProviders.values.any(_isOnDeviceProviderOrTombstone) ||
+        providerIds.contains(AiPresets.onDeviceId);
     _providers = const <AiProviderConfig>[];
     _deletingProviders.clear();
     _providerKeys.clear();
     for (final providerId in deletingIds) {
       _finishProviderDeletion(providerId);
+    }
+    if (hadOnDevice) {
+      await _closeOnDeviceAiSafe();
     }
     _secretSetId += 1;
     _markInitialized();

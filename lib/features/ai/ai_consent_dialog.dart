@@ -253,6 +253,10 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                           isolated(details.providerName!),
                           style: theme.textTheme.titleMedium,
                         ),
+                      if (details.isOnDevice) ...[
+                        const SizedBox(height: 4),
+                        Text(l10n.aiConsentOnDeviceRecipient),
+                      ],
                       SelectableText(isolated(details.origin)),
                       if (details.cleartext) ...[
                         const SizedBox(height: 8),
@@ -334,16 +338,27 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                         retentionDays: details.retentionDays,
                       ),
                       const SizedBox(height: 8),
-                      if (details.policyUri case final policyUri?)
+                      if (details.policyUri case final policyUri?) ...[
                         Align(
                           alignment: AlignmentDirectional.centerStart,
                           child: TextButton.icon(
                             onPressed: () => openExternal(context, policyUri),
                             icon: const Icon(Icons.open_in_new),
-                            label: Text(l10n.aiConsentViewPolicy),
+                            label: Text(
+                              details.isOnDevice
+                                  ? l10n.aiConsentOnDeviceDisclosureLinkLabel
+                                  : l10n.aiConsentViewPolicy,
+                            ),
                           ),
-                        )
-                      else
+                        ),
+                        if (details.isOnDevice)
+                          SelectableText(
+                            policyUri.toString(),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ] else
                         Text(l10n.aiConsentCustomPolicy),
                     ],
                   ),
@@ -549,6 +564,35 @@ class _DataUseNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (dataUse == AiDataUse.onDevice) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.smartphone_outlined, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text(l10n.aiConsentOnDeviceStaysOnPhone)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.info_outline, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text(l10n.aiConsentOnDeviceMlKitTelemetry)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _WarningLine(
+            icon: Icons.restart_alt,
+            text: l10n.aiConsentOnDeviceCannotStopUntilRestart,
+          ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -671,6 +715,11 @@ final class _ConsentDetails {
   /// the first policy that offers those writes and a saved record shows
   /// exactly what was agreed; the hash is untouched.
   final bool groupWrites;
+
+  bool get isOnDevice =>
+      dataUse == AiDataUse.onDevice ||
+      origin == AiPresets.onDeviceOrigin ||
+      format == AiFormat.onDevicePrompt;
 }
 
 String _formatLabel(AiFormat format) => switch (format) {
