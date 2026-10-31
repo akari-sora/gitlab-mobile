@@ -12,7 +12,12 @@ import 'package:markdown/markdown.dart' as md;
 import 'support/fake_adapter.dart';
 
 void main() {
-  const defaultBaselineShapes = {'Codex code source', 'Opus Q15 footnote'};
+  const defaultBaselineShapes = {
+    'Codex code source',
+    'Opus Q1 code',
+    'Opus Q3 text and code',
+    'Opus Q15 footnote',
+  };
   const neutralised = {
     'Codex escaped source': r'<a>\<img src=x>',
     'Codex code source': '<a>`<img src=x>`',
@@ -127,12 +132,14 @@ void main() {
       await render(1024);
       final usesDefaultBaseline = defaultBaselineShapes.contains(shape.key);
       if (usesDefaultBaseline) await render(1024, defaultSyntax: true);
-      // Use the best of three to reduce JIT/GC/scheduling noise without an
-      // additive allowance that could conceal quadratic growth.
+      // Use the best of five to reduce JIT/GC/scheduling noise without an
+      // additive allowance that could conceal quadratic growth. Load only
+      // slows a sample; with three, Opus Q15 footnote reached 1.39 of its
+      // 1.5 limit.
       var quarter = 1 << 62;
       var cap = 1 << 62;
       var defaultCap = 1 << 62;
-      for (var sample = 0; sample < 3; sample++) {
+      for (var sample = 0; sample < 5; sample++) {
         final measuredQuarter = await render(16384);
         final measuredCap = await render(65536);
         if (measuredQuarter < quarter) quarter = measuredQuarter;
@@ -147,9 +154,12 @@ void main() {
         'default4N=${usesDefaultBaseline ? defaultCap : 'not measured'}us',
       );
       // Linear scans grow 4x from N to 4N and quadratic ones 16x. Laying out
-      // one long unbroken line is already slightly superlinear (about 7x
-      // here, as on main), so the ratio allows 12x; the original scans took
-      // 2.8 to 66 s at the cap, far above the independent ceiling.
+      // one long unbroken line is already superlinear, so the ratio allows
+      // 12x; the original scans took 2.8 to 66 s at the cap, far above the
+      // independent ceiling. The code-span shapes cost the same as stock
+      // Markdown at the cap, but their own growth depends on the hardware
+      // (Opus Q1 code: median 8.8x and up to 13x on the x86 runner, about
+      // 11x on Apple silicon), so they compare with the stock render.
       if (usesDefaultBaseline) {
         expect(cap, lessThan(5000000), reason: '${shape.key}: cap < 5 s');
         expect(
@@ -197,11 +207,14 @@ void main() {
       }
 
       measure(1024);
+      // Each parse takes milliseconds, so one scheduler pause can dominate a
+      // sample: with three, a runner at load 30 pushed even stock Markdown to
+      // 14x. Nine samples still cost well under a second.
       var quarter = 1 << 62;
       var cap = 1 << 62;
       var mainQuarter = 1 << 62;
       var mainCap = 1 << 62;
-      for (var sample = 0; sample < 3; sample++) {
+      for (var sample = 0; sample < 9; sample++) {
         final n = measure(16384);
         final fourN = measure(65536);
         final mainN = measure(16384, media: false);
