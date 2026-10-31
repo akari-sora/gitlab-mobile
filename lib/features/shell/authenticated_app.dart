@@ -16,6 +16,7 @@ import '../../shared/reveal_transition.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
+import '../auth/instance_ca_ui.dart';
 import '../auth/session_controller.dart';
 import '../cache/read_cache_settings_page.dart';
 import '../offline/offline_projects_page.dart';
@@ -1510,6 +1511,7 @@ class _MobileShellState extends State<_MobileShell> {
                     ),
                   ),
                 ],
+                InstanceCaRows(session: session, locked: _accountLocked),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Align(alignment: Alignment.centerLeft, child: TextButton.icon(

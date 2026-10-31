@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'rate_budget.dart';
 import 'request_meter.dart';
-import 'dart:io' show FileSystemException, IOException, IOSink;
+import 'dart:io'
+    show FileSystemException, HttpClient, IOException, IOSink, SecurityContext;
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
@@ -10,6 +11,7 @@ import 'failure.dart';
 import 'analytics_models.dart';
 import 'group_work_item_identity.dart';
 import 'instance.dart';
+import 'instance_ca.dart';
 import 'models.dart';
 import 'oauth.dart';
 import 'pagination.dart';
@@ -162,7 +164,10 @@ final class GitLabApi {
     ReadCacheSource? readCacheSource,
     GitLabRateBudget? rateBudget,
     String Function()? forbiddenDetail,
-  }) : _credential = credential ?? PatCredential(token ?? ''),
+    SecurityContext? securityContext,
+  }) : assert(dio == null || securityContext == null),
+       _credential = credential ?? PatCredential(token ?? ''),
+       _securityContext = securityContext,
        _dio = dio ?? Dio(),
        _cdnAdapter = cdnAdapter,
        _oauth = oauth,
@@ -181,11 +186,56 @@ final class GitLabApi {
         throw InputFormatException(l10n.tokenCannotBeBlank);
       }
     }
+    if (dio == null) {
+      _dio.httpClientAdapter = instanceHttpAdapter(
+        _securityContext,
+        configure: _recordRefusedCertificate,
+      );
+    }
     _dio.options.connectTimeout = const Duration(seconds: 15);
     _dio.options.receiveTimeout = const Duration(seconds: 25);
     _dio.options.sendTimeout = const Duration(seconds: 15);
   }
   final GitLabInstance instance;
+
+  /// The instance's imported CA plus the default roots, or null for the
+  /// default roots alone. Fixed for this client's lifetime; it applies to
+  /// [_dio] only when this client created it, and to the artifact redirect
+  /// hop ([_openBareArtifactDio]) of this same client.
+  final SecurityContext? _securityContext;
+
+  /// Recorded by the handshake callback for this instance's host and port;
+  /// the callback still refuses the certificate.
+  RefusedCertificate? _refusedCertificate;
+
+  void _recordRefusedCertificate(HttpClient client) {
+    client.badCertificateCallback = (certificate, host, port) {
+      if (host == instance.base.host && port == instance.base.port) {
+        _refusedCertificate = RefusedCertificate(
+          subject: _certificateName(certificate.subject),
+          issuer: _certificateName(certificate.issuer),
+        );
+      }
+      // Only records what was refused: verification failed and stays failed.
+      return false;
+    };
+  }
+
+  static String _certificateName(String value) {
+    final printable = value.replaceAll(RegExp(r'[\x00-\x1f\x7f-\x9f]'), ' ');
+    return printable.length <= 256 ? printable : printable.substring(0, 256);
+  }
+
+  /// A refused TLS certificate: Dio's certificate rejection, or a handshake
+  /// that failed certificate verification. Other TLS and socket failures
+  /// stay `network`. Writes keep `writeUncertain` (see [_send]).
+  ApiFailure? _untrustedCertificate(DioException error) {
+    if (!isRefusedCertificate(error)) return null;
+    return ApiFailure(
+      FailureKind.untrustedCertificate,
+      refusedCertificate: _refusedCertificate,
+    );
+  }
   AccountCredential _credential;
   AccountCredential get credential => _credential;
   final Dio _dio;
@@ -586,11 +636,16 @@ final class GitLabApi {
       if (error.type == DioExceptionType.cancel || _closed) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      throw ApiFailure(
-        method == 'GET' || method == 'HEAD' || graphQuery
-            ? FailureKind.network
-            : FailureKind.writeUncertain,
-      );
+      if (method == 'GET' || method == 'HEAD' || graphQuery) {
+        throw _untrustedCertificate(error) ??
+            const ApiFailure(FailureKind.network);
+      }
+      // A refused certificate fails the handshake before any HTTP byte, but
+      // `sendStarted` is set before Dio runs and Dio reports the handshake as
+      // `DioExceptionType.unknown` with no phase. The write fences and the AI
+      // journal accept "never sent" only from those flags, so a write stays
+      // uncertain here (CLAUDE.md, GitLabApi invariants).
+      throw const ApiFailure(FailureKind.writeUncertain);
     } on ApiFailure catch (failure) {
       if (graphMutation && !sendStarted &&
           (failure.kind == FailureKind.cancelled ||
@@ -1002,7 +1057,8 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       if (error.type == DioExceptionType.cancel || _closed || token.isCancelled) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      throw const ApiFailure(FailureKind.network);
+      throw _untrustedCertificate(error) ??
+          const ApiFailure(FailureKind.network);
     } finally {
       _requests.remove(token);
     }
@@ -1287,7 +1343,8 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       if (error.type == DioExceptionType.cancel || _closed || token.isCancelled) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      throw const ApiFailure(FailureKind.network);
+      throw _untrustedCertificate(error) ??
+          const ApiFailure(FailureKind.network);
     } on ApiFailure {
       rethrow;
     } catch (_) {
@@ -1392,7 +1449,8 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       if (error.type == DioExceptionType.cancel || _closed || token.isCancelled) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      throw const ApiFailure(FailureKind.network);
+      throw _untrustedCertificate(error) ??
+          const ApiFailure(FailureKind.network);
     } on ApiFailure {
       rethrow;
     } on IOException {
@@ -1612,7 +1670,12 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     );
     dio.interceptors.clear(keepImplyContentTypeInterceptor: false);
     final cdn = _cdnAdapter;
-    dio.httpClientAdapter = cdn == null ? IOHttpClientAdapter() : _ForwardingAdapter(cdn);
+    // The same client's instance CA, if any: self-hosted object storage often
+    // shares the company CA. The context is only ever this account's; the
+    // hop carries no credential and keeps Dio's default idle timeout.
+    dio.httpClientAdapter = cdn == null
+        ? instanceHttpAdapter(_securityContext)
+        : _ForwardingAdapter(cdn);
     _bareClients.add(dio);
     return dio;
   }

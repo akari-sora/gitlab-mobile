@@ -305,7 +305,8 @@ extension PackageDownloadApi on GitLabApi {
           token.isCancelled) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      throw const ApiFailure(FailureKind.network);
+      throw _untrustedCertificate(error) ??
+          const ApiFailure(FailureKind.network);
     } on ApiFailure {
       rethrow;
     } catch (_) {

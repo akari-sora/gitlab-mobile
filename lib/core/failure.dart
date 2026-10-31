@@ -11,6 +11,15 @@ enum FailureKind {
   unauthenticated, forbidden, invisible, rateLimited, network,
   server, tooLarge, attachmentTooLarge, unsupported, redirectBlocked, invalidResponse, cancelled,
   validation, conflict, writeUncertain, aiHistoryCleanup, readCacheCleanup,
+  untrustedCertificate,
+}
+
+/// The certificate a server presented when the platform refused it, for
+/// display beside the import confirmation only. Server-controlled text.
+final class RefusedCertificate {
+  const RefusedCertificate({required this.subject, required this.issuer});
+  final String subject;
+  final String issuer;
 }
 
 /// Shared presentation contract; provider failures keep their own semantics.
@@ -30,6 +39,7 @@ final class ApiFailure implements Exception, UserFacingFailure {
     this.retryAt,
     this.cleanup,
     this.validationDetail,
+    this.refusedCertificate,
     String? title,
     String? detail,
   }) : assert((kind == FailureKind.readCacheCleanup) == (cleanup != null)),
@@ -43,6 +53,10 @@ final class ApiFailure implements Exception, UserFacingFailure {
   final DateTime? retryAt;
   final ReadCacheCleanupState? cleanup;
   final String? validationDetail;
+
+  /// Set only with [FailureKind.untrustedCertificate], when the client saw
+  /// the refused certificate during the handshake.
+  final RefusedCertificate? refusedCertificate;
   final String? _title;
   final String? _detail;
 
@@ -104,6 +118,7 @@ final class ApiFailure implements Exception, UserFacingFailure {
     FailureKind.writeUncertain => l10n.actionResultUnconfirmed,
     FailureKind.aiHistoryCleanup => l10n.aiHistoryCleanupTitle,
     FailureKind.readCacheCleanup => l10n.tryAgainLater,
+    FailureKind.untrustedCertificate => l10n.untrustedCertificateTitle,
   };
   @override
   String get detail => _detail ?? switch (kind) {
@@ -124,6 +139,7 @@ final class ApiFailure implements Exception, UserFacingFailure {
     FailureKind.writeUncertain => l10n.writeInterruptedCheckList,
     FailureKind.aiHistoryCleanup => l10n.aiHistoryCleanupDetail,
     FailureKind.readCacheCleanup => l10n.retryAction,
+    FailureKind.untrustedCertificate => l10n.untrustedCertificateDetail,
   };
   @override
   String toString() => 'ApiFailure(${kind.name}, status: $status)';

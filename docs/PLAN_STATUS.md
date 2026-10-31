@@ -117,6 +117,7 @@ In priority order. Steps marked **owner** need the owner in person.
 5. **MR6c.** The unwired device cases and full V9 stay NOT_RUN / NOT_VERIFIED, so background AI runs stay off.
 6. **Cache C3.** The PARTIAL device rows need an exposed request meter; C3d stays optional.
 7. **Follow-up issues:** #52 (CI flakes and runner capacity) and #54 (MR7 review minors).
+8. **Self-hosted GitLab behind a company CA (#60): done (`feat/instance-ca`).** A sign-in that fails with an untrusted certificate offers 「匯入此站台的 CA 憑證」; the PEM/DER file's SHA-256 fingerprint is confirmed, stored per instance (`instance_ca.v1.*`) and trusted by that instance's clients only; 我的 › 帳號 lists and removes it. A refused certificate is its own failure (`untrustedCertificate`); writes stay `writeUncertain`. Real TLS covered by `test/instance_ca_tls_test.dart` (loopback, CA under `test/fixtures/tls/`). Device check and a real company-CA instance NOT_RUN.
 
 ## Plan documents
 | Document | Covers |

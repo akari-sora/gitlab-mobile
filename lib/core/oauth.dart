@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show SecurityContext;
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'failure.dart';
 import 'instance.dart';
+import 'instance_ca.dart';
 import 'models.dart';
 import 'rate_budget.dart';
 import 'request_meter.dart';
@@ -128,8 +130,18 @@ final class OAuthRefreshRefused implements Exception {
 }
 
 final class OAuthTokenClient {
-  OAuthTokenClient({required this.instance, required this.clientId, Dio? dio})
-    : _dio = dio ?? Dio() {
+  /// [securityContext] is the instance's imported CA (see `GitLabApi`); it
+  /// applies only when this client creates its own Dio.
+  OAuthTokenClient({
+    required this.instance,
+    required this.clientId,
+    Dio? dio,
+    SecurityContext? securityContext,
+  }) : assert(dio == null || securityContext == null),
+       _dio = dio ?? Dio() {
+    if (dio == null) {
+      _dio.httpClientAdapter = instanceHttpAdapter(securityContext);
+    }
     _dio.options.connectTimeout = const Duration(seconds: 15);
     _dio.options.receiveTimeout = const Duration(seconds: 25);
     _dio.options.sendTimeout = const Duration(seconds: 15);
@@ -266,7 +278,11 @@ final class OAuthTokenClient {
       if (error.type == DioExceptionType.cancel) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      throw const ApiFailure(FailureKind.network);
+      throw ApiFailure(
+        isRefusedCertificate(error)
+            ? FailureKind.untrustedCertificate
+            : FailureKind.network,
+      );
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
     }
@@ -314,7 +330,11 @@ final class OAuthTokenClient {
       if (error.type == DioExceptionType.cancel) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      throw const ApiFailure(FailureKind.network);
+      throw ApiFailure(
+        isRefusedCertificate(error)
+            ? FailureKind.untrustedCertificate
+            : FailureKind.network,
+      );
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
     }

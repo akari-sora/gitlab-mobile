@@ -21,7 +21,7 @@ Each recipient (your GitLab instance, your AI provider, Google) handles data und
 
 ## What stays on your device
 
-Accounts and tokens, provider settings and keys, drafts and preferences are kept in the device's secure storage. Optional AI chat history (off by default), the AI write log, the read cache and offline repository copies are encrypted on the device. Demo mode uses built-in sample data and saves nothing.
+Accounts and tokens, CA certificates you import for a self-hosted GitLab, provider settings and keys, drafts and preferences are kept in the device's secure storage. Optional AI chat history (off by default), the AI write log, the read cache and offline repository copies are encrypted on the device. Demo mode uses built-in sample data and saves nothing.
 
 ## Your choices
 
@@ -69,7 +69,7 @@ Mergeline 是 GitLab® 的獨立客戶端，與 GitLab Inc. 無關，也未經�
 
 ## 留在裝置上的資料
 
-帳號與 Token、供應商設定與金鑰、草稿與偏好設定存放在裝置的安全儲存區。選用的 AI 聊天紀錄（預設關閉）、AI 寫入紀錄、讀取快取與離線儲存的儲存庫都在裝置上加密。Demo 模式使用內建的範例資料，不會儲存任何東西。
+帳號與 Token、你為自架 GitLab 匯入的 CA 憑證、供應商設定與金鑰、草稿與偏好設定存放在裝置的安全儲存區。選用的 AI 聊天紀錄（預設關閉）、AI 寫入紀錄、讀取快取與離線儲存的儲存庫都在裝置上加密。Demo 模式使用內建的範例資料，不會儲存任何東西。
 
 ## 你的選擇
 

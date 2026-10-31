@@ -920,7 +920,9 @@ SnapshotFailure snapshotFailure(Object error) => switch (error) {
     _ => SnapshotFailure.storageError,
   },
   ApiFailure(:final kind) => switch (kind) {
-    FailureKind.network || FailureKind.server => SnapshotFailure.network,
+    FailureKind.network ||
+    FailureKind.untrustedCertificate ||
+    FailureKind.server => SnapshotFailure.network,
     FailureKind.rateLimited => SnapshotFailure.rateLimited,
     FailureKind.forbidden ||
     FailureKind.unauthenticated => SnapshotFailure.accessLost,

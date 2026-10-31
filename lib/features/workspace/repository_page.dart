@@ -623,6 +623,7 @@ class RepositoryTabState extends State<RepositoryTab> {
   SnapshotRecord? _offlineFallback(ApiFailure failure) {
     if (!const {
       FailureKind.network,
+      FailureKind.untrustedCertificate,
       FailureKind.server,
       FailureKind.rateLimited,
       FailureKind.redirectBlocked,
