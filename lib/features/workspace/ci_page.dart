@@ -3095,7 +3095,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           ]),
         ),
         if ((_loading && _firstLoadDone) || _busy) const LinearProgressIndicator(minHeight: 2),
-        if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _load,
+        if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _refresh,
           account: widget.account, resourceLabel: '${widget.project.path} · Job #$_jobId',
           onSwitchAccount: endSessionFrom(context)),
         Expanded(child: !_firstLoadDone && _loading
