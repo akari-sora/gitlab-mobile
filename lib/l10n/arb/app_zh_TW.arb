@@ -10606,6 +10606,7 @@
     "placeholders": {}
   },
   "aiAssistantLabel": "AI 助理",
+  "aiSectionTitle": "AI 功能",
   "aiRunChannelName": "AI 背景工作",
   "aiRunServiceTitle": "AI 助理正在工作",
   "aiRunServiceText": "可以離開應用程式，工作會繼續進行。",

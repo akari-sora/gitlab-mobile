@@ -867,6 +867,15 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    // The switch sits below the labelled description field, which can push
+    // it past the end of the scrolling form in the test window.
+    Future<void> tapAttach(WidgetTester tester) async {
+      final attach = find.byKey(const ValueKey('ai-report-attach'));
+      await tester.ensureVisible(attach);
+      await tester.pumpAndSettle();
+      await tester.tap(attach);
+    }
+
     testWidgets('sends metadata only unless the response is attached', (
       tester,
     ) async {
@@ -882,7 +891,7 @@ void main() {
       expect(shown, contains('preset: opencode-go'));
       expect(shown, contains('app: 0.6.0+612 (abc1234)'));
       expect(shown, isNot(contains('renames')));
-      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tapAttach(tester);
       await tester.pumpAndSettle();
       final confirmed = tester.widget<Text>(preview).data!;
       expect(confirmed, contains(answerText));
@@ -912,7 +921,7 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tapAttach(tester);
       await tester.pumpAndSettle();
       final preview = find.byKey(const ValueKey('ai-report-preview'));
       final confirmed = tester.widget<Text>(preview).data!;
@@ -996,7 +1005,7 @@ void main() {
       final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-privacy')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tapAttach(tester);
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('ai-report-description')),
@@ -1031,7 +1040,7 @@ void main() {
       final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tapAttach(tester);
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('ai-report-description')),
@@ -1069,7 +1078,7 @@ void main() {
       final posted = await openReport(tester, session);
       await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tapAttach(tester);
       await tester.pumpAndSettle();
       // The answer is rebuilt while the sheet stays as it was.
       final original = session.items.single as AiAssistantItem;

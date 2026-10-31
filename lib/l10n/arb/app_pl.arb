@@ -2111,6 +2111,7 @@
   "aiReplayProtectionStopped": "W już wysłanej treści wykryto nowy sekret. Odpowiedź zatrzymano, ponieważ wysłanej treści nie można wycofać",
   "aiEndTokenBudget": "Rozmowa osiągnęła limit użycia. Rozpocznij nową rozmowę",
   "aiAssistantLabel": "Asystent AI",
+  "aiSectionTitle": "Funkcje AI",
   "aiRunChannelName": "Praca AI w tle",
   "aiRunServiceTitle": "Asystent AI pracuje",
   "aiRunServiceText": "Możesz opuścić aplikację; praca będzie kontynuowana.",

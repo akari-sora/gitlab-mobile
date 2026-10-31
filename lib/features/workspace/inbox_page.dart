@@ -162,10 +162,10 @@ class _InboxFilters extends StatelessWidget {
           listenable: tabs,
           builder: (context, _) => SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+            padding: EdgeInsetsDirectional.fromSTEB(feedGutter(context), 0, feedGutter(context), 4),
             child: Row(children: [
               for (final (index, (label, icon)) in _labels.indexed) Padding(
-                padding: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsetsDirectional.only(end: 8),
                 child: FilterPill(
                   key: ValueKey('inbox-filter-$index'),
                   label: label,
@@ -532,10 +532,10 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
     final scheme = theme.colorScheme;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: EdgeInsets.fromLTRB(feedGutter(context), 6, feedGutter(context), 0),
+      padding: EdgeInsetsDirectional.fromSTEB(feedGutter(context), 6, feedGutter(context), 0),
       child: Row(children: [
         for (final filter in _TodoFilter.values) Padding(
-          padding: const EdgeInsets.only(right: 6),
+          padding: const EdgeInsetsDirectional.only(end: 6),
           child: ChoiceChip(
             key: ValueKey('todo-filter-${filter.name}'),
             label: Text(filter.label),
@@ -572,7 +572,8 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
     leading: (context, controller) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             _filters(context),
             if (controller.items.isNotEmpty) Padding(
-              padding: EdgeInsets.fromLTRB(feedGutter(context) + 4, 6, feedGutter(context) - 8, 0),
+              // The end inset gives back the text button's own padding.
+              padding: EdgeInsetsDirectional.fromSTEB(feedGutter(context), 6, feedGutter(context) - 8, 0),
               child: Row(children: [
                 Expanded(child: Text(l10n.todoSwipeHint(controller.items.where(_visible).length, controller.next == null ? '' : '+'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),

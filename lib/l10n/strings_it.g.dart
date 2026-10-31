@@ -2115,6 +2115,7 @@ const _messagesIt = <String>[
   'È stato rilevato un nuovo segreto nei contenuti già inviati. La risposta è stata interrotta perché i contenuti inviati non possono essere ritirati',
   'La conversazione ha raggiunto il limite di utilizzo. Avvia una nuova conversazione',
   'Assistente IA',
+  'Funzioni IA',
   'Attività IA in background',
   'L’assistente IA sta lavorando',
   'Puoi uscire dall’app; il lavoro continua.',

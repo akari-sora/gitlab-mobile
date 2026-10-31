@@ -2115,6 +2115,7 @@ const _messagesVi = <String>[
   'Đã phát hiện bí mật mới trong nội dung đã gửi. Câu trả lời đã dừng vì không thể thu hồi nội dung đã gửi',
   'Cuộc trò chuyện đã đạt giới hạn sử dụng. Hãy bắt đầu cuộc trò chuyện mới',
   'Trợ lý AI',
+  'Tính năng AI',
   'Tác vụ AI chạy nền',
   'Trợ lý AI đang làm việc',
   'Bạn có thể rời ứng dụng; công việc vẫn tiếp tục.',

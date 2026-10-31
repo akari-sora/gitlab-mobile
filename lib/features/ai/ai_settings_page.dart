@@ -8,6 +8,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
+import '../../shared/layout_constants.dart';
 import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import '../security/app_lock.dart';
@@ -388,7 +389,12 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           ),
         ),
         Padding(
-          padding: const EdgeInsetsDirectional.fromSTEB(64, 0, 16, 12),
+          padding: const EdgeInsetsDirectional.fromSTEB(
+            SharedLayout.rowTextInset,
+            0,
+            16,
+            12,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -558,7 +564,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           ListTile(
             leading: Monogram(
               accountIdentity.user.name,
-              size: 40,
+              size: 32,
               circle: true,
             ),
             title: Text(isolated(accountIdentity.user.name)),
@@ -568,10 +574,12 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
             ),
           ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 4),
           child: Text(
             l10n.aiConsentsHeading,
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
         if (account.consents.isEmpty)
@@ -583,6 +591,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           _consentRow(consent.key, consent.value),
         SwitchListTile.adaptive(
           key: const ValueKey('ai-history-switch'),
+          secondary: const NeutralTile(Icons.lock_outline),
           title: Text(l10n.aiEncryptedHistory),
           value: account.historyEnabled,
           onChanged: editable
@@ -597,7 +606,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         ),
         _historyStatus(state),
         Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -628,7 +637,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                       }
                     : null,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: SharedLayout.fieldGap),
               TextFormField(
                 key: ValueKey('ai-token-cap-${widget.accountKey}'),
                 controller: _cap,
@@ -659,9 +668,13 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 l10n.aiConversationCapHelp,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
-              const SizedBox(height: 12),
-              Text(l10n.aiWorstCaseUsage),
-              for (final provider in widget.settings.providers)
+              const SizedBox(height: 16),
+              Text(
+                l10n.aiWorstCaseUsage,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              for (final provider in widget.settings.providers) ...[
+                const SizedBox(height: 4),
                 Text(
                   l10n.aiWorstCaseUsageForProvider(
                     isolated(provider.name),
@@ -671,6 +684,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                   ),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+              ],
               const SizedBox(height: 16),
               OutlinedButton.icon(
                 onPressed:
@@ -713,18 +727,11 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     final theme = Theme.of(context);
     return ListTile(
       key: const ValueKey('ai-write-log'),
-      leading: Icon(
-        unreadable
-            ? Icons.error_outline
-            : interrupted > 0
-            ? Icons.help_outline
-            : Icons.history,
-        color: unreadable
-            ? theme.colorScheme.error
-            : interrupted > 0
-            ? HubColors.orange
-            : null,
-      ),
+      leading: unreadable
+          ? const IconTile(Icons.error_outline, color: HubColors.red)
+          : interrupted > 0
+          ? const IconTile(Icons.help_outline, color: HubColors.orange)
+          : const NeutralTile(Icons.history),
       title: Text(l10n.aiWriteLogTitle),
       subtitle: Text(
         unreadable
@@ -781,6 +788,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           ),
         ),
       ),
+      footer: [
+        if (widget.account case final account?) _writeLogTile(account),
+      ],
     );
   }
 
@@ -819,7 +829,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(l10n.aiAssistantLabel)),
+    appBar: AppBar(titleSpacing: 0, title: Text(l10n.aiAssistantLabel)),
     body: SafeArea(
       top: false,
       child: AnimatedBuilder(
@@ -889,10 +899,15 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
               ),
               _accountSection(),
               _writeSection(),
-              if (widget.account case final account?) _writeLogTile(account),
+              // A footnote under the sections, like a settings footer.
               Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(l10n.aiWritePromise),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 24),
+                child: Text(
+                  l10n.aiWritePromise,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
             ],
           );

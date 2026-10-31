@@ -2115,6 +2115,7 @@ const _messagesEn = <String>[
   'A new secret was detected in content already sent. The answer stopped because sent content cannot be retracted',
   'This conversation reached its usage limit. Start a new conversation',
   'AI assistant',
+  'AI features',
   'AI background work',
   'AI assistant is working',
   'You can leave the app; the work keeps running.',

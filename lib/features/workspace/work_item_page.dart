@@ -1468,10 +1468,16 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                 ),
               ],
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
+              // The merge (or cancel) action spans the card on its own row;
+              // the review actions share the row under it evenly.
+              SizedBox(
+                width: double.infinity,
+                child: autoScheduled
+                    ? OutlinedButton.icon(key: const ValueKey('cancel-auto-merge'), onPressed: _busy ? null : () => _action('cancel_auto_merge'), icon: const Icon(Icons.close, size: 18), label: Text(l10n.cancelAutoMerge))
+                    : FilledButton.icon(onPressed: _busy ? null : () => _action('merge'), icon: Icon(autoCandidate ? Icons.schedule_send : Icons.merge, size: 18), label: Text(autoCandidate ? l10n.autoMergeEllipsis : l10n.merge)),
+              ),
+              const SizedBox(height: 8),
+              _evenRow([
                   OutlinedButton.icon(key: const ValueKey('mr-draft-review-btn'), onPressed: _busy ? null : () => _openDraftReview(data), icon: const Icon(Icons.rate_review_outlined, size: 18), label: Text(l10n.reviewDrafts)),
                   if (hasApproved)
                     OutlinedButton.icon(key: const ValueKey('mr-unapprove-btn'), onPressed: _busy ? null : () => _action('unapprove'), icon: const Icon(Icons.undo, size: 18), label: Text(l10n.revokeMyApproval))
@@ -1486,12 +1492,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                     )
                   else if (canRebase)
                     OutlinedButton.icon(key: const ValueKey('mr-rebase-btn'), onPressed: _busy ? null : () => _action('rebase'), icon: const Icon(Icons.fork_right, size: 18), label: Text(divergedCommits > 0 ? l10n.rebaseBehindCount(divergedCommits) : 'Rebase')),
-                  if (autoScheduled)
-                    OutlinedButton.icon(key: const ValueKey('cancel-auto-merge'), onPressed: _busy ? null : () => _action('cancel_auto_merge'), icon: const Icon(Icons.close, size: 18), label: Text(l10n.cancelAutoMerge))
-                  else
-                    FilledButton.icon(onPressed: _busy ? null : () => _action('merge'), icon: Icon(autoCandidate ? Icons.schedule_send : Icons.merge, size: 18), label: Text(autoCandidate ? l10n.autoMergeEllipsis : l10n.merge)),
-                ],
-              ),
+              ]),
             ],
           ),
         ),
@@ -1612,7 +1613,7 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
     final rows = <Widget>[];
     void add(IconData icon, String label, String value) {
       rows
-        ..add(const Divider(height: 20))
+        ..add(const Divider(height: 24))
         ..add(
           Row(
             children: [
@@ -1640,13 +1641,16 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
     final subscribed = data['subscribed'];
     if (subscribed is bool) {
       rows
-        ..add(const Divider(height: 12))
+        ..add(const Divider(height: 24))
         ..add(
           SwitchListTile(
             key: const ValueKey('work-item-subscribe'),
             contentPadding: EdgeInsets.zero,
             minTileHeight: 48,
-            secondary: Icon(subscribed ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, color: muted),
+            // The same icon column as the attribute rows above.
+            minLeadingWidth: 18,
+            horizontalTitleGap: 10,
+            secondary: Icon(subscribed ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, size: 18, color: muted),
             title: Text(l10n.notifications),
             subtitle: Text(subscribed ? l10n.notifyOnNewActivity : l10n.muteItemNotifications),
             value: subscribed,
@@ -1893,7 +1897,12 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
     final author = valueObject(data, 'author');
     final authorName = valueText(author, 'name', valueText(author, 'username'));
     final created = relativeDate(valueText(data, 'created_at'));
-    final crowded = MediaQuery.textScalerOf(context).scale(14) > 14 * 1.3;
+    final tabLabels = [
+      l10n.summary,
+      if (mr) l10n.changes,
+      l10n.thread,
+      if (mr) l10n.checks,
+    ];
     return Scaffold(
       body: NotificationListener<ScrollNotification>(
         onNotification: _chrome.handle,
@@ -1965,18 +1974,18 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                       onRetry: () => unawaited(_load(fresh: true)),
                     ),
                   ),
-                TabBar(
-                  controller: _tabs,
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  isScrollable: crowded,
-                  tabAlignment: crowded ? TabAlignment.start : null,
-                  tabs: [
-                    Tab(text: l10n.summary),
-                    if (mr) Tab(text: l10n.changes),
-                    Tab(text: l10n.thread),
-                    if (mr) Tab(text: l10n.checks),
-                  ],
-                ),
+                // Scrolls at large text and when a translation is too long
+                // for an even share, instead of cutting the label.
+                LayoutBuilder(builder: (context, constraints) {
+                  final crowded = tabLabelsCrowded(context, tabLabels, constraints.maxWidth);
+                  return TabBar(
+                    controller: _tabs,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    isScrollable: crowded,
+                    tabAlignment: crowded ? TabAlignment.start : null,
+                    tabs: [for (final label in tabLabels) Tab(text: label)],
+                  );
+                }),
                 Expanded(
                   child: NotificationListener<KeepAliveNotification>(onNotification: (_) => true, child: TabBarView(
                     controller: _tabs,
@@ -2036,18 +2045,26 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                           const SizedBox(height: 16),
                           Card(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(14, 4, 8, 12),
+                              padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 8, 12),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   _buildAssigneesSection(data),
-                                  if (mr) ...[const Divider(height: 20), _buildReviewersSection(data)],
-                                  const Divider(height: 20),
+                                  if (mr) ...[const Divider(height: 24), _buildReviewersSection(data)],
+                                  const Divider(height: 24),
                                   _buildLabelsSection(data),
                                   if (valueObject(data, 'milestone').isNotEmpty) ...[
-                                    const Divider(height: 20),
-                                    Text(l10n.milestoneLabel, style: Theme.of(context).textTheme.titleSmall),
-                                    const SizedBox(height: 8),
+                                    const Divider(height: 24),
+                                    // As tall as the headings above, which
+                                    // carry a 48 dp edit button.
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(minHeight: 48),
+                                      child: Align(
+                                        alignment: AlignmentDirectional.centerStart,
+                                        child: Text(l10n.milestoneLabel, style: Theme.of(context).textTheme.titleSmall),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
                                     Wrap(
                                       spacing: 8,
                                       runSpacing: 2,
@@ -2311,7 +2328,7 @@ class _MergeChecksState extends State<_MergeChecks> {
 
   @override
   Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.all(20),
+    padding: const EdgeInsets.all(16),
     children: [
       Text(l10n.mergeConditions, style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 10),
@@ -2321,7 +2338,9 @@ class _MergeChecksState extends State<_MergeChecks> {
         l10n.versionShortSha(shortSha(valueText(widget.data, 'sha'))),
         style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace']),
       ),
-      if (widget.data['head_pipeline'] is Json) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: StatusBadge(valueText(valueObject(widget.data, 'head_pipeline'), 'status'))),
+      if (widget.data['head_pipeline'] is Json) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: StatusBadge(valueText(valueObject(widget.data, 'head_pipeline'), 'status')))),
       const Divider(height: 32),
       Text(l10n.review, style: Theme.of(context).textTheme.titleMedium),
       FutureBuilder<Json>(
@@ -2630,3 +2649,27 @@ String mergeStatusLabel(Json data) {
     _ => l10n.statusToken(token),
   };
 }
+
+/// Outlined [buttons] side by side in equal shares, 8 dp apart and of one
+/// height, so a label that wraps in a long translation does not leave its
+/// neighbours short. Each has half a card, so the side padding is narrower.
+Widget _evenRow(List<Widget> buttons) => Builder(
+  builder: (context) => OutlinedButtonTheme(
+    data: OutlinedButtonThemeData(
+      style: (Theme.of(context).outlinedButtonTheme.style ?? const ButtonStyle()).copyWith(
+        padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 12)),
+      ),
+    ),
+    child: IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (index, button) in buttons.indexed) ...[
+            if (index > 0) const SizedBox(width: 8),
+            Expanded(child: button),
+          ],
+        ],
+      ),
+    ),
+  ),
+);

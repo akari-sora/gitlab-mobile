@@ -257,7 +257,7 @@ class _AiWriteLogPageState extends State<AiWriteLogPage> {
     return ScaffoldMessenger(
       key: _messenger,
       child: Scaffold(
-        appBar: AppBar(title: Text(l10n.aiWriteLogTitle)),
+        appBar: AppBar(titleSpacing: 0, title: Text(l10n.aiWriteLogTitle)),
         body: SafeArea(
           top: false,
           child: ListView(

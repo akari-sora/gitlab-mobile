@@ -2049,8 +2049,13 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                     children: [
                       appBar,
                       if (text != null && !_preview)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        // On the header's surface, clear of the app bar, so
+                        // the raised field does not fade into the canvas.
+                        ColoredBox(
+                          color: Theme.of(context).appBarTheme.backgroundColor ??
+                              Theme.of(context).colorScheme.surface,
+                          child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                           child: TextField(
                             controller: _searchController,
                             focusNode: _searchFocus,
@@ -2066,7 +2071,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                             onChanged: _onSearchChanged,
                             onSubmitted: _onSearchSubmitted,
                           ),
-                        ),
+                        )),
                       if (_searchPending)
                         const LinearProgressIndicator(
                           key: ValueKey('repository-file-search-pending'),

@@ -519,7 +519,6 @@ class _ProjectPageState extends State<ProjectPage>
         ? l10n.unstar
         : l10n.star;
     final scaler = MediaQuery.textScalerOf(context);
-    final crowded = scaler.scale(14) > 14 * 1.3;
     final titleStyle =
         theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19) ??
         theme.textTheme.titleLarge!.copyWith(fontSize: 19);
@@ -714,21 +713,21 @@ class _ProjectPageState extends State<ProjectPage>
                   icon: const Icon(Icons.space_dashboard_outlined, size: 20),
                 ),
                 Expanded(
-                  child: TabBar(
-                    controller: _tabs,
-                    dividerHeight: 0,
-                    indicatorSize: TabBarIndicatorSize.label,
-                    isScrollable: crowded,
-                    tabAlignment: crowded ? TabAlignment.start : null,
-                    labelPadding: crowded ? null : const EdgeInsets.symmetric(horizontal: 4),
-                    tabs: [
-                      Tab(text: l10n.compareFilesSection),
-                      Tab(text: l10n.issues),
-                      Tab(text: 'MR'),
-                      Tab(text: 'CI'),
-                      Tab(text: l10n.moreItems),
-                    ],
-                  ),
+                  // Scrolls at large text and when a translation is too long
+                  // for an even share, instead of cutting the label.
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    final labels = [l10n.compareFilesSection, l10n.issues, 'MR', 'CI', l10n.moreItems];
+                    final crowded = tabLabelsCrowded(context, labels, constraints.maxWidth, labelPadding: 8);
+                    return TabBar(
+                      controller: _tabs,
+                      dividerHeight: 0,
+                      indicatorSize: TabBarIndicatorSize.label,
+                      isScrollable: crowded,
+                      tabAlignment: crowded ? TabAlignment.start : null,
+                      labelPadding: crowded ? null : const EdgeInsets.symmetric(horizontal: 4),
+                      tabs: [for (final label in labels) Tab(text: label)],
+                    );
+                  }),
                 ),
               ],
             ),

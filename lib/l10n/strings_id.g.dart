@@ -2115,6 +2115,7 @@ const _messagesId = <String>[
   'Rahasia baru terdeteksi dalam konten yang sudah dikirim. Jawaban dihentikan karena konten terkirim tidak dapat ditarik kembali',
   'Percakapan ini mencapai batas penggunaan. Mulai percakapan baru',
   'Asisten AI',
+  'Fitur AI',
   'Pekerjaan AI di latar belakang',
   'Asisten AI sedang bekerja',
   'Anda dapat meninggalkan aplikasi; pekerjaan tetap berjalan.',

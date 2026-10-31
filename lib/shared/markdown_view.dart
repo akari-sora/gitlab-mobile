@@ -973,6 +973,9 @@ class _MarkdownViewState extends State<MarkdownView> {
         h1: Theme.of(context).textTheme.headlineSmall,
         h2: Theme.of(context).textTheme.titleLarge,
         h3: Theme.of(context).textTheme.titleMedium,
+        // Headings get a little more room above them than a paragraph.
+        h2Padding: const EdgeInsets.only(top: 12),
+        h3Padding: const EdgeInsets.only(top: 8),
         tableColumnWidth: FixedColumnWidth(180.0 * tableTextScale),
         tableScrollbarThumbVisibility: true,
         code: TextStyle(
@@ -980,7 +983,11 @@ class _MarkdownViewState extends State<MarkdownView> {
           fontFamilyFallback: const ['Menlo', 'monospace'],
           fontSize: 13,
           color: Theme.of(context).colorScheme.onSurface,
+          // The block's own fill, so code lines show no per-line bands (the
+          // default merged in is the card colour).
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         ),
+        codeblockPadding: const EdgeInsets.all(12),
         codeblockDecoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),

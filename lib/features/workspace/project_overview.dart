@@ -754,7 +754,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: Row(children: [
-                SizedBox(width: 32, child: Icon(Icons.alt_route, color: muted)),
+                const NeutralTile(Icons.alt_route),
                 const SizedBox(width: 16),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(l10n.currentBranch, style: theme.textTheme.bodyMedium?.copyWith(color: muted)),

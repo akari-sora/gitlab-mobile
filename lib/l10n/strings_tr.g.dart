@@ -2115,6 +2115,7 @@ const _messagesTr = <String>[
   'Daha önce gönderilmiş içerikte yeni bir gizli bilgi algılandı. Gönderilen içerik geri alınamayacağı için yanıt durduruldu',
   'Bu konuşma kullanım sınırına ulaştı. Yeni bir konuşma başlatın',
   'AI asistanı',
+  'AI özellikleri',
   'Arka planda AI çalışması',
   'AI asistanı çalışıyor',
   'Uygulamadan çıkabilirsiniz; çalışma devam eder.',

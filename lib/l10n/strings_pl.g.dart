@@ -2115,6 +2115,7 @@ const _messagesPl = <String>[
   'W już wysłanej treści wykryto nowy sekret. Odpowiedź zatrzymano, ponieważ wysłanej treści nie można wycofać',
   'Rozmowa osiągnęła limit użycia. Rozpocznij nową rozmowę',
   'Asystent AI',
+  'Funkcje AI',
   'Praca AI w tle',
   'Asystent AI pracuje',
   'Możesz opuścić aplikację; praca będzie kontynuowana.',

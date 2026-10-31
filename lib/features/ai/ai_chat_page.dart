@@ -905,6 +905,7 @@ class _AiChatPageState extends State<AiChatPage> {
           key: _messenger,
           child: Scaffold(
             appBar: AppBar(
+              titleSpacing: 0,
               title: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1474,7 +1475,9 @@ class _EmptyConversation extends StatelessWidget {
     ];
     return ListView(
       controller: controller,
-      padding: const EdgeInsets.all(24),
+      // The message list's 16 dp sides, so the first message does not shift
+      // the banner.
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       children: [
         if (notice case final notice?) ...[notice, const SizedBox(height: 20)],
         Icon(Icons.auto_awesome, size: 40, color: theme.colorScheme.primary),
@@ -2508,7 +2511,12 @@ class _Composer extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: EdgeInsets.fromLTRB(attach == null ? 12 : 4, 8, 8, 8),
+          padding: EdgeInsetsDirectional.fromSTEB(
+            attach == null ? 16 : 4,
+            8,
+            12,
+            8,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,

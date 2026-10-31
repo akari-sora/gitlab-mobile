@@ -2111,6 +2111,7 @@
   "aiReplayProtectionStopped": "Um novo segredo foi detectado em conteúdo já enviado. A resposta foi interrompida porque o conteúdo enviado não pode ser retirado",
   "aiEndTokenBudget": "A conversa atingiu o limite de uso. Inicie uma nova conversa",
   "aiAssistantLabel": "Assistente de IA",
+  "aiSectionTitle": "Recursos de IA",
   "aiRunChannelName": "Trabalho de IA em segundo plano",
   "aiRunServiceTitle": "O assistente de IA está trabalhando",
   "aiRunServiceText": "Você pode sair do app; o trabalho continua.",

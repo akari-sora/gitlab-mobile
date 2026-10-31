@@ -251,7 +251,8 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       for (var index = 0; index < notes.length; index++) ...[
         if (index > 0) const Divider(height: 24),
-        Row(children: [
+        // As tall as a header with its ⋮ menu, so every note starts alike.
+        ConstrainedBox(constraints: const BoxConstraints(minHeight: 48), child: Row(children: [
           Monogram(valueText(valueObject(notes[index], 'author'), 'name',
             valueText(valueObject(notes[index], 'author'), 'username')), size: 26),
           const SizedBox(width: 8),
@@ -264,7 +265,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
             PopupMenuButton<String>(tooltip: l10n.commentActions, enabled: !_busy,
               onSelected: (action) => action == 'edit' ? _compose(note: notes[index], discussion: discussionId) : _delete(notes[index], discussionId),
               itemBuilder: (_) => [PopupMenuItem(value: 'edit', child: Text(l10n.editComment)), PopupMenuItem(value: 'delete', child: Text(l10n.deleteComment))]),
-        ]),
+        ])),
         if (notes[index]['position'] is Json) Text('${valueText(valueObject(notes[index], 'position'), 'new_path')} · '
           '${valueObject(notes[index], 'position')['new_line'] ?? valueObject(notes[index], 'position')['old_line'] ?? ''}',
           style: Theme.of(context).textTheme.bodySmall),
@@ -421,13 +422,12 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       })),
     Material(
       color: Theme.of(context).colorScheme.surfaceContainerLow,
-      child: SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(12, 8, 8, 8), child: Row(children: [
+      child: SafeArea(top: false, child: Padding(padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8), child: Row(children: [
         Expanded(flex: 3, child: FilledButton.icon(
-          style: FilledButton.styleFrom(alignment: Alignment.centerLeft),
           onPressed: _busy ? null : () => _compose(), icon: const Icon(Icons.add_comment_outlined),
           label: Text(l10n.addComment, maxLines: 1, overflow: TextOverflow.ellipsis))),
         const SizedBox(width: 8),
-        Flexible(flex: 2, child: OutlinedButton.icon(onPressed: _busy ? null : () => _compose(thread: true),
+        Expanded(flex: 2, child: OutlinedButton.icon(onPressed: _busy ? null : () => _compose(thread: true),
           icon: const Icon(Icons.forum_outlined, size: 18),
           label: Text(l10n.newThread, maxLines: 1, overflow: TextOverflow.ellipsis))),
       ]))),

@@ -326,7 +326,13 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                       children: [
                         Text(l10n.aiConsentWritesUpTo(aiLevelLabel(ceiling))),
                         const SizedBox(height: 4),
-                        Text(aiLevelHint(ceiling)),
+                        // The level's hint belongs to the line above.
+                        Text(
+                          aiLevelHint(ceiling),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                         for (final line in [
                           l10n.aiConsentWritesLimits,
                           if (details.groupWrites)
@@ -421,6 +427,8 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                 ],
               ),
             ),
+            // Separates the actions from the content scrolling above them.
+            const Divider(height: 1),
             SafeArea(
               top: false,
               child: Padding(

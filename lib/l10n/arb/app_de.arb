@@ -2111,6 +2111,7 @@
   "aiReplayProtectionStopped": "In bereits gesendeten Inhalten wurde ein neues Geheimnis erkannt. Die Antwort wurde gestoppt, weil gesendete Inhalte nicht zurückgezogen werden können",
   "aiEndTokenBudget": "Das Nutzungslimit der Unterhaltung ist erreicht. Beginnen Sie eine neue Unterhaltung",
   "aiAssistantLabel": "KI-Assistent",
+  "aiSectionTitle": "KI-Funktionen",
   "aiRunChannelName": "KI-Arbeit im Hintergrund",
   "aiRunServiceTitle": "KI-Assistent arbeitet",
   "aiRunServiceText": "Sie können die App verlassen, die Arbeit läuft weiter.",

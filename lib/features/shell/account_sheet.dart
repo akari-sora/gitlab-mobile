@@ -25,9 +25,13 @@ Future<void> showAccountSheet(BuildContext context, SessionController session) {
       ]),
       const SizedBox(height: 12),
       for (final saved in session.accounts.where((saved) => saved.key != account.key))
+        // Leading in a 48 dp slot under the current account's avatar, so
+        // every name in the sheet starts at the same column.
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: Monogram(saved.user.name, size: 32, circle: true),
+          minLeadingWidth: 48,
+          horizontalTitleGap: 14,
+          leading: SizedBox(width: 48, child: Center(child: Monogram(saved.user.name, size: 32, circle: true))),
           title: Text(isolated('@${saved.user.username}'), maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(saved.instance.base.host),
           trailing: const Icon(Icons.swap_horiz),
@@ -43,7 +47,9 @@ Future<void> showAccountSheet(BuildContext context, SessionController session) {
         ),
       ListTile(
         contentPadding: EdgeInsets.zero,
-        leading: const Icon(Icons.person_add_outlined),
+        minLeadingWidth: 48,
+        horizontalTitleGap: 14,
+        leading: const SizedBox(width: 48, child: Center(child: Icon(Icons.person_add_outlined))),
         title: Text(l10n.addOrSwitchAccount),
         onTap: () {
           Navigator.pop(sheetContext);

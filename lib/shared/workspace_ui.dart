@@ -378,6 +378,33 @@ double feedGutter(BuildContext context, [double? containerWidth]) {
   return width > 672 ? (width - 640) / 2 : 16.0;
 }
 
+/// Whether a tab bar of [labels] should scroll instead of splitting
+/// [maxWidth] evenly: at large text, or when a label plus its
+/// [labelPadding] (both sides) would not fit its share at the current text
+/// size, so long translations scroll rather than being cut.
+bool tabLabelsCrowded(BuildContext context, List<String> labels, double maxWidth,
+    {double labelPadding = 32}) {
+  final scaler = MediaQuery.textScalerOf(context);
+  if (scaler.scale(14) > 14 * 1.3) return true;
+  if (labels.isEmpty || !maxWidth.isFinite) return false;
+  final theme = Theme.of(context);
+  // The selected style is the widest one.
+  final style = theme.textTheme.titleSmall!.merge(theme.tabBarTheme.labelStyle);
+  final share = maxWidth / labels.length;
+  for (final label in labels) {
+    final painter = TextPainter(
+      text: TextSpan(text: label, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    if (width + labelPadding > share) return true;
+  }
+  return false;
+}
+
 /// Appearance picker: a segmented control when there is room, wrapping chips
 /// on narrow widths or large text so labels never ellipsize.
 class AppearancePicker extends StatelessWidget {

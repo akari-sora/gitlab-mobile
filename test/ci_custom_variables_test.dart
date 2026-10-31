@@ -258,6 +258,9 @@ void main() {
       await tester.enterText(find.byKey(const ValueKey('ci-var-key-0')), 'DUPLICATE_KEY');
       await tester.enterText(find.byKey(const ValueKey('ci-var-val-0')), 'val1');
 
+      // Focusing the first card's fields scrolled the add button away.
+      await tester.ensureVisible(find.byKey(const Key('add-ci-variable')));
+      await settleWorkspace(tester);
       await tester.tap(find.byKey(const Key('add-ci-variable')));
       await settleWorkspace(tester);
       await tester.enterText(find.byKey(const ValueKey('ci-var-key-1')), 'DUPLICATE_KEY');

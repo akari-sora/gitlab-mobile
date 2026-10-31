@@ -2115,6 +2115,7 @@ const _messagesFr = <String>[
   'Un nouveau secret a été détecté dans du contenu déjà envoyé. La réponse a été arrêtée, car le contenu envoyé ne peut pas être retiré',
   'La conversation a atteint sa limite d’utilisation. Démarrez une nouvelle conversation',
   'Assistant IA',
+  'Fonctions d’IA',
   'Travail IA en arrière-plan',
   'L’assistant IA travaille',
   'Vous pouvez quitter l’app ; le travail continue.',

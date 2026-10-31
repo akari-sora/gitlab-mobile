@@ -2115,6 +2115,7 @@ const _messagesSv = <String>[
   'En ny hemlighet upptäcktes i redan skickat innehåll. Svaret stoppades eftersom skickat innehåll inte kan återkallas',
   'Konversationen har nått användningsgränsen. Starta en ny konversation',
   'AI-assistent',
+  'AI-funktioner',
   'AI-arbete i bakgrunden',
   'AI-assistenten arbetar',
   'Du kan lämna appen; arbetet fortsätter.',
