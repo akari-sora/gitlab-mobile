@@ -37,6 +37,9 @@ class _BoardsPageState extends State<BoardsPage> {
   ApiFailure? _error;
   bool _loading = true;
   bool _firstLoadDone = false;
+  // The board the user last asked for, so a retry after a failed switch
+  // reopens it rather than the first board.
+  int? _requestedBoardId;
   String? _pageSkeletonIdentity;
   bool _writing = false;
   int _columnIndex = 0;
@@ -95,6 +98,7 @@ class _BoardsPageState extends State<BoardsPage> {
       _dismissRoutes();
       _writing = false;
       _firstLoadDone = false;
+      _requestedBoardId = null;
       _boards = const [];
       _board = null;
       _feeds.clear();
@@ -166,7 +170,8 @@ class _BoardsPageState extends State<BoardsPage> {
         return;
       }
       final selected = boards.cast<Json?>().firstWhere(
-        (value) => value?['id'] == (preferredId ?? _board?.id),
+        (value) =>
+            value?['id'] == (preferredId ?? _board?.id ?? _requestedBoardId),
         orElse: () => boards.first,
       )!;
       await _loadBoard(
@@ -186,6 +191,7 @@ class _BoardsPageState extends State<BoardsPage> {
 
   Future<void> _loadBoard(int id, {int? generation, bool fresh = false}) async {
     final activeGeneration = generation ?? ++_generation;
+    _requestedBoardId = id;
     final differentBoard = _board == null || _board!.id != id;
     final wasShowingPageSkeleton = !_firstLoadDone || differentBoard;
     if (generation == null || differentBoard) {

@@ -1139,7 +1139,9 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 24),
       );
     }
-    final showProgress = _firstLoadDone && (_loading || _blobLoading);
+    // A file that is not loaded yet has its own skeleton, so no bar then.
+    final showProgress =
+        _firstLoadDone && (_loading || (_blobLoading && _blob != null));
     final error = _error;
     if (error != null) {
       return ListView(

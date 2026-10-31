@@ -1383,9 +1383,6 @@ class PipelineGraphSkeleton extends StatelessWidget implements Skeleton {
   }
 }
 
-/// Compatibility alias for [PipelineGraphSkeleton].
-typedef StageColumnsSkeleton = PipelineGraphSkeleton;
-
 /// Skeleton for `ProjectAnalyticsPage` contributors tab: two text lines plus
 /// contributor card rows.
 class ContributorsSkeleton extends StatelessWidget implements Skeleton {

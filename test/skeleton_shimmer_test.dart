@@ -804,7 +804,7 @@ void main() {
           project: _project,
           pipelineId: 10,
         ),
-        StageColumnsSkeleton,
+        PipelineGraphSkeleton,
       );
 
       // 11. boards_page.dart
@@ -1198,6 +1198,71 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('BoardsPage retry after a failed board switch reopens the board the user picked', (tester) async {
+    var failBoard2 = true;
+    final adapter = FakeAdapter((request) {
+      final path = request.uri.path;
+      if (path.endsWith('/boards')) {
+        return jsonResponse([
+          {'id': 1, 'name': 'Development'},
+          {'id': 2, 'name': 'Release'},
+        ]);
+      }
+      if (path.endsWith('/boards/1/lists')) {
+        return jsonResponse([
+          {
+            'id': 10,
+            'position': 0,
+            'label': {'id': 100, 'name': 'To Do', 'color': '#428BCA'},
+          },
+        ]);
+      }
+      if (path.endsWith('/boards/2/lists')) {
+        return jsonResponse([
+          {
+            'id': 20,
+            'position': 0,
+            'label': {'id': 200, 'name': 'Ready', 'color': '#5CB85C'},
+          },
+        ]);
+      }
+      if (path.endsWith('/boards/2')) {
+        if (failBoard2) return jsonResponse({'message': 'unavailable'}, status: 503);
+        return jsonResponse({'id': 2, 'name': 'Release'});
+      }
+      if (path.endsWith('/boards/1')) {
+        return jsonResponse({'id': 1, 'name': 'Development'});
+      }
+      return jsonResponse([]);
+    });
+    final api = testApi(adapter, host: _instance.key);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(
+      workspaceHost(
+        BoardsPage(account: _account, api: api, project: _project),
+      ),
+    );
+    await settleNetworkWidgets(tester);
+    expect(find.textContaining('To Do'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('board-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Release').last);
+    await settleNetworkWidgets(tester);
+    expect(find.byType(FailureNotice), findsOneWidget);
+
+    failBoard2 = false;
+    await tester.tap(
+      find.descendant(of: find.byType(FailureNotice), matching: find.byIcon(Icons.refresh)),
+    );
+    await settleNetworkWidgets(tester);
+    expect(find.byType(FailureNotice), findsNothing);
+    expect(find.textContaining('Ready'), findsOneWidget);
+    expect(find.textContaining('To Do'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'short README and no-README text stay left-aligned at 16dp during and after crossfade',
