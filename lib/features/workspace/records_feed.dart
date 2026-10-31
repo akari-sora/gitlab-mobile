@@ -89,6 +89,7 @@ class RecordsFeedState extends State<RecordsFeed> {
   @override
   void initState() { super.initState(); controller = RecordController(widget.load, cached: widget.cached); }
   bool _started = false;
+  bool _identityReset = false;
   ValueListenable<TickerModeData>? _tickerMode;
   void _updateTickerMode() {
     final mode = TickerMode.getValuesNotifier(context);
@@ -112,6 +113,7 @@ class RecordsFeedState extends State<RecordsFeed> {
   void didUpdateWidget(covariant RecordsFeed oldWidget) {
     super.didUpdateWidget(oldWidget); controller.loader = widget.load; controller.cached = widget.cached;
     if (oldWidget.identity != widget.identity) {
+      _identityReset = true;
       unawaited(controller.refresh(reset: true));
       if (widget.storageId != null && widget.storageId == oldWidget.storageId && _scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.minScrollExtent);
@@ -232,7 +234,7 @@ class RecordsFeedState extends State<RecordsFeed> {
         retryAt: controller.backgroundRetryAt,
         onRetry: () { unawaited(controller.refresh(fresh: true)); }),
       if (controller.loading && !controller.hasLoaded)
-        RowsSkeleton(grouped: widget.grouped, liveRegion: widget.skeletonLiveRegion),
+        RowsSkeleton(grouped: widget.grouped, liveRegion: widget.skeletonLiveRegion || _identityReset),
       if ((controller.hasLoaded || !controller.loading) && shown.isEmpty && controller.error == null && controller.next == null) EmptyState(
         controller.items.isEmpty ? widget.empty : (widget.filteredEmpty ?? widget.empty),
         icon: widget.emptyIcon,

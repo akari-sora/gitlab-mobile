@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
 import 'code_text_view.dart';
-import 'hub_ui.dart';
+import 'layout_constants.dart';
 import 'motion.dart';
 
 /// Marker implemented by every skeleton widget so test harnesses and helpers
@@ -86,6 +86,7 @@ class SkeletonShimmer extends StatefulWidget implements Skeleton {
     required this.child,
     this.decoration,
     this.liveRegion = true,
+    this.sweepDirection,
   });
 
   static const duration = Duration(milliseconds: 1500);
@@ -93,6 +94,7 @@ class SkeletonShimmer extends StatefulWidget implements Skeleton {
   final Widget child;
   final BoxDecoration? decoration;
   final bool liveRegion;
+  final TextDirection? sweepDirection;
 
   static (Color, Color) _colorsFor(ThemeData theme) {
     final scheme = theme.colorScheme;
@@ -103,10 +105,10 @@ class SkeletonShimmer extends StatefulWidget implements Skeleton {
     }
     final base = Color.lerp(
       scheme.surfaceContainerHighest,
-      scheme.outlineVariant,
-      0.35,
+      scheme.outline,
+      0.55,
     )!;
-    final highlight = Color.lerp(base, scheme.surface, 0.42)!;
+    final highlight = Color.lerp(base, scheme.surface, 0.35)!;
     return (base, highlight);
   }
 
@@ -181,7 +183,10 @@ class _SkeletonShimmerState extends State<SkeletonShimmer>
   @override
   Widget build(BuildContext context) {
     final reduce = reduceMotion(context);
-    final direction = Directionality.maybeOf(context) ?? TextDirection.ltr;
+    final direction =
+        widget.sweepDirection ??
+        Directionality.maybeOf(context) ??
+        TextDirection.ltr;
     final (baseColor, highlightColor) = SkeletonShimmer._colorsFor(
       Theme.of(context),
     );
@@ -539,11 +544,12 @@ class CodeSkeleton extends StatelessWidget implements Skeleton {
   @override
   Widget build(BuildContext context) {
     final resolved = padding.resolve(TextDirection.ltr);
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: _boundedSkeletonBody(
-        SkeletonShimmer(
-          liveRegion: liveRegion,
+    return _boundedSkeletonBody(
+      SkeletonShimmer(
+        liveRegion: liveRegion,
+        sweepDirection: TextDirection.ltr,
+        child: Directionality(
+          textDirection: TextDirection.ltr,
           child: Padding(
             padding: EdgeInsets.only(
               top: resolved.top,
@@ -634,11 +640,12 @@ class DiffSkeleton extends StatelessWidget implements Skeleton {
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: _boundedSkeletonBody(
-        SkeletonShimmer(
-          liveRegion: liveRegion,
+    return _boundedSkeletonBody(
+      SkeletonShimmer(
+        liveRegion: liveRegion,
+        sweepDirection: TextDirection.ltr,
+        child: Directionality(
+          textDirection: TextDirection.ltr,
           child: Padding(
             padding: padding,
             child: Column(
@@ -725,11 +732,12 @@ class LogSkeleton extends StatelessWidget implements Skeleton {
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: _boundedSkeletonBody(
-        SkeletonShimmer(
-          liveRegion: liveRegion,
+    return _boundedSkeletonBody(
+      SkeletonShimmer(
+        liveRegion: liveRegion,
+        sweepDirection: TextDirection.ltr,
+        child: Directionality(
+          textDirection: TextDirection.ltr,
           child: Padding(
             padding: padding,
             child: Column(
@@ -801,41 +809,27 @@ class DetailSkeleton extends StatelessWidget implements Skeleton {
                 ],
               ),
             ),
-            SizedBox(
-              height: 48,
-              child: Column(
-                children: [
-                  const Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Center(
-                              child: SkeletonBone(
-                                width: 52,
-                                height: 14,
-                                radius: 4,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Center(
-                              child: SkeletonBone(
-                                width: 52,
-                                height: 14,
-                                radius: 4,
-                              ),
-                            ),
-                          ),
-                        ],
+            const SizedBox(
+              height: 47,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: SkeletonBone(width: 52, height: 14, radius: 4),
                       ),
                     ),
-                  ),
-                  Divider(height: 1, thickness: 1, color: dividerColor),
-                ],
+                    Expanded(
+                      child: Center(
+                        child: SkeletonBone(width: 52, height: 14, radius: 4),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
+            Divider(height: 1, thickness: 1, color: dividerColor),
             Padding(
               padding: summaryPadding,
               child: const Column(
@@ -868,7 +862,7 @@ class DetailSkeleton extends StatelessWidget implements Skeleton {
 }
 
 /// Skeleton for Home hub sections (such as Starred Projects), matching
-/// [HubRow.padding] and monogram-plus-two-line layout.
+/// [SharedLayout.hubRowPadding] and monogram-plus-two-line layout.
 class HomeSectionSkeleton extends StatelessWidget implements Skeleton {
   const HomeSectionSkeleton({
     super.key,
@@ -876,7 +870,7 @@ class HomeSectionSkeleton extends StatelessWidget implements Skeleton {
     this.padding = EdgeInsets.zero,
   });
 
-  static const rowPadding = HubRow.padding;
+  static const rowPadding = SharedLayout.hubRowPadding;
   static const _titleFactors = [0.58, 0.46, 0.64, 0.52];
   static const _subtitleFactors = [0.38, 0.30, 0.42, 0.34];
 
@@ -955,114 +949,114 @@ class PipelineSkeleton extends StatelessWidget implements Skeleton {
       border: Border.all(color: dividerColor),
     );
     return _boundedSkeletonBody(
-      SkeletonShimmer(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SkeletonBone(width: 72, height: 22, radius: 7),
-                  SkeletonBone(width: 84, height: 22, radius: 7),
-                  SkeletonBone(width: 88, height: 32, radius: 7),
-                ],
-              ),
-            ),
-            SizedBox(
-              height: 48,
-              child: Column(
-                children: [
-                  const Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Center(
-                              child: SkeletonBone(
-                                width: 48,
-                                height: 14,
-                                radius: 4,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Center(
-                              child: SkeletonBone(
-                                width: 56,
-                                height: 14,
-                                radius: 4,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SkeletonShimmer(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      SkeletonBone(width: 72, height: 22, radius: 7),
+                      SkeletonBone(width: 84, height: 22, radius: 7),
+                      SkeletonBone(width: 88, height: 32, radius: 7),
+                    ],
                   ),
-                  Divider(height: 1, thickness: 1, color: dividerColor),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: gutter),
-              child: DecoratedBox(
-                decoration: cardDecoration,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (var i = 0; i < 6; i++)
-                      SizedBox(
-                        height: RowsSkeleton.rowHeight,
-                        child: Padding(
-                          padding: RowsSkeleton.rowPadding,
-                          child: Row(
-                            children: [
-                              const SkeletonBone(
-                                width: 36,
-                                height: 36,
-                                radius: 8,
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    SkeletonBone(
-                                      widthFactor:
-                                          RowsSkeleton._title[i %
-                                              RowsSkeleton._title.length],
-                                      height: 14,
-                                      radius: 4,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    SkeletonBone(
-                                      widthFactor:
-                                          RowsSkeleton._detail[i %
-                                              RowsSkeleton._detail.length],
-                                      height: 10,
-                                      radius: 4,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                ),
+                SizedBox(
+                  height: 47,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Center(
+                            child: SkeletonBone(
+                              width: 48,
+                              height: 14,
+                              radius: 4,
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                        Expanded(
+                          child: Center(
+                            child: SkeletonBone(
+                              width: 56,
+                              height: 14,
+                              radius: 4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
+              ],
+            ),
+          ),
+          Divider(height: 1, thickness: 1, color: dividerColor),
+          const SizedBox(height: 8),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: gutter),
+            child: SkeletonShimmer(
+              decoration: cardDecoration,
+              liveRegion: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < 6; i++)
+                    SizedBox(
+                      height: RowsSkeleton.rowHeight,
+                      child: Padding(
+                        padding: RowsSkeleton.rowPadding,
+                        child: Row(
+                          children: [
+                            const SkeletonBone(
+                              width: 36,
+                              height: 36,
+                              radius: 8,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  SkeletonBone(
+                                    widthFactor:
+                                        RowsSkeleton._title[i %
+                                            RowsSkeleton._title.length],
+                                    height: 14,
+                                    radius: 4,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SkeletonBone(
+                                    widthFactor:
+                                        RowsSkeleton._detail[i %
+                                            RowsSkeleton._detail.length],
+                                    height: 10,
+                                    radius: 4,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1078,84 +1072,79 @@ class CompareSkeleton extends StatelessWidget implements Skeleton {
         Theme.of(context).dividerTheme.color ??
         Theme.of(context).colorScheme.outlineVariant;
     return _boundedSkeletonBody(
-      SkeletonShimmer(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              height: 48,
-              child: Column(
-                children: [
-                  const Expanded(
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SkeletonShimmer(
+            child: SizedBox(
+              height: 47,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: SkeletonBone(width: 64, height: 14, radius: 4),
+                      ),
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: SkeletonBone(width: 64, height: 14, radius: 4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Divider(height: 1, thickness: 1, color: dividerColor),
+          SkeletonShimmer(
+            liveRegion: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < 6; i++)
+                  SizedBox(
+                    height: RowsSkeleton.rowHeight,
                     child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      padding: RowsSkeleton.rowPadding,
                       child: Row(
                         children: [
+                          const SkeletonBone(width: 36, height: 36, radius: 8),
+                          const SizedBox(width: 16),
                           Expanded(
-                            child: Center(
-                              child: SkeletonBone(
-                                width: 64,
-                                height: 14,
-                                radius: 4,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Center(
-                              child: SkeletonBone(
-                                width: 64,
-                                height: 14,
-                                radius: 4,
-                              ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                SkeletonBone(
+                                  widthFactor:
+                                      RowsSkeleton._title[i %
+                                          RowsSkeleton._title.length],
+                                  height: 14,
+                                  radius: 4,
+                                ),
+                                const SizedBox(height: 8),
+                                SkeletonBone(
+                                  widthFactor:
+                                      RowsSkeleton._detail[i %
+                                          RowsSkeleton._detail.length],
+                                  height: 10,
+                                  radius: 4,
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
                   ),
-                  Divider(height: 1, thickness: 1, color: dividerColor),
-                ],
-              ),
+              ],
             ),
-            for (var i = 0; i < 6; i++)
-              SizedBox(
-                height: RowsSkeleton.rowHeight,
-                child: Padding(
-                  padding: RowsSkeleton.rowPadding,
-                  child: Row(
-                    children: [
-                      const SkeletonBone(width: 36, height: 36, radius: 8),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            SkeletonBone(
-                              widthFactor:
-                                  RowsSkeleton._title[i %
-                                      RowsSkeleton._title.length],
-                              height: 14,
-                              radius: 4,
-                            ),
-                            const SizedBox(height: 8),
-                            SkeletonBone(
-                              widthFactor:
-                                  RowsSkeleton._detail[i %
-                                      RowsSkeleton._detail.length],
-                              height: 10,
-                              radius: 4,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1298,65 +1287,12 @@ class SnippetDetailSkeleton extends StatelessWidget implements Skeleton {
   }
 }
 
-/// Skeleton for `BoardsPage`: side-by-side issue board columns with column
-/// headers and issue card placeholders.
+/// Skeleton for `BoardsPage`: board selector, search field, column chips, and
+/// one full-width column of cards.
 class BoardColumnsSkeleton extends StatelessWidget implements Skeleton {
   const BoardColumnsSkeleton({
     super.key,
-    this.padding = const EdgeInsets.all(12),
-  });
-
-  final EdgeInsetsGeometry padding;
-
-  Widget _columnCard() => Expanded(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: const [
-        Row(
-          children: [
-            SkeletonBone(width: 12, height: 12, radius: 6),
-            SizedBox(width: 8),
-            Expanded(child: SkeletonBone(widthFactor: 0.6, height: 14)),
-            SizedBox(width: 8),
-            SkeletonBone(width: 24, height: 18, radius: 9),
-          ],
-        ),
-        SizedBox(height: 12),
-        SkeletonBone(height: 76, radius: 10),
-        SizedBox(height: 10),
-        SkeletonBone(height: 68, radius: 10),
-        SizedBox(height: 10),
-        SkeletonBone(height: 76, radius: 10),
-      ],
-    ),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    return _boundedSkeletonBody(
-      SkeletonShimmer(
-        child: Padding(
-          padding: padding,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _columnCard(),
-              const SizedBox(width: 12),
-              _columnCard(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Skeleton for `PipelineGraphPage`: stage header chips and stage job columns.
-class StageColumnsSkeleton extends StatelessWidget implements Skeleton {
-  const StageColumnsSkeleton({
-    super.key,
-    this.padding = const EdgeInsets.all(16),
+    this.padding = const EdgeInsets.fromLTRB(16, 12, 16, 16),
   });
 
   final EdgeInsetsGeometry padding;
@@ -1371,46 +1307,114 @@ class StageColumnsSkeleton extends StatelessWidget implements Skeleton {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              SkeletonBone(height: 48, radius: 10),
+              SizedBox(height: 10),
+              SkeletonBone(height: 48, radius: 10),
+              SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 runSpacing: 6,
                 children: [
-                  SkeletonBone(width: 72, height: 26, radius: 999),
-                  SkeletonBone(width: 68, height: 26, radius: 999),
-                  SkeletonBone(width: 80, height: 26, radius: 999),
+                  SkeletonBone(width: 84, height: 32, radius: 999),
+                  SkeletonBone(width: 96, height: 32, radius: 999),
+                  SkeletonBone(width: 76, height: 32, radius: 999),
                 ],
               ),
-              SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              SizedBox(height: 12),
+              SkeletonBone(height: 76, radius: 12),
+              SizedBox(height: 10),
+              SkeletonBone(height: 76, radius: 12),
+              SizedBox(height: 10),
+              SkeletonBone(height: 76, radius: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Skeleton for `PipelineGraphPage`: title, two text lines, stage chips, and a
+/// vertical list of job rows.
+class PipelineGraphSkeleton extends StatelessWidget implements Skeleton {
+  const PipelineGraphSkeleton({
+    super.key,
+    this.padding = const EdgeInsets.fromLTRB(16, 14, 16, 24),
+  });
+
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return _boundedSkeletonBody(
+      SkeletonShimmer(
+        child: Padding(
+          padding: padding,
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SkeletonBone(widthFactor: 0.48, height: 22, radius: 6),
+              SizedBox(height: 8),
+              SkeletonBone(widthFactor: 0.84, height: 14, radius: 4),
+              SizedBox(height: 10),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SkeletonBone(widthFactor: 0.5, height: 14, radius: 4),
-                        SizedBox(height: 10),
-                        SkeletonBone(height: 64, radius: 12),
-                        SizedBox(height: 10),
-                        SkeletonBone(height: 64, radius: 12),
-                      ],
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SkeletonBone(widthFactor: 0.5, height: 14, radius: 4),
-                        SizedBox(height: 10),
-                        SkeletonBone(height: 64, radius: 12),
-                        SizedBox(height: 10),
-                        SkeletonBone(height: 64, radius: 12),
-                      ],
-                    ),
-                  ),
+                  SkeletonBone(width: 72, height: 28, radius: 999),
+                  SkeletonBone(width: 68, height: 28, radius: 999),
+                  SkeletonBone(width: 80, height: 28, radius: 999),
                 ],
               ),
+              SizedBox(height: 10),
+              SkeletonBone(widthFactor: 0.56, height: 14, radius: 4),
+              SizedBox(height: 14),
+              SkeletonBone(height: 84, radius: 12),
+              SizedBox(height: 10),
+              SkeletonBone(height: 84, radius: 12),
+              SizedBox(height: 10),
+              SkeletonBone(height: 84, radius: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compatibility alias for [PipelineGraphSkeleton].
+typedef StageColumnsSkeleton = PipelineGraphSkeleton;
+
+/// Skeleton for `ProjectAnalyticsPage` contributors tab: two text lines plus
+/// contributor card rows.
+class ContributorsSkeleton extends StatelessWidget implements Skeleton {
+  const ContributorsSkeleton({
+    super.key,
+    this.padding = const EdgeInsets.fromLTRB(16, 8, 16, 24),
+  });
+
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return _boundedSkeletonBody(
+      SkeletonShimmer(
+        child: Padding(
+          padding: padding,
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SkeletonBone(widthFactor: 0.78, height: 14, radius: 4),
+              SizedBox(height: 8),
+              SkeletonBone(widthFactor: 0.56, height: 14, radius: 4),
+              SizedBox(height: 12),
+              SkeletonBone(height: 68, radius: 12),
+              SizedBox(height: 8),
+              SkeletonBone(height: 68, radius: 12),
+              SizedBox(height: 8),
+              SkeletonBone(height: 68, radius: 12),
             ],
           ),
         ),

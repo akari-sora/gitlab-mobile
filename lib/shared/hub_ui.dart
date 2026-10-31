@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'layout_constants.dart';
 import 'workspace_ui.dart';
 
 /// Tile hues for hub rows, modelled on GitHub Mobile's "My Work" list. They
@@ -135,10 +136,7 @@ class HubRow extends StatelessWidget {
   final String? semanticLabel;
 
   /// Shared row padding matched by [HomeSectionSkeleton].
-  static const EdgeInsets padding = EdgeInsets.symmetric(
-    horizontal: 16,
-    vertical: 8,
-  );
+  static const EdgeInsets padding = SharedLayout.hubRowPadding;
 
   @override
   Widget build(BuildContext context) {

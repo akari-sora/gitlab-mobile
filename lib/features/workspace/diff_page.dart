@@ -482,13 +482,11 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
       setState(() {
         _error = safeFailure(e);
         _loading = false;
-        _firstLoadDone = true;
       });
     } finally {
-      if (mounted && epoch == _epoch && (_loading || !_firstLoadDone)) {
+      if (mounted && epoch == _epoch && _loading) {
         setState(() {
           _loading = false;
-          _firstLoadDone = true;
         });
       }
     }

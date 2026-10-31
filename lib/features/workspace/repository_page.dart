@@ -234,6 +234,7 @@ class RepositoryTabState extends State<RepositoryTab> {
         : RepositoryRef(kind: ref.kind, name: ref.name, sha: '', protected: ref.protected, isDefault: ref.isDefault);
     _branchRead = null;
     _stale = false;
+    _firstLoadDone = false;
   }
 
   /// Ends any in-flight README request and drops its result: the completion
@@ -330,7 +331,6 @@ class RepositoryTabState extends State<RepositoryTab> {
       if (_readCurrent(generation, readEpoch)) {
         setState(() {
           _loading = false;
-          _firstLoadDone = true;
         });
       }
     }
@@ -1133,7 +1133,8 @@ class RepositoryReadmeCard extends StatelessWidget {
             AnimatedSwitcher(
               duration: motionDuration(context, Durations.short4),
               layoutBuilder: (currentChild, previousChildren) => Stack(
-                alignment: Alignment.topCenter,
+                fit: StackFit.passthrough,
+                alignment: AlignmentDirectional.topStart,
                 children: [...previousChildren, ?currentChild],
               ),
               child: loading && readme == null
@@ -1677,13 +1678,13 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
         setState(() {
           _error = failure;
           _loading = false;
-          _firstLoadDone = true;
           if (const {
             FailureKind.unauthenticated,
             FailureKind.forbidden,
             FailureKind.invisible,
           }.contains(failure.kind)) {
             _text = null;
+            _firstLoadDone = false;
             _lastCommit = null;
             _selectedLine = null;
             _indexLines('');

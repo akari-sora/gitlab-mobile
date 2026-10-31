@@ -839,6 +839,7 @@ class PipelinePageState extends State<PipelinePage> {
   FailureKind? _backgroundFailure;
   DateTime? _backgroundRetryAt;
   bool _busy = false, _loading = false, _firstLoadDone = false;
+  String? _pageSkeletonIdentity;
   @override
   void initState() { super.initState(); unawaited(_load()); }
   bool _revoked(ApiFailure failure) => switch (failure.kind) {
@@ -884,12 +885,17 @@ class PipelinePageState extends State<PipelinePage> {
     _data = null;
     _fetchedAt = null;
     _stale = false;
+    _firstLoadDone = false;
   }
   Future<void> _load({bool fresh = false}) async {
     if (_loading || !mounted) { return; }
     final owner = widget, generation = _generation, readEpoch = ++_readEpoch;
     setState(() {
       _loading = true;
+      if (!_firstLoadDone) {
+        _pageSkeletonIdentity =
+            '${owner.account.key}/${owner.project.id}/pipeline/${owner.id}/jobs/$generation';
+      }
       _error = null;
       _revalidating = false;
       _backgroundFailure = null;
@@ -919,10 +925,9 @@ class PipelinePageState extends State<PipelinePage> {
         setState(() { _error = failure; if (_revoked(failure)) _withdraw(); });
       }
     } finally {
-      if (_readCurrent(generation, readEpoch) && (_loading || !_firstLoadDone)) {
+      if (_readCurrent(generation, readEpoch) && _loading) {
         setState(() {
           _loading = false;
-          _firstLoadDone = true;
         });
       }
     }
@@ -1197,7 +1202,9 @@ class PipelinePageState extends State<PipelinePage> {
                   empty: l10n.noJobsYet,
                   emptyIcon: Icons.work_outline,
                   grouped: true,
-                  skeletonLiveRegion: false,
+                  skeletonLiveRegion:
+                      '${widget.account.key}/${widget.project.id}/pipeline/${widget.id}/jobs/$_generation' !=
+                      _pageSkeletonIdentity,
                   account: widget.account,
                   resourceLabel: l10n.pipelineJobsTitle(widget.project.path, widget.id),
                   onSwitchAccount: endSessionFrom(context),
@@ -1429,13 +1436,11 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
       setState(() {
         _summaryError = safeFailure(e);
         _loadingSummary = false;
-        _firstLoadDone = true;
       });
     } finally {
-      if (mounted && gen == _generation && (_loadingSummary || !_firstLoadDone)) {
+      if (mounted && gen == _generation && _loadingSummary) {
         setState(() {
           _loadingSummary = false;
-          _firstLoadDone = true;
         });
       }
     }
@@ -1466,14 +1471,12 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
       setState(() {
         _casesError = safeFailure(e);
         _loadingCases = false;
-        _casesFirstLoadDone = true;
       });
     } finally {
       if (mounted && summaryGen == _generation && caseGen == _casesGeneration &&
-          (_loadingCases || !_casesFirstLoadDone)) {
+          _loadingCases) {
         setState(() {
           _loadingCases = false;
-          _casesFirstLoadDone = true;
         });
       }
     }
@@ -2216,6 +2219,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         final parsed = JobTrace.parse(text);
         setState(() {
           _trace = parsed;
+          _firstLoadDone = true;
           if (_query.isNotEmpty) {
             _matches = _findMatches(_query);
             if (_matches.isEmpty) {
@@ -2225,6 +2229,8 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             }
           }
         });
+      } else if (!_firstLoadDone) {
+        setState(() => _firstLoadDone = true);
       }
       if (follow) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2247,7 +2253,6 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       if ( current() ) {
         setState(() {
           _loading = false;
-          _firstLoadDone = true;
         });
         // The page may have come back while this load was still running.
         _resumeWhenVisible();
@@ -2321,6 +2326,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _traceOffset = 0;
           _tail = null;
           _tailClipped = false;
+          _firstLoadDone = false;
         }
         // The load below replaces any load deferred while the dialog covered
         // the page; it defers again by itself if the page is hidden.

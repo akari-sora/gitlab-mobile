@@ -259,7 +259,7 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
     _timer = Timer(const Duration(milliseconds: 300), () {
       if (!mounted) return;
       _records.loader = _loader(value.trim());
-      unawaited(_records.refresh());
+      unawaited(_records.refresh(reset: true));
     });
   }
 

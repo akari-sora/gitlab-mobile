@@ -37,6 +37,7 @@ class _BoardsPageState extends State<BoardsPage> {
   ApiFailure? _error;
   bool _loading = true;
   bool _firstLoadDone = false;
+  String? _pageSkeletonIdentity;
   bool _writing = false;
   int _columnIndex = 0;
   int _generation = 0;
@@ -178,7 +179,6 @@ class _BoardsPageState extends State<BoardsPage> {
         setState(() {
           _error = safeFailure(error);
           _loading = false;
-          _firstLoadDone = true;
         });
       }
     }
@@ -186,10 +186,18 @@ class _BoardsPageState extends State<BoardsPage> {
 
   Future<void> _loadBoard(int id, {int? generation, bool fresh = false}) async {
     final activeGeneration = generation ?? ++_generation;
-    if (generation == null) {
+    final differentBoard = _board == null || _board!.id != id;
+    final wasShowingPageSkeleton = !_firstLoadDone || differentBoard;
+    if (generation == null || differentBoard) {
       setState(() {
         _loading = true;
         _error = null;
+        if (differentBoard) {
+          _board = null;
+          _firstLoadDone = false;
+          _feeds.clear();
+          _columnIndex = 0;
+        }
       });
     }
     try {
@@ -223,6 +231,10 @@ class _BoardsPageState extends State<BoardsPage> {
           ? {for (final column in definition.columns) column.key}
           : <String>{};
       setState(() {
+        if (wasShowingPageSkeleton && definition.columns.isNotEmpty) {
+          _pageSkeletonIdentity =
+              '${widget.account.key}/${widget.project.id}/${definition.id}/${definition.columns.first.key}/$_query';
+        }
         _board = definition;
         _columnIndex = 0;
         _loading = false;
@@ -234,14 +246,12 @@ class _BoardsPageState extends State<BoardsPage> {
         setState(() {
           _error = safeFailure(error);
           _loading = false;
-          _firstLoadDone = true;
         });
       }
     } finally {
-      if (mounted && activeGeneration == _generation && (_loading || !_firstLoadDone)) {
+      if (mounted && activeGeneration == _generation && _loading) {
         setState(() {
           _loading = false;
-          _firstLoadDone = true;
         });
       }
     }
@@ -1027,10 +1037,11 @@ class _BoardsPageState extends State<BoardsPage> {
     // generation and reload. Board, project and account need not be in the key.
     final pairKey =
         '${column.key}\x00${pairEntries.map((e) => '${e.key}=${e.value}').join('&')}';
+    final feedIdentity =
+        '${widget.account.key}/${widget.project.id}/${board.id}/${column.key}/$_query';
     return RecordsFeed(
       key: key,
-      identity:
-          '${widget.account.key}/${widget.project.id}/${board.id}/${column.key}/$_query',
+      identity: feedIdentity,
       storageId:
           'board/${widget.account.key}/${widget.project.id}/${board.id}/${column.key}',
       account: widget.account,
@@ -1042,7 +1053,7 @@ class _BoardsPageState extends State<BoardsPage> {
       emptyDetail: _query.isEmpty ? l10n.pullToRefreshThisList : l10n.searchAppliesAfterSubmit,
       emptyIcon: _columnIcon(column.kind),
       grouped: true,
-      skeletonLiveRegion: false,
+      skeletonLiveRegion: feedIdentity != _pageSkeletonIdentity,
       visible: column.kind == BoardColumnKind.open
           ? (issue) => boardOpenIssueMatches(board, issue)
           : null,

@@ -15,10 +15,12 @@ class ProjectAnalyticsPage extends StatefulWidget {
     required this.account,
     required this.api,
     required this.project,
+    this.now,
   });
   final Account account;
   final GitLabApi api;
   final Project project;
+  final DateTime Function()? now;
   @override
   State<ProjectAnalyticsPage> createState() => _ProjectAnalyticsPageState();
 }
@@ -48,6 +50,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
   ApiFailure? _commitError, _moreError;
   bool _commitLoading = false;
   bool _commitFirstLoadDone = false;
+  bool _commitStale = false;
   int _commitPages = 0;
   int _commitRequest = 0;
   List<MapEntry<DateTime, _ActivityDay>> _dayRows = const [];
@@ -57,6 +60,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
   ApiFailure? _pipelineError, _coverageError, _languageError;
   bool _ciLoading = false, _coverageLoaded = false;
   bool _ciFirstLoadDone = false;
+  bool _ciStale = false;
   int _pipelineRequest = 0;
   bool _coverageLoading = false, _languageLoading = false;
   int _coverageRequest = 0, _languageRequest = 0;
@@ -153,18 +157,23 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     _nextContributors = null;
     _contributorPages = 0;
     _contributorLoading = false;
+    _contributorFirstLoadDone = false;
     _contributorLimited = false;
     _commits = null;
     _nextCommits = null;
     _commitError = null;
     _moreError = null;
     _commitLoading = false;
+    _commitFirstLoadDone = false;
+    _commitStale = false;
     _commitPages = 0;
     _dayRows = const [];
     _dayMax = 1;
     _pipelines = null;
     _pipelineError = null;
     _ciLoading = false;
+    _ciFirstLoadDone = false;
+    _ciStale = false;
     _coverage = null;
     _coverageLoaded = false;
     _coverageLoading = false;
@@ -175,7 +184,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
   }
 
   (DateTime, DateTime) _newWindow(int days) {
-    final now = DateTime.now().toUtc();
+    final now = (widget.now ?? DateTime.now)().toUtc();
     final to = DateTime.utc(
       now.year,
       now.month,
@@ -230,6 +239,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         _moreError = null;
         _commitLoading = false;
         _commitFirstLoadDone = false;
+        _commitStale = false;
         _commitPages = 0;
         _dayRows = const [];
         _dayMax = 1;
@@ -239,6 +249,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         _pipelineError = null;
         _ciLoading = false;
         _ciFirstLoadDone = false;
+        _ciStale = false;
       }
     });
     await _ensureLoaded();
@@ -252,6 +263,8 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       _from = window.$1;
       _to = window.$2;
       if (windowMoved) {
+        _commitStale = true;
+        _ciStale = true;
         _nextCommits = null;
         _commitError = null;
         _moreError = null;
@@ -308,7 +321,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     1 => _loadRepository(),
     2
         when _activeRef.isNotEmpty &&
-            _pipelines == null &&
+            (_pipelines == null || _ciStale) &&
             _pipelineError == null &&
             !_ciLoading =>
       _loadPipeline(),
@@ -318,7 +331,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
   Future<void> _loadRepository() async {
     final tasks = <Future<void>>[];
     if (_activeRef.isNotEmpty &&
-        _commits == null &&
+        (_commits == null || _commitStale) &&
         _commitError == null &&
         !_commitLoading) {
       tasks.add(_loadCommits(reset: true));
@@ -369,6 +382,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         _nextContributors = limited ? null : page.next;
         _contributorPages = pages;
         _contributorLimited = limited && page.next != null;
+        _contributorFirstLoadDone = true;
       });
     } catch (error) {
       if (_currentContributor(owner) && request == _contributorRequest) {
@@ -378,7 +392,6 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       if (_currentContributor(owner) && request == _contributorRequest) {
         setState(() {
           _contributorLoading = false;
-          _contributorFirstLoadDone = true;
         });
       }
     }
@@ -396,6 +409,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     setState(() {
       _commitLoading = true;
       if (reset) {
+        _commitStale = false;
         if (!_commitFirstLoadDone) {
           _commits = null;
           _nextCommits = null;
@@ -437,6 +451,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         _commitPages = pages;
         _dayRows = List.unmodifiable(rows);
         _dayMax = maxCount;
+        _commitFirstLoadDone = true;
       });
     } catch (error) {
       if (_currentRepository(owner) && request == _commitRequest) {
@@ -452,7 +467,6 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       if (_currentRepository(owner) && request == _commitRequest) {
         setState(() {
           _commitLoading = false;
-          _commitFirstLoadDone = true;
         });
       }
     }
@@ -476,6 +490,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     final request = ++_pipelineRequest;
     setState(() {
       _ciLoading = true;
+      _ciStale = false;
       _pipelineError = null;
     });
     try {
@@ -493,12 +508,13 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
             if (b.label == null) return -1;
             return b.label!.compareTo(a.label!);
           });
-        setState(
-          () => _pipelines = PipelineAnalyticsSnapshot(
+        setState(() {
+          _pipelines = PipelineAnalyticsSnapshot(
             buckets: recentFirst,
             aggregate: value.aggregate,
-          ),
-        );
+          );
+          _ciFirstLoadDone = true;
+        });
       }
     } catch (error) {
       if (_currentPipeline(owner) && request == _pipelineRequest) {
@@ -508,7 +524,6 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       if (_currentPipeline(owner) && request == _pipelineRequest) {
         setState(() {
           _ciLoading = false;
-          _ciFirstLoadDone = true;
         });
       }
     }
@@ -645,7 +660,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
 
   Widget _contributorsTab() {
     if (_contributorLoading && !_contributorFirstLoadDone) {
-      return const ChartSkeleton();
+      return const ContributorsSkeleton();
     }
     if (_contributorError != null && _contributors == null) {
       return FailureNotice(

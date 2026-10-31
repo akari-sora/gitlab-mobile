@@ -231,6 +231,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
       _readmeMissing = false;
       _readmeLoading = false;
       _readmePending = false;
+      _readmeFirstLoadDone = false;
       _readmeError = failure;
     } else if (background) {
       backgroundFailure = failure.kind;
@@ -430,6 +431,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
         _readmePending = false;
         _readmeMissing = path == null;
         _readmeLoading = false;
+        _readmeFirstLoadDone = true;
         _readmeError = null;
       });
     } catch (e) {
@@ -443,7 +445,6 @@ class ProjectOverviewState extends State<ProjectOverview> {
       if (_current(epoch, api)) {
         setState(() {
           _readmeLoading = false;
-          if (!background) _readmeFirstLoadDone = true;
         });
       }
     }
@@ -853,7 +854,8 @@ class ProjectOverviewState extends State<ProjectOverview> {
         AnimatedSwitcher(
           duration: motionDuration(context, Durations.short4),
           layoutBuilder: (currentChild, previousChildren) => Stack(
-            alignment: Alignment.topCenter,
+            fit: StackFit.passthrough,
+            alignment: AlignmentDirectional.topStart,
             children: [...previousChildren, ?currentChild],
           ),
           child: body,

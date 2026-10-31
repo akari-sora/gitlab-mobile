@@ -181,6 +181,7 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
         if (initial) {
           _stageNames = page.stageNames;
           _stagesTruncated = page.stagesTruncated;
+          _firstLoadDone = true;
         }
         _hasNextPage = page.hasNextPage && _jobs.length < _maxJobs;
         _endCursor = _hasNextPage ? page.endCursor : null;
@@ -214,7 +215,6 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
       )) {
         setState(() {
           _loading = false;
-          if (initial) _firstLoadDone = true;
         });
       }
     }
@@ -320,7 +320,7 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
   }
 
   Widget _buildBody() {
-    if (!_firstLoadDone && _loading) return const StageColumnsSkeleton();
+    if (!_firstLoadDone && _loading) return const PipelineGraphSkeleton();
     if (_jobs.isEmpty && _error != null) {
       return SingleChildScrollView(
         child: FailureNotice(

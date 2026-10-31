@@ -190,6 +190,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
       setState(() {
         _drafts = drafts;
         _readbackRequired = false;
+        _firstLoadDone = true;
       });
       return true;
     } on _StaleDraftOperation {
@@ -202,7 +203,6 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
       if (_isCurrent(scope) && epoch == _epoch) {
         setState(() {
           _loading = false;
-          _firstLoadDone = true;
         });
       }
     }

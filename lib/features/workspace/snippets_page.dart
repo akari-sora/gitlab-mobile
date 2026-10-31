@@ -456,6 +456,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
           _blob = null;
           _selectedPath = null;
           _loading = false;
+          _firstLoadDone = true;
         });
         return;
       }
@@ -492,11 +493,10 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         _snippet = snapshot.snippet;
         _content = null;
         _snapshot = snapshot;
-        if (_selectedPath != selected) _blob = null;
-        _selectedPath = selected;
-        _markdownPreview = false;
+        _loading = false;
+        _firstLoadDone = true;
       });
-      await _selectFile(selected);
+      unawaited(_selectFile(selected));
     } catch (error) {
       if (!mounted || generation != _generation) return;
       final failure = safeFailure(error);
@@ -505,10 +505,9 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         _loading = false;
       });
     } finally {
-      if (mounted && generation == _generation) {
+      if (mounted && generation == _generation && _loading) {
         setState(() {
           _loading = false;
-          _firstLoadDone = true;
         });
       }
     }
@@ -523,12 +522,15 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     final snippetId = widget.snippetId;
     final generation = _generation;
     final request = ++_blobRequest;
+    final samePath = _selectedPath == path;
     setState(() {
-      _selectedPath = path;
-      _blob = null;
+      if (!samePath) {
+        _selectedPath = path;
+        _blob = null;
+        _markdownPreview = false;
+      }
       _blobError = null;
       _blobLoading = true;
-      _markdownPreview = false;
     });
     try {
       final blob = await api.snippetBlob(project, snapshot, path: path);
@@ -1351,7 +1353,19 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
       ];
     }
     final blob = _blob;
-    if (blob == null) return const [];
+    if (blob == null) {
+      if (_blobLoading) {
+        return [
+          SliverToBoxAdapter(
+            child: CodeSkeleton(
+              padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 24),
+              liveRegion: false,
+            ),
+          ),
+        ];
+      }
+      return const [];
+    }
     if (blob.availability != SnippetBlobAvailability.text) {
       final message = switch (blob.availability) {
         SnippetBlobAvailability.nullContent => l10n.fileTextMissing,

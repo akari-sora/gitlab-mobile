@@ -20,6 +20,7 @@ import 'package:gitlab_mobile/features/workspace/compare_page.dart';
 import 'package:gitlab_mobile/features/workspace/diff_page.dart';
 import 'package:gitlab_mobile/features/workspace/editor.dart';
 import 'package:gitlab_mobile/features/workspace/file_history.dart';
+import 'package:gitlab_mobile/features/workspace/picker_sheet.dart';
 import 'package:gitlab_mobile/features/workspace/pipeline_graph_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_analytics_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_more_page.dart';
@@ -30,6 +31,7 @@ import 'package:gitlab_mobile/features/workspace/records_feed.dart';
 import 'package:gitlab_mobile/features/workspace/repository_page.dart';
 import 'package:gitlab_mobile/features/workspace/snippets_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/code_text_view.dart';
 import 'package:gitlab_mobile/shared/hub_ui.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
@@ -188,7 +190,8 @@ void main() {
         const CommitSkeleton(),
         const SnippetDetailSkeleton(),
         const BoardColumnsSkeleton(),
-        const StageColumnsSkeleton(),
+        const PipelineGraphSkeleton(),
+        const ContributorsSkeleton(),
         const ChartSkeleton(),
       ];
 
@@ -821,7 +824,7 @@ void main() {
           api: api,
           project: _project,
         ),
-        ChartSkeleton,
+        ContributorsSkeleton,
       );
 
       // 13. work_item_page.dart
@@ -1109,9 +1112,12 @@ void main() {
   );
 
   testWidgets(
-    'first-load-only: BoardsPage board change keeps the loaded board with thin bar',
+    'BoardsPage board switch shows BoardColumnsSkeleton while same-board reload uses thin bar',
     (tester) async {
+      var holdBoard2 = true;
       final board2Gate = Completer<ResponseBody>();
+      final board2ReloadGate = Completer<ResponseBody>();
+      var holdBoard2Reload = false;
       final adapter = FakeAdapter((request) {
         final path = request.uri.path;
         if (path.endsWith('/boards')) {
@@ -1139,7 +1145,9 @@ void main() {
           ]);
         }
         if (path.endsWith('/boards/2')) {
-          return board2Gate.future;
+          if (holdBoard2) return board2Gate.future;
+          if (holdBoard2Reload) return board2ReloadGate.future;
+          return jsonResponse({'id': 2, 'name': 'Release'});
         }
         if (path.endsWith('/boards/1')) {
           return jsonResponse({'id': 1, 'name': 'Development'});
@@ -1162,18 +1170,847 @@ void main() {
       expect(find.byType(BoardColumnsSkeleton), findsNothing);
       expect(find.textContaining('To Do'), findsOneWidget);
 
-      // Switch to board 2 while its response is held: existing board stays visible.
+      // Switch to board 2 while its response is held: new board identity clears board 1 and shows skeleton.
       await tester.tap(find.byKey(const ValueKey('board-selector')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Release').last);
       await tester.pump();
-      expect(find.byType(BoardColumnsSkeleton), findsNothing);
-      expect(find.textContaining('To Do'), findsOneWidget);
-      expect(find.byType(LinearProgressIndicator), findsWidgets);
+      expect(find.byType(BoardColumnsSkeleton), findsOneWidget);
+      expect(find.textContaining('To Do'), findsNothing);
 
+      holdBoard2 = false;
       board2Gate.complete(jsonResponse({'id': 2, 'name': 'Release'}));
       await settleNetworkWidgets(tester);
+      expect(find.byType(BoardColumnsSkeleton), findsNothing);
       expect(find.textContaining('Ready'), findsOneWidget);
+
+      // Same-board reload keeps board 2 visible under the thin bar.
+      holdBoard2Reload = true;
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      expect(find.byType(BoardColumnsSkeleton), findsNothing);
+      expect(find.textContaining('Ready'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsWidgets);
+
+      holdBoard2Reload = false;
+      board2ReloadGate.complete(jsonResponse({'id': 2, 'name': 'Release'}));
+      await settleNetworkWidgets(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'short README and no-README text stay left-aligned at 16dp during and after crossfade',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 1400);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var noReadme = false;
+      final readmeGate = Completer<ResponseBody>();
+      var holdReadme = true;
+      final adapter = FakeAdapter((request) {
+        final path = request.uri.path;
+        if (path.endsWith('/projects/42')) {
+          return jsonResponse({...projectJson(42), 'default_branch': 'main'});
+        }
+        if (path.contains('/repository/branches/')) {
+          return jsonResponse({
+            'name': 'main',
+            'protected': true,
+            'default': true,
+            'commit': {'id': '1111111111111111111111111111111111111111'},
+          });
+        }
+        if (path.endsWith('/repository/tree')) {
+          if (noReadme) return jsonResponse([]);
+          return jsonResponse([
+            {
+              'id': 'blob1',
+              'name': 'README.md',
+              'type': 'blob',
+              'path': 'README.md',
+            },
+          ]);
+        }
+        if (path.contains('/repository/files/') && path.endsWith('/raw')) {
+          if (holdReadme) return readmeGate.future;
+          return ResponseBody.fromString(
+            'hi',
+            200,
+            headers: {
+              Headers.contentTypeHeader: ['text/plain; charset=utf-8'],
+              'content-length': ['2'],
+            },
+          );
+        }
+        return jsonResponse([]);
+      });
+      final api = testApi(adapter, host: _instance.key);
+      addTearDown(api.close);
+
+      // 1. ProjectOverview with short README ('hi').
+      final overviewScroll = ScrollController();
+      addTearDown(overviewScroll.dispose);
+      final star = ProjectStarControl(
+        starred: false,
+        checked: true,
+        busy: false,
+        starCount: 0,
+        revision: 0,
+        recheck: () async {},
+        setStar: (_) async => null,
+      );
+      await tester.pumpWidget(
+        workspaceHost(
+          Scaffold(
+            body: ProjectOverview(
+              account: _account,
+              api: api,
+              project: _project,
+              starControl: star,
+              onSection: (_) {},
+              isCurrent: () => true,
+              controller: overviewScroll,
+            ),
+          ),
+        ),
+      );
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('overview-readme-skeleton')), findsOneWidget);
+
+      while (!adapter.requests.any((r) => r.uri.path.endsWith('/raw'))) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      }
+
+      holdReadme = false;
+      readmeGate.complete(
+        ResponseBody.fromString(
+          'hi',
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['text/plain; charset=utf-8'],
+            'content-length': ['2'],
+          },
+        ),
+      );
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump();
+      // Mid-fade check:
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(find.byKey(const ValueKey('overview-readme-content')), findsOneWidget);
+      expect(tester.getTopLeft(find.text('hi', findRichText: true)).dx, closeTo(16.0, 0.5));
+      await settleNetworkWidgets(tester);
+      // Post-fade check:
+      expect(tester.getTopLeft(find.text('hi', findRichText: true)).dx, closeTo(16.0, 0.5));
+
+      // 2. ProjectOverview with no README ("此預設分支尚無 README").
+      noReadme = true;
+      final overviewScroll2 = ScrollController();
+      addTearDown(overviewScroll2.dispose);
+      await tester.pumpWidget(
+        workspaceHost(
+          Scaffold(
+            body: ProjectOverview(
+              key: const ValueKey('no-readme-overview'),
+              account: _account,
+              api: api,
+              project: _project,
+              starControl: star,
+              onSection: (_) {},
+              isCurrent: () => true,
+              controller: overviewScroll2,
+            ),
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(
+        tester.getTopLeft(find.text(l10n.projectNoReadme)).dx,
+        closeTo(16.0, 0.5),
+      );
+
+      // 3. RepositoryTab with short README ('hi').
+      noReadme = false;
+      final repoReadmeGate = Completer<ResponseBody>();
+      var holdRepoReadme = true;
+      final repoAdapter = FakeAdapter((request) {
+        final path = request.uri.path;
+        if (path.contains('/repository/branches/')) {
+          return jsonResponse({
+            'name': 'main',
+            'protected': true,
+            'default': true,
+            'commit': {'id': '1111111111111111111111111111111111111111'},
+          });
+        }
+        if (path.endsWith('/repository/tree')) {
+          return jsonResponse([
+            {
+              'id': 'blob1',
+              'name': 'README.md',
+              'type': 'blob',
+              'path': 'README.md',
+            },
+          ]);
+        }
+        if (path.contains('/repository/files/') && path.endsWith('/raw')) {
+          if (holdRepoReadme) return repoReadmeGate.future;
+          return ResponseBody.fromString(
+            'hi',
+            200,
+            headers: {
+              Headers.contentTypeHeader: ['text/plain; charset=utf-8'],
+              'content-length': ['2'],
+            },
+          );
+        }
+        return jsonResponse([]);
+      });
+      final repoApi = testApi(repoAdapter, host: _instance.key);
+      addTearDown(repoApi.close);
+
+      await tester.pumpWidget(
+        workspaceHost(
+          Scaffold(
+            body: RepositoryTab(
+              account: _account,
+              api: repoApi,
+              project: _project,
+            ),
+          ),
+        ),
+      );
+      while (!repoAdapter.requests.any((r) => r.uri.path.endsWith('/raw'))) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      }
+      expect(find.byKey(const ValueKey('repo-readme-skeleton')), findsOneWidget);
+
+      holdRepoReadme = false;
+      repoReadmeGate.complete(
+        ResponseBody.fromString(
+          'hi',
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['text/plain; charset=utf-8'],
+            'content-length': ['2'],
+          },
+        ),
+      );
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      // Card has 0 horizontal margin in feed or 16dp contentPadding; MarkdownView left edge matches contentPadding.
+      final markdownLeftDuringFade =
+          tester.getTopLeft(find.text('hi', findRichText: true)).dx;
+      await settleNetworkWidgets(tester);
+      final markdownLeftAfterFade =
+          tester.getTopLeft(find.text('hi', findRichText: true)).dx;
+      expect(markdownLeftDuringFade, closeTo(markdownLeftAfterFade, 0.5));
+      expect(markdownLeftAfterFade, lessThanOrEqualTo(32.0));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'failed first load followed by retry shows skeleton again without fabricated empty or fake states',
+    (tester) async {
+      var fail = true;
+      var holdRetry = false;
+      Completer<ResponseBody> retryGate = Completer<ResponseBody>();
+      final adapter = FakeAdapter((request) {
+        if (fail) {
+          return jsonResponse({'message': 'server error'}, status: 500);
+        }
+        if (holdRetry) {
+          return retryGate.future;
+        }
+        return jsonResponse({});
+      });
+      final api = testApi(adapter, host: _instance.key);
+      addTearDown(api.close);
+
+      // 1. JobLogPage fail -> retry shows LogSkeleton, never "尚無 Log".
+      await tester.pumpWidget(
+        workspaceHost(
+          JobLogPage(
+            account: _account,
+            api: api,
+            project: _project,
+            id: 20,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.byType(FailureNotice), findsOneWidget);
+      expect(find.text('尚無 Log'), findsNothing);
+
+      fail = false;
+      holdRetry = true;
+      retryGate = Completer<ResponseBody>();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(FailureNotice),
+          matching: find.byIcon(Icons.refresh),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(LogSkeleton), findsOneWidget);
+      expect(find.text('尚無 Log'), findsNothing);
+
+      // 2. CommitDetailPage fail -> retry shows CommitSkeleton, never fake commit.
+      fail = true;
+      holdRetry = false;
+      await tester.pumpWidget(
+        workspaceHost(
+          CommitDetailPage(
+            account: _account,
+            api: api,
+            project: _project,
+            sha: '1111111111111111111111111111111111111111',
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.byType(FailureNotice), findsOneWidget);
+
+      fail = false;
+      holdRetry = true;
+      retryGate = Completer<ResponseBody>();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(FailureNotice),
+          matching: find.byIcon(Icons.refresh),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(CommitSkeleton), findsOneWidget);
+
+      // 3. PipelineGraphPage fail -> retry shows PipelineGraphSkeleton, never "此 Pipeline 沒有工作".
+      fail = true;
+      holdRetry = false;
+      await tester.pumpWidget(
+        workspaceHost(
+          PipelineGraphPage(
+            account: _account,
+            api: api,
+            project: _project,
+            pipelineId: 10,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.byType(FailureNotice), findsOneWidget);
+      expect(find.text('此 Pipeline 沒有工作'), findsNothing);
+
+      fail = false;
+      holdRetry = true;
+      retryGate = Completer<ResponseBody>();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(FailureNotice),
+          matching: find.byIcon(Icons.refresh),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(PipelineGraphSkeleton), findsOneWidget);
+      expect(find.text('此 Pipeline 沒有工作'), findsNothing);
+
+      // 4. BoardsPage fail -> retry shows BoardColumnsSkeleton, never "此專案尚無 Issue 看板".
+      fail = true;
+      holdRetry = false;
+      await tester.pumpWidget(
+        workspaceHost(
+          BoardsPage(
+            account: _account,
+            api: api,
+            project: _project,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.byType(FailureNotice), findsOneWidget);
+      expect(find.text('此專案尚無 Issue 看板'), findsNothing);
+
+      fail = false;
+      holdRetry = true;
+      retryGate = Completer<ResponseBody>();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(FailureNotice),
+          matching: find.byIcon(Icons.refresh),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(BoardColumnsSkeleton), findsOneWidget);
+      expect(find.text('此專案尚無 Issue 看板'), findsNothing);
+      fail = false;
+      holdRetry = false;
+      retryGate.complete(jsonResponse([]));
+      await settleNetworkWidgets(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'SnippetsPage shows header immediately, uses CodeSkeleton(liveRegion: false) on file switch, and keeps blob on pull-to-refresh',
+    (tester) async {
+      var holdBlobA = true;
+      final blobAGate = Completer<ResponseBody>();
+      var holdBlobB = true;
+      final blobBGate = Completer<ResponseBody>();
+      var holdRefreshBlobA = false;
+      final refreshBlobAGate = Completer<ResponseBody>();
+
+      ResponseBody makeBlobResponse(String p, String content) => jsonResponse({
+        'data': {
+          'snippets': {
+            'nodes': [
+              {
+                'id': 'gid://gitlab/ProjectSnippet/9',
+                'project': {
+                  'id': 'gid://gitlab/Project/42',
+                  'fullPath': 'studio/mobile',
+                },
+                'updatedAt': '2026-10-01T00:00:00Z',
+                'blobs': {
+                  'hasUnretrievableBlobs': false,
+                  'nodes': [
+                    {
+                      'binary': false,
+                      'name': p,
+                      'path': p,
+                      'rawPath': 'https://example.com/raw/$p',
+                      'size': content.length,
+                      'rawPlainData': content,
+                      'renderedAsText': true,
+                      'simpleViewer': {
+                        'tooLarge': false,
+                        'renderError': null,
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      });
+
+      final adapter = FakeAdapter((request) {
+        final path = request.uri.path;
+        if (path.endsWith('/snippets')) {
+          return jsonResponse([
+            {
+              'id': 9,
+              'project_id': 42,
+              'title': 'Multi Snippet',
+              'visibility': 'private',
+              'created_at': '2026-10-01T00:00:00Z',
+              'updated_at': '2026-10-01T00:00:00Z',
+              'web_url': 'https://example.com/gitlab/studio/mobile/-/snippets/9',
+              'author': {'id': 7, 'username': 'tester', 'name': 'Tester'},
+              'files': [
+                {'path': 'a.dart'},
+                {'path': 'b.dart'},
+              ],
+            },
+          ]);
+        }
+        if (path.endsWith('/snippets/9')) {
+          return jsonResponse({
+            'id': 9,
+            'project_id': 42,
+            'title': 'Multi Snippet',
+            'visibility': 'private',
+            'created_at': '2026-10-01T00:00:00Z',
+            'updated_at': '2026-10-01T00:00:00Z',
+            'web_url': 'https://example.com/gitlab/studio/mobile/-/snippets/9',
+            'author': {'id': 7, 'username': 'tester', 'name': 'Tester'},
+            'files': [
+              {'path': 'a.dart'},
+              {'path': 'b.dart'},
+            ],
+          });
+        }
+        if (path.endsWith('/api/graphql')) {
+          final body = request.data as Map<String, dynamic>;
+          final query = body['query'] as String;
+          if (query.contains('MobileProjectSnippets')) {
+            return jsonResponse({
+              'data': {
+                'snippets': {
+                  'nodes': [
+                    {
+                      'id': 'gid://gitlab/ProjectSnippet/9',
+                      'project': {
+                        'id': 'gid://gitlab/Project/42',
+                        'fullPath': 'studio/mobile',
+                      },
+                      'updatedAt': '2026-10-01T00:00:00Z',
+                    },
+                  ],
+                  'pageInfo': {'hasNextPage': false, 'endCursor': null},
+                },
+              },
+            });
+          }
+          if (query.contains('MobileSnippetBlob')) {
+            final vars = body['variables'] as Map<String, dynamic>;
+            final paths = (vars['paths'] as List).cast<String>();
+            final filePath = paths.single;
+            if (filePath == 'a.dart') {
+              if (holdBlobA) return blobAGate.future;
+              if (holdRefreshBlobA) return refreshBlobAGate.future;
+              return makeBlobResponse('a.dart', 'void main() {}');
+            }
+            if (filePath == 'b.dart') {
+              if (holdBlobB) return blobBGate.future;
+              return makeBlobResponse('b.dart', 'int x = 42;');
+            }
+          }
+          return jsonResponse([]);
+        }
+        return jsonResponse([]);
+      });
+      final api = testApi(adapter, host: _instance.key);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        workspaceHost(
+          SnippetsPage(
+            account: _account,
+            api: api,
+            project: _project,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.text('Multi Snippet'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump();
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump();
+
+      // Header is already shown while blob a.dart is still loading:
+      expect(find.text('Multi Snippet'), findsWidgets);
+      expect(find.byType(SnippetDetailSkeleton), findsNothing);
+      expect(find.byType(CodeSkeleton), findsOneWidget);
+      expect(tester.widget<CodeSkeleton>(find.byType(CodeSkeleton)).liveRegion, isFalse);
+
+      holdBlobA = false;
+      blobAGate.complete(makeBlobResponse('a.dart', 'void main() {}'));
+      await settleNetworkWidgets(tester);
+      expect(find.byType(CodeSkeleton), findsNothing);
+      expect(find.textContaining('void main() {}'), findsOneWidget);
+
+      // Pull-to-refresh on same file keeps blob visible with thin bar:
+      holdRefreshBlobA = true;
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump();
+      expect(find.textContaining('void main() {}'), findsOneWidget);
+      expect(find.byType(CodeSkeleton), findsNothing);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+
+      holdRefreshBlobA = false;
+      refreshBlobAGate.complete(makeBlobResponse('a.dart', 'void main() {}'));
+      await settleNetworkWidgets(tester);
+
+      // Switch to b.dart: shows CodeSkeleton(liveRegion: false) in file area.
+      await tester.tap(find.text('b.dart'));
+      await tester.pump();
+      expect(find.byType(CodeSkeleton), findsOneWidget);
+      expect(tester.widget<CodeSkeleton>(find.byType(CodeSkeleton)).liveRegion, isFalse);
+
+      holdBlobB = false;
+      blobBGate.complete(makeBlobResponse('b.dart', 'int x = 42;'));
+      await settleNetworkWidgets(tester);
+      expect(find.textContaining('int x = 42;'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'ProjectAnalyticsPage date-window move on refresh marks the other tab stale and reloads it with thin bar',
+    (tester) async {
+      var currentNow = DateTime.utc(2026, 10, 10, 23, 59);
+      var holdCiReload = false;
+      final ciReloadGate = Completer<ResponseBody>();
+      var ciQueries = 0;
+
+      final adapter = FakeAdapter((request) {
+        final path = request.uri.path;
+        if (path.endsWith('/repository/contributors')) {
+          return jsonResponse([
+            {
+              'name': 'Tester',
+              'email': 't@example.com',
+              'commits': 3,
+              'additions': 10,
+              'deletions': 2,
+            },
+          ]);
+        }
+        if (path.endsWith('/repository/commits')) {
+          final since = DateTime.parse(request.uri.queryParameters['since']!);
+          return jsonResponse([
+            {
+              'id': 'a' * 40,
+              'committed_date': since.add(const Duration(days: 1)).toIso8601String(),
+              'parent_ids': ['1' * 40],
+              'stats': {'additions': 4, 'deletions': 2},
+            },
+          ]);
+        }
+        if (path.endsWith('/languages')) {
+          return jsonResponse({'Dart': 100});
+        }
+        if (path.endsWith('/api/graphql')) {
+          final body = request.data as Map<String, dynamic>;
+          final query = body['query'] as String;
+          if (query.contains('MobilePipelineAnalytics')) {
+            ciQueries++;
+            if (holdCiReload) return ciReloadGate.future;
+            final vars = body['variables'] as Map<String, dynamic>;
+            final from = DateTime.parse(vars['fromTime'] as String)
+                .add(const Duration(days: 1))
+                .toIso8601String()
+                .substring(0, 10);
+            return jsonResponse({
+              'data': {
+                'project': {
+                  'id': 'gid://gitlab/Project/42',
+                  'pipelineAnalytics': {
+                    'aggregate': {
+                      'label': null,
+                      'all': 10,
+                      'success': 8,
+                      'failed': 2,
+                      'other': 0,
+                      'durationStatistics': {'p50': 2.0, 'p95': 5.0},
+                    },
+                    'timeSeries': [
+                      {
+                        'label': from,
+                        'all': 10,
+                        'success': 8,
+                        'failed': 2,
+                        'other': 0,
+                        'durationStatistics': {'p50': 2.0, 'p95': 5.0},
+                      },
+                    ],
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse({
+            'data': {
+              'project': {
+                'id': 'gid://gitlab/Project/42',
+                'codeCoverageSummary': null,
+              },
+            },
+          });
+        }
+        return jsonResponse([]);
+      });
+      final api = testApi(adapter, host: _instance.key);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        workspaceHost(
+          ProjectAnalyticsPage(
+            account: _account,
+            api: api,
+            project: _project,
+            now: () => currentNow,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      // Load CI tab (tab 2) and Repository tab (tab 1) in day 1 window.
+      await tester.tap(find.widgetWithText(Tab, 'CI'));
+      await settleNetworkWidgets(tester);
+      expect(ciQueries, 1);
+
+      await tester.tap(find.widgetWithText(Tab, '儲存庫'));
+      await settleNetworkWidgets(tester);
+
+      // Advance clock across UTC midnight and refresh on Repository tab.
+      currentNow = DateTime.utc(2026, 10, 11, 0, 5);
+      await tester.tap(find.byKey(const ValueKey('analytics-refresh')));
+      await settleNetworkWidgets(tester);
+
+      // Switch back to CI tab: it must reload with thin bar (keeping existing CI data, no ChartSkeleton).
+      holdCiReload = true;
+      await tester.tap(find.widgetWithText(Tab, 'CI'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      while (ciQueries < 2) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      }
+      expect(ciQueries, 2);
+      expect(find.byType(ChartSkeleton), findsNothing);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+
+      holdCiReload = false;
+      ciReloadGate.complete(
+        jsonResponse({
+          'data': {
+            'project': {
+              'id': 'gid://gitlab/Project/42',
+              'pipelineAnalytics': {
+                'aggregate': {
+                  'label': null,
+                  'all': 10,
+                  'success': 8,
+                  'failed': 2,
+                  'other': 0,
+                  'durationStatistics': {'p50': 2.0, 'p95': 5.0},
+                },
+                'timeSeries': <Object?>[],
+              },
+            },
+          },
+        }),
+      );
+      await settleNetworkWidgets(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'PickerSheet search calls refresh(reset: true) and shows RowsSkeleton for new query',
+    (tester) async {
+      var holdSearch = false;
+      final searchGate = Completer<ResponseBody>();
+      final adapter = FakeAdapter((request) {
+        if (request.uri.queryParameters['search'] == 'bug') {
+          if (holdSearch) return searchGate.future;
+          return jsonResponse([
+            {'id': 2, 'title': 'bug'},
+          ]);
+        }
+        return jsonResponse([
+          {'id': 1, 'title': 'feature'},
+        ]);
+      });
+      final api = testApi(adapter, host: _instance.key);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        workspaceHost(
+          Scaffold(
+            body: ChoicePickerSheet(
+              api: api,
+              account: _account,
+              projectId: 42,
+              source: PickerSource.milestones,
+              title: '里程碑',
+              initial: const <PickerChoice>[],
+              multi: false,
+            ),
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.text('feature'), findsOneWidget);
+
+      holdSearch = true;
+      await tester.enterText(find.byType(TextField), 'bug');
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.byType(RowsSkeleton), findsOneWidget);
+      expect(find.text('feature'), findsNothing);
+
+      holdSearch = false;
+      searchGate.complete(
+        jsonResponse([
+          {'id': 2, 'title': 'bug'},
+        ]),
+      );
+      await settleNetworkWidgets(tester);
+      expect(
+        find.descendant(
+          of: find.byType(ListView),
+          matching: find.text('bug'),
+        ),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'JobLogPage retry action (new job id) resets _firstLoadDone and shows LogSkeleton',
+    (tester) async {
+      final retryTraceGate = Completer<ResponseBody>();
+      final adapter = FakeAdapter((request) {
+        final path = request.uri.path;
+        if (path.endsWith('/jobs/20/retry')) {
+          return jsonResponse({'id': 21, 'name': 'build', 'status': 'running'});
+        }
+        if (path.endsWith('/jobs/20/trace')) {
+          return ResponseBody.fromString('first attempt log\n', 200);
+        }
+        if (path.endsWith('/jobs/20')) {
+          return jsonResponse({'id': 20, 'name': 'build', 'status': 'failed'});
+        }
+        if (path.endsWith('/jobs/21/trace')) {
+          return retryTraceGate.future;
+        }
+        if (path.endsWith('/jobs/21')) {
+          return jsonResponse({'id': 21, 'name': 'build', 'status': 'running'});
+        }
+        return jsonResponse({});
+      });
+      final api = testApi(adapter, host: _instance.key);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        workspaceHost(
+          JobLogPage(
+            account: _account,
+            api: api,
+            project: _project,
+            id: 20,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.textContaining('first attempt log'), findsOneWidget);
+      expect(find.byType(LogSkeleton), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('job-banner-retry-20')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(FilledButton),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      while (!adapter.requests.any((r) => r.uri.path.endsWith('/jobs/21/trace'))) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      }
+      expect(find.byType(LogSkeleton), findsOneWidget);
+      expect(find.text('尚無 Log'), findsNothing);
+
+      retryTraceGate.complete(ResponseBody.fromString('second attempt log\n', 200));
+      await settleNetworkWidgets(tester);
+      expect(find.textContaining('second attempt log'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

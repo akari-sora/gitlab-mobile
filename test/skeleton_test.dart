@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,7 +7,17 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/records_feed.dart';
 import 'package:gitlab_mobile/shared/skeleton.dart';
+import 'package:gitlab_mobile/shared/theme.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
+import 'support/widget_settle.dart';
+
+double _contrastRatio(Color a, Color b) {
+  final la = a.computeLuminance();
+  final lb = b.computeLuminance();
+  final lighter = math.max(la, lb);
+  final darker = math.min(la, lb);
+  return (lighter + 0.05) / (darker + 0.05);
+}
 
 int _rows(WidgetTester tester) =>
     find
@@ -133,7 +144,8 @@ void main() {
         CommitSkeleton(),
         SnippetDetailSkeleton(),
         BoardColumnsSkeleton(),
-        StageColumnsSkeleton(),
+        PipelineGraphSkeleton(),
+        ContributorsSkeleton(),
         ChartSkeleton(),
       ];
       for (final skeleton in skeletons) {
@@ -337,6 +349,160 @@ void main() {
       await tester.pump();
       expect(find.byType(RowsSkeleton), findsNothing);
       expect(find.text('Issue 1'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'composite skeletons draw opaque cards and dividers outside ShaderMask',
+    (tester) async {
+      const skeletons = <Widget>[
+        RowsSkeleton(grouped: true),
+        PipelineSkeleton(),
+        DetailSkeleton(),
+        CompareSkeleton(),
+        CommitSkeleton(),
+        SnippetDetailSkeleton(),
+        BoardColumnsSkeleton(),
+        PipelineGraphSkeleton(),
+        ContributorsSkeleton(),
+        ChartSkeleton(),
+      ];
+      for (final skeleton in skeletons) {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: appTheme(Brightness.light),
+            home: Scaffold(body: SingleChildScrollView(child: skeleton)),
+          ),
+        );
+        final masks = find.byType(ShaderMask);
+        expect(
+          masks,
+          findsWidgets,
+          reason: '${skeleton.runtimeType} should render at least one ShaderMask',
+        );
+        for (final maskElement in masks.evaluate()) {
+          final maskFinder = find.byElementPredicate(
+            (element) => identical(element, maskElement),
+          );
+          final decoratedInsideMask = find.descendant(
+            of: maskFinder,
+            matching: find.byType(DecoratedBox),
+          );
+          for (final decoratedElement in decoratedInsideMask.evaluate()) {
+            final decoratedFinder = find.byElementPredicate(
+              (element) => identical(element, decoratedElement),
+            );
+            expect(
+              find.descendant(
+                of: decoratedFinder,
+                matching: find.byType(SkeletonBone),
+              ),
+              findsNothing,
+              reason:
+                  '${skeleton.runtimeType} must not wrap SkeletonBones in an opaque DecoratedBox inside ShaderMask',
+            );
+          }
+        }
+      }
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'light-mode contrast against scaffoldBackgroundColor (#F2F4F7) meets thresholds',
+    (tester) async {
+      final theme = appTheme(Brightness.light);
+      final bg = theme.scaffoldBackgroundColor;
+      expect(bg, const Color(0xFFF2F4F7));
+
+      late LinearGradient gradient;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Builder(
+            builder: (context) {
+              gradient = SkeletonShimmer.gradientFor(context, progress: 0.5);
+              return const Scaffold(body: SkeletonBone(width: 80, height: 12));
+            },
+          ),
+        ),
+      );
+      final base = gradient.colors.first;
+      final highlight = gradient.colors[1];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: const MediaQuery(
+            data: MediaQueryData(disableAnimations: true),
+            child: Scaffold(body: SkeletonBone(width: 80, height: 12)),
+          ),
+        ),
+      );
+      final reducedDecorated = tester.widget<DecoratedBox>(
+        find.descendant(
+          of: find.byType(SkeletonBone),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      final rawReduced = (reducedDecorated.decoration as BoxDecoration).color!;
+      final reducedComposite = Color.alphaBlend(rawReduced, bg);
+
+      expect(_contrastRatio(base, bg), greaterThanOrEqualTo(1.2));
+      expect(_contrastRatio(highlight, bg), greaterThanOrEqualTo(1.08));
+      expect(_contrastRatio(reducedComposite, bg), greaterThanOrEqualTo(1.15));
+    },
+  );
+
+  testWidgets(
+    'CodeSkeleton, DiffSkeleton and LogSkeleton keep RTL direction on live-region Semantics while sweeping LTR',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      for (final skeleton in const <Widget>[
+        CodeSkeleton(),
+        DiffSkeleton(),
+        LogSkeleton(),
+      ]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Scaffold(body: skeleton),
+            ),
+          ),
+        );
+        final node = tester.getSemantics(find.bySemanticsLabel('正在載入'));
+        expect(
+          node.textDirection,
+          TextDirection.rtl,
+          reason:
+              '${skeleton.runtimeType} live-region label must keep ambient RTL direction',
+        );
+        final boneDirectionality = tester.widget<Directionality>(
+          find
+              .descendant(
+                of: find.byType(SkeletonShimmer),
+                matching: find.byType(Directionality),
+              )
+              .first,
+        );
+        expect(boneDirectionality.textDirection, TextDirection.ltr);
+      }
+      semantics.dispose();
+    },
+  );
+
+  testWidgets(
+    'settleNetworkWidgets treats only animated SkeletonShimmer as loading, not standalone SkeletonBone',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: SkeletonBone(width: 64, height: 12)),
+        ),
+      );
+      await settleNetworkWidgets(tester, maxCycles: 2);
+      expect(find.byType(SkeletonBone), findsOneWidget);
+      expect(tester.takeException(), isNull);
     },
   );
 }

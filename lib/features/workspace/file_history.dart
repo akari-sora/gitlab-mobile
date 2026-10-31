@@ -119,14 +119,19 @@ class _BlamePageState extends State<BlamePage> {
           }
         }
       }
-      if (mounted) setState(() { _rows = rows; _longest = longest; });
+      if (mounted) {
+        setState(() {
+          _rows = rows;
+          _longest = longest;
+          _firstLoadDone = true;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = safeFailure(e));
     } finally {
       if (mounted) {
         setState(() {
           _loading = false;
-          _firstLoadDone = true;
         });
       }
     }
@@ -289,6 +294,7 @@ class _FindFilePageState extends State<FindFilePage> {
             _truncated = false;
             clearedForReload = true;
           }
+          _firstLoadDone = true;
           _paths.addAll([
             for (final item in page.items)
               if (item['type'] == 'blob' && item['path'] is String) item['path'] as String,
@@ -306,7 +312,6 @@ class _FindFilePageState extends State<FindFilePage> {
       if (mounted && epoch == _epoch) {
         setState(() {
           _loading = false;
-          _firstLoadDone = true;
         });
       }
     }

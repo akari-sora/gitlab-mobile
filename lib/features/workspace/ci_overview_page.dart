@@ -276,7 +276,6 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       if (current()) {
         setState(() {
           _loading = false;
-          _firstLoadDone = true;
         });
         if (revalidateStaleProjects) {
           unawaited(_load(fresh: true, background: true));
