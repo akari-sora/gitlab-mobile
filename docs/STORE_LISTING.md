@@ -1,12 +1,14 @@
 # Store listing
 
-Decided on 2026-10-19; updated 2026-10-30. In Google Play Console (`app.mergeline`,
+Decided on 2026-10-19; updated 2026-10-31. In Google Play Console (`app.mergeline`,
 CB Studio), the store listing (zh-TW), Demo-mode screenshots, App access
 instructions, Data safety, privacy policy URL and policy declarations are
 filled, content rating (IARC) and price (US$3.99) are set, the promo video
-(https://www.youtube.com/watch?v=p-G6da2prmg) is attached, and the Play AAB
-0.6.2 (versionCode 8, `c6919e52`) was submitted for Google review on 2026-10-30 (AI assistant on, background runs
-off, no foreground-service declarations, upload key); see [Plan and status](PLAN_STATUS.md).
+(https://www.youtube.com/watch?v=oXaaAxL1h_E) is attached, and the Play AAB
+0.6.2 (versionCode 8, `c6919e52`; AI assistant on, background runs off, no
+foreground-service declarations, upload key) was submitted for Google review on
+2026-10-30 and is live since 2026-10-31 at
+https://play.google.com/store/apps/details?id=app.mergeline; see [Plan and status](PLAN_STATUS.md).
 
 ## Name
 
@@ -94,6 +96,12 @@ the demo makes is an AI content report the user explicitly sends (to the
 developer's Google Form). Store screenshots are
 taken in the demo, so they show no real account.
 
+The listing graphics were redone on 2026-10-31 and went to Google review the same day, together with the new promo video.
+- **Order:** they introduce Mergeline as a third-party client for GitLab® first (home, review, approve and merge, CI, project). The AI assistant comes last, as the highlight (confirmation card, then the write read back).
+- **Layout:** each screenshot shows a cropped window of a 1080×2424 Demo capture at about 89% of the canvas width. The rounded card and its border are a single box, so they cannot drift apart as the earlier phone-frame composites did.
+- **Production:** they are rendered with Remotion from the same captures as the video.
+- **AI asset declaration:** the Play Console's declaration is "not labelled". The assets are real app screens composed by code, not generated images.
+
 ## Read-cache data safety
 
 The encrypted read cache stays on the device; it adds no off-device collection
@@ -107,8 +115,8 @@ does not redact that content. Sign-out, account switching, removal and terminal
 401 clear the affected account's cache under the cleanup contract in
 `CLAUDE.md`. Android emulator acceptance for the read cache and offline snapshots is
 recorded in [Plan and status](PLAN_STATUS.md) (C2 and C3); the Play Console
-Data safety form was filled on 2026-10-30, while Play review submission and
-iOS device evidence remain open.
+Data safety form was filled on 2026-10-30, the app went live on Play on
+2026-10-31, and iOS device evidence remains open.
 
 ## Rules for the listing
 
