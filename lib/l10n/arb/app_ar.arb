@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "تعليق,علّق,علق",
   "demoKeywordsIssue": "أنشئ مشكلة,إنشاء مشكلة,مشكلة جديدة",
   "demoKeywordsClose": "أغلق,إغلاق",
-  "demoOffline": "غير متاح في العرض التوضيحي، فهو يعمل دون اتصال"
+  "demoOffline": "غير متاح في العرض التوضيحي، فهو يعمل دون اتصال",
+  "aiProposalFieldChanged": "سيتغير",
+  "aiProposalFieldUnchanged": "دون تغيير",
+  "aiProposalFieldPrevious": "الحالي: {value}"
 }

@@ -27,6 +27,7 @@ AiWriteProposal _proposal({
   bool typedName = false,
   List<AiFixedConfirmReason> reasons = const [],
   Map<String, String> fields = const {'body': 'Looks good.\nShip it.'},
+  Map<String, AiFieldChange> fieldChanges = const {},
   String reason = 'You asked me to approve the review.',
   AiUploadPreview? upload,
   List<String> closingRefs = const [],
@@ -58,6 +59,7 @@ AiWriteProposal _proposal({
   scopeRevision: 1,
   releaseName: releaseName,
   fields: fields,
+  fieldChanges: fieldChanges,
   upload: upload,
   closingRefs: closingRefs,
   preview: preview,
@@ -2173,6 +2175,294 @@ void main() {
           );
         }
       }
+    });
+  });
+
+  group('field change markers on the confirmation card', () {
+    testWidgets(
+      'renders changed, unchanged and unknown field rows with semantics',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        final proposal = _proposal(
+          operationId: 'updateIssue',
+          fields: const {
+            'title': 'Rewritten title',
+            'labels': 'ux, mobile',
+            'description': 'Updated prose body',
+            'state_event': 'reopen',
+          },
+          fieldChanges: const {
+            'title': AiFieldChange.changed(
+              previous: 'Keep release notes concise',
+            ),
+            'labels': AiFieldChange.unchanged(),
+            'description': AiFieldChange.changed(),
+            'state_event': AiFieldChange.unknown(),
+          },
+          editableField: 'description',
+          releaseName: '#7',
+        );
+        await tester.pumpWidget(
+          _host(
+            AiWriteProposalCard(
+              proposal: proposal,
+              session: _Writes([proposal]),
+            ),
+          ),
+        );
+
+        final titleChange = find.byKey(
+          const ValueKey('ai-proposal-change-title'),
+        );
+        expect(titleChange, findsOneWidget);
+        expect(
+          find.descendant(
+            of: titleChange,
+            matching: find.text(l10n.aiProposalFieldChanged),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: titleChange, matching: find.byIcon(Icons.edit)),
+          findsOneWidget,
+        );
+        final titlePrev = find.byKey(
+          const ValueKey('ai-proposal-previous-title'),
+        );
+        expect(titlePrev, findsOneWidget);
+        expect(
+          tester.widget<Text>(titlePrev).data,
+          l10n.aiProposalFieldPrevious('Keep release notes concise'),
+        );
+        expect(
+          tester
+              .getSemantics(
+                find.byKey(const ValueKey('ai-proposal-field-title')),
+              )
+              .label,
+          allOf(
+            contains(l10n.title),
+            contains(l10n.aiProposalFieldChanged),
+            contains('Rewritten title'),
+          ),
+        );
+
+        final labelsChange = find.byKey(
+          const ValueKey('ai-proposal-change-labels'),
+        );
+        expect(labelsChange, findsOneWidget);
+        expect(
+          find.descendant(
+            of: labelsChange,
+            matching: find.text(l10n.aiProposalFieldUnchanged),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('ai-proposal-previous-labels')),
+          findsNothing,
+        );
+        expect(
+          tester
+              .getSemantics(
+                find.byKey(const ValueKey('ai-proposal-field-labels')),
+              )
+              .label,
+          allOf(
+            contains(l10n.labelNoun),
+            contains(l10n.aiProposalFieldUnchanged),
+          ),
+        );
+
+        // Description is prose: changed marker is shown, never a previous line.
+        expect(
+          find.byKey(const ValueKey('ai-proposal-change-description')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('ai-proposal-previous-description')),
+          findsNothing,
+        );
+
+        // Action field has no marker and no previous line.
+        expect(
+          find.byKey(const ValueKey('ai-proposal-change-state_event')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('ai-proposal-previous-state_event')),
+          findsNothing,
+        );
+        handle.dispose();
+      },
+    );
+
+    testWidgets('a yes/no previous value reads like the proposed one', (
+      tester,
+    ) async {
+      final proposal = _proposal(
+        operationId: 'updateIssue',
+        fields: const {'confidential': 'true'},
+        fieldChanges: const {
+          'confidential': AiFieldChange.changed(previous: 'false'),
+        },
+        editableField: null,
+        releaseName: '#7',
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+        ),
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('ai-proposal-field-confidential')),
+            )
+            .data,
+        l10n.yesLabel,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('ai-proposal-previous-confidential')),
+            )
+            .data,
+        l10n.aiProposalFieldPrevious(l10n.noLabel),
+      );
+    });
+
+    testWidgets('a field without a comparison keeps the plain row', (
+      tester,
+    ) async {
+      final proposal = _proposal(
+        operationId: 'updateIssue',
+        fields: const {'title': 'Rewritten title', 'labels': 'ux'},
+        fieldChanges: const {'labels': AiFieldChange.unknown()},
+        editableField: null,
+        releaseName: '#7',
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+        ),
+      );
+      for (final key in ['title', 'labels']) {
+        final value = find.byKey(ValueKey('ai-proposal-field-$key'));
+        expect(value, findsOneWidget);
+        expect(
+          tester.widget<Text>(value).style,
+          Theme.of(tester.element(value)).textTheme.bodySmall,
+        );
+        expect(
+          find.ancestor(of: value, matching: find.byType(MergeSemantics)),
+          findsNothing,
+          reason: key,
+        );
+        expect(find.byKey(ValueKey('ai-proposal-change-$key')), findsNothing);
+        expect(find.byKey(ValueKey('ai-proposal-previous-$key')), findsNothing);
+      }
+      expect(find.text(l10n.aiProposalFieldChanged), findsNothing);
+      expect(find.text(l10n.aiProposalFieldUnchanged), findsNothing);
+    });
+
+    testWidgets('wraps the previous value in bidi isolates under Arabic', (
+      tester,
+    ) async {
+      useLanguage(languageForTag('ar')!);
+      addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+      const oldTitle = 'Keep release notes !44';
+      final proposal = _proposal(
+        operationId: 'updateIssue',
+        fields: const {'title': 'New title'},
+        fieldChanges: const {
+          'title': AiFieldChange.changed(previous: oldTitle),
+        },
+        editableField: null,
+        releaseName: '#7',
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+          tag: 'ar',
+        ),
+      );
+      final prev = find.byKey(const ValueKey('ai-proposal-previous-title'));
+      expect(prev, findsOneWidget);
+      final rendered = tester.widget<Text>(prev).data!;
+      const ltrIsolate = '\u2068';
+      const popIsolate = '\u2069';
+      // The Arabic message isolates its argument by itself; the inner pair
+      // is the card's own isolated(), without which this fails.
+      expect(
+        rendered,
+        contains('$ltrIsolate$ltrIsolate$oldTitle$popIsolate$popIsolate'),
+      );
+    });
+
+    testWidgets('an old title that reads true or false is shown as it is', (
+      tester,
+    ) async {
+      final proposal = _proposal(
+        operationId: 'updateIssue',
+        fields: const {'title': 'Ship it', 'confidential': 'false'},
+        fieldChanges: const {
+          'title': AiFieldChange.changed(previous: 'false'),
+          'confidential': AiFieldChange.changed(previous: 'true'),
+        },
+        editableField: null,
+        releaseName: '#7',
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+        ),
+      );
+      String previous(String key) => tester
+          .widget<Text>(find.byKey(ValueKey('ai-proposal-previous-$key')))
+          .data!;
+      expect(previous('title'), l10n.aiProposalFieldPrevious('false'));
+      expect(
+        previous('confidential'),
+        l10n.aiProposalFieldPrevious(l10n.yesLabel),
+      );
+    });
+
+    testWidgets('prose and set fields never show an old value', (tester) async {
+      final proposal = _proposal(
+        operationId: 'updateIssue',
+        fields: const {
+          'description': 'New body',
+          'labels': 'ux',
+          'assignee_ids': '[7]',
+        },
+        // Even if a comparison carried one, the card leaves it out.
+        fieldChanges: const {
+          'description': AiFieldChange.changed(previous: 'Old body'),
+          'labels': AiFieldChange.changed(previous: 'bug'),
+          'assignee_ids': AiFieldChange.changed(previous: '[1]'),
+        },
+        editableField: null,
+        releaseName: '#7',
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+        ),
+      );
+      for (final key in ['description', 'labels', 'assignee_ids']) {
+        expect(
+          find.byKey(ValueKey('ai-proposal-change-$key')),
+          findsOneWidget,
+          reason: key,
+        );
+        expect(
+          find.byKey(ValueKey('ai-proposal-previous-$key')),
+          findsNothing,
+          reason: key,
+        );
+      }
+      expect(find.textContaining('Old body'), findsNothing);
     });
   });
 }

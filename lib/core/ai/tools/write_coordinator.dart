@@ -27,6 +27,70 @@ import 'write_tier.dart';
 
 export 'write_tier.dart' show AiGateDecision;
 
+/// Whether a proposed field on an approval card changes the current record.
+/// [unchanged] means the two values are equal after only the normalisation
+/// GitLab applies on write (Ruby `strip` of a title or label name, labels and
+/// assignees as sets, null and "" for an empty description); any other
+/// difference is [changed]. A value either side cannot read is [unknown].
+enum AiFieldChangeStatus { changed, unchanged, unknown }
+
+/// Display-only comparison result for one field on [AiWriteProposal].
+final class AiFieldChange {
+  const AiFieldChange(this.status, {this.previous});
+
+  const AiFieldChange.changed({String? previous})
+    : this(AiFieldChangeStatus.changed, previous: previous);
+  const AiFieldChange.unchanged() : this(AiFieldChangeStatus.unchanged);
+  const AiFieldChange.unknown() : this(AiFieldChangeStatus.unknown);
+
+  final AiFieldChangeStatus status;
+  final String? previous;
+}
+
+/// Normalized current value from the freshness read, for field comparison only.
+final class AiComparableValue {
+  const AiComparableValue.string(this.stringValue, {this.previous})
+    : boolValue = null,
+      intValue = null,
+      stringSet = null,
+      intSet = null;
+
+  const AiComparableValue.boolean(bool this.boolValue, {this.previous})
+    : stringValue = null,
+      intValue = null,
+      stringSet = null,
+      intSet = null;
+
+  const AiComparableValue.integer(int this.intValue, {this.previous})
+    : stringValue = null,
+      boolValue = null,
+      stringSet = null,
+      intSet = null;
+
+  AiComparableValue.strings(Iterable<String> values)
+    : stringSet = Set<String>.unmodifiable(values),
+      stringValue = null,
+      boolValue = null,
+      intValue = null,
+      intSet = null,
+      previous = null;
+
+  AiComparableValue.integers(Iterable<int> values)
+    : intSet = Set<int>.unmodifiable(values),
+      stringValue = null,
+      boolValue = null,
+      intValue = null,
+      stringSet = null,
+      previous = null;
+
+  final String? stringValue;
+  final bool? boolValue;
+  final int? intValue;
+  final Set<String>? stringSet;
+  final Set<int>? intSet;
+  final String? previous;
+}
+
 /// A process-local approval. Neither its text nor its payload is journaled.
 final class AiWriteProposal {
   AiWriteProposal({
@@ -45,6 +109,7 @@ final class AiWriteProposal {
     required this.releaseName,
     port.AiWritePreview? preview,
     this.fields = const <String, String>{},
+    this.fieldChanges = const <String, AiFieldChange>{},
     this.upload,
     this.closingRefs = const <String>[],
     this.editableField,
@@ -76,6 +141,9 @@ final class AiWriteProposal {
   /// The write's arguments for the approval card, each value redacted with
   /// the live secrets. The model's `reason` is [modelReason] instead.
   Map<String, String> fields;
+
+  /// Per-field comparison against the fresh record, for the approval card only.
+  Map<String, AiFieldChange> fieldChanges;
 
   /// The one text field an edit may replace, from the ledger, and only when
   /// this write carries it; null means the card offers no edit.
@@ -355,6 +423,7 @@ final class AiWriteFreshness {
     this.polluted = false,
     this.currentFields = const {},
     this.provenance = const {},
+    this.comparable = const {},
   });
 
   final String? updatedAt;
@@ -379,6 +448,12 @@ final class AiWriteFreshness {
   final bool polluted;
   final Map<String, String> currentFields;
   final Map<String, text.AiFieldProvenance> provenance;
+
+  /// The whitelisted fields of the record this read fetched, normalised for
+  /// the card's changed/unchanged markers (REST `updateIssue` and
+  /// `updateMergeRequest` only). Raw GitLab text held in memory: it is never
+  /// journaled, and reaches the card only through `safeDisplay`.
+  final Map<String, AiComparableValue> comparable;
 }
 
 typedef AiWriteFreshnessReader =
@@ -423,6 +498,7 @@ AiWriteFreshness _withPreparedFields(
   provenance: prepared.request.arguments.containsKey('groupId')
       ? _groupPreparedProvenance(prepared, policy)
       : fresh.provenance,
+  comparable: fresh.comparable,
 );
 
 /// Only the strict opening can prove a complete group field. A
@@ -1163,6 +1239,12 @@ final class PolicyAiWriteCoordinator
             preexistingSecretHits: scanReasons.preexistingSecretHits,
         ),
         fields: _fields(request, capability, safeDisplay),
+        fieldChanges: _fieldChanges(
+          request,
+          capability,
+          fresh.comparable,
+          safeDisplay,
+        ),
         editableField: _editableField(request, capability),
         closingRefs: [
           for (final ref in preparedText.closingRefs) safeDisplay(ref),
@@ -1354,6 +1436,12 @@ final class PolicyAiWriteCoordinator
         );
         proposal.fields = _fields(
           processed.request, ledger.find(proposal.operationId)!, safeDisplay,
+        );
+        proposal.fieldChanges = _fieldChanges(
+          processed.request,
+          ledger.find(proposal.operationId)!,
+          pending.fresh.comparable,
+          safeDisplay,
         );
         if (proposal.preview is port.AiFieldsPreview) {
           proposal.preview = redactAiWritePreview(
@@ -3254,28 +3342,339 @@ port.AiWriteRequest _edit(
 }
 
 // Identifiers are represented by the target; content comes from the ledger.
+// The card's field rows and their change markers walk the same keys.
+void _forEachCardField(
+  port.AiWriteRequest request,
+  AiCapability capability,
+  void Function(String key, Object value) visit,
+) {
+  void walk(Map<String, Object?> values, Map<String, AiArgSpec> specs) {
+    for (final MapEntry(:key, :value) in values.entries) {
+      final spec = specs[key];
+      if (spec == null || !spec.modelVisible || value == null) continue;
+      if (key == 'fields' && value is Map<String, Object?>) {
+        walk(value, spec.properties);
+      } else if (key != 'resource' &&
+          key != 'iid' &&
+          key != 'position' &&
+          !key.endsWith('Id')) {
+        visit(key, value);
+      }
+    }
+  }
+
+  walk(request.arguments, _argumentSpecs(capability));
+}
+
 Map<String, String> _fields(
   port.AiWriteRequest request,
   AiCapability capability,
   String Function(String) safeDisplay,
 ) {
   final shown = <String, String>{};
-  void add(Map<String, Object?> values, Map<String, AiArgSpec> specs) {
-    for (final entry in values.entries) {
-      final spec = specs[entry.key];
-      if (spec == null || !spec.modelVisible || entry.value == null) continue;
-      if (entry.key == 'fields' && entry.value is Map<String, Object?>) {
-        add(entry.value! as Map<String, Object?>, spec.properties);
-      } else if (entry.key != 'resource' && entry.key != 'iid' &&
-          entry.key != 'position' && !entry.key.endsWith('Id')) {
-        shown[entry.key] = safeDisplay(
-          entry.value is String ? entry.value! as String : jsonEncode(entry.value),
+  _forEachCardField(request, capability, (key, value) {
+    shown[key] = safeDisplay(value is String ? value : jsonEncode(value));
+  });
+  return Map.unmodifiable(shown);
+}
+
+final _isoDatePattern = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+
+/// Ruby's `String#strip`, which GitLab applies to titles and label names:
+/// NUL and ASCII whitespace (`\t \n \v \f \r` and space) at either end.
+/// Dart's `trim()` also removes Unicode spaces (NBSP, BOM, U+3000, U+2028
+/// and others) that GitLab keeps, and would hide a real change as
+/// "unchanged".
+String _gitLabStrip(String value) {
+  bool strippable(int unit) =>
+      unit == 0x00 || unit == 0x20 || (unit >= 0x09 && unit <= 0x0d);
+  var start = 0;
+  var end = value.length;
+  while (start < end && strippable(value.codeUnitAt(start))) {
+    start++;
+  }
+  while (end > start && strippable(value.codeUnitAt(end - 1))) {
+    end--;
+  }
+  return value.substring(start, end);
+}
+
+/// A label list as GitLab reads it: comma-separated names, each stripped,
+/// empty names dropped.
+Set<String> _gitLabLabelNames(Iterable<String> names) => {
+  for (final name in names)
+    if (_gitLabStrip(name) case final stripped when stripped.isNotEmpty)
+      stripped,
+};
+
+bool? _parseComparableBool(Object? value) => switch (value) {
+  final bool b => b,
+  'true' => true,
+  'false' => false,
+  _ => null,
+};
+
+/// Extracts the whitelisted current values from the freshness read's [target]
+/// record, for REST `updateIssue` and `updateMergeRequest` only. Each value is
+/// normalised only as GitLab itself normalises the field on write, so equal
+/// values mean the write leaves the field as it is.
+Map<String, AiComparableValue> aiComparableFieldsFor(
+  String operationId,
+  Map<String, dynamic> target,
+) {
+  if (operationId != 'updateIssue' && operationId != 'updateMergeRequest') {
+    return const <String, AiComparableValue>{};
+  }
+  final out = <String, AiComparableValue>{};
+  if (target['title'] case final String title) {
+    out['title'] = AiComparableValue.string(
+      _gitLabStrip(title),
+      previous: title,
+    );
+  }
+  if (target.containsKey('description')) {
+    final raw = target['description'];
+    // Compared exactly: only null and "" are the same. Whitespace inside a
+    // description is content (indented code, Markdown line breaks).
+    if (raw == null) {
+      out['description'] = const AiComparableValue.string('');
+    } else if (raw is String) {
+      out['description'] = AiComparableValue.string(raw);
+    }
+  }
+  if (target.containsKey('due_date')) {
+    final raw = target['due_date'];
+    if (raw == null || raw == '') {
+      out['due_date'] = const AiComparableValue.string('');
+    } else if (raw is String && _isoDatePattern.hasMatch(raw)) {
+      out['due_date'] = AiComparableValue.string(raw, previous: raw);
+    }
+  }
+  if (target.containsKey('confidential')) {
+    final parsed = _parseComparableBool(target['confidential']);
+    if (parsed != null) {
+      out['confidential'] = AiComparableValue.boolean(
+        parsed,
+        previous: parsed ? 'true' : 'false',
+      );
+    }
+  }
+  if (target['weight'] case final int weight) {
+    out['weight'] = AiComparableValue.integer(weight, previous: '$weight');
+  }
+  if (target.containsKey('milestone')) {
+    final milestone = target['milestone'];
+    if (milestone == null) {
+      out['milestone_id'] = const AiComparableValue.integer(0);
+    } else if (milestone is Map) {
+      final id = milestone['id'];
+      final title = milestone['title'];
+      if (id is int && (title == null || title is String)) {
+        out['milestone_id'] = AiComparableValue.integer(
+          id,
+          previous: title is String && title.isNotEmpty ? title : null,
         );
       }
     }
   }
-  add(request.arguments, _argumentSpecs(capability));
-  return Map.unmodifiable(shown);
+  if (target['labels'] case final List<Object?> labels
+      when labels.every((item) => item is String)) {
+    out['labels'] = AiComparableValue.strings(
+      _gitLabLabelNames(labels.cast<String>()),
+    );
+  }
+  if (target['assignees'] case final List<Object?> assignees
+      when assignees.every((item) => item is Map && item['id'] is int)) {
+    out['assignee_ids'] = AiComparableValue.integers({
+      for (final item in assignees) (item! as Map)['id'] as int,
+    });
+  }
+  if (operationId == 'updateMergeRequest') {
+    if (target['target_branch'] case final String branch) {
+      out['target_branch'] = AiComparableValue.string(branch, previous: branch);
+    }
+  }
+  if (target['discussion_locked'] case final bool locked) {
+    out['discussion_locked'] = AiComparableValue.boolean(locked);
+  }
+  return Map.unmodifiable(out);
+}
+
+/// The longest previous value the card shows, in UTF-16 code units.
+const aiPreviousValueLimit = 200;
+
+/// A previous value for the card: redacted first, then capped at
+/// [aiPreviousValueLimit] code units including a trailing `…` when cut. The
+/// cut falls on a code point boundary, never inside a surrogate pair;
+/// `lib/core` is plain Dart, so it does not cut on grapheme clusters.
+String? _formatPrevious(String? raw, String Function(String) safeDisplay) {
+  if (raw == null || raw.isEmpty) return null;
+  final redacted = safeDisplay(raw);
+  if (redacted.isEmpty) return null;
+  if (redacted.length <= aiPreviousValueLimit) return redacted;
+  final kept = clipAiPlainForEscapedBudget(
+    redacted,
+    aiPreviousValueLimit - 1,
+    escapeDepth: 0,
+  );
+  return '$kept…';
+}
+
+/// Compares one proposed field against [comparable] for [operationId].
+AiFieldChange aiCompareWriteField({
+  required String operationId,
+  required String field,
+  required Object? proposed,
+  required Map<String, AiComparableValue> comparable,
+  required String Function(String) safeDisplay,
+}) {
+  if (operationId != 'updateIssue' && operationId != 'updateMergeRequest') {
+    return const AiFieldChange.unknown();
+  }
+  final current = comparable[field];
+  if (current == null) return const AiFieldChange.unknown();
+  switch (field) {
+    case 'title':
+      final currentVal = current.stringValue;
+      if (currentVal == null || proposed is! String) {
+        return const AiFieldChange.unknown();
+      }
+      return _gitLabStrip(proposed) == currentVal
+          ? const AiFieldChange.unchanged()
+          : AiFieldChange.changed(
+              previous: _formatPrevious(current.previous, safeDisplay),
+            );
+    case 'description':
+      final currentVal = current.stringValue;
+      if (currentVal == null || (proposed != null && proposed is! String)) {
+        return const AiFieldChange.unknown();
+      }
+      return ((proposed as String?) ?? '') == currentVal
+          ? const AiFieldChange.unchanged()
+          : const AiFieldChange.changed();
+    case 'due_date':
+      final currentVal = current.stringValue;
+      if (currentVal == null) return const AiFieldChange.unknown();
+      final String normalized;
+      if (proposed == null || proposed == '') {
+        normalized = '';
+      } else if (proposed is String && _isoDatePattern.hasMatch(proposed)) {
+        normalized = proposed;
+      } else {
+        return const AiFieldChange.unknown();
+      }
+      return normalized == currentVal
+          ? const AiFieldChange.unchanged()
+          : AiFieldChange.changed(
+              previous: _formatPrevious(current.previous, safeDisplay),
+            );
+    case 'confidential':
+      final currentVal = current.boolValue;
+      final parsed = _parseComparableBool(proposed);
+      if (currentVal == null || parsed == null) {
+        return const AiFieldChange.unknown();
+      }
+      return parsed == currentVal
+          ? const AiFieldChange.unchanged()
+          : AiFieldChange.changed(
+              previous: _formatPrevious(current.previous, safeDisplay),
+            );
+    case 'weight':
+      final currentVal = current.intValue;
+      if (currentVal == null || proposed is! int) {
+        return const AiFieldChange.unknown();
+      }
+      return proposed == currentVal
+          ? const AiFieldChange.unchanged()
+          : AiFieldChange.changed(
+              previous: _formatPrevious(current.previous, safeDisplay),
+            );
+    case 'milestone_id':
+      final currentVal = current.intValue;
+      if (currentVal == null) return const AiFieldChange.unknown();
+      final int normalized;
+      if (proposed == null || proposed == 0) {
+        normalized = 0;
+      } else if (proposed is int && proposed > 0) {
+        normalized = proposed;
+      } else {
+        return const AiFieldChange.unknown();
+      }
+      return normalized == currentVal
+          ? const AiFieldChange.unchanged()
+          : AiFieldChange.changed(
+              previous: _formatPrevious(current.previous, safeDisplay),
+            );
+    case 'labels':
+      final currentSet = current.stringSet;
+      if (currentSet == null || proposed is! String) {
+        return const AiFieldChange.unknown();
+      }
+      final proposedSet = _gitLabLabelNames(proposed.split(','));
+      final same =
+          proposedSet.length == currentSet.length &&
+          currentSet.containsAll(proposedSet);
+      return same
+          ? const AiFieldChange.unchanged()
+          : const AiFieldChange.changed();
+    case 'assignee_ids':
+      final currentSet = current.intSet;
+      if (currentSet == null ||
+          proposed is! List<Object?> ||
+          !proposed.every((item) => item is int)) {
+        return const AiFieldChange.unknown();
+      }
+      final proposedSet = <int>{for (final item in proposed) item! as int};
+      final same =
+          proposedSet.length == currentSet.length &&
+          currentSet.containsAll(proposedSet);
+      return same
+          ? const AiFieldChange.unchanged()
+          : const AiFieldChange.changed();
+    case 'target_branch' when operationId == 'updateMergeRequest':
+      final currentVal = current.stringValue;
+      if (currentVal == null || proposed is! String) {
+        return const AiFieldChange.unknown();
+      }
+      return proposed == currentVal
+          ? const AiFieldChange.unchanged()
+          : AiFieldChange.changed(
+              previous: _formatPrevious(current.previous, safeDisplay),
+            );
+    case 'discussion_locked':
+      final currentVal = current.boolValue;
+      if (currentVal == null || proposed is! bool) {
+        return const AiFieldChange.unknown();
+      }
+      return proposed == currentVal
+          ? const AiFieldChange.unchanged()
+          : const AiFieldChange.changed();
+    default:
+      return const AiFieldChange.unknown();
+  }
+}
+
+Map<String, AiFieldChange> _fieldChanges(
+  port.AiWriteRequest request,
+  AiCapability capability,
+  Map<String, AiComparableValue> comparable,
+  String Function(String) safeDisplay,
+) {
+  final operationId = request.operationId;
+  if (operationId != 'updateIssue' && operationId != 'updateMergeRequest') {
+    return const <String, AiFieldChange>{};
+  }
+  final changes = <String, AiFieldChange>{};
+  _forEachCardField(request, capability, (key, value) {
+    changes[key] = aiCompareWriteField(
+      operationId: operationId,
+      field: key,
+      proposed: value,
+      comparable: comparable,
+      safeDisplay: safeDisplay,
+    );
+  });
+  return Map.unmodifiable(changes);
 }
 
 String _preview(port.AiWriteRequest request, String releaseName) =>

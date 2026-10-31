@@ -3041,4 +3041,7 @@ const _messagesPtBr = <String>[
   'criar uma issue,crie uma issue,nova issue,abra uma issue',
   'feche,fechar',
   'Indisponível na demonstração, que funciona offline',
+  'Será alterado',
+  'Sem alteração',
+  'Atual: {value}',
 ];

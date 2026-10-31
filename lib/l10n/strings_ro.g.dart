@@ -3041,4 +3041,7 @@ const _messagesRo = <String>[
   'creează o problemă,creeaza o problema,problemă nouă',
   'închide,inchide',
   'Indisponibil în demo, care rămâne offline',
+  'Se va modifica',
+  'Neschimbat',
+  'Actual: {value}',
 ];

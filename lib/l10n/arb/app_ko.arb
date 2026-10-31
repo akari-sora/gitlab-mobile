@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "댓글,코멘트,답글",
   "demoKeywordsIssue": "이슈 만들,이슈를 만들,새 이슈,이슈 생성",
   "demoKeywordsClose": "닫아,닫기,닫아줘",
-  "demoOffline": "데모는 오프라인이라 사용할 수 없습니다"
+  "demoOffline": "데모는 오프라인이라 사용할 수 없습니다",
+  "aiProposalFieldChanged": "변경 예정",
+  "aiProposalFieldUnchanged": "변경 없음",
+  "aiProposalFieldPrevious": "현재: {value}"
 }

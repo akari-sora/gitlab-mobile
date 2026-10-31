@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "टिप्पणी,कमेंट",
   "demoKeywordsIssue": "इश्यू बनाओ,इश्यू बनाएं,इश्यू बनाएँ,नया इश्यू",
   "demoKeywordsClose": "बंद",
-  "demoOffline": "डेमो ऑफ़लाइन रहता है, इसलिए यह उपलब्ध नहीं है"
+  "demoOffline": "डेमो ऑफ़लाइन रहता है, इसलिए यह उपलब्ध नहीं है",
+  "aiProposalFieldChanged": "बदलेगा",
+  "aiProposalFieldUnchanged": "अपरिवर्तित",
+  "aiProposalFieldPrevious": "अभी: {value}"
 }

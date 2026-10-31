@@ -3041,4 +3041,7 @@ const _messagesIt = <String>[
   'crea una issue,creare una issue,nuova issue,apri una issue',
   'chiudi,chiudere',
   'Non disponibile nella demo, che resta offline',
+  'Verrà modificato',
+  'Invariato',
+  'Attuale: {value}',
 ];

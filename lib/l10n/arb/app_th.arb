@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "ความคิดเห็น,คอมเมนต์",
   "demoKeywordsIssue": "สร้างประเด็น,ประเด็นใหม่,เปิดประเด็น",
   "demoKeywordsClose": "ปิด",
-  "demoOffline": "ใช้ไม่ได้ในเดโม เพราะเดโมทำงานแบบออฟไลน์"
+  "demoOffline": "ใช้ไม่ได้ในเดโม เพราะเดโมทำงานแบบออฟไลน์",
+  "aiProposalFieldChanged": "จะเปลี่ยน",
+  "aiProposalFieldUnchanged": "ไม่เปลี่ยน",
+  "aiProposalFieldPrevious": "เดิม: {value}"
 }

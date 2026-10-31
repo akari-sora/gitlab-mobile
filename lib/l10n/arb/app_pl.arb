@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "komentarz,komentarza,skomentuj",
   "demoKeywordsIssue": "utwórz zgłoszenie,nowe zgłoszenie,załóż zgłoszenie",
   "demoKeywordsClose": "zamknij,zamknąć,zamknijcie",
-  "demoOffline": "Niedostępne w demo, które działa offline"
+  "demoOffline": "Niedostępne w demo, które działa offline",
+  "aiProposalFieldChanged": "Zmieni się",
+  "aiProposalFieldUnchanged": "Bez zmian",
+  "aiProposalFieldPrevious": "Obecnie: {value}"
 }

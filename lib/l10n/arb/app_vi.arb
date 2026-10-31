@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "bình luận,nhận xét",
   "demoKeywordsIssue": "tạo vấn đề,tạo một vấn đề,vấn đề mới",
   "demoKeywordsClose": "đóng",
-  "demoOffline": "Không dùng được trong bản demo vì bản demo chạy ngoại tuyến"
+  "demoOffline": "Không dùng được trong bản demo vì bản demo chạy ngoại tuyến",
+  "aiProposalFieldChanged": "Sẽ thay đổi",
+  "aiProposalFieldUnchanged": "Không đổi",
+  "aiProposalFieldPrevious": "Hiện tại: {value}"
 }

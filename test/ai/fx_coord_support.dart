@@ -386,6 +386,7 @@ final class StackHarness {
     this.session,
     this.settings,
     this.journal,
+    this.journalKeys,
     this.picker,
   );
 
@@ -395,6 +396,9 @@ final class StackHarness {
   final SessionController session;
   final AiSettingsController settings;
   final AiWriteJournal journal;
+
+  /// The journal's keys, so a test can decrypt the file the journal wrote.
+  final MemoryAiJournalKeyStore journalKeys;
   final FakePicker picker;
   late final AiChatController controller;
 
@@ -449,8 +453,9 @@ final class StackHarness {
     );
 
     final root = Directory.systemTemp.createTempSync('fx-coord-stack-');
+    final journalKeys = MemoryAiJournalKeyStore();
     final journal = AiWriteJournal(
-      keys: MemoryAiJournalKeyStore(),
+      keys: journalKeys,
       applicationSupport: root,
       processId: 'fx-coord-stack-test',
     );
@@ -466,6 +471,7 @@ final class StackHarness {
       session,
       settings,
       journal,
+      journalKeys,
       picker,
     );
     harness.controller = AiChatController(

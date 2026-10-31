@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "评论,留言,回复",
   "demoKeywordsIssue": "创建议题,新建议题,开一个议题,建一个议题",
   "demoKeywordsClose": "关闭,关掉,结案",
-  "demoOffline": "Demo 不会联网，此处无法使用"
+  "demoOffline": "Demo 不会联网，此处无法使用",
+  "aiProposalFieldChanged": "将变更",
+  "aiProposalFieldUnchanged": "不变",
+  "aiProposalFieldPrevious": "原本：{value}"
 }

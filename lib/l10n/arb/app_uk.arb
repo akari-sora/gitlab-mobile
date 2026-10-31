@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "коментар,коментаря,коментарем,прокоментуй,прокоментувати",
   "demoKeywordsIssue": "створи проблему,створити проблему,нову проблему,нова проблема",
   "demoKeywordsClose": "закрий,закрити,закрийте",
-  "demoOffline": "Недоступно в демо: воно працює офлайн"
+  "demoOffline": "Недоступно в демо: воно працює офлайн",
+  "aiProposalFieldChanged": "Зміниться",
+  "aiProposalFieldUnchanged": "Без змін",
+  "aiProposalFieldPrevious": "Зараз: {value}"
 }

@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "komen,ulasan",
   "demoKeywordsIssue": "cipta isu,buat isu,isu baharu",
   "demoKeywordsClose": "tutup",
-  "demoOffline": "Tidak tersedia dalam demo, yang kekal di luar talian"
+  "demoOffline": "Tidak tersedia dalam demo, yang kekal di luar talian",
+  "aiProposalFieldChanged": "Akan berubah",
+  "aiProposalFieldUnchanged": "Tidak berubah",
+  "aiProposalFieldPrevious": "Semasa: {value}"
 }

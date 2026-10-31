@@ -2304,6 +2304,7 @@ class AiChatController extends ChangeNotifier
             if (target[key] is String) key: target[key] as String,
       },
       provenance: provenance,
+      comparable: aiComparableFieldsFor(operation, target),
     );
   }
 

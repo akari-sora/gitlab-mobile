@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "commentaire,commente,commenter,note",
   "demoKeywordsIssue": "créer un ticket,crée un ticket,nouveau ticket,ouvre un ticket",
   "demoKeywordsClose": "ferme,fermer",
-  "demoOffline": "Indisponible dans la démo, qui reste hors ligne"
+  "demoOffline": "Indisponible dans la démo, qui reste hors ligne",
+  "aiProposalFieldChanged": "Sera modifié",
+  "aiProposalFieldUnchanged": "Inchangé",
+  "aiProposalFieldPrevious": "Actuel : {value}"
 }

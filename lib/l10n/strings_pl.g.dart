@@ -3041,4 +3041,7 @@ const _messagesPl = <String>[
   'utwórz zgłoszenie,nowe zgłoszenie,załóż zgłoszenie',
   'zamknij,zamknąć,zamknijcie',
   'Niedostępne w demo, które działa offline',
+  'Zmieni się',
+  'Bez zmian',
+  'Obecnie: {value}',
 ];

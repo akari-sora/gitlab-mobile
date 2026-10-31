@@ -3038,5 +3038,8 @@
   "demoKeywordsComment": "komentář,komentáře,okomentuj",
   "demoKeywordsIssue": "vytvoř problém,vytvořit problém,nový problém",
   "demoKeywordsClose": "zavři,zavřít,uzavři",
-  "demoOffline": "V demu nedostupné, demo zůstává offline"
+  "demoOffline": "V demu nedostupné, demo zůstává offline",
+  "aiProposalFieldChanged": "Změní se",
+  "aiProposalFieldUnchanged": "Beze změny",
+  "aiProposalFieldPrevious": "Nyní: {value}"
 }
