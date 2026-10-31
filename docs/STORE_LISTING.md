@@ -38,30 +38,48 @@ commit-graph mark and uses no GitLab logo.
 
 ## Short description (≤ 80)
 
-- zh-TW: `隨身管理 GitLab® 議題、合併請求與 CI 的非官方客戶端`
-- en: `Unofficial mobile client for GitLab®: issues, merge requests and CI`
+- zh-TW: `非官方 GitLab® 客戶端：議題、合併請求、CI 與自備金鑰的 AI 助理`
+- en: `Unofficial GitLab® client: issues, merge requests, CI and bring-your-own-key AI`
 
 ## Full description
 
-### zh-TW
+### zh-TW (live)
 
-Mergeline 讓你在手機上處理 GitLab® 的日常工作：議題、合併請求的審查與合併、
-Pipeline 與 Job 記錄、檔案與提交，以及待辦收件匣。支援 GitLab.com 與自架的
-GitLab，可以同時登入多個帳號；Token 只存放在裝置的安全儲存區。
+Mergeline 讓你在手機上處理 GitLab® 的日常工作：議題、合併請求的審查與合併、Pipeline 與 Job 記錄、檔案與提交，以及待辦收件匣。支援 GitLab.com 與自架的 GitLab，可以同時登入多個帳號；Token 只存放在裝置的安全儲存區。
 
-Mergeline 是獨立的第三方客戶端，與 GitLab Inc. 無關，也未經其認可。
-GITLAB 是 GitLab Inc. 在美國及其他國家或地區的商標。
+AI 助理（自備金鑰）
+• 使用你自己的 AI 供應商與 API Key（OpenAI 相容、OpenAI Responses、Anthropic），對話直接送到你選的供應商，不經過開發者的伺服器。
+• 請 AI 解釋檔案、整理議題與合併請求、看懂 CI 失敗的原因。
+• AI 可以提議留言、建立議題、建立分支等修改；每一個修改都會先顯示確認卡片，由你核准。高風險操作需要輸入名稱確認。
+• 可以隨時在 App 內檢舉不當的 AI 回答。
 
-### en
+其他特色
+• 清單先顯示快取，也能離線保存儲存庫
+• 24 種語言、深色模式、大字體
+• 無廣告、無追蹤
 
-Mergeline brings your everyday GitLab® work to your phone: issues, reviewing
-and merging merge requests, pipelines and job logs, files and commits, and a
-to-do inbox. It works with GitLab.com and self-managed GitLab, signs in to
-several accounts, and keeps tokens in the device's secure storage.
+不用帳號也能先試：在登入畫面點「試用 Demo」，用內建的範例資料體驗完整功能。
 
-Mergeline is an independent third-party client. It is not affiliated with or
-endorsed by GitLab Inc. GITLAB is a trademark of GitLab Inc. in the United
-States and other countries and regions.
+Mergeline 是獨立的第三方客戶端，與 GitLab Inc. 無關，也未經其認可。GITLAB 是 GitLab Inc. 在美國及其他國家或地區的商標。
+
+### en (live, default listing since 2026-10-31)
+
+Mergeline brings your everyday GitLab® work to your phone: issues, reviewing and merging merge requests, pipelines and job logs, files and commits, and a to-do inbox. It works with GitLab.com and self-managed GitLab, signs in to several accounts, and keeps tokens in the device's secure storage.
+
+AI assistant (bring your own key)
+• Use your own AI provider and API key (OpenAI-compatible, OpenAI Responses, Anthropic). Conversations go straight to the provider you choose, never through the developer's servers.
+• Ask the AI to explain files, summarize issues and merge requests, and work out why a CI job failed.
+• The AI can propose changes such as comments, new issues and new branches. Every change shows a confirmation card first, and you approve it. High-risk actions require typing the name to confirm.
+• Report an inappropriate AI answer from inside the app at any time.
+
+Also
+• Lists show cached data first, and repositories can be saved for offline use
+• 24 languages, dark mode, large text
+• No ads, no tracking
+
+Try it without an account: tap "Try the demo" on the sign-in screen to explore every feature with built-in sample data.
+
+Mergeline is an independent third-party client. It is not affiliated with or endorsed by GitLab Inc. GITLAB is a trademark of GitLab Inc. in the United States and other countries and regions.
 
 ## App access (Play review)
 
@@ -101,6 +119,15 @@ The listing graphics were redone on 2026-10-31 and went to Google review the sam
 - **Layout:** each screenshot shows a cropped window of a 1080×2424 Demo capture at about 89% of the canvas width. The rounded card and its border are a single box, so they cannot drift apart as the earlier phone-frame composites did.
 - **Production:** they are rendered with Remotion from the same captures as the video.
 - **AI asset declaration:** the Play Console's declaration is "not labelled". The assets are real app screens composed by code, not generated images.
+
+**Languages (2026-10-31, in Google review).** English (en-US) is now the default listing, so every region without a translation sees English. Traditional Chinese (zh-TW) is a translation that keeps the Chinese text, graphics and video.
+
+The English set is a separate capture:
+- The screenshots and the four clips were recorded in the English UI. The app language was set with `cmd locale set-app-locales app.mergeline --locales en-US`, because Demo mode has no language picker.
+- They were rendered with the same compositions (`Shot-*-en`, `Vertical-en`, `Horizontal-en`).
+- The English promo video is https://www.youtube.com/watch?v=ikrNOT5f__I.
+
+Known issue: the English CI screenshot shows "1 minutes 35 seconds". !282 fixes the plural, so re-take that screenshot after the next release.
 
 ## Read-cache data safety
 

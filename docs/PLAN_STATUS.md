@@ -85,6 +85,10 @@ In priority order. Steps marked **owner** need the owner in person.
    - **Release (2026-10-30):** the 0.6.1 draft was blocked by Play's foreground-service declaration check, so !275 strips those declarations from the Play build. 0.6.2 was built locally from `c6919e52` (fresh bootstrap; `bundletool dump manifest` shows no `FOREGROUND_SERVICE`/`AgentRunService`), walked through in Demo mode on the emulator (explain, propose, approve, write confirmed), uploaded with `gplay release --track production --status draft` and sent for review with the listing changes. Earlier, the 0.6.1 APK's real in-app AI report reached the Google Form with exactly the previewed fields.
    - **Live (2026-10-31):** https://play.google.com/store/apps/details?id=app.mergeline.
    - **Listing graphics v3 (2026-10-31, in Google review):** the owner found the phone frames misaligned, the app screens too small and the AI first. The seven screenshots, the feature graphic and the promo video (https://www.youtube.com/watch?v=oXaaAxL1h_E, public) were redone. They now lead with the third-party GitLab® client, with large cropped screens, and the AI comes last. See [Store listing](STORE_LISTING.md).
+   - **English listing (2026-10-31, in Google review):**
+     - English is now the default store language. It has its own text, seven screenshots captured in the English UI, a feature graphic and a promo video (https://www.youtube.com/watch?v=ikrNOT5f__I).
+     - zh-TW keeps the Chinese set.
+     - The English CI screenshot shows "1 minutes 35 seconds" until the plural fix (!282) ships; re-take it after the next release.
    - **Next:** answer any policy questions from Google.
 2. **Media and loading polish (owner, 2026-10-30).**
    - **#55, done (!278, 2026-10-31).** A video behind image syntax no longer holds up a README or file page. The request stops at the content type, and the video waits behind a tap-to-play card. The page byte budget is first-come. A raster's header size only rejects early; the engine's decoder still decides acceptance, because crafted GIF/JPEG headers can understate the size.

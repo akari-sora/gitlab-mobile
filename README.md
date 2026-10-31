@@ -6,7 +6,7 @@
 
 **GitLab®, in your pocket.** Mergeline is a mobile-first client for GitLab.com and self-managed GitLab: issues, merge-request review and merge, CI/CD pipelines and logs, files and an inbox — plus a **bring-your-own-key AI assistant** that explains code and proposes changes, each one confirmed by you.
 
-- ▶️ **Demo video:** [youtube.com/watch?v=oXaaAxL1h_E](https://www.youtube.com/watch?v=oXaaAxL1h_E)
+- ▶️ **Demo video:** [English](https://www.youtube.com/watch?v=ikrNOT5f__I) · [繁體中文](https://www.youtube.com/watch?v=oXaaAxL1h_E)
 - 📦 **Android (GitLab channel, free):** [latest release](https://gitlab.com/aa22396584/gitlab-mobile/-/releases) — installed builds update themselves under 我的 › 應用程式更新
 - 🛒 **Google Play (US$3.99):** [play.google.com/store/apps/details?id=app.mergeline](https://play.google.com/store/apps/details?id=app.mergeline)
 - 🧪 **Try without an account:** tap **試用 Demo** on the sign-in screen
