@@ -3114,4 +3114,6 @@ const _messagesDe = <String>[
   'Nur von Ihnen erlaubte Inhalte werden auf diesem Telefon von Android AICore verarbeitet. Sie werden an keinen KI-Server gesendet; die Diagnosedaten von Google ML Kit sind unten beschrieben.',
   'Lassen Sie diese Seite geöffnet, bis der Download abgeschlossen ist; beim Verlassen wird der Download beendet.',
   'Diese lokale KI-Quelle kann keine Änderungen vornehmen; wechseln Sie zu einem Cloud-Anbieter.',
+  'Die Inhalte dieses Kontos können den Richtlinien Ihrer Organisation oder Ihrer selbst verwalteten GitLab-Instanz unterliegen. Sie werden nur auf diesem Telefon verarbeitet und an keinen KI-Anbieter gesendet.',
+  'Die integrierte Telefon-KI liest nur diese Seite. Weitere Daten aus dem Projekt liest sie nicht.',
 ];

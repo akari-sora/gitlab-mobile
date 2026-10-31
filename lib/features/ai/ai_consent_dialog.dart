@@ -379,36 +379,45 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                   _InfoCard(
                     icon: Icons.apartment_outlined,
                     title: l10n.aiConsentOrganizationHeading,
-                    children: [Text(l10n.aiConsentSelfManagedNotice)],
+                    children: [
+                      Text(
+                        details.isOnDevice
+                            ? l10n.aiConsentSelfManagedNoticeOnDevice
+                            : l10n.aiConsentSelfManagedNotice,
+                      ),
+                    ],
                   ),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            color: theme.colorScheme.onErrorContainer,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              l10n.aiConsentIrreversible,
-                              style: theme.textTheme.bodyLarge?.copyWith(
-                                color: theme.colorScheme.onErrorContainer,
-                                fontWeight: FontWeight.w700,
+                  // Nothing reaches a provider on-device; the ML Kit
+                  // diagnostics warning above says what does leave the phone.
+                  if (!details.isOnDevice)
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: theme.colorScheme.onErrorContainer,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                l10n.aiConsentIrreversible,
+                                style: theme.textTheme.bodyLarge?.copyWith(
+                                  color: theme.colorScheme.onErrorContainer,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

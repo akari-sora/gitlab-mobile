@@ -3111,5 +3111,7 @@
   "aiConsentOnDeviceDataHeading": "在这部手机上处理的数据",
   "aiConsentOnDeviceDataDescription": "只有你允许的内容会在这部手机上由 Android AICore 处理，不会发送到 AI 服务器；Google ML Kit 的诊断数据说明见下方。",
   "aiOnDeviceDownloadKeepOpen": "下载完成前请保持此页打开；离开此页会停止下载。",
-  "aiOnDeviceCannotWrite": "此本机 AI 来源无法执行修改；如需修改 GitLab 内容，请切换为云端服务商。"
+  "aiOnDeviceCannotWrite": "此本机 AI 来源无法执行修改；如需修改 GitLab 内容，请切换为云端服务商。",
+  "aiConsentSelfManagedNoticeOnDevice": "此账户的内容可能受你的组织或自托管 GitLab 政策约束。这些内容只在这部手机上处理，不会发送给 AI 供应商。",
+  "aiChatEmptyOnDevice": "手机内置 AI 只会读取此页面，不会读取项目的其他数据。"
 }

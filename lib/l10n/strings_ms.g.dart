@@ -3114,4 +3114,6 @@ const _messagesMs = <String>[
   'Hanya kandungan yang anda benarkan diproses pada telefon ini oleh Android AICore. Ia tidak dihantar ke mana-mana pelayan AI; diagnostik Google ML Kit diterangkan di bawah.',
   'Biarkan halaman ini terbuka sehingga muat turun selesai; meninggalkannya akan menghentikan muat turun.',
   'Sumber AI pada peranti ini tidak boleh membuat perubahan; tukar kepada penyedia awan.',
+  'Kandungan akaun ini mungkin tertakluk pada dasar organisasi anda atau GitLab urus sendiri. Kandungan hanya diproses pada telefon ini dan tidak dihantar kepada mana-mana penyedia AI.',
+  'AI terbina dalam telefon hanya membaca halaman ini. AI tidak membaca data lain daripada projek.',
 ];

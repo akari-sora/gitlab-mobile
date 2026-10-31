@@ -3114,4 +3114,6 @@ const _messagesEs = <String>[
   'Solo el contenido que permitas se procesa en este teléfono con Android AICore. No se envía a ningún servidor de IA; los diagnósticos de Google ML Kit se describen a continuación.',
   'Mantén esta página abierta hasta que termine la descarga; si sales, la descarga se detiene.',
   'Esta fuente de IA en el dispositivo no puede realizar cambios; cambia a un proveedor en la nube.',
+  'El contenido de esta cuenta puede estar sujeto a las políticas de tu organización o de una instancia de GitLab autogestionada. Solo se procesa en este teléfono y no se envía a ningún proveedor de IA.',
+  'La IA integrada del teléfono solo lee esta página. No lee otros datos del proyecto.',
 ];

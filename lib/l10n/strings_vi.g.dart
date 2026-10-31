@@ -3114,4 +3114,6 @@ const _messagesVi = <String>[
   'Chỉ nội dung bạn cho phép mới được Android AICore xử lý trên điện thoại này. Nội dung không được gửi đến máy chủ AI nào; dữ liệu chẩn đoán của Google ML Kit được mô tả bên dưới.',
   'Hãy giữ trang này mở cho đến khi tải xong; rời trang sẽ dừng việc tải xuống.',
   'Nguồn AI trên thiết bị này không thể thực hiện thay đổi; hãy chuyển sang nhà cung cấp đám mây.',
+  'Nội dung của tài khoản này có thể chịu sự điều chỉnh của chính sách tổ chức hoặc GitLab tự quản lý. Nội dung chỉ được xử lý trên điện thoại này và không được gửi đến nhà cung cấp AI nào.',
+  'AI tích hợp trên điện thoại chỉ đọc trang này. AI không đọc dữ liệu khác trong dự án.',
 ];

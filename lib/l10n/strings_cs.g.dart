@@ -3114,4 +3114,6 @@ const _messagesCs = <String>[
   'Pouze obsah, který povolíte, zpracuje v tomto telefonu Android AICore. Neodesílá se na žádný server AI; diagnostika Google ML Kit je popsána níže.',
   'Nechte tuto stránku otevřenou, dokud stahování neskončí; jejím opuštěním se stahování zastaví.',
   'Tento místní zdroj AI nemůže provádět změny; přepněte na cloudového poskytovatele.',
+  'Obsah tohoto účtu se může řídit zásadami vaší organizace nebo samostatně spravované instance GitLabu. Zpracovává se jen v tomto telefonu a neodesílá se žádnému poskytovateli AI.',
+  'Vestavěná AI telefonu čte jen tuto stránku. Další data z projektu nečte.',
 ];

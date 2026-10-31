@@ -3114,4 +3114,6 @@ const _messagesFr = <String>[
   'Seul le contenu que vous autorisez est traité sur ce téléphone par Android AICore. Il n’est envoyé à aucun serveur d’IA ; les diagnostics de Google ML Kit sont décrits ci-dessous.',
   'Gardez cette page ouverte jusqu’à la fin du téléchargement ; la quitter l’arrête.',
   'Cette source d’IA sur l’appareil ne peut pas effectuer de modifications ; passez à un fournisseur cloud.',
+  'Le contenu de ce compte peut être régi par la politique de votre organisation ou de votre instance GitLab autogérée. Il est traité uniquement sur ce téléphone et n’est envoyé à aucun fournisseur d’IA.',
+  'L’IA intégrée au téléphone lit uniquement cette page. Elle ne lit pas les autres données du projet.',
 ];

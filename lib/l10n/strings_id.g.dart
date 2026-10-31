@@ -3114,4 +3114,6 @@ const _messagesId = <String>[
   'Hanya konten yang Anda izinkan yang diproses di ponsel ini oleh Android AICore. Konten tidak dikirim ke server AI; diagnostik Google ML Kit dijelaskan di bawah.',
   'Biarkan halaman ini tetap terbuka sampai unduhan selesai; meninggalkannya akan menghentikan unduhan.',
   'Sumber AI di perangkat ini tidak dapat membuat perubahan; beralihlah ke penyedia cloud.',
+  'Konten akun ini mungkin diatur oleh kebijakan organisasi Anda atau GitLab yang dikelola sendiri. Konten hanya diproses di ponsel ini dan tidak dikirim ke penyedia AI mana pun.',
+  'AI bawaan ponsel hanya membaca halaman ini. Data lain dari proyek tidak dibaca.',
 ];

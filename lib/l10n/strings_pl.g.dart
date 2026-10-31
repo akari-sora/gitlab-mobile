@@ -3114,4 +3114,6 @@ const _messagesPl = <String>[
   'Tylko treści, na które zezwolisz, są przetwarzane na tym telefonie przez Android AICore. Nie są wysyłane do żadnego serwera AI; dane diagnostyczne Google ML Kit opisano poniżej.',
   'Nie zamykaj tej strony, dopóki pobieranie się nie zakończy; opuszczenie jej zatrzyma pobieranie.',
   'To wbudowane źródło AI nie może wprowadzać zmian; przełącz się na dostawcę chmurowego.',
+  'Treść tego konta może podlegać zasadom organizacji lub samodzielnie zarządzanego GitLab. Jest przetwarzana tylko na tym telefonie i nie jest wysyłana do żadnego dostawcy AI.',
+  'Wbudowane AI telefonu odczytuje tylko tę stronę. Nie odczytuje innych danych z projektu.',
 ];

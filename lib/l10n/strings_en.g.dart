@@ -3114,4 +3114,6 @@ const _messagesEn = <String>[
   'Only content you allow is processed on this phone by Android AICore. It is not sent to an AI server; Google ML Kit\'s diagnostics are described below.',
   'Keep this page open until the download finishes; leaving it stops the download.',
   'This on-device AI source cannot make changes; switch to a cloud provider.',
+  'This account\'s content may be governed by your organization or self-managed GitLab policy. It is processed only on this phone and is not sent to an AI provider.',
+  'The phone\'s built-in AI reads only this page. It does not read other data from the project.',
 ];

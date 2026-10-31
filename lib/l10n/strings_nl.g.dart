@@ -3114,4 +3114,6 @@ const _messagesNl = <String>[
   'Alleen inhoud die je toestaat, wordt op deze telefoon verwerkt door Android AICore. Er wordt niets naar een AI-server gestuurd; de diagnostiek van Google ML Kit staat hieronder beschreven.',
   'Houd deze pagina open tot de download klaar is; als je weggaat, stopt de download.',
   'Deze AI-bron op het toestel kan geen wijzigingen aanbrengen; schakel over naar een cloudprovider.',
+  'De inhoud van dit account kan onder het beleid van je organisatie of zelfbeheerde GitLab-instantie vallen. Deze wordt alleen op deze telefoon verwerkt en niet naar een AI-provider gestuurd.',
+  'De ingebouwde telefoon-AI leest alleen deze pagina. Andere gegevens uit het project leest de AI niet.',
 ];

@@ -3114,4 +3114,6 @@ const _messagesTr = <String>[
   'Yalnızca izin verdiğiniz içerik bu telefonda Android AICore tarafından işlenir. Hiçbir AI sunucusuna gönderilmez; Google ML Kit tanılama verileri aşağıda açıklanmıştır.',
   'İndirme bitene kadar bu sayfayı açık tutun; sayfadan çıkmak indirmeyi durdurur.',
   'Bu cihaz içi AI kaynağı değişiklik yapamaz; bir bulut sağlayıcısına geçin.',
+  'Bu hesabın içeriği kuruluşunuzun veya kendi yönettiğiniz GitLab\'ın politikasına tabi olabilir. İçerik yalnızca bu telefonda işlenir ve hiçbir AI sağlayıcısına gönderilmez.',
+  'Telefonun yerleşik AI modeli yalnızca bu sayfayı okur. Projedeki diğer verileri okumaz.',
 ];

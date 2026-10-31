@@ -729,12 +729,19 @@ void main() {
       final assembled = assembleOnDevicePrompt(plan);
       expect(assembled.historyDropped, isTrue);
       expect(assembled.contextTruncated, isFalse);
+      // AICore answers only the first user turn of a multi-turn request, so
+      // the kept history travels inside the one user turn.
       expect(
         assembled.turns.map((t) => (t.role, t.text)).toList(),
         <(OnDeviceRole, String)>[
-          (OnDeviceRole.user, 'second question'),
-          (OnDeviceRole.model, 'second answer'),
-          (OnDeviceRole.user, 'third question'),
+          (
+            OnDeviceRole.user,
+            '<conversation_history>\n'
+                '<user_turn>\nsecond question\n</user_turn>\n\n'
+                '<assistant_turn>\nsecond answer\n</assistant_turn>\n'
+                '</conversation_history>\n\n'
+                '<user_request>\nthird question\n</user_request>',
+          ),
         ],
       );
       expect(
@@ -1256,6 +1263,61 @@ void main() {
         expect(result.contextTruncated, isTrue);
       },
     );
+
+    test('a follow-up reaches the plugin as one user turn: the earlier turns '
+        'in <conversation_history>, then the new request', () async {
+      // On the device AICore answered only the first user Content, so a
+      // follow-up sent as [user, model, user] got the first answer again.
+      final plugin = _FakeOnDeviceAiPlugin();
+      var sent = 0;
+      plugin.handler = (_) => Stream<String>.fromIterable(<String>[
+        ++sent == 1 ? '這個 MR 新增到期日。' : 'It adds a due date.',
+      ]);
+      final context = <AiContextBlock>[
+        AiContextBlock.fromData(
+          source: 'merge_request',
+          data: AiAppText.untrusted(
+            source: 'merge_request',
+            nonce: '0123456789abcdef0123456789abcdef',
+            body: AiAppText.plain('MR !1: add a due date to tasks'),
+          ),
+        ),
+      ];
+      final runner = _runner(plugin, context: context);
+      expect((await runner.run('請用繁體中文摘要這個 MR')).reason, AiRunEnd.done);
+      expect(
+        (await runner.run('Summarize this MR in English.')).reason,
+        AiRunEnd.done,
+      );
+
+      expect(plugin.calls, hasLength(2));
+      // The first request keeps its plain shape: page context, then question.
+      expect(
+        plugin.calls[0].turns.map((t) => (t.role, t.text)).toList(),
+        <(OnDeviceRole, String)>[
+          (OnDeviceRole.user, '${context.single.text}\n\n請用繁體中文摘要這個 MR'),
+        ],
+      );
+      expect(
+        plugin.calls[1].turns.map((t) => (t.role, t.text)).toList(),
+        <(OnDeviceRole, String)>[
+          (
+            OnDeviceRole.user,
+            '<conversation_history>\n'
+                '${context.single.text}\n\n'
+                '<user_turn>\n請用繁體中文摘要這個 MR\n</user_turn>\n\n'
+                '<assistant_turn>\n這個 MR 新增到期日。\n</assistant_turn>\n'
+                '</conversation_history>\n\n'
+                '<user_request>\nSummarize this MR in English.\n'
+                '</user_request>',
+          ),
+        ],
+      );
+      expect(
+        aiOnDeviceSystemPrompt(languageTag: 'zh-TW', languageName: '繁體中文'),
+        allOf(contains('<conversation_history>'), contains('<user_request>')),
+      );
+    });
 
     test('dropping older turns alone raises no page-context notice', () async {
       final notices = <AiNoticeKind>[];

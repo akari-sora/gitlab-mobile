@@ -1435,7 +1435,8 @@ class _EmptyConversation extends StatelessWidget {
               (final path, false) => l10n.aiChatEmptyGroup(path, iid),
               (final path, true) => l10n.aiChatEmptyGroupAdded(path, iid),
             },
-            _ => l10n.aiChatEmpty,
+            // On-device has no tools, so it never reads beyond this page.
+            _ => onDevice ? l10n.aiChatEmptyOnDevice : l10n.aiChatEmpty,
           },
           key: const ValueKey('ai-chat-empty-scope'),
           textAlign: TextAlign.center,

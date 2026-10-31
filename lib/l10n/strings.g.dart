@@ -9429,4 +9429,10 @@ final class AppStrings {
 
   /// 此本機 AI 來源無法執行修改；若需修改 GitLab 內容，請切換為雲端服務商。
   String get aiOnDeviceCannotWrite => language._messages[3111];
+
+  /// 此帳號的內容可能受你所屬組織或自管 GitLab 的政策約束。這些內容只在這支手機上處理，不會傳送給 AI 供應商。
+  String get aiConsentSelfManagedNoticeOnDevice => language._messages[3112];
+
+  /// 手機內建 AI 只會讀取這個頁面，不會讀取專案的其他資料。
+  String get aiChatEmptyOnDevice => language._messages[3113];
 }

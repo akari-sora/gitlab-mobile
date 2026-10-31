@@ -3111,5 +3111,7 @@
   "aiConsentOnDeviceDataHeading": "البيانات التي تتم معالجتها على هذا الهاتف",
   "aiConsentOnDeviceDataDescription": "تتم معالجة المحتوى الذي تسمح به فقط على هذا الهاتف بواسطة Android AICore. ولا يُرسل إلى أي خادم AI؛ وبيانات التشخيص الخاصة بـ Google ML Kit موضحة أدناه.",
   "aiOnDeviceDownloadKeepOpen": "أبقِ هذه الصفحة مفتوحة حتى يكتمل التنزيل؛ فمغادرتها توقف التنزيل.",
-  "aiOnDeviceCannotWrite": "لا يمكن لمصدر AI المحلي هذا إجراء تغييرات؛ انتقل إلى موفر سحابي."
+  "aiOnDeviceCannotWrite": "لا يمكن لمصدر AI المحلي هذا إجراء تغييرات؛ انتقل إلى موفر سحابي.",
+  "aiConsentSelfManagedNoticeOnDevice": "قد يخضع محتوى هذا الحساب لسياسة مؤسستك أو GitLab المُدار ذاتيًا. تتم معالجته على هذا الهاتف فقط ولا يُرسَل إلى أي مزوّد AI.",
+  "aiChatEmptyOnDevice": "يقرأ ذكاء AI المدمج في الهاتف هذه الصفحة فقط، ولا يقرأ بيانات أخرى من المشروع."
 }

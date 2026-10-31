@@ -3114,4 +3114,6 @@ const _messagesSv = <String>[
   'Endast innehåll som du tillåter behandlas på den här telefonen av Android AICore. Det skickas inte till någon AI-server; diagnostiken från Google ML Kit beskrivs nedan.',
   'Håll den här sidan öppen tills nedladdningen är klar; om du lämnar den stoppas nedladdningen.',
   'Den här AI-källan på enheten kan inte göra ändringar; byt till en molnleverantör.',
+  'Innehållet i det här kontot kan omfattas av organisationens eller den egenhanterade GitLab-instansens policy. Det bearbetas bara på den här telefonen och skickas inte till någon AI-leverantör.',
+  'Telefonens inbyggda AI läser bara den här sidan. Andra data från projektet läser den inte.',
 ];

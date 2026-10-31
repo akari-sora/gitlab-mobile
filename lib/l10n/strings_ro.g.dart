@@ -3114,4 +3114,6 @@ const _messagesRo = <String>[
   'Doar conținutul pe care îl permiteți este procesat pe acest telefon de Android AICore. Nu este trimis către niciun server AI; diagnosticele Google ML Kit sunt descrise mai jos.',
   'Păstrați această pagină deschisă până la finalizarea descărcării; dacă o părăsiți, descărcarea se oprește.',
   'Această sursă AI de pe dispozitiv nu poate face modificări; comutați la un furnizor cloud.',
+  'Conținutul acestui cont poate fi guvernat de politica organizației sau a instanței GitLab autogestionate. Este procesat doar pe acest telefon și nu este trimis niciunui furnizor de AI.',
+  'AI-ul integrat în telefon citește doar această pagină. Nu citește alte date din proiect.',
 ];

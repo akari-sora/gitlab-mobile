@@ -21,6 +21,7 @@ import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_consent_dialog.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_provider_editor.dart';
+import 'package:gitlab_mobile/features/ai/ai_run_registry.dart';
 import 'package:gitlab_mobile/features/ai/ai_scope.dart';
 import 'package:gitlab_mobile/features/ai/ai_settings_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
@@ -567,6 +568,16 @@ void main() {
             ),
             findsOneWidget,
           );
+
+          // No cloud wording: nothing goes to a provider, so neither the
+          // provider-policy sentence nor the cannot-retract box is shown.
+          await tester.dragUntilVisible(
+            find.text(l10n.aiConsentSelfManagedNoticeOnDevice),
+            find.byType(ListView).last,
+            const Offset(0, -160),
+          );
+          expect(find.text(l10n.aiConsentSelfManagedNotice), findsNothing);
+          expect(find.text(l10n.aiConsentIrreversible), findsNothing);
 
           // Still 0 status calls before tapping Agree!
           expect(plugin.statusCalls, 0);
@@ -1881,5 +1892,273 @@ void main() {
         expect(AiPresets.policyCheckedOn, '2026-10-20');
       },
     );
+  });
+
+  group('9. Leaving the app, through the real binding and the registry', () {
+    // Home on Android reports inactive, then hidden, then paused. The chat
+    // is opened through the registry as in production, and both the
+    // controller and the registry's execution owner read the binding's
+    // lifecycle state (aiAppInForeground); nothing calls the observer.
+    for (final last in const [
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+    ]) {
+      testWidgets('${last.name}: the on-device answer stops with the paused '
+          'card, resuming alone does nothing, and Continue completes it', (
+        tester,
+      ) async {
+        late _ChatEnvironment env;
+        late AccountAiRunRegistry registry;
+        late AiChatController controller;
+        final firstTurn = StreamController<String>();
+        addTearDown(firstTurn.close);
+        final plugin = _FakeOnDeviceTransportPlugin();
+        var turns = 0;
+        plugin.handler = (_) => ++turns == 1
+            ? firstTurn.stream
+            : Stream<String>.fromIterable(const <String>['完整的回答。']);
+        // The engine reports resumed when an app starts; the test binding
+        // starts without a state.
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        expect(aiAppInForeground(), isTrue);
+
+        await tester.runAsync(() async {
+          env = await _createChatEnvironment();
+          final saved = await env.settings.saveProvider(
+            AiProviderConfig.onDevice(),
+          );
+          await env.settings.grantConsent(
+            env.workspace.account.key,
+            aiConversationConsentContract(
+              env.settings,
+              env.workspace.account.key,
+              saved,
+              releasePolicy: fixtureReleasePolicy,
+            ),
+            const <String, Object?>{'synthetic': true},
+          );
+          registry = AccountAiRunRegistry(
+            session: env.session,
+            settings: env.settings,
+            // The production factory, with the fixture release policy.
+            sessionFactory:
+                ({
+                  required origin,
+                  required session,
+                  required settings,
+                  required runningCount,
+                  wireClientFactory,
+                }) {
+                  final chat = AiChatController(
+                    releasePolicy: fixtureReleasePolicy,
+                    origin: origin,
+                    session: session,
+                    settings: settings,
+                    runningCount: runningCount,
+                    wireClientFactory: wireClientFactory,
+                    appInForeground: aiAppInForeground,
+                    clientMayStart: aiClientMayStart(session),
+                  );
+                  return (
+                    session: chat,
+                    capacityChanged: chat.notifyCapacityChanged,
+                    dispose: chat.dispose,
+                  );
+                },
+            wireClientFactory:
+                ({required config, required apiKey, required conversationId}) =>
+                    AiWireClient.onDevice(
+                      config: config,
+                      conversationId: conversationId,
+                      appVersion: 'test',
+                      onDeviceTransport: OnDeviceAiTransport(plugin: plugin),
+                    ),
+          );
+          controller = registry.open(const AiGeneralOrigin()) as AiChatController;
+          await controller.recheck();
+
+          final sending = controller.send('請解釋這段程式碼');
+          await _waitFor(() => plugin.calls.length == 1);
+          firstTurn.add('半截回答內容'.padRight(260, '！'));
+          await _waitFor(
+            () => controller.items.whereType<AiAssistantItem>().any(
+              (item) => item.text.startsWith('半截回答內容'),
+            ),
+          );
+          expect(controller.phase, AiChatPhase.running);
+
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.inactive,
+          );
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.hidden,
+          );
+          if (last == AppLifecycleState.paused) {
+            tester.binding.handleAppLifecycleStateChanged(
+              AppLifecycleState.paused,
+            );
+          }
+          await sending.timeout(const Duration(seconds: 5));
+        });
+        addTearDown(() {
+          registry.dispose();
+          env.dispose();
+        });
+
+        expect(controller.phase, AiChatPhase.idle);
+        expect(controller.lastEnd, AiRunEnd.stopped);
+        expect(controller.failure, isNull);
+        expect(
+          controller.executionPause?.reason,
+          AiExecutionPauseReason.foregroundRequired,
+        );
+        expect(plugin.cancelledIds, <String>['req-1']);
+
+        // Back in the foreground: nothing restarts by itself.
+        await tester.runAsync(() async {
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.hidden,
+          );
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.inactive,
+          );
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.resumed,
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 30));
+        });
+        expect(plugin.calls, hasLength(1));
+        expect(controller.canResumeRun, isTrue);
+
+        await tester.runAsync(() async {
+          await controller.resumeRun();
+        });
+        expect(plugin.calls, hasLength(2));
+        expect(controller.lastEnd, AiRunEnd.done);
+        expect(controller.executionPause, isNull);
+        expect(
+          controller.items.whereType<AiAssistantItem>().last.text,
+          '完整的回答。',
+        );
+      });
+    }
+  });
+
+  group('10. On-device wording on the chat and settings pages', () {
+    testWidgets('a page chat on-device says it reads only this page', (
+      tester,
+    ) async {
+      late _ChatEnvironment env;
+      late AiChatController controller;
+      await tester.runAsync(() async {
+        env = await _createChatEnvironment();
+        final saved = await env.settings.saveProvider(
+          AiProviderConfig.onDevice(),
+        );
+        await env.settings.grantConsent(
+          env.workspace.account.key,
+          aiConversationConsentContract(
+            env.settings,
+            env.workspace.account.key,
+            saved,
+            releasePolicy: fixtureReleasePolicy,
+          ),
+          const <String, Object?>{'synthetic': true},
+        );
+        controller = AiChatController(
+          releasePolicy: fixtureReleasePolicy,
+          appInForeground: () => true,
+          origin: AiFileOrigin(
+            project: env.workspace.project,
+            path: 'README.md',
+            sha: WorkspaceFixture.sha,
+          ),
+          session: env.session,
+          settings: env.settings,
+          runningCount: () => 0,
+          wireClientFactory:
+              ({required config, required apiKey, required conversationId}) =>
+                  AiWireClient.onDevice(
+                    config: config,
+                    conversationId: conversationId,
+                    appVersion: 'test',
+                    onDeviceTransport: OnDeviceAiTransport(
+                      plugin: _FakeOnDeviceTransportPlugin(),
+                    ),
+                  ),
+        );
+        await controller.recheck();
+      });
+      addTearDown(() {
+        controller.dispose();
+        env.dispose();
+      });
+
+      await tester.pumpWidget(_host(AiChatPage(session: controller)));
+      await tester.pump();
+
+      final scope = tester.widget<Text>(
+        find.byKey(const ValueKey('ai-chat-empty-scope')),
+      );
+      expect(scope.data, l10n.aiChatEmptyOnDevice);
+      expect(find.text(l10n.aiChatEmpty), findsNothing);
+    });
+
+    for (final renamed in const [false, true]) {
+      testWidgets(
+        renamed
+            ? 'a renamed on-device provider still names its preset'
+            : 'an on-device provider with its default name is named once',
+        (tester) async {
+          final store = MemoryAiStore();
+          final settings = AiSettingsController(
+            store,
+            closeOnDeviceAi: () async {},
+          );
+          final history = AiHistoryCoordinator(store: store);
+          addTearDown(settings.dispose);
+          addTearDown(history.dispose);
+          await settings.initialize();
+          const accountKey = 'https://gitlab.example#1';
+          await settings.loadAccount(accountKey);
+          final saved = await settings.saveProvider(
+            AiProviderConfig.onDevice(
+              // The editor keeps the localized preset name by default.
+              name: renamed ? 'My phone' : l10n.aiPresetOnDeviceName,
+            ),
+          );
+
+          await tester.pumpWidget(
+            _host(
+              AiSettingsPage(
+                settings: settings,
+                history: history,
+                accountKey: accountKey,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final row = find.byKey(ValueKey('ai-provider-${saved.id}'));
+          expect(
+            find.descendant(of: row, matching: find.text(saved.name)),
+            findsOneWidget,
+          );
+          // The details under the row: the preset line, then the model.
+          final details = find
+              .ancestor(of: find.text(saved.model), matching: find.byType(Column))
+              .first;
+          expect(
+            find.descendant(
+              of: details,
+              matching: find.text(l10n.aiPresetOnDeviceName),
+            ),
+            renamed ? findsOneWidget : findsNothing,
+          );
+        },
+      );
+    }
   });
 }

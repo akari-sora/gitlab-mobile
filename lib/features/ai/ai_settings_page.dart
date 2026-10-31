@@ -392,12 +392,12 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // The on-device format names the same model as the preset.
-              Text(
-                provider.isOnDevice
-                    ? isolated(presetName)
-                    : '${isolated(presetName)} · ${_format(provider.format)}',
-              ),
+              // The on-device format names the same model as the preset, and
+              // a kept default name already says the preset in the title.
+              if (!provider.isOnDevice)
+                Text('${isolated(presetName)} · ${_format(provider.format)}')
+              else if (provider.name != presetName)
+                Text(isolated(presetName)),
               Text(isolated(provider.model)),
               const SizedBox(height: 4),
               Wrap(

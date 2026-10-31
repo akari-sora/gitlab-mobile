@@ -13531,5 +13531,13 @@
   "aiOnDeviceCannotWrite": "此本機 AI 來源無法執行修改；若需修改 GitLab 內容，請切換為雲端服務商。",
   "@aiOnDeviceCannotWrite": {
     "description": "features/ai/ai_chat_page.dart: on-device write refusal card text"
+  },
+  "aiConsentSelfManagedNoticeOnDevice": "此帳號的內容可能受你所屬組織或自管 GitLab 的政策約束。這些內容只在這支手機上處理，不會傳送給 AI 供應商。",
+  "@aiConsentSelfManagedNoticeOnDevice": {
+    "description": "features/ai/ai_consent_dialog.dart: organization-policy card text for the on-device provider (nothing is sent to an AI provider)"
+  },
+  "aiChatEmptyOnDevice": "手機內建 AI 只會讀取這個頁面，不會讀取專案的其他資料。",
+  "@aiChatEmptyOnDevice": {
+    "description": "features/ai/ai_chat_page.dart: chat empty-state scope line for the on-device provider, which has no tools"
   }
 }

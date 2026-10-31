@@ -3111,5 +3111,7 @@
   "aiConsentOnDeviceDataHeading": "Data yang diproses pada telefon ini",
   "aiConsentOnDeviceDataDescription": "Hanya kandungan yang anda benarkan diproses pada telefon ini oleh Android AICore. Ia tidak dihantar ke mana-mana pelayan AI; diagnostik Google ML Kit diterangkan di bawah.",
   "aiOnDeviceDownloadKeepOpen": "Biarkan halaman ini terbuka sehingga muat turun selesai; meninggalkannya akan menghentikan muat turun.",
-  "aiOnDeviceCannotWrite": "Sumber AI pada peranti ini tidak boleh membuat perubahan; tukar kepada penyedia awan."
+  "aiOnDeviceCannotWrite": "Sumber AI pada peranti ini tidak boleh membuat perubahan; tukar kepada penyedia awan.",
+  "aiConsentSelfManagedNoticeOnDevice": "Kandungan akaun ini mungkin tertakluk pada dasar organisasi anda atau GitLab urus sendiri. Kandungan hanya diproses pada telefon ini dan tidak dihantar kepada mana-mana penyedia AI.",
+  "aiChatEmptyOnDevice": "AI terbina dalam telefon hanya membaca halaman ini. AI tidak membaca data lain daripada projek."
 }
