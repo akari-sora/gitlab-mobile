@@ -1306,6 +1306,12 @@ void main() {
         '關閉這個議題之前要注意什麼？',
         '更新完成後要做什麼？',
         '請問要不要合併這個 MR',
+        // A request to write text or code, not to change GitLab.
+        '幫我修改這段程式碼',
+        '幫我修改這個函式讓它更快',
+        '幫我建立一個測試計畫',
+        '幫我新增幾個測試案例',
+        '幫我更新這段說明文字',
         // No explicit request: a bare verb may start a description.
         '關閉這個議題',
         '重試這個工作',

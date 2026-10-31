@@ -4176,7 +4176,11 @@ final _cjkWriteActionPattern = RegExp(
   '$_cjkAsk(?:$_cjkObject)?$_cjkAct'
   '|(?:$_cjkAsk)?$_cjkObject$_cjkAct'
   '|(?:$_cjkAsk)?$_cjkObject(?:$_cjkWriteTargets)$_cjkGap(?:$_cjkWriteVerbs)'
-  '|(?:\\u8acb|\\u9ebb\\u7169(?:\\u4f60)?)?\\u5e6b\\u6211(?:$_cjkWriteVerbs))',
+  // 幫我 + a verb that only means a GitLab action (comment, approve, assign,
+  // retry); generic verbs such as 修改 or 建立 still need a GitLab object.
+  '|(?:\\u8acb|\\u9ebb\\u7169(?:\\u4f60)?)?\\u5e6b\\u6211'
+  '(?:\\u7559\\u8a00|\\u6838\\u51c6|\\u6279\\u51c6|\\u6307\\u6d3e|'
+  '\\u91cd\\u8a66|\\u91cd\\u65b0\\u57f7\\u884c))',
   caseSensitive: false,
 );
 
