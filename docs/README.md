@@ -55,4 +55,4 @@ Synthetic tests, live API checks, emulator runs and physical-device runs are rec
 
 ## Media
 
-[`media/`](media/) holds the README showcase: the feature graphic, store screenshots and a short demo GIF, all taken in Demo mode with sample data. The full promo video is on [YouTube](https://www.youtube.com/watch?v=p-G6da2prmg).
+[`media/`](media/) holds the README showcase: the feature graphic, store screenshots and a short demo GIF, all taken in Demo mode with sample data. The full promo video is on [YouTube](https://www.youtube.com/watch?v=oXaaAxL1h_E).

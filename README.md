@@ -1,14 +1,14 @@
 # Mergeline
 
 <p align="center">
-  <img src="docs/media/feature.jpg" alt="Mergeline — a mobile client for GitLab® with a bring-your-own-key AI assistant" width="640">
+  <img src="docs/media/feature.jpg" alt="Mergeline — a third-party mobile client for GitLab®" width="640">
 </p>
 
 **GitLab®, in your pocket.** Mergeline is a mobile-first client for GitLab.com and self-managed GitLab: issues, merge-request review and merge, CI/CD pipelines and logs, files and an inbox — plus a **bring-your-own-key AI assistant** that explains code and proposes changes, each one confirmed by you.
 
-- ▶️ **Demo video:** [youtube.com/watch?v=p-G6da2prmg](https://www.youtube.com/watch?v=p-G6da2prmg)
+- ▶️ **Demo video:** [youtube.com/watch?v=oXaaAxL1h_E](https://www.youtube.com/watch?v=oXaaAxL1h_E)
 - 📦 **Android (GitLab channel, free):** [latest release](https://gitlab.com/aa22396584/gitlab-mobile/-/releases) — installed builds update themselves under 我的 › 應用程式更新
-- 🛒 **Google Play (`app.mergeline`, US$3.99):** submitted for review on 2026-10-30
+- 🛒 **Google Play (US$3.99):** [play.google.com/store/apps/details?id=app.mergeline](https://play.google.com/store/apps/details?id=app.mergeline)
 - 🧪 **Try without an account:** tap **試用 Demo** on the sign-in screen
 
 > Canonical repository, issues and merge requests: https://gitlab.com/aa22396584/gitlab-mobile.
@@ -20,9 +20,13 @@
 
 ## Screenshots
 
-| AI proposes, you approve | Understands your code | Review merge requests | CI/CD at a glance | Your GitLab, at hand |
-|---|---|---|---|---|
-| <img src="docs/media/screenshot-1-ai-confirm.jpg" width="160" alt="AI confirmation card"> | <img src="docs/media/screenshot-2-ai-explain.jpg" width="160" alt="AI explains a file and writes a comment"> | <img src="docs/media/screenshot-3-review.jpg" width="160" alt="Merge request diff with a discussion"> | <img src="docs/media/screenshot-4-ci.jpg" width="160" alt="Pipeline jobs"> | <img src="docs/media/screenshot-5-home.jpg" width="160" alt="Home"> |
+| Your GitLab, at hand | Review code | Approve and merge | CI/CD at a glance |
+|---|---|---|---|
+| <img src="docs/media/screenshot-1-home.jpg" width="160" alt="Home"> | <img src="docs/media/screenshot-2-review.jpg" width="160" alt="Merge request diff with a discussion"> | <img src="docs/media/screenshot-3-merge.jpg" width="160" alt="Merge request summary with approve and merge"> | <img src="docs/media/screenshot-4-ci.jpg" width="160" alt="Pipeline jobs"> |
+
+| Whole project | AI proposes, you approve | Written, then read back |
+|---|---|---|
+| <img src="docs/media/screenshot-5-project.jpg" width="160" alt="Project overview"> | <img src="docs/media/screenshot-6-ai-confirm.jpg" width="160" alt="AI confirmation card"> | <img src="docs/media/screenshot-7-ai-done.jpg" width="160" alt="The AI write, confirmed by a read-back"> |
 
 All screenshots and the video show **Demo mode** with sample data.
 
