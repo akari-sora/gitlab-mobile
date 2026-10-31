@@ -665,7 +665,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
     // GitLab reports a truncated diff as the version's state; there is no
     // overflow key (issue #59).
     final overflow =
-        valueText(_version ?? const <String, dynamic>{}, 'state') == 'overflow';
+        valueText(_version ?? const <String, dynamic>{}, 'state').startsWith('overflow');
     final target = widget.initialTarget;
     final missingTarget = target != null && _fileFor(target) == null;
     final unmatched = _unmatchedDiscussions();
