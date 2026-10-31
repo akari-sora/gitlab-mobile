@@ -11,6 +11,7 @@ import '../../shared/attachment_budget.dart';
 import '../../shared/external_link.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import '../../shared/theme.dart';
@@ -325,6 +326,11 @@ String _excerpt(String body) {
 }
 
 class ReviewDiffPage extends StatefulWidget {
+  static const EdgeInsets contentPadding = EdgeInsets.all(16);
+  static const EdgeInsets filePadding = EdgeInsets.symmetric(
+    horizontal: 16,
+    vertical: 8,
+  );
   const ReviewDiffPage({
     super.key,
     required this.account,
@@ -353,6 +359,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
   ApiFailure? _error;
   ApiFailure? _discussionsError;
   bool _loading = true;
+  bool _firstLoadDone = false;
   bool _discussionsTruncated = false;
   bool _openedTarget = false;
   int _epoch = 0;
@@ -465,6 +472,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
         ).map(diffFilePath).toSet();
         _viewedFiles.retainAll(currentPaths);
         _loading = false;
+        _firstLoadDone = true;
       });
     } catch (e) {
       if (!mounted || epoch != _epoch) {
@@ -475,6 +483,12 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
         _error = safeFailure(e);
         _loading = false;
       });
+    } finally {
+      if (mounted && epoch == _epoch && _loading) {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
     final loaded = await discussionsFuture;
     if (!mounted || epoch != _epoch) return;
@@ -617,8 +631,8 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const ListSkeleton();
+    if (_loading && !_firstLoadDone) {
+      return const DiffSkeleton(padding: ReviewDiffPage.contentPadding);
     }
     if (_error != null) {
       return ListView(
@@ -647,6 +661,10 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
+          if (_loading && _firstLoadDone)
+            const SliverToBoxAdapter(
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
               16,
@@ -1865,15 +1883,9 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       ),
       body: gestureSafe(
         _diffLoading
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(strokeWidth: 2),
-                    SizedBox(height: 12),
-                    Text(l10n.preparingDiff),
-                  ],
-                ),
+            ? const DiffSkeleton(
+                key: ValueKey('diff-file-skeleton'),
+                padding: ReviewDiffPage.filePadding,
               )
             : _diffError != null
             ? ListView(

@@ -59,6 +59,18 @@ class CodeTextView extends StatelessWidget {
     height: 1.55,
   );
 
+  /// Shared code padding matched by [CodeSkeleton].
+  static const EdgeInsets padding = EdgeInsets.all(12);
+
+  /// Width reserved for the line-number gutter.
+  static const double gutterWidth = 48;
+
+  /// Gap between the line-number gutter and code text.
+  static const double gutterGap = 8;
+
+  /// Vertical pitch of each code row (24dp minimum target + 2dp vertical padding).
+  static const double linePitch = 26;
+
   final CodeTextIndex index;
   final List<int> visibleIndices;
   final String filePath;
@@ -97,7 +109,9 @@ class CodeTextView extends StatelessWidget {
                 child: ListView.builder(
                   controller: vertical,
                   itemCount: visibleIndices.length,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: EdgeInsets.symmetric(
+                    vertical: padding.top,
+                  ),
                   itemBuilder: (context, row) => _line(context, row),
                 ),
               ),
@@ -120,7 +134,10 @@ class CodeTextView extends StatelessWidget {
       color: isSelected
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
           : null,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+      padding: EdgeInsets.symmetric(
+        horizontal: padding.left,
+        vertical: 1,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -137,7 +154,10 @@ class CodeTextView extends StatelessWidget {
               // Code reads line by line: rows stay at text height and the
               // number keeps the 24dp WCAG 2.5.8 minimum in a 48dp-wide column.
               child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 24),
+                constraints: const BoxConstraints(
+                  minWidth: gutterWidth,
+                  minHeight: 24,
+                ),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -154,7 +174,7 @@ class CodeTextView extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: gutterGap),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),

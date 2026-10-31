@@ -85,7 +85,7 @@ Future<void> settleNetworkWidgets(
   final hasIndeterminateSpinner = find.byWidgetPredicate((widget) {
     if (widget is CircularProgressIndicator && widget.value == null) return true;
     if (widget is LinearProgressIndicator && widget.value == null) return true;
-    if (widget is RowsSkeleton) return true;
+    if (widget is SkeletonShimmer) return true;
     return false;
   }).evaluate().isNotEmpty;
 

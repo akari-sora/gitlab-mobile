@@ -84,6 +84,7 @@ class RepositoryTabState extends State<RepositoryTab> {
   String _folder = '';
   ApiFailure? _error;
   bool _loading = true;
+  bool _firstLoadDone = false;
   int _epoch = 0, _readEpoch = 0;
   final _feed = GlobalKey<RecordsFeedState>();
   ValueListenable<TickerModeData>? _tickerMode;
@@ -138,6 +139,7 @@ class RepositoryTabState extends State<RepositoryTab> {
         initial.kind != RepositoryRefKind.commit) {
       _currentRef = initial;
       _loading = false;
+      _firstLoadDone = true;
     } else if (defaultBranch != null && defaultBranch.isNotEmpty) {
       _currentRef = RepositoryRef(
         kind: RepositoryRefKind.branch,
@@ -149,6 +151,7 @@ class RepositoryTabState extends State<RepositoryTab> {
       unawaited(_resolve());
     } else {
       _loading = false;
+      _firstLoadDone = true;
     }
   }
 
@@ -231,6 +234,7 @@ class RepositoryTabState extends State<RepositoryTab> {
         : RepositoryRef(kind: ref.kind, name: ref.name, sha: '', protected: ref.protected, isDefault: ref.isDefault);
     _branchRead = null;
     _stale = false;
+    _firstLoadDone = false;
   }
 
   /// Ends any in-flight README request and drops its result: the completion
@@ -311,6 +315,7 @@ class RepositoryTabState extends State<RepositoryTab> {
         _branchRead = read;
         _stale = read.stale;
         _loading = false;
+        _firstLoadDone = true;
         if (shaChanged) _resetReadme();
       });
       _startRevalidation(generation, readEpoch: readEpoch);
@@ -323,8 +328,10 @@ class RepositoryTabState extends State<RepositoryTab> {
         });
       }
     } finally {
-      if (_readCurrent(generation, readEpoch) && _loading) {
-        setState(() => _loading = false);
+      if (_readCurrent(generation, readEpoch)) {
+        setState(() {
+          _loading = false;
+        });
       }
     }
   }
@@ -458,6 +465,7 @@ class RepositoryTabState extends State<RepositoryTab> {
       _resumeWhenVisible = false;
       _resetReadme();
       _loading = true;
+      _firstLoadDone = false;
       final defaultBranch = widget.project.defaultBranch;
       if (defaultBranch != null && defaultBranch.isNotEmpty) {
         _currentRef = RepositoryRef(
@@ -470,6 +478,7 @@ class RepositoryTabState extends State<RepositoryTab> {
         unawaited(_resolve());
       } else {
         _loading = false;
+        _firstLoadDone = true;
       }
     }
   }
@@ -889,12 +898,23 @@ class RepositoryTabState extends State<RepositoryTab> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_currentRef == null || _currentRef!.sha.isEmpty) _refBar(context),
-        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        if (_loading &&
+            (_firstLoadDone ||
+                (_currentRef != null && _currentRef!.sha.isNotEmpty)))
+          const LinearProgressIndicator(minHeight: 2),
         if (_error != null) _errorNotice(context, _error!),
         Expanded(
           child: _currentRef == null || _currentRef!.sha.isEmpty
-              ? (_loading
-                    ? const RowsSkeleton()
+              ? (_loading && !_firstLoadDone
+                    ? RowsSkeleton(
+                        grouped: true,
+                        padding: EdgeInsets.fromLTRB(
+                          feedGutter(context),
+                          8,
+                          feedGutter(context),
+                          0,
+                        ),
+                      )
                     : SingleChildScrollView(
                         child: EmptyState(
                           l10n.repositoryNotInitialized,
@@ -1048,6 +1068,8 @@ class RepositoryReadmeCard extends StatelessWidget {
   final GitLabApi? api;
   final VoidCallback? onSwitchAccount;
 
+  static const EdgeInsets contentPadding = EdgeInsets.all(16);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1108,37 +1130,48 @@ class RepositoryReadmeCard extends StatelessWidget {
           ),
           ExpandSection(expanded: expanded, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             const Divider(height: 1),
-            if (loading)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (error != null)
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: FailureNotice(
-                  error!,
-                  account: account,
-                  resourceLabel: '${project.path} · $title',
-                  onRetry: onRetry,
-                  onSwitchAccount: onSwitchAccount,
-                ),
-              )
-            else if (readme != null)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: MarkdownView(
-                  readme!.markdown,
-                  base: account.instance.projectWeb(
-                    '${project.path}/-/blob/${readme!.sha}/${readme!.path}',
-                  ),
-                  api: api,
-                  projectId: project.id,
-                  projectWeb: account.instance.projectWeb(project.path),
-                  projectPath: project.path,
-                  account: account,
-                ),
+            AnimatedSwitcher(
+              duration: motionDuration(context, Durations.short4),
+              layoutBuilder: (currentChild, previousChildren) => Stack(
+                fit: StackFit.passthrough,
+                alignment: AlignmentDirectional.topStart,
+                children: [...previousChildren, ?currentChild],
               ),
+              child: loading && readme == null
+                  ? const MarkdownSkeleton(
+                      key: ValueKey('repo-readme-skeleton'),
+                      padding: contentPadding,
+                    )
+                  : error != null
+                  ? Padding(
+                      key: const ValueKey('repo-readme-error'),
+                      padding: const EdgeInsets.all(8),
+                      child: FailureNotice(
+                        error!,
+                        account: account,
+                        resourceLabel: '${project.path} · $title',
+                        onRetry: onRetry,
+                        onSwitchAccount: onSwitchAccount,
+                      ),
+                    )
+                  : readme != null
+                  ? Padding(
+                      key: const ValueKey('repo-readme-content'),
+                      padding: contentPadding,
+                      child: MarkdownView(
+                        readme!.markdown,
+                        base: account.instance.projectWeb(
+                          '${project.path}/-/blob/${readme!.sha}/${readme!.path}',
+                        ),
+                        api: api,
+                        projectId: project.id,
+                        projectWeb: account.instance.projectWeb(project.path),
+                        projectPath: project.path,
+                        account: account,
+                      ),
+                    )
+                  : const SizedBox.shrink(key: ValueKey('repo-readme-empty')),
+            ),
           ])),
         ],
       ),
@@ -1391,6 +1424,8 @@ class RepositoryFilePage extends StatefulWidget {
   final String filePath;
   final int? targetLine;
 
+  static const EdgeInsets markdownPadding = EdgeInsets.all(20);
+
   RepositoryRef get resolvedRef =>
       ref ??
       RepositoryRef(
@@ -1408,6 +1443,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
   String? _text, _lastCommit;
   ApiFailure? _error;
   bool _loading = true, _busy = false, _preview = false, _wrap = true;
+  bool _firstLoadDone = false;
   bool _markdown = false;
   final _vertical = ScrollController();
   final _horizontal = ScrollController();
@@ -1457,6 +1493,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
     _lastCommit = null;
     _error = null;
     _selectedLine = null;
+    _firstLoadDone = false;
     _markdown = _isMarkdownPath(widget.filePath);
     _preview = _markdown && widget.targetLine == null;
     _indexLines('');
@@ -1621,6 +1658,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
               ? requiredString(meta, 'last_commit_id')
               : null;
           _loading = false;
+          _firstLoadDone = true;
           _searchPending = false;
           if (hasTarget) {
             _selectedLine = target;
@@ -1646,6 +1684,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
             FailureKind.invisible,
           }.contains(failure.kind)) {
             _text = null;
+            _firstLoadDone = false;
             _lastCommit = null;
             _selectedLine = null;
             _indexLines('');
@@ -2035,7 +2074,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                     ],
                   ),
                 ),
-                if (_loading || _busy)
+                if ((_loading && _firstLoadDone) || _busy)
                   const LinearProgressIndicator(minHeight: 2),
                 if (_error != null)
                   FailureNotice(
@@ -2070,10 +2109,16 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                   ),
                 Expanded(
                   child: text == null
-                      ? const SizedBox()
+                      ? (_loading && !_firstLoadDone
+                            ? (_preview
+                                  ? const MarkdownSkeleton(
+                                      padding: RepositoryFilePage.markdownPadding,
+                                    )
+                                  : const CodeSkeleton())
+                            : const SizedBox())
                       : _preview
                       ? SingleChildScrollView(
-                          padding: const EdgeInsets.all(20),
+                          padding: RepositoryFilePage.markdownPadding,
                           child: MarkdownView(
                             text,
                             account: widget.account,

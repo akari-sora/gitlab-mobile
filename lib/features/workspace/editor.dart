@@ -6,6 +6,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../demo/demo_scope.dart';
@@ -229,6 +230,7 @@ Future<bool> openEditor(
 }
 
 class ResourceEditor extends StatefulWidget {
+  static const EdgeInsets bodyPadding = EdgeInsets.fromLTRB(20, 8, 20, 32);
   const ResourceEditor({
     super.key,
     required this.account,
@@ -753,9 +755,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
       ),
       body: SafeArea(
         child: _loading
-            ? const ListSkeleton()
+            ? const EditorSkeleton(padding: ResourceEditor.bodyPadding)
             : SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                padding: ResourceEditor.bodyPadding,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [

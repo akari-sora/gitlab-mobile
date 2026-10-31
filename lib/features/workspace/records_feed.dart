@@ -16,8 +16,9 @@ class RecordsFeed extends StatefulWidget {
     String? empty, this.emptyDetail, this.filteredEmpty, this.account, this.resourceLabel, this.onSwitchAccount,
     this.underShell = false, this.visible, this.header, this.footer, this.leading, this.topSlivers,
     this.grouped = false, this.itemSpacing = 8, this.emptyIcon = Icons.inbox_outlined, this.storageId,
-    this.arrange, this.sectionOf, this.emptyArt, this.cached}) : _emptyArg = empty;
+    this.arrange, this.sectionOf, this.emptyArt, this.cached, this.skeletonLiveRegion = true}) : _emptyArg = empty;
   final String identity;
+  final bool skeletonLiveRegion;
 
   /// Reorders the loaded rows before display, e.g. jobs into stage order.
   final List<Json> Function(List<Json> items)? arrange;
@@ -88,6 +89,7 @@ class RecordsFeedState extends State<RecordsFeed> {
   @override
   void initState() { super.initState(); controller = RecordController(widget.load, cached: widget.cached); }
   bool _started = false;
+  bool _identityReset = false;
   ValueListenable<TickerModeData>? _tickerMode;
   void _updateTickerMode() {
     final mode = TickerMode.getValuesNotifier(context);
@@ -111,6 +113,7 @@ class RecordsFeedState extends State<RecordsFeed> {
   void didUpdateWidget(covariant RecordsFeed oldWidget) {
     super.didUpdateWidget(oldWidget); controller.loader = widget.load; controller.cached = widget.cached;
     if (oldWidget.identity != widget.identity) {
+      _identityReset = true;
       unawaited(controller.refresh(reset: true));
       if (widget.storageId != null && widget.storageId == oldWidget.storageId && _scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.minScrollExtent);
@@ -224,14 +227,15 @@ class RecordsFeedState extends State<RecordsFeed> {
       // The gap above the rows. A reload over loaded rows draws its bar inside
       // it instead of taking layout, so the rows do not jump as it starts and
       // ends; a pull-to-refresh shows only its own spinner.
-      SizedBox(height: 8, child: controller.loading && controller.items.isNotEmpty && !_pulling
+      SizedBox(height: 8, child: controller.loading && controller.hasLoaded && !_pulling
           ? const Center(child: LinearProgressIndicator(minHeight: 2)) : null),
       if (_freshness(controller) case final fetchedAt?) CacheFreshnessBar(fetchedAt: fetchedAt,
         refreshing: controller.revalidating, failure: controller.backgroundFailure,
         retryAt: controller.backgroundRetryAt,
         onRetry: () { unawaited(controller.refresh(fresh: true)); }),
-      if (controller.loading && controller.items.isEmpty) RowsSkeleton(grouped: widget.grouped),
-      if (!controller.loading && shown.isEmpty && controller.error == null && controller.next == null) EmptyState(
+      if (controller.loading && !controller.hasLoaded)
+        RowsSkeleton(grouped: widget.grouped, liveRegion: widget.skeletonLiveRegion || _identityReset),
+      if ((controller.hasLoaded || !controller.loading) && shown.isEmpty && controller.error == null && controller.next == null) EmptyState(
         controller.items.isEmpty ? widget.empty : (widget.filteredEmpty ?? widget.empty),
         icon: widget.emptyIcon,
         art: controller.items.isEmpty ? widget.emptyArt : null,

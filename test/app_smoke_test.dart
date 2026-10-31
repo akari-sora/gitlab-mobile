@@ -99,7 +99,7 @@ void main() {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
       final hasNavBar = find.byType(NavigationBar).evaluate().isNotEmpty;
       final hasSpinner = find.byType(CircularProgressIndicator).evaluate().isNotEmpty ||
-          find.byType(RowsSkeleton).evaluate().isNotEmpty;
+          find.byWidgetPredicate((w) => w is Skeleton).evaluate().isNotEmpty;
       final hasProjectsRequest = adapter.requests.any((r) => r.uri.path.contains('projects'));
       if (hasNavBar && !hasSpinner && hasProjectsRequest) {
         settled = true;

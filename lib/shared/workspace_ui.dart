@@ -8,6 +8,7 @@ import '../core/models.dart';
 import '../core/read_cache_disk_contract.dart';
 import '../core/providers.dart';
 import 'resume_target.dart';
+import 'skeleton.dart';
 import 'theme.dart';
 
 import '../l10n/l10n.dart';
@@ -842,16 +843,41 @@ class FailureNotice extends StatelessWidget {
   }
 }
 
-class ListSkeleton extends StatelessWidget {
-  const ListSkeleton({super.key});
+class ListSkeleton extends StatelessWidget implements Skeleton {
+  const ListSkeleton({
+    super.key,
+    this.rows = 8,
+    this.grouped = false,
+    this.padding = EdgeInsets.zero,
+    this.rowHeight = RowsSkeleton.rowHeight,
+    this.leadingSize = 36,
+    this.leadingRadius = 8,
+    this.showLeading = true,
+    this.showSubtitle = true,
+    this.liveRegion = true,
+  });
+
+  final int rows;
+  final bool grouped;
+  final EdgeInsetsGeometry padding;
+  final double rowHeight;
+  final double leadingSize;
+  final double leadingRadius;
+  final bool showLeading;
+  final bool showSubtitle;
+  final bool liveRegion;
+
   @override
-  Widget build(BuildContext context) => Semantics(
-    label: l10n.loading2,
-    liveRegion: true,
-    child: const Padding(
-      padding: EdgeInsets.all(32),
-      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-    ),
+  Widget build(BuildContext context) => RowsSkeleton(
+    rows: rows,
+    grouped: grouped,
+    padding: padding,
+    itemHeight: rowHeight,
+    leadingSize: leadingSize,
+    leadingRadius: leadingRadius,
+    showLeading: showLeading,
+    showSubtitle: showSubtitle,
+    liveRegion: liveRegion,
   );
 }
 

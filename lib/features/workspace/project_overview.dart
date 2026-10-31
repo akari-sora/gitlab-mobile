@@ -11,6 +11,7 @@ import '../../shared/hub_ui.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/cache_freshness.dart';
 import '../../shared/workspace_ui.dart';
@@ -50,6 +51,9 @@ class ProjectOverview extends StatefulWidget {
   final ValueChanged<int> onSection;
   final bool Function() isCurrent;
   final ScrollController? controller;
+
+  static const EdgeInsets readmePadding = EdgeInsets.fromLTRB(16, 8, 16, 24);
+
   @override
   State<ProjectOverview> createState() => ProjectOverviewState();
 }
@@ -62,6 +66,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
   String? _readmeDeniedBranch;
   bool _readmeLoading = false;
   bool _readmeMissing = false;
+  bool _readmeFirstLoadDone = false;
   bool _moreOpen = false;
   bool _forking = false;
   int _epoch = 0;
@@ -197,6 +202,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
     _readmeMissing = false;
     _readmeLoading = false;
     _readmePending = false;
+    _readmeFirstLoadDone = false;
   }
 
   bool _revoked(ApiFailure failure) => switch (failure.kind) {
@@ -225,6 +231,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
       _readmeMissing = false;
       _readmeLoading = false;
       _readmePending = false;
+      _readmeFirstLoadDone = false;
       _readmeError = failure;
     } else if (background) {
       backgroundFailure = failure.kind;
@@ -345,11 +352,12 @@ class ProjectOverviewState extends State<ProjectOverview> {
         _readmeMissing = false;
         _readmeLoading = false;
         _readmePending = false;
+        if (!background) _readmeFirstLoadDone = true;
       });
       return;
     }
     setState(() {
-      _readmeLoading = !background && _readme == null;
+      _readmeLoading = !background && !_readmeFirstLoadDone && _readme == null;
       if (!background) _readmeError = null;
     });
     try {
@@ -423,6 +431,7 @@ class ProjectOverviewState extends State<ProjectOverview> {
         _readmePending = false;
         _readmeMissing = path == null;
         _readmeLoading = false;
+        _readmeFirstLoadDone = true;
         _readmeError = null;
       });
     } catch (e) {
@@ -433,7 +442,11 @@ class ProjectOverviewState extends State<ProjectOverview> {
         () => _failed(failure, background: background, repository: true),
       );
     } finally {
-      if (_current(epoch, api)) setState(() => _readmeLoading = false);
+      if (_current(epoch, api)) {
+        setState(() {
+          _readmeLoading = false;
+        });
+      }
     }
   }
 
@@ -773,16 +786,32 @@ class ProjectOverviewState extends State<ProjectOverview> {
     final readme = _readme, ref = _ref;
     final Widget body;
     if (_emptyRepository) {
-      body = Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-        child: Text(l10n.repositoryNotInitializedHint, style: TextStyle(color: muted)));
-    } else if (_readmeLoading) {
-      body = const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+      body = Padding(
+        key: const ValueKey('overview-readme-uninit'),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        child: Text(l10n.repositoryNotInitializedHint, style: TextStyle(color: muted)),
+      );
+    } else if (!_readmeFirstLoadDone &&
+        (_readmeLoading ||
+            (loading &&
+                readme == null &&
+                _readmeError == null &&
+                !_readmeMissing &&
+                _readmeDeniedBranch != _branch))) {
+      body = const MarkdownSkeleton(
+        key: ValueKey('overview-readme-skeleton'),
+        padding: ProjectOverview.readmePadding,
+      );
     } else if (_readmeError != null) {
-      body = FailureNotice(_readmeError!, account: account, resourceLabel: '${project.path} · README',
-        onRetry: () => unawaited(refresh()), onSwitchAccount: endSessionFrom(context));
+      body = KeyedSubtree(
+        key: const ValueKey('overview-readme-error'),
+        child: FailureNotice(_readmeError!, account: account, resourceLabel: '${project.path} · README',
+          onRetry: () => unawaited(refresh()), onSwitchAccount: endSessionFrom(context)),
+      );
     } else if (readme != null) {
       body = Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        key: const ValueKey('overview-readme-content'),
+        padding: ProjectOverview.readmePadding,
         child: MarkdownView(
           readme.markdown,
           base: account.instance.projectWeb('${project.path}/-/blob/${readme.sha}/${readme.path}'),
@@ -794,10 +823,13 @@ class ProjectOverviewState extends State<ProjectOverview> {
         ),
       );
     } else if (_readmeMissing) {
-      body = Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-        child: Text(l10n.projectNoReadme, style: TextStyle(color: muted)));
+      body = Padding(
+        key: const ValueKey('overview-readme-missing'),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        child: Text(l10n.projectNoReadme, style: TextStyle(color: muted)),
+      );
     } else {
-      body = const SizedBox(height: 16);
+      body = const SizedBox(key: ValueKey('overview-readme-idle'), height: 16);
     }
     return Material(
       color: theme.colorScheme.surface,
@@ -819,7 +851,15 @@ class ProjectOverviewState extends State<ProjectOverview> {
               ),
           ]),
         ),
-        body,
+        AnimatedSwitcher(
+          duration: motionDuration(context, Durations.short4),
+          layoutBuilder: (currentChild, previousChildren) => Stack(
+            fit: StackFit.passthrough,
+            alignment: AlignmentDirectional.topStart,
+            children: [...previousChildren, ?currentChild],
+          ),
+          child: body,
+        ),
       ]),
     );
   }

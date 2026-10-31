@@ -253,7 +253,7 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
   );
 
   Widget _content(BuildContext context) {
-    if (_records.loading && _records.items.isEmpty) return const ListSkeleton();
+    if (_records.loading && !_records.hasLoaded) return const ListSkeleton();
     if (_records.error != null && _records.items.isEmpty) {
       return ListView(
         children: [
@@ -603,7 +603,7 @@ class _TagPickerSheetState extends State<_TagPickerSheet> {
         child: ListenableBuilder(
           listenable: _records,
           builder: (context, _) {
-            if (_records.loading && _records.items.isEmpty) {
+            if (_records.loading && !_records.hasLoaded) {
               return const ListSkeleton();
             }
             if (_records.error != null && _records.items.isEmpty) {

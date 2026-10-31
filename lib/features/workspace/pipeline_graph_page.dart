@@ -7,6 +7,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/pipeline_graph.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import '../../shared/resource_share.dart';
 import 'ci_page.dart';
@@ -44,6 +45,7 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
   int? _iid;
   int _epoch = 0;
   bool _loading = false;
+  bool _firstLoadDone = false;
   ApiFailure? _error;
   ApiFailure? _pageError;
 
@@ -72,6 +74,7 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
     _endCursor = null;
     _iid = null;
     _loading = false;
+    _firstLoadDone = false;
     _error = null;
     _pageError = null;
     unawaited(_refresh());
@@ -101,14 +104,16 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
   Future<void> _refresh() async {
     if (_loading) return;
     final epoch = ++_epoch;
-    _jobs.clear();
-    _jobIds.clear();
-    _rowKeys.clear();
-    _stageNames = const [];
-    _stagesTruncated = false;
-    _hasNextPage = false;
-    _endCursor = null;
-    _iid = null;
+    if (!_firstLoadDone) {
+      _jobs.clear();
+      _jobIds.clear();
+      _rowKeys.clear();
+      _stageNames = const [];
+      _stagesTruncated = false;
+      _hasNextPage = false;
+      _endCursor = null;
+      _iid = null;
+    }
     await _load(after: null, epoch: epoch, initial: true);
   }
 
@@ -161,6 +166,12 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
       if (page.hasNextPage && page.endCursor == after) {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
+      if (initial) {
+        _jobs.clear();
+        _jobIds.clear();
+        _rowKeys.clear();
+        _iid = null;
+      }
       final room = _maxJobs - _jobs.length;
       for (final job in page.jobs.take(room)) {
         if (_jobIds.add(job.id)) _jobs.add(job);
@@ -170,6 +181,7 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
         if (initial) {
           _stageNames = page.stageNames;
           _stagesTruncated = page.stagesTruncated;
+          _firstLoadDone = true;
         }
         _hasNextPage = page.hasNextPage && _jobs.length < _maxJobs;
         _endCursor = _hasNextPage ? page.endCursor : null;
@@ -201,7 +213,9 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
         projectId: project.id,
         pipelineId: pipelineId,
       )) {
-        setState(() => _loading = false);
+        setState(() {
+          _loading = false;
+        });
       }
     }
   }
@@ -297,7 +311,8 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
       ),
       body: gestureSafe(Column(
         children: [
-          if (_loading) const LinearProgressIndicator(minHeight: 2),
+          if (_loading && _firstLoadDone)
+            const LinearProgressIndicator(minHeight: 2),
           Expanded(child: _buildBody()),
         ],
       )),
@@ -305,7 +320,7 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
   }
 
   Widget _buildBody() {
-    if (_jobs.isEmpty && _loading) return const ListSkeleton();
+    if (!_firstLoadDone && _loading) return const PipelineGraphSkeleton();
     if (_jobs.isEmpty && _error != null) {
       return SingleChildScrollView(
         child: FailureNotice(

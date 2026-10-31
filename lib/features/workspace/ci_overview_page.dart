@@ -5,6 +5,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/scroll_chrome.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
@@ -96,6 +97,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
 
   int _loadEpoch = 0;
   bool _loading = false;
+  bool _firstLoadDone = false;
   bool _loadingMore = false;
   Uri? _nextPageUri;
   ApiFailure? _error;
@@ -155,6 +157,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     if (accountChanged || apiChanged || sessionChanged) {
       _loadEpoch++;
       _loading = false;
+      _firstLoadDone = false;
       _loadingMore = false;
       _nextPageUri = null;
       _error = null;
@@ -233,6 +236,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
 
       final projects = page.items.map(Project.fromJson).toList();
       setState(() {
+        _firstLoadDone = true;
         final previous = {for (final item in _items) item.project.id: item};
         _items = projects.map((project) {
           final item = previous[project.id];
@@ -694,12 +698,20 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
               ),
             ),
             const SizedBox(height: 8),
+            if (_loading && _firstLoadDone)
+              const LinearProgressIndicator(minHeight: 2),
           ],
         );
 
   List<Widget> _bodySlivers(double gutter, List<ProjectCiItem> displayed) {
-    if (_loading && _items.isEmpty) {
-      return const [SliverFillRemaining(hasScrollBody: false, child: ListSkeleton())];
+    if (_loading && !_firstLoadDone) {
+      return [
+        SliverToBoxAdapter(
+          child: ListSkeleton(
+            padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 24),
+          ),
+        ),
+      ];
     }
     if (_error != null && _items.isEmpty) {
       return [SliverToBoxAdapter(child: FailureNotice(
@@ -804,11 +816,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                   ),
                   const SizedBox(width: 8),
                   if (item.state == ProjectCiLoadState.loading)
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                    const SkeletonBone(width: 20, height: 20, radius: 10)
                   else if (item.state == ProjectCiLoadState.unknown)
                     Icon(
                       Icons.help_outline,

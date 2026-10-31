@@ -6,6 +6,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/workspace_ui.dart';
 import '../../shared/scroll_chrome.dart';
+import '../../shared/skeleton.dart';
 
 import '../../l10n/l10n.dart';
 class ProjectAnalyticsPage extends StatefulWidget {
@@ -14,10 +15,12 @@ class ProjectAnalyticsPage extends StatefulWidget {
     required this.account,
     required this.api,
     required this.project,
+    this.now,
   });
   final Account account;
   final GitLabApi api;
   final Project project;
+  final DateTime Function()? now;
   @override
   State<ProjectAnalyticsPage> createState() => _ProjectAnalyticsPageState();
 }
@@ -40,11 +43,14 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
   int _contributorPages = 0;
   int _contributorRequest = 0;
   bool _contributorLoading = false, _contributorLimited = false;
+  bool _contributorFirstLoadDone = false;
 
   List<RepositoryActivityCommit>? _commits;
   Uri? _nextCommits;
   ApiFailure? _commitError, _moreError;
   bool _commitLoading = false;
+  bool _commitFirstLoadDone = false;
+  bool _commitStale = false;
   int _commitPages = 0;
   int _commitRequest = 0;
   List<MapEntry<DateTime, _ActivityDay>> _dayRows = const [];
@@ -53,6 +59,8 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
   PipelineAnalyticsSnapshot? _pipelines;
   ApiFailure? _pipelineError, _coverageError, _languageError;
   bool _ciLoading = false, _coverageLoaded = false;
+  bool _ciFirstLoadDone = false;
+  bool _ciStale = false;
   int _pipelineRequest = 0;
   bool _coverageLoading = false, _languageLoading = false;
   int _coverageRequest = 0, _languageRequest = 0;
@@ -149,18 +157,23 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     _nextContributors = null;
     _contributorPages = 0;
     _contributorLoading = false;
+    _contributorFirstLoadDone = false;
     _contributorLimited = false;
     _commits = null;
     _nextCommits = null;
     _commitError = null;
     _moreError = null;
     _commitLoading = false;
+    _commitFirstLoadDone = false;
+    _commitStale = false;
     _commitPages = 0;
     _dayRows = const [];
     _dayMax = 1;
     _pipelines = null;
     _pipelineError = null;
     _ciLoading = false;
+    _ciFirstLoadDone = false;
+    _ciStale = false;
     _coverage = null;
     _coverageLoaded = false;
     _coverageLoading = false;
@@ -171,7 +184,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
   }
 
   (DateTime, DateTime) _newWindow(int days) {
-    final now = DateTime.now().toUtc();
+    final now = (widget.now ?? DateTime.now)().toUtc();
     final to = DateTime.utc(
       now.year,
       now.month,
@@ -216,6 +229,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         _nextContributors = null;
         _contributorPages = 0;
         _contributorLoading = false;
+        _contributorFirstLoadDone = false;
         _contributorLimited = false;
       }
       if (refChanged || windowChanged) {
@@ -224,6 +238,8 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         _commitError = null;
         _moreError = null;
         _commitLoading = false;
+        _commitFirstLoadDone = false;
+        _commitStale = false;
         _commitPages = 0;
         _dayRows = const [];
         _dayMax = 1;
@@ -232,6 +248,8 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         _pipelines = null;
         _pipelineError = null;
         _ciLoading = false;
+        _ciFirstLoadDone = false;
+        _ciStale = false;
       }
     });
     await _ensureLoaded();
@@ -245,36 +263,26 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       _from = window.$1;
       _to = window.$2;
       if (windowMoved) {
-        _commits = null;
+        _commitStale = true;
+        _ciStale = true;
         _nextCommits = null;
         _commitError = null;
         _moreError = null;
         _commitLoading = false;
-        _commitPages = 0;
-        _dayRows = const [];
-        _dayMax = 1;
-        _pipelines = null;
         _pipelineError = null;
         _ciLoading = false;
       }
       switch (tab) {
         case 0:
-          _contributors = null;
           _contributorError = null;
           _nextContributors = null;
-          _contributorPages = 0;
           _contributorLoading = false;
-          _contributorLimited = false;
         case 1:
           if (!windowMoved) {
-            _commits = null;
             _nextCommits = null;
             _commitError = null;
             _moreError = null;
             _commitLoading = false;
-            _commitPages = 0;
-            _dayRows = const [];
-            _dayMax = 1;
           }
           _coverage = null;
           _coverageLoaded = false;
@@ -285,13 +293,23 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
           _languageError = null;
         case 2:
           if (!windowMoved) {
-            _pipelines = null;
             _pipelineError = null;
             _ciLoading = false;
           }
       }
     });
-    await _ensureLoaded();
+    switch (tab) {
+      case 0:
+        await _loadContributors(reset: true);
+      case 1:
+        await Future.wait([
+          if (_activeRef.isNotEmpty) _loadCommits(reset: true),
+          _loadCoverage(),
+          _loadLanguages(),
+        ]);
+      case 2:
+        if (_activeRef.isNotEmpty) await _loadPipeline();
+    }
   }
 
   Future<void> _ensureLoaded() => switch (_tabs.index) {
@@ -303,7 +321,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     1 => _loadRepository(),
     2
         when _activeRef.isNotEmpty &&
-            _pipelines == null &&
+            (_pipelines == null || _ciStale) &&
             _pipelineError == null &&
             !_ciLoading =>
       _loadPipeline(),
@@ -313,7 +331,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
   Future<void> _loadRepository() async {
     final tasks = <Future<void>>[];
     if (_activeRef.isNotEmpty &&
-        _commits == null &&
+        (_commits == null || _commitStale) &&
         _commitError == null &&
         !_commitLoading) {
       tasks.add(_loadCommits(reset: true));
@@ -339,7 +357,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     setState(() {
       _contributorLoading = true;
       _contributorError = null;
-      if (reset) {
+      if (reset && !_contributorFirstLoadDone) {
         _contributors = null;
         _nextContributors = null;
         _contributorPages = 0;
@@ -364,6 +382,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         _nextContributors = limited ? null : page.next;
         _contributorPages = pages;
         _contributorLimited = limited && page.next != null;
+        _contributorFirstLoadDone = true;
       });
     } catch (error) {
       if (_currentContributor(owner) && request == _contributorRequest) {
@@ -371,7 +390,9 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       }
     } finally {
       if (_currentContributor(owner) && request == _contributorRequest) {
-        setState(() => _contributorLoading = false);
+        setState(() {
+          _contributorLoading = false;
+        });
       }
     }
   }
@@ -388,13 +409,16 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     setState(() {
       _commitLoading = true;
       if (reset) {
-        _commits = null;
-        _nextCommits = null;
+        _commitStale = false;
+        if (!_commitFirstLoadDone) {
+          _commits = null;
+          _nextCommits = null;
+          _commitPages = 0;
+          _dayRows = const [];
+          _dayMax = 1;
+        }
         _commitError = null;
         _moreError = null;
-        _commitPages = 0;
-        _dayRows = const [];
-        _dayMax = 1;
       } else {
         _moreError = null;
       }
@@ -427,6 +451,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         _commitPages = pages;
         _dayRows = List.unmodifiable(rows);
         _dayMax = maxCount;
+        _commitFirstLoadDone = true;
       });
     } catch (error) {
       if (_currentRepository(owner) && request == _commitRequest) {
@@ -440,7 +465,9 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       }
     } finally {
       if (_currentRepository(owner) && request == _commitRequest) {
-        setState(() => _commitLoading = false);
+        setState(() {
+          _commitLoading = false;
+        });
       }
     }
   }
@@ -463,6 +490,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     final request = ++_pipelineRequest;
     setState(() {
       _ciLoading = true;
+      _ciStale = false;
       _pipelineError = null;
     });
     try {
@@ -480,12 +508,13 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
             if (b.label == null) return -1;
             return b.label!.compareTo(a.label!);
           });
-        setState(
-          () => _pipelines = PipelineAnalyticsSnapshot(
+        setState(() {
+          _pipelines = PipelineAnalyticsSnapshot(
             buckets: recentFirst,
             aggregate: value.aggregate,
-          ),
-        );
+          );
+          _ciFirstLoadDone = true;
+        });
       }
     } catch (error) {
       if (_currentPipeline(owner) && request == _pipelineRequest) {
@@ -493,7 +522,9 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       }
     } finally {
       if (_currentPipeline(owner) && request == _pipelineRequest) {
-        setState(() => _ciLoading = false);
+        setState(() {
+          _ciLoading = false;
+        });
       }
     }
   }
@@ -628,8 +659,8 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
   }
 
   Widget _contributorsTab() {
-    if (_contributorLoading && _contributors == null) {
-      return const ListSkeleton();
+    if (_contributorLoading && !_contributorFirstLoadDone) {
+      return const ContributorsSkeleton();
     }
     if (_contributorError != null && _contributors == null) {
       return FailureNotice(
@@ -649,6 +680,10 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     return CustomScrollView(
       key: const PageStorageKey('analytics-contributors'),
       slivers: [
+        if (_contributorLoading && _contributorFirstLoadDone)
+          const SliverToBoxAdapter(
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           sliver: SliverList.builder(
@@ -732,8 +767,8 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     Widget? activityLead;
     if (_activeRef.isEmpty) {
       activityLead = _Empty(Icons.alt_route, l10n.enterRefForActivity);
-    } else if (_commitLoading && _commits == null) {
-      activityLead = const ListSkeleton();
+    } else if (_commitLoading && !_commitFirstLoadDone) {
+      activityLead = const ChartSkeleton(padding: EdgeInsets.zero);
     } else if (_commitError != null && _commits == null) {
       activityLead = FailureNotice(
         _commitError!,
@@ -751,6 +786,10 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     return CustomScrollView(
       key: const PageStorageKey('analytics-repository'),
       slivers: [
+        if (_commitLoading && _commitFirstLoadDone)
+          const SliverToBoxAdapter(
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           sliver: SliverList.list(
@@ -858,8 +897,8 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     }
     final buckets = _pipelines?.buckets ?? const <PipelineAnalyticsBucket>[];
     Widget? lead;
-    if (_ciLoading && _pipelines == null && _pipelineError == null) {
-      lead = const ListSkeleton();
+    if (_ciLoading && !_ciFirstLoadDone && _pipelineError == null) {
+      lead = const ChartSkeleton(padding: EdgeInsets.zero);
     }
     if (_pipelineError != null) {
       lead = FailureNotice(
@@ -870,13 +909,19 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         onSwitchAccount: endSessionFrom(context),
       );
     }
-    if (!_ciLoading && _pipelines != null && buckets.isEmpty) {
+    if ((_ciFirstLoadDone || !_ciLoading) &&
+        _pipelines != null &&
+        buckets.isEmpty) {
       lead = _Empty(Icons.query_stats, l10n.noPipelineAnalytics);
     }
     final headerCount = (lead == null ? 0 : 1) + (buckets.isEmpty ? 0 : 1);
     return CustomScrollView(
       key: const PageStorageKey('analytics-ci'),
       slivers: [
+        if (_ciLoading && _ciFirstLoadDone)
+          const SliverToBoxAdapter(
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           sliver: SliverList.builder(

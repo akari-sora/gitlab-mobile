@@ -58,3 +58,7 @@ The look and navigation follow GitHub Mobile. Data paths, account binding, reque
 - **我的.** A profile header with a round avatar, rows for 我的動態, 我的群組 and 全域搜尋, then accounts, appearance and the about block as full-width sections.
 
 People are drawn as round monograms; projects and groups keep rounded squares. The redesign is checked by host-rendered screenshots (`test/visual_evidence_test.dart`: home, inbox, explore, me, repository overview, files and review in light and dark) and widget tests; physical-device review of the new layout is `NOT_RUN`.
+
+## Loading
+
+Every first load shows a page-shaped skeleton (`SkeletonShimmer` with one 1.5 s ease-in-out sweep across the group of bones, wrapped in `RepaintBoundary` and one `正在載入` live region with inner bones excluded from semantics) so content swaps in without a layout jump. Spinners (`CircularProgressIndicator` / `LinearProgressIndicator`) are reserved for actions in progress: submitting buttons, download/progress percentages, pull-to-refresh, reloads over existing content, and loading more at the end of a list. When the platform requests reduced motion (`reduceMotion(context)`), skeletons stop their ticker and render static faint blocks, and swap fades drop to zero duration.

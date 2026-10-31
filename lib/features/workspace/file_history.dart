@@ -5,6 +5,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/repository_ref.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'commit_page.dart';
@@ -54,6 +55,7 @@ class FileHistoryPage extends StatelessWidget {
 
 /// Who last changed each line, at one fixed commit.
 class BlamePage extends StatefulWidget {
+  static const EdgeInsets contentPadding = EdgeInsets.fromLTRB(12, 8, 12, 8);
   const BlamePage({super.key, required this.account, required this.api, required this.project,
     required this.path, required this.sha});
   final Account account;
@@ -83,6 +85,7 @@ class _BlamePageState extends State<BlamePage> {
   int _longest = 0;
   ApiFailure? _error;
   bool _loading = true;
+  bool _firstLoadDone = false;
   final _horizontal = ScrollController();
 
   @override
@@ -116,11 +119,21 @@ class _BlamePageState extends State<BlamePage> {
           }
         }
       }
-      if (mounted) setState(() { _rows = rows; _longest = longest; });
+      if (mounted) {
+        setState(() {
+          _rows = rows;
+          _longest = longest;
+          _firstLoadDone = true;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = safeFailure(e));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -140,9 +153,15 @@ class _BlamePageState extends State<BlamePage> {
       body: gestureSafe(_error != null
         ? SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load, account: widget.account,
             resourceLabel: '${widget.project.path} · ${widget.path}'))
-        : _loading
-          ? const ListSkeleton()
-          : LayoutBuilder(builder: (context, constraints) {
+        : _loading && !_firstLoadDone
+          ? const CodeSkeleton(padding: BlamePage.contentPadding)
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_loading && _firstLoadDone)
+                  const LinearProgressIndicator(minHeight: 2),
+                Expanded(
+                  child: LayoutBuilder(builder: (context, constraints) {
               final width = math.max(constraints.maxWidth, gutterWidth + 24 + _longest * 7.6);
               return Scrollbar(controller: _horizontal, child: SingleChildScrollView(
                 controller: _horizontal,
@@ -188,7 +207,10 @@ class _BlamePageState extends State<BlamePage> {
                   },
                 )),
               ));
-            })),
+            }),
+                ),
+              ],
+            )),
     );
   }
 }
@@ -209,6 +231,8 @@ bool findFileMatches(String path, String query) {
 
 /// Finds a file by name or path within one commit's tree.
 class FindFilePage extends StatefulWidget {
+  static const double tileHeight = 52;
+  static const double iconSize = 20;
   const FindFilePage({super.key, required this.account, required this.api, required this.project, required this.ref});
   final Account account;
   final GitLabApi api;
@@ -228,7 +252,7 @@ class _FindFilePageState extends State<FindFilePage> {
   final _paths = <String>[];
   final _input = TextEditingController();
   ApiFailure? _error;
-  bool _loading = true, _truncated = false;
+  bool _loading = true, _firstLoadDone = false, _truncated = false;
   String _query = '';
   int _epoch = 0;
 
@@ -247,9 +271,17 @@ class _FindFilePageState extends State<FindFilePage> {
 
   Future<void> _load() async {
     final epoch = ++_epoch;
-    setState(() { _loading = true; _error = null; _paths.clear(); _truncated = false; });
+    setState(() {
+      _loading = true;
+      _error = null;
+      if (!_firstLoadDone) {
+        _paths.clear();
+        _truncated = false;
+      }
+    });
     Uri? next;
     var visited = 0;
+    var clearedForReload = !_firstLoadDone;
     try {
       do {
         final page = await widget.api.records(['projects', '${widget.project.id}', 'repository', 'tree'],
@@ -257,6 +289,12 @@ class _FindFilePageState extends State<FindFilePage> {
         if (!mounted || epoch != _epoch) return;
         visited += page.items.length;
         setState(() {
+          if (!clearedForReload) {
+            _paths.clear();
+            _truncated = false;
+            clearedForReload = true;
+          }
+          _firstLoadDone = true;
           _paths.addAll([
             for (final item in page.items)
               if (item['type'] == 'blob' && item['path'] is String) item['path'] as String,
@@ -271,7 +309,11 @@ class _FindFilePageState extends State<FindFilePage> {
     } catch (e) {
       if (mounted && epoch == _epoch) setState(() => _error = safeFailure(e));
     } finally {
-      if (mounted && epoch == _epoch) setState(() => _loading = false);
+      if (mounted && epoch == _epoch) {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -298,7 +340,7 @@ class _FindFilePageState extends State<FindFilePage> {
         ),
       ),
       body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (_loading) const LinearProgressIndicator(minHeight: 2),
+        if (_loading && _firstLoadDone) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
           resourceLabel: '${widget.project.path} · ${widget.ref.name}'),
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text([
@@ -306,14 +348,21 @@ class _FindFilePageState extends State<FindFilePage> {
           if (query.isEmpty && _paths.length > _shownWithoutQuery) l10n.fileListPreviewHint(_shownWithoutQuery),
           if (query.isNotEmpty) l10n.fileMatchCount(hits.length),
         ].join(' · '), style: theme.textTheme.bodySmall)),
-        Expanded(child: ListView.builder(
+        Expanded(
+          child: _loading && !_firstLoadDone
+              ? const RowsSkeleton(
+                  itemHeight: FindFilePage.tileHeight,
+                  leadingSize: FindFilePage.iconSize,
+                  leadingRadius: 4,
+                )
+              : ListView.builder(
           itemCount: hits.length,
           itemBuilder: (context, index) {
             final path = hits[index];
             final slash = path.lastIndexOf('/');
             return ListTile(
-              minTileHeight: 52,
-              leading: Icon(fileIconFor(path), size: 20),
+              minTileHeight: FindFilePage.tileHeight,
+              leading: Icon(fileIconFor(path), size: FindFilePage.iconSize),
               title: Text(slash < 0 ? path : path.substring(slash + 1), maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: slash < 0 ? null : Text(path.substring(0, slash), maxLines: 1, overflow: TextOverflow.ellipsis),
               onTap: () => Navigator.of(context).push(MaterialPageRoute<bool>(builder: (_) => RepositoryFilePage(
