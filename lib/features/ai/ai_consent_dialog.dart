@@ -211,7 +211,11 @@ class _AiConsentPageState extends State<_AiConsentPage> {
         appBar: AppBar(
           automaticallyImplyLeading: false,
           title: Text(
-            widget.readOnly ? l10n.aiConsentDetailsTitle : l10n.aiConsentTitle,
+            widget.readOnly
+                ? l10n.aiConsentDetailsTitle
+                : details.isOnDevice
+                ? l10n.aiConsentOnDeviceTitle
+                : l10n.aiConsentTitle,
           ),
         ),
         body: Column(
@@ -253,11 +257,13 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                           isolated(details.providerName!),
                           style: theme.textTheme.titleMedium,
                         ),
+                      // The on-device origin is an internal name, not an
+                      // address: the line above says where data goes.
                       if (details.isOnDevice) ...[
                         const SizedBox(height: 4),
                         Text(l10n.aiConsentOnDeviceRecipient),
-                      ],
-                      SelectableText(isolated(details.origin)),
+                      ] else
+                        SelectableText(isolated(details.origin)),
                       if (details.cleartext) ...[
                         const SizedBox(height: 8),
                         _WarningLine(
@@ -279,9 +285,15 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                   ),
                   _InfoCard(
                     icon: Icons.data_object,
-                    title: l10n.aiConsentDataHeading,
+                    title: details.isOnDevice
+                        ? l10n.aiConsentOnDeviceDataHeading
+                        : l10n.aiConsentDataHeading,
                     children: [
-                      Text(l10n.aiConsentDataDescription),
+                      Text(
+                        details.isOnDevice
+                            ? l10n.aiConsentOnDeviceDataDescription
+                            : l10n.aiConsentDataDescription,
+                      ),
                       const SizedBox(height: 8),
                       for (final category in details.categories)
                         Padding(
@@ -351,13 +363,15 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                             ),
                           ),
                         ),
-                        if (details.isOnDevice)
+                        if (details.isOnDevice) ...[
+                          const SizedBox(height: 12),
                           SelectableText(
                             policyUri.toString(),
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
+                        ],
                       ] else
                         Text(l10n.aiConsentCustomPolicy),
                     ],

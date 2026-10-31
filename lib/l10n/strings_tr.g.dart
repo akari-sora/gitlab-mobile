@@ -3109,5 +3109,9 @@ const _messagesTr = <String>[
   'Bu özelliğin kullandığı Google ML Kit, tanılama ve kullanım verilerini (kurulum başına tanımlayıcılar dahil) Google’a gönderir.',
   'Başlatıldıktan sonra, onay geri çekilse bile uygulama yeniden başlatılana kadar bu veri gönderimi tamamen durdurulamaz.',
   'Google ML Kit Android veri açıklaması',
+  'Telefonun yapay zekâsını kullanmadan önce onaylayın',
+  'Bu telefonda işlenen veriler',
+  'Yalnızca izin verdiğiniz içerik bu telefonda Android AICore tarafından işlenir. Hiçbir AI sunucusuna gönderilmez; Google ML Kit tanılama verileri aşağıda açıklanmıştır.',
+  'İndirme bitene kadar bu sayfayı açık tutun; sayfadan çıkmak indirmeyi durdurur.',
   'Bu cihaz içi AI kaynağı değişiklik yapamaz; bir bulut sağlayıcısına geçin.',
 ];

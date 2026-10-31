@@ -3107,5 +3107,9 @@
   "aiConsentOnDeviceMlKitTelemetry": "Google ML Kit, utilisé par cette fonctionnalité, envoie des données de diagnostic et d’utilisation (y compris des identifiants par installation) à Google.",
   "aiConsentOnDeviceCannotStopUntilRestart": "Une fois démarré, cet envoi ne peut pas être complètement arrêté avant le redémarrage de l’application, même après le retrait du consentement.",
   "aiConsentOnDeviceDisclosureLinkLabel": "Divulgation des données Android de Google ML Kit",
+  "aiConsentOnDeviceTitle": "Confirmer avant d’utiliser l’IA du téléphone",
+  "aiConsentOnDeviceDataHeading": "Données traitées sur ce téléphone",
+  "aiConsentOnDeviceDataDescription": "Seul le contenu que vous autorisez est traité sur ce téléphone par Android AICore. Il n’est envoyé à aucun serveur d’IA ; les diagnostics de Google ML Kit sont décrits ci-dessous.",
+  "aiOnDeviceDownloadKeepOpen": "Gardez cette page ouverte jusqu’à la fin du téléchargement ; la quitter l’arrête.",
   "aiOnDeviceCannotWrite": "Cette source d’IA sur l’appareil ne peut pas effectuer de modifications ; passez à un fournisseur cloud."
 }

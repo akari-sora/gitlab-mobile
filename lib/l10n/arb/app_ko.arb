@@ -3107,5 +3107,9 @@
   "aiConsentOnDeviceMlKitTelemetry": "이 기능에서 사용하는 Google ML Kit는 진단 및 사용 데이터(설치별 식별자 포함)를 Google로 전송합니다.",
   "aiConsentOnDeviceCannotStopUntilRestart": "한 번 시작되면 동의를 철회하더라도 앱을 다시 시작하기 전까지는 이 데이터 전송을 완전히 중지할 수 없습니다.",
   "aiConsentOnDeviceDisclosureLinkLabel": "Google ML Kit Android 데이터 공개 안내",
+  "aiConsentOnDeviceTitle": "휴대폰 내장 AI 사용 전 확인",
+  "aiConsentOnDeviceDataHeading": "이 휴대폰에서 처리되는 데이터",
+  "aiConsentOnDeviceDataDescription": "허용한 콘텐츠만 이 휴대폰에서 Android AICore가 처리합니다. AI 서버로 전송되지 않으며, Google ML Kit의 진단 데이터는 아래에 설명되어 있습니다.",
+  "aiOnDeviceDownloadKeepOpen": "다운로드가 끝날 때까지 이 페이지를 열어 두세요. 페이지를 나가면 다운로드가 중지됩니다.",
   "aiOnDeviceCannotWrite": "이 내장 AI 원본은 변경 작업을 수행할 수 없습니다. 변경하려면 클라우드 제공자로 전환하세요."
 }

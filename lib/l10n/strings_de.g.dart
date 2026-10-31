@@ -3109,5 +3109,9 @@ const _messagesDe = <String>[
   'Google ML Kit, das von dieser Funktion genutzt wird, sendet Diagnose- und Nutzungsdaten (einschließlich installationsbezogener Kennungen) an Google.',
   'Nach dem Start kann dies erst durch einen Neustart der App vollständig beendet werden, selbst wenn die Zustimmung widerrufen wird.',
   'Google ML Kit-Datenoffenlegung für Android',
+  'Vor der Nutzung der Telefon-KI bestätigen',
+  'Auf diesem Telefon verarbeitete Daten',
+  'Nur von Ihnen erlaubte Inhalte werden auf diesem Telefon von Android AICore verarbeitet. Sie werden an keinen KI-Server gesendet; die Diagnosedaten von Google ML Kit sind unten beschrieben.',
+  'Lassen Sie diese Seite geöffnet, bis der Download abgeschlossen ist; beim Verlassen wird der Download beendet.',
   'Diese lokale KI-Quelle kann keine Änderungen vornehmen; wechseln Sie zu einem Cloud-Anbieter.',
 ];

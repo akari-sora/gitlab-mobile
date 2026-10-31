@@ -3107,5 +3107,9 @@
   "aiConsentOnDeviceMlKitTelemetry": "Google ML Kit, utilizat de această funcție, trimite către Google date de diagnosticare și de utilizare (inclusiv identificatori per instalare).",
   "aiConsentOnDeviceCannotStopUntilRestart": "Odată pornit, acest lucru nu poate fi oprit complet până la repornirea aplicației, chiar și după retragerea consimțământului.",
   "aiConsentOnDeviceDisclosureLinkLabel": "Informarea privind datele Google ML Kit pe Android",
+  "aiConsentOnDeviceTitle": "Confirmați înainte de a folosi AI-ul telefonului",
+  "aiConsentOnDeviceDataHeading": "Date procesate pe acest telefon",
+  "aiConsentOnDeviceDataDescription": "Doar conținutul pe care îl permiteți este procesat pe acest telefon de Android AICore. Nu este trimis către niciun server AI; diagnosticele Google ML Kit sunt descrise mai jos.",
+  "aiOnDeviceDownloadKeepOpen": "Păstrați această pagină deschisă până la finalizarea descărcării; dacă o părăsiți, descărcarea se oprește.",
   "aiOnDeviceCannotWrite": "Această sursă AI de pe dispozitiv nu poate face modificări; comutați la un furnizor cloud."
 }

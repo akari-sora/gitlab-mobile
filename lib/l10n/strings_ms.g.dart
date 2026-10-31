@@ -3109,5 +3109,9 @@ const _messagesMs = <String>[
   'Google ML Kit yang digunakan oleh ciri ini menghantar data diagnostik dan penggunaan (termasuk pengecam setiap pemasangan) kepada Google.',
   'Setelah dimulakan, penghantaran ini tidak boleh dihentikan sepenuhnya sehingga aplikasi dimulakan semula, walaupun selepas persetujuan ditarik balik.',
   'Pendedahan data Android Google ML Kit',
+  'Sahkan sebelum menggunakan AI telefon',
+  'Data yang diproses pada telefon ini',
+  'Hanya kandungan yang anda benarkan diproses pada telefon ini oleh Android AICore. Ia tidak dihantar ke mana-mana pelayan AI; diagnostik Google ML Kit diterangkan di bawah.',
+  'Biarkan halaman ini terbuka sehingga muat turun selesai; meninggalkannya akan menghentikan muat turun.',
   'Sumber AI pada peranti ini tidak boleh membuat perubahan; tukar kepada penyedia awan.',
 ];

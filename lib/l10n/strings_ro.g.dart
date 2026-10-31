@@ -3109,5 +3109,9 @@ const _messagesRo = <String>[
   'Google ML Kit, utilizat de această funcție, trimite către Google date de diagnosticare și de utilizare (inclusiv identificatori per instalare).',
   'Odată pornit, acest lucru nu poate fi oprit complet până la repornirea aplicației, chiar și după retragerea consimțământului.',
   'Informarea privind datele Google ML Kit pe Android',
+  'Confirmați înainte de a folosi AI-ul telefonului',
+  'Date procesate pe acest telefon',
+  'Doar conținutul pe care îl permiteți este procesat pe acest telefon de Android AICore. Nu este trimis către niciun server AI; diagnosticele Google ML Kit sunt descrise mai jos.',
+  'Păstrați această pagină deschisă până la finalizarea descărcării; dacă o părăsiți, descărcarea se oprește.',
   'Această sursă AI de pe dispozitiv nu poate face modificări; comutați la un furnizor cloud.',
 ];

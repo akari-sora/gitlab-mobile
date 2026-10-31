@@ -3107,5 +3107,9 @@
   "aiConsentOnDeviceMlKitTelemetry": "Sada Google ML Kit, kterou tato funkce využívá, odesílá společnosti Google diagnostická a provozní data (včetně identifikátorů instalace).",
   "aiConsentOnDeviceCannotStopUntilRestart": "Po spuštění nelze toto odesílání zcela zastavit až do restartu aplikace, a to ani po odvolání souhlasu.",
   "aiConsentOnDeviceDisclosureLinkLabel": "Informace o zpracování dat Google ML Kit v systému Android",
+  "aiConsentOnDeviceTitle": "Potvrďte před použitím AI v telefonu",
+  "aiConsentOnDeviceDataHeading": "Data zpracovaná v tomto telefonu",
+  "aiConsentOnDeviceDataDescription": "Pouze obsah, který povolíte, zpracuje v tomto telefonu Android AICore. Neodesílá se na žádný server AI; diagnostika Google ML Kit je popsána níže.",
+  "aiOnDeviceDownloadKeepOpen": "Nechte tuto stránku otevřenou, dokud stahování neskončí; jejím opuštěním se stahování zastaví.",
   "aiOnDeviceCannotWrite": "Tento místní zdroj AI nemůže provádět změny; přepněte na cloudového poskytovatele."
 }

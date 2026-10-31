@@ -18,9 +18,11 @@ import 'package:gitlab_mobile/features/ai/ai_background_execution.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
+import 'package:gitlab_mobile/features/ai/ai_consent_dialog.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_provider_editor.dart';
 import 'package:gitlab_mobile/features/ai/ai_scope.dart';
+import 'package:gitlab_mobile/features/ai/ai_settings_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
 import 'package:gitlab_mobile/features/ai/ai_write_ui.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
@@ -520,8 +522,20 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.text(l10n.aiConsentTitle), findsOneWidget);
+          // Its own wording: nothing is "sent" to an AI server, and the
+          // internal origin is not shown as an address.
+          expect(find.text(l10n.aiConsentOnDeviceTitle), findsOneWidget);
+          expect(find.text(l10n.aiConsentTitle), findsNothing);
           expect(find.text(l10n.aiConsentOnDeviceRecipient), findsOneWidget);
+          expect(find.text(AiPresets.onDeviceOrigin), findsNothing);
+          await tester.dragUntilVisible(
+            find.text(l10n.aiConsentOnDeviceDataDescription),
+            find.byType(ListView).last,
+            const Offset(0, -160),
+          );
+          expect(find.text(l10n.aiConsentOnDeviceDataHeading), findsOneWidget);
+          expect(find.text(l10n.aiConsentDataHeading), findsNothing);
+          expect(find.text(l10n.aiConsentDataDescription), findsNothing);
 
           await tester.dragUntilVisible(
             find.text(l10n.aiConsentOnDeviceStaysOnPhone),
@@ -1064,6 +1078,8 @@ void main() {
       expect(start.failure, isNull);
       expect(gate.executionEligible, isTrue);
       expect(methods, isNot(contains('startRuns')));
+      // A running on-device turn does not count as service work.
+      expect(owner.serviceWorkCount, 0);
 
       // The same peer starts the service for a cloud run.
       final cloud = owner.createGate(
@@ -1072,7 +1088,65 @@ void main() {
       );
       await cloud.beginRun(runId: 'run-2');
       expect(methods, contains('startRuns'));
+      expect(owner.serviceWorkCount, 1);
     });
+
+    test(
+      'after failed service cleanup an on-device start is unavailable',
+      () async {
+        TestWidgetsFlutterBinding.ensureInitialized();
+        const channel = MethodChannel('test/on_device_agent_runs_orphan');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        // The peer refuses the start and then fails to clean it up.
+        messenger.setMockMethodCallHandler(
+          channel,
+          (call) async => switch (call.method) {
+            'startRuns' => {
+              'version': 1,
+              'status': 'rejected',
+              'reason': 'start_denied',
+            },
+            'releaseRuns' => {
+              'version': 1,
+              'status': 'rejected',
+              'reason': 'cleanup_failed',
+            },
+            _ => {
+              'version': 1,
+              'status': 'rejected',
+              'reason': 'permit_inactive',
+            },
+          },
+        );
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+        final owner = AiBackgroundExecution(
+          backgroundEnabled: true,
+          accountKey: 'https://gitlab.example#1',
+          generation: 1,
+          ownerApi: Object(),
+          isCurrent: () => true,
+          appInForeground: () => true,
+          channel: channel,
+        );
+        addTearDown(owner.dispose);
+        final cloud = owner.createGate(
+          conversationId: () => 'cloud',
+          isCurrent: () => true,
+        );
+        final refused = await cloud.beginRun(runId: 'run-1');
+        expect(refused.disposition, AiBackgroundStartDisposition.unavailable);
+
+        final gate = owner.createGate(
+          conversationId: () => 'on-device',
+          isCurrent: () => true,
+        );
+        final start = await gate.beginRun(runId: 'run-2', foregroundOnly: true);
+        expect(start.disposition, AiBackgroundStartDisposition.unavailable);
+        expect(start.failure, AiBackgroundStartFailure.cleanupFailed);
+        expect(gate.executionEligible, isFalse);
+      },
+    );
   });
 
   group('6. No tools in UI and write refusal card (aiOnDeviceCannotWrite)', () {
@@ -1189,18 +1263,19 @@ void main() {
       for (final text in const [
         'Close this issue',
         'Please merge this MR',
-        'Can you close this issue?',
         'Mark all my to-dos as done',
         'Post a comment saying LGTM',
         'Retry the failed job',
         'Add the bug label to this issue',
         'Thanks. Now close the issue.',
-        '關閉這個議題',
         '請合併這個 MR',
+        '請關閉這個議題',
+        '麻煩你關閉這個議題',
+        '請幫我更新描述',
         '幫我把全部待辦標為完成',
         '幫我留言說 LGTM',
-        '可以關閉這個議題嗎？',
-        '重試這個工作',
+        '幫我把這個 MR 合併',
+        '把這個議題關閉',
       ]) {
         expect(
           looksLikeGitLabWriteRequest(text, origin: origin),
@@ -1216,10 +1291,24 @@ void main() {
         'Write a summary of this MR',
         'Update me on the pipeline status',
         'Why was this issue closed?',
+        'Can you close this issue?',
+        'Should I close this issue',
+        'Is it safe to merge this MR',
+        'Close this issue or keep it open?',
+        'Comment threads here: which are unresolved?',
         '為什麼要關閉這個議題？',
         '發布說明寫了什麼？',
         '這個 MR 可以合併嗎？',
+        '可以關閉這個議題嗎？',
         '修改這段程式的問題',
+        '合併這個 MR 安全嗎？',
+        '建立這個 issue 的人是誰？',
+        '關閉這個議題之前要注意什麼？',
+        '更新完成後要做什麼？',
+        '請問要不要合併這個 MR',
+        // No explicit request: a bare verb may start a description.
+        '關閉這個議題',
+        '重試這個工作',
         l10n.aiSuggestJobWhy,
         l10n.aiSuggestJobFix,
         l10n.aiSuggestMrSummary,
@@ -1232,13 +1321,21 @@ void main() {
           reason: text,
         );
       }
-      // The Inbox conversation can only mark to-dos done.
+      // The Inbox conversation can only mark to-dos done; a question about
+      // it still goes to the model.
+      expect(
+        looksLikeGitLabWriteRequest(
+          'Clear my inbox',
+          origin: const AiInboxOrigin(),
+        ),
+        isTrue,
+      );
       expect(
         looksLikeGitLabWriteRequest(
           'What is in my inbox?',
           origin: const AiInboxOrigin(),
         ),
-        isTrue,
+        isFalse,
       );
     });
 
@@ -1371,5 +1468,412 @@ void main() {
         'Reply 2',
       );
     });
+  });
+
+  group('8. Review round 1', () {
+    Future<AiProviderConfig> grantOnDevice(
+      _ChatEnvironment env, {
+      String id = AiPresets.onDeviceId,
+    }) async {
+      final saved = await env.settings.saveProvider(
+        AiProviderConfig.onDevice(id: id),
+      );
+      await env.settings.grantConsent(
+        env.workspace.account.key,
+        aiConversationConsentContract(
+          env.settings,
+          env.workspace.account.key,
+          saved,
+          releasePolicy: fixtureReleasePolicy,
+        ),
+        const <String, Object?>{'synthetic': true},
+      );
+      return saved;
+    }
+
+    AiChatController onDeviceController(
+      _ChatEnvironment env,
+      _FakeOnDeviceTransportPlugin plugin, {
+      AiChatOrigin origin = const AiGeneralOrigin(),
+      AiBackgroundExecution? backgroundExecution,
+    }) => AiChatController(
+      releasePolicy: fixtureReleasePolicy,
+      appInForeground: () => true,
+      backgroundExecution: backgroundExecution,
+      origin: origin,
+      session: env.session,
+      settings: env.settings,
+      runningCount: () => 0,
+      wireClientFactory:
+          ({required config, required apiKey, required conversationId}) =>
+              AiWireClient.onDevice(
+                config: config,
+                conversationId: conversationId,
+                appVersion: 'test',
+                onDeviceTransport: OnDeviceAiTransport(plugin: plugin),
+              ),
+    );
+
+    testWidgets('declining the on-device consent keeps no provider', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        final settings = AiSettingsController(
+          MemoryAiStore(),
+          closeOnDeviceAi: () async {},
+        );
+        addTearDown(settings.dispose);
+        await settings.initialize();
+        const accountKey = 'https://gitlab.example#1';
+        await settings.loadAccount(accountKey);
+        final plugin = _ConsentGuardedOnDeviceAi(isConsentGranted: () => false);
+        await tester.pumpWidget(
+          _scopedHost(
+            settings,
+            accountKey,
+            AiProviderEditor(
+              settings: settings,
+              accountKey: accountKey,
+              onDeviceAi: plugin,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        tester
+            .widget<DropdownButtonFormField<AiPreset>>(
+              find.byKey(const ValueKey('ai-provider-preset')),
+            )
+            .onChanged!(AiPresets.onDevice);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('ai-on-device-review-consent')),
+        );
+        await tester.pumpAndSettle();
+        expect(settings.providers.map((p) => p.id), [AiPresets.onDeviceId]);
+
+        await tester.tap(find.text(l10n.cancelAction));
+        await tester.pumpAndSettle();
+
+        // Not kept, so it cannot become the device default.
+        expect(settings.providers, isEmpty);
+        expect(plugin.statusCalls, 0);
+        expect(
+          find.byKey(const ValueKey('ai-on-device-review-consent')),
+          findsOneWidget,
+        );
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets(
+      'a download under way is attached again on entry, with the keep-open '
+      'hint, and a stream that ends without a final event re-reads the status',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        try {
+          final settings = AiSettingsController(
+            MemoryAiStore(),
+            closeOnDeviceAi: () async {},
+          );
+          addTearDown(settings.dispose);
+          await settings.initialize();
+          const accountKey = 'https://gitlab.example#1';
+          await settings.loadAccount(accountKey);
+          final saved = await settings.saveProvider(
+            AiProviderConfig.onDevice(),
+          );
+          await settings.grantConsent(
+            accountKey,
+            aiConsentContractFor(saved),
+            const <String, Object?>{'synthetic': true},
+          );
+          final downloads = StreamController<OnDeviceDownloadEvent>();
+          final plugin = _ConsentGuardedOnDeviceAi(
+            isConsentGranted: () => true,
+            statusResult: const OnDeviceStatus.downloading(),
+          )..onDownload = () => downloads.stream;
+
+          await tester.pumpWidget(
+            _scopedHost(
+              settings,
+              accountKey,
+              AiProviderEditor(
+                settings: settings,
+                provider: saved,
+                accountKey: accountKey,
+                onDeviceAi: plugin,
+              ),
+            ),
+          );
+          // The indeterminate bar animates until the total is known.
+          await tester.pump();
+          await tester.pump();
+
+          expect(plugin.statusCalls, 1);
+          expect(plugin.downloadCalls, 1);
+          expect(
+            find.byKey(const ValueKey('ai-on-device-download-keep-open')),
+            findsOneWidget,
+          );
+          downloads.add(
+            const OnDeviceDownloadEvent.progress(
+              bytesDownloaded: 24 * 1024 * 1024,
+              bytesToDownload: 48 * 1024 * 1024,
+            ),
+          );
+          await tester.pump();
+          expect(
+            find.text(l10n.aiOnDeviceDownloadProgress('24.0', '48.0')),
+            findsOneWidget,
+          );
+
+          // The stream ends with no completed or failed event.
+          plugin.statusResult = const OnDeviceStatus.available();
+          await downloads.close();
+          await tester.pumpAndSettle();
+          expect(plugin.statusCalls, 2);
+          expect(plugin.downloadCalls, 1);
+          expect(find.text(l10n.aiOnDeviceStatusAvailable), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey('ai-on-device-download-keep-open')),
+            findsNothing,
+          );
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      },
+    );
+
+    test('a refused write clears the interrupted answer, so Continue adds a '
+        'new one below the refusal', () async {
+      final env = await _createChatEnvironment();
+      addTearDown(env.dispose);
+      await grantOnDevice(env);
+      final plugin = _FakeOnDeviceTransportPlugin();
+      var turn = 0;
+      plugin.handler = (_) => ++turn == 1
+          ? Stream<String>.error(
+              const OnDeviceAiException(OnDeviceAiErrorCode.backgroundBlocked),
+            )
+          : Stream<String>.fromIterable(const <String>['Answer']);
+      final controller = onDeviceController(env, plugin);
+      addTearDown(controller.dispose);
+      await controller.recheck();
+
+      await controller.send('Explain this');
+      expect(controller.canResumeRun, isTrue);
+      await controller.send('Close this issue');
+      final refusal = controller.items.indexWhere(
+        (item) =>
+            item is AiNoticeItem &&
+            item.kind == AiNoticeKind.onDeviceCannotWrite,
+      );
+      expect(refusal, isNonNegative);
+
+      await controller.resumeRun();
+      expect(plugin.calls, hasLength(2));
+      final answer = controller.items.lastIndexWhere(
+        (item) => item is AiAssistantItem && item.text == 'Answer',
+      );
+      expect(answer, greaterThan(refusal));
+    });
+
+    testWidgets('the truncation notice shows again in a later conversation', (
+      tester,
+    ) async {
+      late _ChatEnvironment env;
+      late AiChatController controller;
+      final plugin = _FakeOnDeviceTransportPlugin();
+      await tester.runAsync(() async {
+        env = await _createChatEnvironment(
+          repositoryText: List<String>.generate(
+            500,
+            (i) => 'Line $i: large repository file content for truncation.',
+          ).join('\n'),
+        );
+        await grantOnDevice(env);
+        controller = onDeviceController(
+          env,
+          plugin,
+          origin: AiFileOrigin(
+            project: env.workspace.project,
+            path: 'README.md',
+            sha: WorkspaceFixture.sha,
+          ),
+        );
+        await controller.recheck();
+        await controller.send('Summarize this file');
+        // A changed recipient starts a new conversation and keeps the
+        // earlier one on screen.
+        await env.settings.saveProvider(
+          AiProviderConfig.onDevice(model: 'gemini-nano-next'),
+        );
+        await env.settings.grantConsent(
+          env.workspace.account.key,
+          aiConversationConsentContract(
+            env.settings,
+            env.workspace.account.key,
+            env.settings.providers.single,
+            releasePolicy: fixtureReleasePolicy,
+          ),
+          const <String, Object?>{'synthetic': true},
+        );
+        await _waitFor(() => controller.canSend);
+        await controller.send('Summarize this file again');
+      });
+      addTearDown(() {
+        controller.dispose();
+        env.dispose();
+      });
+
+      expect(plugin.calls, hasLength(2));
+      expect(
+        controller.items.whereType<AiNoticeItem>().map((n) => n.kind),
+        containsAllInOrder(<AiNoticeKind>[
+          AiNoticeKind.onDeviceContextTruncated,
+          AiNoticeKind.newConversation,
+          AiNoticeKind.onDeviceContextTruncated,
+        ]),
+      );
+    });
+
+    test('an on-device chat run never starts the background service', () async {
+      const channel = MethodChannel('test/on_device_chat_agent_runs');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      final methods = <String>[];
+      // A willing native peer: any start would be accepted and recorded.
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        methods.add(call.method);
+        final args = call.arguments as Map<Object?, Object?>;
+        return call.method == 'startRuns'
+            ? {
+                'version': 1,
+                'status': 'active',
+                'permitId': 'synthetic-permit',
+                'startRequestId': args['startRequestId'],
+                'opSeq': args['opSeq'],
+              }
+            : {'version': 1, 'status': 'rejected', 'reason': 'permit_inactive'};
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final env = await _createChatEnvironment();
+      addTearDown(env.dispose);
+      await grantOnDevice(env);
+      final execution = AiBackgroundExecution(
+        backgroundEnabled: true,
+        accountKey: env.workspace.account.key,
+        generation: env.session.generation,
+        ownerApi: env.session.api!,
+        isCurrent: () => true,
+        appInForeground: () => true,
+        channel: channel,
+      );
+      addTearDown(execution.dispose);
+      final plugin = _FakeOnDeviceTransportPlugin();
+      final controller = onDeviceController(
+        env,
+        plugin,
+        backgroundExecution: execution,
+      );
+      addTearDown(controller.dispose);
+      await controller.recheck();
+
+      await controller.send('Explain this');
+      expect(controller.lastEnd, AiRunEnd.done);
+      expect(plugin.calls, hasLength(1));
+      expect(methods, isNot(contains('startRuns')));
+    });
+
+    testWidgets('withdrawing the on-device consent on the settings page '
+        'closes the model', (tester) async {
+      var closeCalls = 0;
+      final store = MemoryAiStore();
+      final settings = AiSettingsController(
+        store,
+        closeOnDeviceAi: () async => closeCalls++,
+      );
+      final history = AiHistoryCoordinator(store: store);
+      addTearDown(settings.dispose);
+      addTearDown(history.dispose);
+      await settings.initialize();
+      const accountKey = 'https://gitlab.example#1';
+      await settings.loadAccount(accountKey);
+      final saved = await settings.saveProvider(AiProviderConfig.onDevice());
+      final contract = aiConsentContractFor(saved);
+      await settings.grantConsent(
+        accountKey,
+        contract,
+        aiConsentSummary(contract, providerName: saved.name),
+      );
+
+      await tester.pumpWidget(
+        _host(
+          AiSettingsPage(
+            settings: settings,
+            history: history,
+            accountKey: accountKey,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final revoke = find.byTooltip(l10n.aiRevokeConsent);
+      await tester.ensureVisible(revoke);
+      await tester.pumpAndSettle();
+      await tester.tap(revoke);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(l10n.confirmAction));
+      await tester.pumpAndSettle();
+
+      expect(closeCalls, 1);
+      expect(settings.accountRecord(accountKey)?.consents, isEmpty);
+    });
+
+    test(
+      'removing an account with an on-device consent closes the model',
+      () async {
+        var closeCalls = 0;
+        final store = MemoryAiStore();
+        final settings = AiSettingsController(
+          store,
+          closeOnDeviceAi: () async => closeCalls++,
+        );
+        final history = AiHistoryCoordinator(store: store);
+        addTearDown(settings.dispose);
+        addTearDown(history.dispose);
+        await settings.initialize();
+        final saved = await settings.saveProvider(AiProviderConfig.onDevice());
+        final contract = aiConsentContractFor(saved);
+        for (final account in ['with-on-device', 'without']) {
+          await settings.loadAccount(account);
+        }
+        await settings.grantConsent(
+          'with-on-device',
+          contract,
+          aiConsentSummary(contract, providerName: saved.name),
+        );
+
+        await history.clearAccount('without');
+        await pumpEventQueue();
+        expect(closeCalls, 0);
+        await history.clearAccount('with-on-device');
+        await pumpEventQueue();
+        expect(closeCalls, 1);
+      },
+    );
+
+    test(
+      'the on-device policy date is its own; cloud consents keep theirs',
+      () {
+        expect(
+          aiConsentContractFor(AiProviderConfig.onDevice()).policyCheckedOn,
+          AiPresets.onDevicePolicyCheckedOn,
+        );
+        expect(AiPresets.onDevicePolicyCheckedOn, '2026-11-01');
+        expect(AiPresets.policyCheckedOn, '2026-10-20');
+      },
+    );
   });
 }

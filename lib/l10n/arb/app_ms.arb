@@ -3107,5 +3107,9 @@
   "aiConsentOnDeviceMlKitTelemetry": "Google ML Kit yang digunakan oleh ciri ini menghantar data diagnostik dan penggunaan (termasuk pengecam setiap pemasangan) kepada Google.",
   "aiConsentOnDeviceCannotStopUntilRestart": "Setelah dimulakan, penghantaran ini tidak boleh dihentikan sepenuhnya sehingga aplikasi dimulakan semula, walaupun selepas persetujuan ditarik balik.",
   "aiConsentOnDeviceDisclosureLinkLabel": "Pendedahan data Android Google ML Kit",
+  "aiConsentOnDeviceTitle": "Sahkan sebelum menggunakan AI telefon",
+  "aiConsentOnDeviceDataHeading": "Data yang diproses pada telefon ini",
+  "aiConsentOnDeviceDataDescription": "Hanya kandungan yang anda benarkan diproses pada telefon ini oleh Android AICore. Ia tidak dihantar ke mana-mana pelayan AI; diagnostik Google ML Kit diterangkan di bawah.",
+  "aiOnDeviceDownloadKeepOpen": "Biarkan halaman ini terbuka sehingga muat turun selesai; meninggalkannya akan menghentikan muat turun.",
   "aiOnDeviceCannotWrite": "Sumber AI pada peranti ini tidak boleh membuat perubahan; tukar kepada penyedia awan."
 }

@@ -3107,5 +3107,9 @@
   "aiConsentOnDeviceMlKitTelemetry": "Bu özelliğin kullandığı Google ML Kit, tanılama ve kullanım verilerini (kurulum başına tanımlayıcılar dahil) Google’a gönderir.",
   "aiConsentOnDeviceCannotStopUntilRestart": "Başlatıldıktan sonra, onay geri çekilse bile uygulama yeniden başlatılana kadar bu veri gönderimi tamamen durdurulamaz.",
   "aiConsentOnDeviceDisclosureLinkLabel": "Google ML Kit Android veri açıklaması",
+  "aiConsentOnDeviceTitle": "Telefonun yapay zekâsını kullanmadan önce onaylayın",
+  "aiConsentOnDeviceDataHeading": "Bu telefonda işlenen veriler",
+  "aiConsentOnDeviceDataDescription": "Yalnızca izin verdiğiniz içerik bu telefonda Android AICore tarafından işlenir. Hiçbir AI sunucusuna gönderilmez; Google ML Kit tanılama verileri aşağıda açıklanmıştır.",
+  "aiOnDeviceDownloadKeepOpen": "İndirme bitene kadar bu sayfayı açık tutun; sayfadan çıkmak indirmeyi durdurur.",
   "aiOnDeviceCannotWrite": "Bu cihaz içi AI kaynağı değişiklik yapamaz; bir bulut sağlayıcısına geçin."
 }

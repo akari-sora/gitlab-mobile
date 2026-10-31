@@ -3109,5 +3109,9 @@ const _messagesVi = <String>[
   'Google ML Kit mà tính năng này sử dụng sẽ gửi dữ liệu chẩn đoán và mức sử dụng (bao gồm mã định danh theo lượt cài đặt) tới Google.',
   'Sau khi đã khởi chạy, việc gửi dữ liệu này không thể dừng hoàn toàn cho đến khi khởi động lại ứng dụng, ngay cả khi đã rút lại sự đồng ý.',
   'Tiết lộ dữ liệu Android của Google ML Kit',
+  'Xác nhận trước khi dùng AI của điện thoại',
+  'Dữ liệu được xử lý trên điện thoại này',
+  'Chỉ nội dung bạn cho phép mới được Android AICore xử lý trên điện thoại này. Nội dung không được gửi đến máy chủ AI nào; dữ liệu chẩn đoán của Google ML Kit được mô tả bên dưới.',
+  'Hãy giữ trang này mở cho đến khi tải xong; rời trang sẽ dừng việc tải xuống.',
   'Nguồn AI trên thiết bị này không thể thực hiện thay đổi; hãy chuyển sang nhà cung cấp đám mây.',
 ];

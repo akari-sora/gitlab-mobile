@@ -286,7 +286,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     _onDeviceDownloadError = null;
   }
 
-  Future<void> _refreshOnDeviceStatus() async {
+  Future<void> _refreshOnDeviceStatus({bool resumeDownload = true}) async {
     if (!mounted || !_preset.onDevice || !_hasOnDeviceConsent) return;
     final ticket = ++_onDeviceTicket;
     setState(() {
@@ -300,6 +300,11 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
         _checkingOnDeviceStatus = false;
         _onDeviceStatus = status;
       });
+      // A download started on an earlier visit shows its progress again;
+      // the plugin attaches to it.
+      if (resumeDownload && status.isDownloading && !_downloadingOnDevice) {
+        _startOnDeviceDownload();
+      }
     } on Object catch (error) {
       if (!mounted || ticket != _onDeviceTicket || !_hasOnDeviceConsent) return;
       setState(() {
@@ -317,10 +322,14 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     final invalid = _formKey.currentState!.validateGranularly();
     if (invalid.isNotEmpty) return;
     setState(() => _saving = true);
+    final previous = widget.settings.providers
+        .where((candidate) => candidate.id == _effectiveProviderId)
+        .firstOrNull;
+    final edited = _snapshot != _initialSnapshot;
     try {
+      // The consent screen reads the saved provider; a decline undoes this.
       final saved = await widget.settings.saveProvider(_config());
       if (!mounted) return;
-      _initialSnapshot = _snapshot;
       if (widget.settings.accountRecord(accountKey) == null) {
         await widget.settings.loadAccount(accountKey);
       }
@@ -333,9 +342,19 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
         contract,
         agreeLabel: l10n.aiConsentAgree,
       );
+      if (!agreed) {
+        // A declined provider is not kept: a new one would otherwise become
+        // the device default. An edited one gets its saved settings back.
+        if (previous == null) {
+          await widget.settings.deleteProvider(saved.id);
+        } else if (edited) {
+          await widget.settings.saveProvider(previous);
+        }
+        return;
+      }
       if (!mounted) return;
-      if (agreed &&
-          _hasOnDeviceConsent &&
+      _initialSnapshot = _snapshot;
+      if (_hasOnDeviceConsent &&
           !_checkingOnDeviceStatus &&
           _onDeviceStatus == null) {
         await _refreshOnDeviceStatus();
@@ -383,7 +402,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
               _downloadingOnDevice = false;
               _onDeviceStatus = const OnDeviceStatus.available();
             });
-            unawaited(_refreshOnDeviceStatus());
+            unawaited(_refreshOnDeviceStatus(resumeDownload: false));
           case OnDeviceDownloadState.failed:
             setState(() {
               _downloadingOnDevice = false;
@@ -401,6 +420,14 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
           _onDeviceStatus = const OnDeviceStatus.downloadable();
           _onDeviceDownloadError = _downloadErrorText(error);
         });
+      },
+      // A stream that ends without a final event: read the status again.
+      onDone: () {
+        if (!mounted || ticket != _onDeviceTicket || !_downloadingOnDevice) {
+          return;
+        }
+        setState(() => _downloadingOnDevice = false);
+        unawaited(_refreshOnDeviceStatus(resumeDownload: false));
       },
     );
   }
@@ -1770,6 +1797,17 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                   explanation: _unavailableReasonText(status.reason),
                 ),
               },
+              // Leaving the editor cancels the download.
+              if (status.isDownloadable || status.isDownloading) ...[
+                const SizedBox(height: 8),
+                Text(
+                  l10n.aiOnDeviceDownloadKeepOpen,
+                  key: const ValueKey('ai-on-device-download-keep-open'),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
               if (_onDeviceDownloadError != null) ...[
                 const SizedBox(height: 8),
                 Text(

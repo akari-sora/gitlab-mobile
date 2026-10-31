@@ -3107,5 +3107,9 @@
   "aiConsentOnDeviceMlKitTelemetry": "Компонент Google ML Kit, используемый этой функцией, отправляет в Google диагностические данные и сведения об использовании (включая идентификаторы установки).",
   "aiConsentOnDeviceCannotStopUntilRestart": "После запуска отправку этих данных нельзя полностью остановить до перезапуска приложения, даже после отзыва согласия.",
   "aiConsentOnDeviceDisclosureLinkLabel": "Раскрытие данных Google ML Kit для Android",
+  "aiConsentOnDeviceTitle": "Подтвердите перед использованием встроенного AI",
+  "aiConsentOnDeviceDataHeading": "Данные, обрабатываемые на этом телефоне",
+  "aiConsentOnDeviceDataDescription": "Только разрешённое вами содержимое обрабатывается на этом телефоне с помощью Android AICore. Оно не отправляется на AI-серверы; диагностические данные Google ML Kit описаны ниже.",
+  "aiOnDeviceDownloadKeepOpen": "Не закрывайте эту страницу, пока загрузка не завершится: если уйти с неё, загрузка остановится.",
   "aiOnDeviceCannotWrite": "Этот встроенный источник AI не может вносить изменения; переключитесь на облачного провайдера."
 }

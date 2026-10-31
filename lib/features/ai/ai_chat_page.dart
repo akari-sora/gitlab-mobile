@@ -2253,7 +2253,7 @@ class _NoticeRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Icon(Icons.cloud_outlined, size: 20),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   Expanded(child: Text(l10n.aiOnDeviceCannotWrite)),
                 ],
               ),

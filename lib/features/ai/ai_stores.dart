@@ -2161,9 +2161,13 @@ final class AiSettingsController extends ChangeNotifier {
   Future<void> _closeOnDeviceAiSafe() async {
     try {
       await _closeOnDeviceAi();
-    } on Object {
+    } on Object catch (error) {
       // Closing the native ML Kit client is best-effort and must not block
-      // local consent revocation or provider deletion.
+      // local consent revocation, provider deletion or account removal. Only
+      // the error type is logged.
+      debugPrint(
+        'AI: closing the on-device model failed: ${error.runtimeType}',
+      );
     }
   }
 
@@ -2518,7 +2522,18 @@ final class AiSettingsController extends ChangeNotifier {
 
   void _accountRecordChanged(String accountKey, AiAccountRecord? account) {
     if (account == null) {
-      _accounts.remove(accountKey);
+      final removed = _accounts.remove(accountKey);
+      // Account removal (the tombstone path) deletes consents without
+      // revokeConsent; an on-device one still releases the model.
+      if (removed != null &&
+          _accountMutations.isCleaning(accountKey) &&
+          removed.consents.entries.any(
+            (consent) =>
+                consent.key == AiPresets.onDeviceId ||
+                consent.value.summary['origin'] == AiPresets.onDeviceOrigin,
+          )) {
+        unawaited(_closeOnDeviceAiSafe());
+      }
     } else {
       _accounts[accountKey] = account;
     }

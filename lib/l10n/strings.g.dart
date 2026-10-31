@@ -9415,6 +9415,18 @@ final class AppStrings {
   /// Google ML Kit 資料揭露說明
   String get aiConsentOnDeviceDisclosureLinkLabel => language._messages[3106];
 
+  /// 使用手機內建 AI 前確認
+  String get aiConsentOnDeviceTitle => language._messages[3107];
+
+  /// 在這支手機上處理的資料
+  String get aiConsentOnDeviceDataHeading => language._messages[3108];
+
+  /// 只有你允許的內容會在這支手機上由 Android AICore 處理，不會傳送到 AI 伺服器；Google ML Kit 的診斷資料說明在下方。
+  String get aiConsentOnDeviceDataDescription => language._messages[3109];
+
+  /// 下載完成前請保持此頁開啟；離開此頁會停止下載。
+  String get aiOnDeviceDownloadKeepOpen => language._messages[3110];
+
   /// 此本機 AI 來源無法執行修改；若需修改 GitLab 內容，請切換為雲端服務商。
-  String get aiOnDeviceCannotWrite => language._messages[3107];
+  String get aiOnDeviceCannotWrite => language._messages[3111];
 }

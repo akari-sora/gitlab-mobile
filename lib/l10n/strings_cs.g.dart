@@ -3109,5 +3109,9 @@ const _messagesCs = <String>[
   'Sada Google ML Kit, kterou tato funkce využívá, odesílá společnosti Google diagnostická a provozní data (včetně identifikátorů instalace).',
   'Po spuštění nelze toto odesílání zcela zastavit až do restartu aplikace, a to ani po odvolání souhlasu.',
   'Informace o zpracování dat Google ML Kit v systému Android',
+  'Potvrďte před použitím AI v telefonu',
+  'Data zpracovaná v tomto telefonu',
+  'Pouze obsah, který povolíte, zpracuje v tomto telefonu Android AICore. Neodesílá se na žádný server AI; diagnostika Google ML Kit je popsána níže.',
+  'Nechte tuto stránku otevřenou, dokud stahování neskončí; jejím opuštěním se stahování zastaví.',
   'Tento místní zdroj AI nemůže provádět změny; přepněte na cloudového poskytovatele.',
 ];

@@ -3109,5 +3109,9 @@ const _messagesPtBr = <String>[
   'O Google ML Kit, usado por este recurso, envia dados de diagnóstico e de uso (incluindo identificadores por instalação) para o Google.',
   'Depois de iniciado, isso não pode ser totalmente interrompido até que o aplicativo seja reiniciado, mesmo após retirar o consentimento.',
   'Divulgação de dados do Google ML Kit no Android',
+  'Confirme antes de usar a IA do celular',
+  'Dados processados neste celular',
+  'Somente o conteúdo que você permitir é processado neste celular pelo Android AICore. Ele não é enviado a nenhum servidor de IA; os diagnósticos do Google ML Kit estão descritos abaixo.',
+  'Mantenha esta página aberta até o download terminar; sair dela interrompe o download.',
   'Esta fonte de IA no dispositivo não pode fazer alterações; mude para um provedor na nuvem.',
 ];

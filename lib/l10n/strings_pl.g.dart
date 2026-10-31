@@ -3109,5 +3109,9 @@ const _messagesPl = <String>[
   'Używany przez tę funkcję pakiet Google ML Kit wysyła do Google dane diagnostyczne i dotyczące użycia (w tym identyfikatory instalacji).',
   'Po uruchomieniu przesyłania nie można całkowicie zatrzymać aż do ponownego uruchomienia aplikacji, nawet po wycofaniu zgody.',
   'Informacja o danych Google ML Kit na Androidzie',
+  'Potwierdź przed użyciem AI w telefonie',
+  'Dane przetwarzane na tym telefonie',
+  'Tylko treści, na które zezwolisz, są przetwarzane na tym telefonie przez Android AICore. Nie są wysyłane do żadnego serwera AI; dane diagnostyczne Google ML Kit opisano poniżej.',
+  'Nie zamykaj tej strony, dopóki pobieranie się nie zakończy; opuszczenie jej zatrzyma pobieranie.',
   'To wbudowane źródło AI nie może wprowadzać zmian; przełącz się na dostawcę chmurowego.',
 ];

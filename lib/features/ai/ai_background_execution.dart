@@ -243,7 +243,9 @@ final class AiBackgroundExecution extends ChangeNotifier
 
   /// User stop requests reach the account registry without carrying content.
   Stream<void> get stopEvents => _stopEvents.stream;
-  int get serviceWorkCount => _gates.where((gate) => gate._active).length;
+  // A foreground-only run (the phone's built-in AI) never holds the service.
+  int get serviceWorkCount =>
+      _gates.where((gate) => gate._active && !gate._foregroundOnly).length;
   int get backProtectedCount =>
       _gates.where((gate) => gate._backProtected).length;
 
@@ -1193,6 +1195,7 @@ final class AiBackgroundRunGate implements AiExecutionGate {
   final bool Function() _appInForeground;
   late AiExecutionRunBinding _binding;
   bool _active = false;
+  bool _foregroundOnly = false;
   bool _backProtected = false;
   bool _awaitingApproval = false;
   bool _invalidated = false;
@@ -1338,6 +1341,14 @@ final class AiBackgroundRunGate implements AiExecutionGate {
       );
     }
     if (foregroundOnly) {
+      if (_owner._orphan) {
+        return _recordStart(
+          const AiBackgroundStartResult(
+            AiBackgroundStartDisposition.unavailable,
+            failure: AiBackgroundStartFailure.cleanupFailed,
+          ),
+        );
+      }
       if (!_appInForeground()) {
         return _recordStart(
           const AiBackgroundStartResult(
@@ -1355,6 +1366,7 @@ final class AiBackgroundRunGate implements AiExecutionGate {
       if (!preserveBinding) _binding = _newBinding(runId);
       _approvalRestart = preserveBinding;
       _active = true;
+      _foregroundOnly = true;
       _backProtected = true;
       _owner._workChanged();
       return _recordStart(
@@ -1368,7 +1380,7 @@ final class AiBackgroundRunGate implements AiExecutionGate {
         AiExecutionPause(AiExecutionPauseReason.unavailable),
       );
     }
-    if (_owner.serviceWorkCount - (_active ? 1 : 0) >= 3) {
+    if (_owner.serviceWorkCount - (_active && !_foregroundOnly ? 1 : 0) >= 3) {
       throw const AiExecutionPaused(
         AiExecutionPause(AiExecutionPauseReason.runLimit),
       );
@@ -1382,6 +1394,7 @@ final class AiBackgroundRunGate implements AiExecutionGate {
     if (!preserveBinding) _binding = _newBinding(runId);
     _approvalRestart = preserveBinding;
     _active = true;
+    _foregroundOnly = false;
     _backProtected = true;
     _starting = true;
     _owner._workChanged();
@@ -1463,7 +1476,12 @@ final class AiBackgroundRunGate implements AiExecutionGate {
     int step = 0,
   }) {
     if (_disposed) return;
-    if (active && !_active && _owner.serviceWorkCount >= 3) active = false;
+    if (active &&
+        !_active &&
+        !_foregroundOnly &&
+        _owner.serviceWorkCount >= 3) {
+      active = false;
+    }
     final waiting = awaitingApproval && !active;
     final changed =
         _active != active ||

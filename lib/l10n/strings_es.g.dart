@@ -3109,5 +3109,9 @@ const _messagesEs = <String>[
   'Google ML Kit, utilizado por esta función, envía datos de diagnóstico y uso (incluidos identificadores por instalación) a Google.',
   'Una vez iniciado, esto no se puede detener por completo hasta que se reinicie la aplicación, incluso si retiras el consentimiento.',
   'Divulgación de datos de Google ML Kit en Android',
+  'Confirmar antes de usar la IA del teléfono',
+  'Datos procesados en este teléfono',
+  'Solo el contenido que permitas se procesa en este teléfono con Android AICore. No se envía a ningún servidor de IA; los diagnósticos de Google ML Kit se describen a continuación.',
+  'Mantén esta página abierta hasta que termine la descarga; si sales, la descarga se detiene.',
   'Esta fuente de IA en el dispositivo no puede realizar cambios; cambia a un proveedor en la nube.',
 ];

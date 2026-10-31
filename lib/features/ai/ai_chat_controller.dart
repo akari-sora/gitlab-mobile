@@ -2808,7 +2808,10 @@ class AiChatController extends ChangeNotifier
       },
       onNotice: (kind) {
         if (!current()) return;
-        if (!_items.whereType<AiNoticeItem>().any((i) => i.kind == kind)) {
+        // Only this conversation: an earlier one kept on screen has its own.
+        if (!_conversationItems.whereType<AiNoticeItem>().any(
+          (i) => i.kind == kind,
+        )) {
           _insertRunItem(AiNoticeItem(kind));
           _notifyStream();
         }
@@ -2850,6 +2853,8 @@ class AiChatController extends ChangeNotifier
         // Only the refusal card remains when the text exceeds the scan limit.
       }
       _items.add(const AiNoticeItem(AiNoticeKind.onDeviceCannotWrite));
+      // A later Continue must not refill a bubble above this exchange.
+      _interruptedOnDeviceAssistantIndex = null;
       _lastEnd = AiRunEnd.done;
       _notify();
       _saveReportedHistory();
@@ -4113,62 +4118,82 @@ AiWireClient _createWireClient({
 }
 
 // A write request is an imperative at the start of a sentence (optionally
-// after "please" or "can you") that names a GitLab object within a few
-// words. Questions about writes ("How do I close…?") and read requests that
-// merely mention an object ("Explain the open issues") do not match; the
-// on-device system prompt refuses whatever this misses.
+// after "please") that names a GitLab object within a few words. Anything
+// phrased as a question never is: a missed write costs nothing, because the
+// on-device source has no tools and its system prompt refuses changes.
+final _questionEnd = RegExp('[?\\uff1f\\u55ce\\u5462]\\s*\$');
+final _enQuestionStart = RegExp(
+  r'(?:^|[.!?\n])\s*(?:what|who|whom|whose|which|when|where|why|how|'
+  r'should|can|could|would|will|is|are|was|were|do|does|did)\b',
+  caseSensitive: false,
+);
+final _cjkQuestionWord = RegExp(
+  '\\u8ab0|\\u4ec0\\u9ebc|\\u70ba\\u4ec0\\u9ebc|\\u600e\\u9ebc|'
+  '\\u5982\\u4f55|\\u662f\\u5426|\\u6703\\u4e0d\\u6703|\\u8981\\u4e0d\\u8981',
+);
 final _enWriteActionPattern = RegExp(
   r'(?:^|[.!?\n])\s*'
   r'(?:(?:please|pls|kindly|now|then|also)\s+)?'
-  r'(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?)?'
   r'(?:create|submit|post|leave|add|edit|update|modify|change|rename|close|'
   r'reopen|merge|approve|unapprove|assign|unassign|delete|remove|retry|'
   r'rerun|cancel|trigger|resolve|unresolve|mark|comment|reply|label)\b'
-  r'(?!\W+(?:me|us)\b)'
-  r'(?:\W+[\w-]+){0,4}?\W+'
+  r'(?![^\w.!?\n]+(?:me|us)\b)'
+  r'(?:[^\w.!?\n]+[\w-]+){0,4}?[^\w.!?\n]+'
   r'(?:issues?|mrs?|merge\s+requests?|comments?|notes?|replies|reply|'
   r'discussions?|threads?|titles?|descriptions?|labels?|milestones?|'
   r'releases?|snippets?|pipelines?|jobs?|todos?|to-dos?|inbox|done)\b',
   caseSensitive: false,
 );
 
-// The same shape in Traditional Chinese: an optional 請 / 麻煩 / 可以 and
-// 幫我, an optional 把/將 object, a write verb, then a GitLab object within
-// the sentence; or 幫我 directly followed by a write verb.
+// Traditional Chinese needs an explicit request: 請 or 麻煩 (optionally with 幫我),
+// 幫我 alone, or a 把/將 object; then a write verb and a GitLab object in the
+// same sentence.
 const _cjkWriteVerbs =
-    '\\u5efa\\u7acb|\\u65b0\\u589e|\\u958b\\u7acb|\\u767c\\u5e03|\\u5f35\\u8cbc|'
-    '\\u767c\\u8868|\\u7559\\u8a00|\\u56de\\u8986|\\u7de8\\u8f2f|\\u4fee\\u6539|'
-    '\\u66f4\\u65b0|\\u66f4\\u6539|\\u91cd\\u65b0\\u547d\\u540d|\\u95dc\\u9589|'
-    '\\u91cd\\u958b|\\u91cd\\u65b0\\u958b\\u555f|\\u5408\\u4f75|\\u6838\\u51c6|'
+    '\\u5efa\\u7acb|\\u65b0\\u589e|\\u958b\\u7acb|\\u767c\\u5e03|'
+    '\\u5f35\\u8cbc|\\u767c\\u8868|\\u7559\\u8a00|\\u56de\\u8986|'
+    '\\u7de8\\u8f2f|\\u4fee\\u6539|\\u66f4\\u65b0|\\u66f4\\u6539|'
+    '\\u91cd\\u65b0\\u547d\\u540d|\\u95dc\\u9589|\\u91cd\\u958b|'
+    '\\u91cd\\u65b0\\u958b\\u555f|\\u5408\\u4f75|\\u6838\\u51c6|'
     '\\u6279\\u51c6|\\u53d6\\u6d88\\u6838\\u51c6|\\u6307\\u6d3e|'
-    '\\u53d6\\u6d88\\u6307\\u6d3e|\\u522a\\u9664|\\u79fb\\u9664|\\u91cd\\u8a66|'
-    '\\u91cd\\u65b0\\u57f7\\u884c|\\u53d6\\u6d88|\\u89f8\\u767c|\\u6a19\\u8a18|'
-    '\\u6a19\\u70ba';
-const _cjkPolite =
-    '(?:\\u8acb|\\u9ebb\\u7169(?:\\u4f60)?|\\u53ef\\u4ee5|\\u80fd\\u4e0d\\u80fd|'
-    '\\u53ef\\u4e0d\\u53ef\\u4ee5)?';
+    '\\u53d6\\u6d88\\u6307\\u6d3e|\\u522a\\u9664|\\u79fb\\u9664|'
+    '\\u91cd\\u8a66|\\u91cd\\u65b0\\u57f7\\u884c|\\u53d6\\u6d88|'
+    '\\u89f8\\u767c|\\u6a19\\u8a18|\\u6a19\\u70ba';
+const _cjkWriteTargets =
+    'issue|mr|\\u5408\\u4f75\\u8acb\\u6c42|\\u8b70\\u984c|\\u7559\\u8a00|'
+    '\\u8a55\\u8ad6|\\u5099\\u8a3b|\\u8a0e\\u8ad6|\\u6a19\\u984c|'
+    '\\u63cf\\u8ff0|\\u6a19\\u7c64|\\u91cc\\u7a0b\\u7891|\\u770b\\u677f|'
+    'release|\\u7a0b\\u5f0f\\u78bc\\u7247\\u6bb5|snippet|pipeline|job|'
+    '\\u5f85\\u8fa6|todo|\\u6536\\u4ef6\\u5323';
+const _cjkAsk =
+    '(?:(?:\\u8acb|\\u9ebb\\u7169(?:\\u4f60)?)(?:\\u5e6b\\u6211)?|\\u5e6b\\u6211)';
 const _cjkGap = '[^\\u3002\\uff01\\uff1f!?\\n]{0,16}?';
+const _cjkObject = '[\\u628a\\u5c07]$_cjkGap';
+const _cjkAct =
+    '(?:(?:$_cjkWriteVerbs)$_cjkGap(?:$_cjkWriteTargets)|'
+    '\\u6a19(?:\\u8a18)?\\u70ba\\u5b8c\\u6210)';
 final _cjkWriteActionPattern = RegExp(
   '(?:^|[\\u3002\\uff01\\uff1f!?\\n])\\s*(?:'
-  '$_cjkPolite(?:\\u5e6b\\u6211)?(?:[\\u628a\\u5c07]$_cjkGap)?'
-  '(?:$_cjkWriteVerbs)$_cjkGap'
-  '(?:issue|mr|\\u5408\\u4f75\\u8acb\\u6c42|\\u8b70\\u984c|\\u7559\\u8a00|'
-  '\\u8a55\\u8ad6|\\u5099\\u8a3b|\\u8a0e\\u8ad6|\\u6a19\\u984c|\\u63cf\\u8ff0|'
-  '\\u6a19\\u7c64|\\u91cc\\u7a0b\\u7891|\\u770b\\u677f|release|'
-  '\\u7a0b\\u5f0f\\u78bc\\u7247\\u6bb5|snippet|pipeline|job|\\u5de5\\u4f5c|'
-  '\\u5f85\\u8fa6|todo|\\u6536\\u4ef6\\u5323|\\u5b8c\\u6210)'
-  '|$_cjkPolite\\u5e6b\\u6211(?:$_cjkWriteVerbs))',
+  '$_cjkAsk(?:$_cjkObject)?$_cjkAct'
+  '|(?:$_cjkAsk)?$_cjkObject$_cjkAct'
+  '|(?:$_cjkAsk)?$_cjkObject(?:$_cjkWriteTargets)$_cjkGap(?:$_cjkWriteVerbs)'
+  '|(?:\\u8acb|\\u9ebb\\u7169(?:\\u4f60)?)?\\u5e6b\\u6211(?:$_cjkWriteVerbs))',
   caseSensitive: false,
 );
 
 /// Detects explicit GitLab write requests for the read-only on-device source.
-/// The Inbox conversation can only mark to-dos done, so all of it is a write.
+/// The Inbox conversation can only mark to-dos done, so all of it is a write,
+/// except a question.
 bool looksLikeGitLabWriteRequest(String text, {required AiChatOrigin origin}) {
-  if (origin is AiInboxOrigin) return true;
   final trimmed = text.trim();
-  return trimmed.isNotEmpty &&
-      (_enWriteActionPattern.hasMatch(trimmed) ||
-          _cjkWriteActionPattern.hasMatch(trimmed));
+  if (trimmed.isEmpty ||
+      _questionEnd.hasMatch(trimmed) ||
+      _enQuestionStart.hasMatch(trimmed) ||
+      _cjkQuestionWord.hasMatch(trimmed)) {
+    return false;
+  }
+  return origin is AiInboxOrigin ||
+      _enWriteActionPattern.hasMatch(trimmed) ||
+      _cjkWriteActionPattern.hasMatch(trimmed);
 }
 
 /// The consent a conversation with [provider] asks for on [accountKey].

@@ -3109,5 +3109,9 @@ const _messagesNl = <String>[
   'Google ML Kit, dat door deze functie wordt gebruikt, verzendt diagnostische en gebruiksgegevens (inclusief installatie-identificaties) naar Google.',
   'Eenmaal gestart kan dit pas volledig worden gestopt wanneer de app opnieuw wordt opgestart, zelfs nadat de toestemming is ingetrokken.',
   'Gegevensverklaring van Google ML Kit voor Android',
+  'Bevestigen voordat je de AI van de telefoon gebruikt',
+  'Gegevens die op deze telefoon worden verwerkt',
+  'Alleen inhoud die je toestaat, wordt op deze telefoon verwerkt door Android AICore. Er wordt niets naar een AI-server gestuurd; de diagnostiek van Google ML Kit staat hieronder beschreven.',
+  'Houd deze pagina open tot de download klaar is; als je weggaat, stopt de download.',
   'Deze AI-bron op het toestel kan geen wijzigingen aanbrengen; schakel over naar een cloudprovider.',
 ];
