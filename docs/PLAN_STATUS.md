@@ -1,6 +1,6 @@
 # Plan and status
 
-Last updated: 2026-10-30.
+Last updated: 2026-10-31.
 
 This page is the single place for **what we are building, in what order, and where each piece stands**.
 - Update it in the same MR that changes a status.
@@ -84,16 +84,24 @@ In priority order. Steps marked **owner** need the owner in person.
    - **Code for Play:** in-app AI reporting (!270: the report posts to the developer's Google Form from inside the app; mail/share fallback), Demo mode (sample data, no account, no network except a report the user sends), the Play build guard allowing the assistant, v0.6.1.
    - **Release (2026-10-30):** the 0.6.1 draft was blocked by Play's foreground-service declaration check, so !275 strips those declarations from the Play build. 0.6.2 was built locally from `c6919e52` (fresh bootstrap; `bundletool dump manifest` shows no `FOREGROUND_SERVICE`/`AgentRunService`), walked through in Demo mode on the emulator (explain, propose, approve, write confirmed), uploaded with `gplay release --track production --status draft` and sent for review with the listing changes. Earlier, the 0.6.1 APK's real in-app AI report reached the Google Form with exactly the previewed fields.
    - **Next:** wait for Google's review; answer any policy questions it raises.
-2. **Small-model robustness.** Found in the v0.6.0 walkthrough with `gpt-4o-mini`:
+2. **Media and loading polish (owner, 2026-10-30).**
+   - **#55, done (!278, 2026-10-31).** A video behind image syntax no longer holds up a README or file page. The request stops at the content type, and the video waits behind a tap-to-play card. The page byte budget is first-come. A raster's header size only rejects early; the engine's decoder still decides acceptance, because crafted GIF/JPEG headers can understate the size.
+   - **#56, part 1 (`feat/skeleton-shimmer`).**
+     - First loads on the reading screens show page-shaped skeletons with one shared 1.5 s shimmer, which is static under reduced motion. Covered: README, files, code, diff, compare, commit, job log, pipeline, pipeline graph, issue/MR detail, home, boards, analytics, snippets and lists.
+     - Skeletons appear only before the first successful load. Reloads keep their content under the thin bar.
+     - Rules are in `UI_REDESIGN.md` › Loading.
+     - Device check NOT_RUN.
+   - **#56, part 2 (next):** the remaining first-load spinners (AI screens, offline screens, start-up and the `work_item_*` sections).
+3. **Small-model robustness.** Found in the v0.6.0 walkthrough with `gpt-4o-mini`:
    - **Unrequested changes.** The model sometimes proposes changes nobody asked for; it rewrote an issue title while reopening the issue. Consider marking changed against unchanged fields in the confirmation card.
    - **Unexplained refusals: done (!273).** A refused write now tells the model which field failed and the rule (allowed values, expected type, or GitLab's own field error), redacted and capped, never in the UI, history or journal.
    - **Placeholder coverage: done (!274).** Every model-visible write drops optional null/""/[] placeholders (0 only for ids and 1-based lines) before validation; a request that loses exactly one field keeps it as an explicit clear; `moveBoardCard` is never stripped. Residual risk: a lone placeholder for a field the user did not mention is treated as a clear (the confirmation card shows it).
-3. **Optional live evidence.** The live matrix (MR7 breakdown §5) is optional evidence now, not a release gate.
+4. **Optional live evidence.** The live matrix (MR7 breakdown §5) is optional evidence now, not a release gate.
    - Each run leaves one private sandbox project scheduled for deletion for 30 days.
    - Keep each run under the per-user burst limit of about 100 requests.
-4. **MR6c.** The unwired device cases and full V9 stay NOT_RUN / NOT_VERIFIED, so background AI runs stay off.
-5. **Cache C3.** The PARTIAL device rows need an exposed request meter; C3d stays optional.
-6. **Follow-up issues:** #52 (CI flakes and runner capacity) and #54 (MR7 review minors).
+5. **MR6c.** The unwired device cases and full V9 stay NOT_RUN / NOT_VERIFIED, so background AI runs stay off.
+6. **Cache C3.** The PARTIAL device rows need an exposed request meter; C3d stays optional.
+7. **Follow-up issues:** #52 (CI flakes and runner capacity) and #54 (MR7 review minors).
 
 ## Plan documents
 | Document | Covers |
