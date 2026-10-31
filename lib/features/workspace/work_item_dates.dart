@@ -655,7 +655,6 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
           scrollPadding: const EdgeInsets.only(bottom: 112),
           decoration: InputDecoration(
             labelText: label,
-            border: const OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 8),

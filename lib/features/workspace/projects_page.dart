@@ -496,19 +496,20 @@ class _ProjectsPageState extends State<ProjectsPage> {
                 showCheckmark: false, onSelected: (_) => setState(() => _scope = i))),
             ])),
         )),
-        // A hairline and a gap keep the pinned sort apart from the scopes
-        // scrolling (and fading) beside it.
+        // A hairline keeps the pinned sort apart from the scopes scrolling
+        // (and fading) beside it. The sort is an icon so the scopes keep the
+        // room; its menu checks the current order.
         if (_scope != 3) Container(width: 1, height: 24, margin: const EdgeInsetsDirectional.only(top: 4),
           color: theme.dividerTheme.color ?? theme.colorScheme.outlineVariant),
-        if (_scope != 3) Padding(padding: EdgeInsetsDirectional.fromSTEB(8, 4, gutter, 0), child: PopupMenuButton<String>(
+        if (_scope != 3) Padding(padding: EdgeInsetsDirectional.fromSTEB(4, 4, gutter, 0), child: PopupMenuButton<String>(
           tooltip: l10n.sortBy,
           initialValue: _sort,
+          icon: const Icon(Icons.sort),
           onSelected: (value) => setState(() => _sort = value),
           itemBuilder: (_) => [
             for (final entry in _sorts.entries)
               CheckedPopupMenuItem(value: entry.key, checked: _sort == entry.key, child: Text(entry.value.$1)),
           ],
-          child: Chip(avatar: const Icon(Icons.sort, size: 18), label: Text(_sorts[_sort]!.$1)),
         )),
       ]),
       if (_query.isEmpty && _recentProjects.isNotEmpty) ...[

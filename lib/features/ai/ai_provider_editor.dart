@@ -1267,7 +1267,14 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                                 },
                         ),
                       if (_requiresKey) ...[
-                        const SizedBox(height: 8),
+                        // A field gap straight after the base URL; a switch
+                        // above already brings its own padding.
+                        SizedBox(
+                          height:
+                              _showsCleartextControl || _preset.id == 'custom'
+                              ? 8
+                              : SharedLayout.fieldGap,
+                        ),
                         TextFormField(
                           key: const ValueKey('ai-provider-api-key'),
                           controller: _apiKey,

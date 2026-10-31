@@ -355,6 +355,7 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
     // the label inside the rounded fill, which `UnderlineInputBorder` paints
     // with its full radius (`paintInterior`); with no border side it draws
     // no line. Every state uses the same kind so focus never moves the label.
+    // All state borders are set here, so a field's own `border:` has no effect.
     inputDecorationTheme: InputDecorationTheme(
       filled: true, fillColor: inputFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),

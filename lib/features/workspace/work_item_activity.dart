@@ -1061,7 +1061,6 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
               horizontal: 12,
               vertical: 4,
             ),
-            border: const OutlineInputBorder(),
           ),
           child: Semantics(label: label, child: child),
         ),

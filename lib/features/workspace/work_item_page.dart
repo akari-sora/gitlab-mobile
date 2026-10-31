@@ -1477,21 +1477,16 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
                     : FilledButton.icon(onPressed: _busy ? null : () => _action('merge'), icon: Icon(autoCandidate ? Icons.schedule_send : Icons.merge, size: 18), label: Text(autoCandidate ? l10n.autoMergeEllipsis : l10n.merge)),
               ),
               const SizedBox(height: 8),
-              _evenRow([
-                  OutlinedButton.icon(key: const ValueKey('mr-draft-review-btn'), onPressed: _busy ? null : () => _openDraftReview(data), icon: const Icon(Icons.rate_review_outlined, size: 18), label: Text(l10n.reviewDrafts)),
-                  if (hasApproved)
-                    OutlinedButton.icon(key: const ValueKey('mr-unapprove-btn'), onPressed: _busy ? null : () => _action('unapprove'), icon: const Icon(Icons.undo, size: 18), label: Text(l10n.revokeMyApproval))
-                  else
-                    OutlinedButton.icon(key: const ValueKey('mr-approve-btn'), onPressed: _busy ? null : () => _action('approve'), icon: const Icon(Icons.verified_outlined, size: 18), label: Text(l10n.approve2)),
-                  if (rebaseInProgress)
-                    OutlinedButton.icon(
-                      key: const ValueKey('mr-rebase-progress-btn'),
-                      onPressed: null,
-                      icon: const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                      label: Text(l10n.rebaseInProgress),
-                    )
-                  else if (canRebase)
-                    OutlinedButton.icon(key: const ValueKey('mr-rebase-btn'), onPressed: _busy ? null : () => _action('rebase'), icon: const Icon(Icons.fork_right, size: 18), label: Text(divergedCommits > 0 ? l10n.rebaseBehindCount(divergedCommits) : 'Rebase')),
+              _reviewActions([
+                (key: const ValueKey('mr-draft-review-btn'), onPressed: _busy ? null : () => _openDraftReview(data), icon: const Icon(Icons.rate_review_outlined, size: 18), label: l10n.reviewDrafts),
+                if (hasApproved)
+                  (key: const ValueKey('mr-unapprove-btn'), onPressed: _busy ? null : () => _action('unapprove'), icon: const Icon(Icons.undo, size: 18), label: l10n.revokeMyApproval)
+                else
+                  (key: const ValueKey('mr-approve-btn'), onPressed: _busy ? null : () => _action('approve'), icon: const Icon(Icons.verified_outlined, size: 18), label: l10n.approve2),
+                if (rebaseInProgress)
+                  (key: const ValueKey('mr-rebase-progress-btn'), onPressed: null, icon: const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)), label: l10n.rebaseInProgress)
+                else if (canRebase)
+                  (key: const ValueKey('mr-rebase-btn'), onPressed: _busy ? null : () => _action('rebase'), icon: const Icon(Icons.fork_right, size: 18), label: divergedCommits > 0 ? l10n.rebaseBehindCount(divergedCommits) : 'Rebase'),
               ]),
             ],
           ),
@@ -1688,13 +1683,16 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(l10n.assignee, style: Theme.of(context).textTheme.titleSmall),
-            TextButton.icon(
-              key: const ValueKey('quick-edit-assignees'),
-              onPressed: _busy ? null : _editAssignees,
-              icon: const Icon(Icons.group_add_outlined, size: 16),
-              label: Text(l10n.editList),
-              style: TextButton.styleFrom(visualDensity: VisualDensity.compact, minimumSize: const Size(48, 48)),
+            // Both shrink and wrap in a long translation or at large text.
+            Flexible(child: Text(l10n.assignee, style: Theme.of(context).textTheme.titleSmall)),
+            Flexible(
+              child: TextButton.icon(
+                key: const ValueKey('quick-edit-assignees'),
+                onPressed: _busy ? null : _editAssignees,
+                icon: const Icon(Icons.group_add_outlined, size: 16),
+                label: Text(l10n.editList),
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact, minimumSize: const Size(48, 48)),
+              ),
             ),
           ],
         ),
@@ -1738,13 +1736,15 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(l10n.reviewers, style: Theme.of(context).textTheme.titleSmall),
-            TextButton.icon(
-              key: const ValueKey('quick-edit-reviewers'),
-              onPressed: _busy ? null : _editReviewers,
-              icon: const Icon(Icons.person_search_outlined, size: 16),
-              label: Text(l10n.editReviewers),
-              style: TextButton.styleFrom(visualDensity: VisualDensity.compact, minimumSize: const Size(48, 48)),
+            Flexible(child: Text(l10n.reviewers, style: Theme.of(context).textTheme.titleSmall)),
+            Flexible(
+              child: TextButton.icon(
+                key: const ValueKey('quick-edit-reviewers'),
+                onPressed: _busy ? null : _editReviewers,
+                icon: const Icon(Icons.person_search_outlined, size: 16),
+                label: Text(l10n.editReviewers),
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact, minimumSize: const Size(48, 48)),
+              ),
             ),
           ],
         ),
@@ -1784,13 +1784,15 @@ class WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSta
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(l10n.labelNoun, style: Theme.of(context).textTheme.titleSmall),
-            TextButton.icon(
-              key: const ValueKey('quick-edit-labels'),
-              onPressed: _busy ? null : _editLabelsQuick,
-              icon: const Icon(Icons.label_outline, size: 16),
-              label: Text(l10n.manageLabels),
-              style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+            Flexible(child: Text(l10n.labelNoun, style: Theme.of(context).textTheme.titleSmall)),
+            Flexible(
+              child: TextButton.icon(
+                key: const ValueKey('quick-edit-labels'),
+                onPressed: _busy ? null : _editLabelsQuick,
+                icon: const Icon(Icons.label_outline, size: 16),
+                label: Text(l10n.manageLabels),
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+              ),
             ),
           ],
         ),
@@ -2650,26 +2652,55 @@ String mergeStatusLabel(Json data) {
   };
 }
 
-/// Outlined [buttons] side by side in equal shares, 8 dp apart and of one
-/// height, so a label that wraps in a long translation does not leave its
-/// neighbours short. Each has half a card, so the side padding is narrower.
-Widget _evenRow(List<Widget> buttons) => Builder(
-  builder: (context) => OutlinedButtonTheme(
-    data: OutlinedButtonThemeData(
-      style: (Theme.of(context).outlinedButtonTheme.style ?? const ButtonStyle()).copyWith(
-        padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 12)),
+/// One outlined review action under the merge button.
+typedef _ReviewAction = ({Key key, VoidCallback? onPressed, Widget icon, String label});
+
+/// The review actions under the merge button. They share one row in equal
+/// parts, 8 dp apart and of one height, only when every label fits its part
+/// on one line; otherwise each spans the card, so a long translation never
+/// breaks inside a word. The side padding is 12 dp in both layouts.
+Widget _reviewActions(List<_ReviewAction> actions) => LayoutBuilder(
+  builder: (context, constraints) {
+    const gap = 8.0, side = 12.0;
+    final theme = Theme.of(context);
+    final share = (constraints.maxWidth - gap * (actions.length - 1)) / actions.length;
+    // Icon 18 dp and its 8 dp gap, both side paddings, the outline and a
+    // little slack for rounding.
+    final fits = actions.every((action) =>
+        measureTextWidth(context, action.label, theme.textTheme.labelLarge) + 18 + 8 + 2 * side + 4 <= share);
+    Widget button(_ReviewAction action) => OutlinedButton.icon(
+      key: action.key,
+      onPressed: action.onPressed,
+      icon: action.icon,
+      label: Text(action.label),
+    );
+    return OutlinedButtonTheme(
+      data: OutlinedButtonThemeData(
+        style: (theme.outlinedButtonTheme.style ?? const ButtonStyle()).copyWith(
+          padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: side)),
+        ),
       ),
-    ),
-    child: IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final (index, button) in buttons.indexed) ...[
-            if (index > 0) const SizedBox(width: 8),
-            Expanded(child: button),
-          ],
-        ],
-      ),
-    ),
-  ),
+      child: fits
+          ? IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (index, action) in actions.indexed) ...[
+                    if (index > 0) const SizedBox(width: gap),
+                    Expanded(child: button(action)),
+                  ],
+                ],
+              ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final (index, action) in actions.indexed) ...[
+                  if (index > 0) const SizedBox(height: gap),
+                  button(action),
+                ],
+              ],
+            ),
+    );
+  },
 );

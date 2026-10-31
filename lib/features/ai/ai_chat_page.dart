@@ -2539,9 +2539,6 @@ class _Composer extends StatelessWidget {
                         // One line: a long hint at a large text size would
                         // otherwise grow the empty field to six lines.
                         hintMaxLines: 1,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 10,
@@ -3124,7 +3121,6 @@ class _AddGroupWorkItemSheetState extends State<_AddGroupWorkItemSheet> {
                     onSubmitted: (_) => can ? unawaited(_check()) : null,
                     decoration: InputDecoration(
                       labelText: l10n.aiAddGroupWorkItemLink,
-                      border: const OutlineInputBorder(),
                     ),
                   )
                 else

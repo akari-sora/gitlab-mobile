@@ -780,16 +780,28 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                                     },
                                     child: Text(allViewed ? l10n.unmarkAllViewed : l10n.markAllAsViewed),
                                   );
-                                  // The action stays beside the count on
-                                  // phones (about 350 dp inside the card); it
-                                  // takes its own row only on very narrow
-                                  // windows or at large text.
+                                  // The action stays beside the count when
+                                  // both fit on one line (icon and gap 26 dp,
+                                  // button padding 16 dp, either label);
+                                  // otherwise, and at large text, it takes
+                                  // its own row.
+                                  final theme = Theme.of(context);
+                                  final actionWidth = math.max(
+                                    measureTextWidth(context, l10n.markAllAsViewed, theme.textTheme.labelLarge),
+                                    measureTextWidth(context, l10n.unmarkAllViewed, theme.textTheme.labelLarge),
+                                  );
+                                  final summaryWidth = measureTextWidth(
+                                    context,
+                                    l10n.reviewProgress(viewedCount, files.length),
+                                    theme.textTheme.titleSmall,
+                                  );
                                   final compact =
-                                      constraints.maxWidth < 300 ||
                                       MediaQuery.textScalerOf(
                                             context,
                                           ).scale(1) >
-                                          1.3;
+                                          1.3 ||
+                                      26 + summaryWidth + 16 + actionWidth + 4 >
+                                          constraints.maxWidth;
                                   if (compact) {
                                     return Column(
                                       crossAxisAlignment:
