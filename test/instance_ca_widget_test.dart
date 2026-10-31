@@ -15,7 +15,7 @@ import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
 import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 
-import 'instance_ca_test.dart' show caFingerprint;
+import 'instance_ca_test.dart' show caFingerprint, otherCaFingerprint;
 import 'instance_trust_test.dart' show HandshakeRefusingAdapter, trustingSession;
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_shortcuts.dart';
@@ -192,6 +192,8 @@ void main() {
     await tester.tap(find.text('我的'));
     await settleNetworkWidgets(tester);
 
+    final apiBefore = session.api;
+    final generationBefore = session.generation;
     final row = find.byKey(ValueKey('instance-ca-${instance.key}'));
     await tester.ensureVisible(row);
     await tester.pumpAndSettle();
@@ -203,11 +205,117 @@ void main() {
     await tester.tap(find.byKey(ValueKey('remove-instance-ca-${instance.key}')));
     await tester.pumpAndSettle();
     expect(find.text('移除自訂 CA 憑證？'), findsOneWidget);
+    // L5: this is the signed-in instance, so the account is checked again.
+    expect(find.textContaining('移除後會立即在不使用此憑證的情況下重新驗證帳號'),
+        findsOneWidget);
     expect(session.trust.certificateFor(instance), isNotNull,
         reason: 'nothing changes before confirming');
     await tester.tap(find.widgetWithText(FilledButton, '移除'));
     await settleNetworkWidgets(tester);
     expect(session.trust.certificateFor(instance), isNull);
+    expect(row, findsNothing);
+    // A new client for the same account replaced the one built with the CA.
+    expect(session.active?.instance.key, instance.key);
+    expect(session.api, isNotNull);
+    expect(identical(session.api, apiBefore), isFalse);
+    expect(session.generation, isNot(generationBefore));
+  });
+
+  testWidgets('M1: GitLab.com shows the interception warning and no import',
+      (tester) async {
+    tester.view.physicalSize = const Size(412, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = MemoryAccountStore();
+    final session = trustingSession(store, InstanceTrust.memory());
+    addTearDown(session.dispose);
+    await tester.runAsync(session.initialize);
+    await tester.pumpWidget(MaterialApp(
+      home: LoginScreen(session: session, caPicker: FakeCaPicker(pickedFixture('ca.pem'))),
+    ));
+    await tester.enterText(find.byKey(const Key('instanceField')), 'https://gitlab.com');
+    await tester.enterText(find.byKey(const Key('tokenField')), 'synthetic-test-token');
+    await tester.tap(find.byKey(const Key('connectButton')));
+    await settleNetworkWidgets(tester);
+    expect(session.active, isNull);
+    expect(find.textContaining('這個網路上可能有人攔截連線'), findsOneWidget);
+    expect(find.byKey(const Key('importInstanceCa')), findsNothing);
+  });
+
+  testWidgets('L1: replacing a stored CA warns and shows its fingerprint',
+      (tester) async {
+    tester.view.physicalSize = const Size(412, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = MemoryAccountStore();
+    final trust = InstanceTrust.memory();
+    final ca = parseCaCertificate(File('test/fixtures/tls/ca.pem').readAsBytesSync());
+    final other =
+        parseCaCertificate(File('test/fixtures/tls/other_ca.pem').readAsBytesSync());
+    final instance = GitLabInstance.parse(url);
+    // The server now needs `ca`; the stored CA is the other one.
+    final session = trustingSession(store, trust,
+        accepts: (target) => trust.certificateFor(target) == ca);
+    addTearDown(session.dispose);
+    await tester.runAsync(() async {
+      await session.initialize();
+      await trust.save(instance, other);
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: LoginScreen(session: session, caPicker: FakeCaPicker(pickedFixture('ca.pem'))),
+    ));
+    await signInAttempt(tester);
+    await tester.tap(find.byKey(const Key('importInstanceCa')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('instance-ca-replace-warning')), findsOneWidget);
+    expect(find.textContaining('這可能表示連線遭到攔截'), findsOneWidget);
+    expect(
+      tester.widget<SelectableText>(
+          find.byKey(const ValueKey('instance-ca-current-fingerprint-0'))).data,
+      otherCaFingerprint,
+    );
+    expect(find.text('目前的 SHA-256 指紋'), findsOneWidget);
+    expect(find.text(caFingerprint), findsOneWidget);
+    await tester.tap(find.byKey(const Key('confirmInstanceCa')));
+    await settleNetworkWidgets(tester);
+    expect(trust.certificateFor(instance), ca);
+    expect(session.active?.user.id, 7);
+  });
+
+  testWidgets('L6: a CA without a saved account is listed and removable',
+      (tester) async {
+    tester.view.physicalSize = const Size(412, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = MemoryAccountStore();
+    final trust = InstanceTrust.memory();
+    final session = trustingSession(store, trust);
+    addTearDown(session.dispose);
+    final orphan = GitLabInstance.parse('https://orphan.example.com');
+    await tester.runAsync(() async {
+      await session.initialize();
+      await trust.save(
+        orphan,
+        parseCaCertificate(File('test/fixtures/tls/ca.pem').readAsBytesSync()),
+      );
+    });
+    expect(session.accounts, isEmpty);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: InstanceCaRows(session: session)),
+    ));
+    final row = find.byKey(ValueKey('instance-ca-${orphan.key}'));
+    expect(row, findsOneWidget);
+    expect(find.descendant(of: row, matching: find.textContaining('orphan.example.com')),
+        findsOneWidget);
+    await tester.tap(find.byKey(ValueKey('remove-instance-ca-${orphan.key}')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('移除後會立即'), findsNothing, reason: 'not signed in');
+    await tester.tap(find.widgetWithText(FilledButton, '移除'));
+    await settleNetworkWidgets(tester);
+    expect(trust.certificateFor(orphan), isNull);
     expect(row, findsNothing);
     expect(find.text('已移除自訂 CA 憑證'), findsOneWidget);
   });

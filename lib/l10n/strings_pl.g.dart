@@ -3070,4 +3070,10 @@ const _messagesPl = <String>[
   'Usuń własny certyfikat CA',
   'Usunięto własny certyfikat CA',
   'Własny certyfikat CA',
+  'Certyfikat GitLab.com nie jest zaufany, więc ktoś w tej sieci może przechwytywać połączenie. Nie kontynuuj w tej sieci i nie instaluj ani nie importuj żadnego certyfikatu dla GitLab.com.',
+  'Certyfikat serwera wygasł lub jeszcze nie jest ważny i import certyfikatu CA tego nie naprawi. Poproś administratora o odnowienie albo sprawdź datę i godzinę na tym urządzeniu.',
+  'Z tym certyfikatem CA certyfikat witryny nadal nie jest zaufany, więc nie został zachowany. Certyfikat CA nie naprawi certyfikatu wystawionego dla innej nazwy hosta, wygasłego ani wystawionego przez inny urząd.',
+  'Dla tej witryny jest już zapisany certyfikat CA, który zostanie zastąpiony. Jeśli administrator nie zmienił urzędu certyfikacji, może to oznaczać przechwytywanie połączenia.',
+  'Bieżący odcisk palca SHA-256',
+  'Jesteś zalogowany w tej witrynie, więc konto zostanie od razu sprawdzone ponownie bez tego certyfikatu.',
 ];

@@ -3070,4 +3070,10 @@ const _messagesEs = <String>[
   'Quitar certificado de CA personalizado',
   'Certificado de CA personalizado quitado',
   'Certificado de CA personalizado',
+  'El certificado de GitLab.com no es de confianza, así que alguien en esta red podría estar interceptando la conexión. No continúes en esta red y no instales ni importes ningún certificado para GitLab.com.',
+  'El certificado del servidor ha caducado o aún no es válido, y eso no se arregla importando un certificado de CA. Pide al administrador que lo renueve o revisa la fecha y la hora de este dispositivo.',
+  'Con este certificado de CA el certificado del sitio sigue sin ser de confianza, así que no se guardó. Un certificado de CA no arregla un certificado emitido para otro nombre de host, uno caducado ni uno de otra CA.',
+  'Este sitio ya tiene un certificado de CA guardado y se va a reemplazar. Salvo que tu administrador haya cambiado la CA, esto puede significar que la conexión está siendo interceptada.',
+  'Huella digital SHA-256 actual',
+  'Has iniciado sesión en este sitio, así que tu cuenta se vuelve a comprobar enseguida sin este certificado.',
 ];

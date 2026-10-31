@@ -75,6 +75,7 @@ enum CaCertificateProblem {
   privateKey,
   tooMany,
   rejected,
+  gitLabCom,
   saveFailed,
   removeFailed,
 }
@@ -100,6 +101,7 @@ final class CaCertificateFailure implements Exception, UserFacingFailure {
       '$maxCaCertificates',
     ),
     CaCertificateProblem.rejected => l10n.caCertificateRejected,
+    CaCertificateProblem.gitLabCom => l10n.untrustedCertificateGitLabCom,
     CaCertificateProblem.saveFailed => l10n.caCertificateSaveFailedDetail,
     CaCertificateProblem.removeFailed => l10n.caCertificateRemoveFailedDetail,
   };

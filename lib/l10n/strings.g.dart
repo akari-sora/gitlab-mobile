@@ -9297,4 +9297,22 @@ final class AppStrings {
 
   /// 自訂 CA 憑證
   String get customCaCertificate => language._messages[3067];
+
+  /// GitLab.com 的憑證不受信任，這個網路上可能有人攔截連線。請不要在這個網路上繼續登入，也不要為 GitLab.com 安裝或匯入任何憑證。
+  String get untrustedCertificateGitLabCom => language._messages[3068];
+
+  /// 伺服器的憑證已過期或尚未生效，匯入 CA 憑證也無法解決。請管理員更新憑證，或檢查此裝置的日期與時間。
+  String get serverCertificateNotValidNow => language._messages[3069];
+
+  /// 匯入這張 CA 憑證後，站台的憑證仍不受信任，因此沒有保留它。CA 憑證無法解決主機名稱不符、已過期或由其他 CA 簽發的憑證。
+  String get caImportDidNotHelp => language._messages[3070];
+
+  /// 此站台已儲存一張 CA 憑證，將被取代。除非管理員更換了 CA，否則這可能表示連線遭到攔截。
+  String get caReplaceWarning => language._messages[3071];
+
+  /// 目前的 SHA-256 指紋
+  String get caCurrentFingerprintLabel => language._messages[3072];
+
+  /// 你目前登入的是這個站台，移除後會立即在不使用此憑證的情況下重新驗證帳號。
+  String get removeCustomCaSignInAgain => language._messages[3073];
 }

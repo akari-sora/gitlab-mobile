@@ -3070,4 +3070,10 @@ const _messagesCs = <String>[
   'Odebrat vlastní certifikát CA',
   'Vlastní certifikát CA byl odebrán',
   'Vlastní certifikát CA',
+  'Certifikát GitLab.com není důvěryhodný, takže někdo v této síti možná připojení odposlouchává. V této síti nepokračujte a pro GitLab.com neinstalujte ani neimportujte žádný certifikát.',
+  'Certifikát serveru vypršel nebo ještě neplatí a import certifikátu CA to nevyřeší. Požádejte správce o obnovení nebo zkontrolujte datum a čas v tomto zařízení.',
+  'Ani s tímto certifikátem CA není certifikát webu důvěryhodný, proto nebyl ponechán. Certifikát CA nevyřeší certifikát vydaný pro jiný název hostitele, prošlý certifikát ani certifikát od jiné CA.',
+  'Pro tento web je už uložen certifikát CA a bude nahrazen. Pokud správce CA nezměnil, může to znamenat, že je připojení odposloucháváno.',
+  'Aktuální otisk SHA-256',
+  'K tomuto webu jste přihlášeni, takže se účet hned znovu ověří bez tohoto certifikátu.',
 ];

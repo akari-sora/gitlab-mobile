@@ -3070,4 +3070,10 @@ const _messagesRo = <String>[
   'Elimină certificatul CA personalizat',
   'Certificatul CA personalizat a fost eliminat',
   'Certificat CA personalizat',
+  'Certificatul GitLab.com nu este de încredere, deci cineva din această rețea ar putea intercepta conexiunea. Nu continua în această rețea și nu instala sau importa niciun certificat pentru GitLab.com.',
+  'Certificatul serverului a expirat sau nu este încă valid, iar importarea unui certificat CA nu rezolvă asta. Cere administratorului să îl reînnoiască sau verifică data și ora acestui dispozitiv.',
+  'Cu acest certificat CA, certificatul site-ului tot nu este de încredere, așa că nu a fost păstrat. Un certificat CA nu rezolvă un certificat emis pentru alt nume de gazdă, unul expirat sau unul de la altă CA.',
+  'Pentru acest site este deja salvat un certificat CA, care va fi înlocuit. Dacă administratorul nu a schimbat CA-ul, asta poate însemna că conexiunea este interceptată.',
+  'Amprenta SHA-256 actuală',
+  'Ești autentificat pe acest site, așa că contul tău este verificat din nou imediat, fără acest certificat.',
 ];

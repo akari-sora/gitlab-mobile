@@ -3067,5 +3067,11 @@
   "removeCustomCaAction": "Odebrat",
   "removeCustomCaTooltip": "Odebrat vlastní certifikát CA",
   "customCaRemoved": "Vlastní certifikát CA byl odebrán",
-  "customCaCertificate": "Vlastní certifikát CA"
+  "customCaCertificate": "Vlastní certifikát CA",
+  "untrustedCertificateGitLabCom": "Certifikát GitLab.com není důvěryhodný, takže někdo v této síti možná připojení odposlouchává. V této síti nepokračujte a pro GitLab.com neinstalujte ani neimportujte žádný certifikát.",
+  "serverCertificateNotValidNow": "Certifikát serveru vypršel nebo ještě neplatí a import certifikátu CA to nevyřeší. Požádejte správce o obnovení nebo zkontrolujte datum a čas v tomto zařízení.",
+  "caImportDidNotHelp": "Ani s tímto certifikátem CA není certifikát webu důvěryhodný, proto nebyl ponechán. Certifikát CA nevyřeší certifikát vydaný pro jiný název hostitele, prošlý certifikát ani certifikát od jiné CA.",
+  "caReplaceWarning": "Pro tento web je už uložen certifikát CA a bude nahrazen. Pokud správce CA nezměnil, může to znamenat, že je připojení odposloucháváno.",
+  "caCurrentFingerprintLabel": "Aktuální otisk SHA-256",
+  "removeCustomCaSignInAgain": "K tomuto webu jste přihlášeni, takže se účet hned znovu ověří bez tohoto certifikátu."
 }

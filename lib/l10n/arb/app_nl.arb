@@ -3067,5 +3067,11 @@
   "removeCustomCaAction": "Verwijderen",
   "removeCustomCaTooltip": "Eigen CA-certificaat verwijderen",
   "customCaRemoved": "Eigen CA-certificaat verwijderd",
-  "customCaCertificate": "Eigen CA-certificaat"
+  "customCaCertificate": "Eigen CA-certificaat",
+  "untrustedCertificateGitLabCom": "Het certificaat van GitLab.com wordt niet vertrouwd, dus iemand op dit netwerk onderschept mogelijk de verbinding. Ga op dit netwerk niet verder en installeer of importeer geen certificaat voor GitLab.com.",
+  "serverCertificateNotValidNow": "Het certificaat van de server is verlopen of nog niet geldig, en een CA-certificaat importeren lost dat niet op. Vraag de beheerder het te vernieuwen of controleer de datum en tijd van dit apparaat.",
+  "caImportDidNotHelp": "Met dit CA-certificaat wordt het certificaat van de site nog steeds niet vertrouwd, dus het is niet bewaard. Een CA-certificaat lost geen certificaat op voor een andere hostnaam, een verlopen certificaat of een van een andere CA.",
+  "caReplaceWarning": "Voor deze site is al een CA-certificaat opgeslagen; dat wordt vervangen. Tenzij je beheerder de CA heeft gewijzigd, kan dit betekenen dat de verbinding wordt onderschept.",
+  "caCurrentFingerprintLabel": "Huidige SHA-256-vingerafdruk",
+  "removeCustomCaSignInAgain": "Je bent bij deze site ingelogd, dus je account wordt meteen opnieuw gecontroleerd zonder dit certificaat."
 }

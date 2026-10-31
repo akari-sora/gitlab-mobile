@@ -3070,4 +3070,10 @@ const _messagesSv = <String>[
   'Ta bort anpassat CA-certifikat',
   'Det anpassade CA-certifikatet har tagits bort',
   'Anpassat CA-certifikat',
+  'GitLab.coms certifikat är inte betrott, så någon i det här nätverket kan avlyssna anslutningen. Fortsätt inte i det här nätverket och installera eller importera inget certifikat för GitLab.com.',
+  'Serverns certifikat har gått ut eller är inte giltigt än, och det löser inte ett importerat CA-certifikat. Be administratören förnya det eller kontrollera enhetens datum och tid.',
+  'Med det här CA-certifikatet är webbplatsens certifikat fortfarande inte betrott, så det sparades inte. Ett CA-certifikat löser inte ett certifikat för ett annat värdnamn, ett utgånget certifikat eller ett från en annan CA.',
+  'Ett CA-certifikat finns redan sparat för den här webbplatsen och ersätts. Om inte administratören har bytt CA kan det betyda att anslutningen avlyssnas.',
+  'Nuvarande SHA-256-fingeravtryck',
+  'Du är inloggad på den här webbplatsen, så ditt konto kontrolleras igen direkt utan det här certifikatet.',
 ];

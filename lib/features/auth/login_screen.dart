@@ -273,6 +273,7 @@ class _LoginScreenState extends State<LoginScreen> {
   /// The import action applies to the failed operation's instance: for a
   /// connect, only while the URL field still names that instance.
   bool _offersCaImport(UntrustedInstance untrusted) {
+    if (untrusted.instance.isGitLabCom) return false;
     if (untrusted.retry == UntrustedRetry.select) {
       return widget.session.accounts.any(
         (saved) => saved.key == untrusted.saved?.key,
@@ -286,32 +287,48 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Imports a CA for the instance, then repeats the operation that stopped
-  /// at its certificate. The user already confirmed leaving any retained
-  /// account for that operation, so the retry does not ask again.
+  /// Imports a CA for the instance and repeats the operation that stopped at
+  /// its certificate; the session rolls the CA back when the retry still
+  /// stops there. The user already confirmed leaving any retained account
+  /// for that operation, so the retry does not ask again.
   Future<void> _importCa(UntrustedInstance untrusted) async {
     final session = widget.session;
     if (session.busy || AiAccountRemoval.anyRunning) return;
-    final stored = await importInstanceCa(
+    final certificate = await pickAndConfirmInstanceCa(
       context,
       session: session,
       untrusted: untrusted,
       picker: widget.caPicker,
     );
-    if (!stored || !mounted || session.busy || AiAccountRemoval.anyRunning) {
+    if (certificate == null ||
+        !mounted ||
+        session.busy ||
+        AiAccountRemoval.anyRunning) {
       return;
     }
-    switch (untrusted.retry) {
-      case UntrustedRetry.connect:
-        if (_form.currentState?.validate() != true) return;
-        await session.connect(_instance.text, _token.text);
-        if (mounted && session.active != null) _token.clear();
-      case UntrustedRetry.connectOAuth:
-        await session.connectOAuth(_instance.text);
-      case UntrustedRetry.select:
-        final saved = untrusted.saved;
-        if (saved != null) await session.select(saved);
+    Future<void> retry() async {
+      switch (untrusted.retry) {
+        case UntrustedRetry.connect:
+          if (_form.currentState?.validate() != true) return;
+          await session.connect(_instance.text, _token.text);
+        case UntrustedRetry.connectOAuth:
+          await session.connectOAuth(_instance.text);
+        case UntrustedRetry.select:
+          final saved = untrusted.saved;
+          if (saved != null) await session.select(saved);
+      }
     }
+
+    try {
+      await session.importInstanceCa(
+        untrusted.instance,
+        certificate,
+        retry: retry,
+      );
+    } on Object catch (error) {
+      if (mounted) showFailure(context, error);
+    }
+    if (mounted && session.active != null) _token.clear();
   }
 
   Future<void> _tryDemo() async {

@@ -3067,5 +3067,11 @@
   "removeCustomCaAction": "Hapus",
   "removeCustomCaTooltip": "Hapus sertifikat CA kustom",
   "customCaRemoved": "Sertifikat CA kustom dihapus",
-  "customCaCertificate": "Sertifikat CA kustom"
+  "customCaCertificate": "Sertifikat CA kustom",
+  "untrustedCertificateGitLabCom": "Sertifikat GitLab.com tidak tepercaya, jadi seseorang di jaringan ini mungkin menyadap koneksi. Jangan lanjutkan di jaringan ini dan jangan memasang atau mengimpor sertifikat apa pun untuk GitLab.com.",
+  "serverCertificateNotValidNow": "Sertifikat server sudah kedaluwarsa atau belum berlaku, dan mengimpor sertifikat CA tidak bisa memperbaikinya. Minta administrator memperbaruinya atau periksa tanggal dan waktu perangkat ini.",
+  "caImportDidNotHelp": "Dengan sertifikat CA ini sertifikat situs tetap tidak tepercaya, jadi sertifikat ini tidak disimpan. Sertifikat CA tidak bisa memperbaiki sertifikat untuk nama host lain, sertifikat kedaluwarsa, atau sertifikat dari CA lain.",
+  "caReplaceWarning": "Situs ini sudah punya sertifikat CA tersimpan yang akan diganti. Kecuali administrator Anda mengganti CA, ini bisa berarti koneksi sedang disadap.",
+  "caCurrentFingerprintLabel": "Sidik jari SHA-256 saat ini",
+  "removeCustomCaSignInAgain": "Anda masuk ke situs ini, jadi akun Anda langsung diperiksa ulang tanpa sertifikat ini."
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -46,6 +47,7 @@ SessionController trustingSession(
   InstanceTrust trust, {
   FakeAdapter? adapter,
   HandshakeRefusingAdapter? refusing,
+  bool Function(GitLabInstance instance)? accepts,
 }) {
   final accepted =
       adapter ?? FakeAdapter((_) => jsonResponse({'id': 7, 'username': 'tester'}));
@@ -59,7 +61,9 @@ SessionController trustingSession(
       credential: credential,
       dio: Dio()
         ..httpClientAdapter =
-            trust.certificateFor(instance) == null ? refused : accepted,
+            (accepts?.call(instance) ?? trust.certificateFor(instance) != null)
+            ? accepted
+            : refused,
       oauth: oauth,
       onOAuthRotated: onOAuthRotated,
     ),
@@ -73,6 +77,7 @@ Account account(String instance, int id) => Account(
 );
 
 void main() {
+  _securityReviewTests();
   test('storage key is instance_ca.v1.<base64url(instance.key)>', () {
     expect(
       instanceCaStorageKey('https://gitlab.example.com/gitlab'),
@@ -107,12 +112,16 @@ void main() {
     expect(backing.values, isEmpty);
     expect(store.accounts, isEmpty);
 
-    await session.importInstanceCa(untrusted.instance, ca);
+    final kept = await session.importInstanceCa(
+      untrusted.instance,
+      ca,
+      retry: () =>
+          session.connect('https://gitlab.example.com/gitlab', 'synthetic-test-token'),
+    );
+    expect(kept, isTrue);
     final key = instanceCaStorageKey('https://gitlab.example.com/gitlab');
     expect(backing.values.keys, [key]);
     expect(InstanceCaCertificate.decode(backing.values[key]), ca);
-
-    await session.connect('https://gitlab.example.com/gitlab', 'synthetic-test-token');
     expect(session.active?.user.id, 7);
     expect(session.untrusted, isNull);
     expect(refusing.attempts, 1);
@@ -249,6 +258,195 @@ void main() {
     expect(trust.securityContextFor(instance), isNull);
     expect(backing.values, isEmpty);
   });
+}
+
+const _gitLabComWarning = 'GitLab.com 的憑證不受信任';
+const _didNotHelp = '匯入這張 CA 憑證後，站台的憑證仍不受信任';
+
+void _securityReviewTests() {
+  test('isGitLabCom covers gitlab.com and its subdomains only', () {
+    bool gitLabCom(String url) => GitLabInstance.parse(url).isGitLabCom;
+    expect(gitLabCom('https://gitlab.com'), isTrue);
+    expect(gitLabCom('https://GitLab.com/'), isTrue);
+    expect(gitLabCom('https://gitlab.com.'), isTrue);
+    expect(gitLabCom('https://next.gitlab.com'), isTrue);
+    expect(gitLabCom('https://a.b.gitlab.com:8443/x'), isTrue);
+    expect(gitLabCom('https://gitlab.com.evil.example'), isFalse);
+    expect(gitLabCom('https://notgitlab.com'), isFalse);
+    expect(gitLabCom('https://gitlab.example.com'), isFalse);
+  });
+
+  test('M1: GitLab.com never offers an import and refuses to store one',
+      () async {
+    final store = MemoryAccountStore();
+    final backing = MemoryInstanceTrustStore();
+    final trust = InstanceTrust.memory(backing);
+    final session = trustingSession(store, trust);
+    addTearDown(session.dispose);
+    await session.initialize();
+    await session.connect('https://gitlab.com', 'synthetic-test-token');
+    expect(session.active, isNull);
+    expect(session.untrusted, isNull);
+    expect(session.message, contains(_gitLabComWarning));
+
+    final gitLabCom = GitLabInstance.parse('https://gitlab.com');
+    Matcher refused() => throwsA(isA<CaCertificateFailure>().having(
+        (failure) => failure.problem, 'problem', CaCertificateProblem.gitLabCom));
+    await expectLater(trust.save(gitLabCom, ca), refused());
+    await expectLater(
+      trust.save(GitLabInstance.parse('https://next.gitlab.com'), ca),
+      refused(),
+    );
+    var retried = false;
+    await expectLater(
+      session.importInstanceCa(gitLabCom, ca, retry: () async => retried = true),
+      refused(),
+    );
+    expect(retried, isFalse);
+    expect(backing.values, isEmpty);
+  });
+
+  test('L2: validity dates decide whether a CA can help', () {
+    final now = DateTime.utc(2026, 10, 31);
+    RefusedCertificate dates(DateTime? start, DateTime? end) => RefusedCertificate(
+        subject: '/CN=x', issuer: '/CN=y', startValidity: start, endValidity: end);
+    expect(dates(DateTime.utc(2026), DateTime.utc(2027)).validAt(now), isTrue);
+    expect(dates(DateTime.utc(2025), DateTime.utc(2026)).validAt(now), isFalse);
+    expect(dates(DateTime.utc(2027), DateTime.utc(2028)).validAt(now), isFalse);
+    expect(dates(null, null).validAt(now), isTrue);
+  });
+
+  test('L3: a retry that still fails at the certificate removes the new CA',
+      () async {
+    final store = MemoryAccountStore();
+    final backing = MemoryInstanceTrustStore();
+    final trust = InstanceTrust.memory(backing);
+    final refusing = HandshakeRefusingAdapter();
+    final session =
+        trustingSession(store, trust, refusing: refusing, accepts: (_) => false);
+    addTearDown(session.dispose);
+    await session.initialize();
+    const url = 'https://gitlab.example.com';
+    await session.connect(url, 'synthetic-test-token');
+    final kept = await session.importInstanceCa(
+      session.untrusted!.instance,
+      ca,
+      retry: () => session.connect(url, 'synthetic-test-token'),
+    );
+    expect(kept, isFalse);
+    expect(refusing.attempts, 2);
+    expect(trust.certificateFor(GitLabInstance.parse(url)), isNull);
+    expect(backing.values, isEmpty);
+    expect(session.untrusted, isNull);
+    expect(session.message, contains(_didNotHelp));
+  });
+
+  test('L3: a retry that still fails restores the previous CA', () async {
+    final store = MemoryAccountStore();
+    const url = 'https://gitlab.example.com';
+    final instance = GitLabInstance.parse(url);
+    final backing = MemoryInstanceTrustStore({
+      instanceCaStorageKey(instance.key): otherCa.encode(),
+    });
+    final trust = InstanceTrust.memory(backing);
+    final session = trustingSession(store, trust, accepts: (_) => false);
+    addTearDown(session.dispose);
+    await session.initialize();
+    await trust.save(instance, otherCa);
+    await session.connect(url, 'synthetic-test-token');
+    expect(
+      await session.importInstanceCa(instance, ca,
+          retry: () => session.connect(url, 'synthetic-test-token')),
+      isFalse,
+    );
+    expect(trust.certificateFor(instance), otherCa);
+    expect(InstanceCaCertificate.decode(backing.values[instanceCaStorageKey(url)]),
+        otherCa);
+  });
+
+  test('L3: a retry that fails for another reason keeps the CA', () async {
+    final store = MemoryAccountStore();
+    final trust = InstanceTrust.memory();
+    final session = trustingSession(store, trust,
+        adapter: FakeAdapter((_) => jsonResponse({'message': '401'}, status: 401)));
+    addTearDown(session.dispose);
+    await session.initialize();
+    const url = 'https://gitlab.example.com';
+    await session.connect(url, 'synthetic-test-token');
+    expect(
+      await session.importInstanceCa(session.untrusted!.instance, ca,
+          retry: () => session.connect(url, 'synthetic-test-token')),
+      isTrue,
+    );
+    expect(trust.certificateFor(GitLabInstance.parse(url)), ca);
+    expect(session.active, isNull);
+  });
+
+  test('L6: a failed delete stops trusting the CA for the rest of the run',
+      () async {
+    final store = MemoryAccountStore();
+    final instance = GitLabInstance.parse('https://gitlab.example.com');
+    final backing = _StuckTrustStore({
+      instanceCaStorageKey(instance.key): ca.encode(),
+    });
+    final trust = InstanceTrust(backing);
+    final refusing = HandshakeRefusingAdapter();
+    final session = trustingSession(store, trust, refusing: refusing);
+    addTearDown(session.dispose);
+    await session.initialize();
+    expect(trust.certificateFor(instance), ca);
+
+    await expectLater(
+      trust.remove(instance),
+      throwsA(isA<CaCertificateFailure>().having(
+          (failure) => failure.problem, 'problem', CaCertificateProblem.removeFailed)),
+    );
+    expect(backing.values, hasLength(1), reason: 'storage still holds it');
+    expect(trust.certificateFor(instance), isNull);
+    expect(trust.instanceKeys, isEmpty);
+    expect(trust.securityContextFor(instance), isNull);
+    // A later sign-in builds its client without it.
+    await session.connect(instance.key, 'synthetic-test-token');
+    expect(refusing.attempts, 1);
+    expect(session.active, isNull);
+    expect(session.untrusted?.instance.key, instance.key);
+  });
+
+  test('L7: a hung CA delete cannot hold the account removal', () async {
+    final store = MemoryAccountStore();
+    final only = account('https://gitlab.example.com', 7);
+    store.accounts = [only];
+    final backing = _StuckTrustStore({
+      instanceCaStorageKey(only.instance.key): ca.encode(),
+    }, hang: true);
+    final trust = InstanceTrust(backing);
+    final session = trustingSession(store, trust);
+    addTearDown(session.dispose);
+    await session.initialize();
+    final watch = Stopwatch()..start();
+    expect((await session.remove(only)).removed, isTrue);
+    expect(watch.elapsed, lessThan(const Duration(seconds: 15)));
+    expect(store.accounts, isEmpty);
+    expect(trust.certificateFor(only.instance), isNull);
+  });
+}
+
+/// A keychain whose delete fails ([hang] false) or never answers.
+final class _StuckTrustStore implements InstanceTrustStore {
+  _StuckTrustStore(this.values, {this.hang = false});
+  final Map<String, String> values;
+  final bool hang;
+  @override
+  Future<Map<String, String>> readAll() async => Map.of(values);
+  @override
+  Future<String?> read(String storageKey) async => values[storageKey];
+  @override
+  Future<void> write(String storageKey, String value) async =>
+      values[storageKey] = value;
+  @override
+  Future<void> delete(String storageKey) => hang
+      ? Completer<void>().future
+      : Future.error(StateError('synthetic keychain failure'));
 }
 
 final class _FailingTrustStore implements InstanceTrustStore {

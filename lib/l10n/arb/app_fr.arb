@@ -3067,5 +3067,11 @@
   "removeCustomCaAction": "Supprimer",
   "removeCustomCaTooltip": "Supprimer le certificat CA personnalisé",
   "customCaRemoved": "Certificat CA personnalisé supprimé",
-  "customCaCertificate": "Certificat CA personnalisé"
+  "customCaCertificate": "Certificat CA personnalisé",
+  "untrustedCertificateGitLabCom": "Le certificat de GitLab.com n'est pas approuvé : quelqu'un sur ce réseau intercepte peut-être la connexion. Ne continuez pas sur ce réseau et n'installez ni n'importez aucun certificat pour GitLab.com.",
+  "serverCertificateNotValidNow": "Le certificat du serveur a expiré ou n'est pas encore valide, ce qu'un certificat CA importé ne peut pas corriger. Demandez à l'administrateur de le renouveler ou vérifiez la date et l'heure de cet appareil.",
+  "caImportDidNotHelp": "Avec ce certificat CA, le certificat du site n'est toujours pas approuvé ; il n'a donc pas été conservé. Un certificat CA ne corrige pas un certificat émis pour un autre nom d'hôte, expiré ou émis par une autre CA.",
+  "caReplaceWarning": "Un certificat CA est déjà enregistré pour ce site et va être remplacé. Sauf si votre administrateur a changé de CA, cela peut indiquer que la connexion est interceptée.",
+  "caCurrentFingerprintLabel": "Empreinte SHA-256 actuelle",
+  "removeCustomCaSignInAgain": "Vous êtes connecté à ce site : votre compte est donc vérifié de nouveau immédiatement, sans ce certificat."
 }

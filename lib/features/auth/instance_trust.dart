@@ -197,6 +197,9 @@ final class InstanceTrust extends ChangeNotifier {
     GitLabInstance instance,
     InstanceCaCertificate certificate,
   ) async {
+    if (instance.isGitLabCom) {
+      throw const CaCertificateFailure(CaCertificateProblem.gitLabCom);
+    }
     final storageKey = instanceCaStorageKey(instance.key);
     final value = certificate.encode();
     try {
@@ -215,23 +218,33 @@ final class InstanceTrust extends ChangeNotifier {
     _notify();
   }
 
-  /// Deletes the entry and confirms it is gone. Clients already built keep
-  /// the context they were given; the next client uses the default roots.
+  /// Deletes the entry and confirms it is gone. This run stops trusting the
+  /// CA at once, before the delete is even attempted, so a failed or hung
+  /// delete cannot leave a CA that a later sign-in silently reuses; it then
+  /// shows as a failure and, while stored, comes back at the next start.
+  /// Clients already built keep the context they were given; the next client
+  /// uses the default roots.
   Future<void> remove(GitLabInstance instance) async {
     final storageKey = instanceCaStorageKey(instance.key);
+    _forget(instance.key);
     try {
       await store.delete(storageKey);
       if (await store.read(storageKey) != null) {
         throw const CaCertificateFailure(CaCertificateProblem.removeFailed);
       }
+      _storageKeys.remove(storageKey);
     } on CaCertificateFailure {
       rethrow;
     } on Object {
       throw const CaCertificateFailure(CaCertificateProblem.removeFailed);
+    } finally {
+      _notify();
     }
-    _touched.add(instance.key);
-    _storageKeys.remove(storageKey);
-    _byInstance.remove(instance.key);
+  }
+
+  void _forget(String instanceKey) {
+    _touched.add(instanceKey);
+    _byInstance.remove(instanceKey);
     _notify();
   }
 

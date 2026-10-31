@@ -278,11 +278,15 @@ final class OAuthTokenClient {
       if (error.type == DioExceptionType.cancel) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      throw ApiFailure(
-        isRefusedCertificate(error)
-            ? FailureKind.untrustedCertificate
-            : FailureKind.network,
-      );
+      if (isRefusedCertificate(error)) {
+        throw ApiFailure(
+          FailureKind.untrustedCertificate,
+          detail: instance.isGitLabCom
+              ? l10n.untrustedCertificateGitLabCom
+              : null,
+        );
+      }
+      throw const ApiFailure(FailureKind.network);
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
     }
@@ -330,11 +334,15 @@ final class OAuthTokenClient {
       if (error.type == DioExceptionType.cancel) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      throw ApiFailure(
-        isRefusedCertificate(error)
-            ? FailureKind.untrustedCertificate
-            : FailureKind.network,
-      );
+      if (isRefusedCertificate(error)) {
+        throw ApiFailure(
+          FailureKind.untrustedCertificate,
+          detail: instance.isGitLabCom
+              ? l10n.untrustedCertificateGitLabCom
+              : null,
+        );
+      }
+      throw const ApiFailure(FailureKind.network);
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
     }

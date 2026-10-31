@@ -17,9 +17,22 @@ enum FailureKind {
 /// The certificate a server presented when the platform refused it, for
 /// display beside the import confirmation only. Server-controlled text.
 final class RefusedCertificate {
-  const RefusedCertificate({required this.subject, required this.issuer});
+  const RefusedCertificate({
+    required this.subject,
+    required this.issuer,
+    this.startValidity,
+    this.endValidity,
+  });
   final String subject;
   final String issuer;
+  final DateTime? startValidity;
+  final DateTime? endValidity;
+
+  /// False when the certificate has expired or is not valid yet at [now]:
+  /// importing a CA cannot fix that. Unknown dates count as valid.
+  bool validAt(DateTime now) =>
+      !(startValidity?.isAfter(now) ?? false) &&
+      !(endValidity?.isBefore(now) ?? false);
 }
 
 /// Shared presentation contract; provider failures keep their own semantics.

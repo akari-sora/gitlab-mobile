@@ -214,6 +214,8 @@ final class GitLabApi {
         _refusedCertificate = RefusedCertificate(
           subject: _certificateName(certificate.subject),
           issuer: _certificateName(certificate.issuer),
+          startValidity: certificate.startValidity,
+          endValidity: certificate.endValidity,
         );
       }
       // Only records what was refused: verification failed and stays failed.
@@ -234,6 +236,9 @@ final class GitLabApi {
     return ApiFailure(
       FailureKind.untrustedCertificate,
       refusedCertificate: _refusedCertificate,
+      // GitLab.com chains to public roots: a refusal there suggests
+      // interception, and no CA is offered for it.
+      detail: instance.isGitLabCom ? l10n.untrustedCertificateGitLabCom : null,
     );
   }
   AccountCredential _credential;
@@ -1655,7 +1660,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
   /// jar cannot ride along. The account adapter is never reused: production
   /// gets a new [IOHttpClientAdapter], and tests observe this hop only through
   /// an explicitly injected adapter, which is not closed with the hop.
-  Dio _openBareArtifactDio() {
+  ///
+  /// The instance CA applies only when [location] is on the instance's own
+  /// host: the import confirmation promises "only connections to {host}".
+  Dio _openBareArtifactDio(Uri location) {
     final dio = Dio(
       BaseOptions(
         connectTimeout: _dio.options.connectTimeout,
@@ -1670,11 +1678,13 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     );
     dio.interceptors.clear(keepImplyContentTypeInterceptor: false);
     final cdn = _cdnAdapter;
-    // The same client's instance CA, if any: self-hosted object storage often
-    // shares the company CA. The context is only ever this account's; the
-    // hop carries no credential and keeps Dio's default idle timeout.
+    // The same client's instance CA, for object storage on the instance's own
+    // host; any other host gets the default roots. The hop carries no
+    // credential and keeps Dio's default idle timeout.
     dio.httpClientAdapter = cdn == null
-        ? instanceHttpAdapter(_securityContext)
+        ? instanceHttpAdapter(
+            location.host == instance.base.host ? _securityContext : null,
+          )
         : _ForwardingAdapter(cdn);
     _bareClients.add(dio);
     return dio;
@@ -1792,7 +1802,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       if (location == null) {
         throw ApiFailure(FailureKind.redirectBlocked, status: status);
       }
-      final bare = _openBareArtifactDio();
+      final bare = _openBareArtifactDio(location);
       try {
         final followed = await _artifactResponse(
           location,

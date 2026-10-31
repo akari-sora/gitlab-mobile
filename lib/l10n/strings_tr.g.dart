@@ -3070,4 +3070,10 @@ const _messagesTr = <String>[
   'Özel CA sertifikasını kaldır',
   'Özel CA sertifikası kaldırıldı',
   'Özel CA sertifikası',
+  'GitLab.com sertifikası güvenilir değil; bu ağda biri bağlantıyı dinliyor olabilir. Bu ağda devam etmeyin ve GitLab.com için hiçbir sertifika yüklemeyin ya da içe aktarmayın.',
+  'Sunucunun sertifikasının süresi dolmuş veya henüz geçerli değil; bir CA sertifikası içe aktarmak bunu düzeltmez. Yöneticiden yenilemesini isteyin veya bu cihazın tarih ve saatini kontrol edin.',
+  'Bu CA sertifikasıyla da sitenin sertifikası güvenilir olmadığı için saklanmadı. CA sertifikası, başka bir ana makine adı için verilmiş, süresi dolmuş veya başka bir CA\'nın verdiği bir sertifikayı düzeltemez.',
+  'Bu site için zaten bir CA sertifikası kayıtlı ve değiştirilecek. Yöneticiniz CA\'yı değiştirmediyse bu, bağlantının dinlendiği anlamına gelebilir.',
+  'Geçerli SHA-256 parmak izi',
+  'Bu sitede oturum açmış durumdasınız; hesabınız bu sertifika olmadan hemen yeniden doğrulanır.',
 ];

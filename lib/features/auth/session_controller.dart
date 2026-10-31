@@ -94,8 +94,14 @@ final class SessionController extends ChangeNotifier {
   final InstanceTrust trust;
 
   /// Set when the last connect, OAuth sign-in or account check stopped at an
-  /// untrusted certificate; cleared when the next one starts.
+  /// untrusted certificate that a CA import can address; cleared when the
+  /// next one starts. Never set for GitLab.com or for a server certificate
+  /// outside its validity dates.
   UntrustedInstance? untrusted;
+
+  /// The instance whose certificate the last operation refused, whether or
+  /// not an import is offered; [importInstanceCa] rolls back on it.
+  String? _refusedInstanceKey;
   final ApiFactory? _createApi;
   final IdentityApiFactory? _createIdentityApi;
   late final OfflineGate offlineGate;
@@ -407,6 +413,7 @@ final class SessionController extends ChangeNotifier {
       resumingAccount = match;
       message = null;
       untrusted = null;
+      _refusedInstanceKey = null;
       _emit();
       if (!_current(ticket)) return;
       offlineGate.stop();
@@ -511,6 +518,9 @@ final class SessionController extends ChangeNotifier {
     _emit();
   }
 
+  /// Offers a CA import only where one can help. GitLab.com's failure text
+  /// already warns of interception (set by the client). A server
+  /// certificate outside its validity dates gets its own message.
   void _noteUntrusted(
     ApiFailure failure,
     GitLabInstance instance,
@@ -518,6 +528,16 @@ final class SessionController extends ChangeNotifier {
     Account? saved,
   ]) {
     if (failure.kind != FailureKind.untrustedCertificate) return;
+    _refusedInstanceKey = instance.key;
+    if (instance.isGitLabCom) return;
+    final refused = failure.refusedCertificate;
+    if (refused != null && !refused.validAt(offlineGate.now)) {
+      message = l10n.titleThenDetail(
+        failure.title,
+        l10n.serverCertificateNotValidNow,
+      );
+      return;
+    }
     untrusted = UntrustedInstance(
       instance: instance,
       retry: retry,
@@ -526,15 +546,49 @@ final class SessionController extends ChangeNotifier {
     );
   }
 
-  /// Stores [certificate] for [instance] once the user confirmed it. The
-  /// caller then repeats the operation in [untrusted]; a client built before
-  /// this keeps its own context. Throws [CaCertificateFailure].
-  Future<void> importInstanceCa(
+  /// Stores [certificate] for [instance] once the user confirmed it, then
+  /// runs [retry] (the operation that stopped at the certificate). When the
+  /// retry stops at the certificate again, the CA cannot help: the previous
+  /// CA is restored, or the new one removed, and the message says so.
+  /// Returns whether the new CA was kept. A client built before this keeps
+  /// its own context. Throws [CaCertificateFailure], always for GitLab.com.
+  Future<bool> importInstanceCa(
     GitLabInstance instance,
-    InstanceCaCertificate certificate,
-  ) async {
-    if (_disposed || busy || offline != null) return;
+    InstanceCaCertificate certificate, {
+    required Future<void> Function() retry,
+  }) async {
+    if (instance.isGitLabCom) {
+      throw const CaCertificateFailure(CaCertificateProblem.gitLabCom);
+    }
+    if (_disposed || busy || offline != null) return false;
+    final previous = trust.certificateFor(instance);
     await trust.save(instance, certificate);
+    _refusedInstanceKey = null;
+    await retry();
+    if (_disposed || _refusedInstanceKey != instance.key) return true;
+    const limit = Duration(seconds: 5);
+    try {
+      await (previous == null
+              ? trust.remove(instance)
+              : trust.save(instance, previous))
+          .timeout(limit);
+    } on Object {
+      // A failed restore must not leave the rejected CA trusted: removal
+      // forgets it in memory before its delete, even one that fails or hangs.
+      try {
+        await trust.remove(instance).timeout(limit);
+      } on Object {
+        // Shown in 我的 › 帳號 until a later removal succeeds.
+      }
+    }
+    if (_disposed) return false;
+    untrusted = null;
+    message = l10n.titleThenDetail(
+      l10n.untrustedCertificateTitle,
+      l10n.caImportDidNotHelp,
+    );
+    _emit();
+    return false;
   }
 
   Future<bool> _handleIdentityVerdict(
@@ -736,6 +790,7 @@ final class SessionController extends ChangeNotifier {
     resumingAccount = null;
     message = null;
     untrusted = null;
+    _refusedInstanceKey = null;
     offlineGate.start(
       lastValidatedAt: eligible.lastValidatedAt,
       onProbe: () => probeOffline(manual: false),
@@ -876,6 +931,7 @@ final class SessionController extends ChangeNotifier {
     busy = true;
     message = null;
     untrusted = null;
+    _refusedInstanceKey = null;
     _emit();
     GitLabApi? candidate;
     GitLabInstance? target;
@@ -956,6 +1012,7 @@ final class SessionController extends ChangeNotifier {
     busy = true;
     message = null;
     untrusted = null;
+    _refusedInstanceKey = null;
     _emit();
     GitLabApi? candidate;
     try {
@@ -1038,6 +1095,7 @@ final class SessionController extends ChangeNotifier {
     busy = true;
     message = null;
     untrusted = null;
+    _refusedInstanceKey = null;
     _emit();
     GitLabApi? candidate;
     GitLabInstance? target;
@@ -1510,6 +1568,7 @@ final class SessionController extends ChangeNotifier {
     busy = true;
     message = null;
     untrusted = null;
+    _refusedInstanceKey = null;
     _emit();
     final previous = List<Account>.of(_accounts);
     final staged = _accounts.where((item) => item.key != account.key).toList();
@@ -1583,9 +1642,11 @@ final class SessionController extends ChangeNotifier {
             (item) => item.instance.key == account.instance.key,
           )) {
         try {
-          await trust.remove(account.instance);
+          await trust.remove(account.instance).timeout(
+            const Duration(seconds: 5),
+          );
         } on Object {
-          // Swept at the next start.
+          // Swept at the next start; this run already stopped trusting it.
         }
       }
       if (!_current(ticket)) return (removed: removalCommitted, failure: null);

@@ -3070,4 +3070,10 @@ const _messagesMs = <String>[
   'Alih keluar sijil CA tersuai',
   'Sijil CA tersuai dialih keluar',
   'Sijil CA tersuai',
+  'Sijil GitLab.com tidak dipercayai, jadi seseorang dalam rangkaian ini mungkin memintas sambungan. Jangan teruskan dalam rangkaian ini dan jangan pasang atau import sebarang sijil untuk GitLab.com.',
+  'Sijil pelayan telah tamat tempoh atau belum sah, dan mengimport sijil CA tidak dapat membetulkannya. Minta pentadbir memperbaharuinya atau semak tarikh dan masa peranti ini.',
+  'Dengan sijil CA ini sijil tapak masih tidak dipercayai, jadi ia tidak disimpan. Sijil CA tidak dapat membetulkan sijil untuk nama hos lain, sijil yang tamat tempoh atau sijil daripada CA lain.',
+  'Tapak ini sudah mempunyai sijil CA tersimpan yang akan diganti. Melainkan pentadbir anda menukar CA, ini mungkin bermakna sambungan sedang dipintas.',
+  'Cap jari SHA-256 semasa',
+  'Anda log masuk ke tapak ini, jadi akaun anda disemak semula serta-merta tanpa sijil ini.',
 ];

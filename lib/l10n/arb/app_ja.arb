@@ -3067,5 +3067,11 @@
   "removeCustomCaAction": "削除",
   "removeCustomCaTooltip": "カスタム CA 証明書を削除",
   "customCaRemoved": "カスタム CA 証明書を削除しました",
-  "customCaCertificate": "カスタム CA 証明書"
+  "customCaCertificate": "カスタム CA 証明書",
+  "untrustedCertificateGitLabCom": "GitLab.com の証明書が信頼されていません。このネットワーク上で通信が傍受されている可能性があります。このネットワークでは続行せず、GitLab.com 用の証明書をインストールまたはインポートしないでください。",
+  "serverCertificateNotValidNow": "サーバーの証明書は期限切れか、まだ有効になっていません。CA 証明書をインポートしても解決しません。管理者に更新を依頼するか、このデバイスの日付と時刻を確認してください。",
+  "caImportDidNotHelp": "この CA 証明書を使ってもサイトの証明書は信頼されないため、保存しませんでした。CA 証明書では、ホスト名の不一致、期限切れ、別の CA が発行した証明書は解決できません。",
+  "caReplaceWarning": "このサイトにはすでに CA 証明書が保存されており、置き換えられます。管理者が CA を変更したのでない限り、通信が傍受されている可能性があります。",
+  "caCurrentFingerprintLabel": "現在の SHA-256 フィンガープリント",
+  "removeCustomCaSignInAgain": "このサイトにサインイン中のため、削除するとすぐにこの証明書なしでアカウントを再確認します。"
 }

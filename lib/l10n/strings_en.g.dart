@@ -3070,4 +3070,10 @@ const _messagesEn = <String>[
   'Remove custom CA certificate',
   'Custom CA certificate removed',
   'Custom CA certificate',
+  'GitLab.com\'s certificate was not trusted, so someone on this network may be intercepting the connection. Do not continue on this network, and do not install or import any certificate for GitLab.com.',
+  'The server\'s certificate has expired or is not valid yet, which importing a CA certificate cannot fix. Ask the administrator to renew it, or check this device\'s date and time.',
+  'With this CA certificate the site\'s certificate is still not trusted, so it was not kept. A CA certificate cannot fix a certificate issued for another host name, an expired certificate, or one from a different CA.',
+  'A CA certificate is already stored for this site and will be replaced. Unless your administrator changed the CA, this can mean the connection is being intercepted.',
+  'Current SHA-256 fingerprint',
+  'You are signed in to this site, so your account is checked again right away without this certificate.',
 ];

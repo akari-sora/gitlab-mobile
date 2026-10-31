@@ -3070,4 +3070,10 @@ const _messagesIt = <String>[
   'Rimuovi certificato CA personalizzato',
   'Certificato CA personalizzato rimosso',
   'Certificato CA personalizzato',
+  'Il certificato di GitLab.com non è attendibile, quindi qualcuno su questa rete potrebbe intercettare la connessione. Non continuare su questa rete e non installare né importare alcun certificato per GitLab.com.',
+  'Il certificato del server è scaduto o non è ancora valido: importare un certificato CA non lo risolve. Chiedi all\'amministratore di rinnovarlo o controlla data e ora di questo dispositivo.',
+  'Con questo certificato CA il certificato del sito non è ancora attendibile, quindi non è stato conservato. Un certificato CA non risolve un certificato emesso per un altro nome host, scaduto o emesso da un\'altra CA.',
+  'Per questo sito è già salvato un certificato CA, che verrà sostituito. A meno che l\'amministratore non abbia cambiato CA, potrebbe significare che la connessione è intercettata.',
+  'Impronta digitale SHA-256 attuale',
+  'Hai eseguito l\'accesso a questo sito, quindi il tuo account viene ricontrollato subito senza questo certificato.',
 ];
