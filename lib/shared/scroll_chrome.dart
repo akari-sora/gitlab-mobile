@@ -161,10 +161,14 @@ class _CollapsingChromeState extends State<CollapsingChrome> with SingleTickerPr
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.accessibleNavigationOf(context)) return widget.child;
+    // Keep one element shape: returning the bare child here re-inflated the
+    // header whenever accessibleNavigation flipped (any accessibility client
+    // reading the screen does that), unmounting an open PopupMenuButton so its
+    // selection was dropped.
+    final accessible = MediaQuery.accessibleNavigationOf(context);
     return ClipRect(
       child: SizeTransition(
-        sizeFactor: _curve,
+        sizeFactor: accessible ? kAlwaysCompleteAnimation : _curve,
         alignment: widget.edge == AxisDirection.up ? Alignment.bottomCenter : Alignment.topCenter,
         child: widget.child,
       ),

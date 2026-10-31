@@ -223,6 +223,31 @@ void main() {
     expect(tester.getSize(find.byKey(const Key('header'))).height, 80);
   });
 
+  testWidgets('an open header menu keeps its selection when screen-reader navigation turns on', (tester) async {
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    final visible = ValueNotifier(true);
+    addTearDown(visible.dispose);
+    final selected = <String>[];
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: Column(children: [
+      CollapsingChrome(visible: visible, child: AppBar(title: const Text('!1'), actions: [
+        PopupMenuButton<String>(
+          onSelected: selected.add,
+          itemBuilder: (_) => const [PopupMenuItem(value: 'ai', child: Text('Discuss with AI'))],
+        ),
+      ])),
+      const Expanded(child: SizedBox()),
+    ]))));
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    // What Android's AccessibilityBridge does when a client reads the screen.
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(accessibleNavigation: true);
+    await tester.pump();
+    await tester.tap(find.text('Discuss with AI'));
+    await tester.pumpAndSettle();
+    expect(selected, ['ai']);
+  });
+
   testWidgets('a focused issue keeps horizontal swipes inside the detail', (tester) async {
     _phone(tester);
     final fixture = WorkspaceFixture();
