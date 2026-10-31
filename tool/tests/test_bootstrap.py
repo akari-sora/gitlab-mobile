@@ -20,6 +20,7 @@ MERGED_COMMON_PERMISSIONS = {
     'android.permission.WAKE_LOCK', 'android.permission.USE_BIOMETRIC',
     'android.permission.USE_FINGERPRINT', 'android.permission.POST_NOTIFICATIONS',
     'android.permission.VIBRATE',
+    'com.google.android.apps.aicore.service.BIND_SERVICE',
 }
 MERGED_GITLAB_PERMISSIONS = {
     'android.permission.FOREGROUND_SERVICE',
@@ -72,16 +73,50 @@ def verify_merged_manifest(path, flavor):
         _require(not list(service), f'{path}: unexpected service children')
     else:
         _require(not agents, f'{path}: play must not declare AgentRunService')
-    # image_picker_android 0.8.13+23 contributes this disabled metadata service.
-    plugin_services = [node for node in services if node not in agents]
-    _require(len(plugin_services) == 1, f'{path}: unexpected plugin services')
-    plugin = plugin_services[0]
-    _require(plugin.get(a + 'name') == 'com.google.android.gms.metadata.ModuleDependencies', f'{path}: plugin service name')
+    # Non-agent services contributed by image_picker_android and mlkit:genai-prompt transitive AARs.
+    plugin_services = {node.get(a + 'name'): node for node in services if node not in agents}
+    _require(len(plugin_services) == len(services) - len(agents), f'{path}: duplicate plugin services')
+    expected_plugin_services = {
+        'com.google.android.gms.metadata.ModuleDependencies',
+        'com.google.mlkit.common.internal.MlKitComponentDiscoveryService',
+        'com.google.android.datatransport.runtime.backends.TransportBackendDiscovery',
+        'com.google.android.datatransport.runtime.scheduling.jobscheduling.JobInfoSchedulerService',
+    }
+    _require(set(plugin_services) == expected_plugin_services,
+             f'{path}: unexpected plugin services {set(plugin_services) ^ expected_plugin_services}')
+    plugin = plugin_services['com.google.android.gms.metadata.ModuleDependencies']
     _require(plugin.get(a + 'enabled') == 'false' and plugin.get(a + 'exported') == 'false', f'{path}: plugin service flags')
     _require([node.get(a + 'name') for node in plugin.findall('intent-filter/action')] == [
         'com.google.android.gms.metadata.MODULE_DEPENDENCIES'], f'{path}: plugin service action')
     _require([(node.get(a + 'name'), node.get(a + 'value')) for node in plugin.findall('meta-data')] == [
         ('photopicker_activity:0:required', '')], f'{path}: plugin service metadata')
+    mlkit_service = plugin_services['com.google.mlkit.common.internal.MlKitComponentDiscoveryService']
+    _require(mlkit_service.attrib == {
+        a + 'name': 'com.google.mlkit.common.internal.MlKitComponentDiscoveryService',
+        a + 'directBootAware': 'true',
+        a + 'exported': 'false',
+    }, f'{path}: MlKitComponentDiscoveryService attributes')
+    _require(not mlkit_service.findall('intent-filter'), f'{path}: MlKitComponentDiscoveryService intent-filter')
+    _require([(node.get(a + 'name'), node.get(a + 'value')) for node in mlkit_service.findall('meta-data')] == [(
+        'com.google.firebase.components:com.google.mlkit.common.internal.CommonComponentRegistrar',
+        'com.google.firebase.components.ComponentRegistrar',
+    )], f'{path}: MlKitComponentDiscoveryService metadata')
+    transport_discovery = plugin_services['com.google.android.datatransport.runtime.backends.TransportBackendDiscovery']
+    _require(transport_discovery.attrib == {
+        a + 'name': 'com.google.android.datatransport.runtime.backends.TransportBackendDiscovery',
+        a + 'exported': 'false',
+    }, f'{path}: TransportBackendDiscovery attributes')
+    _require(not transport_discovery.findall('intent-filter'), f'{path}: TransportBackendDiscovery intent-filter')
+    _require([(node.get(a + 'name'), node.get(a + 'value')) for node in transport_discovery.findall('meta-data')] == [
+        ('backend:com.google.android.datatransport.cct.CctBackendFactory', 'cct'),
+    ], f'{path}: TransportBackendDiscovery metadata')
+    scheduler = plugin_services['com.google.android.datatransport.runtime.scheduling.jobscheduling.JobInfoSchedulerService']
+    _require(scheduler.attrib == {
+        a + 'name': 'com.google.android.datatransport.runtime.scheduling.jobscheduling.JobInfoSchedulerService',
+        a + 'exported': 'false',
+        a + 'permission': 'android.permission.BIND_JOB_SERVICE',
+    }, f'{path}: JobInfoSchedulerService attributes')
+    _require(not list(scheduler), f'{path}: JobInfoSchedulerService children')
     for action in app.findall('.//receiver/intent-filter/action'):
         _require(action.get(a + 'name') not in {
             'android.intent.action.BOOT_COMPLETED', 'android.intent.action.LOCKED_BOOT_COMPLETED',
@@ -89,6 +124,11 @@ def verify_merged_manifest(path, flavor):
     for receiver in app.findall('receiver'):
         _require(not receiver.get(a + 'name', '').startswith(
             'com.dexterous.flutterlocalnotifications.'), f'{path}: unexpected notification receiver')
+    for provider in app.findall('.//provider'):
+        _require(provider.get(a + 'name') != 'com.google.mlkit.common.internal.MlKitInitProvider' and
+                 'mlkitinitprovider' not in provider.get(a + 'name', '').lower() and
+                 'mlkitinitprovider' not in provider.get(a + 'authorities', '').lower(),
+                 f'{path}: MlKitInitProvider must not be present in merged manifest')
     def activity(name):
         matches = [node for node in app.findall('activity') if node.get(a + 'name', '').split('.')[-1] == name]
         _require(len(matches) == 1, f'{path}: {name} must be unique')
@@ -838,6 +878,9 @@ class BootstrapTests(unittest.TestCase):
             a + 'name': '.AgentRunService', a + 'exported': 'false',
             a + 'foregroundServiceType': 'dataSync', a + 'stopWithTask': 'true',
         })
+        providers = root.findall('application/provider')
+        self.assertEqual(len(providers), 1)
+        self.assertEqual(providers[0].attrib, bootstrap.MLKIT_INIT_PROVIDER_REMOVE_ATTRIBUTES)
         self.assertFalse(root.findall('.//receiver'))
         for forbidden in ('BOOT_COMPLETED', 'SCHEDULE_EXACT_ALARM', 'USE_EXACT_ALARM',
                           'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS'):
@@ -1455,6 +1498,8 @@ class BootstrapTests(unittest.TestCase):
             original.replace('</manifest>', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" android:maxSdkVersion="32" /></manifest>'),
             original.replace('android:noHistory="true"', 'android:noHistory="false"'),
             original.replace('</application>', '<service android:name=".ForeignService" /></application>'),
+            original.replace('</application>', '<provider android:name=".ForeignProvider" android:authorities="foreign.provider" /></application>'),
+            original.replace('com.google.mlkit.common.internal.MlKitInitProvider', 'foreign.Provider'),
             original.replace('android:name=".MainActivity" android:exported="true"',
                              'android:name=".MainActivity" android:exported="false"'),
             original.replace('android:host="oauth"', 'android:host="foreign"'),
@@ -1674,8 +1719,13 @@ class BootstrapTests(unittest.TestCase):
         tree = ET.parse(app / 'src/main/AndroidManifest.xml')
         root = tree.getroot()
         a = '{' + bootstrap.ANDROID + '}'
+        t = '{' + bootstrap.TOOLS + '}'
         package = 'app.mergeline' if flavor == 'play' else 'io.gitlabmobile.gitlab_mobile'
         root.set('package', package)
+        app_node = root.find('application')
+        for node in list(app_node.findall('provider')):
+            if node.get(t + 'node') == 'remove':
+                app_node.remove(node)
         if flavor == 'play':
             for node in list(root.findall('uses-permission')):
                 if node.get(a + 'name') in {
@@ -1697,12 +1747,29 @@ class BootstrapTests(unittest.TestCase):
             permissions |= MERGED_GITLAB_PERMISSIONS
         for permission in sorted(permissions - existing):
             ET.SubElement(root, 'uses-permission', {a + 'name': permission})
-        plugin = ET.SubElement(root.find('application'), 'service', {
+        app_node = root.find('application')
+        plugin = ET.SubElement(app_node, 'service', {
             a + 'name': 'com.google.android.gms.metadata.ModuleDependencies',
             a + 'enabled': 'false', a + 'exported': 'false'})
         intent = ET.SubElement(plugin, 'intent-filter')
         ET.SubElement(intent, 'action', {a + 'name': 'com.google.android.gms.metadata.MODULE_DEPENDENCIES'})
         ET.SubElement(plugin, 'meta-data', {a + 'name': 'photopicker_activity:0:required', a + 'value': ''})
+        mlkit_service = ET.SubElement(app_node, 'service', {
+            a + 'name': 'com.google.mlkit.common.internal.MlKitComponentDiscoveryService',
+            a + 'directBootAware': 'true', a + 'exported': 'false'})
+        ET.SubElement(mlkit_service, 'meta-data', {
+            a + 'name': 'com.google.firebase.components:com.google.mlkit.common.internal.CommonComponentRegistrar',
+            a + 'value': 'com.google.firebase.components.ComponentRegistrar'})
+        transport_discovery = ET.SubElement(app_node, 'service', {
+            a + 'name': 'com.google.android.datatransport.runtime.backends.TransportBackendDiscovery',
+            a + 'exported': 'false'})
+        ET.SubElement(transport_discovery, 'meta-data', {
+            a + 'name': 'backend:com.google.android.datatransport.cct.CctBackendFactory',
+            a + 'value': 'cct'})
+        ET.SubElement(app_node, 'service', {
+            a + 'name': 'com.google.android.datatransport.runtime.scheduling.jobscheduling.JobInfoSchedulerService',
+            a + 'exported': 'false',
+            a + 'permission': 'android.permission.BIND_JOB_SERVICE'})
         tree.write(path)
         return path
 
@@ -1753,6 +1820,7 @@ class BootstrapTests(unittest.TestCase):
             original.replace('io.gitlabmobile.gitlab_mobile.LinkActivity', 'foreign.LinkActivity'),
             original.replace('</application>', '<activity android:name="foreign.MainActivity" /></application>'),
             original.replace('</application>', '<activity android:name="io.gitlabmobile.gitlab_mobile.AgentRunQaAdapter" android:exported="true" /></application>'),
+            original.replace('</application>', '<provider android:name="com.google.mlkit.common.internal.MlKitInitProvider" android:authorities="app.mergeline.mlkitinitprovider" android:exported="false" android:initOrder="99" /></application>'),
         ):
             play.write_text(mutated)
             with self.assertRaises(AssertionError):

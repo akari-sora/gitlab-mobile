@@ -65,8 +65,10 @@ test_status=${PIPESTATUS[0]}
 cat "$output_dir/test-stderr.txt"
 python3 ci/test_report.py "$output_dir/tests.jsonl" "$output_dir/junit.xml"
 report_status=$?
+(cd packages/mergeline_on_device_ai && flutter pub get --enforce-lockfile --offline && flutter test --no-pub) 2>&1 | tee "$output_dir/plugin-test.txt"
+plugin_test_status=${PIPESTATUS[0]}
 set -e
-printf 'analysis_exit=%s\ntest_exit=%s\nreport_exit=%s\n' "$analysis_status" "$test_status" "$report_status" | tee "$output_dir/check-status.txt"
+printf 'analysis_exit=%s\ntest_exit=%s\nreport_exit=%s\nplugin_test_exit=%s\n' "$analysis_status" "$test_status" "$report_status" "$plugin_test_status" | tee "$output_dir/check-status.txt"
 if [ -f "$coverage_dir/lcov.info" ]; then
   python3 - "$coverage_dir/lcov.info" <<'PY'
 from pathlib import Path
@@ -95,6 +97,6 @@ if [ "$mode" = ai ]; then
     fi
   done
 fi
-if [ "$analysis_status" -ne 0 ] || [ "$test_status" -ne 0 ] || [ "$report_status" -ne 0 ]; then
+if [ "$analysis_status" -ne 0 ] || [ "$test_status" -ne 0 ] || [ "$report_status" -ne 0 ] || [ "$plugin_test_status" -ne 0 ]; then
   exit 1
 fi

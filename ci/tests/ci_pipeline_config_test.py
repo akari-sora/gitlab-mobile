@@ -487,7 +487,7 @@ class CheckScriptTests(unittest.TestCase):
         tests = self.SHARED_TESTS + (self.SANDBOX_TESTS if mode == 'ai' else ())
         return sorted(tests)
 
-    def run_check(self, *args, test_exit='0', tree=SANDBOX_TESTS + SHARED_TESTS + HELPERS, links=()):
+    def run_check(self, *args, test_exit='0', plugin_test_exit='0', tree=SANDBOX_TESTS + SHARED_TESTS + HELPERS, links=()):
         root = Path(__file__).resolve().parents[2]
         scratch = root / 'ci-output'
         scratch.mkdir(exist_ok=True)
@@ -495,6 +495,7 @@ class CheckScriptTests(unittest.TestCase):
             work = Path(directory)
             (work / 'ci').mkdir()
             (work / 'bin').mkdir()
+            (work / 'packages/mergeline_on_device_ai').mkdir(parents=True)
             for name in ('check.sh', 'test_progress.py', 'test_report.py'):
                 shutil.copyfile(root / 'ci' / name, work / 'ci' / name)
             (work / 'pubspec.lock').write_text('synthetic lock\n')
@@ -510,6 +511,8 @@ class CheckScriptTests(unittest.TestCase):
                 with open(os.environ['COMMANDS'], 'a') as output:
                     output.write(json.dumps(sys.argv[1:]) + '\\n')
                 if sys.argv[1] == 'test':
+                    if pathlib.Path.cwd().name == 'mergeline_on_device_ai':
+                        sys.exit(int(os.environ['PLUGIN_TEST_EXIT']))
                     for event in ({'type':'testStart','test':{'id':1,'name':'synthetic'}},
                                   {'type':'testDone','testID':1,'result':'success'},
                                   {'type':'done','success':True}):
@@ -532,7 +535,8 @@ class CheckScriptTests(unittest.TestCase):
             timeout.chmod(0o755)
             env = dict(os.environ, PATH=f"{work / 'bin'}:{os.environ['PATH']}",
                        COMMANDS=str(work / 'commands.jsonl'),
-                       TIMEOUT_ARGS=str(work / 'timeout.json'), TEST_EXIT=test_exit)
+                       TIMEOUT_ARGS=str(work / 'timeout.json'),
+                       TEST_EXIT=test_exit, PLUGIN_TEST_EXIT=plugin_test_exit)
             env.pop('CI', None)
             result = subprocess.run(['bash', 'ci/check.sh', *args], cwd=work, env=env,
                                     capture_output=True, text=True, timeout=20)
@@ -557,9 +561,12 @@ class CheckScriptTests(unittest.TestCase):
                                       '--dart-define=MERGELINE_AI_BACKGROUND=false',
                                       '--coverage-path=coverage-ai/lcov.info']
                 self.assertEqual(commands[2], expected_args + self.lane(mode))
+                # The plugin resolves from its committed lock, offline, then tests without pub.
+                self.assertEqual(commands[3:5], [['pub', 'get', '--enforce-lockfile', '--offline'], ['test', '--no-pub']])
                 output = 'ci-output' if mode == 'default' else 'ci-output-ai'
                 coverage = 'coverage' if mode == 'default' else 'coverage-ai'
                 self.assertIn(f'{output}/junit.xml', files)
+                self.assertIn(f'{output}/plugin-test.txt', files)
                 self.assertIn(f'{coverage}/lcov.info', files)
 
     def test_failed_flutter_test_remains_a_failure(self):
@@ -567,6 +574,10 @@ class CheckScriptTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('test_exit=7', result.stdout)
         self.assertIn('ci-output-ai/junit.xml', files)
+        plugin_result, _, _, plugin_files = self.run_check('default', plugin_test_exit='9')
+        self.assertNotEqual(plugin_result.returncode, 0)
+        self.assertIn('plugin_test_exit=9', plugin_result.stdout)
+        self.assertIn('ci-output/junit.xml', plugin_files)
 
     def test_unknown_mode_is_rejected_before_invoking_flutter(self):
         for args in (('unknown',), ('--list-tests',), ('default', '--unknown'),

@@ -187,6 +187,25 @@ if metadata['ai_assistant']:
     metadata.update(package=values['name'],
                     debuggable=bool(re.search(r'^application-debuggable$', badging, re.M)),
                     certificate_sha256=certificates[0].replace(':', '').lower())
+sdk_root = os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT') or ''
+if not sdk_root and pathlib.Path('android/local.properties').is_file():
+    for line in pathlib.Path('android/local.properties').read_text(encoding='iso-8859-1').splitlines():
+        if line.startswith('sdk.dir='):
+            sdk_root = line.split('=', 1)[1].replace(r'\:', ':').replace(r'\ ', ' ').replace(r'\\', '\\')
+sdk = pathlib.Path(sdk_root)
+aapt = sorted((sdk / 'build-tools').glob('*/aapt2'))
+if not aapt:
+    raise SystemExit('Android SDK aapt2 is required to verify packaged AndroidManifest.xml')
+built_apks = sorted(pathlib.Path('build/app/outputs/flutter-apk').glob(f"app-*-{os.environ['BUILD_TYPE']}.apk")) or [apk]
+for built_apk in built_apks:
+    xmltree = subprocess.check_output(
+        [str(aapt[-1]), 'dump', 'xmltree', str(built_apk), '--file', 'AndroidManifest.xml'],
+        text=True,
+    )
+    if 'MlKitInitProvider' in xmltree or 'mlkitinitprovider' in xmltree.lower():
+        raise SystemExit(f'{built_apk}: MlKitInitProvider must not be present in packaged AndroidManifest.xml')
+    if not re.search(r'^\s*E:\s+provider\b', xmltree, re.M):
+        raise SystemExit(f'{built_apk}: packaged AndroidManifest.xml contained no provider entries')
 pathlib.Path('artifacts/build-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
 PY
 (cd artifacts && sha256sum *.apk build-metadata.json > SHA256SUMS)
