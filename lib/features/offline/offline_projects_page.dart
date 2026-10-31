@@ -9,6 +9,7 @@ import '../../core/offline/snapshot_schema.dart';
 import '../../core/repository_ref.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../workspace/project_page.dart';
@@ -256,35 +257,64 @@ class _OfflineProjectsPageState extends State<OfflineProjectsPage> {
       },
     };
     final online = snapshotOnline(context, _repos);
+    // The list's first read shows rows where the list goes; a re-read or an
+    // action keeps the list, or its empty state, under the thin bar.
+    final firstLoad = _repos.loading && !_repos.hasLoaded;
     return ListView(
       key: const ValueKey('offline-projects-list'),
       padding: const EdgeInsets.only(bottom: 32),
       children: [
-        if (_busy || _repos.loading) const LinearProgressIndicator(minHeight: 2),
+        if (_busy || (_repos.loading && !firstLoad))
+          const LinearProgressIndicator(minHeight: 2),
         HubSection(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Text(
-                l10n.offlineProjectsHeader(
-                  _repos.snapshots.length,
-                  snapshotSize(_repos.usedBytes),
-                  snapshotLimitText,
-                ),
-                key: const ValueKey('offline-projects-header'),
-                style: theme.textTheme.titleMedium,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: (_repos.usedBytes / snapshotAccountLimit).clamp(0.0, 1.0),
-                  minHeight: 4,
+            // The count and usage are known only after a successful read:
+            // bones while the first one runs, nothing after a failed one.
+            if (_repos.hasLoaded) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  l10n.offlineProjectsHeader(
+                    _repos.snapshots.length,
+                    snapshotSize(_repos.usedBytes),
+                    snapshotLimitText,
+                  ),
+                  key: const ValueKey('offline-projects-header'),
+                  style: theme.textTheme.titleMedium,
                 ),
               ),
-            ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: (_repos.usedBytes / snapshotAccountLimit).clamp(
+                      0.0,
+                      1.0,
+                    ),
+                    minHeight: 4,
+                  ),
+                ),
+              ),
+            ] else if (firstLoad) ...[
+              const Padding(
+                key: ValueKey('offline-projects-header-loading'),
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: LineSkeleton(
+                  widthFactor: 0.6,
+                  lineHeight: 24,
+                  boneHeight: 16,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: LineSkeleton(
+                  widthFactor: 1,
+                  lineHeight: 4,
+                  boneHeight: 4,
+                ),
+              ),
+            ],
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               child: Text(
@@ -322,7 +352,9 @@ class _OfflineProjectsPageState extends State<OfflineProjectsPage> {
               ),
             ],
           ),
-        if (rows.isEmpty && !_repos.loading && blocker == null)
+        if (firstLoad && rows.isEmpty)
+          const HubSectionSkeleton(heading: false, rowHeight: 72)
+        else if (rows.isEmpty && !firstLoad && blocker == null)
           EmptyState(
             l10n.offlineEmptyTitle,
             detail: l10n.offlineEmptyDetail,

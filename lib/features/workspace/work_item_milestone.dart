@@ -8,6 +8,7 @@ import '../../core/models.dart';
 import '../../core/work_item_attribute_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_milestone_models.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 
 import '../../l10n/l10n.dart';
@@ -542,7 +543,17 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
                       ),
                     ),
                   ),
-                  if (_loading) const LinearProgressIndicator(minHeight: 2),
+                  // A search starts a new list, so it reads like a first load;
+                  // reading the next page keeps the rows under the thin bar.
+                  if (_loading && _items.isEmpty)
+                    const RowsSkeleton(
+                      rows: 3,
+                      itemHeight: 72,
+                      leadingSize: 24,
+                      leadingRadius: 12,
+                    )
+                  else if (_loading)
+                    const LinearProgressIndicator(minHeight: 2),
                   if (_choiceError != null)
                     FailureNotice(
                       _choiceError!,

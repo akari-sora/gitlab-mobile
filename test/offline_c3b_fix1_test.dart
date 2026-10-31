@@ -27,6 +27,7 @@ import 'package:gitlab_mobile/features/offline/snapshot_browser_page.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 import 'package:gitlab_mobile/features/workspace/projects_page.dart';
 import 'package:gitlab_mobile/shared/network_boundary.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import 'offline/coordinator_regression_test.dart' as fixture;
@@ -637,6 +638,75 @@ void main() {
     expect(find.byKey(const ValueKey('snapshot-row-docs')), findsNothing);
     expect(find.byKey(const ValueKey('snapshot-browser-error')), findsOneWidget);
     expect(find.text('目前帳號無法讀取這個專案。'), findsOneWidget);
+  });
+
+  // #56 part 2: a folder or file's first read shows its skeleton (the real
+  // header, filter and search stay), never a bar over an empty page. A retry
+  // calls the same read, which clears the page first; a fenced reader fails
+  // before the next frame, so that path cannot be held here.
+  testWidgets('snapshot folder and file first reads show skeletons', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final (h, repositories, record) = await saved(tester);
+    final reader = repositories.reader(record);
+    await tester.pumpWidget(
+      host(
+        SnapshotBrowserPage(
+          repositories: repositories,
+          record: record,
+          reader: reader,
+          account: _account,
+        ),
+        repositories,
+      ),
+    );
+    // The read runs on real file I/O, so the first frames hold it.
+    expect(find.byType(RowsSkeleton), findsOneWidget);
+    expect(find.byKey(const ValueKey('snapshot-filter')), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.bySemanticsLabel('正在載入'), findsOneWidget);
+    await pumpUntil(
+      tester,
+      () =>
+          find.byKey(const ValueKey('snapshot-row-docs')).evaluate().isNotEmpty,
+      description: 'rows shown',
+    );
+    expect(find.byType(RowsSkeleton), findsNothing);
+
+    late List<SnapshotTreeEntry> entries;
+    await tester.runAsync(() async {
+      entries = await loadSnapshotEntries(h.coordinator, reader);
+    });
+    final file = entries.singleWhere((e) => e.path == 'docs/hello.txt');
+    await tester.pumpWidget(
+      host(
+        SnapshotFilePage(
+          repositories: repositories,
+          record: record,
+          reader: reader,
+          account: _account,
+          entry: file,
+        ),
+        repositories,
+      ),
+    );
+    expect(find.byType(CodeSkeleton), findsOneWidget);
+    expect(find.byKey(const ValueKey('snapshot-file-search')), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.bySemanticsLabel('正在載入'), findsOneWidget);
+    await pumpUntil(
+      tester,
+      () => find
+          .byKey(const ValueKey('snapshot-file-line-1'))
+          .evaluate()
+          .isNotEmpty,
+      description: 'file shown',
+    );
+    expect(find.byType(CodeSkeleton), findsNothing);
+
+    semantics.dispose();
+    await tester.pumpWidget(const SizedBox());
   });
 
   // GLM #6: an update started from the list that fails later is reported.

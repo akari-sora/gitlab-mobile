@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'layout_constants.dart';
+import 'skeleton.dart';
 import 'workspace_ui.dart';
 
 /// Tile hues for hub rows, modelled on GitHub Mobile's "My Work" list. They
@@ -125,10 +126,15 @@ class HubRow extends StatelessWidget {
     this.chevron = false,
     this.trailing,
     this.semanticLabel,
+    this.subtitleLoading = false,
   });
   final Widget leading;
   final String title;
   final String? subtitle;
+
+  /// The subtitle is a value still being read for the first time: a one-line
+  /// skeleton in its place (no live region; the row's page has loaded).
+  final bool subtitleLoading;
   final String? value;
   final VoidCallback? onTap;
   final bool chevron;
@@ -143,7 +149,7 @@ class HubRow extends StatelessWidget {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
     final label = semanticLabel ??
-        [title, if (subtitle != null && subtitle!.isNotEmpty) subtitle!, if (value != null && value!.isNotEmpty) value!]
+        [title, if (!subtitleLoading && subtitle != null && subtitle!.isNotEmpty) subtitle!, if (value != null && value!.isNotEmpty) value!]
             .join(' · ');
     return Semantics(
       container: true,
@@ -167,7 +173,13 @@ class HubRow extends StatelessWidget {
                   children: [
                     Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyLarge?.copyWith(fontSize: 17, height: 1.3)),
-                    if (subtitle != null && subtitle!.isNotEmpty)
+                    if (subtitleLoading)
+                      const LineSkeleton(
+                        widthFactor: 0.3,
+                        lineHeight: 16,
+                        boneHeight: 10,
+                      )
+                    else if (subtitle != null && subtitle!.isNotEmpty)
                       Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(color: muted)),
                   ],

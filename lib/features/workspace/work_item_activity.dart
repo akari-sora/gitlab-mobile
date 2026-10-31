@@ -12,6 +12,7 @@ import '../../shared/attachment_budget.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart' show FailureNotice, endSessionFrom;
 import 'editor.dart';
 import 'reactions.dart' show reactionChoices, reactionGlyph;
@@ -108,6 +109,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   ApiFailure? _initialError;
   ApiFailure? _nextPageError;
   bool _expanded = false;
+  bool _firstLoadDone = false;
   bool _loadingInitial = false;
   bool _loadingNextPage = false;
   bool _retentionLimitReached = false;
@@ -206,9 +208,12 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     _loadingWriteAccess = false;
   }
 
+  /// Drops the loaded threads, so the next load is a first load again: a new
+  /// item, owner, filter or order is a new feed.
   void _clearFeed() {
     _dismissNoteActionRoutes();
     _epoch++;
+    _firstLoadDone = false;
     _pages.clear();
     _retainedNoteIds.clear();
     _attachmentBudget = AttachmentBudget();
@@ -239,8 +244,31 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
 
   void _refresh() {
     if (!_current(_epoch) || _loadingInitial || _loadingNextPage) return;
-    setState(_clearFeed);
-    if (_expanded) unawaited(_loadInitial());
+    if (!_firstLoadDone) {
+      setState(_clearFeed);
+      if (_expanded) unawaited(_loadInitial());
+      return;
+    }
+    _reloadFeed();
+  }
+
+  /// Reads the first page again over the loaded threads, which stay under
+  /// the thin bar. Ending the epoch drops reads started for the old feed, so
+  /// their flags are cleared here; next-page and more-replies reads wait for
+  /// the reload (see [_loadNextPage] and [_loadMoreNotes]).
+  void _reloadFeed() {
+    _dismissNoteActionRoutes();
+    setState(() {
+      _epoch++;
+      _loadingInitial = false;
+      _loadingNextPage = false;
+      for (final page in _pages) {
+        for (final discussion in page.discussions) {
+          discussion.loading = false;
+        }
+      }
+    });
+    if (_expanded) unawaited(_loadInitial(reload: true));
   }
 
   Future<void> _loadWriteAccess() async {
@@ -534,19 +562,30 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     }
   }
 
+  /// After a write, the threads are read again over the loaded ones (a
+  /// reload, not a first load) and the comment permission is checked again.
   void _refreshAfterWrite() {
-    setState(() {
-      _clearFeed();
-      _clearWriteAccess();
-    });
-    if (_expanded) {
-      unawaited(_loadInitial());
-      unawaited(_loadWriteAccess());
+    if (!_firstLoadDone) {
+      setState(() {
+        _clearFeed();
+        _clearWriteAccess();
+      });
+      if (_expanded) {
+        unawaited(_loadInitial());
+        unawaited(_loadWriteAccess());
+      }
+      return;
     }
+    setState(_clearWriteAccess);
+    _reloadFeed();
+    if (_expanded) unawaited(_loadWriteAccess());
   }
 
-  Future<void> _loadInitial() async {
-    if (_loadingInitial || _pages.isNotEmpty || _retentionLimitReached) return;
+  Future<void> _loadInitial({bool reload = false}) async {
+    if (_loadingInitial ||
+        (!reload && (_pages.isNotEmpty || _retentionLimitReached))) {
+      return;
+    }
     final epoch = _epoch;
     final expected = widget.detail.summary;
     setState(() {
@@ -562,6 +601,33 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
       );
       if (!_current(epoch)) return;
       _requireSnapshotIdentity(result.snapshot, expected);
+      if (reload) {
+        // Measured against an empty feed; the loaded threads and their
+        // bookkeeping stay until the new page replaces them.
+        final fresh = _retention(_pageNotes(result), const {}, 0);
+        if (fresh == null) {
+          setState(() => _retentionLimitReached = true);
+          return;
+        }
+        setState(() {
+          _retainedNoteIds
+            ..clear()
+            ..addAll(fresh.$1);
+          _retainedBodyCharacters = fresh.$2;
+          _attachmentBudget = AttachmentBudget();
+          _activePage = 0;
+          _nextPageError = null;
+          _retentionLimitReached = false;
+          _filter = result.filter;
+          _order = result.order;
+          _controlsSupported = result.controlsSupported;
+          _pages
+            ..clear()
+            ..add(_DiscussionPage(result));
+          _firstLoadDone = true;
+        });
+        return;
+      }
       if (!_retainNotes(_pageNotes(result))) {
         setState(() => _retentionLimitReached = true);
         return;
@@ -571,6 +637,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
         _order = result.order;
         _controlsSupported = result.controlsSupported;
         _pages.add(_DiscussionPage(result));
+        _firstLoadDone = true;
       });
     } catch (error) {
       if (!_current(epoch)) return;
@@ -584,7 +651,13 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   }
 
   Future<void> _loadNextPage() async {
-    if (_loadingNextPage || _pages.isEmpty || _retentionLimitReached) return;
+    // A reload replaces the first page, so a cursor from the old one waits.
+    if (_loadingInitial ||
+        _loadingNextPage ||
+        _pages.isEmpty ||
+        _retentionLimitReached) {
+      return;
+    }
     final source = _pages.last.result.nextDiscussions;
     if (source == null || _pages.length >= _maxDiscussionPages) return;
     final epoch = _epoch;
@@ -635,7 +708,8 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   }
 
   Future<void> _loadMoreNotes(_DiscussionState discussion) async {
-    if (discussion.loading ||
+    if (_loadingInitial ||
+        discussion.loading ||
         discussion.next == null ||
         _retentionLimitReached) {
       return;
@@ -711,22 +785,34 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   }
 
   bool _retainNotes(Iterable<WorkItemActivityNote> notes) {
+    final added = _retention(notes, _retainedNoteIds, _retainedBodyCharacters);
+    if (added == null) return false;
+    _retainedNoteIds.addAll(added.$1);
+    _retainedBodyCharacters += added.$2;
+    return true;
+  }
+
+  /// The note ids and body characters [notes] add on top of [ids] and
+  /// [characters], or null when that passes the retention cap. A note seen
+  /// twice is an invalid response.
+  (Set<String>, int)? _retention(
+    Iterable<WorkItemActivityNote> notes,
+    Set<String> ids,
+    int characters,
+  ) {
     final candidateIds = <String>{};
     var candidateCharacters = 0;
     for (final note in notes) {
-      if (_retainedNoteIds.contains(note.id) || !candidateIds.add(note.id)) {
+      if (ids.contains(note.id) || !candidateIds.add(note.id)) {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
       candidateCharacters += note.body.length;
     }
-    if (_retainedNoteIds.length + candidateIds.length > _maxRetainedNotes ||
-        _retainedBodyCharacters + candidateCharacters >
-            _maxRetainedBodyCharacters) {
-      return false;
+    if (ids.length + candidateIds.length > _maxRetainedNotes ||
+        characters + candidateCharacters > _maxRetainedBodyCharacters) {
+      return null;
     }
-    _retainedNoteIds.addAll(candidateIds);
-    _retainedBodyCharacters += candidateCharacters;
-    return true;
+    return (candidateIds, candidateCharacters);
   }
 
   @override
@@ -764,10 +850,17 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_loadingInitial && _firstLoadDone)
+          const LinearProgressIndicator(minHeight: 2),
         _selectionControls(context),
         const SizedBox(height: 12),
         _writeControls(context),
         const SizedBox(height: 16),
+        // A failed reload keeps the threads it would have replaced.
+        if (_initialError case final error? when _pages.isNotEmpty) ...[
+          _InlineActivityFailure(error: error, onRetry: _refresh),
+          const SizedBox(height: 12),
+        ],
         _feedContent(context),
       ],
     );
@@ -977,17 +1070,11 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   }
 
   Widget _feedContent(BuildContext context) {
-    if (_loadingInitial) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(child: CircularProgressIndicator()),
-      );
+    if (_loadingInitial && !_firstLoadDone) {
+      return const ActivityTimelineSkeleton();
     }
-    if (_initialError case final error?) {
-      return _InlineActivityFailure(
-        error: error,
-        onRetry: () => unawaited(_loadInitial()),
-      );
+    if (_initialError case final error? when _pages.isEmpty) {
+      return _InlineActivityFailure(error: error, onRetry: _refresh);
     }
     if (_pages.isEmpty) {
       return _retentionLimitReached
@@ -1106,7 +1193,8 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
               )
             else if (hasServerNext && !reachedCap && !_retentionLimitReached)
               OutlinedButton.icon(
-                onPressed: _loadingNextPage
+                key: const ValueKey('work-item-activity-next-page'),
+                onPressed: _loadingNextPage || _loadingInitial
                     ? null
                     : () => unawaited(_loadNextPage()),
                 icon: _loadingNextPage
@@ -1195,9 +1283,12 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
             alignment: AlignmentDirectional.centerStart,
             child: OutlinedButton.icon(
               key: ValueKey('work-item-activity-reply:${discussion.value.id}'),
-              onPressed: () => unawaited(
-                _openReply(discussion.value.id, discussion.replyTarget!),
-              ),
+              // Rows under a reload are about to be replaced.
+              onPressed: _loadingInitial
+                  ? null
+                  : () => unawaited(
+                      _openReply(discussion.value.id, discussion.replyTarget!),
+                    ),
               icon: const Icon(Icons.reply_outlined),
               label: Text(l10n.replyAction),
             ),
@@ -1218,7 +1309,10 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
           Align(
             alignment: AlignmentDirectional.centerStart,
             child: OutlinedButton.icon(
-              onPressed: discussion.loading
+              key: ValueKey(
+                'work-item-activity-more-replies:${discussion.value.id}',
+              ),
+              onPressed: discussion.loading || _loadingInitial
                   ? null
                   : () => unawaited(_loadMoreNotes(discussion)),
               icon: discussion.loading
@@ -1304,7 +1398,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
             IconButton(
               key: ValueKey('work-item-activity-note-actions:${note.id}'),
               tooltip: l10n.commentActions2,
-              onPressed: actionsPending
+              onPressed: actionsPending || _loadingInitial
                   ? null
                   : () => unawaited(_openNoteActions(discussion, note)),
               icon: actionsPending
@@ -1868,16 +1962,14 @@ class _WorkItemNoteActionsDialogState
 
   Widget _reactionContent(BuildContext context) {
     if (_loadingReactions) {
-      return Row(
-        children: [
-          SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          SizedBox(width: 8),
-          Expanded(child: Text(l10n.loadingEmojiReactions)),
-        ],
+      // Reading always starts from no reactions, so this is a first load: the
+      // reaction chips' shape, the sheet's only loading region.
+      return const ChipsSkeleton(
+        key: ValueKey('work-item-activity-reactions-loading'),
+        widths: [56, 56, 64],
+        slotHeight: 48,
+        spacing: 6,
+        liveRegion: true,
       );
     }
     if (_reactionError case final error?) {

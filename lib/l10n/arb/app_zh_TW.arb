@@ -4002,10 +4002,6 @@
   "@allWorkItemTypes": {
     "description": "features/workspace/graph_work_items_page.dart:1137"
   },
-  "loadingWorkItemTypes": "讀取可用的工作項目類型…",
-  "@loadingWorkItemTypes": {
-    "description": "features/workspace/graph_work_items_page.dart:1168"
-  },
   "workItemTypesTitle": "{namespacePath} · 工作項目類型",
   "@workItemTypesTitle": {
     "description": "features/workspace/graph_work_items_page.dart:1178",
@@ -7471,10 +7467,6 @@
   "@deleteCommentPermanently": {
     "description": "features/workspace/work_item_activity.dart:1816"
   },
-  "loadingEmojiReactions": "正在讀取表情回應…",
-  "@loadingEmojiReactions": {
-    "description": "features/workspace/work_item_activity.dart:1833"
-  },
   "emojiReactionUnconfirmed": "表情回應結果尚未確認。請關閉並重新整理活動後再確認，這裡不會重複送出。",
   "@emojiReactionUnconfirmed": {
     "description": "features/workspace/work_item_activity.dart:1844"
@@ -8365,10 +8357,6 @@
   "@subscriptionDoesNotChangeDelivery": {
     "description": "features/workspace/work_item_notifications.dart:273"
   },
-  "checkingNotificationSubscription": "正在確認通知訂閱…",
-  "@checkingNotificationSubscription": {
-    "description": "features/workspace/work_item_notifications.dart:276"
-  },
   "loadNotificationSettings": "讀取通知設定",
   "@loadNotificationSettings": {
     "description": "features/workspace/work_item_notifications.dart:290"
@@ -9235,10 +9223,6 @@
   "workItemState": "工作項目狀態",
   "@workItemState": {
     "description": "features/workspace/work_item_state_control.dart:303"
-  },
-  "confirmingStateAndPermission": "確認最新狀態與更新權限…",
-  "@confirmingStateAndPermission": {
-    "description": "features/workspace/work_item_state_control.dart:314"
   },
   "reloadStateBeforeRetry": "請先重新讀取伺服器狀態，再決定是否重試。",
   "@reloadStateBeforeRetry": {

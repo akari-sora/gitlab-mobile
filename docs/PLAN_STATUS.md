@@ -86,12 +86,15 @@ In priority order. Steps marked **owner** need the owner in person.
    - **Next:** wait for Google's review; answer any policy questions it raises.
 2. **Media and loading polish (owner, 2026-10-30).**
    - **#55, done (!278, 2026-10-31).** A video behind image syntax no longer holds up a README or file page. The request stops at the content type, and the video waits behind a tap-to-play card. The page byte budget is first-come. A raster's header size only rejects early; the engine's decoder still decides acceptance, because crafted GIF/JPEG headers can understate the size.
-   - **#56, part 1 (`feat/skeleton-shimmer`).**
+   - **#56, part 1, done (!279, 2026-10-31).**
      - First loads on the reading screens show page-shaped skeletons with one shared 1.5 s shimmer, which is static under reduced motion. Covered: README, files, code, diff, compare, commit, job log, pipeline, pipeline graph, issue/MR detail, home, boards, analytics, snippets and lists.
      - Skeletons appear only before the first successful load. Reloads keep their content under the thin bar.
      - Rules are in `UI_REDESIGN.md` › Loading.
      - Device check NOT_RUN.
-   - **#56, part 2 (next):** the remaining first-load spinners (AI screens, offline screens, start-up and the `work_item_*` sections).
+   - **#56, part 2 (`feat/skeleton-part2`).**
+     - Skeletons replace the remaining first-load spinners: start-up (blank for 150 ms, then the app shell), AI settings and the AI write log, the work item activity feed and its attribute, status, reaction and milestone sections, analytics cards, the offline shell and projects, and the snapshot browser. Images wait behind a silent placeholder sized from their declared dimensions.
+     - Spinners stay for actions in progress, progress percentages, pull-to-refresh, loading more, one-shot dialogs and labelled checks that come before a button or notice.
+     - Device check NOT_RUN.
 3. **Small-model robustness.** Found in the v0.6.0 walkthrough with `gpt-4o-mini`:
    - **Unrequested changes.** The model sometimes proposes changes nobody asked for; it rewrote an issue title while reopening the issue. Consider marking changed against unchanged fields in the confirmation card.
    - **Unexplained refusals: done (!273).** A refused write now tells the model which field failed and the rule (allowed values, expected type, or GitLab's own field error), redacted and capped, never in the UI, history or journal.

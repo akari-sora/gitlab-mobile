@@ -20,6 +20,7 @@ import '../../shared/code_text_view.dart';
 import '../../shared/markdown_media_svg.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/network_boundary.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import '../workspace/repository_page.dart' show RepositoryFilePage, findReadmePath;
 import 'offline_repositories.dart';
@@ -554,10 +555,21 @@ class _SnapshotBrowserPageState extends State<SnapshotBrowserPage> {
       );
     }
     if (entries == null) {
-      return Column(
+      // The listing's first read: the real header and filter, and rows
+      // shaped like [_row] where the listing will be.
+      return ListView(
         children: [
           _header(context),
-          const LinearProgressIndicator(minHeight: 2),
+          _filterField(),
+          Material(
+            color: Theme.of(context).colorScheme.surface,
+            child: const RowsSkeleton(
+              itemHeight: 48,
+              leadingSize: 20,
+              leadingRadius: 4,
+              showSubtitle: false,
+            ),
+          ),
         ],
       );
     }
@@ -590,23 +602,7 @@ class _SnapshotBrowserPageState extends State<SnapshotBrowserPage> {
               ],
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: TextField(
-            key: const ValueKey('snapshot-filter'),
-            controller: _filter,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: l10n.snapshotFilterHint,
-              prefixIcon: const Icon(Icons.filter_list),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-            ),
-            onChanged: (value) => setState(() => _query = value),
-          ),
-        ),
+        _filterField(),
         if (!filtering && !_atRoot) _breadcrumbs(context),
         if (rows.isEmpty)
           EmptyState(
@@ -629,6 +625,24 @@ class _SnapshotBrowserPageState extends State<SnapshotBrowserPage> {
       ],
     );
   }
+
+  Widget _filterField() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+    child: TextField(
+      key: const ValueKey('snapshot-filter'),
+      controller: _filter,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: l10n.snapshotFilterHint,
+        prefixIcon: const Icon(Icons.filter_list),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+      ),
+      onChanged: (value) => setState(() => _query = value),
+    ),
+  );
 
   Widget _header(BuildContext context) {
     final theme = Theme.of(context);
@@ -1143,7 +1157,8 @@ class _SnapshotFilePageState extends State<SnapshotFilePage> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_loading) const LinearProgressIndicator(minHeight: 2),
+            if (_loading && (text != null || _image != null))
+              const LinearProgressIndicator(minHeight: 2),
             if (_error case final error?)
               OfflineNotice(
                 key: const ValueKey('snapshot-file-error'),
@@ -1165,7 +1180,11 @@ class _SnapshotFilePageState extends State<SnapshotFilePage> {
                 padding: const EdgeInsets.all(16),
                 child: Text(l10n.gitLfsPointer),
               ),
-            if (text != null && !_preview)
+            // Shown while a text file loads too, so the code does not move.
+            if ((text != null ||
+                    (_loading &&
+                        widget.entry.kind == SnapshotContentKind.text)) &&
+                !_preview)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: TextField(
@@ -1206,7 +1225,17 @@ class _SnapshotFilePageState extends State<SnapshotFilePage> {
         ),
       );
     }
-    if (text == null) return const SizedBox();
+    if (text == null) {
+      if (!_loading) return const SizedBox();
+      // The file's first read, shaped like what will show.
+      return switch (widget.entry.kind) {
+        SnapshotContentKind.image => const Center(
+          child: ImageSkeleton(width: 160, height: 160, liveRegion: true),
+        ),
+        _ when _preview => const MarkdownSkeleton(),
+        _ => const CodeSkeleton(),
+      };
+    }
     if (_preview) {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(20),

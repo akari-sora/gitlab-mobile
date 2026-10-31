@@ -12,12 +12,14 @@ import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_activity.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 import 'package:gitlab_mobile/shared/resource_share.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 // ignore: depend_on_referenced_packages
 import 'package:share_plus_platform_interface/share_plus_platform_interface.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/widget_settle.dart';
 
 const _workItemId = 'gid://gitlab/WorkItem/700';
 const _projectId = 'gid://gitlab/Project/42';
@@ -2126,7 +2128,8 @@ void main() {
     );
     await _tap(tester, find.text('活動'));
     await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
+    expect(find.byType(ActivityTimelineSkeleton), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
     current = false;
     owner.notifyListeners();
@@ -2142,6 +2145,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('comment-late'), findsNothing);
+    expect(find.byType(ActivityTimelineSkeleton), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
@@ -2371,5 +2375,174 @@ void main() {
     expect(find.byType(MarkdownView), findsNWidgets(100));
     expect(find.textContaining('最多排版 100 則活動內容'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  // #56 part 2 round 2: a write reloads the feed over the loaded threads.
+  testWidgets('a posted comment keeps the old threads under the bar', (
+    tester,
+  ) async {
+    var activityReads = 0;
+    Completer<void>? holdReload;
+    const submitted = '**new comment**';
+    final created = _createdNote('503', submitted);
+    final adapter = FakeAdapter((request) async {
+      final data = request.data as Map;
+      final query = data['query'] as String;
+      if (query.contains('MobileWorkItemActivityWriteAccess')) {
+        return jsonResponse(_activity());
+      }
+      if (query.contains('MobileCreateWorkItemActivityNote')) {
+        return jsonResponse(_createdMutation(created));
+      }
+      if (query.contains('MobileWorkItemActivityNoteReadback')) {
+        return jsonResponse(_createdReadback(created));
+      }
+      if (query.contains('MobileWorkItemActivity(')) {
+        activityReads++;
+        if (activityReads == 1) {
+          return jsonResponse(
+            _activity(
+              discussions: [
+                _discussion('before', notes: [_note('before')]),
+              ],
+            ),
+          );
+        }
+        if (holdReload case final gate?) await gate.future;
+        return jsonResponse(
+          _activity(
+            discussions: [
+              _discussion('before', notes: [_note('before')]),
+              _discussion('created', notes: [created]),
+            ],
+          ),
+        );
+      }
+      throw StateError('Unexpected activity request: $query');
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(api));
+    await _expand(tester);
+    expect(find.textContaining('comment-before'), findsOneWidget);
+
+    holdReload = Completer<void>();
+    tester
+        .widget<FilledButton>(
+          find.byKey(const ValueKey('work-item-activity-add-comment')),
+        )
+        .onPressed!();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('editor-body'), skipOffstage: false),
+      submitted,
+    );
+    await _tap(tester, find.byKey(const Key('editorSave')));
+    await pumpUntil(
+      tester,
+      () => activityReads == 2,
+      description: 'the feed is read again after the write',
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.textContaining('comment-before'), findsOneWidget);
+    expect(find.byType(ActivityTimelineSkeleton), findsNothing);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+
+    holdReload.complete();
+    holdReload = null;
+    await settleNetworkWidgets(tester);
+    expect(find.text('new comment'), findsOneWidget);
+    expect(find.textContaining('comment-before'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('next page and more replies wait for a reload', (tester) async {
+    Completer<void>? holdReload;
+    var firstPageReads = 0;
+    var pagingReads = 0;
+    final adapter = FakeAdapter((request) async {
+      final data = request.data as Map;
+      final query = data['query'] as String;
+      final variables = data['variables'] as Map;
+      if (query.contains('MobileWorkItemActivityWriteAccess')) {
+        return jsonResponse(_activity());
+      }
+      if (query.contains('MobileWorkItemDiscussionNotes') ||
+          variables['after'] != null) {
+        pagingReads++;
+        return jsonResponse(_activity());
+      }
+      firstPageReads++;
+      if (firstPageReads > 1) {
+        if (holdReload case final gate?) await gate.future;
+      }
+      return jsonResponse(
+        _activity(
+          discussions: [
+            _discussion(
+              'thread',
+              notes: [_note('one'), _note('two')],
+              notesNext: true,
+              notesCursor: 'notes-1',
+            ),
+          ],
+          next: true,
+          cursor: 'outer-1',
+        ),
+      );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(api));
+    await _expand(tester);
+    final nextPage = find.byKey(const ValueKey('work-item-activity-next-page'));
+    final moreReplies = find.byKey(
+      const ValueKey(
+        'work-item-activity-more-replies:gid://gitlab/Discussion/thread',
+      ),
+    );
+    // The page controls show above and below the threads.
+    bool enabled(Finder buttons) => tester
+        .widgetList<OutlinedButton>(buttons)
+        .every((button) => button.onPressed != null);
+    bool disabled(Finder buttons) => tester
+        .widgetList<OutlinedButton>(buttons)
+        .every((button) => button.onPressed == null);
+    expect(nextPage, findsWidgets);
+    expect(enabled(nextPage), isTrue);
+    expect(enabled(moreReplies), isTrue);
+
+    holdReload = Completer<void>();
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-refresh')),
+    );
+    await pumpUntil(
+      tester,
+      () => firstPageReads == 2,
+      description: 'reload started',
+    );
+    await tester.pump();
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(disabled(nextPage), isTrue);
+    expect(disabled(moreReplies), isTrue);
+    await tester.ensureVisible(nextPage.first);
+    await tester.tap(nextPage.first, warnIfMissed: false);
+    await tester.ensureVisible(moreReplies);
+    await tester.tap(moreReplies, warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(pagingReads, 0);
+
+    holdReload.complete();
+    holdReload = null;
+    await settleNetworkWidgets(tester);
+    expect(enabled(nextPage), isTrue);
+    expect(enabled(moreReplies), isTrue);
+    expect(pagingReads, 0);
+    expect(firstPageReads, 2);
   });
 }

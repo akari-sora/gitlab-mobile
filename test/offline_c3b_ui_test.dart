@@ -32,6 +32,7 @@ import 'package:gitlab_mobile/shared/external_link.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 import 'package:gitlab_mobile/shared/network_boundary.dart';
 import 'package:gitlab_mobile/shared/resource_share.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 // The production dependency re-exports its value types, while this test needs
@@ -287,10 +288,13 @@ Future<void> _until(WidgetTester tester, Finder finder, {String? what}) =>
       description: what ?? finder.toString(),
     );
 
-/// Every snapshot image settled: no spinner remains (so pumpAndSettle ends).
+/// Every snapshot image settled: no spinner or image placeholder remains (so
+/// pumpAndSettle ends).
 Future<void> _imagesSettled(WidgetTester tester) => pumpUntil(
   tester,
-  () => find.byType(CircularProgressIndicator).evaluate().isEmpty,
+  () =>
+      find.byType(CircularProgressIndicator).evaluate().isEmpty &&
+      find.byType(ImageSkeleton).evaluate().isEmpty,
   maxCycles: 200,
   description: 'snapshot images settled',
 );

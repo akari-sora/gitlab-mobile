@@ -147,6 +147,13 @@ void main() {
         PipelineGraphSkeleton(),
         ContributorsSkeleton(),
         ChartSkeleton(),
+        ActivityTimelineSkeleton(),
+        HubSectionSkeleton(),
+        SettingsSkeleton(),
+        AppShellSkeleton(),
+        ImageSkeleton(),
+        LineSkeleton(),
+        ChipsSkeleton(),
       ];
       for (final skeleton in skeletons) {
         await tester.pumpWidget(
@@ -366,6 +373,13 @@ void main() {
         PipelineGraphSkeleton(),
         ContributorsSkeleton(),
         ChartSkeleton(),
+        ActivityTimelineSkeleton(),
+        HubSectionSkeleton(),
+        SettingsSkeleton(),
+        AppShellSkeleton(),
+        ImageSkeleton(),
+        LineSkeleton(),
+        ChipsSkeleton(),
       ];
       for (final skeleton in skeletons) {
         await tester.pumpWidget(

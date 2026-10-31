@@ -11,6 +11,7 @@ import '../../features/auth/session_controller.dart';
 import '../../features/workspace/graph_work_items_page.dart';
 import '../../features/workspace/work_item_attributes.dart';
 import '../../shared/motion.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 
 import '../../l10n/l10n.dart';
@@ -275,7 +276,8 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
     }
     final snapshot = _status;
     if (snapshot == null) {
-      return Text(l10n.loadingDots);
+      // First read of a one-line value inside the loaded card.
+      return const LineSkeleton(key: ValueKey('rest-graph-status-loading'));
     }
     if (snapshot.value is WorkItemStatusAttribute) {
       final attr = snapshot.value as WorkItemStatusAttribute;
@@ -340,7 +342,9 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
             width: 100,
             child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
-          Expanded(child: Text(l10n.loadingDots)),
+          Expanded(
+            child: LineSkeleton(key: ValueKey('rest-graph-$kind-loading')),
+          ),
         ],
       );
     }

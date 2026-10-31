@@ -7,6 +7,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import '../security/app_lock.dart';
 import 'ai_chat_controller.dart';
@@ -56,6 +57,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   AiHistoryCoordinator get _history =>
       widget.history ?? AiHistoryCoordinator.instance;
   bool _loading = true;
+  bool _firstLoadDone = false;
   bool _failed = false;
   Object? _loadFailure;
   bool _busy = false;
@@ -184,6 +186,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     if (oldWidget.accountKey != widget.accountKey ||
         !identical(oldWidget.settings, widget.settings) ||
         !identical(oldWidget.history, widget.history)) {
+      _firstLoadDone = false;
       _loading = true;
       _failed = false;
       _loadFailure = null;
@@ -208,6 +211,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           _loading = false;
           _failed = false;
           _loadFailure = null;
+          _firstLoadDone = true;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) => _formatCap());
       }
@@ -801,7 +805,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       child: AnimatedBuilder(
         animation: Listenable.merge([widget.settings, _history]),
         builder: (context, _) {
-          if (_loading) return const Center(child: CircularProgressIndicator());
+          if (_loading && !_firstLoadDone) return const SettingsSkeleton();
           if (_failed) {
             return Center(
               child: Padding(
@@ -814,7 +818,10 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                     Text(l10n.aiSettingsReadFailure),
                     TextButton.icon(
                       onPressed: () {
-                        setState(() => _loading = true);
+                        setState(() {
+                          _loading = true;
+                          _failed = false;
+                        });
                         unawaited(_load());
                       },
                       icon: const Icon(Icons.refresh),

@@ -8,6 +8,8 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/groups_page.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
@@ -1060,9 +1062,87 @@ void main() {
     await tester.pumpWidget(_host(_account(api), api));
     await settleNetworkWidgets(tester);
 
-    expect(find.text('讀取可用的工作項目類型…'), findsNothing);
+    expect(find.byKey(const ValueKey('work-item-types-loading')), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  // #56 part 2: the types card's first read is a compact chip skeleton. The
+  // item list beside it holds the page's one live region; a refresh re-reads
+  // both lists from nothing (the list's own behaviour), and a retry after a
+  // failed read shows the skeleton again.
+  testWidgets('work item types first read shows a compact skeleton', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    Completer<void>? holdTypes = Completer<void>();
+    var failTypes = false;
+    final adapter = FakeAdapter((request) async {
+      final query = _query(request);
+      if (query.contains('MobileNamespaceWorkItemTypes')) {
+        if (holdTypes case final gate?) await gate.future;
+        if (failTypes) {
+          return jsonResponse({'message': 'temporary failure'}, status: 503);
+        }
+        return _types();
+      }
+      if (query.contains('MobileGroupWorkItems')) {
+        return _groupList([_summary(iid: 4, title: 'Visible from group')]);
+      }
+      throw StateError('Unexpected query');
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(_account(api), api));
+    await settleNetworkWidgets(tester);
+    final loading = find.byKey(const ValueKey('work-item-types-loading'));
+    expect(loading, findsOneWidget);
+    expect(
+      find.descendant(of: loading, matching: find.byType(ChipsSkeleton)),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<ChipsSkeleton>(find.byType(ChipsSkeleton)).liveRegion,
+      isFalse,
+    );
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    // Both lists are read together: the item list's skeleton is the page's
+    // one live region, and the types card does not announce on its own.
+    expect(find.byType(RowsSkeleton), findsOneWidget);
+    expect(find.bySemanticsLabel('正在載入'), findsOneWidget);
+
+    holdTypes.complete();
+    holdTypes = null;
+    await settleNetworkWidgets(tester);
+    expect(loading, findsNothing);
+    expect(find.byType(ChipsSkeleton), findsNothing);
+    expect(find.textContaining('Epic renamed by server'), findsWidgets);
+    expect(find.text('Visible from group'), findsOneWidget);
+
+    // A failed read, then retry: the skeleton again.
+    await tester.pumpWidget(const SizedBox());
+    failTypes = true;
+    await tester.pumpWidget(_host(_account(api), api));
+    await settleNetworkWidgets(tester);
+    expect(loading, findsNothing);
+    final retry = find.descendant(
+      of: find.byType(FailureNotice),
+      matching: find.byIcon(Icons.refresh),
+    );
+    expect(retry, findsWidgets);
+    failTypes = false;
+    holdTypes = Completer<void>();
+    await tester.ensureVisible(retry.first);
+    await tester.tap(retry.first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(loading, findsOneWidget);
+    holdTypes.complete();
+    holdTypes = null;
+    await settleNetworkWidgets(tester);
+    expect(loading, findsNothing);
+    semantics.dispose();
   });
 
   testWidgets('failed replacement does not park stale initial capabilities', (
@@ -1117,7 +1197,7 @@ void main() {
     await settleNetworkWidgets(tester);
 
     expect(find.text('Stale initial row'), findsNothing);
-    expect(find.text('讀取可用的工作項目類型…'), findsNothing);
+    expect(find.byKey(const ValueKey('work-item-types-loading')), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(tester.takeException(), isNull);
   });

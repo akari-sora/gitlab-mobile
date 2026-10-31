@@ -14,6 +14,7 @@ import '../../core/repository_ref.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/network_boundary.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
@@ -600,8 +601,13 @@ class _OfflineHome extends StatelessWidget {
     ];
     final failure = repositories.failure;
     final blocked = !offlineReadable(repositories.state) || failure != null;
+    // A first read shows rows; a re-read keeps the list, or its empty state,
+    // under the thin bar.
+    final firstLoad = repositories.loading && !repositories.hasLoaded;
     return [
-      if (repositories.loading && saved.isEmpty)
+      if (firstLoad)
+        const HubSectionSkeleton(rowHeight: 80)
+      else if (repositories.loading)
         const LinearProgressIndicator(minHeight: 2),
       if (blocked && !repositories.loading)
         OfflineNotice(
@@ -620,7 +626,7 @@ class _OfflineHome extends StatelessWidget {
             ),
           ],
         ),
-      if (saved.isEmpty && !repositories.loading && !blocked)
+      if (saved.isEmpty && !firstLoad && !blocked)
         EmptyState(
           l10n.offlineNothingToBrowse,
           key: const ValueKey('offline-shell-empty'),

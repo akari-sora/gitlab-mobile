@@ -6,6 +6,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/work_item_graph_models.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 
 import '../../l10n/l10n.dart';
@@ -273,8 +274,23 @@ class _WorkItemNotificationsControlState
                 const SizedBox(height: 10),
                 Text(l10n.subscriptionDoesNotChangeDelivery),
                 const SizedBox(height: 12),
-                if (_loading)
-                  _NotificationProgress(label: l10n.checkingNotificationSubscription)
+                // The read's output is the confirmed state and its button:
+                // their shape on a first read, kept under the bar on a
+                // re-read.
+                if (_loading && access == null)
+                  const Column(
+                    key: ValueKey('work-item-notifications-loading'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      LineSkeleton(widthFactor: 0.6),
+                      SizedBox(height: 12),
+                      LineSkeleton(
+                        widthFactor: 1,
+                        lineHeight: 48,
+                        boneHeight: 48,
+                      ),
+                    ],
+                  )
                 else if (access == null && _error != null)
                   FailureNotice(
                     _error!,
@@ -291,6 +307,7 @@ class _WorkItemNotificationsControlState
                     label: l10n.loadNotificationSettings,
                   )
                 else ...[
+                  if (_loading) const LinearProgressIndicator(minHeight: 2),
                   _NotificationAvailability(access: access),
                   if (_error != null) ...[
                     const SizedBox(height: 10),
@@ -314,7 +331,10 @@ class _WorkItemNotificationsControlState
                     const SizedBox(height: 12),
                     _wideButton(
                       onPressed:
-                          access.canAttemptSubscription && !stale && !_writing
+                          access.canAttemptSubscription &&
+                              !stale &&
+                              !_writing &&
+                              !_loading
                           ? () => unawaited(_setSubscribed(!subscribed))
                           : null,
                       icon: _writing
@@ -385,25 +405,6 @@ class _WorkItemNotificationsControlState
         ),
       ),
     ),
-  );
-}
-
-class _NotificationProgress extends StatelessWidget {
-  const _NotificationProgress({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      const SizedBox(
-        width: 18,
-        height: 18,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
-      const SizedBox(width: 12),
-      Expanded(child: Text(label)),
-    ],
   );
 }
 
