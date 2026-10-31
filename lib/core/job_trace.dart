@@ -2,7 +2,8 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' show Brightness;
-import 'package:flutter/foundation.dart' show SynchronousFuture, compute;
+import 'package:flutter/foundation.dart'
+    show SynchronousFuture, compute, visibleForTesting;
 import 'package:flutter/material.dart' show InlineSpan, TextSpan, TextStyle;
 import 'ansi.dart';
 import 'failure.dart';
@@ -14,14 +15,20 @@ final class JobTrace {
   /// Nested `section_start` markers past this depth stay plain text.
   static const maxDepth = 32;
 
-  /// Further markers are ignored so a marker-dense trace cannot explode.
+  /// Further `section_start` markers are ignored once the lifetime section
+  /// count (closed sections emitted so far, including any later evicted by the
+  /// sliding window, plus currently open sections on the stack) reaches this
+  /// limit, so a marker-dense trace cannot explode.
   static const maxSections = 1024;
 
-  /// Cumulative characters decoded across all [JobTrace.parse] and
-  /// [JobTraceParser] calls since the last [resetDebugCounters].
+  /// Cumulative characters fed into [AnsiStateMachine.parseSpans] across all
+  /// [JobTrace.parse] and [JobTraceParser] committed and preview parses since
+  /// the last [resetDebugCounters].
+  @visibleForTesting
   static int debugCharactersProcessed = 0;
 
   /// Resets [debugCharactersProcessed] for deterministic test assertions.
+  @visibleForTesting
   static void resetDebugCounters() {
     debugCharactersProcessed = 0;
   }
@@ -31,6 +38,7 @@ final class JobTrace {
     required this.lines,
     required this.sections,
     this.truncated = false,
+    this.windowStart = 0,
     this.charactersProcessed = 0,
     int? estimatedBytes,
   })  : _ansiStripped = ansiStripped,
@@ -39,7 +47,11 @@ final class JobTrace {
   final String? _ansiStripped;
   final int? _estimatedBytes;
 
-  /// ANSI-stripped text before markers are removed. Line budgets use this.
+  /// Plain text of the trace without ANSI sequences. For whole-string
+  /// [JobTrace.parse], this is the raw trace with timestamps and CSI escapes
+  /// stripped before section markers are removed; for incremental
+  /// [JobTraceParser] snapshots, it is synthesized on demand by joining the
+  /// retained window's [lines].
   String get ansiStripped =>
       _ansiStripped ??
       (lines.isEmpty ? '' : lines.map((line) => line.text).join('\n'));
@@ -49,6 +61,10 @@ final class JobTrace {
 
   /// Whether earlier lines before [lines] were dropped by the sliding window.
   final bool truncated;
+
+  /// Absolute line index of `lines[0]` in the parser stream (`0` when not
+  /// truncated).
+  final int windowStart;
 
   /// Total decoded characters fed into the parser that produced this trace.
   final int charactersProcessed;
@@ -88,7 +104,6 @@ final class JobTrace {
   static const _timestampHeaderLength = 32;
 
   factory JobTrace.parse(String trace, {int maxLines = GitLabApi.maxTextLines}) {
-    debugCharactersProcessed += trace.length;
     final raw = _withoutTimestamps(trace);
     final plain = raw.replaceAll(_ansi, '');
     if (plain.isEmpty) return JobTrace.empty;
@@ -141,18 +156,25 @@ final class JobTraceParser {
   /// isolate by [addBytesAsync].
   static const isolateThresholdBytes = 64 * 1024;
 
+  /// Maximum characters retained in an unterminated pending logical line
+  /// (e.g. `\r`-only progress output without a newline).
+  static const maxPendingLineChars = 64 * 1024;
+
   static const _blockSize = 512;
 
-  JobTraceParser({this.maxLines = GitLabApi.maxTextLines}) {
+  JobTraceParser({this.maxLines = GitLabApi.maxTextLines})
+      : _inBackgroundIsolate = false {
     _initUtf8Sink();
   }
 
   JobTraceParser._fromCarryState(_IsolateParseRequest req)
       : maxLines = req.maxLines,
+        _inBackgroundIsolate = true,
         _utf8Carry = req.utf8Carry,
         _committedAnsi = req.ansi.copy(),
         _committedStack = List<_OpenSection>.of(req.stack),
         _totalCommittedLines = req.totalCommittedLines,
+        _totalCommittedSections = req.totalCommittedSections,
         _timestampsEnabled = req.timestampsEnabled,
         _initialBuffer = StringBuffer(req.initialBuffer),
         _inPhysicalHeader = req.inPhysicalHeader,
@@ -167,6 +189,7 @@ final class JobTraceParser {
   }
 
   final int maxLines;
+  final bool _inBackgroundIsolate;
 
   late ByteConversionSink _utf8Sink;
   Uint8List _utf8Carry = Uint8List(0);
@@ -187,6 +210,7 @@ final class JobTraceParser {
 
   final List<JobTraceSection> _committedSections = <JobTraceSection>[];
   int _committedSectionsBytes = 0;
+  int _totalCommittedSections = 0;
 
   bool? _timestampsEnabled;
   StringBuffer _initialBuffer = StringBuffer();
@@ -196,14 +220,28 @@ final class JobTraceParser {
   StringBuffer _currentLogicalLine = StringBuffer();
 
   int _charactersProcessed = 0;
+  int _spanCharactersProcessed = 0;
+  int _mutationCount = 0;
   JobTrace? _cachedSnapshot;
 
   /// Total decoded characters processed by this parser instance.
   int get charactersProcessed => _charactersProcessed;
 
-  /// Approximate memory footprint in bytes of the retained parsed model.
+  /// Whether there is an incomplete multi-byte UTF-8 sequence waiting for
+  /// continuation bytes or [finish].
+  bool get hasPendingUtf8 => _utf8Carry.isNotEmpty;
+
+  /// Approximate memory footprint in bytes of the retained parsed model and
+  /// pending raw buffers.
   int get estimatedBytes =>
       (_cachedSnapshot ?? snapshot()).estimatedBytes;
+
+  int get _rawBuffersEstimatedBytes =>
+      _utf8Carry.length +
+      (_initialBuffer.length +
+              _pendingPhysicalHeader.length +
+              _currentLogicalLine.length) *
+          2;
 
   void _initUtf8Sink() {
     _utf8Sink = const Utf8Decoder(allowMalformed: true).startChunkedConversion(
@@ -224,6 +262,7 @@ final class JobTraceParser {
   /// Appends a raw UTF-8 byte chunk synchronously and returns the current
   /// windowed [JobTrace] snapshot.
   JobTrace addBytes(List<int> bytes, {bool isLast = false}) {
+    _mutationCount++;
     if (bytes.isNotEmpty) {
       _cachedSnapshot = null;
       _utf8Sink.add(bytes);
@@ -238,6 +277,7 @@ final class JobTraceParser {
   /// Appends a decoded text chunk synchronously and returns the current
   /// windowed [JobTrace] snapshot.
   JobTrace addText(String chunk, {bool isLast = false}) {
+    _mutationCount++;
     if (chunk.isNotEmpty) {
       _cachedSnapshot = null;
       _feedDecodedText(chunk);
@@ -251,6 +291,7 @@ final class JobTraceParser {
   /// Flushes any trailing incomplete UTF-8 sequence at EOF and returns the
   /// resulting [JobTrace] snapshot.
   JobTrace finish() {
+    _mutationCount++;
     _cachedSnapshot = null;
     _utf8Sink.close();
     _utf8Carry = Uint8List(0);
@@ -262,27 +303,30 @@ final class JobTraceParser {
   /// when `bytes.length > isolateThresholdBytes` (64 KiB).
   ///
   /// If [shouldCommit] is provided and returns `false` after the isolate
-  /// completes, the parser state is left unchanged and the previous snapshot
-  /// is returned.
-  Future<JobTrace> addBytesAsync(
+  /// completes, the parser state is left unchanged and `null` is returned.
+  ///
+  /// Throws a [StateError] if the parser is mutated synchronously (or by
+  /// another [addBytesAsync] commit) while the background isolate is in flight.
+  Future<JobTrace?> addBytesAsync(
     List<int> bytes, {
     bool isLast = false,
     bool Function()? shouldCommit,
   }) {
     if (bytes.length <= isolateThresholdBytes) {
       if (shouldCommit != null && !shouldCommit()) {
-        return SynchronousFuture<JobTrace>(snapshot());
+        return SynchronousFuture<JobTrace?>(null);
       }
-      return SynchronousFuture<JobTrace>(addBytes(bytes, isLast: isLast));
+      return SynchronousFuture<JobTrace?>(addBytes(bytes, isLast: isLast));
     }
     return _addBytesInIsolate(bytes, isLast: isLast, shouldCommit: shouldCommit);
   }
 
-  Future<JobTrace> _addBytesInIsolate(
+  Future<JobTrace?> _addBytesInIsolate(
     List<int> bytes, {
     required bool isLast,
     bool Function()? shouldCommit,
   }) async {
+    final startMutation = ++_mutationCount;
     final payload = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
     final req = _IsolateParseRequest(
       bytes: payload,
@@ -292,6 +336,7 @@ final class JobTraceParser {
       ansi: _committedAnsi.copy(),
       stack: List<_OpenSection>.of(_committedStack),
       totalCommittedLines: _totalCommittedLines,
+      totalCommittedSections: _totalCommittedSections,
       committedSections: List<JobTraceSection>.of(_committedSections),
       timestampsEnabled: _timestampsEnabled,
       initialBuffer: _initialBuffer.toString(),
@@ -302,11 +347,18 @@ final class JobTraceParser {
     );
     final res = await compute(_parseChunkInIsolate, req);
     if (shouldCommit != null && !shouldCommit()) {
-      return snapshot();
+      return null;
     }
+    if (_mutationCount != startMutation) {
+      throw StateError(
+        'JobTraceParser was mutated while addBytesAsync isolate was in flight.',
+      );
+    }
+    _mutationCount++;
     _cachedSnapshot = null;
     _charactersProcessed += res.charsProcessed;
-    JobTrace.debugCharactersProcessed += res.charsProcessed;
+    _spanCharactersProcessed += res.spanCharsProcessed;
+    JobTrace.debugCharactersProcessed += res.spanCharsProcessed;
     _utf8Carry = res.utf8Carry;
     _initUtf8Sink();
     _committedAnsi = res.ansi;
@@ -334,15 +386,34 @@ final class JobTraceParser {
       ..clear()
       ..addAll(res.committedSections);
     _committedSectionsBytes = res.committedSectionsBytes;
+    _totalCommittedSections = res.totalCommittedSections;
     _evictCommittedSectionsIfNeeded();
 
     return snapshot();
   }
 
+  void _capCurrentLogicalLine() {
+    if (_currentLogicalLine.length <= maxPendingLineChars) return;
+    final s = _currentLogicalLine.toString();
+    final searchEnd = s.endsWith('\r') ? s.length - 1 : s.length;
+    final lastCr = searchEnd > 0 ? s.lastIndexOf('\r', searchEnd - 1) : -1;
+    String kept;
+    if (lastCr >= 0) {
+      kept = s.substring(lastCr + 1);
+      if (kept.length > maxPendingLineChars) {
+        kept = kept.substring(kept.length - maxPendingLineChars);
+      }
+    } else {
+      kept = s.substring(s.length - maxPendingLineChars);
+    }
+    _currentLogicalLine
+      ..clear()
+      ..write(kept);
+  }
+
   void _feedDecodedText(String chunk) {
     if (chunk.isEmpty) return;
     _charactersProcessed += chunk.length;
-    JobTrace.debugCharactersProcessed += chunk.length;
     var i = 0;
     if (_timestampsEnabled == null) {
       while (i < chunk.length && _timestampsEnabled == null) {
@@ -385,6 +456,7 @@ final class JobTraceParser {
       final nl = chunk.indexOf('\n', start);
       if (nl < 0) {
         _currentLogicalLine.write(chunk.substring(start));
+        _capCurrentLogicalLine();
         return;
       }
       if (nl > start) {
@@ -403,10 +475,12 @@ final class JobTraceParser {
         final nl = chunk.indexOf('\n', pos);
         if (nl < 0) {
           _currentLogicalLine.write(chunk.substring(pos));
+          _capCurrentLogicalLine();
           return;
         }
         if (nl > pos) {
           _currentLogicalLine.write(chunk.substring(pos, nl));
+          _capCurrentLogicalLine();
         }
         _inPhysicalHeader = true;
         _newlinePending = true;
@@ -484,7 +558,7 @@ final class JobTraceParser {
       _applyMarkerCounted(
         match,
         currentLineCount: _totalCommittedLines,
-        currentSectionCount: _committedSections.length,
+        currentSectionCount: _totalCommittedSections,
         stack: _committedStack,
         onClose: _addCommittedSection,
       );
@@ -497,6 +571,10 @@ final class JobTraceParser {
   }
 
   void _emitSegmentIntoCommitted(String rawText, {required bool allowEmpty}) {
+    _spanCharactersProcessed += rawText.length;
+    if (!_inBackgroundIsolate) {
+      JobTrace.debugCharactersProcessed += rawText.length;
+    }
     final spans = _committedAnsi.parseSpans(rawText);
     final plainText = spans.isEmpty ? '' : spans.map((s) => s.text).join();
     if (plainText.isEmpty) {
@@ -570,6 +648,7 @@ final class JobTraceParser {
   void _addCommittedSection(JobTraceSection section) {
     _committedSections.add(section);
     _committedSectionsBytes += section.estimatedBytes;
+    _totalCommittedSections++;
   }
 
   void _evictCommittedSectionsIfNeeded() {
@@ -609,12 +688,18 @@ final class JobTraceParser {
         uncommittedRawLines.length == 1) {
       final single = uncommittedRawLines.first;
       if (single.isEmpty || single.replaceAll(JobTrace._ansi, '').isEmpty) {
+        if (single.isNotEmpty) {
+          _spanCharactersProcessed += single.length;
+          if (!_inBackgroundIsolate) {
+            JobTrace.debugCharactersProcessed += single.length;
+          }
+        }
         final emptyResult = JobTrace(
           ansiStripped: '',
           lines: const <JobTraceLine>[],
           sections: const <JobTraceSection>[],
           charactersProcessed: _charactersProcessed,
-          estimatedBytes: 0,
+          estimatedBytes: _rawBuffersEstimatedBytes,
         );
         _cachedSnapshot = emptyResult;
         return emptyResult;
@@ -657,7 +742,7 @@ final class JobTraceParser {
         lines: const <JobTraceLine>[],
         sections: const <JobTraceSection>[],
         charactersProcessed: _charactersProcessed,
-        estimatedBytes: 0,
+        estimatedBytes: _rawBuffersEstimatedBytes,
       );
       _cachedSnapshot = emptyResult;
       return emptyResult;
@@ -739,8 +824,10 @@ final class JobTraceParser {
       lines: windowLines,
       sections: List<JobTraceSection>.unmodifiable(windowSections),
       truncated: truncated,
+      windowStart: effectiveWindowStart,
       charactersProcessed: _charactersProcessed,
-      estimatedBytes: windowLinesBytes + windowSectionsBytes,
+      estimatedBytes:
+          windowLinesBytes + windowSectionsBytes + _rawBuffersEstimatedBytes,
     );
     _cachedSnapshot = result;
     return result;
@@ -771,7 +858,7 @@ final class JobTraceParser {
         match,
         currentLineCount: _totalCommittedLines + previewLines.length,
         currentSectionCount:
-            _committedSections.length + previewClosedSections.length,
+            _totalCommittedSections + previewClosedSections.length,
         stack: previewStack,
         onClose: previewClosedSections.add,
       );
@@ -796,6 +883,10 @@ final class JobTraceParser {
     required List<JobTraceLine> previewLines,
     required bool allowEmpty,
   }) {
+    _spanCharactersProcessed += rawText.length;
+    if (!_inBackgroundIsolate) {
+      JobTrace.debugCharactersProcessed += rawText.length;
+    }
     final spans = previewAnsi.parseSpans(rawText);
     final plainText = spans.isEmpty ? '' : spans.map((s) => s.text).join();
     if (plainText.isEmpty) {
@@ -935,6 +1026,7 @@ final class _IsolateParseRequest {
     required this.ansi,
     required this.stack,
     required this.totalCommittedLines,
+    required this.totalCommittedSections,
     required this.committedSections,
     required this.timestampsEnabled,
     required this.initialBuffer,
@@ -951,6 +1043,7 @@ final class _IsolateParseRequest {
   final AnsiStateMachine ansi;
   final List<_OpenSection> stack;
   final int totalCommittedLines;
+  final int totalCommittedSections;
   final List<JobTraceSection> committedSections;
   final bool? timestampsEnabled;
   final String initialBuffer;
@@ -963,10 +1056,12 @@ final class _IsolateParseRequest {
 final class _IsolateParseResult {
   const _IsolateParseResult({
     required this.charsProcessed,
+    required this.spanCharsProcessed,
     required this.utf8Carry,
     required this.ansi,
     required this.stack,
     required this.totalCommittedLines,
+    required this.totalCommittedSections,
     required this.newCommittedLines,
     required this.discardExistingCommittedLines,
     required this.committedSections,
@@ -980,10 +1075,12 @@ final class _IsolateParseResult {
   });
 
   final int charsProcessed;
+  final int spanCharsProcessed;
   final Uint8List utf8Carry;
   final AnsiStateMachine ansi;
   final List<_OpenSection> stack;
   final int totalCommittedLines;
+  final int totalCommittedSections;
   final List<JobTraceLine> newCommittedLines;
   final bool discardExistingCommittedLines;
   final List<JobTraceSection> committedSections;
@@ -1021,10 +1118,12 @@ _IsolateParseResult _parseChunkInIsolate(_IsolateParseRequest req) {
   final producedCount = parser._totalCommittedLines - req.totalCommittedLines;
   return _IsolateParseResult(
     charsProcessed: parser._charactersProcessed,
+    spanCharsProcessed: parser._spanCharactersProcessed,
     utf8Carry: parser._utf8Carry,
     ansi: parser._committedAnsi,
     stack: parser._committedStack,
     totalCommittedLines: parser._totalCommittedLines,
+    totalCommittedSections: parser._totalCommittedSections,
     newCommittedLines: newLines,
     discardExistingCommittedLines: producedCount >= req.maxLines,
     committedSections: parser._committedSections,
@@ -1202,6 +1301,7 @@ void _emitSegment(
   int maxLines, {
   required bool allowEmpty,
 }) {
+  JobTrace.debugCharactersProcessed += rawText.length;
   final spans = stateMachine.parseSpans(rawText);
   final plainText = spans.isEmpty ? '' : spans.map((s) => s.text).join();
   if (plainText.isEmpty) {

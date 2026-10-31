@@ -510,7 +510,7 @@ void main() {
       final first = utf8.encode('running line one\n');
       final adapter = FakeAdapter((request) {
         if (_isTrace(request, 7)) {
-          if (request.headers['Range'] == 'bytes=${first.length}-') {
+          if ((request.headers['Range'] as String?)?.startsWith('bytes=${first.length}-') == true) {
             return ResponseBody.fromString('running line two\n', 206, headers: {
               'content-range': ['bytes ${first.length}-${first.length + 16}/*'],
             });

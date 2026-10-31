@@ -2801,12 +2801,24 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       int requestCount,
     })
   >
-  jobTraceChunk(int project, int job, {int offset = 0, int? maxBytes}) async {
+  jobTraceChunk(
+    int project,
+    int job, {
+    int offset = 0,
+    int? maxBytes,
+    bool bounded = false,
+    bool tail = false,
+  }) async {
+    final limit = maxBytes ?? maxTextBytes;
     final query = <String, String>{
-      if (offset > 0) 'offset': '$offset',
+      if (!tail && offset > 0) 'offset': '$offset',
     };
     final headers = <String, String>{
-      if (offset > 0) 'Range': 'bytes=$offset-',
+      if (tail)
+        'Range': 'bytes=-$limit'
+      else if (offset > 0)
+        'Range':
+            bounded ? 'bytes=$offset-${offset + limit - 1}' : 'bytes=$offset-',
     };
     final uri = instance.api(
       ['projects', '$project', 'jobs', '$job', 'trace'],
@@ -2816,7 +2828,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       final result = await _read(
         uri,
         headers: headers.isNotEmpty ? headers : null,
-        maxBytes: maxBytes ?? maxTextBytes,
+        maxBytes: limit,
         allowRangeNotSatisfiable: true,
       );
       final eofHeader = result.headers.value('x-gitlab-trace-eof');
@@ -2835,37 +2847,73 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
 
       final contentRange = result.headers.value('content-range');
       int? startOffset = result.statusCode == 206 ? null : offset;
+      int? endOffset;
       int? totalBytes;
       if (contentRange != null) {
-        final match = RegExp(r'bytes\s+(\d+)-(\d+)/(\d+)', caseSensitive: false)
-            .firstMatch(contentRange);
+        final match = RegExp(
+          r'bytes\s+(\d+)-(\d+)/(\d+|\*)',
+          caseSensitive: false,
+        ).firstMatch(contentRange);
         if (match != null) {
           startOffset = int.tryParse(match.group(1) ?? '');
-          final end = int.tryParse(match.group(2) ?? '');
+          endOffset = int.tryParse(match.group(2) ?? '');
           final total = int.tryParse(match.group(3) ?? '');
           totalBytes = total;
-          if (end != null && total != null && end + 1 >= total) {
+          if (endOffset != null &&
+              total != null &&
+              endOffset + 1 >= total &&
+              eofHeader != 'false' &&
+              eofHeader != '0') {
             isEof = true;
+          }
+        } else {
+          final unsat = RegExp(
+            r'bytes\s+\*/(\d+)',
+            caseSensitive: false,
+          ).firstMatch(contentRange);
+          if (unsat != null) {
+            totalBytes = int.tryParse(unsat.group(1) ?? '');
           }
         }
       }
 
       List<int> chunkBytes;
+      int nextOffset;
       if (result.statusCode == 206) {
         chunkBytes = result.bytes;
+        if (startOffset != null) {
+          nextOffset = startOffset + chunkBytes.length;
+        } else if (endOffset != null && chunkBytes.isNotEmpty) {
+          nextOffset = endOffset + 1;
+        } else {
+          nextOffset = offset + chunkBytes.length;
+        }
+        if (tail && (startOffset ?? 0) > 0 && chunkBytes.isNotEmpty) {
+          var skip = 0;
+          while (skip < chunkBytes.length &&
+              skip < 3 &&
+              (chunkBytes[skip] & 0xc0) == 0x80) {
+            skip++;
+          }
+          if (skip > 0) {
+            chunkBytes = chunkBytes.sublist(skip);
+            startOffset = startOffset! + skip;
+          }
+        }
       } else if (result.statusCode == 200) {
-        if (offset > 0 && result.bytes.length > offset) {
+        if (!tail && offset > 0 && result.bytes.length > offset) {
           chunkBytes = result.bytes.sublist(offset);
-        } else if (offset > 0 && result.bytes.length <= offset) {
+        } else if (!tail && offset > 0 && result.bytes.length <= offset) {
           chunkBytes = const <int>[];
         } else {
           chunkBytes = result.bytes;
         }
+        nextOffset = (tail ? 0 : offset) + chunkBytes.length;
       } else {
         chunkBytes = result.bytes;
+        nextOffset = (tail ? 0 : offset) + chunkBytes.length;
       }
 
-      final nextOffset = offset + chunkBytes.length;
       return (
         bytes: chunkBytes,
         isEof: isEof,

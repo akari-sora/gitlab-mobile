@@ -2023,8 +2023,9 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   /// offsets are absolute; it may start after byte 0 (C2 §4.5).
   ReadCacheTerminalLog? _tail;
 
-  /// Whether leading lines of the tail were also left out, to stay within the
-  /// screen's line limit.
+  /// Whether earlier lines of the trace were left out—either because the
+  /// sliding window dropped lines above `GitLabApi.maxTextLines` or because a
+  /// running log fell back to a byte-range tail read.
   bool _tailClipped = false;
 
   /// A finished-job load stopped because the page was hidden; it runs again
@@ -2171,6 +2172,8 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       var changed = false;
       List<int>? bytesToParse;
       var resetParser = false;
+      var tailFallback = false;
+      var isTerminalEof = false;
       var nextOffset = _traceOffset;
       var nextTail = _tail;
       var stopPolling = false;
@@ -2179,6 +2182,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         // attempt, and the next offset is the tail's absolute end.
         bytesToParse = tail.bytes;
         resetParser = true;
+        isTerminalEof = true;
         nextOffset = tail.nextOffset;
         nextTail = tail;
         stopPolling = true;
@@ -2190,25 +2194,83 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _parser = JobTraceParser();
           _hasTraceBytes = false;
           _traceOffset = 0;
+          _tailClipped = false;
           nextTail = null;
           nextOffset = 0;
         }
-        final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
+        final pollingOffset = _traceOffset;
+        ({
+          List<int> bytes,
+          bool isEof,
+          int? nextOffset,
+          int requestCount,
+          int? startOffset,
+          int? totalBytes,
+        }) chunk;
+        try {
+          chunk = await widget.api.jobTraceChunk(
+            widget.project.id,
+            jobId,
+            offset: pollingOffset,
+            bounded: pollingOffset > 0,
+          );
+          if (!useTail &&
+              pollingOffset == 0 &&
+              (chunk.totalBytes ?? 0) > GitLabApi.maxTextBytes &&
+              (chunk.nextOffset ?? 0) < chunk.totalBytes!) {
+            chunk = await widget.api.jobTraceChunk(
+              widget.project.id,
+              jobId,
+              tail: true,
+            );
+            tailFallback = true;
+          }
+        } on ApiFailure catch (failure) {
+          if (!useTail && failure.kind == FailureKind.tooLarge) {
+            chunk = await widget.api.jobTraceChunk(
+              widget.project.id,
+              jobId,
+              tail: true,
+            );
+            tailFallback = true;
+          } else {
+            rethrow;
+          }
+        }
         if (!current()) { return; }
         // The bounded fallback after `unsupported` may finish while hidden.
         if (useTail && !_visible) throw const _HiddenLoad();
-        if (chunk.isEof) {
-          stopPolling = true;
-        }
-        changed = chunk.bytes.isNotEmpty || !_hasTraceBytes;
-        if (chunk.bytes.isNotEmpty) {
-          if (chunk.nextOffset != null && chunk.nextOffset! < _traceOffset) {
-            resetParser = true;
-            bytesToParse = chunk.bytes;
-            nextOffset = chunk.nextOffset!;
-          } else {
-            bytesToParse = chunk.bytes;
-            nextOffset = chunk.nextOffset ?? (_traceOffset + chunk.bytes.length);
+        final chunkAtEnd = chunk.isEof ||
+            chunk.totalBytes == null ||
+            (chunk.nextOffset ?? 0) >= chunk.totalBytes!;
+        if (tailFallback) {
+          resetParser = true;
+          bytesToParse = chunk.bytes;
+          nextOffset = chunk.nextOffset ?? chunk.bytes.length;
+          changed = true;
+          if (terminal && chunkAtEnd) {
+            stopPolling = true;
+            isTerminalEof = true;
+          }
+        } else {
+          if (terminal && chunkAtEnd) {
+            stopPolling = true;
+            isTerminalEof = true;
+          }
+          changed =
+              chunk.bytes.isNotEmpty ||
+              !_hasTraceBytes ||
+              (isTerminalEof && _parser.hasPendingUtf8);
+          if (chunk.bytes.isNotEmpty) {
+            if (chunk.nextOffset != null && chunk.nextOffset! < _traceOffset) {
+              resetParser = true;
+              bytesToParse = chunk.bytes;
+              nextOffset = chunk.nextOffset!;
+            } else {
+              bytesToParse = chunk.bytes;
+              nextOffset =
+                  chunk.nextOffset ?? (_traceOffset + chunk.bytes.length);
+            }
           }
         }
       }
@@ -2217,29 +2279,70 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         _timer?.cancel();
       }
       if (changed) {
-        final targetParser = resetParser ? JobTraceParser() : _parser;
-        final parsed = bytesToParse != null
-            ? await targetParser.addBytesAsync(
-                bytesToParse,
-                shouldCommit: () => current() && (!useTail || _visible),
-              )
-            : targetParser.snapshot();
+        final targetParser =
+            (resetParser || useTail) ? JobTraceParser() : _parser;
+        final JobTrace? parsedCandidate;
+        if (bytesToParse != null) {
+          parsedCandidate = await targetParser.addBytesAsync(
+            bytesToParse,
+            isLast: isTerminalEof,
+            shouldCommit: () => current() && (!useTail || _visible),
+          );
+        } else if (isTerminalEof && targetParser.hasPendingUtf8) {
+          parsedCandidate = targetParser.finish();
+        } else {
+          parsedCandidate = targetParser.snapshot();
+        }
         if (!current()) { return; }
         if (useTail && !_visible) throw const _HiddenLoad();
+        if (parsedCandidate == null) { return; }
+        final parsed = parsedCandidate;
         if (useTail && nextTail == null && parsed.truncated) {
           throw const ApiFailure(FailureKind.tooLarge);
+        }
+        final oldTrace = _trace;
+        final prevMatch = (_query.isNotEmpty &&
+                _matches.isNotEmpty &&
+                _currentMatch >= 0 &&
+                _currentMatch < _matches.length)
+            ? _matches[_currentMatch]
+            : null;
+        final prevMatchAbsLine =
+            prevMatch != null ? oldTrace.windowStart + prevMatch.lineIndex : null;
+        final windowDelta = (resetParser || useTail)
+            ? 0
+            : (parsed.windowStart - oldTrace.windowStart);
+        double removedScrollHeight = 0;
+        if (windowDelta > 0 && _scroll.hasClients) {
+          final oldRows = _visibleRows();
+          for (final row in oldRows) {
+            if (row.lineIndex != null) {
+              if (row.lineIndex! < windowDelta) {
+                removedScrollHeight += 21.0;
+              }
+            } else if (row.section != null &&
+                row.section! < oldTrace.sections.length) {
+              final sec = oldTrace.sections[row.section!];
+              if (sec.startLine < windowDelta && sec.endLine <= windowDelta) {
+                removedScrollHeight += 48.0;
+              }
+            }
+          }
         }
         _parser = targetParser;
         _traceOffset = nextOffset;
         _tail = nextTail;
-        if (resetParser) {
+        if (resetParser || useTail) {
           _hasTraceBytes = bytesToParse != null && bytesToParse.isNotEmpty;
         } else if (bytesToParse != null && bytesToParse.isNotEmpty) {
           _hasTraceBytes = true;
         }
         // Display only: offsets stay absolute while lines beyond maxTextLines
-        // are trimmed by the sliding window.
-        _tailClipped = parsed.truncated;
+        // are trimmed by the sliding window or a running log falls back to a
+        // tail read.
+        _tailClipped = parsed.truncated ||
+            tailFallback ||
+            (!(resetParser || useTail) && _tailClipped);
         setState(() {
           _trace = parsed;
           _firstLoadDone = true;
@@ -2247,15 +2350,45 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             _matches = _findMatches(_query);
             if (_matches.isEmpty) {
               _currentMatch = 0;
+            } else if (prevMatch != null && prevMatchAbsLine != null) {
+              final targetLine = prevMatchAbsLine - parsed.windowStart;
+              final exactIdx = _matches.indexWhere(
+                (m) => m.lineIndex == targetLine && m.start == prevMatch.start,
+              );
+              if (exactIdx >= 0) {
+                _currentMatch = exactIdx;
+              } else {
+                final nextIdx = _matches.indexWhere(
+                  (m) =>
+                      m.lineIndex > targetLine ||
+                      (m.lineIndex == targetLine && m.start >= prevMatch.start),
+                );
+                _currentMatch = nextIdx >= 0 ? nextIdx : _matches.length - 1;
+              }
             } else if (_currentMatch >= _matches.length) {
               _currentMatch = _matches.length - 1;
             }
           }
         });
+        // When the sliding window drops rows from the top while the user is not
+        // following the tail, shift the scroll offset by the height of the
+        // removed rows (21 px per log line, 48 px per dropped section header)
+        // so the viewport stays anchored on the same log lines.
+        final followNow = _follow &&
+            (!_scroll.hasClients || _scroll.position.extentAfter < 80);
+        if (!follow && !followNow && removedScrollHeight > 0 && _scroll.hasClients) {
+          final targetOffset = (_scroll.offset - removedScrollHeight).clamp(
+            0.0,
+            _scroll.position.maxScrollExtent,
+          );
+          _scroll.jumpTo(targetOffset);
+        }
       } else if (!_firstLoadDone) {
         setState(() => _firstLoadDone = true);
       }
-      if (follow) {
+      final followNow = _follow &&
+          (!_scroll.hasClients || _scroll.position.extentAfter < 80);
+      if (follow || followNow) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (current() && _scroll.hasClients) { _scroll.jumpTo(_scroll.position.maxScrollExtent); }
         });

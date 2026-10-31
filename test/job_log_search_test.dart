@@ -412,7 +412,177 @@ void main() {
         }
       }
     });
+
+    testWidgets('window slide while not following adjusts scroll offset and re-anchors _currentMatch by line position', (tester) async {
+      final chunk1Buf = StringBuffer();
+      for (var i = 0; i < 20000; i++) {
+        if (i == 10) {
+          chunk1Buf.writeln('needle early line $i');
+        } else if (i == 5000) {
+          chunk1Buf.writeln('needle middle line $i');
+        } else if (i == 10000) {
+          chunk1Buf.writeln('needle late line $i');
+        } else {
+          chunk1Buf.writeln('plain log row $i');
+        }
+      }
+      final chunk1Text = chunk1Buf.toString();
+      final chunk1Bytes = utf8.encode(chunk1Text);
+
+      final chunk2Buf = StringBuffer();
+      for (var i = 20000; i < 20100; i++) {
+        chunk2Buf.writeln('plain log row $i');
+      }
+      final chunk2Text = chunk2Buf.toString();
+      final chunk2Bytes = utf8.encode(chunk2Text);
+
+      final chunk3Buf = StringBuffer();
+      for (var i = 20100; i < 20200; i++) {
+        chunk3Buf.writeln('plain log row $i');
+      }
+      final chunk3Text = chunk3Buf.toString();
+      final chunk3Bytes = utf8.encode(chunk3Text);
+
+      final fixture = _CustomTraceFixture((request) {
+        if (request.uri.path.endsWith('/jobs/501')) {
+          return jsonResponse({'id': 501, 'status': 'running', 'name': 'slide-search'});
+        }
+        if (request.uri.path.endsWith('/jobs/501/trace')) {
+          final range = request.headers['Range'] as String?;
+          if (range != null && range.startsWith('bytes=${chunk1Bytes.length}-')) {
+            return ResponseBody.fromString(chunk2Text, 206, headers: {
+              'content-range': [
+                'bytes ${chunk1Bytes.length}-${chunk1Bytes.length + chunk2Bytes.length - 1}/*',
+              ],
+            });
+          }
+          if (range != null &&
+              range.startsWith('bytes=${chunk1Bytes.length + chunk2Bytes.length}-')) {
+            return ResponseBody.fromString(chunk3Text, 206, headers: {
+              'content-range': [
+                'bytes ${chunk1Bytes.length + chunk2Bytes.length}-${chunk1Bytes.length + chunk2Bytes.length + chunk3Bytes.length - 1}/*',
+              ],
+            });
+          }
+          return ResponseBody.fromString(chunk1Text, 200);
+        }
+        return jsonResponse({}, status: 404);
+      });
+      addTearDown(fixture.api.close);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(workspaceHost(JobLogPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        id: 501,
+      )));
+      await settleWorkspace(tester);
+
+      // Scroll up to offset 5000.0 (far from tail, so extentAfter >= 80 and follow is inactive).
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)),
+      );
+      scrollable.position.jumpTo(5000.0);
+      await tester.pumpAndSettle();
+      expect(scrollable.position.pixels, 5000.0);
+
+      // Poll 2 appends 100 lines -> window slides by 100 lines (100 * 21.0 = 2100.0 px).
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await settleWorkspace(tester);
+      expect(scrollable.position.pixels, closeTo(5000.0 - 100 * 21.0, 0.01));
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('active search match is re-anchored by line position when earlier match scrolls out of the sliding window', (tester) async {
+      final chunk1Buf = StringBuffer();
+      for (var i = 0; i < 19999; i++) {
+        if (i == 10) {
+          chunk1Buf.writeln('needle early line $i');
+        } else if (i == 5000) {
+          chunk1Buf.writeln('needle middle line $i');
+        } else if (i == 10000) {
+          chunk1Buf.writeln('needle late line $i');
+        } else {
+          chunk1Buf.writeln('plain log row $i');
+        }
+      }
+      final chunk1Text = chunk1Buf.toString();
+      final chunk1Bytes = utf8.encode(chunk1Text);
+
+      final chunk2Buf = StringBuffer();
+      for (var i = 19999; i < 20100; i++) {
+        chunk2Buf.writeln('plain log row $i');
+      }
+      final chunk2Text = chunk2Buf.toString();
+      final chunk2Bytes = utf8.encode(chunk2Text);
+
+      final fixture = _CustomTraceFixture((request) {
+        if (request.uri.path.endsWith('/jobs/501')) {
+          return jsonResponse({'id': 501, 'status': 'running', 'name': 'reanchor-search'});
+        }
+        if (request.uri.path.endsWith('/jobs/501/trace')) {
+          final range = request.headers['Range'] as String?;
+          if (range != null && range.startsWith('bytes=${chunk1Bytes.length}-')) {
+            return ResponseBody.fromString(chunk2Text, 206, headers: {
+              'content-range': [
+                'bytes ${chunk1Bytes.length}-${chunk1Bytes.length + chunk2Bytes.length - 1}/*',
+              ],
+            });
+          }
+          return ResponseBody.fromString(chunk1Text, 200);
+        }
+        return jsonResponse({}, status: 404);
+      });
+      addTearDown(fixture.api.close);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(workspaceHost(JobLogPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        id: 501,
+      )));
+      await settleWorkspace(tester);
+
+      final searchFinder = find.byKey(const ValueKey('job-log-search-501'));
+      await tester.enterText(searchFinder, 'needle');
+      await tester.pump();
+      expect(find.text('1/3'), findsOneWidget);
+
+      // Select match 2 of 3 ('needle middle line 5000').
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down));
+      await tester.pumpAndSettle();
+      expect(find.text('2/3'), findsOneWidget);
+
+      // Poll appends 101 lines -> window slides past line 10 ('needle early line 10').
+      // Only 2 matches remain ('needle middle line 5000' and 'needle late line 10000').
+      // Because _currentMatch is re-anchored by absolute line position, it stays on
+      // 'needle middle line 5000', which is now match 1/2 (index 0) instead of 2/2!
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await settleWorkspace(tester);
+      expect(find.text('1/2'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
   });
+}
+
+class _CustomTraceFixture extends WorkspaceFixture {
+  _CustomTraceFixture(this._handler);
+  final FutureOr<ResponseBody> Function(RequestOptions request) _handler;
+
+  @override
+  FutureOr<ResponseBody> respond(RequestOptions request) => _handler(request);
 }
 
 class _ChunkedSearchFixture extends WorkspaceFixture {
@@ -429,7 +599,8 @@ class _ChunkedSearchFixture extends WorkspaceFixture {
       return jsonResponse({'id': 501, 'status': 'running', 'name': 'chunked-search'});
     }
     if (request.uri.path.endsWith('/jobs/501/trace')) {
-      if (request.headers['Range'] == 'bytes=${_part1Bytes.length}-') {
+      final range = request.headers['Range'] as String?;
+      if (range != null && range.startsWith('bytes=${_part1Bytes.length}-')) {
         return ResponseBody.fromString(_part2, 206, headers: {
           'content-range': [
             'bytes ${_part1Bytes.length}-${_part1Bytes.length + _part2Bytes.length - 1}/${_part1Bytes.length + _part2Bytes.length}',
