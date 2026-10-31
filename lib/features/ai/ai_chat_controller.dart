@@ -3998,7 +3998,8 @@ AiFailure _mapFailure(Object error) {
         FailureKind.forbidden => AiFailureKind.forbidden,
         FailureKind.invisible => AiFailureKind.notFound,
         FailureKind.rateLimited => AiFailureKind.rateLimited,
-        FailureKind.network => AiFailureKind.network,
+        FailureKind.network ||
+        FailureKind.untrustedCertificate => AiFailureKind.network,
         FailureKind.server => AiFailureKind.server,
         FailureKind.tooLarge => AiFailureKind.responseTooLarge,
         FailureKind.redirectBlocked => AiFailureKind.redirectBlocked,

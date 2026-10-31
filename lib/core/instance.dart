@@ -42,6 +42,16 @@ final class GitLabInstance {
   }
 
   String get key => base.toString().replaceFirst(RegExp(r'/$'), '');
+
+  /// GitLab.com or one of its subdomains (a trailing root dot included).
+  /// Its certificates chain to public roots, so a refused one means the
+  /// connection may be intercepted: a CA is never imported for it.
+  bool get isGitLabCom {
+    final host = base.host.endsWith('.')
+        ? base.host.substring(0, base.host.length - 1)
+        : base.host;
+    return host == 'gitlab.com' || host.endsWith('.gitlab.com');
+  }
   List<String> get _prefix => [
     ...base.pathSegments.where((s) => s.isNotEmpty),
     'api',

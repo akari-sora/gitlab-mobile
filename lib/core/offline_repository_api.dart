@@ -45,6 +45,7 @@ IdentityVerdict _identityFailure(ApiFailure failure) => switch (failure.kind) {
   FailureKind.server ||
   FailureKind.rateLimited ||
   FailureKind.redirectBlocked ||
+  FailureKind.untrustedCertificate ||
   FailureKind.invalidResponse => IdentityNoVerdict(failure),
   _ => IdentityUnknown(failure),
 };
@@ -245,6 +246,9 @@ extension OfflineRepositoryApi on GitLabApi {
           error.type == DioExceptionType.cancel) {
         return const IdentityUnknown(ApiFailure(FailureKind.cancelled));
       }
+      // A transport failure like any other: no identity verdict.
+      final untrusted = _untrustedCertificate(error);
+      if (untrusted != null) return IdentityNoVerdict(untrusted);
       if (error.type == DioExceptionType.unknown &&
           error.error is! IOException) {
         return const IdentityUnknown(ApiFailure(FailureKind.invalidResponse));
@@ -1061,7 +1065,8 @@ extension _OfflineApiInternals on GitLabApi {
           error.type == DioExceptionType.cancel) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      throw const ApiFailure(FailureKind.network);
+      throw _untrustedCertificate(error) ??
+          const ApiFailure(FailureKind.network);
     }
     _noteRateLimit(response, uri, sequence);
     final status = response.statusCode ?? 0;

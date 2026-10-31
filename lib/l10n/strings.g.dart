@@ -9219,4 +9219,97 @@ final class AppStrings {
 
   /// 原本：{value}
   String aiProposalFieldPrevious(Object? value) => _format(language, language._messages[3041], {'value': value});
+
+  /// 此站台的憑證不受信任
+  String get untrustedCertificateTitle => language._messages[3042];
+
+  /// 這個 GitLab 站台出示的 TLS 憑證未通過此裝置的驗證。若站台使用貴組織的 CA 或自簽憑證，可以為此站台匯入組織的 CA 憑證。
+  String get untrustedCertificateDetail => language._messages[3043];
+
+  /// 無法匯入憑證
+  String get caCertificateImportFailedTitle => language._messages[3044];
+
+  /// 無法儲存憑證
+  String get caCertificateSaveFailedTitle => language._messages[3045];
+
+  /// 無法移除自訂 CA 憑證
+  String get caCertificateRemoveFailedTitle => language._messages[3046];
+
+  /// 檔案超過 64 KiB。請選擇 CA 憑證檔（.crt、.pem 或 .cer）。
+  String get caCertificateTooLarge => language._messages[3047];
+
+  /// 這個檔案不是 PEM 或 DER 格式的 X.509 憑證。
+  String get caCertificateNotCertificate => language._messages[3048];
+
+  /// 檔案含有私鑰，因此沒有匯入。請選擇只含 CA 憑證的檔案。
+  String get caCertificateHasPrivateKey => language._messages[3049];
+
+  /// 檔案含有超過 {count} 張憑證。請只選擇貴組織的 CA 憑證。
+  String caCertificateTooMany(Object? count) => _format(language, language._messages[3050], {'count': count});
+
+  /// 此裝置無法使用這張憑證。
+  String get caCertificateRejected => language._messages[3051];
+
+  /// 憑證沒有存入安全儲存空間，連線仍只信任系統預設的根憑證。請再試一次。
+  String get caCertificateSaveFailedDetail => language._messages[3052];
+
+  /// 憑證仍然存在，連到此站台時仍會信任它。請再試一次。
+  String get caCertificateRemoveFailedDetail => language._messages[3053];
+
+  /// 匯入此站台的 CA 憑證
+  String get importSiteCaCertificate => language._messages[3054];
+
+  /// 信任這張 CA 憑證？
+  String get caImportConfirmTitle => language._messages[3055];
+
+  /// 只有連到 {host} 時才會信任這張憑證，其他站台、外部圖片、AI 服務與更新檢查都不受影響。請先向管理員核對指紋。
+  String caImportConfirmDetail(Object? host) => _format(language, language._messages[3056], {'host': host});
+
+  /// 檔案
+  String get caFileLabel => language._messages[3057];
+
+  /// SHA-256 指紋
+  String get caFingerprintLabel => language._messages[3058];
+
+  /// 伺服器憑證主體
+  String get caServerSubjectLabel => language._messages[3059];
+
+  /// 伺服器憑證簽發者
+  String get caServerIssuerLabel => language._messages[3060];
+
+  /// 信任並重試
+  String get caTrustAndRetry => language._messages[3061];
+
+  /// 移除自訂 CA 憑證？
+  String get removeCustomCaTitle => language._messages[3062];
+
+  /// 之後連到 {host} 時只信任系統預設的根憑證。已開啟的連線維持不變，直到下次登入或切換帳號。
+  String removeCustomCaDetail(Object? host) => _format(language, language._messages[3063], {'host': host});
+
+  /// 移除
+  String get removeCustomCaAction => language._messages[3064];
+
+  /// 移除自訂 CA 憑證
+  String get removeCustomCaTooltip => language._messages[3065];
+
+  /// 已移除自訂 CA 憑證
+  String get customCaRemoved => language._messages[3066];
+
+  /// 自訂 CA 憑證
+  String get customCaCertificate => language._messages[3067];
+
+  /// GitLab.com 的憑證不受信任，這個網路上可能有人攔截連線。請不要在這個網路上繼續登入，也不要為 GitLab.com 安裝或匯入任何憑證。
+  String get untrustedCertificateGitLabCom => language._messages[3068];
+
+  /// 伺服器的憑證已過期或尚未生效，匯入 CA 憑證也無法解決。請管理員更新憑證，或檢查此裝置的日期與時間。
+  String get serverCertificateNotValidNow => language._messages[3069];
+
+  /// 匯入這張 CA 憑證後，站台的憑證仍不受信任，因此沒有保留它。CA 憑證無法解決主機名稱不符、已過期或由其他 CA 簽發的憑證。
+  String get caImportDidNotHelp => language._messages[3070];
+
+  /// 此站台已儲存一張 CA 憑證，將被取代。除非管理員更換了 CA，否則這可能表示連線遭到攔截。
+  String get caReplaceWarning => language._messages[3071];
+
+  /// 目前的 SHA-256 指紋
+  String get caCurrentFingerprintLabel => language._messages[3072];
 }

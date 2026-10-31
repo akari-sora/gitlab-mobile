@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/instance.dart';
+import '../../core/instance_ca.dart';
 import '../../core/models.dart';
 import '../../core/oauth.dart';
 import '../../core/read_cache_disk_contract.dart';
@@ -12,6 +13,7 @@ import '../security/app_lock.dart';
 import '../cache/read_cache_disk_backend.dart';
 import '../cache/read_cache_disk_coordinator.dart';
 import 'account_store.dart';
+import 'instance_trust.dart';
 import '../../shared/resume_target.dart';
 import '../../shared/artifact_storage.dart';
 
@@ -34,6 +36,29 @@ typedef IdentityApiFactory =
       GitLabRateBudget rateBudget,
     );
 
+/// How the sign-in screen repeats the operation that stopped at an
+/// untrusted certificate, once a CA is imported for [instance].
+enum UntrustedRetry { connect, connectOAuth, select }
+
+/// The last connect, OAuth sign-in or account check ended with
+/// [FailureKind.untrustedCertificate] for [instance].
+final class UntrustedInstance {
+  const UntrustedInstance({
+    required this.instance,
+    required this.retry,
+    this.saved,
+    this.certificate,
+  });
+  final GitLabInstance instance;
+  final UntrustedRetry retry;
+
+  /// The saved account to check again, for [UntrustedRetry.select].
+  final Account? saved;
+
+  /// What the server presented, when the handshake reported it.
+  final RefusedCertificate? certificate;
+}
+
 final class SessionController extends ChangeNotifier {
   SessionController(
     this.store, {
@@ -46,15 +71,14 @@ final class SessionController extends ChangeNotifier {
     ReadCacheDiskCoordinator? readCache,
     AppLockController? appLock,
     DateTime Function()? clock,
+    InstanceTrust? trust,
   }) : _createApi = createApi,
        _createIdentityApi = createIdentityApi,
        readCache = readCache ?? ReadCacheDiskCoordinator.instance,
        applicationIdFor = applicationIdFor ?? oauthApplicationIdFor,
        _browser = browser,
-       _createOAuth =
-           createOAuth ??
-           ((instance, clientId) =>
-               OAuthTokenClient(instance: instance, clientId: clientId)) {
+       _createOAuthOverride = createOAuth,
+       trust = trust ?? InstanceTrust.memory() {
     this.readCache.claimStartupSession(this);
     offlineGate = OfflineGate(
       readCache: this.readCache,
@@ -64,6 +88,20 @@ final class SessionController extends ChangeNotifier {
   }
   final AccountStore store;
   final ReadCacheDiskCoordinator readCache;
+
+  /// CA certificates imported per instance. Every client this controller
+  /// builds for an instance gets that instance's context (or the defaults).
+  final InstanceTrust trust;
+
+  /// Set when the last connect, OAuth sign-in or account check stopped at an
+  /// untrusted certificate that a CA import can address; cleared when the
+  /// next one starts. Never set for GitLab.com or for a server certificate
+  /// outside its validity dates.
+  UntrustedInstance? untrusted;
+
+  /// The instance whose certificate the last operation refused, whether or
+  /// not an import is offered; [importInstanceCa] rolls back on it.
+  String? _refusedInstanceKey;
   final ApiFactory? _createApi;
   final IdentityApiFactory? _createIdentityApi;
   late final OfflineGate offlineGate;
@@ -126,8 +164,16 @@ final class SessionController extends ChangeNotifier {
 
   final ApplicationIdLookup applicationIdFor;
   final AuthorizationBrowser? _browser;
-  final OAuthTokenClient Function(GitLabInstance instance, String clientId)
-  _createOAuth;
+  final OAuthTokenClient Function(GitLabInstance instance, String clientId)?
+  _createOAuthOverride;
+
+  OAuthTokenClient _createOAuth(GitLabInstance instance, String clientId) =>
+      _createOAuthOverride?.call(instance, clientId) ??
+      OAuthTokenClient(
+        instance: instance,
+        clientId: clientId,
+        securityContext: trust.securityContextFor(instance),
+      );
   List<Account> _accounts = [];
   List<Account> get accounts => List.unmodifiable(_accounts);
   Account? active;
@@ -324,6 +370,17 @@ final class SessionController extends ChangeNotifier {
         }
         return;
       }
+      // Imported CAs are read before the first client is built. An
+      // unreadable store leaves every instance on the default roots.
+      if (!trust.loaded) {
+        await trust.load();
+        if (!_current(ticket)) return;
+      }
+      unawaited(
+        trust.sweepOrphans({
+          for (final account in _accounts) account.instance.key,
+        }),
+      );
       // In-memory cleanup survives a marker write that never landed. A stored
       // marker, or an unreadable one, also blocks auto-resume.
       var signOutPending = pendingSignOutCleanup;
@@ -355,6 +412,8 @@ final class SessionController extends ChangeNotifier {
       resuming = true;
       resumingAccount = match;
       message = null;
+      untrusted = null;
+      _refusedInstanceKey = null;
       _emit();
       if (!_current(ticket)) return;
       offlineGate.stop();
@@ -419,7 +478,7 @@ final class SessionController extends ChangeNotifier {
           if (entered) {
             offlineGate.scheduleRetry();
           } else {
-            _showIdentityFailure(verdict);
+            _showIdentityFailure(verdict, account: match);
           }
         } else {
           await _handleIdentityVerdict(match, verdict, ticket: ticket);
@@ -449,11 +508,88 @@ final class SessionController extends ChangeNotifier {
     }
   }
 
-  void _showIdentityFailure(IdentityVerdict verdict) {
+  void _showIdentityFailure(IdentityVerdict verdict, {Account? account}) {
     final failure =
         verdict.failure ?? const ApiFailure(FailureKind.unauthenticated);
     message = l10n.titleThenDetail(failure.title, failure.detail);
+    if (account != null) {
+      _noteUntrusted(failure, account.instance, UntrustedRetry.select, account);
+    }
     _emit();
+  }
+
+  /// Offers a CA import only where one can help. GitLab.com's failure text
+  /// already warns of interception (set by the client). A server
+  /// certificate outside its validity dates gets its own message.
+  void _noteUntrusted(
+    ApiFailure failure,
+    GitLabInstance instance,
+    UntrustedRetry retry, [
+    Account? saved,
+  ]) {
+    if (failure.kind != FailureKind.untrustedCertificate) return;
+    _refusedInstanceKey = instance.key;
+    if (instance.isGitLabCom) return;
+    final refused = failure.refusedCertificate;
+    if (refused != null && !refused.validAt(offlineGate.now)) {
+      message = l10n.titleThenDetail(
+        failure.title,
+        l10n.serverCertificateNotValidNow,
+      );
+      return;
+    }
+    untrusted = UntrustedInstance(
+      instance: instance,
+      retry: retry,
+      saved: saved,
+      certificate: failure.refusedCertificate,
+    );
+  }
+
+  /// Stores [certificate] for [instance] once the user confirmed it, then
+  /// runs [retry] (the operation that stopped at the certificate). When the
+  /// retry stops at the certificate again, the CA cannot help: the previous
+  /// CA is restored, or the new one removed, and the message says so.
+  /// Returns whether the new CA was kept. A client built before this keeps
+  /// its own context. Throws [CaCertificateFailure], always for GitLab.com.
+  Future<bool> importInstanceCa(
+    GitLabInstance instance,
+    InstanceCaCertificate certificate, {
+    required Future<void> Function() retry,
+  }) async {
+    if (instance.isGitLabCom) {
+      throw const CaCertificateFailure(CaCertificateProblem.gitLabCom);
+    }
+    if (_disposed || busy || offline != null) return false;
+    final previous = trust.certificateFor(instance);
+    await trust.save(instance, certificate);
+    _refusedInstanceKey = null;
+    await retry();
+    if (_disposed || _refusedInstanceKey != instance.key) return true;
+    const limit = Duration(seconds: 5);
+    try {
+      await (previous == null
+              ? trust.remove(instance)
+              : trust.save(instance, previous))
+          .timeout(limit);
+    } on Object {
+      // A failed restore must not leave the rejected CA trusted: removal
+      // forgets it in memory before its delete, even one that fails or hangs.
+      try {
+        await trust.remove(instance).timeout(limit);
+      } on Object {
+        // Forgotten for this run only: storage may still hold it, and the
+        // next start's load trusts it again (follow-up in RESULT.md).
+      }
+    }
+    if (_disposed) return false;
+    untrusted = null;
+    message = l10n.titleThenDetail(
+      l10n.untrustedCertificateTitle,
+      l10n.caImportDidNotHelp,
+    );
+    _emit();
+    return false;
   }
 
   Future<bool> _handleIdentityVerdict(
@@ -654,6 +790,8 @@ final class SessionController extends ChangeNotifier {
     resuming = false;
     resumingAccount = null;
     message = null;
+    untrusted = null;
+    _refusedInstanceKey = null;
     offlineGate.start(
       lastValidatedAt: eligible.lastValidatedAt,
       onProbe: () => probeOffline(manual: false),
@@ -793,10 +931,13 @@ final class SessionController extends ChangeNotifier {
     _invalidateReadCacheDecision();
     busy = true;
     message = null;
+    untrusted = null;
+    _refusedInstanceKey = null;
     _emit();
     GitLabApi? candidate;
+    GitLabInstance? target;
     try {
-      final instance = GitLabInstance.parse(instanceText);
+      final instance = target = GitLabInstance.parse(instanceText);
       final token = rawToken.trim();
       candidate = _client(instance, PatCredential(token));
       _pending = candidate;
@@ -836,6 +977,9 @@ final class SessionController extends ChangeNotifier {
         message = error.kind == FailureKind.unauthenticated
             ? l10n.cannotVerifyTokenScopes
             : l10n.titleThenDetail(error.title, error.detail);
+        if (target != null) {
+          _noteUntrusted(error, target, UntrustedRetry.connect);
+        }
       }
     } catch (_) {
       if (_current(ticket)) message = l10n.cannotStoreAccountSecurely;
@@ -868,6 +1012,8 @@ final class SessionController extends ChangeNotifier {
     _invalidateReadCacheDecision();
     busy = true;
     message = null;
+    untrusted = null;
+    _refusedInstanceKey = null;
     _emit();
     GitLabApi? candidate;
     try {
@@ -895,7 +1041,7 @@ final class SessionController extends ChangeNotifier {
         );
         if (!_current(ticket)) return;
         _publishReadCacheDecision(retryRetained && retained ? saved.key : null);
-        _showIdentityFailure(verdict);
+        _showIdentityFailure(verdict, account: saved);
         return;
       }
       await _acceptIdentity(saved.key);
@@ -924,6 +1070,7 @@ final class SessionController extends ChangeNotifier {
               : null,
         );
         message = l10n.titleThenDetail(error.title, error.detail);
+        _noteUntrusted(error, saved.instance, UntrustedRetry.select, saved);
       }
     } catch (_) {
       if (_current(ticket)) {
@@ -948,10 +1095,13 @@ final class SessionController extends ChangeNotifier {
     _invalidateReadCacheDecision();
     busy = true;
     message = null;
+    untrusted = null;
+    _refusedInstanceKey = null;
     _emit();
     GitLabApi? candidate;
+    GitLabInstance? target;
     try {
-      final instance = GitLabInstance.parse(instanceText);
+      final instance = target = GitLabInstance.parse(instanceText);
       final clientId = applicationIdFor(instance);
       final browser = _browser;
       if (clientId == null || clientId.isEmpty) {
@@ -1015,6 +1165,9 @@ final class SessionController extends ChangeNotifier {
         message = error.kind == FailureKind.unauthenticated
             ? l10n.cannotCompleteGitlabAuth
             : l10n.titleThenDetail(error.title, error.detail);
+        if (target != null) {
+          _noteUntrusted(error, target, UntrustedRetry.connectOAuth);
+        }
       }
     } catch (_) {
       if (_current(ticket)) message = l10n.authOrSecureStoreFailed;
@@ -1058,6 +1211,7 @@ final class SessionController extends ChangeNotifier {
       oauth: oauthClient,
       onOAuthRotated: onRotated,
       rateBudget: identityCandidate ? offlineGate.rateBudget : null,
+      securityContext: trust.securityContextFor(instance),
     );
   }
 
@@ -1414,6 +1568,8 @@ final class SessionController extends ChangeNotifier {
     _invalidateReadCacheDecision();
     busy = true;
     message = null;
+    untrusted = null;
+    _refusedInstanceKey = null;
     _emit();
     final previous = List<Account>.of(_accounts);
     final staged = _accounts.where((item) => item.key != account.key).toList();
@@ -1460,11 +1616,15 @@ final class SessionController extends ChangeNotifier {
               ),
             );
       }
+      var instanceStillSaved = true;
       await _enqueueAccountSave(
         onSaved: (saved) {
           // A superseding sign-out changes UI ownership, not a confirmed save.
           if (!saved.any((item) => item.key == account.key)) {
             removalCommitted = true;
+            instanceStillSaved = saved.any(
+              (item) => item.instance.key == account.instance.key,
+            );
             markMarkdownMediaAccountRemoved(account);
             readCache.finishAccountRemoval(account.key, removed: true);
             if (_current(ticket) &&
@@ -1474,6 +1634,22 @@ final class SessionController extends ChangeNotifier {
           }
         },
       );
+      // The CA is shared by every account of the instance, so it goes only
+      // once the last one is confirmed removed. A failure leaves it for the
+      // start-up sweep; the removal itself has succeeded.
+      if (removalCommitted &&
+          !instanceStillSaved &&
+          !_accounts.any(
+            (item) => item.instance.key == account.instance.key,
+          )) {
+        try {
+          await trust.remove(account.instance).timeout(
+            const Duration(seconds: 5),
+          );
+        } on Object {
+          // Swept at the next start; this run already stopped trusting it.
+        }
+      }
       if (!_current(ticket)) return (removed: removalCommitted, failure: null);
       if (active?.key == account.key) {
         _pendingResumeTarget = null;

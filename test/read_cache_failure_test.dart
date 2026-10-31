@@ -86,6 +86,10 @@ void main() {
           l10n.aiHistoryCleanupTitle,
           l10n.aiHistoryCleanupDetail,
         ),
+        FailureKind.untrustedCertificate: (
+          l10n.untrustedCertificateTitle,
+          l10n.untrustedCertificateDetail,
+        ),
       };
 
       expect(

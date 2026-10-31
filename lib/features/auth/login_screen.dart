@@ -8,12 +8,21 @@ import '../../shared/workspace_ui.dart';
 import '../ai/ai_account_removal.dart';
 import '../ai/ai_write_journal.dart';
 import '../offline/offline_app.dart';
+import 'instance_ca_ui.dart';
 import 'session_controller.dart';
 
 import '../../l10n/l10n.dart';
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.session, this.onTryDemo});
+  const LoginScreen({
+    super.key,
+    required this.session,
+    this.onTryDemo,
+    this.caPicker = const PluginCaCertificatePicker(),
+  });
   final SessionController session;
+
+  /// Picks the CA certificate offered after an untrusted certificate.
+  final CaCertificatePicker caPicker;
 
   /// Opens the built-in demo; the action is hidden when null. A failure is
   /// shown here like any other.
@@ -261,6 +270,67 @@ class _LoginScreenState extends State<LoginScreen> {
     await widget.session.connectOAuth(_instance.text);
   }
 
+  /// The import action applies to the failed operation's instance: for a
+  /// connect, only while the URL field still names that instance.
+  bool _offersCaImport(UntrustedInstance untrusted) {
+    if (untrusted.instance.isGitLabCom) return false;
+    if (untrusted.retry == UntrustedRetry.select) {
+      return widget.session.accounts.any(
+        (saved) => saved.key == untrusted.saved?.key,
+      );
+    }
+    try {
+      return GitLabInstance.parse(_instance.text).key ==
+          untrusted.instance.key;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  /// Imports a CA for the instance and repeats the operation that stopped at
+  /// its certificate; the session rolls the CA back when the retry still
+  /// stops there. The user already confirmed leaving any retained account
+  /// for that operation, so the retry does not ask again.
+  Future<void> _importCa(UntrustedInstance untrusted) async {
+    final session = widget.session;
+    if (session.busy || AiAccountRemoval.anyRunning) return;
+    final certificate = await pickAndConfirmInstanceCa(
+      context,
+      session: session,
+      untrusted: untrusted,
+      picker: widget.caPicker,
+    );
+    if (certificate == null ||
+        !mounted ||
+        session.busy ||
+        AiAccountRemoval.anyRunning) {
+      return;
+    }
+    Future<void> retry() async {
+      switch (untrusted.retry) {
+        case UntrustedRetry.connect:
+          if (_form.currentState?.validate() != true) return;
+          await session.connect(_instance.text, _token.text);
+        case UntrustedRetry.connectOAuth:
+          await session.connectOAuth(_instance.text);
+        case UntrustedRetry.select:
+          final saved = untrusted.saved;
+          if (saved != null) await session.select(saved);
+      }
+    }
+
+    try {
+      await session.importInstanceCa(
+        untrusted.instance,
+        certificate,
+        retry: retry,
+      );
+    } on Object catch (error) {
+      if (mounted) showFailure(context, error);
+    }
+    if (mounted && session.active != null) _token.clear();
+  }
+
   Future<void> _tryDemo() async {
     try {
       await widget.onTryDemo?.call();
@@ -444,6 +514,22 @@ class _LoginScreenState extends State<LoginScreen> {
                                   color: theme.colorScheme.error,
                                 ),
                               ),
+                            ),
+                          ),
+                        if (session.untrusted case final untrusted?
+                            when _offersCaImport(untrusted))
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: OutlinedButton.icon(
+                              key: const Key('importInstanceCa'),
+                              onPressed: locked
+                                  ? null
+                                  : () => unawaited(_importCa(untrusted)),
+                              icon: const Icon(
+                                Icons.verified_user_outlined,
+                                size: 20,
+                              ),
+                              label: Text(l10n.importSiteCaCertificate),
                             ),
                           ),
                         const SizedBox(height: 20),

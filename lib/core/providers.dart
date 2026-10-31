@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/auth/account_store.dart';
+import '../features/auth/instance_trust.dart';
 import '../features/auth/recent_project.dart';
 import '../features/auth/session_controller.dart';
 import '../features/auth/system_browser.dart';
@@ -15,11 +16,14 @@ import '../features/update/update_controller.dart';
 import 'anonymous_api.dart';
 
 final sessionProvider = Provider<SessionController>((ref) {
+  final trust = InstanceTrust(SecureInstanceTrustStore());
   final session = SessionController(
     SecureAccountStore(),
     browser: SystemAuthorizationBrowser(),
+    trust: trust,
   );
   ref.onDispose(session.dispose);
+  ref.onDispose(trust.dispose);
   return session;
 });
 
