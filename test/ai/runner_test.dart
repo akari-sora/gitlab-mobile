@@ -13,6 +13,7 @@ import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/sse.dart';
 import 'package:gitlab_mobile/core/ai/wire/anthropic_messages.dart';
 import 'package:gitlab_mobile/core/ai/wire/chat_completions.dart';
+import 'package:gitlab_mobile/core/ai/wire/on_device_wire.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 
@@ -99,6 +100,7 @@ final class Harness {
     AiFormat.chatCompletions => const ChatCompletionsFormat(),
     AiFormat.responses => const ResponsesFormat(),
     AiFormat.anthropicMessages => const AnthropicMessagesFormat(),
+    AiFormat.onDevicePrompt => const OnDevicePromptFormat(),
   };
   AiProviderConfig config() => AiProviderConfig(
     id: 'provider',
@@ -130,7 +132,7 @@ final class Harness {
     String opaque = '',
   }) {
     final raw = switch (format) {
-      AiFormat.chatCompletions => <String, Object?>{
+      AiFormat.chatCompletions || AiFormat.onDevicePrompt => <String, Object?>{
         'role': 'assistant',
         'content': text,
         'extra_content': {'signature': opaque},
@@ -883,12 +885,14 @@ void main() {
     expect(clipAiText('a\u{1f600}b', 3), 'a\u{1f600}');
   });
 
-  for (final format in AiFormat.values) {
+  for (final format in AiFormat.values.where(
+    (f) => f != AiFormat.onDevicePrompt,
+  )) {
     test(
       'recorded decode-next-request chain $format preserves replay output',
       () async {
         final column = switch (format) {
-          AiFormat.chatCompletions => 'C',
+          AiFormat.chatCompletions || AiFormat.onDevicePrompt => 'C',
           AiFormat.responses => 'R',
           AiFormat.anthropicMessages => 'A',
         };

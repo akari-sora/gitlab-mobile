@@ -332,6 +332,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     AiFormat.chatCompletions => l10n.aiProviderFormatChat,
     AiFormat.responses => l10n.aiProviderFormatResponses,
     AiFormat.anthropicMessages => l10n.aiProviderFormatAnthropic,
+    AiFormat.onDevicePrompt => AiPresets.onDevice.name,
   };
 
   Widget _provider(AiProviderConfig provider, bool isDefault) {

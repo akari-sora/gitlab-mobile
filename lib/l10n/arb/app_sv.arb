@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "Serverns certifikat har gått ut eller är inte giltigt än, och det löser inte ett importerat CA-certifikat. Be administratören förnya det eller kontrollera enhetens datum och tid.",
   "caImportDidNotHelp": "Med det här CA-certifikatet är webbplatsens certifikat fortfarande inte betrott, så det sparades inte. Ett CA-certifikat löser inte ett certifikat för ett annat värdnamn, ett utgånget certifikat eller ett från en annan CA.",
   "caReplaceWarning": "Ett CA-certifikat finns redan sparat för den här webbplatsen och ersätts. Om inte administratören har bytt CA kan det betyda att anslutningen avlyssnas.",
-  "caCurrentFingerprintLabel": "Nuvarande SHA-256-fingeravtryck"
+  "caCurrentFingerprintLabel": "Nuvarande SHA-256-fingeravtryck",
+  "aiOnDeviceUnavailableTitle": "Inbyggd AI är inte tillgänglig på den här telefonen",
+  "aiOnDeviceUnavailableDetail": "Inbyggd AI kräver en telefon som stöds och systemkomponenter, eller så kan du använda en AI-leverantör i molnet eller det lokala nätverket.",
+  "aiOnDeviceModelNotReadyTitle": "Telefonens inbyggda AI-modell är inte klar",
+  "aiOnDeviceModelNotReadyDetail": "Se till att telefonen har tillräckligt med lagringsutrymme och har laddat ned systemets AI-modell, och försök sedan igen.",
+  "aiOnDeviceForegroundOnlyTitle": "Inbyggd AI kräver att appen visas på skärmen",
+  "aiOnDeviceForegroundOnlyDetail": "Systemet kör bara inbyggd AI medan appen är öppen på skärmen. Gå tillbaka till appen och försök igen manuellt.",
+  "aiOnDeviceBusyTitle": "Telefonens inbyggda AI är upptagen",
+  "aiOnDeviceBusyDetail": "En annan uppgift använder telefonens inbyggda AI just nu. Vänta en stund och försök igen manuellt.",
+  "aiOnDeviceQuotaExceededTitle": "Inbyggd AI nådde systemets användningsgräns",
+  "aiOnDeviceQuotaExceededDetail": "Systemet begränsade tillfälligt anrop till inbyggd AI. Vänta lite eller byt till en annan AI-leverantör.",
+  "aiOnDeviceErrorTitle": "Inbyggd AI kunde inte slutföra svaret",
+  "aiOnDeviceErrorDetail": "Genereringen på enheten slutfördes inte. Försök igen senare eller byt till en annan AI-leverantör.",
+  "aiNoticeOnDeviceContextTruncated": "Sidinnehållet kortades ned för att rymmas inom gränsen för telefonens inbyggda AI"
 }

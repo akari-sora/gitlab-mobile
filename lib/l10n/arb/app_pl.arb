@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "Certyfikat serwera wygasł lub jeszcze nie jest ważny i import certyfikatu CA tego nie naprawi. Poproś administratora o odnowienie albo sprawdź datę i godzinę na tym urządzeniu.",
   "caImportDidNotHelp": "Z tym certyfikatem CA certyfikat witryny nadal nie jest zaufany, więc nie został zachowany. Certyfikat CA nie naprawi certyfikatu wystawionego dla innej nazwy hosta, wygasłego ani wystawionego przez inny urząd.",
   "caReplaceWarning": "Dla tej witryny jest już zapisany certyfikat CA, który zostanie zastąpiony. Jeśli administrator nie zmienił urzędu certyfikacji, może to oznaczać przechwytywanie połączenia.",
-  "caCurrentFingerprintLabel": "Bieżący odcisk palca SHA-256"
+  "caCurrentFingerprintLabel": "Bieżący odcisk palca SHA-256",
+  "aiOnDeviceUnavailableTitle": "Wbudowane AI jest niedostępne na tym telefonie",
+  "aiOnDeviceUnavailableDetail": "Wbudowane AI wymaga obsługiwanego telefonu i składników systemowych, ale możesz też użyć dostawcy AI w chmurze lub w sieci lokalnej.",
+  "aiOnDeviceModelNotReadyTitle": "Model wbudowanego AI w telefonie nie jest gotowy",
+  "aiOnDeviceModelNotReadyDetail": "Upewnij się, że telefon ma dość miejsca i ukończył pobieranie systemowego modelu AI, a następnie spróbuj ponownie.",
+  "aiOnDeviceForegroundOnlyTitle": "Wbudowane AI wymaga aplikacji widocznej na ekranie",
+  "aiOnDeviceForegroundOnlyDetail": "System uruchamia wbudowane AI tylko wtedy, gdy aplikacja jest otwarta na ekranie. Wróć do aplikacji i ponów próbę ręcznie.",
+  "aiOnDeviceBusyTitle": "Wbudowane AI telefonu jest zajęte",
+  "aiOnDeviceBusyDetail": "Inne zadanie korzysta teraz z wbudowanego AI telefonu. Odczekaj chwilę i ponów próbę ręcznie.",
+  "aiOnDeviceQuotaExceededTitle": "Wbudowane AI osiągnęło systemowy limit użycia",
+  "aiOnDeviceQuotaExceededDetail": "System tymczasowo ograniczył żądania do wbudowanego AI. Odczekaj chwilę lub przełącz na innego dostawcę AI.",
+  "aiOnDeviceErrorTitle": "Wbudowane AI nie mogło dokończyć odpowiedzi",
+  "aiOnDeviceErrorDetail": "Generowanie na urządzeniu nie zostało ukończone. Spróbuj ponownie później lub użyj innego dostawcy AI.",
+  "aiNoticeOnDeviceContextTruncated": "Kontekst strony został skrócony do limitu wbudowanego AI telefonu"
 }

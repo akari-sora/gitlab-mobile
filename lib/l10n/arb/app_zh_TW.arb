@@ -13367,5 +13367,57 @@
   "caCurrentFingerprintLabel": "目前的 SHA-256 指紋",
   "@caCurrentFingerprintLabel": {
     "description": "features/auth/instance_ca_ui.dart"
+  },
+  "aiOnDeviceUnavailableTitle": "此手機不支援內建 AI",
+  "@aiOnDeviceUnavailableTitle": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceUnavailable title"
+  },
+  "aiOnDeviceUnavailableDetail": "內建 AI 需要支援的機型與系統元件，也可以改用雲端或區域網路 AI 服務商。",
+  "@aiOnDeviceUnavailableDetail": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceUnavailable detail"
+  },
+  "aiOnDeviceModelNotReadyTitle": "手機內建 AI 模型尚未就緒",
+  "@aiOnDeviceModelNotReadyTitle": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceModelNotReady title"
+  },
+  "aiOnDeviceModelNotReadyDetail": "請確認手機有足夠儲存空間並完成系統 AI 模型下載後再試一次。",
+  "@aiOnDeviceModelNotReadyDetail": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceModelNotReady detail"
+  },
+  "aiOnDeviceForegroundOnlyTitle": "內建 AI 需要畫面保持開啟",
+  "@aiOnDeviceForegroundOnlyTitle": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceForegroundOnly title"
+  },
+  "aiOnDeviceForegroundOnlyDetail": "系統只允許在前景執行內建 AI，請回到畫面後手動重試。",
+  "@aiOnDeviceForegroundOnlyDetail": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceForegroundOnly detail"
+  },
+  "aiOnDeviceBusyTitle": "手機內建 AI 正在忙碌",
+  "@aiOnDeviceBusyTitle": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceBusy title"
+  },
+  "aiOnDeviceBusyDetail": "其他工作正在使用手機的內建 AI，請稍候再手動重試。",
+  "@aiOnDeviceBusyDetail": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceBusy detail"
+  },
+  "aiOnDeviceQuotaExceededTitle": "手機內建 AI 已達系統用量上限",
+  "@aiOnDeviceQuotaExceededTitle": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceQuotaExceeded title"
+  },
+  "aiOnDeviceQuotaExceededDetail": "系統暫時限制內建 AI 的呼叫次數，請稍候再試或切換其他 AI 服務商。",
+  "@aiOnDeviceQuotaExceededDetail": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceQuotaExceeded detail"
+  },
+  "aiOnDeviceErrorTitle": "手機內建 AI 無法完成回覆",
+  "@aiOnDeviceErrorTitle": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceError title"
+  },
+  "aiOnDeviceErrorDetail": "本機推論未完成，請稍候手動重試，或改用其他 AI 服務商。",
+  "@aiOnDeviceErrorDetail": {
+    "description": "core/ai/ai_failure.dart: AiFailureKind.onDeviceError detail"
+  },
+  "aiNoticeOnDeviceContextTruncated": "已配合手機內建 AI 的長度上限縮短此頁內容",
+  "@aiNoticeOnDeviceContextTruncated": {
+    "description": "features/ai/ai_chat_page.dart: AiNoticeKind.onDeviceContextTruncated"
   }
 }

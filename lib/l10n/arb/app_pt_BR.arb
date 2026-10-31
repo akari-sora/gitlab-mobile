@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "O certificado do servidor expirou ou ainda não é válido, e importar um certificado de CA não resolve isso. Peça ao administrador para renová-lo ou verifique a data e a hora deste dispositivo.",
   "caImportDidNotHelp": "Com este certificado de CA o certificado do site continua não confiável, por isso ele não foi mantido. Um certificado de CA não resolve um certificado emitido para outro nome de host, expirado ou de outra CA.",
   "caReplaceWarning": "Este site já tem um certificado de CA salvo, que será substituído. A menos que o administrador tenha trocado a CA, isso pode significar que a conexão está sendo interceptada.",
-  "caCurrentFingerprintLabel": "Impressão digital SHA-256 atual"
+  "caCurrentFingerprintLabel": "Impressão digital SHA-256 atual",
+  "aiOnDeviceUnavailableTitle": "A IA integrada não está disponível neste telefone",
+  "aiOnDeviceUnavailableDetail": "A IA integrada precisa de um telefone compatível e componentes do sistema, ou você pode usar um provedor de IA na nuvem ou na rede local.",
+  "aiOnDeviceModelNotReadyTitle": "O modelo de IA integrada do telefone não está pronto",
+  "aiOnDeviceModelNotReadyDetail": "Verifique se há espaço livre suficiente e conclua o download do modelo de IA do sistema antes de tentar novamente.",
+  "aiOnDeviceForegroundOnlyTitle": "A IA integrada precisa do aplicativo na tela",
+  "aiOnDeviceForegroundOnlyDetail": "O sistema só executa a IA integrada enquanto o aplicativo está aberto na tela. Volte ao aplicativo e tente novamente.",
+  "aiOnDeviceBusyTitle": "A IA integrada do telefone está ocupada",
+  "aiOnDeviceBusyDetail": "Outra tarefa está usando a IA integrada do telefone agora. Aguarde um instante e tente novamente.",
+  "aiOnDeviceQuotaExceededTitle": "A IA integrada atingiu o limite de uso do sistema",
+  "aiOnDeviceQuotaExceededDetail": "O sistema limitou temporariamente as solicitações da IA integrada. Aguarde um pouco ou troque para outro provedor de IA.",
+  "aiOnDeviceErrorTitle": "A IA integrada não conseguiu concluir a resposta",
+  "aiOnDeviceErrorDetail": "A geração no dispositivo não terminou. Tente novamente mais tarde ou use outro provedor de IA.",
+  "aiNoticeOnDeviceContextTruncated": "O conteúdo da página foi reduzido para caber no limite da IA integrada do telefone"
 }

@@ -677,6 +677,7 @@ String _formatLabel(AiFormat format) => switch (format) {
   AiFormat.chatCompletions => l10n.aiConsentFormatChatCompletions,
   AiFormat.responses => l10n.aiConsentFormatResponses,
   AiFormat.anthropicMessages => l10n.aiConsentFormatAnthropicMessages,
+  AiFormat.onDevicePrompt => AiPresets.onDevice.name,
 };
 
 String _categoryLabel(String category) => switch (category) {

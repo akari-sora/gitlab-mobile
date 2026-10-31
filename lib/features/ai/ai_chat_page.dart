@@ -2226,6 +2226,10 @@ class _NoticeRow extends StatelessWidget {
         Icons.restart_alt,
         l10n.aiNoticeNewConversation,
       ),
+      AiNoticeKind.onDeviceContextTruncated => (
+        Icons.content_cut,
+        l10n.aiNoticeOnDeviceContextTruncated,
+      ),
     };
     return _MutedRow(icon: icon, text: text);
   }

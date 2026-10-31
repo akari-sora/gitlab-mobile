@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 
 import '../../l10n/l10n.dart';
 import 'ai_endpoint.dart';
+import 'ai_failure.dart';
 import 'tools/release_policy.dart';
 import 'tools/tool_catalogue_version.dart' show aiToolCatalogueVersion;
 import 'tools/write_levels.dart';
@@ -13,13 +14,13 @@ export 'tools/write_levels.dart';
 
 export 'tools/tool_catalogue_version.dart' show aiToolCatalogueVersion;
 
-enum AiFormat { chatCompletions, responses, anthropicMessages }
+enum AiFormat { chatCompletions, responses, anthropicMessages, onDevicePrompt }
 
 enum AiAuthStyle { bearer, apiKey, xApiKey, none }
 
 enum AiTokenLimitField { maxTokens, maxCompletionTokens, maxOutputTokens }
 
-enum AiDataUse { noTraining, training, unknown }
+enum AiDataUse { noTraining, training, unknown, onDevice }
 
 const aiProductionWriteEscalationRuleIds = <String>{
   'protectedOrDefaultBranch',
@@ -209,6 +210,9 @@ final class AiPreset {
     this.modelsUrl,
     this.modelSensitive = false,
     this.policyUrl,
+    this.defaultModel,
+    this.onDevice = false,
+    this.supportsTools = true,
     Map<String, AiModelPolicy> modelPolicies = const <String, AiModelPolicy>{},
   }) : _name = name,
        formats = Set.unmodifiable(formats),
@@ -235,6 +239,9 @@ final class AiPreset {
   final String? modelsUrl;
   final bool modelSensitive;
   final String? policyUrl;
+  final String? defaultModel;
+  final bool onDevice;
+  final bool supportsTools;
   final Map<String, AiModelPolicy> modelPolicies;
 
   String baseUrlFor(AiFormat format) =>
@@ -280,6 +287,47 @@ final class AiProviderConfig {
   final bool allowLanCleartext;
   final bool toolsEnabled;
   final int recipientRevision;
+
+  factory AiProviderConfig.onDevice({
+    String id = AiPresets.onDeviceId,
+    String? name,
+    String model = AiPresets.onDeviceModel,
+    AiCaps? caps,
+    int recipientRevision = 1,
+  }) => AiProviderConfig(
+    id: id,
+    name: name ?? AiPresets.onDevice.name,
+    presetId: AiPresets.onDeviceId,
+    baseUrl: AiPresets.onDeviceOrigin,
+    format: AiFormat.onDevicePrompt,
+    model: model,
+    authStyle: AiAuthStyle.none,
+    caps: caps ?? AiPresets.onDevice.capsFor(AiFormat.onDevicePrompt),
+    allowLanCleartext: false,
+    toolsEnabled: false,
+    recipientRevision: recipientRevision,
+  );
+
+  bool get isOnDevice => presetId == AiPresets.onDeviceId;
+
+  bool get isValidOnDevice =>
+      presetId == AiPresets.onDeviceId &&
+      baseUrl == AiPresets.onDeviceOrigin &&
+      (modelsUrl == null || modelsUrl!.trim().isEmpty) &&
+      format == AiFormat.onDevicePrompt &&
+      model.trim().isNotEmpty &&
+      authStyle == AiAuthStyle.none &&
+      !allowLanCleartext &&
+      !toolsEnabled &&
+      !caps.requiresKey &&
+      !caps.toolChoice &&
+      !caps.streamUsage &&
+      !caps.replayChatExtras &&
+      !caps.includeEncryptedReasoning &&
+      !caps.promptCaching &&
+      caps.maxRequestChars > 0 &&
+      caps.maxOutputTokens >= 1 &&
+      caps.maxOutputTokens <= 4096;
 }
 
 final class AiConsentContract {
@@ -300,6 +348,7 @@ final class AiConsentContract {
     this.policyUrl,
     this.retentionDays,
     this.policyCheckedOn,
+    this.dataRetention,
   }) : dataCategories = Set.unmodifiable(dataCategories),
        releasePolicyIdentity = toolsEnabled
            ? releasePolicyIdentity ??
@@ -329,6 +378,7 @@ final class AiConsentContract {
   final String? policyUrl;
   final int? retentionDays;
   final String? policyCheckedOn;
+  final String? dataRetention;
 
   late final String hash = sha256
       .convert(
@@ -345,6 +395,7 @@ final class AiConsentContract {
               'policyIdentity': policyIdentity,
               'routedModel': routedModel,
               'dataUse': dataUse.name,
+              if (dataRetention != null) 'dataRetention': dataRetention,
               'disclosureVersion': disclosureVersion,
               'writePolicy': writePolicy?.toCanonicalJson(),
               'releasePolicyIdentity': releasePolicyIdentity,
@@ -374,6 +425,46 @@ AiConsentContract aiConsentContractFor(
   AiReleasePolicyView releasePolicy = productionAiReleasePolicy,
   String? releasePolicyIdentity,
 }) {
+  if (provider.isOnDevice) {
+    if (!provider.isValidOnDevice) {
+      throw const AiFailure(AiFailureKind.policyBlocked, notSent: true);
+    }
+    final preset = AiPresets.onDevice;
+    final policy = preset.policyFor(provider.model);
+    final categories = <String>{
+      ...?dataCategories,
+      if (dataCategories == null) ...{
+        'job_log',
+        'diff',
+        'source',
+        'issue_text',
+        'comments',
+      },
+    }..removeAll(const {'tool_reads', 'write_results', 'attachment_metadata'});
+    return AiConsentContract(
+      providerId: provider.id,
+      origin: AiPresets.onDeviceOrigin,
+      format: AiFormat.onDevicePrompt,
+      cleartext: false,
+      toolsEnabled: false,
+      toolCatalogueVersion: toolCatalogueVersion,
+      dataCategories: categories,
+      writePolicy: null,
+      releasePolicyIdentity: null,
+      policyIdentity: jsonEncode(<String, Object?>{
+        'preset': preset.id,
+        'policy': policy?.identity,
+        'policyUrl': preset.policyUrl,
+      }),
+      routedModel: provider.model,
+      dataUse: AiDataUse.onDevice,
+      dataRetention: AiPresets.onDeviceDataRetention,
+      disclosureVersion: disclosureVersion,
+      policyUrl: policy?.sourceUrl ?? preset.policyUrl,
+      retentionDays: policy?.retentionDays ?? 0,
+      policyCheckedOn: policy?.checkedOn ?? AiPresets.policyCheckedOn,
+    );
+  }
   final preset = AiPresets.all
       .where((candidate) => candidate.id == provider.presetId)
       .firstOrNull;
@@ -498,10 +589,21 @@ const _goAnthropicCaps = AiCaps(
   tokenLimitField: AiTokenLimitField.maxTokens,
   toolChoice: true,
 );
+const _onDeviceCaps = AiCaps(
+  tokenLimitField: AiTokenLimitField.maxOutputTokens,
+  requiresKey: false,
+  maxRequestChars: 12000,
+  maxOutputTokens: 1024,
+);
 
 final class AiPresets {
   AiPresets._();
 
+  static const onDeviceId = 'on-device';
+  static const onDeviceOrigin = 'on-device://android-aicore';
+  static const onDeviceModel = 'gemini-nano';
+  static const onDeviceDataRetention = 'on_device';
+  static const onDevicePolicyUrl = 'https://developers.google.com/ml-kit/terms';
   static const openCodePolicySource = 'https://opencode.ai/docs/go/';
   static const openCodeZenPolicySource = 'https://opencode.ai/docs/zen/';
   static const policyCheckedOn = '2026-10-20';
@@ -814,6 +916,40 @@ final class AiPresets {
     },
     modelSensitive: true,
   );
+
+  /// Hidden from [all] until MR 3 adds the Android AICore settings UI.
+  /// Look up via [byId] where stores, consent, runner, or history codec need it.
+  static final onDevice = AiPreset(
+    id: onDeviceId,
+    name: 'Gemini Nano',
+    defaultFormat: AiFormat.onDevicePrompt,
+    formats: const {AiFormat.onDevicePrompt},
+    baseUrls: const {AiFormat.onDevicePrompt: onDeviceOrigin},
+    authStyle: AiAuthStyle.none,
+    caps: const {AiFormat.onDevicePrompt: _onDeviceCaps},
+    defaultModel: onDeviceModel,
+    onDevice: true,
+    supportsTools: false,
+    policyUrl: onDevicePolicyUrl,
+    modelPolicies: const {
+      onDeviceModel: AiModelPolicy(
+        modelId: onDeviceModel,
+        format: AiFormat.onDevicePrompt,
+        dataUse: AiDataUse.onDevice,
+        retentionDays: 0,
+        sourceUrl: onDevicePolicyUrl,
+        checkedOn: policyCheckedOn,
+      ),
+    },
+  );
+
+  static AiPreset? byId(String id) {
+    if (id == onDeviceId) return onDevice;
+    for (final preset in all) {
+      if (preset.id == id) return preset;
+    }
+    return null;
+  }
 
   static final List<AiPreset> all = List.unmodifiable(<AiPreset>[
     openAi,

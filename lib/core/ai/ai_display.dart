@@ -80,6 +80,9 @@ enum AiNoticeKind {
   /// The provider's settings changed, so later questions start a new
   /// conversation; the items above stay for reading but are not sent again.
   newConversation,
+
+  /// Page context was truncated to fit the 4,000-token on-device model limit.
+  onDeviceContextTruncated,
 }
 
 sealed class AiChatItem {

@@ -125,7 +125,9 @@ void main() {
       },
     );
 
-    for (final format in AiFormat.values) {
+    for (final format in AiFormat.values.where(
+      (f) => f != AiFormat.onDevicePrompt,
+    )) {
       test('${format.name} user turn carries exactly one metadata block, '
           'names redacted and no bytes', () async {
         final harness = await _Harness.create(
@@ -876,7 +878,8 @@ final class _Harness {
                 adapter: providerAdapter,
               ),
               wire: switch (config.format) {
-                AiFormat.chatCompletions => const ChatCompletionsFormat(),
+                AiFormat.chatCompletions ||
+                AiFormat.onDevicePrompt => const ChatCompletionsFormat(),
                 AiFormat.responses => const ResponsesFormat(),
                 AiFormat.anthropicMessages => const AnthropicMessagesFormat(),
               },
@@ -985,7 +988,7 @@ String _answer(AiFormat format, String text) => switch (format) {
       ],
     },
   }),
-  AiFormat.chatCompletions =>
+  AiFormat.chatCompletions || AiFormat.onDevicePrompt =>
     '${_data({
       'choices': [
         {

@@ -32,7 +32,10 @@ final class AiRequestPlan {
     // the reasoning-safe minimum unless they opt in.
     bool allowSmallOutputTokens = false,
   }) : tools = List.unmodifiable(tools) {
-    if (maxOutputTokens < (allowSmallOutputTokens ? 512 : 2048)) {
+    final minOutputTokens = segment.format == AiFormat.onDevicePrompt
+        ? 1
+        : (allowSmallOutputTokens ? 512 : 2048);
+    if (maxOutputTokens < minOutputTokens) {
       throw ArgumentError.value(maxOutputTokens, 'maxOutputTokens');
     }
   }

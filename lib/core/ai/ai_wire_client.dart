@@ -5,7 +5,9 @@ import 'ai_events.dart';
 import 'ai_failure.dart';
 import 'ai_provider.dart';
 import 'ai_transport.dart';
+import 'on_device_transport.dart';
 import 'sse.dart';
+import 'wire/on_device_wire.dart';
 import 'wire/wire_format.dart';
 
 /// The app version sent in the AI User-Agent. tool/tests/test_ai_client_version.py
@@ -16,12 +18,16 @@ const aiClientAppVersion = '0.6.2';
 /// executes tools; the runner decides whether/when to freeze a completed turn.
 final class AiWireClient {
   AiWireClient({
-    required this.transport,
+    required AiTransport transport,
     required this.wire,
     required this.config,
     required this.conversationId,
     required this.appVersion,
-  }) {
+  }) : _httpTransport = transport,
+       _onDeviceTransport = null {
+    if (config.isOnDevice || config.format == AiFormat.onDevicePrompt) {
+      throw const AiFailure(AiFailureKind.policyBlocked);
+    }
     final configuredEndpoint = AiEndpoint.parse(
       config.baseUrl,
       allowLanCleartext: config.allowLanCleartext,
@@ -38,11 +44,45 @@ final class AiWireClient {
     }
   }
 
-  final AiTransport transport;
+  AiWireClient.onDevice({
+    required this.config,
+    required this.conversationId,
+    required this.appVersion,
+    OnDeviceAiTransport? onDeviceTransport,
+    WireFormatBase wire = const OnDevicePromptFormat(),
+  }) : _httpTransport = null,
+       _onDeviceTransport = onDeviceTransport ?? OnDeviceAiTransport(),
+       wire = wire {
+    if (!config.isOnDevice ||
+        !config.isValidOnDevice ||
+        wire.format != AiFormat.onDevicePrompt ||
+        !RegExp(r'^[A-Za-z0-9_\-]{8,128}$').hasMatch(conversationId) ||
+        !RegExp(r'^[A-Za-z0-9.+_\-]+$').hasMatch(appVersion)) {
+      throw const AiFailure(AiFailureKind.policyBlocked);
+    }
+  }
+
+  final AiTransport? _httpTransport;
+  final OnDeviceAiTransport? _onDeviceTransport;
   final WireFormatBase wire;
   final AiProviderConfig config;
   final String conversationId;
   final String appVersion;
+
+  AiTransport get transport =>
+      _httpTransport ?? (throw const AiFailure(AiFailureKind.policyBlocked));
+
+  OnDeviceAiTransport? get onDeviceTransport => _onDeviceTransport;
+
+  void close() {
+    _httpTransport?.close();
+    _onDeviceTransport?.close();
+  }
+
+  void cancelActive() {
+    _httpTransport?.cancelActive();
+    _onDeviceTransport?.cancelActive();
+  }
 
   Map<String, String> get headers => {
     if (config.format == AiFormat.anthropicMessages)
@@ -61,8 +101,13 @@ final class AiWireClient {
         plan.segment.format != config.format ||
         plan.segment.providerId != config.id ||
         plan.segment.recipientRevision != config.recipientRevision ||
-        (!config.toolsEnabled && plan.tools.isNotEmpty)) {
+        (!config.toolsEnabled && plan.tools.isNotEmpty) ||
+        (config.isOnDevice && plan.tools.isNotEmpty)) {
       throw const AiFailure(AiFailureKind.policyBlocked);
+    }
+    final onDevice = _onDeviceTransport;
+    if (onDevice != null) {
+      return onDevice.complete(plan, onEvent: onEvent);
     }
     final decoder = wire.newDecoder();
     try {

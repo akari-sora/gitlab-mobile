@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "Sijil pelayan telah tamat tempoh atau belum sah, dan mengimport sijil CA tidak dapat membetulkannya. Minta pentadbir memperbaharuinya atau semak tarikh dan masa peranti ini.",
   "caImportDidNotHelp": "Dengan sijil CA ini sijil tapak masih tidak dipercayai, jadi ia tidak disimpan. Sijil CA tidak dapat membetulkan sijil untuk nama hos lain, sijil yang tamat tempoh atau sijil daripada CA lain.",
   "caReplaceWarning": "Tapak ini sudah mempunyai sijil CA tersimpan yang akan diganti. Melainkan pentadbir anda menukar CA, ini mungkin bermakna sambungan sedang dipintas.",
-  "caCurrentFingerprintLabel": "Cap jari SHA-256 semasa"
+  "caCurrentFingerprintLabel": "Cap jari SHA-256 semasa",
+  "aiOnDeviceUnavailableTitle": "AI terbina dalam tidak tersedia pada telefon ini",
+  "aiOnDeviceUnavailableDetail": "AI terbina dalam memerlukan telefon yang disokong dan komponen sistem, atau anda boleh menggunakan penyedia AI awan atau rangkaian tempatan.",
+  "aiOnDeviceModelNotReadyTitle": "Model AI terbina dalam telefon belum bersedia",
+  "aiOnDeviceModelNotReadyDetail": "Pastikan telefon mempunyai ruang storan yang mencukupi dan selesai memuat turun model AI sistem, kemudian cuba lagi.",
+  "aiOnDeviceForegroundOnlyTitle": "AI terbina dalam memerlukan aplikasi dipaparkan pada skrin",
+  "aiOnDeviceForegroundOnlyDetail": "Sistem hanya menjalankan AI terbina dalam semasa aplikasi dibuka pada skrin. Kembali ke aplikasi dan cuba semula secara manual.",
+  "aiOnDeviceBusyTitle": "AI terbina dalam telefon sedang sibuk",
+  "aiOnDeviceBusyDetail": "Tugasan lain sedang menggunakan AI terbina dalam telefon sekarang. Tunggu sebentar dan cuba semula secara manual.",
+  "aiOnDeviceQuotaExceededTitle": "AI terbina dalam mencapai had penggunaan sistem",
+  "aiOnDeviceQuotaExceededDetail": "Sistem mengehadkan permintaan AI terbina dalam buat sementara waktu. Tunggu sebentar atau tukar kepada penyedia AI lain.",
+  "aiOnDeviceErrorTitle": "AI terbina dalam tidak dapat melengkapkan jawapan",
+  "aiOnDeviceErrorDetail": "Penjanaan pada peranti tidak selesai. Cuba semula kemudian atau gunakan penyedia AI lain.",
+  "aiNoticeOnDeviceContextTruncated": "Konteks halaman telah dipendekkan untuk muat dalam had AI terbina dalam telefon"
 }

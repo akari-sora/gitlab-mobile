@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "Het certificaat van de server is verlopen of nog niet geldig, en een CA-certificaat importeren lost dat niet op. Vraag de beheerder het te vernieuwen of controleer de datum en tijd van dit apparaat.",
   "caImportDidNotHelp": "Met dit CA-certificaat wordt het certificaat van de site nog steeds niet vertrouwd, dus het is niet bewaard. Een CA-certificaat lost geen certificaat op voor een andere hostnaam, een verlopen certificaat of een van een andere CA.",
   "caReplaceWarning": "Voor deze site is al een CA-certificaat opgeslagen; dat wordt vervangen. Tenzij je beheerder de CA heeft gewijzigd, kan dit betekenen dat de verbinding wordt onderschept.",
-  "caCurrentFingerprintLabel": "Huidige SHA-256-vingerafdruk"
+  "caCurrentFingerprintLabel": "Huidige SHA-256-vingerafdruk",
+  "aiOnDeviceUnavailableTitle": "Ingebouwde AI is niet beschikbaar op deze telefoon",
+  "aiOnDeviceUnavailableDetail": "Ingebouwde AI vereist een ondersteunde telefoon en systeemonderdelen, of u kunt een cloud- of lokale netwerk-AI-provider gebruiken.",
+  "aiOnDeviceModelNotReadyTitle": "Het ingebouwde AI-model van de telefoon is nog niet klaar",
+  "aiOnDeviceModelNotReadyDetail": "Zorg dat de telefoon voldoende opslagruimte heeft en het downloaden van het systeem-AI-model heeft voltooid, en probeer het opnieuw.",
+  "aiOnDeviceForegroundOnlyTitle": "Ingebouwde AI vereist dat de app op het scherm staat",
+  "aiOnDeviceForegroundOnlyDetail": "Het systeem voert ingebouwde AI alleen uit terwijl de app op het scherm geopend is. Keer terug naar de app en probeer het handmatig opnieuw.",
+  "aiOnDeviceBusyTitle": "De ingebouwde AI van de telefoon is bezet",
+  "aiOnDeviceBusyDetail": "Een andere taak gebruikt momenteel de ingebouwde AI van de telefoon. Wacht even en probeer het handmatig opnieuw.",
+  "aiOnDeviceQuotaExceededTitle": "Ingebouwde AI heeft de systeemlimiet bereikt",
+  "aiOnDeviceQuotaExceededDetail": "Het systeem heeft verzoeken aan de ingebouwde AI tijdelijk beperkt. Wacht even of schakel over naar een andere AI-provider.",
+  "aiOnDeviceErrorTitle": "Ingebouwde AI kon het antwoord niet voltooien",
+  "aiOnDeviceErrorDetail": "Genereren op het toestel is niet voltooid. Probeer het later opnieuw of gebruik een andere AI-provider.",
+  "aiNoticeOnDeviceContextTruncated": "Paginacontext is ingekort om binnen de limiet van de ingebouwde AI van de telefoon te passen"
 }

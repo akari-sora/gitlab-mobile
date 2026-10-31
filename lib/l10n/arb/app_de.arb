@@ -3072,5 +3072,18 @@
   "serverCertificateNotValidNow": "Das Serverzertifikat ist abgelaufen oder noch nicht gültig; ein importiertes CA-Zertifikat behebt das nicht. Bitten Sie Ihre Administration um ein neues Zertifikat oder prüfen Sie Datum und Uhrzeit dieses Geräts.",
   "caImportDidNotHelp": "Auch mit diesem CA-Zertifikat ist das Zertifikat der Website nicht vertrauenswürdig, daher wurde es nicht behalten. Ein CA-Zertifikat behebt kein Zertifikat für einen anderen Hostnamen, kein abgelaufenes und keines einer anderen CA.",
   "caReplaceWarning": "Für diese Website ist bereits ein CA-Zertifikat gespeichert, das ersetzt wird. Sofern Ihre Administration die CA nicht gewechselt hat, kann das bedeuten, dass die Verbindung abgefangen wird.",
-  "caCurrentFingerprintLabel": "Aktueller SHA-256-Fingerabdruck"
+  "caCurrentFingerprintLabel": "Aktueller SHA-256-Fingerabdruck",
+  "aiOnDeviceUnavailableTitle": "Integrierte KI ist auf diesem Telefon nicht verfügbar",
+  "aiOnDeviceUnavailableDetail": "Integrierte KI erfordert ein unterstütztes Telefon und Systemkomponenten; alternativ können Sie einen Cloud- oder lokalen Netzwerk-KI-Anbieter nutzen.",
+  "aiOnDeviceModelNotReadyTitle": "Das integrierte KI-Modell des Telefons ist noch nicht bereit",
+  "aiOnDeviceModelNotReadyDetail": "Stellen Sie sicher, dass genügend Speicherplatz frei ist und das System-KI-Modell vollständig heruntergeladen wurde, und versuchen Sie es erneut.",
+  "aiOnDeviceForegroundOnlyTitle": "Integrierte KI erfordert die geöffnete App auf dem Bildschirm",
+  "aiOnDeviceForegroundOnlyDetail": "Das System führt die integrierte KI nur im Vordergrund aus. Kehren Sie zur App zurück und versuchen Sie es manuell erneut.",
+  "aiOnDeviceBusyTitle": "Die integrierte KI des Telefons ist ausgelastet",
+  "aiOnDeviceBusyDetail": "Eine andere Aufgabe verwendet gerade die integrierte KI des Telefons. Warten Sie kurz und versuchen Sie es manuell erneut.",
+  "aiOnDeviceQuotaExceededTitle": "Integrierte KI hat das Systemnutzungslimit erreicht",
+  "aiOnDeviceQuotaExceededDetail": "Das System hat Anfragen an die integrierte KI vorübergehend begrenzt. Warten Sie etwas oder wechseln Sie zu einem anderen KI-Anbieter.",
+  "aiOnDeviceErrorTitle": "Integrierte KI konnte die Antwort nicht abschließen",
+  "aiOnDeviceErrorDetail": "Die lokale Erstellung wurde nicht abgeschlossen. Versuchen Sie es später erneut oder wechseln Sie zu einem anderen KI-Anbieter.",
+  "aiNoticeOnDeviceContextTruncated": "Der Seiteninhalt wurde gekürzt, um in das Limit der integrierten KI des Telefons zu passen"
 }

@@ -14,6 +14,7 @@ import 'execution_gate.dart';
 import 'redaction.dart';
 import 'prompts.dart';
 import 'tools/write_coordinator.dart';
+import 'wire/on_device_wire.dart';
 import 'wire/wire_format.dart';
 
 /// The owner supplies live getters; no account or API secret enters the core.
@@ -85,6 +86,7 @@ final class AiRunResult {
     this.failure,
     this.offerRollover = false,
     this.withheldPrivateKeyContext = false,
+    this.contextTruncated = false,
     this.pause,
   });
   final AiRunEnd reason;
@@ -94,6 +96,7 @@ final class AiRunResult {
   final AiFailure? failure;
   final bool offerRollover;
   final bool withheldPrivateKeyContext;
+  final bool contextTruncated;
   final AiExecutionPause? pause;
 }
 
@@ -129,6 +132,7 @@ final class AiRunner {
     this.onToolStarted,
     this.onRestorableResultCut,
     this.onContextDelivered,
+    this.onNotice,
     this.onToolResult,
     this.confirmCleartext,
     this.listInterfaceAddresses = listAiInterfaceAddresses,
@@ -151,13 +155,16 @@ final class AiRunner {
                : ForegroundAiExecutionGate(
                    appInForeground: appInForeground ?? (() => false),
                  )),
-       tools = List.unmodifiable(config.toolsEnabled ? tools : <AiToolSpec>[]),
+       tools = List.unmodifiable(
+         (config.toolsEnabled && !config.isOnDevice) ? tools : <AiToolSpec>[],
+       ),
        context = List.unmodifiable(context),
        _redactor = Redactor(secrets: secrets),
        _withheld = contextWithheldPrivateKeyContext {
+    final minOutputTokens = config.format == AiFormat.onDevicePrompt ? 1 : 512;
     if (wire.format != config.format ||
         conversationTokenCap <= 0 ||
-        this.maxOutputTokens < 512 ||
+        this.maxOutputTokens < minOutputTokens ||
         toolDeadline <= Duration.zero ||
         runDeadline <= Duration.zero ||
         modelDeadline <= Duration.zero) {
@@ -207,6 +214,7 @@ final class AiRunner {
 
   /// Page context actually accepted by the provider, before its tools run.
   final void Function(List<AiContextBlock> sent)? onContextDelivered;
+  final void Function(AiNoticeKind kind)? onNotice;
   final void Function(AiToolResult result)? onToolResult;
   final Future<bool> Function()? confirmCleartext;
   final AiInterfaceAddressLister listInterfaceAddresses;
@@ -479,6 +487,8 @@ final class AiRunner {
       return paired;
     }
 
+    var contextTruncated = false;
+
     AiRunResult result(
       AiRunEnd reason, {
       AiFailure? failure,
@@ -500,6 +510,7 @@ final class AiRunner {
         failure: failure,
         offerRollover: offer,
         withheldPrivateKeyContext: _withheld,
+        contextTruncated: contextTruncated,
         pause: pause,
       );
     }
@@ -540,20 +551,26 @@ final class AiRunner {
       if (actualInputTokens + estimatedInputTokens >= conversationTokenCap) {
         return result(AiRunEnd.tokenBudget);
       }
-      final endpoint = AiEndpoint.parse(
-        config.baseUrl,
-        allowLanCleartext: config.allowLanCleartext,
-      );
-      if (await _interruptible(
-        cleartextLanNeedsConfirmation(
-          endpoint,
-          listAddresses: listInterfaceAddresses,
-        ),
-        epoch,
-      )) {
-        if (confirmCleartext == null ||
-            !await _interruptible(confirmCleartext!(), epoch)) {
-          throw const AiFailure(AiFailureKind.policyBlocked);
+      if (config.isOnDevice) {
+        if (!config.isValidOnDevice) {
+          throw const AiFailure(AiFailureKind.policyBlocked, notSent: true);
+        }
+      } else {
+        final endpoint = AiEndpoint.parse(
+          config.baseUrl,
+          allowLanCleartext: config.allowLanCleartext,
+        );
+        if (await _interruptible(
+          cleartextLanNeedsConfirmation(
+            endpoint,
+            listAddresses: listInterfaceAddresses,
+          ),
+          epoch,
+        )) {
+          if (confirmCleartext == null ||
+              !await _interruptible(confirmCleartext!(), epoch)) {
+            throw const AiFailure(AiFailureKind.policyBlocked);
+          }
         }
       }
       _check(epoch);
@@ -570,7 +587,8 @@ final class AiRunner {
       seg.removeFinalAnswerNote();
       previousTail = seg.tail;
       await _setUserTail(seg, text, epoch);
-      if (identical(seg, segmentBeforeSend) &&
+      if (!config.isOnDevice &&
+          identical(seg, segmentBeforeSend) &&
           _requestSize(seg) > config.caps.maxRequestChars) {
         seg.restoreTail(previousTail);
         seg = _newSegment(text, previous: segmentBeforeSend);
@@ -621,6 +639,39 @@ final class AiRunner {
         // The only asynchronous work after acquire: a final secret snapshot.
         await _refresh(epoch);
         final delivered = _redactTail(seg, delivery);
+        var truncatedThisCall = false;
+        if (config.isOnDevice) {
+          final candidatePlan = _plan(seg, finishing: finishing);
+          final OnDeviceAssembledPrompt assembled;
+          try {
+            assembled = assembleOnDevicePrompt(
+              candidatePlan,
+              redactor: _redactor,
+            );
+          } on AiFailure catch (failure) {
+            if (failure.kind == AiFailureKind.contextTooLong) {
+              if (!froze) {
+                seg.restoreTail(previousTail);
+                _segment = segmentBeforeSend;
+                _needsProjection = true;
+              }
+              return result(AiRunEnd.contextTooLong, offer: modelCalls == 0);
+            }
+            rethrow;
+          }
+          if (assembled.contextTruncated) {
+            truncatedThisCall = true;
+            if (seg.tail case final AppUserEntry tail) {
+              seg.setTail(
+                tail.redactedCopy(
+                  text: tail.text,
+                  context: assembled.sentContext,
+                ),
+              );
+              _sentContext = List.unmodifiable(assembled.sentContext);
+            }
+          }
+        }
         // Everything from the last refresh through _complete is synchronous.
         if (!_verify(seg)) {
           _needsProjection = true;
@@ -629,8 +680,9 @@ final class AiRunner {
         final plan = _plan(seg, finishing: finishing);
         // This is the final redacted payload, including the finishing note.
         final encoded = wire.encodeJson(plan, config.caps);
-        if (encoded.length > config.caps.maxRequestChars ||
-            utf8.encode(encoded).length > 4 * 1024 * 1024) {
+        if (!config.isOnDevice &&
+            (encoded.length > config.caps.maxRequestChars ||
+                utf8.encode(encoded).length > 4 * 1024 * 1024)) {
           if (!froze) {
             seg.restoreTail(previousTail);
             _segment = segmentBeforeSend;
@@ -712,6 +764,13 @@ final class AiRunner {
           if (!refused) _recordUsage(latestUsage, encoded.length);
         }
         _check(epoch);
+        if (config.isOnDevice && turn.output.toolCalls.isNotEmpty) {
+          throw const AiFailure(AiFailureKind.invalidResponse);
+        }
+        if (truncatedThisCall && !contextTruncated) {
+          contextTruncated = true;
+          onNotice?.call(AiNoticeKind.onDeviceContextTruncated);
+        }
         if (seg.tail case AppUserEntry(:final context) when context.isNotEmpty) {
           // Prior tool fields are reduced to summaries on segment rollover.
           // Invalidate them first, then allow any whole page fields actually
@@ -1105,7 +1164,9 @@ final class AiRunner {
 
   void _refreshToolPolicy() {
     _nextTools = List.unmodifiable(
-      config.toolsEnabled ? currentTools?.call() ?? tools : <AiToolSpec>[],
+      (config.toolsEnabled && !config.isOnDevice)
+          ? currentTools?.call() ?? tools
+          : <AiToolSpec>[],
     );
     _nextToolPolicyRevision = toolPolicyRevision?.call();
     if (_segment != null &&
@@ -1624,7 +1685,8 @@ Iterable<String> readableAiEntry(AiEntry entry) sync* {
     final blocks = raw is List<Object?> ? raw : <Object?>[raw];
     for (final value in blocks) {
       if (value is! Map<String, Object?>) continue;
-      if (entry.format == AiFormat.chatCompletions) {
+      if (entry.format == AiFormat.chatCompletions ||
+          entry.format == AiFormat.onDevicePrompt) {
         for (final key in [
           'content',
           'refusal',
