@@ -322,6 +322,14 @@ class AiChatController extends ChangeNotifier
         AiExecutionPauseReason.permitInactive,
       );
       _runner?.pause(_executionPause!);
+    } else if (_executionPause == null &&
+        (_provider?.isOnDevice ?? false) &&
+        (_backgroundGate?.requiresExplicitResume ?? false) &&
+        _phase == AiChatPhase.running) {
+      _executionPause = const AiExecutionPause(
+        AiExecutionPauseReason.foregroundRequired,
+      );
+      _runner?.pause(_executionPause!);
     }
     _notify();
   }
@@ -376,7 +384,7 @@ class AiChatController extends ChangeNotifier
 
   @override
   Set<AiRunResumeWarning> get resumeWarnings => Set.unmodifiable({
-    if ((_runner?.modelCallsUsed ?? 0) > 0)
+    if (!(_provider?.isOnDevice ?? false) && (_runner?.modelCallsUsed ?? 0) > 0)
       AiRunResumeWarning.possibleRebilling,
     if (_writeRows.isNotEmpty) AiRunResumeWarning.possibleDuplicate,
   });
@@ -574,6 +582,7 @@ class AiChatController extends ChangeNotifier
   bool _settingsChangedDuringRun = false;
   int _epoch = 0;
   int? _assistantIndex;
+  int? _interruptedOnDeviceAssistantIndex;
   AiUsage? _usage;
   Timer? _streamNotification;
   Future<bool> Function()? _confirmCleartext;
@@ -1025,7 +1034,14 @@ class AiChatController extends ChangeNotifier
       blocker == AiChatBlocker.none &&
       _context != null &&
       sendBlockReason == null &&
-      runningCount() < AiRunRegistry.maxRunning;
+      runningCount() < AiRunRegistry.maxRunning &&
+      !_onDeviceInbox;
+
+  /// The Inbox conversation reads no data on any provider, and the phone's
+  /// built-in AI has no tools: there it can neither read nor change anything,
+  /// so nothing is sent and the page says so instead.
+  bool get _onDeviceInbox =>
+      origin is AiInboxOrigin && (_provider?.isOnDevice ?? false);
   @override
   set confirmCleartext(Future<bool> Function()? callback) =>
       _confirmCleartext = callback;
@@ -1426,12 +1442,12 @@ class AiChatController extends ChangeNotifier
           runner.replaceKeyRecipient(
             config: selected,
             complete: _completeForRunner!(client),
-            close: client.transport.close,
-            cancelActive: client.transport.cancelActive,
+            close: client.close,
+            cancelActive: client.cancelActive,
           );
           _transportClosed = false;
         } on Object {
-          client.transport.close();
+          client.close();
           _clearConversation(keepDisplay: true);
         }
       }
@@ -2583,11 +2599,16 @@ class AiChatController extends ChangeNotifier
         consentValid: () =>
             settings.isValid(_accountKey, _consentContract(config)),
       ),
-      system: _contract?.writePolicy == null
-          ? aiSystemPrompt
-          : aiWriteSystemPrompt,
-      close: client.transport.close,
-      cancelActive: client.transport.cancelActive,
+      system: config.isOnDevice
+          ? aiOnDeviceSystemPrompt(
+              languageTag: l10n.language.tag,
+              languageName: l10n.language.name,
+            )
+          : (_contract?.writePolicy == null
+                ? aiSystemPrompt
+                : aiWriteSystemPrompt),
+      close: client.close,
+      cancelActive: client.cancelActive,
       tools: catalogue?.specs ?? const [],
       writeCoordinator: coordinator,
       currentTools: () => [
@@ -2792,6 +2813,16 @@ class AiChatController extends ChangeNotifier
           _notifyStream();
         }
       },
+      onNotice: (kind) {
+        if (!current()) return;
+        // Only this conversation: an earlier one kept on screen has its own.
+        if (!_conversationItems.whereType<AiNoticeItem>().any(
+          (i) => i.kind == kind,
+        )) {
+          _insertRunItem(AiNoticeItem(kind));
+          _notifyStream();
+        }
+      },
     );
     _runner = runner;
     _binding = AiRunnerBinding(
@@ -2819,6 +2850,23 @@ class AiChatController extends ChangeNotifier
       return;
     }
     if (!canSend) return;
+    if (!resuming &&
+        (_provider?.isOnDevice ?? false) &&
+        looksLikeGitLabWriteRequest(text, origin: origin)) {
+      try {
+        final clean = _redactor.redactSource(text);
+        _items.add(AiUserItem(text: clean.text));
+      } on Object {
+        // Only the refusal card remains when the text exceeds the scan limit.
+      }
+      _items.add(const AiNoticeItem(AiNoticeKind.onDeviceCannotWrite));
+      // A later Continue must not refill a bubble above this exchange.
+      _interruptedOnDeviceAssistantIndex = null;
+      _lastEnd = AiRunEnd.done;
+      _notify();
+      _saveReportedHistory();
+      return;
+    }
     final pendingPreparation = resuming ? _pendingPreparation : null;
     final continuingRunner = resuming && pendingPreparation == null;
     if (pendingPreparation != null) text = pendingPreparation.text;
@@ -2884,9 +2932,15 @@ class AiChatController extends ChangeNotifier
       return value;
     }
     try {
+      final onDevice = _provider?.isOnDevice ?? false;
       final start = resuming
-          ? await prepare(_executionGate.resumeRun())
-          : await prepare(_executionGate.beginRun(runId: _newId()));
+          ? await prepare(_executionGate.resumeRun(foregroundOnly: onDevice))
+          : await prepare(
+              _executionGate.beginRun(
+                runId: _newId(),
+                foregroundOnly: onDevice,
+              ),
+            );
       if (start.disposition == AiBackgroundStartDisposition.invalidated ||
           start.disposition == AiBackgroundStartDisposition.unavailable) {
         throw const AiExecutionPaused(AiExecutionPause(
@@ -2951,19 +3005,33 @@ class AiChatController extends ChangeNotifier
           ),
         );
       }
-      _assistantIndex = _items.length;
       final config = _provider!;
-      _items.add(
-        AiAssistantItem(
-          text: '',
-          state: AiAssistantState.streaming,
-          source: AiAnswerSource(
-            presetId: config.presetId,
-            format: config.format.name,
-            model: config.model,
-          ),
+      final assistantBubble = AiAssistantItem(
+        text: '',
+        state: AiAssistantState.streaming,
+        source: AiAnswerSource(
+          presetId: config.presetId,
+          format: config.format.name,
+          model: config.model,
         ),
       );
+      if (continuingRunner &&
+          config.isOnDevice &&
+          _interruptedOnDeviceAssistantIndex != null &&
+          _interruptedOnDeviceAssistantIndex! < _items.length) {
+        while (_items.length > _interruptedOnDeviceAssistantIndex! + 1 &&
+            _items.last is AiNoticeItem &&
+            (_items.last as AiNoticeItem).kind == AiNoticeKind.stopped) {
+          _items.removeLast();
+        }
+        _assistantIndex = _interruptedOnDeviceAssistantIndex;
+        _interruptedOnDeviceAssistantIndex = null;
+        _replaceItem(_assistantIndex!, assistantBubble);
+      } else {
+        _interruptedOnDeviceAssistantIndex = null;
+        _assistantIndex = _items.length;
+        _items.add(assistantBubble);
+      }
       if (_runner == null) _createRunner();
       _notifyStream();
       final runner = _runner!;
@@ -3022,6 +3090,11 @@ class AiChatController extends ChangeNotifier
         _setAssistant('', AiAssistantState.hidden);
       } else {
         _setAssistant(result.text, _stateFor(result.reason));
+      }
+      if (config.isOnDevice &&
+          result.reason == AiRunEnd.stopped &&
+          result.pause != null) {
+        _interruptedOnDeviceAssistantIndex = _assistantIndex;
       }
       _assistantIndex = null;
       if (segment != null && !identical(segment, runner.segment)) {
@@ -3753,6 +3826,7 @@ class AiChatController extends ChangeNotifier
     _pendingTools.clear();
     _writeRows.clear();
     _assistantIndex = null;
+    _interruptedOnDeviceAssistantIndex = null;
     _failure = null;
     _contextFailed = false;
     _offerNewConversation = false;
@@ -4018,11 +4092,17 @@ AiWireClient _createWireClient({
   required String? apiKey,
   required String conversationId,
 }) {
+  if (config.isOnDevice) {
+    return AiWireClient.onDevice(
+      config: config,
+      conversationId: conversationId,
+      appVersion: aiClientAppVersion,
+    );
+  }
   final wire = switch (config.format) {
     AiFormat.chatCompletions => const ChatCompletionsFormat(),
     AiFormat.responses => const ResponsesFormat(),
     AiFormat.anthropicMessages => const AnthropicMessagesFormat(),
-    // The on-device client and runner wiring arrive with MR 3's UI.
     AiFormat.onDevicePrompt => throw const AiFailure(
       AiFailureKind.policyBlocked,
     ),
@@ -4042,6 +4122,92 @@ AiWireClient _createWireClient({
     conversationId: conversationId,
     appVersion: aiClientAppVersion,
   );
+}
+
+// A write request is an imperative at the start of a sentence (optionally
+// after "please") that names a GitLab object within a few words. Anything
+// phrased as a question never is: a missed write costs nothing, because the
+// on-device source has no tools and its system prompt refuses changes.
+final _questionEnd = RegExp('[?\\uff1f\\u55ce\\u5462]\\s*\$');
+final _enQuestionStart = RegExp(
+  r'(?:^|[.!?\n])\s*(?:what|who|whom|whose|which|when|where|why|how|'
+  r'should|can|could|would|will|is|are|was|were|do|does|did)\b',
+  caseSensitive: false,
+);
+final _cjkQuestionWord = RegExp(
+  '\\u8ab0|\\u4ec0\\u9ebc|\\u70ba\\u4ec0\\u9ebc|\\u600e\\u9ebc|'
+  '\\u5982\\u4f55|\\u662f\\u5426|\\u6703\\u4e0d\\u6703|\\u8981\\u4e0d\\u8981',
+);
+final _enWriteActionPattern = RegExp(
+  r'(?:^|[.!?\n])\s*'
+  r'(?:(?:please|pls|kindly|now|then|also)\s+)?'
+  r'(?:create|submit|post|leave|add|edit|update|modify|change|rename|close|'
+  r'reopen|merge|approve|unapprove|assign|unassign|delete|remove|retry|'
+  r'rerun|cancel|trigger|resolve|unresolve|mark|comment|reply|label|'
+  r'clear|archive|dismiss|snooze)\b'
+  r'(?![^\w.!?\n]+(?:me|us)\b)'
+  r'(?:[^\w.!?\n]+[\w-]+){0,4}?[^\w.!?\n]+'
+  r'(?:issues?|mrs?|merge\s+requests?|comments?|notes?|replies|reply|'
+  r'discussions?|threads?|titles?|descriptions?|labels?|milestones?|'
+  r'releases?|snippets?|pipelines?|jobs?|todos?|to-dos?|inbox|'
+  r'notifications?|done)\b',
+  caseSensitive: false,
+);
+
+// Traditional Chinese needs an explicit request: 請 or 麻煩 (optionally with 幫我),
+// 幫我 alone, or a 把/將 object; then a write verb and a GitLab object in the
+// same sentence.
+const _cjkWriteVerbs =
+    '\\u5efa\\u7acb|\\u65b0\\u589e|\\u958b\\u7acb|\\u767c\\u5e03|'
+    '\\u5f35\\u8cbc|\\u767c\\u8868|\\u7559\\u8a00|\\u56de\\u8986|'
+    '\\u7de8\\u8f2f|\\u4fee\\u6539|\\u66f4\\u65b0|\\u66f4\\u6539|'
+    '\\u91cd\\u65b0\\u547d\\u540d|\\u95dc\\u9589|\\u91cd\\u958b|'
+    '\\u91cd\\u65b0\\u958b\\u555f|\\u5408\\u4f75|\\u6838\\u51c6|'
+    '\\u6279\\u51c6|\\u53d6\\u6d88\\u6838\\u51c6|\\u6307\\u6d3e|'
+    '\\u53d6\\u6d88\\u6307\\u6d3e|\\u522a\\u9664|\\u79fb\\u9664|'
+    '\\u91cd\\u8a66|\\u91cd\\u65b0\\u57f7\\u884c|\\u53d6\\u6d88|'
+    '\\u89f8\\u767c|\\u6a19\\u8a18|\\u6a19\\u70ba|'
+    // Inbox actions: 清空, 封存, 略過, 忽略.
+    '\\u6e05\\u7a7a|\\u5c01\\u5b58|\\u7565\\u904e|\\u5ffd\\u7565';
+const _cjkWriteTargets =
+    'issue|mr|\\u5408\\u4f75\\u8acb\\u6c42|\\u8b70\\u984c|\\u7559\\u8a00|'
+    '\\u8a55\\u8ad6|\\u5099\\u8a3b|\\u8a0e\\u8ad6|\\u6a19\\u984c|'
+    '\\u63cf\\u8ff0|\\u6a19\\u7c64|\\u91cc\\u7a0b\\u7891|\\u770b\\u677f|'
+    'release|\\u7a0b\\u5f0f\\u78bc\\u7247\\u6bb5|snippet|pipeline|job|'
+    '\\u5f85\\u8fa6|todo|\\u6536\\u4ef6\\u5323|\\u901a\\u77e5';
+const _cjkAsk =
+    '(?:(?:\\u8acb|\\u9ebb\\u7169(?:\\u4f60)?)(?:\\u5e6b\\u6211)?|\\u5e6b\\u6211)';
+const _cjkGap = '[^\\u3002\\uff01\\uff1f!?\\n]{0,16}?';
+const _cjkObject = '[\\u628a\\u5c07]$_cjkGap';
+const _cjkAct =
+    '(?:(?:$_cjkWriteVerbs)$_cjkGap(?:$_cjkWriteTargets)|'
+    '\\u6a19(?:\\u8a18)?\\u70ba\\u5b8c\\u6210)';
+final _cjkWriteActionPattern = RegExp(
+  '(?:^|[\\u3002\\uff01\\uff1f!?\\n])\\s*(?:'
+  '$_cjkAsk(?:$_cjkObject)?$_cjkAct'
+  '|(?:$_cjkAsk)?$_cjkObject$_cjkAct'
+  '|(?:$_cjkAsk)?$_cjkObject(?:$_cjkWriteTargets)$_cjkGap(?:$_cjkWriteVerbs)'
+  // 幫我 + a verb that only means a GitLab action (comment, approve, assign,
+  // retry); generic verbs such as 修改 or 建立 still need a GitLab object.
+  '|(?:\\u8acb|\\u9ebb\\u7169(?:\\u4f60)?)?\\u5e6b\\u6211'
+  '(?:\\u7559\\u8a00|\\u6838\\u51c6|\\u6279\\u51c6|\\u6307\\u6d3e|'
+  '\\u91cd\\u8a66|\\u91cd\\u65b0\\u57f7\\u884c))',
+  caseSensitive: false,
+);
+
+/// Detects explicit GitLab write requests for the read-only on-device source.
+/// The same rule applies to every origin; an on-device Inbox conversation
+/// never reaches it, because it cannot send at all (see `canSend`).
+bool looksLikeGitLabWriteRequest(String text, {required AiChatOrigin origin}) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty ||
+      _questionEnd.hasMatch(trimmed) ||
+      _enQuestionStart.hasMatch(trimmed) ||
+      _cjkQuestionWord.hasMatch(trimmed)) {
+    return false;
+  }
+  return _enWriteActionPattern.hasMatch(trimmed) ||
+      _cjkWriteActionPattern.hasMatch(trimmed);
 }
 
 /// The consent a conversation with [provider] asks for on [accountKey].

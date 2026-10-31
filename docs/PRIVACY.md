@@ -11,7 +11,8 @@ Mergeline is an independent client for GitLab®. It is not affiliated with or en
 | What | Sent to | When |
 |---|---|---|
 | Your GitLab token or OAuth sign-in, and the requests you make (projects, issues, merge requests, files, CI, comments and other changes) | The GitLab instance you sign in to (GitLab.com or your own server), over HTTPS | While you use the app |
-| Prompts, the page or files you ask about, read-only tool results, and attachment names and sizes (not their contents) | The AI provider **you** configure, with **your own** API key | Only after you add a provider and agree to the consent screen, and only when you send a message |
+| Prompts, the page or files you ask about, read-only tool results, and attachment names and sizes (not their contents) | The cloud or LAN AI provider **you** configure, with **your own** API key | Only after you add a provider and agree to the consent screen, and only when you send a message |
+| Diagnostics and usage-analytics data that Google ML Kit collects when you use the phone's built-in AI (Gemini Nano): device information (such as manufacturer, model and OS version), app package name and version, performance metrics such as latency, API configuration, input and output sizes, feature version, event types and error codes, configured languages, and user, device or other identifiers, including per-installation identifiers. Not your prompts, the page content or the answers: Android AICore processes them on the phone, and Google's ML Kit terms state that ML Kit does not send input or output to Google servers | Google (ML Kit), encrypted in transit over HTTPS. Google states that ML Kit does not transfer this data to third parties ([ML Kit Android data disclosure](https://developers.google.com/ml-kit/android-data-disclosure), [ML Kit terms](https://developers.google.com/ml-kit/terms)) | Only on a supported Android phone, after you choose the phone's built-in AI and agree to its consent screen. Once ML Kit has started, it may keep reporting until the app restarts, even after you withdraw consent or delete the provider |
 | Changes the AI proposes | Your GitLab instance | Only after you approve each one (or after you choose a more automatic level in settings) |
 | An AI content report: the reason, your description, app version, the AI provider preset, API format and model, time, the answer's number in the conversation and, only if you choose to attach it, the reported AI answer (with secrets masked; it can still contain whatever the answer quoted from your project). You see the exact text before sending | The developer, through a Google Form (Google Forms' privacy policy applies to its handling) | Only when you report an AI answer |
 | Images and media linked from Markdown | The site hosting them, without any GitLab credential | When a page shows them |
@@ -21,7 +22,7 @@ Each recipient (your GitLab instance, your AI provider, Google) handles data und
 
 ## What stays on your device
 
-Accounts and tokens, CA certificates you import for a self-hosted GitLab, provider settings and keys, drafts and preferences are kept in the device's secure storage. Optional AI chat history (off by default), the AI write log, the read cache and offline repository copies are encrypted on the device. Demo mode uses built-in sample data and saves nothing.
+Accounts and tokens, CA certificates you import for a self-hosted GitLab, provider settings and keys, drafts and preferences are kept in the device's secure storage. Optional AI chat history (off by default), the AI write log, the read cache and offline repository copies are encrypted on the device. Demo mode uses built-in sample data and saves nothing. With the phone's built-in AI, your prompts, the page content and the answers stay on the phone: Android AICore processes them there.
 
 ## Your choices
 
@@ -59,7 +60,8 @@ Mergeline 是 GitLab® 的獨立客戶端，與 GitLab Inc. 無關，也未經�
 | 資料 | 送往 | 時機 |
 |---|---|---|
 | 你的 GitLab Token 或 OAuth 登入，以及你的操作（專案、議題、合併請求、檔案、CI、留言與其他修改） | 你登入的 GitLab（GitLab.com 或你自架的伺服器），使用 HTTPS | 使用 App 時 |
-| 你的提問、你要 AI 看的頁面或檔案、唯讀工具的結果、附件的名稱與大小（不含內容） | **你自己**設定的 AI 供應商，使用**你自己**的 API Key | 只有在你新增供應商、同意確認畫面，並送出訊息後 |
+| 你的提問、你要 AI 看的頁面或檔案、唯讀工具的結果、附件的名稱與大小（不含內容） | **你自己**設定的雲端或區域網路 AI 供應商，使用**你自己**的 API Key | 只有在你新增供應商、同意確認畫面，並送出訊息後 |
+| 使用手機內建 AI（Gemini Nano）時，Google ML Kit 為診斷與使用分析收集的資料：裝置資訊（例如製造商、型號與作業系統版本）、App 套件名稱與版本、延遲等效能指標、API 設定、輸入與輸出的大小、功能版本、事件類型與錯誤代碼、設定的語言，以及使用者、裝置或其他識別碼（包含每個安裝的識別碼）。不包含你的提問、頁面內容與回答：它們由 Android AICore 在手機上處理，Google 的 ML Kit 條款也說明 ML Kit 不會把輸入與輸出傳送到 Google 伺服器 | Google（ML Kit），傳輸時以 HTTPS 加密。Google 表示 ML Kit 不會把這些資料轉給第三方（[ML Kit Android 資料揭露說明](https://developers.google.com/ml-kit/android-data-disclosure)、[ML Kit 條款](https://developers.google.com/ml-kit/terms)） | 只有在支援的 Android 手機上選擇手機內建 AI 並同意其確認畫面後。ML Kit 一旦啟動，即使你撤回同意或刪除該來源，仍可能持續回報到 App 重新啟動為止 |
 | AI 提議的修改 | 你的 GitLab | 只有在你逐一核准後（或你在設定中選擇了更自動的等級） |
 | AI 內容檢舉：原因、你的說明、App 版本、AI 供應商預設、API 格式與模型、時間、該回答在對話中的序號，以及（只有在你選擇附上時）被檢舉的 AI 回答（秘密已遮蔽，但仍可能含有回答引用的專案內容）。送出前你會看到完整內容 | 開發者，透過 Google 表單（Google 表單的處理適用 Google 的隱私權政策） | 只有在你檢舉 AI 回答時 |
 | Markdown 中連結的圖片與媒體 | 存放它們的網站，不帶任何 GitLab 憑證 | 頁面顯示時 |
@@ -69,7 +71,7 @@ Mergeline 是 GitLab® 的獨立客戶端，與 GitLab Inc. 無關，也未經�
 
 ## 留在裝置上的資料
 
-帳號與 Token、你為自架 GitLab 匯入的 CA 憑證、供應商設定與金鑰、草稿與偏好設定存放在裝置的安全儲存區。選用的 AI 聊天紀錄（預設關閉）、AI 寫入紀錄、讀取快取與離線儲存的儲存庫都在裝置上加密。Demo 模式使用內建的範例資料，不會儲存任何東西。
+帳號與 Token、你為自架 GitLab 匯入的 CA 憑證、供應商設定與金鑰、草稿與偏好設定存放在裝置的安全儲存區。選用的 AI 聊天紀錄（預設關閉）、AI 寫入紀錄、讀取快取與離線儲存的儲存庫都在裝置上加密。Demo 模式使用內建的範例資料，不會儲存任何東西。使用手機內建 AI 時，你的提問、頁面內容與回答會留在手機上，由 Android AICore 在本機處理。
 
 ## 你的選擇
 

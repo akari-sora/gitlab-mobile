@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:mergeline_on_device_ai/mergeline_on_device_ai.dart';
 
 import '../../core/ai/ai_display.dart';
 import '../../core/ai/ai_report.dart';
@@ -168,6 +169,7 @@ class AiChatPage extends StatefulWidget {
     this.summarize = false,
     this.focusProposal,
     this.draftTarget,
+    this.onDeviceAi,
     this.analyzeDraft = analyzeAiDraft,
     this.postReport = postAiReport,
     this.sendReport = sendAiReport,
@@ -176,6 +178,7 @@ class AiChatPage extends StatefulWidget {
   });
 
   final AiChatSession session;
+  final MergelineOnDeviceAi? onDeviceAi;
 
   /// The comment draft a finished answer can be appended to; null when the
   /// origin offers none.
@@ -240,6 +243,12 @@ class _AiChatPageState extends State<AiChatPage> {
   final _focusCard = GlobalKey();
 
   AiChatSession get _session => widget.session;
+
+  /// The on-device AI cannot read or change the Inbox: the page shows a
+  /// notice instead of the composer result, and nothing is sent.
+  bool get _onDeviceInbox =>
+      _session.origin is AiInboxOrigin &&
+      (_session.provider?.isOnDevice ?? false);
 
   @override
   void initState() {
@@ -822,6 +831,7 @@ class _AiChatPageState extends State<AiChatPage> {
           isAccountRetained: (key) =>
               session.accounts.any((saved) => saved.key == key),
           history: scope.history,
+          onDeviceAi: widget.onDeviceAi,
         ),
       ),
     );
@@ -913,7 +923,9 @@ class _AiChatPageState extends State<AiChatPage> {
                 ],
               ),
               actions: [
-                if (_session.autonomyCeiling != AiAutonomyLevel.readOnly)
+                // The phone's built-in AI has no tools to raise a level for.
+                if (_session.autonomyCeiling != AiAutonomyLevel.readOnly &&
+                    !(provider?.isOnDevice ?? false))
                   AiChatLevelButton(
                     session: _session,
                     enabled: _session.phase != AiChatPhase.stopping,
@@ -1015,7 +1027,8 @@ class _AiChatPageState extends State<AiChatPage> {
                               attach: switch (_session) {
                                 final AiWriteChatSession writes
                                     when writes.autonomyCeiling !=
-                                        AiAutonomyLevel.readOnly =>
+                                            AiAutonomyLevel.readOnly &&
+                                        !(provider?.isOnDevice ?? false) =>
                                   _attachButton(writes),
                                 _ => null,
                               },
@@ -1064,6 +1077,16 @@ class _AiChatPageState extends State<AiChatPage> {
         (gate.sendBlockReason, gate.sendBlockedUntil),
       _ => (null, null),
     };
+    final cloudProvider = _session.providers
+        .where((candidate) => !candidate.isOnDevice)
+        .firstOrNull;
+    final canOpenSettings = DemoScope.maybeOf(context) == null;
+    final VoidCallback? onSwitchToCloud = cloudProvider != null
+        ? () => unawaited(_switchProvider(cloudProvider.id))
+        : (canOpenSettings ? _openSettings : null);
+    final String? switchToCloudLabel = cloudProvider != null
+        ? l10n.aiChatSwitchProvider
+        : (canOpenSettings ? l10n.aiChatOpenSettings : null);
     final notice =
         _session.blocker != AiChatBlocker.none ||
             _session.phase == AiChatPhase.preparing
@@ -1080,6 +1103,11 @@ class _AiChatPageState extends State<AiChatPage> {
             until: pausedUntil,
             now: widget.now,
             onResume: _sendPauseEnded,
+          )
+        : _session.phase == AiChatPhase.idle && _onDeviceInbox
+        ? _OnDeviceInboxCard(
+            onSwitchProvider: onSwitchToCloud,
+            switchProviderLabel: switchToCloudLabel,
           )
         : null;
     final continuation = switch (_session) {
@@ -1105,6 +1133,7 @@ class _AiChatPageState extends State<AiChatPage> {
               _ => null,
             },
             start: start,
+            onDevice: _session.provider?.isOnDevice ?? false,
             cleanupPending:
                 cleanupPending &&
                 start?.disposition == AiBackgroundStartDisposition.unavailable,
@@ -1136,6 +1165,7 @@ class _AiChatPageState extends State<AiChatPage> {
           final AiScopeAddSession adds => adds.addedGroupWorkItems.isNotEmpty,
           _ => false,
         },
+        onDevice: _session.provider?.isOnDevice ?? false,
         enabled: _session.canSend,
         onSuggestion: _send,
         notice: notice,
@@ -1167,6 +1197,8 @@ class _AiChatPageState extends State<AiChatPage> {
               ? null
               : _report,
           reportNotSaved: _session.reportNotSaved,
+          onSwitchProvider: onSwitchToCloud,
+          switchProviderLabel: switchToCloudLabel,
         ),
       // What the AI asks to write waits here, under the answer that led to
       // it, until the user approves or rejects it.
@@ -1354,11 +1386,62 @@ class _BlockerCard extends StatelessWidget {
   }
 }
 
+/// The Inbox with the phone's built-in AI: it has no data and no tools there,
+/// so the page says so and offers the cloud switch (or AI settings) instead
+/// of sending.
+class _OnDeviceInboxCard extends StatelessWidget {
+  const _OnDeviceInboxCard({
+    required this.onSwitchProvider,
+    required this.switchProviderLabel,
+  });
+
+  final VoidCallback? onSwitchProvider;
+  final String? switchProviderLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      key: const ValueKey('ai-on-device-inbox-card'),
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.cloud_outlined, size: 20),
+                const SizedBox(width: 8),
+                Expanded(child: Text(l10n.aiOnDeviceInboxUnavailable)),
+              ],
+            ),
+            if (onSwitchProvider != null && switchProviderLabel != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: FilledButton.tonal(
+                  key: const ValueKey('ai-on-device-switch-provider'),
+                  onPressed: onSwitchProvider,
+                  child: Text(switchProviderLabel!),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyConversation extends StatelessWidget {
   const _EmptyConversation({
     required this.origin,
     required this.safe,
     this.addedGroupItems = false,
+    this.onDevice = false,
     required this.enabled,
     required this.onSuggestion,
     this.notice,
@@ -1372,6 +1455,9 @@ class _EmptyConversation extends StatelessWidget {
 
   /// Whether the user added group work items to this conversation.
   final bool addedGroupItems;
+
+  /// The phone's built-in AI cannot mark to-dos done.
+  final bool onDevice;
   final bool enabled;
   final ValueChanged<String> onSuggestion;
   final Widget? notice;
@@ -1383,7 +1469,9 @@ class _EmptyConversation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final suggestions = _suggestions(origin);
+    final suggestions = [
+      if (!onDevice || origin is! AiInboxOrigin) ..._suggestions(origin),
+    ];
     return ListView(
       controller: controller,
       padding: const EdgeInsets.all(24),
@@ -1391,31 +1479,34 @@ class _EmptyConversation extends StatelessWidget {
         if (notice case final notice?) ...[notice, const SizedBox(height: 20)],
         Icon(Icons.auto_awesome, size: 40, color: theme.colorScheme.primary),
         const SizedBox(height: 12),
-        Text(
-          switch (origin) {
-            AiGeneralOrigin() => l10n.aiChatEmptyGeneral,
-            // A group's own work item has no project to read around it: the
-            // conversation covers this item, not the group's other items or
-            // its projects. A path that cannot be checked is left out.
-            // With user-added items the sentence names them as in scope and
-            // keeps out only the group's items that were not added.
-            AiGroupWorkItemOrigin(:final group, :final iid) => switch ((
-              safe(group.fullPath),
-              addedGroupItems,
-            )) {
-              ('', false) => l10n.aiChatEmptyGroupItem,
-              ('', true) => l10n.aiChatEmptyGroupItemAdded,
-              (final path, false) => l10n.aiChatEmptyGroup(path, iid),
-              (final path, true) => l10n.aiChatEmptyGroupAdded(path, iid),
+        // On-device, the Inbox notice above replaces the scope sentence.
+        if (!onDevice || origin is! AiInboxOrigin)
+          Text(
+            switch (origin) {
+              AiGeneralOrigin() => l10n.aiChatEmptyGeneral,
+              // A group's own work item has no project to read around it: the
+              // conversation covers this item, not the group's other items or
+              // its projects. A path that cannot be checked is left out.
+              // With user-added items the sentence names them as in scope and
+              // keeps out only the group's items that were not added.
+              AiGroupWorkItemOrigin(:final group, :final iid) => switch ((
+                safe(group.fullPath),
+                addedGroupItems,
+              )) {
+                ('', false) => l10n.aiChatEmptyGroupItem,
+                ('', true) => l10n.aiChatEmptyGroupItemAdded,
+                (final path, false) => l10n.aiChatEmptyGroup(path, iid),
+                (final path, true) => l10n.aiChatEmptyGroupAdded(path, iid),
+              },
+              // On-device has no tools, so it never reads beyond this page.
+              _ => onDevice ? l10n.aiChatEmptyOnDevice : l10n.aiChatEmpty,
             },
-            _ => l10n.aiChatEmpty,
-          },
-          key: const ValueKey('ai-chat-empty-scope'),
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+            key: const ValueKey('ai-chat-empty-scope'),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
         const SizedBox(height: 20),
         Wrap(
           alignment: WrapAlignment.center,
@@ -1444,6 +1535,8 @@ class _ChatItemView extends StatelessWidget {
     this.reportNotSaved = false,
     this.awaitingApproval = false,
     this.writeRow,
+    this.onSwitchProvider,
+    this.switchProviderLabel,
   });
 
   final AiChatItem item;
@@ -1462,6 +1555,8 @@ class _ChatItemView extends StatelessWidget {
   /// The draft is still being checked; the buttons say so.
   final bool preparingDraft;
   final void Function(AiAssistantItem item, Rect? origin)? onReport;
+  final VoidCallback? onSwitchProvider;
+  final String? switchProviderLabel;
 
   @override
   Widget build(BuildContext context) => switch (item) {
@@ -1482,7 +1577,11 @@ class _ChatItemView extends StatelessWidget {
       awaitingApproval: awaitingApproval,
       writeRow: writeRow,
     ),
-    final AiNoticeItem notice => _NoticeRow(item: notice),
+    final AiNoticeItem notice => _NoticeRow(
+      item: notice,
+      onSwitchProvider: onSwitchProvider,
+      switchProviderLabel: switchProviderLabel,
+    ),
   };
 }
 
@@ -2191,12 +2290,53 @@ class _ToolRow extends StatelessWidget {
 }
 
 class _NoticeRow extends StatelessWidget {
-  const _NoticeRow({required this.item});
+  const _NoticeRow({
+    required this.item,
+    this.onSwitchProvider,
+    this.switchProviderLabel,
+  });
 
   final AiNoticeItem item;
+  final VoidCallback? onSwitchProvider;
+  final String? switchProviderLabel;
 
   @override
   Widget build(BuildContext context) {
+    if (item.kind == AiNoticeKind.onDeviceCannotWrite) {
+      final theme = Theme.of(context);
+      return Card(
+        key: const ValueKey('ai-on-device-cannot-write-card'),
+        margin: EdgeInsets.zero,
+        color: theme.colorScheme.surfaceContainerHighest,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.cloud_outlined, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(l10n.aiOnDeviceCannotWrite)),
+                ],
+              ),
+              if (onSwitchProvider != null && switchProviderLabel != null) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: FilledButton.tonal(
+                    key: const ValueKey('ai-on-device-switch-provider'),
+                    onPressed: onSwitchProvider,
+                    child: Text(switchProviderLabel!),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
     final (icon, text) = switch (item.kind) {
       AiNoticeKind.redacted => (
         Icons.shield_outlined,
@@ -2229,6 +2369,10 @@ class _NoticeRow extends StatelessWidget {
       AiNoticeKind.onDeviceContextTruncated => (
         Icons.content_cut,
         l10n.aiNoticeOnDeviceContextTruncated,
+      ),
+      AiNoticeKind.onDeviceCannotWrite => (
+        Icons.cloud_outlined,
+        l10n.aiOnDeviceCannotWrite,
       ),
     };
     return _MutedRow(icon: icon, text: text);
@@ -2430,6 +2574,7 @@ class _RunPausedCard extends StatelessWidget {
     required this.pause,
     required this.status,
     required this.start,
+    this.onDevice = false,
     required this.cleanupPending,
     required this.onResume,
   });
@@ -2440,6 +2585,7 @@ class _RunPausedCard extends StatelessWidget {
   /// The last service start; a refused start that invalidated the run says
   /// why, and unconfirmed cleanup replaces the whole message.
   final AiBackgroundStartResult? start;
+  final bool onDevice;
   final bool cleanupPending;
   final VoidCallback? onResume;
 
@@ -2456,6 +2602,12 @@ class _RunPausedCard extends StatelessWidget {
         Icons.sync_problem,
         l10n.aiRunCleanupPending,
         l10n.aiRunCleanupRetry,
+      ),
+      AiExecutionPauseReason.foregroundRequired ||
+      AiExecutionPauseReason.permitInactive when onDevice => (
+        Icons.pause_circle_outline,
+        l10n.aiOnDeviceForegroundOnlyTitle,
+        l10n.aiOnDeviceForegroundOnlyDetail,
       ),
       null ||
       AiExecutionPauseReason.foregroundRequired ||

@@ -9351,4 +9351,91 @@ final class AppStrings {
 
   /// 已配合手機內建 AI 的長度上限縮短此頁內容
   String get aiNoticeOnDeviceContextTruncated => language._messages[3085];
+
+  /// 手機內建 AI（Gemini Nano）
+  String get aiPresetOnDeviceName => language._messages[3086];
+
+  /// 在同意資料揭露前，不會啟動 Google ML Kit 或查詢模型狀態。儲存後即可檢視並同意，接著檢查或下載模型。
+  String get aiOnDeviceConsentBeforeStatus => language._messages[3087];
+
+  /// 檢視並同意資料揭露
+  String get aiOnDeviceReviewConsentAction => language._messages[3088];
+
+  /// 模型已就緒，可直接在手機上使用
+  String get aiOnDeviceStatusAvailable => language._messages[3089];
+
+  /// 模型可下載至手機使用
+  String get aiOnDeviceStatusDownloadable => language._messages[3090];
+
+  /// 正在下載手機內建 AI 模型…
+  String get aiOnDeviceStatusDownloading => language._messages[3091];
+
+  /// 此手機無法使用內建 AI 模型
+  String get aiOnDeviceStatusUnavailable => language._messages[3092];
+
+  /// 僅支援具備 AICore 的 Android 手機。
+  String get aiOnDeviceUnavailableReasonNotAndroid => language._messages[3093];
+
+  /// 需要 Android 8.0 或更新版本。
+  String get aiOnDeviceUnavailableReasonSdkTooOld => language._messages[3094];
+
+  /// 這支手機未安裝 Android AICore 系統服務。
+  String get aiOnDeviceUnavailableReasonAicoreMissing => language._messages[3095];
+
+  /// Android AICore 系統服務目前已停用。
+  String get aiOnDeviceUnavailableReasonAicoreDisabled => language._messages[3096];
+
+  /// 手機剩餘儲存空間不足，無法下載模型。
+  String get aiOnDeviceUnavailableReasonInsufficientStorage => language._messages[3097];
+
+  /// 此機型不支援 Gemini Nano 內建模型。
+  String get aiOnDeviceUnavailableReasonUnsupported => language._messages[3098];
+
+  /// 下載模型
+  String get aiOnDeviceDownloadButton => language._messages[3099];
+
+  /// 已下載 {downloadedMb} MB / {totalMb} MB
+  String aiOnDeviceDownloadProgress(Object? downloadedMb, Object? totalMb) => _format(language, language._messages[3100], {'downloadedMb': downloadedMb, 'totalMb': totalMb});
+
+  /// 唯讀模式（無工具呼叫、上限約 4,000 個詞元、僅限前景執行）。
+  String get aiOnDeviceCapabilitiesNote => language._messages[3101];
+
+  /// 這支手機（Android AICore / Gemini Nano）
+  String get aiConsentOnDeviceRecipient => language._messages[3102];
+
+  /// 提問與頁面內容會留在這支手機上，由 Android AICore 在本機處理，不會傳送至雲端 AI 伺服器。
+  String get aiConsentOnDeviceStaysOnPhone => language._messages[3103];
+
+  /// 此功能使用的 Google ML Kit 會將診斷與使用情況資料（包含每個安裝實例的識別碼）傳送給 Google。
+  String get aiConsentOnDeviceMlKitTelemetry => language._messages[3104];
+
+  /// 一旦啟動，即使事後撤回同意或移除此來源，也必須等到重新啟動應用程式後才能完全停止傳送上述診斷資料。
+  String get aiConsentOnDeviceCannotStopUntilRestart => language._messages[3105];
+
+  /// Google ML Kit 資料揭露說明
+  String get aiConsentOnDeviceDisclosureLinkLabel => language._messages[3106];
+
+  /// 使用手機內建 AI 前確認
+  String get aiConsentOnDeviceTitle => language._messages[3107];
+
+  /// 在這支手機上處理的資料
+  String get aiConsentOnDeviceDataHeading => language._messages[3108];
+
+  /// 只有你允許的內容會在這支手機上由 Android AICore 處理，不會傳送到 AI 伺服器；Google ML Kit 的診斷資料說明在下方。
+  String get aiConsentOnDeviceDataDescription => language._messages[3109];
+
+  /// 下載完成前請保持此頁開啟；離開此頁會停止下載。
+  String get aiOnDeviceDownloadKeepOpen => language._messages[3110];
+
+  /// 此本機 AI 來源無法執行修改；若需修改 GitLab 內容，請切換為雲端服務商。
+  String get aiOnDeviceCannotWrite => language._messages[3111];
+
+  /// 此帳號的內容可能受你所屬組織或自管 GitLab 的政策約束。這些內容只在這支手機上處理，不會傳送給 AI 供應商。
+  String get aiConsentSelfManagedNoticeOnDevice => language._messages[3112];
+
+  /// 手機內建 AI 只會讀取這個頁面，不會讀取專案的其他資料。
+  String get aiChatEmptyOnDevice => language._messages[3113];
+
+  /// 手機內建 AI 無法讀取或變更收件匣，請改用雲端供應商。
+  String get aiOnDeviceInboxUnavailable => language._messages[3114];
 }

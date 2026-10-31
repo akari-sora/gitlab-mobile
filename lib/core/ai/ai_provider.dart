@@ -462,7 +462,7 @@ AiConsentContract aiConsentContractFor(
       disclosureVersion: disclosureVersion,
       policyUrl: policy?.sourceUrl ?? preset.policyUrl,
       retentionDays: policy?.retentionDays ?? 0,
-      policyCheckedOn: policy?.checkedOn ?? AiPresets.policyCheckedOn,
+      policyCheckedOn: policy?.checkedOn ?? AiPresets.onDevicePolicyCheckedOn,
     );
   }
   final preset = AiPresets.all
@@ -603,10 +603,13 @@ final class AiPresets {
   static const onDeviceOrigin = 'on-device://android-aicore';
   static const onDeviceModel = 'gemini-nano';
   static const onDeviceDataRetention = 'on_device';
-  static const onDevicePolicyUrl = 'https://developers.google.com/ml-kit/terms';
+  static const onDevicePolicyUrl =
+      'https://developers.google.com/ml-kit/android-data-disclosure';
   static const openCodePolicySource = 'https://opencode.ai/docs/go/';
   static const openCodeZenPolicySource = 'https://opencode.ai/docs/zen/';
   static const policyCheckedOn = '2026-10-20';
+  // Its own date: the shared one is in every cloud consent hash.
+  static const onDevicePolicyCheckedOn = '2026-11-01';
 
   static const Map<String, AiModelPolicy> _openCodePolicies = {
     'gpt-6-luna': AiModelPolicy(
@@ -938,7 +941,7 @@ final class AiPresets {
         dataUse: AiDataUse.onDevice,
         retentionDays: 0,
         sourceUrl: onDevicePolicyUrl,
-        checkedOn: policyCheckedOn,
+        checkedOn: onDevicePolicyCheckedOn,
       ),
     },
   );

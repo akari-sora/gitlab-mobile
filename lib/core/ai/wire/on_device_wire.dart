@@ -7,6 +7,7 @@ import '../ai_failure.dart';
 import '../ai_provider.dart';
 import '../ai_transcript.dart';
 import '../app_text.dart';
+import '../prompts.dart';
 import '../redaction.dart';
 import '../sse.dart';
 import 'wire_format.dart';
@@ -184,9 +185,21 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
     }
   }
 
+  // AICore (checked on prod_aicore_20260917, nano-v2) answers only the first
+  // user Content of a multi-turn request, so a follow-up sent as
+  // [user, model, user] got the first answer again. Earlier turns therefore
+  // travel inside the one user turn, in <conversation_history>.
+  const historyOpen = '<conversation_history>';
+  const historyClose = '</conversation_history>';
   final systemSection =
       '<system_instructions>\n${plan.system}\n</system_instructions>';
-  final userSection = '<user_request>\n${tail.text}\n</user_request>';
+  // Section text is escaped at delivery only (& < >), so an earlier answer
+  // or question cannot close a section or fake <gitlab_data>. The plain
+  // values below stay raw for the transport's redaction check, and the
+  // budget counts the escaped text that is sent.
+  final userSection =
+      '<user_request>\n${escapeUntrustedGitLabText(tail.text)}\n'
+      '</user_request>';
   final basePrompt = '$systemSection\n\n$userSection';
   final baseTokens = estimateOnDeviceTokens(basePrompt);
   if (baseTokens > maxInputTokens) {
@@ -199,18 +212,14 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
   for (final entry in plan.segment.frozen) {
     switch (entry) {
       case AppUserEntry(:final text, :final context):
-        final turnParts = <String>[
-          for (final block in context) block.text,
-          if (text.isNotEmpty) text,
-        ];
         final sectionParts = <String>[
           for (final block in context) block.text,
-          if (text.isNotEmpty) '<user_turn>\n$text\n</user_turn>',
+          if (text.isNotEmpty)
+            '<user_turn>\n${escapeUntrustedGitLabText(text)}\n</user_turn>',
         ];
         if (sectionParts.isNotEmpty) {
           historyEntries.add((
             role: OnDeviceRole.user,
-            turnText: turnParts.join('\n\n'),
             section: sectionParts.join('\n\n'),
             plain: <String>[
               for (final block in context) ...block.plainData.plainStrings,
@@ -224,8 +233,9 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
         if (content is String && content.isNotEmpty) {
           historyEntries.add((
             role: OnDeviceRole.model,
-            turnText: content,
-            section: '<assistant_turn>\n$content\n</assistant_turn>',
+            section:
+                '<assistant_turn>\n${escapeUntrustedGitLabText(content)}\n'
+                '</assistant_turn>',
             plain: <String>[content],
           ));
         }
@@ -249,7 +259,10 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
     );
     var historyBudget = math.max(
       0,
-      remainingForHistoryAndContext - reservedForTailContext - 4,
+      remainingForHistoryAndContext -
+          reservedForTailContext -
+          4 -
+          estimateOnDeviceTokens('$historyOpen\n\n$historyClose'),
     );
     for (var i = historyEntries.length - 1; i >= 0; i--) {
       final item = historyEntries[i];
@@ -269,7 +282,11 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
     }
   }
   final keptHistory = keptHistoryRev.reversed.toList(growable: false);
-  final historySection = keptHistory.map((item) => item.section).join('\n\n');
+  final historySection = keptHistory.isEmpty
+      ? ''
+      : '$historyOpen\n'
+            '${keptHistory.map((item) => item.section).join('\n\n')}\n'
+            '$historyClose';
 
   final promptWithoutContext = [
     systemSection,
@@ -334,14 +351,17 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
   if (estimatedTokens > maxInputTokens) {
     throw const AiFailure(AiFailureKind.contextTooLong, notSent: true);
   }
-  final currentTurnText = [
-    if (contextSection.isNotEmpty) contextSection,
-    tail.text,
-  ].join('\n\n');
+  // A first turn keeps its plain shape. A follow-up is one user turn: the
+  // prompt above without the system section, which goes as the system
+  // instruction, so the 3,400-token check covers everything sent.
   final turns = <OnDeviceTurn>[
-    for (final item in keptHistory)
-      OnDeviceTurn(role: item.role, text: item.turnText),
-    OnDeviceTurn.user(currentTurnText),
+    OnDeviceTurn.user(
+      [
+        if (historySection.isNotEmpty) historySection,
+        if (contextSection.isNotEmpty) contextSection,
+        if (historySection.isEmpty) tail.text else userSection,
+      ].join('\n\n'),
+    ),
   ];
   final maxOutputTokens = plan.maxOutputTokens.clamp(1, 4096);
   return OnDeviceAssembledPrompt(
@@ -364,7 +384,6 @@ OnDeviceAssembledPrompt assembleOnDevicePrompt(
 
 typedef _HistoryTurn = ({
   OnDeviceRole role,
-  String turnText,
   String section,
   List<String> plain,
 });

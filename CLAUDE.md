@@ -289,3 +289,18 @@ their `ApiFailure` (shown with `FailureNotice`); provider failures are
 `AiFailure`. Anything shown outside the display items (the title) goes through
 `displaySafe`, which never throws and returns an empty string for text it
 cannot check.
+
+On-device AI (#57: preset `on-device`, `AiFormat.onDevicePrompt`, plugin
+`packages/mergeline_on_device_ai`) adds no secure-storage keys: the keyless
+provider lives in the provider list and its consent in the account record
+(recipient `on-device://android-aicore`, `dataRetention: 'on_device'`). The
+provider editor offers it only on Android outside Demo mode, and only when
+`MergelineOnDeviceAi.deviceSupport()` (API 26+ and the AICore package; it never
+touches ML Kit) says likely. `status()`, `download()` and `generate()` run only
+after the user picked it and accepted its consent, which discloses Google ML
+Kit's diagnostics and links its data-disclosure page. Withdrawing that consent,
+deleting the provider or `resetProviders` calls the plugin's process-wide
+`close()`. Runs are read-only (no tools; a write request gets the
+`onDeviceCannotWrite` card), fit under 3,400 estimated input tokens, and are
+foreground-only: leaving the foreground pauses the run, and Continue resends
+the same turn and replaces the partial answer.

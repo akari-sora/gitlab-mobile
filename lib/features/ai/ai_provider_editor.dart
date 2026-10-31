@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:mergeline_on_device_ai/mergeline_on_device_ai.dart';
 
 import '../../core/ai/ai_endpoint.dart';
 import '../../core/ai/ai_failure.dart';
@@ -12,6 +14,9 @@ import '../../core/ai/wire/chat_completions.dart';
 import '../../core/ai/wire/responses.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/workspace_ui.dart';
+import '../demo/demo_scope.dart';
+import 'ai_consent_dialog.dart';
+import 'ai_scope.dart';
 import 'ai_settings_failure.dart';
 import 'ai_stores.dart';
 
@@ -48,11 +53,15 @@ final class AiProviderEditor extends StatefulWidget {
     required this.settings,
     this.provider,
     this.clientFactory,
+    this.accountKey,
+    this.onDeviceAi,
   });
 
   final AiSettingsController settings;
   final AiProviderConfig? provider;
   final AiProviderClientFactory? clientFactory;
+  final String? accountKey;
+  final MergelineOnDeviceAi? onDeviceAi;
 
   @override
   State<AiProviderEditor> createState() => _AiProviderEditorState();
@@ -69,7 +78,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   late final TextEditingController _maxOutputTokens;
   late final ExpansibleController _advancedController;
   late final String _providerId;
-  late final _EditorSnapshot _initialSnapshot;
+  late _EditorSnapshot _initialSnapshot;
   late AiPreset _preset;
   late AiFormat _format;
   late AiCaps _caps;
@@ -82,6 +91,16 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   bool _saveAttempted = false;
   bool _endpointTouched = false;
   bool _saved = false;
+  bool _deviceSupportChecked = false;
+  bool _onDeviceSupported = false;
+  bool _checkingOnDeviceStatus = false;
+  bool _downloadingOnDevice = false;
+  OnDeviceStatus? _onDeviceStatus;
+  int? _bytesDownloaded;
+  int? _bytesToDownload;
+  String? _onDeviceDownloadError;
+  StreamSubscription<OnDeviceDownloadEvent>? _downloadSubscription;
+  int _onDeviceTicket = 0;
   // The recipient (origin and auth style) the unsaved key draft was typed
   // for. A draft is never reused or sent once the recipient changes.
   String? _keyDraftRecipient;
@@ -117,32 +136,50 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   bool get _editing => widget.provider != null;
   bool get _requiresKey =>
       _preset.id == 'custom' ? !_customNoKey : _caps.requiresKey;
+  MergelineOnDeviceAi get _onDeviceAi =>
+      widget.onDeviceAi ?? MergelineOnDeviceAi.instance;
+
+  String get _effectiveProviderId => _editing
+      ? _providerId
+      : (_preset.onDevice ? AiPresets.onDeviceId : _providerId);
+
+  // On-device consent is per account; without one the option is not offered.
+  String? get _accountKey =>
+      widget.accountKey ??
+      (mounted ? AiScope.maybeOf(context)?.accountKey : null);
+
+  bool get _hasOnDeviceConsent {
+    final accountKey = _accountKey;
+    if (!_preset.onDevice || accountKey == null) return false;
+    final contract = _currentContract();
+    if (contract == null) return false;
+    return widget.settings.isValid(accountKey, contract);
+  }
 
   @override
   void initState() {
     super.initState();
+    widget.settings.addListener(_settingsChanged);
     final provider = widget.provider;
     _providerId =
         provider?.id ?? 'ai-provider-${DateTime.now().microsecondsSinceEpoch}';
     _preset = provider == null
         ? AiPresets.openAi
-        : AiPresets.all.firstWhere(
-            (candidate) => candidate.id == provider.presetId,
-            orElse: () => AiPresets.custom,
-          );
+        : (AiPresets.byId(provider.presetId) ?? AiPresets.custom);
     _format = provider?.format ?? _preset.defaultFormat;
     _caps = provider?.caps ?? _preset.capsFor(_format);
     _authStyle = provider?.authStyle ?? _preset.authStyle;
     _allowLanCleartext = provider?.allowLanCleartext ?? false;
     _toolsEnabled = provider?.toolsEnabled ?? false;
     _customNoKey = _preset.id == 'custom' && !_caps.requiresKey;
-    _name = TextEditingController(text: provider?.name ?? _preset.name);
+    _name = TextEditingController(text: provider?.name ?? _presetName(_preset));
     _baseUrl = TextEditingController(
       text: provider?.baseUrl ?? _preset.baseUrlFor(_format),
     )..addListener(_baseUrlChanged);
     _apiKey = TextEditingController()..addListener(_keyChanged);
-    _model = TextEditingController(text: provider?.model ?? '')
-      ..addListener(_modelChanged);
+    _model = TextEditingController(
+      text: provider?.model ?? (_preset.defaultModel ?? ''),
+    )..addListener(_modelChanged);
     final savedModelsUrl = provider?.modelsUrl ?? '';
     _modelsUrlEdited =
         savedModelsUrl.isNotEmpty && savedModelsUrl != _preset.modelsUrl;
@@ -165,7 +202,26 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_deviceSupportChecked) {
+      _deviceSupportChecked = true;
+      unawaited(_checkOnDeviceSupport());
+    }
+    if (_preset.onDevice &&
+        _hasOnDeviceConsent &&
+        _onDeviceStatus == null &&
+        !_checkingOnDeviceStatus) {
+      unawaited(_refreshOnDeviceStatus());
+    }
+  }
+
+  @override
   void dispose() {
+    widget.settings.removeListener(_settingsChanged);
+    _onDeviceTicket += 1;
+    unawaited(_downloadSubscription?.cancel());
+    _downloadSubscription = null;
     _networkTicket += 1;
     _activeClient?.transport.close();
     _activeClient = null;
@@ -178,6 +234,235 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     _maxOutputTokens.dispose();
     super.dispose();
   }
+
+  void _settingsChanged() {
+    if (!mounted) return;
+    if (_preset.onDevice) {
+      if (_hasOnDeviceConsent) {
+        if (_onDeviceStatus == null && !_checkingOnDeviceStatus) {
+          unawaited(_refreshOnDeviceStatus());
+        }
+      } else {
+        _cancelOnDeviceWork();
+      }
+    }
+    setState(() {});
+  }
+
+  Future<void> _checkOnDeviceSupport() async {
+    if (!mounted) return;
+    if (DemoScope.maybeOf(context) != null ||
+        Theme.of(context).platform != TargetPlatform.android ||
+        _accountKey == null) {
+      if (_onDeviceSupported && mounted) {
+        setState(() => _onDeviceSupported = false);
+      }
+      return;
+    }
+    try {
+      final support = await _onDeviceAi.deviceSupport();
+      if (!mounted) return;
+      if (DemoScope.maybeOf(context) != null ||
+          Theme.of(context).platform != TargetPlatform.android) {
+        return;
+      }
+      if (support.isLikely != _onDeviceSupported) {
+        setState(() => _onDeviceSupported = support.isLikely);
+      }
+    } on Object {
+      // Never offer on-device if capability check fails.
+    }
+  }
+
+  void _cancelOnDeviceWork() {
+    _onDeviceTicket += 1;
+    unawaited(_downloadSubscription?.cancel());
+    _downloadSubscription = null;
+    _checkingOnDeviceStatus = false;
+    _downloadingOnDevice = false;
+    _onDeviceStatus = null;
+    _bytesDownloaded = null;
+    _bytesToDownload = null;
+    _onDeviceDownloadError = null;
+  }
+
+  Future<void> _refreshOnDeviceStatus({bool resumeDownload = true}) async {
+    if (!mounted || !_preset.onDevice || !_hasOnDeviceConsent) return;
+    final ticket = ++_onDeviceTicket;
+    setState(() {
+      _checkingOnDeviceStatus = true;
+      _onDeviceDownloadError = null;
+    });
+    try {
+      final status = await _onDeviceAi.status();
+      if (!mounted || ticket != _onDeviceTicket || !_hasOnDeviceConsent) return;
+      setState(() {
+        _checkingOnDeviceStatus = false;
+        _onDeviceStatus = status;
+      });
+      // A download started on an earlier visit shows its progress again;
+      // the plugin attaches to it.
+      if (resumeDownload && status.isDownloading && !_downloadingOnDevice) {
+        _startOnDeviceDownload();
+      }
+    } on Object catch (error) {
+      if (!mounted || ticket != _onDeviceTicket || !_hasOnDeviceConsent) return;
+      setState(() {
+        _checkingOnDeviceStatus = false;
+        _onDeviceStatus = const OnDeviceStatus.unavailable();
+        _onDeviceDownloadError = _downloadErrorText(error);
+      });
+    }
+  }
+
+  Future<void> _reviewOnDeviceConsent() async {
+    final accountKey = _accountKey;
+    if (_saving || !_preset.onDevice || accountKey == null) return;
+    if (!_validateCaps()) return;
+    final invalid = _formKey.currentState!.validateGranularly();
+    if (invalid.isNotEmpty) return;
+    setState(() => _saving = true);
+    final previous = widget.settings.providers
+        .where((candidate) => candidate.id == _effectiveProviderId)
+        .firstOrNull;
+    final edited = _snapshot != _initialSnapshot;
+    try {
+      // The consent screen reads the saved provider; a decline undoes this.
+      final saved = await widget.settings.saveProvider(_config());
+      if (!mounted) return;
+      if (widget.settings.accountRecord(accountKey) == null) {
+        await widget.settings.loadAccount(accountKey);
+      }
+      if (!mounted) return;
+      final contract = aiConsentContractFor(saved);
+      final agreed = await showAiConsentDialog(
+        context,
+        widget.settings,
+        accountKey,
+        contract,
+        agreeLabel: l10n.aiConsentAgree,
+      );
+      if (!agreed) {
+        // A declined provider is not kept: a new one would otherwise become
+        // the device default. An edited one gets its saved settings back.
+        if (previous == null) {
+          await widget.settings.deleteProvider(saved.id);
+        } else if (edited) {
+          await widget.settings.saveProvider(previous);
+        }
+        return;
+      }
+      if (!mounted) return;
+      _initialSnapshot = _snapshot;
+      if (_hasOnDeviceConsent &&
+          !_checkingOnDeviceStatus &&
+          _onDeviceStatus == null) {
+        await _refreshOnDeviceStatus();
+      }
+    } on Object catch (error) {
+      if (mounted) showAiSettingsFailure(context, error);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _startOnDeviceDownload() {
+    if (_downloadingOnDevice || !_preset.onDevice || !_hasOnDeviceConsent) {
+      return;
+    }
+    final ticket = ++_onDeviceTicket;
+    unawaited(_downloadSubscription?.cancel());
+    setState(() {
+      _downloadingOnDevice = true;
+      _onDeviceDownloadError = null;
+      _bytesDownloaded = 0;
+      _bytesToDownload = null;
+      _onDeviceStatus = const OnDeviceStatus.downloading();
+    });
+    _downloadSubscription = _onDeviceAi.download().listen(
+      (event) {
+        if (!mounted || ticket != _onDeviceTicket || !_hasOnDeviceConsent) {
+          return;
+        }
+        switch (event.state) {
+          case OnDeviceDownloadState.started:
+            setState(() {
+              _bytesToDownload = event.bytesToDownload;
+              _bytesDownloaded = 0;
+              _onDeviceStatus = const OnDeviceStatus.downloading();
+            });
+          case OnDeviceDownloadState.progress:
+            setState(() {
+              _bytesDownloaded = event.bytesDownloaded;
+              _bytesToDownload = event.bytesToDownload ?? _bytesToDownload;
+              _onDeviceStatus = const OnDeviceStatus.downloading();
+            });
+          case OnDeviceDownloadState.completed:
+            setState(() {
+              _downloadingOnDevice = false;
+              _onDeviceStatus = const OnDeviceStatus.available();
+            });
+            unawaited(_refreshOnDeviceStatus(resumeDownload: false));
+          case OnDeviceDownloadState.failed:
+            setState(() {
+              _downloadingOnDevice = false;
+              _onDeviceStatus = const OnDeviceStatus.downloadable();
+              _onDeviceDownloadError = _downloadErrorText(event.error);
+            });
+        }
+      },
+      onError: (Object error) {
+        if (!mounted || ticket != _onDeviceTicket || !_hasOnDeviceConsent) {
+          return;
+        }
+        setState(() {
+          _downloadingOnDevice = false;
+          _onDeviceStatus = const OnDeviceStatus.downloadable();
+          _onDeviceDownloadError = _downloadErrorText(error);
+        });
+      },
+      // A stream that ends without a final event: read the status again.
+      onDone: () {
+        if (!mounted || ticket != _onDeviceTicket || !_downloadingOnDevice) {
+          return;
+        }
+        setState(() => _downloadingOnDevice = false);
+        unawaited(_refreshOnDeviceStatus(resumeDownload: false));
+      },
+    );
+  }
+
+  String _downloadErrorText(Object? error) {
+    if (error is OnDeviceAiException) {
+      return switch (error.code) {
+        OnDeviceAiErrorCode.insufficientStorage =>
+          l10n.aiOnDeviceUnavailableReasonInsufficientStorage,
+        OnDeviceAiErrorCode.backgroundBlocked =>
+          l10n.aiOnDeviceForegroundOnlyDetail,
+        OnDeviceAiErrorCode.busy => l10n.aiOnDeviceBusyDetail,
+        OnDeviceAiErrorCode.quotaExceeded => l10n.aiOnDeviceQuotaExceededDetail,
+        OnDeviceAiErrorCode.unsupported => l10n.aiOnDeviceUnavailableDetail,
+        OnDeviceAiErrorCode.notDownloaded => l10n.aiOnDeviceModelNotReadyDetail,
+        _ => l10n.aiOnDeviceErrorDetail,
+      };
+    }
+    return l10n.aiOnDeviceErrorDetail;
+  }
+
+  String _unavailableReasonText(String? reason) => switch (reason) {
+    'not_android' => l10n.aiOnDeviceUnavailableReasonNotAndroid,
+    'sdk_too_old' => l10n.aiOnDeviceUnavailableReasonSdkTooOld,
+    'aicore_missing' => l10n.aiOnDeviceUnavailableReasonAicoreMissing,
+    'aicore_disabled' => l10n.aiOnDeviceUnavailableReasonAicoreDisabled,
+    'insufficient_storage' ||
+    'insufficientStorage' ||
+    'NOT_ENOUGH_DISK_SPACE' =>
+      l10n.aiOnDeviceUnavailableReasonInsufficientStorage,
+    _ => l10n.aiOnDeviceUnavailableReasonUnsupported,
+  };
+
+  static String _formatMb(int bytes) =>
+      (bytes / (1024 * 1024)).toStringAsFixed(1);
 
   void _modelChanged() {
     if (_model.text == _modelText) return;
@@ -312,6 +597,18 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   }
 
   void _validateEndpoint() {
+    if (_preset.onDevice) {
+      if (mounted && (_endpointError != null || _endpointErrorOnModelsUrl)) {
+        setState(() {
+          _endpointError = null;
+          _endpointErrorOnModelsUrl = false;
+        });
+      } else {
+        _endpointError = null;
+        _endpointErrorOnModelsUrl = false;
+      }
+      return;
+    }
     String? error;
     var onModelsUrl = false;
     try {
@@ -361,6 +658,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   }
 
   bool get _baseUrlValidAlone {
+    if (_preset.onDevice) return true;
     try {
       AiEndpoint.parse(
         _baseUrl.text.trim(),
@@ -444,6 +742,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   void _selectPreset(AiPreset preset) {
     if (preset.id == _preset.id) return;
     _invalidateNetworkRequest();
+    _cancelOnDeviceWork();
     setState(() {
       _preset = preset;
       _format = preset.defaultFormat;
@@ -451,9 +750,10 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _authStyle = preset.authStyle;
       _customNoKey = false;
       _allowLanCleartext = false;
-      _name.text = preset.name;
+      _name.text = _presetName(preset);
       _modelsUrlEdited = false;
       _baseUrl.text = preset.baseUrlFor(_format);
+      _model.text = preset.defaultModel ?? '';
       _setModelsUrl(preset.modelsUrl ?? '');
       _maxRequestChars.text = _caps.maxRequestChars.toString();
       _maxOutputTokens.text = _caps.maxOutputTokens.toString();
@@ -468,6 +768,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _endpointError = null;
       _endpointErrorOnModelsUrl = false;
     });
+    if (preset.onDevice && _hasOnDeviceConsent) {
+      unawaited(_refreshOnDeviceStatus());
+    }
   }
 
   void _selectFormat(AiFormat format) {
@@ -520,20 +823,28 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
         int.tryParse(_maxOutputTokens.text.trim()) ?? _caps.maxOutputTokens,
   );
 
-  AiProviderConfig _config({AiAuthStyle? authStyle}) => AiProviderConfig(
-    id: _providerId,
-    name: _name.text.trim(),
-    presetId: _preset.id,
-    baseUrl: _baseUrl.text.trim(),
-    modelsUrl: _modelsUrl.text.trim().isEmpty ? null : _modelsUrl.text.trim(),
-    format: _format,
-    model: _model.text.trim(),
-    authStyle: authStyle ?? (_requiresKey ? _authStyle : AiAuthStyle.none),
-    caps: _effectiveCaps(),
-    allowLanCleartext: _showsCleartextControl && _allowLanCleartext,
-    toolsEnabled: _toolsEnabled,
-    recipientRevision: widget.provider?.recipientRevision ?? 0,
-  );
+  AiProviderConfig _config({AiAuthStyle? authStyle}) {
+    final id = _effectiveProviderId;
+    final persistedRevision = widget.settings.providers
+        .where((candidate) => candidate.id == id)
+        .firstOrNull
+        ?.recipientRevision;
+    return AiProviderConfig(
+      id: id,
+      name: _name.text.trim(),
+      presetId: _preset.id,
+      baseUrl: _baseUrl.text.trim(),
+      modelsUrl: _modelsUrl.text.trim().isEmpty ? null : _modelsUrl.text.trim(),
+      format: _format,
+      model: _model.text.trim(),
+      authStyle: authStyle ?? (_requiresKey ? _authStyle : AiAuthStyle.none),
+      caps: _effectiveCaps(),
+      allowLanCleartext: _showsCleartextControl && _allowLanCleartext,
+      toolsEnabled: _preset.onDevice ? false : _toolsEnabled,
+      recipientRevision:
+          persistedRevision ?? widget.provider?.recipientRevision ?? 0,
+    );
+  }
 
   String? _validatedKey({bool allowStored = true}) {
     final key = _apiKey.text.trim();
@@ -826,15 +1137,17 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                       ),
                       itemHeight: null,
                       selectedItemBuilder: (context) => [
-                        for (final preset in _presetMenuOrder)
+                        for (final preset in _availablePresets)
                           Align(
+                            key: ValueKey('ai-preset-${preset.id}'),
                             alignment: AlignmentDirectional.centerStart,
-                            child: Text(isolated(preset.name)),
+                            child: Text(isolated(_presetName(preset))),
                           ),
                       ],
                       items: [
-                        for (final preset in _presetMenuOrder)
+                        for (final preset in _availablePresets)
                           DropdownMenuItem(
+                            key: ValueKey('ai-preset-option-${preset.id}'),
                             value: preset,
                             child: Padding(
                               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -842,7 +1155,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text(isolated(preset.name)),
+                                  Text(isolated(_presetName(preset))),
                                   Text(
                                     _presetDescription(preset),
                                     style: Theme.of(
@@ -870,147 +1183,196 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                           ? l10n.aiProviderNameRequired
                           : null,
                     ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<AiFormat>(
-                      key: const ValueKey('ai-provider-format'),
-                      isExpanded: true,
-                      initialValue: _format,
-                      decoration: InputDecoration(
-                        labelText: l10n.aiProviderFormatLabel,
+                    if (_preset.onDevice) ...[
+                      const SizedBox(height: 12),
+                      _buildOnDeviceSection(),
+                    ] else ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<AiFormat>(
+                        key: const ValueKey('ai-provider-format'),
+                        isExpanded: true,
+                        initialValue: _format,
+                        decoration: InputDecoration(
+                          labelText: l10n.aiProviderFormatLabel,
+                        ),
+                        items: [
+                          for (final format in _preset.formats)
+                            DropdownMenuItem(
+                              value: format,
+                              child: Text(_formatLabel(format)),
+                            ),
+                        ],
+                        onChanged: _saving
+                            ? null
+                            : (format) {
+                                if (format != null) _selectFormat(format);
+                              },
                       ),
-                      items: [
-                        for (final format in _preset.formats)
-                          DropdownMenuItem(
-                            value: format,
-                            child: Text(_formatLabel(format)),
+                      const SizedBox(height: 12),
+                      KeyedSubtree(
+                        key: _baseUrlFieldKey,
+                        child: TextFormField(
+                          key: const ValueKey('ai-provider-base-url'),
+                          controller: _baseUrl,
+                          autocorrect: false,
+                          keyboardType: TextInputType.url,
+                          decoration: InputDecoration(
+                            labelText: l10n.aiProviderBaseUrlLabel,
+                            // The base URL is fine on its own; point at the
+                            // collapsed field that needs the fix.
+                            errorText: _endpointErrorOnModelsUrl
+                                ? l10n.aiProviderModelsUrlNeedsFix
+                                : _endpointError,
                           ),
-                      ],
-                      onChanged: _saving
-                          ? null
-                          : (format) {
-                              if (format != null) _selectFormat(format);
-                            },
-                    ),
-                    const SizedBox(height: 12),
-                    KeyedSubtree(
-                      key: _baseUrlFieldKey,
-                      child: TextFormField(
-                        key: const ValueKey('ai-provider-base-url'),
-                        controller: _baseUrl,
-                        autocorrect: false,
-                        keyboardType: TextInputType.url,
-                        decoration: InputDecoration(
-                          labelText: l10n.aiProviderBaseUrlLabel,
-                          // The base URL is fine on its own; point at the
-                          // collapsed field that needs the fix.
-                          errorText: _endpointErrorOnModelsUrl
-                              ? l10n.aiProviderModelsUrlNeedsFix
-                              : _endpointError,
                         ),
                       ),
-                    ),
-                    if (_showsCleartextControl)
-                      SwitchListTile(
-                        key: const ValueKey('ai-provider-cleartext'),
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(l10n.aiProviderCleartextOptIn),
-                        subtitle: endpoint?.cleartext == true
-                            ? Text(
-                                l10n.aiProviderCleartextWarning,
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              )
-                            : null,
-                        value: _allowLanCleartext,
-                        onChanged: _saving
-                            ? null
-                            : (value) {
-                                _invalidateNetworkRequest();
-                                setState(() => _allowLanCleartext = value);
-                                _validateEndpoint();
-                              },
-                      ),
-                    if (_preset.id == 'custom')
-                      SwitchListTile(
-                        key: const ValueKey('ai-provider-no-key'),
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(l10n.aiProviderNoKeyNeeded),
-                        value: _customNoKey,
-                        onChanged: _saving
-                            ? null
-                            : (value) {
-                                _invalidateNetworkRequest();
-                                setState(() => _customNoKey = value);
-                              },
-                      ),
-                    if (_requiresKey) ...[
-                      const SizedBox(height: 4),
-                      TextFormField(
-                        key: const ValueKey('ai-provider-api-key'),
-                        controller: _apiKey,
-                        obscureText: true,
-                        enableSuggestions: false,
-                        enableIMEPersonalizedLearning: false,
-                        autocorrect: false,
-                        keyboardType: TextInputType.visiblePassword,
-                        decoration: InputDecoration(
-                          labelText: l10n.aiProviderApiKeyLabel,
-                          helperText: _editing
-                              ? l10n.aiProviderApiKeyReplaceHint
-                              : l10n.aiProviderApiKeyNewHint,
-                        ),
-                        validator: (value) {
-                          if (_editing &&
-                              (value == null || value.isEmpty) &&
-                              widget.settings.providerKeyFor(_config()) !=
-                                  null) {
-                            return null;
-                          }
-                          final key = (value ?? '').trim();
-                          if (RegExp(r'[\s\x00-\x1f\x7f-\x9f]').hasMatch(key)) {
-                            return l10n.aiProviderKeyWhitespace;
-                          }
-                          return assessAiProviderKey(key).accepted
+                      if (_showsCleartextControl)
+                        SwitchListTile(
+                          key: const ValueKey('ai-provider-cleartext'),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(l10n.aiProviderCleartextOptIn),
+                          subtitle: endpoint?.cleartext == true
+                              ? Text(
+                                  l10n.aiProviderCleartextWarning,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                )
+                              : null,
+                          value: _allowLanCleartext,
+                          onChanged: _saving
                               ? null
-                              : l10n.aiProviderKeyMinimum;
-                        },
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: _StatusLine(
-                          icon: _hasUsableStoredKey
-                              ? Icons.key_rounded
-                              : Icons.key_off_outlined,
-                          label: _hasUsableStoredKey
-                              ? l10n.aiProviderKeySet
-                              : l10n.aiProviderKeyNotSet,
+                              : (value) {
+                                  _invalidateNetworkRequest();
+                                  setState(() => _allowLanCleartext = value);
+                                  _validateEndpoint();
+                                },
                         ),
-                      ),
-                      if (_keyDraftCleared)
+                      if (_preset.id == 'custom')
+                        SwitchListTile(
+                          key: const ValueKey('ai-provider-no-key'),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(l10n.aiProviderNoKeyNeeded),
+                          value: _customNoKey,
+                          onChanged: _saving
+                              ? null
+                              : (value) {
+                                  _invalidateNetworkRequest();
+                                  setState(() => _customNoKey = value);
+                                },
+                        ),
+                      if (_requiresKey) ...[
+                        const SizedBox(height: 4),
+                        TextFormField(
+                          key: const ValueKey('ai-provider-api-key'),
+                          controller: _apiKey,
+                          obscureText: true,
+                          enableSuggestions: false,
+                          enableIMEPersonalizedLearning: false,
+                          autocorrect: false,
+                          keyboardType: TextInputType.visiblePassword,
+                          decoration: InputDecoration(
+                            labelText: l10n.aiProviderApiKeyLabel,
+                            helperText: _editing
+                                ? l10n.aiProviderApiKeyReplaceHint
+                                : l10n.aiProviderApiKeyNewHint,
+                          ),
+                          validator: (value) {
+                            if (_editing &&
+                                (value == null || value.isEmpty) &&
+                                widget.settings.providerKeyFor(_config()) !=
+                                    null) {
+                              return null;
+                            }
+                            final key = (value ?? '').trim();
+                            if (RegExp(r'[\s\x00-\x1f\x7f-\x9f]')
+                                .hasMatch(key)) {
+                              return l10n.aiProviderKeyWhitespace;
+                            }
+                            return assessAiProviderKey(key).accepted
+                                ? null
+                                : l10n.aiProviderKeyMinimum;
+                          },
+                        ),
                         Padding(
-                          key: const ValueKey('ai-provider-key-draft-cleared'),
                           padding: const EdgeInsets.only(top: 8),
                           child: _StatusLine(
-                            icon: Icons.info_outline_rounded,
-                            label: l10n.aiProviderKeyDraftCleared,
-                            explanation: l10n.aiProviderKeyDraftClearedDetail,
+                            icon: _hasUsableStoredKey
+                                ? Icons.key_rounded
+                                : Icons.key_off_outlined,
+                            label: _hasUsableStoredKey
+                                ? l10n.aiProviderKeySet
+                                : l10n.aiProviderKeyNotSet,
                           ),
                         ),
-                    ],
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      key: const ValueKey('ai-provider-model'),
-                      controller: _model,
-                      autocorrect: false,
-                      decoration: InputDecoration(
-                        labelText: l10n.aiProviderModelLabel,
-                        suffixIcon: IconButton(
-                          key: const ValueKey('ai-provider-pick-model'),
-                          tooltip: l10n.aiProviderChooseModel,
+                        if (_keyDraftCleared)
+                          Padding(
+                            key: const ValueKey(
+                              'ai-provider-key-draft-cleared',
+                            ),
+                            padding: const EdgeInsets.only(top: 8),
+                            child: _StatusLine(
+                              icon: Icons.info_outline_rounded,
+                              label: l10n.aiProviderKeyDraftCleared,
+                              explanation: l10n.aiProviderKeyDraftClearedDetail,
+                            ),
+                          ),
+                      ],
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        key: const ValueKey('ai-provider-model'),
+                        controller: _model,
+                        autocorrect: false,
+                        decoration: InputDecoration(
+                          labelText: l10n.aiProviderModelLabel,
+                          suffixIcon: IconButton(
+                            key: const ValueKey('ai-provider-pick-model'),
+                            tooltip: l10n.aiProviderChooseModel,
+                            onPressed: _loadingModels || _saving
+                                ? null
+                                : _pickModel,
+                            icon: _loadingModels
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.format_list_bulleted),
+                          ),
+                        ),
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                            ? l10n.aiProviderModelRequired
+                            : null,
+                      ),
+                      // A routed model means the policy depends on the model
+                      // (or the recipient is custom), so an unknown one is
+                      // shown.
+                      if (contract != null &&
+                          (contract.dataUse != AiDataUse.unknown ||
+                              contract.routedModel != null))
+                        _PolicyNotice(
+                          dataUse: contract.dataUse,
+                          retentionDays: contract.retentionDays,
+                        ),
+                      if (model.isNotEmpty && _verificationLabel != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _StatusLine(
+                            icon: Icons.help_outline_rounded,
+                            label: _verificationLabel!,
+                            explanation: l10n.aiProviderVerificationExplanation,
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: OutlinedButton.icon(
+                          key: const ValueKey('ai-provider-read-models'),
                           onPressed: _loadingModels || _saving
                               ? null
-                              : _pickModel,
+                              : () => _pickModel(refresh: true),
                           icon: _loadingModels
                               ? const SizedBox.square(
                                   dimension: 18,
@@ -1018,68 +1380,28 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Icon(Icons.format_list_bulleted),
+                              : const Icon(Icons.cloud_download_outlined),
+                          label: Text(l10n.aiProviderReadModels),
                         ),
                       ),
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? l10n.aiProviderModelRequired
-                          : null,
-                    ),
-                    // A routed model means the policy depends on the model (or
-                    // the recipient is custom), so an unknown one is shown.
-                    if (contract != null &&
-                        (contract.dataUse != AiDataUse.unknown ||
-                            contract.routedModel != null))
-                      _PolicyNotice(
-                        dataUse: contract.dataUse,
-                        retentionDays: contract.retentionDays,
-                      ),
-                    if (model.isNotEmpty && _verificationLabel != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: _StatusLine(
-                          icon: Icons.help_outline_rounded,
-                          label: _verificationLabel!,
-                          explanation: l10n.aiProviderVerificationExplanation,
+                      if (_preset.id == 'openrouter')
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: OutlinedButton.icon(
+                            key: const ValueKey('ai-provider-verify-key'),
+                            onPressed: _loadingModels || _saving
+                                ? null
+                                : _verifyOpenRouterKey,
+                            icon: const Icon(Icons.key_outlined),
+                            label: Text(l10n.aiProviderVerifyKey),
+                          ),
                         ),
-                      ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: OutlinedButton.icon(
-                        key: const ValueKey('ai-provider-read-models'),
-                        onPressed: _loadingModels || _saving
-                            ? null
-                            : () => _pickModel(refresh: true),
-                        icon: _loadingModels
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.cloud_download_outlined),
-                        label: Text(l10n.aiProviderReadModels),
-                      ),
-                    ),
-                    if (_preset.id == 'openrouter')
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: OutlinedButton.icon(
-                          key: const ValueKey('ai-provider-verify-key'),
-                          onPressed: _loadingModels || _saving
-                              ? null
-                              : _verifyOpenRouterKey,
-                          icon: const Icon(Icons.key_outlined),
-                          label: Text(l10n.aiProviderVerifyKey),
+                      if (_modelsMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(_modelsMessage!),
                         ),
-                      ),
-                    if (_modelsMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(_modelsMessage!),
-                      ),
+                    ],
                     const SizedBox(height: 8),
                     ExpansionTile(
                       key: const ValueKey('ai-provider-advanced'),
@@ -1091,106 +1413,112 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                         // Room for the first field's floating label, which
                         // the tile's clip would otherwise cut.
                         const SizedBox(height: 12),
-                        KeyedSubtree(
-                          key: _modelsUrlFieldKey,
-                          child: TextFormField(
-                            key: const ValueKey('ai-provider-models-url'),
-                            controller: _modelsUrl,
-                            autocorrect: false,
-                            keyboardType: TextInputType.url,
-                            decoration: InputDecoration(
-                              labelText: l10n.aiProviderModelsUrlLabel,
-                              errorText: _endpointErrorOnModelsUrl
-                                  ? _endpointError
-                                  : null,
+                        if (!_preset.onDevice) ...[
+                          KeyedSubtree(
+                            key: _modelsUrlFieldKey,
+                            child: TextFormField(
+                              key: const ValueKey('ai-provider-models-url'),
+                              controller: _modelsUrl,
+                              autocorrect: false,
+                              keyboardType: TextInputType.url,
+                              decoration: InputDecoration(
+                                labelText: l10n.aiProviderModelsUrlLabel,
+                                errorText: _endpointErrorOnModelsUrl
+                                    ? _endpointError
+                                    : null,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(l10n.aiProviderToolsEnabled),
-                          subtitle: Text(
-                            l10n.aiProviderToolsHint(l10n.aiWriteSettingsTitle),
+                          const SizedBox(height: 12),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(l10n.aiProviderToolsEnabled),
+                            subtitle: Text(
+                              l10n.aiProviderToolsHint(
+                                l10n.aiWriteSettingsTitle,
+                              ),
+                            ),
+                            value: _toolsEnabled,
+                            onChanged: (value) =>
+                                setState(() => _toolsEnabled = value),
                           ),
-                          value: _toolsEnabled,
-                          onChanged: (value) =>
-                              setState(() => _toolsEnabled = value),
-                        ),
-                        const SizedBox(height: 8),
-                        if (_requiresKey)
-                          DropdownButtonFormField<AiAuthStyle>(
-                            key: const ValueKey('ai-provider-auth-style'),
+                          const SizedBox(height: 8),
+                          if (_requiresKey)
+                            DropdownButtonFormField<AiAuthStyle>(
+                              key: const ValueKey('ai-provider-auth-style'),
+                              isExpanded: true,
+                              initialValue: _authStyle,
+                              decoration: InputDecoration(
+                                labelText: l10n.aiProviderAuthStyleLabel,
+                              ),
+                              items: [
+                                for (final style in const <AiAuthStyle>[
+                                  AiAuthStyle.bearer,
+                                  AiAuthStyle.apiKey,
+                                  AiAuthStyle.xApiKey,
+                                ])
+                                  DropdownMenuItem(
+                                    value: style,
+                                    child: Text(_authStyleLabel(style)),
+                                  ),
+                              ],
+                              onChanged: (style) {
+                                if (style != null) {
+                                  _invalidateNetworkRequest();
+                                  setState(() => _authStyle = style);
+                                  _dropKeyDraftForNewRecipient();
+                                }
+                              },
+                            ),
+                          DropdownButtonFormField<AiTokenLimitField>(
+                            key: const ValueKey(
+                              'ai-provider-token-limit-field',
+                            ),
                             isExpanded: true,
-                            initialValue: _authStyle,
+                            initialValue: _caps.tokenLimitField,
                             decoration: InputDecoration(
-                              labelText: l10n.aiProviderAuthStyleLabel,
+                              labelText: l10n.aiProviderTokenLimitFieldLabel,
                             ),
                             items: [
-                              for (final style in const <AiAuthStyle>[
-                                AiAuthStyle.bearer,
-                                AiAuthStyle.apiKey,
-                                AiAuthStyle.xApiKey,
-                              ])
+                              for (final field in _tokenLimitFields)
                                 DropdownMenuItem(
-                                  value: style,
-                                  child: Text(_authStyleLabel(style)),
+                                  value: field,
+                                  child: Text(_tokenLimitFieldLabel(field)),
                                 ),
                             ],
-                            onChanged: (style) {
-                              if (style != null) {
-                                _invalidateNetworkRequest();
-                                setState(() => _authStyle = style);
-                                _dropKeyDraftForNewRecipient();
+                            onChanged: (field) {
+                              if (field != null) {
+                                _copyCaps(tokenLimitField: field);
                               }
                             },
                           ),
-                        DropdownButtonFormField<AiTokenLimitField>(
-                          key: const ValueKey('ai-provider-token-limit-field'),
-                          isExpanded: true,
-                          initialValue: _caps.tokenLimitField,
-                          decoration: InputDecoration(
-                            labelText: l10n.aiProviderTokenLimitFieldLabel,
+                          _capSwitch(
+                            l10n.aiProviderToolChoiceCapability,
+                            _caps.toolChoice,
+                            (value) => _copyCaps(toolChoice: value),
                           ),
-                          items: [
-                            for (final field in _tokenLimitFields)
-                              DropdownMenuItem(
-                                value: field,
-                                child: Text(_tokenLimitFieldLabel(field)),
-                              ),
-                          ],
-                          onChanged: (field) {
-                            if (field != null) {
-                              _copyCaps(tokenLimitField: field);
-                            }
-                          },
-                        ),
-                        _capSwitch(
-                          l10n.aiProviderToolChoiceCapability,
-                          _caps.toolChoice,
-                          (value) => _copyCaps(toolChoice: value),
-                        ),
-                        _capSwitch(
-                          l10n.aiProviderStreamUsageCapability,
-                          _caps.streamUsage,
-                          (value) => _copyCaps(streamUsage: value),
-                        ),
-                        _capSwitch(
-                          l10n.aiProviderReplayExtrasCapability,
-                          _caps.replayChatExtras,
-                          (value) => _copyCaps(replayChatExtras: value),
-                        ),
-                        _capSwitch(
-                          l10n.aiProviderEncryptedReasoningCapability,
-                          _caps.includeEncryptedReasoning,
-                          (value) =>
-                              _copyCaps(includeEncryptedReasoning: value),
-                        ),
-                        _capSwitch(
-                          l10n.aiProviderPromptCachingCapability,
-                          _caps.promptCaching,
-                          (value) => _copyCaps(promptCaching: value),
-                        ),
+                          _capSwitch(
+                            l10n.aiProviderStreamUsageCapability,
+                            _caps.streamUsage,
+                            (value) => _copyCaps(streamUsage: value),
+                          ),
+                          _capSwitch(
+                            l10n.aiProviderReplayExtrasCapability,
+                            _caps.replayChatExtras,
+                            (value) => _copyCaps(replayChatExtras: value),
+                          ),
+                          _capSwitch(
+                            l10n.aiProviderEncryptedReasoningCapability,
+                            _caps.includeEncryptedReasoning,
+                            (value) =>
+                                _copyCaps(includeEncryptedReasoning: value),
+                          ),
+                          _capSwitch(
+                            l10n.aiProviderPromptCachingCapability,
+                            _caps.promptCaching,
+                            (value) => _copyCaps(promptCaching: value),
+                          ),
+                        ],
                         KeyedSubtree(
                           key: _requestLimitFieldKey,
                           child: TextFormField(
@@ -1337,7 +1665,16 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     ...AiPresets.all.where((preset) => !_presetMenuIds.contains(preset.id)),
   ];
 
+  List<AiPreset> get _availablePresets => [
+    if (_onDeviceSupported || _preset.onDevice) AiPresets.onDevice,
+    ..._presetMenuOrder,
+  ];
+
+  String _presetName(AiPreset preset) =>
+      preset.onDevice ? l10n.aiPresetOnDeviceName : preset.name;
+
   String _presetDescription(AiPreset preset) => switch (preset.id) {
+    'on-device' => l10n.aiOnDeviceCapabilitiesNote,
     'openai' => l10n.aiPresetAboutOpenAi,
     'anthropic' => l10n.aiPresetAboutAnthropic,
     'gemini' => l10n.aiPresetAboutGemini,
@@ -1351,6 +1688,140 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     'lm-studio' => l10n.aiPresetAboutLmStudio,
     _ => l10n.aiProviderPresetDescriptionCustom,
   };
+
+  Widget _buildOnDeviceSection() {
+    final hasConsent = _hasOnDeviceConsent;
+    final status = _onDeviceStatus;
+    final progressValue =
+        (_bytesToDownload != null &&
+            _bytesToDownload! > 0 &&
+            _bytesDownloaded != null)
+        ? (_bytesDownloaded! / _bytesToDownload!).clamp(0.0, 1.0)
+        : null;
+    return DecoratedBox(
+      key: const ValueKey('ai-on-device-section'),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _StatusLine(
+              icon: Icons.smartphone_outlined,
+              label: l10n.aiPresetOnDeviceName,
+              explanation: l10n.aiOnDeviceCapabilitiesNote,
+            ),
+            const SizedBox(height: 12),
+            if (!hasConsent) ...[
+              Text(
+                l10n.aiOnDeviceConsentBeforeStatus,
+                key: const ValueKey('ai-on-device-consent-required'),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                key: const ValueKey('ai-on-device-review-consent'),
+                onPressed: _saving ? null : _reviewOnDeviceConsent,
+                icon: const Icon(Icons.privacy_tip_outlined),
+                label: Text(l10n.aiOnDeviceReviewConsentAction),
+              ),
+            ] else if (_checkingOnDeviceStatus && status == null) ...[
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            ] else if (status != null) ...[
+              switch (status.availability) {
+                OnDeviceAvailability.available => _StatusLine(
+                  icon: Icons.check_circle_outline,
+                  label: l10n.aiOnDeviceStatusAvailable,
+                  explanation:
+                      status.modelName != null && status.modelName!.isNotEmpty
+                      ? isolated(status.modelName!)
+                      : null,
+                ),
+                OnDeviceAvailability.downloadable => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _StatusLine(
+                      icon: Icons.download_for_offline_outlined,
+                      label: l10n.aiOnDeviceStatusDownloadable,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.tonalIcon(
+                      key: const ValueKey('ai-on-device-download'),
+                      onPressed: _downloadingOnDevice || _saving
+                          ? null
+                          : _startOnDeviceDownload,
+                      icon: const Icon(Icons.download),
+                      label: Text(l10n.aiOnDeviceDownloadButton),
+                    ),
+                  ],
+                ),
+                OnDeviceAvailability.downloading => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _StatusLine(
+                      icon: Icons.downloading,
+                      label: l10n.aiOnDeviceStatusDownloading,
+                    ),
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(
+                      key: const ValueKey('ai-on-device-download-progress'),
+                      value: progressValue,
+                    ),
+                    if (_bytesDownloaded != null &&
+                        _bytesToDownload != null &&
+                        _bytesToDownload! > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.aiOnDeviceDownloadProgress(
+                          _formatMb(_bytesDownloaded!),
+                          _formatMb(_bytesToDownload!),
+                        ),
+                        key: const ValueKey(
+                          'ai-on-device-download-progress-text',
+                        ),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ],
+                ),
+                OnDeviceAvailability.unavailable => _StatusLine(
+                  icon: Icons.error_outline,
+                  label: l10n.aiOnDeviceStatusUnavailable,
+                  explanation: _unavailableReasonText(status.reason),
+                ),
+              },
+              // Leaving the editor cancels the download.
+              if (status.isDownloadable || status.isDownloading) ...[
+                const SizedBox(height: 8),
+                Text(
+                  l10n.aiOnDeviceDownloadKeepOpen,
+                  key: const ValueKey('ai-on-device-download-keep-open'),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              if (_onDeviceDownloadError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _onDeviceDownloadError!,
+                  key: const ValueKey('ai-on-device-download-error'),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
   _EditorSnapshot get _snapshot => (
     presetId: _preset.id,

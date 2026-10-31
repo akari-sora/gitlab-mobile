@@ -209,7 +209,11 @@ final class OnDeviceAiTransport {
         bound?.redactor ??
         Redactor(secrets: const _NoKnownSecrets());
     if (!_alreadyRedacted(assembled, checker)) {
-      throw const AiFailure(AiFailureKind.policyBlocked, notSent: true);
+      throw const AiFailure(
+        AiFailureKind.policyBlocked,
+        notSent: true,
+        requiresNewSegment: true,
+      );
     }
     final callGeneration = _generationId;
     try {
