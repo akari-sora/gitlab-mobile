@@ -121,6 +121,11 @@ In priority order. Steps marked **owner** need the owner in person.
        - `PRIVACY.md` (English and 繁體中文), `MR7_PLAY_DECLARATIONS.md` (Data safety: Device or other IDs and Diagnostics collected for Analytics; "shared" is the maintainer's call) and `CLAUDE.md`.
      - **Device verification:** a partial probe ran on a Galaxy Z Fold7 (Android 17, AICore `nano-v2`, 2026-10-31). Status was available, and en and zh-TW generation, cancel, and a 3,398-token prompt all worked. The full MR 3 UI walkthrough on the Fold7 is `NOT_RUN` (done separately by the maintainer's agent).
    - **#58, done (!288, 2026-10-31).** CI job logs parse incrementally, with an isolate for chunks over 64 KiB, a 20,000-line sliding window and bounded or tail reads. gitlab.com ignores `Range`, so there the saving is parse-side only. Follow-ups: #61 (cap an unterminated line over 2 MiB) and #62 (streaming read when `Range` is ignored). Device check NOT_RUN.
+   - **#62, done (`fix/ci-log-stream-full-trace`, 2026-11-01).** gitlab.com ignores `Range` on job traces, and its `HEAD` reports `Content-Length: 0`.
+     - A `200` is now read as a stream. Offset reads discard the bytes before the offset and keep at most 2 MiB after it; the next poll continues. Tail reads keep the last 2 MiB in a ring buffer. A request stops after 64 MiB.
+     - `Content-Length` equal to the offset, or 0, cancels the download before the body. A shorter log is read again from byte 0, so the view restarts.
+     - While Range is ignored, polling slows by 10 s per 2 MiB above the first 2 MiB, to at most 120 s, and the refresh chip names the interval.
+     - Running-job behaviour on gitlab.com and the device check are NOT_RUN.
    - **#61, done (`fix/ci-log-pending-cap`, 2026-11-01).**
      - An unterminated job-log line, such as a `\r` progress bar, is cut once it passes 2 MiB, down to at most 3/4 of the cap. The cut prefers a `\r` and never lands inside a surrogate pair or an escape sequence.
      - The dropped front still runs through section markers and the ANSI state. Below the cap the output is unchanged.
