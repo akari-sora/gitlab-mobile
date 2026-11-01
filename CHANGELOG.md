@@ -11,7 +11,7 @@ Release history of Mergeline (formerly "GitLab Mobile"). The newest entries come
 - **AI confirmation cards mark what changes** (!284): each field of an issue or MR update says 將變更 or 不變, with the old value under a changed title, milestone or confidential flag.
 - **Large MR diffs** (#59, !286): the partial-diff notice follows GitLab's overflow state, and too-large files offer Open in GitLab.
 - **UI fixes:** spacing and alignment across settings and lists (!292), header menus that kept closing with a screen reader (!291), and English, Romanian and Swedish durations (!282).
-- GitLab channel: [v0.7.0 release](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.7.0) (versionCode 1778, `5ebc48f5`; 16,811 AI-off and 17,970 AI-on tests passed). Google Play: 0.7.0 (versionCode 9) sent for Google review on 2026-11-01, with the Data safety form updated for ML Kit.
+- GitLab channel: [v0.7.0 release](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.7.0) (versionCode 1778, `5ebc48f5`; 16,811 AI-off and 17,970 AI-on tests passed). Google Play: 0.7.0 (versionCode 9) live on 2026-11-01, with the Data safety form updated for ML Kit.
 - **Emulator check:** the release APK updated v0.6.2 in place with the account kept; Home, Me, AI settings and a 4 MB job log; the Play build in Demo mode (propose, approve, write read back).
 - **Not tested on a device:** the phone's built-in AI in this release build (an earlier build was walked through on a Galaxy Z Fold7; the re-walk is skipped by owner decision, 2026-11-01) and a real company-CA instance.
 
