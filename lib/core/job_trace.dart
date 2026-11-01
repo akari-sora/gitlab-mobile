@@ -40,6 +40,7 @@ final class JobTrace {
     this.truncated = false,
     this.windowStart = 0,
     this.charactersProcessed = 0,
+    this.lineCuts = 0,
     int? estimatedBytes,
   })  : _ansiStripped = ansiStripped,
         _estimatedBytes = estimatedBytes;
@@ -59,7 +60,8 @@ final class JobTrace {
   final List<JobTraceLine> lines;
   final List<JobTraceSection> sections;
 
-  /// Whether earlier lines before [lines] were dropped by the sliding window.
+  /// Whether earlier lines before [lines] were dropped by the sliding window
+  /// or a line's front part was dropped by the pending-line cap.
   final bool truncated;
 
   /// Absolute line index of `lines[0]` in the parser stream (`0` when not
@@ -68,6 +70,11 @@ final class JobTrace {
 
   /// Total decoded characters fed into the parser that produced this trace.
   final int charactersProcessed;
+
+  /// How many times the parser dropped the front of an unterminated line (see
+  /// [JobTraceParser.maxPendingChars]). A cut re-splits that line's rows, so a
+  /// change moves rows the way a window slide does.
+  final int lineCuts;
 
   /// Approximate in-memory footprint in bytes of the retained parsed model.
   int get estimatedBytes {
@@ -156,25 +163,24 @@ final class JobTraceParser {
   /// isolate by [addBytesAsync].
   static const isolateThresholdBytes = 64 * 1024;
 
-  // The unterminated logical line is kept whole, never capped: dropping its
-  // head would lose section markers and SGR state and make the rows depend
-  // on how the bytes were chunked. One read is bounded by
-  // GitLabApi.maxTextBytes; snapshots re-parse this line, which the span
-  // counter and estimatedBytes account for. Known gap (follow-up, #58): a
-  // running job's line that never ends (hours of `\r` progress) grows without
-  // bound. A cap must be at maxTextBytes scale, carry the section and ANSI
-  // state through the dropped head, cut just after a `\r`, and show the
-  // truncation notice.
+  /// Maximum number of characters retained for an unterminated logical line
+  /// before its front part is dropped while preserving section and ANSI state.
+  /// A cut keeps at most three quarters of it, so the next cut (and the scan
+  /// it costs) waits for another quarter to arrive.
+  static const defaultMaxPendingChars = GitLabApi.maxTextBytes;
 
   static const _blockSize = 512;
 
-  JobTraceParser({this.maxLines = GitLabApi.maxTextLines})
-      : _inBackgroundIsolate = false {
+  JobTraceParser({
+    this.maxLines = GitLabApi.maxTextLines,
+    this.maxPendingChars = defaultMaxPendingChars,
+  }) : _inBackgroundIsolate = false {
     _initUtf8Sink();
   }
 
   JobTraceParser._fromCarryState(_IsolateParseRequest req)
       : maxLines = req.maxLines,
+        maxPendingChars = req.maxPendingChars,
         _inBackgroundIsolate = true,
         _utf8Carry = req.utf8Carry,
         _committedAnsi = req.ansi.copy(),
@@ -186,7 +192,10 @@ final class JobTraceParser {
         _inPhysicalHeader = req.inPhysicalHeader,
         _newlinePending = req.newlinePending,
         _pendingPhysicalHeader = req.pendingPhysicalHeader,
-        _currentLogicalLine = StringBuffer(req.currentLogicalLine) {
+        _currentLogicalLine = StringBuffer(req.currentLogicalLine),
+        _pendingLineTruncated = req.pendingLineTruncated,
+        _hasTruncatedLine = req.hasTruncatedLine,
+        _lineCuts = req.lineCuts {
     for (final section in req.committedSections) {
       _committedSections.add(section);
       _committedSectionsBytes += section.estimatedBytes;
@@ -195,6 +204,7 @@ final class JobTraceParser {
   }
 
   final int maxLines;
+  final int maxPendingChars;
   final bool _inBackgroundIsolate;
 
   late ByteConversionSink _utf8Sink;
@@ -224,6 +234,9 @@ final class JobTraceParser {
   bool _newlinePending = false;
   String _pendingPhysicalHeader = '';
   StringBuffer _currentLogicalLine = StringBuffer();
+  bool _pendingLineTruncated = false;
+  bool _hasTruncatedLine = false;
+  int _lineCuts = 0;
 
   int _charactersProcessed = 0;
   int _spanCharactersProcessed = 0;
@@ -236,6 +249,14 @@ final class JobTraceParser {
   /// Whether there is an incomplete multi-byte UTF-8 sequence waiting for
   /// continuation bytes or [finish].
   bool get hasPendingUtf8 => _utf8Carry.isNotEmpty;
+
+  /// Whether the currently pending (unterminated) logical line had its front
+  /// part dropped because it exceeded [maxPendingChars].
+  bool get pendingLineTruncated => _pendingLineTruncated;
+
+  /// Current character length of the pending (unterminated) logical line.
+  @visibleForTesting
+  int get pendingLineLength => _currentLogicalLine.length;
 
   /// Approximate memory footprint in bytes of the retained parsed model and
   /// pending raw buffers.
@@ -338,6 +359,7 @@ final class JobTraceParser {
       bytes: payload,
       isLast: isLast,
       maxLines: maxLines,
+      maxPendingChars: maxPendingChars,
       utf8Carry: Uint8List.fromList(_utf8Carry),
       ansi: _committedAnsi.copy(),
       stack: List<_OpenSection>.of(_committedStack),
@@ -350,6 +372,9 @@ final class JobTraceParser {
       newlinePending: _newlinePending,
       pendingPhysicalHeader: _pendingPhysicalHeader,
       currentLogicalLine: _currentLogicalLine.toString(),
+      pendingLineTruncated: _pendingLineTruncated,
+      hasTruncatedLine: _hasTruncatedLine,
+      lineCuts: _lineCuts,
     );
     final res = await compute(_parseChunkInIsolate, req);
     if (shouldCommit != null && !shouldCommit()) {
@@ -375,6 +400,9 @@ final class JobTraceParser {
     _newlinePending = res.newlinePending;
     _pendingPhysicalHeader = res.pendingPhysicalHeader;
     _currentLogicalLine = StringBuffer(res.currentLogicalLine);
+    _pendingLineTruncated = res.pendingLineTruncated;
+    _hasTruncatedLine = res.hasTruncatedLine;
+    _lineCuts = res.lineCuts;
 
     if (res.discardExistingCommittedLines) {
       _blocks.clear();
@@ -395,7 +423,7 @@ final class JobTraceParser {
     _totalCommittedSections = res.totalCommittedSections;
     _evictCommittedSectionsIfNeeded();
 
-    return snapshot();
+    return _assembleSnapshot(res.preview);
   }
 
   void _feedDecodedText(String chunk) {
@@ -443,11 +471,13 @@ final class JobTraceParser {
       final nl = chunk.indexOf('\n', start);
       if (nl < 0) {
         _currentLogicalLine.write(chunk.substring(start));
+        _capPendingLineIfNeeded();
         return;
       }
       if (nl > start) {
         _currentLogicalLine.write(chunk.substring(start, nl));
       }
+      _capPendingLineIfNeeded();
       _commitLogicalLine(_currentLogicalLine.toString());
       _currentLogicalLine.clear();
       start = nl + 1;
@@ -461,10 +491,12 @@ final class JobTraceParser {
         final nl = chunk.indexOf('\n', pos);
         if (nl < 0) {
           _currentLogicalLine.write(chunk.substring(pos));
+          _capPendingLineIfNeeded();
           return;
         }
         if (nl > pos) {
           _currentLogicalLine.write(chunk.substring(pos, nl));
+          _capPendingLineIfNeeded();
         }
         _inPhysicalHeader = true;
         _newlinePending = true;
@@ -477,6 +509,7 @@ final class JobTraceParser {
         final take = needed < avail ? needed : avail;
         final nl = chunk.indexOf('\n', pos);
         if (nl >= 0 && nl < pos + take) {
+          _capPendingLineIfNeeded();
           _commitLogicalLine(_currentLogicalLine.toString());
           _currentLogicalLine
             ..clear()
@@ -484,6 +517,7 @@ final class JobTraceParser {
           if (nl > pos) {
             _currentLogicalLine.write(chunk.substring(pos, nl));
           }
+          _capPendingLineIfNeeded();
           _pendingPhysicalHeader = '';
           _inPhysicalHeader = true;
           _newlinePending = true;
@@ -502,10 +536,12 @@ final class JobTraceParser {
                   ) ==
                   0x2B;
               if (!continued) {
+                _capPendingLineIfNeeded();
                 _commitLogicalLine(_currentLogicalLine.toString());
                 _currentLogicalLine.clear();
               }
             } else {
+              _capPendingLineIfNeeded();
               _commitLogicalLine(_currentLogicalLine.toString());
               _currentLogicalLine
                 ..clear()
@@ -520,24 +556,218 @@ final class JobTraceParser {
     }
   }
 
+  void _capPendingLineIfNeeded() {
+    if (_currentLogicalLine.length <= maxPendingChars) return;
+    final s = _currentLogicalLine.toString();
+    final minCut = s.length - (maxPendingChars - maxPendingChars ~/ 4);
+    final matches = JobTrace._marker.allMatches(s).toList(growable: false);
+    final cut = _findPendingLineCut(s, minCut, matches);
+    if (cut > 0) {
+      _advanceDroppedPrefix(s, cut, matches);
+      _currentLogicalLine
+        ..clear()
+        ..write(s.substring(cut));
+      _pendingLineTruncated = true;
+      _hasTruncatedLine = true;
+      _lineCuts++;
+    }
+  }
+
+  int _findPendingLineCut(
+    String s,
+    int minCut,
+    List<RegExpMatch> matches,
+  ) {
+    var probe = _committedAnsi.copy();
+    var cursor = 0;
+    var matchIdx = 0;
+
+    void advanceProbeTo(int target) {
+      while (cursor < target) {
+        while (matchIdx < matches.length && matches[matchIdx].end <= cursor) {
+          matchIdx++;
+        }
+        if (matchIdx < matches.length && matches[matchIdx].start <= cursor) {
+          final mEnd = matches[matchIdx].end;
+          if (mEnd <= target) {
+            // A full parse ends each segment before a marker on its own.
+            probe.flushEscape();
+            cursor = mEnd;
+            matchIdx++;
+            continue;
+          }
+        }
+        final limit =
+            (matchIdx < matches.length && matches[matchIdx].start < target)
+                ? matches[matchIdx].start
+                : target;
+        while (cursor < limit) {
+          final prev = cursor > 0 ? s.codeUnitAt(cursor - 1) : -1;
+          probe.advanceChar(s.codeUnitAt(cursor), prevCodeUnit: prev);
+          cursor++;
+        }
+      }
+    }
+
+    var searchFrom = minCut > 0 ? minCut - 1 : 0;
+    while (searchFrom < s.length - 1) {
+      final cr = s.indexOf('\r', searchFrom);
+      if (cr < 0 || cr >= s.length - 1) break;
+      final candidate = cr + 1;
+      advanceProbeTo(candidate);
+      if (probe.isNormalState) {
+        return _adjustPastMarkerAndSurrogate(s, candidate, matches);
+      }
+      searchFrom = cr + 1;
+    }
+
+    if (cursor > minCut) {
+      probe = _committedAnsi.copy();
+      cursor = 0;
+      matchIdx = 0;
+    }
+    var cut = minCut;
+    while (cut < s.length) {
+      final markerEnd = _markerEndContaining(cut, matches);
+      if (markerEnd != null) {
+        cut = markerEnd;
+        continue;
+      }
+      advanceProbeTo(cut);
+      if (!probe.isNormalState) {
+        cut++;
+        continue;
+      }
+      if (cut > 0 &&
+          cut < s.length &&
+          (s.codeUnitAt(cut - 1) & 0xFC00) == 0xD800 &&
+          (s.codeUnitAt(cut) & 0xFC00) == 0xDC00) {
+        cut++;
+        continue;
+      }
+      return cut;
+    }
+    advanceProbeTo(s.length);
+    if (probe.isNormalState) return s.length;
+    // An escape sequence runs from before minCut to the end (`printf '\e]'`
+    // with no terminator): cut inside it anyway, so the line stays bounded,
+    // and _advanceDroppedPrefix ends it there. Only such malformed input
+    // diverges from a full parse, where the rest of the line stays hidden.
+    // Marker ends are clean boundaries, so minCut is not inside a marker.
+    if (minCut < s.length &&
+        (s.codeUnitAt(minCut - 1) & 0xFC00) == 0xD800 &&
+        (s.codeUnitAt(minCut) & 0xFC00) == 0xDC00) {
+      return minCut + 1;
+    }
+    return minCut;
+  }
+
+  int _adjustPastMarkerAndSurrogate(
+    String s,
+    int candidate,
+    List<RegExpMatch> matches,
+  ) {
+    var cut = candidate;
+    final markerEnd = _markerEndContaining(cut, matches);
+    if (markerEnd != null) {
+      cut = markerEnd;
+    }
+    if (cut > 0 &&
+        cut < s.length &&
+        (s.codeUnitAt(cut - 1) & 0xFC00) == 0xD800 &&
+        (s.codeUnitAt(cut) & 0xFC00) == 0xDC00) {
+      cut++;
+    }
+    return cut;
+  }
+
+  int? _markerEndContaining(int index, List<RegExpMatch> matches) {
+    // The matches are ordered and do not overlap: only the last one starting
+    // before [index] can contain it.
+    var lo = 0;
+    var hi = matches.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (matches[mid].start < index) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    if (lo == 0) return null;
+    final end = matches[lo - 1].end;
+    return index < end ? end : null;
+  }
+
+  void _advanceDroppedPrefix(
+    String s,
+    int cut,
+    List<RegExpMatch> matches,
+  ) {
+    var cursor = 0;
+    for (final match in matches) {
+      if (match.start >= cut) break;
+      if (match.start > cursor) {
+        final spanLen = match.start - cursor;
+        _spanCharactersProcessed += spanLen;
+        if (!_inBackgroundIsolate) {
+          JobTrace.debugCharactersProcessed += spanLen;
+        }
+        _committedAnsi
+          ..advance(s, cursor, match.start)
+          ..flushEscape();
+      }
+      _applyMarkerCounted(
+        match,
+        currentLineCount: _totalCommittedLines,
+        currentSectionCount: _totalCommittedSections,
+        stack: _committedStack,
+        onClose: _addCommittedSection,
+      );
+      cursor = match.end;
+    }
+    if (cut > cursor) {
+      final spanLen = cut - cursor;
+      _spanCharactersProcessed += spanLen;
+      if (!_inBackgroundIsolate) {
+        JobTrace.debugCharactersProcessed += spanLen;
+      }
+      _committedAnsi.advance(s, cursor, cut);
+    }
+    // A no-op unless the cut was forced inside an escape sequence.
+    _committedAnsi.flushEscape();
+    _evictCommittedSectionsIfNeeded();
+  }
+
   void _commitLogicalLine(String rawLine) {
+    final wasTruncated = _pendingLineTruncated;
+    _pendingLineTruncated = false;
     var line = rawLine;
     if (line.endsWith('\r')) {
       line = line.substring(0, line.length - 1);
     }
-    _parseLineIntoCommitted(line);
+    _parseLineIntoCommitted(line, lineTruncated: wasTruncated);
     _evictCommittedLinesIfNeeded();
     _evictCommittedSectionsIfNeeded();
   }
 
-  void _parseLineIntoCommitted(String line) {
+  void _parseLineIntoCommitted(String line, {bool lineTruncated = false}) {
     var cursor = 0;
     var sawMarker = false;
+    var pendingTruncated = lineTruncated;
     for (final match in JobTrace._marker.allMatches(line)) {
       sawMarker = true;
       final before = line.substring(cursor, match.start);
       if (before.isNotEmpty) {
-        _emitSegmentIntoCommitted(before, allowEmpty: false);
+        final beforeLines = _totalCommittedLines;
+        _emitSegmentIntoCommitted(
+          before,
+          allowEmpty: false,
+          firstLineTruncated: pendingTruncated,
+        );
+        if (_totalCommittedLines > beforeLines) {
+          pendingTruncated = false;
+        }
       }
       _applyMarkerCounted(
         match,
@@ -549,12 +779,24 @@ final class JobTraceParser {
       cursor = match.end;
     }
     final rest = line.substring(cursor);
-    if (!sawMarker || rest.isNotEmpty) {
-      _emitSegmentIntoCommitted(rest, allowEmpty: !sawMarker);
+    if (!sawMarker || rest.isNotEmpty || pendingTruncated) {
+      final beforeLines = _totalCommittedLines;
+      _emitSegmentIntoCommitted(
+        rest,
+        allowEmpty: !sawMarker || pendingTruncated,
+        firstLineTruncated: pendingTruncated,
+      );
+      if (_totalCommittedLines > beforeLines) {
+        pendingTruncated = false;
+      }
     }
   }
 
-  void _emitSegmentIntoCommitted(String rawText, {required bool allowEmpty}) {
+  void _emitSegmentIntoCommitted(
+    String rawText, {
+    required bool allowEmpty,
+    bool firstLineTruncated = false,
+  }) {
     _spanCharactersProcessed += rawText.length;
     if (!_inBackgroundIsolate) {
       JobTrace.debugCharactersProcessed += rawText.length;
@@ -568,6 +810,7 @@ final class JobTraceParser {
           '',
           lowerText: '',
           section: _committedStack.isEmpty ? null : _committedStack.last.name,
+          truncated: firstLineTruncated,
         ),
       );
       return;
@@ -576,7 +819,12 @@ final class JobTraceParser {
         _committedStack.isEmpty ? null : _committedStack.last.name;
     if (plainText.length <= _committedAnsi.maxLineLength) {
       _addCommittedLine(
-        JobTraceLine(plainText, section: sectionName, spans: spans),
+        JobTraceLine(
+          plainText,
+          section: sectionName,
+          spans: spans,
+          truncated: firstLineTruncated,
+        ),
       );
     } else {
       _emitChunkedSpansWithCallback(
@@ -585,6 +833,7 @@ final class JobTraceParser {
         sectionName,
         _committedAnsi.maxLineLength,
         _addCommittedLine,
+        firstLineTruncated: firstLineTruncated,
       );
     }
   }
@@ -653,7 +902,10 @@ final class JobTraceParser {
   JobTrace snapshot() {
     final cached = _cachedSnapshot;
     if (cached != null) return cached;
+    return _assembleSnapshot(_buildPreview());
+  }
 
+  _PreviewData _buildPreview() {
     final List<String> uncommittedRawLines;
     if (_timestampsEnabled == null) {
       uncommittedRawLines = <String>[_initialBuffer.toString()];
@@ -669,6 +921,8 @@ final class JobTraceParser {
     if (_totalCommittedLines == 0 &&
         _committedSections.isEmpty &&
         _committedStack.isEmpty &&
+        !_pendingLineTruncated &&
+        !_hasTruncatedLine &&
         uncommittedRawLines.length == 1) {
       final single = uncommittedRawLines.first;
       if (single.isEmpty || single.replaceAll(JobTrace._ansi, '').isEmpty) {
@@ -678,15 +932,11 @@ final class JobTraceParser {
             JobTrace.debugCharactersProcessed += single.length;
           }
         }
-        final emptyResult = JobTrace(
-          ansiStripped: '',
-          lines: const <JobTraceLine>[],
-          sections: const <JobTraceSection>[],
-          charactersProcessed: _charactersProcessed,
-          estimatedBytes: _rawBuffersEstimatedBytes,
+        return const _PreviewData(
+          lines: <JobTraceLine>[],
+          closedSections: <JobTraceSection>[],
+          isEmptyFastPath: true,
         );
-        _cachedSnapshot = emptyResult;
-        return emptyResult;
       }
     }
 
@@ -695,16 +945,20 @@ final class JobTraceParser {
     final previewLines = <JobTraceLine>[];
     final previewClosedSections = <JobTraceSection>[];
 
-    for (var rawLine in uncommittedRawLines) {
+    for (var i = 0; i < uncommittedRawLines.length; i++) {
+      var rawLine = uncommittedRawLines[i];
       if (rawLine.endsWith('\r')) {
         rawLine = rawLine.substring(0, rawLine.length - 1);
       }
+      final lineTruncated =
+          i == 0 && _timestampsEnabled != null && _pendingLineTruncated;
       _parsePreviewLine(
         rawLine,
         previewAnsi: previewAnsi,
         previewStack: previewStack,
         previewLines: previewLines,
         previewClosedSections: previewClosedSections,
+        lineTruncated: lineTruncated,
       );
     }
 
@@ -718,9 +972,15 @@ final class JobTraceParser {
       );
     }
 
-    if (totalAbsLines == 0 &&
-        _committedSections.isEmpty &&
-        previewClosedSections.isEmpty) {
+    return _PreviewData(
+      lines: previewLines,
+      closedSections: previewClosedSections,
+      isEmptyFastPath: false,
+    );
+  }
+
+  JobTrace _assembleSnapshot(_PreviewData preview) {
+    if (preview.isEmptyFastPath) {
       final emptyResult = JobTrace(
         ansiStripped: '',
         lines: const <JobTraceLine>[],
@@ -732,8 +992,31 @@ final class JobTraceParser {
       return emptyResult;
     }
 
-    final truncated = totalAbsLines > maxLines;
-    final effectiveWindowStart = truncated ? totalAbsLines - maxLines : 0;
+    final previewLines = preview.lines;
+    final previewClosedSections = preview.closedSections;
+    final totalAbsLines = _totalCommittedLines + previewLines.length;
+
+    if (totalAbsLines == 0 &&
+        _committedSections.isEmpty &&
+        previewClosedSections.isEmpty &&
+        !_pendingLineTruncated &&
+        !_hasTruncatedLine) {
+      final emptyResult = JobTrace(
+        ansiStripped: '',
+        lines: const <JobTraceLine>[],
+        sections: const <JobTraceSection>[],
+        charactersProcessed: _charactersProcessed,
+        estimatedBytes: _rawBuffersEstimatedBytes,
+      );
+      _cachedSnapshot = emptyResult;
+      return emptyResult;
+    }
+
+    final windowTruncated = totalAbsLines > maxLines;
+    final effectiveWindowStart =
+        windowTruncated ? totalAbsLines - maxLines : 0;
+    final truncated =
+        windowTruncated || _pendingLineTruncated || _hasTruncatedLine;
 
     final List<JobTraceLine> windowLines;
     var windowLinesBytes = 0;
@@ -810,6 +1093,7 @@ final class JobTraceParser {
       truncated: truncated,
       windowStart: effectiveWindowStart,
       charactersProcessed: _charactersProcessed,
+      lineCuts: _lineCuts,
       estimatedBytes:
           windowLinesBytes + windowSectionsBytes + _rawBuffersEstimatedBytes,
     );
@@ -823,20 +1107,27 @@ final class JobTraceParser {
     required List<_OpenSection> previewStack,
     required List<JobTraceLine> previewLines,
     required List<JobTraceSection> previewClosedSections,
+    bool lineTruncated = false,
   }) {
     var cursor = 0;
     var sawMarker = false;
+    var pendingTruncated = lineTruncated;
     for (final match in JobTrace._marker.allMatches(line)) {
       sawMarker = true;
       final before = line.substring(cursor, match.start);
       if (before.isNotEmpty) {
+        final beforeLen = previewLines.length;
         _emitPreviewSegment(
           before,
           previewAnsi: previewAnsi,
           previewStack: previewStack,
           previewLines: previewLines,
           allowEmpty: false,
+          firstLineTruncated: pendingTruncated,
         );
+        if (previewLines.length > beforeLen) {
+          pendingTruncated = false;
+        }
       }
       _applyMarkerCounted(
         match,
@@ -849,14 +1140,19 @@ final class JobTraceParser {
       cursor = match.end;
     }
     final rest = line.substring(cursor);
-    if (!sawMarker || rest.isNotEmpty) {
+    if (!sawMarker || rest.isNotEmpty || pendingTruncated) {
+      final beforeLen = previewLines.length;
       _emitPreviewSegment(
         rest,
         previewAnsi: previewAnsi,
         previewStack: previewStack,
         previewLines: previewLines,
-        allowEmpty: !sawMarker,
+        allowEmpty: !sawMarker || pendingTruncated,
+        firstLineTruncated: pendingTruncated,
       );
+      if (previewLines.length > beforeLen) {
+        pendingTruncated = false;
+      }
     }
   }
 
@@ -866,6 +1162,7 @@ final class JobTraceParser {
     required List<_OpenSection> previewStack,
     required List<JobTraceLine> previewLines,
     required bool allowEmpty,
+    bool firstLineTruncated = false,
   }) {
     _spanCharactersProcessed += rawText.length;
     if (!_inBackgroundIsolate) {
@@ -880,6 +1177,7 @@ final class JobTraceParser {
           '',
           lowerText: '',
           section: previewStack.isEmpty ? null : previewStack.last.name,
+          truncated: firstLineTruncated,
         ),
       );
       return;
@@ -887,7 +1185,12 @@ final class JobTraceParser {
     final sectionName = previewStack.isEmpty ? null : previewStack.last.name;
     if (plainText.length <= previewAnsi.maxLineLength) {
       previewLines.add(
-        JobTraceLine(plainText, section: sectionName, spans: spans),
+        JobTraceLine(
+          plainText,
+          section: sectionName,
+          spans: spans,
+          truncated: firstLineTruncated,
+        ),
       );
     } else {
       _emitChunkedSpansWithCallback(
@@ -896,9 +1199,22 @@ final class JobTraceParser {
         sectionName,
         previewAnsi.maxLineLength,
         previewLines.add,
+        firstLineTruncated: firstLineTruncated,
       );
     }
   }
+}
+
+final class _PreviewData {
+  const _PreviewData({
+    required this.lines,
+    required this.closedSections,
+    required this.isEmptyFastPath,
+  });
+
+  final List<JobTraceLine> lines;
+  final List<JobTraceSection> closedSections;
+  final bool isEmptyFastPath;
 }
 
 final class _WindowedLineList extends ListBase<JobTraceLine> {
@@ -1006,6 +1322,7 @@ final class _IsolateParseRequest {
     required this.bytes,
     required this.isLast,
     required this.maxLines,
+    required this.maxPendingChars,
     required this.utf8Carry,
     required this.ansi,
     required this.stack,
@@ -1018,11 +1335,15 @@ final class _IsolateParseRequest {
     required this.newlinePending,
     required this.pendingPhysicalHeader,
     required this.currentLogicalLine,
+    required this.pendingLineTruncated,
+    required this.hasTruncatedLine,
+    required this.lineCuts,
   });
 
   final Uint8List bytes;
   final bool isLast;
   final int maxLines;
+  final int maxPendingChars;
   final Uint8List utf8Carry;
   final AnsiStateMachine ansi;
   final List<_OpenSection> stack;
@@ -1035,6 +1356,9 @@ final class _IsolateParseRequest {
   final bool newlinePending;
   final String pendingPhysicalHeader;
   final String currentLogicalLine;
+  final bool pendingLineTruncated;
+  final bool hasTruncatedLine;
+  final int lineCuts;
 }
 
 final class _IsolateParseResult {
@@ -1056,6 +1380,10 @@ final class _IsolateParseResult {
     required this.newlinePending,
     required this.pendingPhysicalHeader,
     required this.currentLogicalLine,
+    required this.pendingLineTruncated,
+    required this.hasTruncatedLine,
+    required this.lineCuts,
+    required this.preview,
   });
 
   final int charsProcessed;
@@ -1075,6 +1403,10 @@ final class _IsolateParseResult {
   final bool newlinePending;
   final String pendingPhysicalHeader;
   final String currentLogicalLine;
+  final bool pendingLineTruncated;
+  final bool hasTruncatedLine;
+  final int lineCuts;
+  final _PreviewData preview;
 }
 
 _IsolateParseResult _parseChunkInIsolate(_IsolateParseRequest req) {
@@ -1091,6 +1423,7 @@ _IsolateParseResult _parseChunkInIsolate(_IsolateParseRequest req) {
     parser._utf8Sink.close();
     parser._utf8Carry = Uint8List(0);
   }
+  final preview = parser._buildPreview();
   final newLines = <JobTraceLine>[];
   for (var b = 0; b < parser._blocks.length; b++) {
     final block = parser._blocks[b];
@@ -1118,6 +1451,10 @@ _IsolateParseResult _parseChunkInIsolate(_IsolateParseRequest req) {
     newlinePending: parser._newlinePending,
     pendingPhysicalHeader: parser._pendingPhysicalHeader,
     currentLogicalLine: parser._currentLogicalLine.toString(),
+    pendingLineTruncated: parser._pendingLineTruncated,
+    hasTruncatedLine: parser._hasTruncatedLine,
+    lineCuts: parser._lineCuts,
+    preview: preview,
   );
 }
 
@@ -1149,6 +1486,7 @@ final class JobTraceLine {
     String? lowerText,
     this.section,
     this.spans = const <AnsiSpan>[],
+    this.truncated = false,
   }) : lowerText = lowerText ?? text.toLowerCase();
 
   /// Plain text with ANSI sequences and section markers removed.
@@ -1162,6 +1500,10 @@ final class JobTraceLine {
 
   /// Styled ANSI segments for this line.
   final List<AnsiSpan> spans;
+
+  /// Whether the front part of this logical line was dropped because it
+  /// exceeded [JobTraceParser.defaultMaxPendingChars].
+  final bool truncated;
 
   /// Approximate heap footprint in bytes for bounded-memory checks.
   int get estimatedBytes =>
@@ -1329,11 +1671,13 @@ void _emitChunkedSpansWithCallback(
   List<AnsiSpan> spans,
   String? sectionName,
   int maxLineLength,
-  void Function(JobTraceLine line) onLine,
-) {
+  void Function(JobTraceLine line) onLine, {
+  bool firstLineTruncated = false,
+}) {
   var charIndex = 0;
   var spanIndex = 0;
   var spanCharOffset = 0;
+  var isFirstChunk = true;
 
   while (charIndex < plainText.length) {
     final chunkEnd = (charIndex + maxLineLength < plainText.length)
@@ -1365,7 +1709,15 @@ void _emitChunkedSpansWithCallback(
       }
     }
 
-    onLine(JobTraceLine(chunkText, section: sectionName, spans: chunkSpans));
+    onLine(
+      JobTraceLine(
+        chunkText,
+        section: sectionName,
+        spans: chunkSpans,
+        truncated: isFirstChunk && firstLineTruncated,
+      ),
+    );
+    isFirstChunk = false;
     charIndex = chunkEnd;
   }
 }

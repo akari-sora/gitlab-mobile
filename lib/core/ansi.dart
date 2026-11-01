@@ -300,11 +300,16 @@ final class AnsiStateMachine {
   AnsiStyle currentStyle = AnsiStyle.plain;
 
   _AnsiState _state = _AnsiState.normal;
+  bool _oscSawEsc = false;
   final StringBuffer _paramBuffer = StringBuffer();
+
+  /// Whether the parser is currently outside any ANSI escape sequence.
+  bool get isNormalState => _state == _AnsiState.normal;
 
   void reset() {
     currentStyle = AnsiStyle.plain;
     _state = _AnsiState.normal;
+    _oscSawEsc = false;
     _paramBuffer.clear();
   }
 
@@ -312,11 +317,88 @@ final class AnsiStateMachine {
   AnsiStateMachine copy() {
     final cloned = AnsiStateMachine(maxLineLength: maxLineLength)
       ..currentStyle = currentStyle
-      .._state = _state;
+      .._state = _state
+      .._oscSawEsc = _oscSawEsc;
     if (_paramBuffer.isNotEmpty) {
       cloned._paramBuffer.write(_paramBuffer.toString());
     }
     return cloned;
+  }
+
+  /// Advances the SGR style and escape-sequence state by a single UTF-16
+  /// [code] unit without allocating spans or character cells.
+  void advanceChar(int code, {int prevCodeUnit = -1}) {
+    switch (_state) {
+      case _AnsiState.normal:
+        if (code == 0x1B) {
+          _state = _AnsiState.escape;
+        }
+        break;
+      case _AnsiState.escape:
+        if (code == 0x5B) {
+          _state = _AnsiState.csi;
+          _paramBuffer.clear();
+        } else if (code == 0x5D) {
+          _state = _AnsiState.osc;
+          _oscSawEsc = false;
+        } else if (code == 0x1B) {
+          // Consecutive ESC, remain in escape state.
+        } else {
+          _state = _AnsiState.normal;
+        }
+        break;
+      case _AnsiState.csi:
+        if (code >= 0x30 && code <= 0x3F) {
+          if (_paramBuffer.length < 64) {
+            _paramBuffer.writeCharCode(code);
+          }
+        } else if (code >= 0x20 && code <= 0x2F) {
+          // Intermediate bytes: ignore.
+        } else if (code >= 0x40 && code <= 0x7E) {
+          if (code == 0x6D) {
+            _applySgr(_paramBuffer.toString());
+          }
+          _state = _AnsiState.normal;
+          _paramBuffer.clear();
+        } else if (code == 0x1B) {
+          _state = _AnsiState.escape;
+          _paramBuffer.clear();
+        } else {
+          _state = _AnsiState.normal;
+          _paramBuffer.clear();
+        }
+        break;
+      case _AnsiState.osc:
+        if (code == 0x07 ||
+            (code == 0x5C && (prevCodeUnit == 0x1B || _oscSawEsc)) ||
+            code == 0x0A) {
+          _state = _AnsiState.normal;
+          _oscSawEsc = false;
+        } else {
+          _oscSawEsc = code == 0x1B;
+        }
+        break;
+    }
+  }
+
+  /// Advances the SGR style and escape-sequence state across `input[start..end)`
+  /// without allocating character cells or [AnsiSpan]s.
+  void advance(String input, [int start = 0, int? end]) {
+    final stop = end ?? input.length;
+    for (var i = start; i < stop; i++) {
+      advanceChar(
+        input.codeUnitAt(i),
+        prevCodeUnit: i > start ? input.codeUnitAt(i - 1) : -1,
+      );
+    }
+  }
+
+  /// Drops a dangling escape sequence, as [parseSpans] does at the end of a
+  /// non-empty input when `flushAtEnd` is true.
+  void flushEscape() {
+    _state = _AnsiState.normal;
+    _oscSawEsc = false;
+    _paramBuffer.clear();
   }
 
   /// Parses a chunk or line of text into a list of [AnsiSpan]s.

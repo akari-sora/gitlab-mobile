@@ -2095,6 +2095,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   void _show(JobTrace trace) {
     final oldTrace = _trace;
     final sameNumbering = _shownNumbering == _numbering;
+    final sameCuts = oldTrace.lineCuts == trace.lineCuts;
     final prevMatch = (_query.isNotEmpty &&
             _matches.isNotEmpty &&
             _currentMatch >= 0 &&
@@ -2114,10 +2115,18 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       } else if (prevMatch != null) {
         final targetLine =
             oldTrace.windowStart + prevMatch.lineIndex - trace.windowStart;
+        // A cut re-splits the cut line's rows, which start at its flagged
+        // first row: like a row the window slid past, a match there moves to
+        // the first match left from that row on.
+        final cutRow =
+            sameCuts ? -1 : trace.lines.lastIndexWhere((l) => l.truncated);
         final exactIdx = _matches.indexWhere(
           (m) => m.lineIndex == targetLine && m.start == prevMatch.start,
         );
-        if (exactIdx >= 0) {
+        if (cutRow >= 0 && targetLine >= cutRow) {
+          final firstIdx = _matches.indexWhere((m) => m.lineIndex >= cutRow);
+          _currentMatch = firstIdx >= 0 ? firstIdx : _matches.length - 1;
+        } else if (exactIdx >= 0) {
           _currentMatch = exactIdx;
         } else {
           final nextIdx = _matches.indexWhere(
@@ -2431,7 +2440,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         if (!current()) { return; }
         // Not committed: the page went out of sight while the parse ran.
         if (parsed == null || (useTail && !_visible)) throw const _HiddenLoad();
-        if (useTail && nextTail == null && parsed.truncated) {
+        if (useTail && nextTail == null && parsed.windowStart > 0) {
           throw const ApiFailure(FailureKind.tooLarge);
         }
         // The latest parse, kept whether or not it goes on screen now.
@@ -2442,15 +2451,17 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         _resyncTail = resync;
         _hasTraceBytes =
             bytesToParse.isNotEmpty || (!restart && _hasTraceBytes);
-        _latestClipped = parsed.truncated ||
+        _latestClipped = (parsed.truncated && parsed.windowStart > 0) ||
             tailRead ||
             (nextTail?.truncated ?? false) ||
             (!restart && _latestClipped);
         final shownEmpty = _trace.lines.isEmpty && _trace.sections.isEmpty;
         // Off the tail, rows the reader is looking at never move: a window
-        // slide or a restarted parse waits until they come back to the tail.
+        // slide, a cut of a long unfinished line or a restarted parse waits
+        // until they come back to the tail.
         final append = _numbering == _shownNumbering &&
-            parsed.windowStart == _trace.windowStart;
+            parsed.windowStart == _trace.windowStart &&
+            parsed.lineCuts == _trace.lineCuts;
         if (following() || append || shownEmpty || !_firstLoadDone || showLatest) {
           _show(parsed);
         } else {
@@ -2963,6 +2974,8 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final rows = _visibleRows();
     final noLog = _trace.lines.isEmpty && _trace.sections.isEmpty;
+    // The log rows are left to right; the notices follow the app.
+    final appDirection = Directionality.of(context);
     // AI is offered only where the app was built with it (a registry above).
     final ai = _job != null && AiRunRegistry.maybeOf(context) != null;
     final failed = ai && valueText(_job!, 'status') == 'failed';
@@ -3134,6 +3147,35 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                     baseStyle: baseStyle,
                   );
                   lineWidget = Text.rich(TextSpan(style: baseStyle, children: spans));
+                }
+                if (traceLine != null && traceLine.truncated) {
+                  lineWidget = Column(
+                    key: ValueKey('job-log-line-truncated-${row.lineIndex ?? index}'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Not part of the log: a copy leaves it out.
+                      SelectionContainer.disabled(
+                        child: Directionality(
+                          textDirection: appDirection,
+                          child: Row(children: [
+                            Icon(
+                              Icons.vertical_align_top,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                l10n.readCacheLogTruncated,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ]),
+                        ),
+                      ),
+                      lineWidget,
+                    ],
+                  );
                 }
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 3),
