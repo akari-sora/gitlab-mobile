@@ -281,6 +281,7 @@ final class GitLabApi {
   bool _closed = false;
   DateTime? get _retryAt => rateBudget.retryAtFor(RateRequestClass.global);
   static const maxTextBytes = 2 * 1024 * 1024;
+  static const maxTraceStreamBytes = 64 * 1024 * 1024;
   static const maxTextLines = 20000;
   static const maxUploadBytes = 25 * 1024 * 1024;
   static const maxArtifactBytes = 256 * 1024 * 1024;
@@ -369,6 +370,12 @@ final class GitLabApi {
     bool graphQuery = false,
     CancelToken? cancelToken,
     void Function(String contentType)? onContentType,
+    Future<Uint8List>? Function(
+      ResponseBody body,
+      Headers headers,
+      int statusCode,
+      CancelToken cancelToken,
+    )? readBody,
   }) => _send(
     uri,
     method: method,
@@ -380,6 +387,7 @@ final class GitLabApi {
     graphQuery: graphQuery,
     cancelToken: cancelToken,
     onContentType: onContentType,
+    readBody: readBody,
   );
 
   /// Shared request path for JSON calls and multipart uploads.
@@ -398,6 +406,12 @@ final class GitLabApi {
     void Function()? onSendStarted,
     CancelToken? cancelToken,
     void Function(String contentType)? onContentType,
+    Future<Uint8List>? Function(
+      ResponseBody body,
+      Headers headers,
+      int statusCode,
+      CancelToken cancelToken,
+    )? readBody,
   }) async {
     if (_closed || cancelToken?.isCancelled == true) {
       const failure = ApiFailure(FailureKind.cancelled);
@@ -546,6 +560,7 @@ final class GitLabApi {
               graphQuery: graphQuery,
               cancelToken: cancelToken,
               onContentType: onContentType,
+              readBody: readBody,
             );
           }
           throw _knownMutation401(refreshSucceeded: true);
@@ -598,6 +613,21 @@ final class GitLabApi {
           rethrow;
         }
         if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      }
+      final customRead = !writing && readBody != null
+          ? readBody(body, response.headers, status, cancel)
+          : null;
+      if (customRead != null) {
+        final bytes = await customRead;
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
+        if (method == 'GET' && _offlineNeedsValidation(response.headers)) {
+          _offlineNoteValidatedJson(response.headers, bytes);
+        }
+        return (
+          bytes: bytes,
+          headers: response.headers,
+          statusCode: status,
+        );
       }
       final length = int.tryParse(
         response.headers.value('content-length') ?? '',
@@ -2830,11 +2860,32 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       query.isNotEmpty ? query : null,
     );
     try {
+      ({
+        Uint8List bytes,
+        int startOffset,
+        int nextOffset,
+        int? totalBytes,
+      })? streamed200;
       final result = await _read(
         uri,
         headers: headers.isNotEmpty ? headers : null,
         maxBytes: limit,
         allowRangeNotSatisfiable: true,
+        readBody: (body, responseHeaders, status, cancel) {
+          if (status != 200) return null;
+          return _readTrace200(
+            body,
+            responseHeaders,
+            cancel,
+            offset: offset,
+            limit: limit,
+            tail: tail,
+            bounded: bounded,
+          ).then((value) {
+            streamed200 = value;
+            return value.bytes;
+          });
+        },
       );
       final eofHeader = result.headers.value('x-gitlab-trace-eof');
       var isEof = eofHeader == 'true' || eofHeader == '1';
@@ -2911,22 +2962,11 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
             startOffset = startOffset! + skip;
           }
         }
-      } else if (result.statusCode == 200) {
-        // A server that ignores Range (gitlab.com's trace endpoint, #58)
-        // answers every read with the whole log. Logs only grow, so the bytes
-        // past [offset] are the new ones. A shorter, non-empty body means the
-        // log was replaced: it is returned whole from byte 0, below [offset].
-        if (!tail && offset > 0 && result.bytes.length >= offset) {
-          chunkBytes = result.bytes.sublist(offset);
-          startOffset = offset;
-        } else if (!tail && offset > 0 && result.bytes.isEmpty) {
-          chunkBytes = const <int>[];
-          startOffset = offset;
-        } else {
-          chunkBytes = result.bytes;
-          startOffset = 0;
-        }
-        nextOffset = startOffset + chunkBytes.length;
+      } else if (result.statusCode == 200 && streamed200 != null) {
+        chunkBytes = streamed200!.bytes;
+        startOffset = streamed200!.startOffset;
+        nextOffset = streamed200!.nextOffset;
+        totalBytes = streamed200!.totalBytes ?? totalBytes;
       } else {
         chunkBytes = result.bytes;
         nextOffset = (tail ? 0 : offset) + chunkBytes.length;
@@ -2964,6 +3004,219 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       }
       rethrow;
     }
+  }
+
+  /// Reads a `200` trace body, sent whole by a server that ignores `Range`
+  /// (gitlab.com, #62), as a stream: an offset read drops the first [offset]
+  /// bytes and counts only the bytes it keeps against [limit]; a tail read
+  /// keeps the last [limit] bytes. At most [maxTraceStreamBytes] are read.
+  Future<
+    ({
+      Uint8List bytes,
+      int startOffset,
+      int nextOffset,
+      int? totalBytes,
+    })
+  >
+  _readTrace200(
+    ResponseBody body,
+    Headers responseHeaders,
+    CancelToken cancel, {
+    required int offset,
+    required int limit,
+    required bool tail,
+    required bool bounded,
+  }) async {
+    final contentLength = int.tryParse(
+      responseHeaders.value('content-length') ?? '',
+    );
+    Future<void> stop(String reason) async {
+      // The token stops the adapter's download; the listen drains nothing.
+      cancel.cancel(reason);
+      await body.stream.listen((_) {}).cancel();
+    }
+
+    // Nothing past what is shown: stop before the body (mobile data).
+    final shown = tail ? 0 : offset;
+    if (contentLength != null && contentLength <= shown) {
+      await stop('no new data');
+      return (
+        bytes: Uint8List(0),
+        startOffset: shown,
+        nextOffset: shown,
+        totalBytes: null,
+      );
+    }
+    if (contentLength != null &&
+        (contentLength > maxTraceStreamBytes ||
+            (!tail && !bounded && contentLength - offset > limit))) {
+      await stop('response budget exceeded');
+      throw const ApiFailure(FailureKind.tooLarge);
+    }
+    final declaredTotal = contentLength;
+    if (!tail) {
+      // Like a 206 offset read, the bytes start exactly at [offset], even
+      // inside a UTF-8 sequence: the caller's decoder holds its first bytes.
+      final kept = BytesBuilder(copy: false);
+      // The first bytes, kept while the body may still turn out shorter than
+      // [offset]: a replaced log is then returned whole from byte 0.
+      final head = BytesBuilder(copy: false);
+      var keepHead = offset > 0;
+      var seen = 0;
+      try {
+        await for (final chunk in body.stream) {
+          if (_closed) throw const ApiFailure(FailureKind.cancelled);
+          if (chunk.isEmpty) continue;
+          final before = seen;
+          seen += chunk.length;
+          if (seen > maxTraceStreamBytes) {
+            cancel.cancel('response budget exceeded');
+            throw const ApiFailure(FailureKind.tooLarge);
+          }
+          if (keepHead) {
+            if (seen <= limit && seen < offset) {
+              head.add(chunk);
+            } else {
+              keepHead = false;
+              head.clear();
+            }
+          }
+          if (seen <= offset) continue;
+          final from = before < offset ? offset - before : 0;
+          final room = limit - kept.length;
+          if (chunk.length - from > room) {
+            // A bounded read keeps [limit] bytes, as a 206 for
+            // `bytes=offset-(offset+limit-1)` does; the next read goes on.
+            if (!bounded) {
+              cancel.cancel('response budget exceeded');
+              throw const ApiFailure(FailureKind.tooLarge);
+            }
+            kept.add(Uint8List.sublistView(chunk, from, from + room));
+            cancel.cancel('budget reached');
+            break;
+          }
+          kept.add(from == 0 ? chunk : Uint8List.sublistView(chunk, from));
+        }
+      } on ApiFailure {
+        rethrow;
+      } catch (_) {
+        if (_closed || cancel.isCancelled) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        throw const ApiFailure(FailureKind.network);
+      }
+      if (seen > 0 && seen < offset) {
+        // Shorter than what is shown: the log was replaced. Over the budget
+        // it fails as a whole read of it would.
+        if (seen > limit) throw const ApiFailure(FailureKind.tooLarge);
+        return (
+          bytes: head.takeBytes(),
+          startOffset: 0,
+          nextOffset: seen,
+          totalBytes: declaredTotal,
+        );
+      }
+      if (seen <= offset) {
+        return (
+          bytes: Uint8List(0),
+          startOffset: offset,
+          nextOffset: offset,
+          totalBytes: declaredTotal,
+        );
+      }
+      final bytes = kept.takeBytes();
+      return (
+        bytes: bytes,
+        startOffset: offset,
+        nextOffset: offset + bytes.length,
+        totalBytes: declaredTotal,
+      );
+    }
+    final initial = BytesBuilder(copy: false);
+    Uint8List? ring;
+    var cursor = 0;
+    var total = 0;
+    try {
+      await for (final chunk in body.stream) {
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
+        if (chunk.isEmpty) continue;
+        total += chunk.length;
+        if (total > maxTraceStreamBytes) {
+          cancel.cancel('response budget exceeded');
+          throw const ApiFailure(FailureKind.tooLarge);
+        }
+        if (ring == null) {
+          if (total <= limit) {
+            initial.add(chunk);
+            continue;
+          }
+          ring = Uint8List(limit);
+          final prev = initial.takeBytes();
+          if (chunk.length >= limit) {
+            ring.setRange(0, limit, chunk, chunk.length - limit);
+          } else {
+            final keepPrev = limit - chunk.length;
+            ring.setRange(0, keepPrev, prev, prev.length - keepPrev);
+            ring.setRange(keepPrev, limit, chunk);
+          }
+          cursor = 0;
+          continue;
+        }
+        if (chunk.length >= limit) {
+          ring.setRange(0, limit, chunk, chunk.length - limit);
+          cursor = 0;
+        } else {
+          final firstPart = limit - cursor;
+          if (chunk.length <= firstPart) {
+            ring.setRange(cursor, cursor + chunk.length, chunk);
+            cursor = (cursor + chunk.length) % limit;
+          } else {
+            ring.setRange(cursor, limit, chunk, 0);
+            final secondPart = chunk.length - firstPart;
+            ring.setRange(0, secondPart, chunk, firstPart);
+            cursor = secondPart;
+          }
+        }
+      }
+    } on ApiFailure {
+      rethrow;
+    } catch (_) {
+      if (_closed || cancel.isCancelled) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      throw const ApiFailure(FailureKind.network);
+    }
+    if (ring == null) {
+      return (
+        bytes: initial.takeBytes(),
+        startOffset: 0,
+        nextOffset: total,
+        totalBytes: declaredTotal,
+      );
+    }
+    final Uint8List window;
+    if (cursor == 0) {
+      window = ring;
+    } else {
+      window = Uint8List(limit);
+      final tailPart = limit - cursor;
+      window.setRange(0, tailPart, ring, cursor);
+      window.setRange(tailPart, limit, ring, 0);
+    }
+    final rawStart = total - limit;
+    var skip = 0;
+    while (skip < window.length &&
+        skip < 3 &&
+        (window[skip] & 0xc0) == 0x80) {
+      skip++;
+    }
+    skip = skipCutLine(window, skip);
+    return (
+      bytes: skip > 0 ? Uint8List.sublistView(window, skip) : window,
+      startOffset: rawStart + skip,
+      nextOffset: total,
+      totalBytes: declaredTotal,
+    );
   }
 
   bool get isClosed => _closed;
