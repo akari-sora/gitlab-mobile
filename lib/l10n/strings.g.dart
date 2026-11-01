@@ -8347,1098 +8347,1101 @@ final class AppStrings {
   /// 每分鐘更新
   String get refreshEveryMinute => language._messages[2750];
 
+  /// {duration}更新
+  String refreshEveryDuration(Object? duration) => _format(language, language._messages[2751], {'duration': duration});
+
   /// GitLab 請求額度快用完了，暫停送出
-  String get aiSendPausedBudget => language._messages[2751];
+  String get aiSendPausedBudget => language._messages[2752];
 
   /// GitLab 正在限制請求，暫停送出
-  String get aiSendPausedRateLimited => language._messages[2752];
+  String get aiSendPausedRateLimited => language._messages[2753];
 
   /// 額度重設後恢復
-  String get aiSendResumesAfterReset => language._messages[2753];
+  String get aiSendResumesAfterReset => language._messages[2754];
 
   /// GitLab 請求額度暫時不足
-  String get aiGitLabBudgetTitle => language._messages[2754];
+  String get aiGitLabBudgetTitle => language._messages[2755];
 
   /// 這則訊息沒有送出。送出按鈕恢復後再送一次。
-  String get aiGitLabBudgetDetail => language._messages[2755];
+  String get aiGitLabBudgetDetail => language._messages[2756];
 
   /// {verb}{target} {ref}
-  String activityVerbTargetRef(Object? verb, Object? target, Object? ref) => _format(language, language._messages[2756], {'verb': verb, 'target': target, 'ref': ref});
+  String activityVerbTargetRef(Object? verb, Object? target, Object? ref) => _format(language, language._messages[2757], {'verb': verb, 'target': target, 'ref': ref});
 
   /// 設定標籤
-  String get aiOpSetWorkItemLabels => language._messages[2757];
+  String get aiOpSetWorkItemLabels => language._messages[2758];
 
   /// 要設定的標籤不在這個專案的標籤清單裡，或有多個同名標籤，所以沒有執行。
-  String get aiRefusedLabelUnknown => language._messages[2758];
+  String get aiRefusedLabelUnknown => language._messages[2759];
 
   /// 內容有以 / 開頭的一行，GitLab 可能把它當成快捷指令執行，為了安全這筆寫入沒有送出。請刪除那一行，或改放進程式碼區塊。
-  String get aiRefusedQuickAction => language._messages[2759];
+  String get aiRefusedQuickAction => language._messages[2760];
 
   /// 讀取群組工作項目
-  String get aiToolGetGroupWorkItem => language._messages[2760];
+  String get aiToolGetGroupWorkItem => language._messages[2761];
 
   /// 編輯群組工作項目
-  String get aiOpEditGroupWorkItem => language._messages[2761];
+  String get aiOpEditGroupWorkItem => language._messages[2762];
 
   /// 關閉或重新開啟群組工作項目
-  String get aiOpSetGroupWorkItemState => language._messages[2762];
+  String get aiOpSetGroupWorkItemState => language._messages[2763];
 
   /// 關閉群組工作項目
-  String get aiOpCloseGroupWorkItem => language._messages[2763];
+  String get aiOpCloseGroupWorkItem => language._messages[2764];
 
   /// 重新開啟群組工作項目
-  String get aiOpReopenGroupWorkItem => language._messages[2764];
+  String get aiOpReopenGroupWorkItem => language._messages[2765];
 
   /// 設定群組工作項目負責人
-  String get aiOpSetGroupWorkItemAssignees => language._messages[2765];
+  String get aiOpSetGroupWorkItemAssignees => language._messages[2766];
 
   /// 設定群組工作項目日期
-  String get aiOpSetGroupWorkItemDates => language._messages[2766];
+  String get aiOpSetGroupWorkItemDates => language._messages[2767];
 
   /// AI 工作待核准
-  String get aiRunNoticeApprovalChannel => language._messages[2767];
+  String get aiRunNoticeApprovalChannel => language._messages[2768];
 
   /// AI 工作結果
-  String get aiRunNoticeResultChannel => language._messages[2768];
+  String get aiRunNoticeResultChannel => language._messages[2769];
 
   /// AI 助理
-  String get aiRunNoticeTitle => language._messages[2769];
+  String get aiRunNoticeTitle => language._messages[2770];
 
   /// 有一項工作等你核准
-  String get aiRunNoticeNeedsApproval => language._messages[2770];
+  String get aiRunNoticeNeedsApproval => language._messages[2771];
 
   /// 工作已完成
-  String get aiRunNoticeCompleted => language._messages[2771];
+  String get aiRunNoticeCompleted => language._messages[2772];
 
   /// 工作失敗
-  String get aiRunNoticeFailed => language._messages[2772];
+  String get aiRunNoticeFailed => language._messages[2773];
 
   /// 工作已中斷
-  String get aiRunNoticeInterrupted => language._messages[2773];
+  String get aiRunNoticeInterrupted => language._messages[2774];
 
   /// 開啟 AI 工作通知？
-  String get aiRunNoticeAskTitle => language._messages[2774];
+  String get aiRunNoticeAskTitle => language._messages[2775];
 
   /// 離開應用程式後，AI 工作需要你核准或結束時，會用通知提醒你。通知只顯示工作狀態，不含帳號、專案或內容。
-  String get aiRunNoticeAskDetail => language._messages[2775];
+  String get aiRunNoticeAskDetail => language._messages[2776];
 
   /// 暫時不要
-  String get aiRunNoticeAskSkip => language._messages[2776];
+  String get aiRunNoticeAskSkip => language._messages[2777];
 
   /// 繼續
-  String get aiRunNoticeAskContinue => language._messages[2777];
+  String get aiRunNoticeAskContinue => language._messages[2778];
 
   /// 通知已關閉：工作在背景中需要核准時不會提醒你，提議會在 30 分鐘後作廢。
-  String get aiRunNoticeDenied => language._messages[2778];
+  String get aiRunNoticeDenied => language._messages[2779];
 
   /// 請先完成或關閉目前的編輯，再開啟通知
-  String get aiRunNoticeFinishEditFirst => language._messages[2779];
+  String get aiRunNoticeFinishEditFirst => language._messages[2780];
 
   /// 儲存與快取
-  String get storageAndCacheLabel => language._messages[2780];
+  String get storageAndCacheLabel => language._messages[2781];
 
   /// 離線快取
-  String get offlineCacheLabel => language._messages[2781];
+  String get offlineCacheLabel => language._messages[2782];
 
   /// 你看過的部分內容（符合條件者）會加密保存在這台裝置。網路不穩時可先顯示上次的版本，並在背景更新。開啟 App 時仍需先成功驗證登入。登出、切換或移除帳號時會清除。
-  String get offlineCacheDescription => language._messages[2782];
+  String get offlineCacheDescription => language._messages[2783];
 
   /// 使用中
-  String get offlineCacheStatusOn => language._messages[2783];
+  String get offlineCacheStatusOn => language._messages[2784];
 
   /// 已關閉
-  String get offlineCacheStatusOff => language._messages[2784];
+  String get offlineCacheStatusOff => language._messages[2785];
 
   /// 下次開啟 App 或切換帳號後開始保存
-  String get offlineCacheStatusWaiting => language._messages[2785];
+  String get offlineCacheStatusWaiting => language._messages[2786];
 
   /// 正在清除
-  String get offlineCacheStatusCleaning => language._messages[2786];
+  String get offlineCacheStatusCleaning => language._messages[2787];
 
   /// 安全儲存空間無法使用，暫不保存
-  String get offlineCacheStatusUnavailable => language._messages[2787];
+  String get offlineCacheStatusUnavailable => language._messages[2788];
 
   /// 無法讀取設定，這次使用期間不保存
-  String get offlineCacheStatusSettingUnreadable => language._messages[2788];
+  String get offlineCacheStatusSettingUnreadable => language._messages[2789];
 
   /// 清除未完成，暫停使用
-  String get offlineCacheStatusCleanupPending => language._messages[2789];
+  String get offlineCacheStatusCleanupPending => language._messages[2790];
 
   /// 已使用 {size}
-  String offlineCacheSize(Object? size) => _format(language, language._messages[2790], {'size': size});
+  String offlineCacheSize(Object? size) => _format(language, language._messages[2791], {'size': size});
 
   /// 清除離線快取
-  String get offlineCacheClearAction => language._messages[2791];
+  String get offlineCacheClearAction => language._messages[2792];
 
   /// 清除離線快取？
-  String get offlineCacheClearConfirmTitle => language._messages[2792];
+  String get offlineCacheClearConfirmTitle => language._messages[2793];
 
   /// 會刪除這台裝置上此帳號的離線快取。GitLab 上的資料不受影響。
-  String get offlineCacheClearConfirmDetail => language._messages[2793];
+  String get offlineCacheClearConfirmDetail => language._messages[2794];
 
   /// 已清除離線快取
-  String get offlineCacheCleared => language._messages[2794];
+  String get offlineCacheCleared => language._messages[2795];
 
   /// 已關閉離線快取並清除資料
-  String get offlineCacheTurnedOff => language._messages[2795];
+  String get offlineCacheTurnedOff => language._messages[2796];
 
   /// 無法確認離線快取已關閉並清除。這次使用期間保持關閉，請重試清除。
-  String get offlineCacheTurnOffUnconfirmed => language._messages[2796];
+  String get offlineCacheTurnOffUnconfirmed => language._messages[2797];
 
   /// 無法儲存設定。離線快取保持關閉。
-  String get offlineCacheTurnOnFailed => language._messages[2797];
+  String get offlineCacheTurnOnFailed => language._messages[2798];
 
   /// 重試清除
-  String get offlineCacheRetryCleanup => language._messages[2798];
+  String get offlineCacheRetryCleanup => language._messages[2799];
 
   /// 變更尚未送出
-  String get readCacheBlockedTitle => language._messages[2799];
+  String get readCacheBlockedTitle => language._messages[2800];
 
   /// 離線快取無法清除，所以這項變更沒有送到 GitLab。請先重試清除，再重新送出。
-  String get readCacheBlockedDetail => language._messages[2800];
+  String get readCacheBlockedDetail => language._messages[2801];
 
   /// 離線快取待清除
-  String get readCachePreservedTitle => language._messages[2801];
+  String get readCachePreservedTitle => language._messages[2802];
 
   /// 操作的結果不受影響。離線快取已暫停使用，清除完成後才會恢復。
-  String get readCachePreservedDetail => language._messages[2802];
+  String get readCachePreservedDetail => language._messages[2803];
 
   /// 離線快取已暫停
-  String get readCachePrivacyTitle => language._messages[2803];
+  String get readCachePrivacyTitle => language._messages[2804];
 
   /// 畫面上是剛從 GitLab 取得的內容。舊的離線快取還沒清除，已暫停使用。
-  String get readCachePrivacyDetail => language._messages[2804];
+  String get readCachePrivacyDetail => language._messages[2805];
 
   /// 無法清除離線快取
-  String get readCacheCleanupFailedTitle => language._messages[2805];
+  String get readCacheCleanupFailedTitle => language._messages[2806];
 
   /// 離線快取尚未清除。帳號已保留，請重試移除。
-  String get readCacheRetainedDetail => language._messages[2806];
+  String get readCacheRetainedDetail => language._messages[2807];
 
   /// 離線快取尚未清除
-  String get readCacheSignedOutTitle => language._messages[2807];
+  String get readCacheSignedOutTitle => language._messages[2808];
 
   /// 已登出，但這台裝置上的離線快取還沒清除完成。可以重試清除。
-  String get readCacheSignedOutDetail => language._messages[2808];
+  String get readCacheSignedOutDetail => language._messages[2809];
 
   /// 離線快取已暫停使用，重試清除完成後才會恢復。
-  String get readCacheClosedDetail => language._messages[2809];
+  String get readCacheClosedDetail => language._messages[2810];
 
   /// Log 太長，前段已截掉，只顯示最後一部分。
-  String get readCacheLogTruncated => language._messages[2810];
+  String get readCacheLogTruncated => language._messages[2811];
 
   /// 上次的清除完成後，才能重新開啟離線快取。
-  String get offlineCacheOnNeedsCleanup => language._messages[2811];
+  String get offlineCacheOnNeedsCleanup => language._messages[2812];
 
   /// 無法儲存設定。離線快取已清除，這次使用期間保持關閉。
-  String get offlineCacheOffNotSaved => language._messages[2812];
+  String get offlineCacheOffNotSaved => language._messages[2813];
 
   /// 已使用約 {size}
-  String offlineCacheSizeApprox(Object? size) => _format(language, language._messages[2813], {'size': size});
+  String offlineCacheSizeApprox(Object? size) => _format(language, language._messages[2814], {'size': size});
 
   /// 已使用：無法確認
-  String get offlineCacheSizeUnknown => language._messages[2814];
+  String get offlineCacheSizeUnknown => language._messages[2815];
 
   /// 加入群組工作項目
-  String get aiAddGroupWorkItem => language._messages[2815];
+  String get aiAddGroupWorkItem => language._messages[2816];
 
   /// 貼上 {instance} 上直接屬於群組的工作項目連結。此次新增的授權只涵蓋這個工作項目及其留言，不包含群組的其他工作項目或其中的專案；對話原有的範圍不變。
-  String aiAddGroupWorkItemIntro(Object? instance) => _format(language, language._messages[2816], {'instance': instance});
+  String aiAddGroupWorkItemIntro(Object? instance) => _format(language, language._messages[2817], {'instance': instance});
 
   /// 工作項目連結
-  String get aiAddGroupWorkItemLink => language._messages[2817];
+  String get aiAddGroupWorkItemLink => language._messages[2818];
 
   /// 檢查
-  String get aiAddGroupWorkItemCheck => language._messages[2818];
+  String get aiAddGroupWorkItemCheck => language._messages[2819];
 
   /// 檢查中…
-  String get aiAddGroupWorkItemChecking => language._messages[2819];
+  String get aiAddGroupWorkItemChecking => language._messages[2820];
 
   /// AI 對它提出的修改，仍依這個對話的寫入方式確認或執行。你可以隨時在輸入框上方移除它。
-  String get aiAddGroupWorkItemConfirmDetail => language._messages[2820];
+  String get aiAddGroupWorkItemConfirmDetail => language._messages[2821];
 
   /// 加入後，這個對話的「{level}」會結束；需要時請重新選擇。
-  String aiAddGroupWorkItemGrantEnds(Object? level) => _format(language, language._messages[2821], {'level': level});
+  String aiAddGroupWorkItemGrantEnds(Object? level) => _format(language, language._messages[2822], {'level': level});
 
   /// 加入對話
-  String get aiAddGroupWorkItemConfirm => language._messages[2822];
+  String get aiAddGroupWorkItemConfirm => language._messages[2823];
 
   /// 已加入 {path} #{iid}
-  String aiAddedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[2823], {'path': path, 'iid': iid});
+  String aiAddedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[2824], {'path': path, 'iid': iid});
 
   /// 已加入；新增的授權只涵蓋此項及其留言
-  String get aiAddedGroupWorkItemHint => language._messages[2824];
+  String get aiAddedGroupWorkItemHint => language._messages[2825];
 
   /// 從對話中移除
-  String get aiRemoveGroupWorkItem => language._messages[2825];
+  String get aiRemoveGroupWorkItem => language._messages[2826];
 
   /// 這不是完整的群組工作項目連結。請在 GitLab 開啟該工作項目，複製頁面網址後再貼上。沒有加入任何項目。
-  String get aiAddGroupWorkItemMalformed => language._messages[2826];
+  String get aiAddGroupWorkItemMalformed => language._messages[2827];
 
   /// 這個連結不在 {instance} 上，只能加入目前帳號所在 GitLab 的工作項目。沒有加入任何項目。
-  String aiAddGroupWorkItemOtherInstance(Object? instance) => _format(language, language._messages[2827], {'instance': instance});
+  String aiAddGroupWorkItemOtherInstance(Object? instance) => _format(language, language._messages[2828], {'instance': instance});
 
   /// 這個連結屬於專案。這裡只能加入直接屬於群組的工作項目。沒有加入任何項目。
-  String get aiAddGroupWorkItemProjectLink => language._messages[2828];
+  String get aiAddGroupWorkItemProjectLink => language._messages[2829];
 
   /// 這個群組連結沒有指向單一工作項目。沒有加入任何項目。
-  String get aiAddGroupWorkItemNotWorkItem => language._messages[2829];
+  String get aiAddGroupWorkItemNotWorkItem => language._messages[2830];
 
   /// 這個工作項目已在這個對話中。
-  String get aiAddGroupWorkItemAlreadyAdded => language._messages[2830];
+  String get aiAddGroupWorkItemAlreadyAdded => language._messages[2831];
 
   /// GitLab 沒有確認這個工作項目直接屬於連結中的群組，或檢查期間它有變動。沒有加入任何項目。
-  String get aiAddGroupWorkItemNotGroupOwned => language._messages[2831];
+  String get aiAddGroupWorkItemNotGroupOwned => language._messages[2832];
 
   /// AI 正在工作或有寫入等你處理時不能加入。沒有加入任何項目。
-  String get aiAddGroupWorkItemUnavailable => language._messages[2832];
+  String get aiAddGroupWorkItemUnavailable => language._messages[2833];
 
   /// 檢查結果已過期，沒有加入任何項目。請重新檢查連結。
-  String get aiAddGroupWorkItemStale => language._messages[2833];
+  String get aiAddGroupWorkItemStale => language._messages[2834];
 
   /// 工作已暫停
-  String get aiRunPaused => language._messages[2834];
+  String get aiRunPaused => language._messages[2835];
 
   /// 工作已暫停：要開著應用程式才能繼續
-  String get aiRunPausedForeground => language._messages[2835];
+  String get aiRunPausedForeground => language._messages[2836];
 
   /// 工作已暫停：繼續前的檢查逾時
-  String get aiRunPausedTimeout => language._messages[2836];
+  String get aiRunPausedTimeout => language._messages[2837];
 
   /// 可以從中斷的地方繼續這項工作
-  String get aiRunCanResume => language._messages[2837];
+  String get aiRunCanResume => language._messages[2838];
 
   /// 繼續執行
-  String get aiRunResume => language._messages[2838];
+  String get aiRunResume => language._messages[2839];
 
   /// 要繼續執行嗎？
-  String get aiRunResumeTitle => language._messages[2839];
+  String get aiRunResumeTitle => language._messages[2840];
 
   /// 這項工作的寫入可能已經完成。繼續後若 AI 再提出相同的變更，會先請你確認。
-  String get aiRunResumeDuplicate => language._messages[2840];
+  String get aiRunResumeDuplicate => language._messages[2841];
 
   /// 繼續會再向 AI 供應商送出請求，可能會再次計費。
-  String get aiRunResumeRebilling => language._messages[2841];
+  String get aiRunResumeRebilling => language._messages[2842];
 
   /// 背景執行沒有啟動，工作只會在應用程式開啟時繼續。
-  String get aiRunForegroundOnly => language._messages[2842];
+  String get aiRunForegroundOnly => language._messages[2843];
 
   /// 系統這次不允許在背景執行。
-  String get aiRunStartDenied => language._messages[2843];
+  String get aiRunStartDenied => language._messages[2844];
 
   /// 背景執行沒有及時啟動。
-  String get aiRunStartTimeout => language._messages[2844];
+  String get aiRunStartTimeout => language._messages[2845];
 
   /// 背景執行目前無法使用。
-  String get aiRunStartUnavailable => language._messages[2845];
+  String get aiRunStartUnavailable => language._messages[2846];
 
   /// 這筆寫入沒有執行：背景執行無法啟動。
-  String get aiProposalBackgroundUnavailable => language._messages[2846];
+  String get aiProposalBackgroundUnavailable => language._messages[2847];
 
   /// 工作已暫停：還無法確認背景工作已經結束，在那之前不能繼續。
-  String get aiRunCleanupPending => language._messages[2847];
+  String get aiRunCleanupPending => language._messages[2848];
 
   /// 每次回到應用程式時都會再嘗試清理；要等清理確認完成，工作才能繼續。
-  String get aiRunCleanupRetry => language._messages[2848];
+  String get aiRunCleanupRetry => language._messages[2849];
 
   /// 離線時無法開啟
-  String get offlineBlockedAction => language._messages[2849];
+  String get offlineBlockedAction => language._messages[2850];
 
   /// 離線保存
-  String get offlineSaveAction => language._messages[2850];
+  String get offlineSaveAction => language._messages[2851];
 
   /// 離線保存…
-  String get offlineSaveMenu => language._messages[2851];
+  String get offlineSaveMenu => language._messages[2852];
 
   /// 離線版本…
-  String get offlineVersionMenu => language._messages[2852];
+  String get offlineVersionMenu => language._messages[2853];
 
   /// 已離線保存
-  String get offlineSavedChip => language._messages[2853];
+  String get offlineSavedChip => language._messages[2854];
 
   /// 已離線保存，{count} 個檔案未保存
-  String offlineSavedChipPartial(Object? count) => _format(language, language._messages[2854], {'count': count});
+  String offlineSavedChipPartial(Object? count) => _format(language, language._messages[2855], {'count': count});
 
   /// 檢視離線版本（保存於 {date}）
-  String offlineViewSaved(Object? date) => _format(language, language._messages[2855], {'date': date});
+  String offlineViewSaved(Object? date) => _format(language, language._messages[2856], {'date': date});
 
   /// 已保存
-  String get snapshotStatusSaved => language._messages[2856];
+  String get snapshotStatusSaved => language._messages[2857];
 
   /// 已保存 · {count} 個未保存
-  String snapshotStatusSavedPartial(Object? count) => _format(language, language._messages[2857], {'count': count});
+  String snapshotStatusSavedPartial(Object? count) => _format(language, language._messages[2858], {'count': count});
 
   /// 保存中 {percent}%
-  String snapshotStatusSaving(Object? percent) => _format(language, language._messages[2858], {'percent': percent});
+  String snapshotStatusSaving(Object? percent) => _format(language, language._messages[2859], {'percent': percent});
 
   /// 排隊中
-  String get snapshotStatusQueued => language._messages[2859];
+  String get snapshotStatusQueued => language._messages[2860];
 
   /// 等待額度
-  String get snapshotStatusWaitingBudget => language._messages[2860];
+  String get snapshotStatusWaitingBudget => language._messages[2861];
 
   /// 等待限流解除
-  String get snapshotStatusWaitingRateLimit => language._messages[2861];
+  String get snapshotStatusWaitingRateLimit => language._messages[2862];
 
   /// 已暫停
-  String get snapshotStatusPaused => language._messages[2862];
+  String get snapshotStatusPaused => language._messages[2863];
 
   /// 已中斷
-  String get snapshotStatusInterrupted => language._messages[2863];
+  String get snapshotStatusInterrupted => language._messages[2864];
 
   /// 失敗：{reason}
-  String snapshotStatusFailed(Object? reason) => _format(language, language._messages[2864], {'reason': reason});
+  String snapshotStatusFailed(Object? reason) => _format(language, language._messages[2865], {'reason': reason});
 
   /// 有新版本
-  String get snapshotStatusNewer => language._messages[2865];
+  String get snapshotStatusNewer => language._messages[2866];
 
   /// 分支已不存在
-  String get snapshotStatusBranchGone => language._messages[2866];
+  String get snapshotStatusBranchGone => language._messages[2867];
 
   /// 標籤已不存在
-  String get snapshotStatusTagGone => language._messages[2867];
+  String get snapshotStatusTagGone => language._messages[2868];
 
   /// 保存的提交已不在 GitLab 上
-  String get snapshotStatusCommitGone => language._messages[2868];
+  String get snapshotStatusCommitGone => language._messages[2869];
 
   /// 約 {minutes} 分鐘後自動繼續
-  String snapshotRateLimitEta(Object? minutes) => _format(language, language._messages[2869], {'minutes': minutes});
+  String snapshotRateLimitEta(Object? minutes) => _format(language, language._messages[2870], {'minutes': minutes});
 
   /// 正在確認版本
-  String get snapshotPhaseResolving => language._messages[2870];
+  String get snapshotPhaseResolving => language._messages[2871];
 
   /// 正在讀取檔案清單（第 {page} 頁）
-  String snapshotPhaseListing(Object? page) => _format(language, language._messages[2871], {'page': page});
+  String snapshotPhaseListing(Object? page) => _format(language, language._messages[2872], {'page': page});
 
   /// 正在下載與驗證 · {size}
-  String snapshotPhaseDownloading(Object? size) => _format(language, language._messages[2872], {'size': size});
+  String snapshotPhaseDownloading(Object? size) => _format(language, language._messages[2873], {'size': size});
 
   /// 正在寫入
-  String get snapshotPhaseFinalizing => language._messages[2873];
+  String get snapshotPhaseFinalizing => language._messages[2874];
 
   /// 無法離線保存
-  String get snapshotSaveFailedTitle => language._messages[2874];
+  String get snapshotSaveFailedTitle => language._messages[2875];
 
   /// 檔案超過 5,000 個，請改保存子資料夾。
-  String get snapshotFailureTooManyEntries => language._messages[2875];
+  String get snapshotFailureTooManyEntries => language._messages[2876];
 
   /// 檔案清單太大，請改保存子資料夾。
-  String get snapshotFailureTreeTooLarge => language._messages[2876];
+  String get snapshotFailureTreeTooLarge => language._messages[2877];
 
   /// 離線專案清單已滿。
-  String get snapshotFailureIndexTooLarge => language._messages[2877];
+  String get snapshotFailureIndexTooLarge => language._messages[2878];
 
   /// 下載的封存檔超過大小上限。
-  String get snapshotFailureArchiveTooLarge => language._messages[2878];
+  String get snapshotFailureArchiveTooLarge => language._messages[2879];
 
   /// 離線保存的空間已滿。
-  String get snapshotFailureStorageFull => language._messages[2879];
+  String get snapshotFailureStorageFull => language._messages[2880];
 
   /// 裝置的儲存空間不足。
-  String get snapshotFailureDeviceFull => language._messages[2880];
+  String get snapshotFailureDeviceFull => language._messages[2881];
 
   /// 無法寫入離線資料。
-  String get snapshotFailureStorageError => language._messages[2881];
+  String get snapshotFailureStorageError => language._messages[2882];
 
   /// 安全儲存區暫時無法使用。
-  String get snapshotFailureKeyUnavailable => language._messages[2882];
+  String get snapshotFailureKeyUnavailable => language._messages[2883];
 
   /// 離線快取已關閉。
-  String get snapshotFailureCacheDisabled => language._messages[2883];
+  String get snapshotFailureCacheDisabled => language._messages[2884];
 
   /// GitLab 回傳的檔案清單無效。
-  String get snapshotFailureInvalidTree => language._messages[2884];
+  String get snapshotFailureInvalidTree => language._messages[2885];
 
   /// 下載的封存檔已損壞。
-  String get snapshotFailureCorruptArchive => language._messages[2885];
+  String get snapshotFailureCorruptArchive => language._messages[2886];
 
   /// 下載的封存檔不是所選的提交。
-  String get snapshotFailureShaMismatch => language._messages[2886];
+  String get snapshotFailureShaMismatch => language._messages[2887];
 
   /// 無法確認這個版本對應的提交。
-  String get snapshotFailureResolveFailed => language._messages[2887];
+  String get snapshotFailureResolveFailed => language._messages[2888];
 
   /// 這個 GitLab 伺服器要求不要保存它的回應，所以無法離線保存這個專案。
-  String get snapshotFailureServerForbids => language._messages[2888];
+  String get snapshotFailureServerForbids => language._messages[2889];
 
   /// 目前帳號無法讀取這個專案。
-  String get snapshotFailureAccessLost => language._messages[2889];
+  String get snapshotFailureAccessLost => language._messages[2890];
 
   /// 這個版本已不在 GitLab 上。
-  String get snapshotFailureVersionGone => language._messages[2890];
+  String get snapshotFailureVersionGone => language._messages[2891];
 
   /// GitLab 正在限制請求。
-  String get snapshotFailureRateLimited => language._messages[2891];
+  String get snapshotFailureRateLimited => language._messages[2892];
 
   /// 網路連線中斷。
-  String get snapshotFailureNetwork => language._messages[2892];
+  String get snapshotFailureNetwork => language._messages[2893];
 
   /// 這個帳號的使用階段已結束。
-  String get snapshotFailureSessionEnded => language._messages[2893];
+  String get snapshotFailureSessionEnded => language._messages[2894];
 
   /// 已有 5 個保存在排隊，請稍後再試。
-  String get snapshotQueueFull => language._messages[2894];
+  String get snapshotQueueFull => language._messages[2895];
 
   /// 版本
-  String get saveSheetVersion => language._messages[2895];
+  String get saveSheetVersion => language._messages[2896];
 
   /// 範圍
-  String get saveSheetScope => language._messages[2896];
+  String get saveSheetScope => language._messages[2897];
 
   /// 整個儲存庫
-  String get saveSheetWholeRepository => language._messages[2897];
+  String get saveSheetWholeRepository => language._messages[2898];
 
   /// 此資料夾
-  String get saveSheetThisFolder => language._messages[2898];
+  String get saveSheetThisFolder => language._messages[2899];
 
   /// 保存文字檔（每檔 2 MiB 內）與圖片（每張 10 MiB 內）。其他二進位檔、議題、合併請求與 CI 不保存。
-  String get saveSheetContents => language._messages[2899];
+  String get saveSheetContents => language._messages[2900];
 
   /// 只屬於 @{username}；切換帳號、登出、移除帳號或清除快取時都會刪除。
-  String saveSheetAccountNote(Object? username) => _format(language, language._messages[2900], {'username': username});
+  String saveSheetAccountNote(Object? username) => _format(language, language._messages[2901], {'username': username});
 
   /// 詳細說明
-  String get saveSheetDetails => language._messages[2901];
+  String get saveSheetDetails => language._messages[2902];
 
   /// 已使用 {used} / {limit}
-  String saveSheetCapacity(Object? used, Object? limit) => _format(language, language._messages[2902], {'used': used, 'limit': limit});
+  String saveSheetCapacity(Object? used, Object? limit) => _format(language, language._messages[2903], {'used': used, 'limit': limit});
 
   /// 保存
-  String get saveSheetStart => language._messages[2903];
+  String get saveSheetStart => language._messages[2904];
 
   /// 更新到最新版本
-  String get saveSheetUpdate => language._messages[2904];
+  String get saveSheetUpdate => language._messages[2905];
 
   /// 開啟離線版本
-  String get saveSheetOpen => language._messages[2905];
+  String get saveSheetOpen => language._messages[2906];
 
   /// 已開始離線保存
-  String get saveSheetStarted => language._messages[2906];
+  String get saveSheetStarted => language._messages[2907];
 
   /// 離線版本已是最新
-  String get saveSheetAlreadyCurrent => language._messages[2907];
+  String get saveSheetAlreadyCurrent => language._messages[2908];
 
   /// GitLab 正在限制請求，約 {minutes} 分鐘後可以再試。
-  String saveBlockedRateLimitedEta(Object? minutes) => _format(language, language._messages[2908], {'minutes': minutes});
+  String saveBlockedRateLimitedEta(Object? minutes) => _format(language, language._messages[2909], {'minutes': minutes});
 
   /// 已有 30 個離線專案，請先刪除一些。
-  String get saveBlockedCount => language._messages[2909];
+  String get saveBlockedCount => language._messages[2910];
 
   /// 需要較新版本的 App 才能使用這些離線資料。
-  String get saveBlockedNewerApp => language._messages[2910];
+  String get saveBlockedNewerApp => language._messages[2911];
 
   /// 正在清除離線資料。
-  String get saveBlockedCleaning => language._messages[2911];
+  String get saveBlockedCleaning => language._messages[2912];
 
   /// 離線保存前請先了解
-  String get offlineConsentTitle => language._messages[2912];
+  String get offlineConsentTitle => language._messages[2913];
 
   /// 這是存在這台裝置上的副本，以這個帳號的金鑰加密。
-  String get offlineConsentLocalCopy => language._messages[2913];
+  String get offlineConsentLocalCopy => language._messages[2914];
 
   /// 只屬於 @{username}；切換帳號、登出、移除帳號、清除快取、關閉離線快取，或失去專案權限時都會刪除。
-  String offlineConsentAccount(Object? username) => _format(language, language._messages[2914], {'username': username});
+  String offlineConsentAccount(Object? username) => _format(language, language._messages[2915], {'username': username});
 
   /// 離線時無法得知權限是否已被撤銷；30 天的上限不是撤銷機制。
-  String get offlineConsentRevocation => language._messages[2915];
+  String get offlineConsentRevocation => language._messages[2916];
 
   /// 上游的 force-push 或刪除，不會收回已保存的內容。
-  String get offlineConsentForcePush => language._messages[2916];
+  String get offlineConsentForcePush => language._messages[2917];
 
   /// 原始碼可能含有機密，建議開啟 App 鎖定。
-  String get offlineConsentSecrets => language._messages[2917];
+  String get offlineConsentSecrets => language._messages[2918];
 
   /// 知道了
-  String get offlineConsentClose => language._messages[2918];
+  String get offlineConsentClose => language._messages[2919];
 
   /// 離線專案
-  String get offlineProjectsTitle => language._messages[2919];
+  String get offlineProjectsTitle => language._messages[2920];
 
   /// {count} 個 · {size}
-  String offlineProjectsSummary(Object? count, Object? size) => _format(language, language._messages[2920], {'count': count, 'size': size});
+  String offlineProjectsSummary(Object? count, Object? size) => _format(language, language._messages[2921], {'count': count, 'size': size});
 
   /// {count} 個專案 · 已使用 {used} / {limit}
-  String offlineProjectsHeader(Object? count, Object? used, Object? limit) => _format(language, language._messages[2921], {'count': count, 'used': used, 'limit': limit});
+  String offlineProjectsHeader(Object? count, Object? used, Object? limit) => _format(language, language._messages[2922], {'count': count, 'used': used, 'limit': limit});
 
   /// 離線專案只屬於目前的帳號；切換帳號、登出、移除帳號或清除快取時都會刪除。
-  String get offlineProjectsAccountNote => language._messages[2922];
+  String get offlineProjectsAccountNote => language._messages[2923];
 
   /// 目前帳號無法讀取這些專案（可能已無權限、已刪除、已移動，或目前的網路位置不被允許），已刪除 {count} 個離線專案。
-  String offlineRemovedNotice(Object? count) => _format(language, language._messages[2923], {'count': count});
+  String offlineRemovedNotice(Object? count) => _format(language, language._messages[2924], {'count': count});
 
   /// 資料夾 {path}
-  String offlineRowFolder(Object? path) => _format(language, language._messages[2924], {'path': path});
+  String offlineRowFolder(Object? path) => _format(language, language._messages[2925], {'path': path});
 
   /// 保存於 {time}
-  String offlineRowSavedAt(Object? time) => _format(language, language._messages[2925], {'time': time});
+  String offlineRowSavedAt(Object? time) => _format(language, language._messages[2926], {'time': time});
 
   /// 更新
-  String get offlineActionUpdate => language._messages[2926];
+  String get offlineActionUpdate => language._messages[2927];
 
   /// 暫停
-  String get offlineActionPause => language._messages[2927];
+  String get offlineActionPause => language._messages[2928];
 
   /// 繼續
-  String get offlineActionResume => language._messages[2928];
+  String get offlineActionResume => language._messages[2929];
 
   /// 取消保存
-  String get offlineActionCancel => language._messages[2929];
+  String get offlineActionCancel => language._messages[2930];
 
   /// 刪除
-  String get offlineActionDelete => language._messages[2930];
+  String get offlineActionDelete => language._messages[2931];
 
   /// 在線上開啟
-  String get offlineActionOpenOnline => language._messages[2931];
+  String get offlineActionOpenOnline => language._messages[2932];
 
   /// 取消保存？
-  String get offlineCancelTitle => language._messages[2932];
+  String get offlineCancelTitle => language._messages[2933];
 
   /// 已下載的部分會被刪除。
-  String get offlineCancelDetail => language._messages[2933];
+  String get offlineCancelDetail => language._messages[2934];
 
   /// 刪除離線專案？
-  String get offlineDeleteTitle => language._messages[2934];
+  String get offlineDeleteTitle => language._messages[2935];
 
   /// 會刪除這台裝置上 {name} 的離線版本（{size}）。GitLab 上的專案不受影響。
-  String offlineDeleteDetail(Object? name, Object? size) => _format(language, language._messages[2935], {'name': name, 'size': size});
+  String offlineDeleteDetail(Object? name, Object? size) => _format(language, language._messages[2936], {'name': name, 'size': size});
 
   /// 全部刪除離線專案
-  String get offlineDeleteAllAction => language._messages[2936];
+  String get offlineDeleteAllAction => language._messages[2937];
 
   /// 刪除全部離線專案？
-  String get offlineDeleteAllTitle => language._messages[2937];
+  String get offlineDeleteAllTitle => language._messages[2938];
 
   /// 會刪除這台裝置上的 {count} 個離線專案（共 {size}）。自動快取不受影響。
-  String offlineDeleteAllDetail(Object? count, Object? size) => _format(language, language._messages[2938], {'count': count, 'size': size});
+  String offlineDeleteAllDetail(Object? count, Object? size) => _format(language, language._messages[2939], {'count': count, 'size': size});
 
   /// 已刪除離線專案
-  String get offlineDeleted => language._messages[2939];
+  String get offlineDeleted => language._messages[2940];
 
   /// 已刪除全部離線專案
-  String get offlineDeletedAll => language._messages[2940];
+  String get offlineDeletedAll => language._messages[2941];
 
   /// 無法更新離線專案清單。請改用「全部刪除離線專案」。
-  String get offlineDeleteUseAll => language._messages[2941];
+  String get offlineDeleteUseAll => language._messages[2942];
 
   /// 原始碼可能含有機密，建議開啟 App 鎖定。
-  String get offlineAppLockHint => language._messages[2942];
+  String get offlineAppLockHint => language._messages[2943];
 
   /// 還沒有離線專案
-  String get offlineEmptyTitle => language._messages[2943];
+  String get offlineEmptyTitle => language._messages[2944];
 
   /// 在專案的檔案分頁點「離線保存」，沒有網路時也能瀏覽。
-  String get offlineEmptyDetail => language._messages[2944];
+  String get offlineEmptyDetail => language._messages[2945];
 
   /// 離線版本 · {ref} @ {sha} · 保存於 {date}
-  String snapshotBrowserHeader(Object? ref, Object? sha, Object? date) => _format(language, language._messages[2945], {'ref': ref, 'sha': sha, 'date': date});
+  String snapshotBrowserHeader(Object? ref, Object? sha, Object? date) => _format(language, language._messages[2946], {'ref': ref, 'sha': sha, 'date': date});
 
   /// 篩選檔名
-  String get snapshotFilterHint => language._messages[2946];
+  String get snapshotFilterHint => language._messages[2947];
 
   /// 沒有符合的檔案
-  String get snapshotFilterNoMatch => language._messages[2947];
+  String get snapshotFilterNoMatch => language._messages[2948];
 
   /// 超過大小
-  String get snapshotNotSavedTooLarge => language._messages[2948];
+  String get snapshotNotSavedTooLarge => language._messages[2949];
 
   /// 二進位檔
-  String get snapshotNotSavedBinary => language._messages[2949];
+  String get snapshotNotSavedBinary => language._messages[2950];
 
   /// 封存檔中沒有
-  String get snapshotNotSavedMissing => language._messages[2950];
+  String get snapshotNotSavedMissing => language._messages[2951];
 
   /// 內容與提交不符
-  String get snapshotNotSavedMismatch => language._messages[2951];
+  String get snapshotNotSavedMismatch => language._messages[2952];
 
   /// 符號連結或子模組
-  String get snapshotNotSavedLink => language._messages[2952];
+  String get snapshotNotSavedLink => language._messages[2953];
 
   /// 不支援的項目
-  String get snapshotNotSavedUnsupported => language._messages[2953];
+  String get snapshotNotSavedUnsupported => language._messages[2954];
 
   /// 尚未保存
-  String get snapshotNotSavedPending => language._messages[2954];
+  String get snapshotNotSavedPending => language._messages[2955];
 
   /// 這個檔案沒有離線保存
-  String get snapshotNotSavedTitle => language._messages[2955];
+  String get snapshotNotSavedTitle => language._messages[2956];
 
   /// 連線時可以開啟線上版本。
-  String get snapshotNotSavedOnlineNote => language._messages[2956];
+  String get snapshotNotSavedOnlineNote => language._messages[2957];
 
   /// 部分檔案可能受 .gitattributes 設定影響而未保存
-  String get snapshotAttributesHint => language._messages[2957];
+  String get snapshotAttributesHint => language._messages[2958];
 
   /// 離線內容已損壞
-  String get snapshotDamaged => language._messages[2958];
+  String get snapshotDamaged => language._messages[2959];
 
   /// 重新保存
-  String get snapshotResave => language._messages[2959];
+  String get snapshotResave => language._messages[2960];
 
   /// 離線時不載入
-  String get snapshotMediaOffline => language._messages[2960];
+  String get snapshotMediaOffline => language._messages[2961];
 
   /// 此圖片未保存
-  String get snapshotMediaNotSaved => language._messages[2961];
+  String get snapshotMediaNotSaved => language._messages[2962];
 
   /// 離線時無法開啟這個連結
-  String get snapshotLinkTitle => language._messages[2962];
+  String get snapshotLinkTitle => language._messages[2963];
 
   /// 複製網址
-  String get snapshotLinkCopy => language._messages[2963];
+  String get snapshotLinkCopy => language._messages[2964];
 
   /// 要刪除離線專案嗎？
-  String get offlineLossTitle => language._messages[2964];
+  String get offlineLossTitle => language._messages[2965];
 
   /// 切換帳號會刪除 @{username} 的 {count} 個離線專案（{size}）。
-  String offlineLossSwitch(Object? username, Object? count, Object? size) => _format(language, language._messages[2965], {'username': username, 'count': count, 'size': size});
+  String offlineLossSwitch(Object? username, Object? count, Object? size) => _format(language, language._messages[2966], {'username': username, 'count': count, 'size': size});
 
   /// 登出會刪除 @{username} 的 {count} 個離線專案（{size}）。
-  String offlineLossSignOut(Object? username, Object? count, Object? size) => _format(language, language._messages[2966], {'username': username, 'count': count, 'size': size});
+  String offlineLossSignOut(Object? username, Object? count, Object? size) => _format(language, language._messages[2967], {'username': username, 'count': count, 'size': size});
 
   /// 移除帳號會刪除 @{username} 的 {count} 個離線專案（{size}）。
-  String offlineLossRemove(Object? username, Object? count, Object? size) => _format(language, language._messages[2967], {'username': username, 'count': count, 'size': size});
+  String offlineLossRemove(Object? username, Object? count, Object? size) => _format(language, language._messages[2968], {'username': username, 'count': count, 'size': size});
 
   /// 繼續並刪除
-  String get offlineLossProceed => language._messages[2968];
+  String get offlineLossProceed => language._messages[2969];
 
   /// 會刪除自動快取與 {count} 個離線專案（共 {size}），這個動作無法復原。
-  String offlineCacheClearWithProjects(Object? count, Object? size) => _format(language, language._messages[2969], {'count': count, 'size': size});
+  String offlineCacheClearWithProjects(Object? count, Object? size) => _format(language, language._messages[2970], {'count': count, 'size': size});
 
   /// 關閉離線快取？
-  String get offlineCacheTurnOffTitle => language._messages[2970];
+  String get offlineCacheTurnOffTitle => language._messages[2971];
 
   /// 清除
-  String get offlineCacheClearButton => language._messages[2971];
+  String get offlineCacheClearButton => language._messages[2972];
 
   /// 離線瀏覽
-  String get offlineBrowseAction => language._messages[2972];
+  String get offlineBrowseAction => language._messages[2973];
 
   /// 驗證完成之前，可以先瀏覽已保存的專案。
-  String get offlineBrowseHint => language._messages[2973];
+  String get offlineBrowseHint => language._messages[2974];
 
   /// 目前無法離線瀏覽。
-  String get offlineEnterFailed => language._messages[2974];
+  String get offlineEnterFailed => language._messages[2975];
 
   /// 離線瀏覽
-  String get offlineShellTitle => language._messages[2975];
+  String get offlineShellTitle => language._messages[2976];
 
   /// 離線 · 只能瀏覽已保存的專案
-  String get offlineBannerNetwork => language._messages[2976];
+  String get offlineBannerNetwork => language._messages[2977];
 
   /// GitLab 暫時沒有回應 · 只能瀏覽已保存的專案
-  String get offlineBannerServer => language._messages[2977];
+  String get offlineBannerServer => language._messages[2978];
 
   /// GitLab 限流中 · 只能瀏覽已保存的專案
-  String get offlineBannerRateLimited => language._messages[2978];
+  String get offlineBannerRateLimited => language._messages[2979];
 
   /// GitLab 限流中（約 {minutes} 分鐘）· 只能瀏覽已保存的專案
-  String offlineBannerRateLimitedMinutes(Object? minutes) => _format(language, language._messages[2979], {'minutes': minutes});
+  String offlineBannerRateLimitedMinutes(Object? minutes) => _format(language, language._messages[2980], {'minutes': minutes});
 
   /// 網路可能需要登入（例如 Wi-Fi 認證頁）· 只能瀏覽已保存的專案
-  String get offlineBannerSignIn => language._messages[2980];
+  String get offlineBannerSignIn => language._messages[2981];
 
   /// 尚未連上 GitLab · 只能瀏覽已保存的專案
-  String get offlineBannerChecking => language._messages[2981];
+  String get offlineBannerChecking => language._messages[2982];
 
   /// 已恢復連線
-  String get offlineBannerRestored => language._messages[2982];
+  String get offlineBannerRestored => language._messages[2983];
 
   /// 重試連線
-  String get offlineRetryConnection => language._messages[2983];
+  String get offlineRetryConnection => language._messages[2984];
 
   /// 正在檢查連線…
-  String get offlineCheckingConnection => language._messages[2984];
+  String get offlineCheckingConnection => language._messages[2985];
 
   /// 切換到線上
-  String get offlineSwitchOnline => language._messages[2985];
+  String get offlineSwitchOnline => language._messages[2986];
 
   /// 仍然無法連上 GitLab
-  String get offlineStillOffline => language._messages[2986];
+  String get offlineStillOffline => language._messages[2987];
 
   /// 上次驗證：{when}
-  String offlineLastValidated(Object? when) => _format(language, language._messages[2987], {'when': when});
+  String offlineLastValidated(Object? when) => _format(language, language._messages[2988], {'when': when});
 
   /// 連線後會開啟 1 個連結
-  String get offlinePendingLink => language._messages[2988];
+  String get offlinePendingLink => language._messages[2989];
 
   /// 管理離線專案
-  String get offlineManageProjects => language._messages[2989];
+  String get offlineManageProjects => language._messages[2990];
 
   /// 已保存的專案
-  String get offlineSavedProjectsTitle => language._messages[2990];
+  String get offlineSavedProjectsTitle => language._messages[2991];
 
   /// 沒有可以離線瀏覽的專案
-  String get offlineNothingToBrowse => language._messages[2991];
+  String get offlineNothingToBrowse => language._messages[2992];
 
   /// 連線後可以再次保存專案。
-  String get offlineNothingToBrowseDetail => language._messages[2992];
+  String get offlineNothingToBrowseDetail => language._messages[2993];
 
   /// 無法讀取 App 鎖定設定
-  String get offlineLockUnreadableTitle => language._messages[2993];
+  String get offlineLockUnreadableTitle => language._messages[2994];
 
   /// 讀取成功之前，不會顯示離線內容。
-  String get offlineLockUnreadableDetail => language._messages[2994];
+  String get offlineLockUnreadableDetail => language._messages[2995];
 
   /// 若登入的是其他帳號，會刪除 @{username} 的 {count} 個離線專案（{size}）。
-  String offlineLossConnect(Object? username, Object? count, Object? size) => _format(language, language._messages[2995], {'username': username, 'count': count, 'size': size});
+  String offlineLossConnect(Object? username, Object? count, Object? size) => _format(language, language._messages[2996], {'username': username, 'count': count, 'size': size});
 
   /// 會刪除 @{username} 在這台裝置上的離線專案（目前無法讀取數量）。
-  String offlineLossUnknown(Object? username) => _format(language, language._messages[2996], {'username': username});
+  String offlineLossUnknown(Object? username) => _format(language, language._messages[2997], {'username': username});
 
   /// 若登入的是其他帳號，會刪除 @{username} 在這台裝置上的離線專案（目前無法讀取數量）。
-  String offlineLossConnectUnknown(Object? username) => _format(language, language._messages[2997], {'username': username});
+  String offlineLossConnectUnknown(Object? username) => _format(language, language._messages[2998], {'username': username});
 
   /// 登入已失效，正在刪除 @{username} 的離線資料。
-  String offlineSignInExpiredDeleting(Object? username) => _format(language, language._messages[2998], {'username': username});
+  String offlineSignInExpiredDeleting(Object? username) => _format(language, language._messages[2999], {'username': username});
 
   /// 登入已失效，已刪除 @{username} 的離線資料。
-  String offlineSignInExpiredDeleted(Object? username) => _format(language, language._messages[2999], {'username': username});
+  String offlineSignInExpiredDeleted(Object? username) => _format(language, language._messages[3000], {'username': username});
 
   /// 登入已失效，@{username} 的離線資料將在下次啟動時重試刪除。
-  String offlineSignInExpiredRetry(Object? username) => _format(language, language._messages[3000], {'username': username});
+  String offlineSignInExpiredRetry(Object? username) => _format(language, language._messages[3001], {'username': username});
 
   /// 離線瀏覽只能在上次驗證後 30 天內使用。請連線後重新驗證。
-  String get offlineValidationExpired => language._messages[3001];
+  String get offlineValidationExpired => language._messages[3002];
 
   /// AI 寫入被中斷
-  String get aiRecoveryTitle => language._messages[3002];
+  String get aiRecoveryTitle => language._messages[3003];
 
   /// 知道了
-  String get aiRecoveryOk => language._messages[3003];
+  String get aiRecoveryOk => language._messages[3004];
 
   /// 有 {count} 筆 AI 寫入在應用程式上次關閉時正在送出，結果未知。請到 GitLab 查看是否已經完成；AI 之後若提出相同的寫入，會先請你確認。
-  String aiRecoveryUncertain(Object? count) => _format(language, language._messages[3004], {'count': count});
+  String aiRecoveryUncertain(Object? count) => _format(language, language._messages[3005], {'count': count});
 
   /// 有 {count} 筆 AI 寫入在送出前就被中斷，沒有送到 GitLab。
-  String aiRecoveryNotExecuted(Object? count) => _format(language, language._messages[3005], {'count': count});
+  String aiRecoveryNotExecuted(Object? count) => _format(language, language._messages[3006], {'count': count});
 
   /// 這些寫入不會自動重新送出，相關的 AI 工作也不會恢復。
-  String get aiRecoveryNoResend => language._messages[3006];
+  String get aiRecoveryNoResend => language._messages[3007];
 
   /// 直接屬於群組 {path} 的工作項目 #{iid}
-  String aiProposalGroupTarget(Object? path, Object? iid) => _format(language, language._messages[3007], {'path': path, 'iid': iid});
+  String aiProposalGroupTarget(Object? path, Object? iid) => _format(language, language._messages[3008], {'path': path, 'iid': iid});
 
   /// 只會變更你（@{username}）自己的待辦清單，不會改動工作項目本身。
-  String aiProposalOwnTodo(Object? username) => _format(language, language._messages[3008], {'username': username});
+  String aiProposalOwnTodo(Object? username) => _format(language, language._messages[3009], {'username': username});
 
   /// 只會刪除你自己寫的這則留言；送出前會再向 GitLab 確認作者是你。
-  String get aiProposalDeleteOwnNote => language._messages[3009];
+  String get aiProposalDeleteOwnNote => language._messages[3010];
 
   /// GitLab 沒有為這個群組工作項目提供這項功能（可能是版本或工作項目類型不支援），所以沒有送出。
-  String get aiRefusedGroupUnsupported => language._messages[3010];
+  String get aiRefusedGroupUnsupported => language._messages[3011];
 
   /// 無法確認這個工作項目仍直接屬於它的群組（群組可能已改名或移動），所以沒有送出。請重新開啟或加入它。
-  String get aiRefusedGroupUnverifiable => language._messages[3011];
+  String get aiRefusedGroupUnverifiable => language._messages[3012];
 
   /// 群組擁有的工作項目：AI 只能修改這個對話開啟的那一項，或你自己加入對話的項目；授權不會擴及整個群組、子群組或群組裡的專案。
-  String get aiConsentWritesGroupScope => language._messages[3012];
+  String get aiConsentWritesGroupScope => language._messages[3013];
 
   /// AI 會讀取群組 {path} 的工作項目 #{iid}。群組的其他工作項目和群組裡的專案不在這個對話的範圍內。
-  String aiChatEmptyGroup(Object? path, Object? iid) => _format(language, language._messages[3013], {'path': path, 'iid': iid});
+  String aiChatEmptyGroup(Object? path, Object? iid) => _format(language, language._messages[3014], {'path': path, 'iid': iid});
 
   /// AI 會讀取這個群組工作項目。群組的其他工作項目和群組裡的專案不在這個對話的範圍內。
-  String get aiChatEmptyGroupItem => language._messages[3014];
+  String get aiChatEmptyGroupItem => language._messages[3015];
 
   /// 摘要這個工作項目
-  String get aiSuggestWorkItemSummary => language._messages[3015];
+  String get aiSuggestWorkItemSummary => language._messages[3016];
 
   /// 已從對話移除 {path} #{iid}，AI 不能再修改它
-  String aiRemovedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[3016], {'path': path, 'iid': iid});
+  String aiRemovedGroupWorkItem(Object? path, Object? iid) => _format(language, language._messages[3017], {'path': path, 'iid': iid});
 
   /// AI 會讀取群組 {path} 的工作項目 #{iid}。你加入對話的項目（列在輸入框上方）也在這個對話的範圍內；群組其他未加入的工作項目和群組裡的專案則不在範圍內。
-  String aiChatEmptyGroupAdded(Object? path, Object? iid) => _format(language, language._messages[3017], {'path': path, 'iid': iid});
+  String aiChatEmptyGroupAdded(Object? path, Object? iid) => _format(language, language._messages[3018], {'path': path, 'iid': iid});
 
   /// AI 會讀取這個群組工作項目。你加入對話的項目（列在輸入框上方）也在這個對話的範圍內；群組其他未加入的工作項目和群組裡的專案則不在範圍內。
-  String get aiChatEmptyGroupItemAdded => language._messages[3018];
+  String get aiChatEmptyGroupItemAdded => language._messages[3019];
 
   /// 日期沒有送出：要求的日期可能和目前相同，而群組工作項目在這種情況下無法不多送一次請求就確認歸屬。請重新讀取目前的日期後再試。
-  String get aiRefusedGroupDatesNotSent => language._messages[3019];
+  String get aiRefusedGroupDatesNotSent => language._messages[3020];
 
   /// 切換帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
-  String offlineLossSwitchUnknown(Object? username) => _format(language, language._messages[3020], {'username': username});
+  String offlineLossSwitchUnknown(Object? username) => _format(language, language._messages[3021], {'username': username});
 
   /// 登出會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
-  String offlineLossSignOutUnknown(Object? username) => _format(language, language._messages[3021], {'username': username});
+  String offlineLossSignOutUnknown(Object? username) => _format(language, language._messages[3022], {'username': username});
 
   /// 移除帳號會刪除 @{username} 在這台裝置上的所有離線專案；目前無法確認有幾個。
-  String offlineLossRemoveUnknown(Object? username) => _format(language, language._messages[3022], {'username': username});
+  String offlineLossRemoveUnknown(Object? username) => _format(language, language._messages[3023], {'username': username});
 
   /// 會刪除自動快取與這個帳號的所有離線專案（目前無法確認有幾個），這個動作無法復原。
-  String get offlineCacheClearUnknownProjects => language._messages[3023];
+  String get offlineCacheClearUnknownProjects => language._messages[3024];
 
   /// 試用 Demo（範例資料，不需帳號）
-  String get demoTryAction => language._messages[3024];
+  String get demoTryAction => language._messages[3025];
 
   /// Demo · 範例資料
-  String get demoBanner => language._messages[3025];
+  String get demoBanner => language._messages[3026];
 
   /// 離開 Demo
-  String get demoExitAction => language._messages[3026];
+  String get demoExitAction => language._messages[3027];
 
   /// 回到登入畫面。Demo 裡的變更只存在記憶體中，離開後就會消失。
-  String get demoExitHint => language._messages[3027];
+  String get demoExitHint => language._messages[3028];
 
   /// Demo 只能新增議題、新增留言，以及關閉或重新開啟議題；這項變更沒有執行。
-  String get demoWriteRefused => language._messages[3028];
+  String get demoWriteRefused => language._messages[3029];
 
   /// Demo（離線）
-  String get demoProviderName => language._messages[3029];
+  String get demoProviderName => language._messages[3030];
 
   /// 這是 Demo：對話不會傳送給任何 AI 服務，AI 的回覆都是預先寫好的範例。登入自己的帳號後，AI 才會使用你自己設定的服務商與金鑰。
-  String get demoConsentNotice => language._messages[3030];
+  String get demoConsentNotice => language._messages[3031];
 
   /// 範例回答：這是 Demo 專案裡的 {subject}。登入真實帳號後，AI 會讀取這一頁的內容並整理重點；這裡顯示的是預先寫好的範例。你可以請我新增留言、建立議題或關閉議題，執行前我會先請你確認。
-  String demoAiExplain(Object? subject) => _format(language, language._messages[3031], {'subject': subject});
+  String demoAiExplain(Object? subject) => _format(language, language._messages[3032], {'subject': subject});
 
   /// 範例回答：完成了。這項變更只存在 Demo 的記憶體中，離開 Demo 後就會消失。
-  String get demoAiDone => language._messages[3032];
+  String get demoAiDone => language._messages[3033];
 
   /// 範例回答：這項變更沒有執行，Demo 的資料維持不變。
-  String get demoAiNotDone => language._messages[3033];
+  String get demoAiNotDone => language._messages[3034];
 
   /// 這則留言是 AI 在 Demo 中寫的範例。
-  String get demoAiNoteBody => language._messages[3034];
+  String get demoAiNoteBody => language._messages[3035];
 
   /// AI 在 Demo 中建立的範例議題
-  String get demoAiIssueTitle => language._messages[3035];
+  String get demoAiIssueTitle => language._messages[3036];
 
   /// 留言,評論,回覆,意見
-  String get demoKeywordsComment => language._messages[3036];
+  String get demoKeywordsComment => language._messages[3037];
 
   /// 建立議題,新增議題,開議題,開一個議題,開個議題
-  String get demoKeywordsIssue => language._messages[3037];
+  String get demoKeywordsIssue => language._messages[3038];
 
   /// 關閉,關掉,結案
-  String get demoKeywordsClose => language._messages[3038];
+  String get demoKeywordsClose => language._messages[3039];
 
   /// Demo 不會連線，這裡無法使用
-  String get demoOffline => language._messages[3039];
+  String get demoOffline => language._messages[3040];
 
   /// 將變更
-  String get aiProposalFieldChanged => language._messages[3040];
+  String get aiProposalFieldChanged => language._messages[3041];
 
   /// 不變
-  String get aiProposalFieldUnchanged => language._messages[3041];
+  String get aiProposalFieldUnchanged => language._messages[3042];
 
   /// 原本：{value}
-  String aiProposalFieldPrevious(Object? value) => _format(language, language._messages[3042], {'value': value});
+  String aiProposalFieldPrevious(Object? value) => _format(language, language._messages[3043], {'value': value});
 
   /// 此站台的憑證不受信任
-  String get untrustedCertificateTitle => language._messages[3043];
+  String get untrustedCertificateTitle => language._messages[3044];
 
   /// 這個 GitLab 站台出示的 TLS 憑證未通過此裝置的驗證。若站台使用貴組織的 CA 或自簽憑證，可以為此站台匯入組織的 CA 憑證。
-  String get untrustedCertificateDetail => language._messages[3044];
+  String get untrustedCertificateDetail => language._messages[3045];
 
   /// 無法匯入憑證
-  String get caCertificateImportFailedTitle => language._messages[3045];
+  String get caCertificateImportFailedTitle => language._messages[3046];
 
   /// 無法儲存憑證
-  String get caCertificateSaveFailedTitle => language._messages[3046];
+  String get caCertificateSaveFailedTitle => language._messages[3047];
 
   /// 無法移除自訂 CA 憑證
-  String get caCertificateRemoveFailedTitle => language._messages[3047];
+  String get caCertificateRemoveFailedTitle => language._messages[3048];
 
   /// 檔案超過 64 KiB。請選擇 CA 憑證檔（.crt、.pem 或 .cer）。
-  String get caCertificateTooLarge => language._messages[3048];
+  String get caCertificateTooLarge => language._messages[3049];
 
   /// 這個檔案不是 PEM 或 DER 格式的 X.509 憑證。
-  String get caCertificateNotCertificate => language._messages[3049];
+  String get caCertificateNotCertificate => language._messages[3050];
 
   /// 檔案含有私鑰，因此沒有匯入。請選擇只含 CA 憑證的檔案。
-  String get caCertificateHasPrivateKey => language._messages[3050];
+  String get caCertificateHasPrivateKey => language._messages[3051];
 
   /// 檔案含有超過 {count} 張憑證。請只選擇貴組織的 CA 憑證。
-  String caCertificateTooMany(Object? count) => _format(language, language._messages[3051], {'count': count});
+  String caCertificateTooMany(Object? count) => _format(language, language._messages[3052], {'count': count});
 
   /// 此裝置無法使用這張憑證。
-  String get caCertificateRejected => language._messages[3052];
+  String get caCertificateRejected => language._messages[3053];
 
   /// 憑證沒有存入安全儲存空間，連線仍只信任系統預設的根憑證。請再試一次。
-  String get caCertificateSaveFailedDetail => language._messages[3053];
+  String get caCertificateSaveFailedDetail => language._messages[3054];
 
   /// 憑證仍然存在，連到此站台時仍會信任它。請再試一次。
-  String get caCertificateRemoveFailedDetail => language._messages[3054];
+  String get caCertificateRemoveFailedDetail => language._messages[3055];
 
   /// 匯入此站台的 CA 憑證
-  String get importSiteCaCertificate => language._messages[3055];
+  String get importSiteCaCertificate => language._messages[3056];
 
   /// 信任這張 CA 憑證？
-  String get caImportConfirmTitle => language._messages[3056];
+  String get caImportConfirmTitle => language._messages[3057];
 
   /// 只有連到 {host} 時才會信任這張憑證，其他站台、外部圖片、AI 服務與更新檢查都不受影響。請先向管理員核對指紋。
-  String caImportConfirmDetail(Object? host) => _format(language, language._messages[3057], {'host': host});
+  String caImportConfirmDetail(Object? host) => _format(language, language._messages[3058], {'host': host});
 
   /// 檔案
-  String get caFileLabel => language._messages[3058];
+  String get caFileLabel => language._messages[3059];
 
   /// SHA-256 指紋
-  String get caFingerprintLabel => language._messages[3059];
+  String get caFingerprintLabel => language._messages[3060];
 
   /// 伺服器憑證主體
-  String get caServerSubjectLabel => language._messages[3060];
+  String get caServerSubjectLabel => language._messages[3061];
 
   /// 伺服器憑證簽發者
-  String get caServerIssuerLabel => language._messages[3061];
+  String get caServerIssuerLabel => language._messages[3062];
 
   /// 信任並重試
-  String get caTrustAndRetry => language._messages[3062];
+  String get caTrustAndRetry => language._messages[3063];
 
   /// 移除自訂 CA 憑證？
-  String get removeCustomCaTitle => language._messages[3063];
+  String get removeCustomCaTitle => language._messages[3064];
 
   /// 之後連到 {host} 時只信任系統預設的根憑證。已開啟的連線維持不變，直到下次登入或切換帳號。
-  String removeCustomCaDetail(Object? host) => _format(language, language._messages[3064], {'host': host});
+  String removeCustomCaDetail(Object? host) => _format(language, language._messages[3065], {'host': host});
 
   /// 移除
-  String get removeCustomCaAction => language._messages[3065];
+  String get removeCustomCaAction => language._messages[3066];
 
   /// 移除自訂 CA 憑證
-  String get removeCustomCaTooltip => language._messages[3066];
+  String get removeCustomCaTooltip => language._messages[3067];
 
   /// 已移除自訂 CA 憑證
-  String get customCaRemoved => language._messages[3067];
+  String get customCaRemoved => language._messages[3068];
 
   /// 自訂 CA 憑證
-  String get customCaCertificate => language._messages[3068];
+  String get customCaCertificate => language._messages[3069];
 
   /// GitLab.com 的憑證不受信任，這個網路上可能有人攔截連線。請不要在這個網路上繼續登入，也不要為 GitLab.com 安裝或匯入任何憑證。
-  String get untrustedCertificateGitLabCom => language._messages[3069];
+  String get untrustedCertificateGitLabCom => language._messages[3070];
 
   /// 伺服器的憑證已過期或尚未生效，匯入 CA 憑證也無法解決。請管理員更新憑證，或檢查此裝置的日期與時間。
-  String get serverCertificateNotValidNow => language._messages[3070];
+  String get serverCertificateNotValidNow => language._messages[3071];
 
   /// 匯入這張 CA 憑證後，站台的憑證仍不受信任，因此沒有保留它。CA 憑證無法解決主機名稱不符、已過期或由其他 CA 簽發的憑證。
-  String get caImportDidNotHelp => language._messages[3071];
+  String get caImportDidNotHelp => language._messages[3072];
 
   /// 此站台已儲存一張 CA 憑證，將被取代。除非管理員更換了 CA，否則這可能表示連線遭到攔截。
-  String get caReplaceWarning => language._messages[3072];
+  String get caReplaceWarning => language._messages[3073];
 
   /// 目前的 SHA-256 指紋
-  String get caCurrentFingerprintLabel => language._messages[3073];
+  String get caCurrentFingerprintLabel => language._messages[3074];
 
   /// 此手機不支援內建 AI
-  String get aiOnDeviceUnavailableTitle => language._messages[3074];
+  String get aiOnDeviceUnavailableTitle => language._messages[3075];
 
   /// 內建 AI 需要支援的機型與系統元件，也可以改用雲端或區域網路 AI 服務商。
-  String get aiOnDeviceUnavailableDetail => language._messages[3075];
+  String get aiOnDeviceUnavailableDetail => language._messages[3076];
 
   /// 手機內建 AI 模型尚未就緒
-  String get aiOnDeviceModelNotReadyTitle => language._messages[3076];
+  String get aiOnDeviceModelNotReadyTitle => language._messages[3077];
 
   /// 請確認手機有足夠儲存空間並完成系統 AI 模型下載後再試一次。
-  String get aiOnDeviceModelNotReadyDetail => language._messages[3077];
+  String get aiOnDeviceModelNotReadyDetail => language._messages[3078];
 
   /// 內建 AI 需要畫面保持開啟
-  String get aiOnDeviceForegroundOnlyTitle => language._messages[3078];
+  String get aiOnDeviceForegroundOnlyTitle => language._messages[3079];
 
   /// 系統只允許在前景執行內建 AI，請回到畫面後手動重試。
-  String get aiOnDeviceForegroundOnlyDetail => language._messages[3079];
+  String get aiOnDeviceForegroundOnlyDetail => language._messages[3080];
 
   /// 手機內建 AI 正在忙碌
-  String get aiOnDeviceBusyTitle => language._messages[3080];
+  String get aiOnDeviceBusyTitle => language._messages[3081];
 
   /// 其他工作正在使用手機的內建 AI，請稍候再手動重試。
-  String get aiOnDeviceBusyDetail => language._messages[3081];
+  String get aiOnDeviceBusyDetail => language._messages[3082];
 
   /// 手機內建 AI 已達系統用量上限
-  String get aiOnDeviceQuotaExceededTitle => language._messages[3082];
+  String get aiOnDeviceQuotaExceededTitle => language._messages[3083];
 
   /// 系統暫時限制內建 AI 的呼叫次數，請稍候再試或切換其他 AI 服務商。
-  String get aiOnDeviceQuotaExceededDetail => language._messages[3083];
+  String get aiOnDeviceQuotaExceededDetail => language._messages[3084];
 
   /// 手機內建 AI 無法完成回覆
-  String get aiOnDeviceErrorTitle => language._messages[3084];
+  String get aiOnDeviceErrorTitle => language._messages[3085];
 
   /// 本機推論未完成，請稍候手動重試，或改用其他 AI 服務商。
-  String get aiOnDeviceErrorDetail => language._messages[3085];
+  String get aiOnDeviceErrorDetail => language._messages[3086];
 
   /// 已配合手機內建 AI 的長度上限縮短此頁內容
-  String get aiNoticeOnDeviceContextTruncated => language._messages[3086];
+  String get aiNoticeOnDeviceContextTruncated => language._messages[3087];
 
   /// 手機內建 AI（Gemini Nano）
-  String get aiPresetOnDeviceName => language._messages[3087];
+  String get aiPresetOnDeviceName => language._messages[3088];
 
   /// 在同意資料揭露前，不會啟動 Google ML Kit 或查詢模型狀態。儲存後即可檢視並同意，接著檢查或下載模型。
-  String get aiOnDeviceConsentBeforeStatus => language._messages[3088];
+  String get aiOnDeviceConsentBeforeStatus => language._messages[3089];
 
   /// 檢視並同意資料揭露
-  String get aiOnDeviceReviewConsentAction => language._messages[3089];
+  String get aiOnDeviceReviewConsentAction => language._messages[3090];
 
   /// 模型已就緒，可直接在手機上使用
-  String get aiOnDeviceStatusAvailable => language._messages[3090];
+  String get aiOnDeviceStatusAvailable => language._messages[3091];
 
   /// 模型可下載至手機使用
-  String get aiOnDeviceStatusDownloadable => language._messages[3091];
+  String get aiOnDeviceStatusDownloadable => language._messages[3092];
 
   /// 正在下載手機內建 AI 模型…
-  String get aiOnDeviceStatusDownloading => language._messages[3092];
+  String get aiOnDeviceStatusDownloading => language._messages[3093];
 
   /// 此手機無法使用內建 AI 模型
-  String get aiOnDeviceStatusUnavailable => language._messages[3093];
+  String get aiOnDeviceStatusUnavailable => language._messages[3094];
 
   /// 僅支援具備 AICore 的 Android 手機。
-  String get aiOnDeviceUnavailableReasonNotAndroid => language._messages[3094];
+  String get aiOnDeviceUnavailableReasonNotAndroid => language._messages[3095];
 
   /// 需要 Android 8.0 或更新版本。
-  String get aiOnDeviceUnavailableReasonSdkTooOld => language._messages[3095];
+  String get aiOnDeviceUnavailableReasonSdkTooOld => language._messages[3096];
 
   /// 這支手機未安裝 Android AICore 系統服務。
-  String get aiOnDeviceUnavailableReasonAicoreMissing => language._messages[3096];
+  String get aiOnDeviceUnavailableReasonAicoreMissing => language._messages[3097];
 
   /// Android AICore 系統服務目前已停用。
-  String get aiOnDeviceUnavailableReasonAicoreDisabled => language._messages[3097];
+  String get aiOnDeviceUnavailableReasonAicoreDisabled => language._messages[3098];
 
   /// 手機剩餘儲存空間不足，無法下載模型。
-  String get aiOnDeviceUnavailableReasonInsufficientStorage => language._messages[3098];
+  String get aiOnDeviceUnavailableReasonInsufficientStorage => language._messages[3099];
 
   /// 此機型不支援 Gemini Nano 內建模型。
-  String get aiOnDeviceUnavailableReasonUnsupported => language._messages[3099];
+  String get aiOnDeviceUnavailableReasonUnsupported => language._messages[3100];
 
   /// 下載模型
-  String get aiOnDeviceDownloadButton => language._messages[3100];
+  String get aiOnDeviceDownloadButton => language._messages[3101];
 
   /// 已下載 {downloadedMb} MB / {totalMb} MB
-  String aiOnDeviceDownloadProgress(Object? downloadedMb, Object? totalMb) => _format(language, language._messages[3101], {'downloadedMb': downloadedMb, 'totalMb': totalMb});
+  String aiOnDeviceDownloadProgress(Object? downloadedMb, Object? totalMb) => _format(language, language._messages[3102], {'downloadedMb': downloadedMb, 'totalMb': totalMb});
 
   /// 唯讀模式（無工具呼叫、上限約 4,000 個詞元、僅限前景執行）。
-  String get aiOnDeviceCapabilitiesNote => language._messages[3102];
+  String get aiOnDeviceCapabilitiesNote => language._messages[3103];
 
   /// 這支手機（Android AICore / Gemini Nano）
-  String get aiConsentOnDeviceRecipient => language._messages[3103];
+  String get aiConsentOnDeviceRecipient => language._messages[3104];
 
   /// 提問與頁面內容會留在這支手機上，由 Android AICore 在本機處理，不會傳送至雲端 AI 伺服器。
-  String get aiConsentOnDeviceStaysOnPhone => language._messages[3104];
+  String get aiConsentOnDeviceStaysOnPhone => language._messages[3105];
 
   /// 此功能使用的 Google ML Kit 會將診斷與使用情況資料（包含每個安裝實例的識別碼）傳送給 Google。
-  String get aiConsentOnDeviceMlKitTelemetry => language._messages[3105];
+  String get aiConsentOnDeviceMlKitTelemetry => language._messages[3106];
 
   /// 一旦啟動，即使事後撤回同意或移除此來源，也必須等到重新啟動應用程式後才能完全停止傳送上述診斷資料。
-  String get aiConsentOnDeviceCannotStopUntilRestart => language._messages[3106];
+  String get aiConsentOnDeviceCannotStopUntilRestart => language._messages[3107];
 
   /// Google ML Kit 資料揭露說明
-  String get aiConsentOnDeviceDisclosureLinkLabel => language._messages[3107];
+  String get aiConsentOnDeviceDisclosureLinkLabel => language._messages[3108];
 
   /// 使用手機內建 AI 前確認
-  String get aiConsentOnDeviceTitle => language._messages[3108];
+  String get aiConsentOnDeviceTitle => language._messages[3109];
 
   /// 在這支手機上處理的資料
-  String get aiConsentOnDeviceDataHeading => language._messages[3109];
+  String get aiConsentOnDeviceDataHeading => language._messages[3110];
 
   /// 只有你允許的內容會在這支手機上由 Android AICore 處理，不會傳送到 AI 伺服器；Google ML Kit 的診斷資料說明在下方。
-  String get aiConsentOnDeviceDataDescription => language._messages[3110];
+  String get aiConsentOnDeviceDataDescription => language._messages[3111];
 
   /// 下載完成前請保持此頁開啟；離開此頁會停止下載。
-  String get aiOnDeviceDownloadKeepOpen => language._messages[3111];
+  String get aiOnDeviceDownloadKeepOpen => language._messages[3112];
 
   /// 此本機 AI 來源無法執行修改；若需修改 GitLab 內容，請切換為雲端服務商。
-  String get aiOnDeviceCannotWrite => language._messages[3112];
+  String get aiOnDeviceCannotWrite => language._messages[3113];
 
   /// 此帳號的內容可能受你所屬組織或自管 GitLab 的政策約束。這些內容只在這支手機上處理，不會傳送給 AI 供應商。
-  String get aiConsentSelfManagedNoticeOnDevice => language._messages[3113];
+  String get aiConsentSelfManagedNoticeOnDevice => language._messages[3114];
 
   /// 手機內建 AI 只會讀取這個頁面，不會讀取專案的其他資料。
-  String get aiChatEmptyOnDevice => language._messages[3114];
+  String get aiChatEmptyOnDevice => language._messages[3115];
 
   /// 手機內建 AI 無法讀取或變更收件匣，請改用雲端供應商。
-  String get aiOnDeviceInboxUnavailable => language._messages[3115];
+  String get aiOnDeviceInboxUnavailable => language._messages[3116];
 }

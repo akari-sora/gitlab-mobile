@@ -2751,6 +2751,7 @@
   "activityVerbTarget": "{verb} ({target})",
   "refreshEveryThirtySeconds": "हर 30 सेकंड में रीफ़्रेश करें",
   "refreshEveryMinute": "हर मिनट में रीफ़्रेश करें",
+  "refreshEveryDuration": "हर {duration} में रीफ़्रेश करें",
   "aiSendPausedBudget": "GitLab के अनुरोधों का कोटा लगभग खत्म हो गया है; भेजना रुका हुआ है",
   "aiSendPausedRateLimited": "GitLab अनुरोध सीमित कर रहा है; भेजना रुका हुआ है",
   "aiSendResumesAfterReset": "अनुरोधों का कोटा बहाल होने पर फिर से शुरू होगा",

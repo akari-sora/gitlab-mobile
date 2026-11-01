@@ -2753,6 +2753,7 @@ const _messagesMs = <String>[
   '{verb} {target}',
   'Refresh setiap 30 saat',
   'Refresh setiap minit',
+  'Refresh setiap {duration}',
   'Kuota permintaan GitLab hampir habis; penghantaran dijeda',
   'GitLab sedang mengehadkan permintaan; penghantaran dijeda',
   'Sambung semula apabila kuota permintaan ditetapkan semula',

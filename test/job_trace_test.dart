@@ -395,8 +395,8 @@ void main() {
       }
     });
 
-    test('Content-Length early cancel: when Content-Length <= offset, cancels before reading the body and reports no new data', () async {
-      for (final declaredLength in [500, 250, 0]) {
+    test('Content-Length early cancel: equal to the offset (nothing new) or 0 (erased) cancels before the body and reports no new data; shorter is a replaced log read from byte 0', () async {
+      for (final declaredLength in [500, 0]) {
         var dioCancelled = false;
         final slow = slowBody(
           utf8.encode('must not be read\n' * 100),
@@ -418,6 +418,38 @@ void main() {
         expect(res.nextOffset, 500);
         expect(res.totalBytes, isNull);
       }
+
+      // Shorter than the offset: the log was replaced. It is read whole from
+      // byte 0, as before #62, so the page restarts from it.
+      final replaced = utf8.encode('replaced\n' * 25);
+      final shorterApi = testApi(FakeAdapter((request) => ResponseBody.fromBytes(
+        replaced,
+        200,
+        headers: {
+          'content-length': ['${replaced.length}'],
+        },
+      )));
+      addTearDown(shorterApi.close);
+      final shorter = await shorterApi.jobTraceChunk(42, 1, offset: 500, bounded: true);
+      expect(shorter.bytes, replaced);
+      expect(shorter.startOffset, 0);
+      expect(shorter.nextOffset, replaced.length);
+      expect(shorter.totalBytes, replaced.length);
+      expect(shorter.rangeIgnored, isTrue);
+
+      // A replaced log over the budget fails before its body, as a whole
+      // read of it did.
+      final big = slowBody(List<int>.filled(64 * 100, 0x61), step: 64, headers: {
+        'content-length': ['${GitLabApi.maxTextBytes + 1}'],
+      });
+      final bigApi = testApi(FakeAdapter((request) => big.body));
+      addTearDown(bigApi.close);
+      await expectLater(
+        bigApi.jobTraceChunk(42, 1, offset: GitLabApi.maxTextBytes + 100, bounded: true),
+        throwsA(isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.tooLarge)),
+      );
+      expect(big.cancelled(), isTrue);
+      expect(big.sent(), lessThan(10), reason: 'of 100 chunks');
 
       // When Content-Length is present and larger than offset, it is used for totalBytes.
       final body = utf8.encode('0123456789new data\n');
@@ -2116,7 +2148,7 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('Content-Length not larger than offset cancels before reading the body and keeps the shown rows (#62)', (tester) async {
+    testWidgets('Content-Length equal to the offset or 0 cancels before reading the body and keeps the shown rows (#62)', (tester) async {
       var text = '${part(0, 30)}\n';
       final initialLen = utf8.encode(text).length;
       final ranges = <String?>[];
@@ -2177,8 +2209,8 @@ void main() {
       expect(JobTrace.debugCharactersProcessed, 0);
       expect(find.text('row 29 of the growing log'), findsOneWidget);
 
-      // Smaller Content-Length (e.g. 0): also early cancel without reading the body,
-      // keeping the shown rows.
+      // Content-Length 0 (an erased log): also early cancel, keeping the
+      // shown rows.
       final fullText = text;
       text = '';
       bodyReads = 0;
@@ -2201,6 +2233,35 @@ void main() {
       expect(ranges.last, 'bytes=$initialLen-${initialLen + limit - 1}');
       expect(find.text('appended line after early cancel'), findsOneWidget);
       expect(find.text('row 29 of the growing log'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('a body shorter than the offset (log replaced) restarts from it', (tester) async {
+      // wholeLog sends Content-Length, as gitlab.com does for a finished job.
+      var text = '${part(0, 30)}\n';
+      final ranges = <String?>[];
+      final api = testApi(wholeLog(() => text, ranges));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.text('row 29 of the growing log'), findsOneWidget);
+
+      text = 'replaced log line one\nreplaced log line two\n';
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(find.text('replaced log line two'), findsOneWidget);
+      expect(find.text('row 29 of the growing log'), findsNothing);
+      expect(find.textContaining('of the growing log'), findsNothing);
+      expect(ranges.where((r) => r!.startsWith('bytes=-')), isEmpty);
+
+      // It continues from the replaced log's end.
+      text = '${text}third line\n';
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(ranges.last, 'bytes=44-${44 + limit - 1}');
+      expect(find.text('third line'), findsOneWidget);
+      expect(find.text('replaced log line one'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
@@ -2321,6 +2382,85 @@ void main() {
       expect(ranges.last, 'bytes=$end-${end + limit - 1}');
       expect(find.text('after the jump'), findsOneWidget);
       expect(find.text('內容超出預覽上限'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    test('the polling interval grows with the log only when the server ignored Range (#62)', () {
+      const mib = 1024 * 1024;
+      const ten = Duration(seconds: 10);
+      Duration at(int bytes, {bool ignored = true, Duration base = ten}) =>
+          jobLogPollingInterval(base, rangeIgnored: ignored, logBytes: bytes);
+      // Range honoured (206): the rate-level interval, whatever the size.
+      expect(at(30 * mib, ignored: false), ten);
+      expect(at(30 * mib, ignored: false, base: const Duration(seconds: 60)), const Duration(seconds: 60));
+      // Range ignored (200): +10 s per started 2 MiB above the first 2 MiB.
+      expect(at(0), ten);
+      expect(at(2 * mib), ten);
+      expect(at(2 * mib + 1), const Duration(seconds: 20));
+      expect(at(4 * mib), const Duration(seconds: 20));
+      expect(at(4 * mib + 1), const Duration(seconds: 30));
+      expect(at(10 * mib), const Duration(seconds: 50));
+      expect(at(22 * mib), const Duration(seconds: 110));
+      expect(at(22 * mib + 1), const Duration(seconds: 120));
+      expect(at(30 * mib), const Duration(seconds: 120), reason: 'capped');
+      // On top of a slower rate level, with the same cap.
+      expect(at(4 * mib + 1, base: const Duration(seconds: 30)), const Duration(seconds: 50));
+      expect(at(30 * mib, base: const Duration(seconds: 60)), const Duration(seconds: 120));
+    });
+
+    testWidgets('auto-refresh slows down as a log served whole (200) grows, and keeps 10 s for a log served with Range (206) (#62)', (tester) async {
+      final line = '${'x' * 120}\n';
+      var text = line * 39000; // 4.5 MiB: 10 s + 2 × 10 s
+      final ranges = <String?>[];
+      final api = testApi(wholeLog(() => text, ranges));
+      addTearDown(api.close);
+      // Auto-refresh runs only while the app is in the foreground.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _pumpJobLog(tester, api);
+      final state = tester.state<JobLogPageState>(find.byType(JobLogPage));
+      expect(state.pollingInterval, const Duration(seconds: 30));
+      // The chip names the interval actually used.
+      expect(find.text('30 秒更新'), findsOneWidget);
+      expect(find.text('10 秒更新'), findsNothing);
+      await tester.tap(find.byType(FilterChip).first);
+      await tester.pump();
+      final reads = ranges.length;
+      await tester.pump(const Duration(seconds: 29));
+      expect(ranges, hasLength(reads), reason: 'no poll after 10 s or 29 s');
+      text = '$text${line * 18000}'; // 6.6 MiB: 10 s + 3 × 10 s
+      await tester.pump(const Duration(seconds: 1));
+      await _settleJobLog(tester);
+      expect(ranges.length, greaterThan(reads));
+      expect(state.pollingInterval, const Duration(seconds: 40));
+      expect(find.text('40 秒更新'), findsOneWidget);
+      final afterGrowth = ranges.length;
+      await tester.pump(const Duration(seconds: 39));
+      expect(ranges, hasLength(afterGrowth), reason: 'the timer was re-armed at 40 s');
+      await tester.pump(const Duration(seconds: 1));
+      await _settleJobLog(tester);
+      expect(ranges.length, greaterThan(afterGrowth));
+
+      // The same size served with Range keeps the 10 s cadence.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      final all = utf8.encode(text);
+      final rangeApi = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'honours-range'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          return _serveRange(all, request.headers['Range'] as String?);
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(rangeApi.close);
+      await _pumpJobLog(tester, rangeApi);
+      expect(
+        tester.state<JobLogPageState>(find.byType(JobLogPage)).pollingInterval,
+        const Duration(seconds: 10),
+      );
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump();

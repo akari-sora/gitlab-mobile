@@ -2753,6 +2753,7 @@ const _messagesDe = <String>[
   '{verb} {target}',
   'Alle 30 Sek. aktualisieren',
   'Jede Minute aktualisieren',
+  'Alle {duration} aktualisieren',
   'Das GitLab-Anfragekontingent ist fast aufgebraucht; Senden pausiert',
   'GitLab begrenzt derzeit die Anfragen; Senden pausiert',
   'Fortsetzung nach Zurücksetzen des Anfragekontingents',

@@ -2757,6 +2757,7 @@
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "Refresh every 30 seconds",
   "refreshEveryMinute": "Refresh every minute",
+  "refreshEveryDuration": "Refresh every {duration}",
   "aiSendPausedBudget": "GitLab request budget is almost used up; sending is paused",
   "aiSendPausedRateLimited": "GitLab is limiting requests; sending is paused",
   "aiSendResumesAfterReset": "Resumes when the budget resets",

@@ -2751,6 +2751,7 @@
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "Obnovit každých 30 s",
   "refreshEveryMinute": "Obnovit každou minutu",
+  "refreshEveryDuration": "Obnovit každých {duration}",
   "aiSendPausedBudget": "Kvóta požadavků pro GitLab je téměř vyčerpaná; odesílání je pozastaveno",
   "aiSendPausedRateLimited": "GitLab omezuje požadavky; odesílání je pozastaveno",
   "aiSendResumesAfterReset": "Obnoví se po obnovení kvóty požadavků",

@@ -2753,6 +2753,7 @@ const _messagesRo = <String>[
   '{verb} {target}',
   'Actualizare la 30 de secunde',
   'Actualizare la un minut',
+  'Actualizare la {duration}',
   'Cota de cereri GitLab este aproape epuizată; trimiterea este suspendată',
   'GitLab limitează cererile; trimiterea este suspendată',
   'Se reia când se resetează cota de cereri',

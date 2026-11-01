@@ -1992,6 +1992,23 @@ final class _HiddenLoad implements Exception {
   const _HiddenLoad();
 }
 
+/// Auto-refresh interval of a job log. A server that ignores `Range`
+/// (gitlab.com, #62) sends the whole log on every poll with new data, so
+/// past the first [GitLabApi.maxTextBytes] of [logBytes] the interval grows
+/// by 10 s per started 2 MiB, up to 120 s. A log read with `Range` keeps
+/// [base].
+Duration jobLogPollingInterval(
+  Duration base, {
+  required bool rangeIgnored,
+  required int logBytes,
+}) {
+  const step = GitLabApi.maxTextBytes;
+  const longest = Duration(seconds: 120);
+  if (!rangeIgnored || logBytes <= step || base >= longest) return base;
+  final grown = base + Duration(seconds: 10 * ((logBytes - 1) ~/ step));
+  return grown < longest ? grown : longest;
+}
+
 class JobLogPage extends StatefulWidget {
   static const EdgeInsets logPadding = EdgeInsets.symmetric(horizontal: 16, vertical: 8);
   const JobLogPage({super.key, required this.account, required this.api, required this.project, required this.id,
@@ -2019,6 +2036,10 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   JobTraceParser _parser = JobTraceParser();
   bool _hasTraceBytes = false;
   int _traceOffset = 0;
+
+  /// The last trace read was a `200` that ignored `Range`, so each poll
+  /// downloads the log up to [_traceOffset] and the interval grows with it.
+  bool _rangeIgnored = false;
 
   /// The verified tail of this attempt's finished log, when one is shown. Its
   /// offsets are absolute; it may start after byte 0 (C2 §4.5).
@@ -2070,11 +2091,16 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   late RateLevel _rateLevel;
   final _scroll = ScrollController();
   final _chrome = ScrollChromeController();
-  Duration get pollingInterval => switch (_rateLevel) {
+  Duration get _baseInterval => switch (_rateLevel) {
     RateLevel.normal => const Duration(seconds: 10),
     RateLevel.low => const Duration(seconds: 30),
     RateLevel.critical => const Duration(seconds: 60),
   };
+  Duration get pollingInterval => jobLogPollingInterval(
+    _baseInterval,
+    rangeIgnored: _rangeIgnored,
+    logBytes: _traceOffset,
+  );
   @override
   void initState() {
     super.initState(); _routeOwner = widget; _jobId = widget.id;
@@ -2311,6 +2337,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       var resync = false;
       var nextOffset = _traceOffset;
       var nextTail = _tail;
+      var rangeIgnored = _rangeIgnored;
       if (tail != null) {
         // The tail never joins bytes of an earlier read or attempt, and the
         // next offset is the tail's absolute end.
@@ -2350,6 +2377,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             int requestCount,
             int? startOffset,
             int? totalBytes,
+            bool rangeIgnored,
           }) chunk;
           try {
             chunk = await widget.api.jobTraceChunk(
@@ -2367,6 +2395,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           if (!current()) { return; }
           // The bounded fallback after `unsupported` may finish while hidden.
           if (useTail && !_visible) throw const _HiddenLoad();
+          rangeIgnored = chunk.rangeIgnored;
           final end = chunk.nextOffset ?? offset + chunk.bytes.length;
           if (chunk.bytes.isNotEmpty && end < offset) {
             // The server's trace restarted below the offset read so far.
@@ -2380,10 +2409,10 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           }
           final total = chunk.totalBytes;
           // gitlab.com's trace endpoint ignores Range and answers 200 with the
-          // whole log (#58): jobTraceChunk then returns only the bytes past
-          // the offset, with no total, and the read is at its end. The short
-          // reads with an unknown `/*` total handled here and below do not
-          // occur there; they are kept for servers that honour Range.
+          // whole log (#58): jobTraceChunk streams it and returns at most one
+          // budget past the offset, stopping there like a bounded 206, with
+          // the total from Content-Length when the response has one (#62).
+          // Without a total, a chunk shorter than the budget is the end.
           atEnd = chunk.isEof ||
               (total != null ? end >= total : chunk.bytes.length < limit);
           if (!atEnd &&
@@ -2406,6 +2435,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             tail: true,
           );
           if (!current()) { return; }
+          rangeIgnored = last.rangeIgnored;
           bytesToParse = last.bytes;
           restart = true;
           tailRead = true;
@@ -2447,6 +2477,9 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         if (restart) _numbering++;
         _parser = targetParser;
         _traceOffset = nextOffset;
+        _rangeIgnored = rangeIgnored;
+        // A server that ignores Range polls less often as its log grows.
+        _schedule();
         _tail = nextTail;
         _resyncTail = resync;
         _hasTraceBytes =
@@ -2549,6 +2582,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _parser = JobTraceParser();
           _hasTraceBytes = false;
           _traceOffset = 0;
+          _rangeIgnored = false;
           _tail = null;
           _tailClipped = false;
           _latestClipped = false;
@@ -3012,11 +3046,15 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 if (valueText(_job!, 'stage').isNotEmpty) MetaChip(valueText(_job!, 'stage'), icon: Icons.layers_outlined),
                 if (valueText(_job!, 'ref').isNotEmpty) MetaChip(valueText(_job!, 'ref'), icon: Icons.alt_route, mono: true),
               ],
-              FilterChip(label: Text(switch (_rateLevel) {
-                RateLevel.normal => l10n.refreshEveryTenSeconds,
-                RateLevel.low => l10n.refreshEveryThirtySeconds,
-                RateLevel.critical => l10n.refreshEveryMinute,
-              }), selected: _auto, onSelected: (value) {
+              // A large log the server sends whole polls more slowly; name the
+              // interval actually used.
+              FilterChip(label: Text(_rangeIgnored && pollingInterval != _baseInterval
+                ? l10n.refreshEveryDuration(formatDuration(pollingInterval.inSeconds))
+                : switch (_rateLevel) {
+                    RateLevel.normal => l10n.refreshEveryTenSeconds,
+                    RateLevel.low => l10n.refreshEveryThirtySeconds,
+                    RateLevel.critical => l10n.refreshEveryMinute,
+                  }), selected: _auto, onSelected: (value) {
                 setState(() => _auto = value); _schedule();
               }),
               FilterChip(label: Text(l10n.followLogTail), selected: _follow, onSelected: (value) {

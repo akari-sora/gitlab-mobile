@@ -2753,6 +2753,7 @@ const _messagesPtBr = <String>[
   '{verb} {target}',
   'Atualizar a cada 30 s',
   'Atualizar a cada minuto',
+  'Atualizar a cada {duration}',
   'A cota de solicitações do GitLab está quase esgotada; envio pausado',
   'O GitLab está limitando solicitações; envio pausado',
   'Retoma quando a cota de solicitações for redefinida',

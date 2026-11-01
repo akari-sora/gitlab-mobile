@@ -2823,6 +2823,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     );
   }
 
+  /// [rangeIgnored] is true when a `Range` was sent and the server answered
+  /// `200` with the whole log (gitlab.com, #62): every read then downloads
+  /// the log up to its end.
   Future<
     ({
       List<int> bytes,
@@ -2831,6 +2834,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       int? startOffset,
       int? totalBytes,
       int requestCount,
+      bool rangeIgnored,
     })
   >
   jobTraceChunk(
@@ -2898,6 +2902,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           startOffset: offset,
           totalBytes: null,
           requestCount: 1,
+          rangeIgnored: false,
         );
       }
 
@@ -2979,6 +2984,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         startOffset: startOffset,
         totalBytes: totalBytes,
         requestCount: 1,
+        rangeIgnored: result.statusCode == 200 && headers.containsKey('Range'),
       );
     } on ApiFailure catch (failure) {
       if (failure.status != 404) rethrow;
@@ -3000,6 +3006,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           startOffset: offset,
           totalBytes: null,
           requestCount: 2,
+          rangeIgnored: false,
         );
       }
       rethrow;
@@ -3036,9 +3043,11 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       await body.stream.listen((_) {}).cancel();
     }
 
-    // Nothing past what is shown: stop before the body (mobile data).
+    // Nothing new (the size that is shown) or an erased log: stop before the
+    // body (mobile data); the rows on screen stay. A log now shorter than
+    // [offset] was replaced and is read whole from byte 0 below.
     final shown = tail ? 0 : offset;
-    if (contentLength != null && contentLength <= shown) {
+    if (contentLength == shown || contentLength == 0) {
       await stop('no new data');
       return (
         bytes: Uint8List(0),
@@ -3049,7 +3058,8 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     }
     if (contentLength != null &&
         (contentLength > maxTraceStreamBytes ||
-            (!tail && !bounded && contentLength - offset > limit))) {
+            (!tail && !bounded && contentLength - offset > limit) ||
+            (!tail && contentLength < offset && contentLength > limit))) {
       await stop('response budget exceeded');
       throw const ApiFailure(FailureKind.tooLarge);
     }

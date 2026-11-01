@@ -2751,6 +2751,7 @@
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "Actualizare la 30 de secunde",
   "refreshEveryMinute": "Actualizare la un minut",
+  "refreshEveryDuration": "Actualizare la {duration}",
   "aiSendPausedBudget": "Cota de cereri GitLab este aproape epuizată; trimiterea este suspendată",
   "aiSendPausedRateLimited": "GitLab limitează cererile; trimiterea este suspendată",
   "aiSendResumesAfterReset": "Se reia când se resetează cota de cereri",
