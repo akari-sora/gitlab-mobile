@@ -2753,6 +2753,7 @@ const _messagesEn = <String>[
   '{verb} {target}',
   'Refresh every 30 seconds',
   'Refresh every minute',
+  'Refresh every {duration}',
   'GitLab request budget is almost used up; sending is paused',
   'GitLab is limiting requests; sending is paused',
   'Resumes when the budget resets',

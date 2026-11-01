@@ -2751,6 +2751,7 @@
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "Оновлення кожні 30 секунд",
   "refreshEveryMinute": "Оновлення кожну хвилину",
+  "refreshEveryDuration": "Оновлення кожні {duration}",
   "aiSendPausedBudget": "Квоту запитів GitLab майже вичерпано; надсилання призупинено",
   "aiSendPausedRateLimited": "GitLab обмежує запити; надсилання призупинено",
   "aiSendResumesAfterReset": "Відновиться після скидання квоти запитів",

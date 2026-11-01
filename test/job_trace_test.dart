@@ -127,7 +127,9 @@ void main() {
     expect(grown.totalBytes, isNull);
     final same = await api.jobTraceChunk(42, 1, offset: 23, bounded: true);
     expect(same.bytes, isEmpty);
+    expect(same.startOffset, 23);
     expect(same.nextOffset, 23);
+    expect(same.totalBytes, isNull);
     body = 'replaced\n';
     final replaced = await api.jobTraceChunk(42, 1, offset: 23, bounded: true);
     expect(utf8.decode(replaced.bytes), 'replaced\n');
@@ -137,6 +139,458 @@ void main() {
     final erased = await api.jobTraceChunk(42, 1, offset: 23, bounded: true);
     expect(erased.bytes, isEmpty);
     expect(erased.nextOffset, 23, reason: 'an empty body keeps what is shown');
+  });
+
+  group('jobTraceChunk streaming when server ignores Range with 200 (#62)', () {
+    // Dio subscribes to the adapter's stream as soon as the headers arrive and
+    // its response interceptors take a timer turn before GitLabApi sees the
+    // response, so a fake that sends on the first turn always sends once
+    // before any cancel. What the cancel proves is that the download stops:
+    // the source is cancelled long before it would have finished.
+    ({ResponseBody body, int Function() sent, bool Function() cancelled})
+        slowBody(List<int> bytes, {int step = 16, Map<String, List<String>> headers = const {}}) {
+      var sent = 0;
+      var cancelled = false;
+      final body = ResponseBody(
+        Stream<Uint8List>.multi((sink) {
+          sink.onCancel = () => cancelled = true;
+          Future<void> pump() async {
+            for (var i = 0; i < bytes.length && !cancelled; i += step) {
+              await Future<void>.delayed(Duration.zero);
+              if (cancelled) return;
+              sent++;
+              sink.add(Uint8List.fromList(bytes.sublist(i, min(i + step, bytes.length))));
+            }
+            if (!cancelled) await sink.close();
+          }
+
+          unawaited(pump());
+        }),
+        200,
+        headers: headers,
+      );
+      return (body: body, sent: () => sent, cancelled: () => cancelled);
+    }
+
+    test('200 ignoring Range: offset read discards prefix across chunks and tail read uses ring buffer with skipCutLine', () async {
+      const cut = 'partial line at start of tail window\n';
+      const rest = '2026-10-20T06:56:03.100000Z 00O first complete tail line\n'
+          '2026-10-20T06:56:04.100000Z 00O final tail line\n';
+      final tailWindow = [...utf8.encode(cut), ...utf8.encode(rest)];
+      final prefix = List<int>.filled(300, 0x78); // 300 'x' bytes before the window
+      final fullBytes = Uint8List.fromList([...prefix, ...tailWindow]);
+
+      Stream<Uint8List> chunked(Uint8List data, int step) async* {
+        for (var i = 0; i < data.length; i += step) {
+          yield Uint8List.sublistView(data, i, min(i + step, data.length));
+        }
+      }
+
+      final api = testApi(FakeAdapter((request) => ResponseBody(
+        chunked(fullBytes, 17),
+        200,
+        headers: {
+          'content-length': ['${fullBytes.length}'],
+        },
+      )));
+      addTearDown(api.close);
+
+      // 1. Offset read: discards the first 300 + cut.length bytes and keeps `rest`.
+      final offsetTarget = prefix.length + utf8.encode(cut).length;
+      final offsetRes = await api.jobTraceChunk(
+        42,
+        1,
+        offset: offsetTarget,
+        maxBytes: 256,
+        bounded: true,
+      );
+      expect(utf8.decode(offsetRes.bytes), rest);
+      expect(offsetRes.startOffset, offsetTarget);
+      expect(offsetRes.nextOffset, fullBytes.length);
+      expect(offsetRes.totalBytes, fullBytes.length);
+
+      // 2. Tail read: keeps only the last `tailWindow.length` bytes in the ring
+      // buffer and aligns to the next line via skipCutLine.
+      final tailRes = await api.jobTraceChunk(
+        42,
+        1,
+        tail: true,
+        maxBytes: tailWindow.length,
+      );
+      expect(utf8.decode(tailRes.bytes), rest);
+      expect(tailRes.startOffset, prefix.length + utf8.encode(cut).length);
+      expect(tailRes.startOffset! + tailRes.bytes.length, fullBytes.length);
+      expect(tailRes.nextOffset, fullBytes.length);
+      expect(tailRes.totalBytes, fullBytes.length);
+      final parsed = JobTraceParser().addBytes(tailRes.bytes, isLast: true);
+      expect(parsed.lines.map((l) => l.text).toList(), [
+        'first complete tail line',
+        'final tail line',
+        '',
+      ]);
+
+      // 3. Tail read when total <= limit: keeps the whole body from byte 0
+      // without dropping the first line.
+      final wholeTail = await api.jobTraceChunk(
+        42,
+        1,
+        tail: true,
+        maxBytes: fullBytes.length + 100,
+      );
+      expect(wholeTail.bytes, fullBytes);
+      expect(wholeTail.startOffset, 0);
+      expect(wholeTail.nextOffset, fullBytes.length);
+      expect(wholeTail.totalBytes, fullBytes.length);
+    });
+
+    test('kept-bytes budget: discarded offset bytes do not count; a bounded read keeps the budget and the next read goes on, an unbounded one fails with tooLarge', () async {
+      const limit = GitLabApi.maxTextBytes;
+      // 3 MiB discarded, then the bytes after the offset.
+      const discarded = 3 * 1024 * 1024;
+      final chunk64K = Uint8List.fromList(List<int>.generate(64 * 1024, (i) => 0x61 + (i % 26)));
+      var keptChunks = limit ~/ chunk64K.length;
+      var streamCancelled = false;
+      var emittedChunks = 0;
+      final api = testApi(FakeAdapter((request) {
+        final totalChunks = discarded ~/ chunk64K.length + keptChunks;
+        return ResponseBody(
+          Stream<Uint8List>.multi((sink) {
+            sink.onCancel = () {
+              streamCancelled = true;
+            };
+            Future<void> pump() async {
+              for (var i = 0; i < totalChunks && !streamCancelled; i++) {
+                emittedChunks++;
+                sink.add(chunk64K);
+                await Future<void>.delayed(Duration.zero);
+              }
+              if (!streamCancelled) {
+                await sink.close();
+              }
+            }
+
+            unawaited(pump());
+          }),
+          200,
+        );
+      }));
+      addTearDown(api.close);
+
+      // Exactly 2 MiB kept after discarding 3 MiB.
+      final ok = await api.jobTraceChunk(42, 1, offset: discarded, bounded: true);
+      expect(ok.bytes.length, limit);
+      expect(ok.startOffset, discarded);
+      expect(ok.nextOffset, discarded + limit);
+      expect(ok.totalBytes, isNull);
+
+      // 10 more chunks after the offset: a bounded read keeps exactly the
+      // budget, as a 206 for bytes=offset-(offset+limit-1) would, and stops
+      // the download. The next read starts where it stopped.
+      keptChunks += 10;
+      streamCancelled = false;
+      emittedChunks = 0;
+      final first = await api.jobTraceChunk(42, 1, offset: discarded, bounded: true);
+      expect(first.bytes.length, limit);
+      expect(first.startOffset, discarded);
+      expect(first.nextOffset, discarded + limit);
+      expect(first.totalBytes, isNull);
+      expect(streamCancelled, isTrue);
+      expect(emittedChunks, lessThan(80 + 10), reason: 'stopped before the end of the body');
+      streamCancelled = false;
+      final next = await api.jobTraceChunk(42, 1, offset: first.nextOffset!, bounded: true);
+      expect(next.bytes.length, 10 * chunk64K.length);
+      expect(next.startOffset, discarded + limit);
+      expect(next.nextOffset, discarded + limit + 10 * chunk64K.length);
+
+      // Unbounded (other callers, like `bytes=offset-` on the Range path):
+      // more than the budget after the offset fails with tooLarge.
+      streamCancelled = false;
+      emittedChunks = 0;
+      await expectLater(
+        api.jobTraceChunk(42, 1, offset: discarded),
+        throwsA(isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.tooLarge)),
+      );
+      expect(streamCancelled, isTrue);
+      expect(emittedChunks, lessThan(80 + 10));
+
+      // A Content-Length with more than the budget after the offset: an
+      // unbounded read fails before reading the body; a bounded one keeps the
+      // budget and reports the total.
+      final bytes = List<int>.filled(discarded + limit + 10, 0x61);
+      final declared = <({int Function() sent, bool Function() cancelled})>[];
+      final declaredApi = testApi(FakeAdapter((request) {
+        final body = slowBody(bytes, step: 64 * 1024, headers: {
+          'content-length': ['${bytes.length}'],
+        });
+        declared.add((sent: body.sent, cancelled: body.cancelled));
+        return body.body;
+      }));
+      addTearDown(declaredApi.close);
+      await expectLater(
+        declaredApi.jobTraceChunk(42, 1, offset: discarded),
+        throwsA(isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.tooLarge)),
+      );
+      expect(declared.last.cancelled(), isTrue);
+      expect(declared.last.sent(), lessThan(10));
+      final bounded = await declaredApi.jobTraceChunk(42, 1, offset: discarded, bounded: true);
+      expect(bounded.bytes.length, limit);
+      expect(bounded.nextOffset, discarded + limit);
+      expect(bounded.totalBytes, bytes.length);
+      expect(declared.last.cancelled(), isTrue);
+    });
+
+    test('total-bytes cap (64 MiB): fails with tooLarge when streamed bytes or Content-Length exceed 64 MiB', () async {
+      const cap = GitLabApi.maxTraceStreamBytes;
+      final oneMiB = Uint8List(1024 * 1024);
+
+      for (final tail in [false, true]) {
+        var chunksEmitted = 0;
+        var cancelled = false;
+        final streamApi = testApi(FakeAdapter((request) => ResponseBody(
+          Stream<Uint8List>.multi((sink) {
+            sink.onCancel = () {
+              cancelled = true;
+            };
+            Future<void> emit() async {
+              while (!cancelled && chunksEmitted < 100) {
+                chunksEmitted++;
+                sink.add(oneMiB);
+                await Future<void>.delayed(Duration.zero);
+              }
+              if (!cancelled) await sink.close();
+            }
+
+            unawaited(emit());
+          }),
+          200,
+        )));
+        addTearDown(streamApi.close);
+
+        await expectLater(
+          streamApi.jobTraceChunk(
+            42,
+            1,
+            offset: tail ? 0 : cap - 1024 * 1024,
+            tail: tail,
+            bounded: !tail,
+          ),
+          throwsA(isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.tooLarge)),
+        );
+        expect(cancelled, isTrue);
+        expect(chunksEmitted, 65, reason: 'stops on the chunk that crosses 64 MiB');
+
+        // Also when Content-Length > 64 MiB: cancels on the headers, so the
+        // download stops after the first bytes Dio buffered.
+        final declared = slowBody(List<int>.filled(64 * 100, 0x61), step: 64, headers: {
+          'content-length': ['${cap + 1}'],
+        });
+        final headerApi = testApi(FakeAdapter((request) => declared.body));
+        addTearDown(headerApi.close);
+        await expectLater(
+          headerApi.jobTraceChunk(42, 1, offset: 0, tail: tail, bounded: !tail),
+          throwsA(isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.tooLarge)),
+        );
+        expect(declared.cancelled(), isTrue);
+        expect(declared.sent(), lessThan(10), reason: 'of 100 chunks');
+      }
+    });
+
+    test('Content-Length early cancel: equal to the offset (nothing new) or 0 (erased) cancels before the body and reports no new data; shorter is a replaced log read from byte 0', () async {
+      for (final declaredLength in [500, 0]) {
+        var dioCancelled = false;
+        final slow = slowBody(
+          utf8.encode('must not be read\n' * 100),
+          headers: {
+            'content-length': ['$declaredLength'],
+          },
+        );
+        final adapter = FakeAdapter((request) => slow.body);
+        final api = testApi(adapter);
+        addTearDown(api.close);
+
+        final res = await api.jobTraceChunk(42, 1, offset: 500, bounded: true);
+        await adapter.cancelFutures.single!.then((_) => dioCancelled = true);
+        expect(dioCancelled, isTrue, reason: 'CancelToken cancelled for Content-Length=$declaredLength');
+        expect(slow.cancelled(), isTrue, reason: 'body stream cancelled for Content-Length=$declaredLength');
+        expect(slow.sent(), lessThan(10), reason: 'of 107 chunks for Content-Length=$declaredLength');
+        expect(res.bytes, isEmpty);
+        expect(res.startOffset, 500);
+        expect(res.nextOffset, 500);
+        expect(res.totalBytes, isNull);
+      }
+
+      // Shorter than the offset: the log was replaced. It is read whole from
+      // byte 0, as before #62, so the page restarts from it.
+      final replaced = utf8.encode('replaced\n' * 25);
+      final shorterApi = testApi(FakeAdapter((request) => ResponseBody.fromBytes(
+        replaced,
+        200,
+        headers: {
+          'content-length': ['${replaced.length}'],
+        },
+      )));
+      addTearDown(shorterApi.close);
+      final shorter = await shorterApi.jobTraceChunk(42, 1, offset: 500, bounded: true);
+      expect(shorter.bytes, replaced);
+      expect(shorter.startOffset, 0);
+      expect(shorter.nextOffset, replaced.length);
+      expect(shorter.totalBytes, replaced.length);
+      expect(shorter.rangeIgnored, isTrue);
+
+      // A replaced log over the budget fails before its body, as a whole
+      // read of it did.
+      final big = slowBody(List<int>.filled(64 * 100, 0x61), step: 64, headers: {
+        'content-length': ['${GitLabApi.maxTextBytes + 1}'],
+      });
+      final bigApi = testApi(FakeAdapter((request) => big.body));
+      addTearDown(bigApi.close);
+      await expectLater(
+        bigApi.jobTraceChunk(42, 1, offset: GitLabApi.maxTextBytes + 100, bounded: true),
+        throwsA(isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.tooLarge)),
+      );
+      expect(big.cancelled(), isTrue);
+      expect(big.sent(), lessThan(10), reason: 'of 100 chunks');
+
+      // When Content-Length is present and larger than offset, it is used for totalBytes.
+      final body = utf8.encode('0123456789new data\n');
+      final largerApi = testApi(FakeAdapter((request) => ResponseBody.fromBytes(
+        body,
+        200,
+        headers: {
+          'content-length': ['${body.length}'],
+        },
+      )));
+      addTearDown(largerApi.close);
+      final larger = await largerApi.jobTraceChunk(42, 1, offset: 10, bounded: true);
+      expect(utf8.decode(larger.bytes), 'new data\n');
+      expect(larger.startOffset, 10);
+      expect(larger.nextOffset, body.length);
+      expect(larger.totalBytes, body.length);
+    });
+
+    test('no Content-Length: streams offset and tail reads with null totalBytes', () async {
+      const head = 'line 0\nline 1\n';
+      const cut = 'cut middle line\n';
+      const tailLines = 'kept line A\nkept line B\n';
+      final allBytes = Uint8List.fromList(utf8.encode('$head$cut$tailLines'));
+      final tailBudget = utf8.encode('$cut$tailLines').length;
+
+      Stream<Uint8List> makeStream() async* {
+        for (var i = 0; i < allBytes.length; i += 5) {
+          yield Uint8List.sublistView(allBytes, i, min(i + 5, allBytes.length));
+        }
+      }
+
+      final api = testApi(FakeAdapter((_) => ResponseBody(makeStream(), 200)));
+      addTearDown(api.close);
+
+      final offsetChunk = await api.jobTraceChunk(
+        42,
+        1,
+        offset: utf8.encode('$head$cut').length,
+        bounded: true,
+      );
+      expect(utf8.decode(offsetChunk.bytes), tailLines);
+      expect(offsetChunk.startOffset, utf8.encode('$head$cut').length);
+      expect(offsetChunk.nextOffset, allBytes.length);
+      expect(offsetChunk.totalBytes, isNull);
+
+      final tailChunk = await api.jobTraceChunk(
+        42,
+        1,
+        tail: true,
+        maxBytes: tailBudget,
+      );
+      expect(utf8.decode(tailChunk.bytes), tailLines);
+      expect(tailChunk.startOffset, utf8.encode('$head$cut').length);
+      expect(tailChunk.nextOffset, allBytes.length);
+      expect(tailChunk.totalBytes, isNull);
+    });
+
+    test('a multi-byte UTF-8 character across the skip or budget boundary is never split (offset and tail reads)', () async {
+      // '🚀' is 4 bytes [0xF0, 0x9F, 0x9A, 0x80]; '中' is 3 bytes [0xE4, 0xB8, 0xAD].
+      final prefix = utf8.encode('prefix ');
+      final rocket = utf8.encode('🚀'); // 4 bytes
+      final cutRest = utf8.encode(' mid-line\n');
+      final afterNewline = utf8.encode('clean line 中🎉\n');
+      final full = Uint8List.fromList([...prefix, ...rocket, ...cutRest, ...afterNewline]);
+
+      Stream<Uint8List> oneByteAtATime(Uint8List bytes) async* {
+        for (var i = 0; i < bytes.length; i++) {
+          yield Uint8List.sublistView(bytes, i, i + 1);
+        }
+      }
+
+      final api = testApi(FakeAdapter((_) => ResponseBody(oneByteAtATime(full), 200)));
+      addTearDown(api.close);
+
+      // 1. An offset read continues the previous read byte for byte, as a 206
+      // does: a budget that ends inside '🚀' leaves its first bytes in the
+      // decoder, and the next read starts with the rest of it.
+      final rangeApi = testApi(FakeAdapter((request) => _serveRange(full, request.headers['Range'] as String?)));
+      addTearDown(rangeApi.close);
+      for (var split = 1; split < rocket.length; split++) {
+        final budget = prefix.length + split;
+        final head = await api.jobTraceChunk(42, 1, bounded: true, maxBytes: budget);
+        expect(head.bytes, full.sublist(0, budget));
+        expect(head.nextOffset, budget);
+        final viaRange = await rangeApi.jobTraceChunk(42, 1, bounded: true, maxBytes: budget);
+        expect(head.bytes, viaRange.bytes, reason: 'same bytes as the Range path');
+        final rest = await api.jobTraceChunk(42, 1, offset: budget, bounded: true);
+        expect(rest.startOffset, budget);
+        expect(rest.bytes, full.sublist(budget));
+        expect(rest.nextOffset, full.length);
+        final parser = JobTraceParser()..addBytes(head.bytes);
+        expect(
+          parser.addBytes(rest.bytes, isLast: true).lines.map((l) => l.text).toList(),
+          ['prefix 🚀 mid-line', 'clean line 中🎉', ''],
+        );
+      }
+
+      // 2. Tail read whose ring-buffer start lands at each continuation byte inside '🚀',
+      // followed by a newline (skipCutLine aligns to afterNewline):
+      for (var split = 1; split < rocket.length; split++) {
+        final windowSize = (rocket.length - split) + cutRest.length + afterNewline.length;
+        final res = await api.jobTraceChunk(42, 1, tail: true, maxBytes: windowSize);
+        expect(utf8.decode(res.bytes), 'clean line 中🎉\n');
+        expect(res.startOffset, prefix.length + rocket.length + cutRest.length);
+        expect(res.startOffset! + res.bytes.length, full.length);
+        expect(res.nextOffset, full.length);
+      }
+
+      // 3. Single-line tail read (no newline to align on) whose ring-buffer start
+      // lands inside '🚀': drops only the dangling continuation bytes so UTF-8 stays valid.
+      final singleLine = Uint8List.fromList([...prefix, ...rocket, ...utf8.encode('one long line 中')]);
+      final singleLineApi = testApi(FakeAdapter((_) => ResponseBody(oneByteAtATime(singleLine), 200)));
+      addTearDown(singleLineApi.close);
+      for (var split = 1; split < rocket.length; split++) {
+        final windowSize = (rocket.length - split) + utf8.encode('one long line 中').length;
+        final res = await singleLineApi.jobTraceChunk(42, 1, tail: true, maxBytes: windowSize);
+        expect(utf8.decode(res.bytes), 'one long line 中');
+        expect(res.startOffset, prefix.length + rocket.length);
+        expect(res.startOffset! + res.bytes.length, singleLine.length);
+        expect(res.nextOffset, singleLine.length);
+      }
+    });
+
+    test('closing the client while a 200 streams fails with cancelled and stops the download (offset and tail)', () async {
+      for (final tail in [false, true]) {
+        final slow = slowBody(List<int>.filled(16 * 1000, 0x61));
+        final api = testApi(FakeAdapter((request) => slow.body));
+        final read = api.jobTraceChunk(42, 1, offset: tail ? 0 : 64, tail: tail, bounded: !tail);
+        while (slow.sent() < 5) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        api.close();
+        await expectLater(
+          read,
+          throwsA(isA<ApiFailure>().having((e) => e.kind, 'kind', FailureKind.cancelled)),
+          reason: tail ? 'tail' : 'offset',
+        );
+        expect(slow.cancelled(), isTrue);
+        expect(slow.sent(), lessThan(1000));
+      }
+    });
   });
 
   test('jobTraceChunk tail starting mid-line drops the cut line and keeps offsets absolute', () async {
@@ -1694,7 +2148,98 @@ void main() {
       await tester.pump();
     });
 
+    testWidgets('Content-Length equal to the offset or 0 cancels before reading the body and keeps the shown rows (#62)', (tester) async {
+      var text = '${part(0, 30)}\n';
+      final initialLen = utf8.encode(text).length;
+      final ranges = <String?>[];
+      // Chunks sent by the latest response. Dio subscribes as soon as the
+      // headers arrive, so one or two go out before any cancel; a cancelled
+      // download stops long before its last chunk.
+      var bodyReads = 0;
+      var streamCancelled = false;
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'early-cancel'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          ranges.add(request.headers['Range'] as String?);
+          final bytes = Uint8List.fromList(utf8.encode(text));
+          var cancelled = false;
+          return ResponseBody(
+            Stream<Uint8List>.multi((sink) {
+              sink.onCancel = () {
+                cancelled = true;
+                streamCancelled = true;
+              };
+              Future<void> pump() async {
+                for (var i = 0; i < bytes.length; i += 16) {
+                  await Future<void>.delayed(Duration.zero);
+                  if (cancelled) return;
+                  bodyReads++;
+                  sink.add(Uint8List.sublistView(bytes, i, min(i + 16, bytes.length)));
+                }
+                await sink.close();
+              }
+
+              unawaited(pump());
+            }),
+            200,
+            headers: {
+              'content-length': ['${bytes.length}'],
+              'accept-ranges': ['bytes'],
+            },
+          );
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.text('row 29 of the growing log'), findsOneWidget);
+      final chunks = (initialLen + 15) ~/ 16;
+      expect(bodyReads, chunks);
+
+      // Same length (no new data): early cancel; nothing is parsed.
+      bodyReads = 0;
+      streamCancelled = false;
+      JobTrace.resetDebugCounters();
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(streamCancelled, isTrue);
+      expect(bodyReads, lessThan(5), reason: 'of $chunks chunks');
+      expect(JobTrace.debugCharactersProcessed, 0);
+      expect(find.text('row 29 of the growing log'), findsOneWidget);
+
+      // Content-Length 0 (an erased log): also early cancel, keeping the
+      // shown rows.
+      final fullText = text;
+      text = '';
+      bodyReads = 0;
+      streamCancelled = false;
+      JobTrace.resetDebugCounters();
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(streamCancelled, isTrue);
+      expect(bodyReads, 0, reason: 'an empty body has no chunks');
+      expect(JobTrace.debugCharactersProcessed, 0);
+      expect(find.text('row 29 of the growing log'), findsOneWidget);
+
+      // When the log grows past the previous offset, polling resumes from initialLen.
+      text = '${fullText}appended line after early cancel\n';
+      bodyReads = 0;
+      streamCancelled = false;
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(bodyReads, (utf8.encode(text).length + 15) ~/ 16);
+      expect(ranges.last, 'bytes=$initialLen-${initialLen + limit - 1}');
+      expect(find.text('appended line after early cancel'), findsOneWidget);
+      expect(find.text('row 29 of the growing log'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
     testWidgets('a body shorter than the offset (log replaced) restarts from it', (tester) async {
+      // wholeLog sends Content-Length, as gitlab.com does for a finished job.
       var text = '${part(0, 30)}\n';
       final ranges = <String?>[];
       final api = testApi(wholeLog(() => text, ranges));
@@ -1722,15 +2267,242 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('a whole log over 2 MiB still ends in the preview error after one tail attempt', (tester) async {
-      final big = '${'x' * 120}\n' * 18000;
-      expect(big.length, greaterThan(limit));
+    testWidgets('a running log over 2 MiB shows the last window (same as the Range path), never shows over-the-preview-limit, and keeps polling (#62)', (tester) async {
+      final b = StringBuffer();
+      for (var i = 0; i < 22000; i++) {
+        b.write('2026-10-20T06:56:03.100000Z 00O ');
+        b.writeln('running big log line number $i padded with extra text to exceed 2 MiB');
+      }
+      var big = b.toString();
+      final initialBytes = utf8.encode(big);
+      expect(initialBytes.length, greaterThan(limit));
+      expect(initialBytes[initialBytes.length - limit - 1], isNot(0x0A), reason: 'tail starts mid-line');
+
       final ranges = <String?>[];
       final api = testApi(wholeLog(() => big, ranges));
       addTearDown(api.close);
       await _pumpJobLog(tester, api);
-      expect(find.text('內容超出預覽上限'), findsOneWidget);
+      expect(find.text('內容超出預覽上限'), findsNothing);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsOneWidget);
+      expect(find.text('running big log line number 21999 padded with extra text to exceed 2 MiB'), findsOneWidget);
+      expect(find.textContaining('Z 00O'), findsNothing);
       expect(ranges, ['bytes=0-${limit - 1}', 'bytes=-$limit']);
+      final shownOn200 = rows(tester);
+
+      // Verify the shown window matches the 206 Range path.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      final rangeApi = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'honours-range'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          return _serveRange(initialBytes, request.headers['Range'] as String?);
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(rangeApi.close);
+      await _pumpJobLog(tester, rangeApi);
+      expect(rows(tester), shownOn200);
+
+      // Mount the 200 log again and verify subsequent polls keep polling from the tail end.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      ranges.clear();
+      final pollApi = testApi(wholeLog(() => big, ranges));
+      addTearDown(pollApi.close);
+      await _pumpJobLog(tester, pollApi);
+      expect(ranges, ['bytes=0-${limit - 1}', 'bytes=-$limit']);
+
+      // Poll with new lines appended past 2 MiB: discards the first initialBytes.length
+      // bytes and parses only the newly appended lines.
+      const appended = '2026-10-20T06:56:04.100000Z 00O appended line 22000 after tail\n'
+          '2026-10-20T06:56:05.100000Z 00O appended line 22001 after tail\n';
+      big = '$big$appended';
+      JobTrace.resetDebugCounters();
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(ranges.last, 'bytes=${initialBytes.length}-${initialBytes.length + limit - 1}');
+      // A timestamped line is committed when the next header arrives, so the
+      // poll also parses the line that was last before it, as on the Range
+      // path: its content and the two new ones, never the window.
+      const lastShown = 'running big log line number 21999 padded with extra text to exceed 2 MiB';
+      const appendedContent = 'appended line 22000 after tailappended line 22001 after tail';
+      expect(JobTrace.debugCharactersProcessed, greaterThan(0));
+      expect(
+        JobTrace.debugCharactersProcessed,
+        lessThanOrEqualTo(lastShown.length + appendedContent.length),
+      );
+      expect(find.text('appended line 22001 after tail'), findsOneWidget);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsOneWidget);
+      expect(find.text('內容超出預覽上限'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('a running log without Content-Length that grows by more than 2 MiB between polls jumps to the tail as on the Range path, then polls on (#62)', (tester) async {
+      var text = '${part(0, 30)}\n';
+      final ranges = <String?>[];
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'no-length'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          ranges.add(request.headers['Range'] as String?);
+          return ResponseBody.fromBytes(utf8.encode(text), 200);
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.text('row 29 of the growing log'), findsOneWidget);
+      final initialLen = utf8.encode(text).length;
+
+      // More than one budget arrives before the next poll: the bounded read
+      // keeps the budget and stops, and the page reads the tail instead.
+      text = '$text${part(30, 120000)}\n';
+      expect(utf8.encode(text).length - initialLen, greaterThan(limit));
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(ranges, [
+        'bytes=0-${limit - 1}',
+        'bytes=$initialLen-${initialLen + limit - 1}',
+        'bytes=-$limit',
+      ]);
+      expect(find.text('內容超出預覽上限'), findsNothing);
+      expect(find.byKey(const ValueKey('job-log-truncated')), findsOneWidget);
+      expect(find.text('row 119999 of the growing log'), findsOneWidget);
+
+      // The next poll goes on from the end of that tail.
+      final end = utf8.encode(text).length;
+      text = '${text}after the jump\n';
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(ranges.last, 'bytes=$end-${end + limit - 1}');
+      expect(find.text('after the jump'), findsOneWidget);
+      expect(find.text('內容超出預覽上限'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    test('the polling interval grows with the log only when the server ignored Range (#62)', () {
+      const mib = 1024 * 1024;
+      const ten = Duration(seconds: 10);
+      Duration at(int bytes, {bool ignored = true, Duration base = ten}) =>
+          jobLogPollingInterval(base, rangeIgnored: ignored, logBytes: bytes);
+      // Range honoured (206): the rate-level interval, whatever the size.
+      expect(at(30 * mib, ignored: false), ten);
+      expect(at(30 * mib, ignored: false, base: const Duration(seconds: 60)), const Duration(seconds: 60));
+      // Range ignored (200): +10 s per started 2 MiB above the first 2 MiB.
+      expect(at(0), ten);
+      expect(at(2 * mib), ten);
+      expect(at(2 * mib + 1), const Duration(seconds: 20));
+      expect(at(4 * mib), const Duration(seconds: 20));
+      expect(at(4 * mib + 1), const Duration(seconds: 30));
+      expect(at(10 * mib), const Duration(seconds: 50));
+      expect(at(22 * mib), const Duration(seconds: 110));
+      expect(at(22 * mib + 1), const Duration(seconds: 120));
+      expect(at(30 * mib), const Duration(seconds: 120), reason: 'capped');
+      // On top of a slower rate level, with the same cap.
+      expect(at(4 * mib + 1, base: const Duration(seconds: 30)), const Duration(seconds: 50));
+      expect(at(30 * mib, base: const Duration(seconds: 60)), const Duration(seconds: 120));
+    });
+
+    testWidgets('auto-refresh slows down as a log served whole (200) grows, and keeps 10 s for a log served with Range (206) (#62)', (tester) async {
+      final line = '${'x' * 120}\n';
+      var text = line * 39000; // 4.5 MiB: 10 s + 2 × 10 s
+      final ranges = <String?>[];
+      final api = testApi(wholeLog(() => text, ranges));
+      addTearDown(api.close);
+      // Auto-refresh runs only while the app is in the foreground.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _pumpJobLog(tester, api);
+      final state = tester.state<JobLogPageState>(find.byType(JobLogPage));
+      expect(state.pollingInterval, const Duration(seconds: 30));
+      // The chip names the interval actually used.
+      expect(find.text('30 秒更新'), findsOneWidget);
+      expect(find.text('10 秒更新'), findsNothing);
+      await tester.tap(find.byType(FilterChip).first);
+      await tester.pump();
+      final reads = ranges.length;
+      await tester.pump(const Duration(seconds: 29));
+      expect(ranges, hasLength(reads), reason: 'no poll after 10 s or 29 s');
+      text = '$text${line * 18000}'; // 6.6 MiB: 10 s + 3 × 10 s
+      await tester.pump(const Duration(seconds: 1));
+      await _settleJobLog(tester);
+      expect(ranges.length, greaterThan(reads));
+      expect(state.pollingInterval, const Duration(seconds: 40));
+      expect(find.text('40 秒更新'), findsOneWidget);
+      final afterGrowth = ranges.length;
+      await tester.pump(const Duration(seconds: 39));
+      expect(ranges, hasLength(afterGrowth), reason: 'the timer was re-armed at 40 s');
+      await tester.pump(const Duration(seconds: 1));
+      await _settleJobLog(tester);
+      expect(ranges.length, greaterThan(afterGrowth));
+
+      // The same size served with Range keeps the 10 s cadence.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      final all = utf8.encode(text);
+      final rangeApi = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'honours-range'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          return _serveRange(all, request.headers['Range'] as String?);
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(rangeApi.close);
+      await _pumpJobLog(tester, rangeApi);
+      expect(
+        tester.state<JobLogPageState>(find.byType(JobLogPage)).pollingInterval,
+        const Duration(seconds: 10),
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+
+    testWidgets('over the 64 MiB total-bytes cap on a poll fails with tooLarge and keeps what we have on screen (#62)', (tester) async {
+      var overCap = false;
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'cap-job'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          if (overCap) {
+            return ResponseBody.fromBytes(
+              Uint8List(0),
+              200,
+              headers: {
+                'content-length': ['${GitLabApi.maxTraceStreamBytes + 1}'],
+              },
+            );
+          }
+          final bytes = utf8.encode('kept line before cap\n');
+          return ResponseBody.fromBytes(
+            bytes,
+            200,
+            headers: {
+              'content-length': ['${bytes.length}'],
+            },
+          );
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+      await _pumpJobLog(tester, api);
+      expect(find.text('kept line before cap'), findsOneWidget);
+      expect(find.text('內容超出預覽上限'), findsNothing);
+
+      overCap = true;
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+      expect(find.text('內容超出預覽上限'), findsOneWidget);
+      expect(find.text('kept line before cap'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump();

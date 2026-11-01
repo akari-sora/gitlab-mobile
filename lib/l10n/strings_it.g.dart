@@ -2753,6 +2753,7 @@ const _messagesIt = <String>[
   '{verb} {target}',
   'Aggiorna ogni 30 s',
   'Aggiorna ogni minuto',
+  'Aggiorna ogni {duration}',
   'La quota di richieste GitLab è quasi esaurita; invio in pausa',
   'GitLab sta limitando le richieste; invio in pausa',
   'Riprende quando la quota di richieste viene ripristinata',

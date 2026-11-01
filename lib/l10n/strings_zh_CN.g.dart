@@ -2753,6 +2753,7 @@ const _messagesZhCn = <String>[
   '{verb}{target}',
   '30 秒刷新',
   '每分钟刷新',
+  '{duration}刷新',
   'GitLab 请求额度快用完了，暂停发送',
   'GitLab 正在限制请求，暂停发送',
   '请求额度重置后恢复',

@@ -2751,6 +2751,7 @@
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "Actualiser toutes les 30 s",
   "refreshEveryMinute": "Actualiser toutes les minutes",
+  "refreshEveryDuration": "Actualiser toutes les {duration}",
   "aiSendPausedBudget": "Le quota de requêtes GitLab est presque épuisé ; envoi en pause",
   "aiSendPausedRateLimited": "GitLab limite les requêtes ; envoi en pause",
   "aiSendResumesAfterReset": "Reprise à la réinitialisation du quota de requêtes",

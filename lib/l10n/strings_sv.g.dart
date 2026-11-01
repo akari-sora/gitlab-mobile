@@ -2753,6 +2753,7 @@ const _messagesSv = <String>[
   '{verb} {target}',
   'Uppdatera var 30:e sekund',
   'Uppdatera varje minut',
+  'Uppdatera var {duration}',
   'Kvoten för begäranden hos GitLab är nästan förbrukad; sändningen är pausad',
   'GitLab begränsar begäranden; sändningen är pausad',
   'Återupptas när kvoten för begäranden återställs',

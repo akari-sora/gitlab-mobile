@@ -2751,6 +2751,7 @@
   "activityVerbTarget": "{verb} ({target})",
   "refreshEveryThirtySeconds": "30 saniyede bir yenile",
   "refreshEveryMinute": "Dakikada bir yenile",
+  "refreshEveryDuration": "{duration} arayla yenile",
   "aiSendPausedBudget": "GitLab istek kotası tükenmek üzere; gönderim duraklatıldı",
   "aiSendPausedRateLimited": "GitLab istekleri sınırlıyor; gönderim duraklatıldı",
   "aiSendResumesAfterReset": "İstek kotası sıfırlandığında devam eder",

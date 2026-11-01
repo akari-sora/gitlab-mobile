@@ -2751,6 +2751,7 @@
   "activityVerbTarget": "{verb} {target}",
   "refreshEveryThirtySeconds": "تحديث كل 30 ثانيةً",
   "refreshEveryMinute": "تحديث كل دقيقة",
+  "refreshEveryDuration": "تحديث كل {duration}",
   "aiSendPausedBudget": "حصة طلبات GitLab على وشك النفاد؛ الإرسال متوقف مؤقتًا",
   "aiSendPausedRateLimited": "يقيّد GitLab الطلبات؛ الإرسال متوقف مؤقتًا",
   "aiSendResumesAfterReset": "يستأنف عند إعادة تعيين حصة الطلبات",

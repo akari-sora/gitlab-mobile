@@ -2753,6 +2753,7 @@ const _messagesPl = <String>[
   '{verb} {target}',
   'Odświeżaj co 30 s',
   'Odświeżaj co minutę',
+  'Odświeżaj co {duration}',
   'Limit żądań w GitLab jest prawie wyczerpany; wysyłanie wstrzymane',
   'GitLab ogranicza żądania; wysyłanie wstrzymane',
   'Wznowienie po odnowieniu limitu żądań',
