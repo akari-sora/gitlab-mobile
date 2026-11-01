@@ -88,9 +88,9 @@ In priority order. Steps marked **owner** need the owner in person.
    - **English listing (2026-10-31, published 2026-10-31):**
      - English is now the default store language. It has its own text, seven screenshots captured in the English UI, a feature graphic and a promo video (https://www.youtube.com/watch?v=ikrNOT5f__I).
      - zh-TW keeps the Chinese set.
-     - The English CI screenshot shows "1 minutes 35 seconds" until the plural fix (!282) ships; re-take it after the next release.
+     - The English CI screenshot was re-taken from 0.7.0 on 2026-11-01 ("1 min 35 s") and sent for review (owner-approved).
    - **0.7.0 (2026-11-01):** the AAB was built locally from a fresh bootstrap of the `5ebc48f5` tree (versionCode 9, upload key `989e6da9…`); `bundletool dump manifest` shows no `FOREGROUND_SERVICE`, `AgentRunService` or `MlKitInitProvider`. It was uploaded with `gplay release --track production` (the API commit sends changes for review automatically; `--changes-not-sent-for-review` is refused) together with the Data safety change for ML Kit; Google approved it and it went live on 2026-11-01.
-   - **Next:** re-take the English CI screenshot now that 0.7.0 is live (!282; a listing change, so ask the owner first); answer any policy questions from Google.
+   - **Next:** answer any policy questions from Google.
 2. **Media and loading polish (owner, 2026-10-30).**
    - **#55, done (!278, 2026-10-31).** A video behind image syntax no longer holds up a README or file page. The request stops at the content type, and the video waits behind a tap-to-play card. The page byte budget is first-come. A raster's header size only rejects early; the engine's decoder still decides acceptance, because crafted GIF/JPEG headers can understate the size.
    - **#56, part 1, done (!279, 2026-10-31).**

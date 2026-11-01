@@ -127,7 +127,7 @@ The English set is a separate capture:
 - They were rendered with the same compositions (`Shot-*-en`, `Vertical-en`, `Horizontal-en`).
 - The English promo video is https://www.youtube.com/watch?v=ikrNOT5f__I.
 
-Known issue: the English CI screenshot shows "1 minutes 35 seconds". !282 fixes the plural, so re-take that screenshot after the next release.
+The English CI screenshot was re-taken on 2026-11-01 from the live 0.7.0 Play build in Demo mode (it now reads "1 min 35 s", after the plural fix !282) and sent for Google review. Its library file is `mergeline-en-4-ci-v2.jpg`; the raw capture is `public/shots/en/pipeline.png` in the Remotion project.
 
 ## Read-cache data safety
 
