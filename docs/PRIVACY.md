@@ -1,6 +1,6 @@
 # Mergeline privacy policy
 
-Effective: 2026-10-30. Applies to the Mergeline app on Google Play (`app.mergeline`) and the GitLab-channel build (`io.gitlabmobile.gitlab_mobile`).
+Effective: 2026-11-01. Applies to the Mergeline app on Google Play (`app.mergeline`) and the GitLab-channel build (`io.gitlabmobile.gitlab_mobile`).
 
 Mergeline is an independent client for GitLab®. It is not affiliated with or endorsed by GitLab Inc. The developer runs **no server, no analytics, no advertising and no tracking**. The app does not sell or rent data.
 
@@ -51,7 +51,7 @@ aa22396584@gmail.com. Changes to this policy are published at this address with 
 
 # Mergeline 隱私權政策
 
-生效日期：2026-10-30。適用於 Google Play 上的 Mergeline（`app.mergeline`）以及 GitLab 通道版本（`io.gitlabmobile.gitlab_mobile`）。
+生效日期：2026-11-01。適用於 Google Play 上的 Mergeline（`app.mergeline`）以及 GitLab 通道版本（`io.gitlabmobile.gitlab_mobile`）。
 
 Mergeline 是 GitLab® 的獨立客戶端，與 GitLab Inc. 無關，也未經其認可。開發者**不經營任何伺服器，也沒有分析、廣告或追蹤**，不出售或出租任何資料。
 
