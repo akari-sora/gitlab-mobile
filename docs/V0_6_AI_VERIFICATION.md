@@ -2023,3 +2023,10 @@ fixed in one commit:
   server returns. Observations never unlock isolation, so the behaviour is
   conservative; implementing §7.6's `Date`-header window plus a name/digest
   match is a follow-up, not done here.
+
+## v0.7.0 release evidence (2026-11-01)
+
+- **CI:** main `5ebc48f5`, pipeline [3013729215](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/3013729215): 16,811 tests AI-off and 17,970 AI-on, 0 failures, one skipped each; the release APK (versionCode 1778, SHA-256 `c232e1e6…`) was published and matched `SHA256SUMS`.
+- **Emulator, GitLab channel (API 36, real account, read-only):** `adb install -r` over v0.6.2 (1671) kept the signed-in account. Home, Me and AI settings rendered; the provider presets have no 手機內建 AI, as designed without AICore. A finished 4 MB job log showed its tail with the cut notice, and search found the JUnit line. In-app update from a fresh v0.6.2 install: 我的 offered 0.7.0 (1778); it downloaded, verified the SHA-256 and, after the one-time "install unknown apps" permission, the Android installer updated it in place with the account kept. The test account was then removed from the emulator.
+- **Emulator, Play build:** a universal APK from the 0.7.0 AAB (upload key) updated the installed Play 0.6.2 in place. Demo mode: the AI proposed a comment, it was approved, and the write was read back. The AAB's manifest has no `FOREGROUND_SERVICE`, `AgentRunService` or `MlKitInitProvider`.
+- **NOT_RUN:** the release build on a phone with AICore (the owner skipped the Fold7 re-walk; an earlier build was walked through on a Galaxy Z Fold7), a real company-CA instance, the confirmation-card changed/unchanged markers with a real model, iOS.
