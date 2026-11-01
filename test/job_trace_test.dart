@@ -1736,6 +1736,252 @@ void main() {
       await tester.pump();
     });
   });
+
+  group('Pending unterminated line cap at 2 MiB (#61)', () {
+    const cap = GitLabApi.maxTextBytes;
+
+    test('a 3 MiB \\r progress line fed in chunks keeps memory bounded, ends at the cap and sets the flag', () {
+      final parser = JobTraceParser();
+      // 64-char progress frame ending in \r; 64 divides 2 MiB (2,097,152) evenly.
+      final frame = '${'#' * 56} 100.0%\r';
+      expect(frame.length, 64);
+      final chunk = frame * 4096; // 256 KiB per chunk
+      expect(chunk.length, 256 * 1024);
+
+      late JobTrace snap;
+      // Feed 12 chunks = 3 MiB total.
+      for (var i = 0; i < 12; i++) {
+        snap = parser.addText(chunk);
+        expect(parser.pendingLineLength, lessThanOrEqualTo(cap));
+        expect(snap.estimatedBytes, lessThan(6 * 1024 * 1024));
+      }
+
+      expect(parser.charactersProcessed, 3 * 1024 * 1024);
+      expect(parser.pendingLineLength, cap);
+      expect(parser.pendingLineTruncated, isTrue);
+      expect(snap.truncated, isTrue);
+      expect(snap.lines, hasLength(1));
+      expect(snap.lines.single.truncated, isTrue);
+      expect(snap.lines.single.text, '${'#' * 56} 100.0%');
+
+      // Non-power-of-two \r frames cut right after the first \r at or after minCut - 1.
+      final unalignedParser = JobTraceParser();
+      final frame50 = '${'=' * 42} 99.9%\r';
+      expect(frame50.length, 49);
+      final chunk50 = frame50 * 6000; // 294,000 chars
+      for (var i = 0; i < 11; i++) {
+        snap = unalignedParser.addText(chunk50);
+        expect(unalignedParser.pendingLineLength, lessThanOrEqualTo(cap));
+      }
+      expect(unalignedParser.pendingLineLength, greaterThan(cap - frame50.length));
+      expect(unalignedParser.pendingLineTruncated, isTrue);
+      expect(snap.truncated, isTrue);
+      expect(snap.lines.single.truncated, isTrue);
+      expect(snap.lines.single.text, '${'=' * 42} 99.9%');
+    });
+
+    test('a section opened before the cut still closes correctly', () {
+      final parser = JobTraceParser();
+      final header = 'section_start:1000:tqdm_step[collapsed=true]\r';
+      final frame = '${'.' * 60} 50%\r'; // 65 chars
+      final bodyChunk = frame * 5000; // 325,000 chars
+
+      parser.addText(header);
+      late JobTrace snap;
+      for (var i = 0; i < 8; i++) {
+        snap = parser.addText(bodyChunk);
+      }
+      // Total fed > 2.6 MiB; the section_start marker was dropped from the front.
+      expect(parser.pendingLineTruncated, isTrue);
+      expect(snap.truncated, isTrue);
+      expect(snap.lines, hasLength(1));
+      expect(snap.lines.single.section, 'tqdm_step');
+      expect(snap.lines.single.truncated, isTrue);
+      expect(snap.sections, hasLength(1));
+      expect(snap.sections.single.name, 'tqdm_step');
+      expect(snap.sections.single.start, 1000);
+      expect(snap.sections.single.end, isNull);
+      expect(snap.sections.single.collapsed, isTrue);
+
+      snap = parser.addText('done\nsection_end:1045:tqdm_step\r\nafter section\n');
+      expect(snap.sections, hasLength(1));
+      final closed = snap.sections.single;
+      expect(closed.name, 'tqdm_step');
+      expect(closed.start, 1000);
+      expect(closed.end, 1045);
+      expect(closed.durationSeconds, 45);
+      expect(closed.startLine, 0);
+      expect(closed.endLine, 1);
+      // 'done' ends the capped line and 'after section' is the next one; as
+      // without a cap, the final newline leaves an empty last line.
+      expect(snap.lines, hasLength(3));
+      expect(snap.lines.first.truncated, isTrue);
+      expect(snap.lines.first.section, 'tqdm_step');
+      expect(snap.lines[1].text, 'after section');
+      expect(snap.lines[1].section, isNull);
+      expect(snap.lines[1].truncated, isFalse);
+      expect(snap.lines.last.text, '');
+      expect(snap.lines.last.section, isNull);
+      expect(snap.lines.last.truncated, isFalse);
+      _expectTraceEquivalent(
+        snap,
+        JobTrace.parse(
+          '$header${bodyChunk * 8}'
+          'done\nsection_end:1045:tqdm_step\r\nafter section\n',
+        ),
+        reason: 'capped section vs full parse',
+      );
+    });
+
+    test('the colour state set before the cut still applies', () {
+      final parser = JobTraceParser();
+      final frame = '${'x' * 59} 10%\r'; // 64 chars
+      final chunk = frame * 4096; // 256 KiB
+
+      // Set bold red (\x1b[1;31m) at the very start of the line, then exceed 2 MiB.
+      parser.addText('\x1b[1;31m');
+      late JobTrace snap;
+      for (var i = 0; i < 10; i++) {
+        snap = parser.addText(chunk);
+      }
+      expect(parser.pendingLineTruncated, isTrue);
+      expect(snap.lines, hasLength(1));
+      expect(snap.lines.single.truncated, isTrue);
+      expect(snap.lines.single.spans, isNotEmpty);
+      for (final span in snap.lines.single.spans) {
+        expect(span.style.bold, isTrue);
+        expect(span.style.foreground?.index, 1);
+      }
+
+      // Resetting colour later on the same line transitions style cleanly.
+      snap = parser.addText('\r\x1b[0mplain tail\n');
+      // The newline completes the line; the parser then reports the empty
+      // line that follows it, as it does without a cap.
+      expect(snap.lines, hasLength(2));
+      expect(snap.lines.first.truncated, isTrue);
+      expect(snap.lines.first.spans.first.text, 'plain tail');
+      expect(snap.lines.first.spans.first.style.isPlain, isTrue);
+      expect(snap.lines.last.truncated, isFalse);
+    });
+
+    test('an escape left open before a marker in the dropped front ends there', () {
+      // A full parse ends the dangling `\x1b[1;31` at the section marker, so
+      // the `m` after it is text and the tail stays plain.
+      final line = '\x1b[1;31section_start:1:a\rm${'y' * 200}\r${'z' * 50}';
+      final parser = JobTraceParser(maxPendingChars: 100);
+      final snap = parser.addText(line);
+      final full = JobTrace.parse(line);
+      expect(parser.pendingLineTruncated, isTrue);
+      expect(snap.lines.single.truncated, isTrue);
+      expect(snap.lines.single.section, 'a');
+      expect(snap.lines.single.text, 'z' * 50);
+      expect(snap.lines.single.spans.single.style.isPlain, isTrue);
+      expect(
+        snap.lines.single.spans.single.style,
+        full.lines.single.spans.single.style,
+      );
+    });
+
+    test('no cut lands inside a surrogate pair or an escape sequence', () {
+      // 1. Surrogate pair straddling the exact 2 MiB cut boundary (no \r in tail).
+      final surrogateParser = JobTraceParser();
+      // Prefix of 101 chars + '🚀' (2 code units at 101..103) + (cap - 1) 'a's:
+      // Total length = 101 + 2 + (cap - 1) = cap + 102.
+      // minCut = (cap + 102) - cap = 102, which is right between high (101) and low (102) surrogate!
+      final surrogateInput = '${'p' * 101}🚀${'a' * (cap - 1)}';
+      expect(surrogateInput.length, cap + 102);
+      final surrogateSnap = surrogateParser.addText(surrogateInput);
+      expect(surrogateParser.pendingLineTruncated, isTrue);
+      expect(surrogateParser.pendingLineLength, cap - 1);
+      expect(surrogateSnap.lines.first.truncated, isTrue);
+      expect(surrogateSnap.lines.first.text.codeUnitAt(0), equals('a'.codeUnitAt(0)));
+
+      // 2. CSI escape sequence straddling the exact 2 MiB cut boundary.
+      final ansiParser = JobTraceParser();
+      const esc = '\x1b[38;5;208m'; // length 11
+      // Place esc so minCut lands in the middle of esc (at offset 5 inside esc):
+      // Total length = 100 + 11 + (cap - 6) = cap + 105 -> minCut = 105 (index 5 of esc).
+      final ansiInput = '${'q' * 100}$esc${'b' * (cap - 6)}';
+      expect(ansiInput.length, cap + 105);
+      final ansiSnap = ansiParser.addText(ansiInput);
+      expect(ansiParser.pendingLineTruncated, isTrue);
+      expect(ansiParser.pendingLineLength, cap - 6);
+      expect(ansiSnap.lines.first.truncated, isTrue);
+      expect(ansiSnap.lines.first.text.startsWith('bbbbb'), isTrue);
+      expect(ansiSnap.lines.first.spans.first.style.foreground?.index, 208);
+
+      // 3. OSC sequence containing \r straddling the cut boundary does not cut at the \r inside OSC.
+      final oscParser = JobTraceParser(maxPendingChars: 20);
+      final oscSnap = oscParser.addText('0123456789\x1b]0;my\rtitle\x07abcdefghij');
+      expect(oscParser.pendingLineTruncated, isTrue);
+      expect(oscSnap.lines.single.text, 'abcdefghij');
+    });
+
+    test('below the cap, the output equals the full re-parse', () {
+      final frame = '\x1b[32mstep 1\r\x1b[34mstep 2 🚀\x1b[0m ';
+      // Build a multi-line trace whose longest unterminated line is right below the cap.
+      final belowLine = 'section_start:10:s1\r${frame * 2000}tail';
+      expect(belowLine.length, lessThan(cap));
+      final fullText = 'first line\n$belowLine';
+
+      final parser = JobTraceParser();
+      const chunkSize = 13107;
+      for (var i = 0; i < fullText.length; i += chunkSize) {
+        final end = (i + chunkSize < fullText.length) ? i + chunkSize : fullText.length;
+        parser.addText(fullText.substring(i, end));
+      }
+      final snap = parser.snapshot();
+      expect(parser.pendingLineTruncated, isFalse);
+      expect(snap.truncated, isFalse);
+      expect(snap.lines.every((l) => !l.truncated), isTrue);
+
+      final expected = JobTrace.parse(fullText);
+      _expectTraceEquivalent(snap, expected, reason: 'below cap snapshot vs full parse');
+      _expectTraceEquivalent(parser.finish(), expected, reason: 'below cap finish vs full parse');
+
+      // Also test exact cap length (== GitLabApi.maxTextBytes) does not truncate.
+      final exactParser = JobTraceParser();
+      final exactLine = 'x' * cap;
+      final exactSnap = exactParser.addText(exactLine);
+      expect(exactParser.pendingLineTruncated, isFalse);
+      expect(exactParser.pendingLineLength, cap);
+      expect(exactSnap.truncated, isFalse);
+      expect(exactSnap.lines.every((l) => !l.truncated), isTrue);
+    });
+
+    testWidgets('JobLogPage shows the truncation notice on a capped pending line', (tester) async {
+      final frame = '${'#' * 56} 100.0%\r'; // 64 chars
+      final chunk1 = 'first normal line\n${frame * 20000}'; // ~1.28 MiB
+      final chunk2 = frame * 20000; // +1.28 MiB -> > 2.56 MiB on line 1
+      var polled = false;
+      final api = testApi(FakeAdapter((request) {
+        if (request.uri.path.endsWith('/jobs/1')) {
+          return jsonResponse({'id': 1, 'status': 'running', 'name': 'tqdm-job'});
+        }
+        if (request.uri.path.endsWith('/trace')) {
+          final all = utf8.encode(polled ? '$chunk1$chunk2' : chunk1);
+          return _serveRange(all, request.headers['Range'] as String?);
+        }
+        return jsonResponse({}, status: 404);
+      }));
+      addTearDown(api.close);
+
+      await _pumpJobLog(tester, api);
+      expect(find.text('first normal line'), findsOneWidget);
+      expect(find.text('Log 太長，前段已截掉，只顯示最後一部分。'), findsNothing);
+
+      polled = true;
+      await tester.tap(find.byTooltip('重新讀取 Log'));
+      await _settleJobLog(tester);
+
+      expect(find.byKey(const ValueKey('job-log-line-truncated-1')), findsOneWidget);
+      expect(find.text('Log 太長，前段已截掉，只顯示最後一部分。'), findsOneWidget);
+      expect(find.text('${'#' * 56} 100.0%'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+  });
 }
 
 Account _account() => Account(

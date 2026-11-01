@@ -2442,7 +2442,7 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         _resyncTail = resync;
         _hasTraceBytes =
             bytesToParse.isNotEmpty || (!restart && _hasTraceBytes);
-        _latestClipped = parsed.truncated ||
+        _latestClipped = (parsed.truncated && parsed.windowStart > 0) ||
             tailRead ||
             (nextTail?.truncated ?? false) ||
             (!restart && _latestClipped);
@@ -3134,6 +3134,29 @@ class JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                     baseStyle: baseStyle,
                   );
                   lineWidget = Text.rich(TextSpan(style: baseStyle, children: spans));
+                }
+                if (traceLine != null && traceLine.truncated) {
+                  lineWidget = Column(
+                    key: ValueKey('job-log-line-truncated-${row.lineIndex ?? index}'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(
+                          Icons.vertical_align_top,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            l10n.readCacheLogTruncated,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ]),
+                      lineWidget,
+                    ],
+                  );
                 }
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 3),
