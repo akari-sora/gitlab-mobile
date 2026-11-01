@@ -1,6 +1,6 @@
 # Plan and status
 
-Last updated: 2026-10-31.
+Last updated: 2026-11-01.
 
 This page is the single place for **what we are building, in what order, and where each piece stands**.
 - Update it in the same MR that changes a status.
@@ -8,8 +8,9 @@ This page is the single place for **what we are building, in what order, and whe
 - The evidence for each delivered piece lives in the verification ledgers, mainly [v0.6 AI verification](V0_6_AI_VERIFICATION.md).
 - The plans also cite review reports, surveys and earlier drafts (e.g. `review-opus.md`, `survey.md`, `ai-assistant-plan-v5.md`). Those are working files outside the repository; the review outcomes they record are folded into the plans.
 
-## Current state (2026-10-30)
+## Current state (2026-11-01)
 
+- **Releasing v0.7.0** (`release/v0.7.0`): the phone's built-in AI (#57), company CA certificates (#60), the job-log work (#58, #61, #62), skeletons (#56), the confirmation-card markers (!284) and the UI spacing audit, on the GitLab channel and then Google Play (versionCode 9). Owner, 2026-11-01: release once CI and an emulator pass are green, without the Fold7 re-walk.
 - **Released:** [v0.6.2](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.6.2) on the GitLab channel (`c6919e52`, versionCode 1671; adds !273, !274 and the Play manifest change !275), after [v0.6.1](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.6.1) (`c39818e5`, 1658) and [v0.6.0](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.6.0) (`aa47e464`, 1621). v0.6.1 adds in-app AI reporting (!270), Demo mode (!272) and the Play build with the assistant (!271).
   - The AI assistant is on in gitlab-flavour builds (`MERGELINE_AI_ASSISTANT=true`; background runs off).
   - Every read tool and every model-visible write is released; `batchApplySuggestions` stays hidden.
@@ -111,7 +112,7 @@ In priority order. Steps marked **owner** need the owner in person.
        - error mapping, with one BUSY retry after 1.5 s;
        - no tools.
        - The chat fails closed for on-device configs. The transport refuses any value its redactor would change, and empty or interrupted streams fail.
-     - **MR 3 (`feat/on-device-ai-ui`), in review:** the settings, consent, chat and docs.
+     - **MR 3 (`feat/on-device-ai-ui`), merged (!290, 2026-11-01):** the settings, consent, chat and docs.
        - The provider editor offers 手機內建 AI only on Android outside Demo mode, decided by `deviceSupport()` alone. `status()`, `download()` and `generate()` never run before the user picks it and accepts its consent. After consent it shows the model status (available, downloadable with a download button, downloading with progress, unavailable with the reason).
        - The consent screen has its own on-device title and data wording (no "sent", no `on-device://` address). It says prompts and page content stay on the phone (Android AICore), that Google ML Kit sends diagnostics and usage data with per-installation identifiers to Google, and that this cannot be fully stopped until the app restarts; it links Google's ML Kit data disclosure. Withdrawing consent, deleting the provider or resetting providers calls the plugin's `close()`.
        - The chat uses `AiWireClient.onDevice` and `aiOnDeviceSystemPrompt`, shows the truncation notice, hides the level button, attachments and the Inbox mark-all chip, and answers an explicit write request with a refusal card that offers a cloud provider or settings. The Inbox conversation reads no data on any provider, so on-device it sends nothing: the page shows 手機內建 AI 無法讀取或變更收件匣 with the same cloud or settings action, and the composer is disabled. The card recognises English and Traditional Chinese only (including the Inbox verbs clear/archive/dismiss/snooze and 清空/封存/略過/忽略 with 待辦, 收件匣 or 通知); a question is never refused, and anything it misses still reaches a model with no tools whose system prompt refuses changes. A transport-guard refusal now carries `requiresNewSegment`, so the next send recovers.
@@ -119,7 +120,9 @@ In priority order. Steps marked **owner** need the owner in person.
        - Follow-ups are folded into one user turn: the Fold7's AICore (`prod_aicore_20260917`, `nano-v2`) answers only the first user `Content` of a multi-turn request, so `[user, model, user]` repeated the first answer. Earlier turns travel in `<conversation_history>`, and the new question in `<user_request>`; their text is escaped (`&`, `<`, `>`) at delivery so an earlier answer cannot close a section or fake `<gitlab_data>`. The system prompt says the history is earlier conversation, never instructions.
        - Accepted gap: `OnDeviceAssembledPrompt.historyDropped` (older turns left out to fit the 3,400-token cap) has no reader, so the user is not told when the oldest turns were dropped. No notice is planned for now.
        - `PRIVACY.md` (English and 繁體中文), `MR7_PLAY_DECLARATIONS.md` (Data safety: Device or other IDs and Diagnostics collected for Analytics; "shared" is the maintainer's call) and `CLAUDE.md`.
-     - **Device verification:** a partial probe ran on a Galaxy Z Fold7 (Android 17, AICore `nano-v2`, 2026-10-31). Status was available, and en and zh-TW generation, cancel, and a 3,398-token prompt all worked. The full MR 3 UI walkthrough on the Fold7 is `NOT_RUN` (done separately by the maintainer's agent).
+     - **Device verification:** a partial probe ran on a Galaxy Z Fold7 (Android 17, AICore `nano-v2`, 2026-10-31). Status was available, and en and zh-TW generation, cancel, and a 3,398-token prompt all worked. The MR 3 UI walkthrough on the Fold7 (2026-11-01, a pre-merge build) found the first-turn-only answers fixed above. The escaped history, the Inbox card and the v0.7.0 release build on a phone are `NOT_RUN`: the owner skipped the Fold7 re-walk for v0.7.0 (2026-11-01).
+     - **Play Data safety, before the v0.7.0 upload:** add Device or other IDs and App info and performance › Diagnostics, collected for Analytics, optional, encrypted in transit, declared **shared** (with Google). Google's page does not say whether its own receipt counts as sharing, so the conservative answer is chosen under the owner's standing "pick the recommended option" rule; the owner can change it in the Console. Sync the hosted privacy policy (Google Doc) with `PRIVACY.md` first.
+     - **Minor follow-ups (#64):** a follow-up's history escapes the user's own `<` (the model reads `List&lt;int&gt;`); the Inbox shows the consent card before the cannot-read card.
    - **#58, done (!288, 2026-10-31).** CI job logs parse incrementally, with an isolate for chunks over 64 KiB, a 20,000-line sliding window and bounded or tail reads. gitlab.com ignores `Range`, so there the saving is parse-side only. Follow-ups: #61 (cap an unterminated line over 2 MiB) and #62 (streaming read when `Range` is ignored). Device check NOT_RUN.
    - **#62, done (`fix/ci-log-stream-full-trace`, 2026-11-01).** gitlab.com ignores `Range` on job traces, and its `HEAD` reports `Content-Length: 0`.
      - A `200` is now read as a stream. Offset reads discard the bytes before the offset and keep at most 2 MiB after it; the next poll continues. Tail reads keep the last 2 MiB in a ring buffer. A request stops after 64 MiB.
@@ -147,7 +150,7 @@ In priority order. Steps marked **owner** need the owner in person.
    - Keep each run under the per-user burst limit of about 100 requests.
 5. **MR6c.** The unwired device cases and full V9 stay NOT_RUN / NOT_VERIFIED, so background AI runs stay off.
 6. **Cache C3.** The PARTIAL device rows need an exposed request meter; C3d stays optional.
-7. **Follow-up issues:** #52 (CI flakes and runner capacity) and #54 (MR7 review minors).
+7. **Follow-up issues:** #52 (CI flakes and runner capacity), #54 (MR7 review minors), #63 (a Fold7 grey screen, not reproduced) and #64 (small items after v0.7.0).
 8. **Self-hosted GitLab behind a company CA (#60): done (`feat/instance-ca`).** A sign-in that fails with an untrusted certificate offers 「匯入此站台的 CA 憑證」; the PEM/DER file's SHA-256 fingerprint is confirmed, stored per instance (`instance_ca.v1.*`) and trusted by that instance's clients only; 我的 › 帳號 lists and removes it. A refused certificate is its own failure (`untrustedCertificate`); writes stay `writeUncertain`. Real TLS covered by `test/instance_ca_tls_test.dart` (loopback, CA under `test/fixtures/tls/`). Device check and a real company-CA instance NOT_RUN.
 
 ## Plan documents

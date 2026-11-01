@@ -2,6 +2,17 @@
 
 Release history of Mergeline (formerly "GitLab Mobile"). The newest entries come first. Current plans and status live in [docs/PLAN_STATUS.md](docs/PLAN_STATUS.md); verification evidence lives in the ledgers listed in [docs/README.md](docs/README.md).
 
+## 2026-11-01 — v0.7.0: the phone's built-in AI and company CA certificates
+
+- **The phone's built-in AI** (#57: !285, !289, !290). On a supported Android phone, 我的 › AI 助理 offers 手機內建 AI (Gemini Nano through Android AICore): no key, and prompts, page content and answers stay on the phone. It explains and summarises, with no tools and no writes; a write request gets a card that offers a cloud provider. Google ML Kit, which the app starts only after you pick this provider and accept its consent screen, sends diagnostics and usage data with per-installation identifiers to Google ([PRIVACY](docs/PRIVACY.md)).
+- **Self-hosted GitLab behind a company CA** (#60, !287). A sign-in refused for an untrusted certificate offers 「匯入此站台的 CA 憑證」. After you confirm its fingerprint, the certificate is trusted for that one instance only (never for GitLab.com); 我的 › 帳號 lists and removes it.
+- **Faster, lighter CI job logs** (#58, #61, #62: !288, !293, !294). Logs parse incrementally in a 20,000-line window. Very long unterminated lines are cut at 2 MiB. On gitlab.com, which ignores `Range`, the log is streamed and only new bytes are kept, and large logs refresh less often (the chip shows the interval).
+- **Skeleton loading** (#56: !279, !280) on first loads everywhere, and media never hold up a README (#55, !278).
+- **AI confirmation cards mark what changes** (!284): each field of an issue or MR update says 將變更 or 不變, with the old value under a changed title, milestone or confidential flag.
+- **Large MR diffs** (#59, !286): the partial-diff notice follows GitLab's overflow state, and too-large files offer Open in GitLab.
+- **UI fixes:** spacing and alignment across settings and lists (!292), header menus that kept closing with a screen reader (!291), and English, Romanian and Swedish durations (!282).
+- **Not tested on a device:** the phone's built-in AI in this release build (an earlier build was walked through on a Galaxy Z Fold7; the re-walk is skipped by owner decision, 2026-11-01) and a real company-CA instance.
+
 ## 2026-10-30 — v0.6.2: Google Play submission
 
 - **The Play build drops the foreground-service declarations** (!275). The background AI runner is compiled off in the Play build, so its `FOREGROUND_SERVICE` permissions and service are removed from the Play manifest; the GitLab-channel build keeps them.
