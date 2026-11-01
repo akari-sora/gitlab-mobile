@@ -121,6 +121,12 @@ In priority order. Steps marked **owner** need the owner in person.
        - `PRIVACY.md` (English and 繁體中文), `MR7_PLAY_DECLARATIONS.md` (Data safety: Device or other IDs and Diagnostics collected for Analytics; "shared" is the maintainer's call) and `CLAUDE.md`.
      - **Device verification:** a partial probe ran on a Galaxy Z Fold7 (Android 17, AICore `nano-v2`, 2026-10-31). Status was available, and en and zh-TW generation, cancel, and a 3,398-token prompt all worked. The full MR 3 UI walkthrough on the Fold7 is `NOT_RUN` (done separately by the maintainer's agent).
    - **#58, done (!288, 2026-10-31).** CI job logs parse incrementally, with an isolate for chunks over 64 KiB, a 20,000-line sliding window and bounded or tail reads. gitlab.com ignores `Range`, so there the saving is parse-side only. Follow-ups: #61 (cap an unterminated line over 2 MiB) and #62 (streaming read when `Range` is ignored). Device check NOT_RUN.
+   - **#61, done (`fix/ci-log-pending-cap`, 2026-11-01).**
+     - An unterminated job-log line, such as a `\r` progress bar, is cut once it passes 2 MiB, down to at most 3/4 of the cap. The cut prefers a `\r` and never lands inside a surrogate pair or an escape sequence.
+     - The dropped front still runs through section markers and the ANSI state. Below the cap the output is unchanged.
+     - A cut holds new rows back like a window slide, and the line shows the existing "earlier part cut" notice.
+     - An unterminated escape sequence is cut at the target; this differs from a full parse only on malformed input.
+     - Device check NOT_RUN.
    - **UI spacing audit, done (`fix/ui-spacing-audit`, 2026-11-01).**
      - An emulator audit (zh-TW, dark, de, ar) found 9 high, 26 medium and 20 low spacing issues.
      - Root causes: the floating label sat on the filled field's edge, and HubRow, ListTile and SwitchListTile mixed text insets.
