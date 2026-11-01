@@ -40,6 +40,7 @@ final class JobTrace {
     this.truncated = false,
     this.windowStart = 0,
     this.charactersProcessed = 0,
+    this.lineCuts = 0,
     int? estimatedBytes,
   })  : _ansiStripped = ansiStripped,
         _estimatedBytes = estimatedBytes;
@@ -69,6 +70,11 @@ final class JobTrace {
 
   /// Total decoded characters fed into the parser that produced this trace.
   final int charactersProcessed;
+
+  /// How many times the parser dropped the front of an unterminated line (see
+  /// [JobTraceParser.maxPendingChars]). A cut re-splits that line's rows, so a
+  /// change moves rows the way a window slide does.
+  final int lineCuts;
 
   /// Approximate in-memory footprint in bytes of the retained parsed model.
   int get estimatedBytes {
@@ -159,6 +165,8 @@ final class JobTraceParser {
 
   /// Maximum number of characters retained for an unterminated logical line
   /// before its front part is dropped while preserving section and ANSI state.
+  /// A cut keeps at most three quarters of it, so the next cut (and the scan
+  /// it costs) waits for another quarter to arrive.
   static const defaultMaxPendingChars = GitLabApi.maxTextBytes;
 
   static const _blockSize = 512;
@@ -186,7 +194,8 @@ final class JobTraceParser {
         _pendingPhysicalHeader = req.pendingPhysicalHeader,
         _currentLogicalLine = StringBuffer(req.currentLogicalLine),
         _pendingLineTruncated = req.pendingLineTruncated,
-        _hasTruncatedLine = req.hasTruncatedLine {
+        _hasTruncatedLine = req.hasTruncatedLine,
+        _lineCuts = req.lineCuts {
     for (final section in req.committedSections) {
       _committedSections.add(section);
       _committedSectionsBytes += section.estimatedBytes;
@@ -227,6 +236,7 @@ final class JobTraceParser {
   StringBuffer _currentLogicalLine = StringBuffer();
   bool _pendingLineTruncated = false;
   bool _hasTruncatedLine = false;
+  int _lineCuts = 0;
 
   int _charactersProcessed = 0;
   int _spanCharactersProcessed = 0;
@@ -364,6 +374,7 @@ final class JobTraceParser {
       currentLogicalLine: _currentLogicalLine.toString(),
       pendingLineTruncated: _pendingLineTruncated,
       hasTruncatedLine: _hasTruncatedLine,
+      lineCuts: _lineCuts,
     );
     final res = await compute(_parseChunkInIsolate, req);
     if (shouldCommit != null && !shouldCommit()) {
@@ -391,6 +402,7 @@ final class JobTraceParser {
     _currentLogicalLine = StringBuffer(res.currentLogicalLine);
     _pendingLineTruncated = res.pendingLineTruncated;
     _hasTruncatedLine = res.hasTruncatedLine;
+    _lineCuts = res.lineCuts;
 
     if (res.discardExistingCommittedLines) {
       _blocks.clear();
@@ -547,7 +559,7 @@ final class JobTraceParser {
   void _capPendingLineIfNeeded() {
     if (_currentLogicalLine.length <= maxPendingChars) return;
     final s = _currentLogicalLine.toString();
-    final minCut = s.length - maxPendingChars;
+    final minCut = s.length - (maxPendingChars - maxPendingChars ~/ 4);
     final matches = JobTrace._marker.allMatches(s).toList(growable: false);
     final cut = _findPendingLineCut(s, minCut, matches);
     if (cut > 0) {
@@ -557,6 +569,7 @@ final class JobTraceParser {
         ..write(s.substring(cut));
       _pendingLineTruncated = true;
       _hasTruncatedLine = true;
+      _lineCuts++;
     }
   }
 
@@ -568,7 +581,6 @@ final class JobTraceParser {
     var probe = _committedAnsi.copy();
     var cursor = 0;
     var matchIdx = 0;
-    var lastNormalIndex = 0;
 
     void advanceProbeTo(int target) {
       while (cursor < target) {
@@ -581,9 +593,6 @@ final class JobTraceParser {
             // A full parse ends each segment before a marker on its own.
             probe.flushEscape();
             cursor = mEnd;
-            if (probe.isNormalState) {
-              lastNormalIndex = cursor;
-            }
             matchIdx++;
             continue;
           }
@@ -594,15 +603,8 @@ final class JobTraceParser {
                 : target;
         while (cursor < limit) {
           final prev = cursor > 0 ? s.codeUnitAt(cursor - 1) : -1;
-          final cu = s.codeUnitAt(cursor);
-          if (probe.isNormalState) {
-            lastNormalIndex = cursor;
-          }
-          probe.advanceChar(cu, prevCodeUnit: prev);
+          probe.advanceChar(s.codeUnitAt(cursor), prevCodeUnit: prev);
           cursor++;
-          if (probe.isNormalState) {
-            lastNormalIndex = cursor;
-          }
         }
       }
     }
@@ -623,7 +625,6 @@ final class JobTraceParser {
       probe = _committedAnsi.copy();
       cursor = 0;
       matchIdx = 0;
-      lastNormalIndex = 0;
     }
     var cut = minCut;
     while (cut < s.length) {
@@ -647,7 +648,18 @@ final class JobTraceParser {
       return cut;
     }
     advanceProbeTo(s.length);
-    return probe.isNormalState ? s.length : lastNormalIndex;
+    if (probe.isNormalState) return s.length;
+    // An escape sequence runs from before minCut to the end (`printf '\e]'`
+    // with no terminator): cut inside it anyway, so the line stays bounded,
+    // and _advanceDroppedPrefix ends it there. Only such malformed input
+    // diverges from a full parse, where the rest of the line stays hidden.
+    // Marker ends are clean boundaries, so minCut is not inside a marker.
+    if (minCut < s.length &&
+        (s.codeUnitAt(minCut - 1) & 0xFC00) == 0xD800 &&
+        (s.codeUnitAt(minCut) & 0xFC00) == 0xDC00) {
+      return minCut + 1;
+    }
+    return minCut;
   }
 
   int _adjustPastMarkerAndSurrogate(
@@ -670,13 +682,21 @@ final class JobTraceParser {
   }
 
   int? _markerEndContaining(int index, List<RegExpMatch> matches) {
-    for (final match in matches) {
-      if (match.start >= index) break;
-      if (match.start < index && index < match.end) {
-        return match.end;
+    // The matches are ordered and do not overlap: only the last one starting
+    // before [index] can contain it.
+    var lo = 0;
+    var hi = matches.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (matches[mid].start < index) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
       }
     }
-    return null;
+    if (lo == 0) return null;
+    final end = matches[lo - 1].end;
+    return index < end ? end : null;
   }
 
   void _advanceDroppedPrefix(
@@ -714,6 +734,8 @@ final class JobTraceParser {
       }
       _committedAnsi.advance(s, cursor, cut);
     }
+    // A no-op unless the cut was forced inside an escape sequence.
+    _committedAnsi.flushEscape();
     _evictCommittedSectionsIfNeeded();
   }
 
@@ -1071,6 +1093,7 @@ final class JobTraceParser {
       truncated: truncated,
       windowStart: effectiveWindowStart,
       charactersProcessed: _charactersProcessed,
+      lineCuts: _lineCuts,
       estimatedBytes:
           windowLinesBytes + windowSectionsBytes + _rawBuffersEstimatedBytes,
     );
@@ -1314,6 +1337,7 @@ final class _IsolateParseRequest {
     required this.currentLogicalLine,
     required this.pendingLineTruncated,
     required this.hasTruncatedLine,
+    required this.lineCuts,
   });
 
   final Uint8List bytes;
@@ -1334,6 +1358,7 @@ final class _IsolateParseRequest {
   final String currentLogicalLine;
   final bool pendingLineTruncated;
   final bool hasTruncatedLine;
+  final int lineCuts;
 }
 
 final class _IsolateParseResult {
@@ -1357,6 +1382,7 @@ final class _IsolateParseResult {
     required this.currentLogicalLine,
     required this.pendingLineTruncated,
     required this.hasTruncatedLine,
+    required this.lineCuts,
     required this.preview,
   });
 
@@ -1379,6 +1405,7 @@ final class _IsolateParseResult {
   final String currentLogicalLine;
   final bool pendingLineTruncated;
   final bool hasTruncatedLine;
+  final int lineCuts;
   final _PreviewData preview;
 }
 
@@ -1426,6 +1453,7 @@ _IsolateParseResult _parseChunkInIsolate(_IsolateParseRequest req) {
     currentLogicalLine: parser._currentLogicalLine.toString(),
     pendingLineTruncated: parser._pendingLineTruncated,
     hasTruncatedLine: parser._hasTruncatedLine,
+    lineCuts: parser._lineCuts,
     preview: preview,
   );
 }

@@ -1739,41 +1739,59 @@ void main() {
 
   group('Pending unterminated line cap at 2 MiB (#61)', () {
     const cap = GitLabApi.maxTextBytes;
+    // A cut keeps at most three quarters of the cap.
+    const keep = cap - cap ~/ 4;
 
-    test('a 3 MiB \\r progress line fed in chunks keeps memory bounded, ends at the cap and sets the flag', () {
+    test('a 3 MiB \\r progress line fed in chunks keeps memory bounded, cuts to three quarters of the cap and sets the flag', () {
       final parser = JobTraceParser();
-      // 64-char progress frame ending in \r; 64 divides 2 MiB (2,097,152) evenly.
+      // 64-char progress frame ending in \r; 64 divides 2 MiB (2,097,152)
+      // and its three quarters evenly.
       final frame = '${'#' * 56} 100.0%\r';
       expect(frame.length, 64);
       final chunk = frame * 4096; // 256 KiB per chunk
       expect(chunk.length, 256 * 1024);
 
       late JobTrace snap;
+      final cuts = <int>[];
       // Feed 12 chunks = 3 MiB total.
       for (var i = 0; i < 12; i++) {
         snap = parser.addText(chunk);
         expect(parser.pendingLineLength, lessThanOrEqualTo(cap));
         expect(snap.estimatedBytes, lessThan(6 * 1024 * 1024));
+        cuts.add(snap.lineCuts);
       }
 
+      // 2 MiB fits; the 9th chunk goes over and cuts to 1.5 MiB, and the
+      // line only goes over again with the 12th.
+      expect(cuts, [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2]);
       expect(parser.charactersProcessed, 3 * 1024 * 1024);
-      expect(parser.pendingLineLength, cap);
+      expect(parser.pendingLineLength, keep);
       expect(parser.pendingLineTruncated, isTrue);
       expect(snap.truncated, isTrue);
       expect(snap.lines, hasLength(1));
       expect(snap.lines.single.truncated, isTrue);
       expect(snap.lines.single.text, '${'#' * 56} 100.0%');
 
-      // Non-power-of-two \r frames cut right after the first \r at or after minCut - 1.
+      // Non-power-of-two \r frames cut right after the first \r at or after
+      // minCut - 1, so a cut keeps less than one frame under three quarters.
       final unalignedParser = JobTraceParser();
       final frame50 = '${'=' * 42} 99.9%\r';
       expect(frame50.length, 49);
       final chunk50 = frame50 * 6000; // 294,000 chars
+      var unalignedCuts = 0;
       for (var i = 0; i < 11; i++) {
         snap = unalignedParser.addText(chunk50);
         expect(unalignedParser.pendingLineLength, lessThanOrEqualTo(cap));
+        if (snap.lineCuts > unalignedCuts) {
+          unalignedCuts = snap.lineCuts;
+          expect(
+            unalignedParser.pendingLineLength,
+            inInclusiveRange(keep - frame50.length + 1, keep),
+          );
+        }
       }
-      expect(unalignedParser.pendingLineLength, greaterThan(cap - frame50.length));
+      // Over the cap after the 8th and the 10th chunk.
+      expect(unalignedCuts, 2);
       expect(unalignedParser.pendingLineTruncated, isTrue);
       expect(snap.truncated, isTrue);
       expect(snap.lines.single.truncated, isTrue);
@@ -1883,35 +1901,41 @@ void main() {
     });
 
     test('no cut lands inside a surrogate pair or an escape sequence', () {
-      // 1. Surrogate pair straddling the exact 2 MiB cut boundary (no \r in tail).
+      // 1. Surrogate pair straddling the cut target (no \r in tail).
       final surrogateParser = JobTraceParser();
-      // Prefix of 101 chars + '🚀' (2 code units at 101..103) + (cap - 1) 'a's:
-      // Total length = 101 + 2 + (cap - 1) = cap + 102.
-      // minCut = (cap + 102) - cap = 102, which is right between high (101) and low (102) surrogate!
-      final surrogateInput = '${'p' * 101}🚀${'a' * (cap - 1)}';
-      expect(surrogateInput.length, cap + 102);
+      // Prefix of p chars + '🚀' (code units p and p + 1) + (keep - 1) 'a's:
+      // length = p + 2 + keep - 1, so minCut = length - keep = p + 1, right
+      // between the high and the low surrogate.
+      const p = cap ~/ 4 + 101;
+      final surrogateInput = '${'p' * p}🚀${'a' * (keep - 1)}';
+      expect(surrogateInput.length, greaterThan(cap));
+      expect(surrogateInput.length - keep, p + 1);
       final surrogateSnap = surrogateParser.addText(surrogateInput);
       expect(surrogateParser.pendingLineTruncated, isTrue);
-      expect(surrogateParser.pendingLineLength, cap - 1);
+      expect(surrogateParser.pendingLineLength, keep - 1);
       expect(surrogateSnap.lines.first.truncated, isTrue);
       expect(surrogateSnap.lines.first.text.codeUnitAt(0), equals('a'.codeUnitAt(0)));
 
-      // 2. CSI escape sequence straddling the exact 2 MiB cut boundary.
+      // 2. CSI escape sequence straddling the cut target.
       final ansiParser = JobTraceParser();
       const esc = '\x1b[38;5;208m'; // length 11
-      // Place esc so minCut lands in the middle of esc (at offset 5 inside esc):
-      // Total length = 100 + 11 + (cap - 6) = cap + 105 -> minCut = 105 (index 5 of esc).
-      final ansiInput = '${'q' * 100}$esc${'b' * (cap - 6)}';
-      expect(ansiInput.length, cap + 105);
+      // q chars + esc + (keep - 6) 'b's: length = q + 5 + keep, so
+      // minCut = q + 5, offset 5 inside esc.
+      const q = cap ~/ 4 + 100;
+      final ansiInput = '${'q' * q}$esc${'b' * (keep - 6)}';
+      expect(ansiInput.length, greaterThan(cap));
+      expect(ansiInput.length - keep, q + 5);
       final ansiSnap = ansiParser.addText(ansiInput);
       expect(ansiParser.pendingLineTruncated, isTrue);
-      expect(ansiParser.pendingLineLength, cap - 6);
+      expect(ansiParser.pendingLineLength, keep - 6);
       expect(ansiSnap.lines.first.truncated, isTrue);
       expect(ansiSnap.lines.first.text.startsWith('bbbbb'), isTrue);
       expect(ansiSnap.lines.first.spans.first.style.foreground?.index, 208);
 
       // 3. OSC sequence containing \r straddling the cut boundary does not cut at the \r inside OSC.
-      final oscParser = JobTraceParser(maxPendingChars: 20);
+      // Length 33, keep 18: the search for a \r starts at 14, before the
+      // \r at 16 inside the OSC.
+      final oscParser = JobTraceParser(maxPendingChars: 24);
       final oscSnap = oscParser.addText('0123456789\x1b]0;my\rtitle\x07abcdefghij');
       expect(oscParser.pendingLineTruncated, isTrue);
       expect(oscSnap.lines.single.text, 'abcdefghij');
@@ -1947,6 +1971,129 @@ void main() {
       expect(exactParser.pendingLineLength, cap);
       expect(exactSnap.truncated, isFalse);
       expect(exactSnap.lines.every((l) => !l.truncated), isTrue);
+    });
+
+    test('a timestamped progress line over the cap is cut at most once per quarter of the cap', () {
+      // Each physical line continues the logical one ('+'), as a runner
+      // writes a long \r progress line. Every physical line used to pay a
+      // 2 MiB scan once the line was over the cap.
+      const header = '2024-01-01T00:00:00.000000Z 01O';
+      final frame = '${'#' * 60} 50%\r'; // 65 chars
+      final physical = '$header+$frame\n';
+      final all = StringBuffer('$header $frame\n${physical * 33000}');
+      final parser = JobTraceParser();
+      var snap = parser.addText(all.toString());
+      expect(parser.pendingLineTruncated, isTrue);
+      // The 32,264th frame goes over and the cut keeps 24,197 frames; the
+      // last 737 frames follow it.
+      expect(snap.lineCuts, 1);
+      expect(parser.pendingLineLength, (24197 + 737) * 65);
+
+      // 16 polls of 64 KiB (668 physical lines each) add 694,720 characters
+      // to the line: one more cut, in the 11th poll, never one per line.
+      final poll = physical * (64 * 1024 ~/ physical.length);
+      final cuts = <int>[];
+      for (var i = 0; i < 16; i++) {
+        snap = parser.addText(poll);
+        all.write(poll);
+        expect(parser.pendingLineLength, lessThanOrEqualTo(cap));
+        cuts.add(snap.lineCuts);
+      }
+      expect(cuts, [for (var i = 0; i < 16; i++) i < 10 ? 1 : 2]);
+      expect(snap.lines.first.truncated, isTrue);
+      expect(snap.lines.first.text, '${'#' * 60} 50%');
+      _expectTraceEquivalent(
+        snap,
+        JobTrace.parse(all.toString()),
+        reason: 'timestamped capped line vs full parse',
+      );
+    });
+
+    test('an escape sequence that never ends is cut inside it and ended there', () {
+      // `printf '\e]'` with no terminator leaves no clean cut point: the cut
+      // lands at its target and the escape ends there, so the line stays
+      // bounded. A full parse would hide the rest of the line; only such
+      // malformed input differs from it.
+      final parser = JobTraceParser(maxPendingChars: 1000);
+      parser.addText('\x1b]0;');
+      late JobTrace snap;
+      for (var i = 0; i < 20; i++) {
+        snap = parser.addText('z' * 1000);
+        expect(parser.pendingLineLength, 750);
+      }
+      expect(snap.lineCuts, 20);
+      expect(snap.lines.single.truncated, isTrue);
+      expect(snap.lines.single.text, 'z' * 750);
+      expect(snap.lines.single.spans.single.style.isPlain, isTrue);
+
+      // Behind a front dense with section markers too.
+      final dense = JobTraceParser(maxPendingChars: 100000);
+      dense.addText('${'section_start:1:a' * 3000}\x1b]${'x' * 40000}');
+      snap = dense.addText('y' * 120000);
+      expect(dense.pendingLineLength, 75000);
+      expect(snap.lineCuts, 1);
+      expect(snap.lines.first.truncated, isTrue);
+      expect(snap.lines.map((l) => l.text).join(), 'y' * 75000);
+    });
+
+    test('the isolate and the synchronous parse agree when a cut lands inside an isolate chunk', () async {
+      final text = StringBuffer('head line\n\x1b[1;33msection_start:5:outer\r');
+      final frame = '\x1b[32m${'=' * 50}\x1b[0m 42%\r';
+      var i = 0;
+      while (text.length < cap + 300 * 1024) {
+        text.write(frame);
+        if (i % 5000 == 0) text.write('section_start:${i + 10}:inner$i\r');
+        if (i % 5000 == 2500) {
+          text.write('section_end:${i + 20}:inner${i - 2500}\r');
+        }
+        i++;
+      }
+      text.write('\x1b[35mdone\nsection_end:99:outer\r\nafter\n');
+      final bytes = utf8.encode(text.toString());
+      // Over the 64 KiB isolate threshold.
+      const chunk = 100 * 1024;
+      final viaIsolate = JobTraceParser();
+      final sync = JobTraceParser();
+      late JobTrace a;
+      late JobTrace b;
+      for (var offset = 0; offset < bytes.length; offset += chunk) {
+        final end = min(offset + chunk, bytes.length);
+        a = (await viaIsolate.addBytesAsync(bytes.sublist(offset, end)))!;
+        b = sync.addBytes(bytes.sublist(offset, end));
+        final reason = 'chunk at $offset';
+        _expectTraceEquivalent(a, b, reason: reason);
+        expect(a.truncated, b.truncated, reason: reason);
+        expect(a.windowStart, b.windowStart, reason: reason);
+        expect(a.lineCuts, b.lineCuts, reason: reason);
+        expect(
+          [for (final line in a.lines) line.truncated],
+          [for (final line in b.lines) line.truncated],
+          reason: reason,
+        );
+      }
+      expect(b.lineCuts, greaterThan(0));
+      expect(b.lines.last.text, '');
+      expect(b.lines[b.lines.length - 2].text, 'after');
+      expect(b.sections.last.name, 'outer');
+      expect(b.sections.last.end, 99);
+    });
+
+    test('a \\r or an escape split across calls at the cut gives the one-shot result', () {
+      final input = '${'abc\x1b[31m${'x' * 40}\r\x1b[0m' * 3000}END';
+      final oneShot = JobTraceParser(maxPendingChars: 1000)..addText(input);
+      for (final split in [1, 2, 3, 5, 7, 11, 64, 65, 66, 67]) {
+        final parser = JobTraceParser(maxPendingChars: 1000);
+        var longest = 0;
+        for (var offset = 0; offset < input.length; offset += split) {
+          parser.addText(input.substring(offset, min(offset + split, input.length)));
+          longest = max(longest, parser.pendingLineLength);
+        }
+        expect(longest, lessThanOrEqualTo(1000), reason: 'split $split');
+        final snap = parser.snapshot();
+        _expectTraceEquivalent(snap, oneShot.snapshot(), reason: 'split $split');
+        expect(snap.lines.single.truncated, isTrue, reason: 'split $split');
+        expect(snap.lines.single.text, 'END${'x' * 40}', reason: 'split $split');
+      }
     });
 
     testWidgets('JobLogPage shows the truncation notice on a capped pending line', (tester) async {

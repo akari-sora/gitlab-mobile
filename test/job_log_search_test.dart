@@ -611,6 +611,92 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
     });
+
+    testWidgets('a cut of a long unfinished line is held like a window slide, and the active match moves to the first match left in that line', (tester) async {
+      // A 2 MiB line with no \r (minified JSON, say) in 64-char units: rows
+      // are 4096 chars, 64 units each. A cut re-splits every row of the line.
+      String unit(int i, {bool needle = false}) =>
+          '<${i.toString().padLeft(7, '0')}>${needle ? 'needle ' : '.......'}${'.' * 48}';
+      const needles = {100, 20000, 32000, 32900};
+      String units(int from, int to) => [
+            for (var i = from; i < to; i++) unit(i, needle: needles.contains(i)),
+          ].join();
+      expect(unit(0).length, 64);
+      // Under the 2 MiB read budget: rows 0 (the first line), 2 and 313 match.
+      final chunk1Text = 'needle first line\n${units(0, 31000)}';
+      final chunk1Bytes = utf8.encode(chunk1Text);
+      // The line goes over the cap and the cut keeps its last 1.5 MiB, from
+      // unit 8424: unit 100 is dropped, unit 20000 moves from row 313 to row
+      // 181, and units 32000 and 32900 match on rows 369 and 383.
+      final chunk2Text = units(31000, 33000);
+      final chunk2Bytes = utf8.encode(chunk2Text);
+      final total = chunk1Bytes.length + chunk2Bytes.length;
+
+      final fixture = _CustomTraceFixture((request) {
+        if (request.uri.path.endsWith('/jobs/501')) {
+          return jsonResponse({'id': 501, 'status': 'running', 'name': 'cut-search'});
+        }
+        if (request.uri.path.endsWith('/jobs/501/trace')) {
+          final range = request.headers['Range'] as String?;
+          if (range != null && range.startsWith('bytes=${chunk1Bytes.length}-')) {
+            return ResponseBody.fromString(chunk2Text, 206, headers: {
+              'content-range': ['bytes ${chunk1Bytes.length}-${total - 1}/*'],
+            });
+          }
+          if (range != null && range.startsWith('bytes=$total-')) {
+            return ResponseBody.fromString('', 206, headers: {
+              'content-range': ['bytes */$total'],
+            });
+          }
+          return ResponseBody.fromString(chunk1Text, 200);
+        }
+        return jsonResponse({}, status: 404);
+      });
+      addTearDown(fixture.api.close);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpWidget(workspaceHost(JobLogPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        id: 501,
+      )));
+      await settleWorkspace(tester);
+      await tester.tap(find.text('10 秒更新'));
+      await tester.pump();
+
+      final searchFinder = find.byKey(const ValueKey('job-log-search-501'));
+      await tester.enterText(searchFinder, 'needle');
+      await tester.pump();
+      expect(find.text('1/3'), findsOneWidget);
+      // Select match 3 of 3, unit 20000 on row 313.
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down));
+      await tester.pumpAndSettle();
+      expect(find.text('3/3'), findsOneWidget);
+
+      // The 10 s poll cuts the line. Searching turned follow off, so the
+      // rows and matches on screen stay as they were, as for a slide.
+      await tester.pump(const Duration(seconds: 10));
+      await settleWorkspace(tester);
+      expect(find.text('3/3'), findsOneWidget);
+
+      // Following again shows the cut line. Row 313 now holds other units,
+      // so the match moves to the first one left in the line, unit 20000 on
+      // row 181 (2/4), not to the next match after row 313 (3/4).
+      await tester.tap(find.text('跟隨尾端'));
+      await tester.pump();
+      await settleWorkspace(tester);
+      expect(find.text('2/4'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
   });
 }
 
