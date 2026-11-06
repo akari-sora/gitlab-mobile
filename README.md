@@ -87,6 +87,10 @@ A production-client run on 2026-09-21/22 is recorded in the [v0.3 ledger](docs/V
 
 The original 105-operation design and acceptance plan was a separate historical handoff artifact (not in this checkout) and is a **target specification**, not proof that every operation has been implemented or verified. Current working design plans live in [`docs/plans/`](docs/plans/) and are tracked in [Plan and status](docs/PLAN_STATUS.md). Earlier G0/R1 documents and package manifests are historical handoffs; [Plan and status](docs/PLAN_STATUS.md), the current Git history, CI results, and the verification ledgers listed in [docs/README.md](docs/README.md) supersede their status statements.
 
+## Support
+
+If this project saved you some time, you can [buy me a coffee](https://buymeacoffee.com/iml1s).
+
 ## License
 
 GNU Affero General Public License v3.0 (AGPL-3.0). Copyright (C) 2026 ImL1s. See [LICENSE](LICENSE).
